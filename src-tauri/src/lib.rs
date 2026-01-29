@@ -58,6 +58,7 @@ pub fn run() {
             commands::direct_chats::direct_chat_id,
             commands::direct_chats::direct_chat_send_message,
             commands::chats::mark_messages_read,
+            commands::direct_chats::direct_chat_send_reaction,
             // commands::chats::create_group,
             // commands::group_chat::add_member,
             // commands::group_chat::send_message,
