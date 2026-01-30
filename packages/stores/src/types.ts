@@ -18,7 +18,7 @@ export interface SpaceControlMessage {
 export interface ChatReaction {
 	/// The emoji to react with.
 	/// Use None to "remove" the prior reaction.
-	emoji: string | undefined;
+	emoji: string | null;
 	/// The hash of the header of the message being reacted to.
 	target: Hash;
 }

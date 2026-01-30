@@ -53,7 +53,7 @@ export class GroupChatStore {
 				content: 'heeey',
 				author: await this.contactsStore.myAgentId(),
 				timestamp: Date.now(),
-				reactions: new Map()
+				reactions: {}
 			},
 		];
 

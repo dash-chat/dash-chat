@@ -132,7 +132,8 @@
 			scrollToBottom();
 		});
 	}
-	store.onNewMessage(async () => {
+	store.onNewMessage(async (message) => {
+		if(message.body?.payload.type !== 'Message') return;
 		if (scrollIsAtBottom()) {
 			// Wait for the message to get rendered in the UI
 			setTimeout(() => {
@@ -140,6 +141,11 @@
 			});
 		}
 	});
+
+	async function sendReaction(messageHash: string, emoji: string | null) {
+		await store.sendReaction({ target: messageHash, emoji });
+	}
+
 	const theme = $derived(useTheme());
 	const messageClass = (messageSetLength: number, index: number) => {
 		if (messageSetLength <= 1) return '';
@@ -147,6 +153,19 @@
 		if (index === messageSetLength - 1) return 'last-message';
 		return 'middle-message';
 	};
+
+	// placeholder logic
+	function toggleEmoji(
+		reactions: Record<string, string>,
+		deviceId: string,
+	): string | null {
+		console.log('toggling', reactions, deviceId);
+		if (Object.keys(reactions).includes(deviceId)) {
+			return null;
+		} else {
+			return '👍';
+		}
+	}
 </script>
 
 {#await $peerProfile then profile}
@@ -230,6 +249,14 @@
 													class={`${messageClass(messageSet.length, i)} message my-message`}
 												>
 													<div
+														role="button"
+														tabindex="0"
+														on:click={() =>
+															sendReaction(
+																hash,
+																toggleEmoji(message.reactions, myDeviceId),
+															)}
+														on:keydown={e => console.log('ok')}
 														class="row gap-2 mx-1"
 														style="align-items: center"
 													>
@@ -257,7 +284,9 @@
 															</div>
 														{/if}
 													</div>
-													<div>{Array.from(message.reactions.values()).join('')}</div>
+													<div>
+														{Object.values(message.reactions).join('')}
+													</div>
 												</Card>
 											{:else}
 												<div class="row gap-2 m-0">
@@ -266,6 +295,14 @@
 														class={`${messageClass(messageSet.length, i)} message others-message`}
 													>
 														<div
+															role="button"
+															tabindex="0"
+															on:click={() =>
+																sendReaction(
+																	hash,
+																	toggleEmoji(message.reactions, myDeviceId),
+																)}
+															on:keydown={e => console.log('ok2')}
 															class="row gap-2 mx-1"
 															style="align-items: center"
 														>
@@ -292,6 +329,9 @@
 																	{/if}
 																</div>
 															{/if}
+														</div>
+														<div>
+															{Object.values(message.reactions).join('')}
 														</div>
 													</Card>
 												</div>
