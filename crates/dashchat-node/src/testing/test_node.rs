@@ -12,10 +12,7 @@ use mailbox_client::{MailboxClient, mem::MemMailbox};
 
 use crate::{
     AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
-    mailbox::MailboxOperation,
-    node::{LocalStore, Node},
-    testing::behavior::Behavior,
-    topic::TopicId,
+    mailbox::MailboxOperation, node::Node, testing::behavior::Behavior, topic::TopicId,
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::Debug)]
@@ -33,16 +30,14 @@ impl TestNode {
     pub async fn new(config: impl Into<TestNodeConfig>, name: &str) -> Self {
         let config = config.into();
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("store.db");
-        let local_store = LocalStore::new(path).unwrap();
         let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
-        if config.use_named_id {
-            local_store.device_id().unwrap().with_name(name);
-            local_store.agent_id().unwrap().with_name(name);
-        }
-        let node = Node::new(local_store, config.node_config, Some(notification_tx))
+        let node = Node::new(dir.path().into(), config.node_config, Some(notification_tx))
             .await
             .unwrap();
+        if config.use_named_id {
+            node.device_id().with_name(name);
+            node.agent_id().with_name(name);
+        }
         if config.create_profile {
             node.set_profile(Profile {
                 name: name.to_string(),

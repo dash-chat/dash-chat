@@ -2,11 +2,13 @@ pub(crate) mod author_operation;
 mod stream_processing;
 
 use std::collections::{BTreeSet, HashSet};
+use std::path::PathBuf;
 use std::pin::Pin;
 
 use anyhow::Result;
 
 use crate::error::{AddContactError, Error};
+use crate::filesystem::Filesystem;
 use chrono::{Duration, Utc};
 use futures::Stream;
 use named_id::Rename;
@@ -14,7 +16,7 @@ use named_id::*;
 use p2panda_core::Body;
 use p2panda_net::ResyncConfiguration;
 use p2panda_spaces::ActorId;
-use p2panda_store::{LogStore, MemoryStore};
+use p2panda_store::{LogStore, SqliteStore};
 use p2panda_stream::IngestExt;
 use p2panda_stream::partial::operations::PartialOrder;
 use tokio::sync::mpsc;
@@ -73,7 +75,7 @@ impl Default for NodeConfig {
 pub type Orderer<S> =
     PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
 
-pub type NodeOpStore = OpStore<MemoryStore<TopicId, Extensions>>;
+pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
 
 #[derive(Clone)]
 pub struct Node {
@@ -88,21 +90,24 @@ pub struct Node {
     /// Add new subscription streams
     stream_tx: mpsc::Sender<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
 
+    filesystem: Filesystem,
     local_store: LocalStore,
     node_data: NodeData,
 }
 
 impl Node {
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?local_store.device_id().expect("can't load private key").renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all))]
     pub async fn new(
-        local_store: LocalStore,
+        data_path: PathBuf,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
     ) -> Result<Self> {
+        let filesystem = Filesystem::new(data_path);
+        let local_store = LocalStore::new(filesystem.local_store_path())?;
         let node_data = local_store.node_data()?;
 
-        let op_store = OpStore::new_memory();
-        // let op_store = OpStore::new_sqlite().await?;
+        // let op_store = OpStore::new_memory();
+        let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
 
         let (stream_tx, stream_rx) = mpsc::channel(100);
 
@@ -112,6 +117,7 @@ impl Node {
             op_store: op_store.clone(),
             mailboxes,
             config,
+            filesystem,
             local_store: local_store.clone(),
             node_data,
             notification_tx,

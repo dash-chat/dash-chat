@@ -1,12 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
+    path::PathBuf,
     sync::{Arc, RwLock},
 };
 
 use p2panda_core::{Body, Hash, Operation, PublicKey, RawOperation};
 use p2panda_store::{LogStore, MemoryStore, OperationStore, SqliteStore};
 use p2panda_stream::operation::IngestResult;
-use rand::distr::Distribution;
 use tokio::sync::Mutex;
 
 use crate::{
@@ -39,19 +39,13 @@ impl OpStore<MemoryStore<TopicId, Extensions>> {
 }
 
 impl OpStore<SqliteStore<TopicId, Extensions>> {
-    pub async fn new_sqlite() -> anyhow::Result<Self> {
-        let rand = rand::distr::Alphanumeric
-            .sample_iter(&mut rand::rng())
-            .take(10)
-            .map(char::from)
-            .collect::<String>();
-        let filename = format!("/tmp/dashchat-{rand}.db");
-        let url = format!("sqlite://{filename}");
+    pub async fn new_sqlite(database_file_path: PathBuf) -> anyhow::Result<Self> {
+        let url = format!("sqlite://{}", database_file_path.to_string_lossy());
         p2panda_store::sqlite::store::create_database(&url).await?;
 
-        let pool = sqlx::SqlitePool::connect(&url)
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to connect to sqlite at '{filename}': {e}"))?;
+        let pool = sqlx::SqlitePool::connect(&url).await.map_err(|e| {
+            anyhow::anyhow!("failed to connect to sqlite at '{database_file_path:?}': {e}")
+        })?;
 
         if p2panda_store::sqlite::store::run_pending_migrations(&pool)
             .await

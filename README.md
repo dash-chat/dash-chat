@@ -8,10 +8,11 @@ Dash Chat is in pre-alpha. We are currently rebuilding the application on top of
 
 ## Tech Stack
 
-- Frontend: Svelte 5 with TypeScript
-- Backend: Rust with Tauri
-- P2P: P2Panda for peer-to-peer communication
-- Build Tool: Vite
+- Frontend: SvelteKit 5 with TypeScript, and [Konsta UI](https://konstaui.com/) as the component library
+- Backend: Rust with [Tauri](https://tauri.app)
+- P2P: [p2panda](https://p2panda.org) for peer-to-peer communication
+- Build Tool: [Vite](https://vite.dev)
+- Development: [just](https://just.systems/)
 
 ## Translate Dash Chat
 
@@ -38,7 +39,11 @@ If you use nix, just use `nix develop` to enter the development shell and run `p
 To run the app, run this command:
 
 ```bash
-pnpm start
+just dev
 ```
 
-This will spawn two instances of the tauri, forming a p2panda network of 2 nodes.
+This will spawn two instances of the tauri, forming a p2panda network of 2 nodes connected to a single mailbox server running locally. All data will be persisted to the .dev-dbs folder in the current folder. If you want to clean up the development databases, run:
+
+```bash
+just clean-dev
+```
