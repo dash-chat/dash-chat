@@ -20,7 +20,7 @@ local-ip-address = "0.6"
 
 [dependencies]
 dashchat-node = { path = "../crates/dashchat-node" }
-tauri = { version = "2.8", features = ["devtools"] }
+tauri = { version = "2.8", features = ["devtools", "tray-icon"] }
 
 anyhow = "1.0.95"
 async-trait = "0.1.85"
@@ -87,6 +87,7 @@ ndk-sys = "0.6"
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-updater = "2.9"
 tauri-plugin-mcp-bridge = "0.7"
+mailbox-server = { path = "../crates/mailbox-server" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

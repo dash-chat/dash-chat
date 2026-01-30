@@ -1626,6 +1626,7 @@ dependencies = [
  "local-ip-address",
  "log",
  "mailbox-client",
+ "mailbox-server",
  "ndk-context",
  "ndk-sys",
  "opener",
