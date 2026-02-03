@@ -3,14 +3,18 @@ use std::{collections::BTreeSet, path::Path, sync::Arc};
 use chrono::{DateTime, Utc};
 use redb::*;
 
-use crate::{contact::InboxTopic, *};
+use crate::{
+    contact::InboxTopic,
+    topic::{Topic, kind},
+    *,
+};
 
+mod contact_code;
 mod impls;
 
 const IDENTITY_TABLE: TableDefinition<&'static str, [u8; 32]> = TableDefinition::new("identity");
 const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> =
     TableDefinition::new("active_inboxes");
-
 const PRIVATE_KEY_KEY: &str = "private_key";
 const AGENT_ID_KEY: &str = "agent_id";
 
@@ -50,6 +54,7 @@ impl LocalStore {
         {
             let mut identity = txn.open_table(IDENTITY_TABLE)?;
             let _ = txn.open_table(ACTIVE_INBOXES_TABLE)?;
+            let _ = txn.open_table(contact_code::CONTACT_CODE_TABLE)?;
             let uninitialized =
                 identity.get(PRIVATE_KEY_KEY)?.is_none() && identity.get(AGENT_ID_KEY)?.is_none();
             if uninitialized {
@@ -126,6 +131,32 @@ impl LocalStore {
                 topic: Topic::new([0; 32]),
             };
             table.retain_in(..limit, |_, _| false)?;
+        }
+        txn.commit()?;
+        Ok(())
+    }
+
+    pub fn remove_active_inbox_topic(&self, topic: &Topic<kind::Inbox>) -> anyhow::Result<()> {
+        let txn = self.db.begin_write()?;
+        {
+            let mut table = txn.open_table(ACTIVE_INBOXES_TABLE)?;
+            // Find and remove any entry with the matching topic (regardless of expires_at)
+            let to_remove: Vec<InboxTopic> = table
+                .iter()?
+                .filter_map(|entry| {
+                    entry.ok().and_then(|(inbox_topic, _)| {
+                        let inbox_topic = inbox_topic.value();
+                        if &inbox_topic.topic == topic {
+                            Some(inbox_topic)
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect();
+            for inbox_topic in to_remove {
+                table.remove(&inbox_topic)?;
+            }
         }
         txn.commit()?;
         Ok(())
@@ -219,6 +250,57 @@ mod tests {
         store.prune_expired_active_inbox_topics(more_valid).unwrap();
         topics.pop_first().unwrap();
 
+        let loaded_topics = store.get_active_inbox_topics().unwrap();
+        assert_eq!(loaded_topics, topics);
+    }
+
+    #[test]
+    fn test_remove_inbox_topic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_prune_inbox_topics.db");
+        let store = LocalStore::new(&path).unwrap();
+
+        let now = Utc::now();
+
+        let topic_to_remove = InboxTopic {
+            expires_at: now + Duration::days(20),
+            topic: Topic::new([2; 32]),
+        };
+        let mut topics = maplit::btreeset![
+            InboxTopic {
+                expires_at: now + Duration::days(10),
+                topic: Topic::new([1; 32]),
+            },
+            topic_to_remove.clone(),
+            InboxTopic {
+                expires_at: now + Duration::days(30),
+                topic: Topic::new([3; 32]),
+            },
+        ];
+
+        // Insert all topics
+        {
+            let txn = store.db.begin_write().unwrap();
+            {
+                let mut table = txn.open_table(super::ACTIVE_INBOXES_TABLE).unwrap();
+                for t in &topics {
+                    table.insert(t, ()).unwrap();
+                }
+            }
+            txn.commit().unwrap();
+        }
+
+        // Check all topics are present
+        let loaded_topics = store.get_active_inbox_topics().unwrap();
+        assert_eq!(loaded_topics, topics);
+
+        // Remove the middle topic (by topic only, not full InboxTopic)
+        store
+            .remove_active_inbox_topic(&topic_to_remove.topic)
+            .unwrap();
+        topics.remove(&topic_to_remove);
+
+        // Only the middle one should be gone
         let loaded_topics = store.get_active_inbox_topics().unwrap();
         assert_eq!(loaded_topics, topics);
     }

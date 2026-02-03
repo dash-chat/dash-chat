@@ -30,6 +30,8 @@
 		ToolbarPane,
 		TabbarLink,
 		Tabbar,
+		Dialog,
+		DialogButton,
 	} from 'konsta/svelte';
 	import { goto } from '$app/navigation';
 	import { showToast } from '$lib/utils/toasts';
@@ -39,9 +41,22 @@
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
-	let myCode = contactsStore.client.createContactCode().then(encodeContactCode);
+	let myCode = $state(contactsStore.client.getOrCreateContactCode().then(encodeContactCode));
+	let codeError = $state<string | null>(null);
+	let resetDialogOpen = $state(false);
 
 	let tab = $state<'code' | 'scan'>('code');
+
+	async function resetCode() {
+		codeError = null;
+		try {
+			const code = await contactsStore.client.resetContactCode();
+			myCode = Promise.resolve(encodeContactCode(code));
+		} catch (e) {
+			console.error(e);
+			codeError = m.errorCreateContactCode();
+		}
+	}
 
 	async function receiveCode(code: string) {
 		try {
@@ -79,7 +94,7 @@
 					break;
 				case 'InitializeTopic':
 				case 'AuthorOperation':
-				case 'CreateQrCode':
+				case 'CreateContactCode':
 				case 'CreateDirectChat':
 					showToast(m.errorAddContact(), 'error');
 					break;
@@ -189,6 +204,12 @@
 				<Preloader />
 			</div>
 		{:then code}
+			{#if codeError}
+				<div class="column m-6" style="align-items: center; gap: 16px;">
+					<span class="error-text">{codeError}</span>
+					<Button onClick={resetCode}>{m.resetQrCode()}</Button>
+				</div>
+			{:else}
 			<div class="column" style="flex:1">
 				<div class="column center-in-desktop gap-4 m-6">
 					<Card class="qr-card p-2 pb-0">
@@ -240,6 +261,17 @@
 						</List>
 					</div>
 				</div>
+				<div class="row" style="justify-content: center">
+					<Button style="width: auto" tonal small rounded onClick={() => (resetDialogOpen = true)}>
+						{m.resetQrCode()}
+					</Button>
+				</div>
+			</div>
+			{/if}
+		{:catch}
+			<div class="column m-6" style="align-items: center; gap: 16px;">
+				<span class="error-text">{m.errorCreateContactCode()}</span>
+				<Button onClick={resetCode}>{m.resetQrCode()}</Button>
 			</div>
 		{/await}
 	{:else}
@@ -262,6 +294,30 @@
 			</div>
 		</div>
 	{/if}
+
+	<Dialog
+		opened={resetDialogOpen}
+		onBackdropClick={() => (resetDialogOpen = false)}
+	>
+		{#snippet title()}
+			{m.resetQrCode()}
+		{/snippet}
+		<span>{m.areYouSureResetQrCode()}</span>
+		{#snippet buttons()}
+			<DialogButton onClick={() => (resetDialogOpen = false)}>
+				{m.cancel()}
+			</DialogButton>
+			<DialogButton
+				strong
+				onClick={() => {
+					resetDialogOpen = false;
+					resetCode();
+				}}
+			>
+				{m.reset()}
+			</DialogButton>
+		{/snippet}
+	</Dialog>
 </Page>
 
 <style>
@@ -301,5 +357,10 @@
 	.barcode-scanner--area--outer {
 		display: flex;
 		border-radius: 1em;
+	}
+
+	.error-text {
+		color: var(--k-color-red);
+		text-align: center;
 	}
 </style>

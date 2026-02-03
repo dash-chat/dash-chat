@@ -19,12 +19,29 @@ pub enum Error {
 
 #[derive(Debug, Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
+pub enum ContactCodeError {
+    #[error("Failed to get contact code: {0}")]
+    GetContactCode(String),
+
+    #[error("Failed to set contact code: {0}")]
+    SetContactCode(String),
+
+    #[error("Failed to clear contact code: {0}")]
+    ClearContactCode(String),
+
+    #[error(transparent)]
+    #[serde(untagged)]
+    Common(#[from] Error),
+}
+
+#[derive(Debug, Error, Serialize)]
+#[serde(tag = "kind", content = "message")]
 pub enum AddContactError {
     #[error("Profile must be created before adding contacts")]
     ProfileNotCreated,
 
-    #[error("Failed to create QR code: {0}")]
-    CreateQrCode(String),
+    #[error("Failed to create contact code: {0}")]
+    CreateContactCode(String),
 
     #[error("Failed to create direct chat: {0}")]
     CreateDirectChat(String),

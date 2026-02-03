@@ -18,8 +18,11 @@ export interface IContactsClient {
 
 	/// contacts
 
-	// Creates a new contact code to be shared
-	createContactCode(): Promise<ContactCode>;
+	// Creates a new contact code to be shared (reuses existing if valid)
+	getOrCreateContactCode(): Promise<ContactCode>;
+
+	// Resets the contact code, invalidating the old one
+	resetContactCode(): Promise<ContactCode>;
 
 	activeInboxTopics(): Promise<TopicId[]>
 
@@ -60,8 +63,12 @@ export class ContactsClient implements IContactsClient {
 		});
 	}
 
-	createContactCode(): Promise<ContactCode> {
-		return invoke('create_contact_code');
+	getOrCreateContactCode(): Promise<ContactCode> {
+		return invoke('get_or_create_contact_code');
+	}
+
+	resetContactCode(): Promise<ContactCode> {
+		return invoke('reset_contact_code');
 	}
 
 	activeInboxTopics(): Promise<TopicId[]> {

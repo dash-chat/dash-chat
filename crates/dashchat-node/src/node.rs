@@ -24,7 +24,7 @@ use tokio::sync::mpsc;
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 
 use crate::chat::ChatMessageContent;
-use crate::contact::{InboxTopic, QrCode, ShareIntent};
+use crate::contact::{ContactCode, InboxTopic, ShareIntent};
 use crate::local_store::NodeData;
 use crate::mailbox::MailboxOperation;
 use crate::payload::{
@@ -211,7 +211,7 @@ impl Node {
         &self,
         share_intent: ShareIntent,
         inbox: bool,
-    ) -> Result<QrCode, crate::Error> {
+    ) -> Result<ContactCode, crate::Error> {
         let inbox_topic = if inbox {
             let inbox_topic = InboxTopic {
                 topic: Topic::inbox().with_name(&format!("inbox({})", self.device_id().renamed())),
@@ -228,12 +228,72 @@ impl Node {
             None
         };
 
-        Ok(QrCode {
+        Ok(ContactCode {
             device_pubkey: self.device_id(),
             inbox_topic,
             agent_id: self.node_data.agent_id,
             share_intent,
         })
+    }
+
+    /// Get the stored contact code if it exists and is not expired,
+    /// otherwise create a new one and store it.
+    pub async fn get_or_create_contact_code(&self) -> Result<ContactCode, crate::ContactCodeError> {
+        // Check if we have a stored contact code
+        if let Some(stored_code) = self
+            .local_store
+            .get_contact_code()
+            .map_err(|e| crate::ContactCodeError::GetContactCode(format!("{e}")))?
+        {
+            // Check if the inbox topic is still valid (not expired)
+            if let Some(inbox_topic) = &stored_code.inbox_topic {
+                if inbox_topic.expires_at > Utc::now() {
+                    return Ok(stored_code);
+                }
+                // Expired - remove from active inboxes and create new
+                if let Err(err) = self
+                    .local_store
+                    .remove_active_inbox_topic(&inbox_topic.topic)
+                {
+                    tracing::error!("Failed to remove expired inbox topic: {}", err);
+                }
+            } else {
+                // No inbox topic means this is a response code, should still be valid
+                return Ok(stored_code);
+            }
+        }
+        // Create a new contact code and store it
+        let new_code = self.new_qr_code(ShareIntent::AddContact, true).await?;
+        self.local_store
+            .set_contact_code(&new_code)
+            .map_err(|e| crate::ContactCodeError::SetContactCode(format!("{e}")))?;
+        Ok(new_code)
+    }
+
+    /// Reset the contact code: remove the old inbox topic from active inboxes,
+    /// clear the stored code, and create a new one.
+    pub async fn reset_contact_code(&self) -> Result<ContactCode, crate::ContactCodeError> {
+        // Get the current stored code to clean up its inbox topic
+        if let Ok(Some(stored_code)) = self.local_store.get_contact_code() {
+            if let Some(inbox_topic) = &stored_code.inbox_topic {
+                // Remove from active inboxes so we stop listening for messages on this topic
+                let _ = self
+                    .local_store
+                    .remove_active_inbox_topic(&inbox_topic.topic);
+            }
+        }
+
+        // Clear the stored code
+        self.local_store
+            .clear_contact_code()
+            .map_err(|e| crate::ContactCodeError::ClearContactCode(format!("{e}")))?;
+
+        // Create a new contact code and store it
+        let new_code = self.new_qr_code(ShareIntent::AddContact, true).await?;
+        self.local_store
+            .set_contact_code(&new_code)
+            .map_err(|e| crate::ContactCodeError::SetContactCode(format!("{e}")))?;
+        Ok(new_code)
     }
 
     pub fn agent_id(&self) -> AgentId {
@@ -323,6 +383,12 @@ impl Node {
         Ok(Some(profile.clone()))
     }
 
+    /// Get a reference to the local store for testing purposes.
+    #[cfg(feature = "testing")]
+    pub fn local_store(&self) -> &LocalStore {
+        &self.local_store
+    }
+
     /// Get all messages for a chat from the logs.
     ///
     /// In the real app, the interleaving of logs happens on the front end.
@@ -410,7 +476,7 @@ impl Node {
     /// - store them in the contacts map
     /// - send an invitation to them to do the same
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
-    pub async fn add_contact(&self, contact: QrCode) -> Result<AgentId, AddContactError> {
+    pub async fn add_contact(&self, contact: ContactCode) -> Result<AgentId, AddContactError> {
         tracing::debug!("adding contact: {:?}", contact);
 
         // SPACES: Register the member in the spaces manager
@@ -487,7 +553,7 @@ impl Node {
             let code = self
                 .new_qr_code(ShareIntent::AddContact, false)
                 .await
-                .map_err(|e| AddContactError::CreateQrCode(e.to_string()))?;
+                .map_err(|e| AddContactError::CreateContactCode(e.to_string()))?;
             let Some(profile) = self
                 .my_profile()
                 .await

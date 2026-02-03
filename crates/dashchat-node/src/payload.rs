@@ -4,7 +4,7 @@ use p2panda_core::{Body, Extension, PruneFlag};
 use serde::{Deserialize, Serialize};
 
 use crate::chat::ChatId;
-use crate::contact::QrCode;
+use crate::contact::ContactCode;
 use crate::topic::TopicId;
 use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, Topic};
 
@@ -35,7 +35,7 @@ pub enum AnnouncementsPayload {
 #[serde(tag = "type", content = "payload")]
 pub enum InboxPayload {
     /// Invites the recipient to add the sender as a contact.
-    ContactRequest { code: QrCode, profile: Profile },
+    ContactRequest { code: ContactCode, profile: Profile },
 }
 
 // TODO: consolidate into something else
@@ -60,7 +60,7 @@ pub enum ChatPayload {
 #[derive(Clone, Debug, Serialize, Deserialize, RenameAll)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
-    AddContact(QrCode),
+    AddContact(ContactCode),
     RejectContactRequest(AgentId),
 }
 

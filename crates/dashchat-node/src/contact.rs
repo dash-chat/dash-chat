@@ -24,7 +24,7 @@ use crate::{AgentId, DeviceId, Topic, topic::kind};
 /// pubkeys and key bundles, so that chat groups can be joined in the future.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
 // #[serde(into = "String", try_from = "String")]
-pub struct QrCode {
+pub struct ContactCode {
     /// Pubkey of this node: allows adding this node to groups.
     pub device_pubkey: DeviceId,
     /// Agent ID to add to spaces
@@ -53,7 +53,7 @@ pub struct InboxTopic {
     pub topic: Topic<kind::Inbox>,
 }
 
-impl std::fmt::Display for QrCode {
+impl std::fmt::Display for ContactCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let bytes = encode_cbor(&(
             &self.device_pubkey,
@@ -66,12 +66,12 @@ impl std::fmt::Display for QrCode {
     }
 }
 
-impl FromStr for QrCode {
+impl FromStr for ContactCode {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = hex::decode(s)?;
         let (device_pubkey, inbox_topic, agent_id, share_intent) = decode_cbor(bytes.as_slice())?;
-        Ok(QrCode {
+        Ok(ContactCode {
             device_pubkey,
             inbox_topic,
             agent_id,
@@ -80,16 +80,16 @@ impl FromStr for QrCode {
     }
 }
 
-impl From<QrCode> for String {
-    fn from(code: QrCode) -> Self {
+impl From<ContactCode> for String {
+    fn from(code: ContactCode) -> Self {
         code.to_string()
     }
 }
 
-impl TryFrom<String> for QrCode {
+impl TryFrom<String> for ContactCode {
     type Error = anyhow::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        Ok(QrCode::from_str(&value).unwrap())
+        ContactCode::from_str(&value)
     }
 }
 
@@ -105,7 +105,7 @@ mod tests {
     fn test_contact_roundtrip() {
         let pubkey = PublicKey::from_bytes(&[11; 32]).unwrap();
         let agent_id = AgentId::from(ActorId::from_bytes(&[22; 32]).unwrap());
-        let contact = QrCode {
+        let contact = ContactCode {
             device_pubkey: DeviceId::from(pubkey),
             inbox_topic: Some(InboxTopic {
                 topic: Topic::inbox(),
@@ -115,7 +115,7 @@ mod tests {
             share_intent: ShareIntent::AddDevice,
         };
         let encoded = contact.to_string();
-        let decoded = QrCode::from_str(&encoded).unwrap();
+        let decoded = ContactCode::from_str(&encoded).unwrap();
 
         assert_eq!(contact, decoded);
     }

@@ -33,7 +33,7 @@ impl Behavior {
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().renamed())))]
-    pub async fn accept_next_contact(&self) -> anyhow::Result<QrCode> {
+    pub async fn accept_next_contact(&self) -> anyhow::Result<ContactCode> {
         let qr = self
             .watcher
             .lock()
