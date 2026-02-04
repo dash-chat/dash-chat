@@ -67,6 +67,7 @@ impl redb::Value for InboxTopic {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

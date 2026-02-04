@@ -7,12 +7,15 @@ use crate::{commands::logs::simplify, filesystem::local_data_dir};
 
 mod commands;
 mod filesystem;
+mod settings;
 mod utils;
 
+mod mailbox;
 #[cfg(not(mobile))]
 mod menu;
 #[cfg(mobile)]
 mod push_notifications;
+mod tray;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -66,6 +69,8 @@ pub fn run() {
             tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Warn)
                 .level_for("dashchat_node", log::LevelFilter::Debug)
+                .level_for("mailbox_client", log::LevelFilter::Debug)
+                .level_for("mailbox_server", log::LevelFilter::Debug)
                 .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
                 .build(),
         )
@@ -76,6 +81,12 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
             let handle = app.handle().clone();
+
+            // Manage the mDNS service daemon
+            app.manage(mdns_sd::ServiceDaemon::new()?);
+
+            // Setup the menu to work with the tray icon
+            crate::tray::setup_tray_menu(&app)?;
 
             let local_data_path: std::path::PathBuf = local_data_dir(&handle)?;
             log::info!("Using local data path: {local_data_path:?}");
@@ -98,7 +109,10 @@ pub fn run() {
                 let mailbox_client = ToyMailboxClient::new(mailbox_url);
                 node.mailboxes.add(mailbox_client).await;
 
-                handle.manage(node);
+                handle.manage(node.clone());
+
+                mailbox::spawn_local_mailbox_mdns_discovery(&handle, node)
+                    .expect("Failed to spawn local mailbox mdns discovery");
 
                 tauri::async_runtime::spawn(async move {
                     while let Some(notification) = notification_rx.recv().await {

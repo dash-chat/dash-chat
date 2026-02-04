@@ -176,11 +176,15 @@ where
         let mut ops_to_publish = vec![];
         for (topic, response) in response.into_iter() {
             let FetchTopicResponse { items, missing } = response;
-            tracing::info!(
-                items = items.len(),
-                missing = missing.len(),
-                "fetched operations"
-            );
+            if items.is_empty() && missing.is_empty() {
+                tracing::trace!(topic = ?topic, "Syncing with mailbox: nothing to do");
+            } else {
+                tracing::info!(
+                    items = items.len(),
+                    missing = missing.len(),
+                    "fetched operations"
+                );
+            }
 
             let Some(sender) = self.topics.lock().await.get(&topic).cloned() else {
                 #[cfg(feature = "named-id")]

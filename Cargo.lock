@@ -1626,6 +1626,9 @@ dependencies = [
  "local-ip-address",
  "log",
  "mailbox-client",
+ "mailbox-server",
+ "mdns-sd",
+ "nanoid",
  "ndk-context",
  "ndk-sys",
  "opener",
@@ -3536,6 +3539,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "if-addrs"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf39cc0423ee66021dc5eccface85580e4a001e0c5288bae8bea7ecb69225e90"
+dependencies = [
+ "libc",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "igd-next"
 version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4404,6 +4417,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 
 [[package]]
+name = "mdns-sd"
+version = "0.17.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "183d7ebd9fe3815c1635cd039d1ed95f1d315731cc13e6d504e4ae039d527b8d"
+dependencies = [
+ "fastrand",
+ "flume",
+ "if-addrs",
+ "log",
+ "mio",
+ "socket-pktinfo",
+ "socket2 0.6.2",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4463,6 +4491,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a69bcab0ad47271a0234d9422b131806bf3968021e5dc9328caf2d4cd58557fc"
 dependencies = [
  "libc",
+ "log",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
 ]
@@ -4555,6 +4584,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "nanoid"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ffa00dec017b5b1a8b7cf5e2c008bfda1aa7e0697ac1508b491fdf2622fb4d8"
+dependencies = [
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -7869,6 +7907,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "socket-pktinfo"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "927136cc2ae6a1b0e66ac6b1210902b75c3f726db004a73bc18686dcd0dcd22f"
+dependencies = [
+ "libc",
+ "socket2 0.6.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

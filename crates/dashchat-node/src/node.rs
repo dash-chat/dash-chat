@@ -90,7 +90,7 @@ pub struct Node {
     /// Add new subscription streams
     stream_tx: mpsc::Sender<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
 
-    filesystem: Filesystem,
+    _filesystem: Filesystem,
     local_store: LocalStore,
     node_data: NodeData,
 }
@@ -117,7 +117,7 @@ impl Node {
             op_store: op_store.clone(),
             mailboxes,
             config,
-            filesystem,
+            _filesystem: filesystem,
             local_store: local_store.clone(),
             node_data,
             notification_tx,
