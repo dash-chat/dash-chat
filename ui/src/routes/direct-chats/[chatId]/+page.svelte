@@ -47,6 +47,7 @@
 	import { watcher } from 'signalium';
 	import type { Action } from 'svelte/action';
 	import MessageInput from '$lib/components/MessageInput.svelte';
+	import type { EventSetsInDay } from 'dash-chat-stores/dist/utils/event-sets';
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -56,9 +57,20 @@
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(chatId);
 
-	const messagesSets = useReactivePromise(store.messageSets);
+	const messageSets = useReactivePromise(store.messageSets);
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const contactRequest = useReactivePromise(store.getContactRequest);
+
+	let messageSetsData = $state<EventSetsInDay<Message>[] | undefined>(undefined);
+    
+    $effect(() => {
+        const storeValue = $messageSets;
+        if (storeValue) {
+            storeValue.then(data => {
+                messageSetsData = data;
+            });
+        }
+    });
 
 	async function acceptContactRequest(contactRequest: ContactRequest) {
 		try {
@@ -132,6 +144,7 @@
 			scrollToBottom();
 		});
 	}
+	
 	store.onNewMessage(async (message) => {
 		if(message.body?.payload.type !== 'Message') return;
 		if (scrollIsAtBottom()) {
@@ -195,7 +208,7 @@
 
 		<div class="column">
 			{#await $myDeviceId then myDeviceId}
-				{#await $messagesSets then messagesSetsInDays}
+				{#if messageSetsData}
 					<div
 						use:scrolltobottom
 						class="center-in-desktop column"
@@ -219,7 +232,7 @@
 						{/if}
 
 						<div class="column m-2 gap-1">
-							{#each messagesSetsInDays as messageSetInDay}
+							{#each messageSetsData as messageSetInDay}
 								<Card outline class="day-tag" style="align-self: center">
 									{#if moreThanAYearAgo(messageSetInDay.day.valueOf())}
 										<wa-format-date
@@ -342,7 +355,7 @@
 							{/each}
 						</div>
 					</div>
-				{/await}
+				{/if}
 			{/await}
 
 			{#await $contactRequest then contactRequest}
