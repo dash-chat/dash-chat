@@ -48,6 +48,7 @@
 	import type { Action } from 'svelte/action';
 	import MessageInput from '$lib/components/MessageInput.svelte';
 	import type { EventSetsInDay } from 'dash-chat-stores/dist/utils/event-sets';
+	import DirectMessage from '$lib/components/messages/DirectMessage.svelte';
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -61,16 +62,18 @@
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const contactRequest = useReactivePromise(store.getContactRequest);
 
-	let messageSetsData = $state<EventSetsInDay<Message>[] | undefined>(undefined);
-    
-    $effect(() => {
-        const storeValue = $messageSets;
-        if (storeValue) {
-            storeValue.then(data => {
-                messageSetsData = data;
-            });
-        }
-    });
+	let messageSetsData = $state<EventSetsInDay<Message>[] | undefined>(
+		undefined,
+	);
+
+	$effect(() => {
+		const storeValue = $messageSets;
+		if (storeValue) {
+			storeValue.then(data => {
+				messageSetsData = data;
+			});
+		}
+	});
 
 	async function acceptContactRequest(contactRequest: ContactRequest) {
 		try {
@@ -144,9 +147,9 @@
 			scrollToBottom();
 		});
 	}
-	
-	store.onNewMessage(async (message) => {
-		if(message.body?.payload.type !== 'Message') return;
+
+	store.onNewMessage(async message => {
+		if (message.body?.payload.type !== 'Message') return;
 		if (scrollIsAtBottom()) {
 			// Wait for the message to get rendered in the UI
 			setTimeout(() => {
@@ -257,96 +260,22 @@
 									<div class="column" style="gap: 1px">
 										{#each messageSet as [hash, message], i}
 											{#if myDeviceId == message.author}
-												<Card
-													raised
-													class={`${messageClass(messageSet.length, i)} message my-message`}
-												>
-													<div
-														role="button"
-														tabindex="0"
-														on:click={() =>
-															sendReaction(
-																hash,
-																toggleEmoji(message.reactions, myDeviceId),
-															)}
-														on:keydown={e => console.log('ok')}
-														class="row gap-2 mx-1"
-														style="align-items: center"
-													>
-														<span>{message.content}</span>
-
-														{#if i === messageSet.length - 1}
-															<div class="dark-quiet text-xs">
-																{#if lessThanAMinuteAgo(message.timestamp)}
-																	<span>{m.now()}</span>
-																{:else if moreThanAnHourAgo(message.timestamp)}
-																	<wa-format-date
-																		hour="numeric"
-																		minute="numeric"
-																		hour-format="24"
-																		date={new Date(message.timestamp)}
-																	></wa-format-date>
-																{:else}
-																	<wa-relative-time
-																		sync
-																		format="narrow"
-																		date={new Date(message.timestamp)}
-																	>
-																	</wa-relative-time>
-																{/if}
-															</div>
-														{/if}
-													</div>
-													<div>
-														{Object.values(message.reactions).join('')}
-													</div>
-												</Card>
+												<DirectMessage
+													{message}
+													{hash}
+													classes={messageClass(messageSet.length, i) + ' my-message'}
+													isLastMessage={i === messageSet.length - 1}
+													isOwnMessage={true}
+												></DirectMessage>
 											{:else}
 												<div class="row gap-2 m-0">
-													<Card
-														raised
-														class={`${messageClass(messageSet.length, i)} message others-message`}
-													>
-														<div
-															role="button"
-															tabindex="0"
-															on:click={() =>
-																sendReaction(
-																	hash,
-																	toggleEmoji(message.reactions, myDeviceId),
-																)}
-															on:keydown={e => console.log('ok2')}
-															class="row gap-2 mx-1"
-															style="align-items: center"
-														>
-															<span>{message.content}</span>
-
-															{#if i === messageSet.length - 1}
-																<div class="quiet text-xs">
-																	{#if lessThanAMinuteAgo(message.timestamp)}
-																		<span>{m.now()}</span>
-																	{:else if moreThanAnHourAgo(message.timestamp)}
-																		<wa-format-date
-																			hour="numeric"
-																			minute="numeric"
-																			hour-format="24"
-																			date={new Date(message.timestamp)}
-																		></wa-format-date>
-																	{:else}
-																		<wa-relative-time
-																			sync
-																			format="narrow"
-																			date={new Date(message.timestamp)}
-																		>
-																		</wa-relative-time>
-																	{/if}
-																</div>
-															{/if}
-														</div>
-														<div>
-															{Object.values(message.reactions).join('')}
-														</div>
-													</Card>
+													<DirectMessage
+														{message}
+														{hash}
+														classes={messageClass(messageSet.length, i) + ' others-message'}
+														isLastMessage={i === messageSet.length - 1}
+														isOwnMessage={false}
+													></DirectMessage>
 												</div>
 											{/if}
 										{/each}
