@@ -16,39 +16,41 @@
 		moreThanAYearAgo,
 	} from '$lib/utils/time';
 
-	import {
-		Card,
-	} from 'konsta/svelte';
-
+	import { Card, Chip } from 'konsta/svelte';
+	import { condenseReactions } from '$lib/utils/emojis';
 
 	interface Props {
 		message: Message;
-        hash: string;
-        isLastMessage: boolean;
-        isOwnMessage: boolean;
+		hash: string;
+		isLastMessage: boolean;
+		isOwnMessage: boolean;
+		deviceId: DeviceId;
 		classes: string;
+		onclick: () => void;
 	}
 
-	let { message, hash, classes, isLastMessage, isOwnMessage}: Props = $props();
+	let {
+		message,
+		hash,
+		deviceId,
+		classes,
+		isLastMessage,
+		isOwnMessage,
+		onclick,
+	}: Props = $props();
 
-    function sendReaction(hash: string, emoji: string|null) {
+	function sendReaction(hash: string, emoji: string | null) {}
 
-    }
-
-    function toggleEmoji(m:any, d: any) {
-        return ''
-    }
-
-    const myDeviceId = ''
+	function toggleEmoji(m: any, d: any) {
+		return '';
+	}
 </script>
 
 <Card raised class={`${classes} message`}>
 	<div
 		role="button"
 		tabindex="0"
-		on:click={() =>
-			sendReaction(hash, toggleEmoji(message.reactions, myDeviceId))}
-		on:keydown={e => console.log('ok')}
+		{onclick}
 		class="row gap-2 mx-1"
 		style="align-items: center"
 	>
@@ -76,7 +78,9 @@
 			</div>
 		{/if}
 	</div>
-	<div>
-		{Object.values(message.reactions).join('')}
-	</div>
+	{#each condenseReactions(message.reactions, deviceId) as reaction}
+		<Chip class={(reaction.own ? 'border' : '') + 'px-1 py-0 mr-1'}>
+			{reaction.emoji}{#if reaction.count > 1}{reaction.count}{/if}
+		</Chip>
+	{/each}
 </Card>

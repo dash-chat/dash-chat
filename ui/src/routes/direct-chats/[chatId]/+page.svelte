@@ -40,6 +40,8 @@
 		Icon,
 		useTheme,
 		Chip,
+		Sheet,
+		Block,
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
@@ -49,6 +51,7 @@
 	import MessageInput from '$lib/components/MessageInput.svelte';
 	import type { EventSetsInDay } from 'dash-chat-stores/dist/utils/event-sets';
 	import DirectMessage from '$lib/components/messages/DirectMessage.svelte';
+	import { condenseReactions } from '$lib/utils/emojis';
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -112,9 +115,11 @@
 		}
 	}
 
-	let messageText = $state('');
 	let showEmojiPicker = $state(false);
+	let emojiTargetedMessage: Message | null = $state(null);
+	let messageText = $state('');
 	let messageInputHeight: string = $state('');
+	let emojiPalette = '😉🙃🙏💀💍⁉️🖤🍊💨👱‍♀️🗣️✅🎸';
 
 	const scrollIsAtBottom = () => {
 		const pageEl = document.querySelector('.messages-page')! as HTMLDivElement;
@@ -170,17 +175,36 @@
 		return 'middle-message';
 	};
 
+	function selectEmojiForMessage(hash: string, message: Message) {
+		emojiTargetedMessage = message;
+		showEmojiPicker = true;
+	}
+
+	function hideEmojiPicker() {
+		emojiTargetedMessage = null;
+		showEmojiPicker = false;
+	}
+
 	// placeholder logic
 	function toggleEmoji(
 		reactions: Record<string, string>,
 		deviceId: string,
+		emoji: string,
 	): string | null {
 		console.log('toggling', reactions, deviceId);
-		if (Object.keys(reactions).includes(deviceId)) {
+		let myReaction = reactions[deviceId];
+		if (myReaction && myReaction === emoji) {
 			return null;
 		} else {
-			return '👍';
+			return emoji;
 		}
+	}
+	function setReaction(message:Message, emoji: string, deviceId: DeviceId) {
+		sendReaction(
+			message.hash,
+			toggleEmoji(message.reactions, deviceId, emoji),
+		);
+		hideEmojiPicker();
 	}
 </script>
 
@@ -209,8 +233,8 @@
 			{/snippet}
 		</Navbar>
 
-		<div class="column">
-			{#await $myDeviceId then myDeviceId}
+		{#await $myDeviceId then myDeviceId}
+			<div class="column">
 				{#if messageSetsData}
 					<div
 						use:scrolltobottom
@@ -263,18 +287,28 @@
 												<DirectMessage
 													{message}
 													{hash}
-													classes={messageClass(messageSet.length, i) + ' my-message'}
+													deviceId={myDeviceId}
+													classes={messageClass(messageSet.length, i) +
+														' my-message'}
 													isLastMessage={i === messageSet.length - 1}
 													isOwnMessage={true}
+													onclick={() => {
+														selectEmojiForMessage(hash, message);
+													}}
 												></DirectMessage>
 											{:else}
 												<div class="row gap-2 m-0">
 													<DirectMessage
 														{message}
 														{hash}
-														classes={messageClass(messageSet.length, i) + ' others-message'}
+														deviceId={myDeviceId}
+														classes={messageClass(messageSet.length, i) +
+															' others-message'}
 														isLastMessage={i === messageSet.length - 1}
 														isOwnMessage={false}
+														onclick={() => {
+															selectEmojiForMessage(hash, message);
+														}}
 													></DirectMessage>
 												</div>
 											{/if}
@@ -285,49 +319,78 @@
 						</div>
 					</div>
 				{/if}
-			{/await}
-
-			{#await $contactRequest then contactRequest}
-				{#if contactRequest}
-					<Card class="center-in-desktop p-1 fixed bottom-1">
-						<div class="column gap-2 items-center justify-center">
-							<span style="flex: 1"
-								>{m.contactRequestBanner({
-									name: contactRequest.profile.name,
-								})}</span
-							>
-							<div class="flex gap-2">
-								<Button
-									class="k-color-brand-red"
-									rounded
-									tonal
-									onClick={() => rejectContactRequest(contactRequest)}
-									>{m.reject()}</Button
+				{#await $contactRequest then contactRequest}
+					{#if contactRequest}
+						<Card class="center-in-desktop p-1 fixed bottom-1">
+							<div class="column gap-2 items-center justify-center">
+								<span style="flex: 1"
+									>{m.contactRequestBanner({
+										name: contactRequest.profile.name,
+									})}</span
 								>
-								<Button
-									tonal
-									rounded
-									onClick={() => acceptContactRequest(contactRequest)}
-									>{m.accept()}</Button
-								>
+								<div class="flex gap-2">
+									<Button
+										class="k-color-brand-red"
+										rounded
+										tonal
+										onClick={() => rejectContactRequest(contactRequest)}
+										>{m.reject()}</Button
+									>
+									<Button
+										tonal
+										rounded
+										onClick={() => acceptContactRequest(contactRequest)}
+										>{m.accept()}</Button
+									>
+								</div>
 							</div>
-						</div>
-					</Card>
-				{:else}
-					<MessageInput
-						bind:value={messageText}
-						bind:height={messageInputHeight}
-						onSend={sendMessage}
-						onInput={async () => {
-							if (scrollIsAtBottom()) {
-								await tick();
-								scrollToBottom();
-							}
-						}}
-						onEmojiClick={() => (showEmojiPicker = true)}
-					/>
+						</Card>
+					{:else}
+						<MessageInput
+							bind:value={messageText}
+							bind:height={messageInputHeight}
+							onSend={sendMessage}
+							onInput={async () => {
+								if (scrollIsAtBottom()) {
+									await tick();
+									scrollToBottom();
+								}
+							}}
+							onEmojiClick={() => (showEmojiPicker = true)}
+						/>
+					{/if}
+				{/await}
+			</div>
+			<Sheet
+				class="pb-safe text-lg"
+				opened={showEmojiPicker}
+				onBackdropClick={() => (showEmojiPicker = false)}
+			>
+				{#if emojiTargetedMessage}
+					{#if Object.values(emojiTargetedMessage.reactions).length > 0}
+						<Block>
+							<div>This Message</div>
+							{#each condenseReactions(emojiTargetedMessage.reactions, myDeviceId) as reaction}
+								<button class="mr-2 text-lg" onclick={() => setReaction(emojiTargetedMessage!, reaction.emoji, myDeviceId)}>
+									<Chip class={reaction.own ? 'outline' : ''} >
+										{reaction.emoji}{#if reaction.count>1}{reaction.count}{/if}
+									</Chip>
+								</button>
+							{/each}
+						</Block>
+					{/if}
+					<Block>
+						<div>Emoji</div>
+						<p class="text-lg">
+							{#each emojiPalette as emojiInstance}
+								<button onclick={() => setReaction(emojiTargetedMessage!, emojiInstance, myDeviceId)}>
+									{emojiInstance}
+								</button>
+							{/each}
+						</p>
+					</Block>
 				{/if}
-			{/await}
-		</div>
+			</Sheet>
+		{/await}
 	</Page>
 {/await}

@@ -50,6 +50,7 @@ export class GroupChatStore {
 		// }]
 		const messages: Array<Message> = [
 			{
+				hash: '123',
 				content: 'heeey',
 				author: await this.contactsStore.myAgentId(),
 				timestamp: Date.now(),
