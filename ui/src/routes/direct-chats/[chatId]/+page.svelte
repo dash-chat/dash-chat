@@ -4,6 +4,7 @@
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 	import { m } from '$lib/paraglide/messages.js';
+	import 'emoji-picker-element';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import {
@@ -50,6 +51,7 @@
 	import type { Action } from 'svelte/action';
 	import MessageInput from '$lib/components/MessageInput.svelte';
 	import type { EventSetsInDay } from 'dash-chat-stores/dist/utils/event-sets';
+	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import DirectMessage from '$lib/components/messages/DirectMessage.svelte';
 	import { condenseReactions } from '$lib/utils/emojis';
 	let chatId = page.params.chatId!;
@@ -199,11 +201,8 @@
 			return emoji;
 		}
 	}
-	function setReaction(message:Message, emoji: string, deviceId: DeviceId) {
-		sendReaction(
-			message.hash,
-			toggleEmoji(message.reactions, deviceId, emoji),
-		);
+	function setReaction(message: Message, emoji: string, deviceId: DeviceId) {
+		sendReaction(message.hash, toggleEmoji(message.reactions, deviceId, emoji));
 		hideEmojiPicker();
 	}
 </script>
@@ -356,7 +355,7 @@
 									scrollToBottom();
 								}
 							}}
-							onEmojiClick={() => (showEmojiPicker = true)}
+							onEmojiClick={() => {}}
 						/>
 					{/if}
 				{/await}
@@ -371,23 +370,27 @@
 						<Block>
 							<div>This Message</div>
 							{#each condenseReactions(emojiTargetedMessage.reactions, myDeviceId) as reaction}
-								<button class="mr-2 text-lg" onclick={() => setReaction(emojiTargetedMessage!, reaction.emoji, myDeviceId)}>
-									<Chip class={reaction.own ? 'outline' : ''} >
-										{reaction.emoji}{#if reaction.count>1}{reaction.count}{/if}
+								<button
+									class="mr-2 text-lg"
+									onclick={() =>
+										setReaction(
+											emojiTargetedMessage!,
+											reaction.emoji,
+											myDeviceId,
+										)}
+								>
+									<Chip class={reaction.own ? 'outline' : ''}>
+										{reaction.emoji}{#if reaction.count > 1}{reaction.count}{/if}
 									</Chip>
 								</button>
 							{/each}
 						</Block>
 					{/if}
 					<Block>
-						<div>Emoji</div>
-						<p class="text-lg">
-							{#each emojiPalette as emojiInstance}
-								<button onclick={() => setReaction(emojiTargetedMessage!, emojiInstance, myDeviceId)}>
-									{emojiInstance}
-								</button>
-							{/each}
-						</p>
+						<EmojiPickerWrapper
+							onEmojiSelected={(emoji) =>
+								setReaction(emojiTargetedMessage!, emoji, myDeviceId)}
+						></EmojiPickerWrapper>
 					</Block>
 				{/if}
 			</Sheet>
