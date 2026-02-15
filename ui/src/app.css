@@ -226,4 +226,6 @@ li.plain span {
 
 emoji-picker {
 	width: 100%;
+	--background: none;
+	--border-color: none;
 }

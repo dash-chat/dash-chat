@@ -283,18 +283,20 @@
 									<div class="column" style="gap: 1px">
 										{#each messageSet as [hash, message], i}
 											{#if myDeviceId == message.author}
-												<DirectMessage
-													{message}
-													{hash}
-													deviceId={myDeviceId}
-													classes={messageClass(messageSet.length, i) +
-														' my-message'}
-													isLastMessage={i === messageSet.length - 1}
-													isOwnMessage={true}
-													onclick={() => {
-														selectEmojiForMessage(hash, message);
-													}}
-												></DirectMessage>
+												<div class="flex flex-row-reverse gap-2 m-0">
+													<DirectMessage
+														{message}
+														{hash}
+														deviceId={myDeviceId}
+														classes={messageClass(messageSet.length, i) +
+															' my-message'}
+														isLastMessage={i === messageSet.length - 1}
+														isOwnMessage={true}
+														onclick={() => {
+															selectEmojiForMessage(hash, message);
+														}}
+													></DirectMessage>
+												</div>
 											{:else}
 												<div class="row gap-2 m-0">
 													<DirectMessage
@@ -388,7 +390,7 @@
 					{/if}
 					<Block>
 						<EmojiPickerWrapper
-							onEmojiSelected={(emoji) =>
+							onEmojiSelected={emoji =>
 								setReaction(emojiTargetedMessage!, emoji, myDeviceId)}
 						></EmojiPickerWrapper>
 					</Block>
