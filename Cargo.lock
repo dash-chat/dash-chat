@@ -4548,6 +4548,7 @@ dependencies = [
  "hex",
  "mailbox-server",
  "named-id",
+ "once_cell",
  "p2panda-core",
  "pretty_assertions",
  "reqwest",

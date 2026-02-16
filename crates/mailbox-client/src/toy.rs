@@ -12,7 +12,6 @@ pub trait ToyItemTraits: ItemTraits {
 /// A client for the toy mailbox server.
 #[derive(Clone)]
 pub struct ToyMailboxClient<Item: MailboxItem> {
-    client: reqwest::Client,
     base_url: String,
     phantom: std::marker::PhantomData<Item>,
 }
@@ -20,7 +19,6 @@ pub struct ToyMailboxClient<Item: MailboxItem> {
 impl<Item: MailboxItem> ToyMailboxClient<Item> {
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
-            client: reqwest::Client::new(),
             base_url: base_url.into(),
             phantom: std::marker::PhantomData,
         }
@@ -56,8 +54,7 @@ where
         }
 
         let request = StoreBlobsRequest { blobs };
-        let response = self
-            .client
+        let response = HTTP_CLIENT
             .post(format!("{}/blobs/store", self.base_url))
             .json(&request)
             .send()
@@ -96,8 +93,7 @@ where
         }
 
         let get_request = GetBlobsRequest { topics };
-        let response = self
-            .client
+        let response = HTTP_CLIENT
             .post(format!("{}/blobs/get", self.base_url))
             .json(&get_request)
             .send()

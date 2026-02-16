@@ -9,10 +9,13 @@ use std::{
     time::Duration,
 };
 
+use once_cell::sync::Lazy;
 use tokio::sync::{Mutex, mpsc};
 use tracing::Instrument;
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+
+pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| reqwest::Client::new());
 
 #[async_trait::async_trait]
 pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
