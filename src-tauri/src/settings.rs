@@ -12,7 +12,7 @@ struct Settings {
 }
 
 fn settings_path<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<PathBuf> {
-    Ok(handle.path().local_data_dir()?.join(SETTINGS_FILE_NAME))
+    Ok(crate::filesystem::local_data_dir(handle)?.join(SETTINGS_FILE_NAME))
 }
 
 pub fn load_mailbox_enabled<R: Runtime>(handle: &AppHandle<R>) -> bool {

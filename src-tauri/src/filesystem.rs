@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager};
 // In desktop development, use DEV_DBS_PATH/agent-{AGENT} (set in mprocs.yaml) so multiple
 // agents can run side-by-side. On mobile development we fall through to the OS
 // data dir because DEV_DBS_PATH points to the build machine, not the device.
-pub fn local_data_dir(handle: &AppHandle) -> anyhow::Result<PathBuf> {
+pub fn local_data_dir<R: tauri::Runtime>(handle: &AppHandle<R>) -> anyhow::Result<PathBuf> {
     let local_data_path = if cfg!(mobile) || !tauri::is_dev() {
         handle.path().local_data_dir()?
     } else {

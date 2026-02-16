@@ -12,8 +12,8 @@ pub struct MailboxesConfig {
 impl Default for MailboxesConfig {
     fn default() -> Self {
         Self {
-            success_interval: Duration::from_secs(5),
-            error_interval: Duration::from_secs(15),
+            success_interval: Duration::from_secs(3),
+            error_interval: Duration::from_secs(5),
             min_interval: Duration::from_secs(1),
         }
     }
@@ -92,6 +92,8 @@ where
                 let mut next_interval;
                 let mut last_iteration: tokio::time::Instant = tokio::time::Instant::now();
                 loop {
+                    // TODO: track which client caused an error, and eventually remove it from the active list
+                    // TODO: do something smarter than round-robin
                     (next_interval, next_mailbox) = manager.one_iteration(next_mailbox).await;
 
                     // The two match conditions are:
@@ -123,21 +125,23 @@ where
 
     async fn one_iteration(&self, mut mailbox_index: usize) -> (tokio::time::Duration, usize) {
         mailbox_index += 1;
-        let mailbox = {
+        let (client, total) = {
             let mm = self.mailboxes.lock().await;
-            if mailbox_index >= mm.len() {
+            let total = mm.len();
+            if mailbox_index >= total {
                 mailbox_index = 0;
             }
 
-            match mm.get(mailbox_index) {
+            let client = match mm.get(mailbox_index) {
                 Some(mailbox) => mailbox.clone(),
                 None => {
                     tracing::warn!("empty mailbox list, no mailbox to fetch from");
                     return (self.config.error_interval, mailbox_index);
                 }
-            }
+            };
+            (client, total)
         };
-        tracing::trace!("polling mailbox {mailbox_index}");
+        tracing::info!("polling mailbox {mailbox_index} of {total}");
 
         let topics = self.subscribed_topics().await;
         if topics.is_empty() {
@@ -145,7 +149,7 @@ where
             return (self.config.error_interval, mailbox_index);
         }
 
-        match self.sync_topics(topics.into_iter(), mailbox.clone()).await {
+        match self.sync_topics(topics.into_iter(), client.clone()).await {
             Ok(()) => {
                 return (self.config.success_interval, mailbox_index);
             }

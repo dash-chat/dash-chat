@@ -22,21 +22,12 @@ pub fn start_local_mailbox<R: Runtime>(
 
         let (stop_signal_tx, stop_signal_rx) = tokio::sync::oneshot::channel();
         let stop_signal_rx = stop_signal_rx.map(|f| f.expect("failed to listen for event"));
-        let path = handle.path().local_data_dir()?.join("local-mailbox.redb");
-        let addr = format!(
-            "0.0.0.0:{}",
-            std::env::var("LOCAL_MAILBOX_PORT").unwrap_or_else(|_| "3411".to_string())
-        );
-        let server = tokio::spawn(async move {
-            match mailbox_server::spawn_server(path, addr, stop_signal_rx).await {
-                Ok(_) => (),
-                Err(e) => log::error!("Failed to start local mailbox: {e:?}"),
-            }
-        });
+        let path = crate::filesystem::local_data_dir(handle)?.join("local-mailbox.redb");
 
         let mut result = Ok(());
+        let mut port = 0;
         for attempt in 1..=3 {
-            let port = free_port()?;
+            port = free_port()?;
             let service = mdns_service_info(port, handle);
             log::info!(
                 "Registering local mailbox service via mdns: {} ({})",
@@ -55,6 +46,14 @@ pub fn start_local_mailbox<R: Runtime>(
             }
         }
         result?;
+
+        let addr = format!("0.0.0.0:{port}");
+        let server = tokio::spawn(async move {
+            match mailbox_server::spawn_server(path, addr, stop_signal_rx).await {
+                Ok(_) => (),
+                Err(e) => log::error!("Failed to start local mailbox: {e:?}"),
+            }
+        });
 
         log::info!("Started local mailbox");
         if state
@@ -105,6 +104,7 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
         while let Ok(event) = receiver.recv() {
             match event {
                 mdns_sd::ServiceEvent::ServiceResolved(resolved) => {
+                    let port = resolved.port;
                     let ip = resolved
                         .addresses
                         .iter()
@@ -117,14 +117,12 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
                     let ip2 = ip.clone();
                     n.mailboxes
                         .add(mailbox_client::toy::ToyMailboxClient::new(format!(
-                            "http://{}:3411",
-                            ip2
+                            "http://{ip2}:{port}",
                         )))
                         .await;
                     log::info!(
-                        "*** Added new local mailbox client via mdns: {} ({}) ***",
+                        "*** Added new local mailbox client via mdns: {} ({ip2}:{port}) ***",
                         resolved.fullname,
-                        ip
                     );
                 }
                 other_event => {
@@ -143,7 +141,6 @@ fn mdns_service_info<R: Runtime>(port: u16, _handle: &AppHandle<R>) -> ServiceIn
     let instance_name = nanoid::nanoid!(7);
 
     let host_name = "0.0.0.0.local.";
-    let properties = [("property_1", "test"), ("property_2", "1234")];
 
     ServiceInfo::new(
         MDNS_SERVICE_TYPE,
@@ -151,7 +148,7 @@ fn mdns_service_info<R: Runtime>(port: u16, _handle: &AppHandle<R>) -> ServiceIn
         host_name,
         "",
         port,
-        &properties[..],
+        vec![],
     )
     .unwrap()
     .enable_addr_auto()
