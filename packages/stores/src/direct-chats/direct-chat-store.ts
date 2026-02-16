@@ -69,14 +69,12 @@ export class DirectChatStore {
 				if (body?.type === 'Chat') {
 					if (body.payload.type === 'Reaction') {
 						const payload = body.payload.payload;
-						let message = Object.entries(messages).find(
-							record => record[0] === payload.target,
-						);
+						let message = messages[payload.target];
 						if (message) {
 							if (payload.emoji) {
-								message[1].reactions[author] = payload.emoji;
+								message.reactions[author] = payload.emoji;
 							} else {
-								delete message[1].reactions[author];
+								delete message.reactions[author];
 							}
 						} else {
 							console.warn('reaction for missing message');
@@ -144,11 +142,12 @@ export class DirectChatStore {
 		const chatId = await toPromise(this.chatId);
 		const myDeviceId = await toPromise(this.contactsStore.myDeviceId);
 		const promise = new Promise(resolve => {
-			this.onNewMessage((op, message) => {
+			const unsub = this.onNewMessage((op, message) => {
 				if (op.body?.payload.type !== 'Message') return;
 				if (op.header.public_key !== myDeviceId) return;
 				if (message !== content) return;
 
+				unsub();
 				resolve(undefined);
 			});
 		});
@@ -211,9 +210,12 @@ export class DirectChatStore {
 		return {
 			type: 'DirectChat',
 			chatId: this.peer,
-			name: fullName(profile!),
+			name: profile ? fullName(profile) : '',
 			avatar: profile?.avatar,
-			lastEvent,
+			lastEvent: {
+				summary: lastEvent.summary,
+				timestamp: lastEvent.timestamp ?? 0,
+			},
 			unreadMessages: unreadCount,
 		} as ChatSummary;
 	});

@@ -1,4 +1,6 @@
-use dashchat_node::{topic::kind::Chat, AgentId, ChatId, ChatMessageContent, ChatReaction, Node, Topic};
+use dashchat_node::{
+    topic::kind::Chat, AgentId, ChatId, ChatMessageContent, ChatReaction, Node, Topic,
+};
 use tauri::State;
 
 #[tauri::command]
@@ -17,7 +19,6 @@ pub async fn direct_chat_send_message(
         .map_err(|err| format!("{err:?}"))?;
     Ok(())
 }
-
 
 #[tauri::command]
 pub async fn direct_chat_send_reaction(

@@ -150,7 +150,7 @@
 
 	const scrollIsAtBottom = () => {
 		const pageEl = document.querySelector('.messages-page') as HTMLDivElement;
-		if (!pageEl) return;
+		if (!pageEl) return false;
 		return pageEl.scrollTop + 200 >= pageEl.scrollHeight - pageEl.offsetHeight;
 	};
 
@@ -183,17 +183,7 @@
 	}
 	let t: any;
 	let bottom = false;
-	store.onNewMessage(async () => {
-		if (scrollIsAtBottom()) bottom = true;
-		if (scrollIsAtBottom() || bottom) {
-			// Wait for the message to get rendered in the UI
-			clearTimeout(t);
-			t = setTimeout(() => {
-				bottom = false;
-				scrollToBottom();
-			});
-		}
-	});
+	let unsubNewMessage: (() => void) | undefined;
 
 	const messageClass = (messageSetLength: number, index: number) => {
 		if (messageSetLength <= 1) return '';
@@ -212,6 +202,17 @@
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
 
+		unsubNewMessage = store.onNewMessage(async () => {
+			if (scrollIsAtBottom()) bottom = true;
+			if (scrollIsAtBottom() || bottom) {
+				clearTimeout(t);
+				t = setTimeout(() => {
+					bottom = false;
+					scrollToBottom();
+				});
+			}
+		});
+
 		observer = new IntersectionObserver(
 			entries => {
 				for (const entry of entries) {
@@ -224,7 +225,6 @@
 				clearTimeout(markReadTimeout);
 				markReadTimeout = setTimeout(() => {
 					if (visibleMessages.size > 0) {
-						console.log('reaad', visibleMessages);
 						store.markAsRead(Array.from(visibleMessages));
 						visibleMessages.clear();
 					}
@@ -241,6 +241,7 @@
 		pageEl?.addEventListener('scroll', handleScroll);
 
 		return () => {
+			unsubNewMessage?.();
 			observer?.disconnect();
 			clearTimeout(markReadTimeout);
 			pageEl?.removeEventListener('scroll', handleScroll);
@@ -668,6 +669,7 @@
 													{:else}
 														<div
 															class="self-start max-w-[85%]"
+															data-message-hash={hash}
 															use:observeMessage={readHashes?.has(hash)
 																? null
 																: hash}
@@ -824,8 +826,10 @@
 									{@html m
 										.contactRequestBanner({
 											name: contactRequest.profile.name
+												.replace(/&/g, '&amp;')
 												.replace(/</g, '&lt;')
-												.replace(/>/g, '&gt;'),
+												.replace(/>/g, '&gt;')
+												.replace(/"/g, '&quot;'),
 										})
 										.replace(
 											/\*\*(.*?)\*\*/g,

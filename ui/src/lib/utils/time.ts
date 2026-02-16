@@ -7,7 +7,7 @@ export const moreThanAWeekAgo = (timestamp: number) =>
 export const moreThanAYearAgo = (timestamp: number) =>
 	Date.now() - timestamp > 365 * 24 * 60 * 60 * 1000;
 export const inToday = (timestamp: number) =>
-	Date.now() - timestamp > 365 * 24 * 60 * 60 * 1000;
+	timestamp >= todayFirstTimestamp();
 
 const todayFirstTimestamp = () => {
 	const today = new Date();

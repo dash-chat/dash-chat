@@ -10,7 +10,7 @@ export interface CondensedReaction {
 
 export function condenseReactions(reactions: Record<DeviceId, string>, ownDeviceId: DeviceId): Array<CondensedReaction> {
     const mapping = new Map<string, CondensedReaction>()
-    Object.entries(reactions).map(([device, emoji]) => {
+    Object.entries(reactions).forEach(([device, emoji]) => {
         let entry = mapping.get(emoji)
         if (entry) {
             entry.count = entry.count +  1

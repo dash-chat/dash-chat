@@ -43,14 +43,17 @@ export function orderInEventSets<T>(
 			const lastEvent = lastEventSet[lastEventSet.length - 1][1];
 
 			const lastMessageAgentSet = agentSets.find(agents =>
-				agents.find(agent => agent === lastEvent.author),
+				agents.some(agent => agent === lastEvent.author),
 			);
 
 			const currentMessageAgentSet = agentSets.find(agents =>
-				agents.find(agent => agent === event.author),
+				agents.some(agent => agent === event.author),
 			);
 
-			const sameProvenance = lastMessageAgentSet === currentMessageAgentSet;
+			const sameProvenance =
+				lastMessageAgentSet !== undefined &&
+				currentMessageAgentSet !== undefined &&
+				lastMessageAgentSet === currentMessageAgentSet;
 			const sameTimeframe =
 				event.timestamp - lastEvent.timestamp <
 				MESSAGE_SET_TIMEFRAME_INTERVAL_MS;
