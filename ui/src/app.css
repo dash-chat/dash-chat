@@ -10,7 +10,6 @@
 
 html {
 	background-color: transparent !important;
-	
 }
 
 body {
@@ -78,6 +77,8 @@ li.plain span {
 
 .message {
 	margin: 0;
+	overflow-wrap: anywhere;
+	min-width: 0;
 }
 .message > div {
 	padding: 8px;
@@ -88,14 +89,44 @@ li.plain span {
 	background-color: var(--color-brand-primary);
 	color: white;
 }
+.my-message.first-message {
+	border-bottom-right-radius: 4px;
+}
+.my-message.middle-message {
+	border-top-right-radius: 4px;
+	border-bottom-right-radius: 4px;
+}
+.my-message.last-message {
+	border-top-right-radius: 4px;
+}
 
 .others-message {
 	align-self: start;
+}
+.others-message.first-message {
+	border-bottom-left-radius: 4px;
+}
+.others-message.middle-message {
+	border-top-left-radius: 4px;
+	border-bottom-left-radius: 4px;
+}
+.others-message.last-message {
+	border-top-left-radius: 4px;
+}
+
+.message-highlighted {
+	position: relative;
+	z-index: 51;
 }
 
 .qr-card > div {
 	/* Padding for the copy button below the QR code in add-contact */
 	padding-bottom: 8px;
+}
+.k-card.no-padding > div {
+	padding: 0;
+	padding-right: 8px;
+	padding-left: 8px;
 }
 
 .transparent.k-page {
@@ -103,5 +134,103 @@ li.plain span {
 }
 
 .k-toolbar.transparent .bg-gradient-to-t {
-	display: none
+	display: none;
+}
+
+.icon-only-card {
+	border-radius: 50%;
+	margin: 0;
+	width: 32px;
+	height: 32px;
+}
+.icon-only-card > div {
+	padding: 0px;
+	padding-top: 4px;
+	padding-left: 1px;
+}
+
+.sticky-day-tag {
+	position: sticky;
+	top: calc(64px + env(safe-area-inset-top, 0px) + 8px);
+	align-self: center;
+	z-index: 30;
+	background-color: var(--k-color-md-light-surface);
+	padding: 4px 12px;
+	border-radius: 12px;
+	font-size: 0.75rem;
+}
+
+@media (prefers-color-scheme: dark) {
+	.sticky-day-tag {
+		background-color: var(--k-color-md-dark-surface);
+	}
+}
+
+.small-icon {
+	font-size: 16px;
+}
+
+.sheet-handle {
+	width: 2.5rem;
+	height: 2px;
+	border-radius: 9999px;
+	background-color: #d1d5db;
+	margin-top: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+	.sheet-handle {
+		background-color: #4b5563;
+	}
+}
+
+.neutral-tonal-button.k-button {
+	background-color: rgba(0, 0, 0, 0.07);
+}
+
+@media (prefers-color-scheme: dark) {
+	.neutral-tonal-button.k-button {
+		background-color: rgba(255, 255, 255, 0.1);
+	}
+}
+
+.k-button.icon-only {
+	width: 56px;
+	height: 56px;
+	border-radius: 16px;
+}
+
+.search-highlight {
+	background-color: #fbbf24;
+	color: black;
+	border-radius: 2px;
+	padding: 0 1px;
+}
+
+.search-flash {
+	animation: search-flash-anim 0.8s ease-out;
+}
+
+@keyframes search-flash-anim {
+	0% {
+		filter: brightness(1);
+	}
+	15% {
+		filter: brightness(1.4);
+	}
+	30% {
+		filter: brightness(1);
+	}
+	45% {
+		filter: brightness(1.4);
+	}
+	70% {
+		filter: brightness(1);
+	}
+}
+
+emoji-picker {
+	width: 100%;
+	--background: none;
+	--border-color: none;
 }

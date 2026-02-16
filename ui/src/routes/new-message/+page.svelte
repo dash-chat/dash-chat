@@ -33,7 +33,7 @@
 <Page>
 	<Navbar title={m.newMessage()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
-			<NavbarBackLink onClick={() => goto('/')} />
+			<NavbarBackLink onClick={() => goto('/')}  data-testid="new-message-back" />
 		{/snippet}
 	</Navbar>
 
@@ -48,7 +48,7 @@
 				</Link>
 			</div>
 
-			<div class={theme === 'ios' ? 'mt-6 px-4' : 'pl-5 pr-10'}>
+			<div class={theme === 'ios' ? 'mt-6 px-4' : 'pl-5 pr-10'} data-testid="new-message-search">
 				<Searchbar
 					clearButton
 					placeholder={m.filter()}
@@ -72,7 +72,7 @@
 					<Preloader />
 				</div>
 			{:then contacts}
-				<List strongIos insetIos>
+				<List strongIos insetIos data-testid="new-message-contact-list">
 					{#if contacts.length === 0}
 						<ListItem title={m.noContactsYet()} />
 						<ListItem
@@ -91,7 +91,7 @@
 						{#each filteredContacts as [actorId, profile]}
 							<ListItem
 								link
-								linkProps={{ href: `/direct-messages/${actorId}` }}
+								linkProps={{ href: `/direct-chats/${actorId}` }}
 								title={profile.name}
 								chevron={false}
 							>

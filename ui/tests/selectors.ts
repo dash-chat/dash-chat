@@ -1,0 +1,103 @@
+export const tid = (id: string) => `[data-testid="${id}"]`;
+
+export const S = {
+	home: {
+		settingsLink: tid('home-settings-link'),
+		contactsLink: tid('home-contacts-link'),
+		newMessageLink: tid('home-new-message-link'),
+		newMessageFab: tid('home-new-message-fab'),
+		chatList: tid('all-chats-list'),
+		emptyState: tid('all-chats-empty'),
+	},
+	createProfile: {
+		nameInput: tid('create-profile-name'),
+		surnameInput: tid('create-profile-surname'),
+		createButton: tid('create-profile-create-btn'),
+		createLink: tid('create-profile-create-link'),
+	},
+	addContact: {
+		back: tid('add-contact-back'),
+		codeTab: tid('add-contact-code-tab'),
+		scanTab: tid('add-contact-scan-tab'),
+		qrCode: 'wa-qr-code',
+		copyButton: tid('add-contact-copy-btn'),
+		codeInput: tid('add-contact-code-input'),
+	},
+	directChat: {
+		back: tid('direct-chat-back'),
+		settingsLink: tid('direct-chat-settings-link'),
+		peerName: tid('direct-chat-peer-name'),
+		scrollBottom: tid('direct-chat-scroll-bottom'),
+		unreadBadge: tid('direct-chat-unread-badge'),
+		acceptButton: tid('direct-chat-accept-btn'),
+		rejectButton: tid('direct-chat-reject-btn'),
+		acceptConfirm: tid('direct-chat-accept-confirm'),
+		rejectConfirm: tid('direct-chat-reject-confirm'),
+		messages: tid('direct-chat-messages'),
+	},
+	messageInput: {
+		textarea: tid('message-input-textarea'),
+		send: tid('message-input-send'),
+		emoji: tid('message-input-emoji'),
+	},
+	chatSettings: {
+		back: tid('chat-settings-back'),
+		peerName: tid('chat-settings-peer-name'),
+		searchButton: tid('chat-settings-search-btn'),
+	},
+	settings: {
+		back: tid('settings-back'),
+		profileLink: tid('settings-profile-link'),
+		qrLink: tid('settings-qr-link'),
+		accountLink: tid('settings-account-link'),
+	},
+	profile: {
+		back: tid('profile-back'),
+		editPhoto: tid('profile-edit-photo'),
+		editName: tid('profile-edit-name'),
+		editAbout: tid('profile-edit-about'),
+		qrLink: tid('profile-qr-link'),
+	},
+	editName: {
+		back: tid('edit-name-back'),
+		nameInput: tid('edit-name-name'),
+		surnameInput: tid('edit-name-surname'),
+		saveButton: tid('edit-name-save-btn'),
+		saveLink: tid('edit-name-save-link'),
+	},
+	editAbout: {
+		back: tid('edit-about-back'),
+		input: tid('edit-about-input'),
+		saveButton: tid('edit-about-save-btn'),
+		saveLink: tid('edit-about-save-link'),
+	},
+	contacts: {
+		back: tid('contacts-back'),
+		addLink: tid('contacts-add-link'),
+		list: tid('contacts-list'),
+	},
+	newMessage: {
+		back: tid('new-message-back'),
+		search: tid('new-message-search'),
+		contactList: tid('new-message-contact-list'),
+	},
+	newGroup: {
+		back: tid('new-group-back'),
+		nextButton: tid('new-group-next-btn'),
+		nextLink: tid('new-group-next-link'),
+		infoBack: tid('new-group-info-back'),
+		nameInput: tid('new-group-name-input'),
+		createButton: tid('new-group-create-btn'),
+		createLink: tid('new-group-create-link'),
+	},
+	groupChat: {
+		back: tid('group-chat-back'),
+		infoLink: tid('group-chat-info-link'),
+	},
+	account: {
+		back: tid('account-back'),
+		deleteItem: tid('account-delete'),
+		deleteConfirm: tid('account-delete-confirm'),
+		deleteCancel: tid('account-delete-cancel'),
+	},
+} as const;

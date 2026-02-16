@@ -5,7 +5,7 @@ use tauri::State;
 
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct SimplifiedOperation {
-    // hash: Hash,
+    pub hash: Hash,
     pub header: SimplifiedHeader,
     pub body: Option<serde_json::Value>,
 }
@@ -88,7 +88,7 @@ impl From<Header> for SimplifiedHeader {
 // }
 
 pub fn simplify(
-    // hash: Hash,
+    hash: Hash,
     header: Header,
     body: Option<Body>,
 ) -> anyhow::Result<SimplifiedOperation> {
@@ -125,7 +125,7 @@ pub fn simplify(
     };
 
     let operation = SimplifiedOperation {
-        // hash,
+        hash,
         header: SimplifiedHeader::from(header),
         body,
     };
@@ -146,7 +146,7 @@ pub async fn get_log(
 
     let simplified_log = log
         .into_iter()
-        .map(|(header, body)| simplify(header, body))
+        .map(|(header, body)| simplify(header.hash(), header, body))
         .collect::<anyhow::Result<Vec<SimplifiedOperation>>>()
         .map_err(|err| format!("{err:?}"))?;
 

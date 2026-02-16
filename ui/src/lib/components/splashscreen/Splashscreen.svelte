@@ -12,7 +12,9 @@
 	async function setProfile() {
 		await contactsStore.client.setProfile({
 			name: nickname!,
+			surname: undefined,
 			avatar: undefined,
+			about: undefined,
 		});
 
 		splashscreenDismissed.dismiss();

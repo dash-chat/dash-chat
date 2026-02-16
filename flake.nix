@@ -2,10 +2,9 @@
   description = "Template for Holochain app development";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
     tauri-plugin-holochain.url =
       "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
-    tauri-plugin-holochain.inputs.webkitnixpkgs.follows = "nixpkgs";
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-parts.url = "github:hercules-ci/flake-parts";
 
@@ -43,7 +42,7 @@
       systems =
         [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
         
-      perSystem = { inputs', config, pkgs, system, ... }:
+      perSystem = { inputs',   system, ... }:
         let
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
@@ -61,6 +60,7 @@
               devShells.default
               inputs'.tauri-plugin-holochain.devShells.holochainTauriAndroidDev
             ];
+            packages = [rust];
           };
         };
     };

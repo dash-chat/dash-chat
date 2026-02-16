@@ -16,7 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.4.0", default-features = false, features = [] }
-local-ip-address = "0.6"
+localip = "0.2"
 
 [dependencies]
 dashchat-node = { path = "../crates/dashchat-node" }
@@ -87,7 +87,7 @@ ndk-sys = "0.6"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-updater = "2.9"
-tauri-plugin-mcp-bridge = "0.7"
+tauri-plugin-mcp-bridge = "0.8"
 mailbox-server = { path = "../crates/mailbox-server" }
 
 [dev-dependencies]

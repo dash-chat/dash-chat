@@ -240,6 +240,14 @@ impl Node {
         self.node_data.agent_id
     }
 
+    pub fn device_id(&self) -> DeviceId {
+        self.node_data.device_id()
+    }
+
+    pub fn device_group_topic(&self) -> DeviceGroupId {
+        Topic::device_group(self.agent_id()).into()
+    }
+
     /// Get the topic for a direct chat between two public keys.
     ///
     /// The topic is the hashed sorted public keys.
@@ -396,14 +404,6 @@ impl Node {
         Ok(header)
     }
 
-    pub fn device_id(&self) -> DeviceId {
-        self.node_data.device_id()
-    }
-
-    pub fn device_group_topic(&self) -> DeviceGroupId {
-        Topic::device_group(self.agent_id()).into()
-    }
-
     /// Store someone as a contact, and:
     /// - register their spaces keybundle so we can add them to spaces
     /// - subscribe to their inbox
@@ -536,5 +536,28 @@ impl Node {
     pub async fn remove_contact(&self, _chat_actor_id: ActorId) -> anyhow::Result<()> {
         // TODO: shutdown inbox task, etc.
         todo!("add tombstone to contacts list");
+    }
+
+    /// Mark messages as read by storing a ReadMessages operation in the device group topic.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    pub async fn mark_messages_read(
+        &self,
+        chat_id: ChatId,
+        message_hashes: Vec<p2panda_core::Hash>,
+    ) -> Result<(), Error> {
+        use crate::payload::ReadMessagesPayload;
+
+        self.author_operation(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::ReadMessages(ReadMessagesPayload {
+                chat_id,
+                message_hashes,
+            })),
+            Some(&format!("mark_messages_read({})", chat_id.renamed())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
     }
 }

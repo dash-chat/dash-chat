@@ -1,13 +1,15 @@
 import { ReactivePromise, reactive } from 'signalium';
 
+import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
-import { DirectMessagesChatClient } from '../direct-messages/direct-messages-chat-client';
-import { DirectMessagesChatStore } from '../direct-messages/direct-messages-chat-store';
+import { DirectChatClient } from '../direct-chats/direct-chat-client';
+import { DirectChatStore } from '../direct-chats/direct-chat-store';
 import { GroupChatClient } from '../group-chats/group-chat-client';
 import { GroupChatStore } from '../group-chats/group-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, PublicKey, TopicId } from '../p2panda/types';
-import { ChatId, Payload } from '../types';
+import { ChatId, ChatSummary, Payload } from '../types';
+import { memo } from '../utils/memo';
 import { ChatsClient } from './chats-client';
 
 function random_hexadecimal(length: number) {
@@ -40,7 +42,7 @@ export class ChatsStore {
 		return groupStore;
 	}
 
-	groupChats = reactive(
+	groupChats = memo(
 		(chatId: ChatId) =>
 			new GroupChatStore(
 				this.logsStore,
@@ -50,12 +52,12 @@ export class ChatsStore {
 			),
 	);
 
-	directMessagesChats = reactive(
+	directChats = memo(
 		(peer: AgentId) =>
-			new DirectMessagesChatStore(
+			new DirectChatStore(
 				this.logsStore,
 				this.contactsStore,
-				new DirectMessagesChatClient(),
+				new DirectChatClient(),
 				peer,
 			),
 	);
@@ -70,7 +72,7 @@ export class ChatsStore {
 		const chatIds = await this.allChatsIds();
 
 		let summaries = await Promise.all(
-			chatIds.map(chatId => this.chatSummary(chatId)),
+			chatIds.map(chatId => this.directChats(chatId).summary()),
 		);
 
 		const pendingRequests = await this.contactsStore.contactRequests();
@@ -78,14 +80,15 @@ export class ChatsStore {
 		// Deduplicate by agent_id
 		const uniquePendingRequests = pendingRequests.filter(
 			(request, index, self) =>
-				self.findIndex(r => r.code.agent_id === request.code.agent_id) === index,
+				self.findIndex(r => r.code.agent_id === request.code.agent_id) ===
+				index,
 		);
 
 		const pendingRequestsSummaries: ChatSummary[] = uniquePendingRequests.map(
 			pendingRequest => ({
 				type: 'ContactRequest',
 				chatId: pendingRequest.code.agent_id,
-				name: pendingRequest.profile.name,
+				name: fullName(pendingRequest.profile),
 				avatar: pendingRequest.profile.avatar,
 				lastEvent: {
 					summary: '',
@@ -100,32 +103,4 @@ export class ChatsStore {
 
 		return summaries;
 	});
-
-	chatSummary = reactive(async (chatId: ChatId) => {
-		const profile = await this.contactsStore.profiles(chatId);
-
-		return {
-			type: 'DirectMessagesChat',
-			chatId,
-			name: profile?.name,
-			avatar: profile?.avatar,
-			lastEvent: {
-				summary: 'contact_added',
-				timestamp: Date.now(),
-			},
-			unreadMessages: 0,
-		} as ChatSummary;
-	});
-}
-
-export interface ChatSummary {
-	type: 'GroupChat' | 'DirectMessagesChat' | 'ContactRequest';
-	chatId: TopicId;
-	unreadMessages: number;
-	name: string;
-	avatar: string | undefined;
-	lastEvent: {
-		summary: string;
-		timestamp: number;
-	};
 }

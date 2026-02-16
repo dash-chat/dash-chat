@@ -19,10 +19,10 @@ export function personalTopicFor(actorId: AgentId): TopicId {
 	return actorId;
 }
 // export function personalTopicFor(actorId: ActorId): TopicId {
-// 	// const bytes = fromHexString(actorId);
-// 	const hash = blake3Hash(WebBuf.fromHex(actorId));
-// 	// console.log(WebBuf.fromHex(actorId), hash.buf);
-// 	return `${hash.buf.toHex()}`;
+ 	// const bytes = fromHexString(actorId);
+ //	const hash = blake3Hash(WebBuf.fromHex(actorId));
+ 	// console.log(WebBuf.fromHex(actorId), hash.buf);
+ //	return `${hash.buf.toHex()}`;
 // }
 // export function personalTopicFor(chatActorId: ActorId): TopicId {
 // 	return chatActorId;

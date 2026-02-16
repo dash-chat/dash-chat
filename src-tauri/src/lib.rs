@@ -48,18 +48,20 @@ pub fn run() {
 
     builder
         .invoke_handler(tauri::generate_handler![
-            // commands::my_pub_key,
             commands::logs::get_log,
             commands::logs::get_authors,
             commands::profile::set_profile,
             commands::devices::my_device_group_topic,
+            commands::contacts::my_device_id,
             commands::contacts::my_agent_id,
             commands::contacts::create_contact_code,
             commands::contacts::add_contact,
             commands::contacts::active_inbox_topics,
             commands::contacts::reject_contact_request,
-            commands::direct_messages::direct_message_chat_id,
-            commands::direct_messages::direct_messages_send_message,
+            commands::direct_chats::direct_chat_id,
+            commands::direct_chats::direct_chat_send_message,
+            commands::chats::mark_messages_read,
+            commands::direct_chats::direct_chat_send_reaction,
             // commands::chats::create_group,
             // commands::group_chat::add_member,
             // commands::group_chat::send_message,
@@ -101,7 +103,9 @@ pub fn run() {
                 let mailbox_url = if tauri::is_dev() {
                     // Use the IP address of the compiling machine to support tauri android dev
                     // pointing to the compiling computer's IP address
-                    format!("http://{}:3000", env!("LOCAL_IP_ADDRESS"))
+                    let mailbox_port =
+                        std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
+                    format!("http://{}:{}", env!("LOCAL_IP_ADDRESS"), mailbox_port)
                 } else {
                     "https://mailbox-server.production.dash-chat.dash-chat.garnix.me".to_string()
                 };
@@ -126,14 +130,17 @@ pub fn run() {
                             }
                         };
                         let _node = handle.state::<Node>();
-                        let simplified_operation =
-                            match simplify(notification.header, Some(Body::new(&body[..]))) {
-                                Ok(o) => o,
-                                Err(err) => {
-                                    log::error!("Failed to simplify operation: {err:?}");
-                                    continue;
-                                }
-                            };
+                        let simplified_operation = match simplify(
+                            notification.header.hash(),
+                            notification.header,
+                            Some(Body::new(&body[..])),
+                        ) {
+                            Ok(o) => o,
+                            Err(err) => {
+                                log::error!("Failed to simplify operation: {err:?}");
+                                continue;
+                            }
+                        };
 
                         if let Err(err) =
                             handle.emit("p2panda://new-operation", simplified_operation)

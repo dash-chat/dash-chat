@@ -3,12 +3,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { AgentId, PublicKey, TopicId } from '../p2panda/types';
 import { ChatId, MessageContent, Payload } from '../types';
 
-export interface Message {
-	content: MessageContent;
-	author: AgentId;
-	timestamp: number;
-}
-
 export interface IGroupChatClient {
 	/// Members
 	addMember(chatId: ChatId, member: PublicKey): Promise<void>;

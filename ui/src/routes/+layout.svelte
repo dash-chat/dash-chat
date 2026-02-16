@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/styles/webawesome.css';
+	import '@awesome.me/webawesome/dist/styles/themes/default.css';
 
 	import '../app.css';
 	import { setContext } from 'svelte';
@@ -8,7 +9,6 @@
 		ChatsStore,
 		LogsStore,
 		TauriLogsClient,
-		type TopicId,
 		type Payload,
 		ContactsClient,
 		ContactsStore,
@@ -22,17 +22,18 @@
 
 	import { setLocale } from '$lib/paraglide/runtime';
 	setLocale('en');
+	window.__setLocale = setLocale;
 
 	let { children } = $props();
 
-	const logsClient = new TauriLogsClient<TopicId, Payload>();
+	const logsClient = new TauriLogsClient<Payload>();
 	const logsStore = new LogsStore<Payload>(logsClient);
 
 	const devicesClient = new DevicesClient();
 	const devicesStore = new DevicesStore(logsStore, devicesClient);
 	setContext('devices-store', devicesStore);
 
-	const contactsClient = new ContactsClient();
+	const contactsClient = new ContactsClient(logsClient);
 	const contactsStore = new ContactsStore(
 		logsStore,
 		devicesStore,
@@ -44,7 +45,11 @@
 	const chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
 	setContext('chats-store', chatsStore);
 
-	let theme: 'ios' | 'material' = 'material';
+	let theme: 'ios' | 'material' = $state('material');
+
+	window.addEventListener('theme-change', (event: CustomEvent) => {
+		theme = event.detail.theme;
+	});
 </script>
 
 <KonstaProvider {theme}>

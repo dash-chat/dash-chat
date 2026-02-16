@@ -26,7 +26,6 @@ let
         wants = [ "network-online.target" ];
         serviceConfig = {
           ExecStart = "${mailbox}/bin/mailbox-server --addr 0.0.0.0:80";
-          # RuntimeMaxSec = "3600"; # Restart every hour
           Restart = "always";
         };
       };
