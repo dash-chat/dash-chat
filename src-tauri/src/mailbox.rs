@@ -33,13 +33,28 @@ pub fn start_local_mailbox<R: Runtime>(
                 Err(e) => log::error!("Failed to start local mailbox: {e:?}"),
             }
         });
-        let service = mdns_service_info(handle);
-        log::info!(
-            "Registering local mailbox service via mdns: {} ({})",
-            service.get_fullname(),
-            service.get_type()
-        );
-        handle.state::<ServiceDaemon>().register(service)?;
+
+        let mut result = Ok(());
+        for attempt in 1..=3 {
+            let port = free_port()?;
+            let service = mdns_service_info(port, handle);
+            log::info!(
+                "Registering local mailbox service via mdns: {} ({})",
+                service.get_fullname(),
+                service.get_type()
+            );
+
+            match handle.state::<ServiceDaemon>().register(service) {
+                Ok(()) => {
+                    break;
+                }
+                Err(e) => {
+                    log::error!("Failed to register local mailbox service via mdns, attempt {attempt} of 3, error: {e:?}");
+                    result = Err(e);
+                }
+            }
+        }
+        result?;
 
         log::info!("Started local mailbox");
         if state
@@ -124,15 +139,10 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     Ok(())
 }
 
-fn mdns_service_info<R: Runtime>(_handle: &AppHandle<R>) -> ServiceInfo {
-    // let ip = local_ip_address::local_ip().unwrap().to_string();
-    // let instance_name = format!("{}.{}", &nanoid::nanoid!(), MDNS_SERVICE_TYPE);
+fn mdns_service_info<R: Runtime>(port: u16, _handle: &AppHandle<R>) -> ServiceInfo {
     let instance_name = nanoid::nanoid!(7);
 
-    // let host_name = &format!("{ip}.local.");
     let host_name = "0.0.0.0.local.";
-    // let host_name = "localhost.local.";
-    let port = 3456;
     let properties = [("property_1", "test"), ("property_2", "1234")];
 
     ServiceInfo::new(
@@ -145,4 +155,9 @@ fn mdns_service_info<R: Runtime>(_handle: &AppHandle<R>) -> ServiceInfo {
     )
     .unwrap()
     .enable_addr_auto()
+}
+
+fn free_port() -> Result<u16, Box<dyn std::error::Error>> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    Ok(listener.local_addr()?.port())
 }
