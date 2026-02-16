@@ -19,6 +19,8 @@ pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| reqwest::Client::ne
 
 #[async_trait::async_trait]
 pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
+    fn id(&self) -> MailboxId;
+
     /// Publish an operation to the mailbox for the given topic.
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error>;
 
@@ -59,6 +61,7 @@ pub struct FetchTopicResponse<Item: MailboxItem> {
     pub missing: HashMap<<Item as MailboxItem>::Author, Vec<u64>>,
 }
 
+pub type MailboxId = String;
 pub type SeqNum = u64;
 
 pub trait ItemTraits:

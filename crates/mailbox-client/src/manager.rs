@@ -25,7 +25,7 @@ where
     Item: MailboxItem,
     Store: MailboxStore<Item>,
 {
-    mailboxes: Arc<Mutex<Vec<Arc<dyn MailboxClient<Item>>>>>,
+    mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<dyn MailboxClient<Item>>>>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Store,
     config: MailboxesConfig,
@@ -48,8 +48,17 @@ where
         }
     }
 
-    pub async fn add(&self, mailbox: impl MailboxClient<Item>) {
-        self.mailboxes.lock().await.push(Arc::new(mailbox));
+    pub async fn register(&self, mailbox: impl MailboxClient<Item>) {
+        // TODO: check for existing mailbox with different ID but same "URL" (which is currently abstracted away and inaccessible here, darn)
+        // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.
+        let id = mailbox.id();
+        let mb = Arc::new(mailbox);
+        let existing = self.mailboxes.lock().await.insert(id.clone(), mb);
+        if existing.is_some() {
+            // TODO: potentially track multiple clients for a single mailbox ID, e.g. multiple mDNS discovered addresses for the same node
+            // TODO: at least, make sure the URL being replaced is "better" than the previous one, i.e. ipv4 instead of ipv6
+            tracing::warn!("overwriting existing mailbox for {id}");
+        }
     }
 
     pub async fn clear(&self) {
@@ -125,23 +134,23 @@ where
 
     async fn one_iteration(&self, mut mailbox_index: usize) -> (tokio::time::Duration, usize) {
         mailbox_index += 1;
-        let (client, total) = {
+        let (id, client, total) = {
             let mm = self.mailboxes.lock().await;
             let total = mm.len();
             if mailbox_index >= total {
                 mailbox_index = 0;
             }
 
-            let client = match mm.get(mailbox_index) {
-                Some(mailbox) => mailbox.clone(),
+            let (id, client) = match mm.iter().nth(mailbox_index) {
+                Some((id, mailbox)) => (id.clone(), mailbox.clone()),
                 None => {
                     tracing::warn!("empty mailbox list, no mailbox to fetch from");
                     return (self.config.error_interval, mailbox_index);
                 }
             };
-            (client, total)
+            (id, client, total)
         };
-        tracing::info!("polling mailbox {mailbox_index} of {total}");
+        tracing::info!("polling mailbox {id} ({mailbox_index} of {total})");
 
         let topics = self.subscribed_topics().await;
         if topics.is_empty() {

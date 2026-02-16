@@ -17,6 +17,8 @@ mod menu;
 mod push_notifications;
 mod tray;
 
+const DASHCHAT_MAILBOX_ID: &str = "dashchat-mailbox";
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -111,8 +113,9 @@ pub fn run() {
                     "https://mailbox-server.production.dash-chat.dash-chat.garnix.me".to_string()
                 };
 
-                let mailbox_client = ToyMailboxClient::new(mailbox_url);
-                node.mailboxes.add(mailbox_client).await;
+                let mailbox_client =
+                    ToyMailboxClient::new(DASHCHAT_MAILBOX_ID.to_string(), mailbox_url);
+                node.mailboxes.register(mailbox_client).await;
 
                 handle.manage(node.clone());
 

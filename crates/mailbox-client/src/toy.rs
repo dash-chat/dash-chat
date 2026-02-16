@@ -12,13 +12,15 @@ pub trait ToyItemTraits: ItemTraits {
 /// A client for the toy mailbox server.
 #[derive(Clone)]
 pub struct ToyMailboxClient<Item: MailboxItem> {
+    id: MailboxId,
     base_url: String,
     phantom: std::marker::PhantomData<Item>,
 }
 
 impl<Item: MailboxItem> ToyMailboxClient<Item> {
-    pub fn new(base_url: impl Into<String>) -> Self {
+    pub fn new(id: MailboxId, base_url: impl Into<String>) -> Self {
         Self {
+            id,
             base_url: base_url.into(),
             phantom: std::marker::PhantomData,
         }
@@ -31,6 +33,10 @@ where
     Item::Topic: ToyItemTraits,
     Item::Author: ToyItemTraits,
 {
+    fn id(&self) -> MailboxId {
+        self.id.clone()
+    }
+
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error> {
         if ops.is_empty() {
             return Ok(());

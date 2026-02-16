@@ -104,6 +104,7 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
         while let Ok(event) = receiver.recv() {
             match event {
                 mdns_sd::ServiceEvent::ServiceResolved(resolved) => {
+                    let mailbox_id = resolved.fullname;
                     let port = resolved.port;
                     let ip = resolved
                         .addresses
@@ -116,13 +117,13 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
                     let n = node.clone();
                     let ip2 = ip.clone();
                     n.mailboxes
-                        .add(mailbox_client::toy::ToyMailboxClient::new(format!(
-                            "http://{ip2}:{port}",
-                        )))
+                        .register(mailbox_client::toy::ToyMailboxClient::new(
+                            mailbox_id.clone(),
+                            format!("http://{ip2}:{port}",),
+                        ))
                         .await;
                     log::info!(
-                        "*** Added new local mailbox client via mdns: {} ({ip2}:{port}) ***",
-                        resolved.fullname,
+                        "*** Added new local mailbox client via mdns: {mailbox_id} ({ip2}:{port}) ***",
                     );
                 }
                 other_event => {

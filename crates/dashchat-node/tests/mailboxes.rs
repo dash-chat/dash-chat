@@ -44,8 +44,8 @@ async fn test_mailbox_late_join_toy() {
     let url = url.trim_end_matches('/').to_string();
 
     // Create clients pointing to the same server
-    let alice_mailbox = ToyMailboxClient::<MailboxOperation>::new(&url);
-    let bobbi_mailbox = ToyMailboxClient::<MailboxOperation>::new(&url);
+    let alice_mailbox = ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url);
+    let bobbi_mailbox = ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url);
 
     mailbox_late_join(alice_mailbox, bobbi_mailbox).await;
 }

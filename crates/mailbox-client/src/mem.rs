@@ -29,12 +29,14 @@ pub type MemMailboxLogs<Item> = HashMap<
 
 #[derive(Clone)]
 pub struct MemMailbox<Item: MailboxItem> {
+    id: MailboxId,
     ops: Arc<RwLock<MemMailboxLogs<Item>>>,
 }
 
 impl<Item: MailboxItem> MemMailbox<Item> {
     pub fn new() -> Self {
         Self {
+            id: nanoid::nanoid!(),
             ops: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -53,6 +55,10 @@ where
     Item::Topic: OptionalItemTraits,
     Item::Hash: OptionalItemTraits,
 {
+    fn id(&self) -> MailboxId {
+        self.mailbox.id.clone()
+    }
+
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error> {
         let mut store = self.mailbox.ops.write().await;
         // ops.entry(topic).or_insert_with(Vec::new).push(op.into());
