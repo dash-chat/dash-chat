@@ -225,19 +225,6 @@ export class DirectChatStore {
 
 	async sendReaction(reaction: ChatReaction) {
 		const chatId = await toPromise(this.chatId);
-		const myDeviceId = await toPromise(this.contactsStore.myDeviceId);
-		const promise = new Promise(resolve => {
-			this.onNewMessage((op, message) => {
-				if (op.header.public_key !== myDeviceId) return;
-				if (op.body?.payload.type !== 'Reaction') return;
-
-				let incoming = message as ChatReaction;
-				if (reaction.emoji != incoming.emoji) return;
-				if (reaction.target != incoming.target) return;
-				resolve(undefined);
-			});
-		});
 		await this.client.sendReaction(chatId, reaction);
-		return promise;
 	}
 }

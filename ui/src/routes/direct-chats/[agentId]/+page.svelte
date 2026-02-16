@@ -66,6 +66,8 @@
 	import MessageInput from '$lib/components/MessageInput.svelte';
 	import { condenseReactions } from '$lib/utils/emojis';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
+	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
+	import { longpress } from '$lib/actions/longpress';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -123,8 +125,10 @@
 	}
 
 	let messageText = $state('');
-	let showEmojiPicker = $state(false);
+	let showQuickBar = $state(false);
+	let showFullPicker = $state(false);
 	let emojiTargetedMessage: Message | undefined = $state(undefined);
+	let reactionTargetElement: HTMLElement | null = $state(null);
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -348,36 +352,32 @@
 	$effect(() => {
 		if (searchMode) messageInputHeight = '60px';
 	});
-	function selectEmojiForMessage(hash: string, message: Message) {
+	function showQuickReactionBar(e: MouseEvent | TouchEvent, message: Message) {
+		const el = e.target as HTMLElement;
+		const target = el.closest('.message') as HTMLElement ?? el.querySelector('.message') as HTMLElement;
+		if (!target) return;
 		emojiTargetedMessage = message;
-		showEmojiPicker = true;
+		reactionTargetElement = target;
+		showQuickBar = true;
 	}
 
-	function hideEmojiPicker() {
+	function hideReactionUI() {
+		showQuickBar = false;
+		showFullPicker = false;
 		emojiTargetedMessage = undefined;
-		showEmojiPicker = false;
+		reactionTargetElement = null;
 	}
 
-	// placeholder logic
-	function toggleEmoji(
-		reactions: Record<string, string>,
-		deviceId: string,
-		emoji: string,
-	): string | null {
-		console.log('toggling', reactions, deviceId);
-		let myReaction = reactions[deviceId];
-		if (myReaction && myReaction === emoji) {
-			return null;
-		} else {
-			return emoji;
-		}
+	function expandToFullPicker() {
+		showQuickBar = false;
+		showFullPicker = true;
 	}
-	async function setReaction(
-		message: Message,
-		emoji: string,
-	) {
-		await store.sendReaction({ target: message.hash, emoji });
-		hideEmojiPicker();
+
+	async function toggleReaction(message: Message, emoji: string, deviceId: DeviceId) {
+		const currentReaction = message.reactions[deviceId];
+		const newEmoji = currentReaction === emoji ? null : emoji;
+		await store.sendReaction({ target: message.hash, emoji: newEmoji });
+		hideReactionUI();
 	}
 
 	const theme = $derived(useTheme());
@@ -601,14 +601,14 @@
 											<div class="column" style="gap: 1px">
 												{#each messageSet as [hash, message], i}
 													{#if myDeviceId == message.author}
-														<div>
+														<div
+															class="self-end max-w-[85%]"
+															use:longpress={{ onLongPress: (e) => showQuickReactionBar(e, message) }}
+														>
 															<Card
 																raised
 																class={`${messageClass(messageSet.length, i)} message my-message`}
 																data-message-hash={hash}
-																onclick={() =>
-																	selectEmojiForMessage(hash, message)}
-																style="position: relative"
 															>
 																<div
 																	class="row gap-2 mx-1"
@@ -649,35 +649,30 @@
 																</div>
 															</Card>
 															{#if Object.values(message.reactions).length}
-																<div class="h-4 relative">
-																	<div
-																		class="absolute -top-3 h-7 overflow-hidden px-1"
-																	>
-																		{#each condenseReactions(message.reactions, myDeviceId) as reaction}
-																			<Chip
-																				class={(reaction.own ? '' : '') +
-																					' h-6 px-2 mr-1 text-xs'}
-																			>
-																				{reaction.emoji}{#if reaction.count > 1}{reaction.count}{/if}
-																			</Chip>
-																		{/each}
-																	</div>
+																<div class="flex -mt-1.5 mb-0.5 gap-0.5 px-1">
+																	{#each condenseReactions(message.reactions, myDeviceId) as reaction}
+																		<Chip
+																			class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
+																			colors={reaction.own ? { fillBgMaterial: 'bg-gray-300 dark:bg-gray-500' } : { fillBgMaterial: 'bg-gray-200 dark:bg-gray-700' }}
+																			onclick={(e) => { e.stopPropagation(); toggleReaction(message, reaction.emoji, myDeviceId); }}
+																		>
+																			{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
+																		</Chip>
+																	{/each}
 																</div>
 															{/if}
 														</div>
 													{:else}
 														<div
-															class="row gap-2 m-0"
+															class="self-start max-w-[85%]"
 															use:observeMessage={readHashes?.has(hash)
 																? null
 																: hash}
+															use:longpress={{ onLongPress: (e) => showQuickReactionBar(e, message) }}
 														>
 															<Card
 																raised
 																class={`${messageClass(messageSet.length, i)} message others-message`}
-																onclick={() =>
-																	selectEmojiForMessage(hash, message)}
-																style="position: relative"
 															>
 																<div
 																	class="row gap-2 mx-1"
@@ -718,19 +713,16 @@
 																</div>
 															</Card>
 															{#if Object.values(message.reactions).length}
-																<div class="h-4 relative">
-																	<div
-																		class="absolute -top-3 h-7 overflow-hidden px-1"
-																	>
-																		{#each condenseReactions(message.reactions, myDeviceId!) as reaction}
-																			<Chip
-																				class={(reaction.own ? '' : '') +
-																					' h-6 px-2 mr-1 text-xs'}
-																			>
-																				{reaction.emoji}{#if reaction.count > 1}{reaction.count}{/if}
-																			</Chip>
-																		{/each}
-																	</div>
+																<div class="flex justify-end -mt-1.5 mb-0.5 gap-0.5 px-1">
+																	{#each condenseReactions(message.reactions, myDeviceId!) as reaction}
+																		<Chip
+																			class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
+																			colors={reaction.own ? { fillBgMaterial: 'bg-gray-300 dark:bg-gray-500' } : { fillBgMaterial: 'bg-gray-200 dark:bg-gray-700' }}
+																			onclick={(e) => { e.stopPropagation(); toggleReaction(message, reaction.emoji, myDeviceId!); }}
+																		>
+																			{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
+																		</Chip>
+																	{/each}
 																</div>
 															{/if}
 														</div>
@@ -868,7 +860,7 @@
 									scrollToBottom();
 								}
 							}}
-							onEmojiClick={() => (showEmojiPicker = true)}
+							onEmojiClick={() => (showFullPicker = true)}
 						/>
 					{/if}
 				</div>
@@ -923,26 +915,38 @@
 						{/snippet}
 					</Dialog>
 				{/if}
+				{#if emojiTargetedMessage && reactionTargetElement && myDeviceId}
+					<QuickReactionBar
+						message={emojiTargetedMessage}
+						targetElement={reactionTargetElement}
+						opened={showQuickBar}
+						isOwnMessage={myDeviceId === emojiTargetedMessage.author}
+						{myDeviceId}
+						onReaction={(emoji) => toggleReaction(emojiTargetedMessage!, emoji, myDeviceId)}
+						onExpand={expandToFullPicker}
+						onClose={hideReactionUI}
+					/>
+				{/if}
 				<Sheet
 					class="pb-safe text-lg"
-					opened={showEmojiPicker}
-					onBackdropClick={() => (showEmojiPicker = false)}
+					opened={showFullPicker}
+					onBackdropClick={hideReactionUI}
 				>
-					{#if emojiTargetedMessage}
+					{#if emojiTargetedMessage && myDeviceId}
 						{#if Object.values(emojiTargetedMessage.reactions).length > 0}
 							<Block>
-								<div>This Message</div>
 								{#each condenseReactions(emojiTargetedMessage.reactions, myDeviceId) as reaction}
 									<button
 										class="mr-2 text-lg"
 										onclick={() =>
-											setReaction(
+											toggleReaction(
 												emojiTargetedMessage!,
 												reaction.emoji,
+												myDeviceId!,
 											)}
 									>
-										<Chip class={reaction.own ? 'outline' : ''}>
-											{reaction.emoji}{#if reaction.count > 1}{reaction.count}{/if}
+										<Chip class="border !border-white dark:!border-black">
+											{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
 										</Chip>
 									</button>
 								{/each}
@@ -951,7 +955,16 @@
 						<Block>
 							<EmojiPickerWrapper
 								onEmojiSelected={emoji =>
-									setReaction(emojiTargetedMessage!, emoji, myDeviceId)}
+									toggleReaction(emojiTargetedMessage!, emoji, myDeviceId!)}
+							></EmojiPickerWrapper>
+						</Block>
+					{:else}
+						<Block>
+							<EmojiPickerWrapper
+								onEmojiSelected={emoji => {
+									messageText += emoji;
+									hideReactionUI();
+								}}
 							></EmojiPickerWrapper>
 						</Block>
 					{/if}

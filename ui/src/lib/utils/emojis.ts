@@ -1,5 +1,7 @@
 import type { DeviceId } from "dash-chat-stores";
 
+export const QUICK_EMOJIS = ['❤️', '👍', '👎', '😂', '😮', '😢'];
+
 export interface CondensedReaction {
     emoji: string;
     count: number;
