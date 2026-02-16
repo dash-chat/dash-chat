@@ -21,7 +21,6 @@
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 
 	import { setLocale } from '$lib/paraglide/runtime';
-	setLocale('en');
 	window.__setLocale = setLocale;
 
 	let { children } = $props();

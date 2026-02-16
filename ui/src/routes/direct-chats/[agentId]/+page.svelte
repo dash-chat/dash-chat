@@ -349,7 +349,7 @@
 			{#if searchMode}
 				<Navbar transparent={true} titleClass="opacity1 w-full" centerTitle={false}>
 					{#snippet left()}
-						<NavbarBackLink onClick={closeSearch} />
+						<NavbarBackLink onClick={closeSearch} data-testid="direct-chat-search-back" />
 					{/snippet}
 					{#snippet title()}
 						<div class="flex items-center gap-2">
