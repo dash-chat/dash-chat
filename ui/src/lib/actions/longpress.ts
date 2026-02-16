@@ -16,6 +16,7 @@ export const longpress: Action<HTMLElement, LongPressParams> = (
 		triggered = false;
 		timer = setTimeout(() => {
 			triggered = true;
+			window.getSelection()?.removeAllRanges();
 			params.onLongPress(e);
 		}, params.duration ?? 500);
 	}

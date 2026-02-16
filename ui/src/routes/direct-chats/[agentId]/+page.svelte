@@ -358,10 +358,12 @@
 		if (!target) return;
 		emojiTargetedMessage = message;
 		reactionTargetElement = target;
+		target.parentElement?.classList.add('message-highlighted');
 		showQuickBar = true;
 	}
 
 	function hideReactionUI() {
+		reactionTargetElement?.parentElement?.classList.remove('message-highlighted');
 		showQuickBar = false;
 		showFullPicker = false;
 		emojiTargetedMessage = undefined;
@@ -369,6 +371,7 @@
 	}
 
 	function expandToFullPicker() {
+		reactionTargetElement?.parentElement?.classList.remove('message-highlighted');
 		showQuickBar = false;
 		showFullPicker = true;
 	}

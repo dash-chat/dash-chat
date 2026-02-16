@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { QUICK_EMOJIS } from '$lib/utils/emojis';
-	import { mdiPlus } from '@mdi/js';
+	import { mdiDotsHorizontal } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import type { Message, DeviceId } from 'dash-chat-stores';
@@ -55,7 +55,7 @@
 
 {#if opened}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="fixed inset-0 z-50" onclick={onClose} oncontextmenu={(e) => { e.preventDefault(); onClose(); }}>
+	<div class="fixed inset-0 z-50 bg-black/30" onclick={onClose} oncontextmenu={(e) => { e.preventDefault(); onClose(); }}>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div
 			class="fixed z-50 flex items-center gap-1 rounded-full bg-white px-2 py-1.5 shadow-lg dark:bg-gray-800"
@@ -75,7 +75,7 @@
 				onclick={onExpand}
 				aria-label="More reactions"
 			>
-				<wa-icon src={wrapPathInSvg(mdiPlus)} style="font-size: 1.25rem"></wa-icon>
+				<wa-icon src={wrapPathInSvg(mdiDotsHorizontal)} style="font-size: 1.25rem"></wa-icon>
 			</button>
 		</div>
 	</div>

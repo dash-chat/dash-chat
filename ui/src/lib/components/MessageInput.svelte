@@ -71,7 +71,7 @@
 
 <div
 	bind:this={div}
-	class="message-input-bar p-2"
+	class="message-input-bar p-2 pb-safe"
 	class:ios={theme === 'ios'}
 	class:bg-md-light-surface={theme === 'material'}
 >
