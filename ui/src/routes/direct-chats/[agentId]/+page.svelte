@@ -111,8 +111,7 @@
 			await contactsStore.client.rejectContactRequest(
 				contactRequest.code.agent_id,
 			);
-			// Wait for the new operation to redirect to the home page
-			// This prevents the rejected contact request to render on the home page before it's
+			// Defer navigation so the rejection operation propagates before the home page renders
 			setTimeout(() => {
 				showToast(m.contactRequestRejected());
 

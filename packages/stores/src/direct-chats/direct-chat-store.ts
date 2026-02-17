@@ -2,6 +2,7 @@ import { reactive } from 'signalium';
 
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
+import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
@@ -141,27 +142,16 @@ export class DirectChatStore {
 	async sendMessage(content: MessageContent) {
 		const chatId = await toPromise(this.chatId);
 		const myDeviceId = await toPromise(this.contactsStore.myDeviceId);
-		const promise = new Promise<void>((resolve) => {
-			let settled = false;
-			const unsub = this.onNewMessage((op, message) => {
-				if (op.body?.payload.type !== 'Message') return;
-				if (op.header.public_key !== myDeviceId) return;
-				if (message !== content) return;
-
-				settled = true;
-				unsub();
-				resolve();
-			});
-			// Safety timeout: resolve and clean up if the echo never arrives
-			setTimeout(() => {
-				if (!settled) {
-					unsub();
-					resolve();
-				}
-			}, 10_000);
-		});
-		await this.client.sendMessage(chatId, content);
-		return promise;
+		await Promise.all([
+			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
+				if (topicId !== chatId) return false;
+				if (op.body?.payload.type !== 'Message') return false;
+				if (op.header.public_key !== myDeviceId) return false;
+				if (op.body.payload.payload !== content) return false;
+				return true;
+			}),
+			this.client.sendMessage(chatId, content),
+		]);
 	}
 
 	readMessageHashes = reactive(async () => {
