@@ -59,6 +59,51 @@ impl TestNode {
         }
     }
 
+    /// Returns the store directory so it can be kept alive after dropping the TestNode.
+    /// Useful for restart scenarios where you need to create a new node at the same path.
+    pub fn store_dir(&self) -> Arc<TempDir> {
+        self._store_dir.clone()
+    }
+
+    /// Creates a TestNode at an existing filesystem path (for restart scenarios).
+    /// Skips profile creation since it already exists in the persisted op store.
+    /// Re-registers named IDs for debug output since the in-memory registry is lost on drop.
+    pub async fn new_at_path(config: NodeConfig, name: &str, store_dir: Arc<TempDir>) -> Self {
+        let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
+
+        let filesystem = Filesystem::new(store_dir.path().to_path_buf());
+        let local_store = LocalStore::new(filesystem.local_store_path()).unwrap();
+        local_store.device_id().unwrap().with_name(name);
+        local_store.agent_id().unwrap().with_name(name);
+        drop(local_store);
+
+        let node = Node::new(
+            store_dir.path().into(),
+            config,
+            Some(notification_tx),
+        )
+        .await
+        .unwrap();
+
+        Self {
+            node,
+            watcher: Arc::new(Mutex::new(Watcher(notification_rx))),
+            _store_dir: store_dir,
+        }
+    }
+
+    /// Shut down the node's background tasks and return the store directory.
+    /// The store directory can be passed to `new_at_path` to restart the node.
+    pub async fn shutdown(self) -> Arc<TempDir> {
+        let dir = self._store_dir.clone();
+        self.node.shutdown();
+        drop(self);
+        // Give the runtime time to cancel the aborted task and drop its Node clone,
+        // releasing the redb database lock
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        dir
+    }
+
     pub async fn add_mailbox_client(&self, mailbox: impl MailboxClient<MailboxOperation>) -> Self {
         self.node.mailboxes.add(mailbox).await;
         self.clone()

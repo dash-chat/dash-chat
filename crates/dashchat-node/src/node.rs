@@ -90,6 +90,9 @@ pub struct Node {
     /// Add new subscription streams
     stream_tx: mpsc::Sender<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
 
+    /// Abort handle for the stream processing background task
+    stream_task_abort: Option<tokio::task::AbortHandle>,
+
     filesystem: Filesystem,
     local_store: LocalStore,
     node_data: NodeData,
@@ -113,7 +116,7 @@ impl Node {
 
         let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
 
-        let node = Self {
+        let mut node = Self {
             op_store: op_store.clone(),
             mailboxes,
             config,
@@ -122,9 +125,10 @@ impl Node {
             node_data,
             notification_tx,
             stream_tx,
+            stream_task_abort: None,
         };
 
-        node.spawn_stream_process_loop(stream_rx);
+        node.stream_task_abort = Some(node.spawn_stream_process_loop(stream_rx));
 
         node.initialize_topic(
             Topic::announcements(node.agent_id())
@@ -394,6 +398,13 @@ impl Node {
             .await?;
 
         Ok(header)
+    }
+
+    /// Abort the stream processing background task, allowing database handles to be released.
+    pub fn shutdown(&self) {
+        if let Some(abort) = &self.stream_task_abort {
+            abort.abort();
+        }
     }
 
     pub fn device_id(&self) -> DeviceId {

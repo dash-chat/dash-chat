@@ -67,10 +67,10 @@ impl Node {
         mut stream_rx: mpsc::Receiver<
             Pin<Box<dyn Stream<Item = Operation<Extensions>> + Send + 'static>>,
         >,
-    ) {
+    ) -> tokio::task::AbortHandle {
         let node = self.clone();
 
-        task::spawn(
+        let handle = task::spawn(
             async move {
                 let node = node.clone();
                 let mut streams = SelectAll::new();
@@ -100,6 +100,8 @@ impl Node {
             }
             .instrument(tracing::info_span!("stream_process_loop")),
         );
+
+        handle.abort_handle()
     }
 
     async fn process_stream_item(&self, operation: Operation<Extensions>) -> anyhow::Result<()> {

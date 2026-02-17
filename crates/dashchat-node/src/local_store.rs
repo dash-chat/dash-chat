@@ -11,6 +11,7 @@ const IDENTITY_TABLE: TableDefinition<&'static str, [u8; 32]> = TableDefinition:
 const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> =
     TableDefinition::new("active_inboxes");
 
+
 const PRIVATE_KEY_KEY: &str = "private_key";
 const AGENT_ID_KEY: &str = "agent_id";
 
@@ -50,6 +51,7 @@ impl LocalStore {
         {
             let mut identity = txn.open_table(IDENTITY_TABLE)?;
             let _ = txn.open_table(ACTIVE_INBOXES_TABLE)?;
+
             let uninitialized =
                 identity.get(PRIVATE_KEY_KEY)?.is_none() && identity.get(AGENT_ID_KEY)?.is_none();
             if uninitialized {
@@ -130,6 +132,7 @@ impl LocalStore {
         txn.commit()?;
         Ok(())
     }
+
 }
 
 #[cfg(test)]
