@@ -84,27 +84,27 @@ export class ContactsClient implements IContactsClient {
 	}
 
 	async addContact(contactCode: ContactCode): Promise<void> {
-		invoke('add_contact', {
-			contactCode,
-		});
-		await waitForOperation(
-			this.logsClient,
-			op =>
-				op.body?.payload.type === 'AddContact' &&
-				op.body.payload.payload.agent_id === contactCode.agent_id,
-		);
+		await Promise.all([
+			invoke('add_contact', { contactCode }),
+			waitForOperation(
+				this.logsClient,
+				op =>
+					op.body?.payload.type === 'AddContact' &&
+					op.body.payload.payload.agent_id === contactCode.agent_id,
+			),
+		]);
 	}
 
 	async rejectContactRequest(agentId: AgentId): Promise<void> {
-		invoke('reject_contact_request', {
-			agentId,
-		});
-		await waitForOperation(
-			this.logsClient,
-			op =>
-				op.body?.payload.type === 'RejectContactRequest' &&
-				op.body.payload.payload === agentId,
-		);
+		await Promise.all([
+			invoke('reject_contact_request', { agentId }),
+			waitForOperation(
+				this.logsClient,
+				op =>
+					op.body?.payload.type === 'RejectContactRequest' &&
+					op.body.payload.payload === agentId,
+			),
+		]);
 	}
 
 	// getContacts(): Promise<Array<PublicKey>> {

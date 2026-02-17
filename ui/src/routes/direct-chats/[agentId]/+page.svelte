@@ -4,6 +4,7 @@
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 	import { m, yesterday } from '$lib/paraglide/messages.js';
+	import 'emoji-picker-element';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import {
@@ -53,6 +54,8 @@
 		DialogButton,
 		useTheme,
 		Link,
+		Chip,
+		Block,
 	} from 'konsta/svelte';
 	import SafetyTipsSheet from '$lib/components/SafetyTipsSheet.svelte';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
@@ -61,6 +64,10 @@
 	import type { Action } from 'svelte/action';
 	import { watcher } from 'signalium';
 	import MessageInput from '$lib/components/MessageInput.svelte';
+	import { condenseReactions } from '$lib/utils/emojis';
+	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
+	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
+	import { longpress } from '$lib/actions/longpress';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -118,7 +125,10 @@
 	}
 
 	let messageText = $state('');
-	let showEmojiPicker = $state(false);
+	let showQuickBar = $state(false);
+	let showFullPicker = $state(false);
+	let emojiTargetedMessage: Message | undefined = $state(undefined);
+	let reactionTargetElement: HTMLElement | null = $state(null);
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -134,13 +144,13 @@
 	let matchingHashes: Hash[] = $state([]);
 	let dateInput = $state<HTMLInputElement>();
 
-	const focusOnMount: Action = (node) => {
+	const focusOnMount: Action = node => {
 		node.focus();
 	};
 
 	const scrollIsAtBottom = () => {
 		const pageEl = document.querySelector('.messages-page') as HTMLDivElement;
-		if (!pageEl) return;
+		if (!pageEl) return false;
 		return pageEl.scrollTop + 200 >= pageEl.scrollHeight - pageEl.offsetHeight;
 	};
 
@@ -173,17 +183,7 @@
 	}
 	let t: any;
 	let bottom = false;
-	store.onNewMessage(async () => {
-		if (scrollIsAtBottom()) bottom = true;
-		if (scrollIsAtBottom() || bottom) {
-			// Wait for the message to get rendered in the UI
-			clearTimeout(t);
-			t = setTimeout(() => {
-				bottom = false;
-				scrollToBottom();
-			});
-		}
-	});
+	let unsubNewMessage: (() => void) | undefined;
 
 	const messageClass = (messageSetLength: number, index: number) => {
 		if (messageSetLength <= 1) return '';
@@ -202,6 +202,17 @@
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
 
+		unsubNewMessage = store.onNewMessage(async () => {
+			if (scrollIsAtBottom()) bottom = true;
+			if (scrollIsAtBottom() || bottom) {
+				clearTimeout(t);
+				t = setTimeout(() => {
+					bottom = false;
+					scrollToBottom();
+				});
+			}
+		});
+
 		observer = new IntersectionObserver(
 			entries => {
 				for (const entry of entries) {
@@ -214,7 +225,6 @@
 				clearTimeout(markReadTimeout);
 				markReadTimeout = setTimeout(() => {
 					if (visibleMessages.size > 0) {
-						console.log('reaad', visibleMessages);
 						store.markAsRead(Array.from(visibleMessages));
 						visibleMessages.clear();
 					}
@@ -231,6 +241,7 @@
 		pageEl?.addEventListener('scroll', handleScroll);
 
 		return () => {
+			unsubNewMessage?.();
 			observer?.disconnect();
 			clearTimeout(markReadTimeout);
 			pageEl?.removeEventListener('scroll', handleScroll);
@@ -250,7 +261,10 @@
 	};
 	// Search helpers
 	function escapeHtml(text: string): string {
-		return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+		return text
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;');
 	}
 
 	function highlightMatch(text: string, query: string): string {
@@ -273,7 +287,7 @@
 			const lowerQ = q.toLowerCase();
 			const els = document.querySelectorAll('[data-message-hash]');
 			const matches: Hash[] = [];
-			els.forEach((el) => {
+			els.forEach(el => {
 				const hash = el.getAttribute('data-message-hash') as Hash;
 				const text = el.querySelector('.flex-1')?.textContent || '';
 				if (text.toLowerCase().includes(lowerQ)) matches.push(hash);
@@ -293,7 +307,7 @@
 		// Remove flash from any previously flashing message
 		document
 			.querySelectorAll('.search-flash')
-			.forEach((e) => e.classList.remove('search-flash'));
+			.forEach(e => e.classList.remove('search-flash'));
 		// Flash the current match's message card
 		const card = el.closest('.message') ?? el.querySelector('.message') ?? el;
 		void (card as HTMLElement).offsetWidth;
@@ -339,62 +353,102 @@
 	$effect(() => {
 		if (searchMode) messageInputHeight = '60px';
 	});
+	function showQuickReactionBar(e: MouseEvent | TouchEvent, message: Message) {
+		const el = e.target as HTMLElement;
+		const target = el.closest('.message') as HTMLElement ?? el.querySelector('.message') as HTMLElement;
+		if (!target) return;
+		emojiTargetedMessage = message;
+		reactionTargetElement = target;
+		target.parentElement?.classList.add('message-highlighted');
+		showQuickBar = true;
+	}
+
+	function hideReactionUI() {
+		reactionTargetElement?.parentElement?.classList.remove('message-highlighted');
+		showQuickBar = false;
+		showFullPicker = false;
+		emojiTargetedMessage = undefined;
+		reactionTargetElement = null;
+	}
+
+	function expandToFullPicker() {
+		reactionTargetElement?.parentElement?.classList.remove('message-highlighted');
+		showQuickBar = false;
+		showFullPicker = true;
+	}
+
+	async function toggleReaction(message: Message, emoji: string, deviceId: DeviceId) {
+		const currentReaction = message.reactions[deviceId];
+		const newEmoji = currentReaction === emoji ? null : emoji;
+		await store.sendReaction({ target: message.hash, emoji: newEmoji });
+		hideReactionUI();
+	}
 
 	const theme = $derived(useTheme());
 </script>
 
 <Page class="messages-page">
-	{#await $peerProfile then profile}
-		{#await $contactRequest then contactRequest}
-			{#if searchMode}
-				<Navbar transparent={true} titleClass="opacity1 w-full" centerTitle={false}>
-					{#snippet left()}
-						<NavbarBackLink onClick={closeSearch} data-testid="direct-chat-search-back" />
-					{/snippet}
-					{#snippet title()}
-						<div class="flex items-center gap-2">
-							<wa-icon class="quiet" src={wrapPathInSvg(mdiMagnify)}></wa-icon>
-							<input
-								type="text"
-								class="w-full border-none bg-transparent text-base outline-none"
-								placeholder={m.searchMessages()}
-								bind:value={searchQuery}
-								use:focusOnMount
+	{#await $myDeviceId then myDeviceId}
+		{#await $peerProfile then profile}
+			{#await $contactRequest then contactRequest}
+				{#if searchMode}
+					<Navbar
+						transparent={true}
+						titleClass="opacity1 w-full"
+						centerTitle={false}
+					>
+						{#snippet left()}
+							<NavbarBackLink onClick={closeSearch} />
+						{/snippet}
+						{#snippet title()}
+							<div class="flex items-center gap-2">
+								<wa-icon class="quiet" src={wrapPathInSvg(mdiMagnify)}
+								></wa-icon>
+								<input
+									type="text"
+									class="w-full border-none bg-transparent text-base outline-none"
+									placeholder={m.searchMessages()}
+									bind:value={searchQuery}
+									use:focusOnMount
+								/>
+							</div>
+						{/snippet}
+					</Navbar>
+				{:else}
+					<Navbar
+						transparent={true}
+						titleClass="opacity1 w-full"
+						centerTitle={false}
+					>
+						{#snippet left()}
+							<NavbarBackLink
+								onClick={() => goto('/')}
+								data-testid="direct-chat-back"
 							/>
-						</div>
-					{/snippet}
-				</Navbar>
-			{:else}
-				<Navbar
-					transparent={true}
-					titleClass="opacity1 w-full"
-					centerTitle={false}
-				>
-					{#snippet left()}
-						<NavbarBackLink onClick={() => goto('/')} data-testid="direct-chat-back" />
-					{/snippet}
-					{#snippet title()}
-						{#if profile}
-							<Link
-								class="flex items-center justify-start gap-2"
-								href={`/direct-chats/${agentId}/chat-settings`}
-								data-testid="direct-chat-settings-link"
-							>
-								<wa-avatar
-									image={profile!.avatar}
-									initials={profile!.name.slice(0, 2)}
-									style="--size: 2.5rem"
+						{/snippet}
+						{#snippet title()}
+							{#if profile}
+								<Link
+									class="flex items-center justify-start gap-2"
+									href={`/direct-chats/${agentId}/chat-settings`}
+									data-testid="direct-chat-settings-link"
 								>
-								</wa-avatar>
-								<span data-testid="direct-chat-peer-name">{fullName(profile!)}</span>
-							</Link>
-						{/if}
-					{/snippet}
-				</Navbar>
-			{/if}
+									<wa-avatar
+										image={profile!.avatar}
+										initials={profile!.name.slice(0, 2)}
+										style="--size: 2.5rem"
+									>
+									</wa-avatar>
+									<span data-testid="direct-chat-peer-name"
+										>{fullName(profile!)}</span
+									>
+								</Link>
+							{/if}
+						{/snippet}
+					</Navbar>
+				{/if}
 
-			<div class="column">
-				{#await $myDeviceId then myDeviceId}
+				<div class="column">
 					{#await $readMessageHashes then readHashes}
 						{#await $messagesSets then messagesSetsInDays}
 							<div
@@ -517,9 +571,15 @@
 									</div>
 								</Sheet>
 
-								<div class="column m-2 gap-1" data-testid="direct-chat-messages">
+								<div
+									class="column m-2 gap-1"
+									data-testid="direct-chat-messages"
+								>
 									{#each messagesSetsInDays as messageSetInDay}
-										<div class="sticky-day-tag quiet" data-day={messageSetInDay.day.toISOString()}>
+										<div
+											class="sticky-day-tag quiet"
+											data-day={messageSetInDay.day.toISOString()}
+										>
 											{#if moreThanAYearAgo(messageSetInDay.day.valueOf())}
 												<wa-format-date
 													month="numeric"
@@ -545,52 +605,75 @@
 											<div class="column" style="gap: 1px">
 												{#each messageSet as [hash, message], i}
 													{#if myDeviceId == message.author}
-														<Card
-															raised
-															class={`${messageClass(messageSet.length, i)} message my-message`}
-															data-message-hash={hash}
+														<div
+															class="self-end max-w-[85%]"
+															use:longpress={{ onLongPress: (e) => showQuickReactionBar(e, message) }}
 														>
-															<div
-																class="row gap-2 mx-1"
-																style="align-items: end"
+															<Card
+																raised
+																class={`${messageClass(messageSet.length, i)} message my-message`}
+																data-message-hash={hash}
 															>
-																<span class="flex-1">
-																	{#if searchMode && searchQuery}
-																		{@html highlightMatch(message.content, searchQuery)}
-																	{:else}
-																		{message.content}
-																	{/if}
-																</span>
-
-																{#if i === messageSet.length - 1}
-																	<div class="dark-quiet text-xs">
-																		{#if lessThanAMinuteAgo(message.timestamp)}
-																			<span>{m.now()}</span>
-																		{:else if moreThanAnHourAgo(message.timestamp)}
-																			<wa-format-date
-																				hour="numeric"
-																				minute="numeric"
-																				hour-format="24"
-																				date={new Date(message.timestamp)}
-																			></wa-format-date>
+																<div
+																	class="row gap-2 mx-1"
+																	style="align-items: end"
+																>
+																	<span class="flex-1">
+																		{#if searchMode && searchQuery}
+																			{@html highlightMatch(
+																				message.content,
+																				searchQuery,
+																			)}
 																		{:else}
-																			<wa-relative-time
-																				sync
-																				format="narrow"
-																				date={new Date(message.timestamp)}
-																			>
-																			</wa-relative-time>
+																			{message.content}
 																		{/if}
-																	</div>
-																{/if}
-															</div>
-														</Card>
+																	</span>
+
+																	{#if i === messageSet.length - 1}
+																		<div class="dark-quiet text-xs">
+																			{#if lessThanAMinuteAgo(message.timestamp)}
+																				<span>{m.now()}</span>
+																			{:else if moreThanAnHourAgo(message.timestamp)}
+																				<wa-format-date
+																					hour="numeric"
+																					minute="numeric"
+																					hour-format="24"
+																					date={new Date(message.timestamp)}
+																				></wa-format-date>
+																			{:else}
+																				<wa-relative-time
+																					sync
+																					format="narrow"
+																					date={new Date(message.timestamp)}
+																				>
+																				</wa-relative-time>
+																			{/if}
+																		</div>
+																	{/if}
+																</div>
+															</Card>
+															{#if Object.values(message.reactions).length}
+																<div class="flex -mt-1.5 mb-0.5 gap-0.5 px-1">
+																	{#each condenseReactions(message.reactions, myDeviceId) as reaction}
+																		<Chip
+																			class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
+																			colors={reaction.own ? { fillBgMaterial: 'bg-gray-300 dark:bg-gray-500' } : { fillBgMaterial: 'bg-gray-200 dark:bg-gray-700' }}
+																			onclick={(e) => { e.stopPropagation(); toggleReaction(message, reaction.emoji, myDeviceId); }}
+																		>
+																			{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
+																		</Chip>
+																	{/each}
+																</div>
+															{/if}
+														</div>
 													{:else}
 														<div
-															class="row gap-2 m-0"
+															class="self-start max-w-[85%]"
+															data-message-hash={hash}
 															use:observeMessage={readHashes?.has(hash)
 																? null
 																: hash}
+															use:longpress={{ onLongPress: (e) => showQuickReactionBar(e, message) }}
 														>
 															<Card
 																raised
@@ -602,7 +685,10 @@
 																>
 																	<span class="flex-1">
 																		{#if searchMode && searchQuery}
-																			{@html highlightMatch(message.content, searchQuery)}
+																			{@html highlightMatch(
+																				message.content,
+																				searchQuery,
+																			)}
 																		{:else}
 																			{message.content}
 																		{/if}
@@ -631,6 +717,19 @@
 																	{/if}
 																</div>
 															</Card>
+															{#if Object.values(message.reactions).length}
+																<div class="flex justify-end -mt-1.5 mb-0.5 gap-0.5 px-1">
+																	{#each condenseReactions(message.reactions, myDeviceId!) as reaction}
+																		<Chip
+																			class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
+																			colors={reaction.own ? { fillBgMaterial: 'bg-gray-300 dark:bg-gray-500' } : { fillBgMaterial: 'bg-gray-200 dark:bg-gray-700' }}
+																			onclick={(e) => { e.stopPropagation(); toggleReaction(message, reaction.emoji, myDeviceId!); }}
+																		>
+																			{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
+																		</Chip>
+																	{/each}
+																</div>
+															{/if}
 														</div>
 													{/if}
 												{/each}
@@ -641,171 +740,244 @@
 							</div>
 						{/await}
 					{/await}
-				{/await}
 
-				{#if showScrollToBottom && !searchMode}
-					{#await $unreadCount then count}
-						<button
-							class="fixed right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
-							style={`bottom: calc(${messageInputHeight || '60px'} + 0.5rem)`}
-							onclick={() => scrollToBottom()}
-							aria-label="Scroll to bottom"
-							data-testid="direct-chat-scroll-bottom"
-						>
-							{#if count && count > 0}
-								<Badge class="absolute -top-1 -right-1" data-testid="direct-chat-unread-badge">
-									{count > 99 ? '99+' : count}
-								</Badge>
-							{/if}
-							<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
-						</button>
-					{/await}
-				{/if}
-
-				{#if searchMode}
-					<div class="fixed bottom-0 left-0 right-0 z-40 pb-safe bg-md-light-surface dark:bg-md-dark-surface">
-						<div class="center-in-desktop mx-4 border-t border-gray-300 dark:border-gray-600" style="margin: 0 auto"></div>
-						<div class="center-in-desktop row items-center gap-2 px-4 py-3" style="margin: 0 auto">
-							<button onclick={() => dateInput?.click()}>
-								<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}></wa-icon>
-							</button>
-							<input
-								type="date"
-								class="absolute opacity-0 h-0 w-0"
-								bind:this={dateInput}
-								onchange={(e) => jumpToDate(e.currentTarget.value)}
-							/>
-							<span class="flex-1 text-center text-sm quiet">
-								{#if !searchQuery}
-									<!-- empty -->
-								{:else if matchingHashes.length === 0}
-									{m.noResults()}
-								{:else}
-									{m.searchResultsCount({ current: String(currentMatchIndex + 1), total: String(matchingHashes.length) })}
+					{#if showScrollToBottom && !searchMode}
+						{#await $unreadCount then count}
+							<button
+								class="fixed right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
+								style={`bottom: calc(${messageInputHeight || '60px'} + 0.5rem)`}
+								onclick={() => scrollToBottom()}
+								aria-label="Scroll to bottom"
+								data-testid="direct-chat-scroll-bottom"
+							>
+								{#if count && count > 0}
+									<Badge
+										class="absolute -top-1 -right-1"
+										data-testid="direct-chat-unread-badge"
+									>
+										{count > 99 ? '99+' : count}
+									</Badge>
 								{/if}
-							</span>
-							<button
-								disabled={!matchingHashes.length}
-								onclick={goToPreviousMatch}
-								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-							>
-								<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
-							</button>
-							<button
-								disabled={!matchingHashes.length}
-								onclick={goToNextMatch}
-								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-							>
 								<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
 							</button>
-						</div>
-					</div>
-				{:else if contactRequest}
-					<div
-						class="center-in-desktop fixed bottom-0 pb-safe z-40 bg-md-light-surface dark:bg-md-dark-surface"
-						style="margin: auto"
-					>
+						{/await}
+					{/if}
+
+					{#if searchMode}
 						<div
-							class="mx-4 border-t border-gray-300 dark:border-gray-600"
-						></div>
-						<div class="flex flex-col items-center gap-3 px-6 py-3">
-							<p class="text-center text-sm text-gray-600 dark:text-gray-400">
-								{@html m
-									.contactRequestBanner({
-										name: contactRequest.profile.name
-											.replace(/</g, '&lt;')
-											.replace(/>/g, '&gt;'),
-									})
-									.replace(
-										/\*\*(.*?)\*\*/g,
-										'<strong class="text-black dark:text-white">$1</strong>',
-									)}
-							</p>
-							<div class="flex w-full gap-2">
-								<Button
-									class="neutral-tonal-button text-red-500 flex-1"
-									rounded
-									tonal
-									data-testid="direct-chat-reject-btn"
-									onClick={() => (showRejectDialog = true)}>{m.reject()}</Button
+							class="fixed bottom-0 left-0 right-0 z-40 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
+						>
+							<div
+								class="center-in-desktop mx-4 border-t border-gray-300 dark:border-gray-600"
+								style="margin: 0 auto"
+							></div>
+							<div
+								class="center-in-desktop row items-center gap-2 px-4 py-3"
+								style="margin: 0 auto"
+							>
+								<button onclick={() => dateInput?.click()}>
+									<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
+									></wa-icon>
+								</button>
+								<input
+									type="date"
+									class="absolute opacity-0 h-0 w-0"
+									bind:this={dateInput}
+									onchange={e => jumpToDate(e.currentTarget.value)}
+								/>
+								<span class="flex-1 text-center text-sm quiet">
+									{#if !searchQuery}
+										<!-- empty -->
+									{:else if matchingHashes.length === 0}
+										{m.noResults()}
+									{:else}
+										{m.searchResultsCount({
+											current: String(currentMatchIndex + 1),
+											total: String(matchingHashes.length),
+										})}
+									{/if}
+								</span>
+								<button
+									disabled={!matchingHashes.length}
+									onclick={goToPreviousMatch}
+									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
 								>
-								<Button
-									class="neutral-tonal-button flex-1"
-									rounded
-									tonal
-									data-testid="direct-chat-accept-btn"
-									onClick={() => (showAcceptDialog = true)}>{m.accept()}</Button
+									<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
+								</button>
+								<button
+									disabled={!matchingHashes.length}
+									onclick={goToNextMatch}
+									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
 								>
+									<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
+								</button>
 							</div>
 						</div>
-					</div>
-				{:else}
-					<MessageInput
-						bind:value={messageText}
-						bind:height={messageInputHeight}
-						onSend={sendMessage}
-						onInput={async () => {
-							if (scrollIsAtBottom()) {
-								await tick();
-								scrollToBottom();
-							}
-						}}
-						onEmojiClick={() => (showEmojiPicker = true)}
+					{:else if contactRequest}
+						<div
+							class="center-in-desktop fixed bottom-0 pb-safe z-40 bg-md-light-surface dark:bg-md-dark-surface"
+							style="margin: auto"
+						>
+							<div
+								class="mx-4 border-t border-gray-300 dark:border-gray-600"
+							></div>
+							<div class="flex flex-col items-center gap-3 px-6 py-3">
+								<p class="text-center text-sm text-gray-600 dark:text-gray-400">
+									{@html m
+										.contactRequestBanner({
+											name: contactRequest.profile.name
+												.replace(/&/g, '&amp;')
+												.replace(/</g, '&lt;')
+												.replace(/>/g, '&gt;')
+												.replace(/"/g, '&quot;'),
+										})
+										.replace(
+											/\*\*(.*?)\*\*/g,
+											'<strong class="text-black dark:text-white">$1</strong>',
+										)}
+								</p>
+								<div class="flex w-full gap-2">
+									<Button
+										class="neutral-tonal-button text-red-500 flex-1"
+										rounded
+										tonal
+										data-testid="direct-chat-reject-btn"
+										onClick={() => (showRejectDialog = true)}
+										>{m.reject()}</Button
+									>
+									<Button
+										class="neutral-tonal-button flex-1"
+										rounded
+										tonal
+										data-testid="direct-chat-accept-btn"
+										onClick={() => (showAcceptDialog = true)}
+										>{m.accept()}</Button
+									>
+								</div>
+							</div>
+						</div>
+					{:else}
+						<MessageInput
+							bind:value={messageText}
+							bind:height={messageInputHeight}
+							onSend={sendMessage}
+							onInput={async () => {
+								if (scrollIsAtBottom()) {
+									await tick();
+									scrollToBottom();
+								}
+							}}
+							onEmojiClick={() => (showFullPicker = true)}
+						/>
+					{/if}
+				</div>
+			{/await}
+
+			{#await $contactRequest then contactRequest}
+				{#if contactRequest}
+					<Dialog
+						opened={showAcceptDialog}
+						onBackdropClick={() => (showAcceptDialog = false)}
+					>
+						{#snippet title()}
+							{m.acceptRequestTitle()}
+						{/snippet}
+						<span>{m.acceptRequestDescription()}</span>
+						{#snippet buttons()}
+							<DialogButton onClick={() => (showAcceptDialog = false)}>
+								{m.cancel()}
+							</DialogButton>
+							<DialogButton
+								data-testid="direct-chat-accept-confirm"
+								onClick={() => {
+									showAcceptDialog = false;
+									acceptContactRequest(contactRequest);
+								}}
+							>
+								{m.accept()}
+							</DialogButton>
+						{/snippet}
+					</Dialog>
+					<Dialog
+						opened={showRejectDialog}
+						onBackdropClick={() => (showRejectDialog = false)}
+					>
+						{#snippet title()}
+							{m.rejectRequestTitle()}
+						{/snippet}
+						<span>{m.rejectRequestDescription()}</span>
+						{#snippet buttons()}
+							<DialogButton onClick={() => (showRejectDialog = false)}>
+								{m.cancel()}
+							</DialogButton>
+							<DialogButton
+								data-testid="direct-chat-reject-confirm"
+								onClick={() => {
+									showRejectDialog = false;
+									rejectContactRequest(contactRequest);
+								}}
+							>
+								{m.reject()}
+							</DialogButton>
+						{/snippet}
+					</Dialog>
+				{/if}
+				{#if emojiTargetedMessage && reactionTargetElement && myDeviceId}
+					<QuickReactionBar
+						message={emojiTargetedMessage}
+						targetElement={reactionTargetElement}
+						opened={showQuickBar}
+						isOwnMessage={myDeviceId === emojiTargetedMessage.author}
+						{myDeviceId}
+						onReaction={(emoji) => toggleReaction(emojiTargetedMessage!, emoji, myDeviceId)}
+						onExpand={expandToFullPicker}
+						onClose={hideReactionUI}
 					/>
 				{/if}
-			</div>
+				<Sheet
+					class="pb-safe text-lg"
+					opened={showFullPicker}
+					onBackdropClick={hideReactionUI}
+				>
+					{#if emojiTargetedMessage && myDeviceId}
+						{#if Object.values(emojiTargetedMessage.reactions).length > 0}
+							<Block>
+								{#each condenseReactions(emojiTargetedMessage.reactions, myDeviceId) as reaction}
+									<button
+										class="mr-2 text-lg"
+										onclick={() =>
+											toggleReaction(
+												emojiTargetedMessage!,
+												reaction.emoji,
+												myDeviceId!,
+											)}
+									>
+										<Chip class="border !border-white dark:!border-black">
+											{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
+										</Chip>
+									</button>
+								{/each}
+							</Block>
+						{/if}
+						<Block>
+							<EmojiPickerWrapper
+								onEmojiSelected={emoji =>
+									toggleReaction(emojiTargetedMessage!, emoji, myDeviceId!)}
+							></EmojiPickerWrapper>
+						</Block>
+					{:else}
+						<Block>
+							<EmojiPickerWrapper
+								onEmojiSelected={emoji => {
+									messageText += emoji;
+									hideReactionUI();
+								}}
+							></EmojiPickerWrapper>
+						</Block>
+					{/if}
+				</Sheet>
+			{/await}
 		{/await}
-	{/await}
-
-	{#await $contactRequest then contactRequest}
-		{#if contactRequest}
-			<Dialog
-				opened={showAcceptDialog}
-				onBackdropClick={() => (showAcceptDialog = false)}
-			>
-				{#snippet title()}
-					{m.acceptRequestTitle()}
-				{/snippet}
-				<span>{m.acceptRequestDescription()}</span>
-				{#snippet buttons()}
-					<DialogButton onClick={() => (showAcceptDialog = false)}>
-						{m.cancel()}
-					</DialogButton>
-					<DialogButton
-						data-testid="direct-chat-accept-confirm"
-						onClick={() => {
-							showAcceptDialog = false;
-							acceptContactRequest(contactRequest);
-						}}
-					>
-						{m.accept()}
-					</DialogButton>
-				{/snippet}
-			</Dialog>
-			<Dialog
-				opened={showRejectDialog}
-				onBackdropClick={() => (showRejectDialog = false)}
-			>
-				{#snippet title()}
-					{m.rejectRequestTitle()}
-				{/snippet}
-				<span>{m.rejectRequestDescription()}</span>
-				{#snippet buttons()}
-					<DialogButton onClick={() => (showRejectDialog = false)}>
-						{m.cancel()}
-					</DialogButton>
-					<DialogButton
-						data-testid="direct-chat-reject-confirm"
-						onClick={() => {
-							showRejectDialog = false;
-							rejectContactRequest(contactRequest);
-						}}
-					>
-						{m.reject()}
-					</DialogButton>
-				{/snippet}
-			</Dialog>
-		{/if}
 	{/await}
 
 	<SafetyTipsSheet

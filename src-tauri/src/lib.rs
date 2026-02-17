@@ -58,6 +58,7 @@ pub fn run() {
             commands::direct_chats::direct_chat_id,
             commands::direct_chats::direct_chat_send_message,
             commands::chats::mark_messages_read,
+            commands::direct_chats::direct_chat_send_reaction,
             // commands::chats::create_group,
             // commands::group_chat::add_member,
             // commands::group_chat::send_message,
@@ -91,7 +92,8 @@ pub fn run() {
                 let mailbox_url = if tauri::is_dev() {
                     // Use the IP address of the compiling machine to support tauri android dev
                     // pointing to the compiling computer's IP address
-                    let mailbox_port = std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
+                    let mailbox_port =
+                        std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
                     format!("http://{}:{}", env!("LOCAL_IP_ADDRESS"), mailbox_port)
                 } else {
                     "https://mailbox-server.production.dash-chat.dash-chat.garnix.me".to_string()

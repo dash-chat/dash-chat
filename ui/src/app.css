@@ -114,6 +114,11 @@ li.plain span {
 	border-top-left-radius: 4px;
 }
 
+.message-highlighted {
+	position: relative;
+	z-index: 51;
+}
+
 .qr-card > div {
 	/* Padding for the copy button below the QR code in add-contact */
 	padding-bottom: 8px;
@@ -222,4 +227,10 @@ li.plain span {
 	70% {
 		filter: brightness(1);
 	}
+}
+
+emoji-picker {
+	width: 100%;
+	--background: none;
+	--border-color: none;
 }

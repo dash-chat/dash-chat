@@ -1,19 +1,21 @@
 import { reactive } from 'signalium';
 
+import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
-import { ChatId, ChatSummary, MessageContent, Payload } from '../types';
+import { ChatReaction, ChatSummary, MessageContent, Payload } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { toPromise } from '../utils/to-promise';
 import { DirectChatClient } from './direct-chat-client';
-import { fullName } from '../contacts/contacts-client';
 
 export interface Message {
+	hash: string;
 	content: MessageContent;
 	timestamp: number;
 	author: DeviceId;
+	reactions: Record<DeviceId, string>;
 }
 
 // Store tied to a specific direct chat
@@ -23,8 +25,7 @@ export class DirectChatStore {
 		protected contactsStore: ContactsStore,
 		public client: DirectChatClient,
 		public peer: AgentId,
-	) {
-	}
+	) {}
 
 	chatId = reactive(async () => await this.client.chatId(this.peer));
 
@@ -43,21 +44,45 @@ export class DirectChatStore {
 		const chatId = await this.chatId();
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const messages: Record<Hash, Message> = {};
+		const messages: Record<Hash, Message> = {}; // todo: convert to map?
 
 		for (const [author, operations] of Object.entries(logs)) {
 			for (const operation of operations) {
 				const body = operation.body;
-				if (body?.type === 'Chat' && body.payload.type === 'Message') {
-					messages[operation.hash] = {
-						content: body.payload.payload,
-						author,
-						timestamp: operation.header.timestamp * 1000,
-					};
+				if (body?.type === 'Chat') {
+					if (body.payload.type === 'Message') {
+						messages[operation.hash] = {
+							hash: operation.hash,
+							content: body.payload.payload,
+							author,
+							timestamp: operation.header.timestamp * 1000,
+							reactions: {},
+						};
+					}
 				}
 			}
 		}
-
+		// reactions applied in second loop after messages are fully resolved
+		for (const [author, operations] of Object.entries(logs)) {
+			for (const operation of operations) {
+				const body = operation.body;
+				if (body?.type === 'Chat') {
+					if (body.payload.type === 'Reaction') {
+						const payload = body.payload.payload;
+						let message = messages[payload.target];
+						if (message) {
+							if (payload.emoji) {
+								message.reactions[author] = payload.emoji;
+							} else {
+								delete message.reactions[author];
+							}
+						} else {
+							console.warn('reaction for missing message');
+						}
+					}
+				}
+			}
+		}
 		return messages;
 	});
 
@@ -98,13 +123,17 @@ export class DirectChatStore {
 	onNewMessage(
 		handler: (
 			operation: SimplifiedOperation<Payload>,
-			message: MessageContent,
+			message: MessageContent | ChatReaction,
 		) => void,
 	) {
 		return this.logsStore.logsClient.onNewOperation(async (topicId, op) => {
 			const chatId = await toPromise(this.chatId);
 			if (topicId !== chatId) return;
-			if (op.body?.payload.type !== 'Message') return;
+			if (
+				op.body?.payload.type !== 'Message' &&
+				op.body?.payload.type !== 'Reaction'
+			)
+				return;
 			handler(op, op.body.payload.payload);
 		});
 	}
@@ -113,10 +142,12 @@ export class DirectChatStore {
 		const chatId = await toPromise(this.chatId);
 		const myDeviceId = await toPromise(this.contactsStore.myDeviceId);
 		const promise = new Promise(resolve => {
-			this.onNewMessage((op, message) => {
+			const unsub = this.onNewMessage((op, message) => {
+				if (op.body?.payload.type !== 'Message') return;
 				if (op.header.public_key !== myDeviceId) return;
 				if (message !== content) return;
 
+				unsub();
 				resolve(undefined);
 			});
 		});
@@ -126,7 +157,8 @@ export class DirectChatStore {
 
 	readMessageHashes = reactive(async () => {
 		const chatId = await this.chatId();
-		const myDeviceGroupTopic = await this.contactsStore.devicesStore.myDeviceGroupTopic();
+		const myDeviceGroupTopic =
+			await this.contactsStore.devicesStore.myDeviceGroupTopic();
 		const readHashes: Set<Hash> = new Set();
 
 		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
@@ -178,9 +210,12 @@ export class DirectChatStore {
 		return {
 			type: 'DirectChat',
 			chatId: this.peer,
-			name: fullName(profile!),
+			name: profile ? fullName(profile) : '',
 			avatar: profile?.avatar,
-			lastEvent,
+			lastEvent: {
+				summary: lastEvent.summary,
+				timestamp: lastEvent.timestamp ?? 0,
+			},
 			unreadMessages: unreadCount,
 		} as ChatSummary;
 	});
@@ -188,5 +223,10 @@ export class DirectChatStore {
 	async markAsRead(messageHashes: Hash[]): Promise<void> {
 		const chatId = await toPromise(this.chatId);
 		await this.client.markMessagesRead(chatId, messageHashes);
+	}
+
+	async sendReaction(reaction: ChatReaction) {
+		const chatId = await toPromise(this.chatId);
+		await this.client.sendReaction(chatId, reaction);
 	}
 }
