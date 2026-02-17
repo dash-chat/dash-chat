@@ -154,16 +154,17 @@
 	const SCROLL_BOTTOM_THRESHOLD = 200;
 
 	const scrollIsAtBottom = () => {
-		const pageEl = document.querySelector('.messages-page') as HTMLDivElement;
-		if (!pageEl) return false;
-		return pageEl.scrollTop + SCROLL_BOTTOM_THRESHOLD >= pageEl.scrollHeight - pageEl.offsetHeight;
+		if (!messagesPageEl) return false;
+		return (
+			messagesPageEl.scrollTop + SCROLL_BOTTOM_THRESHOLD >=
+			messagesPageEl.scrollHeight - messagesPageEl.offsetHeight
+		);
 	};
 
 	const scrollToBottom = (animate = true) => {
-		const pageEl = document.querySelector('.messages-page')! as HTMLDivElement;
-		if (!pageEl) return;
-		pageEl.scrollTo({
-			top: pageEl.scrollHeight - pageEl.offsetHeight,
+		if (!messagesPageEl) return;
+		messagesPageEl.scrollTo({
+			top: messagesPageEl.scrollHeight - messagesPageEl.offsetHeight,
 			behavior: animate ? 'smooth' : 'auto',
 		});
 	};
@@ -190,7 +191,7 @@
 			showToast(m.errorUnexpected(), 'error');
 		}
 	}
-	let t: any;
+	let t: ReturnType<typeof setTimeout> | undefined;
 	let bottom = false;
 	let unsubNewMessage: (() => void) | undefined;
 
@@ -205,8 +206,10 @@
 	let observer: IntersectionObserver | undefined;
 	const visibleMessages: Set<Hash> = new Set();
 	let markReadTimeout: ReturnType<typeof setTimeout>;
+	let messagesPageEl: HTMLDivElement | null = null;
 
 	onMount(() => {
+		messagesPageEl = document.querySelector('.messages-page') as HTMLDivElement;
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
@@ -243,17 +246,16 @@
 		);
 
 		// Track scroll position to show/hide scroll-to-bottom button
-		const pageEl = document.querySelector('.messages-page') as HTMLDivElement;
 		const handleScroll = () => {
 			showScrollToBottom = !scrollIsAtBottom();
 		};
-		pageEl?.addEventListener('scroll', handleScroll);
+		messagesPageEl?.addEventListener('scroll', handleScroll);
 
 		return () => {
 			unsubNewMessage?.();
 			observer?.disconnect();
 			clearTimeout(markReadTimeout);
-			pageEl?.removeEventListener('scroll', handleScroll);
+			messagesPageEl?.removeEventListener('scroll', handleScroll);
 		};
 	});
 
@@ -399,7 +401,11 @@
 	) {
 		const currentReaction = message.reactions[deviceId];
 		const newEmoji = currentReaction === emoji ? null : emoji;
-		await store.sendReaction({ target: message.hash, emoji: newEmoji });
+		try {
+			await store.sendReaction({ target: message.hash, emoji: newEmoji });
+		} catch {
+			showToast(m.errorUnexpected(), 'error');
+		}
 		hideReactionUI();
 	}
 
@@ -888,7 +894,8 @@
 												.replace(/>/g, '&gt;')
 												.replace(/"/g, '&quot;'),
 										})
-										.replace( // i18next string contains **{{name}}** so that the contact name is bold
+										.replace(
+											// i18next string contains **{{name}}** so that the contact name is bold
 											/\*\*(.*?)\*\*/g,
 											'<strong class="text-black dark:text-white">$1</strong>',
 										)}
