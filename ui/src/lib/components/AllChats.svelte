@@ -27,8 +27,10 @@
 			? `/group-chat/${summary.chatId}`
 			: `/direct-chats/${summary.chatId}`;
 
+	let activePath = $derived(page.url.pathname);
+
 	const isActive = (summary: { type: string; chatId: string }) =>
-		isWideScreen.value && page.url.pathname.startsWith(chatHref(summary));
+		isWideScreen.value && activePath.startsWith(chatHref(summary));
 </script>
 
 <List nested data-testid="all-chats-list">
@@ -39,7 +41,7 @@
 				link
 				linkProps={{ href: chatHref(summary) }}
 				chevron={false}
-				class={isActive(summary) ? 'active-chat' : ''}
+				class={isActive(summary) ? 'bg-gray-200 dark:bg-gray-700' : ''}
 			>
 				{#snippet media()}
 					<wa-avatar image={summary.avatar} initials={summary.name.slice(0, 2)}>
@@ -92,9 +94,3 @@
 		{/each}
 	{/await}
 </List>
-
-<style>
-	:global(.active-chat) {
-		background-color: rgba(0, 122, 255, 0.1);
-	}
-</style>

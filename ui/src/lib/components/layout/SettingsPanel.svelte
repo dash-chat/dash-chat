@@ -53,7 +53,7 @@
 				linkProps={{ href: '/settings/profile' }}
 				data-testid="settings-profile-link"
 				title={myProfile?.name}
-				class={isActive('/settings/profile') ? 'active-chat' : ''}
+				class={isActive('/settings/profile') ? 'bg-gray-200 dark:bg-gray-700' : ''}
 			>
 				{#snippet media()}
 					<wa-avatar
@@ -97,7 +97,7 @@
 				data-testid="settings-account-link"
 				title={m.account()}
 				chevron={false}
-				class={isActive('/settings/account') ? 'active-chat' : ''}
+				class={isActive('/settings/account') ? 'bg-gray-200 dark:bg-gray-700' : ''}
 			>
 				{#snippet media()}
 					<wa-icon src={wrapPathInSvg(mdiAccountCircleOutline)} style="font-size: 28px"></wa-icon>
@@ -111,7 +111,5 @@
 	.settings-panel {
 		display: flex;
 		flex-direction: column;
-		height: 100%;
-		overflow-y: auto;
 	}
 </style>

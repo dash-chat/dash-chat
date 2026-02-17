@@ -4,7 +4,7 @@
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiAccountGroup, mdiPencil, mdiSquareEditOutline } from '@mdi/js';
+	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/AllChats.svelte';
 	import { Fab, Link, Navbar, Page, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -36,10 +36,6 @@
 			{/snippet}
 
 			{#snippet right()}
-				<Link iconOnly href="/contacts" data-testid="home-contacts-link">
-					<wa-icon src={wrapPathInSvg(mdiAccountGroup)}></wa-icon>
-				</Link>
-
 				{#if theme == 'ios'}
 					<Link iconOnly href="/new-message" data-testid="home-new-message-link">
 						<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>

@@ -8,7 +8,9 @@
 	let { children }: { children: Snippet } = $props();
 
 	const isSettings = $derived(page.url.pathname.startsWith('/settings'));
-	const isNewMessage = $derived(page.url.pathname === '/new-message');
+	const isNewMessage = $derived(
+		page.url.pathname === '/new-message' || page.url.pathname === '/add-contact',
+	);
 </script>
 
 <div class="desktop-layout">
@@ -37,7 +39,8 @@
 		width: 320px;
 		min-width: 320px;
 		border-right: 1px solid var(--k-hairline-color);
-		overflow: hidden;
+		overflow-y: auto;
+		overflow-x: hidden;
 		background-color: var(--k-color-md-light-surface);
 	}
 

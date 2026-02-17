@@ -73,7 +73,7 @@
 			<DialogButton onClick={() => (showDeleteDialog = false)} data-testid="account-delete-cancel">
 				{m.cancel()}
 			</DialogButton>
-			<DialogButton strong onClick={handleDeleteAccount} disabled={loading} data-testid="account-delete-confirm">
+			<DialogButton onClick={handleDeleteAccount} disabled={loading} data-testid="account-delete-confirm">
 				{loading ? '...' : m.delete()}
 			</DialogButton>
 		{/snippet}

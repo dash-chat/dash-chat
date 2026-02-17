@@ -4,12 +4,10 @@
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiAccountGroup, mdiPencil, mdiSquareEditOutline } from '@mdi/js';
+	import { mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/AllChats.svelte';
-	import { Fab, Link, Navbar, useTheme } from 'konsta/svelte';
+	import { Link, Navbar } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { goto } from '$app/navigation';
-	const theme = $derived(useTheme());
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
@@ -31,37 +29,19 @@
 		{/snippet}
 
 		{#snippet right()}
-			<Link iconOnly href="/contacts" data-testid="home-contacts-link">
-				<wa-icon src={wrapPathInSvg(mdiAccountGroup)}></wa-icon>
+			<Link iconOnly href="/new-message" data-testid="home-new-message-link">
+				<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
 			</Link>
-
-			{#if theme == 'ios'}
-				<Link iconOnly href="/new-message" data-testid="home-new-message-link">
-					<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
-				</Link>
-			{/if}
 		{/snippet}
 	</Navbar>
 
 	<AllChats></AllChats>
-
-	{#if theme == 'material'}
-		<Fab
-			class="absolute right-4 bottom-4 z-20"
-			onClick={() => goto('/new-message')}
-			data-testid="home-new-message-fab"
-		>
-			<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
-		</Fab>
-	{/if}
 </div>
 
 <style>
 	.chat-list-panel {
 		display: flex;
 		flex-direction: column;
-		height: 100%;
-		overflow-y: auto;
 		position: relative;
 	}
 </style>

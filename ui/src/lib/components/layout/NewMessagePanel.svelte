@@ -37,14 +37,6 @@
 	</Navbar>
 
 	<div class="column" style="flex: 1">
-		<div class="column gap-4 mt-2 mx-4">
-			<Link href="/new-group" style="display: none">
-				<Button tonal large class="w-full gap-2">
-					<wa-icon src={wrapPathInSvg(mdiAccountMultiplePlus)}> </wa-icon>
-					{m.newGroup()}
-				</Button>
-			</Link>
-		</div>
 
 		<div class={theme === 'ios' ? 'mt-6 px-4' : 'pl-5 pr-10'} data-testid="new-message-search">
 			<Searchbar
@@ -60,7 +52,31 @@
 			/>
 		</div>
 
-		<BlockTitle>{m.contacts()}</BlockTitle>
+		<List strongIos insetIos class="mb-0 mt-4">
+			<ListItem
+				link
+				linkProps={{ href: '/new-group' }}
+				title={m.newGroup()}
+				chevron={false}
+				style="display: none"
+			>
+				{#snippet media()}
+					<wa-icon src={wrapPathInSvg(mdiAccountMultiplePlus)}></wa-icon>
+				{/snippet}
+			</ListItem>
+			<ListItem
+				link
+				linkProps={{ href: '/add-contact' }}
+				title={m.addContact()}
+				chevron={false}
+			>
+				{#snippet media()}
+					<wa-icon src={wrapPathInSvg(mdiAccountPlus)}></wa-icon>
+				{/snippet}
+			</ListItem>
+		</List>
+
+		<BlockTitle >{m.contacts()}</BlockTitle>
 
 		{#await $contacts}
 			<div
@@ -73,15 +89,6 @@
 			<List strongIos insetIos data-testid="new-message-contact-list">
 				{#if contacts.length === 0}
 					<ListItem title={m.noContactsYet()} />
-					<ListItem
-						link
-						linkProps={{ href: '/add-contact' }}
-						title={m.addContact()}
-					>
-						{#snippet media()}
-							<wa-icon src={wrapPathInSvg(mdiAccountPlus)}></wa-icon>
-						{/snippet}
-					</ListItem>
 				{:else}
 					{@const filteredContacts = contacts.filter(([_, profile]) =>
 						profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
@@ -114,7 +121,5 @@
 	.new-message-panel {
 		display: flex;
 		flex-direction: column;
-		height: 100%;
-		overflow-y: auto;
 	}
 </style>
