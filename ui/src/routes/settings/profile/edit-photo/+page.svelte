@@ -184,6 +184,7 @@
 				class="close-btn"
 				onclick={() => goto('/settings/profile')}
 				aria-label="Close"
+				data-testid="edit-photo-back"
 			>
 				<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 28px"
 				></wa-icon>
@@ -275,6 +276,7 @@
 			disabled={!hasChanges}
 			onClick={save}
 			style="position: fixed; bottom: 16px; right: 16px; width: auto"
+			data-testid="edit-photo-save-btn"
 		>
 			{m.save()}
 		</Button>

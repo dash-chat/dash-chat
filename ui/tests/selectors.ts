@@ -25,6 +25,7 @@ export const S = {
 	},
 	directChat: {
 		back: tid('direct-chat-back'),
+		searchBack: tid('direct-chat-search-back'),
 		settingsLink: tid('direct-chat-settings-link'),
 		peerName: tid('direct-chat-peer-name'),
 		scrollBottom: tid('direct-chat-scroll-bottom'),
@@ -70,6 +71,10 @@ export const S = {
 		input: tid('edit-about-input'),
 		saveButton: tid('edit-about-save-btn'),
 		saveLink: tid('edit-about-save-link'),
+	},
+	editPhoto: {
+		back: tid('edit-photo-back'),
+		saveButton: tid('edit-photo-save-btn'),
 	},
 	contacts: {
 		back: tid('contacts-back'),

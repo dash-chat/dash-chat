@@ -10,5 +10,5 @@ uninstall-android:
 
 # clean all paths used by the dev environment
 clean-dev:
-    -just uninstall-android
+    -@adb uninstall studio.darksoil.dashchat 2>/dev/null
     rm -rf .dev-dbs

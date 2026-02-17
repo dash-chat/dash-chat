@@ -148,17 +148,23 @@
 		node.focus();
 	};
 
+	// Pixel threshold for considering the scroll position "at the bottom".
+	// Accounts for roughly 2-3 message heights so new messages auto-scroll
+	// even when the user is near but not exactly at the bottom.
+	const SCROLL_BOTTOM_THRESHOLD = 200;
+
 	const scrollIsAtBottom = () => {
-		const pageEl = document.querySelector('.messages-page') as HTMLDivElement;
-		if (!pageEl) return false;
-		return pageEl.scrollTop + 200 >= pageEl.scrollHeight - pageEl.offsetHeight;
+		if (!messagesPageEl) return false;
+		return (
+			messagesPageEl.scrollTop + SCROLL_BOTTOM_THRESHOLD >=
+			messagesPageEl.scrollHeight - messagesPageEl.offsetHeight
+		);
 	};
 
 	const scrollToBottom = (animate = true) => {
-		const pageEl = document.querySelector('.messages-page')! as HTMLDivElement;
-		if (!pageEl) return;
-		pageEl.scrollTo({
-			top: pageEl.scrollHeight - pageEl.offsetHeight,
+		if (!messagesPageEl) return;
+		messagesPageEl.scrollTo({
+			top: messagesPageEl.scrollHeight - messagesPageEl.offsetHeight,
 			behavior: animate ? 'smooth' : 'auto',
 		});
 	};
@@ -174,14 +180,18 @@
 
 		if (!message || message.trim() === '') return;
 
-		await store.sendMessage(message);
-		messageText = '';
-		// Wait for the message to get rendered in the UI
-		setTimeout(() => {
-			scrollToBottom();
-		});
+		try {
+			await store.sendMessage(message);
+			messageText = '';
+			// Wait for the message to get rendered in the UI
+			setTimeout(() => {
+				scrollToBottom();
+			});
+		} catch {
+			showToast(m.errorUnexpected(), 'error');
+		}
 	}
-	let t: any;
+	let t: ReturnType<typeof setTimeout> | undefined;
 	let bottom = false;
 	let unsubNewMessage: (() => void) | undefined;
 
@@ -196,8 +206,10 @@
 	let observer: IntersectionObserver | undefined;
 	const visibleMessages: Set<Hash> = new Set();
 	let markReadTimeout: ReturnType<typeof setTimeout>;
+	let messagesPageEl: HTMLDivElement | null = null;
 
 	onMount(() => {
+		messagesPageEl = document.querySelector('.messages-page') as HTMLDivElement;
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
@@ -234,17 +246,16 @@
 		);
 
 		// Track scroll position to show/hide scroll-to-bottom button
-		const pageEl = document.querySelector('.messages-page') as HTMLDivElement;
 		const handleScroll = () => {
 			showScrollToBottom = !scrollIsAtBottom();
 		};
-		pageEl?.addEventListener('scroll', handleScroll);
+		messagesPageEl?.addEventListener('scroll', handleScroll);
 
 		return () => {
 			unsubNewMessage?.();
 			observer?.disconnect();
 			clearTimeout(markReadTimeout);
-			pageEl?.removeEventListener('scroll', handleScroll);
+			messagesPageEl?.removeEventListener('scroll', handleScroll);
 		};
 	});
 
@@ -355,7 +366,9 @@
 	});
 	function showQuickReactionBar(e: MouseEvent | TouchEvent, message: Message) {
 		const el = e.target as HTMLElement;
-		const target = el.closest('.message') as HTMLElement ?? el.querySelector('.message') as HTMLElement;
+		const target =
+			(el.closest('.message') as HTMLElement) ??
+			(el.querySelector('.message') as HTMLElement);
 		if (!target) return;
 		emojiTargetedMessage = message;
 		reactionTargetElement = target;
@@ -364,7 +377,9 @@
 	}
 
 	function hideReactionUI() {
-		reactionTargetElement?.parentElement?.classList.remove('message-highlighted');
+		reactionTargetElement?.parentElement?.classList.remove(
+			'message-highlighted',
+		);
 		showQuickBar = false;
 		showFullPicker = false;
 		emojiTargetedMessage = undefined;
@@ -372,15 +387,25 @@
 	}
 
 	function expandToFullPicker() {
-		reactionTargetElement?.parentElement?.classList.remove('message-highlighted');
+		reactionTargetElement?.parentElement?.classList.remove(
+			'message-highlighted',
+		);
 		showQuickBar = false;
 		showFullPicker = true;
 	}
 
-	async function toggleReaction(message: Message, emoji: string, deviceId: DeviceId) {
+	async function toggleReaction(
+		message: Message,
+		emoji: string,
+		deviceId: DeviceId,
+	) {
 		const currentReaction = message.reactions[deviceId];
 		const newEmoji = currentReaction === emoji ? null : emoji;
-		await store.sendReaction({ target: message.hash, emoji: newEmoji });
+		try {
+			await store.sendReaction({ target: message.hash, emoji: newEmoji });
+		} catch {
+			showToast(m.errorUnexpected(), 'error');
+		}
 		hideReactionUI();
 	}
 
@@ -607,7 +632,10 @@
 													{#if myDeviceId == message.author}
 														<div
 															class="self-end max-w-[85%]"
-															use:longpress={{ onLongPress: (e) => showQuickReactionBar(e, message) }}
+															use:longpress={{
+																onLongPress: e =>
+																	showQuickReactionBar(e, message),
+															}}
 														>
 															<Card
 																raised
@@ -657,8 +685,23 @@
 																	{#each condenseReactions(message.reactions, myDeviceId) as reaction}
 																		<Chip
 																			class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
-																			colors={reaction.own ? { fillBgMaterial: 'bg-gray-300 dark:bg-gray-500' } : { fillBgMaterial: 'bg-gray-200 dark:bg-gray-700' }}
-																			onclick={(e) => { e.stopPropagation(); toggleReaction(message, reaction.emoji, myDeviceId); }}
+																			colors={reaction.own
+																				? {
+																						fillBgMaterial:
+																							'bg-gray-300 dark:bg-gray-500',
+																					}
+																				: {
+																						fillBgMaterial:
+																							'bg-gray-200 dark:bg-gray-700',
+																					}}
+																			onclick={e => {
+																				e.stopPropagation();
+																				toggleReaction(
+																					message,
+																					reaction.emoji,
+																					myDeviceId,
+																				);
+																			}}
 																		>
 																			{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
 																		</Chip>
@@ -673,7 +716,10 @@
 															use:observeMessage={readHashes?.has(hash)
 																? null
 																: hash}
-															use:longpress={{ onLongPress: (e) => showQuickReactionBar(e, message) }}
+															use:longpress={{
+																onLongPress: e =>
+																	showQuickReactionBar(e, message),
+															}}
 														>
 															<Card
 																raised
@@ -718,12 +764,29 @@
 																</div>
 															</Card>
 															{#if Object.values(message.reactions).length}
-																<div class="flex justify-end -mt-1.5 mb-0.5 gap-0.5 px-1">
+																<div
+																	class="flex justify-end -mt-1.5 mb-0.5 gap-0.5 px-1"
+																>
 																	{#each condenseReactions(message.reactions, myDeviceId!) as reaction}
 																		<Chip
 																			class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
-																			colors={reaction.own ? { fillBgMaterial: 'bg-gray-300 dark:bg-gray-500' } : { fillBgMaterial: 'bg-gray-200 dark:bg-gray-700' }}
-																			onclick={(e) => { e.stopPropagation(); toggleReaction(message, reaction.emoji, myDeviceId!); }}
+																			colors={reaction.own
+																				? {
+																						fillBgMaterial:
+																							'bg-gray-300 dark:bg-gray-500',
+																					}
+																				: {
+																						fillBgMaterial:
+																							'bg-gray-200 dark:bg-gray-700',
+																					}}
+																			onclick={e => {
+																				e.stopPropagation();
+																				toggleReaction(
+																					message,
+																					reaction.emoji,
+																					myDeviceId!,
+																				);
+																			}}
 																		>
 																			{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
 																		</Chip>
@@ -832,6 +895,7 @@
 												.replace(/"/g, '&quot;'),
 										})
 										.replace(
+											// i18next string contains **{{name}}** so that the contact name is bold
 											/\*\*(.*?)\*\*/g,
 											'<strong class="text-black dark:text-white">$1</strong>',
 										)}
@@ -929,7 +993,8 @@
 						opened={showQuickBar}
 						isOwnMessage={myDeviceId === emojiTargetedMessage.author}
 						{myDeviceId}
-						onReaction={(emoji) => toggleReaction(emojiTargetedMessage!, emoji, myDeviceId)}
+						onReaction={emoji =>
+							toggleReaction(emojiTargetedMessage!, emoji, myDeviceId)}
 						onExpand={expandToFullPicker}
 						onClose={hideReactionUI}
 					/>
