@@ -44,7 +44,7 @@ export class DirectChatStore {
 		const chatId = await this.chatId();
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const messages: Record<Hash, Message> = {}; // todo: convert to map?
+		const messages: Record<Hash, Message> = {};
 
 		for (const [author, operations] of Object.entries(logs)) {
 			for (const operation of operations) {
@@ -141,15 +141,24 @@ export class DirectChatStore {
 	async sendMessage(content: MessageContent) {
 		const chatId = await toPromise(this.chatId);
 		const myDeviceId = await toPromise(this.contactsStore.myDeviceId);
-		const promise = new Promise(resolve => {
+		const promise = new Promise<void>((resolve) => {
+			let settled = false;
 			const unsub = this.onNewMessage((op, message) => {
 				if (op.body?.payload.type !== 'Message') return;
 				if (op.header.public_key !== myDeviceId) return;
 				if (message !== content) return;
 
+				settled = true;
 				unsub();
-				resolve(undefined);
+				resolve();
 			});
+			// Safety timeout: resolve and clean up if the echo never arrives
+			setTimeout(() => {
+				if (!settled) {
+					unsub();
+					resolve();
+				}
+			}, 10_000);
 		});
 		await this.client.sendMessage(chatId, content);
 		return promise;
