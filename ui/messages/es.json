@@ -60,5 +60,6 @@
     "securityTipLinksTitle": "Mensajes con enlaces",
     "securityTipLinksDescription": "Ten cuidado con los mensajes de personas que no conoces que contienen enlaces a sitios web. Nunca visites enlaces de personas en las que no conf\u00edas.",
     "securityTipFakeBusinessesTitle": "Empresas e instituciones falsas",
-    "securityTipFakeBusinessesDescription": "Ten cuidado con empresas o agencias gubernamentales que te contacten. Los mensajes de agencias tributarias, mensajer\u00edas y dem\u00e1s pueden ser spam."
+    "securityTipFakeBusinessesDescription": "Ten cuidado con empresas o agencias gubernamentales que te contacten. Los mensajes de agencias tributarias, mensajer\u00edas y dem\u00e1s pueden ser spam.",
+    "selectAChat": "Select a chat to start messaging."
 }

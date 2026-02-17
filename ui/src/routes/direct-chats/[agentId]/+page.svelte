@@ -68,6 +68,7 @@
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
 	import { longpress } from '$lib/actions/longpress';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -445,10 +446,12 @@
 						centerTitle={false}
 					>
 						{#snippet left()}
-							<NavbarBackLink
-								onClick={() => goto('/')}
-								data-testid="direct-chat-back"
-							/>
+							{#if !isWideScreen.value}
+								<NavbarBackLink
+									onClick={() => goto('/')}
+									data-testid="direct-chat-back"
+								/>
+							{/if}
 						{/snippet}
 						{#snippet title()}
 							{#if profile}
@@ -806,7 +809,7 @@
 					{#if showScrollToBottom && !searchMode}
 						{#await $unreadCount then count}
 							<button
-								class="fixed right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
+								class="absolute right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
 								style={`bottom: calc(${messageInputHeight || '60px'} + 0.5rem)`}
 								onclick={() => scrollToBottom()}
 								aria-label="Scroll to bottom"
@@ -827,7 +830,7 @@
 
 					{#if searchMode}
 						<div
-							class="fixed bottom-0 left-0 right-0 z-40 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
+							class="absolute bottom-0 left-0 right-0 z-40 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
 						>
 							<div
 								class="center-in-desktop mx-4 border-t border-gray-300 dark:border-gray-600"
@@ -877,7 +880,7 @@
 						</div>
 					{:else if contactRequest}
 						<div
-							class="center-in-desktop fixed bottom-0 pb-safe z-40 bg-md-light-surface dark:bg-md-dark-surface"
+							class="center-in-desktop absolute bottom-0 pb-safe z-40 bg-md-light-surface dark:bg-md-dark-surface"
 							style="margin: auto"
 						>
 							<div

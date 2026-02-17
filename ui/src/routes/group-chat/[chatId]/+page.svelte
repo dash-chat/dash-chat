@@ -27,6 +27,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -60,7 +61,9 @@
 <Page style={theme === 'material' ? 'height: calc(100vh - 57px)' : ''}>
 	<Navbar transparent={true} titleClass="opacity1 w-full" centerTitle={false}>
 		{#snippet left()}
-			<NavbarBackLink onClick={() => goto('/')}  data-testid="group-chat-back" />
+			{#if !isWideScreen.value}
+				<NavbarBackLink onClick={() => goto('/')}  data-testid="group-chat-back" />
+			{/if}
 		{/snippet}
 		{#snippet title()}
 			{#await $info then info}

@@ -18,6 +18,7 @@
 		Preloader,
 	} from 'konsta/svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
@@ -27,7 +28,9 @@
 <Page>
 	<Navbar title={m.myContacts()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
-			<NavbarBackLink onClick={() => goto('/')}  data-testid="contacts-back" />
+			{#if !isWideScreen.value}
+				<NavbarBackLink onClick={() => goto('/')}  data-testid="contacts-back" />
+			{/if}
 		{/snippet}
 
 		{#snippet right()}

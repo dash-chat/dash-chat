@@ -16,9 +16,19 @@
 		inYesterday,
 		beforeYesterday,
 	} from '$lib/utils/time';
+	import { page } from '$app/state';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+
+	const chatHref = (summary: { type: string; chatId: string }) =>
+		summary.type === 'GroupChat'
+			? `/group-chat/${summary.chatId}`
+			: `/direct-chats/${summary.chatId}`;
+
+	const isActive = (summary: { type: string; chatId: string }) =>
+		isWideScreen.value && page.url.pathname.startsWith(chatHref(summary));
 </script>
 
 <List nested data-testid="all-chats-list">
@@ -27,13 +37,9 @@
 			<ListItem
 				title={summary.name}
 				link
-				linkProps={{
-					href:
-						summary.type === 'GroupChat'
-							? `/group-chat/${summary.chatId}`
-							: `/direct-chats/${summary.chatId}`,
-				}}
+				linkProps={{ href: chatHref(summary) }}
 				chevron={false}
+				class={isActive(summary) ? 'active-chat' : ''}
 			>
 				{#snippet media()}
 					<wa-avatar image={summary.avatar} initials={summary.name.slice(0, 2)}>
@@ -88,4 +94,7 @@
 </List>
 
 <style>
+	:global(.active-chat) {
+		background-color: rgba(0, 122, 255, 0.1);
+	}
 </style>

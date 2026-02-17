@@ -56,5 +56,6 @@
     "remove": "Eemalda",
     "leave": "Lahku",
     "delete": "Kustuta",
-    "settings": "Seadistused"
+    "settings": "Seadistused",
+    "selectAChat": "Select a chat to start messaging."
 }

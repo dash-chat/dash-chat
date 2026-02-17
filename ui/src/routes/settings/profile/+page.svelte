@@ -9,6 +9,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
 	import { fullName } from 'dash-chat-stores'
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
 		Button,
 		List,
@@ -27,7 +28,9 @@
 <Page>
 	<Navbar title={m.profile()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
-			<NavbarBackLink onClick={() => goto('/settings')} data-testid="profile-back" />
+			{#if !isWideScreen.value}
+				<NavbarBackLink onClick={() => goto('/settings')} data-testid="profile-back" />
+			{/if}
 		{/snippet}
 	</Navbar>
 

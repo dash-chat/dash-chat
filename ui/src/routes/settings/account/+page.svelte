@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
 		BlockTitle,
 		Dialog,
@@ -35,7 +36,9 @@
 <Page>
 	<Navbar title={m.account()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
-			<NavbarBackLink onClick={() => goto('/settings')}  data-testid="account-back" />
+			{#if !isWideScreen.value}
+				<NavbarBackLink onClick={() => goto('/settings')} data-testid="account-back" />
+			{/if}
 		{/snippet}
 	</Navbar>
 
