@@ -23,6 +23,10 @@
 	import { setLocale } from '$lib/paraglide/runtime';
 	window.__setLocale = setLocale;
 
+	if (import.meta.env.DEV) {
+		import('../../tests/setup-utils').then(({ registerTestUtils }) => registerTestUtils());
+	}
+
 	let { children } = $props();
 
 	const logsClient = new TauriLogsClient<Payload>();
