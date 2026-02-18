@@ -35,7 +35,9 @@ async fn test_set_profile_and_my_profile() {
 
     let profile = Profile {
         name: "Alice".to_string(),
+        surname: Some("Alice Surname".to_string()),
         avatar: Some("alice_avatar.png".to_string()),
+        about: None,
     };
     alice.set_profile(profile.clone()).await.unwrap();
 
@@ -52,7 +54,9 @@ async fn test_set_profile_overwrites_previous_profile() {
     // Update profile with new name and avatar
     let updated_profile = Profile {
         name: "Alice Updated".to_string(),
+        surname: Some("Alice Updated Surname".to_string()),
         avatar: Some("new_avatar.png".to_string()),
+        about: None,
     };
     alice.set_profile(updated_profile.clone()).await.unwrap();
 
@@ -84,13 +88,17 @@ async fn test_profiles_sync_between_contacts() {
     // Set initial profiles before adding contacts
     let profile = Profile {
         name: "Alice".to_string(),
+        surname: Some("Alice Surname".to_string()),
         avatar: Some("this is a picture of alice".to_string()),
+        about: None,
     };
     alice.set_profile(profile.clone()).await.unwrap();
     bobbi
         .set_profile(Profile {
             name: "Bobbi".to_string(),
+            surname: Some("Bobbi Surname".to_string()),
             avatar: None,
+            about: None,
         })
         .await
         .unwrap();

@@ -5,7 +5,7 @@
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { mdiPencil, mdiQrcode } from '@mdi/js';
+	import { mdiAccountCircleOutline, mdiPencil, mdiQrcode } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
@@ -29,7 +29,7 @@
 <Page>
 	<Navbar title={m.settings()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
-			<NavbarBackLink onClick={() => goto('/')} />
+			<NavbarBackLink onClick={() => goto('/')} data-testid="settings-back" />
 		{/snippet}
 	</Navbar>
 
@@ -52,6 +52,7 @@
 					link
 					chevron={false}
 					linkProps={{ href: '/settings/profile' }}
+					data-testid="settings-profile-link"
 					title={myProfile?.name}
 				>
 					{#snippet media()}
@@ -71,6 +72,7 @@
 						>
 							<Link
 								iconOnly
+								data-testid="settings-qr-link"
 								onClick={e => {
 									e.stopPropagation();
 									e.preventDefault();
@@ -80,6 +82,24 @@
 								<wa-icon src={wrapPathInSvg(mdiQrcode)}></wa-icon>
 							</Link>
 						</div>
+					{/snippet}
+				</ListItem>
+			</List>
+
+			<List
+				class="center-in-desktop"
+				strongIos
+				nested				inset
+			>
+				<ListItem
+					link
+					linkProps={{ href: '/settings/account' }}
+					data-testid="settings-account-link"
+					title={m.account()}
+					chevron={false}
+				>
+					{#snippet media()}
+						<wa-icon src={wrapPathInSvg(mdiAccountCircleOutline)} style="font-size: 28px"></wa-icon>
 					{/snippet}
 				</ListItem>
 			</List>

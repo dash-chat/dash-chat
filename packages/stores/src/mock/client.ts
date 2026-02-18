@@ -19,7 +19,7 @@ export function hash<T>(obj: T): Hash {
 	return blake2bHex(JSON.stringify(obj));
 }
 
-export class LocalStorageLogsClient implements LogsClient<string, any> {
+export class LocalStorageLogsClient implements LogsClient<any> {
 	emitter = new Emittery();
 
 	constructor(protected _myPubKey: PublicKey) {}
@@ -71,7 +71,7 @@ export class LocalStorageLogsClient implements LogsClient<string, any> {
 			public_key: this._myPubKey,
 			seq_num: lastOperation ? lastOperation.header.seq_num + 1 : 0,
 			timestamp: Date.now() * 1000,
-			topic_id: topicId
+			topic_id: topicId,
 		};
 
 		const headerHash = hash(header);

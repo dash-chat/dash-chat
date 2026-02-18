@@ -15,8 +15,8 @@ export * from './contacts/errors.js';
 export * from './devices/devices-store.js';
 export * from './devices/devices-client.js';
 
-export * from './direct-messages/direct-messages-chat-store.js';
-export * from './direct-messages/direct-messages-chat-client.js';
+export * from './direct-chats/direct-chat-store.js';
+export * from './direct-chats/direct-chat-client.js';
 
 export * from './group-chats/group-chat-store.js';
 export * from './group-chats/group-chat-client.js';
@@ -25,3 +25,4 @@ export * from './chats/chats-store.js';
 export * from './chats/chats-client.js';
 
 export * from './utils/to-promise.js';
+export * from './utils/memo.js';

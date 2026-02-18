@@ -19,7 +19,7 @@
 	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
-				<Link iconOnly href="/settings">
+				<Link iconOnly href="/settings" data-testid="home-settings-link">
 					<wa-avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
@@ -31,12 +31,12 @@
 		{/snippet}
 
 		{#snippet right()}
-			<Link iconOnly href="/contacts">
+			<Link iconOnly href="/contacts" data-testid="home-contacts-link">
 				<wa-icon src={wrapPathInSvg(mdiAccountGroup)}></wa-icon>
 			</Link>
 
 			{#if theme == 'ios'}
-				<Link iconOnly href="/new-message">
+				<Link iconOnly href="/new-message" data-testid="home-new-message-link">
 					<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
 				</Link>
 			{/if}
@@ -49,6 +49,7 @@
 		<Fab
 			class="fixed right-safe-4 bottom-safe-4 z-20"
 			onClick={() => goto('/new-message')}
+			data-testid="home-new-message-fab"
 		>
 			<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
 		</Fab>

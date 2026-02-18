@@ -1,6 +1,6 @@
 [toolchain]
 channel = "nightly-2025-10-31"
-components = [ "rust-analyzer", "rustfmt", "rustc-dev" ]
+components = [ "rust-analyzer", "rust-src", "rustfmt", "rustc-dev" ]
 targets = [ "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "aarch64-linux-android" ]
 profile = "minimal"
 

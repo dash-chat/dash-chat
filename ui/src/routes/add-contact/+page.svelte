@@ -20,7 +20,6 @@
 		Page,
 		Navbar,
 		NavbarBackLink,
-		Link,
 		ListInput,
 		List,
 		Card,
@@ -69,7 +68,7 @@
 			await contactsStore.client.addContact(contactCode);
 			showToast(m.contactAccepted());
 
-			goto(`/direct-messages/${contactCode.agent_id}`);
+			goto(`/direct-chats/${contactCode.agent_id}`);
 		} catch (e) {
 			console.error(e);
 			const error = e as AddContactError;
@@ -122,6 +121,7 @@
 	>
 		{#snippet left()}
 			<NavbarBackLink
+				data-testid="add-contact-back"
 				onClick={() => {
 					window.history.back();
 				}}
@@ -141,6 +141,7 @@
 							rounded
 							tonal={tab !== 'code'}
 							onClick={cancelScan}
+							data-testid="add-contact-code-tab"
 							>{m.code()}
 						</Button>
 
@@ -150,6 +151,7 @@
 							rounded
 							tonal={tab !== 'scan'}
 							onClick={scan}
+							data-testid="add-contact-scan-tab"
 							>{m.scan()}
 						</Button>
 					</div>
@@ -164,11 +166,13 @@
 								active={tab === 'code'}
 								onclick={cancelScan}
 								label={m.code()}
+								data-testid="add-contact-code-tab"
 							/>
 							<TabbarLink
 								active={tab !== 'code'}
 								onclick={scan}
 								label={m.scan()}
+								data-testid="add-contact-scan-tab"
 							/>
 						</ToolbarPane>
 					</Tabbar>
@@ -208,6 +212,7 @@
 										textMaterial: 'text-white',
 									}}
 									clearMaterial
+									data-testid="add-contact-copy-btn"
 									onClick={async () => {
 										await writeText(code);
 										showToast(m.copiedCodeToClipboard());
@@ -228,7 +233,7 @@
 								floatingLabel
 								label={m.enterYourContactsCode()}
 								type="text"
-								outline
+								data-testid="add-contact-code-input"
 								onInput={async (e: Event) => {
 									const target = e.target as HTMLInputElement;
 									if (target.value) {

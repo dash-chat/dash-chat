@@ -15,6 +15,7 @@
 		"mprocs": "^0.8.3",
 		"prettier": "^3.6.2",
 		"rust-just": "^1.46.0",
+		"svelte-language-server": "^0.17.25",
 		"typescript": "^5.9.3",
 		"typescript-eslint": "^8.45.0",
 		"vite": "^4.5.14"

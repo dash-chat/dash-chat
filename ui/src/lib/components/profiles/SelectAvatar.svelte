@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { resizeAndExport } from '$lib/utils/image';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiPlus } from '@mdi/js';
+	import { mdiAccount, mdiPlus } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Button, Fab } from 'konsta/svelte';
 
@@ -87,7 +87,7 @@
 			rounded
 			style="border-radius: 50%; height: {size}px; width: {size}px"
 		>
-			<wa-icon src={wrapPathInSvg(mdiPlus)} label={m.addAvatarImage()}
+			<wa-icon src={wrapPathInSvg(mdiAccount)} label={m.addAvatarImage()}
 			></wa-icon>
 		</Button>
 	</div>
