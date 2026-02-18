@@ -4,6 +4,7 @@ mod stream_processing;
 use std::collections::{BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use anyhow::Result;
 
@@ -78,6 +79,29 @@ pub type Orderer<S> =
 pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
 
 #[derive(Clone)]
+pub struct CancelAndWait<R> {
+    handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<R>>>>,
+    token: tokio_util::sync::CancellationToken,
+}
+
+impl<R> CancelAndWait<R> {
+    pub fn new(
+        handle: tokio::task::JoinHandle<R>,
+        token: tokio_util::sync::CancellationToken,
+    ) -> Self {
+        Self {
+            handle: Arc::new(tokio::sync::Mutex::new(Some(handle))),
+            token,
+        }
+    }
+
+    pub async fn cancel_and_wait(self) -> Option<Result<R, tokio::task::JoinError>> {
+        self.token.cancel();
+        Some(self.handle.lock().await.take()?.await)
+    }
+}
+
+#[derive(Clone)]
 pub struct Node {
     pub op_store: NodeOpStore,
 
@@ -91,11 +115,12 @@ pub struct Node {
     stream_tx: mpsc::Sender<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
 
     /// Abort handle for the stream processing background task
-    stream_task_abort: Option<tokio::task::AbortHandle>,
+    stream_task: Option<CancelAndWait<()>>,
 
-    filesystem: Filesystem,
     local_store: LocalStore,
     node_data: NodeData,
+
+    _filesystem: Filesystem,
 }
 
 impl Node {
@@ -120,15 +145,15 @@ impl Node {
             op_store: op_store.clone(),
             mailboxes,
             config,
-            filesystem,
+            _filesystem: filesystem,
             local_store: local_store.clone(),
             node_data,
             notification_tx,
             stream_tx,
-            stream_task_abort: None,
+            stream_task: None,
         };
 
-        node.stream_task_abort = Some(node.spawn_stream_process_loop(stream_rx));
+        node.stream_task = Some(node.spawn_stream_process_loop(stream_rx));
 
         node.initialize_topic(
             Topic::announcements(node.agent_id())
@@ -409,9 +434,9 @@ impl Node {
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.
-    pub fn shutdown(&self) {
-        if let Some(abort) = &self.stream_task_abort {
-            abort.abort();
+    pub async fn shutdown(mut self) {
+        if let Some(cancel_and_wait) = self.stream_task.take() {
+            cancel_and_wait.cancel_and_wait().await;
         }
     }
 

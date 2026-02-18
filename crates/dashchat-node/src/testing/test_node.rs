@@ -79,13 +79,9 @@ impl TestNode {
         local_store.agent_id().unwrap().with_name(name);
         drop(local_store);
 
-        let node = Node::new(
-            store_dir.path().into(),
-            config,
-            Some(notification_tx),
-        )
-        .await
-        .unwrap();
+        let node = Node::new(store_dir.path().into(), config, Some(notification_tx))
+            .await
+            .unwrap();
 
         Self {
             node,
@@ -98,11 +94,7 @@ impl TestNode {
     /// The store directory can be passed to `new_at_path` to restart the node.
     pub async fn shutdown(self) -> Arc<TempDir> {
         let dir = self._store_dir.clone();
-        self.node.shutdown();
-        drop(self);
-        // Give the runtime time to cancel the aborted task and drop its Node clone,
-        // releasing the redb database lock
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        self.node.shutdown().await;
         dir
     }
 

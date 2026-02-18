@@ -67,8 +67,11 @@ impl Node {
         mut stream_rx: mpsc::Receiver<
             Pin<Box<dyn Stream<Item = Operation<Extensions>> + Send + 'static>>,
         >,
-    ) -> tokio::task::AbortHandle {
+    ) -> CancelAndWait<()> {
         let node = self.clone();
+
+        let token = tokio_util::sync::CancellationToken::new();
+        let token2 = token.clone();
 
         let handle = task::spawn(
             async move {
@@ -91,6 +94,11 @@ impl Node {
                             }
                         }
 
+                        _ = token.cancelled() => {
+                            tracing::info!("stream processing loop cancelled");
+                            break;
+                        }
+
                         else => {
                             // Both stream_rx is closed and streams is exhausted
                             break;
@@ -101,7 +109,7 @@ impl Node {
             .instrument(tracing::info_span!("stream_process_loop")),
         );
 
-        handle.abort_handle()
+        CancelAndWait::new(handle, token2)
     }
 
     async fn process_stream_item(&self, operation: Operation<Extensions>) -> anyhow::Result<()> {
