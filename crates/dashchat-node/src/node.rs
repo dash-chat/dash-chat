@@ -79,7 +79,7 @@ pub type Orderer<S> =
 pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
 
 #[derive(Clone)]
-pub struct CancelAndWait<R> {
+pub(crate) struct CancelAndWait<R> {
     handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<R>>>>,
     token: tokio_util::sync::CancellationToken,
 }

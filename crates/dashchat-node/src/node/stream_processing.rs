@@ -74,7 +74,7 @@ impl Node {
         Ok(())
     }
 
-    pub fn spawn_stream_process_loop(
+    pub(super) fn spawn_stream_process_loop(
         &self,
         mut stream_rx: mpsc::Receiver<
             Pin<Box<dyn Stream<Item = Operation<Extensions>> + Send + 'static>>,

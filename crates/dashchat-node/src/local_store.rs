@@ -56,6 +56,7 @@ impl LocalStore {
         {
             let mut identity = txn.open_table(IDENTITY_TABLE)?;
             let _ = txn.open_table(ACTIVE_INBOXES_TABLE)?;
+            let _ = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
 
             let uninitialized =
                 identity.get(PRIVATE_KEY_KEY)?.is_none() && identity.get(AGENT_ID_KEY)?.is_none();
@@ -78,7 +79,7 @@ impl LocalStore {
     }
 
     pub fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
-        let txn = self.db.begin_write()?;
+        let txn = self.db.begin_read()?;
         let table = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
         let topics = table
             .iter()?
