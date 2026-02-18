@@ -33,7 +33,7 @@
 		isWideScreen.value && activePath.startsWith(chatHref(summary));
 </script>
 
-<List nested data-testid="all-chats-list">
+<List  nested data-testid="all-chats-list">
 	{#await $chatSummaries then summaries}
 		{#each summaries as summary}
 			<ListItem
@@ -41,7 +41,7 @@
 				link
 				linkProps={{ href: chatHref(summary) }}
 				chevron={false}
-				class={isActive(summary) ? 'bg-gray-200 dark:bg-gray-700' : ''}
+				class={isActive(summary) ? 'active' : ''}
 			>
 				{#snippet media()}
 					<wa-avatar image={summary.avatar} initials={summary.name.slice(0, 2)}>

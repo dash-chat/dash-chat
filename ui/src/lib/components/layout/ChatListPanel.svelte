@@ -8,6 +8,7 @@
 	import AllChats from '$lib/components/AllChats.svelte';
 	import { Link, Navbar } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
+	import { pushState } from '$app/navigation';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
@@ -29,7 +30,13 @@
 		{/snippet}
 
 		{#snippet right()}
-			<Link iconOnly href="/new-message" data-testid="home-new-message-link">
+			<Link
+				iconOnly
+				onClick={() => {
+					pushState('', { sidebarPanel: 'new-message' });
+				}}
+				data-testid="home-new-message-link"
+			>
 				<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
 			</Link>
 		{/snippet}

@@ -18,6 +18,7 @@
 		Preloader,
 		useTheme,
 	} from 'konsta/svelte';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
@@ -45,7 +46,7 @@
 		<List
 			strongIos
 			nested={theme === 'material'}
-			inset
+			inset={isWideScreen.value || theme === 'ios'}
 		>
 			<ListItem
 				link
@@ -53,13 +54,15 @@
 				linkProps={{ href: '/settings/profile' }}
 				data-testid="settings-profile-link"
 				title={myProfile?.name}
-				class={isActive('/settings/profile') ? 'bg-gray-200 dark:bg-gray-700' : ''}
+				class={isActive('/settings/profile') ? 'active' : ''}
 			>
 				{#snippet media()}
 					<wa-avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
-						style="--size: 64px"
+						style={isWideScreen.value || theme === 'ios'
+							? '--size: 64px'
+							: '--size: 64px; margin-left: 16px'}
 					>
 					</wa-avatar>
 				{/snippet}
@@ -69,6 +72,7 @@
 							e.stopPropagation();
 							e.preventDefault();
 						}}
+						style={isWideScreen.value || theme === 'ios' ? '' : 'margin: 16px'}
 					>
 						<Link
 							iconOnly
@@ -76,7 +80,7 @@
 							onClick={e => {
 								e.stopPropagation();
 								e.preventDefault();
-								goto('/add-contact');
+								goto('/settings/profile/add-contact');
 							}}
 						>
 							<wa-icon src={wrapPathInSvg(mdiQrcode)}></wa-icon>
@@ -86,21 +90,20 @@
 			</ListItem>
 		</List>
 
-		<List
-			strongIos
-			nested
-			inset
-		>
+		<List strongIos nested inset={isWideScreen.value || theme === 'ios'}>
 			<ListItem
 				link
 				linkProps={{ href: '/settings/account' }}
 				data-testid="settings-account-link"
 				title={m.account()}
 				chevron={false}
-				class={isActive('/settings/account') ? 'bg-gray-200 dark:bg-gray-700' : ''}
+				class={isActive('/settings/account') ? 'active' : ''}
 			>
 				{#snippet media()}
-					<wa-icon src={wrapPathInSvg(mdiAccountCircleOutline)} style="font-size: 28px"></wa-icon>
+					<wa-icon
+						src={wrapPathInSvg(mdiAccountCircleOutline)}
+						style="font-size: 28px"
+					></wa-icon>
 				{/snippet}
 			</ListItem>
 		</List>

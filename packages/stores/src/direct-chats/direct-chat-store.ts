@@ -124,17 +124,13 @@ export class DirectChatStore {
 	onNewMessage(
 		handler: (
 			operation: SimplifiedOperation<Payload>,
-			message: MessageContent | ChatReaction,
+			message: MessageContent,
 		) => void,
 	) {
 		return this.logsStore.logsClient.onNewOperation(async (topicId, op) => {
 			const chatId = await toPromise(this.chatId);
 			if (topicId !== chatId) return;
-			if (
-				op.body?.payload.type !== 'Message' &&
-				op.body?.payload.type !== 'Reaction'
-			)
-				return;
+			if (op.body?.payload.type !== 'Message') return;
 			handler(op, op.body.payload.payload);
 		});
 	}

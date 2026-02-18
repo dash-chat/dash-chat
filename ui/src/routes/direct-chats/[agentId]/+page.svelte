@@ -59,6 +59,7 @@
 	} from 'konsta/svelte';
 	import SafetyTipsSheet from '$lib/components/SafetyTipsSheet.svelte';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
+	import ProfileNamesSheet from '$lib/components/ProfileNamesSheet.svelte';
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
@@ -481,7 +482,7 @@
 							{#await $messagesSets then messagesSetsInDays}
 								<div
 									use:scrolltobottom
-									class="center-in-desktop column"
+									class="column"
 									style={`padding-bottom: calc(${messageInputHeight} + 8px)`}
 								>
 									{#if profile}
@@ -566,45 +567,10 @@
 										</div>
 									</div>
 
-									<Sheet
-										class="pb-safe z-50"
+									<ProfileNamesSheet
 										opened={profileNamesSheetOpen}
-										onBackdropClick={() => (profileNamesSheetOpen = false)}
-									>
-										<div class="flex flex-col items-center gap-6 px-6 pb-6">
-											<div class="sheet-handle"></div>
-											<wa-icon
-												src={wrapPathInSvg(mdiAccountQuestion)}
-												style="font-size: 3rem"
-											></wa-icon>
-
-											<p class="text-center text-base">
-												<strong>{m.profileNames()}</strong>
-												{m.profileNamesExplanation()}
-											</p>
-
-											<div class="flex flex-col gap-4 w-full">
-												<div class="flex items-start gap-3">
-													<div
-														class="w-1 self-stretch rounded bg-gray-400"
-													></div>
-													<span>{m.profileNamesNotVerifiedTip()}</span>
-												</div>
-												<div class="flex items-start gap-3">
-													<div
-														class="w-1 self-stretch rounded bg-gray-400"
-													></div>
-													<span>{m.profileNamesCautiousTip()}</span>
-												</div>
-												<div class="flex items-start gap-3">
-													<div
-														class="w-1 self-stretch rounded bg-gray-400"
-													></div>
-													<span>{m.profileNamesPersonalInfoTip()}</span>
-												</div>
-											</div>
-										</div>
-									</Sheet>
+										onClose={() => (profileNamesSheetOpen = false)}
+									/>
 
 									<div
 										class="column m-2 gap-1"
@@ -940,11 +906,11 @@
 
 	<!-- Overlay for bottom UI elements -->
 	{#await $contactRequest then contactRequest}
-		<div class="absolute inset-0 pointer-events-none z-40">
+		<div class="absolute inset-0 pointer-events-none">
 			{#if showScrollToBottom && !searchMode}
 				{#await $unreadCount then count}
 					<button
-						class="pointer-events-auto absolute right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
+						class="pointer-events-auto absolute right-4 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
 						style={`bottom: calc(${messageInputHeight || '60px'} + 1.4rem)`}
 						onclick={() => scrollToBottom()}
 						aria-label="Scroll to bottom"
@@ -965,14 +931,14 @@
 
 			{#if searchMode}
 				<div
-					class="pointer-events-auto absolute bottom-0 left-0 right-0 z-40 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
+					class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
 				>
 					<div
-						class="center-in-desktop mx-4 border-t border-gray-300 dark:border-gray-600"
+						class="mx-4 border-t border-gray-300 dark:border-gray-600"
 						style="margin: 0 auto"
 					></div>
 					<div
-						class="center-in-desktop row items-center gap-2 px-4 py-3"
+						class="row items-center gap-2 px-4 py-3"
 						style="margin: 0 auto"
 					>
 						<button onclick={() => dateInput?.click()}>
@@ -1015,14 +981,14 @@
 				</div>
 			{:else if contactRequest}
 				<div
-					class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe z-40 bg-md-light-surface dark:bg-md-dark-surface"
+					class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
 				>
 					<div
-						class="center-in-desktop mx-4 border-t border-gray-300 dark:border-gray-600"
+						class="mx-4 border-t border-gray-300 dark:border-gray-600"
 						style="margin: 0 auto"
 					></div>
 					<div
-						class="center-in-desktop flex flex-col items-center gap-3 px-6 py-3"
+						class="flex flex-col items-center gap-3 px-6 py-3"
 						style="margin: 0 auto"
 					>
 						<p class="text-center text-sm text-gray-600 dark:text-gray-400">

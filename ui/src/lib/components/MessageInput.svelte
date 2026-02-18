@@ -76,7 +76,7 @@
 	class:bg-md-light-surface={theme === 'material'}
 >
 	<div
-		class="row gap-2 center-in-desktop"
+		class="row gap-2"
 		style="align-items: flex-end; margin: 0 auto"
 	>
 		<div
@@ -124,7 +124,6 @@
 
 <style>
 	.message-input-bar {
-		z-index: 40;
 	}
 
 	.message-input-bar.ios {

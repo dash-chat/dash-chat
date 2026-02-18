@@ -18,8 +18,10 @@
 		NavbarBackLink,
 		Page,
 		Preloader,
+		useTheme,
 	} from 'konsta/svelte';
 
+	const theme = $derived(useTheme());
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
@@ -55,12 +57,14 @@
 					<Button tonal style="width: auto" rounded onClick={()=>goto('/settings/profile/edit-photo')} data-testid="profile-edit-photo">{m.editPhoto()}</Button>
 				</div>
 
-				<List nested strongIos insetIos>
+				<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
 					<ListItem
 						title={fullName(myProfile!)}
 						link
 						linkProps={{ href: '/settings/profile/edit-name' }}
 						data-testid="profile-edit-name"
+						      chevronMaterial={false}
+
 					>
 						{#snippet media()}
 							<wa-icon src={wrapPathInSvg(mdiAccount)}></wa-icon>
@@ -71,6 +75,7 @@
 						link
 						linkProps={{ href: '/settings/profile/edit-about' }}
 						data-testid="profile-edit-about"
+						      chevronMaterial={false}
 					>
 						{#snippet media()}
 							<wa-icon src={wrapPathInSvg(mdiInformationOutline)}></wa-icon>
@@ -82,12 +87,13 @@
 
 				<div class="divider"></div>
 
-				<List nested strongIos insetIos>
+				<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
 					<ListItem
 						title={m.myQrCode()}
 						link
-						linkProps={{ href: '/add-contact' }}
+						linkProps={{ href: '/settings/profile/add-contact' }}
 						data-testid="profile-qr-link"
+						      chevronMaterial={false}
 					>
 						{#snippet media()}
 							<wa-icon src={wrapPathInSvg(mdiQrcode)}></wa-icon>

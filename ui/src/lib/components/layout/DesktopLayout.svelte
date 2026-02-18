@@ -4,12 +4,17 @@
 	import ChatListPanel from './ChatListPanel.svelte';
 	import SettingsPanel from './SettingsPanel.svelte';
 	import NewMessagePanel from './NewMessagePanel.svelte';
+	import EmptyState from './EmptyState.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
 	const isSettings = $derived(page.url.pathname.startsWith('/settings'));
 	const isNewMessage = $derived(
-		page.url.pathname === '/new-message' || page.url.pathname === '/add-contact',
+		page.url.pathname.startsWith('/new-message') ||
+			page.state.sidebarPanel === 'new-message',
+	);
+	const isSidebarRoute = $derived(
+		page.url.pathname === '/' || page.url.pathname === '/settings',
 	);
 </script>
 
@@ -23,8 +28,12 @@
 			<ChatListPanel />
 		{/if}
 	</div>
-	<div class="desktop-content">
-		{@render children()}
+	<div class="desktop-content" class:desktop-content-settings={isSettings}>
+		{#if isSidebarRoute}
+			<EmptyState />
+		{:else}
+			{@render children()}
+		{/if}
 	</div>
 </div>
 
@@ -52,10 +61,8 @@
 		background-color: var(--k-color-md-light-surface);
 	}
 
-	/* Disable center-in-desktop constraint — the right panel already provides width */
-	.desktop-content :global(.center-in-desktop) {
-		width: 100%;
-		align-self: stretch;
+	.desktop-content-settings :global(.k-navbar:not(:has(.k-navbar-back-link))) {
+		padding-left: 12px;
 	}
 
 	@media (prefers-color-scheme: dark) {

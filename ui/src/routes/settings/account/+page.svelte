@@ -11,9 +11,11 @@
 		Navbar,
 		NavbarBackLink,
 		Page,
+		useTheme,
 	} from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
 
+	const theme = $derived(useTheme());
 	let showDeleteDialog = $state(false);
 	let loading = $state(false);
 
@@ -45,7 +47,7 @@
 	<div class="column" style="flex: 1">
 		<div class="column center-in-desktop">
 			<BlockTitle>{m.account()}</BlockTitle>
-			<List strongIos insetIos>
+			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
 			<ListItem
 				title={m.deleteAccount()}
 				link

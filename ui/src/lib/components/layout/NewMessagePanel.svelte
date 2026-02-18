@@ -20,6 +20,8 @@
 		Link,
 		Button,
 	} from 'konsta/svelte';
+	import { page } from '$app/state';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
@@ -32,7 +34,16 @@
 <div class="new-message-panel">
 	<Navbar title={m.newMessage()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
-			<NavbarBackLink onClick={() => goto('/')} data-testid="new-message-back" />
+			<NavbarBackLink
+				onClick={() => {
+					if (page.state.sidebarPanel === 'new-message') {
+						history.back();
+					} else {
+						goto('/');
+					}
+				}}
+				data-testid="new-message-back"
+			/>
 		{/snippet}
 	</Navbar>
 
@@ -52,7 +63,7 @@
 			/>
 		</div>
 
-		<List strongIos insetIos class="mb-0 mt-4">
+		<List strongIos inset={isWideScreen.value || theme === 'ios'} class="mb-0 mt-4">
 			<ListItem
 				link
 				linkProps={{ href: '/new-group' }}
@@ -66,7 +77,7 @@
 			</ListItem>
 			<ListItem
 				link
-				linkProps={{ href: '/add-contact' }}
+				linkProps={{ href: '/new-message/add-contact' }}
 				title={m.addContact()}
 				chevron={false}
 			>
@@ -86,7 +97,7 @@
 				<Preloader />
 			</div>
 		{:then contacts}
-			<List strongIos insetIos data-testid="new-message-contact-list">
+			<List strongIos inset={isWideScreen.value || theme === 'ios'} data-testid="new-message-contact-list">
 				{#if contacts.length === 0}
 					<ListItem title={m.noContactsYet()} />
 				{:else}
