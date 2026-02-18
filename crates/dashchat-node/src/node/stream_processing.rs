@@ -10,7 +10,7 @@ use tokio::task;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::Instrument;
 
-use crate::{payload::InboxPayload, topic::TopicKind};
+use crate::{payload::InboxPayload, topic::AutoRegisteredTopic};
 
 use super::*;
 
@@ -21,19 +21,27 @@ pub struct Notification {
 }
 
 impl Node {
-    /// Internal function to start the necessary tasks for processing group chat
-    /// network activity.
+    /// Register a topic as subscribed in the database, and initialize it.
+    /// When the node restarts, the topic will be reinitialized.
     ///
-    /// This must be called:
-    /// - when creating a new group chat
-    /// - when initializing the node, for each existing group chat
-    pub(crate) async fn register_topic<K: TopicKind>(&self, topic: Topic<K>) -> anyhow::Result<()> {
+    /// Note that some topics are excluded from automatic registration, such as inbox topics.
+    /// They have to be registered separately with extra context.
+    pub(crate) async fn register_topic<K: AutoRegisteredTopic>(
+        &self,
+        topic: Topic<K>,
+    ) -> anyhow::Result<()> {
         self.local_store.register_topic_as_subscribed(topic)?;
         self.initialize_topic(*topic).await?;
 
         Ok(())
     }
 
+    /// Internal function to start the necessary tasks for processing network activity
+    /// for a given topic.
+    ///
+    /// This must be called:
+    /// - when creating a new group chat
+    /// - when initializing the node, for each existing group chat
     pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
         let mailbox_rx = self.mailboxes.subscribe(topic.into()).await?;
         let stream = ReceiverStream::new(mailbox_rx)

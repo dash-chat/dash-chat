@@ -1,4 +1,5 @@
 #![feature(bool_to_result)]
+#![feature(min_specialization)]
 
 mod chat;
 mod contact;

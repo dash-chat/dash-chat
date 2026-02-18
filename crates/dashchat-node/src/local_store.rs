@@ -5,7 +5,7 @@ use redb::*;
 
 use crate::{
     contact::InboxTopic,
-    topic::{TopicId, TopicKind},
+    topic::{AutoRegisteredTopic, TopicId},
     *,
 };
 
@@ -87,17 +87,10 @@ impl LocalStore {
         Ok(topics)
     }
 
-    pub fn register_topic_as_subscribed<K: TopicKind>(
+    pub fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        if std::any::TypeId::of::<K>() == std::any::TypeId::of::<topic::kind::Inbox>() {
-            // skip inbox topic, this needs to be registered separately to account for the expiry time
-            unimplemented!(
-                "Inbox topics need to be registered with LocalStore::add_active_inbox_topic"
-            );
-        }
-
         let txn = self.db.begin_write()?;
         {
             let mut table = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
@@ -107,7 +100,7 @@ impl LocalStore {
         Ok(())
     }
 
-    pub fn register_topic_as_unsubscribed<K: TopicKind>(
+    pub fn register_topic_as_unsubscribed<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
