@@ -70,12 +70,12 @@ pub mod kind {
 
     macro_rules! topic_kind {
         ($name:ident) => {
-            topic_kind_manual!($name);
+            topic_kind_no_auto_register!($name);
             impl AutoRegisteredTopic for $name {}
         };
     }
 
-    macro_rules! topic_kind_manual {
+    macro_rules! topic_kind_no_auto_register {
         ($name:ident) => {
             #[derive(
                 Clone,
@@ -112,7 +112,7 @@ pub mod kind {
     topic_kind!(Untyped);
 
     // Inbox topics cannot be automatically registered, they need to be registered separately to account for the expiry time
-    topic_kind_manual!(Inbox);
+    topic_kind_no_auto_register!(Inbox);
 }
 
 #[derive(
