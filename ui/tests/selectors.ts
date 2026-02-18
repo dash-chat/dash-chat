@@ -35,6 +35,7 @@ export const S = {
 		acceptConfirm: tid('direct-chat-accept-confirm'),
 		rejectConfirm: tid('direct-chat-reject-confirm'),
 		messages: tid('direct-chat-messages'),
+		unreadDivider: tid('direct-chat-unread-divider'),
 	},
 	messageInput: {
 		textarea: tid('message-input-textarea'),

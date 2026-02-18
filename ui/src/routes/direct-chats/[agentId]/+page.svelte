@@ -136,6 +136,11 @@
 	let messageInputHeight: string = $state('');
 	let showScrollToBottom = $state(false);
 
+	// Unread divider state — captured once on load, persists until navigation
+	let capturedUnreadHash: Hash | null = null;
+	let capturedUnreadCount = 0;
+	let unreadDividerCaptured = false;
+
 	// Search state
 	let searchMode = $state(page.url.searchParams.has('search'));
 	let searchQuery = $state('');
@@ -182,6 +187,9 @@
 		try {
 			await store.sendMessage(message);
 			messageText = '';
+			// Hide the unread messages divider after sending
+			capturedUnreadHash = null;
+			capturedUnreadCount = 0;
 			// Wait for the message to get rendered in the UI
 			setTimeout(() => {
 				scrollToBottom();
@@ -409,6 +417,36 @@
 	}
 
 	const theme = $derived(useTheme());
+
+	function getUnreadDividerInfo(
+		messagesSetsInDays: Awaited<typeof $messagesSets>,
+		readHashes: Set<Hash> | undefined,
+		deviceId: DeviceId | undefined,
+	): { hash: Hash | null; count: number } {
+		if (unreadDividerCaptured) {
+			return { hash: capturedUnreadHash, count: capturedUnreadCount };
+		}
+		if (!messagesSetsInDays || !readHashes || !deviceId) {
+			return { hash: null, count: 0 };
+		}
+		unreadDividerCaptured = true;
+
+		let count = 0;
+		let firstHash: Hash | null = null;
+		for (const day of messagesSetsInDays) {
+			for (const messageSet of day.eventsSets) {
+				for (const [hash, message] of messageSet) {
+					if (message.author !== deviceId && !readHashes.has(hash)) {
+						if (!firstHash) firstHash = hash;
+						count++;
+					}
+				}
+			}
+		}
+		capturedUnreadHash = firstHash;
+		capturedUnreadCount = count;
+		return { hash: firstHash, count };
+	}
 </script>
 
 <Page class="messages-page">
@@ -475,6 +513,7 @@
 				<div class="column">
 					{#await $readMessageHashes then readHashes}
 						{#await $messagesSets then messagesSetsInDays}
+							{@const unreadDivider = getUnreadDividerInfo(messagesSetsInDays, readHashes, myDeviceId)}
 							<div
 								use:scrolltobottom
 								class="center-in-desktop column"
@@ -628,6 +667,14 @@
 										{#each messageSetInDay.eventsSets as messageSet}
 											<div class="column" style="gap: 1px">
 												{#each messageSet as [hash, message], i}
+													{#if unreadDivider.hash === hash}
+														<div
+															class="unread-divider"
+															data-testid="direct-chat-unread-divider"
+														>
+															{m.unreadMessages({ count: unreadDivider.count })}
+														</div>
+													{/if}
 													{#if myDeviceId == message.author}
 														<div
 															class="self-end max-w-[85%]"

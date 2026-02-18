@@ -137,5 +137,8 @@
 	"comingSoon": "Coming soon",
 	"searchMessages": "Search messages...",
 	"noResults": "No results",
-	"searchResultsCount": "{{current}} of {{total}}"
+	"searchResultsCount": "{{current}} of {{total}}",
+
+	"unreadMessages_one": "{{count}} unread message",
+	"unreadMessages_other": "{{count}} unread messages"
 }
