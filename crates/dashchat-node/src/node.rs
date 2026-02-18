@@ -155,25 +155,7 @@ impl Node {
 
         node.stream_task = Some(node.spawn_stream_process_loop(stream_rx));
 
-        node.initialize_topic(
-            Topic::announcements(node.agent_id())
-                .with_name(&format!("announce({})", node.agent_id().renamed())),
-            true,
-        )
-        .await?;
-
-        for topic in local_store.get_active_inbox_topics()?.iter() {
-            node.initialize_topic(
-                topic
-                    .topic
-                    .clone()
-                    .with_name(&format!("inbox({})", node.device_id().renamed())),
-                false,
-            )
-            .await?;
-        }
-
-        // TODO: locally store list of groups and initialize them when the node starts
+        node.initialize_stored_topics().await?;
 
         Ok(node)
     }
@@ -246,7 +228,7 @@ impl Node {
                 topic: Topic::inbox().with_name(&format!("inbox({})", self.device_id().renamed())),
                 expires_at: Utc::now() + self.config.contact_code_expiry,
             };
-            self.initialize_topic(inbox_topic.topic, false)
+            self.initialize_topic(*inbox_topic.topic)
                 .await
                 .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
             self.local_store
@@ -300,7 +282,7 @@ impl Node {
         let topic = self.direct_chat_topic(other);
 
         let my_actor = self.agent_id();
-        self.initialize_topic(topic, true).await?;
+        self.register_topic(topic).await?;
 
         tracing::info!(
             my_actor = ?my_actor.renamed(),
@@ -320,7 +302,7 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().renamed())))]
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
-        self.initialize_topic(chat_id, true).await
+        self.register_topic(chat_id).await
     }
 
     pub async fn set_profile(&self, profile: Profile) -> Result<(), crate::Error> {
@@ -454,7 +436,7 @@ impl Node {
         // Must subscribe to the new member's device group in order to receive their
         // group control messages.
         // TODO: is this idempotent? If not we must make sure to do this only once.
-        self.initialize_topic(Topic::announcements(contact.agent_id), false)
+        self.register_topic(Topic::announcements(contact.agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
@@ -504,7 +486,7 @@ impl Node {
 
         let agent = contact.agent_id;
         let direct_topic = self.direct_chat_topic(agent);
-        self.initialize_topic(direct_topic, true)
+        self.register_topic(direct_topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
@@ -517,7 +499,7 @@ impl Node {
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
         if let Some(inbox_topic) = contact.inbox_topic.clone() {
-            self.initialize_topic(inbox_topic.topic, true)
+            self.initialize_topic(*inbox_topic.topic)
                 .await
                 .map_err(|e| Error::InitializeTopic(e.to_string()))?;
             let code = self
@@ -593,6 +575,30 @@ impl Node {
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
+        self.initialize_topic(
+            *Topic::announcements(self.agent_id())
+                .with_name(&format!("announce({})", self.agent_id().renamed())),
+        )
+        .await?;
+
+        for topic in self.local_store.get_active_inbox_topics()?.iter() {
+            self.initialize_topic(
+                *topic
+                    .topic
+                    .clone()
+                    .with_name(&format!("inbox({})", self.device_id().renamed())),
+            )
+            .await?;
+        }
+
+        for topic in self.local_store.subscribed_topics()?.iter() {
+            self.initialize_topic(*topic).await?;
+        }
 
         Ok(())
     }

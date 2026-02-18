@@ -27,37 +27,41 @@ impl Node {
     /// This must be called:
     /// - when creating a new group chat
     /// - when initializing the node, for each existing group chat
-    pub(crate) async fn initialize_topic<K: TopicKind>(
-        &self,
-        topic: Topic<K>,
-        _is_author: bool,
-    ) -> anyhow::Result<()> {
-        {
-            let mailbox_rx = self.mailboxes.subscribe(topic.into()).await?;
-            let stream = ReceiverStream::new(mailbox_rx).filter_map(async |op| {
-                    let hash = op.hash();
-                    if hash == op.header.hash() {
-                        let header_bytes = op.header.to_bytes();
-                        Some((op.header, op.body, header_bytes))
-                    } else {
-                        tracing::error!(hash = ?hash.renamed(), "hash mismatch from mailbox server");
+    pub(crate) async fn register_topic<K: TopicKind>(&self, topic: Topic<K>) -> anyhow::Result<()> {
+        self.local_store.register_topic_as_subscribed(topic)?;
+        self.initialize_topic(*topic).await?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
+        let mailbox_rx = self.mailboxes.subscribe(topic.into()).await?;
+        let stream = ReceiverStream::new(mailbox_rx)
+            .filter_map(async |op| {
+                let hash = op.hash();
+                if hash == op.header.hash() {
+                    let header_bytes = op.header.to_bytes();
+                    Some((op.header, op.body, header_bytes))
+                } else {
+                    tracing::error!(hash = ?hash.renamed(), "hash mismatch from mailbox server");
+                    None
+                }
+            })
+            .ingest(self.op_store.clone(), 128)
+            .filter_map(|result| async {
+                match result {
+                    Ok(operation) => Some(operation),
+                    Err(err) => {
+                        tracing::warn!(?err, "ingest operation error");
                         None
                     }
-                }).ingest(self.op_store.clone(), 128) .filter_map(|result| async {
-                    match result {
-                        Ok(operation) => Some(operation),
-                        Err(err) => {
-                            tracing::warn!(?err, "ingest operation error");
-                            None
-                        }
-                    }
-                });
+                }
+            });
 
-            self.stream_tx
-                .send(Pin::from(Box::new(stream)))
-                .await
-                .map_err(|_| anyhow::anyhow!("stream channel closed"))?;
-        }
+        self.stream_tx
+            .send(Pin::from(Box::new(stream)))
+            .await
+            .map_err(|_| anyhow::anyhow!("stream channel closed"))?;
 
         Ok(())
     }
