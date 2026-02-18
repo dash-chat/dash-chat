@@ -6,12 +6,13 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/AllChats.svelte';
-	import { Link, Navbar } from 'konsta/svelte';
+	import { Link, Navbar, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pushState } from '$app/navigation';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const theme = $derived(useTheme());
 </script>
 
 <div class="chat-list-panel">
@@ -42,6 +43,8 @@
 		{/snippet}
 	</Navbar>
 
+	<div class={theme==='ios' ? "mt-4": ''}></div>
+	
 	<AllChats></AllChats>
 </div>
 

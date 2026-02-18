@@ -127,6 +127,13 @@
 	.divider {
 		height: 1px;
 		background-color: var(--k-hairline-color, rgba(128, 128, 128, 0.3));
-		margin: 0 16px 8px 16px;
+	}
+
+	:global(.k-ios) .divider {
+		margin: 0 16px 24px 16px;
+	}
+
+	:global(.k-material) .divider {
+		margin: 0 16px 12px 16px;
 	}
 </style>

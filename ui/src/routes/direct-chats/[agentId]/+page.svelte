@@ -663,10 +663,14 @@
 																				class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
 																				colors={reaction.own
 																					? {
+																							fillBgIos:
+																								'bg-gray-300 dark:bg-gray-500',
 																							fillBgMaterial:
 																								'bg-gray-300 dark:bg-gray-500',
 																						}
 																					: {
+																							fillBgIos:
+																								'bg-gray-200 dark:bg-gray-700',
 																							fillBgMaterial:
 																								'bg-gray-200 dark:bg-gray-700',
 																						}}
@@ -748,10 +752,14 @@
 																				class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
 																				colors={reaction.own
 																					? {
+																							fillBgIos:
+																								'bg-gray-300 dark:bg-gray-500',
 																							fillBgMaterial:
 																								'bg-gray-300 dark:bg-gray-500',
 																						}
 																					: {
+																							fillBgIos:
+																								'bg-gray-200 dark:bg-gray-700',
 																							fillBgMaterial:
 																								'bg-gray-200 dark:bg-gray-700',
 																						}}
@@ -849,6 +857,9 @@
 						opened={showFullPicker}
 						onBackdropClick={hideReactionUI}
 					>
+						<div class="flex flex-col items-center">
+							<div class="sheet-handle"></div>
+						</div>
 						{#if emojiTargetedMessage && myDeviceId}
 							{#if Object.values(emojiTargetedMessage.reactions).length > 0}
 								<Block>

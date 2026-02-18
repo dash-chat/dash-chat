@@ -39,7 +39,9 @@
 		{/snippet}
 	</Navbar>
 
-	<AllChats></AllChats>
+	<div class={theme==='ios' ? "mt-4": ''}></div>
+
+	<AllChats ></AllChats>
 
 	{#if theme == 'material'}
 		<Fab

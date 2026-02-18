@@ -16,6 +16,7 @@
 		inYesterday,
 		beforeYesterday,
 	} from '$lib/utils/time';
+	import { useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 
@@ -31,9 +32,14 @@
 
 	const isActive = (summary: { type: string; chatId: string }) =>
 		isWideScreen.value && activePath.startsWith(chatHref(summary));
+	const theme = $derived(useTheme());
 </script>
 
-<List nested data-testid="all-chats-list">
+<List
+	nested
+	inset={isWideScreen.value && theme === 'ios'}
+	data-testid="all-chats-list"
+>
 	{#await $chatSummaries then summaries}
 		{#each summaries as summary}
 			<ListItem
