@@ -235,14 +235,24 @@ li.plain span {
 	gap: 12px;
 	margin: 8px 0;
 	font-size: 0.75rem;
-	color: #64748b;
+	color: var(--color-gray-500);
 }
 .unread-divider::before,
 .unread-divider::after {
 	content: '';
 	flex: 1;
 	height: 1px;
-	background-color: #94a3b8;
+	background-color: var(--color-gray-400);
+}
+
+@media (prefers-color-scheme: dark) {
+	.unread-divider {
+		color: var(--color-gray-400);
+	}
+	.unread-divider::before,
+	.unread-divider::after {
+		background-color: var(--color-gray-600);
+	}
 }
 
 emoji-picker {

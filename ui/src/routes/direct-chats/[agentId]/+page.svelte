@@ -136,9 +136,9 @@
 	let messageInputHeight: string = $state('');
 	let showScrollToBottom = $state(false);
 
-	// Unread divider state — captured once on load, persists until navigation
+	// Unread divider state — hash captured once on load so position stays fixed,
+	// count always recomputed so it updates as new messages arrive
 	let capturedUnreadHash: Hash | null = null;
-	let capturedUnreadCount = 0;
 	let unreadDividerCaptured = false;
 
 	// Search state
@@ -187,9 +187,9 @@
 		try {
 			await store.sendMessage(message);
 			messageText = '';
-			// Hide the unread messages divider after sending
+			// Hide the unread messages divider after sending, and allow it to reappear for future messages
 			capturedUnreadHash = null;
-			capturedUnreadCount = 0;
+			unreadDividerCaptured = false;
 			// Wait for the message to get rendered in the UI
 			setTimeout(() => {
 				scrollToBottom();
@@ -423,29 +423,44 @@
 		readHashes: Set<Hash> | undefined,
 		deviceId: DeviceId | undefined,
 	): { hash: Hash | null; count: number } {
-		if (unreadDividerCaptured) {
-			return { hash: capturedUnreadHash, count: capturedUnreadCount };
-		}
 		if (!messagesSetsInDays || !readHashes || !deviceId) {
 			return { hash: null, count: 0 };
 		}
-		unreadDividerCaptured = true;
 
+		// Capture the divider position once so it doesn't jump as messages are read
+		if (!unreadDividerCaptured) {
+			for (const day of messagesSetsInDays) {
+				for (const messageSet of day.eventsSets) {
+					for (const [hash, message] of messageSet) {
+						if (message.author !== deviceId && !readHashes.has(hash)) {
+							capturedUnreadHash = hash;
+							break;
+						}
+					}
+					if (capturedUnreadHash) break;
+				}
+				if (capturedUnreadHash) break;
+			}
+			unreadDividerCaptured = true;
+		}
+
+		if (!capturedUnreadHash) return { hash: null, count: 0 };
+
+		// Count all peer messages from the divider position onwards.
+		// This is stable when messages are marked as read (count doesn't drop)
+		// and increases when new messages arrive.
 		let count = 0;
-		let firstHash: Hash | null = null;
+		let found = false;
 		for (const day of messagesSetsInDays) {
 			for (const messageSet of day.eventsSets) {
 				for (const [hash, message] of messageSet) {
-					if (message.author !== deviceId && !readHashes.has(hash)) {
-						if (!firstHash) firstHash = hash;
-						count++;
-					}
+					if (hash === capturedUnreadHash) found = true;
+					if (found && message.author !== deviceId) count++;
 				}
 			}
 		}
-		capturedUnreadHash = firstHash;
-		capturedUnreadCount = count;
-		return { hash: firstHash, count };
+
+		return { hash: capturedUnreadHash, count };
 	}
 </script>
 
