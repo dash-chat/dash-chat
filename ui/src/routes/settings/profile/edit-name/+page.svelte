@@ -5,10 +5,7 @@
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiClose, mdiContentSave } from '@mdi/js';
-	import { editProfile, m } from '$lib/paraglide/messages.js';
+	import { m } from '$lib/paraglide/messages.js';
 	import {
 		Button,
 		Card,
@@ -24,14 +21,18 @@
 	import { showToast } from '$lib/utils/toasts';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	let avatar = $state<string | undefined>(undefined);
 	let name = $state<string>('');
+	let surname = $state<string | undefined>(undefined);
+	let avatar = $state<string | undefined>(undefined);
+	let about = $state<string | undefined>(undefined);
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	myProfile.subscribe(m => {
 		m.then(myProfile => {
 			if (!name) name = myProfile?.name || '';
+			if (!surname) surname = myProfile?.surname;
 			if (!avatar) avatar = myProfile?.avatar;
+			if (!about) about = myProfile?.about;
 		});
 	});
 
@@ -39,7 +40,9 @@
 		try {
 			await contactsStore.client.setProfile({
 				name: name!,
+				surname,
 				avatar,
+				about,
 			});
 			goto('/settings/profile');
 		} catch (e) {
@@ -70,17 +73,17 @@
 			title={m.editName()}
 			titleClass="opacity1"
 			transparent={true}
-			rightClass={myProfile?.name === name
+			rightClass={myProfile?.name === name && myProfile?.surname === surname
 				? 'pointer-events-none opacity-50'
 				: ''}
 		>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => goto('/settings/profile')} />
+				<NavbarBackLink onClick={() => goto('/settings/profile')} data-testid="edit-name-back" />
 			{/snippet}
 
 			{#snippet right()}
 				{#if theme === 'ios'}
-					<Link onClick={save}>
+					<Link onClick={save} data-testid="edit-name-save-link">
 						{m.save()}
 					</Link>
 				{/if}
@@ -96,10 +99,17 @@
 			>
 				<ListInput
 					type="text"
-					outline={theme === 'material'}
 					bind:value={name}
+					data-testid="edit-name-name"
 					label={theme === 'material' ? m.name() : ''}
 					placeholder={theme === 'ios' ? m.name() : ''}
+				/>
+				<ListInput
+					type="text"
+					bind:value={surname}
+					data-testid="edit-name-surname"
+					label={theme === 'material' ? m.surname() : ''}
+					placeholder={theme === 'ios' ? m.surname() : ''}
 				/>
 			</List>
 		</div>
@@ -110,7 +120,8 @@
 				class="end-4 bottom-4"
 				style="position: fixed; width: auto"
 				rounded
-				disabled={myProfile?.name === name}
+				data-testid="edit-name-save-btn"
+				disabled={myProfile?.name === name && myProfile.surname === surname}
 			>
 				{m.save()}
 			</Button>

@@ -51,12 +51,12 @@
 	<Page>
 		<Navbar title={m.newGroup()} titleClass="opacity1" transparent={true}>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => window.history.back()} />
+				<NavbarBackLink onClick={() => window.history.back()}  data-testid="new-group-back" />
 			{/snippet}
 
 			{#snippet right()}
 				{#if theme === 'ios'}
-					<Link onClick={() => (currentPage = 'group-info')}>
+					<Link onClick={() => (currentPage = 'group-info')} data-testid="new-group-next-link">
 						{selectedContacts.length === 0 ? m.omit() : m.next()}
 					</Link>
 				{/if}
@@ -109,6 +109,7 @@
 		{#if theme === 'material'}
 			<Button
 				onClick={() => (currentPage = 'group-info')}
+				data-testid="new-group-next-btn"
 				class="end-4 bottom-4"
 				style="position: fixed; width: auto"
 				rounded
@@ -121,12 +122,12 @@
 	<Page>
 		<Navbar title={m.groupName()} titleClass="opacity1" transparent={true}>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => (currentPage = 'members')} />
+				<NavbarBackLink onClick={() => (currentPage = 'members')} data-testid="new-group-info-back" />
 			{/snippet}
 
 			{#snippet right()}
 				{#if theme === 'ios'}
-					<Link onClick={createGroupChat}>
+					<Link onClick={createGroupChat} data-testid="new-group-create-link">
 						{m.create()}
 					</Link>
 				{/if}
@@ -139,6 +140,7 @@
 					<ListInput
 						type="text"
 						bind:value={groupName}
+						data-testid="new-group-name-input"
 						outline
 						class="plain"
 						placeholder={m.name()}
@@ -154,6 +156,7 @@
 		{#if theme === 'material'}
 			<Button
 				onClick={createGroupChat}
+				data-testid="new-group-create-btn"
 				class="end-4 bottom-4"
 				style="position: fixed; width: auto"
 				rounded

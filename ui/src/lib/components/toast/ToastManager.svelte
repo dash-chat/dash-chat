@@ -28,6 +28,7 @@
 </script>
 
 <Toast
+	style="pointer-events: none"
 	position="center"
 	class={toastVariant === 'error' ? 'k-color-brand-red' : ''}
 	opened={toastOpen}

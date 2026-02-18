@@ -1,11 +1,11 @@
-import { ReactivePromise, reactive, relay } from 'signalium';
+import { reactive, relay } from 'signalium';
 
 import { DevicesStore } from '../devices/devices-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { AgentId, PublicKey, TopicId } from '../p2panda/types';
+import { AgentId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
-import { AnnouncementPayload, ContactCode, Payload } from '../types';
+import { AnnouncementPayload, ChatId, ContactCode, Payload } from '../types';
 import { IContactsClient, Profile } from './contacts-client';
 
 export interface ContactRequest {
@@ -17,11 +17,13 @@ export interface ContactRequest {
 export class ContactsStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
-		protected devicesStore: DevicesStore,
+		public devicesStore: DevicesStore,
 		public client: IContactsClient,
 	) {}
 
 	myAgentId = reactive(async () => await this.client.myAgentId());
+
+	myDeviceId = reactive(async () => await this.client.myDeviceId());
 
 	myProfile = reactive(async () => {
 		const myAgentId = await this.myAgentId();
@@ -32,7 +34,6 @@ export class ContactsStore {
 	private activeInboxTopics = reactive(() =>
 		relay<TopicId[]>(state => {
 			state.setPromise(this.client.activeInboxTopics());
-
 			const interval = setInterval(() => {
 				this.client.activeInboxTopics().then(topics => {
 					if (topics.find(topic => !(state.value || []).includes(topic))) {
@@ -48,7 +49,7 @@ export class ContactsStore {
 			};
 		}),
 	);
-	
+
 	contactsAgentIds = reactive(async () => {
 		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
 
@@ -65,6 +66,22 @@ export class ContactsStore {
 		return Array.from(contacts);
 	});
 
+	contactAddedTimestamp = reactive(async (agentId: AgentId) => {
+		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
+
+		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				if (
+					op.body?.payload?.type === 'AddContact' &&
+					op.body.payload.payload.agent_id === agentId
+				) {
+					return op.header.timestamp * 1000;
+				}
+			}
+		}
+
+		return undefined;
+	});
 
 	rejectedContactRequests = reactive(async () => {
 		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
@@ -88,14 +105,6 @@ export class ContactsStore {
 		}
 
 		return rejected;
-	}, {
-			// Disable memoization for this function
-			// 
-			// TODO: remove this, and debug why a contact request that has been
-			// just deleted still appears in allChatsSummaries used in the AllChats.svelte b
-			paramKey() {
-					return `${Date.now()}`
-			},
 		});
 
 	contactRequests = reactive(async () => {
@@ -137,15 +146,7 @@ export class ContactsStore {
 		}
 
 		return contactRequests;
-	}, {
-			// Disable memoization for this function
-			// 
-			// TODO: remove this, and debug why a contact request that has been
-			// just deleted still appears in allChatsSummaries used in the AllChats.svelte b
-			paramKey() {
-					return `${Date.now()}`
-			},
-		});
+	});
 
 	profiles = reactive(async (agentId: AgentId) => {
 		const topicId = personalTopicFor(agentId);
