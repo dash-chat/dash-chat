@@ -43,7 +43,10 @@ impl Node {
     /// - when creating a new group chat
     /// - when initializing the node, for each existing group chat
     pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
-        let mailbox_rx = self.mailboxes.subscribe(topic.into()).await?;
+        let Some(mailbox_rx) = self.mailboxes.subscribe(topic.into()).await? else {
+            tracing::warn!("topic already iniitalized, skipping");
+            return Ok(());
+        };
         let stream = ReceiverStream::new(mailbox_rx)
             .filter_map(async |op| {
                 let hash = op.hash();
