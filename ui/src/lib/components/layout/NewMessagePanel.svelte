@@ -48,8 +48,10 @@
 	</Navbar>
 
 	<div class="column" style="flex: 1">
-
-		<div class={theme === 'ios' ? 'mt-6 px-4' : 'pl-5 pr-10'} data-testid="new-message-search">
+		<div
+			class={theme === 'ios' ? 'mt-6 px-4' : 'pl-5 pr-10'}
+			data-testid="new-message-search"
+		>
 			<Searchbar
 				clearButton
 				placeholder={m.filter()}
@@ -63,7 +65,11 @@
 			/>
 		</div>
 
-		<List strongIos inset={isWideScreen.value || theme === 'ios'} class="mb-0 mt-4">
+		<List
+			strongIos
+			inset={isWideScreen.value || theme === 'ios'}
+			class="mb-0 mt-4"
+		>
 			<ListItem
 				link
 				linkProps={{ href: '/new-group' }}
@@ -87,7 +93,7 @@
 			</ListItem>
 		</List>
 
-		<BlockTitle >{m.contacts()}</BlockTitle>
+		<BlockTitle>{m.contacts()}</BlockTitle>
 
 		{#await $contacts}
 			<div
@@ -97,7 +103,11 @@
 				<Preloader />
 			</div>
 		{:then contacts}
-			<List strongIos inset={isWideScreen.value || theme === 'ios'} data-testid="new-message-contact-list">
+			<List
+				strongIos
+				inset={isWideScreen.value || theme === 'ios'}
+				data-testid="new-message-contact-list"
+			>
 				{#if contacts.length === 0}
 					<ListItem title={m.noContactsYet()} />
 				{:else}

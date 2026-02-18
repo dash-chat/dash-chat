@@ -33,7 +33,7 @@
 		isWideScreen.value && activePath.startsWith(chatHref(summary));
 </script>
 
-<List  nested data-testid="all-chats-list">
+<List nested data-testid="all-chats-list">
 	{#await $chatSummaries then summaries}
 		{#each summaries as summary}
 			<ListItem

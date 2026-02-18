@@ -236,12 +236,12 @@ emoji-picker {
 }
 
 .k-list-item.active > a {
-	background-color: #e5e7eb;
+	background-color: var(--color-gray-200);
 }
 
 @media (prefers-color-scheme: dark) {
 	.k-list-item.active > a {
-		background-color: #374151;
+		background-color: var(--color-gray-700);
 	}
 }
 

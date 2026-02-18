@@ -14,7 +14,9 @@
 			page.state.sidebarPanel === 'new-message',
 	);
 	const isSidebarRoute = $derived(
-		page.url.pathname === '/' || page.url.pathname === '/settings',
+		page.url.pathname === '/' ||
+			page.url.pathname === '/settings' ||
+			page.url.pathname === '/new-message',
 	);
 </script>
 

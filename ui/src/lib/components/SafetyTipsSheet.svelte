@@ -96,10 +96,15 @@
 	}
 
 	function handleClose() {
-		currentTip = 0;
-		(carousel as any)?.goToSlide(0, 'auto');
 		onClose();
 	}
+
+	$effect(() => {
+		if (opened) {
+			currentTip = 0;
+			(carousel as any)?.goToSlide(0, 'auto');
+		}
+	});
 </script>
 
 {#snippet content()}
@@ -156,7 +161,7 @@
 {/snippet}
 
 {#if isWideScreen.value}
-	<Dialog {opened} onBackdropClick={handleClose}>
+	<Dialog {opened} onBackdropClick={handleClose} class="!w-[32rem] !max-w-[90%]">
 		<div class="flex flex-col items-center gap-4">
 			{@render content()}
 		</div>

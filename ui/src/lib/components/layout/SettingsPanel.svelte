@@ -68,7 +68,7 @@
 				{/snippet}
 				{#snippet after()}
 					<div
-						on:pointerdown|preventDefault|stopPropagation={(e: any) => {
+						on:pointerdown|preventDefault|stopPropagation={(e: Event) => {
 							e.stopPropagation();
 							e.preventDefault();
 						}}

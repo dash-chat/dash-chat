@@ -123,9 +123,6 @@
 </div>
 
 <style>
-	.message-input-bar {
-	}
-
 	.message-input-bar.ios {
 		padding-bottom: max(8px, env(safe-area-inset-bottom));
 	}

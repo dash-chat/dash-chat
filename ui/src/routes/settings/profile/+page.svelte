@@ -8,7 +8,7 @@
 	import { mdiAccount, mdiInformationOutline, mdiQrcode } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
-	import { fullName } from 'dash-chat-stores'
+	import { fullName } from 'dash-chat-stores';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
 		Button,
@@ -31,7 +31,10 @@
 	<Navbar title={m.profile()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#if !isWideScreen.value}
-				<NavbarBackLink onClick={() => goto('/settings')} data-testid="profile-back" />
+				<NavbarBackLink
+					onClick={() => goto('/settings')}
+					data-testid="profile-back"
+				/>
 			{/if}
 		{/snippet}
 	</Navbar>
@@ -54,7 +57,13 @@
 					>
 					</wa-avatar>
 
-					<Button tonal style="width: auto" rounded onClick={()=>goto('/settings/profile/edit-photo')} data-testid="profile-edit-photo">{m.editPhoto()}</Button>
+					<Button
+						tonal
+						style="width: auto"
+						rounded
+						onClick={() => goto('/settings/profile/edit-photo')}
+						data-testid="profile-edit-photo">{m.editPhoto()}</Button
+					>
 				</div>
 
 				<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
@@ -63,8 +72,7 @@
 						link
 						linkProps={{ href: '/settings/profile/edit-name' }}
 						data-testid="profile-edit-name"
-						      chevronMaterial={false}
-
+						chevronMaterial={false}
 					>
 						{#snippet media()}
 							<wa-icon src={wrapPathInSvg(mdiAccount)}></wa-icon>
@@ -75,7 +83,7 @@
 						link
 						linkProps={{ href: '/settings/profile/edit-about' }}
 						data-testid="profile-edit-about"
-						      chevronMaterial={false}
+						chevronMaterial={false}
 					>
 						{#snippet media()}
 							<wa-icon src={wrapPathInSvg(mdiInformationOutline)}></wa-icon>
@@ -93,7 +101,7 @@
 						link
 						linkProps={{ href: '/settings/profile/add-contact' }}
 						data-testid="profile-qr-link"
-						      chevronMaterial={false}
+						chevronMaterial={false}
 					>
 						{#snippet media()}
 							<wa-icon src={wrapPathInSvg(mdiQrcode)}></wa-icon>
