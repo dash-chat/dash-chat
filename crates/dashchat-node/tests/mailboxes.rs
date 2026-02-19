@@ -147,10 +147,16 @@ async fn test_mailbox_restart_relay() {
     bobbi.add_contact(qr).await.unwrap();
 
     alice
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(&url))
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            "mailbox-1".into(),
+            &url,
+        ))
         .await;
     bobbi
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(&url))
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            "mailbox-1".into(),
+            &url,
+        ))
         .await;
 
     alice.behavior().accept_next_contact().await.unwrap();
@@ -185,10 +191,16 @@ async fn test_mailbox_restart_relay() {
 
     // Add fresh mailbox clients
     alice
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(&url))
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            "mailbox-1".into(),
+            &url,
+        ))
         .await;
     bobbi
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(&url))
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            "mailbox-1".into(),
+            &url,
+        ))
         .await;
 
     // === Phase 3: Post-restart — send more messages and verify all are received ===
