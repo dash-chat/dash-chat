@@ -140,3 +140,4 @@ jobs:
         with:
           files: "src-tauri/gen/android/app/build/outputs/bundle/**/*.aab"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+          release-tag: ${{ github.ref_name }}
