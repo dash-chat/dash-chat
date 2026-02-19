@@ -3,7 +3,7 @@
 	"version": "0.10.0",
 	"identifier": "studio.darksoil.dashchat",
 	"build": {
-		"beforeBuildCommand": "pnpm -F ui build",
+		"beforeBuildCommand": "pnpm -F dash-chat-stores build && pnpm -F ui build",
 		"devUrl": "http://localhost:1420",
 		"frontendDist": "../ui/build"
 	},
