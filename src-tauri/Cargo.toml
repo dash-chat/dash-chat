@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.5.0"
+version = "0.10.0"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
