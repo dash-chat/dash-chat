@@ -1,6 +1,6 @@
 const mediaQuery =
 	typeof window !== 'undefined'
-		? window.matchMedia('(min-width: 768px)')
+		? window.matchMedia('(min-width: 768px) and (min-height: 500px)')
 		: undefined;
 
 let wide = $state(mediaQuery?.matches ?? false);

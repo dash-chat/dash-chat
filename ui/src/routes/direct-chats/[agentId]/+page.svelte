@@ -537,7 +537,7 @@
 								<div
 									use:scrolltobottom
 									class="column"
-									style={`padding-bottom: calc(${messageInputHeight} + 8px)`}
+									style={`padding-bottom: calc(${messageInputHeight} + 12px)`}
 								>
 									{#if profile}
 										<div class="column" style="align-items: center">

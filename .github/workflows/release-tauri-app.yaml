@@ -108,7 +108,7 @@ jobs:
         uses: cachix/install-nix-action@v27
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-          nix_path: nixpkgs=channel:nixos-24.05
+          nix_path: nixpkgs=channel:nixos-25.11
 
       - uses: cachix/cachix-action@v15
         with:
@@ -133,7 +133,7 @@ jobs:
 
       - name: Install and Build 🔧
         run: |
-          nix develop --accept-flake-config .#ci --command bash -c "pnpm install && RUSTFLAGS=\"-C target-cpu=native\" pnpm tauri android build -t aarch64 -t i686 -t x86_64"
+          nix develop --accept-flake-config .#androidDev --command bash -c "pnpm install && pnpm tauri android build"
  
       - uses: AButler/upload-release-assets@v3.0
         with:
