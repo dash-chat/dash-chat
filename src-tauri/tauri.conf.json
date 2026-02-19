@@ -41,9 +41,9 @@
 	},
 	"plugins": {
 		"updater": {
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE3RUU3OTAxOUYzN0M2RkEKUldUNnhqZWZBWG51RitCWXhZdFY4RHVhQzY0bVgxU0tnc0JBSm9pSmliZ2pBUGRvOWFlbWV6b24K",
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVBQTcyOUUxMjI1MTU1NEQKUldSTlZWRWk0U21uNnN4cUszMDdpZ3JaOWZBanllV1FsM01qU3VsZmxzNjRuTTBDUTNQelBqazIK",
 			"endpoints": [
-				"https://github.com/darksoil-studio/dash-chat/releases/latest/download/latest.json"
+				"https://github.com/dash-chat/dash-chat/releases/latest/download/latest.json"
 			]
 		},
 		"deep-link": {
