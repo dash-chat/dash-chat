@@ -19,6 +19,8 @@
 
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
+	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	import { setLocale } from '$lib/paraglide/runtime';
 	window.__setLocale = setLocale;
@@ -58,7 +60,13 @@
 <KonstaProvider {theme}>
 	<App safeAreas {theme} class={`k-${theme}`}>
 		<SplashscreenPrompt>
-			{@render children()}
+			{#if isWideScreen.value}
+				<DesktopLayout>
+					{@render children()}
+				</DesktopLayout>
+			{:else}
+				{@render children()}
+			{/if}
 		</SplashscreenPrompt>
 		<ToastManager />
 	</App>

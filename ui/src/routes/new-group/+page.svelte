@@ -28,6 +28,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { mdiArrowNext } from '$lib/utils/icon';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -67,7 +68,7 @@
 			<div class="center-in-desktop">
 				<BlockTitle>{m.contacts()}</BlockTitle>
 
-				<List strongIos insetIos>
+				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
 					{#await $contacts}
 						<div
 							class="column"
@@ -136,7 +137,7 @@
 
 		<div class="column" style="flex: 1">
 			<div class="center-in-desktop m-1">
-				<List insetIos strongIos nested={theme!=='ios'}>
+				<List inset={isWideScreen.value || theme === 'ios'} strongIos nested={theme!=='ios'}>
 					<ListInput
 						type="text"
 						bind:value={groupName}

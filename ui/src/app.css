@@ -234,3 +234,17 @@ emoji-picker {
 	--background: none;
 	--border-color: none;
 }
+
+.k-list-item.active > a {
+	background-color: var(--color-gray-200);
+}
+
+@media (prefers-color-scheme: dark) {
+	.k-list-item.active > a {
+		background-color: var(--color-gray-700);
+	}
+}
+
+.k-list.rounded-2xl a.cursor-pointer {
+	border-radius: 16px;
+}

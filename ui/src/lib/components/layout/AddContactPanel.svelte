@@ -14,6 +14,7 @@
 	import { mdiContentCopy, mdiQrcode } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
 
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { scanQrcode } from '$lib/utils/qrcode';
 	import {
@@ -33,6 +34,8 @@
 	import { goto } from '$app/navigation';
 	import { showToast } from '$lib/utils/toasts';
 	import { cancel } from '@tauri-apps/plugin-barcode-scanner';
+
+	let { showBack = true }: { showBack?: boolean } = $props();
 
 	const theme = $derived(useTheme());
 
@@ -120,12 +123,14 @@
 			: ''}
 	>
 		{#snippet left()}
-			<NavbarBackLink
-				data-testid="add-contact-back"
-				onClick={() => {
-					window.history.back();
-				}}
-			/>
+			{#if showBack}
+				<NavbarBackLink
+					data-testid="add-contact-back"
+					onClick={() => {
+						window.history.back();
+					}}
+				/>
+			{/if}
 		{/snippet}
 
 		{#snippet title()}
@@ -228,7 +233,7 @@
 					<span class="mx-6 mb-2">{m.shareCodeWarning()}</span>
 
 					<div class="column gap-1">
-						<List nested strongIos insetIos>
+						<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
 							<ListInput
 								floatingLabel
 								label={m.enterYourContactsCode()}

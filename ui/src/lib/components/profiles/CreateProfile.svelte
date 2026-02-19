@@ -14,6 +14,7 @@
 		Navbar,
 		Card,
 	} from 'konsta/svelte';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCamera } from '@mdi/js';
 
@@ -81,7 +82,7 @@
 				</Card>
 			</div>
 
-			<List insetIos strongIos>
+			<List inset={isWideScreen.value || theme === 'ios'} strongIos>
 				<ListInput
 					type="text"
 					onInput={e => (name = e.target.value)}
