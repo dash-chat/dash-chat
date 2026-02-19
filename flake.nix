@@ -41,8 +41,8 @@
 
       systems =
         [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
-        
-      perSystem = { inputs',   system, ... }:
+
+      perSystem = { inputs', system, ... }:
         let
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
@@ -55,12 +55,15 @@
             packages = [ pkgs.mprocs pkgs.pnpm rust ];
           };
 
-          devShells.androidDev = pkgs.mkShell {
+          devShells.androidDev = let
+            rust = pkgs.rust-bin.fromRustupToolchainFile
+              ./rust-toolchain.android.toml;
+          in pkgs.mkShell {
             inputsFrom = [
               devShells.default
               inputs'.tauri-plugin-holochain.devShells.holochainTauriAndroidDev
             ];
-            packages = [rust];
+            packages = [ rust ];
           };
         };
     };

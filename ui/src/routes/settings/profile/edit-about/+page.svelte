@@ -19,6 +19,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let name = $state<string>('');
@@ -93,7 +94,7 @@
 		<div class="column">
 			<List
 				class="center-in-desktop"
-				insetIos
+				inset={isWideScreen.value || theme === 'ios'}
 				strongIos
 				nested={theme === 'material'}
 			>

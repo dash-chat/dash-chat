@@ -4,18 +4,18 @@
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
+	import { mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/AllChats.svelte';
-	import { Fab, Link, Navbar, Page, useTheme } from 'konsta/svelte';
+	import { Link, Navbar, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { goto } from '$app/navigation';
-	const theme = $derived(useTheme());
+	import { pushState } from '$app/navigation';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const theme = $derived(useTheme());
 </script>
 
-<Page>
+<div class="chat-list-panel">
 	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
@@ -31,25 +31,27 @@
 		{/snippet}
 
 		{#snippet right()}
-			{#if theme == 'ios'}
-				<Link iconOnly href="/new-message" data-testid="home-new-message-link">
-					<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
-				</Link>
-			{/if}
+			<Link
+				iconOnly
+				onClick={() => {
+					pushState('', { sidebarPanel: 'new-message' });
+				}}
+				data-testid="home-new-message-link"
+			>
+				<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
+			</Link>
 		{/snippet}
 	</Navbar>
 
 	<div class={theme==='ios' ? "mt-4": ''}></div>
+	
+	<AllChats></AllChats>
+</div>
 
-	<AllChats ></AllChats>
-
-	{#if theme == 'material'}
-		<Fab
-			class="absolute right-safe-4 bottom-safe-4 z-20"
-			onClick={() => goto('/new-message')}
-			data-testid="home-new-message-fab"
-		>
-			<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
-		</Fab>
-	{/if}
-</Page>
+<style>
+	.chat-list-panel {
+		display: flex;
+		flex-direction: column;
+		position: relative;
+	}
+</style>
