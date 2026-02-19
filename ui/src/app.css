@@ -229,6 +229,32 @@ li.plain span {
 	}
 }
 
+.unread-divider {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin: 8px 0;
+	font-size: 0.75rem;
+	color: var(--color-gray-500);
+}
+.unread-divider::before,
+.unread-divider::after {
+	content: '';
+	flex: 1;
+	height: 1px;
+	background-color: var(--color-gray-400);
+}
+
+@media (prefers-color-scheme: dark) {
+	.unread-divider {
+		color: var(--color-gray-400);
+	}
+	.unread-divider::before,
+	.unread-divider::after {
+		background-color: var(--color-gray-600);
+	}
+}
+
 emoji-picker {
 	width: 100%;
 	--background: none;

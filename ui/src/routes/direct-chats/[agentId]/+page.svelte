@@ -138,6 +138,11 @@
 	let messageInputHeight: string = $state('');
 	let showScrollToBottom = $state(false);
 
+	// Unread divider state — hash captured once on load so position stays fixed,
+	// count always recomputed so it updates as new messages arrive
+	let capturedUnreadHash: Hash | null = null;
+	let unreadDividerCaptured = false;
+
 	// Search state
 	let searchMode = $state(page.url.searchParams.has('search'));
 	let searchQuery = $state('');
@@ -184,6 +189,9 @@
 		try {
 			await store.sendMessage(message);
 			messageText = '';
+			// Hide the unread messages divider after sending, and allow it to reappear for future messages
+			capturedUnreadHash = null;
+			unreadDividerCaptured = false;
 			// Wait for the message to get rendered in the UI
 			setTimeout(() => {
 				scrollToBottom();
@@ -411,6 +419,51 @@
 	}
 
 	const theme = $derived(useTheme());
+
+	function getUnreadDividerInfo(
+		messagesSetsInDays: Awaited<typeof $messagesSets>,
+		readHashes: Set<Hash> | undefined,
+		deviceId: DeviceId | undefined,
+	): { hash: Hash | null; count: number } {
+		if (!messagesSetsInDays || !readHashes || !deviceId) {
+			return { hash: null, count: 0 };
+		}
+
+		// Capture the divider position once so it doesn't jump as messages are read
+		if (!unreadDividerCaptured) {
+			for (const day of messagesSetsInDays) {
+				for (const messageSet of day.eventsSets) {
+					for (const [hash, message] of messageSet) {
+						if (message.author !== deviceId && !readHashes.has(hash)) {
+							capturedUnreadHash = hash;
+							break;
+						}
+					}
+					if (capturedUnreadHash) break;
+				}
+				if (capturedUnreadHash) break;
+			}
+			unreadDividerCaptured = true;
+		}
+
+		if (!capturedUnreadHash) return { hash: null, count: 0 };
+
+		// Count all peer messages from the divider position onwards.
+		// This is stable when messages are marked as read (count doesn't drop)
+		// and increases when new messages arrive.
+		let count = 0;
+		let found = false;
+		for (const day of messagesSetsInDays) {
+			for (const messageSet of day.eventsSets) {
+				for (const [hash, message] of messageSet) {
+					if (hash === capturedUnreadHash) found = true;
+					if (found && message.author !== deviceId) count++;
+				}
+			}
+		}
+
+		return { hash: capturedUnreadHash, count };
+	}
 </script>
 
 <div class="absolute inset-0">
@@ -480,6 +533,7 @@
 					<div class="column">
 						{#await $readMessageHashes then readHashes}
 							{#await $messagesSets then messagesSetsInDays}
+								{@const unreadDivider = getUnreadDividerInfo(messagesSetsInDays, readHashes, myDeviceId)}
 								<div
 									use:scrolltobottom
 									class="column"
@@ -605,6 +659,14 @@
 											{#each messageSetInDay.eventsSets as messageSet}
 												<div class="column" style="gap: 1px">
 													{#each messageSet as [hash, message], i}
+													{#if unreadDivider.hash === hash}
+														<div
+															class="unread-divider"
+															data-testid="direct-chat-unread-divider"
+														>
+															{m.unreadMessages({ count: unreadDivider.count })}
+														</div>
+													{/if}
 														{#if myDeviceId == message.author}
 															<div
 																class="self-end max-w-[85%]"
