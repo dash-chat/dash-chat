@@ -1,5 +1,5 @@
 {
-  description = "Template for Holochain app development";
+  description = "Dash Chat development flake";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
