@@ -49,6 +49,7 @@
 
           rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
         in rec {
+
           devShells.default = pkgs.mkShell {
             inputsFrom =
               [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
@@ -65,6 +66,7 @@
             ];
             packages = [ rust ];
           };
+
         };
     };
 }
