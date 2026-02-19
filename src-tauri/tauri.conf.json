@@ -41,7 +41,7 @@
 	},
 	"plugins": {
 		"updater": {
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVBQTcyOUUxMjI1MTU1NEQKUldSTlZWRWk0U21uNnN4cUszMDdpZ3JaOWZBanllV1FsM01qU3VsZmxzNjRuTTBDUTNQelBqazIK",
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzQkE0OEM1OUMxNDE0RTAKUldUZ0ZCU2N4VWk2OCsvL3lhQkhjS21GTEZPdzJtaVN6MXY4T3creEhuU3dxUWN1UFJvM21JdFkK",
 			"endpoints": [
 				"https://github.com/dash-chat/dash-chat/releases/latest/download/latest.json"
 			]

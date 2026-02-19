@@ -1,21 +1,21 @@
 {
-  description = "Template for Holochain app development";
+  description = "Dash Chat development flake";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
-    tauri-plugin-holochain.url =
-      "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
+
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-parts.url = "github:hercules-ci/flake-parts";
-
     crane.url = "github:ipetkov/crane";
-
     garnix-lib = {
       url = "github:garnix-io/garnix-lib";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     nixos-generators.url = "github:nix-community/nixos-generators";
+
+    tauri-plugin-holochain.url =
+      "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
   };
 
   nixConfig = {
@@ -62,6 +62,7 @@
             libayatana-appindicator
           ];
         in rec {
+
           devShells.default = pkgs.mkShell {
             inputsFrom =
               [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
@@ -83,6 +84,7 @@
             ];
             packages = [ rust ];
           };
+
         };
     };
 }
