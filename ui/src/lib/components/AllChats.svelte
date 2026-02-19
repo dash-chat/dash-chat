@@ -16,24 +16,38 @@
 		inYesterday,
 		beforeYesterday,
 	} from '$lib/utils/time';
+	import { useTheme } from 'konsta/svelte';
+	import { page } from '$app/state';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+
+	const chatHref = (summary: { type: string; chatId: string }) =>
+		summary.type === 'GroupChat'
+			? `/group-chat/${summary.chatId}`
+			: `/direct-chats/${summary.chatId}`;
+
+	let activePath = $derived(page.url.pathname);
+
+	const isActive = (summary: { type: string; chatId: string }) =>
+		isWideScreen.value && activePath.startsWith(chatHref(summary));
+	const theme = $derived(useTheme());
 </script>
 
-<List nested data-testid="all-chats-list">
+<List
+	nested
+	inset={isWideScreen.value && theme === 'ios'}
+	data-testid="all-chats-list"
+>
 	{#await $chatSummaries then summaries}
 		{#each summaries as summary}
 			<ListItem
 				title={summary.name}
 				link
-				linkProps={{
-					href:
-						summary.type === 'GroupChat'
-							? `/group-chat/${summary.chatId}`
-							: `/direct-chats/${summary.chatId}`,
-				}}
+				linkProps={{ href: chatHref(summary) }}
 				chevron={false}
+				class={isActive(summary) ? 'active' : ''}
 			>
 				{#snippet media()}
 					<wa-avatar image={summary.avatar} initials={summary.name.slice(0, 2)}>
@@ -86,6 +100,3 @@
 		{/each}
 	{/await}
 </List>
-
-<style>
-</style>

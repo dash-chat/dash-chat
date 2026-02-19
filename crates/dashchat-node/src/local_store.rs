@@ -3,11 +3,17 @@ use std::{collections::BTreeSet, path::Path, sync::Arc};
 use chrono::{DateTime, Utc};
 use redb::*;
 
-use crate::{contact::InboxTopic, *};
+use crate::{
+    contact::InboxTopic,
+    topic::{AutoRegisteredTopic, TopicId},
+    *,
+};
 
 mod impls;
 
 const IDENTITY_TABLE: TableDefinition<&'static str, [u8; 32]> = TableDefinition::new("identity");
+const SUBSCRIBED_TOPICS_TABLE: TableDefinition<[u8; 32], ()> =
+    TableDefinition::new("subscribed_topics");
 const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> =
     TableDefinition::new("active_inboxes");
 
@@ -50,6 +56,8 @@ impl LocalStore {
         {
             let mut identity = txn.open_table(IDENTITY_TABLE)?;
             let _ = txn.open_table(ACTIVE_INBOXES_TABLE)?;
+            let _ = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
+
             let uninitialized =
                 identity.get(PRIVATE_KEY_KEY)?.is_none() && identity.get(AGENT_ID_KEY)?.is_none();
             if uninitialized {
@@ -68,6 +76,42 @@ impl LocalStore {
             private_key: self.private_key()?,
             agent_id: self.agent_id()?,
         })
+    }
+
+    pub fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
+        let topics = table
+            .iter()?
+            .map(|entry| Ok(entry.map(|(topic, _)| TopicId::from(topic.value()))?))
+            .collect::<anyhow::Result<BTreeSet<TopicId>>>()?;
+        Ok(topics)
+    }
+
+    pub fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
+        &self,
+        topic: Topic<K>,
+    ) -> anyhow::Result<()> {
+        let txn = self.db.begin_write()?;
+        {
+            let mut table = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
+            table.insert(**topic, ())?;
+        }
+        txn.commit()?;
+        Ok(())
+    }
+
+    pub fn register_topic_as_unsubscribed<K: AutoRegisteredTopic>(
+        &self,
+        topic: Topic<K>,
+    ) -> anyhow::Result<()> {
+        let txn = self.db.begin_write()?;
+        {
+            let mut table = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
+            table.remove(**topic)?;
+        }
+        txn.commit()?;
+        Ok(())
     }
 
     pub fn private_key(&self) -> anyhow::Result<PrivateKey> {

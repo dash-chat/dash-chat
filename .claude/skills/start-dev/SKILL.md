@@ -9,90 +9,45 @@ allowed-tools: mcp__tauri__driver_session, mcp__tauri__webview_screenshot, mcp__
 
 Start all the processes needed to run Dash Chat locally. Do NOT use `pnpm start` or `mprocs` — they require an interactive TTY.
 
-Use the Bash tool with `run_in_background: true` for each process so you get task IDs you can later stop with `TaskStop`.
+## Step 1: Run the start-dev script
 
-## Step 1: Allocate free ports and temp directory
-
-Run each of these as a **separate** Bash call (do NOT chain them with `&&`), and save the output values for use in later steps:
+Run the script as a **single background Bash task** (using `run_in_background: true`) and save the task ID:
 
 ```bash
-node -e "const s=require('net').createServer();s.listen(0,()=>{console.log(s.address().port);s.close()})"
-```
-Save the output as `UI_PORT`.
-
-```bash
-node -e "const s=require('net').createServer();s.listen(0,()=>{console.log(s.address().port);s.close()})"
-```
-Save the output as `MAILBOX_PORT`.
-
-```bash
-mktemp -d
-```
-Save the output as `DEV_DBS_PATH`.
-
-Then substitute these values literally into the commands in later steps (do NOT use shell variable references like `$UI_PORT` — use the actual port numbers and paths).
-
-## Step 2: Build stores
-
-```bash
-pnpm -F ./packages/stores build
+# run_in_background: true
+bash scripts/start-dev.sh
 ```
 
-## Step 3: Start all processes in the background
+The script handles everything: allocating free ports, building stores, starting all processes (stores watcher, mailbox server, UI dev server, Tauri agents 1 and 2), and waiting for MCP bridges to initialize.
 
-Launch each of these as a **separate background Bash task** (using `run_in_background: true`). Save the task IDs so you can stop them later.
+## Step 2: Wait for READY
 
-1. **Stores watcher** (rebuilds on changes):
-   ```bash
-   pnpm -F ./packages/stores dev
-   ```
+Poll the task output using `TaskOutput` (with `block: false`, `timeout: 10000`) until you see `READY` in the output. If you see `ERROR:`, the startup failed — check the output for details.
 
-2. **Mailbox server**:
-   ```bash
-   cargo run -p mailbox-server -- --db-path <DEV_DBS_PATH>/mailbox-server/mailbox.db --addr 0.0.0.0:<MAILBOX_PORT>
-   ```
+## Step 3: Extract MCP bridge ports
 
-3. **UI dev server** (Vite):
-   ```bash
-   UI_PORT=<UI_PORT> pnpm -F ./ui start
-   ```
+Parse the task output for these KEY=VALUE lines:
 
-4. **Tauri agent 1** (Rust backend — connects to the UI dev server):
-   ```bash
-   AGENT=1 MAILBOX_PORT=<MAILBOX_PORT> DEV_DBS_PATH=<DEV_DBS_PATH> pnpm tauri dev --config '{"build":{"devUrl":"http://localhost:<UI_PORT>"}}'
-   ```
+- `AGENT1_MCP_PORT=<port>` — MCP bridge port for Agent 1
+- `AGENT2_MCP_PORT=<port>` — MCP bridge port for Agent 2
 
-5. **Tauri agent 2** (optional — only start if testing p2p communication):
-   ```bash
-   AGENT=2 MAILBOX_PORT=<MAILBOX_PORT> DEV_DBS_PATH=<DEV_DBS_PATH> pnpm tauri dev --config '{"build":{"devUrl":"http://localhost:<UI_PORT>"}}'
-   ```
+Also available (for reference):
+- `UI_PORT=<port>` — Vite dev server port
+- `MAILBOX_PORT=<port>` — Mailbox server port
+- `DEV_DBS_PATH=<path>` — Temp directory for databases and logs
 
-Replace all `<UI_PORT>`, `<MAILBOX_PORT>`, and `<DEV_DBS_PATH>` placeholders with the actual values from Step 1.
+## Step 4: Connect via Tauri MCP bridge
 
-## Step 4: Wait for the app to launch and discover MCP bridge ports
-
-Use the `TaskOutput` tool (with `block: false`, `timeout: 10000`) to poll each agent's task output repeatedly until you see `MCP Bridge plugin initialized` in the output. Do NOT use the Bash tool for polling — use only `TaskOutput` and `Grep`/`Read` on the output files.
-
-**IMPORTANT: The MCP bridge ports are dynamically assigned.** They default to 9223/9224 but will increment if those ports are already in use (e.g., 9225, 9226, etc.). You **must** extract the actual port from the log line:
-
-```
-[MCP][PLUGIN][INFO] MCP Bridge plugin initialized for 'Dash Chat' (studio.darksoil.dashchat) on 0.0.0.0:PORT
-```
-
-Use the `Grep` tool on the task output files to find the actual ports:
-- Pattern: `MCP Bridge plugin initialized`
-- Path: the output file for each agent task
-
-## Step 5: Connect via Tauri MCP bridge
-
-Use `driver_session` (start) with the **actual port** from Step 4 (not hardcoded 9223) to connect to the running Tauri instance, then use `webview_screenshot`, `webview_dom_snapshot`, and other Tauri MCP tools to inspect and interact with the UI.
-
-When running **two agents**, each gets its own MCP bridge on a different port. Use the `appIdentifier` parameter (set to the port number) to target a specific agent:
+Use `driver_session` (start) with the **actual ports** from Step 3:
 
 ```
 driver_session(action: start, port: <agent1-port>)  # connects to Agent 1
 driver_session(action: start, port: <agent2-port>)  # connects to Agent 2
+```
 
+When running two agents, use the `appIdentifier` parameter (set to the port number) to target a specific agent:
+
+```
 webview_screenshot(appIdentifier: <agent1-port>)     # screenshot Agent 1
 webview_screenshot(appIdentifier: <agent2-port>)     # screenshot Agent 2
 ```
@@ -101,4 +56,4 @@ Both sessions can be active simultaneously. The most recently connected app beco
 
 ## Cleanup: Stop all dev processes
 
-When done testing, stop the driver session and use `TaskStop` on each of the background task IDs you saved in Step 3.
+When done testing, stop the driver session and use `TaskStop` on the single task ID from Step 1. The script's cleanup trap will terminate all child processes automatically.

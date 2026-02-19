@@ -76,7 +76,7 @@
 	class:bg-md-light-surface={theme === 'material'}
 >
 	<div
-		class="row gap-2 center-in-desktop"
+		class="row gap-2"
 		style="align-items: flex-end; margin: 0 auto"
 	>
 		<div
@@ -123,14 +123,6 @@
 </div>
 
 <style>
-	.message-input-bar {
-		position: fixed;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		z-index: 40;
-	}
-
 	.message-input-bar.ios {
 		padding-bottom: max(8px, env(safe-area-inset-bottom));
 	}

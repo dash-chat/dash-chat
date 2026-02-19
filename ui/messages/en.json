@@ -140,5 +140,6 @@
 	"searchResultsCount": "{{current}} of {{total}}",
 
 	"unreadMessages_one": "{{count}} unread message",
-	"unreadMessages_other": "{{count}} unread messages"
+	"unreadMessages_other": "{{count}} unread messages",
+	"selectAChat": "Select a chat to start messaging."
 }

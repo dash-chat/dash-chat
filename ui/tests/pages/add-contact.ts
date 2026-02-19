@@ -36,5 +36,5 @@ export function pasteCode(code: string) {
 
 /** Get the QR code value from the page */
 export function getQrCodeValue() {
-	return `document.querySelector('${selectors.qrCode}')?.getAttribute('value')`;
+	return `document.querySelector('${selectors.qrCode}')?.value`;
 }

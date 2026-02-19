@@ -27,6 +27,7 @@
 		Button,
 		useTheme,
 	} from 'konsta/svelte';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { page } from '$app/state';
 	let chatId = page.params.chatId!;
 
@@ -69,7 +70,7 @@
 					></SelectAvatar>
 				</div>
 
-				<List strongIos insetIos>
+				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
 					<ListInput
 						type="text"
 						outline={theme === 'material'}
