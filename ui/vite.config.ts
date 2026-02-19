@@ -30,6 +30,7 @@ export default defineConfig(async () => ({
 		strictPort: true,
 		host: true,
 		hmr: host ? { protocol: 'ws', host, port: uiPort + 1 } : undefined,
+		fs: { allow: ['tests', 'src', 'node_modules', '.svelte-kit', '..'] },
 		watch: {
 			// 3. tell Vite to ignore watching `src-tauri`
 			ignored: ['**/src-tauri/**'],

@@ -76,12 +76,17 @@ where
     pub async fn subscribe(
         &self,
         topic: Item::Topic,
-    ) -> Result<mpsc::Receiver<Item>, anyhow::Error> {
+    ) -> Result<Option<mpsc::Receiver<Item>>, anyhow::Error> {
         #[cfg(feature = "named-id")]
         tracing::info!(topic = ?topic.renamed(), "subscribing to topic");
+
+        let mut tt = self.topics.lock().await;
+        if tt.contains_key(&topic) {
+            return Ok(None);
+        }
         let (tx, rx) = mpsc::channel(100);
-        self.topics.lock().await.insert(topic, tx);
-        Ok(rx)
+        tt.insert(topic, tx);
+        Ok(Some(rx))
     }
 
     pub async fn unsubscribe(&self, topic: Item::Topic) -> Result<(), anyhow::Error> {

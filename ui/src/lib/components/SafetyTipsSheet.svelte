@@ -2,7 +2,8 @@
 	import '@awesome.me/webawesome/dist/components/carousel/carousel.js';
 	import '@awesome.me/webawesome/dist/components/carousel-item/carousel-item.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet, Button } from 'konsta/svelte';
+	import { Sheet, Dialog, Button } from 'konsta/svelte';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	interface Props {
 		opened: boolean;
@@ -95,69 +96,81 @@
 	}
 
 	function handleClose() {
-		currentTip = 0;
-		(carousel as any)?.goToSlide(0, 'auto');
 		onClose();
 	}
+
+	$effect(() => {
+		if (opened) {
+			currentTip = 0;
+			(carousel as any)?.goToSlide(0, 'auto');
+		}
+	});
 </script>
 
-<Sheet
-	class="pb-safe"
-	opened={opened}
-	onBackdropClick={handleClose}
->
-	<div class="flex flex-col items-center px-6 pb-4 gap-4">
-		<div class="sheet-handle"></div>
+{#snippet content()}
+	<h2 class="mt-2 text-2xl font-bold">{m.securityTips()}</h2>
+	<p class=" text-center text-sm text-gray-500">
+		{m.securityTipsSubtitle()}
+	</p>
 
-		<h2 class="mt-2 text-2xl font-bold">{m.securityTips()}</h2>
-		<p class=" text-center text-sm text-gray-500">
-			{m.securityTipsSubtitle()}
-		</p>
-
-		<!-- svelte-ignore element_invalid_self_closing_tag -->
-		<wa-carousel
-			bind:this={carousel}
-			pagination
-			class="w-full"
-			onwa-slide-change={onSlideChange}
-		>
-			{#each tips as tip}
-				<wa-carousel-item>
-					<div class="mx-2 flex flex-col items-center rounded-2xl bg-white p-4 dark:bg-black">
-						<div class="mb-4 w-full rounded-2xl bg-gray-50 p-6 dark:bg-gray-800">
-							<div class="flex min-h-24 items-center justify-center text-5xl">
-								{tip.emoji}
-							</div>
+	<!-- svelte-ignore element_invalid_self_closing_tag -->
+	<wa-carousel
+		bind:this={carousel}
+		pagination
+		class="w-full"
+		onwa-slide-change={onSlideChange}
+	>
+		{#each tips as tip}
+			<wa-carousel-item>
+				<div class="mx-2 flex flex-col items-center rounded-2xl bg-white p-4 dark:bg-black">
+					<div class="mb-4 w-full rounded-2xl bg-gray-50 p-6 dark:bg-gray-800">
+						<div class="flex min-h-24 items-center justify-center text-5xl">
+							{tip.emoji}
 						</div>
-						<h3 class="mb-2 text-center text-lg font-bold">
-							{tip.title()}
-						</h3>
-						<p class="text-center text-sm text-gray-500">
-							{tip.description()}
-						</p>
 					</div>
-				</wa-carousel-item>
-			{/each}
-		</wa-carousel>
+					<h3 class="mb-2 text-center text-lg font-bold">
+						{tip.title()}
+					</h3>
+					<p class="text-center text-sm text-gray-500">
+						{tip.description()}
+					</p>
+				</div>
+			</wa-carousel-item>
+		{/each}
+	</wa-carousel>
 
-		<div class="flex w-full items-center justify-between">
-			<Button
-				clear
-				rounded
-				onClick={previousTip}
-				disabled={currentTip === 0}
-				class="w-auto"
-			>
-				{m.securityTipsPrevious()}
-			</Button>
-			<Button
-				tonal
-				rounded
-				onClick={currentTip === tips.length - 1 ? handleClose : nextTip}
-				class="w-auto"
-			>
-				{currentTip === tips.length - 1 ? m.done() : m.securityTipsNext()}
-			</Button>
-		</div>
+	<div class="flex w-full items-center justify-between">
+		<Button
+			clear
+			rounded
+			onClick={previousTip}
+			disabled={currentTip === 0}
+			class="w-auto"
+		>
+			{m.securityTipsPrevious()}
+		</Button>
+		<Button
+			tonal
+			rounded
+			onClick={currentTip === tips.length - 1 ? handleClose : nextTip}
+			class="w-auto"
+		>
+			{currentTip === tips.length - 1 ? m.done() : m.securityTipsNext()}
+		</Button>
 	</div>
-</Sheet>
+{/snippet}
+
+{#if isWideScreen.value}
+	<Dialog {opened} onBackdropClick={handleClose} class="!w-[32rem] !max-w-[90%]">
+		<div class="flex flex-col items-center gap-4">
+			{@render content()}
+		</div>
+	</Dialog>
+{:else}
+	<Sheet class="pb-safe" {opened} onBackdropClick={handleClose}>
+		<div class="flex flex-col items-center px-6 pb-4 gap-4">
+			<div class="sheet-handle"></div>
+			{@render content()}
+		</div>
+	</Sheet>
+{/if}

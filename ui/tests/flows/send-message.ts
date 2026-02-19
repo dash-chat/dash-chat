@@ -1,4 +1,5 @@
 import { S } from '../selectors';
+import { typeInto, click, nextTick, waitForText } from '../helpers';
 
 /**
  * Send and verify message delivery flow.
@@ -28,3 +29,15 @@ export const steps = {
 	verifyMessageScript: (text: string) =>
 		`document.querySelector('${S.directChat.messages}')?.textContent?.includes('${text.replace(/'/g, "\\'")}')`,
 };
+
+/** Type and send a message in the current chat. */
+export async function sendMessage(text: string): Promise<void> {
+	typeInto(steps.messageInput, text);
+	await nextTick();
+	click(steps.sendButton);
+}
+
+/** Wait until a message with the given text appears. */
+export async function waitForMessage(text: string): Promise<true> {
+	return waitForText(steps.messagesContainer, text);
+}

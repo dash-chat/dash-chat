@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
 		BlockTitle,
 		Dialog,
@@ -10,9 +11,11 @@
 		Navbar,
 		NavbarBackLink,
 		Page,
+		useTheme,
 	} from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
 
+	const theme = $derived(useTheme());
 	let showDeleteDialog = $state(false);
 	let loading = $state(false);
 
@@ -35,14 +38,16 @@
 <Page>
 	<Navbar title={m.account()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
-			<NavbarBackLink onClick={() => goto('/settings')}  data-testid="account-back" />
+			{#if !isWideScreen.value}
+				<NavbarBackLink onClick={() => goto('/settings')} data-testid="account-back" />
+			{/if}
 		{/snippet}
 	</Navbar>
 
 	<div class="column" style="flex: 1">
 		<div class="column center-in-desktop">
 			<BlockTitle>{m.account()}</BlockTitle>
-			<List strongIos insetIos>
+			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
 			<ListItem
 				title={m.deleteAccount()}
 				link
@@ -70,7 +75,7 @@
 			<DialogButton onClick={() => (showDeleteDialog = false)} data-testid="account-delete-cancel">
 				{m.cancel()}
 			</DialogButton>
-			<DialogButton strong onClick={handleDeleteAccount} disabled={loading} data-testid="account-delete-confirm">
+			<DialogButton onClick={handleDeleteAccount} disabled={loading} data-testid="account-delete-confirm">
 				{loading ? '...' : m.delete()}
 			</DialogButton>
 		{/snippet}

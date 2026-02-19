@@ -1,4 +1,5 @@
 import { S } from '../selectors';
+import { waitFor, typeInto, click, nextTick } from '../helpers';
 
 /**
  * Profile creation flow.
@@ -24,3 +25,14 @@ export const steps = {
 	createLink: S.createProfile.createLink,
 	successIndicator: S.home.chatList,
 };
+
+/** Create a profile and wait for the home page. */
+export async function createProfile(name: string, surname: string): Promise<true> {
+	await waitFor(steps.waitForForm);
+	typeInto(steps.nameInput, name);
+	typeInto(steps.surnameInput, surname);
+	await nextTick();
+	click(steps.createButton);
+	await waitFor(steps.successIndicator);
+	return true;
+}

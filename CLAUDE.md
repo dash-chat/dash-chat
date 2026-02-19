@@ -149,6 +149,18 @@ This is a pnpm workspace with multiple packages:
 - Internationalization using @inlang/paraglide-js
 - Image compression before upload
 
+### Desktop Layout
+
+On wide screens (≥768px), the app uses a two-panel layout managed by `DesktopLayout.svelte`:
+- **Sidebar** (left, 320px): Shows the contextual panel based on the current route — `ChatListPanel` for chat routes, `SettingsPanel` for `/settings/*`, `NewMessagePanel` for `/new-message/*`.
+- **Content** (right, flex): Shows the page content. For sidebar-only routes (`/` and `/settings`), an `EmptyState` placeholder is rendered instead.
+
+Pages like `/`, `/settings`, and `/new-message` always render their mobile content (wrapped in `<Page>`). On desktop, `DesktopLayout` handles showing the correct sidebar panel and decides whether to render `EmptyState` or the page's children in the content area. Pages never check `isWideScreen` to decide between EmptyState and their content — that logic lives solely in `DesktopLayout`.
+
+**Sidebar panel switching without navigation (`pushState`):** On desktop, clicking "new message" from the `ChatListPanel` should switch the sidebar to `NewMessagePanel` without navigating away from the current content (e.g., an active chat). This uses SvelteKit's `pushState('', { sidebarPanel: 'new-message' })` to update `page.state` without changing the URL. `DesktopLayout` reads `page.state.sidebarPanel` alongside the URL path to determine which sidebar panel to show. The browser back button automatically pops this state. The `App.PageState` type is augmented in `ui/src/app.d.ts`.
+
+**Add-contact routes are nested under their parent context** (`/new-message/add-contact` and `/settings/profile/add-contact`) so that the correct sidebar panel is shown on desktop based on the URL prefix.
+
 ### UI Navigation Map
 
 The app uses SvelteKit file-based routing. On first launch the user sees the Create Profile screen; after creating a profile the home page (`/`) is the root. The theme (Material or iOS) determines whether some actions use buttons/FABs (Material) or navbar links (iOS).
@@ -165,27 +177,29 @@ Create Profile (first launch only)
 
 /settings
   ├─ [profile item] ────── /settings/profile
-  ├─ [QR icon] ──────────── /add-contact
+  ├─ [QR icon] ──────────── /settings/profile/add-contact
   └─ [account item] ────── /settings/account
 
 /settings/profile
   ├─ [edit photo] ──────── /settings/profile/edit-photo
   ├─ [name item] ──────── /settings/profile/edit-name
   ├─ [about item] ─────── /settings/profile/edit-about
-  └─ [QR code item] ───── /add-contact
+  └─ [QR code item] ───── /settings/profile/add-contact
+
+/settings/profile/add-contact
+  ├─ code tab ──── shows QR + code input
+  └─ scan tab ──── camera scanner (mobile only)
 
 /settings/account
   └─ [delete account] ─── confirmation dialog
 
-/contacts
-  └─ [add icon] ────────── /add-contact
+/new-message
+  ├─ [add contact] ────── /new-message/add-contact
+  └─ [contact item] ───── /direct-chats/{agentId}
 
-/add-contact
+/new-message/add-contact
   ├─ code tab ──── shows QR + code input
   └─ scan tab ──── camera scanner (mobile only)
-
-/new-message
-  └─ [contact item] ───── /direct-chats/{agentId}
 
 /new-group
   ├─ step 1: member selection ─── [next] ──► step 2: group info ─── [create]

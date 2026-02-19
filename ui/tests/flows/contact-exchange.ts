@@ -1,4 +1,5 @@
 import { S } from '../selectors';
+import { waitFor, typeInto, click } from '../helpers';
 
 /**
  * Contact exchange flow between two agents.
@@ -30,5 +31,26 @@ export const steps = {
 	addContactLink: S.contacts.addLink,
 	copyButton: S.addContact.copyButton,
 	codeInput: `${S.addContact.codeInput} input`,
-	getCodeScript: `document.querySelector('wa-qr-code')?.getAttribute('value')`,
+	getCodeScript: `document.querySelector('wa-qr-code')?.value`,
 };
+
+/** Navigate from home to the add-contact page. */
+export async function navigateToAddContact(): Promise<true> {
+	click(steps.contactsLink);
+	await waitFor(steps.addContactLink);
+	click(steps.addContactLink);
+	await waitFor(steps.codeInput);
+	return true;
+}
+
+/** Read the contact code from the QR element. */
+export function getContactCode(): string | null {
+	return (document.querySelector(S.addContact.qrCode) as any)?.value ?? null;
+}
+
+/** Paste a contact code and wait for the direct chat to open. */
+export async function addContact(contactCode: string): Promise<true> {
+	typeInto(steps.codeInput, contactCode);
+	await waitFor(S.directChat.messages);
+	return true;
+}

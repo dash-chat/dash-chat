@@ -24,10 +24,13 @@
 		NavbarBackLink,
 		Page,
 		Preloader,
+		useTheme,
 	} from 'konsta/svelte';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { page } from '$app/state';
 	let agentId = page.params.agentId!;
 
+	const theme = $derived(useTheme());
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
 
@@ -100,7 +103,7 @@
 
 				<!-- TODO: Coming soon - chat color/wallpaper and groups in common -->
 				{#if false}
-				<List nested strongIos insetIos>
+				<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
 					<ListItem
 						link
 						chevron={false}
@@ -122,7 +125,7 @@
 					<span class="font-bold">{m.noGroupsInCommonTitle()}</span>
 				</div>
 
-				<List nested strongIos insetIos>
+				<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
 					<ListItem
 						link
 						chevron={false}

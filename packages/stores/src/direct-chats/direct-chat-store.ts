@@ -2,6 +2,7 @@ import { reactive } from 'signalium';
 
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
+import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
@@ -44,7 +45,7 @@ export class DirectChatStore {
 		const chatId = await this.chatId();
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const messages: Record<Hash, Message> = {}; // todo: convert to map?
+		const messages: Record<Hash, Message> = {};
 
 		for (const [author, operations] of Object.entries(logs)) {
 			for (const operation of operations) {
@@ -123,17 +124,13 @@ export class DirectChatStore {
 	onNewMessage(
 		handler: (
 			operation: SimplifiedOperation<Payload>,
-			message: MessageContent | ChatReaction,
+			message: MessageContent,
 		) => void,
 	) {
 		return this.logsStore.logsClient.onNewOperation(async (topicId, op) => {
 			const chatId = await toPromise(this.chatId);
 			if (topicId !== chatId) return;
-			if (
-				op.body?.payload.type !== 'Message' &&
-				op.body?.payload.type !== 'Reaction'
-			)
-				return;
+			if (op.body?.payload.type !== 'Message') return;
 			handler(op, op.body.payload.payload);
 		});
 	}
@@ -141,18 +138,16 @@ export class DirectChatStore {
 	async sendMessage(content: MessageContent) {
 		const chatId = await toPromise(this.chatId);
 		const myDeviceId = await toPromise(this.contactsStore.myDeviceId);
-		const promise = new Promise(resolve => {
-			const unsub = this.onNewMessage((op, message) => {
-				if (op.body?.payload.type !== 'Message') return;
-				if (op.header.public_key !== myDeviceId) return;
-				if (message !== content) return;
-
-				unsub();
-				resolve(undefined);
-			});
-		});
-		await this.client.sendMessage(chatId, content);
-		return promise;
+		await Promise.all([
+			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
+				if (topicId !== chatId) return false;
+				if (op.body?.payload.type !== 'Message') return false;
+				if (op.header.public_key !== myDeviceId) return false;
+				if (op.body.payload.payload !== content) return false;
+				return true;
+			}),
+			this.client.sendMessage(chatId, content),
+		]);
 	}
 
 	readMessageHashes = reactive(async () => {
