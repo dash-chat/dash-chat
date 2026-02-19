@@ -149,3 +149,4 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
           release_id: ${{ needs.release-tauri-app.outputs.releaseId }}
+          draft: true
