@@ -3,6 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
+
     tauri-plugin-holochain.url =
       "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
     rust-overlay.url = "github:oxalica/rust-overlay";
