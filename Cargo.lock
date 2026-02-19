@@ -1791,6 +1791,7 @@ dependencies = [
  "p2panda-sync",
  "serde",
  "serde_json",
+ "sonix-i18n",
  "tauri",
  "tauri-build",
  "tauri-plugin-barcode-scanner",
@@ -8258,6 +8259,16 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "sonix-i18n"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfccc9e3e516b0c0253df6a7fae06152129c886522d9bd2d963bb3087ace7bf4"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

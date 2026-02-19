@@ -3,92 +3,90 @@ use mdns_sd::{ServiceDaemon, ServiceInfo};
 use tauri::{AppHandle, Manager, Runtime};
 use tokio::sync::Mutex;
 
-pub struct LocalMailboxState {
+use crate::filesystem::FileSystem;
+
+pub(crate) struct LocalMailboxState {
     stop_signal: tokio::sync::oneshot::Sender<()>,
     server: tokio::task::JoinHandle<()>,
 }
 
 pub(crate) type LocalMailboxMutex = Mutex<Option<LocalMailboxState>>;
 
-pub fn start_local_mailbox<R: Runtime>(
-    handle: &AppHandle<R>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    tauri::async_runtime::block_on(async move {
-        let state_mutex = handle.state::<LocalMailboxMutex>();
-        let mut state = state_mutex.lock().await;
-        if state.is_some() {
-            return Ok(());
-        }
+pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
+    crate::tray::show_tray(handle)?;
 
-        let (stop_signal_tx, stop_signal_rx) = tokio::sync::oneshot::channel();
-        let stop_signal_rx = stop_signal_rx.map(|f| f.expect("failed to listen for event"));
-        let path = crate::filesystem::local_data_dir(handle)?.join("local-mailbox.redb");
+    let mutex = handle.state::<LocalMailboxMutex>();
+    let mut guard = mutex.lock().await;
+    if guard.is_some() {
+        return Ok(());
+    }
 
-        let mut result = Ok(());
-        let mut port = 0;
-        for attempt in 1..=3 {
-            port = free_port()?;
-            let service = mdns_service_info(port, handle);
-            log::info!(
-                "Registering local mailbox service via mdns: {} ({})",
-                service.get_fullname(),
-                service.get_type()
-            );
+    let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel();
+    let stop_signal_rx = stop_signal_rx.map(|f| f.expect("failed to listen for event"));
+    let path = FileSystem::new(handle).local_mailbox_db_path()?;
 
-            match handle.state::<ServiceDaemon>().register(service) {
-                Ok(()) => {
-                    break;
-                }
-                Err(e) => {
-                    log::error!("Failed to register local mailbox service via mdns, attempt {attempt} of 3, error: {e:?}");
-                    result = Err(e);
-                }
+    let mut result = Ok(());
+    let mut port = 0;
+    for attempt in 1..=3 {
+        port = free_port()?;
+        let service = mdns_service_info(port, handle);
+        log::info!(
+            "Registering local mailbox service via mdns: {} ({})",
+            service.get_fullname(),
+            service.get_type()
+        );
+
+        match handle.state::<ServiceDaemon>().register(service) {
+            Ok(()) => {
+                break;
+            }
+            Err(e) => {
+                log::error!("Failed to register local mailbox service via mdns, attempt {attempt} of 3, error: {e:?}");
+                result = Err(e);
             }
         }
-        result?;
+    }
+    result?;
 
-        let addr = format!("0.0.0.0:{port}");
-        let server = tokio::spawn(async move {
-            match mailbox_server::spawn_server(path, addr, stop_signal_rx).await {
-                Ok(_) => (),
-                Err(e) => log::error!("Failed to start local mailbox: {e:?}"),
-            }
-        });
-
-        log::info!("Started local mailbox");
-        if state
-            .replace(LocalMailboxState {
-                stop_signal: stop_signal_tx,
-                server,
-            })
-            .is_some()
-        {
-            unreachable!("Replaced existing mailbox state with new state, this should not happen.");
+    let addr = format!("0.0.0.0:{port}");
+    let server = tokio::spawn(async move {
+        match mailbox_server::spawn_server(path, addr, stop_signal_rx).await {
+            Ok(_) => (),
+            Err(e) => log::error!("Failed to start local mailbox: {e:?}"),
         }
-        Ok(())
-    })
+    });
+
+    *guard = Some(LocalMailboxState {
+        server,
+        stop_signal,
+    });
+
+    log::info!("Started local mailbox");
+
+    Ok(())
 }
 
-pub fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) {
-    tauri::async_runtime::block_on(async move {
-        let state_mutex = handle.state::<LocalMailboxMutex>();
-        let mut state = state_mutex.lock().await;
-        let Some(state) = state.take() else {
-            log::warn!("Tried to stop local mailbox, but it was not running");
-            return;
-        };
-        log::info!("Sending stop signal to local mailbox...");
-        let _ = state.stop_signal.send(());
-        state.server.await.unwrap();
-        if let Err(e) = handle
-            .state::<ServiceDaemon>()
-            .unregister(MDNS_SERVICE_TYPE)
-        {
-            log::error!("Failed to unregister MDNS service: {e:?}");
-        }
+pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
+    crate::tray::hide_tray::<R>(handle)?;
 
-        log::info!("Local mailbox stopped");
-    });
+    let mutex = handle.state::<LocalMailboxMutex>();
+    let mut guard = mutex.lock().await;
+    let Some(state) = guard.take() else {
+        log::warn!("Tried to stop local mailbox, but it was not running");
+        return Ok(());
+    };
+    log::info!("Sending stop signal to local mailbox...");
+    let _ = state.stop_signal.send(());
+    state.server.await.unwrap();
+    if let Err(e) = handle
+        .state::<ServiceDaemon>()
+        .unregister(MDNS_SERVICE_TYPE)
+    {
+        log::error!("Failed to unregister MDNS service: {e:?}");
+    }
+
+    log::info!("Local mailbox stopped");
+    Ok(())
 }
 
 const MDNS_SERVICE_TYPE: &str = "_dashchat._udp.local.";
@@ -96,7 +94,7 @@ const MDNS_SERVICE_TYPE: &str = "_dashchat._udp.local.";
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     handle: &AppHandle<R>,
     node: dashchat_node::Node,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     let mdns = handle.state::<ServiceDaemon>();
     let receiver = mdns.browse(MDNS_SERVICE_TYPE)?;
 
@@ -155,7 +153,7 @@ fn mdns_service_info<R: Runtime>(port: u16, _handle: &AppHandle<R>) -> ServiceIn
     .enable_addr_auto()
 }
 
-fn free_port() -> Result<u16, Box<dyn std::error::Error>> {
+fn free_port() -> anyhow::Result<u16> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     Ok(listener.local_addr()?.port())
 }

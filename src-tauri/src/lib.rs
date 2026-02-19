@@ -1,13 +1,8 @@
-use dashchat_node::Node;
-use mailbox_client::toy::ToyMailboxClient;
-use p2panda_core::{cbor::encode_cbor, Body};
-use tauri::{Emitter, Manager};
-
-use crate::{commands::logs::simplify, filesystem::local_data_dir};
-
 mod commands;
 mod filesystem;
+mod i18n;
 mod settings;
+mod setup;
 mod utils;
 
 mod mailbox;
@@ -21,6 +16,8 @@ const DASHCHAT_MAILBOX_ID: &str = "dashchat-mailbox";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    i18n::init_i18n();
+
     let mut builder = tauri::Builder::default();
 
     #[cfg(mobile)]
@@ -86,74 +83,10 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
             let handle = app.handle().clone();
+            let result: anyhow::Result<()> =
+                tauri::async_runtime::block_on(async move { setup::async_setup(handle).await });
 
-            // Manage the mDNS service daemon
-            app.manage(mdns_sd::ServiceDaemon::new()?);
-
-            // Setup the menu to work with the tray icon
-            crate::tray::setup_tray_menu(&app)?;
-
-            let local_data_path: std::path::PathBuf = local_data_dir(&handle)?;
-            log::info!("Using local data path: {local_data_path:?}");
-
-            tauri::async_runtime::block_on(async move {
-                let config = dashchat_node::NodeConfig::default();
-                let (notification_tx, mut notification_rx) = tokio::sync::mpsc::channel(100);
-                let node = dashchat_node::Node::new(local_data_path, config, Some(notification_tx))
-                    .await
-                    .expect("Failed to create node");
-
-                let mailbox_url = if tauri::is_dev() {
-                    // Use the IP address of the compiling machine to support tauri android dev
-                    // pointing to the compiling computer's IP address
-                    let mailbox_port =
-                        std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
-                    format!("http://{}:{}", env!("LOCAL_IP_ADDRESS"), mailbox_port)
-                } else {
-                    "https://mailbox-server.production.dash-chat.dash-chat.garnix.me".to_string()
-                };
-
-                let mailbox_client =
-                    ToyMailboxClient::new(DASHCHAT_MAILBOX_ID.to_string(), mailbox_url);
-                node.mailboxes.register(mailbox_client).await;
-
-                handle.manage(node.clone());
-
-                mailbox::spawn_local_mailbox_mdns_discovery(&handle, node)
-                    .expect("Failed to spawn local mailbox mdns discovery");
-
-                tauri::async_runtime::spawn(async move {
-                    while let Some(notification) = notification_rx.recv().await {
-                        log::info!("Received notification: {:?}", notification);
-
-                        let body = match encode_cbor(&notification.payload) {
-                            Ok(body) => body,
-                            Err(err) => {
-                                log::error!("Failed to serialize payload: {err:?}");
-                                continue;
-                            }
-                        };
-                        let _node = handle.state::<Node>();
-                        let simplified_operation = match simplify(
-                            notification.header.hash(),
-                            notification.header,
-                            Some(Body::new(&body[..])),
-                        ) {
-                            Ok(o) => o,
-                            Err(err) => {
-                                log::error!("Failed to simplify operation: {err:?}");
-                                continue;
-                            }
-                        };
-
-                        if let Err(err) =
-                            handle.emit("p2panda://new-operation", simplified_operation)
-                        {
-                            log::error!("Failed to emit operation: {err:?}");
-                        }
-                    }
-                });
-            });
+            result?;
 
             // app.handle()
             //     .listen("holochain://setup-completed", move |_event| {
@@ -181,8 +114,14 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-
-    ()
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                // Keep the app running in the background when local mailbox is enabled
+                if settings::load_mailbox_enabled(app_handle) {
+                    api.prevent_exit();
+                }
+            }
+        });
 }

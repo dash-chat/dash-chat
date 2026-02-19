@@ -1,0 +1,78 @@
+use p2panda_core::{cbor::encode_cbor, Body};
+use tauri::AppHandle;
+use tauri::{Emitter, Manager};
+
+use dashchat_node::Node;
+use mailbox_client::toy::ToyMailboxClient;
+
+use crate::DASHCHAT_MAILBOX_ID;
+use crate::{commands::logs::simplify, filesystem::FileSystem};
+
+pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
+    // Manage the mDNS service daemon
+    app_handle.manage(mdns_sd::ServiceDaemon::new()?);
+    let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle).local_data_dir()?;
+    log::info!("Using local data path: {local_data_path:?}");
+
+    #[cfg(not(mobile))]
+    {
+        app_handle.manage(crate::mailbox::LocalMailboxMutex::default());
+        crate::tray::setup_tray(&app_handle)?;
+
+        if crate::settings::load_mailbox_enabled(&app_handle) {
+            crate::mailbox::start_local_mailbox(&app_handle).await?;
+        }
+    }
+
+    let config = dashchat_node::NodeConfig::default();
+    let (notification_tx, mut notification_rx) = tokio::sync::mpsc::channel(100);
+    let node = dashchat_node::Node::new(local_data_path, config, Some(notification_tx)).await?;
+
+    let mailbox_url = if tauri::is_dev() {
+        // Use the IP address of the compiling machine to support tauri android dev
+        // pointing to the compiling computer's IP address
+        let mailbox_port = std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
+        format!("http://{}:{}", env!("LOCAL_IP_ADDRESS"), mailbox_port)
+    } else {
+        "https://mailbox-server.production.dash-chat.dash-chat.garnix.me".to_string()
+    };
+
+    let mailbox_client = ToyMailboxClient::new(DASHCHAT_MAILBOX_ID.to_string(), mailbox_url);
+    node.mailboxes.register(mailbox_client).await;
+
+    app_handle.manage(node.clone());
+
+    crate::mailbox::spawn_local_mailbox_mdns_discovery(&app_handle, node)?;
+
+    tauri::async_runtime::spawn(async move {
+        while let Some(notification) = notification_rx.recv().await {
+            log::info!("Received notification: {:?}", notification);
+
+            let body = match encode_cbor(&notification.payload) {
+                Ok(body) => body,
+                Err(err) => {
+                    log::error!("Failed to serialize payload: {err:?}");
+                    continue;
+                }
+            };
+            let _node = app_handle.state::<Node>();
+            let simplified_operation = match simplify(
+                notification.header.hash(),
+                notification.header,
+                Some(Body::new(&body[..])),
+            ) {
+                Ok(o) => o,
+                Err(err) => {
+                    log::error!("Failed to simplify operation: {err:?}");
+                    continue;
+                }
+            };
+
+            if let Err(err) = app_handle.emit("p2panda://new-operation", simplified_operation) {
+                log::error!("Failed to emit operation: {err:?}");
+            }
+        }
+    });
+
+    Ok(())
+}

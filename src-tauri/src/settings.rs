@@ -1,22 +1,17 @@
 use std::fs;
-use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Runtime};
 
-const SETTINGS_FILE_NAME: &str = "settings.json";
+use crate::filesystem::FileSystem;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Settings {
     local_mailbox_enabled: bool,
 }
 
-fn settings_path<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<PathBuf> {
-    Ok(crate::filesystem::local_data_dir(handle)?.join(SETTINGS_FILE_NAME))
-}
-
 pub fn load_mailbox_enabled<R: Runtime>(handle: &AppHandle<R>) -> bool {
-    let path = match settings_path(handle) {
+    let path = match FileSystem::new(handle).settings_path() {
         Ok(path) => path,
         Err(err) => {
             log::error!("Failed to resolve settings path: {err:?}");
@@ -43,7 +38,7 @@ pub fn load_mailbox_enabled<R: Runtime>(handle: &AppHandle<R>) -> bool {
 }
 
 pub fn save_mailbox_enabled<R: Runtime>(handle: &AppHandle<R>, enabled: bool) {
-    let path = match settings_path(handle) {
+    let path = match FileSystem::new(handle).settings_path() {
         Ok(path) => path,
         Err(err) => {
             log::error!("Failed to resolve settings path: {err:?}");
