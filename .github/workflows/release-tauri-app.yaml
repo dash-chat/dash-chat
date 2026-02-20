@@ -23,6 +23,8 @@ jobs:
     permissions: write-all
 
     runs-on: ${{ matrix.platform }}
+    outputs:
+      releaseId: ${{ steps.tauri-build.outputs.releaseId }}
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       # Checks out a copy of your repository on the ubuntu-latest machine
@@ -67,6 +69,7 @@ jobs:
             webkit2gtk-4.1
 
       - name: build the app
+        id: tauri-build
         uses: tauri-apps/tauri-action@v0
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -89,6 +92,7 @@ jobs:
           args: ${{ matrix.args }}
 
   release-tauri-android-app:
+    needs: release-tauri-app
     permissions: write-all
 
     runs-on: ubuntu-22.04
@@ -138,9 +142,11 @@ jobs:
       - name: Install and Build 🔧
         run: |
           nix develop --accept-flake-config .#androidDev --command bash -c "pnpm install && pnpm tauri android build"
- 
-      - uses: AButler/upload-release-assets@v3.0
+
+      - name: Upload AAB to release
+        uses: svenstaro/upload-release-action@v2
         with:
-          files: "src-tauri/gen/android/app/build/outputs/bundle/**/*.aab"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          release-tag: ${{ github.ref_name }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
+          release_id: ${{ needs.release-tauri-app.outputs.releaseId }}
+          draft: true
