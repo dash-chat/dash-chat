@@ -64,7 +64,6 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
                     continue;
                 }
             };
-            let _node = app_handle.state::<Node>();
             let simplified_operation = match simplify(
                 notification.header.hash(),
                 notification.header,
