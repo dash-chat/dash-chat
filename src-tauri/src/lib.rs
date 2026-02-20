@@ -31,18 +31,26 @@ pub fn run() {
         if tauri::is_dev() {
             // MCP for Claude Code to control the tauri app
             builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+        } else {
+            // In Dev, we usually have two instances
+            builder = builder
+                .plugin(tauri_plugin_single_instance::init(
+                    move |app, _argv, _cwd| {
+                        use tauri::Manager;
+
+                        let _ = app
+                            .get_webview_window("main")
+                            .expect("no main window")
+                            .set_focus();
+                    },
+                ))
+                .plugin(tauri_plugin_autostart::init(
+                    tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                    Some(vec!["--minimized"]),
+                ))
+                .plugin(tauri_plugin_updater::Builder::new().build())
+                .plugin(tauri_plugin_keepawake::init());
         }
-        builder = builder
-            .plugin(tauri_plugin_updater::Builder::new().build())
-            .menu(|handle| menu::build_menu(handle));
-        // app.handle()
-        //     .plugin(tauri_plugin_single_instance::init(move |app, argv, cwd| {
-        //         // h.emit(
-        //         //     "single-instance",
-        //         //     Payload { args: argv, cwd },
-        //         // )
-        //         // .unwrap();
-        //     }))?;
     }
 
     builder
@@ -76,7 +84,6 @@ pub fn run() {
                 .build(),
         )
         // .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_keepawake::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
