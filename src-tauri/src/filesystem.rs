@@ -12,8 +12,9 @@ pub fn local_data_dir(handle: &AppHandle) -> anyhow::Result<PathBuf> {
         let base = PathBuf::from(std::env::var("DEV_DBS_PATH")?);
         base.join(format!("agent-{}", std::env::var("AGENT")?))
     };
-    if !local_data_path.exists() {
-        std::fs::create_dir_all(&local_data_path)?;
+    let dashchat_data_path = local_data_path.join("dashchat");
+    if !dashchat_data_path.exists() {
+        std::fs::create_dir_all(&dashchat_data_path)?;
     }
-    Ok(local_data_path)
+    Ok(dashchat_data_path)
 }

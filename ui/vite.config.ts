@@ -2,7 +2,19 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import localIpAddress from 'local-ip-address';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import { defineConfig } from 'vite';
+
+// Resolve signalium's development ESM build for production builds
+const require = createRequire(import.meta.url);
+const signaliumPkgDir = path.dirname(
+	require.resolve('signalium/package.json'),
+);
+const signaliumDevIndex = path.join(
+	signaliumPkgDir,
+	'dist/esm/development/index.js',
+);
 
 // @ts-expect-error process is a nodejs global
 // const host = process.env.TAURI_DEV_HOST;
@@ -12,6 +24,18 @@ const uiPort = parseInt(process.env.UI_PORT || '1420', 10);
 // https://vite.dev/config/
 export default defineConfig(async () => ({
 	optimizeDeps: { exclude: ['../packages/dash-chat-stores'] },
+	resolve: {
+		alias: [
+			{
+				find: /^signalium$/,
+				replacement: signaliumDevIndex,
+			},
+			{
+				find: /^signalium\/(.+)$/,
+				replacement: path.join(signaliumPkgDir, 'dist/esm/development/$1.js'),
+			},
+		],
+	},
 	plugins: [
 		tailwindcss(),
 		sveltekit(),
