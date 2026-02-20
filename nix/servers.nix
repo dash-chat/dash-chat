@@ -36,6 +36,7 @@ let
   };
 
 in {
+
   flake = {
     nixosConfigurations = {
       mailbox-server = inputs.nixpkgs.lib.nixosSystem {
@@ -54,5 +55,6 @@ in {
       };
     };
   };
+
 }
 
