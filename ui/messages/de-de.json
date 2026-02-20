@@ -56,5 +56,12 @@
     "delete": "Löschen",
     "settings": "Einstellungen",
     "omit": "Weglassen",
-    "selectAChat": "Select a chat to start messaging."
+    "selectAChat": "Wähle einen Chat aus, um zu schreiben.",
+
+    "trayTitle": "DashChat lokales Postfach",
+    "trayShow": "Anzeigen",
+    "trayQuit": "Beenden",
+    "menuRunLocalMailbox": "Lokales Postfach starten",
+    "menuFile": "Datei",
+    "menuOpenLogsFolder": "Protokollordner öffnen"
 }

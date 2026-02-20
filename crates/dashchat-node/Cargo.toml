@@ -59,6 +59,7 @@ sqlx = "0.8.6"
 
 
 tempfile = { version = "3.24", optional = true }
+nanoid = { version = "0.4", optional = true }
 
 
 [dev-dependencies]
@@ -71,7 +72,7 @@ pretty_assertions = "1.4.1"
 [features]
 default = ["testing", "instrument"]
 instrument = []
-testing = ["tempfile"]
+testing = ["tempfile", "nanoid"]
 p2p = []
 
 # patches go in the workspace Cargo.toml

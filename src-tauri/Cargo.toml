@@ -20,7 +20,7 @@ localip = "0.2"
 
 [dependencies]
 dashchat-node = { path = "../crates/dashchat-node" }
-tauri = { version = "2.8", features = ["devtools"] }
+tauri = { version = "2.8", features = ["devtools", "tray-icon"] }
 
 anyhow = "1.0.95"
 async-trait = "0.1.85"
@@ -42,6 +42,8 @@ p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "das
 ] }
 tokio = { version = "1.43.0", features = ["fs"] }
 hex = "0.4.3"
+mdns-sd = "0.17"
+nanoid = "0"
 
 image = "0.25"
 
@@ -64,6 +66,7 @@ app_dirs2 = "2.5.5"
 uuid = "1"
 serde = "1"
 serde_json = "1"
+sonix-i18n = "0.1.1"
 jni = "0.21"
 ndk-context = "0.1"
 futures = "0.3"
@@ -84,8 +87,11 @@ tauri-plugin-barcode-scanner = "2.4"
 ndk-sys = "0.6"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-autostart = "2"
+tauri-plugin-keepawake = "0.1.0"
 tauri-plugin-updater = "2.9"
 tauri-plugin-mcp-bridge = "0.8"
+mailbox-server = { path = "../crates/mailbox-server" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
