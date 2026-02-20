@@ -10,6 +10,7 @@ mod mailbox;
 mod menu;
 #[cfg(mobile)]
 mod push_notifications;
+#[cfg(not(mobile))]
 mod tray;
 
 const DASHCHAT_MAILBOX_ID: &str = "dashchat-mailbox";
@@ -76,6 +77,8 @@ pub fn run() {
             commands::direct_chats::direct_chat_send_message,
             commands::chats::mark_messages_read,
             commands::direct_chats::direct_chat_send_reaction,
+            commands::settings::get_qr_color,
+            commands::settings::set_qr_color,
             // commands::chats::create_group,
             // commands::group_chat::add_member,
             // commands::group_chat::send_message,

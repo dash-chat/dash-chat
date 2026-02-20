@@ -11,6 +11,8 @@
 		"notification:allow-is-permission-granted",
 		"deep-link:default",
 		"clipboard-manager:allow-write-text",
-		"sharekit:allow-share-text"
+		"sharekit:allow-share-text",
+		"sharekit:allow-share-file",
+		"fs:allow-appcache-write"
 	]
 }

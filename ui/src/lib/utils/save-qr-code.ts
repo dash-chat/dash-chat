@@ -1,7 +1,38 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { shareFile } from '@choochmeque/tauri-plugin-sharekit-api';
-import { tempDir, join } from '@tauri-apps/api/path';
+import { appCacheDir, join } from '@tauri-apps/api/path';
+
+/**
+ * Gets the QR code as a drawable image source from the wa-qr-code shadow DOM.
+ * Tries canvas first, falls back to rendering the SVG onto a canvas.
+ */
+async function getQrSource(
+	qrCard: HTMLElement,
+): Promise<{ source: CanvasImageSource; size: number } | undefined> {
+	const waQr = qrCard.querySelector('wa-qr-code');
+	if (!waQr?.shadowRoot) return;
+
+	// Try canvas first (desktop)
+	const srcCanvas = waQr.shadowRoot.querySelector('canvas') as HTMLCanvasElement | null;
+	if (srcCanvas && srcCanvas.width > 0) {
+		return { source: srcCanvas, size: srcCanvas.width };
+	}
+
+	// Fall back to SVG (mobile)
+	const svgEl = waQr.shadowRoot.querySelector('svg') as SVGElement | null;
+	if (!svgEl) return;
+
+	const svgData = new XMLSerializer().serializeToString(svgEl);
+	const img = new Image();
+	await new Promise<void>((resolve, reject) => {
+		img.onload = () => resolve();
+		img.onerror = () => reject(new Error('Failed to load SVG'));
+		img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+	});
+
+	return { source: img, size: img.width };
+}
 
 /**
  * Renders the QR code card to PNG bytes.
@@ -10,13 +41,11 @@ async function renderQrImage(qrColor: string): Promise<Uint8Array | undefined> {
 	const qrCard = document.querySelector('.qr-card') as HTMLElement | null;
 	if (!qrCard) return;
 
-	const srcCanvas = qrCard
-		.querySelector('wa-qr-code')
-		?.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null;
-	if (!srcCanvas) return;
+	const qrSource = await getQrSource(qrCard);
+	if (!qrSource) return;
 
 	const padding = 32;
-	const qrSize = srcCanvas.width;
+	const qrSize = qrSource.size;
 	const totalSize = qrSize + padding * 2;
 
 	const canvas = document.createElement('canvas');
@@ -42,8 +71,8 @@ async function renderQrImage(qrColor: string): Promise<Uint8Array | undefined> {
 	);
 	ctx.fill();
 
-	// Draw QR code canvas
-	ctx.drawImage(srcCanvas, padding, padding);
+	// Draw QR code
+	ctx.drawImage(qrSource.source, padding, padding, qrSize, qrSize);
 
 	// Get PNG bytes
 	const blob = await new Promise<Blob>((resolve) => {
@@ -77,8 +106,8 @@ export async function shareQrCode(qrColor: string): Promise<void> {
 	const bytes = await renderQrImage(qrColor);
 	if (!bytes) return;
 
-	const tmp = await tempDir();
-	const path = await join(tmp, 'dashchat-qr-code.png');
+	const cacheDir = await appCacheDir();
+	const path = await join(cacheDir, 'dashchat-qr-code.png');
 	await writeFile(path, bytes);
 
 	await shareFile(`file://${path}`, {

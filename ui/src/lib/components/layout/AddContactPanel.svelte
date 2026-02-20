@@ -3,6 +3,7 @@
 	import '@awesome.me/webawesome/dist/components/qr-code/qr-code.js';
 	import '@awesome.me/webawesome/dist/components/copy-button/copy-button.js';
 	import { getContext } from 'svelte';
+	import { invoke } from '@tauri-apps/api/core';
 	import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 	import {
 		decodeContactCode,
@@ -42,6 +43,7 @@
 	import { showToast } from '$lib/utils/toasts';
 	import { cancel } from '@tauri-apps/plugin-barcode-scanner';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
+	import SelectColor from './SelectColor.svelte';
 
 	let { showBack = true }: { showBack?: boolean } = $props();
 
@@ -117,13 +119,12 @@
 		await cancel();
 	}
 
-	const qrColors = ['#007aff', '#e84393', '#00b894', '#6c5ce7', '#fdcb6e'];
-	let qrColorIndex = $state(0);
-	const qrColor = $derived(qrColors[qrColorIndex]);
+	let qrColor = $state('#007aff');
+	let colorPickerOpen = $state(false);
 
-	function cycleColor() {
-		qrColorIndex = (qrColorIndex + 1) % qrColors.length;
-	}
+	invoke<string | null>('get_qr_color').then((saved) => {
+		if (saved) qrColor = saved;
+	});
 
 	async function copyLink(code: string) {
 		await writeText(code);
@@ -158,6 +159,11 @@
 	onchange={onImageSelected}
 />
 
+{#if colorPickerOpen}
+	{#await myCode then code}
+		<SelectColor {code} bind:qrColor onClose={() => (colorPickerOpen = false)} />
+	{/await}
+{:else}
 <Page
 	class={tab === 'scan' ? 'transparent' : ''}
 	style="display: flex; flex-direction: column"
@@ -335,7 +341,7 @@
 						<div class="column" style="align-items: center; gap: 8px;">
 							<Button
 								tonal
-								onClick={cycleColor}
+								onClick={() => (colorPickerOpen = true)}
 								class="icon-only"
 								data-testid="add-contact-color-btn"
 							>
@@ -406,6 +412,7 @@
 		</div>
 	{/if}
 </Page>
+{/if}
 
 <style>
 	:global(.qr-card) {

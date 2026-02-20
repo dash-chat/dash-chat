@@ -51,9 +51,9 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
                         }
 
                         let r = if enabled {
-                            mailbox::start_local_mailbox(&app_handle).await
+                            mailbox::server::start_local_mailbox(&app_handle).await
                         } else {
-                            mailbox::stop_local_mailbox(&app_handle).await
+                            mailbox::server::stop_local_mailbox(&app_handle).await
                         };
                         if let Err(err) = r {
                             log::error!("Failed to start/stop local mailbox: {err:?}");
