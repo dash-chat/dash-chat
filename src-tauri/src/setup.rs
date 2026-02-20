@@ -1,3 +1,4 @@
+use crate::menu::build_menu;
 use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::AppHandle;
 use tauri::{Emitter, Manager};
@@ -16,11 +17,19 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     #[cfg(not(mobile))]
     {
+        app_handle.set_menu(build_menu(&app_handle)?)?;
         app_handle.manage(crate::mailbox::LocalMailboxMutex::default());
         crate::tray::setup_tray(&app_handle)?;
 
         if crate::settings::load_mailbox_enabled(&app_handle) {
             crate::mailbox::start_local_mailbox(&app_handle).await?;
+        }
+
+        // Hide the main window when launched with --minimized (autostart)
+        if std::env::args().any(|a| a == "--minimized") {
+            if let Some(w) = app_handle.get_webview_window("main") {
+                w.hide()?;
+            }
         }
     }
 
@@ -55,7 +64,6 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
                     continue;
                 }
             };
-            let _node = app_handle.state::<Node>();
             let simplified_operation = match simplify(
                 notification.header.hash(),
                 notification.header,

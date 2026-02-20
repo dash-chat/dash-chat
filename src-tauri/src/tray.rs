@@ -35,6 +35,9 @@ pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
             "quit" => {
                 // Call process:exit(0) instead of app::exit(0)
                 // because exiting from the app would be prevented as the mailbox mode is still on
+                tauri::async_runtime::block_on(async move {
+                    let _ = crate::mailbox::stop_local_mailbox(&app).await;
+                });
                 std::process::exit(0);
             }
             _ => {}

@@ -8,6 +8,7 @@ use crate::filesystem::FileSystem;
 pub(crate) struct LocalMailboxState {
     stop_signal: tokio::sync::oneshot::Sender<()>,
     server: tokio::task::JoinHandle<()>,
+    mdns_fullname: String,
 }
 
 pub(crate) type LocalMailboxMutex = Mutex<Option<LocalMailboxState>>;
@@ -25,28 +26,34 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     let stop_signal_rx = stop_signal_rx.map(|f| f.expect("failed to listen for event"));
     let path = FileSystem::new(handle).local_mailbox_db_path()?;
 
-    let mut result = Ok(());
+    let mut last_err = None;
     let mut port = 0;
+    let mut mdns_fullname = String::new();
     for attempt in 1..=3 {
         port = free_port()?;
         let service = mdns_service_info(port, handle);
+        let fullname = service.get_fullname().to_string();
         log::info!(
             "Registering local mailbox service via mdns: {} ({})",
-            service.get_fullname(),
+            fullname,
             service.get_type()
         );
 
         match handle.state::<ServiceDaemon>().register(service) {
             Ok(()) => {
+                mdns_fullname = fullname;
+                last_err = None;
                 break;
             }
             Err(e) => {
                 log::error!("Failed to register local mailbox service via mdns, attempt {attempt} of 3, error: {e:?}");
-                result = Err(e);
+                last_err = Some(e);
             }
         }
     }
-    result?;
+    if let Some(e) = last_err {
+        return Err(e.into());
+    }
 
     let addr = format!("0.0.0.0:{port}");
     let server = tokio::spawn(async move {
@@ -59,6 +66,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     *guard = Some(LocalMailboxState {
         server,
         stop_signal,
+        mdns_fullname,
     });
 
     log::info!("Started local mailbox");
@@ -80,7 +88,7 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
     state.server.await.unwrap();
     if let Err(e) = handle
         .state::<ServiceDaemon>()
-        .unregister(MDNS_SERVICE_TYPE)
+        .unregister(&state.mdns_fullname)
     {
         log::error!("Failed to unregister MDNS service: {e:?}");
     }
@@ -89,7 +97,7 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
     Ok(())
 }
 
-const MDNS_SERVICE_TYPE: &str = "_dashchat._udp.local.";
+const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
 
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     handle: &AppHandle<R>,

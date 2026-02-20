@@ -87,6 +87,7 @@ tauri-plugin-barcode-scanner = "2.4"
 ndk-sys = "0.6"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-autostart = "2"
 tauri-plugin-keepawake = "0.1.0"
 tauri-plugin-updater = "2.9"
 tauri-plugin-mcp-bridge = "0.8"
