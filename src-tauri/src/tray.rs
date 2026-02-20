@@ -33,12 +33,13 @@ pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
                 }
             }
             "quit" => {
-                // Call process:exit(0) instead of app::exit(0)
-                // because exiting from the app would be prevented as the mailbox mode is still on
                 tauri::async_runtime::block_on(async move {
                     let _ = crate::mailbox::stop_local_mailbox(&app).await;
                 });
-                std::process::exit(0);
+                // Signal the run-loop to stop calling prevent_exit(), then
+                // exit gracefully so all destructors run.
+                crate::FORCE_QUIT.store(true, std::sync::atomic::Ordering::Relaxed);
+                app.exit(0);
             }
             _ => {}
         })
@@ -61,7 +62,7 @@ pub fn hide_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn show_or_create_main_window<R: Runtime>(app: &AppHandle<R>) -> anyhow::Result<()> {
+pub fn show_or_create_main_window<R: Runtime>(app: &AppHandle<R>) -> anyhow::Result<()> {
     if let Some(window) = app.get_webview_window("main") {
         window.show()?;
         window.set_focus()?;

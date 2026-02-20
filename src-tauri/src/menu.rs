@@ -35,16 +35,24 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
                     tauri::async_runtime::spawn(async move {
                         crate::settings::save_mailbox_enabled::<R>(&app_handle, enabled);
 
-                        let autostart = app_handle.autolaunch();
-                        let r = if enabled {
-                            if let Err(err) = autostart.enable() {
-                                log::error!("Failed to enable autostart: {err:?}");
+                        // The autostart plugin is only registered in release builds,
+                        // so skip autolaunch calls during development.
+                        if !tauri::is_dev() {
+                            let autostart = app_handle.autolaunch();
+                            if enabled {
+                                if let Err(err) = autostart.enable() {
+                                    log::error!("Failed to enable autostart: {err:?}");
+                                }
+                            } else {
+                                if let Err(err) = autostart.disable() {
+                                    log::error!("Failed to disable autostart: {err:?}");
+                                }
                             }
+                        }
+
+                        let r = if enabled {
                             mailbox::start_local_mailbox(&app_handle).await
                         } else {
-                            if let Err(err) = autostart.disable() {
-                                log::error!("Failed to disable autostart: {err:?}");
-                            }
                             mailbox::stop_local_mailbox(&app_handle).await
                         };
                         if let Err(err) = r {

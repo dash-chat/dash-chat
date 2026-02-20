@@ -14,6 +14,12 @@ mod tray;
 
 const DASHCHAT_MAILBOX_ID: &str = "dashchat-mailbox";
 
+/// When set to `true`, the run-loop's `ExitRequested` handler will no longer
+/// call `api.prevent_exit()`, allowing the app to shut down gracefully
+/// (running all destructors) even when local-mailbox mode is active.
+pub(crate) static FORCE_QUIT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     i18n::init_i18n();
@@ -38,10 +44,11 @@ pub fn run() {
                     move |app, _argv, _cwd| {
                         use tauri::Manager;
 
-                        let _ = app
-                            .get_webview_window("main")
-                            .expect("no main window")
-                            .set_focus();
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.set_focus();
+                        } else if let Err(err) = tray::show_or_create_main_window(app) {
+                            log::error!("Failed to show/create main window: {err:?}");
+                        }
                     },
                 ))
                 .plugin(tauri_plugin_autostart::init(
@@ -125,8 +132,11 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
-                // Keep the app running in the background when local mailbox is enabled
-                if settings::load_mailbox_enabled(app_handle) {
+                // Keep the app running in the background when local mailbox is enabled,
+                // unless a force-quit has been requested (e.g. from the tray "Quit" action).
+                if settings::load_mailbox_enabled(app_handle)
+                    && !FORCE_QUIT.load(std::sync::atomic::Ordering::Relaxed)
+                {
                     api.prevent_exit();
                 }
             }
