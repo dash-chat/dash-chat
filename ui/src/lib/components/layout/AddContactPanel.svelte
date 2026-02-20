@@ -11,12 +11,19 @@
 	} from 'dash-chat-stores';
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiContentCopy, mdiQrcode } from '@mdi/js';
+	import {
+		mdiContentCopy,
+		mdiLinkVariant,
+		mdiShareVariant,
+		mdiTrayArrowDown,
+		mdiPalette,
+		mdiImageSearchOutline,
+	} from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isMobile } from '$lib/utils/environment';
-	import { scanQrcode } from '$lib/utils/qrcode';
+	import { scanQrcode, scanQrFromImage } from '$lib/utils/qrcode';
 	import {
 		Page,
 		Navbar,
@@ -34,6 +41,7 @@
 	import { goto } from '$app/navigation';
 	import { showToast } from '$lib/utils/toasts';
 	import { cancel } from '@tauri-apps/plugin-barcode-scanner';
+	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
 
 	let { showBack = true }: { showBack?: boolean } = $props();
 
@@ -108,7 +116,47 @@
 		tab = 'code';
 		await cancel();
 	}
+
+	const qrColors = ['#007aff', '#e84393', '#00b894', '#6c5ce7', '#fdcb6e'];
+	let qrColorIndex = $state(0);
+	const qrColor = $derived(qrColors[qrColorIndex]);
+
+	function cycleColor() {
+		qrColorIndex = (qrColorIndex + 1) % qrColors.length;
+	}
+
+	async function copyLink(code: string) {
+		await writeText(code);
+		showToast(m.copiedCodeToClipboard());
+	}
+
+	async function shareCode() {
+		await shareQrCode(qrColor);
+	}
+
+	let imageFilePicker: HTMLInputElement;
+
+	async function onImageSelected() {
+		if (!imageFilePicker.files || !imageFilePicker.files[0]) return;
+		try {
+			const code = await scanQrFromImage(imageFilePicker.files[0]);
+			await receiveCode(code);
+		} catch (e) {
+			console.error(e);
+			showToast(m.errorNoQrCodeInImage(), 'error');
+		} finally {
+			imageFilePicker.value = '';
+		}
+	}
 </script>
+
+<input
+	type="file"
+	accept="image/*"
+	bind:this={imageFilePicker}
+	style="display: none"
+	onchange={onImageSelected}
+/>
 
 <Page
 	class={tab === 'scan' ? 'transparent' : ''}
@@ -199,17 +247,17 @@
 			</div>
 		{:then code}
 			<div class="column" style="flex:1">
-				<div class="column center-in-desktop gap-4 m-6">
-					<Card class="qr-card p-2 pb-0">
-						<div class="column gap-2" style="align-items: center">
+				<div class="column center-in-desktop gap-4 mx-4 mt-4">
+					<Card class="qr-card p-2.5 pb-2" style="background-color: {qrColor}">
+						<div class="column" style="align-items: center">
 							<div
-								class="column p-2"
-								style="align-items: center; justify-content: center; background-color: white; border-radius: 8px;"
+								class="column w-full p-3"
+								style="align-items: center; justify-content: center; background-color: white; border-radius: 10px;"
 							>
-								<wa-qr-code value={code} size="250" fill="#007aff"></wa-qr-code>
+								<wa-qr-code value={code} size="180" fill={qrColor}></wa-qr-code>
 							</div>
 
-							<div>
+							<div class="py-1">
 								<Button
 									colors={{
 										touchRipple: 'white',
@@ -217,6 +265,7 @@
 										textMaterial: 'text-white',
 									}}
 									clearMaterial
+									small
 									data-testid="add-contact-copy-btn"
 									onClick={async () => {
 										await writeText(code);
@@ -230,7 +279,76 @@
 							</div>
 						</div>
 					</Card>
-					<span class="mx-6 mb-2">{m.shareCodeWarning()}</span>
+
+					<!-- Action buttons: Link, Share, Save, Color -->
+					<div
+						class="row gap-4"
+						style="justify-content: center;"
+					>
+						<div class="column" style="display: none; align-items: center; gap: 8px;">
+							<Button
+								tonal
+								onClick={() => copyLink(code)}
+								class="icon-only"
+								data-testid="add-contact-link-btn"
+							>
+								<wa-icon
+									src={wrapPathInSvg(mdiLinkVariant)}
+									style="font-size: 28px"
+								></wa-icon>
+							</Button>
+							<span class="action-label">{m.link()}</span>
+						</div>
+
+						{#if isMobile}
+							<div class="column" style="align-items: center; gap: 8px;">
+								<Button
+									tonal
+									onClick={() => shareCode()}
+									class="icon-only"
+									data-testid="add-contact-share-btn"
+								>
+									<wa-icon
+										src={wrapPathInSvg(mdiShareVariant)}
+										style="font-size: 28px"
+									></wa-icon>
+								</Button>
+								<span class="action-label">{m.share()}</span>
+							</div>
+						{:else}
+							<div class="column" style="align-items: center; gap: 8px;">
+								<Button
+									tonal
+									onClick={() => saveQrCode(qrColor)}
+									class="icon-only"
+									data-testid="add-contact-save-btn"
+								>
+									<wa-icon
+										src={wrapPathInSvg(mdiTrayArrowDown)}
+										style="font-size: 28px"
+									></wa-icon>
+								</Button>
+								<span class="action-label">{m.save()}</span>
+							</div>
+						{/if}
+
+						<div class="column" style="align-items: center; gap: 8px;">
+							<Button
+								tonal
+								onClick={cycleColor}
+								class="icon-only"
+								data-testid="add-contact-color-btn"
+							>
+								<wa-icon
+									src={wrapPathInSvg(mdiPalette)}
+									style="font-size: 28px"
+								></wa-icon>
+							</Button>
+							<span class="action-label">{m.color()}</span>
+						</div>
+					</div>
+
+					<span class="mx-2 mb-2 text-center quiet" style="font-size: 13px">{m.shareCodeWarning()}</span>
 
 					<div class="column gap-1">
 						<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
@@ -270,14 +388,36 @@
 					</div>
 				</div>
 			</div>
+			<div
+				style="position: absolute; bottom: 24px; left: 0; right: 0; display: flex; justify-content: center; z-index: 1;"
+			>
+				<button
+					class="select-image-btn"
+					onclick={() => imageFilePicker.click()}
+					aria-label={m.photo()}
+					data-testid="add-contact-select-image-btn"
+				>
+					<wa-icon
+						src={wrapPathInSvg(mdiImageSearchOutline)}
+						style="font-size: 28px"
+					></wa-icon>
+				</button>
+			</div>
 		</div>
 	{/if}
 </Page>
 
 <style>
 	:global(.qr-card) {
-		background-color: var(--color-brand-primary);
 		align-self: center;
+		width: fit-content;
+		margin: 0 !important;
+		transition: background-color 0.3s ease;
+	}
+
+	.action-label {
+		font-size: 14px;
+		color: var(--k-text-color);
 	}
 
 	.square {
@@ -311,5 +451,28 @@
 	.barcode-scanner--area--outer {
 		display: flex;
 		border-radius: 1em;
+	}
+
+	.select-image-btn {
+		width: 56px;
+		height: 56px;
+		border-radius: 50%;
+		background: white;
+		color: #374151;
+		border: none;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+		transition: transform 0.2s;
+	}
+
+	.select-image-btn:hover {
+		transform: scale(1.05);
+	}
+
+	.select-image-btn:active {
+		transform: scale(0.95);
 	}
 </style>

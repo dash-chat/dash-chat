@@ -6,6 +6,8 @@
 		"core:default",
 		"process:default",
 		"updater:default",
-		"mcp-bridge:default"
+		"mcp-bridge:default",
+		"dialog:allow-save",
+		"fs:allow-write-file"
 	]
 }

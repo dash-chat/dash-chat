@@ -10,6 +10,7 @@
 		"notification:default",
 		"notification:allow-is-permission-granted",
 		"deep-link:default",
-		"clipboard-manager:allow-write-text"
+		"clipboard-manager:allow-write-text",
+		"sharekit:allow-share-text"
 	]
 }

@@ -57,6 +57,8 @@ tauri-plugin-virtual-keyboard-padding = { git = "https://github.com/dash-chat/ta
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-sharekit = "0.3"
+tauri-plugin-fs = "2"
 
 opener = { version = "0.7", features = ["reveal"] }
 log = "0.4"

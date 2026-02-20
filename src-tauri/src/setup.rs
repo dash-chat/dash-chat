@@ -3,7 +3,6 @@ use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::AppHandle;
 use tauri::{Emitter, Manager};
 
-use dashchat_node::Node;
 use mailbox_client::toy::ToyMailboxClient;
 
 use crate::DASHCHAT_MAILBOX_ID;
