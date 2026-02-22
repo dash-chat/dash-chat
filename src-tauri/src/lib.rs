@@ -47,6 +47,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::logs::get_log,
             commands::logs::get_authors,
+            commands::preferences::get_preferences,
+            commands::preferences::set_preferences,
             commands::profile::set_profile,
             commands::devices::my_device_group_topic,
             commands::contacts::my_device_id,

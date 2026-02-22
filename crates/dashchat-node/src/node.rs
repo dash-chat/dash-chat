@@ -120,7 +120,7 @@ pub struct Node {
     local_store: LocalStore,
     node_data: NodeData,
 
-    _filesystem: Filesystem,
+    pub filesystem: Filesystem,
 }
 
 impl Node {
@@ -145,7 +145,7 @@ impl Node {
             op_store: op_store.clone(),
             mailboxes,
             config,
-            _filesystem: filesystem,
+            filesystem: filesystem,
             local_store: local_store.clone(),
             node_data,
             notification_tx,
@@ -314,6 +314,13 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        Ok(())
+    }
+
+    pub async fn delete_profile(&self) -> Result<(), crate::Error> {
+        // delete everything !
+
+        // and then reset to clean state !
         Ok(())
     }
 

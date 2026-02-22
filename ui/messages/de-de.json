@@ -55,6 +55,8 @@
     "leave": "Verlassen",
     "delete": "Löschen",
     "settings": "Einstellungen",
+	"account": "Profil",
+    "appearance": "Darstellung",
     "omit": "Weglassen",
     "selectAChat": "Select a chat to start messaging."
 }

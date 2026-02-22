@@ -1,4 +1,5 @@
 pub mod logs;
+pub mod preferences;
 
 pub mod contacts;
 pub mod devices;

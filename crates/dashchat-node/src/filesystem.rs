@@ -20,4 +20,8 @@ impl Filesystem {
     pub fn op_store_path(&self) -> PathBuf {
         self.0.join("opstore.db")
     }
+    
+    pub fn preferences_path(&self) -> PathBuf {
+        self.0.join("preferences.json")
+    }
 }

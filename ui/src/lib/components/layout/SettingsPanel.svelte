@@ -106,6 +106,21 @@
 					></wa-icon>
 				{/snippet}
 			</ListItem>
+			<ListItem
+				link
+				linkProps={{ href: '/settings/appearance' }}
+				data-testid="settings-appearance-link"
+				title={"Appearance"}
+				chevron={false}
+				class={isActive('/settings/appearance') ? 'active' : ''}
+			>
+				{#snippet media()}
+					<wa-icon
+						src={wrapPathInSvg(mdiAccountCircleOutline)}
+						style="font-size: 28px"
+					></wa-icon>
+				{/snippet}
+			</ListItem>
 		</List>
 	{/await}
 </div>

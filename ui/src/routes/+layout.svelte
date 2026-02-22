@@ -14,6 +14,8 @@
 		ContactsStore,
 		DevicesClient,
 		DevicesStore,
+		PreferencesClient,
+		PreferencesStore,
 	} from 'dash-chat-stores';
 	import { App, KonstaProvider } from 'konsta/svelte';
 
@@ -30,6 +32,10 @@
 	}
 
 	let { children } = $props();
+
+	const preferencesClient = new PreferencesClient();
+	const preferencesStore = new PreferencesStore(preferencesClient);
+	setContext('preferences-store', preferencesStore)
 
 	const logsClient = new TauriLogsClient<Payload>();
 	const logsStore = new LogsStore<Payload>(logsClient);

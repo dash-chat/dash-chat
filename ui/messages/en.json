@@ -116,6 +116,7 @@
 
 	"settings": "Settings",
 	"account": "Account",
+	"appearance": "Appearance",
 	"deleteAccount": "Delete account",
 	"deleteAccountWarning": "This will permanently delete your account and all your data. This action cannot be undone.",
 	"areYouSureDeleteAccount": "Are you sure you want to delete your account?",

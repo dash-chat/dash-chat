@@ -7,6 +7,9 @@ export * from './p2panda/types.js';
 export * from './mock/client.js';
 export * from './types.js';
 
+export * from './preferences/preferences-store.js'
+export * from './preferences/preferences-client.js'
+
 export * from './contacts/contacts-store.js';
 export * from './contacts/contacts-client.js';
 export * from './contacts/contact-code.js';
