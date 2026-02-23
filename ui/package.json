@@ -26,6 +26,7 @@
 		"dash-chat-stores": "workspace:^0.0.0",
 		"emoji-picker-element": "^1.29.0",
 		"jsqr": "^1.4.0",
+		"qr-creator": "^1.0.0",
 		"konsta": "^5.0.6",
 		"signalium": "^2.1.5",
 		"tailwindcss": "^4.1.18",

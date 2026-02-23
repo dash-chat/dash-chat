@@ -8,6 +8,8 @@
 	import {
 		decodeContactCode,
 		encodeContactCode,
+		fullName,
+		toPromise,
 		type ContactsStore,
 	} from 'dash-chat-stores';
 	import type { AddContactError } from 'dash-chat-stores';
@@ -131,8 +133,14 @@
 		showToast(m.copiedCodeToClipboard());
 	}
 
-	async function shareCode() {
-		await shareQrCode(qrColor);
+	async function getMyName(): Promise<string> {
+		const profile = await toPromise(contactsStore.myProfile);
+		return profile ? fullName(profile) : '';
+	}
+
+	async function shareCode(code: string) {
+		const name = await getMyName();
+		await shareQrCode(code, qrColor, name);
 	}
 
 	let imageFilePicker: HTMLInputElement;
@@ -310,7 +318,7 @@
 							<div class="column" style="align-items: center; gap: 8px;">
 								<Button
 									tonal
-									onClick={() => shareCode()}
+									onClick={() => shareCode(code)}
 									class="icon-only"
 									data-testid="add-contact-share-btn"
 								>
@@ -325,7 +333,10 @@
 							<div class="column" style="align-items: center; gap: 8px;">
 								<Button
 									tonal
-									onClick={() => saveQrCode(qrColor)}
+									onClick={async () => {
+										const name = await getMyName();
+										await saveQrCode(code, qrColor, name);
+									}}
 									class="icon-only"
 									data-testid="add-contact-save-btn"
 								>

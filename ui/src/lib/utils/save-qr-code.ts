@@ -1,91 +1,126 @@
-import { save } from '@tauri-apps/plugin-dialog';
-import { writeFile } from '@tauri-apps/plugin-fs';
 import { shareFile } from '@choochmeque/tauri-plugin-sharekit-api';
 import { appCacheDir, join } from '@tauri-apps/api/path';
+import { save } from '@tauri-apps/plugin-dialog';
+import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
+import QrCreator from 'qr-creator';
+import { m } from '$lib/paraglide/messages.js';
 
 /**
- * Gets the QR code as a drawable image source from the wa-qr-code shadow DOM.
- * Tries canvas first, falls back to rendering the SVG onto a canvas.
+ * Renders the QR code pattern to an SVG string using qr-creator's canvas output,
+ * then builds a full share image as SVG with card, name, and subtitle.
  */
-async function getQrSource(
-	qrCard: HTMLElement,
-): Promise<{ source: CanvasImageSource; size: number } | undefined> {
-	const waQr = qrCard.querySelector('wa-qr-code');
-	if (!waQr?.shadowRoot) return;
+function buildShareSvg(
+	code: string,
+	qrColor: string,
+	name: string,
+): string {
+	// Render QR to a temporary canvas to extract the pattern
+	const qrSize = 480;
+	const qrCanvas = document.createElement('canvas');
+	QrCreator.render(
+		{
+			text: code,
+			size: qrSize,
+			fill: qrColor,
+			background: null,
+			ecLevel: 'L',
+			radius: 0.5,
+		},
+		qrCanvas,
+	);
+	const qrDataUrl = qrCanvas.toDataURL('image/png');
 
-	// Try canvas first (desktop)
-	const srcCanvas = waQr.shadowRoot.querySelector('canvas') as HTMLCanvasElement | null;
-	if (srcCanvas && srcCanvas.width > 0) {
-		return { source: srcCanvas, size: srcCanvas.width };
+	// Layout dimensions
+	const imgWidth = 840;
+	const cardMargin = 90;
+	const cardWidth = imgWidth - cardMargin * 2;
+	const cardRadius = 72;
+	const qrDisplaySize = 480;
+	const qrWhitePad = 36;
+	const whiteAreaSize = qrDisplaySize + qrWhitePad * 2;
+	const qrWhiteRadius = 36;
+
+	const cardTop = 90;
+	const qrPadding = 60;
+	const qrWhiteTop = cardTop + qrPadding;
+	const qrWhiteLeft = (imgWidth - whiteAreaSize) / 2;
+	const qrTop = qrWhiteTop + qrWhitePad;
+	const qrLeft = qrWhiteLeft + qrWhitePad;
+
+	const nameTop = qrWhiteTop + whiteAreaSize + 48;
+	const nameFontSize = 48;
+	const cardBottom = nameTop + nameFontSize + 48;
+	const cardHeight = cardBottom - cardTop;
+
+	const subtitleTop = cardBottom + 72;
+	const subtitleFontSize = 33;
+	const subtitle = m.shareQrCodeSubtitle();
+	const totalHeight = subtitleTop + subtitleFontSize + 90;
+
+	return `<svg xmlns="http://www.w3.org/2000/svg" width="${imgWidth}" height="${totalHeight}">
+	<rect width="${imgWidth}" height="${totalHeight}" fill="#e8e4f0" rx="0"/>
+	<rect x="${cardMargin}" y="${cardTop}" width="${cardWidth}" height="${cardHeight}" rx="${cardRadius}" fill="${qrColor}"/>
+	<rect x="${qrWhiteLeft}" y="${qrWhiteTop}" width="${whiteAreaSize}" height="${whiteAreaSize}" rx="${qrWhiteRadius}" fill="white"/>
+	<image href="${qrDataUrl}" x="${qrLeft}" y="${qrTop}" width="${qrDisplaySize}" height="${qrDisplaySize}"/>
+	<text x="${imgWidth / 2}" y="${nameTop + nameFontSize}" text-anchor="middle" fill="white" font-family="-apple-system, 'Segoe UI', Roboto, sans-serif" font-size="${nameFontSize}" font-weight="bold">${escapeXml(name)}</text>
+	<text x="${imgWidth / 2}" y="${subtitleTop + subtitleFontSize}" text-anchor="middle" fill="#555555" font-family="-apple-system, 'Segoe UI', Roboto, sans-serif" font-size="${subtitleFontSize}">${escapeXml(subtitle)}</text>
+</svg>`;
+}
+
+function escapeXml(s: string): string {
+	return s
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;');
+}
+
+/**
+ * Converts the SVG share image to PNG bytes via canvas.
+ */
+async function renderQrImage(
+	code: string,
+	qrColor: string,
+	name: string,
+): Promise<Uint8Array | undefined> {
+	const svg = buildShareSvg(code, qrColor, name);
+	const blob = new Blob([svg], { type: 'image/svg+xml' });
+	const url = URL.createObjectURL(blob);
+
+	const img = new Image();
+	try {
+		await new Promise<void>((resolve, reject) => {
+			img.onload = () => resolve();
+			img.onerror = () => reject(new Error('Failed to load SVG'));
+			img.src = url;
+		});
+	} finally {
+		URL.revokeObjectURL(url);
 	}
 
-	// Fall back to SVG (mobile)
-	const svgEl = waQr.shadowRoot.querySelector('svg') as SVGElement | null;
-	if (!svgEl) return;
-
-	const svgData = new XMLSerializer().serializeToString(svgEl);
-	const img = new Image();
-	await new Promise<void>((resolve, reject) => {
-		img.onload = () => resolve();
-		img.onerror = () => reject(new Error('Failed to load SVG'));
-		img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
-	});
-
-	return { source: img, size: img.width };
-}
-
-/**
- * Renders the QR code card to PNG bytes.
- */
-async function renderQrImage(qrColor: string): Promise<Uint8Array | undefined> {
-	const qrCard = document.querySelector('.qr-card') as HTMLElement | null;
-	if (!qrCard) return;
-
-	const qrSource = await getQrSource(qrCard);
-	if (!qrSource) return;
-
-	const padding = 32;
-	const qrSize = qrSource.size;
-	const totalSize = qrSize + padding * 2;
-
 	const canvas = document.createElement('canvas');
-	canvas.width = totalSize;
-	canvas.height = totalSize;
+	canvas.width = img.naturalWidth;
+	canvas.height = img.naturalHeight;
 	const ctx = canvas.getContext('2d')!;
+	ctx.drawImage(img, 0, 0);
 
-	// Draw colored background with rounded corners
-	ctx.fillStyle = qrColor;
-	drawRoundedRect(ctx, 0, 0, totalSize, totalSize, 24);
-	ctx.fill();
-
-	// Draw white inner area with padding
-	const innerPad = 16;
-	ctx.fillStyle = 'white';
-	drawRoundedRect(
-		ctx,
-		padding - innerPad,
-		padding - innerPad,
-		qrSize + innerPad * 2,
-		qrSize + innerPad * 2,
-		12,
-	);
-	ctx.fill();
-
-	// Draw QR code
-	ctx.drawImage(qrSource.source, padding, padding, qrSize, qrSize);
-
-	// Get PNG bytes
-	const blob = await new Promise<Blob>((resolve) => {
-		canvas.toBlob((b) => resolve(b!), 'image/png');
-	});
-	return new Uint8Array(await blob.arrayBuffer());
+	const dataUrl = canvas.toDataURL('image/png');
+	const base64 = dataUrl.split(',')[1];
+	const raw = atob(base64);
+	const bytes = new Uint8Array(raw.length);
+	for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+	return bytes;
 }
 
 /**
- * Renders the QR code card to a PNG image and saves it via a native save dialog.
+ * Renders the QR code to a PNG image and saves it via a native save dialog.
  */
-export async function saveQrCode(qrColor: string): Promise<void> {
-	const bytes = await renderQrImage(qrColor);
+export async function saveQrCode(
+	code: string,
+	qrColor: string,
+	name: string,
+): Promise<void> {
+	const bytes = await renderQrImage(code, qrColor, name);
 	if (!bytes) return;
 
 	const path = await save({
@@ -100,39 +135,24 @@ export async function saveQrCode(qrColor: string): Promise<void> {
 }
 
 /**
- * Renders the QR code card to a PNG image and shares it via native share sheet.
+ * Renders the QR code to a PNG image and shares it via native share sheet.
  */
-export async function shareQrCode(qrColor: string): Promise<void> {
-	const bytes = await renderQrImage(qrColor);
+export async function shareQrCode(
+	code: string,
+	qrColor: string,
+	name: string,
+): Promise<void> {
+	const bytes = await renderQrImage(code, qrColor, name);
 	if (!bytes) return;
 
 	const cacheDir = await appCacheDir();
-	const path = await join(cacheDir, 'dashchat-qr-code.png');
+	const shareDir = await join(cacheDir, 'share');
+	await mkdir(shareDir, { recursive: true });
+	const path = await join(shareDir, 'dashchat-qr-code.png');
 	await writeFile(path, bytes);
 
 	await shareFile(`file://${path}`, {
 		mimeType: 'image/png',
 		title: 'dashchat-qr-code.png',
 	});
-}
-
-function drawRoundedRect(
-	ctx: CanvasRenderingContext2D,
-	x: number,
-	y: number,
-	w: number,
-	h: number,
-	r: number,
-): void {
-	ctx.beginPath();
-	ctx.moveTo(x + r, y);
-	ctx.lineTo(x + w - r, y);
-	ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-	ctx.lineTo(x + w, y + h - r);
-	ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-	ctx.lineTo(x + r, y + h);
-	ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-	ctx.lineTo(x, y + r);
-	ctx.quadraticCurveTo(x, y, x + r, y);
-	ctx.closePath();
 }
