@@ -32,24 +32,24 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
             "toggle-local-mailbox" => match mailbox_toggle_handle.is_checked() {
                 Ok(enabled) => {
                     let app_handle = app_handle.clone();
-                    tauri::async_runtime::spawn(async move {
-                        crate::settings::save_mailbox_enabled::<R>(&app_handle, enabled);
+                    crate::settings::save_mailbox_enabled::<R>(&app_handle, enabled);
 
-                        // The autostart plugin is only registered in release builds,
-                        // so skip autolaunch calls during development.
-                        if !tauri::is_dev() {
-                            let autostart = app_handle.autolaunch();
-                            if enabled {
-                                if let Err(err) = autostart.enable() {
-                                    log::error!("Failed to enable autostart: {err:?}");
-                                }
-                            } else {
-                                if let Err(err) = autostart.disable() {
-                                    log::error!("Failed to disable autostart: {err:?}");
-                                }
+                    // The autostart plugin is only registered in release builds,
+                    // so skip autolaunch calls during development.
+                    if !tauri::is_dev() {
+                        let autostart = app_handle.autolaunch();
+                        if enabled {
+                            if let Err(err) = autostart.enable() {
+                                log::error!("Failed to enable autostart: {err:?}");
+                            }
+                        } else {
+                            if let Err(err) = autostart.disable() {
+                                log::error!("Failed to disable autostart: {err:?}");
                             }
                         }
+                    }
 
+                    tauri::async_runtime::spawn(async move {
                         let r = if enabled {
                             mailbox::server::start_local_mailbox(&app_handle).await
                         } else {

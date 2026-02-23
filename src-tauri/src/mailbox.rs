@@ -19,24 +19,40 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
                 mdns_sd::ServiceEvent::ServiceResolved(resolved) => {
                     let mailbox_id = resolved.fullname;
                     let port = resolved.port;
-                    let ip = resolved
+
+                    // Prefer IPv4, fall back to IPv6 with bracket notation
+                    let host = resolved
                         .addresses
                         .iter()
                         .find_map(|addr| match addr {
                             mdns_sd::ScopedIp::V4(ip) => Some(ip.addr().to_string()),
                             _ => None,
                         })
-                        .unwrap_or_default();
+                        .or_else(|| {
+                            resolved.addresses.iter().find_map(|addr| match addr {
+                                mdns_sd::ScopedIp::V6(ip) => {
+                                    Some(format!("[{}]", ip.addr()))
+                                }
+                                _ => None,
+                            })
+                        });
+
+                    let Some(host) = host else {
+                        log::warn!(
+                            "Resolved mdns service {mailbox_id} has no addresses, skipping"
+                        );
+                        continue;
+                    };
+
                     let n = node.clone();
-                    let ip2 = ip.clone();
                     n.mailboxes
                         .register(mailbox_client::toy::ToyMailboxClient::new(
                             mailbox_id.clone(),
-                            format!("http://{ip2}:{port}",),
+                            format!("http://{host}:{port}"),
                         ))
                         .await;
                     log::info!(
-                        "*** Added new local mailbox client via mdns: {mailbox_id} ({ip2}:{port}) ***",
+                        "*** Added new local mailbox client via mdns: {mailbox_id} ({host}:{port}) ***",
                     );
                 }
                 other_event => {
