@@ -1,0 +1,45 @@
+# Start a local Cassandra node via Docker
+start-cassandra:
+    docker run -d --name cassandra -p 9042:9042 cassandra:5
+    @echo "Cassandra is starting — run 'just wait-cassandra' before using it"
+
+# Block until Cassandra is ready to accept CQL connections
+wait-cassandra:
+    @echo "Waiting for Cassandra..."
+    @until docker exec cassandra cqlsh -e "DESCRIBE KEYSPACES" > /dev/null 2>&1; do \
+        sleep 2; \
+        echo "  still waiting..."; \
+    done
+    @echo "Cassandra is ready"
+
+# Apply the CQL schema (run once after start-cassandra)
+setup-db: wait-cassandra
+    docker exec -i cassandra cqlsh < schema.cql
+    @echo "Schema applied"
+
+# Run the server locally (requires GOOGLE_APPLICATION_CREDENTIALS and FCM_PROJECT_ID)
+run:
+    CASSANDRA_URL=127.0.0.1:9042 \
+    ADDR=0.0.0.0:3000 \
+    # TODO: change when FCM project is created
+    # FCM_PROJECT_ID=dashchat \
+    cargo run -p push-server
+
+# Run tests
+test:
+    cargo test -p push-server
+
+# Show Cassandra logs
+logs-cassandra:
+    docker logs -f cassandra
+
+# Open a CQL shell
+cqlsh:
+    docker exec -it cassandra cqlsh
+
+# Stop and remove the Cassandra container
+stop-cassandra:
+    docker stop cassandra && docker rm cassandra
+
+# Full local setup from scratch: start Cassandra, apply schema, run server
+dev: start-cassandra setup-db run

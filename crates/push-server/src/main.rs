@@ -1,0 +1,64 @@
+use std::sync::Arc;
+
+use anyhow::{Context, Result};
+use axum::{Router, routing::post};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+
+mod db;
+mod error;
+mod fcm;
+mod routes;
+mod types;
+
+use db::Db;
+use fcm::FcmClient;
+
+#[derive(Clone)]
+pub struct AppState {
+    db: Arc<Db>,
+    fcm: Arc<FcmClient>,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::registry()
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let cassandra_url =
+        std::env::var("CASSANDRA_URL").unwrap_or_else(|_| "127.0.0.1:9042".to_string());
+
+    let service_account_path = std::env::var("GOOGLE_APPLICATION_CREDENTIALS")
+        .context("GOOGLE_APPLICATION_CREDENTIALS env var is required")?;
+
+    let project_id =
+        std::env::var("FCM_PROJECT_ID").context("FCM_PROJECT_ID env var is required")?;
+
+    let addr = std::env::var("ADDR").unwrap_or_else(|_| "0.0.0.0:3000".to_string());
+
+    tracing::info!("connecting to Cassandra at {cassandra_url}");
+    let db = Db::new(&cassandra_url).await?;
+
+    tracing::info!("loading FCM credentials for project {project_id}");
+    let fcm = FcmClient::new(&service_account_path, project_id).await?;
+
+    let state = AppState {
+        db: Arc::new(db),
+        fcm: Arc::new(fcm),
+    };
+
+    let app = Router::new()
+        .route("/fcm-token", post(routes::store_token::store_token))
+        .route("/push", post(routes::send_push::send_push))
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .with_context(|| format!("failed to bind to {addr}"))?;
+
+    tracing::info!("listening on {addr}");
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
