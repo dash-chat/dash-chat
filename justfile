@@ -15,3 +15,13 @@ uninstall-android:
 clean-dev:
     -@adb uninstall studio.darksoil.dashchat 2>/dev/null
     rm -rf .dev-dbs
+
+# builds dash chat as a CLI binary
+build-binary:
+    pnpm -F ./packages/stores build
+    pnpm -F ./ui build
+    cargo build --bins --release --locked --features tauri/custom-protocol,tauri/native-tls    
+
+# builds and runs dash chat as a binary
+run-binary: build-binary
+    ./target/release/dash-chat
