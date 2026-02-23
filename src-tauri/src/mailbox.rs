@@ -30,17 +30,13 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
                         })
                         .or_else(|| {
                             resolved.addresses.iter().find_map(|addr| match addr {
-                                mdns_sd::ScopedIp::V6(ip) => {
-                                    Some(format!("[{}]", ip.addr()))
-                                }
+                                mdns_sd::ScopedIp::V6(ip) => Some(format!("[{}]", ip.addr())),
                                 _ => None,
                             })
                         });
 
                     let Some(host) = host else {
-                        log::warn!(
-                            "Resolved mdns service {mailbox_id} has no addresses, skipping"
-                        );
+                        log::warn!("Resolved mdns service {mailbox_id} has no addresses, skipping");
                         continue;
                     };
 
