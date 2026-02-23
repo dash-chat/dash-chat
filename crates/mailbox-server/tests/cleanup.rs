@@ -1,4 +1,6 @@
-use mailbox_server::{cleanup_old_messages, GetBlobsResponse, BLOBS_TABLE, WATERMARKS_TABLE};
+use mailbox_server::{
+    cleanup_old_messages, BlobsKey, GetBlobsResponse, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE,
+};
 use redb::{ReadableDatabase, ReadableTable};
 use std::time::Duration;
 
@@ -36,24 +38,24 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
 
             // Insert old blobs (seq 0, 1, 2)
             for seq in 0..=2 {
-                let key = format!("{}:{}:{}:{}", topic, author, seq, old_uuid);
+                let key = BlobsKey::new(topic.into(), author.into(), seq, old_uuid).unwrap();
                 blobs
-                    .insert(key.as_str(), format!("old message {}", seq).as_bytes())
+                    .insert(&key, format!("old message {}", seq).as_bytes())
                     .unwrap();
             }
 
             // Insert new blobs (seq 3, 4, 5) with current UUID
             let new_uuid = uuid::Uuid::now_v7();
             for seq in 3..=5 {
-                let key = format!("{}:{}:{}:{}", topic, author, seq, new_uuid);
+                let key = BlobsKey::new(topic.into(), author.into(), seq, new_uuid).unwrap();
                 blobs
-                    .insert(key.as_str(), format!("new message {}", seq).as_bytes())
+                    .insert(&key, format!("new message {}", seq).as_bytes())
                     .unwrap();
             }
 
             // Set watermark to 5 (sequences 0-5 are contiguous)
-            let watermark_key = format!("{}:{}", topic, author);
-            watermarks.insert(watermark_key.as_str(), 5).unwrap();
+            let watermark_key = WatermarksKey::new(topic.into(), author.into()).unwrap();
+            watermarks.insert(&watermark_key, 5).unwrap();
         }
         write_txn.commit().unwrap();
     }
@@ -67,12 +69,8 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
         let count = blobs.iter().unwrap().count();
         assert_eq!(count, 6, "Should have 6 blobs initially");
 
-        let watermark_key = format!("{}:{}", topic, author);
-        let watermark = watermarks
-            .get(watermark_key.as_str())
-            .unwrap()
-            .unwrap()
-            .value();
+        let watermark_key = WatermarksKey::new(topic.into(), author.into()).unwrap();
+        let watermark = watermarks.get(&watermark_key).unwrap().unwrap().value();
         assert_eq!(watermark, 5);
     }
 
@@ -93,12 +91,8 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     {
         let read_txn = db.begin_read().unwrap();
         let watermarks = read_txn.open_table(WATERMARKS_TABLE).unwrap();
-        let watermark_key = format!("{}:{}", topic, author);
-        let watermark = watermarks
-            .get(watermark_key.as_str())
-            .unwrap()
-            .unwrap()
-            .value();
+        let watermark_key = WatermarksKey::new(topic.into(), author.into()).unwrap();
+        let watermark = watermarks.get(&watermark_key).unwrap().unwrap().value();
         assert_eq!(watermark, 5, "Watermark should be preserved after cleanup");
     }
 

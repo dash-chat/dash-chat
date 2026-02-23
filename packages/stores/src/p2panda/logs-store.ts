@@ -1,15 +1,13 @@
-import { ReactivePromise, reactive, relay } from 'signalium';
+import { reactive, relay } from 'signalium';
 
 import type { LogsClient } from './logs-client';
 import type { SimplifiedOperation } from './simplified-types';
 import type { PublicKey, TopicId } from './types';
 
-export class LogsStore<TOPIC_ID, PAYLOAD> {
-	constructor(protected logsClient: LogsClient<TOPIC_ID, PAYLOAD>) {}
+export class LogsStore<PAYLOAD> {
+	constructor(public logsClient: LogsClient<PAYLOAD>) {}
 
-	// myPubKey = reactive(() => this.logsClient.myPubKey());
-
-	authorsForTopic = reactive((topicId: TOPIC_ID) =>
+	authorsForTopic = reactive((topicId: TopicId) =>
 		relay<PublicKey[]>(state => {
 			const fetchAuthors = async () => {
 				const authors = await this.logsClient.getAuthorsForTopic(topicId);
@@ -31,7 +29,7 @@ export class LogsStore<TOPIC_ID, PAYLOAD> {
 		}),
 	);
 
-	logs = reactive((topicId: TOPIC_ID, author: PublicKey) =>
+	logs = reactive((topicId: TopicId, author: PublicKey) =>
 		relay<SimplifiedOperation<PAYLOAD>[]>(state => {
 			const fetchLog = async () => {
 				const log = await this.logsClient.getLog(topicId, author);
@@ -42,6 +40,11 @@ export class LogsStore<TOPIC_ID, PAYLOAD> {
 			const unsubs = this.logsClient.onNewOperation(
 				(operationTopicId, operation) => {
 					if (topicId !== operationTopicId) return;
+					if (author !== operation.header.public_key) return;
+
+					// We already have this operation
+					if (state.value?.find(op => op.header.seq_num === operation.header.seq_num)) return;
+
 					state.value = [...(state.value || []), operation];
 				},
 			);
@@ -51,10 +54,10 @@ export class LogsStore<TOPIC_ID, PAYLOAD> {
 		}),
 	);
 
-	logsForAllAuthors = reactive(async (topicId: TOPIC_ID) => {
+	logsForAllAuthors = reactive(async (topicId: TopicId) => {
 		const authorsForTopic = await this.authorsForTopic(topicId);
 
-		const logs = await ReactivePromise.all(
+		const logs = await Promise.all(
 			authorsForTopic.map(author => this.logs(topicId, author)),
 		);
 
@@ -62,6 +65,7 @@ export class LogsStore<TOPIC_ID, PAYLOAD> {
 		for (let i = 0; i < authorsForTopic.length; i++) {
 			logsForAllAuthors[authorsForTopic[i]] = logs[i];
 		}
+
 		return logsForAllAuthors;
 	});
 }

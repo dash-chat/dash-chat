@@ -10,54 +10,57 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Badge, List, ListItem } from 'konsta/svelte';
+	import {
+		moreThanAnHourAgo,
+		lessThanAMinuteAgo,
+		inYesterday,
+		beforeYesterday,
+	} from '$lib/utils/time';
+	import { useTheme } from 'konsta/svelte';
+	import { page } from '$app/state';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
 
-	const today = new Date();
-	today.setHours(0);
-	today.setMinutes(0);
-	today.setMilliseconds(0);
-	const todayFirstTimestamp = today.valueOf();
-	const yesterday = new Date();
-	yesterday.setDate(today.getDate() - 1);
-	yesterday.setHours(0);
-	yesterday.setMinutes(0);
-	yesterday.setMilliseconds(0);
-	const yesterdayFirstTimestamp = yesterday.valueOf();
+	const chatHref = (summary: { type: string; chatId: string }) =>
+		summary.type === 'GroupChat'
+			? `/group-chat/${summary.chatId}`
+			: `/direct-chats/${summary.chatId}`;
 
-	const beforeThanYesterday = (timestamp: number) =>
-		timestamp < yesterdayFirstTimestamp;
+	let activePath = $derived(page.url.pathname);
 
-	const inYesterday = (timestamp: number) =>
-		yesterdayFirstTimestamp < timestamp && timestamp < todayFirstTimestamp;
-	const lessThanAMinuteAgo = (timestamp: number) =>
-		Date.now() - timestamp < 60 * 1000;
-	const moreThanAnHourAgo = (timestamp: number) =>
-		Date.now() - timestamp > 46 * 60 * 1000;
+	const isActive = (summary: { type: string; chatId: string }) =>
+		isWideScreen.value && activePath.startsWith(chatHref(summary));
+	const theme = $derived(useTheme());
 </script>
 
-<List nested>
+<List
+	nested
+	inset={isWideScreen.value && theme === 'ios'}
+	data-testid="all-chats-list"
+>
 	{#await $chatSummaries then summaries}
 		{#each summaries as summary}
 			<ListItem
 				title={summary.name}
 				link
-				linkProps={{ href: `/group-chat/${summary.chatId}` }}
+				linkProps={{ href: chatHref(summary) }}
 				chevron={false}
+				class={isActive(summary) ? 'active' : ''}
 			>
 				{#snippet media()}
 					<wa-avatar image={summary.avatar} initials={summary.name.slice(0, 2)}>
 					</wa-avatar>
 				{/snippet}
 				{#snippet after()}
-					{#if beforeThanYesterday(summary.lastEvent.timestamp)}
+					{#if beforeYesterday(summary.lastEvent.timestamp)}
 						<wa-format-date
 							weekday="short"
 							date={new Date(summary.lastEvent.timestamp)}
-						></wa-format-date>`;
+						></wa-format-date>
 					{:else if inYesterday(summary.lastEvent.timestamp)}
-						{m.yesterday()}
+						{m.yesterday().toLocaleLowerCase()}
 					{:else if lessThanAMinuteAgo(summary.lastEvent.timestamp)}
 						{m.now()}
 					{:else if moreThanAnHourAgo(summary.lastEvent.timestamp)}
@@ -79,7 +82,13 @@
 				{/snippet}
 				{#snippet subtitle()}
 					<div class="row" style="align-items: center">
-						<span style="flex: 1">{summary.lastEvent.summary}</span>
+						<span style="flex: 1"
+							>{summary.type === 'ContactRequest'
+								? m.messageRequest()
+								: summary.lastEvent.summary === 'contact_added'
+									? m.contactAccepted()
+									: summary.lastEvent.summary}</span
+						>
 						{#if summary.unreadMessages !== 0}
 							<Badge>{summary.unreadMessages}</Badge>
 						{/if}
@@ -87,10 +96,7 @@
 				{/snippet}
 			</ListItem>
 		{:else}
-			<ListItem title={m.noChatsYet()} />
+			<ListItem title={m.noChatsYet()} data-testid="all-chats-empty" />
 		{/each}
 	{/await}
 </List>
-
-<style>
-</style>

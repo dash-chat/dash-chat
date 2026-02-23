@@ -1,8 +1,6 @@
 name: "test"
 on:
-  # Trigger the workflow on push or pull request,
-  # but only for the main branch
-  push: 
+  push:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
@@ -11,29 +9,45 @@ jobs:
   test-and-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Extend space
-        uses: ./.github/actions/extend-space
+      - name: install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt install libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
 
-      - name: Install nix
-        uses: cachix/install-nix-action@v27
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-          nix_path: nixpkgs=channel:nixos-25.11
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@master
+        with:
+          version: 10
+          cache: true
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: '' # TODO: remove this when we want to disallow warnings in our rust code in CI
 
       - name: Check Rust formatting
-        run: |
-          nix develop --no-update-lock-file --accept-flake-config --command bash -c "cargo fmt --check"
+        run: cargo fmt --check
 
       - name: Test
-        run: |
-          nix develop --no-update-lock-file --accept-flake-config --command bash -c "cargo test"
+        run: cargo test
 
-      - name: Install
-        run: |
-          nix develop --no-update-lock-file --accept-flake-config --command bash -c "pnpm install"
+      - name: Install pnpm dependencies
+        run: pnpm install
 
       - name: Build UI packages
-        run: |
-          nix develop --no-update-lock-file --accept-flake-config --command bash -c "pnpm --recursive build"
+        run: pnpm --recursive build

@@ -2,5 +2,10 @@
 	"identifier": "desktop-capability",
 	"platforms": ["macOS", "windows", "linux"],
 	"windows": ["main"],
-	"permissions": ["core:default", "process:default", "updater:default"]
+	"permissions": [
+		"core:default",
+		"process:default",
+		"updater:default",
+		"mcp-bridge:default"
+	]
 }

@@ -43,10 +43,10 @@ impl Behavior {
                     hash = ?n.header.hash().renamed(),
                     "checking for contact invitation"
                 );
-                let Payload::Inbox(InboxPayload::Contact(qr)) = &n.payload else {
+                let Payload::Inbox(InboxPayload::ContactRequest { code, .. }) = &n.payload else {
                     return None;
                 };
-                Some(qr.clone())
+                Some(code.clone())
             })
             .await
             .context("no contact invitation found")?;

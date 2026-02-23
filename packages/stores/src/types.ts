@@ -3,8 +3,6 @@ import {
 	AgentId,
 	DeviceId,
 	Hash,
-	LongTermKeyBundle,
-	PublicKey,
 	TopicId,
 } from './p2panda/types';
 
@@ -17,12 +15,19 @@ export interface SpaceControlMessage {
 	// spaces_args: SpacesArgs,
 }
 
-export type AnnouncementPayload = { type: 'SetProfile'; payload: Profile };
-export type ChatPayload = Array<SpaceControlMessage>;
+export interface ChatReaction {
+	/// The emoji to react with.
+	/// Use None to "remove" the prior reaction.
+	emoji: string | null;
+	/// The hash of the header of the message being reacted to.
+	target: Hash;
+}
 
-export type InboxPayload =
-	| { type: 'JoinGroup'; payload: ChatId }
-	| { type: 'Contact' };
+export type MessageContent = string;
+export type AnnouncementPayload = { type: 'SetProfile'; payload: Profile };
+export type ChatPayload =
+	| { type: 'Message'; payload: MessageContent }
+	| { type: 'Reaction'; payload: ChatReaction };
 
 export interface InboxTopic {
 	expires_at: number;
@@ -41,16 +46,29 @@ export interface ContactCode {
 	share_intent: ShareIntent;
 }
 
-export type DeviceGroupPayload = {
-	type: 'AddContact';
-	payload: ContactCode;
+export interface ReadMessagesPayload {
+	chat_id: ChatId;
+	message_hashes: Hash[];
+}
+
+export type DeviceGroupPayload =
+	| { type: 'AddContact'; payload: ContactCode }
+	| { type: 'RejectContactRequest'; payload: AgentId }
+	| { type: 'ReadMessages'; payload: ReadMessagesPayload };
+
+export type InboxPayload = {
+	type: 'ContactRequest';
+	payload: {
+		code: ContactCode;
+		profile: Profile;
+	};
 };
 
 export type Payload =
 	| { type: 'Announcements'; payload: AnnouncementPayload }
 	| { type: 'Chat'; payload: ChatPayload }
 	| { type: 'DeviceGroupPayload'; payload: DeviceGroupPayload }
-	| { type: 'Inbox' };
+	| { type: 'Inbox'; payload: InboxPayload };
 
 export type MessageId = string;
 
@@ -66,3 +84,15 @@ export type MessageId = string;
 // 	author: PublicKey;
 // 	timestamp: number;
 // }
+
+export interface ChatSummary {
+	type: 'GroupChat' | 'DirectChat' | 'ContactRequest';
+	chatId: TopicId;
+	unreadMessages: number;
+	name: string;
+	avatar: string | undefined;
+	lastEvent: {
+		summary: string;
+		timestamp: number;
+	};
+}

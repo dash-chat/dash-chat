@@ -57,7 +57,9 @@ pub trait TopicKind:
     + 'static
 {
 }
-// pub trait ChatTopicKind: TopicKind {}
+
+/// A topic kind which can be registered in the database to be automatically initialized at node startup
+pub trait AutoRegisteredTopic: TopicKind {}
 
 pub type DeviceGroupTopic = ActorId;
 
@@ -67,6 +69,13 @@ pub mod kind {
     use super::*;
 
     macro_rules! topic_kind {
+        ($name:ident) => {
+            topic_kind_no_auto_register!($name);
+            impl AutoRegisteredTopic for $name {}
+        };
+    }
+
+    macro_rules! topic_kind_no_auto_register {
         ($name:ident) => {
             #[derive(
                 Clone,
@@ -95,7 +104,6 @@ pub mod kind {
     }
 
     topic_kind!(Announcements);
-    topic_kind!(Inbox);
     topic_kind!(DeviceGroup);
 
     // Either direct or group chat
@@ -103,10 +111,8 @@ pub mod kind {
 
     topic_kind!(Untyped);
 
-    // impl ChatTopicKind for Chat {}
-    // impl ChatTopicKind for GroupChat {}
-    // impl ChatTopicKind for DirectChat {}
-    // impl ChatTopicKind for DeviceGroup {}
+    // Inbox topics cannot be automatically registered, they need to be registered separately to account for the expiry time
+    topic_kind_no_auto_register!(Inbox);
 }
 
 #[derive(

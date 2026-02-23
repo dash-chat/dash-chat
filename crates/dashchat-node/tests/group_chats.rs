@@ -39,11 +39,11 @@ async fn test_direct_chat() {
     );
 
     let mailbox = MemMailbox::new();
-    let alice = TestNode::new(NodeConfig::testing(), Some("alice"))
+    let alice = TestNode::new(NodeConfig::testing(), "alice")
         .await
         .add_mailbox_client(mailbox.client())
         .await;
-    let bobbi = TestNode::new(NodeConfig::testing(), Some("bobbi"))
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
         .await
         .add_mailbox_client(mailbox.client())
         .await;

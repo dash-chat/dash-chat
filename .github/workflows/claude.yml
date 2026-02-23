@@ -36,20 +36,15 @@ jobs:
           node-version: 20.12.2
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3 # docs https://pnpm.io/continuous-integration#github-actions
+        uses: pnpm/action-setup@master
         with:
             version: 10.15.0  # Optional: specify a pnpm version
-
-      - name: Install and prepare
-        run: |
-          pnpm install
-          pnpm -F ./packages/stores build
-          npx @inlang/paraglide-js compile --project ./ui/project.inlang
+            cache: true
 
       - name: install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      - name: install dependencies (ubuntu only)
+      - name: install dependencies
         run: |
           sudo apt-get update
           sudo apt install libwebkit2gtk-4.1-dev \
@@ -61,6 +56,12 @@ jobs:
             libssl-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev
+
+      - name: Install and prepare
+        run: |
+          pnpm install
+          pnpm -F ./packages/stores build
+          npx @inlang/paraglide-js compile --project ./ui/project.inlang
 
       - name: Run Claude Code
         id: claude
@@ -78,4 +79,4 @@ jobs:
           # Optional: Add claude_args to customize behavior and configuration
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://docs.claude.com/en/docs/claude-code/cli-reference for available options
-          claude_args: '--model claude-opus-4-5-20251101 --allowed-tools Bash(gh pr:*),Bash(pnpm:*),mcp__tauri__driver_session,mcp__tauri__webview_find_element,mcp__tauri__read_logs,mcp__tauri__webview_interact,mcp__tauri__webview_screenshot,mcp__tauri__webview_keyboard,mcp__tauri__webview_wait_for,mcp__tauri__webview_get_styles,mcp__tauri__webview_execute_js,mcp__tauri__manage_window'
+          claude_args: '--model claude-opus-4-6 --allowed-tools Bash(gh pr:*),Bash(pnpm:*),mcp__tauri__driver_session,mcp__tauri__webview_find_element,mcp__tauri__read_logs,mcp__tauri__webview_interact,mcp__tauri__webview_screenshot,mcp__tauri__webview_keyboard,mcp__tauri__webview_wait_for,mcp__tauri__webview_get_styles,mcp__tauri__webview_execute_js,mcp__tauri__manage_window'

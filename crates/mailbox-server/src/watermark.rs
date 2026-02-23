@@ -1,7 +1,7 @@
 use redb::{Database, ReadableDatabase, ReadableTable};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{SequenceNumber, BLOBS_TABLE, WATERMARKS_TABLE};
+use crate::{BlobsKey, SequenceNumber, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE};
 
 /// Computes initial watermarks by scanning all existing blobs.
 /// Called once at startup to ensure watermarks are in sync with stored blobs.
@@ -13,8 +13,8 @@ use crate::{SequenceNumber, BLOBS_TABLE, WATERMARKS_TABLE};
 pub fn compute_initial_watermarks(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Computing initial watermarks from existing blobs");
 
-    // Step 1: Collect all sequence numbers per topic:log
-    let mut sequences_per_log: BTreeMap<String, BTreeSet<SequenceNumber>> = BTreeMap::new();
+    // Step 1: Collect all sequence numbers per topic:author
+    let mut sequences_per_log: BTreeMap<WatermarksKey, BTreeSet<SequenceNumber>> = BTreeMap::new();
 
     {
         let read_txn = db.begin_read()?;
@@ -26,21 +26,13 @@ pub fn compute_initial_watermarks(db: &Database) -> Result<(), Box<dyn std::erro
             let (key, value) = entry?;
             drop(value);
 
-            let key_str: &str = key.value();
-
-            // Key format: "topic_id:log_id:sequence_number:uuid_v7"
-            let parts: Vec<&str> = key_str.split(':').collect();
-            if parts.len() < 4 {
-                continue; // Skip malformed keys
-            }
-
-            let topic_log_key = format!("{}:{}", parts[0], parts[1]);
-            let seq_num: SequenceNumber = parts[2].parse()?;
+            let blob_key: BlobsKey = key.value();
+            let watermarks_key = blob_key.watermarks_key();
 
             sequences_per_log
-                .entry(topic_log_key)
+                .entry(watermarks_key)
                 .or_default()
-                .insert(seq_num);
+                .insert(blob_key.sequence_number);
         }
     }
 
@@ -49,9 +41,9 @@ pub fn compute_initial_watermarks(db: &Database) -> Result<(), Box<dyn std::erro
     {
         let mut table = write_txn.open_table(WATERMARKS_TABLE)?;
 
-        for (topic_log_key, sequences) in sequences_per_log {
+        for (watermarks_key, sequences) in sequences_per_log {
             if let Some(watermark) = compute_contiguous_watermark(&sequences) {
-                table.insert(topic_log_key.as_str(), watermark)?;
+                table.insert(&watermarks_key, watermark)?;
             }
         }
     }

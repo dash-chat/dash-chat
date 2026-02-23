@@ -1,21 +1,23 @@
 procs:
   agent1:
-    shell: pnpm tauri dev
+    shell: DEV_DBS_PATH="$PWD/.dev-dbs" pnpm tauri dev
+    env:
+      AGENT: "1"
   agent2:
-    shell: pnpm tauri dev
-  # push-notifications-service:
-  #   shell: test-push-notifications-service ./service-account-key.json somesecretnetworkseedv0.5.0
-  # safehold-service:
-  #   shell: test-safehold-service somesecretnetworkseedv0.5.0
-  ui:  pnpm -F ./packages/stores build && pnpm -F ./ui start
+    shell: DEV_DBS_PATH="$PWD/.dev-dbs" pnpm tauri dev
+    env:
+      AGENT: "2"
+  ui: pnpm -F ./packages/stores build && pnpm -F ./ui start
   stores: pnpm -F ./packages/stores dev
-  mailbox_server:
+  mailbox-server:
     shell: |
-      TMPFILE=$(mktemp)
-      cargo run -p mailbox-server -- --db-path ${TMPFILE}
+      DEV_DBS_PATH="$PWD/.dev-dbs"
+      cargo run -p mailbox-server -- --db-path "$DEV_DBS_PATH/mailbox-server/mailbox.db" --addr 0.0.0.0:3000
   android:
-    shell: pnpm tauri android dev
+    shell: DEV_DBS_PATH="$PWD/.dev-dbs" pnpm tauri android dev
     autostart: false
+    env:
+      AGENT: "2"
   logcat:
     shell: adb logcat | grep -F "`adb shell ps | grep studio.darksoil.dashchat | tr -s [:space:] ' ' | cut -d' ' -f2`"
     autostart: false

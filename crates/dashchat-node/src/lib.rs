@@ -2,6 +2,8 @@
 
 mod chat;
 mod contact;
+mod error;
+mod filesystem;
 pub mod node;
 mod payload;
 pub mod stores;
@@ -21,6 +23,7 @@ use named_id::*;
 
 pub use chat::*;
 pub use contact::{QrCode, ShareIntent};
+pub use error::{AddContactError, Error};
 pub use id::*;
 pub use node::{LocalStore, Node, NodeConfig, Notification};
 pub use p2panda_core::PrivateKey;

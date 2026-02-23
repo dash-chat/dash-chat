@@ -1,21 +1,26 @@
 import { invoke } from '@tauri-apps/api/core';
 
-import { AgentId, type PublicKey, type TopicId } from '../p2panda/types';
-import { ContactCode } from '../types';
+import { LogsClient, waitForOperation } from '../p2panda/logs-client';
+import { AgentId, DeviceId, type TopicId } from '../p2panda/types';
+import { ContactCode, Payload } from '../types';
 
 export interface Profile {
 	name: string;
+	surname: string | undefined;
 	avatar: string | undefined;
+	about: string | undefined;
 }
 
-export type ContactRequestId = string;
-
-
+export function fullName(profile: Profile): string {
+	return `${profile.name}${profile.surname ? ` ${profile.surname}` : ''}`;
+}
 
 export interface IContactsClient {
 	/// Profiles
 
 	myAgentId(): Promise<AgentId>;
+
+	myDeviceId(): Promise<DeviceId>;
 
 	// Sets the profile for this user
 	setProfile(profile: Profile): Promise<void>;
@@ -25,10 +30,15 @@ export interface IContactsClient {
 	// Creates a new contact code to be shared
 	createContactCode(): Promise<ContactCode>;
 
+	activeInboxTopics(): Promise<TopicId[]>;
+
 	// getContacts(): Promise<Array<PublicKey>>;
 
-	// Remove contact
+	// Add contact
 	addContact(code: ContactCode): Promise<void>;
+
+	// Reject contact request
+	rejectContactRequest(agentId: AgentId): Promise<void>;
 
 	// Remove contact
 	// removeContact(contact: ContactId): Promise<void>;
@@ -49,8 +59,14 @@ export interface IContactsClient {
 }
 
 export class ContactsClient implements IContactsClient {
+	constructor(protected logsClient: LogsClient<Payload>) {}
+
 	myAgentId(): Promise<AgentId> {
 		return invoke('my_agent_id');
+	}
+
+	myDeviceId(): Promise<DeviceId> {
+		return invoke('my_device_id');
 	}
 
 	async setProfile(profile: Profile): Promise<void> {
@@ -63,10 +79,32 @@ export class ContactsClient implements IContactsClient {
 		return invoke('create_contact_code');
 	}
 
-	addContact(contactCode: ContactCode): Promise<void> {
-		return invoke('add_contact', {
-			contactCode,
-		});
+	activeInboxTopics(): Promise<TopicId[]> {
+		return invoke('active_inbox_topics');
+	}
+
+	async addContact(contactCode: ContactCode): Promise<void> {
+		await Promise.all([
+			invoke('add_contact', { contactCode }),
+			waitForOperation(
+				this.logsClient,
+				op =>
+					op.body?.payload.type === 'AddContact' &&
+					op.body.payload.payload.agent_id === contactCode.agent_id,
+			),
+		]);
+	}
+
+	async rejectContactRequest(agentId: AgentId): Promise<void> {
+		await Promise.all([
+			invoke('reject_contact_request', { agentId }),
+			waitForOperation(
+				this.logsClient,
+				op =>
+					op.body?.payload.type === 'RejectContactRequest' &&
+					op.body.payload.payload === agentId,
+			),
+		]);
 	}
 
 	// getContacts(): Promise<Array<PublicKey>> {

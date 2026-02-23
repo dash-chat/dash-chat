@@ -1,10 +1,15 @@
 pub(crate) mod author_operation;
 mod stream_processing;
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
+use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use anyhow::Result;
+
+use crate::error::{AddContactError, Error};
+use crate::filesystem::Filesystem;
 use chrono::{Duration, Utc};
 use futures::Stream;
 use named_id::Rename;
@@ -12,14 +17,14 @@ use named_id::*;
 use p2panda_core::Body;
 use p2panda_net::ResyncConfiguration;
 use p2panda_spaces::ActorId;
-use p2panda_store::{LogStore, MemoryStore};
+use p2panda_store::{LogStore, SqliteStore};
 use p2panda_stream::IngestExt;
 use p2panda_stream::partial::operations::PartialOrder;
 use tokio::sync::mpsc;
 
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 
-use crate::chat::{ChatMessage, ChatMessageContent};
+use crate::chat::ChatMessageContent;
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::local_store::NodeData;
 use crate::mailbox::MailboxOperation;
@@ -29,8 +34,8 @@ use crate::payload::{
 use crate::stores::OpStore;
 use crate::topic::{Topic, TopicId};
 use crate::{
-    AgentId, AsBody, ChatId, DeviceGroupId, DeviceGroupPayload, DeviceId, DirectChatId, Header,
-    Operation,
+    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
+    DirectChatId, Header, Operation,
 };
 
 pub use crate::local_store::LocalStore;
@@ -71,7 +76,30 @@ impl Default for NodeConfig {
 pub type Orderer<S> =
     PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
 
-pub type NodeOpStore = OpStore<MemoryStore<TopicId, Extensions>>;
+pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
+
+#[derive(Clone)]
+pub(crate) struct CancelAndWait<R> {
+    handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<R>>>>,
+    token: tokio_util::sync::CancellationToken,
+}
+
+impl<R> CancelAndWait<R> {
+    pub fn new(
+        handle: tokio::task::JoinHandle<R>,
+        token: tokio_util::sync::CancellationToken,
+    ) -> Self {
+        Self {
+            handle: Arc::new(tokio::sync::Mutex::new(Some(handle))),
+            token,
+        }
+    }
+
+    pub async fn cancel_and_wait(self) -> Option<Result<R, tokio::task::JoinError>> {
+        self.token.cancel();
+        Some(self.handle.lock().await.take()?.await)
+    }
+}
 
 #[derive(Clone)]
 pub struct Node {
@@ -86,57 +114,48 @@ pub struct Node {
     /// Add new subscription streams
     stream_tx: mpsc::Sender<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
 
+    /// Abort handle for the stream processing background task
+    stream_task: Option<CancelAndWait<()>>,
+
     local_store: LocalStore,
     node_data: NodeData,
+
+    _filesystem: Filesystem,
 }
 
 impl Node {
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?local_store.device_id().expect("can't load private key").renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all))]
     pub async fn new(
-        local_store: LocalStore,
+        data_path: PathBuf,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
     ) -> Result<Self> {
+        let filesystem = Filesystem::new(data_path);
+        let local_store = LocalStore::new(filesystem.local_store_path())?;
         let node_data = local_store.node_data()?;
 
-        let op_store = OpStore::new_memory();
-        // let op_store = OpStore::new_sqlite().await?;
+        // let op_store = OpStore::new_memory();
+        let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
 
         let (stream_tx, stream_rx) = mpsc::channel(100);
 
         let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
 
-        let node = Self {
+        let mut node = Self {
             op_store: op_store.clone(),
             mailboxes,
             config,
+            _filesystem: filesystem,
             local_store: local_store.clone(),
             node_data,
             notification_tx,
             stream_tx,
+            stream_task: None,
         };
 
-        node.spawn_stream_process_loop(stream_rx);
+        node.stream_task = Some(node.spawn_stream_process_loop(stream_rx));
 
-        node.initialize_topic(
-            Topic::announcements(node.agent_id())
-                .with_name(&format!("announce({})", node.agent_id().renamed())),
-            true,
-        )
-        .await?;
-
-        for topic in local_store.get_active_inbox_topics()?.iter() {
-            node.initialize_topic(
-                topic
-                    .topic
-                    .clone()
-                    .with_name(&format!("inbox({})", node.device_id().renamed())),
-                false,
-            )
-            .await?;
-        }
-
-        // TODO: locally store list of groups and initialize them when the node starts
+        node.initialize_stored_topics().await?;
 
         Ok(node)
     }
@@ -191,21 +210,30 @@ impl Node {
         Ok(authors)
     }
 
+    pub fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
+        self.local_store
+            .get_active_inbox_topics()
+            .map_err(|err| Error::GetActiveInboxes(format!("{err}")))
+    }
+
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
     pub async fn new_qr_code(
         &self,
         share_intent: ShareIntent,
         inbox: bool,
-    ) -> anyhow::Result<QrCode> {
+    ) -> Result<QrCode, crate::Error> {
         let inbox_topic = if inbox {
             let inbox_topic = InboxTopic {
                 topic: Topic::inbox().with_name(&format!("inbox({})", self.device_id().renamed())),
                 expires_at: Utc::now() + self.config.contact_code_expiry,
             };
-            self.initialize_topic(inbox_topic.topic, false).await?;
+            self.initialize_topic(*inbox_topic.topic)
+                .await
+                .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
             self.local_store
-                .add_active_inbox_topic(inbox_topic.clone())?;
+                .add_active_inbox_topic(inbox_topic.clone())
+                .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
             Some(inbox_topic)
         } else {
             None
@@ -221,6 +249,14 @@ impl Node {
 
     pub fn agent_id(&self) -> AgentId {
         self.node_data.agent_id
+    }
+
+    pub fn device_id(&self) -> DeviceId {
+        self.node_data.device_id()
+    }
+
+    pub fn device_group_topic(&self) -> DeviceGroupId {
+        Topic::device_group(self.agent_id()).into()
     }
 
     /// Get the topic for a direct chat between two public keys.
@@ -246,7 +282,7 @@ impl Node {
         let topic = self.direct_chat_topic(other);
 
         let my_actor = self.agent_id();
-        self.initialize_topic(topic, true).await?;
+        self.register_topic(topic).await?;
 
         tracing::info!(
             my_actor = ?my_actor.renamed(),
@@ -266,26 +302,55 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().renamed())))]
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
-        self.initialize_topic(chat_id, true).await
+        self.register_topic(chat_id).await
     }
 
-    pub async fn set_profile(&self, profile: Profile) -> anyhow::Result<()> {
+    pub async fn set_profile(&self, profile: Profile) -> Result<(), crate::Error> {
         self.author_operation(
             Topic::announcements(self.agent_id()),
             Payload::Announcements(AnnouncementsPayload::SetProfile(profile)),
             Some(&format!("set_profile({})", self.device_id().renamed())),
         )
-        .await?;
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
         Ok(())
     }
 
+    pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
+        let topic_id: TopicId = Topic::announcements(self.agent_id()).into();
+        let authors = self.get_authors(topic_id.clone()).await?;
+        let ops = self
+            .get_interleaved_logs(topic_id, authors.into_iter().collect())
+            .await?;
+
+        let mut set_profile_ops: Vec<(u64, Profile)> = ops
+            .into_iter()
+            .filter_map(|(header, payload)| match payload {
+                Some(Payload::Announcements(AnnouncementsPayload::SetProfile(profile))) => {
+                    Some((header.timestamp, profile))
+                }
+                _ => None,
+            })
+            .collect();
+
+        set_profile_ops.sort_by_key(|(timestamp, _)| *timestamp);
+
+        let Some((_, profile)) = set_profile_ops.last() else {
+            return Ok(None);
+        };
+        Ok(Some(profile.clone()))
+    }
+
     /// Get all messages for a chat from the logs.
-    // TODO: Store state instead of regenerating from the logs.
-    //       This will be necessary when we switch to double ratchet message encryption.
+    ///
+    /// In the real app, the interleaving of logs happens on the front end.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
     #[cfg(feature = "testing")]
-    pub async fn get_messages(&self, topic: impl Into<ChatId>) -> anyhow::Result<Vec<ChatMessage>> {
+    pub async fn get_messages(
+        &self,
+        topic: impl Into<ChatId>,
+    ) -> anyhow::Result<Vec<crate::chat::testing::ChatMessage>> {
         let chat_id = topic.into();
         let mut messages = vec![];
 
@@ -296,7 +361,7 @@ impl Node {
             .await?
         {
             if let Some(Payload::Chat(ChatPayload::Message(message))) = payload {
-                messages.push(ChatMessage::new(message, &header));
+                messages.push(crate::chat::testing::ChatMessage::new(message, &header));
             }
         }
 
@@ -320,11 +385,9 @@ impl Node {
         &self,
         topic: impl Into<ChatId>,
         message: ChatMessageContent,
-    ) -> anyhow::Result<(ChatMessage, Header)> {
+    ) -> anyhow::Result<Header> {
         let topic = topic.into();
 
-        // NOTE: duplication of timestamp and author.
-        //       shouldn't we just encrypt the message itself since the rest is on the header?
         let message = ChatMessageContent::from(message);
 
         let header = self
@@ -335,15 +398,28 @@ impl Node {
             )
             .await?;
 
-        Ok((ChatMessage::new(message, &header), header))
+        Ok(header)
     }
 
-    pub fn device_id(&self) -> DeviceId {
-        self.node_data.device_id()
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    pub async fn add_reaction(
+        &self,
+        topic: impl Into<ChatId>,
+        reaction: ChatReaction,
+    ) -> anyhow::Result<Header> {
+        let topic = topic.into();
+        let header = self
+            .author_operation(topic, Payload::Chat(ChatPayload::Reaction(reaction)), None)
+            .await?;
+
+        Ok(header)
     }
 
-    pub fn device_group_topic(&self) -> DeviceGroupId {
-        Topic::device_group(self.agent_id()).into()
+    /// Abort the stream processing background task, allowing database handles to be released.
+    pub async fn shutdown(mut self) {
+        if let Some(cancel_and_wait) = self.stream_task.take() {
+            cancel_and_wait.cancel_and_wait().await;
+        }
     }
 
     /// Store someone as a contact, and:
@@ -352,7 +428,7 @@ impl Node {
     /// - store them in the contacts map
     /// - send an invitation to them to do the same
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
-    pub async fn add_contact(&self, contact: QrCode) -> anyhow::Result<AgentId> {
+    pub async fn add_contact(&self, contact: QrCode) -> Result<AgentId, AddContactError> {
         tracing::debug!("adding contact: {:?}", contact);
 
         // SPACES: Register the member in the spaces manager
@@ -360,8 +436,9 @@ impl Node {
         // Must subscribe to the new member's device group in order to receive their
         // group control messages.
         // TODO: is this idempotent? If not we must make sure to do this only once.
-        self.initialize_topic(Topic::announcements(contact.agent_id), false)
-            .await?;
+        self.register_topic(Topic::announcements(contact.agent_id))
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
         // TODO: use all of this commented out stuff when spaces are possible again
         // // XXX: there should be a better way to wait for the device group to be created,
@@ -409,37 +486,120 @@ impl Node {
 
         let agent = contact.agent_id;
         let direct_topic = self.direct_chat_topic(agent);
-        self.initialize_topic(direct_topic, true).await?;
+        self.register_topic(direct_topic)
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
         self.author_operation(
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact.clone())),
             Some(&format!("add_contact/invitation({})", agent.renamed())),
         )
-        .await?;
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
         if let Some(inbox_topic) = contact.inbox_topic.clone() {
-            self.initialize_topic(inbox_topic.topic, true).await?;
-            let qr = self.new_qr_code(ShareIntent::AddContact, false).await?;
+            self.initialize_topic(*inbox_topic.topic)
+                .await
+                .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+            let code = self
+                .new_qr_code(ShareIntent::AddContact, false)
+                .await
+                .map_err(|e| AddContactError::CreateQrCode(e.to_string()))?;
+            let Some(profile) = self
+                .my_profile()
+                .await
+                .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            else {
+                return Err(AddContactError::ProfileNotCreated);
+            };
             self.author_operation(
                 inbox_topic.topic,
-                Payload::Inbox(InboxPayload::Contact(qr)),
+                Payload::Inbox(InboxPayload::ContactRequest { code, profile }),
                 Some(&format!("add_contact/invitation({})", agent.renamed())),
             )
-            .await?;
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
         }
 
         // Only the initiator of contactship should create the direct chat space
         if contact.share_intent == ShareIntent::AddContact && contact.inbox_topic.is_none() {
-            self.create_direct_chat_space(agent).await?;
+            self.create_direct_chat_space(agent)
+                .await
+                .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
         }
 
         Ok(agent)
+    }
+
+    /// Reject a contact request from the given agent.
+    /// This creates a RejectContactRequest operation in the device group topic.
+    /// Contact requests made before this rejection will be filtered out.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    pub async fn reject_contact_request(&self, agent_id: AgentId) -> Result<(), Error> {
+        tracing::debug!("rejecting contact request from: {:?}", agent_id);
+
+        self.author_operation(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::RejectContactRequest(agent_id)),
+            Some(&format!("reject_contact_request({})", agent_id.renamed())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
     pub async fn remove_contact(&self, _chat_actor_id: ActorId) -> anyhow::Result<()> {
         // TODO: shutdown inbox task, etc.
         todo!("add tombstone to contacts list");
+    }
+
+    /// Mark messages as read by storing a ReadMessages operation in the device group topic.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    pub async fn mark_messages_read(
+        &self,
+        chat_id: ChatId,
+        message_hashes: Vec<p2panda_core::Hash>,
+    ) -> Result<(), Error> {
+        use crate::payload::ReadMessagesPayload;
+
+        self.author_operation(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::ReadMessages(ReadMessagesPayload {
+                chat_id,
+                message_hashes,
+            })),
+            Some(&format!("mark_messages_read({})", chat_id.renamed())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
+        self.initialize_topic(
+            *Topic::announcements(self.agent_id())
+                .with_name(&format!("announce({})", self.agent_id().renamed())),
+        )
+        .await?;
+
+        for topic in self.local_store.get_active_inbox_topics()?.iter() {
+            self.initialize_topic(
+                *topic
+                    .topic
+                    .clone()
+                    .with_name(&format!("inbox({})", self.device_id().renamed())),
+            )
+            .await?;
+        }
+
+        for topic in self.local_store.subscribed_topics()?.iter() {
+            self.initialize_topic(*topic).await?;
+        }
+
+        Ok(())
     }
 }

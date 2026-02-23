@@ -10,6 +10,6 @@
 		"notification:default",
 		"notification:allow-is-permission-granted",
 		"deep-link:default",
-		"mcp-bridge:default"
+		"clipboard-manager:allow-write-text"
 	]
 }

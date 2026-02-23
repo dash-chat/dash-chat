@@ -1,24 +1,29 @@
-use dashchat_node::Node;
-use mailbox_client::toy::ToyMailboxClient;
-use p2panda_core::{cbor::encode_cbor, Body};
-use tauri::{Emitter, Manager, RunEvent};
-
-use crate::{
-    commands::logs::simplify,
-    local_store::{cleanup_local_store_path, local_store_path},
-};
-
 mod commands;
-mod local_store;
+mod filesystem;
+mod i18n;
+mod settings;
+mod setup;
 mod utils;
 
+mod mailbox;
 #[cfg(not(mobile))]
 mod menu;
 #[cfg(mobile)]
 mod push_notifications;
+mod tray;
+
+const DASHCHAT_MAILBOX_ID: &str = "dashchat-mailbox";
+
+/// When set to `true`, the run-loop's `ExitRequested` handler will no longer
+/// call `api.prevent_exit()`, allowing the app to shut down gracefully
+/// (running all destructors) even when local-mailbox mode is active.
+pub(crate) static FORCE_QUIT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    i18n::init_i18n();
+
     let mut builder = tauri::Builder::default();
 
     #[cfg(mobile)]
@@ -32,30 +37,45 @@ pub fn run() {
         if tauri::is_dev() {
             // MCP for Claude Code to control the tauri app
             builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+        } else {
+            // In Dev, we usually have two instances
+            builder = builder
+                .plugin(tauri_plugin_single_instance::init(
+                    move |app, _argv, _cwd| {
+                        use tauri::Manager;
+
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.set_focus();
+                        } else if let Err(err) = tray::show_or_create_main_window(app) {
+                            log::error!("Failed to show/create main window: {err:?}");
+                        }
+                    },
+                ))
+                .plugin(tauri_plugin_autostart::init(
+                    tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                    Some(vec!["--minimized"]),
+                ))
+                .plugin(tauri_plugin_updater::Builder::new().build())
+                .plugin(tauri_plugin_keepawake::init());
         }
-        builder = builder
-            .plugin(tauri_plugin_updater::Builder::new().build())
-            .menu(|handle| menu::build_menu(handle));
-        // app.handle()
-        //     .plugin(tauri_plugin_single_instance::init(move |app, argv, cwd| {
-        //         // h.emit(
-        //         //     "single-instance",
-        //         //     Payload { args: argv, cwd },
-        //         // )
-        //         // .unwrap();
-        //     }))?;
     }
 
     builder
         .invoke_handler(tauri::generate_handler![
-            // commands::my_pub_key,
             commands::logs::get_log,
             commands::logs::get_authors,
             commands::profile::set_profile,
             commands::devices::my_device_group_topic,
+            commands::contacts::my_device_id,
             commands::contacts::my_agent_id,
             commands::contacts::create_contact_code,
             commands::contacts::add_contact,
+            commands::contacts::active_inbox_topics,
+            commands::contacts::reject_contact_request,
+            commands::direct_chats::direct_chat_id,
+            commands::direct_chats::direct_chat_send_message,
+            commands::chats::mark_messages_read,
+            commands::direct_chats::direct_chat_send_reaction,
             // commands::chats::create_group,
             // commands::group_chat::add_member,
             // commands::group_chat::send_message,
@@ -65,6 +85,8 @@ pub fn run() {
             tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Warn)
                 .level_for("dashchat_node", log::LevelFilter::Debug)
+                .level_for("mailbox_client", log::LevelFilter::Debug)
+                .level_for("mailbox_server", log::LevelFilter::Debug)
                 .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
                 .build(),
         )
@@ -72,62 +94,13 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
             let handle = app.handle().clone();
+            let result: anyhow::Result<()> =
+                tauri::async_runtime::block_on(async move { setup::async_setup(handle).await });
 
-            let local_store_path: std::path::PathBuf = local_store_path(&handle)?;
-            log::info!("Using local store path: {local_store_path:?}");
-
-            tauri::async_runtime::block_on(async move {
-                let local_store = dashchat_node::LocalStore::new(local_store_path).unwrap();
-                let config = dashchat_node::NodeConfig::default();
-                let (notification_tx, mut notification_rx) = tokio::sync::mpsc::channel(100);
-                let node = dashchat_node::Node::new(local_store, config, Some(notification_tx))
-                    .await
-                    .expect("Failed to create node");
-
-                let mailbox_url = if tauri::is_dev() {
-                    // Use the IP address of the compiling machine to support tauri android dev
-                    // pointing to the compiling computer's IP address
-                    format!("http://{}:3000", env!("LOCAL_IP_ADDRESS"))
-                } else {
-                    "https://mailbox-server.production.dash-chat.dash-chat.garnix.me".to_string()
-                };
-
-                let mailbox_client = ToyMailboxClient::new(mailbox_url);
-                node.mailboxes.add(mailbox_client).await;
-
-                handle.manage(node);
-
-                tauri::async_runtime::spawn(async move {
-                    while let Some(notification) = notification_rx.recv().await {
-                        log::info!("Received notification: {:?}", notification);
-
-                        let body = match encode_cbor(&notification.payload) {
-                            Ok(body) => body,
-                            Err(err) => {
-                                log::error!("Failed to serialize payload: {err:?}");
-                                continue;
-                            }
-                        };
-                        let _node = handle.state::<Node>();
-                        let simplified_operation =
-                            match simplify(notification.header, Some(Body::new(&body[..]))) {
-                                Ok(o) => o,
-                                Err(err) => {
-                                    log::error!("Failed to simplify operation: {err:?}");
-                                    continue;
-                                }
-                            };
-
-                        if let Err(err) =
-                            handle.emit("p2panda://new-operation", simplified_operation)
-                        {
-                            log::error!("Failed to emit operation: {err:?}");
-                        }
-                    }
-                });
-            });
+            result?;
 
             // app.handle()
             //     .listen("holochain://setup-completed", move |_event| {
@@ -156,13 +129,16 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while running tauri application")
-        .run(|app_handle, event| match event {
-            // Limitation: this won't fire when running pnpm start with mprocs,
-            // only when the tauri app is closed directly
-            RunEvent::Exit => cleanup_local_store_path(app_handle).expect("Failed to cleanup"),
-            _ => {}
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                // Keep the app running in the background when local mailbox is enabled,
+                // unless a force-quit has been requested (e.g. from the tray "Quit" action).
+                if settings::load_mailbox_enabled(app_handle)
+                    && !FORCE_QUIT.load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    api.prevent_exit();
+                }
+            }
         });
-
-    ()
 }

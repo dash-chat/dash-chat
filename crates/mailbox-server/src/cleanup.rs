@@ -2,13 +2,13 @@ use redb::{Database, ReadableTable};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::BLOBS_TABLE;
+use crate::{BlobsKey, BLOBS_TABLE};
 
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60); // 5 minutes
 const MESSAGE_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60); // 7 days
 
 /// Spawns a background task that periodically cleans up old messages
-pub fn spawn_cleanup_task(db: Arc<Database>) {
+pub fn spawn_cleanup_task(db: Arc<Database>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(CLEANUP_INTERVAL);
 
@@ -19,7 +19,7 @@ pub fn spawn_cleanup_task(db: Arc<Database>) {
                 tracing::error!("Failed to cleanup old messages: {}", e);
             }
         }
-    });
+    })
 }
 
 /// Deletes all messages older than MESSAGE_MAX_AGE
@@ -40,42 +40,20 @@ pub async fn cleanup_old_messages(db: &Database) -> Result<(), Box<dyn std::erro
         let mut table = write_txn.open_table(BLOBS_TABLE)?;
 
         // Collect keys to delete
-        let mut keys_to_delete = Vec::new();
+        let mut keys_to_delete: Vec<BlobsKey> = Vec::new();
 
         for entry in table.iter()? {
             let (key, _value) = entry?;
-            let key_str: &str = key.value();
+            let blob_key: BlobsKey = key.value();
 
-            // Key format is "topic_id:log_id:sequence_number:uuid_v7"
-            let parts: Vec<&str> = key_str.split(':').collect();
-
-            if parts.len() < 4 {
-                tracing::error!(
-                    "Invalid database key format during cleanup: {} (expected 4 parts, got {})",
-                    key_str,
-                    parts.len()
-                );
-                return Err(format!(
-                    "Invalid database key format: {} (expected 4 parts, got {})",
-                    key_str,
-                    parts.len()
-                )
-                .into());
-            }
-
-            let message_uuid = uuid::Uuid::parse_str(parts[3]).map_err(|e| {
-                tracing::error!("Failed to parse UUID from key {}: {}", key_str, e);
-                format!("Failed to parse UUID from key {}: {}", key_str, e)
-            })?;
-
-            if message_uuid < cutoff_uuid {
-                keys_to_delete.push(key_str.to_string());
+            if blob_key.uuid < cutoff_uuid {
+                keys_to_delete.push(blob_key);
             }
         }
 
         // Delete old messages
         for key in &keys_to_delete {
-            table.remove(key.as_str())?;
+            table.remove(key)?;
             deleted_count += 1;
         }
     }
@@ -120,21 +98,20 @@ mod tests {
                 .as_secs(),
             0,
         ));
-        let old_key = format!("test-topic:log-1:0:{}", old_uuid);
+        let old_key = BlobsKey::new("test-topic".into(), "log-1".into(), 0, old_uuid).unwrap();
 
         // Insert a recent message (1 day ago)
         let recent_uuid = uuid::Uuid::now_v7();
-        let recent_key = format!("test-topic:log-1:1:{}", recent_uuid);
+        let recent_key =
+            BlobsKey::new("test-topic".into(), "log-1".into(), 1, recent_uuid).unwrap();
 
         {
             let write_txn = db.begin_write().unwrap();
             {
                 let mut table = write_txn.open_table(BLOBS_TABLE).unwrap();
+                table.insert(&old_key, b"old message".as_slice()).unwrap();
                 table
-                    .insert(old_key.as_str(), b"old message".as_slice())
-                    .unwrap();
-                table
-                    .insert(recent_key.as_str(), b"recent message".as_slice())
+                    .insert(&recent_key, b"recent message".as_slice())
                     .unwrap();
             }
             write_txn.commit().unwrap();
@@ -144,8 +121,8 @@ mod tests {
         {
             let read_txn = db.begin_read().unwrap();
             let table = read_txn.open_table(BLOBS_TABLE).unwrap();
-            assert!(table.get(old_key.as_str()).unwrap().is_some());
-            assert!(table.get(recent_key.as_str()).unwrap().is_some());
+            assert!(table.get(&old_key).unwrap().is_some());
+            assert!(table.get(&recent_key).unwrap().is_some());
         }
 
         // Run cleanup
@@ -155,8 +132,8 @@ mod tests {
         {
             let read_txn = db.begin_read().unwrap();
             let table = read_txn.open_table(BLOBS_TABLE).unwrap();
-            assert!(table.get(old_key.as_str()).unwrap().is_none());
-            assert!(table.get(recent_key.as_str()).unwrap().is_some());
+            assert!(table.get(&old_key).unwrap().is_none());
+            assert!(table.get(&recent_key).unwrap().is_some());
         }
     }
 }

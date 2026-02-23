@@ -3,7 +3,10 @@ use redb::{Database, ReadableTable};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{AppState, Author, Blob, SequenceNumber, TopicId, BLOBS_TABLE, WATERMARKS_TABLE};
+use crate::{
+    AppState, Author, Blob, BlobsKey, BlobsKeyPrefix, SequenceNumber, TopicId, WatermarksKey,
+    BLOBS_TABLE, WATERMARKS_TABLE,
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct StoreBlobsRequest {
@@ -49,11 +52,12 @@ fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), S
 
         for (topic_id, authors) in &request.blobs {
             for (author, sequences) in authors {
-                let topic_author_key = format!("{}:{}", topic_id, author);
+                let watermarks_key = WatermarksKey::new(topic_id.clone(), author.clone())
+                    .map_err(|e| e.to_string())?;
 
                 // Get current watermark for this topic:author
                 let current_watermark = watermarks_table
-                    .get(topic_author_key.as_str())
+                    .get(&watermarks_key)
                     .map_err(|e| format!("Failed to read watermark: {}", e))?
                     .map(|v| v.value());
 
@@ -61,17 +65,11 @@ fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), S
                 let mut stored_seqs: BTreeSet<SequenceNumber> = BTreeSet::new();
 
                 for (seq_num, blob) in sequences {
-                    // Key format: "topic_id:author:sequence_number:uuid_v7"
-                    let key = format!(
-                        "{}:{}:{}:{}",
-                        topic_id,
-                        author,
-                        seq_num,
-                        uuid::Uuid::now_v7()
-                    );
+                    let key = BlobsKey::new_now(topic_id.clone(), author.clone(), *seq_num)
+                        .map_err(|e| e.to_string())?;
 
                     blobs_table
-                        .insert(key.as_str(), blob.as_slice())
+                        .insert(&key, blob.as_slice())
                         .map_err(|e| format!("Failed to insert blob: {}", e))?;
                     stored_seqs.insert(*seq_num);
                     blob_count += 1;
@@ -90,7 +88,7 @@ fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), S
                     // Only update if watermark changed or was newly established
                     if current_watermark != Some(wm) {
                         watermarks_table
-                            .insert(topic_author_key.as_str(), wm)
+                            .insert(&watermarks_key, wm)
                             .map_err(|e| format!("Failed to update watermark: {}", e))?;
                         tracing::debug!(
                             "Updated watermark for {}:{} from {:?} to {}",
@@ -116,7 +114,7 @@ fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), S
 /// Computes the new watermark after storing blobs.
 /// Returns None if no watermark can be established (no sequence 0).
 fn compute_new_watermark(
-    blobs_table: &redb::Table<&str, &[u8]>,
+    blobs_table: &redb::Table<BlobsKey, &[u8]>,
     topic_id: &str,
     author: &str,
     current_watermark: Option<SequenceNumber>,
@@ -125,14 +123,14 @@ fn compute_new_watermark(
     // watermark = None means we need to check from seq 0
     // watermark = Some(n) means seqs 0..=n are confirmed present
     let mut watermark: Option<SequenceNumber> = match current_watermark {
-        Some(current_watermark) => {
+        Some(current_wm) => {
             // Check if new sequences or existing blobs don't extend current watermark
-            if !new_sequences.contains(&(current_watermark + 1))
-                && !blob_exists(blobs_table, topic_id, author, current_watermark + 1)?
+            if !new_sequences.contains(&(current_wm + 1))
+                && !blob_exists(blobs_table, topic_id, author, current_wm + 1)?
             {
-                return Ok(Some(current_watermark)); // No extension possible
+                return Ok(Some(current_wm)); // No extension possible
             }
-            Some(current_watermark)
+            Some(current_wm)
         }
         None => {
             // No watermark yet - need sequence 0 to start
@@ -162,20 +160,17 @@ fn compute_new_watermark(
 
 /// Checks if a blob exists for the given topic:author:seq
 fn blob_exists(
-    table: &redb::Table<&str, &[u8]>,
+    table: &redb::Table<BlobsKey, &[u8]>,
     topic_id: &str,
     author: &str,
     seq_num: SequenceNumber,
 ) -> Result<bool, String> {
-    // Use range query with prefix "topic_id:author:seq_num:"
-    let prefix = format!("{}:{}:{}:", topic_id, author, seq_num);
-    let range_start = prefix.as_str();
-    let mut range_end = prefix.clone();
-    range_end.push(char::MAX);
+    let prefix = BlobsKeyPrefix::TopicAuthorSeq(topic_id.to_string(), author.to_string(), seq_num);
 
+    // Use range query to check if any blob exists for this topic:author:seq
     let mut iter = table
-        .range(range_start..range_end.as_str())
-        .map_err(|e| format!("Failed to create range iterator: {}", e))?;
+        .range(prefix.range_start()..=prefix.range_end())
+        .map_err(|e| format!("Failed to create iterator: {}", e))?;
 
     Ok(iter.next().is_some())
 }

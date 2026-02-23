@@ -1,11 +1,12 @@
-use dashchat_node::{AgentId, Node, QrCode, ShareIntent};
+use dashchat_node::{
+    topic::kind::Inbox, AddContactError, AgentId, DeviceId, Error, Node, QrCode, ShareIntent, Topic,
+};
+use std::collections::BTreeSet;
 use tauri::State;
 
 #[tauri::command]
-pub async fn create_contact_code(node: State<'_, Node>) -> Result<QrCode, String> {
-    node.new_qr_code(ShareIntent::AddContact, false)
-        .await
-        .map_err(|e| format!("Failed to create contact code: {e:?}"))
+pub async fn create_contact_code(node: State<'_, Node>) -> Result<QrCode, Error> {
+    node.new_qr_code(ShareIntent::AddContact, true).await
 }
 
 #[tauri::command]
@@ -14,12 +15,30 @@ pub fn my_agent_id(node: State<'_, Node>) -> AgentId {
 }
 
 #[tauri::command]
-pub async fn add_contact(contact_code: QrCode, node: State<'_, Node>) -> Result<(), String> {
-    node.add_contact(contact_code.clone())
-        .await
-        .map_err(|e| format!("Failed to add contact: {e:?}"))?;
+pub fn my_device_id(node: State<'_, Node>) -> DeviceId {
+    node.device_id()
+}
 
+#[tauri::command]
+pub async fn add_contact(
+    contact_code: QrCode,
+    node: State<'_, Node>,
+) -> Result<(), AddContactError> {
+    node.add_contact(contact_code).await?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn active_inbox_topics(node: State<'_, Node>) -> Result<BTreeSet<Topic<Inbox>>, Error> {
+    let topics = node.get_active_inbox_topics()?;
+    let topics_ids = topics.clone().into_iter().map(|t| t.topic).collect();
+
+    Ok(topics_ids)
+}
+
+#[tauri::command]
+pub async fn reject_contact_request(agent_id: AgentId, node: State<'_, Node>) -> Result<(), Error> {
+    node.reject_contact_request(agent_id).await
 }
 
 // #[tauri::command]

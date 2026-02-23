@@ -36,6 +36,7 @@
 	} from 'konsta/svelte';
 	import Layout from '../../../+layout.svelte';
 
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { page } from '$app/state';
 	let chatId = page.params.chatId!;
 
@@ -138,7 +139,10 @@
 			{/snippet}
 
 			{#snippet right()}
-				<Link href={`/group-chat/${chatId}/info/edit`} iconOnly={theme === 'material'}>
+				<Link
+					href={`/group-chat/${chatId}/info/edit`}
+					iconOnly={theme === 'material'}
+				>
 					{#if theme === 'material'}
 						<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
 					{:else}
@@ -167,7 +171,7 @@
 								count: Object.keys(members).length,
 							})}</BlockTitle
 						>
-						<List nested strongIos insetIos>
+						<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
 							{#if me.admin}
 								<ListItem
 									link
@@ -205,81 +209,79 @@
 									{/snippet}
 								</ListItem>
 
-								{#if sheetOpenFor === actorId}
-									<Sheet
-										class="pb-safe"
-										opened={sheetOpenFor === actorId}
-										onBackdropClick={() => (sheetOpenFor = null)}
+								<Sheet
+									class="pb-safe"
+									opened={sheetOpenFor === actorId}
+									onBackdropClick={() => (sheetOpenFor = null)}
+								>
+									<div
+										class="flex-col gap-4 py-4"
+										style="display: flex; align-items: center;"
 									>
-										<div
-											class="flex-col gap-4 py-4"
-											style="display: flex; align-items: center;"
-										>
-											<wa-avatar
-												image={member.profile?.avatar}
-												initials={member.profile?.name.slice(0, 2)}
-											></wa-avatar>
-											<span class="font-semibold">{member.profile?.name}</span>
-										</div>
+										<wa-avatar
+											image={member.profile?.avatar}
+											initials={member.profile?.name.slice(0, 2)}
+										></wa-avatar>
+										<span class="font-semibold">{member.profile?.name}</span>
+									</div>
 
-										<List nested strongIos insetIos class="mb-2">
-											{#if me.admin}
-												{#if member.admin}
-													<ListItem
-														link
-														chevron={false}
-														title={m.demoteFromAdministrator()}
-														onClick={() => {
-															dialogType = 'demote';
-															dialogActorId = actorId;
-															sheetOpenFor = null;
-														}}
-													>
-														{#snippet media()}
-															<wa-icon src={wrapPathInSvg(mdiKeyVariant)}
-															></wa-icon>
-														{/snippet}
-													</ListItem>
-												{:else}
-													<ListItem
-														link
-														chevron={false}
-														title={m.promoteToAdministrator()}
-														onClick={() => {
-															dialogType = 'promote';
-															dialogActorId = actorId;
-															sheetOpenFor = null;
-														}}
-													>
-														{#snippet media()}
-															<wa-icon src={wrapPathInSvg(mdiKeyVariant)}
-															></wa-icon>
-														{/snippet}
-													</ListItem>
-												{/if}
-
+									<List nested strongIos inset={isWideScreen.value || theme === 'ios'} class="mb-2">
+										{#if me.admin}
+											{#if member.admin}
 												<ListItem
 													link
 													chevron={false}
-													title={m.removeMember()}
+													title={m.demoteFromAdministrator()}
 													onClick={() => {
-														dialogType = 'remove';
+														dialogType = 'demote';
 														dialogActorId = actorId;
 														sheetOpenFor = null;
 													}}
 												>
 													{#snippet media()}
-														<wa-icon src={wrapPathInSvg(mdiDelete)}></wa-icon>
+														<wa-icon src={wrapPathInSvg(mdiKeyVariant)}
+														></wa-icon>
+													{/snippet}
+												</ListItem>
+											{:else}
+												<ListItem
+													link
+													chevron={false}
+													title={m.promoteToAdministrator()}
+													onClick={() => {
+														dialogType = 'promote';
+														dialogActorId = actorId;
+														sheetOpenFor = null;
+													}}
+												>
+													{#snippet media()}
+														<wa-icon src={wrapPathInSvg(mdiKeyVariant)}
+														></wa-icon>
 													{/snippet}
 												</ListItem>
 											{/if}
-										</List>
-									</Sheet>
-								{/if}
+
+											<ListItem
+												link
+												chevron={false}
+												title={m.removeMember()}
+												onClick={() => {
+													dialogType = 'remove';
+													dialogActorId = actorId;
+													sheetOpenFor = null;
+												}}
+											>
+												{#snippet media()}
+													<wa-icon src={wrapPathInSvg(mdiDelete)}></wa-icon>
+												{/snippet}
+											</ListItem>
+										{/if}
+									</List>
+								</Sheet>
 							{/each}
 						</List>
 
-						<List nested strongIos insetIos class="z-1">
+						<List nested strongIos inset={isWideScreen.value || theme === 'ios'} class="z-1">
 							<ListItem
 								title={m.leaveGroup()}
 								link

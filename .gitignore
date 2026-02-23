@@ -42,5 +42,6 @@ result*
 **/*/google-services.json
 service-account-key.json
 
-# Redb database files
+# Development environment database files
 *.redb
+.dev-dbs

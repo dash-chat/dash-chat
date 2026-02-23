@@ -2,13 +2,13 @@ import { reactive } from 'signalium';
 
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { PublicKey, TopicId } from '../p2panda/types';
+import { PublicKey } from '../p2panda/types';
 import { DeviceGroupPayload, Payload } from '../types';
 import { IDevicesClient } from './devices-client';
 
 export class DevicesStore {
 	constructor(
-		protected logsStore: LogsStore<TopicId, Payload>,
+		protected logsStore: LogsStore<Payload>,
 		public client: IDevicesClient,
 	) {}
 

@@ -3,7 +3,10 @@ use redb::{Database, ReadableDatabase};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{AppState, Author, Blob, SequenceNumber, TopicId, BLOBS_TABLE, WATERMARKS_TABLE};
+use crate::{
+    AppState, Author, Blob, BlobsKey, BlobsKeyPrefix, SequenceNumber, TopicId, WatermarksKey,
+    BLOBS_TABLE, WATERMARKS_TABLE,
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct GetBlobsRequest {
@@ -69,37 +72,18 @@ fn get_blobs_for_topics_inner(
         let mut stored_seqs_per_author: BTreeMap<Author, BTreeSet<SequenceNumber>> =
             BTreeMap::new();
 
-        // Iterate through ALL blobs for this topic
-        let prefix = format!("{topic_id}:");
-        let range_start = prefix.as_str();
-        let mut range_end = prefix.clone();
-        range_end.push(char::MAX);
-        let range_end_str = range_end.as_str();
+        // Use prefix-based range query to only iterate over blobs for this topic
+        let prefix = BlobsKeyPrefix::Topic(topic_id.clone());
 
         for entry in blobs_table
-            .range(range_start..range_end_str)
-            .map_err(|e| format!("Failed to create range iterator: {}", e))?
+            .range(prefix.range_start()..=prefix.range_end())
+            .map_err(|e| format!("Failed to create iterator: {}", e))?
         {
             let (key, value) = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
 
-            let key_str: &str = key.value();
-            // Key format: "topic_id:author:sequence_number:uuid_v7"
-            let parts: Vec<&str> = key_str.split(':').collect();
-            if parts.len() < 4 {
-                return Err(format!(
-                    "Invalid database key format: {} (expected 4 parts, got {})",
-                    key_str,
-                    parts.len()
-                ));
-            }
-
-            let author = parts[1].to_string();
-            let seq_num = parts[2].parse::<SequenceNumber>().map_err(|e| {
-                format!(
-                    "Failed to parse sequence number from key {}: {}",
-                    key_str, e
-                )
-            })?;
+            let blob_key: BlobsKey = key.value();
+            let author = blob_key.author.clone();
+            let seq_num = blob_key.sequence_number;
 
             // Track sequences we have for requested authors (for missing calculation)
             if requested_authors.contains_key(&author) {
@@ -132,11 +116,12 @@ fn get_blobs_for_topics_inner(
         // Calculate missing blobs using watermarks and stored sequences
         let mut missing: BTreeMap<Author, Vec<SequenceNumber>> = BTreeMap::new();
         for (author, client_max_seq) in requested_authors {
-            let topic_author_key = format!("{}:{}", topic_id, author);
+            let watermarks_key =
+                WatermarksKey::new(topic_id.clone(), author.clone()).map_err(|e| e.to_string())?;
 
             // Get watermark for this topic:author
             let server_watermark = watermarks_table
-                .get(topic_author_key.as_str())
+                .get(&watermarks_key)
                 .map_err(|e| format!("Failed to read watermark: {}", e))?
                 .map(|v| v.value());
 

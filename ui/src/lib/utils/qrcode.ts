@@ -6,6 +6,6 @@ import {
 
 export async function scanQrcode(): Promise<string> {
 	await requestPermissions();
-	const result = await scan({ windowed: false, formats: [Format.QRCode] });
+	const result = await scan({ windowed: true, formats: [Format.QRCode] });
 	return result.content;
 }

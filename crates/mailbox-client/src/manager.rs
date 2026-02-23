@@ -12,8 +12,8 @@ pub struct MailboxesConfig {
 impl Default for MailboxesConfig {
     fn default() -> Self {
         Self {
-            success_interval: Duration::from_secs(5),
-            error_interval: Duration::from_secs(15),
+            success_interval: Duration::from_secs(1),
+            error_interval: Duration::from_secs(1),
             min_interval: Duration::from_secs(1),
         }
     }
@@ -25,7 +25,7 @@ where
     Item: MailboxItem,
     Store: MailboxStore<Item>,
 {
-    mailboxes: Arc<Mutex<Vec<Arc<dyn MailboxClient<Item>>>>>,
+    mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<dyn MailboxClient<Item>>>>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Store,
     config: MailboxesConfig,
@@ -48,8 +48,17 @@ where
         }
     }
 
-    pub async fn add(&self, mailbox: impl MailboxClient<Item>) {
-        self.mailboxes.lock().await.push(Arc::new(mailbox));
+    pub async fn register(&self, mailbox: impl MailboxClient<Item>) {
+        // TODO: check for existing mailbox with different ID but same "URL" (which is currently abstracted away and inaccessible here, darn)
+        // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.
+        let id = mailbox.id();
+        let mb = Arc::new(mailbox);
+        let existing = self.mailboxes.lock().await.insert(id.clone(), mb);
+        if existing.is_some() {
+            // TODO: potentially track multiple clients for a single mailbox ID, e.g. multiple mDNS discovered addresses for the same node
+            // TODO: at least, make sure the URL being replaced is "better" than the previous one, i.e. ipv4 instead of ipv6
+            tracing::warn!("overwriting existing mailbox for {id}");
+        }
     }
 
     pub async fn clear(&self) {
@@ -67,12 +76,17 @@ where
     pub async fn subscribe(
         &self,
         topic: Item::Topic,
-    ) -> Result<mpsc::Receiver<Item>, anyhow::Error> {
+    ) -> Result<Option<mpsc::Receiver<Item>>, anyhow::Error> {
         #[cfg(feature = "named-id")]
         tracing::info!(topic = ?topic.renamed(), "subscribing to topic");
+
+        let mut tt = self.topics.lock().await;
+        if tt.contains_key(&topic) {
+            return Ok(None);
+        }
         let (tx, rx) = mpsc::channel(100);
-        self.topics.lock().await.insert(topic, tx);
-        Ok(rx)
+        tt.insert(topic, tx);
+        Ok(Some(rx))
     }
 
     pub async fn unsubscribe(&self, topic: Item::Topic) -> Result<(), anyhow::Error> {
@@ -92,6 +106,8 @@ where
                 let mut next_interval;
                 let mut last_iteration: tokio::time::Instant = tokio::time::Instant::now();
                 loop {
+                    // TODO: track which client caused an error, and eventually remove it from the active list
+                    // TODO: do something smarter than round-robin
                     (next_interval, next_mailbox) = manager.one_iteration(next_mailbox).await;
 
                     // The two match conditions are:
@@ -123,21 +139,23 @@ where
 
     async fn one_iteration(&self, mut mailbox_index: usize) -> (tokio::time::Duration, usize) {
         mailbox_index += 1;
-        let mailbox = {
+        let (id, client, total) = {
             let mm = self.mailboxes.lock().await;
-            if mailbox_index >= mm.len() {
+            let total = mm.len();
+            if mailbox_index >= total {
                 mailbox_index = 0;
             }
 
-            match mm.get(mailbox_index) {
-                Some(mailbox) => mailbox.clone(),
+            let (id, client) = match mm.iter().nth(mailbox_index) {
+                Some((id, mailbox)) => (id.clone(), mailbox.clone()),
                 None => {
                     tracing::warn!("empty mailbox list, no mailbox to fetch from");
                     return (self.config.error_interval, mailbox_index);
                 }
-            }
+            };
+            (id, client, total)
         };
-        tracing::trace!("polling mailbox {mailbox_index}");
+        tracing::info!("polling mailbox {id} ({mailbox_index} of {total})");
 
         let topics = self.subscribed_topics().await;
         if topics.is_empty() {
@@ -145,7 +163,7 @@ where
             return (self.config.error_interval, mailbox_index);
         }
 
-        match self.sync_topics(topics.into_iter(), mailbox.clone()).await {
+        match self.sync_topics(topics.into_iter(), client.clone()).await {
             Ok(()) => {
                 return (self.config.success_interval, mailbox_index);
             }
@@ -176,11 +194,15 @@ where
         let mut ops_to_publish = vec![];
         for (topic, response) in response.into_iter() {
             let FetchTopicResponse { items, missing } = response;
-            tracing::info!(
-                items = items.len(),
-                missing = missing.len(),
-                "fetched operations"
-            );
+            if items.is_empty() && missing.is_empty() {
+                tracing::trace!(topic = ?topic, "Syncing with mailbox: nothing to do");
+            } else {
+                tracing::info!(
+                    items = items.len(),
+                    missing = missing.len(),
+                    "fetched operations"
+                );
+            }
 
             let Some(sender) = self.topics.lock().await.get(&topic).cloned() else {
                 #[cfg(feature = "named-id")]

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/styles/webawesome.css';
+	import '@awesome.me/webawesome/dist/styles/themes/default.css';
 
 	import '../app.css';
 	import { setContext } from 'svelte';
@@ -8,7 +9,6 @@
 		ChatsStore,
 		LogsStore,
 		TauriLogsClient,
-		type TopicId,
 		type Payload,
 		ContactsClient,
 		ContactsStore,
@@ -18,20 +18,27 @@
 	import { App, KonstaProvider } from 'konsta/svelte';
 
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
+	import ToastManager from '$lib/components/toast/ToastManager.svelte';
+	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	import { setLocale } from '$lib/paraglide/runtime';
-	setLocale('en');
+	window.__setLocale = setLocale;
+
+	if (import.meta.env.DEV) {
+		import('../../tests/setup-utils').then(({ registerTestUtils }) => registerTestUtils());
+	}
 
 	let { children } = $props();
 
-	const logsClient = new TauriLogsClient<TopicId, Payload>();
-	const logsStore = new LogsStore<TopicId, Payload>(logsClient);
+	const logsClient = new TauriLogsClient<Payload>();
+	const logsStore = new LogsStore<Payload>(logsClient);
 
 	const devicesClient = new DevicesClient();
 	const devicesStore = new DevicesStore(logsStore, devicesClient);
 	setContext('devices-store', devicesStore);
 
-	const contactsClient = new ContactsClient();
+	const contactsClient = new ContactsClient(logsClient);
 	const contactsStore = new ContactsStore(
 		logsStore,
 		devicesStore,
@@ -43,13 +50,24 @@
 	const chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
 	setContext('chats-store', chatsStore);
 
-	let theme: 'ios' | 'material' = 'material';
+	let theme: 'ios' | 'material' = $state('material');
+
+	window.addEventListener('theme-change', (event: CustomEvent) => {
+		theme = event.detail.theme;
+	});
 </script>
 
 <KonstaProvider {theme}>
 	<App safeAreas {theme} class={`k-${theme}`}>
 		<SplashscreenPrompt>
-			{@render children()}
+			{#if isWideScreen.value}
+				<DesktopLayout>
+					{@render children()}
+				</DesktopLayout>
+			{:else}
+				{@render children()}
+			{/if}
 		</SplashscreenPrompt>
+		<ToastManager />
 	</App>
 </KonstaProvider>

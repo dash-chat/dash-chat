@@ -1,14 +1,12 @@
-import { invoke } from '@tauri-apps/api/core';
 import { ReactivePromise, reactive } from 'signalium';
 
 import { Profile } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
-import { DevicesStore } from '../devices/devices-store';
 import { LogsStore } from '../p2panda/logs-store';
-import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { AgentId, PublicKey, TopicId } from '../p2panda/types';
-import { ChatId, Payload } from '../types';
-import { GroupChatClient, Message, MessageContent } from './group-chat-client';
+import { AgentId, PublicKey } from '../p2panda/types';
+import { ChatId, MessageContent, Payload } from '../types';
+import { GroupChatClient  } from './group-chat-client';
+import { Message } from '../direct-chats/direct-chat-store';
 
 export interface GroupInfo {
 	name: string;
@@ -17,14 +15,14 @@ export interface GroupInfo {
 }
 
 export interface GroupMember {
-	actorId: AgentId;
+	agentId: AgentId;
 	profile: Profile | undefined;
 	admin: boolean;
 }
 
 export class GroupChatStore {
 	constructor(
-		protected logsStore: LogsStore<TopicId, Payload>,
+		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		public client: GroupChatClient,
 		public chatId: ChatId,
@@ -52,119 +50,11 @@ export class GroupChatStore {
 		// }]
 		const messages: Array<Message> = [
 			{
+				hash: '123',
 				content: 'heeey',
 				author: await this.contactsStore.myAgentId(),
 				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
-			},
-			{
-				content: 'heeey',
-				author: await this.contactsStore.myAgentId(),
-				timestamp: Date.now(),
+				reactions: {}
 			},
 		];
 
@@ -172,19 +62,19 @@ export class GroupChatStore {
 	});
 
 	membersIds = reactive(async () => {
-		const myActorId = await this.contactsStore.myAgentId();
-		return [myActorId];
+		const myAgentId = await this.contactsStore.myAgentId();
+		return [myAgentId];
 	});
 
 	me = reactive(async () => {
-		const actorId = await this.contactsStore.myAgentId();
-		return await this.members(actorId);
+		const agentId = await this.contactsStore.myAgentId();
+		return await this.members(agentId);
 	});
 
 	allMembers = reactive(async () => {
 		const membersIds = await this.membersIds();
 
-		const members = await ReactivePromise.all(
+		const members = await Promise.all(
 			membersIds.map(memberId => this.members(memberId)),
 		);
 
@@ -197,11 +87,11 @@ export class GroupChatStore {
 		return allMembers;
 	});
 
-	members = reactive(async (actorId: AgentId) => {
-		const profile = await this.contactsStore.profiles(actorId);
+	members = reactive(async (agentId: AgentId) => {
+		const profile = await this.contactsStore.profiles(agentId);
 
 		const member: GroupMember = {
-			actorId,
+			agentId: agentId,
 			profile,
 			admin: true,
 		};

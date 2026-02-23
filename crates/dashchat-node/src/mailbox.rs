@@ -115,18 +115,18 @@ mod tests {
         let config = NodeConfig::testing();
 
         // Start with no mailbox
-        let alice = TestNode::new(config.clone(), Some("alice")).await;
-        let bobbi = TestNode::new(config.clone(), Some("bobbi")).await;
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
         let chat = alice.direct_chat_topic(bobbi.agent_id());
-        alice.initialize_topic(chat, false).await.unwrap();
+        alice.register_topic(chat).await.unwrap();
         alice.send_message(chat, "Hello".into()).await.unwrap();
 
         println!("=== adding mailboxes ===");
         bobbi.add_mailbox_client(mb.client()).await;
         alice.add_mailbox_client(mb.client()).await;
 
-        bobbi.initialize_topic(chat, false).await.unwrap();
+        bobbi.register_topic(chat).await.unwrap();
         println!("=== added mailboxes ===");
 
         wait_for(
