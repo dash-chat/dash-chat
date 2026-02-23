@@ -9,6 +9,7 @@
 	import { Fab, Link, Navbar, Page, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	const theme = $derived(useTheme());
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -43,7 +44,7 @@
 
 	<AllChats ></AllChats>
 
-	{#if theme == 'material'}
+	{#if theme == 'material' && !isWideScreen.value}
 		<Fab
 			class="absolute right-safe-4 bottom-safe-4 z-20"
 			onClick={() => goto('/new-message')}
