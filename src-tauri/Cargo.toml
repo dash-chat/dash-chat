@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.5.0"
+version = "0.10.0"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -16,7 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.4.0", default-features = false, features = [] }
-local-ip-address = "0.6"
+localip = "0.2"
 
 [dependencies]
 dashchat-node = { path = "../crates/dashchat-node" }
@@ -85,7 +85,7 @@ ndk-sys = "0.6"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-updater = "2.9"
-tauri-plugin-mcp-bridge = "0.7"
+tauri-plugin-mcp-bridge = "0.8"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

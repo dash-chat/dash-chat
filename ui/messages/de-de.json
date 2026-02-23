@@ -74,5 +74,6 @@
     "errorAddContactProfileRequired": "Bitte erstelle erst dein Profil, bevor du Kontakte hinzufügst.",
     "errorSetProfile": "Fehler beim speichern des Profils. Bitte versuche es erneut.",
     "errorScanningQrCode": "Der QR Code konnte nicht gescannt werden. Bitte versuche es erneut.",
-    "errorUnexpected": "Ein unerwarteter Fehler ist aufgetreten."
+    "errorUnexpected": "Ein unerwarteter Fehler ist aufgetreten.",
+    "selectAChat": "Select a chat to start messaging."
 }

@@ -1,22 +1,21 @@
 {
-  description = "Template for Holochain app development";
+  description = "Dash Chat development flake";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
-    tauri-plugin-holochain.url =
-      "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
-    tauri-plugin-holochain.inputs.webkitnixpkgs.follows = "nixpkgs";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
+
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-parts.url = "github:hercules-ci/flake-parts";
-
     crane.url = "github:ipetkov/crane";
-
     garnix-lib = {
       url = "github:garnix-io/garnix-lib";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     nixos-generators.url = "github:nix-community/nixos-generators";
+
+    tauri-plugin-holochain.url =
+      "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
   };
 
   nixConfig = {
@@ -42,26 +41,32 @@
 
       systems =
         [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
-        
-      perSystem = { inputs', config, pkgs, system, ... }:
+
+      perSystem = { inputs', system, ... }:
         let
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
 
           rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
         in rec {
+
           devShells.default = pkgs.mkShell {
             inputsFrom =
               [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
             packages = [ pkgs.mprocs pkgs.pnpm rust ];
           };
 
-          devShells.androidDev = pkgs.mkShell {
+          devShells.androidDev = let
+            rust = pkgs.rust-bin.fromRustupToolchainFile
+              ./rust-toolchain.android.toml;
+          in pkgs.mkShell {
             inputsFrom = [
               devShells.default
               inputs'.tauri-plugin-holochain.devShells.holochainTauriAndroidDev
             ];
+            packages = [ rust ];
           };
+
         };
     };
 }

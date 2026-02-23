@@ -50,6 +50,10 @@ async fn health_check() -> Json<HealthResponse> {
 pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>> {
     tracing::info!("Opening redb database at {:?}", db_path);
 
+    if let Some(parent) = db_path.parent().filter(|p| !p.exists()) {
+        std::fs::create_dir_all(parent)?;
+    }
+
     let db = Database::create(&db_path)?;
 
     let write_txn = db.begin_write()?;

@@ -4,6 +4,7 @@ mod stream_processing;
 use std::collections::{BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use anyhow::Result;
 
@@ -78,6 +79,29 @@ pub type Orderer<S> =
 pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
 
 #[derive(Clone)]
+pub(crate) struct CancelAndWait<R> {
+    handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<R>>>>,
+    token: tokio_util::sync::CancellationToken,
+}
+
+impl<R> CancelAndWait<R> {
+    pub fn new(
+        handle: tokio::task::JoinHandle<R>,
+        token: tokio_util::sync::CancellationToken,
+    ) -> Self {
+        Self {
+            handle: Arc::new(tokio::sync::Mutex::new(Some(handle))),
+            token,
+        }
+    }
+
+    pub async fn cancel_and_wait(self) -> Option<Result<R, tokio::task::JoinError>> {
+        self.token.cancel();
+        Some(self.handle.lock().await.take()?.await)
+    }
+}
+
+#[derive(Clone)]
 pub struct Node {
     pub op_store: NodeOpStore,
 
@@ -90,9 +114,13 @@ pub struct Node {
     /// Add new subscription streams
     stream_tx: mpsc::Sender<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
 
-    filesystem: Filesystem,
+    /// Abort handle for the stream processing background task
+    stream_task: Option<CancelAndWait<()>>,
+
     local_store: LocalStore,
     node_data: NodeData,
+
+    _filesystem: Filesystem,
 }
 
 impl Node {
@@ -113,38 +141,21 @@ impl Node {
 
         let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
 
-        let node = Self {
+        let mut node = Self {
             op_store: op_store.clone(),
             mailboxes,
             config,
-            filesystem,
+            _filesystem: filesystem,
             local_store: local_store.clone(),
             node_data,
             notification_tx,
             stream_tx,
+            stream_task: None,
         };
 
-        node.spawn_stream_process_loop(stream_rx);
+        node.stream_task = Some(node.spawn_stream_process_loop(stream_rx));
 
-        node.initialize_topic(
-            Topic::announcements(node.agent_id())
-                .with_name(&format!("announce({})", node.agent_id().renamed())),
-            true,
-        )
-        .await?;
-
-        for topic in local_store.get_active_inbox_topics()?.iter() {
-            node.initialize_topic(
-                topic
-                    .topic
-                    .clone()
-                    .with_name(&format!("inbox({})", node.device_id().renamed())),
-                false,
-            )
-            .await?;
-        }
-
-        // TODO: locally store list of groups and initialize them when the node starts
+        node.initialize_stored_topics().await?;
 
         Ok(node)
     }
@@ -217,7 +228,7 @@ impl Node {
                 topic: Topic::inbox().with_name(&format!("inbox({})", self.device_id().renamed())),
                 expires_at: Utc::now() + self.config.contact_code_expiry,
             };
-            self.initialize_topic(inbox_topic.topic, false)
+            self.initialize_topic(*inbox_topic.topic)
                 .await
                 .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
             self.local_store
@@ -238,6 +249,14 @@ impl Node {
 
     pub fn agent_id(&self) -> AgentId {
         self.node_data.agent_id
+    }
+
+    pub fn device_id(&self) -> DeviceId {
+        self.node_data.device_id()
+    }
+
+    pub fn device_group_topic(&self) -> DeviceGroupId {
+        Topic::device_group(self.agent_id()).into()
     }
 
     /// Get the topic for a direct chat between two public keys.
@@ -263,7 +282,7 @@ impl Node {
         let topic = self.direct_chat_topic(other);
 
         let my_actor = self.agent_id();
-        self.initialize_topic(topic, true).await?;
+        self.register_topic(topic).await?;
 
         tracing::info!(
             my_actor = ?my_actor.renamed(),
@@ -283,7 +302,7 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().renamed())))]
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
-        self.initialize_topic(chat_id, true).await
+        self.register_topic(chat_id).await
     }
 
     pub async fn set_profile(&self, profile: Profile) -> Result<(), crate::Error> {
@@ -396,12 +415,11 @@ impl Node {
         Ok(header)
     }
 
-    pub fn device_id(&self) -> DeviceId {
-        self.node_data.device_id()
-    }
-
-    pub fn device_group_topic(&self) -> DeviceGroupId {
-        Topic::device_group(self.agent_id()).into()
+    /// Abort the stream processing background task, allowing database handles to be released.
+    pub async fn shutdown(mut self) {
+        if let Some(cancel_and_wait) = self.stream_task.take() {
+            cancel_and_wait.cancel_and_wait().await;
+        }
     }
 
     /// Store someone as a contact, and:
@@ -418,7 +436,7 @@ impl Node {
         // Must subscribe to the new member's device group in order to receive their
         // group control messages.
         // TODO: is this idempotent? If not we must make sure to do this only once.
-        self.initialize_topic(Topic::announcements(contact.agent_id), false)
+        self.register_topic(Topic::announcements(contact.agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
@@ -468,7 +486,7 @@ impl Node {
 
         let agent = contact.agent_id;
         let direct_topic = self.direct_chat_topic(agent);
-        self.initialize_topic(direct_topic, true)
+        self.register_topic(direct_topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
@@ -481,7 +499,7 @@ impl Node {
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
         if let Some(inbox_topic) = contact.inbox_topic.clone() {
-            self.initialize_topic(inbox_topic.topic, true)
+            self.initialize_topic(*inbox_topic.topic)
                 .await
                 .map_err(|e| Error::InitializeTopic(e.to_string()))?;
             let code = self
@@ -536,5 +554,52 @@ impl Node {
     pub async fn remove_contact(&self, _chat_actor_id: ActorId) -> anyhow::Result<()> {
         // TODO: shutdown inbox task, etc.
         todo!("add tombstone to contacts list");
+    }
+
+    /// Mark messages as read by storing a ReadMessages operation in the device group topic.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    pub async fn mark_messages_read(
+        &self,
+        chat_id: ChatId,
+        message_hashes: Vec<p2panda_core::Hash>,
+    ) -> Result<(), Error> {
+        use crate::payload::ReadMessagesPayload;
+
+        self.author_operation(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::ReadMessages(ReadMessagesPayload {
+                chat_id,
+                message_hashes,
+            })),
+            Some(&format!("mark_messages_read({})", chat_id.renamed())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
+        self.initialize_topic(
+            *Topic::announcements(self.agent_id())
+                .with_name(&format!("announce({})", self.agent_id().renamed())),
+        )
+        .await?;
+
+        for topic in self.local_store.get_active_inbox_topics()?.iter() {
+            self.initialize_topic(
+                *topic
+                    .topic
+                    .clone()
+                    .with_name(&format!("inbox({})", self.device_id().renamed())),
+            )
+            .await?;
+        }
+
+        for topic in self.local_store.subscribed_topics()?.iter() {
+            self.initialize_topic(*topic).await?;
+        }
+
+        Ok(())
     }
 }

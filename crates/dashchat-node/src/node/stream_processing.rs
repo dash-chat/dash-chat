@@ -10,7 +10,7 @@ use tokio::task;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::Instrument;
 
-use crate::{payload::InboxPayload, topic::TopicKind};
+use crate::{payload::InboxPayload, topic::AutoRegisteredTopic};
 
 use super::*;
 
@@ -21,56 +21,74 @@ pub struct Notification {
 }
 
 impl Node {
-    /// Internal function to start the necessary tasks for processing group chat
-    /// network activity.
+    /// Register a topic as subscribed in the database, and initialize it.
+    /// When the node restarts, the topic will be reinitialized.
     ///
-    /// This must be called:
-    /// - when creating a new group chat
-    /// - when initializing the node, for each existing group chat
-    pub(crate) async fn initialize_topic<K: TopicKind>(
+    /// Note that some topics are excluded from automatic registration, such as inbox topics.
+    /// They have to be registered separately with extra context.
+    pub(crate) async fn register_topic<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
-        _is_author: bool,
     ) -> anyhow::Result<()> {
-        {
-            let mailbox_rx = self.mailboxes.subscribe(topic.into()).await?;
-            let stream = ReceiverStream::new(mailbox_rx).filter_map(async |op| {
-                    let hash = op.hash();
-                    if hash == op.header.hash() {
-                        let header_bytes = op.header.to_bytes();
-                        Some((op.header, op.body, header_bytes))
-                    } else {
-                        tracing::error!(hash = ?hash.renamed(), "hash mismatch from mailbox server");
-                        None
-                    }
-                }).ingest(self.op_store.clone(), 128) .filter_map(|result| async {
-                    match result {
-                        Ok(operation) => Some(operation),
-                        Err(err) => {
-                            tracing::warn!(?err, "ingest operation error");
-                            None
-                        }
-                    }
-                });
-
-            self.stream_tx
-                .send(Pin::from(Box::new(stream)))
-                .await
-                .map_err(|_| anyhow::anyhow!("stream channel closed"))?;
-        }
+        self.local_store.register_topic_as_subscribed(topic)?;
+        self.initialize_topic(*topic).await?;
 
         Ok(())
     }
 
-    pub fn spawn_stream_process_loop(
+    /// Internal function to start the necessary tasks for processing network activity
+    /// for a given topic.
+    ///
+    /// This must be called:
+    /// - when creating a new group chat
+    /// - when initializing the node, for each existing group chat
+    pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
+        let Some(mailbox_rx) = self.mailboxes.subscribe(topic.into()).await? else {
+            tracing::warn!("topic already iniitalized, skipping");
+            return Ok(());
+        };
+        let stream = ReceiverStream::new(mailbox_rx)
+            .filter_map(async |op| {
+                let hash = op.hash();
+                if hash == op.header.hash() {
+                    let header_bytes = op.header.to_bytes();
+                    Some((op.header, op.body, header_bytes))
+                } else {
+                    tracing::error!(hash = ?hash.renamed(), "hash mismatch from mailbox server");
+                    None
+                }
+            })
+            .ingest(self.op_store.clone(), 128)
+            .filter_map(|result| async {
+                match result {
+                    Ok(operation) => Some(operation),
+                    Err(err) => {
+                        tracing::warn!(?err, "ingest operation error");
+                        None
+                    }
+                }
+            });
+
+        self.stream_tx
+            .send(Pin::from(Box::new(stream)))
+            .await
+            .map_err(|_| anyhow::anyhow!("stream channel closed"))?;
+
+        Ok(())
+    }
+
+    pub(super) fn spawn_stream_process_loop(
         &self,
         mut stream_rx: mpsc::Receiver<
             Pin<Box<dyn Stream<Item = Operation<Extensions>> + Send + 'static>>,
         >,
-    ) {
+    ) -> CancelAndWait<()> {
         let node = self.clone();
 
-        task::spawn(
+        let token = tokio_util::sync::CancellationToken::new();
+        let token2 = token.clone();
+
+        let handle = task::spawn(
             async move {
                 let node = node.clone();
                 let mut streams = SelectAll::new();
@@ -91,6 +109,11 @@ impl Node {
                             }
                         }
 
+                        _ = token.cancelled() => {
+                            tracing::info!("stream processing loop cancelled");
+                            break;
+                        }
+
                         else => {
                             // Both stream_rx is closed and streams is exhausted
                             break;
@@ -100,6 +123,8 @@ impl Node {
             }
             .instrument(tracing::info_span!("stream_process_loop")),
         );
+
+        CancelAndWait::new(handle, token2)
     }
 
     async fn process_stream_item(&self, operation: Operation<Extensions>) -> anyhow::Result<()> {

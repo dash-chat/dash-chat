@@ -15,6 +15,7 @@ Please read this coding style carefully and take it into account when planning o
 - Try to remain as simple as possible with your implementations.
 - Try to reuse types and functions across the project rather than reimplement them.
 - Don't use `any` or `unknown` typescript types. Instead, try to understand the actual typescript types and use them to infer the appropriate data structures and algorithms to use.
+- Prefer Tailwind CSS utility classes over custom CSS styles whenever possible. Use inline `class` attributes with Tailwind classes instead of adding styles to `<style>` blocks.
 
 ## Development Environment
 
@@ -132,13 +133,12 @@ This is a pnpm workspace with multiple packages:
 ### Frontend Architecture (Svelte 5 + TypeScript)
 
 **Structure:**
-- **ui/src/routes/**: SvelteKit file-based routing
-  - Main routes: contacts, direct-messages, group-chat, settings, add-contact, new-group, new-message
-  - Uses Svelte 5 runes (signals) for reactivity
+- **ui/src/routes/**: SvelteKit file-based routing (see [UI Navigation Map](#ui-navigation-map) below)
 - **ui/src/components/**: Reusable UI components
 - **ui/src/utils/**: Utility functions (image compression, time formatting, QR codes, etc.)
+- **ui/tests/**: Test selectors and page objects (see [UI Test Utilities](#ui-test-utilities) below)
 - **packages/stores/src/**: Shared state management
-  - Organized by domain: contacts, chats, group-chats, direct-messages, devices
+  - Organized by domain: contacts, chats, group-chats, direct-chats, devices
   - Each domain has a `-store.ts` (state) and `-client.ts` (Tauri commands)
   - `p2panda/`: Core p2panda integration (logs-store, logs-client, types)
 
@@ -148,6 +148,87 @@ This is a pnpm workspace with multiple packages:
 - UI built with Konsta UI components (mobile-first design)
 - Internationalization using @inlang/paraglide-js
 - Image compression before upload
+
+### Desktop Layout
+
+On wide screens (≥768px), the app uses a two-panel layout managed by `DesktopLayout.svelte`:
+- **Sidebar** (left, 320px): Shows the contextual panel based on the current route — `ChatListPanel` for chat routes, `SettingsPanel` for `/settings/*`, `NewMessagePanel` for `/new-message/*`.
+- **Content** (right, flex): Shows the page content. For sidebar-only routes (`/` and `/settings`), an `EmptyState` placeholder is rendered instead.
+
+Pages like `/`, `/settings`, and `/new-message` always render their mobile content (wrapped in `<Page>`). On desktop, `DesktopLayout` handles showing the correct sidebar panel and decides whether to render `EmptyState` or the page's children in the content area. Pages never check `isWideScreen` to decide between EmptyState and their content — that logic lives solely in `DesktopLayout`.
+
+**Sidebar panel switching without navigation (`pushState`):** On desktop, clicking "new message" from the `ChatListPanel` should switch the sidebar to `NewMessagePanel` without navigating away from the current content (e.g., an active chat). This uses SvelteKit's `pushState('', { sidebarPanel: 'new-message' })` to update `page.state` without changing the URL. `DesktopLayout` reads `page.state.sidebarPanel` alongside the URL path to determine which sidebar panel to show. The browser back button automatically pops this state. The `App.PageState` type is augmented in `ui/src/app.d.ts`.
+
+**Add-contact routes are nested under their parent context** (`/new-message/add-contact` and `/settings/profile/add-contact`) so that the correct sidebar panel is shown on desktop based on the URL prefix.
+
+### UI Navigation Map
+
+The app uses SvelteKit file-based routing. On first launch the user sees the Create Profile screen; after creating a profile the home page (`/`) is the root. The theme (Material or iOS) determines whether some actions use buttons/FABs (Material) or navbar links (iOS).
+
+```
+Create Profile (first launch only)
+  └─ / (Home — chat list)
+
+/ (Home)
+  ├─ [avatar] ──────────── /settings
+  ├─ [contacts icon] ───── /contacts
+  ├─ [new message] ─────── /new-message        (FAB on Material, navbar link on iOS)
+  └─ [chat item] ──────── /direct-chats/{agentId}  or  /group-chat/{chatId}
+
+/settings
+  ├─ [profile item] ────── /settings/profile
+  ├─ [QR icon] ──────────── /settings/profile/add-contact
+  └─ [account item] ────── /settings/account
+
+/settings/profile
+  ├─ [edit photo] ──────── /settings/profile/edit-photo
+  ├─ [name item] ──────── /settings/profile/edit-name
+  ├─ [about item] ─────── /settings/profile/edit-about
+  └─ [QR code item] ───── /settings/profile/add-contact
+
+/settings/profile/add-contact
+  ├─ code tab ──── shows QR + code input
+  └─ scan tab ──── camera scanner (mobile only)
+
+/settings/account
+  └─ [delete account] ─── confirmation dialog
+
+/new-message
+  ├─ [add contact] ────── /new-message/add-contact
+  └─ [contact item] ───── /direct-chats/{agentId}
+
+/new-message/add-contact
+  ├─ code tab ──── shows QR + code input
+  └─ scan tab ──── camera scanner (mobile only)
+
+/new-group
+  ├─ step 1: member selection ─── [next] ──► step 2: group info ─── [create]
+  └─ step 2 back ──► step 1
+
+/direct-chats/{agentId}
+  ├─ [navbar title] ────── /direct-chats/{agentId}/chat-settings
+  └─ [back] ────────────── /
+
+/direct-chats/{agentId}/chat-settings
+  ├─ [search button] ───── /direct-chats/{agentId}?search=true
+  └─ [back] ────────────── /direct-chats/{agentId}
+
+/group-chat/{chatId}
+  ├─ [navbar title] ────── /group-chat/{chatId}/info
+  └─ [back] ────────────── /
+```
+
+### UI Test Utilities
+
+All interactive elements have `data-testid` attributes. The selector registry and page objects live in `ui/tests/`:
+
+- **`ui/tests/selectors.ts`** — Single source of truth for all `data-testid` selectors, organized by page. Use `S.pageName.elementName` to get a CSS selector like `[data-testid="page-element"]`.
+- **`ui/tests/pages/*.ts`** — Page object modules exporting selectors, interaction descriptors, and assertion scripts for each page.
+- **`ui/tests/flows/*.ts`** — Multi-step workflow descriptors (profile creation, contact exchange, send message).
+
+When driving the app via Tauri MCP tools, always use `data-testid` selectors instead of CSS class selectors. For Konsta `ListInput` components, the `data-testid` lands on the outer `<li>`, so type into `[data-testid="..."] input` (or `textarea` for text areas).
+
+Reference `ui/tests/selectors.ts` for the full list of available selectors.
 
 ### State Management (packages/stores)
 
@@ -241,7 +322,7 @@ setContext('chats-store', chatsStore);
 
 Stores depend on each other forming a dependency graph:
 - `LogsStore` (base) ← `DevicesStore` ← `ContactsStore` ← `ChatsStore`
-- Domain-specific stores (e.g., `DirectMessagesChatStore`, `GroupChatStore`) are created on-demand with specific parameters
+- Domain-specific stores (e.g., `DirectChatStore`, `GroupChatStore`) are created on-demand with specific parameters
 
 ### Data Flow
 
@@ -288,6 +369,16 @@ Run tests from workspace root. Tests use tokio async runtime.
 
 ### Development Testing
 Use `pnpm start` to run two instances locally that can communicate with each other over the p2panda network.
+
+### Verifying UI Features
+
+**REQUIREMENT:** Every time you make UI changes, you MUST start the app, visually verify that the feature works correctly and looks polished, and then kill the dev processes when done. Do not skip this step.
+
+1. Use the `start-dev` skill to start the development environment.
+2. Connect via `driver_session` and use `webview_screenshot`, `webview_dom_snapshot`, and other Tauri MCP tools to inspect and interact with the UI.
+3. Verify that the feature works as expected and the UI is well polished — check layout, spacing, alignment, text, colors, and interactive states.
+4. If something looks off, fix it and re-verify.
+5. When done, kill all background dev processes (Tauri agents, mailbox server, stores watcher) to free up ports and resources.
 
 ## Platform Support
 
