@@ -3,7 +3,6 @@
 	import '@awesome.me/webawesome/dist/components/qr-code/qr-code.js';
 	import '@awesome.me/webawesome/dist/components/copy-button/copy-button.js';
 	import { getContext } from 'svelte';
-	import { invoke } from '@tauri-apps/api/core';
 	import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 	import {
 		decodeContactCode,
@@ -11,6 +10,7 @@
 		fullName,
 		toPromise,
 		type ContactsStore,
+		type SettingsStore,
 	} from 'dash-chat-stores';
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -25,6 +25,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { isMobile } from '$lib/utils/environment';
 	import { scanQrcode, scanQrFromImage } from '$lib/utils/qrcode';
 	import {
@@ -52,6 +53,7 @@
 	const theme = $derived(useTheme());
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
+	const settingsStore: SettingsStore = getContext('settings-store');
 
 	let myCode = contactsStore.client.createContactCode().then(encodeContactCode);
 
@@ -121,12 +123,8 @@
 		await cancel();
 	}
 
-	let qrColor = $state('#007aff');
+	const qrColor = useReactivePromise(settingsStore.qrColor);
 	let colorPickerOpen = $state(false);
-
-	invoke<string | null>('get_qr_color').then((saved) => {
-		if (saved) qrColor = saved;
-	});
 
 	async function copyLink(code: string) {
 		await writeText(code);
@@ -140,7 +138,8 @@
 
 	async function shareCode(code: string) {
 		const name = await getMyName();
-		await shareQrCode(code, qrColor, name);
+		const color = await toPromise(settingsStore.qrColor);
+		await shareQrCode(code, color, name);
 	}
 
 	let imageFilePicker: HTMLInputElement;
@@ -169,7 +168,9 @@
 
 {#if colorPickerOpen}
 	{#await myCode then code}
-		<SelectColor {code} bind:qrColor onClose={() => (colorPickerOpen = false)} />
+		{#await $qrColor then color}
+			<SelectColor {code} qrColor={color} onClose={() => (colorPickerOpen = false)} />
+		{/await}
 	{/await}
 {:else}
 <Page
@@ -260,15 +261,16 @@
 				<Preloader />
 			</div>
 		{:then code}
+			{#await $qrColor then color}
 			<div class="column" style="flex:1">
 				<div class="column center-in-desktop gap-4 mx-4 mt-4">
-					<Card class="qr-card p-2.5 pb-2" style="background-color: {qrColor}">
+					<Card class="qr-card p-2.5 pb-2" style="background-color: {color}">
 						<div class="column" style="align-items: center">
 							<div
 								class="column w-full p-3"
 								style="align-items: center; justify-content: center; background-color: white; border-radius: 10px;"
 							>
-								<wa-qr-code value={code} size="180" fill={qrColor}></wa-qr-code>
+								<wa-qr-code value={code} size="180" fill={color}></wa-qr-code>
 							</div>
 
 							<div class="py-1">
@@ -335,7 +337,7 @@
 									tonal
 									onClick={async () => {
 										const name = await getMyName();
-										await saveQrCode(code, qrColor, name);
+										await saveQrCode(code, color, name);
 									}}
 									class="icon-only"
 									data-testid="add-contact-save-btn"
@@ -386,6 +388,7 @@
 					</div>
 				</div>
 			</div>
+			{/await}
 		{/await}
 	{:else}
 		<div class="column" style="position: relative; flex: 1;">

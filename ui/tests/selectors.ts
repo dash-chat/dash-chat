@@ -51,6 +51,7 @@ export const S = {
 		back: tid('settings-back'),
 		profileLink: tid('settings-profile-link'),
 		qrLink: tid('settings-qr-link'),
+		appearanceLink: tid('settings-appearance-link'),
 		accountLink: tid('settings-account-link'),
 	},
 	profile: {
@@ -99,6 +100,12 @@ export const S = {
 	groupChat: {
 		back: tid('group-chat-back'),
 		infoLink: tid('group-chat-info-link'),
+	},
+	appearance: {
+		back: tid('appearance-back'),
+		light: tid('appearance-light'),
+		dark: tid('appearance-dark'),
+		system: tid('appearance-system'),
 	},
 	account: {
 		back: tid('account-back'),

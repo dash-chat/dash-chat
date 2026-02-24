@@ -1818,6 +1818,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-sharekit",
  "tauri-plugin-single-instance",
+ "tauri-plugin-system-bars-styles",
  "tauri-plugin-updater",
  "tauri-plugin-virtual-keyboard-padding",
  "tokio",
@@ -9273,6 +9274,19 @@ dependencies = [
  "tracing",
  "windows-sys 0.60.2",
  "zbus 5.13.2",
+]
+
+[[package]]
+name = "tauri-plugin-system-bars-styles"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-system-bars-styles?branch=main#e2462cbeb9e75744c1984d8208e544fb0ccc7309"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

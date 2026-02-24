@@ -52,16 +52,16 @@
 
 			<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
 
-			{#if showGetStarted}
-				<div class="absolute bottom-safe-0 left-0 right-0 z-10">
+			{#if showGetStarted && !isWideScreen.value}
+				<div class="fixed bottom-0 left-0 right-0 z-10 pb-safe">
 					<GetStarted />
 				</div>
 			{/if}
 
 			{#if theme == 'material' && !isWideScreen.value}
 				<Fab
-					class="absolute right-safe-4 bottom-safe-4 z-20"
-					style={showGetStarted ? 'bottom: 10rem' : ''}
+					class="fixed-action-btn z-20"
+					style={showGetStarted ? `bottom: calc(env(safe-area-inset-bottom, 0px) + 10rem)` : ''}
 					onClick={() => goto('/new-message')}
 					data-testid="home-new-message-fab"
 				>

@@ -31,7 +31,8 @@ pub fn run() {
     {
         builder = builder
             .plugin(tauri_plugin_virtual_keyboard_padding::init())
-            .plugin(tauri_plugin_barcode_scanner::init());
+            .plugin(tauri_plugin_barcode_scanner::init())
+            .plugin(tauri_plugin_system_bars_styles::init());
     }
     #[cfg(not(mobile))]
     {
@@ -77,8 +78,8 @@ pub fn run() {
             commands::direct_chats::direct_chat_send_message,
             commands::chats::mark_messages_read,
             commands::direct_chats::direct_chat_send_reaction,
-            commands::settings::get_qr_color,
-            commands::settings::set_qr_color,
+            commands::settings::get_settings,
+            commands::settings::set_setting,
             // commands::chats::create_group,
             // commands::group_chat::add_member,
             // commands::group_chat::send_message,

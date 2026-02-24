@@ -1,21 +1,18 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { type ContactsStore, type ChatsStore } from 'dash-chat-stores';
+	import { type ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/AllChats.svelte';
-	import GetStarted from '$lib/components/GetStarted.svelte';
+
 	import { Link, Navbar, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pushState } from '$app/navigation';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const chatsStore: ChatsStore = getContext('chats-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
-	const contacts = useReactivePromise(contactsStore.contactsAgentIds);
-	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
 	const theme = $derived(useTheme());
 </script>
 
@@ -51,13 +48,7 @@
 	
 	<AllChats class="flex flex-1 flex-col"></AllChats>
 
-	{#await $contacts then contactsList}
-		{#await $chatSummaries then chats}
-			{#if contactsList.length === 0 && chats.length === 0}
-				<GetStarted />
-			{/if}
-		{/await}
-	{/await}
+
 </div>
 
 <style>

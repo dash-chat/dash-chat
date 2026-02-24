@@ -1,11 +1,12 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/qr-code/qr-code.js';
-	import { invoke } from '@tauri-apps/api/core';
+	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiContentCopy } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 	import { showToast } from '$lib/utils/toasts';
+	import { type SettingsStore } from 'dash-chat-stores';
 	import {
 		Page,
 		Navbar,
@@ -18,7 +19,7 @@
 
 	let {
 		code,
-		qrColor = $bindable(),
+		qrColor,
 		onClose,
 	}: {
 		code: string;
@@ -27,6 +28,7 @@
 	} = $props();
 
 	const theme = $derived(useTheme());
+	const settingsStore: SettingsStore = getContext('settings-store');
 
 	const qrColors = [
 		'#007aff', '#ffffff', '#8e8e93', '#a2845e',
@@ -38,10 +40,13 @@
 
 	const selectedColor = $derived(qrColors[qrColorIndex]);
 
-	function selectColor(index: number) {
+	async function selectColor(index: number) {
 		qrColorIndex = index;
-		qrColor = qrColors[index];
-		invoke('set_qr_color', { color: qrColors[index] });
+		try {
+			await settingsStore.setQrColor(qrColors[index]);
+		} catch {
+			showToast(m.errorUnexpected(), 'error');
+		}
 	}
 </script>
 
@@ -132,16 +137,15 @@
 	</div>
 
 	{#if theme === 'material'}
-		<div style="position: absolute; bottom: 24px; right: 24px;">
 			<Button
 				rounded
 				inline
 				onClick={onClose}
 				data-testid="color-picker-done"
+				class="fixed-action-btn"
 			>
 				{m.done()}
 			</Button>
-		</div>
 	{/if}
 </Page>
 

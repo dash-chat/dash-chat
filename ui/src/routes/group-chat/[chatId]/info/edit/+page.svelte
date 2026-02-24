@@ -91,8 +91,7 @@
 
 		<Button
 			onClick={save}
-			class="end-4 bottom-4"
-			style="position: fixed; width: auto"
+			class="fixed-action-btn"
 			rounded
 		>
 			{m.save()}

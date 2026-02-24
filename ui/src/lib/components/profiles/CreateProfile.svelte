@@ -82,7 +82,7 @@
 				tonal
 				disabled={!pickerHasChanges}
 				onClick={selectAvatar}
-				style="position: fixed; bottom: 16px; right: 16px; width: auto"
+				class="fixed-action-btn"
 			>
 				{m.save()}
 			</Button>
@@ -168,8 +168,7 @@
 		{#if theme === 'material'}
 			<Button
 				onClick={setProfile}
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				class="fixed-action-btn"
 				rounded
 				disabled={name === undefined || name === ''}
 				data-testid="create-profile-create-btn"

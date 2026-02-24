@@ -14,6 +14,8 @@
 		ContactsStore,
 		DevicesClient,
 		DevicesStore,
+		SettingsClient,
+		SettingsStore,
 	} from 'dash-chat-stores';
 	import { App, KonstaProvider } from 'konsta/svelte';
 
@@ -21,6 +23,8 @@
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { useSignal } from '$lib/stores/use-signal';
+	import { applyDarkMode } from '$lib/utils/theme';
 
 	import { setLocale } from '$lib/paraglide/runtime';
 	window.__setLocale = setLocale;
@@ -30,6 +34,15 @@
 	}
 
 	let { children } = $props();
+
+	const settingsStore = new SettingsStore(new SettingsClient());
+	setContext('settings-store', settingsStore);
+
+	const isDark = useSignal(settingsStore.isDark);
+
+	$effect(() => {
+		applyDarkMode($isDark);
+	});
 
 	const logsClient = new TauriLogsClient<Payload>();
 	const logsStore = new LogsStore<Payload>(logsClient);

@@ -320,7 +320,7 @@
 		tonal
 		disabled={!textValue}
 		onClick={generateTextAvatar}
-		style="position: fixed; bottom: 16px; right: 16px; width: auto"
+				class="fixed-action-btn"
 	>
 		{m.done()}
 	</Button>
@@ -354,14 +354,12 @@
 		background: #f3f4f6;
 	}
 
-	@media (prefers-color-scheme: dark) {
-		.remove-avatar-btn {
-			background: #4b5563;
-			color: white;
-		}
-		.remove-avatar-btn:hover {
-			background: #6b7280;
-		}
+	:global(.dark) .remove-avatar-btn {
+		background: #4b5563;
+		color: white;
+	}
+	:global(.dark) .remove-avatar-btn:hover {
+		background: #6b7280;
 	}
 
 	.action-label {

@@ -118,8 +118,7 @@
 		{#if theme === 'material'}
 			<Button
 				onClick={save}
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				class="fixed-action-btn"
 				rounded
 				data-testid="edit-name-save-btn"
 				disabled={myProfile?.name === name && myProfile.surname === surname}

@@ -5,7 +5,7 @@
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { mdiAccountCircleOutline, mdiQrcode } from '@mdi/js';
+	import { mdiAccountCircleOutline, mdiQrcode, mdiPaletteOutline } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
 	import { page } from '$app/state';
@@ -107,6 +107,21 @@
 				{#snippet media()}
 					<wa-icon
 						src={wrapPathInSvg(mdiAccountCircleOutline)}
+						style="font-size: 28px"
+					></wa-icon>
+				{/snippet}
+			</ListItem>
+			<ListItem
+				link
+				linkProps={{ href: '/settings/appearance' }}
+				data-testid="settings-appearance-link"
+				title={m.appearance()}
+				chevron={false}
+				class={isActive('/settings/appearance') ? 'active' : ''}
+			>
+				{#snippet media()}
+					<wa-icon
+						src={wrapPathInSvg(mdiPaletteOutline)}
 						style="font-size: 28px"
 					></wa-icon>
 				{/snippet}

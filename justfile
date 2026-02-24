@@ -25,3 +25,7 @@ build-binary:
 # builds and runs dash chat as a binary
 run-binary: build-binary
     ./target/release/dash-chat
+
+# shows the logs for a connected android device running the app
+logcat:
+    adb logcat | grep -F "`adb shell ps | grep studio.darksoil.dashchat | tr -s [:space:] ' ' | cut -d' ' -f2`"

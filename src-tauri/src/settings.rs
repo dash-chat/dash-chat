@@ -6,12 +6,14 @@ use tauri::{AppHandle, Runtime};
 use crate::filesystem::FileSystem;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-struct Settings {
-    local_mailbox_enabled: bool,
-    qr_color: Option<String>,
+#[serde(default)]
+pub(crate) struct Settings {
+    pub local_mailbox_enabled: bool,
+    pub qr_color: Option<String>,
+    pub color_scheme: Option<String>,
 }
 
-fn load_settings<R: Runtime>(handle: &AppHandle<R>) -> Settings {
+pub(crate) fn load_settings<R: Runtime>(handle: &AppHandle<R>) -> Settings {
     let path = match FileSystem::new(handle).settings_path() {
         Ok(path) => path,
         Err(err) => {
@@ -38,7 +40,7 @@ fn load_settings<R: Runtime>(handle: &AppHandle<R>) -> Settings {
     }
 }
 
-fn save_settings<R: Runtime>(handle: &AppHandle<R>, settings: &Settings) {
+pub(crate) fn save_settings<R: Runtime>(handle: &AppHandle<R>, settings: &Settings) {
     let path = match FileSystem::new(handle).settings_path() {
         Ok(path) => path,
         Err(err) => {
@@ -77,12 +79,3 @@ pub fn save_mailbox_enabled<R: Runtime>(handle: &AppHandle<R>, enabled: bool) {
     save_settings(handle, &settings);
 }
 
-pub fn load_qr_color<R: Runtime>(handle: &AppHandle<R>) -> Option<String> {
-    load_settings(handle).qr_color
-}
-
-pub fn save_qr_color<R: Runtime>(handle: &AppHandle<R>, color: String) {
-    let mut settings = load_settings(handle);
-    settings.qr_color = Some(color);
-    save_settings(handle, &settings);
-}

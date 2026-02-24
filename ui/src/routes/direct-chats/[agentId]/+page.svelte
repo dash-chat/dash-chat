@@ -1100,6 +1100,7 @@
 				<div
 					class="pointer-events-auto absolute bottom-0 left-0 right-0"
 					class:bg-md-light-surface={theme === 'material'}
+					class:dark:bg-md-dark-surface={theme === 'material'}
 				>
 					<MessageInput
 						bind:value={messageText}

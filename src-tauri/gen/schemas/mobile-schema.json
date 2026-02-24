@@ -6237,6 +6237,24 @@
           "markdownDescription": "Denies the share_text command without any pre-configured scope."
         },
         {
+          "description": "Default permissions for the system-bars-styles plugin\n#### This default permission set includes:\n\n- `allow-set-style`",
+          "type": "string",
+          "const": "system-bars-styles:default",
+          "markdownDescription": "Default permissions for the system-bars-styles plugin\n#### This default permission set includes:\n\n- `allow-set-style`"
+        },
+        {
+          "description": "Enables the set_style command without any pre-configured scope.",
+          "type": "string",
+          "const": "system-bars-styles:allow-set-style",
+          "markdownDescription": "Enables the set_style command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_style command without any pre-configured scope.",
+          "type": "string",
+          "const": "system-bars-styles:deny-set-style",
+          "markdownDescription": "Denies the set_style command without any pre-configured scope."
+        },
+        {
           "description": "Default permissions for the plugin",
           "type": "string",
           "const": "virtual-keyboard-padding:default",

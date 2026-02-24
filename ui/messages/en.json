@@ -127,6 +127,11 @@
 	"editGroup": "Edit group",
 
 	"settings": "Settings",
+	"appearance": "Appearance",
+	"colorScheme": "Color scheme",
+	"lightMode": "Light",
+	"darkMode": "Dark",
+	"systemDefault": "System (default)",
 	"account": "Account",
 	"deleteAccount": "Delete account",
 	"deleteAccountWarning": "This will permanently delete your account and all your data. This action cannot be undone.",

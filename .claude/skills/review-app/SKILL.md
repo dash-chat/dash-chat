@@ -36,7 +36,7 @@ document.querySelector('[data-testid="settings-profile-link"]').click()
 (document.querySelector('[data-testid="settings-profile-link"] a') || document.querySelector('[data-testid="settings-profile-link"]')).click()
 ```
 
-This applies to: `settings-profile-link`, `settings-account-link`, `contacts-add-link`, `profile-edit-name`, `profile-edit-about`, `profile-edit-photo`, and any other list item that navigates to a new page. Use the `|| document.querySelector(...)` fallback pattern so it still works if the structure changes.
+This applies to: `settings-profile-link`, `settings-account-link`, `profile-edit-name`, `profile-edit-about`, `profile-edit-photo`, and any other list item that navigates to a new page. Use the `|| document.querySelector(...)` fallback pattern so it still works if the structure changes.
 
 ## Critical: Screenshots are stale
 
@@ -215,8 +215,8 @@ This is the core functional test using both app instances.
 
 **On Agent 1** (switch appIdentifier to Agent 1's port):
 
-1. Click `[data-testid="home-contacts-link"]`, wait for `[data-testid="contacts-add-link"]` (combined click+wait).
-2. Click `[data-testid="contacts-add-link"]`, wait for add-contact page.
+1. Click `[data-testid="home-settings-link"]`, wait for settings page.
+2. Click `[data-testid="settings-qr-link"]` (or navigate via profile → `[data-testid="profile-qr-link"]`), wait for add-contact page (`[data-testid="add-contact-back"]`).
 3. Run per-page checks.
 4. Extract Agent 1's contact code (**use `.value` property, NOT `getAttribute`**):
    ```js
@@ -226,7 +226,7 @@ This is the core functional test using both app instances.
 
 **On Agent 2** (switch appIdentifier to Agent 2's port):
 
-1. Click `[data-testid="home-contacts-link"]`, then `[data-testid="contacts-add-link"]`.
+1. Navigate to add-contact page via same path (settings → QR link).
 2. Run per-page checks.
 3. Extract Agent 2's contact code (same `.value` script). Save as `agent2Code`.
 4. Type `agent1Code` into `[data-testid="add-contact-code-input"] input` using native value setter.
@@ -298,15 +298,15 @@ Navigate through each page, running per-page checks. Combine click+wait into sin
 4. Click `[data-testid="profile-edit-about"]` → per-page checks → click `[data-testid="edit-about-back"]`.
 5. Click `[data-testid="profile-edit-photo"]` → per-page checks → click `[data-testid="edit-photo-back"]`.
 6. Click `[data-testid="profile-back"]` → back to settings.
-7. Click `[data-testid="settings-account-link"]` → per-page checks → click `[data-testid="account-back"]`.
-8. Click `[data-testid="settings-back"]` → return home.
+7. Click `[data-testid="settings-appearance-link"]` → per-page checks → click `[data-testid="appearance-back"]`.
+8. Click `[data-testid="settings-account-link"]` → per-page checks → click `[data-testid="account-back"]`.
+9. Click `[data-testid="settings-back"]` → return home.
 
-### 1.7 Contacts & new message
+### 1.7 New message
 
 **From the home page:**
 
-1. Click `[data-testid="home-contacts-link"]` → per-page checks → click `[data-testid="contacts-back"]`.
-2. Click `[data-testid="home-new-message-fab"]` (Material) → per-page checks → click `[data-testid="new-message-back"]`.
+1. Click `[data-testid="home-new-message-fab"]` (Material) → per-page checks → click `[data-testid="new-message-back"]`.
 
 ### 1.8 New group UI
 
@@ -327,63 +327,137 @@ Navigate through each page, running per-page checks. Combine click+wait into sin
 
 ---
 
-## Phase 2: iOS theme visual pass
+## Layout modes: Desktop and Mobile
 
-Switch to iOS theme without reload (on Agent 1):
+The app has two layouts controlled by the `isWideScreen` store (`ui/src/lib/stores/screen.svelte.ts`):
+
+- **Desktop**: Two-panel layout (sidebar 320px + content area) via `DesktopLayout.svelte`.
+- **Mobile**: Single-panel, full-width pages with back navigation.
+
+The Tauri dev window is wide enough to trigger desktop layout by default. To switch layouts:
 
 ```js
-window.dispatchEvent(new CustomEvent('theme-change', { detail: { theme: 'ios' } }));
+// Switch to mobile layout
+window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: false }));
+
+// Switch back to desktop layout
+window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: true }));
 ```
 
-Re-visit **every page** from Phase 1 (except the profile creation and contact exchange — just navigate to each screen using `data-testid` selectors), running per-page checks at each. Focus on iOS-specific differences:
+The override persists across SvelteKit client-side navigations but is **lost on full page reloads** (e.g., after `__setLocale()`). Re-dispatch the event after any reload.
 
-- Navbar style (large title, back button style)
-- Save/next links in top-right (e.g., `[data-testid="create-profile-create-link"]`, `[data-testid="edit-name-save-link"]`) vs Material FABs/buttons
-- List inset styling
-- Tabbar vs buttons on add-contact
-- `[data-testid="home-new-message-link"]` (iOS) vs `[data-testid="home-new-message-fab"]` (Material)
-
-Navigate to each page using the same click paths as Phase 1. Use `webview_execute_js` for all clicks:
-
-1. `/` (home) — check `[data-testid="all-chats-list"]`
-2. `/contacts` — click `[data-testid="home-contacts-link"]`, then back via `[data-testid="contacts-back"]`
-3. `/new-message` — click `[data-testid="home-new-message-link"]` (iOS), then back via `[data-testid="new-message-back"]`
-4. `/new-group` — navigate through new-message
-5. `/add-contact` — click `[data-testid="home-contacts-link"]` then `[data-testid="contacts-add-link"]`, then back via `[data-testid="add-contact-back"]`
-6. `/direct-chats/{agentId}` — click the chat item in the list, then back via `[data-testid="direct-chat-back"]`
-7. `/direct-chats/{agentId}/chat-settings` — click `[data-testid="direct-chat-settings-link"]`, then back via `[data-testid="chat-settings-back"]`
-8. `/settings` — click `[data-testid="home-settings-link"]`
-9. `/settings/profile` — click `[data-testid="settings-profile-link"]`
-10. `/settings/profile/edit-name` — click `[data-testid="profile-edit-name"]`, then back via `[data-testid="edit-name-back"]`
-11. `/settings/profile/edit-about` — click `[data-testid="profile-edit-about"]`, then back via `[data-testid="edit-about-back"]`
-12. `/settings/profile/edit-photo` — click `[data-testid="profile-edit-photo"]`, then back via `[data-testid="edit-photo-back"]`
-13. `/settings/account` — back to settings, click `[data-testid="settings-account-link"]`, then back via `[data-testid="account-back"]`
-14. Return home via `[data-testid="settings-back"]`
+**Key layout differences:**
+- Back buttons: hidden on desktop, visible on mobile
+- FAB: shown on mobile Material, hidden on desktop
+- GetStarted card: fixed on mobile, in content area on desktop
+- New message: navbar link (iOS mobile), FAB (Material mobile), sidebar icon (desktop)
 
 ---
 
-## Phase 3: German (de-de) translation pass
+## Combination matrix
 
-Switch locale on Agent 1 via `webview_execute_js`:
+All visual passes must cover **every combination** of theme, language, and layout (2 × 3 × 2 = 12 total):
 
+| # | Theme | Language | Layout | Phase |
+|---|-------|----------|--------|-------|
+| 1 | Material | English | Desktop | 1 (functional test) |
+| 2 | Material | English | Mobile | 2 |
+| 3 | iOS | English | Desktop | 2 |
+| 4 | iOS | English | Mobile | 2 |
+| 5 | Material | German | Desktop | 3 |
+| 6 | Material | German | Mobile | 3 |
+| 7 | iOS | German | Desktop | 3 |
+| 8 | iOS | German | Mobile | 3 |
+| 9 | Material | Farsi | Desktop | 4 |
+| 10 | Material | Farsi | Mobile | 4 |
+| 11 | iOS | Farsi | Desktop | 4 |
+| 12 | iOS | Farsi | Mobile | 4 |
+
+### Switching between combinations
+
+Within a language (no reload needed):
+
+```js
+// Switch theme
+window.dispatchEvent(new CustomEvent('theme-change', { detail: { theme: 'ios' } }));  // or 'material'
+
+// Switch layout
+window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: false }));  // mobile
+window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: true }));   // desktop
+```
+
+When changing language (`__setLocale()` triggers a full reload):
+1. Theme resets to Material — re-apply iOS if needed.
+2. Layout resets to desktop (media query re-evaluates) — re-dispatch `set-wide-screen` if needed.
+3. For Farsi, also set `document.documentElement.dir = 'rtl'` after reload.
+
+---
+
+## Page visit list
+
+For each combination, navigate to every page using `data-testid` click paths and run per-page checks. Use theme-appropriate selectors:
+
+- **Material**: `[data-testid="home-new-message-fab"]`, `[data-testid="create-profile-create-btn"]`, `[data-testid="new-group-next-btn"]`
+- **iOS**: `[data-testid="home-new-message-link"]`, `[data-testid="create-profile-create-link"]`, `[data-testid="new-group-next-link"]`
+
+Pages to visit:
+
+1. `/` (home) — `[data-testid="all-chats-list"]`
+2. `/new-message` — click new-message button (theme-dependent), back via `[data-testid="new-message-back"]`
+3. `/new-message/add-contact` — navigate through new-message, back via `[data-testid="add-contact-back"]`
+4. `/new-group` — navigate through new-message
+5. `/direct-chats/{agentId}` — click chat item in list, back via `[data-testid="direct-chat-back"]`
+6. `/direct-chats/{agentId}/chat-settings` — click `[data-testid="direct-chat-settings-link"]`, back via `[data-testid="chat-settings-back"]`
+7. `/settings` — click `[data-testid="home-settings-link"]`
+8. `/settings/profile` — click `[data-testid="settings-profile-link"]`
+9. `/settings/profile/edit-name` — click `[data-testid="profile-edit-name"]`, back via `[data-testid="edit-name-back"]`
+10. `/settings/profile/edit-about` — click `[data-testid="profile-edit-about"]`, back via `[data-testid="edit-about-back"]`
+11. `/settings/profile/edit-photo` — click `[data-testid="profile-edit-photo"]`, back via `[data-testid="edit-photo-back"]`
+12. `/settings/profile/add-contact` — click `[data-testid="profile-add-contact"]`, back via `[data-testid="add-contact-back"]`
+13. `/settings/appearance` — back to settings, click appearance link, back
+14. `/settings/account` — click `[data-testid="settings-account-link"]`, back via `[data-testid="account-back"]`
+15. Return home via `[data-testid="settings-back"]`
+
+---
+
+## Phase 2: English visual pass (remaining 3 combinations)
+
+Phase 1 already covered Material + English + Desktop. Now cover:
+
+### 2a: Material + English + Mobile
+```js
+window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: false }));
+```
+Visit every page. Focus on back buttons, FAB visibility, GetStarted card position.
+
+### 2b: iOS + English + Desktop
+```js
+window.dispatchEvent(new CustomEvent('theme-change', { detail: { theme: 'ios' } }));
+window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: true }));
+```
+Focus on iOS-specific navbar style, save/next links vs FABs, list inset styling.
+
+### 2c: iOS + English + Mobile
+```js
+window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: false }));
+```
+
+---
+
+## Phase 3: German (de-de) pass (4 combinations)
+
+Switch locale (triggers full page reload):
 ```js
 window.__setLocale('de-de');
 ```
 
-This sets the cookie + global variable and reloads the page. Wait for the page to reload, then reconnect `driver_session` if needed.
+Wait for reload, reconnect `driver_session` if needed. For each of the 4 combinations (Material Desktop, Material Mobile, iOS Desktop, iOS Mobile), re-apply theme/layout overrides and visit every page. Focus on:
 
-**Note:** The theme resets to Material after reload. Use `home-new-message-fab` (not `home-new-message-link`) and other Material selectors.
-
-Navigate to **every page** using `data-testid` click paths, running per-page checks at each. Use the helper pattern below to batch navigation efficiently. Also collect the navbar text on each page to verify translations. Focus on:
-
-- Text overflow in buttons, navbars, and list items (German words are significantly longer than English)
-- Truncation issues
-- Layout breakage from long words
+- Text overflow in buttons, navbars, and list items (German words are longer)
+- Truncation issues and layout breakage
 - Verify navbar text is translated (not English)
 
-### Recommended batching pattern for Phases 3-4
-
-Use this `waitFor` + `clickAndWait` helper pattern to chain navigations without deeply nesting callbacks. Keep each script to 3-4 page navigations max:
+### Recommended batching pattern
 
 ```js
 (() => {
@@ -400,15 +474,10 @@ Use this `waitFor` + `clickAndWait` helper pattern to chain navigations without 
       waitFor(waitSel, cb);
     };
 
-    // Example: contacts → back → settings → profile
-    clickAndWait('[data-testid="home-contacts-link"]', '[data-testid="contacts-back"]', () => {
-      results.push({ page: 'contacts', navbar: document.querySelector('.k-navbar')?.textContent?.trim() });
-      document.querySelector('[data-testid="contacts-back"]').click();
-      waitFor('[data-testid="home-settings-link"]', () => {
-        // ... continue for 1-2 more pages, then resolve
-        clearTimeout(timeout);
-        resolve(results);
-      });
+    clickAndWait('[data-testid="home-settings-link"]', '[data-testid="settings-profile-link"]', () => {
+      results.push({ page: 'settings', navbar: document.querySelector('.k-navbar')?.textContent?.trim() });
+      clearTimeout(timeout);
+      resolve(results);
     });
   });
 })()
@@ -416,30 +485,25 @@ Use this `waitFor` + `clickAndWait` helper pattern to chain navigations without 
 
 ---
 
-## Phase 4: Farsi (fa-ir) RTL pass
+## Phase 4: Farsi (fa-ir) RTL pass (4 combinations)
 
-Switch locale on Agent 1:
-
+Switch locale:
 ```js
 window.__setLocale('fa-ir');
 ```
 
-Wait for reload, reconnect `driver_session` if needed. Then set RTL direction (the app does not do this automatically):
-
+Wait for reload, reconnect `driver_session` if needed. Then set RTL:
 ```js
 document.documentElement.dir = 'rtl';
 ```
 
-**Note:** The theme resets to Material after reload. Use `home-new-message-fab` (not `home-new-message-link`) and other Material selectors. Use the same batching pattern from Phase 3.
-
-Navigate to **every page** using `data-testid` click paths, running per-page checks at each (including the RTL-specific checks). Also collect navbar text to verify Farsi translations. Focus on:
+For each of the 4 combinations, re-apply `dir = 'rtl'` and theme/layout overrides, then visit every page. Focus on:
 
 - RTL text direction (`dir="rtl"` on `<html>`)
-- Mirrored navigation (back buttons on right, etc.)
+- Mirrored navigation (back buttons on right)
 - Correct alignment of message bubbles
-- Navbar layout
-- Icon/text alignment
-- Verify navbar text is translated to Farsi (not English)
+- Navbar layout and icon/text alignment
+- Verify navbar text is translated to Farsi
 
 ---
 
