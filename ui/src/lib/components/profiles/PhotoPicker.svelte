@@ -258,6 +258,7 @@
 			class="nav-btn"
 			onclick={() => (view = 'picker')}
 			aria-label="Back"
+			data-testid="edit-photo-back"
 		>
 			<wa-icon
 				src={wrapPathInSvg(mdiArrowLeft)}

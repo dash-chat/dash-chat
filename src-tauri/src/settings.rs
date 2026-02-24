@@ -78,4 +78,3 @@ pub fn save_mailbox_enabled<R: Runtime>(handle: &AppHandle<R>, enabled: bool) {
     settings.local_mailbox_enabled = enabled;
     save_settings(handle, &settings);
 }
-

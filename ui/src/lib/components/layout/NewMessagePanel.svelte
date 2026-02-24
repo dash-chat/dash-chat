@@ -49,7 +49,7 @@
 
 	<div class="column" style="flex: 1">
 		<div
-			class={theme === 'ios' ? 'mt-6 px-4' : 'pl-5 pr-10'}
+			class={theme === 'ios' ? 'mt-6 px-4' : 'ps-5 pe-10'}
 			data-testid="new-message-search"
 		>
 			<Searchbar
