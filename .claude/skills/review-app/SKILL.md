@@ -44,7 +44,7 @@ This applies to: `settings-profile-link`, `settings-account-link`, `profile-edit
 
 ## Critical: Theme resets on locale change
 
-`window.__setLocale(...)` reloads the page, which **resets the theme back to Material**. Phases 3 and 4 will always run in Material theme. Use `home-new-message-fab` (Material) not `home-new-message-link` (iOS) in those phases.
+`window.__setLocale(...)` reloads the page, which **resets the theme back to Material** and **resets color scheme to light**. Phases 4 and 5 will always run in Material theme. Use `home-new-message-fab` (Material) not `home-new-message-link` (iOS) in those phases.
 
 ## Important: Navigation via UI elements only
 
@@ -356,22 +356,26 @@ The override persists across SvelteKit client-side navigations but is **lost on 
 
 ## Combination matrix
 
-All visual passes must cover **every combination** of theme, language, and layout (2 × 3 × 2 = 12 total):
+All visual passes must cover **every combination** of theme, language, layout, and color scheme (16 total):
 
-| # | Theme | Language | Layout | Phase |
-|---|-------|----------|--------|-------|
-| 1 | Material | English | Desktop | 1 (functional test) |
-| 2 | Material | English | Mobile | 2 |
-| 3 | iOS | English | Desktop | 2 |
-| 4 | iOS | English | Mobile | 2 |
-| 5 | Material | German | Desktop | 3 |
-| 6 | Material | German | Mobile | 3 |
-| 7 | iOS | German | Desktop | 3 |
-| 8 | iOS | German | Mobile | 3 |
-| 9 | Material | Farsi | Desktop | 4 |
-| 10 | Material | Farsi | Mobile | 4 |
-| 11 | iOS | Farsi | Desktop | 4 |
-| 12 | iOS | Farsi | Mobile | 4 |
+| # | Theme | Language | Layout | Color | Phase |
+|---|-------|----------|--------|-------|-------|
+| 1 | Material | English | Desktop | Light | 1 (functional test) |
+| 2 | Material | English | Mobile | Light | 2 |
+| 3 | iOS | English | Desktop | Light | 2 |
+| 4 | iOS | English | Mobile | Light | 2 |
+| 5 | Material | English | Desktop | Dark | 3 |
+| 6 | Material | English | Mobile | Dark | 3 |
+| 7 | iOS | English | Desktop | Dark | 3 |
+| 8 | iOS | English | Mobile | Dark | 3 |
+| 9 | Material | German | Desktop | Light | 4 |
+| 10 | Material | German | Mobile | Light | 4 |
+| 11 | iOS | German | Desktop | Light | 4 |
+| 12 | iOS | German | Mobile | Light | 4 |
+| 13 | Material | Farsi | Desktop | Light | 5 |
+| 14 | Material | Farsi | Mobile | Light | 5 |
+| 15 | iOS | Farsi | Desktop | Light | 5 |
+| 16 | iOS | Farsi | Mobile | Light | 5 |
 
 ### Switching between combinations
 
@@ -444,7 +448,82 @@ window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: false }));
 
 ---
 
-## Phase 3: German (de-de) pass (4 combinations)
+## Phase 3: Dark mode pass (English, 4 combinations)
+
+Switch to dark mode (no page reload needed):
+```js
+document.documentElement.classList.add('dark', 'wa-dark');
+```
+
+Or click through the UI: navigate to appearance settings and click `[data-testid="appearance-dark"]`.
+
+To switch back to light mode:
+```js
+document.documentElement.classList.remove('dark', 'wa-dark');
+```
+
+For each of the 4 combinations (Material Desktop, Material Mobile, iOS Desktop, iOS Mobile), enable dark mode and visit every page. Focus on:
+
+- **Background colors** — pages should have dark backgrounds, not white/light
+- **Text contrast** — text should be light on dark backgrounds, fully readable
+- **Input fields** — textarea and input backgrounds should be dark, not white
+- **Message bubbles** — sent/received bubbles should have appropriate dark-mode colors
+- **Navbar/toolbar** — should use dark surface colors
+- **List items** — backgrounds should be dark, separators visible
+- **Icons and buttons** — should be visible against dark backgrounds
+- **No hardcoded light colors** — look for elements that stay white/light in dark mode (e.g. `bg-white` without `dark:bg-*` counterpart)
+
+### Dark mode detection check
+
+Run this alongside the overflow check on every page:
+```js
+(() => {
+  const isDark = document.documentElement.classList.contains('dark');
+  const issues = [];
+  if (!isDark) issues.push('Dark mode class not active');
+  // Check for elements with hardcoded white backgrounds
+  document.querySelectorAll('*').forEach(el => {
+    const bg = getComputedStyle(el).backgroundColor;
+    // Flag pure white backgrounds in dark mode (excluding transparent/hidden elements)
+    if (bg === 'rgb(255, 255, 255)' && el.offsetWidth > 0 && el.offsetHeight > 0) {
+      const tag = el.tagName.toLowerCase();
+      const id = el.getAttribute('data-testid') || el.className?.toString().substring(0, 40) || '';
+      // Skip web component internals and known safe elements
+      if (!el.closest('wa-icon, wa-avatar, wa-qr-code'))
+        issues.push(`White bg in dark mode: <${tag}> ${id}`);
+    }
+  });
+  return { isDark, issues: issues.slice(0, 20) };
+})()
+```
+
+### 3a: Material + English + Desktop + Dark
+Already in Material Desktop from Phase 2. Just enable dark mode.
+
+### 3b: Material + English + Mobile + Dark
+```js
+window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: false }));
+```
+
+### 3c: iOS + English + Desktop + Dark
+```js
+window.dispatchEvent(new CustomEvent('theme-change', { detail: { theme: 'ios' } }));
+window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: true }));
+```
+
+### 3d: iOS + English + Mobile + Dark
+```js
+window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: false }));
+```
+
+After completing all 4 dark-mode combinations, switch back to light mode:
+```js
+document.documentElement.classList.remove('dark', 'wa-dark');
+```
+
+---
+
+## Phase 4: German (de-de) pass (4 combinations)
 
 Switch locale (triggers full page reload):
 ```js
@@ -485,7 +564,7 @@ Wait for reload, reconnect `driver_session` if needed. For each of the 4 combina
 
 ---
 
-## Phase 4: Farsi (fa-ir) RTL pass (4 combinations)
+## Phase 5: Farsi (fa-ir) RTL pass (4 combinations)
 
 Switch locale:
 ```js
@@ -507,7 +586,7 @@ For each of the 4 combinations, re-apply `dir = 'rtl'` and theme/layout override
 
 ---
 
-## Phase 5: Reset & cleanup
+## Phase 6: Reset & cleanup
 
 Reset to English + Material on Agent 1:
 
@@ -525,12 +604,13 @@ Kill all background dev processes (Tauri agents, mailbox server, stores watcher,
 
 ---
 
-## Phase 6: Report
+## Phase 7: Report
 
 Compile a summary of **all issues found**, categorized by:
 
 - **Layout/overflow** — elements overflowing their containers, text truncation, horizontal scroll
 - **Theme-specific** — issues only present in iOS or Material theme
+- **Dark mode** — elements with wrong background/text colors in dark mode, hardcoded light colors, poor contrast
 - **Locale-specific** — missing translations, German text overflow, RTL alignment problems
 - **Functional** — broken interactions, navigation failures, missing data
 
