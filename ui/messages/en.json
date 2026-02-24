@@ -141,5 +141,12 @@
 
 	"unreadMessages_one": "{{count}} unread message",
 	"unreadMessages_other": "{{count}} unread messages",
-	"selectAChat": "Select a chat to start messaging."
+	"selectAChat": "Select a chat to start messaging.",
+
+	"trayTitle": "DashChat Local Mailbox",
+	"trayShow": "Show",
+	"trayQuit": "Quit",
+	"menuRunLocalMailbox": "Run Local Mailbox",
+	"menuFile": "File",
+	"menuOpenLogsFolder": "Open Logs Folder"
 }
