@@ -125,6 +125,7 @@
 
 	const qrColor = useReactivePromise(settingsStore.qrColor);
 	let colorPickerOpen = $state(false);
+	let colorForPicker = $state('#007aff');
 
 	async function copyLink(code: string) {
 		await writeText(code);
@@ -168,9 +169,7 @@
 
 {#if colorPickerOpen}
 	{#await myCode then code}
-		{#await $qrColor then color}
-			<SelectColor {code} qrColor={color} onClose={() => (colorPickerOpen = false)} />
-		{/await}
+		<SelectColor {code} qrColor={colorForPicker} onClose={() => (colorPickerOpen = false)} />
 	{/await}
 {:else}
 <Page
@@ -354,7 +353,10 @@
 						<div class="column" style="align-items: center; gap: 8px;">
 							<Button
 								tonal
-								onClick={() => (colorPickerOpen = true)}
+								onClick={async () => {
+									colorForPicker = await toPromise(settingsStore.qrColor);
+									colorPickerOpen = true;
+								}}
 								class="icon-only"
 								data-testid="add-contact-color-btn"
 							>

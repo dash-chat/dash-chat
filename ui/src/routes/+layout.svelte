@@ -71,7 +71,7 @@
 </script>
 
 <KonstaProvider {theme}>
-	<App safeAreas {theme} class={`k-${theme}`} dark>
+	<App safeAreas {theme} class={`k-${theme}`} dark={!!$isDark}>
 		<SplashscreenPrompt>
 			{#if isWideScreen.value}
 				<DesktopLayout>

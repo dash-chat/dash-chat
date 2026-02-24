@@ -412,3 +412,5 @@ Optimized builds with:
 Translations managed through Weblate: https://hosted.weblate.org/projects/dash-chat
 Contact team at hello@dashchat.org to become a translation reviewer.
 
+**IMPORTANT:** Never modify non-English translation files. They are managed exclusively through Weblate and any manual changes will be overwritten. Only the English source strings (`en.json`) should be edited in code.
+
