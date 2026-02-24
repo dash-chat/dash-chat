@@ -23,6 +23,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 
 scylla = { version = "1", optional = true }
+derive_more = { version = "2.1.1", features = ["full"] }
 
 [features]
 default = ["cassandra"]

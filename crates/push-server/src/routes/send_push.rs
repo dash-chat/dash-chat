@@ -1,12 +1,16 @@
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{Json, extract::State, http::StatusCode};
 use futures::future::join_all;
 use serde::Deserialize;
 
-use crate::{error::AppError, types::PushNotification, AppState};
+use crate::{
+    AppState,
+    error::AppError,
+    types::{PublicKey, PushNotification},
+};
 
 #[derive(Deserialize)]
 pub struct SendPushRequest {
-    pub recipients: Vec<String>,
+    pub recipients: Vec<PublicKey>,
     pub notification: PushNotification,
 }
 

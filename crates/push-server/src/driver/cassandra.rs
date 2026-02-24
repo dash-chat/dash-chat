@@ -5,7 +5,10 @@ use scylla::{
 };
 use std::sync::Arc;
 
-use crate::{driver::Driver, types::PublicKey};
+use crate::{
+    driver::Driver,
+    types::{FcmToken, PublicKey},
+};
 
 const CREATE_KEYSPACE: &str = "
     CREATE KEYSPACE IF NOT EXISTS push_notifications
@@ -71,15 +74,15 @@ impl Cassandra {
 
 #[async_trait::async_trait]
 impl Driver for Cassandra {
-    async fn store_fcm_token(&self, public_key: &PublicKey, fcm_token: &str) -> Result<()> {
+    async fn store_fcm_token(&self, public_key: &PublicKey, fcm_token: &FcmToken) -> Result<()> {
         self.session
-            .execute_unpaged(&self.upsert_token, (public_key as &str, fcm_token))
+            .execute_unpaged(&self.upsert_token, (public_key as &str, fcm_token as &str))
             .await
             .context("failed to store FCM token")?;
         Ok(())
     }
 
-    async fn get_fcm_token(&self, public_key: &PublicKey) -> Result<Option<String>> {
+    async fn get_fcm_token(&self, public_key: &PublicKey) -> Result<Option<FcmToken>> {
         let result = self
             .session
             .execute_unpaged(&self.get_token, (public_key as &str,))
@@ -89,7 +92,7 @@ impl Driver for Cassandra {
         let rows = result.into_rows_result().context("failed to get rows")?;
         let first = rows.rows::<(String,)>()?.next();
         match first {
-            Some(Ok((token,))) => Ok(Some(token)),
+            Some(Ok((token,))) => Ok(Some(token.into())),
             Some(Err(e)) => Err(anyhow::anyhow!("{e}").context("failed to deserialize row")),
             None => Ok(None),
         }
