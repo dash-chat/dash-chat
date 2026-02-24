@@ -20,9 +20,25 @@ These MCP tools **DO NOT WORK** in this app and must NEVER be used:
 
 ## Critical: Speed and batching
 
-**Move fast.** Do not pause between pages or wait for user confirmation. Batch multiple operations into single `webview_execute_js` calls wherever possible. For example, combine clicking a button + waiting for the next page + running overflow checks into a single JS script. Make parallel tool calls (screenshot + DOM snapshot + overflow check) in a single message.
+**Move fast.** Do not pause between pages or wait for user confirmation. Batch multiple operations into single `webview_execute_js` calls wherever possible. For example, combine clicking a button + waiting for the next page + running overflow checks into a single JS script.
 
 **IMPORTANT: Keep batched JS scripts short.** `webview_execute_js` has an execution timeout (~20-30s). Deeply nested callback chains that navigate 5+ pages in a single script WILL time out. Limit each script to navigating at most 3-4 pages. If you need to visit more pages, split into multiple `webview_execute_js` calls.
+
+### Speed optimization guidelines
+
+These optimizations reduce total review time from ~60 minutes to ~15 minutes:
+
+1. **Inline checks into navigation scripts.** Instead of making 3 parallel tool calls per page (screenshot + DOM snapshot + overflow check), run overflow/dark-mode checks inside the same `webview_execute_js` call that navigates between pages. Only take screenshots at key visual checkpoints (home, chat, settings main page), not every sub-page.
+
+2. **Combine desktop + mobile into one script.** For each theme, visit all pages in desktop layout, then dispatch `set-wide-screen: false` mid-script and revisit key pages in mobile layout — all in a single `webview_execute_js` call. This avoids extra round trips for layout switching.
+
+3. **Skip deep sub-pages for non-English phases.** Pages like edit-name, edit-about, and edit-photo are simple input forms. For German and Farsi phases, only visit them if overflow or RTL issues are likely (German: yes for overflow; Farsi: yes for RTL). Otherwise focus on pages with more complex layouts: home, chat, settings, new-message, add-contact.
+
+4. **Re-register helper functions after reloads.** Theme changes (`theme-change` event) and locale changes (`__setLocale()`) cause page reloads that clear any `window.*` helpers you registered. Always re-register helpers in the first `webview_execute_js` call after a reload instead of assuming they persist.
+
+5. **Apply dark mode AFTER theme change settles.** A `theme-change` event triggers re-rendering that can clear dark mode classes. Always apply `classList.add('dark', 'wa-dark')` in a separate `webview_execute_js` call after the theme change, not in the same script.
+
+6. **Don't trust screenshots for dark mode or RTL.** `html2canvas` doesn't reliably render CSS dark mode or RTL layouts. Use JS checks (`getComputedStyle`, `classList.contains`, `document.documentElement.dir`) to verify dark mode and RTL state. Take screenshots for rough visual reference only.
 
 ## Critical: Konsta list item clicks
 
@@ -147,7 +163,11 @@ The `wa-qr-code` web component exposes `.value` as a JS property, NOT as an HTML
 
 ## Per-page checks
 
-Run these checks on **every page visit** throughout all phases. **Call all three in parallel** in a single message (three separate tool calls):
+For **Phase 1** (functional test), run full per-page checks on key screens. For **Phases 2-5** (visual passes), inline the checks into batched navigation scripts to move faster.
+
+### Full per-page checks (Phase 1 key screens)
+
+Take a screenshot + DOM snapshot + overflow check in parallel (three tool calls) on major screens: CreateProfile, home, direct chat, chat settings, settings, profile, new-message, add-contact.
 
 1. **Screenshot** — `webview_screenshot` for visual inspection.
 2. **Structure snapshot** — `webview_dom_snapshot` (type: `structure`) for structural check.
@@ -166,13 +186,32 @@ Run these checks on **every page visit** throughout all phases. **Call all three
      return issues.slice(0, 20);
    })()
    ```
-4. **RTL check** (Farsi phase only) — add this to the overflow detection JS or run as a fourth parallel call:
-   ```js
-   (() => ({
-     dir: document.documentElement.dir,
-     direction: getComputedStyle(document.body).direction
-   }))()
-   ```
+
+### Lightweight inline checks (Phases 2-5)
+
+For visual passes, embed overflow/dark/RTL checks directly into the navigation scripts. Only take screenshots at 2-3 checkpoints per combination (e.g., home + settings + chat). Example pattern:
+
+```js
+(() => {
+  const issues = [];
+  const checkOverflow = (page) => {
+    if (document.documentElement.scrollWidth > document.documentElement.clientWidth)
+      issues.push(page + ': horizontal overflow');
+  };
+  // Navigate and check inline...
+  return issues;
+})()
+```
+
+### RTL check (Farsi phase only)
+
+Add this to the overflow detection JS or run as a separate call:
+```js
+(() => ({
+  dir: document.documentElement.dir,
+  direction: getComputedStyle(document.body).direction
+}))()
+```
 
 Collect all issues found into a running list for the final report.
 

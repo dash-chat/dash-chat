@@ -113,18 +113,17 @@
 				</div>
 			</Card>
 
-			<div class="color-grid" data-testid="color-picker-grid">
+			<div class="grid grid-cols-4 gap-4 justify-items-center px-4" data-testid="color-picker-grid">
 				{#each qrColors as color, i}
 					<button
-						class="color-swatch"
-						class:selected={qrColorIndex === i}
-						style="background-color: {color}; {qrColorIndex === i ? `--swatch-color: ${color === '#ffffff' ? '#8e8e93' : color};` : ''}"
+						class="w-14 h-14 rounded-full border-2 border-gray-400/30 cursor-pointer relative flex items-center justify-center transition-transform duration-150 p-0 hover:scale-[1.08] active:scale-95"
+						style="background-color: {color};{qrColorIndex === i ? ` box-shadow: 0 0 0 3px var(--k-bg-color, #fff), 0 0 0 5px ${color === '#ffffff' ? '#8e8e93' : color};` : ''}"
 						onclick={() => selectColor(i)}
 						data-testid="color-swatch-{i}"
 						aria-label="Color {i + 1}"
 					>
 						{#if qrColorIndex === i}
-							<div class="color-check">
+							<div class="flex items-center justify-center">
 								<svg viewBox="0 0 24 24" width="24" height="24" fill={color === '#ffffff' ? '#000' : '#fff'}>
 									<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
 								</svg>
@@ -148,45 +147,3 @@
 			</Button>
 	{/if}
 </Page>
-
-<style>
-	.color-grid {
-		display: grid;
-		grid-template-columns: repeat(4, 1fr);
-		gap: 16px;
-		justify-items: center;
-		padding: 0 16px;
-	}
-
-	.color-swatch {
-		width: 56px;
-		height: 56px;
-		border-radius: 50%;
-		border: 2px solid rgba(128, 128, 128, 0.3);
-		cursor: pointer;
-		position: relative;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		transition: transform 0.15s ease;
-		padding: 0;
-	}
-
-	.color-swatch:hover {
-		transform: scale(1.08);
-	}
-
-	.color-swatch:active {
-		transform: scale(0.95);
-	}
-
-	.color-swatch.selected {
-		box-shadow: 0 0 0 3px var(--k-bg-color, #fff), 0 0 0 5px var(--swatch-color);
-	}
-
-	.color-check {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-</style>

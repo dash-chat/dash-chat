@@ -143,7 +143,7 @@
 
 <input
 	type="text"
-	class="hidden-input"
+	class="absolute opacity-0 pointer-events-none"
 	bind:this={hiddenInput}
 	value={textValue}
 	oninput={handleTextInput}
@@ -156,9 +156,10 @@
 
 {#if view === 'picker'}
 	{#if onClose}
-		<div class="nav-header">
+		<div class="p-4" style="padding-top: calc(16px + env(safe-area-inset-top))">
 			<button
-				class="nav-btn"
+				class="bg-transparent border-none cursor-pointer p-2 -m-2 flex items-center justify-center"
+				style="color: var(--k-text-color)"
 				onclick={onClose}
 				aria-label="Close"
 			>
@@ -176,7 +177,7 @@
 			<wa-avatar style="--size: 140px" image={avatar}></wa-avatar>
 			{#if avatar}
 				<button
-					class="remove-avatar-btn"
+					class="absolute top-2 right-2 w-10 h-10 rounded-[10px] bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center transition-colors duration-200 hover:bg-gray-100 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
 					onclick={removeAvatar}
 					aria-label={m.removePhoto()}
 				>
@@ -206,7 +207,7 @@
 						style="font-size: 28px"
 					></wa-icon>
 				</Button>
-				<span class="action-label">{m.camera()}</span>
+				<span class="text-sm" style="color: var(--k-text-color)">{m.camera()}</span>
 			</div>
 		{/if}
 
@@ -221,7 +222,7 @@
 					style="font-size: 28px"
 				></wa-icon>
 			</Button>
-			<span class="action-label">{m.photo()}</span>
+			<span class="text-sm" style="color: var(--k-text-color)">{m.photo()}</span>
 		</div>
 
 		<div class="column" style="align-items: center; gap: 8px;">
@@ -233,7 +234,7 @@
 			>
 				Aa
 			</Button>
-			<span class="action-label">{m.text()}</span>
+			<span class="text-sm" style="color: var(--k-text-color)">{m.text()}</span>
 		</div>
 	</div>
 
@@ -241,10 +242,10 @@
 	<div style="height: 1px; background: var(--k-hairline-color);"></div>
 
 	<!-- Default avatars grid -->
-	<div class="avatar-grid">
+	<div class="grid grid-cols-4 gap-3 py-6 px-4 justify-items-center">
 		{#each defaultAvatars as emoji}
 			<button
-				class="default-avatar-btn"
+				class="w-[72px] h-[72px] rounded-full bg-gray-200 border-none cursor-pointer flex items-center justify-center transition-all duration-200 hover:scale-105 hover:bg-gray-300 active:scale-95"
 				onclick={() => selectDefaultAvatar(emoji)}
 			>
 				<span style="font-size: 32px">{emoji}</span>
@@ -253,9 +254,10 @@
 	</div>
 {:else}
 	<!-- Text avatar editor -->
-	<div class="nav-header">
+	<div class="p-4" style="padding-top: calc(16px + env(safe-area-inset-top))">
 		<button
-			class="nav-btn"
+			class="bg-transparent border-none cursor-pointer p-2 -m-2 flex items-center justify-center"
+			style="color: var(--k-text-color)"
 			onclick={() => (view = 'picker')}
 			aria-label="Back"
 			data-testid="edit-photo-back"
@@ -287,27 +289,26 @@
 	<!-- Text avatar preview -->
 	<div class="column" style="align-items: center; padding: 24px 0;">
 		<button
-			class="text-avatar-preview"
+			class="w-[180px] h-[180px] rounded-full flex items-center justify-center border-none cursor-pointer"
 			style="background-color: {selectedColor};"
 			onclick={focusTextInput}
 			type="button"
 		>
 			{#if activeTab === 'text'}
-				<span class="avatar-text"
-					>{textValue}<span class="avatar-cursor">|</span></span
+				<span class="text-[56px] font-medium text-pink-900"
+					>{textValue}<span class="text-[56px] font-light text-pink-900 animate-[blink_1s_infinite] -ml-0.5">|</span></span
 				>
 			{:else}
-				<span class="avatar-text">{textValue}</span>
+				<span class="text-[56px] font-medium text-pink-900">{textValue}</span>
 			{/if}
 		</button>
 	</div>
 
 	{#if activeTab === 'color'}
-		<div class="color-grid">
+		<div class="grid grid-cols-4 gap-4 px-6 py-6 justify-items-center">
 			{#each colors as color}
 				<button
-					class="color-btn"
-					class:selected={selectedColor === color}
+					class="w-[72px] h-[72px] rounded-full border-[3px] cursor-pointer transition-transform duration-200 hover:scale-105 active:scale-95 {selectedColor === color ? 'border-gray-700' : 'border-transparent'}"
 					style="background-color: {color};"
 					onclick={() => (selectedColor = color)}
 				>
@@ -328,120 +329,6 @@
 {/if}
 
 <style>
-	.hidden-input {
-		position: absolute;
-		opacity: 0;
-		pointer-events: none;
-	}
-
-	.remove-avatar-btn {
-		position: absolute;
-		top: 8px;
-		right: 8px;
-		width: 40px;
-		height: 40px;
-		border-radius: 10px;
-		background: white;
-		color: #374151;
-		border: none;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		transition: background 0.2s;
-	}
-
-	.remove-avatar-btn:hover {
-		background: #f3f4f6;
-	}
-
-	:global(.dark) .remove-avatar-btn {
-		background: #4b5563;
-		color: white;
-	}
-	:global(.dark) .remove-avatar-btn:hover {
-		background: #6b7280;
-	}
-
-	.action-label {
-		font-size: 14px;
-		color: var(--k-text-color);
-	}
-
-	.avatar-grid {
-		display: grid;
-		grid-template-columns: repeat(4, 1fr);
-		gap: 12px;
-		padding: 24px 16px;
-		justify-items: center;
-	}
-
-	.default-avatar-btn {
-		width: 72px;
-		height: 72px;
-		border-radius: 50%;
-		background: #e5e7eb;
-		border: none;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		transition:
-			transform 0.2s,
-			background 0.2s;
-	}
-
-	.default-avatar-btn:hover {
-		transform: scale(1.05);
-		background: #d1d5db;
-	}
-
-	.default-avatar-btn:active {
-		transform: scale(0.95);
-	}
-
-	.nav-header {
-		padding: 16px;
-		padding-top: calc(16px + env(safe-area-inset-top));
-	}
-
-	.nav-btn {
-		background: transparent;
-		border: none;
-		cursor: pointer;
-		padding: 8px;
-		margin: -8px;
-		color: var(--k-text-color);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.text-avatar-preview {
-		width: 180px;
-		height: 180px;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border: none;
-		cursor: pointer;
-	}
-
-	.avatar-text {
-		font-size: 56px;
-		font-weight: 500;
-		color: #831843;
-	}
-
-	.avatar-cursor {
-		font-size: 56px;
-		font-weight: 300;
-		color: #831843;
-		animation: blink 1s infinite;
-		margin-left: -2px;
-	}
-
 	@keyframes blink {
 		0%,
 		50% {
@@ -451,34 +338,5 @@
 		100% {
 			opacity: 0;
 		}
-	}
-
-	.color-grid {
-		display: grid;
-		grid-template-columns: repeat(4, 1fr);
-		gap: 16px;
-		padding: 24px 24px;
-		justify-items: center;
-	}
-
-	.color-btn {
-		width: 72px;
-		height: 72px;
-		border-radius: 50%;
-		border: 3px solid transparent;
-		cursor: pointer;
-		transition: transform 0.2s;
-	}
-
-	.color-btn.selected {
-		border-color: #374151;
-	}
-
-	.color-btn:hover {
-		transform: scale(1.05);
-	}
-
-	.color-btn:active {
-		transform: scale(0.95);
 	}
 </style>

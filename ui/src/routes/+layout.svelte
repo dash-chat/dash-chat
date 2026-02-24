@@ -38,12 +38,6 @@
 	const settingsStore = new SettingsStore(new SettingsClient());
 	setContext('settings-store', settingsStore);
 
-	const isDark = useSignal(settingsStore.isDark);
-
-	$effect(() => {
-		applyDarkMode($isDark);
-	});
-
 	const logsClient = new TauriLogsClient<Payload>();
 	const logsStore = new LogsStore<Payload>(logsClient);
 
@@ -63,6 +57,12 @@
 	const chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
 	setContext('chats-store', chatsStore);
 
+	const isDark = useSignal(settingsStore.isDark);
+
+	$effect(() => {
+		applyDarkMode($isDark);
+	});
+
 	let theme: 'ios' | 'material' = $state('material');
 
 	window.addEventListener('theme-change', (event: CustomEvent) => {
@@ -71,7 +71,7 @@
 </script>
 
 <KonstaProvider {theme}>
-	<App safeAreas {theme} class={`k-${theme}`}>
+	<App safeAreas {theme} class={`k-${theme}`} dark>
 		<SplashscreenPrompt>
 			{#if isWideScreen.value}
 				<DesktopLayout>
