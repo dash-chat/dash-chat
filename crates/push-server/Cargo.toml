@@ -8,15 +8,23 @@ name = "push-server"
 path = "src/main.rs"
 
 [dependencies]
-axum = { version = "0.8", features = ["json"] }
-tokio = { version = "1", features = ["full"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-scylla = "1"
-reqwest = { version = "0.12", features = ["json"] }
-gcp_auth = "0.12"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
+async-trait = "0.1.89"
+axum = { version = "0.8", features = ["json"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
+gcp_auth = "0.12"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+
+scylla = { version = "1", optional = true }
+
+[features]
+default = ["cassandra"]
+
+cassandra = ["dep:scylla"]

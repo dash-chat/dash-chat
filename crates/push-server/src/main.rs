@@ -4,18 +4,20 @@ use anyhow::{Context, Result};
 use axum::{Router, routing::post};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
-mod db;
+mod driver;
 mod error;
 mod fcm;
 mod routes;
 mod types;
 
-use db::Db;
+use driver::cassandra::Cassandra;
 use fcm::FcmClient;
+
+use crate::driver::Driver;
 
 #[derive(Clone)]
 pub struct AppState {
-    db: Arc<Db>,
+    db: Arc<dyn Driver>,
     fcm: Arc<FcmClient>,
 }
 
@@ -38,7 +40,7 @@ async fn main() -> Result<()> {
     let addr = std::env::var("ADDR").unwrap_or_else(|_| "0.0.0.0:3000".to_string());
 
     tracing::info!("connecting to Cassandra at {cassandra_url}");
-    let db = Db::new(&cassandra_url).await?;
+    let db = Cassandra::new(&cassandra_url).await?;
 
     tracing::info!("loading FCM credentials for project {project_id}");
     let fcm = FcmClient::new(&service_account_path, project_id).await?;

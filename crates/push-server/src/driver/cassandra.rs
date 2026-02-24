@@ -1,12 +1,11 @@
 use anyhow::{Context, Result};
 use scylla::{
-    client::session::Session,
-    client::session_builder::SessionBuilder,
+    client::session::Session, client::session_builder::SessionBuilder,
     statement::prepared::PreparedStatement,
 };
 use std::sync::Arc;
 
-use crate::types::PublicKey;
+use crate::{driver::Driver, types::PublicKey};
 
 const CREATE_KEYSPACE: &str = "
     CREATE KEYSPACE IF NOT EXISTS push_notifications
@@ -21,13 +20,13 @@ const CREATE_TABLE: &str = "
     )
 ";
 
-pub struct Db {
+pub struct Cassandra {
     session: Arc<Session>,
     upsert_token: PreparedStatement,
     get_token: PreparedStatement,
 }
 
-impl Db {
+impl Cassandra {
     pub async fn new(contact_point: &str) -> Result<Self> {
         let session: Session = SessionBuilder::new()
             .known_node(contact_point)
@@ -68,8 +67,11 @@ impl Db {
             get_token,
         })
     }
+}
 
-    pub async fn store_fcm_token(&self, public_key: &PublicKey, fcm_token: &str) -> Result<()> {
+#[async_trait::async_trait]
+impl Driver for Cassandra {
+    async fn store_fcm_token(&self, public_key: &PublicKey, fcm_token: &str) -> Result<()> {
         self.session
             .execute_unpaged(&self.upsert_token, (public_key as &str, fcm_token))
             .await
@@ -77,7 +79,7 @@ impl Db {
         Ok(())
     }
 
-    pub async fn get_fcm_token(&self, public_key: &PublicKey) -> Result<Option<String>> {
+    async fn get_fcm_token(&self, public_key: &PublicKey) -> Result<Option<String>> {
         let result = self
             .session
             .execute_unpaged(&self.get_token, (public_key as &str,))
