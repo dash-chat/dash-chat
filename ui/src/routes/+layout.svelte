@@ -68,6 +68,7 @@
 	window.addEventListener('theme-change', (event: CustomEvent) => {
 		theme = event.detail.theme;
 	});
+
 </script>
 
 <KonstaProvider {theme}>
