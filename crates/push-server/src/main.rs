@@ -49,11 +49,14 @@ async fn main() -> Result<()> {
 
     let addr = std::env::var("ADDR").unwrap_or_else(|_| "0.0.0.0:3000".to_string());
 
-    let service_account_path = std::env::var("GOOGLE_APPLICATION_CREDENTIALS")
-        .context("GOOGLE_APPLICATION_CREDENTIALS env var is required")?;
+    // let service_account_path = std::env::var("GOOGLE_APPLICATION_CREDENTIALS")
+    //     .context("GOOGLE_APPLICATION_CREDENTIALS env var is required")?;
 
-    let project_id =
-        std::env::var("FCM_PROJECT_ID").context("FCM_PROJECT_ID env var is required")?;
+    // let project_id =
+    //     std::env::var("FCM_PROJECT_ID").context("FCM_PROJECT_ID env var is required")?;
+
+    let service_account_path = "secret/dash-chat-1b3ec-eef186ac8285.json";
+    let project_id = "dashchat-db7cd".to_string();
 
     tracing::info!("loading FCM credentials for project {project_id}");
     let fcm = FcmClient::new(&service_account_path, project_id).await?;
