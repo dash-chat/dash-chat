@@ -5967,6 +5967,24 @@
           "markdownDescription": "Denies the log command without any pre-configured scope."
         },
         {
+          "description": "Default permissions for the mailto plugin\n#### This default permission set includes:\n\n- `allow-mailto`",
+          "type": "string",
+          "const": "mailto:default",
+          "markdownDescription": "Default permissions for the mailto plugin\n#### This default permission set includes:\n\n- `allow-mailto`"
+        },
+        {
+          "description": "Enables the mailto command without any pre-configured scope.",
+          "type": "string",
+          "const": "mailto:allow-mailto",
+          "markdownDescription": "Enables the mailto command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mailto command without any pre-configured scope.",
+          "type": "string",
+          "const": "mailto:deny-mailto",
+          "markdownDescription": "Denies the mailto command without any pre-configured scope."
+        },
+        {
           "description": "This permission set configures which\nnotification features are by default exposed.\n\n#### Granted Permissions\n\nIt allows all notification related features.\n\n\n#### This default permission set includes:\n\n- `allow-is-permission-granted`\n- `allow-request-permission`\n- `allow-notify`\n- `allow-register-action-types`\n- `allow-register-listener`\n- `allow-cancel`\n- `allow-get-pending`\n- `allow-remove-active`\n- `allow-get-active`\n- `allow-check-permissions`\n- `allow-show`\n- `allow-batch`\n- `allow-list-channels`\n- `allow-delete-channel`\n- `allow-create-channel`\n- `allow-permission-state`\n- `allow-get-launching-notification-action`",
           "type": "string",
           "const": "notification:default",

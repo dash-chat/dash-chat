@@ -44,10 +44,18 @@
 	let dismissed = $state(getDismissed());
 
 	let visibleCards = $derived(allCards.filter((c) => !c.hidden && !dismissed.includes(c.id)));
+	let { visible = $bindable(true) }: { visible?: boolean } = $props();
+	$effect(() => {
+		visible = visibleCards.length > 0;
+	});
 
 	function dismiss(id: string) {
 		dismissed = [...dismissed, id];
-		localStorage.setItem(DISMISSED_KEY, JSON.stringify(dismissed));
+		try {
+			localStorage.setItem(DISMISSED_KEY, JSON.stringify(dismissed));
+		} catch (e) {
+			console.error('Failed to persist dismissed cards:', e);
+		}
 	}
 </script>
 

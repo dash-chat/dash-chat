@@ -28,6 +28,10 @@
 	const contacts = useReactivePromise(contactsStore.profilesForAllContacts);
 	const theme = $derived(useTheme());
 
+	const isAddContact = $derived(
+		page.url.pathname === '/new-message/add-contact',
+	);
+
 	let searchQuery = $state('');
 </script>
 
@@ -83,6 +87,7 @@
 			</ListItem>
 			<ListItem
 				link
+				class={isAddContact ? 'active' : ''}
 				linkProps={{ href: '/new-message/add-contact' }}
 				title={m.addContact()}
 				chevron={false}

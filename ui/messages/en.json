@@ -4,6 +4,7 @@
 	"today": "Today",
 	"cancel": "Cancel",
 	"save": "Save",
+	"send": "Send",
 	"link": "Link",
 	"share": "Share",
 	"create": "Create",
@@ -146,6 +147,8 @@
 	"errorScanningQrCode": "Failed to scan QR code. Please try again.",
 	"errorNoQrCodeInImage": "No QR code found in the selected image.",
 	"errorUnexpected": "An unexpected error occurred.",
+	"errorApplyStyle": "Failed to apply style. Please try again.",
+	"errorSendErrorReport": "Failed to send error report. Please try again.",
 
 	"mute": "Mute",
 	"search": "Search",
@@ -166,5 +169,21 @@
 	"trayQuit": "Quit",
 	"menuRunLocalMailbox": "Run Local Mailbox",
 	"menuFile": "File",
-	"menuOpenLogsFolder": "Open Logs Folder"
+	"menuOpenLogsFolder": "Open Logs Folder",
+
+	"help": "Help",
+	"contactUs": "Contact us",
+	"tellUsWhatsGoingOn": "Tell us what's going on",
+	"tellUsWhyReachingOut": "Tell us why you're reaching out.",
+	"pleaseSelectAnOption": "Please select an option",
+	"reasonBugReport": "Bug report",
+	"reasonFeatureRequest": "Feature request",
+	"reasonQuestion": "Question",
+	"reasonOther": "Other",
+	"howDoYouFeel": "How do you feel? (Optional)",
+	"includeDebugLog": "Include debug log.",
+	"whatsThis": "What's this?",
+	"debugLogExplanation": "Debug logs help us diagnose issues. They may contain metadata about your app usage but no message content.",
+	"haveYouReadOurFaq": "Have you read our FAQ yet?",
+	"sendErrorReport": "Send Error Report"
 }

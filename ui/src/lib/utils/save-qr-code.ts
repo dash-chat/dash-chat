@@ -16,12 +16,14 @@ function buildShareSvg(
 ): string {
 	// Render QR to a temporary canvas to extract the pattern
 	const qrSize = 480;
+	const isWhite = qrColor === '#ffffff';
+	const qrFill = isWhite ? '#000000' : qrColor;
 	const qrCanvas = document.createElement('canvas');
 	QrCreator.render(
 		{
 			text: code,
 			size: qrSize,
-			fill: qrColor,
+			fill: qrFill,
 			background: null,
 			ecLevel: 'L',
 			radius: 0.5,
@@ -47,10 +49,12 @@ function buildShareSvg(
 	const qrTop = qrWhiteTop + qrWhitePad;
 	const qrLeft = qrWhiteLeft + qrWhitePad;
 
-	const nameTop = qrWhiteTop + whiteAreaSize + 48;
 	const nameFontSize = 48;
-	const cardBottom = nameTop + nameFontSize + 48;
+	const bottomMargin = 120;
+	const qrWhiteBottom = qrWhiteTop + whiteAreaSize;
+	const cardBottom = qrWhiteBottom + bottomMargin;
 	const cardHeight = cardBottom - cardTop;
+	const nameCenterY = qrWhiteBottom + bottomMargin / 2;
 
 	const subtitleTop = cardBottom + 72;
 	const subtitleFontSize = 33;
@@ -62,7 +66,7 @@ function buildShareSvg(
 	<rect x="${cardMargin}" y="${cardTop}" width="${cardWidth}" height="${cardHeight}" rx="${cardRadius}" fill="${qrColor}"/>
 	<rect x="${qrWhiteLeft}" y="${qrWhiteTop}" width="${whiteAreaSize}" height="${whiteAreaSize}" rx="${qrWhiteRadius}" fill="white"/>
 	<image href="${qrDataUrl}" x="${qrLeft}" y="${qrTop}" width="${qrDisplaySize}" height="${qrDisplaySize}"/>
-	<text x="${imgWidth / 2}" y="${nameTop + nameFontSize}" text-anchor="middle" fill="white" font-family="-apple-system, 'Segoe UI', Roboto, sans-serif" font-size="${nameFontSize}" font-weight="bold">${escapeXml(name)}</text>
+	<text x="${imgWidth / 2}" y="${nameCenterY}" text-anchor="middle" dominant-baseline="central" fill="${isWhite ? 'black' : 'white'}" font-family="-apple-system, 'Segoe UI', Roboto, sans-serif" font-size="${nameFontSize}" font-weight="bold">${escapeXml(name)}</text>
 	<text x="${imgWidth / 2}" y="${subtitleTop + subtitleFontSize}" text-anchor="middle" fill="#555555" font-family="-apple-system, 'Segoe UI', Roboto, sans-serif" font-size="${subtitleFontSize}">${escapeXml(subtitle)}</text>
 </svg>`;
 }

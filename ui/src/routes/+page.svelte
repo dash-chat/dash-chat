@@ -13,6 +13,7 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	const theme = $derived(useTheme());
 
+	let getStartedVisible = $state(true);
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
@@ -46,28 +47,26 @@
 
 	<div class={theme==='ios' ? "mt-4": ''}></div>
 
-	{#await $contacts then contactsList}
-		{#await $chatSummaries then chats}
-			{@const showGetStarted = contactsList.length === 0 && chats.length === 0}
+	{#await Promise.all([$contacts, $chatSummaries]) then [contactsList, chats]}
+		{@const showGetStarted = contactsList.length === 0 && chats.length === 0}
 
-			<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
+		<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
 
-			{#if showGetStarted && !isWideScreen.value}
-				<div class="fixed bottom-0 left-0 right-0 z-10 pb-safe">
-					<GetStarted />
-				</div>
-			{/if}
+		{#if showGetStarted && !isWideScreen.value}
+			<div class="fixed bottom-0 left-0 right-0 z-10 pb-safe">
+				<GetStarted bind:visible={getStartedVisible} />
+			</div>
+		{/if}
 
-			{#if theme == 'material' && !isWideScreen.value}
-				<Fab
-					class="fixed-action-btn z-20"
-					style={showGetStarted ? `bottom: calc(env(safe-area-inset-bottom, 0px) + 10rem)` : ''}
-					onClick={() => goto('/new-message')}
-					data-testid="home-new-message-fab"
-				>
-					<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
-				</Fab>
-			{/if}
-		{/await}
+		{#if theme == 'material' && !isWideScreen.value}
+			<Fab
+				class="fixed-action-btn z-20"
+				style={showGetStarted && getStartedVisible ? `bottom: calc(env(safe-area-inset-bottom, 0px) + 10rem)` : ''}
+				onClick={() => goto('/new-message')}
+				data-testid="home-new-message-fab"
+			>
+				<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
+			</Fab>
+		{/if}
 	{/await}
 </Page>

@@ -3,8 +3,9 @@ use tauri::AppHandle;
 use crate::settings;
 
 #[tauri::command]
-pub fn get_settings(app: AppHandle) -> serde_json::Value {
-    serde_json::to_value(settings::load_settings(&app)).unwrap_or_default()
+pub fn get_settings(app: AppHandle) -> Result<serde_json::Value, String> {
+    serde_json::to_value(settings::load_settings(&app))
+        .map_err(|err| format!("Failed to serialize settings: {err}"))
 }
 
 #[tauri::command]

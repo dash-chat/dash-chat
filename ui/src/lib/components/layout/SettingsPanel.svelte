@@ -5,7 +5,7 @@
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { mdiAccountCircleOutline, mdiQrcode, mdiPaletteOutline } from '@mdi/js';
+	import { mdiAccountCircleOutline, mdiQrcode, mdiPaletteOutline, mdiHelpCircleOutline } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
 	import { page } from '$app/state';
@@ -63,13 +63,13 @@
 		>
 			<ListItem
 				link
+				class={isActive('/settings/profile') ? 'active' : ''}
 				chevron={false}
 				linkProps={{ href: '/settings/profile' }}
 				data-testid="settings-profile-link"
 				title={myProfile ? fullName(myProfile) : undefined}
 				titleFontSizeIos="text-xl"
 				titleFontSizeMaterial="text-xl"
-				class={isActive('/settings/profile') ? 'active' : ''}
 			>
 				{#snippet media()}
 					<wa-avatar
@@ -98,11 +98,11 @@
 		<List strongIos nested inset={isWideScreen.value || theme === 'ios'}>
 			<ListItem
 				link
+				class={isActive('/settings/account') ? 'active' : ''}
 				linkProps={{ href: '/settings/account' }}
 				data-testid="settings-account-link"
 				title={m.account()}
 				chevron={false}
-				class={isActive('/settings/account') ? 'active' : ''}
 			>
 				{#snippet media()}
 					<wa-icon
@@ -113,15 +113,33 @@
 			</ListItem>
 			<ListItem
 				link
+				class={isActive('/settings/appearance') ? 'active' : ''}
 				linkProps={{ href: '/settings/appearance' }}
 				data-testid="settings-appearance-link"
 				title={m.appearance()}
 				chevron={false}
-				class={isActive('/settings/appearance') ? 'active' : ''}
 			>
 				{#snippet media()}
 					<wa-icon
 						src={wrapPathInSvg(mdiPaletteOutline)}
+						style="font-size: 28px"
+					></wa-icon>
+				{/snippet}
+			</ListItem>
+		</List>
+
+		<List strongIos nested inset={isWideScreen.value || theme === 'ios'}>
+			<ListItem
+				link
+				class={isActive('/settings/help') ? 'active' : ''}
+				linkProps={{ href: '/settings/help' }}
+				data-testid="settings-help-link"
+				title={m.help()}
+				chevron={false}
+			>
+				{#snippet media()}
+					<wa-icon
+						src={wrapPathInSvg(mdiHelpCircleOutline)}
 						style="font-size: 28px"
 					></wa-icon>
 				{/snippet}

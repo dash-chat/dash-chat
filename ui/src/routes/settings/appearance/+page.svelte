@@ -24,7 +24,7 @@
 		try {
 			await settingsStore.setColorScheme(scheme);
 		} catch {
-			showToast(m.errorUnexpected(), 'error');
+			showToast(m.errorUnexpected(), 'unexpected');
 		}
 	}
 </script>

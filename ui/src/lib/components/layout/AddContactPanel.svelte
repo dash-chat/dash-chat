@@ -100,7 +100,7 @@
 					showToast(m.errorAddContact(), 'error');
 					break;
 				default:
-					showToast(m.errorUnexpected(), 'error');
+					showToast(m.errorUnexpected(), 'unexpected');
 			}
 		}
 	}
@@ -261,6 +261,7 @@
 			</div>
 		{:then code}
 			{#await $qrColor then color}
+			{@const isWhite = color === '#ffffff'}
 			<div class="column" style="flex:1">
 				<div class="column center-in-desktop gap-4 mx-4 mt-4">
 					<Card class="qr-card p-2.5 pb-2" style="background-color: {color}">
@@ -269,15 +270,15 @@
 								class="column w-full p-3"
 								style="align-items: center; justify-content: center; background-color: white; border-radius: 10px;"
 							>
-								<wa-qr-code value={code} size="180" fill={color}></wa-qr-code>
+								<wa-qr-code value={code} size="180" fill={isWhite ? '#000000' : color}></wa-qr-code>
 							</div>
 
 							<div class="py-1">
 								<Button
 									colors={{
-										touchRipple: 'white',
-										textIos: 'text-white',
-										textMaterial: 'text-white',
+										touchRipple: isWhite ? 'black' : 'white',
+										textIos: isWhite ? 'text-black' : 'text-white',
+										textMaterial: isWhite ? 'text-black' : 'text-white',
 									}}
 									clearMaterial
 									small
@@ -312,7 +313,7 @@
 									style="font-size: 28px"
 								></wa-icon>
 							</Button>
-							<span class="action-label">{m.link()}</span>
+							<span class="text-sm" style="color: var(--k-text-color)">{m.link()}</span>
 						</div>
 
 						{#if isMobile}
@@ -328,7 +329,7 @@
 										style="font-size: 28px"
 									></wa-icon>
 								</Button>
-								<span class="action-label">{m.share()}</span>
+								<span class="text-sm" style="color: var(--k-text-color)">{m.share()}</span>
 							</div>
 						{:else}
 							<div class="column" style="align-items: center; gap: 8px;">
@@ -346,7 +347,7 @@
 										style="font-size: 28px"
 									></wa-icon>
 								</Button>
-								<span class="action-label">{m.save()}</span>
+								<span class="text-sm" style="color: var(--k-text-color)">{m.save()}</span>
 							</div>
 						{/if}
 
@@ -365,7 +366,7 @@
 									style="font-size: 28px"
 								></wa-icon>
 							</Button>
-							<span class="action-label">{m.color()}</span>
+							<span class="text-sm" style="color: var(--k-text-color)">{m.color()}</span>
 						</div>
 					</div>
 
@@ -414,7 +415,7 @@
 				style="position: absolute; bottom: 24px; left: 0; right: 0; display: flex; justify-content: center; z-index: 1;"
 			>
 				<button
-					class="select-image-btn"
+					class="w-14 h-14 rounded-full bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.3)] transition-transform duration-200 hover:scale-105 active:scale-95"
 					onclick={() => imageFilePicker.click()}
 					aria-label={m.photo()}
 					data-testid="add-contact-select-image-btn"
@@ -436,11 +437,6 @@
 		width: fit-content;
 		margin: 0 !important;
 		transition: background-color 0.3s ease;
-	}
-
-	.action-label {
-		font-size: 14px;
-		color: var(--k-text-color);
 	}
 
 	.square {
@@ -476,26 +472,4 @@
 		border-radius: 1em;
 	}
 
-	.select-image-btn {
-		width: 56px;
-		height: 56px;
-		border-radius: 50%;
-		background: white;
-		color: #374151;
-		border: none;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-		transition: transform 0.2s;
-	}
-
-	.select-image-btn:hover {
-		transform: scale(1.05);
-	}
-
-	.select-image-btn:active {
-		transform: scale(0.95);
-	}
 </style>

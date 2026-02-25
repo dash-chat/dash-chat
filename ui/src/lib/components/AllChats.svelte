@@ -49,9 +49,9 @@
 				<ListItem
 					title={summary.name}
 					link
+					class={isActive(summary) ? 'active' : ''}
 					linkProps={{ href: chatHref(summary) }}
 					chevron={false}
-					class={isActive(summary) ? 'active' : ''}
 				>
 					{#snippet media()}
 						<wa-avatar image={summary.avatar} initials={summary.name.slice(0, 2)}>

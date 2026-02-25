@@ -1,6 +1,6 @@
 export const TOAST_TTL_MS = 3000;
 
-export type ToastVariant = 'default' | 'error';
+export type ToastVariant = 'default' | 'error' | 'unexpected';
 
 export interface ToastEvent {
 	message: string;

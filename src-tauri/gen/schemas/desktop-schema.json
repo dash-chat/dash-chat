@@ -5961,6 +5961,24 @@
           "markdownDescription": "Denies the log command without any pre-configured scope."
         },
         {
+          "description": "Default permissions for the mailto plugin\n#### This default permission set includes:\n\n- `allow-mailto`",
+          "type": "string",
+          "const": "mailto:default",
+          "markdownDescription": "Default permissions for the mailto plugin\n#### This default permission set includes:\n\n- `allow-mailto`"
+        },
+        {
+          "description": "Enables the mailto command without any pre-configured scope.",
+          "type": "string",
+          "const": "mailto:allow-mailto",
+          "markdownDescription": "Enables the mailto command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mailto command without any pre-configured scope.",
+          "type": "string",
+          "const": "mailto:deny-mailto",
+          "markdownDescription": "Denies the mailto command without any pre-configured scope."
+        },
+        {
           "description": "Default permissions for MCP Bridge plugin\n#### This default permission set includes:\n\n- `allow-capture-native-screenshot`\n- `allow-emit-event`\n- `allow-execute-command`\n- `allow-execute-js`\n- `allow-get-backend-state`\n- `allow-get-ipc-events`\n- `allow-get-window-info`\n- `allow-list-windows`\n- `allow-report-ipc-event`\n- `allow-request-script-injection`\n- `allow-script-result`\n- `allow-start-ipc-monitor`\n- `allow-stop-ipc-monitor`",
           "type": "string",
           "const": "mcp-bridge:default",

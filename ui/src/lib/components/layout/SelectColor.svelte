@@ -39,13 +39,14 @@
 	if (qrColorIndex === -1) qrColorIndex = 0;
 
 	const selectedColor = $derived(qrColors[qrColorIndex]);
+	const isWhite = $derived(selectedColor === '#ffffff');
 
 	async function selectColor(index: number) {
 		qrColorIndex = index;
 		try {
 			await settingsStore.setQrColor(qrColors[index]);
 		} catch {
-			showToast(m.errorUnexpected(), 'error');
+			showToast(m.errorUnexpected(), 'unexpected');
 		}
 	}
 </script>
@@ -87,15 +88,15 @@
 						class="column w-full p-3"
 						style="align-items: center; justify-content: center; background-color: white; border-radius: 10px;"
 					>
-						<wa-qr-code value={code} size="180" fill={selectedColor}></wa-qr-code>
+						<wa-qr-code value={code} size="180" fill={isWhite ? '#000000' : selectedColor}></wa-qr-code>
 					</div>
 
 					<div class="py-1">
 						<Button
 							colors={{
-								touchRipple: 'white',
-								textIos: 'text-white',
-								textMaterial: 'text-white',
+								touchRipple: isWhite ? 'black' : 'white',
+								textIos: isWhite ? 'text-black' : 'text-white',
+								textMaterial: isWhite ? 'text-black' : 'text-white',
 							}}
 							clear
 							small

@@ -7,6 +7,7 @@ async function setSystemBarsStyle(statusBarStyle: BarStyle, navigationBarStyle: 
 	await invoke('plugin:system-bars-styles|set_style', {
 		statusBarStyle,
 		navigationBarStyle,
+		navigationBarTransparent: true,
 	});
 }
 

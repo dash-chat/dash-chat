@@ -53,6 +53,7 @@ export const S = {
 		qrLink: tid('settings-qr-link'),
 		appearanceLink: tid('settings-appearance-link'),
 		accountLink: tid('settings-account-link'),
+		helpLink: tid('settings-help-link'),
 	},
 	profile: {
 		back: tid('profile-back'),
@@ -112,5 +113,16 @@ export const S = {
 		deleteItem: tid('account-delete'),
 		deleteConfirm: tid('account-delete-confirm'),
 		deleteCancel: tid('account-delete-cancel'),
+	},
+	help: {
+		back: tid('help-back'),
+		contactUsLink: tid('help-contact-us'),
+	},
+	contactUs: {
+		back: tid('contact-us-back'),
+		messageInput: tid('contact-us-message-input'),
+		reasonSelect: tid('contact-us-reason-select'),
+		includeDebugLog: tid('contact-us-include-debug-log'),
+		nextButton: tid('contact-us-next-btn'),
 	},
 } as const;

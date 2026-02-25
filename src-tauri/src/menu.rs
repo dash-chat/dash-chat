@@ -1,6 +1,6 @@
 use sonix_i18n::t;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::menu::{CheckMenuItem, Menu, PredefinedMenuItem, Submenu};
+use tauri::{AppHandle, Runtime};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::mailbox;
@@ -20,15 +20,6 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
 
     app_handle.on_menu_event(
         move |app_handle, menu_event| match menu_event.id().as_ref() {
-            "open-logs-folder" => {
-                let log_folder = app_handle
-                    .path()
-                    .app_log_dir()
-                    .expect("Could not get app log dir");
-                if let Err(err) = opener::reveal(log_folder.clone()) {
-                    log::error!("Failed to open log dir at {log_folder:?}: {err:?}");
-                }
-            }
             "toggle-local-mailbox" => match mailbox_toggle_handle.is_checked() {
                 Ok(enabled) => {
                     let app_handle = app_handle.clone();
@@ -75,13 +66,6 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
             t!("menuFile"),
             true,
             &[
-                &MenuItem::with_id(
-                    app_handle,
-                    "open-logs-folder",
-                    t!("menuOpenLogsFolder"),
-                    true,
-                    None::<&str>,
-                )?,
                 &mailbox_toggle,
                 &PredefinedMenuItem::close_window(app_handle, None)?,
             ],

@@ -50,15 +50,13 @@
 		{#if isSidebarRoute}
 			<EmptyState />
 			{#if isHome}
-				{#await $contacts then contactsList}
-					{#await $chatSummaries then chats}
-						{@const showGetStarted = contactsList.length === 0 && chats.length === 0}
-						{#if showGetStarted}
-							<div class="absolute bottom-0 left-0 right-0 z-10">
-								<GetStarted />
-							</div>
-						{/if}
-					{/await}
+				{#await Promise.all([$contacts, $chatSummaries]) then [contactsList, chats]}
+					{@const showGetStarted = contactsList.length === 0 && chats.length === 0}
+					{#if showGetStarted}
+						<div class="absolute bottom-0 left-0 right-0 z-10">
+							<GetStarted />
+						</div>
+					{/if}
 				{/await}
 			{/if}
 		{:else}

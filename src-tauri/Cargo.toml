@@ -58,6 +58,7 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-sharekit = "0.3"
+tauri-plugin-mailto = { git = "https://github.com/dash-chat/tauri-plugin-mailto", branch = "main" }
 tauri-plugin-fs = "2"
 
 opener = { version = "0.7", features = ["reveal"] }

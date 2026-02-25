@@ -4,6 +4,7 @@
 
 	import '../app.css';
 	import { setContext } from 'svelte';
+
 	import {
 		ChatsClient,
 		ChatsStore,
@@ -25,7 +26,9 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
+	import { showToast } from '$lib/utils/toasts';
 
+	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
 	window.__setLocale = setLocale;
 
@@ -60,7 +63,9 @@
 	const isDark = useSignal(settingsStore.isDark);
 
 	$effect(() => {
-		applyDarkMode($isDark);
+		applyDarkMode($isDark).catch((e) => {
+			showToast(m.errorApplyStyle(), 'error');
+		});
 	});
 
 	let theme: 'ios' | 'material' = $state('material');
