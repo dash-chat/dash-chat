@@ -1,5 +1,5 @@
 [package]
-name = "push-server"
+name = "dashchat-push-server"
 version = "0.1.0"
 edition = "2024"
 
@@ -12,6 +12,8 @@ anyhow = "1"
 async-trait = "0.1.89"
 axum = { version = "0.8", features = ["json"] }
 chrono = { version = "0.4", features = ["serde"] }
+derive_more = { version = "2.1.1", features = ["full"] }
+fcm_v1 = "0.3"
 futures = "0.3"
 gcp_auth = "0.12"
 reqwest = { version = "0.12", features = ["json"] }
@@ -23,7 +25,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 
 scylla = { version = "1", optional = true }
-derive_more = { version = "2.1.1", features = ["full"] }
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"
 
 [features]
 default = ["cassandra"]

@@ -11,6 +11,5 @@ pub struct FcmToken(String);
 /// This is what Google sees.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PushNotification {
-    pub title: String,
     pub body: String,
 }

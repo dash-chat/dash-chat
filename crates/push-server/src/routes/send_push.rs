@@ -25,7 +25,7 @@ pub async fn send_push(
         async move {
             match state.db.get_fcm_token(&public_key).await {
                 Ok(Some(fcm_token)) => {
-                    if let Err(e) = state.fcm.send(&fcm_token, &notification).await {
+                    if let Err(e) = crate::fcm::send_fcm_notification(&fcm_token, &notification.body).await {
                         tracing::warn!(public_key = %public_key, "failed to send FCM notification: {e:#}");
                     } else {
                         tracing::info!(public_key = %public_key, "sent push notification");

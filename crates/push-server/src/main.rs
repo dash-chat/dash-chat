@@ -10,15 +10,15 @@ mod fcm;
 mod routes;
 mod types;
 
+pub(crate) mod secret;
+
 use driver::cassandra::Cassandra;
-use fcm::FcmClient;
 
 use crate::driver::{Driver, mem::MemDb};
 
 #[derive(Clone)]
 pub struct AppState {
     db: Arc<dyn Driver>,
-    fcm: Arc<FcmClient>,
 }
 
 #[allow(unused)]
@@ -55,16 +55,12 @@ async fn main() -> Result<()> {
     // let project_id =
     //     std::env::var("FCM_PROJECT_ID").context("FCM_PROJECT_ID env var is required")?;
 
-    let service_account_path = "secret/dash-chat-1b3ec-eef186ac8285.json";
-    let project_id = "dashchat-db7cd".to_string();
+    tracing::info!(
+        "loading FCM credentials for project {}",
+        secret::FCM_PROJECT_ID
+    );
 
-    tracing::info!("loading FCM credentials for project {project_id}");
-    let fcm = FcmClient::new(&service_account_path, project_id).await?;
-
-    let state = AppState {
-        db,
-        fcm: Arc::new(fcm),
-    };
+    let state = AppState { db };
 
     let app = Router::new()
         .route("/fcm-token", post(routes::store_token::store_token))
