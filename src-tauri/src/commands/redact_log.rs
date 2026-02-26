@@ -63,8 +63,8 @@ pub fn get_redacted_log(app_handle: AppHandle) -> Result<String, String> {
         .map_err(|e| format!("Failed to resolve log dir: {e:?}"))?;
     let log_file = log_dir.join("Dash Chat.log");
 
-    let content = read_tail(&log_file, MAX_LOG_BYTES)
-        .map_err(|e| format!("Failed to read log: {e:?}"))?;
+    let content =
+        read_tail(&log_file, MAX_LOG_BYTES).map_err(|e| format!("Failed to read log: {e:?}"))?;
 
     let redacted = redact(&content);
 
