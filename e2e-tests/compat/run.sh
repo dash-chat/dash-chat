@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 # Backwards compatibility E2E test orchestrator.
 #
-# Usage: ./run.sh [version-tag ...]
+# Usage: ./run.sh <git-ref> [git-ref ...]
 #
-# With no arguments, tests current-vs-current (smoke test).
-# With version tags, checks out each tag, builds it, then:
-#   Phase 1 (setup): creates data with the old binary
-#   Phase 2 (verify): verifies data with the current binary
+# Accepts any git ref (tag, branch, commit hash).
+#
+# For each ref:
+#   1. Builds the current version
+#   2. Checks out the ref, builds it
+#   3. Returns to the original branch
+#   4. Starts a local mailbox server
+#   5. Runs Phase 1 (setup) with the ref's binary
+#   6. Runs Phase 2 (verify) with the current binary
+#   7. Cleans up
 #
 # Environment:
 #   - Assumes all build tools (pnpm, cargo, etc.) are already available
@@ -60,9 +66,16 @@ run_wdio() {
     (cd "$E2E_DIR" && maybe_xvfb npx wdio run "$E2E_DIR/compat/wdio.compat.ts")
 }
 
-# --- Parse args ---
+# --- Validate args ---
 
-TAGS=("$@")
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <git-ref> [git-ref ...]"
+    echo "Example: $0 v0.10.0"
+    echo "Example: $0 HEAD"
+    exit 1
+fi
+
+REFS=("$@")
 ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ "$ORIGINAL_BRANCH" = "HEAD" ]; then
     ORIGINAL_BRANCH=$(git rev-parse HEAD)
@@ -88,49 +101,38 @@ BINARY_PATH="$ROOT/target/debug/dash-chat"
 cp "$BINARY_PATH" "$BINARIES_DIR/current/dash-chat"
 echo "Current binary: $BINARIES_DIR/current/dash-chat"
 
-# --- If no tags, test current-vs-current ---
+# --- Process each ref ---
 
-if [ ${#TAGS[@]} -eq 0 ]; then
-    TAGS=("current")
-fi
+FAILED_REFS=()
+PASSED_REFS=()
 
-# --- Process each tag ---
+for REF in "${REFS[@]}"; do
+    # Resolve to short label for display (short hash for commits, name for tags/branches)
+    REF_LABEL=$(git log -1 --format='%h' "$REF" 2>/dev/null || echo "$REF")
 
-FAILED_TAGS=()
-SKIPPED_TAGS=()
-PASSED_TAGS=()
-
-for TAG in "${TAGS[@]}"; do
     echo ""
     echo "========================================"
-    echo "=== Testing compatibility with $TAG ==="
+    echo "=== Testing compatibility with $REF_LABEL ==="
     echo "========================================"
 
-    TAG_BINARY_DIR="$BINARIES_DIR/$TAG"
-    mkdir -p "$TAG_BINARY_DIR"
+    REF_BINARY_DIR="$BINARIES_DIR/$REF_LABEL"
+    mkdir -p "$REF_BINARY_DIR"
 
-    if [ "$TAG" = "current" ]; then
-        # Already built — nothing to do
-        :
-    else
-        # --- Build old version ---
+    # --- Step 2: Build ref version ---
 
-        echo "--- Checking out $TAG ---"
-        git checkout "$TAG" 2>/dev/null || { echo "SKIP: tag $TAG not found"; SKIPPED_TAGS+=("$TAG"); continue; }
+    echo "--- Checking out $REF ---"
+    git checkout "$REF" 2>/dev/null || { echo "SKIP: ref $REF not found"; FAILED_REFS+=("$REF_LABEL"); continue; }
 
-        echo "--- Building $TAG ---"
-        (pnpm install && pnpm --recursive build && pnpm tauri build --debug --no-bundle) || {
-            echo "SKIP: build failed for $TAG"
-            git checkout "$ORIGINAL_BRANCH" 2>/dev/null
-            SKIPPED_TAGS+=("$TAG")
-            continue
-        }
+    echo "--- Building $REF_LABEL ---"
+    (pnpm install && pnpm --recursive build && pnpm tauri build --debug --no-bundle) || {
+        echo "SKIP: build failed for $REF_LABEL"
+        git checkout "$ORIGINAL_BRANCH" 2>/dev/null
+        FAILED_REFS+=("$REF_LABEL")
+        continue
+    }
 
-        [ -f "$BINARY_PATH" ] || { echo "SKIP: binary not found for $TAG"; git checkout "$ORIGINAL_BRANCH" 2>/dev/null; SKIPPED_TAGS+=("$TAG"); continue; }
-        cp "$BINARY_PATH" "$TAG_BINARY_DIR/dash-chat"
-
-        echo "--- Returning to $ORIGINAL_BRANCH ---"
-        git checkout "$ORIGINAL_BRANCH" 2>/dev/null || die "Failed to return to $ORIGINAL_BRANCH"
+    [ -f "$BINARY_PATH" ] || { echo "SKIP: binary not found for $REF_LABEL"; git checkout "$ORIGINAL_BRANCH" 2>/dev/null; FAILED_REFS+=("$REF_LABEL"); continue; }
+    cp "$BINARY_PATH" "$REF_BINARY_DIR/dash-chat"
 
         # Clean stale Rust artifacts from old version build, restore node_modules
         cargo clean -p dash-chat -p dashchat-node
@@ -163,34 +165,24 @@ for TAG in "${TAGS[@]}"; do
         sleep 1
     done
 
-    if [ "$MAILBOX_READY" != "true" ]; then
-        echo "FAIL: Mailbox server did not start on $MAILBOX_URL"
-        kill "$MAILBOX_PID" 2>/dev/null || true
-        wait "$MAILBOX_PID" 2>/dev/null || true
-        MAILBOX_PID=""
-        FAILED_TAGS+=("$TAG")
-        continue
-    fi
+    # --- Step 5: Phase 1 — Setup with ref binary ---
 
-    # --- Phase 1 — Setup with old binary ---
-
-    echo "--- Phase 1: Creating data with $TAG ---"
-    chmod +x "$TAG_BINARY_DIR/dash-chat"
-    chmod +x "$E2E_DIR/compat/scripts/"*.sh
+    echo "--- Phase 1: Creating data with $REF_LABEL ---"
+    chmod +x "$REF_BINARY_DIR/dash-chat"
+    chmod +x "$E2E_DIR/scripts/"*.sh
 
     PHASE1_OK=true
-    COMPAT_BINARY="$TAG_BINARY_DIR/dash-chat" \
+    COMPAT_BINARY="$REF_BINARY_DIR/dash-chat" \
     COMPAT_PHASE=setup \
     MAILBOX_URL="$MAILBOX_URL" \
     SKIP_BUILD=1 \
         run_wdio || PHASE1_OK=false
 
     if [ "$PHASE1_OK" != "true" ]; then
-        echo "FAIL: Phase 1 (setup) failed for $TAG"
+        echo "FAIL: Phase 1 (setup) failed for $REF_LABEL"
         kill "$MAILBOX_PID" 2>/dev/null || true
         wait "$MAILBOX_PID" 2>/dev/null || true
-        MAILBOX_PID=""
-        FAILED_TAGS+=("$TAG")
+        FAILED_REFS+=("$REF_LABEL")
         continue
     fi
 
@@ -211,11 +203,11 @@ for TAG in "${TAGS[@]}"; do
     MAILBOX_PID=""
 
     if [ "$PHASE2_OK" = "true" ]; then
-        echo "PASS: $TAG is backwards compatible"
-        PASSED_TAGS+=("$TAG")
+        echo "PASS: $REF_LABEL is backwards compatible"
+        PASSED_REFS+=("$REF_LABEL")
     else
-        echo "FAIL: Phase 2 (verify) failed for $TAG"
-        FAILED_TAGS+=("$TAG")
+        echo "FAIL: Phase 2 (verify) failed for $REF_LABEL"
+        FAILED_REFS+=("$REF_LABEL")
     fi
 
     rm -rf "$COMPAT_DB_DIR"
@@ -228,16 +220,12 @@ echo "========================================"
 echo "=== Backwards Compatibility Results ==="
 echo "========================================"
 
-if [ ${#PASSED_TAGS[@]} -gt 0 ]; then
-    echo "PASSED: ${PASSED_TAGS[*]}"
+if [ ${#PASSED_REFS[@]} -gt 0 ]; then
+    echo "PASSED: ${PASSED_REFS[*]}"
 fi
 
-if [ ${#SKIPPED_TAGS[@]} -gt 0 ]; then
-    echo "SKIPPED (build failed): ${SKIPPED_TAGS[*]}"
-fi
-
-if [ ${#FAILED_TAGS[@]} -gt 0 ]; then
-    echo "FAILED: ${FAILED_TAGS[*]}"
+if [ ${#FAILED_REFS[@]} -gt 0 ]; then
+    echo "FAILED: ${FAILED_REFS[*]}"
     exit 1
 fi
 

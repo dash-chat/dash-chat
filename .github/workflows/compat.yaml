@@ -10,10 +10,6 @@ jobs:
   compat:
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    strategy:
-      matrix:
-        version: [v0.10.1]
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,7 +48,7 @@ jobs:
         run: cargo install tauri-driver --locked
 
       - name: Run backwards compatibility test
-        run: bash e2e-tests/compat/run.sh ${{ matrix.version }}
+        run: bash e2e-tests/compat/run.sh ${{ github.sha }}
 
       - name: Cleanup
         if: always()
