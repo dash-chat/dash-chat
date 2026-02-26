@@ -28,6 +28,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { mdiArrowNext } from '$lib/utils/icon';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -51,12 +52,12 @@
 	<Page>
 		<Navbar title={m.newGroup()} titleClass="opacity1" transparent={true}>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => window.history.back()} />
+				<NavbarBackLink onClick={() => window.history.back()}  data-testid="new-group-back" />
 			{/snippet}
 
 			{#snippet right()}
 				{#if theme === 'ios'}
-					<Link onClick={() => (currentPage = 'group-info')}>
+					<Link onClick={() => (currentPage = 'group-info')} data-testid="new-group-next-link">
 						{selectedContacts.length === 0 ? m.omit() : m.next()}
 					</Link>
 				{/if}
@@ -67,7 +68,7 @@
 			<div class="center-in-desktop">
 				<BlockTitle>{m.contacts()}</BlockTitle>
 
-				<List strongIos insetIos>
+				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
 					{#await $contacts}
 						<div
 							class="column"
@@ -109,8 +110,8 @@
 		{#if theme === 'material'}
 			<Button
 				onClick={() => (currentPage = 'group-info')}
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				data-testid="new-group-next-btn"
+				class="fixed-action-btn"
 				rounded
 			>
 				{selectedContacts.length === 0 ? m.omit() : m.next()}
@@ -121,12 +122,12 @@
 	<Page>
 		<Navbar title={m.groupName()} titleClass="opacity1" transparent={true}>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => (currentPage = 'members')} />
+				<NavbarBackLink onClick={() => (currentPage = 'members')} data-testid="new-group-info-back" />
 			{/snippet}
 
 			{#snippet right()}
 				{#if theme === 'ios'}
-					<Link onClick={createGroupChat}>
+					<Link onClick={createGroupChat} data-testid="new-group-create-link">
 						{m.create()}
 					</Link>
 				{/if}
@@ -135,10 +136,11 @@
 
 		<div class="column" style="flex: 1">
 			<div class="center-in-desktop m-1">
-				<List insetIos strongIos nested={theme!=='ios'}>
+				<List inset={isWideScreen.value || theme === 'ios'} strongIos nested={theme!=='ios'}>
 					<ListInput
 						type="text"
 						bind:value={groupName}
+						data-testid="new-group-name-input"
 						outline
 						class="plain"
 						placeholder={m.name()}
@@ -154,8 +156,8 @@
 		{#if theme === 'material'}
 			<Button
 				onClick={createGroupChat}
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				data-testid="new-group-create-btn"
+				class="fixed-action-btn"
 				rounded
 			>
 				{m.create()}

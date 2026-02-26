@@ -30,19 +30,20 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: setup node
-        uses: actions/setup-node@v1
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - name: Setup node
+        uses: actions/setup-node@v4
         with:
           node-version: 20.12.2
+          cache: 'pnpm'
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@master
-        with:
-            version: 10.15.0  # Optional: specify a pnpm version
-            cache: true
-
-      - name: install Rust stable
+      - name: Install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
+        # Includes Swatinem/rust-cache by default
 
       - name: install dependencies
         run: |
@@ -79,4 +80,4 @@ jobs:
           # Optional: Add claude_args to customize behavior and configuration
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://docs.claude.com/en/docs/claude-code/cli-reference for available options
-          claude_args: '--model claude-opus-4-5-20251101 --allowed-tools Bash(gh pr:*),Bash(pnpm:*),mcp__tauri__driver_session,mcp__tauri__webview_find_element,mcp__tauri__read_logs,mcp__tauri__webview_interact,mcp__tauri__webview_screenshot,mcp__tauri__webview_keyboard,mcp__tauri__webview_wait_for,mcp__tauri__webview_get_styles,mcp__tauri__webview_execute_js,mcp__tauri__manage_window'
+          claude_args: '--model claude-opus-4-6 --allowed-tools Bash(gh pr:*),Bash(pnpm:*),mcp__tauri__driver_session,mcp__tauri__webview_find_element,mcp__tauri__read_logs,mcp__tauri__webview_interact,mcp__tauri__webview_screenshot,mcp__tauri__webview_keyboard,mcp__tauri__webview_wait_for,mcp__tauri__webview_get_styles,mcp__tauri__webview_execute_js,mcp__tauri__manage_window'

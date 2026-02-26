@@ -1,23 +1,23 @@
 procs:
   agent1:
-    shell: pnpm tauri dev
+    shell: DEV_DBS_PATH="$PWD/.dev-dbs" pnpm tauri dev
     env:
       AGENT: "1"
   agent2:
-    shell: pnpm tauri dev
+    shell: DEV_DBS_PATH="$PWD/.dev-dbs" pnpm tauri dev
     env:
       AGENT: "2"
-  ui:  pnpm -F ./packages/stores build && pnpm -F ./ui start
+  ui: pnpm -F ./packages/stores build && pnpm -F ./ui start
   stores: pnpm -F ./packages/stores dev
   mailbox-server:
     shell: |
-      mkdir -p .dev-dbs/mailbox-server
-      cargo run -p mailbox-server -- --db-path .dev-dbs/mailbox-server/mailbox.db
+      DEV_DBS_PATH="$PWD/.dev-dbs"
+      cargo run -p mailbox-server -- --db-path "$DEV_DBS_PATH/mailbox-server/mailbox.db" --addr 0.0.0.0:3000
   android:
-    shell: pnpm tauri android dev
+    shell: DEV_DBS_PATH="$PWD/.dev-dbs" pnpm tauri android dev
     autostart: false
     env:
       AGENT: "2"
   logcat:
-    shell: adb logcat | grep -F "`adb shell ps | grep studio.darksoil.dashchat | tr -s [:space:] ' ' | cut -d' ' -f2`"
+    shell: just logcat
     autostart: false

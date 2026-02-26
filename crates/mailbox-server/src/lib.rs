@@ -4,8 +4,8 @@ use axum::{
 };
 use redb::Database;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::sync::Arc;
+use std::{future::Future, path::PathBuf};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod blob;
@@ -41,6 +41,35 @@ struct HealthResponse {
     status: String,
 }
 
+pub async fn spawn_server(
+    db_path: PathBuf,
+    addr: String,
+    signal: impl Future<Output = ()> + Send + 'static,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let db = init_db(db_path)?;
+    let db_arc = Arc::new(db);
+
+    // Spawn background cleanup task
+    let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
+    tracing::info!("Started background cleanup task (runs every 5 minutes)");
+
+    let app = create_app_with_arc(db_arc);
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let addr = listener.local_addr()?;
+
+    tracing::info!("Mailbox server listening on {}", addr);
+
+    let server = axum::serve(listener, app);
+    server.with_graceful_shutdown(signal).await?;
+    // TODO: cleanup task needs to be cleaned up even if the server is aborted.
+    //      the database stays open as long as this task holds a reference to the db arc.
+    cleanup_task.abort();
+    tracing::info!("Mailbox server gracefully shut down");
+
+    Ok(())
+}
+
 async fn health_check() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
@@ -49,6 +78,10 @@ async fn health_check() -> Json<HealthResponse> {
 
 pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>> {
     tracing::info!("Opening redb database at {:?}", db_path);
+
+    if let Some(parent) = db_path.parent().filter(|p| !p.exists()) {
+        std::fs::create_dir_all(parent)?;
+    }
 
     let db = Database::create(&db_path)?;
 

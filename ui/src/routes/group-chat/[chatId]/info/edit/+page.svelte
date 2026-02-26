@@ -7,26 +7,17 @@
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { ContactsStore, ChatsStore, PublicKey } from 'dash-chat-stores';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import {
-		mdiAccountGroup,
-		mdiClose,
-		mdiContentSave,
-		mdiPencil,
-		mdiSend,
-	} from '@mdi/js';
 	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
 	import {
 		Page,
 		Navbar,
 		NavbarBackLink,
-		Link,
-		Card,
 		ListInput,
 		List,
 		Button,
 		useTheme,
 	} from 'konsta/svelte';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { page } from '$app/state';
 	let chatId = page.params.chatId!;
 
@@ -69,7 +60,7 @@
 					></SelectAvatar>
 				</div>
 
-				<List strongIos insetIos>
+				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
 					<ListInput
 						type="text"
 						outline={theme === 'material'}
@@ -90,8 +81,7 @@
 
 		<Button
 			onClick={save}
-			class="end-4 bottom-4"
-			style="position: fixed; width: auto"
+			class="fixed-action-btn"
 			rounded
 		>
 			{m.save()}

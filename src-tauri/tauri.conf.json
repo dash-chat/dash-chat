@@ -1,9 +1,9 @@
 {
 	"productName": "Dash Chat",
-	"version": "0.5.0",
+	"version": "0.10.0",
 	"identifier": "studio.darksoil.dashchat",
 	"build": {
-		"beforeBuildCommand": "pnpm -F ui build",
+		"beforeBuildCommand": "pnpm -F dash-chat-stores build && pnpm -F ui build",
 		"devUrl": "http://localhost:1420",
 		"frontendDist": "../ui/build"
 	},
@@ -41,9 +41,9 @@
 	},
 	"plugins": {
 		"updater": {
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE3RUU3OTAxOUYzN0M2RkEKUldUNnhqZWZBWG51RitCWXhZdFY4RHVhQzY0bVgxU0tnc0JBSm9pSmliZ2pBUGRvOWFlbWV6b24K",
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzQkE0OEM1OUMxNDE0RTAKUldUZ0ZCU2N4VWk2OCsvL3lhQkhjS21GTEZPdzJtaVN6MXY4T3creEhuU3dxUWN1UFJvM21JdFkK",
 			"endpoints": [
-				"https://github.com/darksoil-studio/dash-chat/releases/latest/download/latest.json"
+				"https://github.com/dash-chat/dash-chat/releases/latest/download/latest.json"
 			]
 		},
 		"deep-link": {

@@ -1,6 +1,6 @@
 use named_id::{RenameAll, RenameNone};
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
-use p2panda_core::{Body, Extension, PruneFlag};
+use p2panda_core::{Body, Extension, Hash, PruneFlag};
 use serde::{Deserialize, Serialize};
 
 use crate::chat::ChatId;
@@ -22,7 +22,11 @@ impl Extensions {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
 pub struct Profile {
     pub name: String,
+    #[serde(default)]
+    pub surname: Option<String>,
     pub avatar: Option<String>,
+    #[serde(default)]
+    pub about: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
@@ -50,6 +54,10 @@ pub enum ChatPayload {
     /// The reason for including this message in the ChatPayload
     /// is that it can only be sent to contacts, and we want it to be
     /// long-lasting, so using an Inbox is not an option.
+    ///
+    /// OPTIMIZATION: include a message in the group chat
+    /// which instructs anyone who is a contact of this person to send them
+    /// this JoinGroup message 1:1, to increase their ability to receive it.
     JoinGroup(ChatId),
 
     Message(ChatMessageContent),
@@ -57,11 +65,18 @@ pub enum ChatPayload {
     Reaction(ChatReaction),
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, RenameNone)]
+pub struct ReadMessagesPayload {
+    pub chat_id: ChatId,
+    pub message_hashes: Vec<Hash>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, RenameAll)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
     AddContact(ContactCode),
     RejectContactRequest(AgentId),
+    ReadMessages(ReadMessagesPayload),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, RenameAll)]

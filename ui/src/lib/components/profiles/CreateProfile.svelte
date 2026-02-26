@@ -1,7 +1,9 @@
 <script lang="ts">
+	import '@awesome.me/webawesome/dist/components/icon/icon.js';
+	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { getContext } from 'svelte';
 	import type { ContactsStore, Error } from 'dash-chat-stores';
-	import SelectAvatar from './SelectAvatar.svelte';
+	import PhotoPicker from './PhotoPicker.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
 	import {
@@ -12,17 +14,40 @@
 		useTheme,
 		Link,
 		Navbar,
+		Card,
 	} from 'konsta/svelte';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { mdiCamera, mdiAccount } from '@mdi/js';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	let nickname = $state<string | undefined>(undefined);
+	let name = $state<string | undefined>(undefined);
+	let surname = $state<string | undefined>(undefined);
 	let avatar = $state<string | undefined>(undefined);
+	let showPicker = $state(false);
+	let pickerAvatar = $state<string | undefined>(undefined);
+
+	function openPicker() {
+		pickerAvatar = avatar;
+		showPicker = true;
+	}
+
+	function closePicker() {
+		showPicker = false;
+	}
+
+	function selectAvatar() {
+		avatar = pickerAvatar;
+		showPicker = false;
+	}
 
 	async function setProfile() {
 		try {
 			await contactsStore.client.setProfile({
-				name: nickname!,
+				name: name!,
+				surname,
 				avatar,
+				about: undefined,
 			});
 		} catch (e) {
 			console.error(e);
@@ -32,58 +57,132 @@
 					showToast(m.errorSetProfile(), 'error');
 					break;
 				default:
-					showToast(m.errorUnexpected(), 'error');
+					showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		}
 	}
 	const theme = $derived(useTheme());
+	const pickerHasChanges = $derived(pickerAvatar !== avatar);
+	let textEditorOpen = $state(false);
 </script>
 
 <Page>
-	<Navbar
-		title={m.createProfile()}
-		titleClass="opacity1"
-		transparent={true}
-		rightClass={nickname === undefined || nickname === ''
-			? 'pointer-events-none opacity-50'
-			: ''}
-	>
-		{#snippet right()}
-			{#if theme === 'ios'}
-				<Link onClick={setProfile}>
-					{m.create()}
-				</Link>
-			{/if}
-		{/snippet}
-	</Navbar>
-
-	<div class="column" style="flex: 1">
-		<div class="center-in-desktop">
-			<List nested={theme === 'material'} insetIos strongIos>
-				<ListInput
-					outline
-					class="plain"
-					type="text"
-					onInput={e => (nickname = e.target.value)}
-					label={m.name()}
-				>
-					{#snippet media()}
-						<SelectAvatar bind:value={avatar}></SelectAvatar>
-					{/snippet}
-				</ListInput>
-			</List>
+	{#if showPicker}
+		<div class="column" style="flex: 1; overflow-y: auto">
+			<PhotoPicker
+				bind:avatar={pickerAvatar}
+				bind:isTextEditorOpen={textEditorOpen}
+				onClose={closePicker}
+			/>
 		</div>
-	</div>
 
-	{#if theme === 'material'}
-		<Button
-			onClick={setProfile}
-			class="end-4 bottom-4"
-			style="position: fixed; width: auto"
-			rounded
-			disabled={nickname === undefined || nickname === ''}
+		{#if !textEditorOpen}
+			<Button
+				rounded
+				tonal
+				disabled={!pickerHasChanges}
+				onClick={selectAvatar}
+				class="fixed-action-btn"
+			>
+				{m.save()}
+			</Button>
+		{/if}
+	{:else}
+		<Navbar
+			title={m.setProfile()}
+			titleClass="opacity1"
+			transparent={true}
+			rightClass={name === undefined || name === ''
+				? 'pointer-events-none opacity-50'
+				: ''}
 		>
-			{m.create()}
-		</Button>
+			{#snippet right()}
+				{#if theme === 'ios'}
+					<Link
+						onClick={setProfile}
+						data-testid="create-profile-create-link"
+					>
+						{m.create()}
+					</Link>
+				{/if}
+			{/snippet}
+			{#snippet subtitle()}{/snippet}
+		</Navbar>
+
+		<div class="column" style="flex: 1; overflow-y: auto">
+			<div class="center-in-desktop column gap-2 p-2">
+				<span class="quiet px-4 py-2" class:pt-4={theme === 'ios'}>
+					{m.setProfileExplanation()}
+				</span>
+
+				<button
+					type="button"
+					class="avatar-btn"
+					style="position: relative; align-self: center; cursor: pointer"
+					onclick={openPicker}
+				>
+					{#if avatar}
+						<wa-avatar
+							image={avatar}
+							alt="Avatar"
+							shape="circle"
+							style="--size: 56px"
+						></wa-avatar>
+					{:else}
+						<Button
+							rounded
+							style="border-radius: 50%; height: 56px; width: 56px"
+						>
+							<wa-icon
+								src={wrapPathInSvg(mdiAccount)}
+								label={m.addAvatarImage()}
+							></wa-icon>
+						</Button>
+					{/if}
+					<Card
+						class="icon-only-card"
+						raised
+						style="position: absolute; pointer-events: none; bottom: -6px; right: -6px; z-index: 10"
+					>
+						<wa-icon src={wrapPathInSvg(mdiCamera)}></wa-icon>
+					</Card>
+				</button>
+
+				<List inset={isWideScreen.value || theme === 'ios'} strongIos>
+					<ListInput
+						type="text"
+						onInput={e => (name = e.target.value)}
+						placeholder={m.nameMandatory()}
+						data-testid="create-profile-name"
+					></ListInput>
+					<ListInput
+						type="text"
+						onInput={e => (surname = e.target.value)}
+						placeholder={m.surnameOptional()}
+						data-testid="create-profile-surname"
+					></ListInput>
+				</List>
+			</div>
+		</div>
+
+		{#if theme === 'material'}
+			<Button
+				onClick={setProfile}
+				class="fixed-action-btn"
+				rounded
+				disabled={name === undefined || name === ''}
+				data-testid="create-profile-create-btn"
+			>
+				{m.create()}
+			</Button>
+		{/if}
 	{/if}
 </Page>
+
+<style>
+	.avatar-btn {
+		background: transparent;
+		border: none;
+		padding: 0;
+	}
+</style>
