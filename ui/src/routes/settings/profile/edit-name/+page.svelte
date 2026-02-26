@@ -121,7 +121,7 @@
 				class="fixed-action-btn"
 				rounded
 				data-testid="edit-name-save-btn"
-				disabled={myProfile?.name === name && myProfile.surname === surname}
+				disabled={myProfile?.name === name && myProfile?.surname === surname}
 			>
 				{m.save()}
 			</Button>
