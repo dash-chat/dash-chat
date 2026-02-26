@@ -42,7 +42,7 @@ To run the app, run this command:
 just dev
 ```
 
-This will spawn two instances of the tauri, forming a p2panda network of 2 nodes connected to a single mailbox server running locally. All data will be persisted to the .dbs/dev folder in the current folder. If you want to clean up the development databases, run:
+This will spawn two instances of the tauri, forming a network of 2 nodes connected to a single mailbox server running locally. All data will be persisted to the .dbs/dev folder in the current folder. If you want to clean up the development databases, run:
 
 ```bash
 just clean-dev
