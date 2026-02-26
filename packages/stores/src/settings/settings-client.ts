@@ -25,11 +25,16 @@ export class SettingsClient implements ISettingsClient {
 
 	onSettingsUpdated(handler: (settings: Settings) => void): UnsubscribeFunction {
 		let unsubs: (() => void) | undefined;
+		let cancelled = false;
 		listen('settings://updated', (e) => {
 			handler(e.payload as Settings);
-		}).then((u) => (unsubs = u));
+		}).then((u) => {
+			if (cancelled) u();
+			else unsubs = u;
+		});
 
 		return () => {
+			cancelled = true;
 			if (unsubs) unsubs();
 		};
 	}

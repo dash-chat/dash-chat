@@ -70,8 +70,12 @@
 
 	let theme: 'ios' | 'material' = $state('material');
 
-	window.addEventListener('theme-change', (event: CustomEvent) => {
-		theme = event.detail.theme;
+	$effect(() => {
+		const handler = (event: CustomEvent) => {
+			theme = event.detail.theme;
+		};
+		window.addEventListener('theme-change', handler as EventListener);
+		return () => window.removeEventListener('theme-change', handler as EventListener);
 	});
 
 </script>
