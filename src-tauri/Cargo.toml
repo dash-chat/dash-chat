@@ -24,26 +24,13 @@ tauri = { version = "2.8", features = ["devtools", "tray-icon"] }
 
 anyhow = "1.0.95"
 async-trait = "0.1.85"
-mailbox-client = { path = "../crates/mailbox-client" }
-p2panda-auth = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-encryption = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-discovery = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
-  "mdns",
-] }
-p2panda-net = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-store = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-stream = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-sync = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
-  "log-sync",
-] }
-p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
-  "test_utils",
-] }
-tokio = { version = "1.43.0", features = ["fs"] }
 hex = "0.4.3"
+mailbox-client = { path = "../crates/mailbox-client" }
 mdns-sd = "0.17"
 nanoid = "0"
+tokio = { version = "1.43.0", features = ["fs"] }
+
+p2panda-core = { workspace = true }
 
 image = "0.25"
 

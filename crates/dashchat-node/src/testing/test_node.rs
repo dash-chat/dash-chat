@@ -225,11 +225,7 @@ impl<const N: usize> TestCluster<N> {
     }
 
     pub async fn introduce_all(&self) {
-        #[cfg(feature = "p2p")]
-        {
-            let nodes = self.iter().map(|node| &node.network).collect::<Vec<_>>();
-            introduce(nodes).await;
-        }
+        unimplemented!("re-implement when p2p sync is available")
     }
 
     pub async fn nodes(&self) -> [TestNode; N] {

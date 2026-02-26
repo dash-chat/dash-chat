@@ -15,7 +15,6 @@ use futures::Stream;
 use named_id::Rename;
 use named_id::*;
 use p2panda_core::Body;
-use p2panda_net::ResyncConfiguration;
 use p2panda_spaces::ActorId;
 use p2panda_store::{LogStore, SqliteStore};
 use p2panda_stream::IngestExt;
@@ -43,7 +42,6 @@ pub use stream_processing::Notification;
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
-    pub resync: ResyncConfiguration,
     pub contact_code_expiry: Duration,
     pub mailboxes_config: MailboxesConfig,
 }
@@ -55,7 +53,6 @@ impl NodeConfig {
         mailboxes_config.success_interval = std::time::Duration::from_millis(1000);
         mailboxes_config.error_interval = std::time::Duration::from_millis(1000);
         Self {
-            resync: ResyncConfiguration::new().interval(3).poll_interval(1),
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
         }
@@ -64,9 +61,7 @@ impl NodeConfig {
 
 impl Default for NodeConfig {
     fn default() -> Self {
-        let resync = ResyncConfiguration::new().interval(3).poll_interval(1);
         Self {
-            resync,
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
         }

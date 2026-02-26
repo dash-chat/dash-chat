@@ -1,6 +1,7 @@
 use std::{collections::BTreeSet, path::Path, sync::Arc};
 
 use chrono::{DateTime, Utc};
+use p2panda_core::Operation;
 use redb::*;
 
 use crate::{
@@ -33,8 +34,12 @@ impl NodeData {
 }
 
 #[derive(Clone)]
+pub struct HackyGroupStore(p2panda_auth::processor::Store<Operation<Extensions>>);
+
+#[derive(Clone)]
 pub struct LocalStore {
     db: Arc<Database>,
+    groups: HackyGroupStore,
 }
 
 impl LocalStore {
@@ -42,6 +47,7 @@ impl LocalStore {
         let database = Database::create(path)?;
         let store = Self {
             db: Arc::new(database),
+            groups: HackyGroupStore(p2panda_auth::processor::Store::default()),
         };
         store.ensure_initialized()?;
 

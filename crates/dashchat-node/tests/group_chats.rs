@@ -48,8 +48,7 @@ async fn test_direct_chat() {
         .add_mailbox_client(mailbox.client())
         .await;
 
-    #[cfg(feature = "p2p")]
-    introduce_and_wait([&alice.network, &bobbi.network]).await;
+    introduce_and_wait([&alice, &bobbi]).await;
 
     println!("nodes:");
     println!("alice: {:?}", alice.device_id().short());

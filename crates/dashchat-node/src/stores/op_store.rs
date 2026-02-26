@@ -106,10 +106,14 @@ where
 
         let body = Some(payload.try_into_body()?);
 
+        let auth = match payload {
+            Payload::Chat(ChatPayload::GroupControl) => Some(todo!()),
+            _ => None,
+        };
         let extensions = Extensions {
             topic: topic.clone().into(),
+            auth,
         };
-
         let lock = self.write_mutex.lock().await;
         let latest_operation = self
             .latest_operation(&device_id, &topic.into())
@@ -407,7 +411,7 @@ where
         public_key: &PublicKey,
         topic: &TopicId,
         from: Option<u64>,
-    ) -> Result<Option<Vec<Hash>>, Self::Error> {
+    ) -> Result<Option<Vec<(u64, Hash)>>, Self::Error> {
         self.store.get_log_hashes(public_key, topic, from).await
     }
 }

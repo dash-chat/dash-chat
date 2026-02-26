@@ -35,7 +35,6 @@ use crate::AgentId;
 use named_id::*;
 
 use p2panda_spaces::ActorId;
-use p2panda_sync::TopicQuery;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub trait TopicKind:
@@ -135,7 +134,6 @@ pub mod kind {
 pub struct TopicId([u8; 32]);
 
 impl p2panda_spaces::traits::SpaceId for TopicId {}
-impl TopicQuery for TopicId {}
 
 pub type DashChatTopicId = TopicId;
 
@@ -171,7 +169,6 @@ pub struct Topic<K: TopicKind = kind::Untyped> {
 }
 
 impl<K: TopicKind> p2panda_spaces::traits::SpaceId for Topic<K> {}
-impl<K: TopicKind> TopicQuery for Topic<K> {}
 
 impl<K: TopicKind> Topic<K> {
     pub(crate) fn new(id: [u8; 32]) -> Self {
@@ -236,21 +233,9 @@ impl Topic<kind::Untyped> {
     }
 }
 
-impl p2panda_net::TopicId for TopicId {
-    fn id(&self) -> [u8; 32] {
-        self.0
-    }
-}
-
 impl<K: TopicKind> From<Topic<K>> for TopicId {
     fn from(topic: Topic<K>) -> Self {
         Self(topic.id.0)
-    }
-}
-
-impl<K: TopicKind> p2panda_net::TopicId for Topic<K> {
-    fn id(&self) -> [u8; 32] {
-        self.id.0
     }
 }
 

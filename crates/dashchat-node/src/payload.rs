@@ -1,4 +1,5 @@
 use named_id::{RenameAll, RenameNone};
+use p2panda_auth::processor::AuthExtension;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use p2panda_core::{Body, Extension, Hash, PruneFlag};
 use serde::{Deserialize, Serialize};
@@ -8,14 +9,21 @@ use crate::contact::QrCode;
 use crate::topic::TopicId;
 use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, Topic};
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extensions {
     pub topic: TopicId,
+    pub auth: Option<AuthExtension>,
 }
 
 impl Extensions {
     pub fn topic(&self) -> Topic<crate::topic::kind::Untyped> {
         Topic::untyped(*self.topic)
+    }
+}
+
+impl Extension<AuthExtension> for Extensions {
+    fn extract(header: &Header) -> Option<AuthExtension> {
+        header.extensions.auth.clone()
     }
 }
 
@@ -61,6 +69,8 @@ pub enum ChatPayload {
     JoinGroup(ChatId),
 
     Message(ChatMessageContent),
+
+    GroupControl,
 
     Reaction(ChatReaction),
 }
