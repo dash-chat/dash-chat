@@ -7,21 +7,11 @@
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { ContactsStore, ChatsStore, PublicKey } from 'dash-chat-stores';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import {
-		mdiAccountGroup,
-		mdiClose,
-		mdiContentSave,
-		mdiPencil,
-		mdiSend,
-	} from '@mdi/js';
 	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
 	import {
 		Page,
 		Navbar,
 		NavbarBackLink,
-		Link,
-		Card,
 		ListInput,
 		List,
 		Button,

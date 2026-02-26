@@ -1,4 +1,5 @@
 pub mod logs;
+pub mod redact_log;
 
 pub mod contacts;
 pub mod devices;

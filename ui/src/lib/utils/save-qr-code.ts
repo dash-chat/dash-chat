@@ -54,7 +54,7 @@ function buildShareSvg(
 	const qrWhiteBottom = qrWhiteTop + whiteAreaSize;
 	const cardBottom = qrWhiteBottom + bottomMargin;
 	const cardHeight = cardBottom - cardTop;
-	const nameCenterY = qrWhiteBottom + bottomMargin / 2;
+	const nameCenterY = qrWhiteBottom + bottomMargin / 2 - 18;
 
 	const subtitleTop = cardBottom + 72;
 	const subtitleFontSize = 33;
@@ -86,7 +86,7 @@ async function renderQrImage(
 	code: string,
 	qrColor: string,
 	name: string,
-): Promise<Uint8Array | undefined> {
+): Promise<Uint8Array> {
 	const svg = buildShareSvg(code, qrColor, name);
 	const blob = new Blob([svg], { type: 'image/svg+xml' });
 	const url = URL.createObjectURL(blob);
@@ -125,7 +125,6 @@ export async function saveQrCode(
 	name: string,
 ): Promise<void> {
 	const bytes = await renderQrImage(code, qrColor, name);
-	if (!bytes) return;
 
 	const path = await save({
 		title: 'Save QR Code',
@@ -147,7 +146,6 @@ export async function shareQrCode(
 	name: string,
 ): Promise<void> {
 	const bytes = await renderQrImage(code, qrColor, name);
-	if (!bytes) return;
 
 	const cacheDir = await appCacheDir();
 	const shareDir = await join(cacheDir, 'share');

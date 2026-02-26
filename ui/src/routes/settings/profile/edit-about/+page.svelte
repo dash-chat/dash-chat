@@ -26,12 +26,13 @@
 	let about = $state<string>('');
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
-	myProfile.subscribe((m) => {
-		m.then((myProfile) => {
-			if (!name) name = myProfile?.name || '';
-			if (!surname) surname = myProfile?.surname;
-			if (!avatar) avatar = myProfile?.avatar;
-			if (about === '') about = myProfile?.about || '';
+	$effect(() => {
+		$myProfile.then((profile) => {
+			if (!name) name = profile?.name || '';
+			if (!surname) surname = profile?.surname;
+			if (!avatar) avatar = profile?.avatar;
+			if (about === '') about = profile?.about || '';
+			if (originalAbout === undefined) originalAbout = profile?.about || '';
 		});
 	});
 
@@ -69,18 +70,13 @@
 					showToast(m.errorSetProfile(), 'error');
 					break;
 				default:
-					showToast(m.errorUnexpected(), 'unexpected');
+					showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		}
 	}
 
 	const theme = $derived(useTheme());
 	let originalAbout = $state<string | undefined>(undefined);
-	myProfile.subscribe((m) => {
-		m.then((myProfile) => {
-			if (originalAbout === undefined) originalAbout = myProfile?.about || '';
-		});
-	});
 	const hasChanges = $derived(about !== originalAbout);
 </script>
 

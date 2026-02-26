@@ -1,16 +1,13 @@
 <script lang="ts">
-	import { invoke } from '@tauri-apps/api/core';
-	import { appLogDir, join } from '@tauri-apps/api/path';
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { sendMailto } from '$lib/utils/mailto';
 	import { showToast } from '$lib/utils/toasts';
 	import {
 		BlockTitle,
 		Button,
 		Checkbox,
-		Dialog,
-		DialogButton,
 		List,
 		ListInput,
 		ListItem,
@@ -26,7 +23,6 @@
 	let reason = $state('');
 	let feeling = $state<string | null>(null);
 	let includeDebugLog = $state(true);
-	let showDebugLogDialog = $state(false);
 
 	const feelings = ['😀', '🙂', '😐', '🙁', '😡'];
 
@@ -41,28 +37,16 @@
 		const subjectParts: string[] = [];
 		if (reason) subjectParts.push(reasonLabels[reason]());
 		if (feeling) subjectParts.push(feeling);
-		const subject = subjectParts.length > 0
-			? `Dash Chat: ${subjectParts.join(' - ')}`
-			: 'Dash Chat';
-
-		let attachments: string[] | undefined;
-		if (includeDebugLog) {
-			const logDir = await appLogDir();
-			const logFile = await join(logDir, 'Dash Chat.log');
-			attachments = [logFile];
-		}
+		const subject =
+			subjectParts.length > 0
+				? `Dash Chat: ${subjectParts.join(' - ')}`
+				: 'Dash Chat';
 
 		try {
-			await invoke('plugin:mailto|mailto', {
-				request: {
-					email: 'hello@dashchat.org',
-					subject,
-					body: message,
-					attachments,
-				},
-			});
-		} catch {
-			showToast(m.errorUnexpected(), 'unexpected');
+			await sendMailto({ subject, body: message, includeDebugLog });
+			goto('/settings/help');
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
 </script>
@@ -80,7 +64,11 @@
 	<div class="column" style="flex: 1">
 		<div class="column center-in-desktop">
 			<BlockTitle>{m.contactUs()}</BlockTitle>
-			<List strongIos inset={isWideScreen.value || theme === 'ios'} class="!mb-0">
+			<List
+				strongIos
+				inset={isWideScreen.value || theme === 'ios'}
+				class="!mb-0"
+			>
 				<ListInput
 					type="textarea"
 					placeholder={m.tellUsWhatsGoingOn()}
@@ -91,7 +79,11 @@
 			</List>
 
 			<BlockTitle>{m.tellUsWhyReachingOut()}</BlockTitle>
-			<List strongIos inset={isWideScreen.value || theme === 'ios'} class="!mb-0">
+			<List
+				strongIos
+				inset={isWideScreen.value || theme === 'ios'}
+				class="!mb-0"
+			>
 				<ListInput
 					type="select"
 					bind:value={reason}
@@ -123,7 +115,11 @@
 				{/each}
 			</div>
 
-			<List strongIos inset={isWideScreen.value || theme === 'ios'} class="!mt-4 !mb-0">
+			<List
+				strongIos
+				inset={isWideScreen.value || theme === 'ios'}
+				class="!mt-4 !mb-0"
+			>
 				<ListItem
 					title={m.includeDebugLog()}
 					data-testid="contact-us-include-debug-log"
@@ -135,37 +131,21 @@
 							onChange={() => (includeDebugLog = !includeDebugLog)}
 						/>
 					{/snippet}
-					{#snippet after()}
-					{/snippet}
+					{#snippet after()}{/snippet}
 				</ListItem>
 			</List>
 		</div>
 	</div>
 
-		<Button
-			rounded
-			onClick={handleSubmit}
-			disabled={!message}
-			data-testid="contact-us-next-btn"
-			class="fixed-action-btn"
-		>
-			{m.next()}
-		</Button>
-
-	<Dialog
-		opened={showDebugLogDialog}
-		onBackdropClick={() => (showDebugLogDialog = false)}
+	<Button
+		rounded
+		onClick={handleSubmit}
+		disabled={!message}
+		data-testid="contact-us-next-btn"
+		class="fixed-action-btn"
 	>
-		{#snippet title()}
-			{m.includeDebugLog()}
-		{/snippet}
-		<span>{m.debugLogExplanation()}</span>
-		{#snippet buttons()}
-			<DialogButton onClick={() => (showDebugLogDialog = false)}>
-				{m.done()}
-			</DialogButton>
-		{/snippet}
-	</Dialog>
+		{m.next()}
+	</Button>
 </Page>
 
 <style>
@@ -188,23 +168,5 @@
 
 	.emoji-btn:active {
 		opacity: 0.7;
-	}
-
-	.whats-this-link {
-		background: none;
-		border: none;
-		color: var(--k-color-brand-primary, #007aff);
-		cursor: pointer;
-		font-size: 14px;
-		padding: 0;
-	}
-
-	.faq-link {
-		background: none;
-		border: none;
-		color: var(--k-color-brand-primary, #007aff);
-		cursor: pointer;
-		font-size: 14px;
-		padding: 0;
 	}
 </style>

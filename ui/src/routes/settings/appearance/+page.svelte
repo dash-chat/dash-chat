@@ -23,8 +23,8 @@
 	async function select(scheme: ColorScheme) {
 		try {
 			await settingsStore.setColorScheme(scheme);
-		} catch {
-			showToast(m.errorUnexpected(), 'unexpected');
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
 </script>

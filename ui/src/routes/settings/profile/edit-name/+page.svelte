@@ -54,7 +54,7 @@
 					showToast(m.errorSetProfile(), 'error');
 					break;
 				default:
-					showToast(m.errorUnexpected(), 'unexpected');
+					showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		}
 	}

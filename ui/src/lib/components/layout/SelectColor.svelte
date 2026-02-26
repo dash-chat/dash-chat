@@ -45,8 +45,8 @@
 		qrColorIndex = index;
 		try {
 			await settingsStore.setQrColor(qrColors[index]);
-		} catch {
-			showToast(m.errorUnexpected(), 'unexpected');
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
 </script>

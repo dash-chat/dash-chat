@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { invoke } from '@tauri-apps/api/core';
-	import { appLogDir, join } from '@tauri-apps/api/path';
 	import { Button, Checkbox, Dialog, DialogButton, List, ListItem, Toast } from 'konsta/svelte';
+	import { mdiClose } from '@mdi/js';
+	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { sendMailto } from '$lib/utils/mailto';
 	import { showToast, TOAST_TTL_MS, type ToastEvent } from '$lib/utils/toasts';
 	import { m } from '$lib/paraglide/messages.js';
 
@@ -13,6 +14,7 @@
 
 	let errorReportDialogOpen = $state(false);
 	let errorReportMessage = $state('');
+	let errorReportError = $state<unknown>(undefined);
 	let includeDebugLog = $state(true);
 
 	function handleToast(event: CustomEvent<ToastEvent>) {
@@ -20,9 +22,29 @@
 		toastMessage = event.detail.message;
 		toastVariant = event.detail.variant ?? 'default';
 		toastOpen = true;
-		toastTimeout = setTimeout(() => {
-			toastOpen = false;
-		}, TOAST_TTL_MS);
+		if (event.detail.error !== undefined) {
+			errorReportError = event.detail.error;
+		}
+		if (toastVariant !== 'unexpected') {
+			toastTimeout = setTimeout(() => {
+				toastOpen = false;
+			}, TOAST_TTL_MS);
+		}
+	}
+
+	function dismissToast() {
+		toastOpen = false;
+		clearTimeout(toastTimeout);
+	}
+
+	function formatError(error: unknown): string {
+		if (error instanceof Error) return error.message;
+		if (typeof error === 'string') return error;
+		try {
+			return JSON.stringify(error);
+		} catch {
+			return String(error);
+		}
 	}
 
 	function handleSendErrorReport() {
@@ -36,21 +58,15 @@
 	async function sendErrorReport() {
 		errorReportDialogOpen = false;
 
-		let attachments: string[] | undefined;
-		if (includeDebugLog) {
-			const logDir = await appLogDir();
-			const logFile = await join(logDir, 'Dash Chat.log');
-			attachments = [logFile];
-		}
+		const body = errorReportError
+			? `${errorReportMessage}\n\nError: ${formatError(errorReportError)}`
+			: errorReportMessage;
 
 		try {
-			await invoke('plugin:mailto|mailto', {
-				request: {
-					email: 'hello@dashchat.org',
-					subject: 'Dash Chat: Error Report',
-					body: errorReportMessage,
-					attachments,
-				},
+			await sendMailto({
+				subject: 'Dash Chat: Error Report',
+				body,
+				includeDebugLog,
 			});
 		} catch {
 			showToast(m.errorSendErrorReport(), 'error');
@@ -78,6 +94,9 @@
 			<Button inline clear onClick={handleSendErrorReport}>
 				{m.sendErrorReport()}
 			</Button>
+			<button class="ml-1 opacity-70 active:opacity-100" onclick={dismissToast}>
+				<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 18px"></wa-icon>
+			</button>
 		{/if}
 	{/snippet}
 </Toast>
@@ -89,6 +108,7 @@
 	{#snippet title()}
 		{m.sendErrorReport()}
 	{/snippet}
+	<p class="px-4 text-sm opacity-60">{m.errorReportExplanation()}</p>
 	<List nested class="!my-0">
 		<ListItem
 			title={m.includeDebugLog()}

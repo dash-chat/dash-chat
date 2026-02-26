@@ -103,7 +103,7 @@
 					showToast(m.errorAddContact(), 'error');
 					break;
 				default:
-					showToast(m.errorUnexpected(), 'unexpected');
+					showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		}
 	}
@@ -121,7 +121,7 @@
 			});
 		} catch (e) {
 			console.error(e);
-			showToast(m.errorUnexpected(), 'unexpected');
+			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
 
@@ -196,8 +196,8 @@
 			setTimeout(() => {
 				scrollToBottom();
 			});
-		} catch {
-			showToast(m.errorUnexpected(), 'unexpected');
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
 	let t: ReturnType<typeof setTimeout> | undefined;
@@ -412,8 +412,8 @@
 		const newEmoji = currentReaction === emoji ? null : emoji;
 		try {
 			await store.sendReaction({ target: message.hash, emoji: newEmoji });
-		} catch {
-			showToast(m.errorUnexpected(), 'unexpected');
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 		hideReactionUI();
 	}

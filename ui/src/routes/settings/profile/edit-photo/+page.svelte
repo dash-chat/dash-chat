@@ -18,17 +18,13 @@
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	let originalAvatar = $state<string | undefined>(undefined);
 
-	myProfile.subscribe(m => {
-		m.then(myProfile => {
-			if (!name) name = myProfile?.name || '';
-			if (originalAvatar === undefined) {
-				originalAvatar = myProfile?.avatar;
-			}
-			if (avatar === undefined) {
-				avatar = myProfile?.avatar;
-			}
-			if (!surname) surname = myProfile?.surname;
-			if (!about) about = myProfile?.about;
+	$effect(() => {
+		$myProfile.then((profile) => {
+			if (!name) name = profile?.name || '';
+			if (originalAvatar === undefined) originalAvatar = profile?.avatar;
+			if (avatar === undefined) avatar = profile?.avatar;
+			if (!surname) surname = profile?.surname;
+			if (!about) about = profile?.about;
 		});
 	});
 
@@ -49,7 +45,7 @@
 					showToast(m.errorSetProfile(), 'error');
 					break;
 				default:
-					showToast(m.errorUnexpected(), 'unexpected');
+					showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		}
 	}

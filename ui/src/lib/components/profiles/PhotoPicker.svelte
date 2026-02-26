@@ -4,7 +4,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiCamera, mdiImage, mdiArrowLeft } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button, Segmented, SegmentedButton } from 'konsta/svelte';
+	import { Button, Link, Navbar, Segmented, SegmentedButton } from 'konsta/svelte';
 	import { resizeAndExport } from '$lib/utils/image';
 	import { isMobile } from '$lib/utils/environment';
 
@@ -156,19 +156,13 @@
 
 {#if view === 'picker'}
 	{#if onClose}
-		<div class="p-4" style="padding-top: calc(16px + env(safe-area-inset-top))">
-			<button
-				class="bg-transparent border-none cursor-pointer p-2 -m-2 flex items-center justify-center"
-				style="color: var(--k-text-color)"
-				onclick={onClose}
-				aria-label="Close"
-			>
-				<wa-icon
-					src={wrapPathInSvg(mdiClose)}
-					style="font-size: 28px"
-				></wa-icon>
-			</button>
-		</div>
+		<Navbar transparent>
+			{#snippet left()}
+				<Link iconOnly onClick={onClose}>
+					<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 24px"></wa-icon>
+				</Link>
+			{/snippet}
+		</Navbar>
 	{/if}
 
 	<!-- Avatar preview with remove button -->
@@ -254,20 +248,13 @@
 	</div>
 {:else}
 	<!-- Text avatar editor -->
-	<div class="p-4" style="padding-top: calc(16px + env(safe-area-inset-top))">
-		<button
-			class="bg-transparent border-none cursor-pointer p-2 -m-2 flex items-center justify-center"
-			style="color: var(--k-text-color)"
-			onclick={() => (view = 'picker')}
-			aria-label="Back"
-			data-testid="edit-photo-back"
-		>
-			<wa-icon
-				src={wrapPathInSvg(mdiArrowLeft)}
-				style="font-size: 24px"
-			></wa-icon>
-		</button>
-	</div>
+	<Navbar transparent>
+		{#snippet left()}
+			<Link iconOnly onClick={() => (view = 'picker')} data-testid="edit-photo-back">
+				<wa-icon src={wrapPathInSvg(mdiArrowLeft)} style="font-size: 24px"></wa-icon>
+			</Link>
+		{/snippet}
+	</Navbar>
 
 	<div style="padding: 0 16px 16px;">
 		<Segmented strong>

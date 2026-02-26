@@ -100,7 +100,7 @@
 					showToast(m.errorAddContact(), 'error');
 					break;
 				default:
-					showToast(m.errorUnexpected(), 'unexpected');
+					showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		}
 	}
