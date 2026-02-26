@@ -1,0 +1,5 @@
+[env]
+# Use Apple's ar/ranlib instead of GNU binutils (from homebrew) for iOS targets.
+# GNU ar produces archives with '/' symbol tables that Apple's linker can't read.
+AR = "/usr/bin/ar"
+RANLIB = "/usr/bin/ranlib"

@@ -68,7 +68,9 @@
 		});
 	});
 
-	let theme: 'ios' | 'material' = $state('material');
+	import { isIos } from '$lib/utils/environment';
+
+	let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
 
 	$effect(() => {
 		const handler = (event: CustomEvent) => {

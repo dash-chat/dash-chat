@@ -9473,7 +9473,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-virtual-keyboard-padding"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding?branch=main#0b18952d5e5981cf7d8c6e4bfe38eb7feb8b388b"
+source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding?branch=main#a0ff74e1382d2f324dc3cedc8d09c8b4f9b0105c"
 dependencies = [
  "serde",
  "tauri",
