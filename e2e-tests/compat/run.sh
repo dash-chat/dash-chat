@@ -36,6 +36,15 @@ maybe_xvfb() {
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+MAILBOX_PID=""
+cleanup() {
+    if [ -n "$MAILBOX_PID" ]; then
+        kill "$MAILBOX_PID" 2>/dev/null || true
+        wait "$MAILBOX_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
 require_clean_tree() {
     if ! git diff --quiet HEAD 2>/dev/null; then
         die "Working tree is dirty. Commit or stash changes before running compat tests."
@@ -66,6 +75,9 @@ fi
 if [ ${#TAGS[@]} -gt 0 ]; then
     require_clean_tree
 fi
+
+# Enable test utilities in Vite builds
+export VITE_E2E=1
 
 # --- Step 1: Build current version ---
 
@@ -143,12 +155,23 @@ for TAG in "${TAGS[@]}"; do
     MAILBOX_PID=$!
 
     # Wait for mailbox server to be ready
+    MAILBOX_READY=false
     for _ in $(seq 1 30); do
         if curl -s "$MAILBOX_URL" >/dev/null 2>&1; then
+            MAILBOX_READY=true
             break
         fi
         sleep 1
     done
+
+    if [ "$MAILBOX_READY" != "true" ]; then
+        echo "FAIL: Mailbox server did not start on $MAILBOX_URL"
+        kill "$MAILBOX_PID" 2>/dev/null || true
+        wait "$MAILBOX_PID" 2>/dev/null || true
+        MAILBOX_PID=""
+        FAILED_TAGS+=("$TAG")
+        continue
+    fi
 
     # --- Phase 1 — Setup with old binary ---
 
@@ -167,6 +190,7 @@ for TAG in "${TAGS[@]}"; do
         echo "FAIL: Phase 1 (setup) failed for $TAG"
         kill "$MAILBOX_PID" 2>/dev/null || true
         wait "$MAILBOX_PID" 2>/dev/null || true
+        MAILBOX_PID=""
         FAILED_TAGS+=("$TAG")
         continue
     fi
@@ -185,6 +209,7 @@ for TAG in "${TAGS[@]}"; do
 
     kill "$MAILBOX_PID" 2>/dev/null || true
     wait "$MAILBOX_PID" 2>/dev/null || true
+    MAILBOX_PID=""
 
     if [ "$PHASE2_OK" = "true" ]; then
         echo "PASS: $TAG is backwards compatible"

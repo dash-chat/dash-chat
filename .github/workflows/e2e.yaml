@@ -53,15 +53,25 @@ jobs:
 
       - name: Build Tauri app (debug, no-bundle)
         run: pnpm tauri build --debug --no-bundle
+        env:
+          VITE_E2E: '1'
 
       - name: Make launch scripts executable
         run: chmod +x e2e-tests/scripts/*.sh
 
       - name: Run E2E tests
-        run: xvfb-run pnpm test
+        run: xvfb-run pnpm test 2>&1 | tee e2e-output.log
         working-directory: e2e-tests
         env:
           SKIP_BUILD: '1'
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: e2e-tests/e2e-output.log
+          retention-days: 7
 
       - name: Cleanup E2E data
         if: always()

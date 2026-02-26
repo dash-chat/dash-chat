@@ -34,7 +34,7 @@ export const config: Options.Testrunner = {
 		agent1: {
 			port: 4444,
 			capabilities: {
-				'platformName': 'linux',
+				'platformName': process.platform === 'darwin' ? 'mac' : process.platform,
 				'tauri:options': {
 					application: path.join(__dirname, 'scripts', 'launch-agent1.sh'),
 				},
@@ -43,7 +43,7 @@ export const config: Options.Testrunner = {
 		agent2: {
 			port: 4446,
 			capabilities: {
-				'platformName': 'linux',
+				'platformName': process.platform === 'darwin' ? 'mac' : process.platform,
 				'tauri:options': {
 					application: path.join(__dirname, 'scripts', 'launch-agent2.sh'),
 				},

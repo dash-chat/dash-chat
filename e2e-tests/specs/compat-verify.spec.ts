@@ -9,7 +9,7 @@
  * "execute/sync" endpoint cannot serialize Promises.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,13 +26,18 @@ interface CompatState {
 	msgBob: string;
 }
 
-const state: CompatState = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
+let state: CompatState;
 
 const NEW_MSG_ALICE = 'Post-upgrade message from Alice!';
 const NEW_MSG_BOB = 'Post-upgrade message from Bob!';
 
 describe('Compat verify — check data with current version', () => {
 	before(async () => {
+		if (!existsSync(STATE_FILE)) {
+			throw new Error(`State file not found: ${STATE_FILE}. Did the setup phase run?`);
+		}
+		state = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
+
 		const agent1 = browser.getInstance('agent1');
 		const agent2 = browser.getInstance('agent2');
 
@@ -52,30 +57,19 @@ describe('Compat verify — check data with current version', () => {
 		const agent1 = browser.getInstance('agent1');
 		const agent2 = browser.getInstance('agent2');
 
-		// If profiles persisted, the create-profile screen should not appear.
-		// The app should go straight to the home/chat-list screen.
-		// Check by waiting for the home page to load (not the profile creation page).
+		// If profiles persisted, the app goes straight to the home screen.
+		// Wait for a home-screen element (chat list or empty state) to appear.
 		const err1 = await agent1.executeAsync((done: (r: string | null) => void) => {
-			setTimeout(() => {
-				const createProfile = document.querySelector('[data-testid="create-profile-name-input"]');
-				if (createProfile) {
-					done('Profile creation screen appeared — profile was NOT persisted');
-				} else {
-					done(null);
-				}
-			}, 5000);
+			window.__test
+				.waitFor('[data-testid="all-chats-list"], [data-testid="all-chats-empty"]', 10_000)
+				.then(() => done(null), (e) => done(String(e)));
 		});
 		expect(err1).toBeNull();
 
 		const err2 = await agent2.executeAsync((done: (r: string | null) => void) => {
-			setTimeout(() => {
-				const createProfile = document.querySelector('[data-testid="create-profile-name-input"]');
-				if (createProfile) {
-					done('Profile creation screen appeared — profile was NOT persisted');
-				} else {
-					done(null);
-				}
-			}, 5000);
+			window.__test
+				.waitFor('[data-testid="all-chats-list"], [data-testid="all-chats-empty"]', 10_000)
+				.then(() => done(null), (e) => done(String(e)));
 		});
 		expect(err2).toBeNull();
 	});
