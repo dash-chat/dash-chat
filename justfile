@@ -29,3 +29,7 @@ run-binary: build-binary
 # shows the logs for a connected android device running the app
 logcat:
     adb logcat | grep -F "`adb shell ps | grep studio.darksoil.dashchat | tr -s [:space:] ' ' | cut -d' ' -f2`"
+
+# cut a new release (e.g. just release 0.11.0)
+release version:
+    ./scripts/release.sh {{version}}
