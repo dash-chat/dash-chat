@@ -82,7 +82,7 @@ mkdir -p "$BINARIES_DIR/current"
 
 pnpm install && pnpm --recursive build && pnpm tauri build --debug --no-bundle
 
-BINARY_PATH="$ROOT/src-tauri/target/debug/dash-chat"
+BINARY_PATH="$ROOT/target/debug/dash-chat"
 [ -f "$BINARY_PATH" ] || die "Current binary not found at $BINARY_PATH"
 cp "$BINARY_PATH" "$BINARIES_DIR/current/dash-chat"
 echo "Current binary: $BINARIES_DIR/current/dash-chat"
