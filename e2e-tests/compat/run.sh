@@ -75,6 +75,12 @@ fi
 
 require_clean_tree
 
+# --- Step 0: Stash compat files that must survive git checkout ---
+
+COMPAT_TMP="$(mktemp -d)"
+cp "$ROOT/e2e-tests/compat/apply-patches.sh" "$COMPAT_TMP/apply-patches.sh"
+trap 'rm -rf "$COMPAT_TMP"' EXIT
+
 # --- Step 1: Build current version ---
 
 echo "=== Building current version ==="
@@ -107,7 +113,7 @@ for TAG in "${TAGS[@]}"; do
     git checkout "$TAG" 2>/dev/null || { echo "SKIP: tag $TAG not found"; FAILED_TAGS+=("$TAG"); continue; }
 
     echo "--- Applying patches ---"
-    bash "$ROOT/e2e-tests/compat/apply-patches.sh" || {
+    bash "$COMPAT_TMP/apply-patches.sh" || {
         echo "SKIP: patches failed for $TAG"
         git checkout "$ORIGINAL_BRANCH" 2>/dev/null
         FAILED_TAGS+=("$TAG")
