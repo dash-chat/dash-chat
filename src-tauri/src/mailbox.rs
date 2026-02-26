@@ -15,10 +15,14 @@ pub mod server;
 /// 2. `MAILBOX_URL` compile-time env var (dev builds via mprocs / start-dev.sh)
 /// 3. Production URL
 pub fn default_mailbox_url() -> String {
-    std::env::var("MAILBOX_URL")
-        .ok()
-        .or_else(|| option_env!("MAILBOX_URL").map(String::from))
-        .unwrap_or_else(|| PRODUCTION_MAILBOX_URL.to_string())
+    if let Ok(url) = std::env::var("MAILBOX_URL") {
+        return url;
+    }
+    if let Some(url) = option_env!("MAILBOX_URL") {
+        log::info!("Using compile-time MAILBOX_URL: {url}");
+        return url.to_string();
+    }
+    PRODUCTION_MAILBOX_URL.to_string()
 }
 
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(

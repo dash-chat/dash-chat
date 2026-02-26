@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Options } from '@wdio/types';
+import { allocateDriverPorts } from '../helpers/allocate-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..');
@@ -20,6 +21,8 @@ const specFile =
 		? path.join(E2E_DIR, 'specs', 'compat-setup.spec.ts')
 		: path.join(E2E_DIR, 'specs', 'compat-verify.spec.ts');
 
+const { port1, nativePort1, port2, nativePort2 } = allocateDriverPorts();
+
 let tauriDriver1: ChildProcess;
 let tauriDriver2: ChildProcess;
 
@@ -32,7 +35,7 @@ export const config: Options.Testrunner = {
 
 	capabilities: {
 		agent1: {
-			port: 4444,
+			port: port1,
 			capabilities: {
 				'platformName': process.platform === 'darwin' ? 'mac' : process.platform,
 				'tauri:options': {
@@ -41,7 +44,7 @@ export const config: Options.Testrunner = {
 			} as WebdriverIO.Capabilities,
 		},
 		agent2: {
-			port: 4446,
+			port: port2,
 			capabilities: {
 				'platformName': process.platform === 'darwin' ? 'mac' : process.platform,
 				'tauri:options': {
@@ -67,20 +70,20 @@ export const config: Options.Testrunner = {
 	beforeSession() {
 		tauriDriver1 = spawn(
 			'tauri-driver',
-			['--port', '4444', '--native-port', '4445'],
+			['--port', String(port1), '--native-port', String(nativePort1)],
 			{ stdio: ['ignore', 'pipe', 'pipe'] },
 		);
 		tauriDriver1.stderr?.on('data', (data: Buffer) => {
-			console.error(`[tauri-driver:4444] ${data.toString().trim()}`);
+			console.error(`[tauri-driver:${port1}] ${data.toString().trim()}`);
 		});
 
 		tauriDriver2 = spawn(
 			'tauri-driver',
-			['--port', '4446', '--native-port', '4447'],
+			['--port', String(port2), '--native-port', String(nativePort2)],
 			{ stdio: ['ignore', 'pipe', 'pipe'] },
 		);
 		tauriDriver2.stderr?.on('data', (data: Buffer) => {
-			console.error(`[tauri-driver:4446] ${data.toString().trim()}`);
+			console.error(`[tauri-driver:${port2}] ${data.toString().trim()}`);
 		});
 
 		return new Promise((resolve) => setTimeout(resolve, 500));

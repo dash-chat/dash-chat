@@ -17,7 +17,12 @@ procs:
       cargo run -p mailbox-server -- --db-path "$DEV_DBS_PATH/mailbox-server/mailbox.db" --addr 0.0.0.0:3000
   android:
     shell: |
-      export MAILBOX_URL="http://$(hostname -I | awk '{print $1}'):3000"
+      if command -v hostname &>/dev/null && hostname -I &>/dev/null; then
+        LOCAL_IP=$(hostname -I | awk '{print $1}')
+      else
+        LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "127.0.0.1")
+      fi
+      export MAILBOX_URL="http://$LOCAL_IP:3000"
       pnpm tauri android dev
     autostart: false
   logcat:

@@ -49,7 +49,7 @@ jobs:
         run: pnpm install
 
       - name: Build UI packages
-        run: pnpm --recursive build
+        run: pnpm -F ./packages/stores build
 
       - name: Build Tauri app (debug, no-bundle)
         run: pnpm tauri build --debug --no-bundle

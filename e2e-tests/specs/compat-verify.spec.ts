@@ -78,40 +78,21 @@ describe('Compat verify — check data with current version', () => {
 		const agent1 = browser.getInstance('agent1');
 		const agent2 = browser.getInstance('agent2');
 
-		// Wait for the chat list to load and check for contact names
-		const aliceSeeBob = await agent1.executeAsync(
-			(name: string, done: (r: boolean) => void) => {
-				const check = (attempts: number) => {
-					if (document.body.innerText.includes(name)) {
-						done(true);
-					} else if (attempts > 0) {
-						setTimeout(() => check(attempts - 1), 1000);
-					} else {
-						done(false);
-					}
-				};
-				check(15);
+		await agent1.waitUntil(
+			async () => {
+				const text = await agent1.execute(() => document.body.innerText);
+				return (text as string).includes(state.bobName);
 			},
-			state.bobName,
+			{ timeout: 15_000, interval: 1000, timeoutMsg: `Alice never saw "${state.bobName}" in chat list` },
 		);
-		expect(aliceSeeBob).toBe(true);
 
-		const bobSeeAlice = await agent2.executeAsync(
-			(name: string, done: (r: boolean) => void) => {
-				const check = (attempts: number) => {
-					if (document.body.innerText.includes(name)) {
-						done(true);
-					} else if (attempts > 0) {
-						setTimeout(() => check(attempts - 1), 1000);
-					} else {
-						done(false);
-					}
-				};
-				check(15);
+		await agent2.waitUntil(
+			async () => {
+				const text = await agent2.execute(() => document.body.innerText);
+				return (text as string).includes(state.aliceName);
 			},
-			state.aliceName,
+			{ timeout: 15_000, interval: 1000, timeoutMsg: `Bob never saw "${state.aliceName}" in chat list` },
 		);
-		expect(bobSeeAlice).toBe(true);
 	});
 
 	it('can send new messages after upgrade', async () => {

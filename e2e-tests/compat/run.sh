@@ -46,11 +46,8 @@ cleanup() {
 trap cleanup EXIT
 
 require_clean_tree() {
-    if ! git diff --quiet HEAD 2>/dev/null; then
-        die "Working tree is dirty. Commit or stash changes before running compat tests."
-    fi
-    if ! git diff --cached --quiet HEAD 2>/dev/null; then
-        die "Staged changes found. Commit or stash before running compat tests."
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+        die "Working tree is dirty (modified or untracked files). Commit or stash changes before running compat tests."
     fi
 }
 
@@ -100,6 +97,7 @@ fi
 # --- Process each tag ---
 
 FAILED_TAGS=()
+SKIPPED_TAGS=()
 PASSED_TAGS=()
 
 for TAG in "${TAGS[@]}"; do
@@ -118,23 +116,24 @@ for TAG in "${TAGS[@]}"; do
         # --- Build old version ---
 
         echo "--- Checking out $TAG ---"
-        git checkout "$TAG" 2>/dev/null || { echo "SKIP: tag $TAG not found"; FAILED_TAGS+=("$TAG"); continue; }
+        git checkout "$TAG" 2>/dev/null || { echo "SKIP: tag $TAG not found"; SKIPPED_TAGS+=("$TAG"); continue; }
 
         echo "--- Building $TAG ---"
         (pnpm install && pnpm --recursive build && pnpm tauri build --debug --no-bundle) || {
             echo "SKIP: build failed for $TAG"
             git checkout "$ORIGINAL_BRANCH" 2>/dev/null
-            FAILED_TAGS+=("$TAG")
+            SKIPPED_TAGS+=("$TAG")
             continue
         }
 
-        [ -f "$BINARY_PATH" ] || { echo "SKIP: binary not found for $TAG"; git checkout "$ORIGINAL_BRANCH" 2>/dev/null; FAILED_TAGS+=("$TAG"); continue; }
+        [ -f "$BINARY_PATH" ] || { echo "SKIP: binary not found for $TAG"; git checkout "$ORIGINAL_BRANCH" 2>/dev/null; SKIPPED_TAGS+=("$TAG"); continue; }
         cp "$BINARY_PATH" "$TAG_BINARY_DIR/dash-chat"
 
         echo "--- Returning to $ORIGINAL_BRANCH ---"
         git checkout "$ORIGINAL_BRANCH" 2>/dev/null || die "Failed to return to $ORIGINAL_BRANCH"
 
-        # Restore current node_modules after switching back
+        # Clean stale Rust artifacts from old version build, restore node_modules
+        cargo clean -p dash-chat -p dashchat-node
         pnpm install
     fi
 
@@ -233,8 +232,16 @@ if [ ${#PASSED_TAGS[@]} -gt 0 ]; then
     echo "PASSED: ${PASSED_TAGS[*]}"
 fi
 
+if [ ${#SKIPPED_TAGS[@]} -gt 0 ]; then
+    echo "SKIPPED (build failed): ${SKIPPED_TAGS[*]}"
+fi
+
 if [ ${#FAILED_TAGS[@]} -gt 0 ]; then
     echo "FAILED: ${FAILED_TAGS[*]}"
+    exit 1
+fi
+
+if [ ${#SKIPPED_TAGS[@]} -gt 0 ]; then
     exit 1
 fi
 
