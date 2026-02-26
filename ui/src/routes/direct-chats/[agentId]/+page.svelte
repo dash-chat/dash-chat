@@ -466,7 +466,7 @@
 	}
 </script>
 
-<div class="absolute inset-0">
+<div class="absolute inset-0" data-testid="direct-chat-page">
 	<Page class="messages-page">
 		{#await Promise.all([$myDeviceId, $peerProfile, $contactRequest]) then [myDeviceId, profile, contactRequest]}
 					{#if searchMode}

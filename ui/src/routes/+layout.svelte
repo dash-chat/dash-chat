@@ -32,7 +32,8 @@
 	import { setLocale } from '$lib/paraglide/runtime';
 	window.__setLocale = setLocale;
 
-	if (import.meta.env.DEV) {
+	// Register test utils in dev mode and E2E builds (VITE_E2E=1)
+	if (import.meta.env.DEV || import.meta.env.VITE_E2E) {
 		import('../../tests/setup-utils').then(({ registerTestUtils }) => registerTestUtils());
 	}
 
