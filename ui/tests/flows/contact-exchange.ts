@@ -52,6 +52,6 @@ export function getContactCode(): string | null {
 /** Paste a contact code and wait for the direct chat to open. */
 export async function addContact(contactCode: string): Promise<true> {
 	typeInto(steps.codeInput, contactCode);
-	await waitFor(S.directChat.messages);
+	await waitFor(S.directChat.page);
 	return true;
 }

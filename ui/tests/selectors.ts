@@ -23,6 +23,7 @@ export const S = {
 		codeInput: tid('add-contact-code-input'),
 	},
 	directChat: {
+		page: tid('direct-chat-page'),
 		back: tid('direct-chat-back'),
 		searchBack: tid('direct-chat-search-back'),
 		settingsLink: tid('direct-chat-settings-link'),
