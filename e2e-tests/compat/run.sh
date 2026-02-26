@@ -81,8 +81,18 @@ if [ "$ORIGINAL_BRANCH" = "HEAD" ]; then
     ORIGINAL_BRANCH=$(git rev-parse HEAD)
 fi
 
-# If version tags are given, we need a clean tree for git checkout
-if [ ${#TAGS[@]} -gt 0 ]; then
+# Check if any ref requires a checkout (i.e., resolves to a different commit than HEAD)
+CURRENT_SHA=$(git rev-parse HEAD)
+NEEDS_CHECKOUT=false
+for REF in "${REFS[@]}"; do
+    REF_SHA=$(git rev-parse "$REF" 2>/dev/null || echo "")
+    if [ "$REF_SHA" != "$CURRENT_SHA" ]; then
+        NEEDS_CHECKOUT=true
+        break
+    fi
+done
+
+if [ "$NEEDS_CHECKOUT" = "true" ]; then
     require_clean_tree
 fi
 
@@ -118,23 +128,29 @@ for REF in "${REFS[@]}"; do
     REF_BINARY_DIR="$BINARIES_DIR/$REF_LABEL"
     mkdir -p "$REF_BINARY_DIR"
 
-    # --- Step 2: Build ref version ---
+    # --- Step 2: Build ref version (or reuse current binary for HEAD) ---
 
-    echo "--- Checking out $REF ---"
-    git checkout "$REF" 2>/dev/null || { echo "SKIP: ref $REF not found"; FAILED_REFS+=("$REF_LABEL"); continue; }
+    REF_SHA=$(git rev-parse "$REF" 2>/dev/null || echo "")
+    if [ "$REF_SHA" = "$CURRENT_SHA" ]; then
+        echo "--- Ref $REF_LABEL is HEAD, reusing current binary ---"
+        cp "$BINARIES_DIR/current/dash-chat" "$REF_BINARY_DIR/dash-chat"
+    else
+        echo "--- Checking out $REF ---"
+        git checkout "$REF" 2>/dev/null || { echo "SKIP: ref $REF not found"; FAILED_REFS+=("$REF_LABEL"); continue; }
 
-    echo "--- Building $REF_LABEL ---"
-    (pnpm install && pnpm --recursive build && pnpm tauri build --debug --no-bundle) || {
-        echo "SKIP: build failed for $REF_LABEL"
+        echo "--- Building $REF_LABEL ---"
+        (pnpm install && pnpm --recursive build && pnpm tauri build --debug --no-bundle) || {
+            echo "SKIP: build failed for $REF_LABEL"
+            git checkout "$ORIGINAL_BRANCH" 2>/dev/null
+            FAILED_REFS+=("$REF_LABEL")
+            continue
+        }
+
+        [ -f "$BINARY_PATH" ] || { echo "SKIP: binary not found for $REF_LABEL"; git checkout "$ORIGINAL_BRANCH" 2>/dev/null; FAILED_REFS+=("$REF_LABEL"); continue; }
+        cp "$BINARY_PATH" "$REF_BINARY_DIR/dash-chat"
+
+        # Return to original branch and clean stale Rust artifacts
         git checkout "$ORIGINAL_BRANCH" 2>/dev/null
-        FAILED_REFS+=("$REF_LABEL")
-        continue
-    }
-
-    [ -f "$BINARY_PATH" ] || { echo "SKIP: binary not found for $REF_LABEL"; git checkout "$ORIGINAL_BRANCH" 2>/dev/null; FAILED_REFS+=("$REF_LABEL"); continue; }
-    cp "$BINARY_PATH" "$REF_BINARY_DIR/dash-chat"
-
-        # Clean stale Rust artifacts from old version build, restore node_modules
         cargo clean -p dash-chat -p dashchat-node
         pnpm install
     fi
@@ -165,11 +181,20 @@ for REF in "${REFS[@]}"; do
         sleep 1
     done
 
+    if [ "$MAILBOX_READY" != "true" ]; then
+        echo "FAIL: Mailbox server failed to start for $REF_LABEL"
+        kill "$MAILBOX_PID" 2>/dev/null || true
+        wait "$MAILBOX_PID" 2>/dev/null || true
+        MAILBOX_PID=""
+        FAILED_REFS+=("$REF_LABEL")
+        continue
+    fi
+
     # --- Step 5: Phase 1 — Setup with ref binary ---
 
     echo "--- Phase 1: Creating data with $REF_LABEL ---"
     chmod +x "$REF_BINARY_DIR/dash-chat"
-    chmod +x "$E2E_DIR/scripts/"*.sh
+    chmod +x "$E2E_DIR/compat/scripts/"*.sh
 
     PHASE1_OK=true
     COMPAT_BINARY="$REF_BINARY_DIR/dash-chat" \
@@ -182,6 +207,7 @@ for REF in "${REFS[@]}"; do
         echo "FAIL: Phase 1 (setup) failed for $REF_LABEL"
         kill "$MAILBOX_PID" 2>/dev/null || true
         wait "$MAILBOX_PID" 2>/dev/null || true
+        MAILBOX_PID=""
         FAILED_REFS+=("$REF_LABEL")
         continue
     fi
@@ -226,10 +252,6 @@ fi
 
 if [ ${#FAILED_REFS[@]} -gt 0 ]; then
     echo "FAILED: ${FAILED_REFS[*]}"
-    exit 1
-fi
-
-if [ ${#SKIPPED_TAGS[@]} -gt 0 ]; then
     exit 1
 fi
 
