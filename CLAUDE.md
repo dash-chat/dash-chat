@@ -396,6 +396,15 @@ Use `pnpm start` to run two instances locally that can communicate with each oth
 - **Mobile vs Desktop**: Code paths differ for mobile/desktop (check `#[cfg(mobile)]` and `#[cfg(not(mobile))]`)
 - **Internationalization**: UI supports multiple languages via Weblate integration
 
+## Releasing
+
+Use `scripts/release.sh` to cut a new release:
+```bash
+./scripts/release.sh 0.11.0
+```
+
+This updates the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the download links in `packages/site/index.html`, then commits, tags (`vX.Y.Z`), and pushes.
+
 ## Build Configuration
 
 ### Development
