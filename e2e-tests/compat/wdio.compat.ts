@@ -5,13 +5,14 @@ import type { Options } from '@wdio/types';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..');
-const ROOT = path.resolve(E2E_DIR, '..');
-const launchScript = path.join(E2E_DIR, 'scripts', 'launch-agent.sh');
-const binary = process.env.COMPAT_BINARY ?? '';
 
 const phase = process.env.COMPAT_PHASE;
 if (!phase || !['setup', 'verify'].includes(phase)) {
 	throw new Error('COMPAT_PHASE must be "setup" or "verify"');
+}
+
+if (!process.env.COMPAT_BINARY) {
+	throw new Error('COMPAT_BINARY env var required');
 }
 
 const specFile =
@@ -35,7 +36,7 @@ export const config: Options.Testrunner = {
 			capabilities: {
 				'platformName': 'linux',
 				'tauri:options': {
-					application: `${launchScript} ${path.join(ROOT, '.dbs', 'compat', 'agent-1')} ${binary}`,
+					application: path.join(__dirname, 'scripts', 'launch-agent1.sh'),
 				},
 			} as WebdriverIO.Capabilities,
 		},
@@ -44,7 +45,7 @@ export const config: Options.Testrunner = {
 			capabilities: {
 				'platformName': 'linux',
 				'tauri:options': {
-					application: `${launchScript} ${path.join(ROOT, '.dbs', 'compat', 'agent-2')} ${binary}`,
+					application: path.join(__dirname, 'scripts', 'launch-agent2.sh'),
 				},
 			} as WebdriverIO.Capabilities,
 		},

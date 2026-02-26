@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
 # Backwards compatibility E2E test orchestrator.
 #
-# Usage: ./run.sh v0.10.0 [v0.10.1 ...]
+# Usage: ./run.sh [version-tag ...]
 #
-# For each version tag:
-#   1. Builds the current version
-#   2. Checks out the old tag, patches it, builds it
-#   3. Returns to the original branch
-#   4. Starts a local mailbox server
-#   5. Runs Phase 1 (setup) with the old binary
-#   6. Runs Phase 2 (verify) with the current binary
-#   7. Cleans up
+# With no arguments, tests current-vs-current (smoke test).
+# With version tags, checks out each tag, builds it, then:
+#   Phase 1 (setup): creates data with the old binary
+#   Phase 2 (verify): verifies data with the current binary
 #
 # Environment:
 #   - Assumes all build tools (pnpm, cargo, etc.) are already available
@@ -58,28 +54,18 @@ run_wdio() {
     (cd "$E2E_DIR" && maybe_xvfb npx wdio run "$E2E_DIR/compat/wdio.compat.ts")
 }
 
-# --- Validate args ---
-
-if [ $# -eq 0 ]; then
-    echo "Usage: $0 <version-tag> [version-tag ...]"
-    echo "Example: $0 v0.10.0"
-    exit 1
-fi
+# --- Parse args ---
 
 TAGS=("$@")
 ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-# If detached HEAD, use commit hash instead
 if [ "$ORIGINAL_BRANCH" = "HEAD" ]; then
     ORIGINAL_BRANCH=$(git rev-parse HEAD)
 fi
 
-require_clean_tree
-
-# --- Step 0: Stash compat files that must survive git checkout ---
-
-COMPAT_TMP="$(mktemp -d)"
-cp "$ROOT/e2e-tests/compat/apply-patches.sh" "$COMPAT_TMP/apply-patches.sh"
-trap 'rm -rf "$COMPAT_TMP"' EXIT
+# If version tags are given, we need a clean tree for git checkout
+if [ ${#TAGS[@]} -gt 0 ]; then
+    require_clean_tree
+fi
 
 # --- Step 1: Build current version ---
 
@@ -92,6 +78,12 @@ BINARY_PATH="$ROOT/target/debug/dash-chat"
 [ -f "$BINARY_PATH" ] || die "Current binary not found at $BINARY_PATH"
 cp "$BINARY_PATH" "$BINARIES_DIR/current/dash-chat"
 echo "Current binary: $BINARIES_DIR/current/dash-chat"
+
+# --- If no tags, test current-vs-current ---
+
+if [ ${#TAGS[@]} -eq 0 ]; then
+    TAGS=("current")
+fi
 
 # --- Process each tag ---
 
@@ -107,42 +99,39 @@ for TAG in "${TAGS[@]}"; do
     TAG_BINARY_DIR="$BINARIES_DIR/$TAG"
     mkdir -p "$TAG_BINARY_DIR"
 
-    # --- Step 2: Build old version ---
+    if [ "$TAG" = "current" ]; then
+        # Already built — nothing to do
+        :
+    else
+        # --- Build old version ---
 
-    echo "--- Checking out $TAG ---"
-    git checkout "$TAG" 2>/dev/null || { echo "SKIP: tag $TAG not found"; FAILED_TAGS+=("$TAG"); continue; }
+        echo "--- Checking out $TAG ---"
+        git checkout "$TAG" 2>/dev/null || { echo "SKIP: tag $TAG not found"; FAILED_TAGS+=("$TAG"); continue; }
 
-    echo "--- Applying patches ---"
-    bash "$COMPAT_TMP/apply-patches.sh" "$ROOT" || {
-        echo "SKIP: patches failed for $TAG"
-        git checkout "$ORIGINAL_BRANCH" 2>/dev/null
-        FAILED_TAGS+=("$TAG")
-        continue
-    }
+        echo "--- Building $TAG ---"
+        (pnpm install && pnpm --recursive build && pnpm tauri build --debug --no-bundle) || {
+            echo "SKIP: build failed for $TAG"
+            git checkout "$ORIGINAL_BRANCH" 2>/dev/null
+            FAILED_TAGS+=("$TAG")
+            continue
+        }
 
-    echo "--- Building $TAG ---"
-    (pnpm install && pnpm --recursive build && pnpm tauri build --debug --no-bundle) || {
-        echo "SKIP: build failed for $TAG"
-        git checkout "$ORIGINAL_BRANCH" 2>/dev/null
-        FAILED_TAGS+=("$TAG")
-        continue
-    }
+        [ -f "$BINARY_PATH" ] || { echo "SKIP: binary not found for $TAG"; git checkout "$ORIGINAL_BRANCH" 2>/dev/null; FAILED_TAGS+=("$TAG"); continue; }
+        cp "$BINARY_PATH" "$TAG_BINARY_DIR/dash-chat"
 
-    [ -f "$BINARY_PATH" ] || { echo "SKIP: binary not found for $TAG"; git checkout "$ORIGINAL_BRANCH" 2>/dev/null; FAILED_TAGS+=("$TAG"); continue; }
-    cp "$BINARY_PATH" "$TAG_BINARY_DIR/dash-chat"
+        echo "--- Returning to $ORIGINAL_BRANCH ---"
+        git checkout "$ORIGINAL_BRANCH" 2>/dev/null || die "Failed to return to $ORIGINAL_BRANCH"
 
-    echo "--- Returning to $ORIGINAL_BRANCH ---"
-    git checkout "$ORIGINAL_BRANCH" 2>/dev/null || die "Failed to return to $ORIGINAL_BRANCH"
+        # Restore current node_modules after switching back
+        pnpm install
+    fi
 
-    # Restore current node_modules after switching back
-    pnpm install
-
-    # --- Step 3: Clean compat data dir ---
+    # --- Clean compat data dir ---
 
     rm -rf "$COMPAT_DB_DIR"
     mkdir -p "$COMPAT_DB_DIR"
 
-    # --- Step 4: Start mailbox server ---
+    # --- Start mailbox server ---
 
     MAILBOX_PORT=$(allocate_port)
     MAILBOX_URL="http://localhost:$MAILBOX_PORT"
@@ -161,11 +150,11 @@ for TAG in "${TAGS[@]}"; do
         sleep 1
     done
 
-    # --- Step 5: Phase 1 — Setup with old binary ---
+    # --- Phase 1 — Setup with old binary ---
 
     echo "--- Phase 1: Creating data with $TAG ---"
     chmod +x "$TAG_BINARY_DIR/dash-chat"
-    chmod +x "$E2E_DIR/scripts/"*.sh
+    chmod +x "$E2E_DIR/compat/scripts/"*.sh
 
     PHASE1_OK=true
     COMPAT_BINARY="$TAG_BINARY_DIR/dash-chat" \
@@ -182,7 +171,7 @@ for TAG in "${TAGS[@]}"; do
         continue
     fi
 
-    # --- Step 6: Phase 2 — Verify with current binary ---
+    # --- Phase 2 — Verify with current binary ---
 
     echo "--- Phase 2: Verifying with current version ---"
     PHASE2_OK=true
