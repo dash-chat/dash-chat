@@ -4,41 +4,42 @@ import { waitFor, typeInto, click } from '../helpers';
 /**
  * Contact exchange flow between two agents.
  *
- * Precondition: Both agents have created profiles.
+ * Precondition: Both agents have created profiles and are on the home page.
  *
  * Steps:
- *   1. On Agent 1: Navigate to add-contact page
- *      - From home: click S.home.contactsLink -> then S.contacts.addLink
- *      - Or directly navigate to /add-contact
- *
- *   2. On Agent 1: Copy the contact code
- *      - Wait for: S.addContact.copyButton
- *      - Get the QR code value: document.querySelector('wa-qr-code')?.getAttribute('value')
- *
- *   3. On Agent 2: Navigate to add-contact page (same as step 1)
- *
- *   4. On Agent 2: Paste Agent 1's code
- *      - Type into: S.addContact.codeInput + ' input'
- *      - This triggers automatic navigation to the direct chat
- *
- *   5. On Agent 1: Paste Agent 2's code (same as step 4 with swapped codes)
- *
- *   6. Verify: Both agents should see a direct chat with the other
+ *   1. Click new-message FAB to go to /new-message
+ *   2. Click add-contact item to go to /new-message/add-contact
+ *   3. Read the contact code from the QR element
+ *   4. Paste the other agent's code into the input
+ *   5. Wait for the direct chat to open
  */
 
 export const steps = {
-	contactsLink: S.home.contactsLink,
-	addContactLink: S.contacts.addLink,
+	newMessageFab: S.home.newMessageFab,
+	newMessageLink: S.home.newMessageLink,
+	addContactItem: S.newMessage.addContact,
 	copyButton: S.addContact.copyButton,
 	codeInput: `${S.addContact.codeInput} input`,
-	getCodeScript: `document.querySelector('wa-qr-code')?.value`,
 };
 
-/** Navigate from home to the add-contact page. */
+/** Navigate from home to the add-contact page via the UI. */
 export async function navigateToAddContact(): Promise<true> {
-	click(steps.contactsLink);
-	await waitFor(steps.addContactLink);
-	click(steps.addContactLink);
+	// On narrow screens (Material): FAB is visible
+	// On narrow screens (iOS) or wide screens: navbar link is visible
+	const fab = document.querySelector(steps.newMessageFab);
+	if (fab) {
+		(fab as HTMLElement).click();
+	} else {
+		const link = document.querySelector(steps.newMessageLink) as HTMLElement | null;
+		if (!link) {
+			throw new Error(
+				`navigateToAddContact: neither FAB (${steps.newMessageFab}) nor link (${steps.newMessageLink}) found in DOM`,
+			);
+		}
+		link.click();
+	}
+	await waitFor(steps.addContactItem);
+	click(steps.addContactItem);
 	await waitFor(steps.codeInput);
 	return true;
 }

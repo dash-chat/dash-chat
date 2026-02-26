@@ -1,9 +1,6 @@
 fn main() {
-    // Get the local IP address at compile time for dev builds
-    let local_ip = localip::get_local_ip()
-        .map(|ip| ip.to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string());
-    println!("cargo:rustc-env=LOCAL_IP_ADDRESS={}", local_ip);
+    // Rebuild when MAILBOX_URL changes (used as compile-time override for mobile dev)
+    println!("cargo:rerun-if-env-changed=MAILBOX_URL");
 
     tauri_build::build()
 }

@@ -15,7 +15,7 @@
       "Bash(grep *)",
       "Bash(AGENT=*)",
       "Bash(UI_PORT=*)",
-      "Bash(MAILBOX_PORT=*)",
+      "Bash(MAILBOX_URL=*)",
       "Bash(DEV_DBS_PATH=*)",
       "Bash(bash scripts/start-dev.sh)",
       "mcp__tauri__driver_session",

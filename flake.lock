@@ -53,6 +53,24 @@
         "nixpkgs-lib": "nixpkgs-lib_2"
       },
       "locked": {
+        "lastModified": 1769996383,
+        "narHash": "sha256-AnYjnFWgS49RlqX7LrC4uA+sCCDBj0Ry/WOJ5XWAsa0=",
+        "owner": "hercules-ci",
+        "repo": "flake-parts",
+        "rev": "57928607ea566b5db3ad13af0e57e921e6b12381",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hercules-ci",
+        "repo": "flake-parts",
+        "type": "github"
+      }
+    },
+    "flake-parts_3": {
+      "inputs": {
+        "nixpkgs-lib": "nixpkgs-lib_3"
+      },
+      "locked": {
         "lastModified": 1768135262,
         "narHash": "sha256-PVvu7OqHBGWN16zSi6tEmPwwHQ4rLPU9Plvs8/1TUBY=",
         "owner": "hercules-ci",
@@ -163,12 +181,12 @@
     "holonix": {
       "inputs": {
         "crane": "crane_2",
-        "flake-parts": "flake-parts_2",
+        "flake-parts": "flake-parts_3",
         "hc-scaffold": "hc-scaffold",
         "holochain": "holochain",
         "kitsune2": "kitsune2",
         "lair-keystore": "lair-keystore",
-        "nixpkgs": "nixpkgs_4",
+        "nixpkgs": "nixpkgs_5",
         "rust-overlay": "rust-overlay_2"
       },
       "locked": {
@@ -287,6 +305,21 @@
     },
     "nixpkgs-lib_2": {
       "locked": {
+        "lastModified": 1769909678,
+        "narHash": "sha256-cBEymOf4/o3FD5AZnzC3J9hLbiZ+QDT/KDuyHXVJOpM=",
+        "owner": "nix-community",
+        "repo": "nixpkgs.lib",
+        "rev": "72716169fe93074c333e8d0173151350670b824c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "nixpkgs.lib",
+        "type": "github"
+      }
+    },
+    "nixpkgs-lib_3": {
+      "locked": {
         "lastModified": 1765674936,
         "narHash": "sha256-k00uTP4JNfmejrCLJOwdObYC9jHRrr/5M/a/8L2EIdo=",
         "owner": "nix-community",
@@ -334,6 +367,22 @@
     },
     "nixpkgs_4": {
       "locked": {
+        "lastModified": 1771903837,
+        "narHash": "sha256-sdaqdnsQCv3iifzxwB22tUwN/fSHoN7j2myFW5EIkGk=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "e764fc9a405871f1f6ca3d1394fb422e0a0c3951",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-25.11",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_5": {
+      "locked": {
         "lastModified": 1768940263,
         "narHash": "sha256-sJERJIYTKPFXkoz/gBaBtRKke82h4DkX3BBSsKbfbvI=",
         "owner": "nixos",
@@ -356,6 +405,7 @@
         "nixos-generators": "nixos-generators",
         "nixpkgs": "nixpkgs_2",
         "rust-overlay": "rust-overlay",
+        "tauri-driver": "tauri-driver",
         "tauri-plugin-holochain": "tauri-plugin-holochain"
       }
     },
@@ -440,6 +490,25 @@
         "owner": "darksoil-studio",
         "ref": "main-0.6",
         "repo": "scaffolding",
+        "type": "github"
+      }
+    },
+    "tauri-driver": {
+      "inputs": {
+        "flake-parts": "flake-parts_2",
+        "nixpkgs": "nixpkgs_4"
+      },
+      "locked": {
+        "lastModified": 1772117279,
+        "narHash": "sha256-WDRmSTo8adjHYHi9Di1VVAqOJZZdZjogt/+MQKbhxtM=",
+        "owner": "dash-chat",
+        "repo": "tauri-driver",
+        "rev": "8e33c025a2685ef5dd0dfc036039b58b5ee253d9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "dash-chat",
+        "repo": "tauri-driver",
         "type": "github"
       }
     },

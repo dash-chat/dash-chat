@@ -1781,7 +1781,6 @@ dependencies = [
  "image",
  "jni",
  "libc",
- "localip",
  "log",
  "mailbox-client",
  "mailbox-server",
@@ -4550,12 +4549,6 @@ name = "litrs"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
-
-[[package]]
-name = "localip"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4f334bdde73abdaa7f51751218f7872d8e7c452144111e62726206bc0eaa76e"
 
 [[package]]
 name = "lock_api"

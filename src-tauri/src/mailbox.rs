@@ -2,9 +2,24 @@ use mdns_sd::{ServiceDaemon, ServiceInfo};
 use tauri::{AppHandle, Manager, Runtime};
 
 const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
+const PRODUCTION_MAILBOX_URL: &str =
+    "https://mailbox-server.production.dash-chat.dash-chat.garnix.me";
 
 #[cfg(not(mobile))]
 pub mod server;
+
+/// Returns the mailbox URL to use.
+///
+/// Resolution order:
+/// 1. `MAILBOX_URL` runtime env var (E2E tests)
+/// 2. `MAILBOX_URL` compile-time env var (dev builds via mprocs / start-dev.sh)
+/// 3. Production URL
+pub fn default_mailbox_url() -> String {
+    std::env::var("MAILBOX_URL")
+        .ok()
+        .or_else(|| option_env!("MAILBOX_URL").map(String::from))
+        .unwrap_or_else(|| PRODUCTION_MAILBOX_URL.to_string())
+}
 
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     handle: &AppHandle<R>,

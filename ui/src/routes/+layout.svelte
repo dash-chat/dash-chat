@@ -32,9 +32,8 @@
 	import { setLocale } from '$lib/paraglide/runtime';
 	window.__setLocale = setLocale;
 
-	if (import.meta.env.DEV) {
-		import('../../tests/setup-utils').then(({ registerTestUtils }) => registerTestUtils());
-	}
+	// Always register test utils so they're available in debug builds for E2E tests
+	import('../../tests/setup-utils').then(({ registerTestUtils }) => registerTestUtils());
 
 	let { children } = $props();
 

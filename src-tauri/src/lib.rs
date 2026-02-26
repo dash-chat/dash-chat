@@ -39,8 +39,10 @@ pub fn run() {
         if tauri::is_dev() {
             // MCP for Claude Code to control the tauri app
             builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+        } else if std::env::var("E2E_TEST").is_ok() {
+            // E2E tests run multiple built instances side-by-side;
+            // skip single-instance and production-only plugins.
         } else {
-            // In Dev, we usually have two instances
             builder = builder
                 .plugin(tauri_plugin_single_instance::init(
                     move |app, _argv, _cwd| {

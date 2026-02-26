@@ -7,6 +7,13 @@ dev:
 test:
     cd crates/dashchat-node && cargo nextest run
 
+e2e-test:
+    pnpm -F ./e2e-tests test
+
+# run backwards compatibility tests against version tags (e.g. just compat-test v0.10.0 v0.10.1)
+compat-test *TAGS:
+    bash e2e-tests/compat/run.sh {{TAGS}}
+
 # uninstall the android app via adb
 uninstall-android:
     adb uninstall studio.darksoil.dashchat
@@ -14,7 +21,7 @@ uninstall-android:
 # clean all paths used by the dev environment
 clean-dev:
     -@adb uninstall studio.darksoil.dashchat 2>/dev/null
-    rm -rf .dev-dbs
+    rm -rf .dbs/dev
 
 # builds dash chat as a CLI binary
 build-binary:

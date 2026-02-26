@@ -35,14 +35,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     let (notification_tx, mut notification_rx) = tokio::sync::mpsc::channel(100);
     let node = dashchat_node::Node::new(local_data_path, config, Some(notification_tx)).await?;
 
-    let mailbox_url = if tauri::is_dev() {
-        // Use the IP address of the compiling machine to support tauri android dev
-        // pointing to the compiling computer's IP address
-        let mailbox_port = std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
-        format!("http://{}:{}", env!("LOCAL_IP_ADDRESS"), mailbox_port)
-    } else {
-        "https://mailbox-server.production.dash-chat.dash-chat.garnix.me".to_string()
-    };
+    let mailbox_url = crate::mailbox::default_mailbox_url();
 
     let mailbox_client = ToyMailboxClient::new(DASHCHAT_MAILBOX_ID.to_string(), mailbox_url);
     node.mailboxes.register(mailbox_client).await;

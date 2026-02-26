@@ -1,23 +1,25 @@
 procs:
   agent1:
-    shell: DEV_DBS_PATH="$PWD/.dev-dbs" pnpm tauri dev
+    shell: pnpm tauri dev
     env:
-      AGENT: "1"
+      DATA_DIR: "$PWD/.dbs/dev/agent-1"
+      MAILBOX_URL: "http://localhost:3000"
   agent2:
-    shell: DEV_DBS_PATH="$PWD/.dev-dbs" pnpm tauri dev
+    shell: pnpm tauri dev
     env:
-      AGENT: "2"
+      DATA_DIR: "$PWD/.dbs/dev/agent-2"
+      MAILBOX_URL: "http://localhost:3000"
   ui: pnpm -F ./packages/stores build && pnpm -F ./ui start
   stores: pnpm -F ./packages/stores dev
   mailbox-server:
     shell: |
-      DEV_DBS_PATH="$PWD/.dev-dbs"
+      DEV_DBS_PATH="$PWD/.dbs/dev"
       cargo run -p mailbox-server -- --db-path "$DEV_DBS_PATH/mailbox-server/mailbox.db" --addr 0.0.0.0:3000
   android:
-    shell: DEV_DBS_PATH="$PWD/.dev-dbs" pnpm tauri android dev
+    shell: |
+      export MAILBOX_URL="http://$(hostname -I | awk '{print $1}'):3000"
+      pnpm tauri android dev
     autostart: false
-    env:
-      AGENT: "2"
   logcat:
     shell: just logcat
     autostart: false

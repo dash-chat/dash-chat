@@ -16,7 +16,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.4.0", default-features = false, features = [] }
-localip = "0.2"
 
 [dependencies]
 tauri = { version = "2.9", features = ["devtools", "tray-icon"] }
