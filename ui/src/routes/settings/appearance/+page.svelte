@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
+	import { localesWithName } from '$lib/utils/localization';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
 		BlockTitle,
@@ -25,10 +26,23 @@
 
 	const theme = $derived(useTheme());
 	let showThemeDialog = $state(false);
+	let showLanguageDialog = $state(false);
 
 	function setThemeAndClose(theme: PreferencesData['appearanceTheme']) {
-		store.setTheme(theme)
-		showThemeDialog = false
+		store.setTheme(theme);
+		showThemeDialog = false;
+	}
+
+	function setLanguageAndClose(language: string) {
+		store.setLanguage(language);
+		showLanguageDialog = false;
+	}
+	function nameFromLocale(locale:string) {
+		let ll = localesWithName.find(pair => pair.locale === locale)
+		if(ll) {
+			return ll.name
+		}
+		return ''
 	}
 </script>
 
@@ -57,9 +71,36 @@
 							onClick={() => (showThemeDialog = true)}
 							data-testid="appearance-theme"
 						/>
+						<ListItem
+							title={m.language()}
+							after={nameFromLocale(prefs.appearanceLanguage)}
+							link
+							chevron={false}
+							onClick={() => (showLanguageDialog = true)}
+							data-testid="appearance-language"
+						/>
 					</List>
 				</div>
 			</div>
+			<Dialog
+				opened={showLanguageDialog}
+				onBackdropClick={() => (showLanguageDialog = false)}
+			>
+				<List nested class="-mx-4">
+					{#each localesWithName as ln}
+						<ListItem label title={ln.name}>
+							{#snippet after()}
+								<Radio
+									component="div"
+									value={ln.name}
+									checked={ln.locale === prefs.appearanceLanguage}
+									onChange={() => setLanguageAndClose(ln.locale)}
+								/>
+							{/snippet}
+						</ListItem>
+					{/each}
+				</List>
+			</Dialog>
 			<Dialog
 				opened={showThemeDialog}
 				onBackdropClick={() => (showThemeDialog = false)}

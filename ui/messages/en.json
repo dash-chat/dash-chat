@@ -122,6 +122,7 @@
 	"areYouSureDeleteAccount": "Are you sure you want to delete your account?",
 	"accountDeleted": "Account deleted successfully.",
 	"errorDeleteAccount": "Failed to delete account. Please try again.",
+	"language": "Language",
 
 	"errorCreateContactCode": "Failed to create contact code. Please try again.",
 	"errorAddContact": "Failed to add contact. Please try again.",

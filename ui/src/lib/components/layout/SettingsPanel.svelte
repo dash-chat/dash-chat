@@ -110,7 +110,7 @@
 				link
 				linkProps={{ href: '/settings/appearance' }}
 				data-testid="settings-appearance-link"
-				title={"Appearance"}
+				title={m.appearance()}
 				chevron={false}
 				class={isActive('/settings/appearance') ? 'active' : ''}
 			>

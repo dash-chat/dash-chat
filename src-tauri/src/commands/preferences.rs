@@ -12,7 +12,6 @@ pub async fn get_preferences(node: State<'_, Node>) -> Result<serde_json::Map<St
     let preferences_file = fs::read_to_string(node.filesystem.preferences_path());
     if let Ok(contents) = preferences_file {
         if let Ok(mut val)  = serde_json::from_str::<serde_json::Map<String, Value>>(&contents) {
-            val.insert("mykey".to_string(), "myvalue".into());
             return Ok(val)
         }
     }

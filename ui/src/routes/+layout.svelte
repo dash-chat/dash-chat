@@ -24,7 +24,7 @@
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 
-	import { setLocale } from '$lib/paraglide/runtime';
+	import { setLocale, getLocale } from '$lib/paraglide/runtime';
 	window.__setLocale = setLocale;
 
 	if (import.meta.env.DEV) {
@@ -34,7 +34,7 @@
 	let { children } = $props();
 
 	const preferencesClient = new PreferencesClient();
-	const preferencesStore = new PreferencesStore(preferencesClient);
+	const preferencesStore = new PreferencesStore(preferencesClient, getLocale(), setLocale);
 	setContext('preferences-store', preferencesStore)
 
 	const logsClient = new TauriLogsClient<Payload>();
