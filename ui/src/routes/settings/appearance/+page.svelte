@@ -37,12 +37,12 @@
 		store.setLanguage(language);
 		showLanguageDialog = false;
 	}
-	function nameFromLocale(locale:string) {
-		let ll = localesWithName.find(pair => pair.locale === locale)
-		if(ll) {
-			return ll.name
+	function nameFromLocale(locale: string) {
+		let ll = localesWithName.find(pair => pair.locale === locale);
+		if (ll) {
+			return ll.name;
 		}
-		return ''
+		return '';
 	}
 </script>
 
@@ -86,6 +86,9 @@
 				opened={showLanguageDialog}
 				onBackdropClick={() => (showLanguageDialog = false)}
 			>
+				{#snippet title()}
+					{m.language()}
+				{/snippet}
 				<List nested class="-mx-4">
 					{#each localesWithName as ln}
 						<ListItem label title={ln.name}>
@@ -105,6 +108,9 @@
 				opened={showThemeDialog}
 				onBackdropClick={() => (showThemeDialog = false)}
 			>
+				{#snippet title()}
+					{m.appearance()}
+				{/snippet}
 				<List nested class="-mx-4">
 					<ListItem label title="System">
 						{#snippet after()}
