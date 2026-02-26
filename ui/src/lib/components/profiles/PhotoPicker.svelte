@@ -137,7 +137,7 @@
 	type="file"
 	accept="image/*"
 	bind:this={avatarFilePicker}
-	style="display: none"
+	class="hidden"
 	onchange={onAvatarUploaded}
 />
 

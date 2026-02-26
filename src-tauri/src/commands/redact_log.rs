@@ -1,5 +1,8 @@
 use regex::Regex;
+use std::io::{Read, Seek, SeekFrom};
 use tauri::{AppHandle, Manager};
+
+const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 
 const REDACTION_PATTERNS: &[&str] = &[
     // Hex strings (40+ chars) — public keys, hashes, signatures
@@ -26,6 +29,23 @@ const REDACTION_PATTERNS: &[&str] = &[
     r#""emoji"\s*:\s*"[^"]*""#,
 ];
 
+fn read_tail(path: &std::path::Path, max_bytes: u64) -> std::io::Result<String> {
+    let mut file = std::fs::File::open(path)?;
+    let len = file.metadata()?.len();
+    if len > max_bytes {
+        file.seek(SeekFrom::End(-(max_bytes as i64)))?;
+    }
+    let mut buf = String::new();
+    file.read_to_string(&mut buf)?;
+    if len > max_bytes {
+        // Drop the first partial line
+        if let Some(pos) = buf.find('\n') {
+            buf.drain(..=pos);
+        }
+    }
+    Ok(buf)
+}
+
 pub fn redact(content: &str) -> String {
     let mut redacted = content.to_owned();
     for pattern in REDACTION_PATTERNS {
@@ -43,8 +63,8 @@ pub fn get_redacted_log(app_handle: AppHandle) -> Result<String, String> {
         .map_err(|e| format!("Failed to resolve log dir: {e:?}"))?;
     let log_file = log_dir.join("Dash Chat.log");
 
-    let content =
-        std::fs::read_to_string(&log_file).map_err(|e| format!("Failed to read log: {e:?}"))?;
+    let content = read_tail(&log_file, MAX_LOG_BYTES)
+        .map_err(|e| format!("Failed to read log: {e:?}"))?;
 
     let redacted = redact(&content);
 
@@ -199,6 +219,37 @@ mod tests {
     fn preserves_non_sensitive_log_lines() {
         let input = "2024-02-15T10:30:00 INFO stream processing loop cancelled";
         assert_eq!(redact(input), input);
+    }
+
+    #[test]
+    fn read_tail_small_file() {
+        let dir = std::env::temp_dir().join("dashchat_test_read_tail_small");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("small.log");
+        std::fs::write(&path, "line1\nline2\nline3\n").unwrap();
+        let result = read_tail(&path, 1024).unwrap();
+        assert_eq!(result, "line1\nline2\nline3\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_tail_truncates_large_file() {
+        let dir = std::env::temp_dir().join("dashchat_test_read_tail_large");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("large.log");
+        // Write 100 bytes of padding then 3 meaningful lines
+        let padding = "x".repeat(90) + "\n";
+        let tail = "line_a\nline_b\nline_c\n";
+        std::fs::write(&path, format!("{padding}{tail}")).unwrap();
+        // Read only last 30 bytes — should drop the first partial line
+        let result = read_tail(&path, 30).unwrap();
+        assert!(
+            !result.contains('x'),
+            "padding should be truncated: {result}"
+        );
+        assert!(result.contains("line_b"), "should contain line_b: {result}");
+        assert!(result.contains("line_c"), "should contain line_c: {result}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

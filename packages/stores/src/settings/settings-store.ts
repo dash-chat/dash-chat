@@ -1,11 +1,10 @@
-import { reactive, signal } from 'signalium';
+import { reactive, relay, signal } from 'signalium';
 
-import type { ISettingsClient } from './settings-client.js';
+import type { ISettingsClient, Settings } from './settings-client.js';
 
 export type ColorScheme = 'light' | 'dark' | 'system';
 
 export class SettingsStore {
-	private settingsVersion = signal(0);
 	private systemDarkSignal = signal<boolean>(false);
 
 	constructor(public client: ISettingsClient) {
@@ -21,10 +20,19 @@ export class SettingsStore {
 		});
 	}
 
-	private settings = reactive(async () => {
-		this.settingsVersion.value;
-		return this.client.getSettings();
-	});
+	private settings = reactive(() =>
+		relay<Settings>((state) => {
+			this.client.getSettings().then((s) => {
+				state.value = s;
+			});
+
+			const unsubs = this.client.onSettingsUpdated((settings) => {
+				state.value = settings;
+			});
+
+			return unsubs;
+		}),
+	);
 
 	colorScheme = reactive(async (): Promise<ColorScheme> => {
 		const settings = await this.settings();
@@ -48,11 +56,9 @@ export class SettingsStore {
 
 	async setColorScheme(scheme: ColorScheme): Promise<void> {
 		await this.client.setSetting('color_scheme', scheme === 'system' ? null : scheme);
-		this.settingsVersion.value++;
 	}
 
 	async setQrColor(color: string): Promise<void> {
 		await this.client.setSetting('qr_color', color);
-		this.settingsVersion.value++;
 	}
 }

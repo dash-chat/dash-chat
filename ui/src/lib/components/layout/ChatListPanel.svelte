@@ -16,7 +16,7 @@
 	const theme = $derived(useTheme());
 </script>
 
-<div class="chat-list-panel">
+<div class="flex flex-col relative h-full">
 	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
@@ -50,12 +50,3 @@
 
 
 </div>
-
-<style>
-	.chat-list-panel {
-		display: flex;
-		flex-direction: column;
-		position: relative;
-		height: 100%;
-	}
-</style>

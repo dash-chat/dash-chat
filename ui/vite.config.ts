@@ -30,6 +30,7 @@ export default defineConfig(async () => ({
 		include: ['base64-js', 'cbor-web', 'blakejs', 'emittery'],
 	},
 	resolve: {
+		dedupe: ['svelte', 'svelte/internal', 'svelte/internal/client'],
 		alias: [
 			{
 				find: /^signalium$/,

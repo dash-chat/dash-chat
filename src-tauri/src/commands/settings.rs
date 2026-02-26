@@ -1,4 +1,4 @@
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 use crate::settings;
 
@@ -29,5 +29,10 @@ pub fn set_setting(key: String, value: serde_json::Value, app: AppHandle) -> Res
         .map_err(|err| format!("Invalid setting {key}: {err}"))?;
 
     settings::save_settings(&app, &settings);
+
+    let updated = serde_json::to_value(&settings)
+        .map_err(|err| format!("Failed to serialize settings: {err}"))?;
+    let _ = app.emit("settings://updated", updated);
+
     Ok(())
 }

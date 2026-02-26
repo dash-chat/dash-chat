@@ -138,9 +138,14 @@
 	}
 
 	async function shareCode(code: string) {
-		const name = await getMyName();
-		const color = await toPromise(settingsStore.qrColor);
-		await shareQrCode(code, color, name);
+		try {
+			const name = await getMyName();
+			const color = await toPromise(settingsStore.qrColor);
+			await shareQrCode(code, color, name);
+		} catch (e) {
+			console.error(e);
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
 	}
 
 	let imageFilePicker: HTMLInputElement;
@@ -336,8 +341,13 @@
 								<Button
 									tonal
 									onClick={async () => {
-										const name = await getMyName();
-										await saveQrCode(code, color, name);
+										try {
+											const name = await getMyName();
+											await saveQrCode(code, color, name);
+										} catch (e) {
+											console.error(e);
+											showToast(m.errorUnexpected(), 'unexpected', e);
+										}
 									}}
 									class="icon-only"
 									data-testid="add-contact-save-btn"

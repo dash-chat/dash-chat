@@ -105,8 +105,7 @@
 			<div class="flex gap-2 px-4 mt-6">
 				{#each feelings as emoji}
 					<button
-						class="emoji-btn"
-						class:selected={feeling === emoji}
+						class="flex items-center justify-center w-12 h-12 rounded-full border-none cursor-pointer [-webkit-tap-highlight-color:transparent] active:opacity-70 {feeling === emoji ? 'bg-[var(--k-color-brand-primary,#007aff)]' : 'bg-[var(--k-color-bg-300,rgba(128,128,128,0.15))]'}"
 						onclick={() => (feeling = feeling === emoji ? null : emoji)}
 						data-testid="contact-us-feeling-{emoji}"
 					>
@@ -147,26 +146,3 @@
 		{m.next()}
 	</Button>
 </Page>
-
-<style>
-	.emoji-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 48px;
-		height: 48px;
-		border-radius: 50%;
-		border: none;
-		background-color: var(--k-color-bg-300, rgba(128, 128, 128, 0.15));
-		cursor: pointer;
-		-webkit-tap-highlight-color: transparent;
-	}
-
-	.emoji-btn.selected {
-		background-color: var(--k-color-brand-primary, #007aff);
-	}
-
-	.emoji-btn:active {
-		opacity: 0.7;
-	}
-</style>

@@ -5,16 +5,36 @@ import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
 import QrCreator from 'qr-creator';
 import { m } from '$lib/paraglide/messages.js';
 
+const FONT_FAMILY = "-apple-system, 'Segoe UI', Roboto, sans-serif";
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+function sanitizeHexColor(color: string, fallback = '#007aff'): string {
+	return HEX_COLOR_RE.test(color) ? color : fallback;
+}
+
+function roundRect(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	r: number,
+) {
+	ctx.beginPath();
+	ctx.roundRect(x, y, w, h, r);
+	ctx.fill();
+}
+
 /**
- * Renders the QR code pattern to an SVG string using qr-creator's canvas output,
- * then builds a full share image as SVG with card, name, and subtitle.
+ * Renders the QR share image directly to a canvas and returns PNG bytes.
  */
-function buildShareSvg(
+function renderQrImage(
 	code: string,
-	qrColor: string,
+	rawColor: string,
 	name: string,
-): string {
-	// Render QR to a temporary canvas to extract the pattern
+): Promise<Uint8Array> {
+	const qrColor = sanitizeHexColor(rawColor);
+	// Render QR to a temporary canvas
 	const qrSize = 480;
 	const isWhite = qrColor === '#ffffff';
 	const qrFill = isWhite ? '#000000' : qrColor;
@@ -30,7 +50,6 @@ function buildShareSvg(
 		},
 		qrCanvas,
 	);
-	const qrDataUrl = qrCanvas.toDataURL('image/png');
 
 	// Layout dimensions
 	const imgWidth = 840;
@@ -54,66 +73,62 @@ function buildShareSvg(
 	const qrWhiteBottom = qrWhiteTop + whiteAreaSize;
 	const cardBottom = qrWhiteBottom + bottomMargin;
 	const cardHeight = cardBottom - cardTop;
-	const nameCenterY = qrWhiteBottom + bottomMargin / 2 - 18;
+	const nameCenterY = qrWhiteBottom + bottomMargin / 2;
 
 	const subtitleTop = cardBottom + 72;
 	const subtitleFontSize = 33;
 	const subtitle = m.shareQrCodeSubtitle();
 	const totalHeight = subtitleTop + subtitleFontSize + 90;
 
-	return `<svg xmlns="http://www.w3.org/2000/svg" width="${imgWidth}" height="${totalHeight}">
-	<rect width="${imgWidth}" height="${totalHeight}" fill="#e8e4f0" rx="0"/>
-	<rect x="${cardMargin}" y="${cardTop}" width="${cardWidth}" height="${cardHeight}" rx="${cardRadius}" fill="${qrColor}"/>
-	<rect x="${qrWhiteLeft}" y="${qrWhiteTop}" width="${whiteAreaSize}" height="${whiteAreaSize}" rx="${qrWhiteRadius}" fill="white"/>
-	<image href="${qrDataUrl}" x="${qrLeft}" y="${qrTop}" width="${qrDisplaySize}" height="${qrDisplaySize}"/>
-	<text x="${imgWidth / 2}" y="${nameCenterY}" text-anchor="middle" dominant-baseline="central" fill="${isWhite ? 'black' : 'white'}" font-family="-apple-system, 'Segoe UI', Roboto, sans-serif" font-size="${nameFontSize}" font-weight="bold">${escapeXml(name)}</text>
-	<text x="${imgWidth / 2}" y="${subtitleTop + subtitleFontSize}" text-anchor="middle" fill="#555555" font-family="-apple-system, 'Segoe UI', Roboto, sans-serif" font-size="${subtitleFontSize}">${escapeXml(subtitle)}</text>
-</svg>`;
-}
-
-function escapeXml(s: string): string {
-	return s
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;');
-}
-
-/**
- * Converts the SVG share image to PNG bytes via canvas.
- */
-async function renderQrImage(
-	code: string,
-	qrColor: string,
-	name: string,
-): Promise<Uint8Array> {
-	const svg = buildShareSvg(code, qrColor, name);
-	const blob = new Blob([svg], { type: 'image/svg+xml' });
-	const url = URL.createObjectURL(blob);
-
-	const img = new Image();
-	try {
-		await new Promise<void>((resolve, reject) => {
-			img.onload = () => resolve();
-			img.onerror = () => reject(new Error('Failed to load SVG'));
-			img.src = url;
-		});
-	} finally {
-		URL.revokeObjectURL(url);
-	}
-
+	// Draw everything directly to canvas
 	const canvas = document.createElement('canvas');
-	canvas.width = img.naturalWidth;
-	canvas.height = img.naturalHeight;
+	canvas.width = imgWidth;
+	canvas.height = totalHeight;
 	const ctx = canvas.getContext('2d')!;
-	ctx.drawImage(img, 0, 0);
 
-	const dataUrl = canvas.toDataURL('image/png');
-	const base64 = dataUrl.split(',')[1];
-	const raw = atob(base64);
-	const bytes = new Uint8Array(raw.length);
-	for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-	return bytes;
+	// Background
+	ctx.fillStyle = '#e8e4f0';
+	ctx.fillRect(0, 0, imgWidth, totalHeight);
+
+	// Card
+	ctx.fillStyle = qrColor;
+	roundRect(ctx, cardMargin, cardTop, cardWidth, cardHeight, cardRadius);
+
+	// White area behind QR
+	ctx.fillStyle = 'white';
+	roundRect(ctx, qrWhiteLeft, qrWhiteTop, whiteAreaSize, whiteAreaSize, qrWhiteRadius);
+
+	// QR code
+	ctx.drawImage(qrCanvas, qrLeft, qrTop, qrDisplaySize, qrDisplaySize);
+
+	// Name text
+	ctx.fillStyle = isWhite ? 'black' : 'white';
+	ctx.font = `bold ${nameFontSize}px ${FONT_FAMILY}`;
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	ctx.fillText(name, imgWidth / 2, nameCenterY);
+
+	// Subtitle text
+	ctx.fillStyle = '#555555';
+	ctx.font = `${subtitleFontSize}px ${FONT_FAMILY}`;
+	ctx.textBaseline = 'alphabetic';
+	ctx.fillText(subtitle, imgWidth / 2, subtitleTop + subtitleFontSize);
+
+	return new Promise((resolve, reject) => {
+		canvas.toBlob(
+			(blob) => {
+				if (!blob) {
+					reject(new Error('Failed to render QR image'));
+					return;
+				}
+				blob.arrayBuffer().then(
+					(buf) => resolve(new Uint8Array(buf)),
+					reject,
+				);
+			},
+			'image/png',
+		);
+	});
 }
 
 /**

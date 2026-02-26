@@ -24,6 +24,7 @@
 	let surname = $state<string | undefined>(undefined);
 	let avatar = $state<string | undefined>(undefined);
 	let about = $state<string>('');
+	let originalAbout = $state<string | undefined>(undefined);
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	$effect(() => {
@@ -76,7 +77,6 @@
 	}
 
 	const theme = $derived(useTheme());
-	let originalAbout = $state<string | undefined>(undefined);
 	const hasChanges = $derived(about !== originalAbout);
 </script>
 

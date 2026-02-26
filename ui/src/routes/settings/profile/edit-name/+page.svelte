@@ -28,12 +28,12 @@
 	let about = $state<string | undefined>(undefined);
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
-	myProfile.subscribe(m => {
-		m.then(myProfile => {
-			if (!name) name = myProfile?.name || '';
-			if (!surname) surname = myProfile?.surname;
-			if (!avatar) avatar = myProfile?.avatar;
-			if (!about) about = myProfile?.about;
+	$effect(() => {
+		$myProfile.then((profile) => {
+			if (!name) name = profile?.name || '';
+			if (!surname) surname = profile?.surname;
+			if (!avatar) avatar = profile?.avatar;
+			if (!about) about = profile?.about;
 		});
 	});
 
