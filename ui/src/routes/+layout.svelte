@@ -4,6 +4,7 @@
 
 	import '../app.css';
 	import { setContext } from 'svelte';
+
 	import {
 		ChatsClient,
 		ChatsStore,
@@ -14,6 +15,8 @@
 		ContactsStore,
 		DevicesClient,
 		DevicesStore,
+		SettingsClient,
+		SettingsStore,
 	} from 'dash-chat-stores';
 	import { App, KonstaProvider } from 'konsta/svelte';
 
@@ -21,7 +24,11 @@
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { useSignal } from '$lib/stores/use-signal';
+	import { applyDarkMode } from '$lib/utils/theme';
+	import { showToast } from '$lib/utils/toasts';
 
+	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
 	window.__setLocale = setLocale;
 
@@ -30,6 +37,9 @@
 	}
 
 	let { children } = $props();
+
+	const settingsStore = new SettingsStore(new SettingsClient());
+	setContext('settings-store', settingsStore);
 
 	const logsClient = new TauriLogsClient<Payload>();
 	const logsStore = new LogsStore<Payload>(logsClient);
@@ -50,15 +60,28 @@
 	const chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
 	setContext('chats-store', chatsStore);
 
+	const isDark = useSignal(settingsStore.isDark);
+
+	$effect(() => {
+		applyDarkMode($isDark).catch((e) => {
+			showToast(m.errorApplyStyle(), 'error');
+		});
+	});
+
 	let theme: 'ios' | 'material' = $state('material');
 
-	window.addEventListener('theme-change', (event: CustomEvent) => {
-		theme = event.detail.theme;
+	$effect(() => {
+		const handler = (event: CustomEvent) => {
+			theme = event.detail.theme;
+		};
+		window.addEventListener('theme-change', handler as EventListener);
+		return () => window.removeEventListener('theme-change', handler as EventListener);
 	});
+
 </script>
 
 <KonstaProvider {theme}>
-	<App safeAreas {theme} class={`k-${theme}`}>
+	<App safeAreas {theme} class={`k-${theme}`} dark={!!$isDark}>
 		<SplashscreenPrompt>
 			{#if isWideScreen.value}
 				<DesktopLayout>

@@ -8,7 +8,7 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60); // 5 minutes
 const MESSAGE_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60); // 7 days
 
 /// Spawns a background task that periodically cleans up old messages
-pub fn spawn_cleanup_task(db: Arc<Database>) {
+pub fn spawn_cleanup_task(db: Arc<Database>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(CLEANUP_INTERVAL);
 
@@ -19,7 +19,7 @@ pub fn spawn_cleanup_task(db: Arc<Database>) {
                 tracing::error!("Failed to cleanup old messages: {}", e);
             }
         }
-    });
+    })
 }
 
 /// Deletes all messages older than MESSAGE_MAX_AGE

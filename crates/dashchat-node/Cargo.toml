@@ -10,14 +10,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 mailbox-server = { path = "../mailbox-server" }
-
-anyhow = "1.0.95"
-thiserror = "2.0"
-async-trait = "0.1.85"
-derive_more = { version = "1.0.0", features = ["full"] }
-futures = "0.3"
 mailbox-client = { path = "../mailbox-client" }
-redb = "3.1"
 
 # p2panda-core = "0.3.1"
 # p2panda-discovery = { version = "0.3.1", features = ["mdns"] }
@@ -42,8 +35,14 @@ p2panda-sync = { git = "https://github.com/maackle/p2panda.git", branch = "dashc
 p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
   "test_utils",
 ] }
-tokio = { version = "1.43.0", features = ["fs"] }
 
+anyhow = "1.0.95"
+thiserror = "2.0"
+async-trait = "0.1.85"
+derive_more = { version = "1.0.0", features = ["full"] }
+futures = "0.3"
+redb = "3.1"
+tokio = { version = "1.43.0", features = ["fs"] }
 named-id = { git = "https://github.com/maackle/named-id.git" }
 base64 = "0.22"
 blake3 = "1.8.2"
@@ -57,9 +56,8 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 bytes = "1.11.0"
 sqlx = "0.8.6"
 
-
 tempfile = { version = "3.24", optional = true }
-
+nanoid = { version = "0.4", optional = true }
 
 [dev-dependencies]
 dashchat-node = { path = ".", features = ["testing"] }
@@ -71,7 +69,7 @@ pretty_assertions = "1.4.1"
 [features]
 default = ["testing", "instrument"]
 instrument = []
-testing = ["tempfile"]
+testing = ["tempfile", "nanoid"]
 p2p = []
 
 # patches go in the workspace Cargo.toml

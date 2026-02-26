@@ -30,19 +30,20 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: setup node
-        uses: actions/setup-node@v1
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - name: Setup node
+        uses: actions/setup-node@v4
         with:
           node-version: 20.12.2
+          cache: 'pnpm'
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@master
-        with:
-            version: 10.15.0  # Optional: specify a pnpm version
-            cache: true
-
-      - name: install Rust stable
+      - name: Install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
+        # Includes Swatinem/rust-cache by default
 
       - name: install dependencies
         run: |

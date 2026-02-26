@@ -23,8 +23,14 @@ const uiPort = parseInt(process.env.UI_PORT || '1420', 10);
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-	optimizeDeps: { exclude: ['../packages/dash-chat-stores'] },
+	optimizeDeps: {
+		exclude: ['dash-chat-stores'],
+		// Pre-include dash-chat-stores' transitive deps so Vite doesn't discover
+		// them at runtime and re-optimize, which causes duplicate module instances
+		include: ['base64-js', 'cbor-web', 'blakejs', 'emittery'],
+	},
 	resolve: {
+		dedupe: ['svelte', 'svelte/internal', 'svelte/internal/client'],
 		alias: [
 			{
 				find: /^signalium$/,

@@ -140,7 +140,7 @@
 		rounded
 		tonal
 		onClick={done}
-		style="position: fixed; bottom: 16px; right: 16px; width: auto"
+		class="fixed-action-btn"
 	>
 		{m.done()}
 	</Button>
