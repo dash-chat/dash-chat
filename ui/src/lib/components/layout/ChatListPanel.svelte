@@ -6,6 +6,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/AllChats.svelte';
+
 	import { Link, Navbar, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pushState } from '$app/navigation';
@@ -15,7 +16,7 @@
 	const theme = $derived(useTheme());
 </script>
 
-<div class="chat-list-panel">
+<div class="flex flex-col relative h-full">
 	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
@@ -45,13 +46,7 @@
 
 	<div class={theme==='ios' ? "mt-4": ''}></div>
 	
-	<AllChats></AllChats>
-</div>
+	<AllChats class="flex flex-1 flex-col"></AllChats>
 
-<style>
-	.chat-list-panel {
-		display: flex;
-		flex-direction: column;
-		position: relative;
-	}
-</style>
+
+</div>

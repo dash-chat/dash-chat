@@ -74,6 +74,7 @@
 	class="message-input-bar m-2 pb-safe"
 	class:ios={theme === 'ios'}
 	class:bg-md-light-surface={theme === 'material'}
+	class:dark:bg-md-dark-surface={theme === 'material'}
 >
 	<div
 		class="row gap-2"
@@ -81,8 +82,8 @@
 	>
 		<div
 			class={theme === 'ios'
-				? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg'
-				: 'input-container bg-white dark:bg-gray-400'}
+				? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+				: 'input-container bg-white dark:bg-gray-800'}
 		>
 			{#if onEmojiClick && !isIos}
 				<button

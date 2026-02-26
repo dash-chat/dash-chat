@@ -111,8 +111,7 @@
 			<Button
 				onClick={() => (currentPage = 'group-info')}
 				data-testid="new-group-next-btn"
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				class="fixed-action-btn"
 				rounded
 			>
 				{selectedContacts.length === 0 ? m.omit() : m.next()}
@@ -158,8 +157,7 @@
 			<Button
 				onClick={createGroupChat}
 				data-testid="new-group-create-btn"
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				class="fixed-action-btn"
 				rounded
 			>
 				{m.create()}

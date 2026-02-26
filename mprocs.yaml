@@ -19,5 +19,5 @@ procs:
     env:
       AGENT: "2"
   logcat:
-    shell: adb logcat | grep -F "`adb shell ps | grep studio.darksoil.dashchat | tr -s [:space:] ' ' | cut -d' ' -f2`"
+    shell: just logcat
     autostart: false

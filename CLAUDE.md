@@ -389,6 +389,7 @@ Use `pnpm start` to run two instances locally that can communicate with each oth
 
 ## Important Notes
 
+- **Log redaction**: The `get_redacted_log` command in `src-tauri/src/commands/logs.rs` strips sensitive data from log files before they are sent as error report attachments. This includes: hex strings, base64 blobs, public key byte arrays, hashes, signatures, device/agent IDs, timestamps, profile fields (name, surname, about), chat message content, and reactions. **When adding any new feature that introduces private or user-generated data, you must also update the redaction patterns in `get_redacted_log` to ensure that data never leaves the device in error reports.**
 - **P2panda fork**: This project uses a custom fork of p2panda. Do not update p2panda dependencies without checking compatibility.
 - **Rust edition**: Uses Rust edition 2021 (src-tauri) and 2024 (dashchat-node)
 - **Nightly features**: dashchat-node uses `#![feature(bool_to_result)]`
@@ -411,4 +412,6 @@ Optimized builds with:
 
 Translations managed through Weblate: https://hosted.weblate.org/projects/dash-chat
 Contact team at hello@dashchat.org to become a translation reviewer.
+
+**IMPORTANT:** Never modify non-English translation files. They are managed exclusively through Weblate and any manual changes will be overwritten. Only the English source strings (`en.json`) should be edited in code.
 

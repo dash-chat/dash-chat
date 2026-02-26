@@ -103,8 +103,7 @@
 		{#if theme === 'material'}
 			<Button
 				onClick={addMembers}
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				class="fixed-action-btn"
 				rounded
 				disabled={selectedContacts.length === 0}
 			>

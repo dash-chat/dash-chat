@@ -74,16 +74,16 @@
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const myAgentId = useReactivePromise(contactsStore.myAgentId);
-	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
 
-	const messagesSets = useReactivePromise(store.messageSets);
+	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const contactRequest = useReactivePromise(store.contactRequest);
-	const unreadCount = useReactivePromise(store.unreadCount);
+	const messagesSets = useReactivePromise(store.messageSets);
 	const readMessageHashes = useReactivePromise(store.readMessageHashes);
+	const unreadCount = useReactivePromise(store.unreadCount);
 
 	async function acceptContactRequest(contactRequest: ContactRequest) {
 		try {
@@ -103,7 +103,7 @@
 					showToast(m.errorAddContact(), 'error');
 					break;
 				default:
-					showToast(m.errorUnexpected(), 'error');
+					showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		}
 	}
@@ -121,7 +121,7 @@
 			});
 		} catch (e) {
 			console.error(e);
-			showToast(m.errorUnexpected(), 'error');
+			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
 
@@ -196,8 +196,8 @@
 			setTimeout(() => {
 				scrollToBottom();
 			});
-		} catch {
-			showToast(m.errorUnexpected(), 'error');
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
 	let t: ReturnType<typeof setTimeout> | undefined;
@@ -412,8 +412,8 @@
 		const newEmoji = currentReaction === emoji ? null : emoji;
 		try {
 			await store.sendReaction({ target: message.hash, emoji: newEmoji });
-		} catch {
-			showToast(m.errorUnexpected(), 'error');
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 		hideReactionUI();
 	}
@@ -468,9 +468,7 @@
 
 <div class="absolute inset-0">
 	<Page class="messages-page">
-		{#await $myDeviceId then myDeviceId}
-			{#await $peerProfile then profile}
-				{#await $contactRequest then contactRequest}
+		{#await Promise.all([$myDeviceId, $peerProfile, $contactRequest]) then [myDeviceId, profile, contactRequest]}
 					{#if searchMode}
 						<Navbar
 							transparent={true}
@@ -531,8 +529,7 @@
 					{/if}
 
 					<div class="column">
-						{#await $readMessageHashes then readHashes}
-							{#await $messagesSets then messagesSetsInDays}
+						{#await Promise.all([$readMessageHashes, $messagesSets]) then [readHashes, messagesSetsInDays]}
 								{@const unreadDivider = getUnreadDividerInfo(messagesSetsInDays, readHashes, myDeviceId)}
 								<div
 									use:scrolltobottom
@@ -847,12 +844,8 @@
 										{/each}
 									</div>
 								</div>
-							{/await}
 						{/await}
 					</div>
-				{/await}
-
-				{#await $contactRequest then contactRequest}
 					{#if contactRequest}
 						<Dialog
 							opened={showAcceptDialog}
@@ -959,8 +952,6 @@
 							</Block>
 						{/if}
 					</Sheet>
-				{/await}
-			{/await}
 		{/await}
 
 		<SafetyTipsSheet
@@ -978,7 +969,7 @@
 	</Page>
 
 	<!-- Overlay for bottom UI elements -->
-	{#await $contactRequest then contactRequest}
+	{#await Promise.all([$myDeviceId, $contactRequest]) then [myDeviceId, contactRequest]}
 		<div class="absolute inset-0 pointer-events-none">
 			{#if showScrollToBottom && !searchMode}
 				{#await $unreadCount then count}
@@ -1100,6 +1091,7 @@
 				<div
 					class="pointer-events-auto absolute bottom-0 left-0 right-0"
 					class:bg-md-light-surface={theme === 'material'}
+					class:dark:bg-md-dark-surface={theme === 'material'}
 				>
 					<MessageInput
 						bind:value={messageText}

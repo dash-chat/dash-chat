@@ -17,6 +17,7 @@
       "Bash(UI_PORT=*)",
       "Bash(MAILBOX_PORT=*)",
       "Bash(DEV_DBS_PATH=*)",
+      "Bash(bash scripts/start-dev.sh)",
       "mcp__tauri__driver_session",
       "mcp__tauri__webview_screenshot",
       "mcp__tauri__webview_dom_snapshot",

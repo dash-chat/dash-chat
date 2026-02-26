@@ -10,6 +10,7 @@ mod mailbox;
 mod menu;
 #[cfg(mobile)]
 mod push_notifications;
+#[cfg(not(mobile))]
 mod tray;
 
 const DASHCHAT_MAILBOX_ID: &str = "dashchat-mailbox";
@@ -30,7 +31,8 @@ pub fn run() {
     {
         builder = builder
             .plugin(tauri_plugin_virtual_keyboard_padding::init())
-            .plugin(tauri_plugin_barcode_scanner::init());
+            .plugin(tauri_plugin_barcode_scanner::init())
+            .plugin(tauri_plugin_system_bars_styles::init());
     }
     #[cfg(not(mobile))]
     {
@@ -64,6 +66,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::logs::get_log,
             commands::logs::get_authors,
+            commands::redact_log::get_redacted_log,
             commands::profile::set_profile,
             commands::devices::my_device_group_topic,
             commands::contacts::my_device_id,
@@ -76,6 +79,8 @@ pub fn run() {
             commands::direct_chats::direct_chat_send_message,
             commands::chats::mark_messages_read,
             commands::direct_chats::direct_chat_send_reaction,
+            commands::settings::get_settings,
+            commands::settings::set_setting,
             // commands::chats::create_group,
             // commands::group_chat::add_member,
             // commands::group_chat::send_message,
@@ -88,6 +93,23 @@ pub fn run() {
                 .level_for("mailbox_client", log::LevelFilter::Debug)
                 .level_for("mailbox_server", log::LevelFilter::Debug)
                 .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
+                // This is the default formatter for desktop, also use it in mobile platforms to record time
+                // in the log file, as the logcat timestamp does not get included there
+                .format(move |out, message, record| {
+                    let format = time::macros::format_description!(
+                        "[[[year]-[month]-[day]][[[hour]:[minute]:[second]]"
+                    );
+                    out.finish(format_args!(
+                        "{}[{}][{}] {}",
+                        tauri_plugin_log::TimezoneStrategy::UseUtc
+                            .get_now()
+                            .format(&format)
+                            .unwrap(),
+                        record.target(),
+                        record.level(),
+                        message
+                    ))
+                })
                 .build(),
         )
         // .plugin(tauri_plugin_deep_link::init())
@@ -95,6 +117,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_sharekit::init())
+        .plugin(tauri_plugin_mailto::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(move |app| {
             let handle = app.handle().clone();
             let result: anyhow::Result<()> =
