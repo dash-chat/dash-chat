@@ -1,5 +1,6 @@
 use dashchat_node::{
-    topic::kind::Inbox, AddContactError, AgentId, DeviceId, Error, Node, QrCode, ShareIntent, Topic,
+    topic::kind::Inbox, AddContactError, AgentId, ContactCode, ContactCodeError, DeviceId, Error,
+    Node, Topic,
 };
 use std::collections::BTreeSet;
 use tauri::State;

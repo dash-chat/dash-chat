@@ -5,7 +5,7 @@ use redb::*;
 
 use crate::{
     contact::InboxTopic,
-    topic::{AutoRegisteredTopic, TopicId},
+    topic::{AutoRegisteredTopic, TopicId, kind},
     *,
 };
 
