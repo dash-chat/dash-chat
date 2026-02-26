@@ -113,7 +113,7 @@ for TAG in "${TAGS[@]}"; do
     git checkout "$TAG" 2>/dev/null || { echo "SKIP: tag $TAG not found"; FAILED_TAGS+=("$TAG"); continue; }
 
     echo "--- Applying patches ---"
-    bash "$COMPAT_TMP/apply-patches.sh" || {
+    bash "$COMPAT_TMP/apply-patches.sh" "$ROOT" || {
         echo "SKIP: patches failed for $TAG"
         git checkout "$ORIGINAL_BRANCH" 2>/dev/null
         FAILED_TAGS+=("$TAG")

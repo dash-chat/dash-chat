@@ -12,7 +12,8 @@
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# ROOT can be passed as first argument (needed when script is copied to a temp dir)
+ROOT="${1:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 fail() { echo "PATCH FAILED: $1" >&2; exit 1; }
 
