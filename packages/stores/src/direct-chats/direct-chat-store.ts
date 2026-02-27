@@ -33,10 +33,7 @@ export class DirectChatStore {
 	peerProfile = reactive(async () => {
 		const request = await this.contactRequest();
 		if (request) return request.profile;
-		const profile = await this.contactsStore.profiles(this.peer);
-		if (profile) return profile;
-		// Fallback: check inbox for profile from contact request (works offline)
-		return await this.contactsStore.inboxProfile(this.peer);
+		return await this.contactsStore.profiles(this.peer);
 	});
 
 	contactRequest = reactive(async () => {

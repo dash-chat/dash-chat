@@ -149,7 +149,7 @@ export class ContactsStore {
 	});
 
 	/** Get a profile from inbox contact requests for a given agent, regardless of acceptance status. */
-	inboxProfile = reactive(async (agentId: AgentId) => {
+	private inboxProfile = reactive(async (agentId: AgentId) => {
 		const activeInboxTopics = await this.activeInboxTopics();
 
 		const allLogs = await Promise.all(
@@ -205,7 +205,8 @@ export class ContactsStore {
 		const lastOperation = descendantSortedOperations[0];
 
 		if (!lastOperation) {
-			return undefined;
+			// Fallback: use profile from inbox contact request if personal topic hasn't synced
+			return await this.inboxProfile(agentId);
 		}
 
 		const profile: Profile = lastOperation[1];
