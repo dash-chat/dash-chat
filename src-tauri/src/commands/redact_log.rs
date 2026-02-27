@@ -1,33 +1,39 @@
 use regex::Regex;
 use std::io::{Read, Seek, SeekFrom};
+use std::sync::LazyLock;
 use tauri::{AppHandle, Manager};
 
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 
-const REDACTION_PATTERNS: &[&str] = &[
-    // Hex strings (40+ chars) — public keys, hashes, signatures
-    r"[0-9a-fA-F]{40,}",
-    // Base64 blobs (40+ chars)
-    r"[A-Za-z0-9+/]{40,}={0,2}",
-    // DeviceId and AgentId wrappers (must precede bare PublicKey/Hash patterns)
-    r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
-    // Debug-formatted byte arrays: PublicKey([1, 2, ...]), Hash([...]), Signature([...])
-    r"(PublicKey|Hash|Signature)\(\[[\d, ]+\]\)",
-    // Timestamps (seconds or microseconds since epoch, 10+ digits)
-    r#""?timestamp"?\s*:?\s*\d{10,}"#,
-    // Debug format: name/surname/about fields with quoted values
-    r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
-    // Debug format: ChatMessageContent("...")
-    r#"ChatMessageContent\("[^"]*"\)"#,
-    // Debug format: emoji: Some("...")
-    r#"emoji:\s*Some\("[^"]*"\)"#,
-    // JSON format: "name":"...", "surname":"...", "about":"..."
-    r#""(name|surname|about)"\s*:\s*"[^"]*""#,
-    // JSON format: "content":"..."
-    r#""content"\s*:\s*"[^"]*""#,
-    // JSON format: "emoji":"..."
-    r#""emoji"\s*:\s*"[^"]*""#,
-];
+static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    [
+        // Hex strings (40+ chars) — public keys, hashes, signatures
+        r"[0-9a-fA-F]{40,}",
+        // Base64 blobs (40+ chars)
+        r"[A-Za-z0-9+/]{40,}={0,2}",
+        // DeviceId and AgentId wrappers (must precede bare PublicKey/Hash patterns)
+        r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
+        // Debug-formatted byte arrays: PublicKey([1, 2, ...]), Hash([...]), Signature([...])
+        r"(PublicKey|Hash|Signature)\(\[[\d, ]+\]\)",
+        // Timestamps (seconds or microseconds since epoch, 10+ digits)
+        r#""?timestamp"?\s*:?\s*\d{10,}"#,
+        // Debug format: name/surname/about fields with quoted values
+        r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
+        // Debug format: ChatMessageContent("...")
+        r#"ChatMessageContent\("[^"]*"\)"#,
+        // Debug format: emoji: Some("...")
+        r#"emoji:\s*Some\("[^"]*"\)"#,
+        // JSON format: "name":"...", "surname":"...", "about":"..."
+        r#""(name|surname|about)"\s*:\s*"[^"]*""#,
+        // JSON format: "content":"..."
+        r#""content"\s*:\s*"[^"]*""#,
+        // JSON format: "emoji":"..."
+        r#""emoji"\s*:\s*"[^"]*""#,
+    ]
+    .iter()
+    .map(|p| Regex::new(p).expect("invalid redaction pattern"))
+    .collect()
+});
 
 fn read_tail(path: &std::path::Path, max_bytes: u64) -> std::io::Result<String> {
     let mut file = std::fs::File::open(path)?;
@@ -48,8 +54,7 @@ fn read_tail(path: &std::path::Path, max_bytes: u64) -> std::io::Result<String> 
 
 pub fn redact(content: &str) -> String {
     let mut redacted = content.to_owned();
-    for pattern in REDACTION_PATTERNS {
-        let re = Regex::new(pattern).unwrap();
+    for re in REDACTION_REGEXES.iter() {
         redacted = re.replace_all(&redacted, "[REDACTED]").into_owned();
     }
     redacted

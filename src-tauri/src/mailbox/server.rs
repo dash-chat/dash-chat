@@ -31,7 +31,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     let mut mdns_fullname = String::new();
     for attempt in 1..=3 {
         port = free_port()?;
-        let service = mdns_service_info(port, handle);
+        let service = mdns_service_info(port, handle)?;
         let fullname = service.get_fullname().to_string();
         log::info!(
             "Registering local mailbox service via mdns: {} ({})",
@@ -85,7 +85,7 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
     };
     log::info!("Sending stop signal to local mailbox...");
     let _ = state.stop_signal.send(());
-    state.server.await.unwrap();
+    state.server.await?;
     if let Err(e) = handle
         .state::<ServiceDaemon>()
         .unregister(&state.mdns_fullname)
@@ -102,19 +102,18 @@ fn free_port() -> anyhow::Result<u16> {
     Ok(listener.local_addr()?.port())
 }
 
-fn mdns_service_info<R: Runtime>(port: u16, _handle: &AppHandle<R>) -> ServiceInfo {
+fn mdns_service_info<R: Runtime>(port: u16, _handle: &AppHandle<R>) -> anyhow::Result<ServiceInfo> {
     let instance_name = nanoid::nanoid!(7);
 
     let host_name = "0.0.0.0.local.";
 
-    ServiceInfo::new(
+    Ok(ServiceInfo::new(
         super::MDNS_SERVICE_TYPE,
         &instance_name,
         host_name,
         "",
         port,
         vec![],
-    )
-    .unwrap()
-    .enable_addr_auto()
+    )?
+    .enable_addr_auto())
 }

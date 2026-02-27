@@ -15,6 +15,7 @@ import { waitFor, waitForText, typeInto, click, nextTick } from './helpers';
 import { createProfile } from './flows/profile-creation';
 import { navigateToAddContact, getContactCode, addContact } from './flows/contact-exchange';
 import { sendMessage, waitForMessage } from './flows/send-message';
+import { openDirectChat } from './flows/open-chat';
 
 export const testUtils = {
 	waitFor,
@@ -28,6 +29,7 @@ export const testUtils = {
 	addContact,
 	sendMessage,
 	waitForMessage,
+	openDirectChat,
 };
 
 declare global {

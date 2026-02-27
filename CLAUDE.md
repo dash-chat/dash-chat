@@ -77,6 +77,7 @@ adb logcat | grep -F "`adb shell ps | grep studio.darksoil.dashchat | tr -s [:sp
 This is a pnpm workspace with multiple packages:
 - **ui/**: Svelte 5 + TypeScript frontend (SvelteKit application)
 - **packages/stores/**: Shared TypeScript stores for state management
+- **e2e-tests/**: WebdriverIO E2E test suite
 - **crates/dashchat-node/**: Core p2p backend logic (Rust)
 - **crates/mailbox-server/**: HTTP server for offline message storage
 - **src-tauri/**: Tauri application wrapper and integration layer
@@ -370,6 +371,54 @@ Run tests from workspace root. Tests use tokio async runtime.
 ### Development Testing
 Use `pnpm start` to run two instances locally that can communicate with each other over the p2panda network.
 
+### E2E Tests (WebdriverIO)
+
+The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO + `tauri-driver`. Tests launch two built Tauri instances and exercise the full messaging flow (profile creation, contact exchange, messaging).
+
+```bash
+# Build the app first (debug, no-bundle)
+pnpm tauri build --debug --no-bundle
+
+# Run E2E tests (builds automatically unless SKIP_BUILD=1)
+cd e2e-tests && pnpm test
+
+# Skip the build step (useful when binary is already built)
+cd e2e-tests && SKIP_BUILD=1 pnpm test
+```
+
+**Key details:**
+- Tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`
+- Two `tauri-driver` instances run on ports 4444 and 4446
+- Launch scripts (`e2e-tests/scripts/`) set `DATA_DIR` and `E2E_TEST` env vars
+- Test data is stored in `.dbs/e2e/` and cleaned up after each run
+
+**REQUIREMENT:** New UI features must include E2E test coverage in `e2e-tests/specs/`.
+
+### Backwards Compatibility Tests
+
+The `e2e-tests/compat/` directory contains tests that verify data created by older versions can be read by the current version. This catches breaking changes to the data model before they ship.
+
+```bash
+# Run compat test against a specific version tag
+cd e2e-tests && bash compat/run.sh v0.10.0
+
+# Test multiple versions
+cd e2e-tests && bash compat/run.sh v0.10.0 v0.10.1
+```
+
+**How it works:**
+1. Builds the current version and the old version (with patches for E2E support)
+2. Phase 1 (setup): Creates profiles, contacts, and messages using the old binary
+3. Phase 2 (verify): Launches the current binary against the same data and verifies everything persisted
+4. Data is stored in `.dbs/compat/` with state saved to `state.json` between phases
+
+**Key files:**
+- `compat/run.sh` — Orchestrator script (entry point)
+- `compat/apply-patches.sh` — Patches old versions for E2E support (DATA_DIR, E2E_TEST, MAILBOX_URL, registerTestUtils)
+- `compat/wdio.compat.ts` — WDIO config (reads COMPAT_PHASE and COMPAT_BINARY env vars)
+- `specs/compat-setup.spec.ts` — Phase 1: create data with old version
+- `specs/compat-verify.spec.ts` — Phase 2: verify with current version
+
 ### Verifying UI Features
 
 **REQUIREMENT:** Every time you make UI changes, you MUST start the app, visually verify that the feature works correctly and looks polished, and then kill the dev processes when done. Do not skip this step.
@@ -395,6 +444,15 @@ Use `pnpm start` to run two instances locally that can communicate with each oth
 - **Nightly features**: dashchat-node uses `#![feature(bool_to_result)]`
 - **Mobile vs Desktop**: Code paths differ for mobile/desktop (check `#[cfg(mobile)]` and `#[cfg(not(mobile))]`)
 - **Internationalization**: UI supports multiple languages via Weblate integration
+
+## Releasing
+
+Use `scripts/release.sh` to cut a new release:
+```bash
+./scripts/release.sh 0.11.0
+```
+
+This updates the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the download links in `packages/site/index.html`, then commits, tags (`vX.Y.Z`), and pushes.
 
 ## Build Configuration
 
