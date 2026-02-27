@@ -28,12 +28,16 @@
 	let about = $state<string | undefined>(undefined);
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
-	myProfile.subscribe(m => {
-		m.then(myProfile => {
-			if (!name) name = myProfile?.name || '';
-			if (!surname) surname = myProfile?.surname;
-			if (!avatar) avatar = myProfile?.avatar;
-			if (!about) about = myProfile?.about;
+	let initialized = false;
+	$effect(() => {
+		$myProfile.then((profile) => {
+			if (!initialized) {
+				initialized = true;
+				name = profile?.name || '';
+				surname = profile?.surname;
+				avatar = profile?.avatar;
+				about = profile?.about;
+			}
 		});
 	});
 
@@ -54,7 +58,7 @@
 					showToast(m.errorSetProfile(), 'error');
 					break;
 				default:
-					showToast(m.errorUnexpected(), 'error');
+					showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		}
 	}
@@ -118,11 +122,10 @@
 		{#if theme === 'material'}
 			<Button
 				onClick={save}
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				class="fixed-action-btn"
 				rounded
 				data-testid="edit-name-save-btn"
-				disabled={myProfile?.name === name && myProfile.surname === surname}
+				disabled={myProfile?.name === name && myProfile?.surname === surname}
 			>
 				{m.save()}
 			</Button>

@@ -73,14 +73,12 @@
 		{#snippet subnavbar()}
 			<Segmented strong>
 				<SegmentedButton
-					strong
 					active={activeTab === 'text'}
 					onClick={() => (activeTab = 'text')}
 				>
 					{m.text()}
 				</SegmentedButton>
 				<SegmentedButton
-					strong
 					active={activeTab === 'color'}
 					onClick={() => (activeTab = 'color')}
 				>
@@ -140,7 +138,7 @@
 		rounded
 		tonal
 		onClick={done}
-		style="position: fixed; bottom: 16px; right: 16px; width: auto"
+		class="fixed-action-btn"
 	>
 		{m.done()}
 	</Button>

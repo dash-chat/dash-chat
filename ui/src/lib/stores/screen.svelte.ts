@@ -9,6 +9,12 @@ mediaQuery?.addEventListener('change', (e) => {
 	wide = e.matches;
 });
 
+if (typeof window !== 'undefined') {
+	window.addEventListener('set-wide-screen', ((e: CustomEvent<boolean>) => {
+		wide = e.detail;
+	}) as EventListener);
+}
+
 export const isWideScreen = {
 	get value() {
 		return wide;

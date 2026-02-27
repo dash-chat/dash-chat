@@ -1,6 +1,4 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import type { ContactsStore, Error } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -8,14 +6,14 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import {
 		Button,
-		Card,
 		Link,
+		List,
+		ListInput,
+		ListItem,
 		Navbar,
 		NavbarBackLink,
 		Page,
 		Preloader,
-		ListInput,
-		List,
 		useTheme,
 	} from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
@@ -25,17 +23,40 @@
 	let name = $state<string>('');
 	let surname = $state<string | undefined>(undefined);
 	let avatar = $state<string | undefined>(undefined);
-	let about = $state<string | undefined>(undefined);
+	let about = $state<string>('');
+	let originalAbout = $state<string | undefined>(undefined);
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
-	myProfile.subscribe(m => {
-		m.then(myProfile => {
-			if (!name) name = myProfile?.name || '';
-			if (!surname) surname = myProfile?.surname;
-			if (!avatar) avatar = myProfile?.avatar;
-			if (about === undefined) about = myProfile?.about;
+	let initialized = false;
+	$effect(() => {
+		$myProfile.then((profile) => {
+			if (!initialized) {
+				initialized = true;
+				name = profile?.name || '';
+				surname = profile?.surname;
+				avatar = profile?.avatar;
+				about = profile?.about || '';
+				originalAbout = profile?.about || '';
+			}
 		});
 	});
+
+	const presets = [
+		{ emoji: '\u{1F44B}', label: () => m.aboutSpeakFreely() },
+		{ emoji: '\u{1F910}', label: () => m.aboutEncrypted() },
+		{ emoji: '\u{1F64F}', label: () => m.aboutBeKind() },
+		{ emoji: '\u2615', label: () => m.aboutCoffeeLover() },
+		{ emoji: '\u{1F44D}', label: () => m.aboutFreeToChat() },
+		{ emoji: '\u{1F6D1}', label: () => m.aboutTakingABreak() },
+	];
+
+	function selectPreset(emoji: string, label: string) {
+		about = `${emoji} ${label}`;
+	}
+
+	function clearAbout() {
+		about = '';
+	}
 
 	async function save() {
 		try {
@@ -54,11 +75,13 @@
 					showToast(m.errorSetProfile(), 'error');
 					break;
 				default:
-					showToast(m.errorUnexpected(), 'error');
+					showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		}
 	}
+
 	const theme = $derived(useTheme());
+	const hasChanges = $derived(about !== originalAbout);
 </script>
 
 <Page>
@@ -69,17 +92,18 @@
 		>
 			<Preloader />
 		</div>
-	{:then myProfile}
+	{:then}
 		<Navbar
 			title={m.about()}
 			titleClass="opacity1"
 			transparent={true}
-			rightClass={myProfile?.about === about
-				? 'pointer-events-none opacity-50'
-				: ''}
+			rightClass={!hasChanges ? 'pointer-events-none opacity-50' : ''}
 		>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => goto('/settings/profile')} data-testid="edit-about-back" />
+				<NavbarBackLink
+					onClick={() => goto('/settings/profile')}
+					data-testid="edit-about-back"
+				/>
 			{/snippet}
 
 			{#snippet right()}
@@ -99,23 +123,43 @@
 				nested={theme === 'material'}
 			>
 				<ListInput
-					type="textarea"
+					type="text"
 					bind:value={about}
+					placeholder={m.aboutPlaceholder()}
 					data-testid="edit-about-input"
-					placeholder={m.about()}
-					inputStyle="min-height: 100px"
+					clearButton={!!about}
+					onClear={clearAbout}
 				/>
+			</List>
+
+			<!-- Preset options -->
+			<List
+				class="center-in-desktop"
+				inset={isWideScreen.value || theme === 'ios'}
+				strongIos
+				nested={theme === 'material'}
+			>
+				{#each presets as preset}
+					<ListItem
+						title={preset.label()}
+						onClick={() => selectPreset(preset.emoji, preset.label())}
+						data-testid="edit-about-preset"
+					>
+						{#snippet media()}
+							<span class="text-2xl">{preset.emoji}</span>
+						{/snippet}
+					</ListItem>
+				{/each}
 			</List>
 		</div>
 
 		{#if theme === 'material'}
 			<Button
 				onClick={save}
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				class="fixed-action-btn"
 				rounded
 				data-testid="edit-about-save-btn"
-				disabled={myProfile?.about === about}
+				disabled={!hasChanges}
 			>
 				{m.save()}
 			</Button>

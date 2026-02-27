@@ -1,8 +1,9 @@
 {
 	"productName": "Dash Chat",
-	"version": "0.10.0",
+	"version": "0.10.1",
 	"identifier": "studio.darksoil.dashchat",
 	"build": {
+		"beforeDevCommand": "pnpm dev",
 		"beforeBuildCommand": "pnpm -F dash-chat-stores build && pnpm -F ui build",
 		"devUrl": "http://localhost:1420",
 		"frontendDist": "../ui/build"

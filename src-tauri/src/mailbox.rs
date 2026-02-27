@@ -1,103 +1,35 @@
-use futures::FutureExt;
-use mdns_sd::{ServiceDaemon, ServiceInfo};
+use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
-use tokio::sync::Mutex;
-
-use crate::filesystem::FileSystem;
-
-pub(crate) struct LocalMailboxState {
-    stop_signal: tokio::sync::oneshot::Sender<()>,
-    server: tokio::task::JoinHandle<()>,
-    mdns_fullname: String,
-}
-
-pub(crate) type LocalMailboxMutex = Mutex<Option<LocalMailboxState>>;
-
-pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
-    crate::tray::show_tray(handle)?;
-
-    let mutex = handle.state::<LocalMailboxMutex>();
-    let mut guard = mutex.lock().await;
-    if guard.is_some() {
-        return Ok(());
-    }
-
-    let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel();
-    let stop_signal_rx = stop_signal_rx.map(|f| f.expect("failed to listen for event"));
-    let path = FileSystem::new(handle).local_mailbox_db_path()?;
-
-    let mut last_err = None;
-    let mut port = 0;
-    let mut mdns_fullname = String::new();
-    for attempt in 1..=3 {
-        port = free_port()?;
-        let service = mdns_service_info(port, handle);
-        let fullname = service.get_fullname().to_string();
-        log::info!(
-            "Registering local mailbox service via mdns: {} ({})",
-            fullname,
-            service.get_type()
-        );
-
-        match handle.state::<ServiceDaemon>().register(service) {
-            Ok(()) => {
-                mdns_fullname = fullname;
-                last_err = None;
-                break;
-            }
-            Err(e) => {
-                log::error!("Failed to register local mailbox service via mdns, attempt {attempt} of 3, error: {e:?}");
-                last_err = Some(e);
-            }
-        }
-    }
-    if let Some(e) = last_err {
-        return Err(e.into());
-    }
-
-    let addr = format!("0.0.0.0:{port}");
-    let server = tokio::spawn(async move {
-        match mailbox_server::spawn_server(path, addr, stop_signal_rx).await {
-            Ok(_) => (),
-            Err(e) => log::error!("Failed to start local mailbox: {e:?}"),
-        }
-    });
-
-    *guard = Some(LocalMailboxState {
-        server,
-        stop_signal,
-        mdns_fullname,
-    });
-
-    log::info!("Started local mailbox");
-
-    Ok(())
-}
-
-pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
-    crate::tray::hide_tray::<R>(handle)?;
-
-    let mutex = handle.state::<LocalMailboxMutex>();
-    let mut guard = mutex.lock().await;
-    let Some(state) = guard.take() else {
-        log::warn!("Tried to stop local mailbox, but it was not running");
-        return Ok(());
-    };
-    log::info!("Sending stop signal to local mailbox...");
-    let _ = state.stop_signal.send(());
-    state.server.await.unwrap();
-    if let Err(e) = handle
-        .state::<ServiceDaemon>()
-        .unregister(&state.mdns_fullname)
-    {
-        log::error!("Failed to unregister MDNS service: {e:?}");
-    }
-
-    log::info!("Local mailbox stopped");
-    Ok(())
-}
 
 const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
+const PRODUCTION_MAILBOX_URL: &str =
+    "https://mailbox-server.production.dash-chat.dash-chat.garnix.me";
+
+#[cfg(not(mobile))]
+pub mod server;
+
+/// Returns the mailbox URL to use.
+///
+/// Resolution order:
+/// 1. `MAILBOX_URL` runtime env var (E2E tests)
+/// 2. `MAILBOX_URL` compile-time env var (dev builds via mprocs / start-dev.sh)
+/// 3. Production URL
+pub fn default_mailbox_url() -> String {
+    if let Ok(url) = std::env::var("MAILBOX_URL") {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            log::error!(
+                "MAILBOX_URL env var is not a valid URL: {url}, falling back to next option"
+            );
+        } else {
+            return url;
+        }
+    }
+    if let Some(url) = option_env!("MAILBOX_URL") {
+        log::info!("Using compile-time MAILBOX_URL: {url}");
+        return url.to_string();
+    }
+    PRODUCTION_MAILBOX_URL.to_string()
+}
 
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     handle: &AppHandle<R>,
@@ -107,7 +39,7 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     let receiver = mdns.browse(MDNS_SERVICE_TYPE)?;
 
     tokio::spawn(async move {
-        while let Ok(event) = receiver.recv() {
+        while let Ok(event) = receiver.recv_async().await {
             match event {
                 mdns_sd::ServiceEvent::ServiceResolved(resolved) => {
                     let mailbox_id = resolved.fullname;
@@ -154,26 +86,4 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     });
 
     Ok(())
-}
-
-fn mdns_service_info<R: Runtime>(port: u16, _handle: &AppHandle<R>) -> ServiceInfo {
-    let instance_name = nanoid::nanoid!(7);
-
-    let host_name = "0.0.0.0.local.";
-
-    ServiceInfo::new(
-        MDNS_SERVICE_TYPE,
-        &instance_name,
-        host_name,
-        "",
-        port,
-        vec![],
-    )
-    .unwrap()
-    .enable_addr_auto()
-}
-
-fn free_port() -> anyhow::Result<u16> {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-    Ok(listener.local_addr()?.port())
 }
