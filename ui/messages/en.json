@@ -186,5 +186,12 @@
 	"debugLogExplanation": "Debug logs help us diagnose issues. They may contain metadata about your app usage but no message content.",
 	"errorReportExplanation": "This will open your email app with the error details. If you include the debug log, public keys, profiles and message contents are removed before sending.",
 	"haveYouReadOurFaq": "Have you read our FAQ yet?",
-	"sendErrorReport": "Send Error Report"
+	"sendErrorReport": "Send Error Report",
+
+	"updateAvailable": "Update available",
+	"updateDownloading": "Downloading update...",
+	"updateReady": "Update downloaded. Restart to apply.",
+	"updateRestart": "Restart",
+	"updateLater": "Later",
+	"updateError": "Update failed. Please try again later."
 }

@@ -2,19 +2,13 @@ procs:
   agent1:
     shell: pnpm tauri dev
     env:
-      DATA_DIR: "$PWD/.dbs/dev/agent-1"
       MAILBOX_URL: "http://localhost:3000"
   agent2:
     shell: pnpm tauri dev
     env:
-      DATA_DIR: "$PWD/.dbs/dev/agent-2"
       MAILBOX_URL: "http://localhost:3000"
-  ui: pnpm -F ./packages/stores build && pnpm -F ./ui start
-  stores: pnpm -F ./packages/stores dev
   mailbox-server:
-    shell: |
-      DEV_DBS_PATH="$PWD/.dbs/dev"
-      cargo run -p mailbox-server -- --db-path "$DEV_DBS_PATH/mailbox-server/mailbox.db" --addr 0.0.0.0:3000
+    shell: cargo run -p mailbox-server -- --db-path "$PWD/.dbs/dev/mailbox-server/mailbox.db" --addr 0.0.0.0:3000
   android:
     shell: |
       if command -v hostname &>/dev/null && hostname -I &>/dev/null; then

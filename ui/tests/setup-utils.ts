@@ -16,6 +16,14 @@ import { createProfile } from './flows/profile-creation';
 import { navigateToAddContact, getContactCode, addContact } from './flows/contact-exchange';
 import { sendMessage, waitForMessage } from './flows/send-message';
 import { openDirectChat } from './flows/open-chat';
+import { checkOverflow, checkDarkMode, checkRTL, checkPage } from './review/checks';
+import {
+	visitAllPages,
+	visitSettingsPages,
+	visitProfilePages,
+	visitOtherPages,
+	visitChatPages,
+} from './review/visit-all-pages';
 
 export const testUtils = {
 	waitFor,
@@ -30,6 +38,17 @@ export const testUtils = {
 	sendMessage,
 	waitForMessage,
 	openDirectChat,
+	checkOverflow,
+	checkDarkMode,
+	checkRTL,
+	checkPage,
+	visitAllPages,
+	visitSettingsPages,
+	visitProfilePages,
+	visitOtherPages,
+	visitChatPages,
+	/** SvelteKit goto — set by registerTestUtils from +layout.svelte. */
+	goto: (_path: string) => Promise.resolve() as Promise<void>,
 };
 
 declare global {
@@ -38,6 +57,9 @@ declare global {
 	}
 }
 
-export function registerTestUtils() {
+export function registerTestUtils(goto?: (path: string) => Promise<void>) {
 	window.__test = testUtils;
+	if (goto) {
+		testUtils.goto = goto;
+	}
 }

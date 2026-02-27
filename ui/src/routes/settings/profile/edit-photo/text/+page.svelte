@@ -73,14 +73,12 @@
 		{#snippet subnavbar()}
 			<Segmented strong>
 				<SegmentedButton
-					strong
 					active={activeTab === 'text'}
 					onClick={() => (activeTab = 'text')}
 				>
 					{m.text()}
 				</SegmentedButton>
 				<SegmentedButton
-					strong
 					active={activeTab === 'color'}
 					onClick={() => (activeTab = 'color')}
 				>

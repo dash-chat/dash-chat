@@ -158,7 +158,7 @@
 	{#if onClose}
 		<Navbar transparent>
 			{#snippet left()}
-				<Link iconOnly onClick={onClose}>
+				<Link iconOnly onClick={onClose} data-testid="edit-photo-close">
 					<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 24px"></wa-icon>
 				</Link>
 			{/snippet}

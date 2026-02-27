@@ -77,6 +77,7 @@ export const S = {
 	},
 	editPhoto: {
 		back: tid('edit-photo-back'),
+		close: tid('edit-photo-close'),
 		saveButton: tid('edit-photo-save-btn'),
 	},
 	contacts: {

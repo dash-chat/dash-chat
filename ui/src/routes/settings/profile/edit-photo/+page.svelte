@@ -18,13 +18,17 @@
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	let originalAvatar = $state<string | undefined>(undefined);
 
+	let initialized = false;
 	$effect(() => {
 		$myProfile.then((profile) => {
-			if (!name) name = profile?.name || '';
-			if (originalAvatar === undefined) originalAvatar = profile?.avatar;
-			if (avatar === undefined) avatar = profile?.avatar;
-			if (!surname) surname = profile?.surname;
-			if (!about) about = profile?.about;
+			if (!initialized) {
+				initialized = true;
+				name = profile?.name || '';
+				originalAvatar = profile?.avatar;
+				avatar = profile?.avatar;
+				surname = profile?.surname;
+				about = profile?.about;
+			}
 		});
 	});
 

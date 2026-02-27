@@ -54,6 +54,7 @@ p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "das
   "test_utils",
 ] }
 
+fs2 = "0.4"
 anyhow = "1.0.95"
 async-trait = "0.1.85"
 time = "0.3"

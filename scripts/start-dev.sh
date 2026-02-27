@@ -41,18 +41,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# --- Step 2: Build stores ---
-
-echo "Building stores..."
-pnpm -F ./packages/stores build
-echo "STORES_BUILT=true"
-
-# --- Step 3: Start background processes ---
-
-# Stores watcher
-pnpm -F ./packages/stores dev > "$LOGS_DIR/stores.log" 2>&1 &
-PIDS+=($!)
-echo "STORES_PID=$!"
+# --- Step 2: Start background processes ---
 
 # Mailbox server
 cargo run -p mailbox-server -- \
@@ -61,21 +50,17 @@ cargo run -p mailbox-server -- \
 PIDS+=($!)
 echo "MAILBOX_PID=$!"
 
-# UI dev server
-UI_PORT="$UI_PORT" pnpm -F ./ui start > "$LOGS_DIR/ui.log" 2>&1 &
-PIDS+=($!)
-echo "UI_PID=$!"
-
-# Tauri agent 1
+# Tauri agent 1 (beforeDevCommand runs pnpm dev: stores watcher + Vite)
+export UI_PORT
 DATA_DIR="$DEV_DBS_PATH/agent-1" MAILBOX_URL="$MAILBOX_URL" \
   pnpm tauri dev --config "{\"build\":{\"devUrl\":\"http://localhost:$UI_PORT\"}}" \
   > "$LOGS_DIR/agent1.log" 2>&1 &
 PIDS+=($!)
 echo "AGENT1_PID=$!"
 
-# Tauri agent 2
+# Tauri agent 2 (skip beforeDevCommand since UI dev server is already running)
 DATA_DIR="$DEV_DBS_PATH/agent-2" MAILBOX_URL="$MAILBOX_URL" \
-  pnpm tauri dev --config "{\"build\":{\"devUrl\":\"http://localhost:$UI_PORT\"}}" \
+  pnpm tauri dev --config "{\"build\":{\"beforeDevCommand\":\"\",\"devUrl\":\"http://localhost:$UI_PORT\"}}" \
   > "$LOGS_DIR/agent2.log" 2>&1 &
 PIDS+=($!)
 echo "AGENT2_PID=$!"
