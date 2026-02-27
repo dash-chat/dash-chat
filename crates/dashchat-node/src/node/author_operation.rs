@@ -1,4 +1,4 @@
-use crate::topic::TopicKind;
+use crate::{DashAction, topic::TopicKind};
 
 use super::*;
 
@@ -6,15 +6,16 @@ impl Node {
     pub(super) async fn author_operation<K: TopicKind>(
         &self,
         topic: Topic<K>,
-        payload: Payload,
+        action: impl Into<DashAction>,
         alias: Option<&str>,
     ) -> Result<Header, anyhow::Error> {
+        let action = action.into();
         let (header, body) = self
             .op_store
             .author_operation(
                 &self.node_data.private_key,
                 topic.clone(),
-                payload.clone(),
+                action.clone(),
                 vec![],
                 alias,
             )

@@ -1,7 +1,7 @@
 use named_id::{RenameAll, RenameNone};
 use p2panda_auth::processor::AuthExtension;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
-use p2panda_core::{Body, Extension, Hash, PruneFlag};
+use p2panda_core::{Body, Extension, Hash, PruneFlag, PublicKey};
 use serde::{Deserialize, Serialize};
 
 use crate::chat::ChatId;
@@ -70,8 +70,6 @@ pub enum ChatPayload {
 
     Message(ChatMessageContent),
 
-    GroupControl,
-
     Reaction(ChatReaction),
 }
 
@@ -104,6 +102,23 @@ pub enum Payload {
     /// Data only seen within your private device group.
     /// No other person sees these.
     DeviceGroup(DeviceGroupPayload),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, RenameAll, derive_more::From)]
+#[serde(tag = "type", content = "payload")]
+pub enum DashAction {
+    Payload(Payload),
+    #[named_id(skip)]
+    GroupControl(AuthExtension),
+}
+
+impl DashAction {
+    pub fn try_into_body(&self) -> Result<Option<Body>, EncodeError> {
+        Ok(match self {
+            DashAction::Payload(payload) => Some(payload.try_into_body()?),
+            DashAction::GroupControl(_) => None,
+        })
+    }
 }
 
 impl Cbor for Payload {}

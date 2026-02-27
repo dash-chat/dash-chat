@@ -1,8 +1,10 @@
 use std::{collections::BTreeSet, path::Path, sync::Arc};
 
 use chrono::{DateTime, Utc};
-use p2panda_core::Operation;
+use p2panda_auth::{Access, group::resolver::StrongRemove, processor::AuthExtension};
+use p2panda_core::{Hash, Operation, PublicKey};
 use redb::*;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::{
     contact::InboxTopic,
@@ -33,8 +35,31 @@ impl NodeData {
     }
 }
 
+type MemStore = p2panda_auth::processor::Store<Operation<Extensions>>;
+
 #[derive(Clone)]
-pub struct HackyGroupStore(p2panda_auth::processor::Store<Operation<Extensions>>);
+pub struct HackyGroupStore {
+    groups: MemStore,
+    file_write_mutex: Arc<Mutex<()>>,
+}
+
+impl HackyGroupStore {
+    pub fn new() -> Self {
+        Self {
+            groups: MemStore::default(),
+            file_write_mutex: Arc::new(Mutex::new(())),
+        }
+    }
+
+    pub async fn apply(&self) {
+        let _lock = self.file_write_mutex.lock().await;
+    }
+
+    pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(PublicKey, Access)>> {
+        let group_id = topic.to_group_pubkey();
+        Ok(self.groups.get_state().await?.crdt.inner.members(group_id))
+    }
+}
 
 #[derive(Clone)]
 pub struct LocalStore {
@@ -47,7 +72,7 @@ impl LocalStore {
         let database = Database::create(path)?;
         let store = Self {
             db: Arc::new(database),
-            groups: HackyGroupStore(p2panda_auth::processor::Store::default()),
+            groups: HackyGroupStore::new(),
         };
         store.ensure_initialized()?;
 
@@ -82,6 +107,30 @@ impl LocalStore {
             private_key: self.private_key()?,
             agent_id: self.agent_id()?,
         })
+    }
+
+    pub async fn process_group_operation(&self, action: AuthExtension) -> anyhow::Result<()> {
+        type Resolver = StrongRemove<PublicKey, Hash, Operation<Extensions>, ()>;
+
+        let groups_y = self.groups.groups.get_state().await?;
+
+        let AuthExtension { group_id, action } = action;
+        // let previous: Vec<Hash> = groups_store.get_state().await.unwrap().crdt.heads();
+
+        // let (hash, header, header_bytes, operation) =
+        //     create_operation(&private_key, seq_num, backlink, &previous, extensions);
+
+        // if let Err(err) =
+        //     p2panda_auth::processor::process::<_, _, Resolver>(&groups_store, &operation).await
+        // {
+        //     println!();
+        //     println!("error: {err:?}");
+        //     println!();
+        //     continue;
+        // };
+
+        todo!();
+        Ok(())
     }
 
     pub fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {

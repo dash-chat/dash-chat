@@ -269,10 +269,6 @@ impl Node {
                 // Nothing to do.
             }
 
-            Some(Payload::Chat(ChatPayload::GroupControl)) => {
-                // Nothing to do.
-            }
-
             None => {
                 tracing::error!(?topic, "no payload");
             }

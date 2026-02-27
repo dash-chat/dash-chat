@@ -31,7 +31,7 @@
 
 use std::marker::PhantomData;
 
-use crate::AgentId;
+use crate::{AgentId, ChatId};
 use named_id::*;
 
 use p2panda_spaces::ActorId;
@@ -206,6 +206,14 @@ impl Topic<kind::Chat> {
         hasher.update(pks[0].as_bytes());
         hasher.update(pks[1].as_bytes());
         Self::new(hasher.finalize().into())
+    }
+
+    pub fn from_group_pubkey(pubkey: p2panda_core::PublicKey) -> Self {
+        Self::new(pubkey.as_bytes().clone().try_into().unwrap())
+    }
+
+    pub fn to_group_pubkey(self) -> p2panda_core::PublicKey {
+        p2panda_core::PublicKey::from_bytes(&self.id.0).unwrap()
     }
 }
 

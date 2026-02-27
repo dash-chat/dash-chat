@@ -97,23 +97,15 @@ where
         &self,
         private_key: &PrivateKey,
         topic: Topic<K>,
-        payload: Payload,
+        payload: DashAction,
         deps: Vec<p2panda_core::Hash>,
         alias: Option<&str>,
     ) -> Result<(Header, Option<Body>), anyhow::Error> {
         let device_id = DeviceId::from(private_key.public_key());
         let topic = topic.clone();
 
-        let body = Some(payload.try_into_body()?);
+        let body = payload.try_into_body()?;
 
-        let auth = match payload {
-            Payload::Chat(ChatPayload::GroupControl) => Some(todo!()),
-            _ => None,
-        };
-        let extensions = Extensions {
-            topic: topic.clone().into(),
-            auth,
-        };
         let lock = self.write_mutex.lock().await;
         let latest_operation = self
             .latest_operation(&device_id, &topic.into())
@@ -123,6 +115,18 @@ where
         let (seq_num, backlink) = match latest_operation {
             Some((header, _)) => (header.seq_num + 1, Some(header.hash())),
             None => (0, None),
+        };
+
+        let auth = match payload {
+            DashAction::GroupControl(auth) => {
+                todo!();
+                Some(auth)
+            }
+            _ => None,
+        };
+        let extensions = Extensions {
+            topic: topic.clone().into(),
+            auth,
         };
 
         let timestamp = timestamp_now();
