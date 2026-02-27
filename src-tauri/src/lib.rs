@@ -29,14 +29,10 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default();
 
-    #[cfg(target_os = "android")]
-    {
-        builder = builder
-            .plugin(tauri_plugin_virtual_keyboard_padding::init());
-    }
     #[cfg(mobile)]
     {
         builder = builder
+            .plugin(tauri_plugin_virtual_keyboard_padding::init())
             .plugin(tauri_plugin_barcode_scanner::init())
             .plugin(tauri_plugin_system_bars_styles::init());
     }

@@ -28,7 +28,7 @@
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
-	import { isIos } from '$lib/utils/environment';
+	import { isIos, isMac } from '$lib/utils/environment';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
@@ -66,7 +66,7 @@
 
 	const isDark = useSignal(settingsStore.isDark);
 
-		let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
+		let theme: 'ios' | 'material' = $state(isIos || isMac ? 'ios' : 'material');
 
 	let darkOverride: boolean | null = $state(null);
 	const effectiveDark = $derived(darkOverride ?? !!$isDark);

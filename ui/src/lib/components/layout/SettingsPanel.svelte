@@ -128,7 +128,7 @@
 			</ListItem>
 		</List>
 
-		<List strongIos nested inset={isWideScreen.value || theme === 'ios'}>
+		<List strongIos nested={theme !== 'ios'} inset={isWideScreen.value || theme === 'ios'}>
 			<ListItem
 				link
 				class={isActive('/settings/help') ? 'active' : ''}
