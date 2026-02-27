@@ -414,7 +414,6 @@ cd e2e-tests && bash compat/run.sh v0.10.0 v0.10.1
 
 **Key files:**
 - `compat/run.sh` — Orchestrator script (entry point)
-- `compat/apply-patches.sh` — Patches old versions for E2E support (DATA_DIR, E2E_TEST, MAILBOX_URL, registerTestUtils)
 - `compat/wdio.compat.ts` — WDIO config (reads COMPAT_PHASE and COMPAT_BINARY env vars)
 - `specs/compat-setup.spec.ts` — Phase 1: create data with old version
 - `specs/compat-verify.spec.ts` — Phase 2: verify with current version
