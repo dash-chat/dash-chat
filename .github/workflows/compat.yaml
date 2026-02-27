@@ -52,7 +52,7 @@ jobs:
         run: cargo install tauri-driver --locked
 
       - name: Run backwards compatibility test (${{ matrix.version }})
-        run: bash e2e-tests/compat/run.sh ${{ matrix.version }}
+        run: bash e2e-tests/compat/run.sh "${{ matrix.version }}"
 
       - name: Cleanup
         if: always()

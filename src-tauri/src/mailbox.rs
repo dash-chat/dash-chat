@@ -17,9 +17,12 @@ pub mod server;
 pub fn default_mailbox_url() -> String {
     if let Ok(url) = std::env::var("MAILBOX_URL") {
         if !(url.starts_with("http://") || url.starts_with("https://")) {
-            log::error!("MAILBOX_URL env var is not a valid URL: {url}");
+            log::error!(
+                "MAILBOX_URL env var is not a valid URL: {url}, falling back to next option"
+            );
+        } else {
+            return url;
         }
-        return url;
     }
     if let Some(url) = option_env!("MAILBOX_URL") {
         log::info!("Using compile-time MAILBOX_URL: {url}");

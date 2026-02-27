@@ -8,5 +8,5 @@
 		"types": ["@wdio/mocha-framework", "node"],
 		"outDir": "dist"
 	},
-	"include": ["specs/**/*.ts", "wdio.conf.ts", "compat/wdio.compat.ts"]
+	"include": ["specs/**/*.ts", "helpers/**/*.ts", "wdio.conf.ts", "compat/wdio.compat.ts"]
 }

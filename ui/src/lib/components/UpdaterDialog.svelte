@@ -76,7 +76,8 @@
 			});
 
 			updateState = 'ready';
-		} catch {
+		} catch (err) {
+			console.error('Update check failed:', err);
 			updateState = 'error';
 		}
 	}

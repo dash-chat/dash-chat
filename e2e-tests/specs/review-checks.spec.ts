@@ -8,6 +8,14 @@
  * Uses the same window.__test functions as the review-app skill.
  */
 
+import {
+	waitForTestUtils,
+	waitForBothAgents,
+	createProfile,
+	exchangeContacts,
+	sendAndReceiveMessage,
+} from '../helpers/setup-agents';
+
 /** Helper: call visitAllPages on an agent and return the result. */
 async function runVisit(
 	agent: WebdriverIO.Browser,
@@ -44,14 +52,6 @@ async function switchCombo(
 	await agent.pause(500);
 }
 
-/** Helper: wait for window.__test to be registered after a page reload. */
-async function waitForTestUtils(agent: WebdriverIO.Browser): Promise<void> {
-	await agent.waitUntil(
-		async () => agent.execute(() => typeof window.__test !== 'undefined'),
-		{ timeout: 30_000, interval: 500, timeoutMsg: 'window.__test not registered after reload' },
-	);
-}
-
 describe('Review checks', function () {
 	before(async function () {
 		this.timeout(180_000);
@@ -59,93 +59,15 @@ describe('Review checks', function () {
 		const agent1 = browser.getInstance('agent1');
 		const agent2 = browser.getInstance('agent2');
 
-		// Wait for window.__test on both agents
-		await Promise.all([waitForTestUtils(agent1), waitForTestUtils(agent2)]);
+		await waitForBothAgents();
 
-		// Create profiles
-		const err1 = await agent1.executeAsync(
-			(name: string, surname: string, done: (r: string | null) => void) => {
-				window.__test.createProfile(name, surname).then(() => done(null), (e) => done(String(e)));
-			},
-			'Alice',
-			'Test',
-		);
-		if (err1) throw new Error(`Agent 1 profile creation failed: ${err1}`);
+		await createProfile(agent1, 'Alice', 'Test');
+		await createProfile(agent2, 'Bob', 'Tester');
 
-		const err2 = await agent2.executeAsync(
-			(name: string, surname: string, done: (r: string | null) => void) => {
-				window.__test.createProfile(name, surname).then(() => done(null), (e) => done(String(e)));
-			},
-			'Bob',
-			'Tester',
-		);
-		if (err2) throw new Error(`Agent 2 profile creation failed: ${err2}`);
+		await exchangeContacts(agent1, agent2);
 
-		// Exchange contacts
-		const navErr1 = await agent1.executeAsync((done: (r: string | null) => void) => {
-			window.__test.navigateToAddContact().then(() => done(null), (e) => done(String(e)));
-		});
-		if (navErr1) throw new Error(`Agent 1 nav to add-contact failed: ${navErr1}`);
-
-		const aliceCode = await agent1.execute(() => window.__test.getContactCode());
-		if (!aliceCode) throw new Error('Failed to get Alice contact code');
-
-		const navErr2 = await agent2.executeAsync((done: (r: string | null) => void) => {
-			window.__test.navigateToAddContact().then(() => done(null), (e) => done(String(e)));
-		});
-		if (navErr2) throw new Error(`Agent 2 nav to add-contact failed: ${navErr2}`);
-
-		const bobCode = await agent2.execute(() => window.__test.getContactCode());
-		if (!bobCode) throw new Error('Failed to get Bob contact code');
-
-		const addErr1 = await agent1.executeAsync(
-			(code: string, done: (r: string | null) => void) => {
-				window.__test.addContact(code).then(() => done(null), (e) => done(String(e)));
-			},
-			bobCode as string,
-		);
-		if (addErr1) throw new Error(`Agent 1 add contact failed: ${addErr1}`);
-
-		const addErr2 = await agent2.executeAsync(
-			(code: string, done: (r: string | null) => void) => {
-				window.__test.addContact(code).then(() => done(null), (e) => done(String(e)));
-			},
-			aliceCode as string,
-		);
-		if (addErr2) throw new Error(`Agent 2 add contact failed: ${addErr2}`);
-
-		// Send messages
-		const sendErr = await agent1.executeAsync(
-			(text: string, done: (r: string | null) => void) => {
-				window.__test.sendMessage(text).then(() => done(null), (e) => done(String(e)));
-			},
-			'Hello from Alice!',
-		);
-		if (sendErr) throw new Error(`Agent 1 send message failed: ${sendErr}`);
-
-		const recvErr = await agent2.executeAsync(
-			(text: string, done: (r: string | null) => void) => {
-				window.__test.waitForMessage(text).then(() => done(null), (e) => done(String(e)));
-			},
-			'Hello from Alice!',
-		);
-		if (recvErr) throw new Error(`Agent 2 receive message failed: ${recvErr}`);
-
-		const replyErr = await agent2.executeAsync(
-			(text: string, done: (r: string | null) => void) => {
-				window.__test.sendMessage(text).then(() => done(null), (e) => done(String(e)));
-			},
-			'Hello from Bob!',
-		);
-		if (replyErr) throw new Error(`Agent 2 reply failed: ${replyErr}`);
-
-		const recvReplyErr = await agent1.executeAsync(
-			(text: string, done: (r: string | null) => void) => {
-				window.__test.waitForMessage(text).then(() => done(null), (e) => done(String(e)));
-			},
-			'Hello from Bob!',
-		);
-		if (recvReplyErr) throw new Error(`Agent 1 receive reply failed: ${recvReplyErr}`);
+		await sendAndReceiveMessage(agent1, agent2, 'Hello from Alice!');
+		await sendAndReceiveMessage(agent2, agent1, 'Hello from Bob!');
 
 		// Navigate agent 1 back to home for the review
 		await agent1.executeAsync((done: (r: string | null) => void) => {

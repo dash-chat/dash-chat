@@ -11,6 +11,8 @@
  * Only needs one agent — uses agent1.
  */
 
+import { waitForTestUtils, createProfile } from '../helpers/setup-agents';
+
 /** Check if a data-testid element is visible (opacity > 0). */
 function isVisible(selector: string): boolean {
 	const el = document.querySelector(selector);
@@ -23,19 +25,8 @@ describe('UpdaterDialog', () => {
 
 	before(async () => {
 		agent = browser.getInstance('agent1');
-
-		await agent.waitUntil(
-			async () => agent.execute(() => typeof window.__test !== 'undefined'),
-			{ timeout: 30_000, interval: 500, timeoutMsg: 'agent1: window.__test not registered' },
-		);
-
-		// Create a profile so we reach the home screen
-		const err = await agent.executeAsync((done: (r: string | null) => void) => {
-			window.__test
-				.createProfile('Updater', 'Test')
-				.then(() => done(null), (e) => done(String(e)));
-		});
-		expect(err).toBeNull();
+		await waitForTestUtils(agent);
+		await createProfile(agent, 'Updater', 'Test');
 	});
 
 	afterEach(async () => {
