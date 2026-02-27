@@ -206,7 +206,7 @@ describe('Review checks', function () {
 		before(async function () {
 			const agent1 = browser.getInstance('agent1');
 			await agent1.execute(() => {
-				document.documentElement.classList.add('dark', 'wa-dark');
+				window.dispatchEvent(new CustomEvent('set-dark-mode', { detail: true }));
 			});
 			await agent1.pause(300);
 		});
@@ -249,7 +249,7 @@ describe('Review checks', function () {
 		after(async function () {
 			const agent1 = browser.getInstance('agent1');
 			await agent1.execute(() => {
-				document.documentElement.classList.remove('dark', 'wa-dark');
+				window.dispatchEvent(new CustomEvent('set-dark-mode', { detail: false }));
 			});
 		});
 	});
