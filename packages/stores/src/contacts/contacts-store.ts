@@ -148,6 +148,38 @@ export class ContactsStore {
 		return contactRequests;
 	});
 
+	/** Get a profile from inbox contact requests for a given agent, regardless of acceptance status. */
+	private inboxProfile = reactive(async (agentId: AgentId) => {
+		const activeInboxTopics = await this.activeInboxTopics();
+
+		const allLogs = await Promise.all(
+			activeInboxTopics.map(topicId =>
+				this.logsStore.logsForAllAuthors(topicId),
+			),
+		);
+
+		let latest: { timestamp: number; profile: Profile } | undefined;
+
+		for (const log of allLogs) {
+			for (const operations of Object.values(log)) {
+				for (const operation of operations) {
+					if (operation.body?.type !== 'Inbox') continue;
+					if (operation.body.payload.payload.code.agent_id !== agentId)
+						continue;
+					const ts = operation.header.timestamp * 1000;
+					if (!latest || ts > latest.timestamp) {
+						latest = {
+							timestamp: ts,
+							profile: operation.body.payload.payload.profile,
+						};
+					}
+				}
+			}
+		}
+
+		return latest?.profile;
+	});
+
 	profiles = reactive(async (agentId: AgentId) => {
 		const topicId = personalTopicFor(agentId);
 
@@ -173,7 +205,8 @@ export class ContactsStore {
 		const lastOperation = descendantSortedOperations[0];
 
 		if (!lastOperation) {
-			return undefined;
+			// Fallback: use profile from inbox contact request if personal topic hasn't synced
+			return await this.inboxProfile(agentId);
 		}
 
 		const profile: Profile = lastOperation[1];

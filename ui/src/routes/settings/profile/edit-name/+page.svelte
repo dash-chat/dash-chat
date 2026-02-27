@@ -28,12 +28,16 @@
 	let about = $state<string | undefined>(undefined);
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
+	let initialized = false;
 	$effect(() => {
 		$myProfile.then((profile) => {
-			if (!name) name = profile?.name || '';
-			if (!surname) surname = profile?.surname;
-			if (!avatar) avatar = profile?.avatar;
-			if (!about) about = profile?.about;
+			if (!initialized) {
+				initialized = true;
+				name = profile?.name || '';
+				surname = profile?.surname;
+				avatar = profile?.avatar;
+				about = profile?.about;
+			}
 		});
 	});
 

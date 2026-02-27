@@ -3,7 +3,6 @@ export const tid = (id: string) => `[data-testid="${id}"]`;
 export const S = {
 	home: {
 		settingsLink: tid('home-settings-link'),
-		contactsLink: tid('home-contacts-link'),
 		newMessageLink: tid('home-new-message-link'),
 		newMessageFab: tid('home-new-message-fab'),
 		chatList: tid('all-chats-list'),
@@ -24,6 +23,7 @@ export const S = {
 		codeInput: tid('add-contact-code-input'),
 	},
 	directChat: {
+		page: tid('direct-chat-page'),
 		back: tid('direct-chat-back'),
 		searchBack: tid('direct-chat-search-back'),
 		settingsLink: tid('direct-chat-settings-link'),
@@ -77,16 +77,17 @@ export const S = {
 	},
 	editPhoto: {
 		back: tid('edit-photo-back'),
+		close: tid('edit-photo-close'),
 		saveButton: tid('edit-photo-save-btn'),
 	},
 	contacts: {
 		back: tid('contacts-back'),
-		addLink: tid('contacts-add-link'),
 		list: tid('contacts-list'),
 	},
 	newMessage: {
 		back: tid('new-message-back'),
 		search: tid('new-message-search'),
+		addContact: tid('new-message-add-contact'),
 		contactList: tid('new-message-contact-list'),
 	},
 	newGroup: {
@@ -124,5 +125,13 @@ export const S = {
 		reasonSelect: tid('contact-us-reason-select'),
 		includeDebugLog: tid('contact-us-include-debug-log'),
 		nextButton: tid('contact-us-next-btn'),
+	},
+	updater: {
+		downloading: tid('updater-downloading'),
+		ready: tid('updater-ready'),
+		error: tid('updater-error'),
+		laterBtn: tid('updater-later-btn'),
+		restartBtn: tid('updater-restart-btn'),
+		okBtn: tid('updater-ok-btn'),
 	},
 } as const;

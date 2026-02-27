@@ -36,7 +36,8 @@ body {
 @media screen and (min-width: 600px) {
 	.center-in-desktop {
 		align-self: center;
-		width: 600px;
+		max-width: 600px;
+		width: 100%;
 	}
 }
 

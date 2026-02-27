@@ -30,6 +30,7 @@
 	);
 	const isSidebarRoute = $derived(
 		isNavigatingToSidebarRoute ||
+			!page.url?.pathname ||
 			page.url.pathname === '/' ||
 			page.url.pathname === '/settings' ||
 			page.url.pathname === '/new-message',

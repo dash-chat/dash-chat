@@ -29,11 +29,15 @@
 	let name = $state<string>('');
 	let description = $state<string>('');
 
+	let initialized = false;
 	info.subscribe(i => {
 		i.then(info => {
-			if (!avatar) avatar = info?.avatar;
-			if (!name) name = info?.name || '';
-			if (!description) description = info?.description || '';
+			if (!initialized) {
+				initialized = true;
+				avatar = info?.avatar;
+				name = info?.name || '';
+				description = info?.description || '';
+			}
 		});
 	});
 	const theme = $derived(useTheme());

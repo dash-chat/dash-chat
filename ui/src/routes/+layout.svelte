@@ -22,18 +22,22 @@
 
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
+	import UpdaterDialog from '$lib/components/UpdaterDialog.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
+	import { isIos } from '$lib/utils/environment';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
+	import { goto } from '$app/navigation';
 	window.__setLocale = setLocale;
 
-	if (import.meta.env.DEV) {
-		import('../../tests/setup-utils').then(({ registerTestUtils }) => registerTestUtils());
+	// Register test utils in dev mode and E2E builds (VITE_E2E=1)
+	if (import.meta.env.DEV || import.meta.env.VITE_E2E) {
+		import('../../tests/setup-utils').then(({ registerTestUtils }) => registerTestUtils(goto));
 	}
 
 	let { children } = $props();
@@ -62,15 +66,16 @@
 
 	const isDark = useSignal(settingsStore.isDark);
 
+		let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
+
+	let darkOverride: boolean | null = $state(null);
+	const effectiveDark = $derived(darkOverride ?? !!$isDark);
+
 	$effect(() => {
-		applyDarkMode($isDark).catch((e) => {
+		applyDarkMode(effectiveDark).catch((e) => {
 			showToast(m.errorApplyStyle(), 'error');
 		});
 	});
-
-	import { isIos } from '$lib/utils/environment';
-
-	let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
 
 	$effect(() => {
 		const handler = (event: CustomEvent) => {
@@ -80,10 +85,18 @@
 		return () => window.removeEventListener('theme-change', handler as EventListener);
 	});
 
+	$effect(() => {
+		const handler = (event: CustomEvent) => {
+			darkOverride = event.detail;
+		};
+		window.addEventListener('set-dark-mode', handler as EventListener);
+		return () => window.removeEventListener('set-dark-mode', handler as EventListener);
+	});
+
 </script>
 
-<KonstaProvider {theme}>
-	<App safeAreas {theme} class={`k-${theme}`} dark={!!$isDark}>
+<KonstaProvider {theme} dark={effectiveDark}>
+	<App safeAreas {theme} class={`k-${theme}`} dark={effectiveDark}>
 		<SplashscreenPrompt>
 			{#if isWideScreen.value}
 				<DesktopLayout>
@@ -94,5 +107,6 @@
 			{/if}
 		</SplashscreenPrompt>
 		<ToastManager />
+		<UpdaterDialog />
 	</App>
 </KonstaProvider>
