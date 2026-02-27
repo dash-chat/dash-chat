@@ -42,7 +42,7 @@ where
             return Ok(());
         }
 
-        // Group operations by topic -> author -> seq_num
+        // Group items by topic -> author -> seq_num
         let mut blobs: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blob>>> = BTreeMap::new();
 
         for op in ops {
@@ -123,7 +123,7 @@ where
         for (topic_id_str, topic_response) in response.blobs_by_topic {
             let log_id = Self::log_id_from_string(&topic_id_str)?;
 
-            // Deserialize blobs to operations
+            // Deserialize blobs to items
             let mut items = Vec::new();
             for (_author_str, seq_blobs) in topic_response.blobs {
                 for (_seq, blob) in seq_blobs {

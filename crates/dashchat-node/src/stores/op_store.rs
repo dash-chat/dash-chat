@@ -418,6 +418,10 @@ where
     S: OperationStore<TopicId, Extensions> + LogStore<TopicId, Extensions>,
     S: Send + Sync + 'static,
 {
+    // async fn store_blob(&self, blob: Blob) -> Result<(), anyhow::Error> {
+    //     self.store.store_blob(blob).await
+    // }
+
     async fn get_log(
         &self,
         author: &DeviceId,

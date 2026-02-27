@@ -4,6 +4,8 @@ use crate::MailboxItem;
 
 #[async_trait::async_trait]
 pub trait MailboxStore<Item: MailboxItem>: Clone + Send + Sync + 'static {
+    // async fn store_blob(&self, blob: Blob) -> Result<(), anyhow::Error>;
+
     async fn get_log(
         &self,
         author: &Item::Author,

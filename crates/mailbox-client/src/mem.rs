@@ -1,3 +1,5 @@
+pub use crate::mem_server::MemMailbox;
+
 use super::*;
 
 use std::{
@@ -12,8 +14,8 @@ use tokio::sync::RwLock;
 /// instance. State is shared between all cloned copies of this.
 #[derive(Clone)]
 pub struct MemMailboxClient<Item: MailboxItem> {
-    mailbox: MemMailbox<Item>,
-    subscribed_topics: Arc<RwLock<BTreeSet<Item::Topic>>>,
+    pub(crate) mailbox: MemMailbox<Item>,
+    pub(crate) subscribed_topics: Arc<RwLock<BTreeSet<Item::Topic>>>,
 }
 
 impl<Item: MailboxItem> MemMailboxClient<Item> {
@@ -22,38 +24,24 @@ impl<Item: MailboxItem> MemMailboxClient<Item> {
     }
 }
 
-pub type MemMailboxLogs<Item> = HashMap<
-    <Item as MailboxItem>::Topic,
-    HashMap<<Item as MailboxItem>::Author, BTreeMap<u64, Item>>,
->;
-
-#[derive(Clone)]
-pub struct MemMailbox<Item: MailboxItem> {
-    id: MailboxId,
-    ops: Arc<RwLock<MemMailboxLogs<Item>>>,
-}
-
-impl<Item: MailboxItem> MemMailbox<Item> {
-    pub fn new() -> Self {
-        Self {
-            id: nanoid::nanoid!(),
-            ops: Arc::new(RwLock::new(HashMap::new())),
-        }
+#[async_trait::async_trait]
+impl<Item: MailboxItem> BlobStore for MemMailboxClient<Item> {
+    async fn store_blob(&self, blob: Blob) -> anyhow::Result<()> {
+        let mut store = self.mailbox.blobs.write().await;
+        store.insert(blob.to_hash(), blob);
+        Ok(())
     }
 
-    pub fn client(&self) -> MemMailboxClient<Item> {
-        MemMailboxClient {
-            mailbox: self.clone(),
-            subscribed_topics: Arc::new(RwLock::new(BTreeSet::new())),
-        }
+    async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Blob>> {
+        let store = self.mailbox.blobs.read().await;
+        let blob = store.get(&hash).cloned();
+        Ok(blob)
     }
 }
-
 #[async_trait::async_trait]
 impl<Item: MailboxItem> MailboxClient<Item> for MemMailboxClient<Item>
 where
     Item::Topic: OptionalItemTraits,
-    Item::Hash: OptionalItemTraits,
 {
     fn id(&self) -> MailboxId {
         self.mailbox.id.clone()
@@ -137,7 +125,7 @@ where
                 topic = ?topic.renamed(),
                 num = new.len(),
                 hashes = ?new.iter().map(|op: &Item| op.hash().renamed()).collect::<Vec<_>>(),
-                "fetching mailbox operations"
+                "fetching mailbox items"
             );
 
             response.insert(
@@ -170,8 +158,8 @@ mod tests {
     pub type MsgTopic = u8;
 
     impl MailboxItem for Msg {
-        type Author = char;
         type Hash = (Self::Author, u64);
+        type Author = char;
         type Topic = MsgTopic;
 
         fn hash(&self) -> Self::Hash {
@@ -242,6 +230,19 @@ mod tests {
                 missing: HashMap::new(),
             }
         );
+    }
+
+    #[tokio::test]
+    async fn test_mem_blobs() {
+        let mailbox = MemMailbox::<Msg>::new();
+        let client = mailbox.client();
+
+        let blob = Blob::from_static(b"hello");
+
+        client.store_blob(blob.clone()).await.unwrap();
+
+        let fetched = client.get_blob(blob.to_hash()).await.unwrap().unwrap();
+        assert_eq!(fetched, blob);
     }
 
     #[tokio::test]

@@ -861,6 +861,7 @@ dependencies = [
  "cfg-if",
  "constant_time_eq 0.4.2",
  "cpufeatures",
+ "serde",
 ]
 
 [[package]]
@@ -4640,6 +4641,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "blake3",
  "bytes",
  "derive_more 1.0.0",
  "hex",

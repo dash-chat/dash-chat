@@ -1,5 +1,6 @@
 pub mod manager;
 pub mod mem;
+pub mod mem_server;
 pub mod store;
 pub mod toy;
 
@@ -26,14 +27,14 @@ pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
 pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     fn id(&self) -> MailboxId;
 
-    /// Publish an operation to the mailbox for the given topic.
-    async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error>;
+    /// Publish items to the mailbox for the given topic.
+    async fn publish(&self, ops: Vec<Item>) -> anyhow::Result<()>;
 
-    /// Fetch operations from the mailbox for the given topics.
+    /// Fetch items from the mailbox for the given topics.
     ///
     /// The inner map associated each author with the height of their locally stored log.
     /// The height represents the highest sequence number stored for that author, meaning that the mailbox
-    /// should only return operations with a higher sequence for that author.
+    /// should only return items with a higher sequence for that author.
     /// NOTE that this is a subtractive, not additive, filter, meaning that any authors not included
     /// in the `min_heights` list will have their *entire* log returned, including if `min_heights` is empty.
     /// This is so that the mailbox is used for author discovery as well.
@@ -42,6 +43,12 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
         &self,
         request: FetchRequest<Item>,
     ) -> Result<FetchResponse<Item>, anyhow::Error>;
+}
+
+#[async_trait::async_trait]
+pub trait BlobStore: Send + Sync + 'static {
+    async fn store_blob(&self, blob: Blob) -> anyhow::Result<()>;
+    async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Blob>>;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -59,9 +66,9 @@ pub struct FetchResponse<Item: MailboxItem>(pub BTreeMap<Item::Topic, FetchTopic
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(bound(deserialize = "Item: DeserializeOwned"))]
 pub struct FetchTopicResponse<Item: MailboxItem> {
-    /// The operations not held locally that were fetched.
+    /// The items not held locally that were fetched.
     pub items: Vec<Item>,
-    /// The operations held locally that are missing from the mailbox,
+    /// The items held locally that are missing from the mailbox,
     /// and which this node should now publish.
     pub missing: HashMap<<Item as MailboxItem>::Author, Vec<u64>>,
 }
@@ -92,11 +99,27 @@ pub trait MailboxItem: Clone + Serialize + DeserializeOwned + Send + Sync + 'sta
     type Author: ItemTraits;
     type Topic: ItemTraits;
 
-    fn seq_num(&self) -> SeqNum;
     fn hash(&self) -> Self::Hash;
+    fn seq_num(&self) -> SeqNum;
     fn author(&self) -> Self::Author;
     fn topic(&self) -> Self::Topic;
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, derive_more::Deref)]
+pub struct Blob(bytes::Bytes);
+
+impl Blob {
+    pub fn from_static(bytes: &'static [u8]) -> Self {
+        Self(bytes.into())
+    }
+
+    pub fn to_hash(&self) -> BlobHash {
+        BlobHash(blake3::hash(self.as_ref()))
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, derive_more::Deref)]
+pub struct BlobHash(blake3::Hash);
 
 /// Extra traits for ItemTraits which are feature-dependent.
 #[cfg(feature = "named-id")]
