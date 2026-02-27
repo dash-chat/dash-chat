@@ -1,4 +1,4 @@
-use mdns_sd::{ServiceDaemon, ServiceInfo};
+use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
 
 const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
@@ -16,6 +16,9 @@ pub mod server;
 /// 3. Production URL
 pub fn default_mailbox_url() -> String {
     if let Ok(url) = std::env::var("MAILBOX_URL") {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            log::error!("MAILBOX_URL env var is not a valid URL: {url}");
+        }
         return url;
     }
     if let Some(url) = option_env!("MAILBOX_URL") {

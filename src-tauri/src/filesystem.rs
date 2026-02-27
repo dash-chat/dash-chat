@@ -16,7 +16,8 @@ pub fn init_data_dir() {
         let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
         let base = project_root.join(".dbs/dev");
 
-        for n in 1.. {
+        let mut found = false;
+        for n in 1..=100 {
             let dir = base.join(format!("agent-{n}"));
             std::fs::create_dir_all(&dir).ok();
             let lock_path = dir.join(".lock");
@@ -26,9 +27,13 @@ pub fn init_data_dir() {
                 if file.try_lock_exclusive().is_ok() {
                     std::env::set_var("DATA_DIR", &dir);
                     let _ = DATA_DIR_LOCK.set(file);
+                    found = true;
                     break;
                 }
             }
+        }
+        if !found {
+            eprintln!("WARNING: could not find an available agent slot in {}", base.display());
         }
     }
 

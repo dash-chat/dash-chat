@@ -67,7 +67,7 @@ export default defineConfig(async () => ({
 	//
 	// 1. prevent Vite from obscuring rust errors
 	clearScreen: false,
-	// 2. tauri expects a fixed port, fail if that port is not available
+	// 2. tauri expects a fixed port; the exit-if-port-taken plugin silently exits if already in use
 	server: {
 		port: uiPort,
 		host: true,

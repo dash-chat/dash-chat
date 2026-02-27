@@ -27,6 +27,18 @@
 		checkForUpdate();
 	});
 
+	// Allow E2E tests and dev tools to trigger dialog states
+	$effect(() => {
+		const handler = (event: CustomEvent<UpdateState>) => {
+			version = '1.2.0';
+			contentLength = 50_000_000;
+			progress = contentLength;
+			updateState = event.detail;
+		};
+		window.addEventListener('test-simulate-update', handler as EventListener);
+		return () => window.removeEventListener('test-simulate-update', handler as EventListener);
+	});
+
 	async function simulateMockUpdate(mode: 'download' | 'error') {
 		version = '1.2.0';
 		if (mode === 'error') {
@@ -84,7 +96,7 @@
 	}
 </script>
 
-<Dialog opened={updateState === 'downloading'}>
+<Dialog opened={updateState === 'downloading'} data-testid="updater-downloading">
 	{#snippet title()}
 		{m.updateAvailable()} — v{version}
 	{/snippet}
@@ -95,27 +107,27 @@
 	<p class="px-4 text-xs opacity-50 text-right">{Math.round(progressFraction() * 100)}%</p>
 </Dialog>
 
-<Dialog opened={updateState === 'ready'}>
+<Dialog opened={updateState === 'ready'} data-testid="updater-ready">
 	{#snippet title()}
 		{m.updateAvailable()} — v{version}
 	{/snippet}
 	<p class="px-4 text-sm opacity-70">{m.updateReady()}</p>
 	{#snippet buttons()}
-		<DialogButton onClick={dismiss}>
+		<DialogButton onClick={dismiss} data-testid="updater-later-btn">
 			{m.updateLater()}
 		</DialogButton>
-		<DialogButton strong onClick={restart}>
+		<DialogButton strong onClick={restart} data-testid="updater-restart-btn">
 			{m.updateRestart()}
 		</DialogButton>
 	{/snippet}
 </Dialog>
 
-<Dialog opened={updateState === 'error'} onBackdropClick={dismiss}>
+<Dialog opened={updateState === 'error'} onBackdropClick={dismiss} data-testid="updater-error">
 	{#snippet title()}
 		{m.updateAvailable()}
 	{/snippet}
 	<p class="px-4 text-sm opacity-70">{m.updateError()}</p>
 	{#snippet buttons()}
-		<DialogButton onClick={dismiss}>OK</DialogButton>
+		<DialogButton onClick={dismiss} data-testid="updater-ok-btn">{m.updateOk()}</DialogButton>
 	{/snippet}
 </Dialog>

@@ -25,6 +25,11 @@ import {
 	visitChatPages,
 } from './review/visit-all-pages';
 
+/** Trigger UpdaterDialog into a specific state via custom event. */
+function simulateUpdate(state: 'downloading' | 'ready' | 'error' | 'idle') {
+	window.dispatchEvent(new CustomEvent('test-simulate-update', { detail: state }));
+}
+
 export const testUtils = {
 	waitFor,
 	waitForText,
@@ -38,6 +43,7 @@ export const testUtils = {
 	sendMessage,
 	waitForMessage,
 	openDirectChat,
+	simulateUpdate,
 	checkOverflow,
 	checkDarkMode,
 	checkRTL,

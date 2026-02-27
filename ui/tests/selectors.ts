@@ -126,4 +126,12 @@ export const S = {
 		includeDebugLog: tid('contact-us-include-debug-log'),
 		nextButton: tid('contact-us-next-btn'),
 	},
+	updater: {
+		downloading: tid('updater-downloading'),
+		ready: tid('updater-ready'),
+		error: tid('updater-error'),
+		laterBtn: tid('updater-later-btn'),
+		restartBtn: tid('updater-restart-btn'),
+		okBtn: tid('updater-ok-btn'),
+	},
 } as const;

@@ -95,6 +95,64 @@ describe('Compat verify — check data with current version', () => {
 		);
 	});
 
+	it('old messages are still visible after upgrade', async () => {
+		const agent1 = browser.getInstance('agent1');
+		const agent2 = browser.getInstance('agent2');
+
+		// Navigate Alice into the chat with Bob
+		const navErr1 = await agent1.executeAsync(
+			(name: string, done: (r: string | null) => void) => {
+				window.__test.openDirectChat(name).then(() => done(null), (e) => done(String(e)));
+			},
+			state.bobName,
+		);
+		expect(navErr1).toBeNull();
+
+		// Verify Alice's original message is visible
+		const oldMsg1 = await agent1.executeAsync(
+			(text: string, done: (r: string | null) => void) => {
+				window.__test.waitForMessage(text).then(() => done(null), (e) => done(String(e)));
+			},
+			state.msgAlice,
+		);
+		expect(oldMsg1).toBeNull();
+
+		// Verify Bob's original message is visible
+		const oldMsg2 = await agent1.executeAsync(
+			(text: string, done: (r: string | null) => void) => {
+				window.__test.waitForMessage(text).then(() => done(null), (e) => done(String(e)));
+			},
+			state.msgBob,
+		);
+		expect(oldMsg2).toBeNull();
+
+		// Navigate Bob into the chat with Alice
+		const navErr2 = await agent2.executeAsync(
+			(name: string, done: (r: string | null) => void) => {
+				window.__test.openDirectChat(name).then(() => done(null), (e) => done(String(e)));
+			},
+			state.aliceName,
+		);
+		expect(navErr2).toBeNull();
+
+		// Verify both old messages are visible on Bob's side too
+		const oldMsg3 = await agent2.executeAsync(
+			(text: string, done: (r: string | null) => void) => {
+				window.__test.waitForMessage(text).then(() => done(null), (e) => done(String(e)));
+			},
+			state.msgAlice,
+		);
+		expect(oldMsg3).toBeNull();
+
+		const oldMsg4 = await agent2.executeAsync(
+			(text: string, done: (r: string | null) => void) => {
+				window.__test.waitForMessage(text).then(() => done(null), (e) => done(String(e)));
+			},
+			state.msgBob,
+		);
+		expect(oldMsg4).toBeNull();
+	});
+
 	it('can send new messages after upgrade', async () => {
 		const agent1 = browser.getInstance('agent1');
 		const agent2 = browser.getInstance('agent2');

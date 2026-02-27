@@ -193,5 +193,6 @@
 	"updateReady": "Update downloaded. Restart to apply.",
 	"updateRestart": "Restart",
 	"updateLater": "Later",
-	"updateError": "Update failed. Please try again later."
+	"updateError": "Update failed. Please try again later.",
+	"updateOk": "Ok"
 }
