@@ -15,14 +15,12 @@
 	const mockUpdate: false | 'download' | 'error' = false;
 
 	onMount(() => {
-		if (mockUpdate) {
-			simulateMockUpdate(mockUpdate);
-			return;
-		}
-
 		// The updater plugin is only loaded in production desktop builds
 		// (see src-tauri/src/lib.rs:41-66)
-		if (!isTauriEnv() || import.meta.env.DEV) return;
+		if (!isTauriEnv() || import.meta.env.DEV) {
+			if (mockUpdate) simulateMockUpdate(mockUpdate);
+			return;
+		}
 
 		checkForUpdate();
 	});
