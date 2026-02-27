@@ -55,6 +55,14 @@ export const config: Options.Testrunner = {
 	reporters: ['spec'],
 
 	async onPrepare() {
+		// Clean up leftover databases from previous interrupted runs
+		const dataDir = path.join(ROOT, '.dbs', 'e2e');
+		try {
+			rmSync(dataDir, { recursive: true, force: true });
+		} catch {
+			// ignore
+		}
+
 		if (!process.env.SKIP_BUILD) {
 			console.log('Building Tauri app (debug, no-bundle)...');
 			execSync('pnpm tauri build --debug --no-bundle', {
