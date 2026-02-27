@@ -46,6 +46,8 @@ jobs:
 
       - name: install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: '' # TODO: remove this when we want to disallow warnings in our rust code in CI
 
       - name: install x86_64 target
         if: matrix.args == '--target x86_64-apple-darwin'
