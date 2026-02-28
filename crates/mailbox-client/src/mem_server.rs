@@ -18,7 +18,7 @@ pub type MemMailboxLogs<Item> = HashMap<
 pub struct MemMailbox<Item: MailboxItem> {
     pub(crate) id: MailboxId,
     pub(crate) ops: Arc<RwLock<MemMailboxLogs<Item>>>,
-    pub(crate) blobs: Arc<RwLock<HashMap<BlobHash, Blob>>>,
+    pub(crate) blobs: Arc<RwLock<HashMap<BlobHash, Opaq>>>,
 }
 
 impl<Item: MailboxItem> MemMailbox<Item> {

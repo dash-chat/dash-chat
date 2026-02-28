@@ -52,8 +52,8 @@ pub trait LogStore<Item: MailboxItem>: Send + Sync + 'static {
 #[async_trait::async_trait]
 pub trait BlobStore: Clone + Send + Sync + 'static {
     async fn has_blob(&self, hash: BlobHash) -> anyhow::Result<bool>;
-    async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Blob>>;
-    async fn store_blob(&self, blob: Blob) -> anyhow::Result<BlobHash>;
+    async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Opaq>>;
+    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<BlobHash>;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

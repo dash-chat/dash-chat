@@ -22,7 +22,7 @@ pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
 pub use dollops_table::{DollopsKeyError, DollopsKeyPrefix, LogKey, DOLLOPS_TABLE};
 pub use get_dollops::get_dollops_for_topics;
 pub use mailbox_api::{
-    Author, Blob, GetDollopsRequest, GetDollopsResponse, SequenceNumber, StoreDollopsRequest,
+    Author, GetDollopsRequest, GetDollopsResponse, Opaq, SequenceNumber, StoreDollopsRequest,
     TopicId,
 };
 pub use store_dollops::store_dollops;

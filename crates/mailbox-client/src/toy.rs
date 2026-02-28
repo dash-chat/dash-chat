@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use mailbox_api::{Blob, GetDollopsRequest, GetDollopsResponse, StoreDollopsRequest};
+use mailbox_api::{GetDollopsRequest, GetDollopsResponse, Opaq, StoreDollopsRequest};
 
 use super::*;
 
@@ -47,11 +47,11 @@ where
         todo!()
     }
 
-    async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Blob>> {
+    async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Opaq>> {
         todo!()
     }
 
-    async fn store_blob(&self, blob: Blob) -> anyhow::Result<BlobHash> {
+    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<BlobHash> {
         todo!()
     }
 }
@@ -68,7 +68,7 @@ where
         }
 
         // Group items by topic -> author -> seq_num
-        let mut dollops: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blob>>> = BTreeMap::new();
+        let mut dollops: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Opaq>>> = BTreeMap::new();
 
         for op in ops {
             let topic_id = Self::encode_topic_id(&op.topic());
@@ -195,12 +195,12 @@ where
         Ok(author)
     }
 
-    fn serialize_operation(item: &Item) -> Result<Blob, anyhow::Error> {
+    fn serialize_operation(item: &Item) -> Result<Opaq, anyhow::Error> {
         let bytes = p2panda_core::cbor::encode_cbor(item)?;
-        Ok(Blob::new(bytes))
+        Ok(Opaq::new(bytes))
     }
 
-    fn deserialize_operation(blob: &Blob) -> Result<Item, anyhow::Error> {
+    fn deserialize_operation(blob: &Opaq) -> Result<Item, anyhow::Error> {
         Ok(p2panda_core::cbor::decode_cbor(blob.as_ref())?)
     }
 }

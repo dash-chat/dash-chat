@@ -5,6 +5,7 @@ pub type TopicId = String;
 pub type Author = String;
 pub type SequenceNumber = u64;
 
+/// Opaque bytes, representing either a Dollop or a Blob
 #[derive(
     Clone,
     Debug,
@@ -17,9 +18,9 @@ pub type SequenceNumber = u64;
     derive_more::From,
     derive_more::Into,
 )]
-pub struct Blob(#[serde(with = "base64_serde")] bytes::Bytes);
+pub struct Opaq(#[serde(with = "base64_serde")] bytes::Bytes);
 
-impl Blob {
+impl Opaq {
     pub fn new(data: impl Into<bytes::Bytes>) -> Self {
         Self(data.into())
     }
@@ -33,7 +34,7 @@ impl Blob {
     }
 }
 
-impl From<Vec<u8>> for Blob {
+impl From<Vec<u8>> for Opaq {
     fn from(data: Vec<u8>) -> Self {
         Self(data.into())
     }
@@ -80,7 +81,7 @@ pub struct GetDollopsRequest {
 #[derive(Serialize, Deserialize)]
 pub struct GetDollopsForTopicResponse {
     // The dollops that the client does not have
-    pub dollops: BTreeMap<Author, BTreeMap<SequenceNumber, Blob>>,
+    pub dollops: BTreeMap<Author, BTreeMap<SequenceNumber, Opaq>>,
     // The dollops that the server is missing from the client's request
     pub missing: BTreeMap<Author, Vec<SequenceNumber>>,
 }
@@ -92,7 +93,7 @@ pub struct GetDollopsResponse {
 
 #[derive(Serialize, Deserialize)]
 pub struct StoreDollopsRequest {
-    pub dollops: BTreeMap<TopicId, BTreeMap<Author, BTreeMap<SequenceNumber, Blob>>>,
+    pub dollops: BTreeMap<TopicId, BTreeMap<Author, BTreeMap<SequenceNumber, Opaq>>>,
 }
 
 mod base64_serde {

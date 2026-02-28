@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AppState, Blob, DollopsKeyPrefix, LogKey, WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE,
+    AppState, DollopsKeyPrefix, LogKey, Opaq, WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE,
 };
 
 use mailbox_api::*;
@@ -49,7 +49,7 @@ fn get_dollops_for_topics_inner(
         .map_err(|e| format!("Failed to open watermarks table: {}", e))?;
 
     for (topic_id, requested_authors) in &request.topics {
-        let mut topic_authors: BTreeMap<Author, BTreeMap<SequenceNumber, Blob>> = BTreeMap::new();
+        let mut topic_authors: BTreeMap<Author, BTreeMap<SequenceNumber, Opaq>> = BTreeMap::new();
         // Track which sequences we have stored for each requested author
         // (used to avoid reporting as missing sequences we actually have)
         let mut stored_seqs_per_author: BTreeMap<Author, BTreeSet<SequenceNumber>> =
@@ -92,7 +92,7 @@ fn get_dollops_for_topics_inner(
                 topic_authors
                     .entry(author)
                     .or_insert_with(BTreeMap::new)
-                    .insert(seq_num, Blob::from(value.value().to_vec()));
+                    .insert(seq_num, Opaq::from(value.value().to_vec()));
             }
         }
 

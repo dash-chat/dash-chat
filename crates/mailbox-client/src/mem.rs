@@ -37,13 +37,13 @@ impl<Item: MailboxItem> BlobStore for MemMailboxClient<Item> {
         Ok(store.contains_key(&hash))
     }
 
-    async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Blob>> {
+    async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Opaq>> {
         let store = self.mailbox.blobs.read().await;
         let blob = store.get(&hash).cloned();
         Ok(blob)
     }
 
-    async fn store_blob(&self, blob: Blob) -> anyhow::Result<BlobHash> {
+    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<BlobHash> {
         let mut store = self.mailbox.blobs.write().await;
         let hash = blob.to_hash();
         store.insert(hash.clone(), blob);
@@ -247,7 +247,7 @@ mod tests {
         let client1 = mailbox.client();
         let client2 = mailbox.client();
 
-        let blob = Blob::from_static(b"hello");
+        let blob = Opaq::from_static(b"hello");
 
         client1.store_blob(blob.clone()).await.unwrap();
         let fetched = client2.get_blob(blob.to_hash()).await.unwrap().unwrap();
