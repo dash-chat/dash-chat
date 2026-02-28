@@ -1,17 +1,9 @@
 use axum::{extract::State, http::StatusCode, Json};
+use mailbox_api::*;
 use redb::{Database, ReadableTable};
-use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-use crate::{
-    AppState, Author, Blob, BlobsKey, BlobsKeyPrefix, SequenceNumber, TopicId, WatermarksKey,
-    BLOBS_TABLE, WATERMARKS_TABLE,
-};
-
-#[derive(Serialize, Deserialize)]
-pub struct StoreBlobsRequest {
-    pub blobs: BTreeMap<TopicId, BTreeMap<Author, BTreeMap<SequenceNumber, Blob>>>,
-}
+use crate::{AppState, BlobsKey, BlobsKeyPrefix, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE};
 
 pub async fn store_blobs(
     State(state): State<AppState>,
@@ -69,7 +61,7 @@ fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), S
                         .map_err(|e| e.to_string())?;
 
                     blobs_table
-                        .insert(&key, blob.as_slice())
+                        .insert(&key, blob.as_ref())
                         .map_err(|e| format!("Failed to insert blob: {}", e))?;
                     stored_seqs.insert(*seq_num);
                     blob_count += 1;

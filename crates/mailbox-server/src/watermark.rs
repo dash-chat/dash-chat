@@ -1,7 +1,8 @@
 use redb::{Database, ReadableDatabase, ReadableTable};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{BlobsKey, SequenceNumber, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE};
+use crate::{BlobsKey, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE};
+use mailbox_api::*;
 
 /// Computes initial watermarks by scanning all existing blobs.
 /// Called once at startup to ensure watermarks are in sync with stored blobs.

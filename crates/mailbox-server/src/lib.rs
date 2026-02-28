@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::{future::Future, path::PathBuf};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
-mod blob;
 mod blobs_table;
 mod cleanup;
 mod get_blobs;
@@ -19,17 +18,15 @@ mod watermarks_table;
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
 
-pub use blob::Blob;
 pub use blobs_table::{BlobsKey, BlobsKeyError, BlobsKeyPrefix, BLOBS_TABLE};
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
-pub use get_blobs::{get_blobs_for_topics, GetBlobsRequest, GetBlobsResponse};
-pub use store_blobs::{store_blobs, StoreBlobsRequest};
+pub use get_blobs::get_blobs_for_topics;
+pub use mailbox_api::{
+    Author, Blob, GetBlobsRequest, GetBlobsResponse, SequenceNumber, StoreBlobsRequest, TopicId,
+};
+pub use store_blobs::store_blobs;
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
-
-pub type TopicId = String;
-pub type Author = String;
-pub type SequenceNumber = u64;
 
 #[derive(Clone)]
 pub struct AppState {

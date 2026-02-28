@@ -4654,6 +4654,7 @@ dependencies = [
 name = "mailbox-api"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "blake3",
  "bytes",
  "derive_more 1.0.0",
@@ -4695,6 +4696,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "futures",
+ "mailbox-api",
  "mailbox-server",
  "redb",
  "serde",

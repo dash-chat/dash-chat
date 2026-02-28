@@ -4,27 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AppState, Author, Blob, BlobsKey, BlobsKeyPrefix, SequenceNumber, TopicId, WatermarksKey,
-    BLOBS_TABLE, WATERMARKS_TABLE,
+    AppState, Blob, BlobsKey, BlobsKeyPrefix, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE,
 };
 
-#[derive(Serialize, Deserialize)]
-pub struct GetBlobsRequest {
-    pub topics: BTreeMap<TopicId, BTreeMap<Author, SequenceNumber>>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct GetBlobsForTopicResponse {
-    // The blobs that the client does not have
-    pub blobs: BTreeMap<Author, BTreeMap<SequenceNumber, Blob>>,
-    // The blobs that the server is missing from the client's request
-    pub missing: BTreeMap<Author, Vec<SequenceNumber>>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct GetBlobsResponse {
-    pub blobs_by_topic: BTreeMap<TopicId, GetBlobsForTopicResponse>,
-}
+use mailbox_api::*;
 
 pub async fn get_blobs_for_topics(
     State(state): State<AppState>,
