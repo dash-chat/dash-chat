@@ -4651,6 +4651,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mailbox-api"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bytes",
+ "derive_more 1.0.0",
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mailbox-client"
 version = "0.1.0"
 dependencies = [
@@ -4660,7 +4672,7 @@ dependencies = [
  "bytes",
  "derive_more 1.0.0",
  "hex",
- "mailbox-server",
+ "mailbox-api",
  "named-id",
  "nanoid",
  "once_cell",

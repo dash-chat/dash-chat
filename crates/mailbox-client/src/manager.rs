@@ -25,7 +25,7 @@ where
     Item: MailboxItem,
     Store: MailboxStore<Item>,
 {
-    mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<dyn MailboxClient<Item>>>>>,
+    mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<dyn LogStore<Item>>>>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Store,
     config: MailboxesConfig,
@@ -180,7 +180,7 @@ where
     pub async fn sync_topics(
         &self,
         topics: impl Iterator<Item = Item::Topic>,
-        mailbox: Arc<dyn MailboxClient<Item>>,
+        mailbox: Arc<dyn LogStore<Item>>,
     ) -> anyhow::Result<()> {
         let mut request = BTreeMap::new();
         for topic in topics {

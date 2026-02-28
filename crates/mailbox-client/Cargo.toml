@@ -21,9 +21,7 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 named-id = { git = "https://github.com/maackle/named-id.git", optional = true }
 proptest = { version = "1.4.0", optional = true }
 
-# TODO: pull out the toy mailbox request/response types so they can be
-#       independently depended upon
-mailbox-server = { path = "../mailbox-server" }
+mailbox-api = { path = "../mailbox-api" }
 
 # NOTE: only used for cbor encoding/decoding
 p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }

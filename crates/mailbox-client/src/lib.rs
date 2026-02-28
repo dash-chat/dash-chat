@@ -10,6 +10,7 @@ use std::{
     time::Duration,
 };
 
+use mailbox_api::*;
 use once_cell::sync::Lazy;
 use tokio::sync::{Mutex, mpsc};
 use tracing::Instrument;
@@ -23,10 +24,12 @@ pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         .expect("Failed to build HTTP client")
 });
 
-#[async_trait::async_trait]
-pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
+pub trait MailboxClient<Item: MailboxItem>: LogStore<Item> + BlobStore {
     fn id(&self) -> MailboxId;
+}
 
+#[async_trait::async_trait]
+pub trait LogStore<Item: MailboxItem>: Send + Sync + 'static {
     /// Publish items to the mailbox for the given topic.
     async fn publish(&self, ops: Vec<Item>) -> anyhow::Result<()>;
 
@@ -105,63 +108,6 @@ pub trait MailboxItem: Clone + Serialize + DeserializeOwned + Send + Sync + 'sta
     fn seq_num(&self) -> SeqNum;
     fn author(&self) -> Self::Author;
     fn topic(&self) -> Self::Topic;
-}
-
-#[derive(
-    Clone,
-    Debug,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Eq,
-    Hash,
-    derive_more::Deref,
-    derive_more::From,
-    derive_more::Into,
-)]
-pub struct Blob(bytes::Bytes);
-
-impl Blob {
-    pub fn from_static(bytes: &'static [u8]) -> Self {
-        Self(bytes.into())
-    }
-
-    pub fn to_hash(&self) -> BlobHash {
-        BlobHash(blake3::hash(self.as_ref()))
-    }
-}
-
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Eq,
-    Hash,
-    derive_more::Deref,
-    derive_more::Display,
-    derive_more::From,
-)]
-pub struct BlobHash(blake3::Hash);
-
-impl BlobHash {
-    pub fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self(blake3::Hash::from_bytes(bytes))
-    }
-}
-
-#[cfg(feature = "proptest")]
-impl proptest::arbitrary::Arbitrary for BlobHash {
-    type Strategy = proptest::strategy::BoxedStrategy<Self>;
-    type Parameters = ();
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        use proptest::prelude::Strategy;
-        proptest::prelude::any::<[u8; 32]>()
-            .prop_map(|a| BlobHash(blake3::Hash::from_bytes(a)))
-            .boxed()
-    }
 }
 
 /// Extra traits for ItemTraits which are feature-dependent.

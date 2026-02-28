@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// A blob of binary data that serializes/deserializes as base64
+/// An opaque blob of binary data that serializes/deserializes as base64
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Blob(#[serde(with = "base64_serde")] Vec<u8>);

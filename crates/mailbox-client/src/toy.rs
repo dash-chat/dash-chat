@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use mailbox_server::{Blob, GetBlobsRequest, GetBlobsResponse, StoreBlobsRequest};
+use mailbox_api::{Blob, GetBlobsRequest, GetBlobsResponse, StoreBlobsRequest};
 
 use super::*;
 
@@ -27,7 +27,6 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     }
 }
 
-#[async_trait::async_trait]
 impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item>
 where
     Item::Topic: ToyItemTraits,
@@ -36,7 +35,33 @@ where
     fn id(&self) -> MailboxId {
         self.id.clone()
     }
+}
 
+#[async_trait::async_trait]
+impl<Item: MailboxItem> BlobStore for ToyMailboxClient<Item>
+where
+    Item::Topic: ToyItemTraits,
+    Item::Author: ToyItemTraits,
+{
+    async fn has_blob(&self, hash: BlobHash) -> anyhow::Result<bool> {
+        todo!()
+    }
+
+    async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Blob>> {
+        todo!()
+    }
+
+    async fn store_blob(&self, blob: Blob) -> anyhow::Result<BlobHash> {
+        todo!()
+    }
+}
+
+#[async_trait::async_trait]
+impl<Item: MailboxItem> LogStore<Item> for ToyMailboxClient<Item>
+where
+    Item::Topic: ToyItemTraits,
+    Item::Author: ToyItemTraits,
+{
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error> {
         if ops.is_empty() {
             return Ok(());
@@ -176,6 +201,6 @@ where
     }
 
     fn deserialize_operation(blob: &Blob) -> Result<Item, anyhow::Error> {
-        Ok(p2panda_core::cbor::decode_cbor(blob.as_slice())?)
+        Ok(p2panda_core::cbor::decode_cbor(blob.as_ref())?)
     }
 }

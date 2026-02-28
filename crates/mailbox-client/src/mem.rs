@@ -24,6 +24,12 @@ impl<Item: MailboxItem> MemMailboxClient<Item> {
     }
 }
 
+impl<Item: MailboxItem> MailboxClient<Item> for MemMailboxClient<Item> {
+    fn id(&self) -> MailboxId {
+        self.mailbox.id.clone()
+    }
+}
+
 #[async_trait::async_trait]
 impl<Item: MailboxItem> BlobStore for MemMailboxClient<Item> {
     async fn has_blob(&self, hash: BlobHash) -> anyhow::Result<bool> {
@@ -44,15 +50,12 @@ impl<Item: MailboxItem> BlobStore for MemMailboxClient<Item> {
         Ok(hash)
     }
 }
+
 #[async_trait::async_trait]
-impl<Item: MailboxItem> MailboxClient<Item> for MemMailboxClient<Item>
+impl<Item: MailboxItem> LogStore<Item> for MemMailboxClient<Item>
 where
     Item::Topic: OptionalItemTraits,
 {
-    fn id(&self) -> MailboxId {
-        self.mailbox.id.clone()
-    }
-
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error> {
         let mut store = self.mailbox.ops.write().await;
         // ops.entry(topic).or_insert_with(Vec::new).push(op.into());
