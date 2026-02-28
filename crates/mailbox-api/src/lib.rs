@@ -73,26 +73,26 @@ impl proptest::arbitrary::Arbitrary for BlobHash {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct GetBlobsRequest {
+pub struct GetDollopsRequest {
     pub topics: BTreeMap<TopicId, BTreeMap<Author, SequenceNumber>>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct GetBlobsForTopicResponse {
-    // The blobs that the client does not have
-    pub blobs: BTreeMap<Author, BTreeMap<SequenceNumber, Blob>>,
-    // The blobs that the server is missing from the client's request
+pub struct GetDollopsForTopicResponse {
+    // The dollops that the client does not have
+    pub dollops: BTreeMap<Author, BTreeMap<SequenceNumber, Blob>>,
+    // The dollops that the server is missing from the client's request
     pub missing: BTreeMap<Author, Vec<SequenceNumber>>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct GetBlobsResponse {
-    pub blobs_by_topic: BTreeMap<TopicId, GetBlobsForTopicResponse>,
+pub struct GetDollopsResponse {
+    pub dollops_by_topic: BTreeMap<TopicId, GetDollopsForTopicResponse>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct StoreBlobsRequest {
-    pub blobs: BTreeMap<TopicId, BTreeMap<Author, BTreeMap<SequenceNumber, Blob>>>,
+pub struct StoreDollopsRequest {
+    pub dollops: BTreeMap<TopicId, BTreeMap<Author, BTreeMap<SequenceNumber, Blob>>>,
 }
 
 mod base64_serde {

@@ -1,4 +1,4 @@
-use mailbox_server::{test_utils::create_test_server, GetBlobsResponse};
+use mailbox_server::{test_utils::create_test_server, GetDollopsResponse};
 use serde_json::json;
 
 #[tokio::test]
@@ -22,7 +22,7 @@ async fn test_store_and_retrieve_single_message() {
         base64::Engine::encode(&base64::engine::general_purpose::STANDARD, message_data);
 
     let store_response = server
-        .post("/blobs/store")
+        .post("/dollops/store")
         .json(&json!({
             "blobs": {
                 "test-topic-1": {
@@ -37,7 +37,7 @@ async fn test_store_and_retrieve_single_message() {
     store_response.assert_status(axum::http::StatusCode::CREATED);
 
     let get_response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": {
                 "test-topic-1": {}
@@ -47,14 +47,14 @@ async fn test_store_and_retrieve_single_message() {
 
     get_response.assert_status_ok();
 
-    let body: GetBlobsResponse = get_response.json();
-    assert!(body.blobs_by_topic.contains_key("test-topic-1"));
+    let body: GetDollopsResponse = get_response.json();
+    assert!(body.dollops_by_topic.contains_key("test-topic-1"));
 
-    let topic_response = &body.blobs_by_topic["test-topic-1"];
-    assert!(topic_response.blobs.contains_key("author-a"));
+    let topic_response = &body.dollops_by_topic["test-topic-1"];
+    assert!(topic_response.dollops.contains_key("author-a"));
     assert!(topic_response.missing.is_empty());
 
-    let author_sequences = &topic_response.blobs["author-a"];
+    let author_sequences = &topic_response.dollops["author-a"];
     assert!(author_sequences.contains_key(&0));
 
     let retrieved_message = &author_sequences[&0];
@@ -66,7 +66,7 @@ async fn test_store_and_retrieve_multiple_messages_same_topic() {
     let (server, _temp_file) = create_test_server();
 
     server
-        .post("/blobs/store")
+        .post("/dollops/store")
         .json(&json!({
             "blobs": {
                 "test-topic-multi": {
@@ -82,7 +82,7 @@ async fn test_store_and_retrieve_multiple_messages_same_topic() {
         .assert_status(axum::http::StatusCode::CREATED);
 
     let get_response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": {
                 "test-topic-multi": {}
@@ -92,9 +92,9 @@ async fn test_store_and_retrieve_multiple_messages_same_topic() {
 
     get_response.assert_status_ok();
 
-    let body: GetBlobsResponse = get_response.json();
-    let topic_response = &body.blobs_by_topic["test-topic-multi"];
-    let author_sequences = &topic_response.blobs["author-1"];
+    let body: GetDollopsResponse = get_response.json();
+    let topic_response = &body.dollops_by_topic["test-topic-multi"];
+    let author_sequences = &topic_response.dollops["author-1"];
 
     assert_eq!(author_sequences.len(), 3);
     assert!(topic_response.missing.is_empty());
@@ -112,7 +112,7 @@ async fn test_retrieve_messages_from_multiple_topics() {
     let topic2_msg = b"Topic 2 message";
 
     server
-        .post("/blobs/store")
+        .post("/dollops/store")
         .json(&json!({
             "blobs": {
                 "topic-a": {
@@ -131,7 +131,7 @@ async fn test_retrieve_messages_from_multiple_topics() {
         .assert_status(axum::http::StatusCode::CREATED);
 
     let get_response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": {
                 "topic-a": {},
@@ -142,8 +142,8 @@ async fn test_retrieve_messages_from_multiple_topics() {
 
     get_response.assert_status_ok();
 
-    let body: GetBlobsResponse = get_response.json();
-    let blobs_for_topics = &body.blobs_by_topic;
+    let body: GetDollopsResponse = get_response.json();
+    let blobs_for_topics = &body.dollops_by_topic;
 
     assert!(blobs_for_topics.contains_key("topic-a"));
     assert!(blobs_for_topics.contains_key("topic-b"));
@@ -151,13 +151,13 @@ async fn test_retrieve_messages_from_multiple_topics() {
     let topic_a_response = &blobs_for_topics["topic-a"];
     let topic_b_response = &blobs_for_topics["topic-b"];
 
-    assert_eq!(topic_a_response.blobs["author-1"].len(), 1);
-    assert_eq!(topic_b_response.blobs["author-1"].len(), 1);
+    assert_eq!(topic_a_response.dollops["author-1"].len(), 1);
+    assert_eq!(topic_b_response.dollops["author-1"].len(), 1);
     assert!(topic_a_response.missing.is_empty());
     assert!(topic_b_response.missing.is_empty());
 
-    let retrieved_a = &topic_a_response.blobs["author-1"][&0];
-    let retrieved_b = &topic_b_response.blobs["author-1"][&0];
+    let retrieved_a = &topic_a_response.dollops["author-1"][&0];
+    let retrieved_b = &topic_b_response.dollops["author-1"][&0];
 
     assert_eq!(retrieved_a.as_ref(), topic1_msg);
     assert_eq!(retrieved_b.as_ref(), topic2_msg);
@@ -168,7 +168,7 @@ async fn test_retrieve_empty_topic() {
     let (server, _temp_file) = create_test_server();
 
     let get_response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": {
                 "non-existent-topic": {}
@@ -178,12 +178,12 @@ async fn test_retrieve_empty_topic() {
 
     get_response.assert_status_ok();
 
-    let body: GetBlobsResponse = get_response.json();
-    let blobs_for_topics = &body.blobs_by_topic;
+    let body: GetDollopsResponse = get_response.json();
+    let blobs_for_topics = &body.dollops_by_topic;
 
     assert!(blobs_for_topics.contains_key("non-existent-topic"));
     let topic_response = &blobs_for_topics["non-existent-topic"];
-    assert_eq!(topic_response.blobs.len(), 0);
+    assert_eq!(topic_response.dollops.len(), 0);
     assert!(topic_response.missing.is_empty());
 }
 
@@ -192,7 +192,7 @@ async fn test_topic_isolation() {
     let (server, _temp_file) = create_test_server();
 
     server
-        .post("/blobs/store")
+        .post("/dollops/store")
         .json(&json!({
             "blobs": {
                 "isolated-topic-1": {
@@ -211,7 +211,7 @@ async fn test_topic_isolation() {
         .assert_status(axum::http::StatusCode::CREATED);
 
     let get_response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": {
                 "isolated-topic-1": {}
@@ -219,11 +219,11 @@ async fn test_topic_isolation() {
         }))
         .await;
 
-    let body: GetBlobsResponse = get_response.json();
-    let blobs_for_topics = &body.blobs_by_topic;
+    let body: GetDollopsResponse = get_response.json();
+    let blobs_for_topics = &body.dollops_by_topic;
 
     let topic_1_response = &blobs_for_topics["isolated-topic-1"];
-    assert_eq!(topic_1_response.blobs["author-1"].len(), 1);
+    assert_eq!(topic_1_response.dollops["author-1"].len(), 1);
     assert!(topic_1_response.missing.is_empty());
     assert!(!blobs_for_topics.contains_key("isolated-topic-2"));
 }
@@ -234,7 +234,7 @@ async fn test_sequence_number_filtering() {
 
     // Store messages with sequence numbers 0, 1, 2, 3, 4
     server
-        .post("/blobs/store")
+        .post("/dollops/store")
         .json(&json!({
             "blobs": {
                 "test-topic": {
@@ -253,7 +253,7 @@ async fn test_sequence_number_filtering() {
 
     // Request only messages with sequence number > 2
     let get_response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": {
                 "test-topic": {
@@ -265,9 +265,9 @@ async fn test_sequence_number_filtering() {
 
     get_response.assert_status_ok();
 
-    let body: GetBlobsResponse = get_response.json();
-    let topic_response = &body.blobs_by_topic["test-topic"];
-    let author_sequences = &topic_response.blobs["author-x"];
+    let body: GetDollopsResponse = get_response.json();
+    let topic_response = &body.dollops_by_topic["test-topic"];
+    let author_sequences = &topic_response.dollops["author-x"];
 
     // Should only get messages 3 and 4
     assert_eq!(author_sequences.len(), 2);
@@ -293,7 +293,7 @@ async fn test_get_returns_all_authors_for_topic() {
 
     // Store messages in multiple authors for the same topic
     server
-        .post("/blobs/store")
+        .post("/dollops/store")
         .json(&json!({
             "blobs": {
                 "test-topic": {
@@ -317,7 +317,7 @@ async fn test_get_returns_all_authors_for_topic() {
 
     // Request only author-a with sequence > 0, but should also get all of author-b and author-c
     let get_response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": {
                 "test-topic": {
@@ -329,9 +329,9 @@ async fn test_get_returns_all_authors_for_topic() {
 
     get_response.assert_status_ok();
 
-    let body: GetBlobsResponse = get_response.json();
-    let topic_response = &body.blobs_by_topic["test-topic"];
-    let topic_authors = &topic_response.blobs;
+    let body: GetDollopsResponse = get_response.json();
+    let topic_response = &body.dollops_by_topic["test-topic"];
+    let topic_authors = &topic_response.dollops;
 
     // Should have all three authors
     assert_eq!(topic_authors.len(), 3);
@@ -374,7 +374,7 @@ async fn test_missing_blobs_server_behind() {
 
     // Store only messages 0-2 on server
     server
-        .post("/blobs/store")
+        .post("/dollops/store")
         .json(&json!({
             "blobs": {
                 "test-topic": {
@@ -391,7 +391,7 @@ async fn test_missing_blobs_server_behind() {
 
     // Client says it has up to sequence 5
     let get_response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": {
                 "test-topic": {
@@ -403,13 +403,13 @@ async fn test_missing_blobs_server_behind() {
 
     get_response.assert_status_ok();
 
-    let body: GetBlobsResponse = get_response.json();
-    let topic_response = &body.blobs_by_topic["test-topic"];
+    let body: GetDollopsResponse = get_response.json();
+    let topic_response = &body.dollops_by_topic["test-topic"];
 
     // Server should return empty blobs (nothing new for client)
     // The author might not even exist in blobs if all were filtered out
     assert!(topic_response
-        .blobs
+        .dollops
         .get("author-x")
         .map_or(true, |author| author.is_empty()));
 
@@ -428,7 +428,7 @@ async fn test_missing_blobs_server_has_nothing() {
 
     // Client says it has up to sequence 3
     let get_response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": {
                 "test-topic": {
@@ -440,11 +440,11 @@ async fn test_missing_blobs_server_has_nothing() {
 
     get_response.assert_status_ok();
 
-    let body: GetBlobsResponse = get_response.json();
-    let topic_response = &body.blobs_by_topic["test-topic"];
+    let body: GetDollopsResponse = get_response.json();
+    let topic_response = &body.dollops_by_topic["test-topic"];
 
     // Server should return empty blobs
-    assert!(topic_response.blobs.is_empty());
+    assert!(topic_response.dollops.is_empty());
 
     // Server should report missing all sequences 0-3
     assert!(topic_response.missing.contains_key("author-x"));
@@ -459,7 +459,7 @@ async fn test_missing_blobs_multiple_authors() {
 
     // Store blobs for author-a (0-1) but nothing for author-b
     server
-        .post("/blobs/store")
+        .post("/dollops/store")
         .json(&json!({
             "blobs": {
                 "test-topic": {
@@ -475,7 +475,7 @@ async fn test_missing_blobs_multiple_authors() {
 
     // Client says it has author-a up to 4 and author-b up to 2
     let get_response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": {
                 "test-topic": {
@@ -488,8 +488,8 @@ async fn test_missing_blobs_multiple_authors() {
 
     get_response.assert_status_ok();
 
-    let body: GetBlobsResponse = get_response.json();
-    let topic_response = &body.blobs_by_topic["test-topic"];
+    let body: GetDollopsResponse = get_response.json();
+    let topic_response = &body.dollops_by_topic["test-topic"];
 
     // Should have missing for both authors
     assert_eq!(topic_response.missing.len(), 2);
@@ -509,7 +509,7 @@ async fn test_no_missing_when_server_is_ahead() {
 
     // Store messages 0-5
     server
-        .post("/blobs/store")
+        .post("/dollops/store")
         .json(&json!({
             "blobs": {
                 "test-topic": {
@@ -529,7 +529,7 @@ async fn test_no_missing_when_server_is_ahead() {
 
     // Client says it has up to sequence 2
     let get_response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": {
                 "test-topic": {
@@ -541,11 +541,11 @@ async fn test_no_missing_when_server_is_ahead() {
 
     get_response.assert_status_ok();
 
-    let body: GetBlobsResponse = get_response.json();
-    let topic_response = &body.blobs_by_topic["test-topic"];
+    let body: GetDollopsResponse = get_response.json();
+    let topic_response = &body.dollops_by_topic["test-topic"];
 
     // Server should return messages 3, 4, 5
-    let author_seqs = &topic_response.blobs["author-x"];
+    let author_seqs = &topic_response.dollops["author-x"];
     assert_eq!(author_seqs.len(), 3);
     assert!(author_seqs.contains_key(&3));
     assert!(author_seqs.contains_key(&4));

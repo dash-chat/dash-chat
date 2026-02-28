@@ -1,6 +1,6 @@
 use futures::future::join_all;
 use mailbox_server::{
-    test_utils::create_test_server, Author, GetBlobsResponse, SequenceNumber, TopicId,
+    test_utils::create_test_server, Author, GetDollopsResponse, SequenceNumber, TopicId,
 };
 use serde_json::json;
 use serial_test::serial;
@@ -48,7 +48,7 @@ async fn stress_test_concurrent_writes() {
 
         let task = async move {
             let response = server_clone
-                .post("/blobs/store")
+                .post("/dollops/store")
                 .json(&create_store_request(&topic_id, message.as_bytes(), i))
                 .await;
 
@@ -72,7 +72,7 @@ async fn stress_test_concurrent_writes() {
     for topic_idx in 0..num_topics {
         let topic_id = format!("stress-topic-{}", topic_idx);
         let get_response = server
-            .post("/blobs/get")
+            .post("/dollops/get")
             .json(&json!({
                 "topics": {
                     topic_id: {}
@@ -81,10 +81,10 @@ async fn stress_test_concurrent_writes() {
             .await;
 
         get_response.assert_status_ok();
-        let body: GetBlobsResponse = get_response.json();
-        let topic_authors = &body.blobs_by_topic[&format!("stress-topic-{}", topic_idx)];
+        let body: GetDollopsResponse = get_response.json();
+        let topic_authors = &body.dollops_by_topic[&format!("stress-topic-{}", topic_idx)];
         let total_messages: u64 = topic_authors
-            .blobs
+            .dollops
             .values()
             .map(|author| author.len() as u64)
             .sum();
@@ -110,7 +110,7 @@ async fn stress_test_concurrent_reads() {
             let message = format!("Message {} for topic {}", msg_idx, topic_idx);
 
             server
-                .post("/blobs/store")
+                .post("/dollops/store")
                 .json(&create_store_request(
                     &topic_id,
                     message.as_bytes(),
@@ -133,7 +133,7 @@ async fn stress_test_concurrent_reads() {
         let task = async move {
             let topic_id_clone = topic_id.clone();
             let response = server_clone
-                .post("/blobs/get")
+                .post("/dollops/get")
                 .json(&json!({
                     "topics": {
                         &topic_id: {}
@@ -142,10 +142,10 @@ async fn stress_test_concurrent_reads() {
                 .await;
 
             response.assert_status_ok();
-            let body: GetBlobsResponse = response.json();
-            let topic_authors = &body.blobs_by_topic[&topic_id_clone];
+            let body: GetDollopsResponse = response.json();
+            let topic_authors = &body.dollops_by_topic[&topic_id_clone];
             let total_messages: u64 = topic_authors
-                .blobs
+                .dollops
                 .values()
                 .map(|author| author.len() as u64)
                 .sum();
@@ -187,7 +187,7 @@ async fn stress_test_mixed_read_write_operations() {
                 let message = format!("Mixed message {}", i);
 
                 let response = server_clone
-                    .post("/blobs/store")
+                    .post("/dollops/store")
                     .json(&create_store_request(&topic_id, message.as_bytes(), i))
                     .await;
 
@@ -198,7 +198,7 @@ async fn stress_test_mixed_read_write_operations() {
             // Read operation
             let task = Box::pin(async move {
                 let response = server_clone
-                    .post("/blobs/get")
+                    .post("/dollops/get")
                     .json(&json!({
                         "topics": {
                             topic_id: {}
@@ -243,7 +243,7 @@ async fn stress_test_large_messages() {
             let message = vec![b'X'; message_size];
 
             let response = server_clone
-                .post("/blobs/store")
+                .post("/dollops/store")
                 .json(&create_store_request(&topic_id, &message, i as u64))
                 .await;
 
@@ -269,7 +269,7 @@ async fn stress_test_large_messages() {
     for topic_idx in 0..5 {
         let topic_id = format!("large-msg-topic-{}", topic_idx);
         let response = server
-            .post("/blobs/get")
+            .post("/dollops/get")
             .json(&json!({
                 "topics": {
                     &topic_id: {}
@@ -278,10 +278,10 @@ async fn stress_test_large_messages() {
             .await;
 
         response.assert_status_ok();
-        let body: GetBlobsResponse = response.json();
-        let topic_authors = &body.blobs_by_topic[&topic_id];
+        let body: GetDollopsResponse = response.json();
+        let topic_authors = &body.dollops_by_topic[&topic_id];
         let total_messages: u64 = topic_authors
-            .blobs
+            .dollops
             .values()
             .map(|author| author.len() as u64)
             .sum();
@@ -304,7 +304,7 @@ async fn stress_test_many_topics() {
             let message = format!("Message {} for topic {}", msg_idx, topic_idx);
 
             server
-                .post("/blobs/store")
+                .post("/dollops/store")
                 .json(&create_store_request(
                     &topic_id,
                     message.as_bytes(),
@@ -332,22 +332,22 @@ async fn stress_test_many_topics() {
 
     let start = Instant::now();
     let response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": topics_map
         }))
         .await;
 
     response.assert_status_ok();
-    let body: GetBlobsResponse = response.json();
+    let body: GetDollopsResponse = response.json();
 
     let retrieve_duration = start.elapsed();
 
-    assert_eq!(body.blobs_by_topic.len(), 100);
+    assert_eq!(body.dollops_by_topic.len(), 100);
     for topic_id in &topic_ids {
-        let topic_authors = &body.blobs_by_topic[topic_id];
+        let topic_authors = &body.dollops_by_topic[topic_id];
         let total_messages: u64 = topic_authors
-            .blobs
+            .dollops
             .values()
             .map(|author| author.len() as u64)
             .sum();
@@ -373,7 +373,7 @@ async fn stress_test_rapid_sequential_writes() {
         let message = format!("Rapid message {}", i);
 
         server
-            .post("/blobs/store")
+            .post("/dollops/store")
             .json(&create_store_request(topic_id, message.as_bytes(), i))
             .await
             .assert_status(axum::http::StatusCode::CREATED);
@@ -390,7 +390,7 @@ async fn stress_test_rapid_sequential_writes() {
 
     // Verify all messages were stored
     let response = server
-        .post("/blobs/get")
+        .post("/dollops/get")
         .json(&json!({
             "topics": {
                 topic_id: {}
@@ -399,10 +399,10 @@ async fn stress_test_rapid_sequential_writes() {
         .await;
 
     response.assert_status_ok();
-    let body: GetBlobsResponse = response.json();
-    let topic_authors = &body.blobs_by_topic[topic_id];
+    let body: GetDollopsResponse = response.json();
+    let topic_authors = &body.dollops_by_topic[topic_id];
     let total_messages: u64 = topic_authors
-        .blobs
+        .dollops
         .values()
         .map(|author| author.len() as u64)
         .sum();

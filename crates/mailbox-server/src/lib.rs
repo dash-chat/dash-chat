@@ -8,23 +8,24 @@ use std::sync::Arc;
 use std::{future::Future, path::PathBuf};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
-mod blobs_table;
 mod cleanup;
-mod get_blobs;
-mod store_blobs;
+mod dollops_table;
+mod get_dollops;
+mod store_dollops;
 mod watermark;
 mod watermarks_table;
 
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
 
-pub use blobs_table::{BlobsKey, BlobsKeyError, BlobsKeyPrefix, BLOBS_TABLE};
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
-pub use get_blobs::get_blobs_for_topics;
+pub use dollops_table::{DollopsKeyError, DollopsKeyPrefix, LogKey, DOLLOPS_TABLE};
+pub use get_dollops::get_dollops_for_topics;
 pub use mailbox_api::{
-    Author, Blob, GetBlobsRequest, GetBlobsResponse, SequenceNumber, StoreBlobsRequest, TopicId,
+    Author, Blob, GetDollopsRequest, GetDollopsResponse, SequenceNumber, StoreDollopsRequest,
+    TopicId,
 };
-pub use store_blobs::store_blobs;
+pub use store_dollops::store_dollops;
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
@@ -84,7 +85,7 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
 
     let write_txn = db.begin_write()?;
     {
-        let _blobs_table = write_txn.open_table(BLOBS_TABLE)?;
+        let _LOGS_TABLE = write_txn.open_table(DOLLOPS_TABLE)?;
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE)?;
     }
     write_txn.commit()?;
@@ -106,8 +107,8 @@ pub fn create_app_with_arc(db: Arc<Database>) -> Router {
 
     Router::new()
         .route("/health", get(health_check))
-        .route("/blobs/store", post(store_blobs))
-        .route("/blobs/get", post(get_blobs_for_topics))
+        .route("/dollops/store", post(store_dollops))
+        .route("/dollops/get", post(get_dollops_for_topics))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)

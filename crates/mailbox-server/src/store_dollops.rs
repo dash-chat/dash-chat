@@ -3,17 +3,17 @@ use mailbox_api::*;
 use redb::{Database, ReadableTable};
 use std::collections::BTreeSet;
 
-use crate::{AppState, BlobsKey, BlobsKeyPrefix, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE};
+use crate::{AppState, DollopsKeyPrefix, LogKey, WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE};
 
-pub async fn store_blobs(
+pub async fn store_dollops(
     State(state): State<AppState>,
-    Json(payload): Json<StoreBlobsRequest>,
+    Json(payload): Json<StoreDollopsRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let db = state.db.clone();
     // Use spawn_blocking because redb's begin_write() is a blocking call that waits
     // for exclusive write access. Running this directly in async context would block
     // tokio worker threads and cause deadlocks under concurrent load.
-    tokio::task::spawn_blocking(move || store_blobs_inner(&db, &payload))
+    tokio::task::spawn_blocking(move || store_dollops_inner(&db, &payload))
         .await
         .map_err(|e| {
             tracing::error!("Task join error: {}", e);
@@ -26,23 +26,23 @@ pub async fn store_blobs(
     Ok(StatusCode::CREATED)
 }
 
-fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), String> {
+fn store_dollops_inner(db: &Database, request: &StoreDollopsRequest) -> Result<(), String> {
     let write_txn = db
         .begin_write()
         .map_err(|e| format!("Failed to begin transaction: {}", e))?;
 
-    let mut blob_count = 0;
+    let mut dollop_count = 0;
 
     {
-        let mut blobs_table = write_txn
-            .open_table(BLOBS_TABLE)
-            .map_err(|e| format!("Failed to open blobs table: {}", e))?;
+        let mut dollops_table = write_txn
+            .open_table(DOLLOPS_TABLE)
+            .map_err(|e| format!("Failed to open dollops table: {}", e))?;
 
         let mut watermarks_table = write_txn
             .open_table(WATERMARKS_TABLE)
             .map_err(|e| format!("Failed to open watermarks table: {}", e))?;
 
-        for (topic_id, authors) in &request.blobs {
+        for (topic_id, authors) in &request.dollops {
             for (author, sequences) in authors {
                 let watermarks_key = WatermarksKey::new(topic_id.clone(), author.clone())
                     .map_err(|e| e.to_string())?;
@@ -56,20 +56,20 @@ fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), S
                 // Collect sequence numbers being stored (BTreeMap is already sorted)
                 let mut stored_seqs: BTreeSet<SequenceNumber> = BTreeSet::new();
 
-                for (seq_num, blob) in sequences {
-                    let key = BlobsKey::new_now(topic_id.clone(), author.clone(), *seq_num)
+                for (seq_num, dollop) in sequences {
+                    let key = LogKey::new_now(topic_id.clone(), author.clone(), *seq_num)
                         .map_err(|e| e.to_string())?;
 
-                    blobs_table
-                        .insert(&key, blob.as_ref())
-                        .map_err(|e| format!("Failed to insert blob: {}", e))?;
+                    dollops_table
+                        .insert(&key, dollop.as_ref())
+                        .map_err(|e| format!("Failed to insert dollop: {}", e))?;
                     stored_seqs.insert(*seq_num);
-                    blob_count += 1;
+                    dollop_count += 1;
                 }
 
                 // Update watermark for this topic:author
                 let new_watermark = compute_new_watermark(
-                    &blobs_table,
+                    &dollops_table,
                     topic_id,
                     author,
                     current_watermark,
@@ -99,14 +99,14 @@ fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), S
         .commit()
         .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
-    tracing::debug!("Stored {} blobs", blob_count);
+    tracing::debug!("Stored {} dollops", dollop_count);
     Ok(())
 }
 
-/// Computes the new watermark after storing blobs.
+/// Computes the new watermark after storing dollops.
 /// Returns None if no watermark can be established (no sequence 0).
 fn compute_new_watermark(
-    blobs_table: &redb::Table<BlobsKey, &[u8]>,
+    dollops_table: &redb::Table<LogKey, &[u8]>,
     topic_id: &str,
     author: &str,
     current_watermark: Option<SequenceNumber>,
@@ -116,9 +116,9 @@ fn compute_new_watermark(
     // watermark = Some(n) means seqs 0..=n are confirmed present
     let mut watermark: Option<SequenceNumber> = match current_watermark {
         Some(current_wm) => {
-            // Check if new sequences or existing blobs don't extend current watermark
+            // Check if new sequences or existing dollops don't extend current watermark
             if !new_sequences.contains(&(current_wm + 1))
-                && !blob_exists(blobs_table, topic_id, author, current_wm + 1)?
+                && !dollop_exists(dollops_table, topic_id, author, current_wm + 1)?
             {
                 return Ok(Some(current_wm)); // No extension possible
             }
@@ -126,7 +126,7 @@ fn compute_new_watermark(
         }
         None => {
             // No watermark yet - need sequence 0 to start
-            if !new_sequences.contains(&0) && !blob_exists(blobs_table, topic_id, author, 0)? {
+            if !new_sequences.contains(&0) && !dollop_exists(dollops_table, topic_id, author, 0)? {
                 return Ok(None); // Can't establish watermark without seq 0
             }
             None // Start from None, first iteration will check seq 0
@@ -137,9 +137,9 @@ fn compute_new_watermark(
     loop {
         let next_seq = watermark.map_or(0, |w| w + 1);
 
-        // First check new sequences (cheaper), then existing blobs
+        // First check new sequences (cheaper), then existing dollops
         if new_sequences.contains(&next_seq)
-            || blob_exists(blobs_table, topic_id, author, next_seq)?
+            || dollop_exists(dollops_table, topic_id, author, next_seq)?
         {
             watermark = Some(next_seq);
         } else {
@@ -150,16 +150,17 @@ fn compute_new_watermark(
     Ok(watermark)
 }
 
-/// Checks if a blob exists for the given topic:author:seq
-fn blob_exists(
-    table: &redb::Table<BlobsKey, &[u8]>,
+/// Checks if a dollop exists for the given topic:author:seq
+fn dollop_exists(
+    table: &redb::Table<LogKey, &[u8]>,
     topic_id: &str,
     author: &str,
     seq_num: SequenceNumber,
 ) -> Result<bool, String> {
-    let prefix = BlobsKeyPrefix::TopicAuthorSeq(topic_id.to_string(), author.to_string(), seq_num);
+    let prefix =
+        DollopsKeyPrefix::TopicAuthorSeq(topic_id.to_string(), author.to_string(), seq_num);
 
-    // Use range query to check if any blob exists for this topic:author:seq
+    // Use range query to check if any dollop exists for this topic:author:seq
     let mut iter = table
         .range(prefix.range_start()..=prefix.range_end())
         .map_err(|e| format!("Failed to create iterator: {}", e))?;

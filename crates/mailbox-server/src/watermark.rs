@@ -1,7 +1,7 @@
 use redb::{Database, ReadableDatabase, ReadableTable};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{BlobsKey, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE};
+use crate::{LogKey, WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE};
 use mailbox_api::*;
 
 /// Computes initial watermarks by scanning all existing blobs.
@@ -19,7 +19,7 @@ pub fn compute_initial_watermarks(db: &Database) -> Result<(), Box<dyn std::erro
 
     {
         let read_txn = db.begin_read()?;
-        let table = read_txn.open_table(BLOBS_TABLE)?;
+        let table = read_txn.open_table(DOLLOPS_TABLE)?;
 
         // Note: redb's iter() returns (key, value) pairs. We only access the key.
         // The value's AccessGuard is dropped without deserialization.
@@ -27,7 +27,7 @@ pub fn compute_initial_watermarks(db: &Database) -> Result<(), Box<dyn std::erro
             let (key, value) = entry?;
             drop(value);
 
-            let blob_key: BlobsKey = key.value();
+            let blob_key: LogKey = key.value();
             let watermarks_key = blob_key.watermarks_key();
 
             sequences_per_log

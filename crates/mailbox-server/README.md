@@ -4,11 +4,12 @@ A simple HTTP server for storing and retrieving messages organized by topics. Bu
 
 ## Features
 
-- Store blobs organized by topic → log → sequence number
-- Bidirectional sync: server returns missing blobs AND reports what it needs from the client
+- Store dollops organized by topic → log → sequence number
+- Bidirectional sync: server returns missing dollops AND reports what it needs from the client
+- Separate storage of large blobs associated with dollops (e.g. images, videos, files)
 - Watermark tracking for efficient sync (tracks highest contiguous sequence per log)
 - Persistent storage using redb (embedded database)
-- Automatic cleanup of blobs older than 7 days (via UUID v7 timestamps)
+- Automatic cleanup of dollops and blobs older than 7 days (via UUID v7 timestamps)
 - CORS enabled for cross-origin requests
 
 ## Installation
@@ -52,13 +53,13 @@ Response:
 }
 ```
 
-#### Store Blobs
+#### Store Dollops
 ```bash
-POST /blobs/store
+POST /dollops/store
 Content-Type: application/json
 
 {
-  "blobs": {
+  "dollops": {
     "topic-id-1": {
       "log-id-a": {
         "0": "SGVsbG8=",           // base64-encoded blob at sequence 0
@@ -69,13 +70,13 @@ Content-Type: application/json
 }
 ```
 
-Blobs are organized by topic → log → sequence number. The server tracks watermarks (highest contiguous sequence from 0) for each topic:log pair.
+Dollops are organized by topic → log → sequence number. The server tracks watermarks (highest contiguous sequence from 0) for each topic:log pair.
 
 Response: `201 Created`
 
-#### Retrieve Blobs (Bidirectional Sync)
+#### Retrieve Dollops (Bidirectional Sync)
 ```bash
-POST /blobs/get
+POST /dollops/get
 Content-Type: application/json
 
 {
@@ -90,15 +91,15 @@ Content-Type: application/json
 
 The request specifies, for each topic and log, the highest sequence number the client already has. The server responds with:
 
-1. **blobs**: Blobs the client is missing (sequences > client's max)
+1. **dollops**: Dollops the client is missing (sequences > client's max)
 2. **missing**: Sequences the server needs from the client (for bidirectional sync)
 
 Response:
 ```json
 {
-  "blobs_by_topic": {
+  "dollops_by_topic": {
     "topic-id-1": {
-      "blobs": {
+      "dollops": {
         "log-id-a": {
           "6": "SGVsbG8sIFdvcmxkIQ==",
           "7": "QW5vdGhlciBtZXNzYWdl"
@@ -113,17 +114,17 @@ Response:
 ```
 
 In this example:
-- Server returns blobs for `log-id-a` at sequences 6 and 7 (client had up to 5)
+- Server returns dollops for `log-id-a` at sequences 6 and 7 (client had up to 5)
 - Server reports it's missing sequences 3, 4, 5 for `log-id-b` (client should send these)
 
 ### Example Usage with curl
 
-**Store blobs:**
+**Store dollops:**
 ```bash
-curl -X POST http://localhost:3000/blobs/store \
+curl -X POST http://localhost:3000/dollops/store \
   -H "Content-Type: application/json" \
   -d '{
-    "blobs": {
+    "dollops": {
       "test-topic": {
         "log-1": {
           "0": "SGVsbG8=",
@@ -134,9 +135,9 @@ curl -X POST http://localhost:3000/blobs/store \
   }'
 ```
 
-**Retrieve blobs (with sync):**
+**Retrieve dollops (with sync):**
 ```bash
-curl -X POST http://localhost:3000/blobs/get \
+curl -X POST http://localhost:3000/dollops/get \
   -H "Content-Type: application/json" \
   -d '{
     "topics": {

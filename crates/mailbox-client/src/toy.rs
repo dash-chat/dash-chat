@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use mailbox_api::{Blob, GetBlobsRequest, GetBlobsResponse, StoreBlobsRequest};
+use mailbox_api::{Blob, GetDollopsRequest, GetDollopsResponse, StoreDollopsRequest};
 
 use super::*;
 
@@ -68,7 +68,7 @@ where
         }
 
         // Group items by topic -> author -> seq_num
-        let mut blobs: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blob>>> = BTreeMap::new();
+        let mut dollops: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blob>>> = BTreeMap::new();
 
         for op in ops {
             let topic_id = Self::encode_topic_id(&op.topic());
@@ -76,7 +76,7 @@ where
             let seq_num = op.seq_num();
             let blob = Self::serialize_operation(&op)?;
 
-            blobs
+            dollops
                 .entry(topic_id)
                 .or_default()
                 .entry(log_id)
@@ -84,9 +84,9 @@ where
                 .insert(seq_num, blob);
         }
 
-        let request = StoreBlobsRequest { blobs };
+        let request = StoreDollopsRequest { dollops };
         let response = HTTP_CLIENT
-            .post(format!("{}/blobs/store", self.base_url))
+            .post(format!("{}/dollops/store", self.base_url))
             .json(&request)
             .send()
             .await?;
@@ -97,7 +97,7 @@ where
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             Err(anyhow::anyhow!(
-                "Failed to store blobs: {} - {}",
+                "Failed to store dollops: {} - {}",
                 status,
                 body
             ))
@@ -108,7 +108,7 @@ where
         &self,
         request: FetchRequest<Item>,
     ) -> Result<FetchResponse<Item>, anyhow::Error> {
-        // Convert FetchRequest to GetBlobsRequest
+        // Convert FetchRequest to GetdollopsRequest
         let mut topics: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
 
         for (log_id, authors) in request.0.iter() {
@@ -123,9 +123,9 @@ where
             topics.insert(topic_id, log_map);
         }
 
-        let get_request = GetBlobsRequest { topics };
+        let get_request = GetDollopsRequest { topics };
         let response = HTTP_CLIENT
-            .post(format!("{}/blobs/get", self.base_url))
+            .post(format!("{}/dollops/get", self.base_url))
             .json(&get_request)
             .send()
             .await?;
@@ -134,24 +134,24 @@ where
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!(
-                "Failed to fetch blobs: {} - {}",
+                "Failed to fetch dollops: {} - {}",
                 status,
                 body
             ));
         }
 
-        let response = response.json::<GetBlobsResponse>().await?;
+        let response = response.json::<GetDollopsResponse>().await?;
 
-        // Convert GetBlobsResponse to FetchResponse
+        // Convert GetDollopsResponse to FetchResponse
         let mut result: BTreeMap<Item::Topic, FetchTopicResponse<Item>> = BTreeMap::new();
 
-        for (topic_id_str, topic_response) in response.blobs_by_topic {
+        for (topic_id_str, topic_response) in response.dollops_by_topic {
             let log_id = Self::log_id_from_string(&topic_id_str)?;
 
-            // Deserialize blobs to items
+            // Deserialize dollops to items
             let mut items = Vec::new();
-            for (_author_str, seq_blobs) in topic_response.blobs {
-                for (_seq, blob) in seq_blobs {
+            for (_author_str, seq_dollops) in topic_response.dollops {
+                for (_seq, blob) in seq_dollops {
                     items.push(Self::deserialize_operation(&blob)?);
                 }
             }

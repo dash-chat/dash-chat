@@ -5,9 +5,9 @@ use uuid::Uuid;
 
 use crate::watermarks_table::WatermarksKey;
 
-/// Error type for blobs key operations
+/// Error type for DollopsKey operations
 #[derive(Debug, thiserror::Error)]
-pub enum BlobsKeyError {
+pub enum DollopsKeyError {
     #[error("Topic ID contains invalid character (colon or null): {0}")]
     InvalidTopicId(String),
     #[error("Author contains invalid character (colon or null): {0}")]
@@ -16,7 +16,7 @@ pub enum BlobsKeyError {
     ParseError(String),
 }
 
-/// Key for BLOBS_TABLE with binary format for efficient comparison.
+/// Key for DOLLOPS_TABLE with binary format for efficient comparison.
 ///
 /// Binary format: `topic_id + 0x00 + author + 0x00 + seq_be8 + uuid_16`
 /// - topic_id: UTF-8 bytes (no null bytes allowed)
@@ -28,7 +28,7 @@ pub enum BlobsKeyError {
 ///
 /// This format enables direct byte comparison that matches struct field ordering.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct BlobsKey {
+pub struct LogKey {
     // NOTE: order of these fields matters!
     pub topic_id: String,
     pub author: String,
@@ -36,19 +36,19 @@ pub struct BlobsKey {
     pub uuid: Uuid,
 }
 
-impl BlobsKey {
-    /// Creates a new BlobsKey with validation
+impl LogKey {
+    /// Creates a new DollopsKey with validation
     pub fn new(
         topic_id: String,
         author: String,
         sequence_number: u64,
         uuid: Uuid,
-    ) -> Result<Self, BlobsKeyError> {
+    ) -> Result<Self, DollopsKeyError> {
         if topic_id.contains(':') || topic_id.contains('\0') {
-            return Err(BlobsKeyError::InvalidTopicId(topic_id));
+            return Err(DollopsKeyError::InvalidTopicId(topic_id));
         }
         if author.contains(':') || author.contains('\0') {
-            return Err(BlobsKeyError::InvalidAuthor(author));
+            return Err(DollopsKeyError::InvalidAuthor(author));
         }
         Ok(Self {
             topic_id,
@@ -58,20 +58,20 @@ impl BlobsKey {
         })
     }
 
-    /// Creates a new BlobsKey with a fresh UUID v7 timestamp
+    /// Creates a new DollopsKey with a fresh UUID v7 timestamp
     pub fn new_now(
         topic_id: String,
         author: String,
         sequence_number: u64,
-    ) -> Result<Self, BlobsKeyError> {
+    ) -> Result<Self, DollopsKeyError> {
         Self::new(topic_id, author, sequence_number, Uuid::now_v7())
     }
 
-    /// Parses a BlobsKey from its string representation
-    pub fn parse(s: &str) -> Result<Self, BlobsKeyError> {
+    /// Parses a DollopsKey from its string representation
+    pub fn parse(s: &str) -> Result<Self, DollopsKeyError> {
         let parts: Vec<&str> = s.split(':').collect();
         if parts.len() != 4 {
-            return Err(BlobsKeyError::ParseError(format!(
+            return Err(DollopsKeyError::ParseError(format!(
                 "Expected 4 parts, got {}",
                 parts.len()
             )));
@@ -80,10 +80,10 @@ impl BlobsKey {
         let topic_id = parts[0].to_string();
         let author = parts[1].to_string();
         let sequence_number = parts[2].parse::<u64>().map_err(|e| {
-            BlobsKeyError::ParseError(format!("Invalid sequence number '{}': {}", parts[2], e))
+            DollopsKeyError::ParseError(format!("Invalid sequence number '{}': {}", parts[2], e))
         })?;
         let uuid = Uuid::parse_str(parts[3]).map_err(|e| {
-            BlobsKeyError::ParseError(format!("Invalid UUID '{}': {}", parts[3], e))
+            DollopsKeyError::ParseError(format!("Invalid UUID '{}': {}", parts[3], e))
         })?;
 
         Ok(Self {
@@ -94,14 +94,14 @@ impl BlobsKey {
         })
     }
 
-    /// Extracts the WatermarksKey (topic_id:author) from this BlobsKey
+    /// Extracts the WatermarksKey (topic_id:author) from this DollopsKey
     pub fn watermarks_key(&self) -> WatermarksKey {
-        // Safe to unwrap because BlobsKey already validated no colons
+        // Safe to unwrap because DollopsKey already validated no colons
         WatermarksKey::new(self.topic_id.clone(), self.author.clone()).unwrap()
     }
 }
 
-impl fmt::Display for BlobsKey {
+impl fmt::Display for LogKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -111,8 +111,8 @@ impl fmt::Display for BlobsKey {
     }
 }
 
-impl Value for BlobsKey {
-    type SelfType<'a> = BlobsKey;
+impl Value for LogKey {
+    type SelfType<'a> = LogKey;
     type AsBytes<'a> = Vec<u8>;
 
     fn fixed_width() -> Option<usize> {
@@ -127,7 +127,7 @@ impl Value for BlobsKey {
         let first_null = data
             .iter()
             .position(|&b| b == 0)
-            .expect("Missing first null delimiter in BlobsKey");
+            .expect("Missing first null delimiter in DollopsKey");
         let topic_id = std::str::from_utf8(&data[..first_null])
             .expect("Invalid UTF-8 in topic_id")
             .to_string();
@@ -137,7 +137,7 @@ impl Value for BlobsKey {
         let second_null = rest
             .iter()
             .position(|&b| b == 0)
-            .expect("Missing second null delimiter in BlobsKey");
+            .expect("Missing second null delimiter in DollopsKey");
         let author = std::str::from_utf8(&rest[..second_null])
             .expect("Invalid UTF-8 in author")
             .to_string();
@@ -158,7 +158,7 @@ impl Value for BlobsKey {
                 .expect("Invalid UUID bytes"),
         );
 
-        BlobsKey {
+        LogKey {
             topic_id,
             author,
             sequence_number,
@@ -182,11 +182,11 @@ impl Value for BlobsKey {
     }
 
     fn type_name() -> TypeName {
-        TypeName::new("mailbox_server::BlobsKey")
+        TypeName::new("mailbox_server::DollopsKey")
     }
 }
 
-impl Key for BlobsKey {
+impl Key for LogKey {
     fn compare(data1: &[u8], data2: &[u8]) -> Ordering {
         // Direct byte comparison preserves ordering because:
         // - Null byte (0x00) delimiters are smaller than any valid UTF-8 byte
@@ -197,9 +197,9 @@ impl Key for BlobsKey {
     }
 }
 
-/// Partial key for prefix-based range queries on BLOBS_TABLE
+/// Partial key for prefix-based range queries on DOLLOPS_TABLE
 #[derive(Debug, Clone)]
-pub enum BlobsKeyPrefix {
+pub enum DollopsKeyPrefix {
     /// Match all keys for a topic: "topic_id:"
     Topic(String),
     /// Match all keys for a topic:author: "topic_id:author:"
@@ -208,24 +208,24 @@ pub enum BlobsKeyPrefix {
     TopicAuthorSeq(String, String, u64),
 }
 
-impl BlobsKeyPrefix {
-    /// Returns a BlobsKey for the lower bound of a range query.
+impl DollopsKeyPrefix {
+    /// Returns a DollopsKey for the lower bound of a range query.
     /// Uses minimal values (empty author, seq 0, nil UUID) for unspecified parts.
-    pub fn range_start(&self) -> BlobsKey {
+    pub fn range_start(&self) -> LogKey {
         match self {
-            BlobsKeyPrefix::Topic(topic) => BlobsKey {
+            DollopsKeyPrefix::Topic(topic) => LogKey {
                 topic_id: topic.clone(),
                 author: String::new(),
                 sequence_number: 0,
                 uuid: Uuid::nil(),
             },
-            BlobsKeyPrefix::TopicAuthor(topic, author) => BlobsKey {
+            DollopsKeyPrefix::TopicAuthor(topic, author) => LogKey {
                 topic_id: topic.clone(),
                 author: author.clone(),
                 sequence_number: 0,
                 uuid: Uuid::nil(),
             },
-            BlobsKeyPrefix::TopicAuthorSeq(topic, author, seq) => BlobsKey {
+            DollopsKeyPrefix::TopicAuthorSeq(topic, author, seq) => LogKey {
                 topic_id: topic.clone(),
                 author: author.clone(),
                 sequence_number: *seq,
@@ -234,24 +234,24 @@ impl BlobsKeyPrefix {
         }
     }
 
-    /// Returns a BlobsKey for the upper bound of a range query (exclusive).
+    /// Returns a DollopsKey for the upper bound of a range query (exclusive).
     /// Uses maximal values for unspecified parts.
-    pub fn range_end(&self) -> BlobsKey {
+    pub fn range_end(&self) -> LogKey {
         match self {
-            BlobsKeyPrefix::Topic(topic) => BlobsKey {
+            DollopsKeyPrefix::Topic(topic) => LogKey {
                 topic_id: topic.clone(),
                 // U+FFFF is the highest Unicode code point, sorts after all valid authors
                 author: String::from("\u{FFFF}"),
                 sequence_number: u64::MAX,
                 uuid: Uuid::max(),
             },
-            BlobsKeyPrefix::TopicAuthor(topic, author) => BlobsKey {
+            DollopsKeyPrefix::TopicAuthor(topic, author) => LogKey {
                 topic_id: topic.clone(),
                 author: author.clone(),
                 sequence_number: u64::MAX,
                 uuid: Uuid::max(),
             },
-            BlobsKeyPrefix::TopicAuthorSeq(topic, author, seq) => BlobsKey {
+            DollopsKeyPrefix::TopicAuthorSeq(topic, author, seq) => LogKey {
                 topic_id: topic.clone(),
                 author: author.clone(),
                 sequence_number: *seq,
@@ -264,88 +264,88 @@ impl BlobsKeyPrefix {
 // Database key format: topic_id + 0x00 + author + 0x00 + seq_be8 + uuid_16
 // The UUID v7 suffix is used for cleanup based on message age
 // Binary format enables direct byte comparison for efficient database operations
-pub const BLOBS_TABLE: TableDefinition<BlobsKey, &[u8]> = TableDefinition::new("blobs");
+pub const DOLLOPS_TABLE: TableDefinition<LogKey, &[u8]> = TableDefinition::new("dollops");
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_blobs_key_roundtrip() {
+    fn test_dollops_key_roundtrip() {
         let uuid = Uuid::now_v7();
-        let key = BlobsKey::new("topic1".into(), "author1".into(), 42, uuid).unwrap();
+        let key = LogKey::new("topic1".into(), "author1".into(), 42, uuid).unwrap();
         let serialized = key.to_string();
-        let parsed = BlobsKey::parse(&serialized).unwrap();
+        let parsed = LogKey::parse(&serialized).unwrap();
         assert_eq!(key, parsed);
     }
 
     #[test]
-    fn test_blobs_key_zero_padding() {
+    fn test_dollops_key_zero_padding() {
         let uuid = Uuid::now_v7();
-        let key = BlobsKey::new("topic".into(), "author".into(), 5, uuid).unwrap();
+        let key = LogKey::new("topic".into(), "author".into(), 5, uuid).unwrap();
         let serialized = key.to_string();
         assert!(serialized.contains(":00000000000000000005:"));
     }
 
     #[test]
-    fn test_blobs_key_ordering() {
+    fn test_dollops_key_ordering() {
         let uuid = Uuid::now_v7();
-        let key9 = BlobsKey::new("topic".into(), "author".into(), 9, uuid).unwrap();
-        let key10 = BlobsKey::new("topic".into(), "author".into(), 10, uuid).unwrap();
+        let key9 = LogKey::new("topic".into(), "author".into(), 9, uuid).unwrap();
+        let key10 = LogKey::new("topic".into(), "author".into(), 10, uuid).unwrap();
 
         // With zero-padding, 9 should sort before 10
         assert!(key9.to_string() < key10.to_string());
     }
 
     #[test]
-    fn test_blobs_key_rejects_colon_in_topic() {
+    fn test_dollops_key_rejects_colon_in_topic() {
         let uuid = Uuid::now_v7();
-        let result = BlobsKey::new("topic:bad".into(), "author".into(), 0, uuid);
-        assert!(matches!(result, Err(BlobsKeyError::InvalidTopicId(_))));
+        let result = LogKey::new("topic:bad".into(), "author".into(), 0, uuid);
+        assert!(matches!(result, Err(DollopsKeyError::InvalidTopicId(_))));
     }
 
     #[test]
-    fn test_blobs_key_rejects_colon_in_author() {
+    fn test_dollops_key_rejects_colon_in_author() {
         let uuid = Uuid::now_v7();
-        let result = BlobsKey::new("topic".into(), "author:bad".into(), 0, uuid);
-        assert!(matches!(result, Err(BlobsKeyError::InvalidAuthor(_))));
+        let result = LogKey::new("topic".into(), "author:bad".into(), 0, uuid);
+        assert!(matches!(result, Err(DollopsKeyError::InvalidAuthor(_))));
     }
 
     #[test]
-    fn test_blobs_key_rejects_null_in_topic() {
+    fn test_dollops_key_rejects_null_in_topic() {
         let uuid = Uuid::now_v7();
-        let result = BlobsKey::new("topic\0bad".into(), "author".into(), 0, uuid);
-        assert!(matches!(result, Err(BlobsKeyError::InvalidTopicId(_))));
+        let result = LogKey::new("topic\0bad".into(), "author".into(), 0, uuid);
+        assert!(matches!(result, Err(DollopsKeyError::InvalidTopicId(_))));
     }
 
     #[test]
-    fn test_blobs_key_rejects_null_in_author() {
+    fn test_dollops_key_rejects_null_in_author() {
         let uuid = Uuid::now_v7();
-        let result = BlobsKey::new("topic".into(), "author\0bad".into(), 0, uuid);
-        assert!(matches!(result, Err(BlobsKeyError::InvalidAuthor(_))));
+        let result = LogKey::new("topic".into(), "author\0bad".into(), 0, uuid);
+        assert!(matches!(result, Err(DollopsKeyError::InvalidAuthor(_))));
     }
 
     #[test]
-    fn test_blobs_key_binary_roundtrip() {
+    fn test_dollops_key_binary_roundtrip() {
         let uuid = Uuid::now_v7();
-        let key = BlobsKey::new("topic1".into(), "author1".into(), 42, uuid).unwrap();
-        let bytes = BlobsKey::as_bytes(&key);
-        let parsed = BlobsKey::from_bytes(&bytes);
+        let key = LogKey::new("topic1".into(), "author1".into(), 42, uuid).unwrap();
+        let bytes = LogKey::as_bytes(&key);
+        let parsed = LogKey::from_bytes(&bytes);
         assert_eq!(key, parsed);
     }
 
     #[test]
-    fn test_watermarks_key_from_blobs_key() {
+    fn test_watermarks_key_from_dollops_key() {
         let uuid = Uuid::now_v7();
-        let blobs_key = BlobsKey::new("topic".into(), "author".into(), 42, uuid).unwrap();
-        let watermarks_key = blobs_key.watermarks_key();
+        let dollops_key = LogKey::new("topic".into(), "author".into(), 42, uuid).unwrap();
+        let watermarks_key = dollops_key.watermarks_key();
         assert_eq!(watermarks_key.topic_id, "topic");
         assert_eq!(watermarks_key.author, "author");
     }
 
     #[test]
     fn test_prefix_range_topic() {
-        let prefix = BlobsKeyPrefix::Topic(
+        let prefix = DollopsKeyPrefix::Topic(
             "d8883c1402ed3c078953620a5bf2afc8fafca9601186e7133ca6b1bf72c35cfb".into(),
         );
         let start = prefix.range_start();
@@ -353,11 +353,11 @@ mod tests {
 
         assert!(start < end);
         assert_eq!(
-            BlobsKey::compare(&BlobsKey::as_bytes(&start), &BlobsKey::as_bytes(&end)),
+            LogKey::compare(&LogKey::as_bytes(&start), &LogKey::as_bytes(&end)),
             Ordering::Less
         );
 
-        let key = BlobsKey::new(
+        let key = LogKey::new(
             "d8883c1402ed3c078953620a5bf2afc8fafca9601186e7133ca6b1bf72c35cfb".into(),
             "3cb6797ce981200974303722ca17cbd2691593f2b05fbe5b6152f0b813127a7e".into(),
             0,
@@ -370,11 +370,11 @@ mod tests {
 
         // Making sure that database comparison works correctly
         assert_eq!(
-            BlobsKey::compare(&BlobsKey::as_bytes(&start), &BlobsKey::as_bytes(&key)),
+            LogKey::compare(&LogKey::as_bytes(&start), &LogKey::as_bytes(&key)),
             Ordering::Less
         );
         assert_eq!(
-            BlobsKey::compare(&BlobsKey::as_bytes(&key), &BlobsKey::as_bytes(&end)),
+            LogKey::compare(&LogKey::as_bytes(&key), &LogKey::as_bytes(&end)),
             Ordering::Less
         );
 
@@ -397,7 +397,7 @@ mod tests {
 
     #[test]
     fn test_prefix_range_topic_author() {
-        let prefix = BlobsKeyPrefix::TopicAuthor("topic".into(), "author".into());
+        let prefix = DollopsKeyPrefix::TopicAuthor("topic".into(), "author".into());
         let start = prefix.range_start();
         let end = prefix.range_end();
 
@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_prefix_range_with_seq() {
-        let prefix = BlobsKeyPrefix::TopicAuthorSeq("topic".into(), "author".into(), 5);
+        let prefix = DollopsKeyPrefix::TopicAuthorSeq("topic".into(), "author".into(), 5);
         let start = prefix.range_start();
 
         assert_eq!(start.topic_id, "topic");

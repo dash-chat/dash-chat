@@ -4,20 +4,20 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AppState, Blob, BlobsKey, BlobsKeyPrefix, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE,
+    AppState, Blob, DollopsKeyPrefix, LogKey, WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE,
 };
 
 use mailbox_api::*;
 
-pub async fn get_blobs_for_topics(
+pub async fn get_dollops_for_topics(
     State(state): State<AppState>,
-    Json(payload): Json<GetBlobsRequest>,
-) -> Result<Json<GetBlobsResponse>, (StatusCode, String)> {
+    Json(payload): Json<GetDollopsRequest>,
+) -> Result<Json<GetDollopsResponse>, (StatusCode, String)> {
     let db = state.db.clone();
     // Use spawn_blocking because redb's begin_read() can block while waiting for
     // concurrent write transactions. Running this directly in async context would
     // block tokio worker threads and cause deadlocks under concurrent load.
-    tokio::task::spawn_blocking(move || get_blobs_for_topics_inner(&db, &payload))
+    tokio::task::spawn_blocking(move || get_dollops_for_topics_inner(&db, &payload))
         .await
         .map_err(|e| {
             tracing::error!("Task join error: {}", e);
@@ -30,19 +30,19 @@ pub async fn get_blobs_for_topics(
         })
 }
 
-fn get_blobs_for_topics_inner(
+fn get_dollops_for_topics_inner(
     db: &Database,
-    request: &GetBlobsRequest,
-) -> Result<GetBlobsResponse, String> {
-    let mut blobs_by_topic: BTreeMap<TopicId, GetBlobsForTopicResponse> = BTreeMap::new();
+    request: &GetDollopsRequest,
+) -> Result<GetDollopsResponse, String> {
+    let mut dollops_by_topic: BTreeMap<TopicId, GetDollopsForTopicResponse> = BTreeMap::new();
 
     let read_txn = db
         .begin_read()
         .map_err(|e| format!("Failed to begin transaction: {}", e))?;
 
-    let blobs_table = read_txn
-        .open_table(BLOBS_TABLE)
-        .map_err(|e| format!("Failed to open blobs table: {}", e))?;
+    let dollops_table = read_txn
+        .open_table(DOLLOPS_TABLE)
+        .map_err(|e| format!("Failed to open dollops table: {}", e))?;
 
     let watermarks_table = read_txn
         .open_table(WATERMARKS_TABLE)
@@ -56,15 +56,15 @@ fn get_blobs_for_topics_inner(
             BTreeMap::new();
 
         // Use prefix-based range query to only iterate over blobs for this topic
-        let prefix = BlobsKeyPrefix::Topic(topic_id.clone());
+        let prefix = DollopsKeyPrefix::Topic(topic_id.clone());
 
-        for entry in blobs_table
+        for entry in dollops_table
             .range(prefix.range_start()..=prefix.range_end())
             .map_err(|e| format!("Failed to create iterator: {}", e))?
         {
             let (key, value) = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
 
-            let blob_key: BlobsKey = key.value();
+            let blob_key: LogKey = key.value();
             let author = blob_key.author.clone();
             let seq_num = blob_key.sequence_number;
 
@@ -149,15 +149,15 @@ fn get_blobs_for_topics_inner(
             }
         }
 
-        blobs_by_topic.insert(
+        dollops_by_topic.insert(
             topic_id.clone(),
-            GetBlobsForTopicResponse {
-                blobs: topic_authors,
+            GetDollopsForTopicResponse {
+                dollops: topic_authors,
                 missing,
             },
         );
     }
 
-    tracing::debug!("Retrieved blobs for {} topics", request.topics.len());
-    Ok(GetBlobsResponse { blobs_by_topic })
+    tracing::debug!("Retrieved dollops for {} topics", request.topics.len());
+    Ok(GetDollopsResponse { dollops_by_topic })
 }
