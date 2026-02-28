@@ -45,10 +45,12 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     ) -> Result<FetchResponse<Item>, anyhow::Error>;
 }
 
+/// The interface for remotely storing and retrieving blobs from a mailbox server.
 #[async_trait::async_trait]
-pub trait BlobStore: Send + Sync + 'static {
-    async fn store_blob(&self, blob: Blob) -> anyhow::Result<()>;
+pub trait BlobStore: Clone + Send + Sync + 'static {
+    async fn has_blob(&self, hash: BlobHash) -> anyhow::Result<bool>;
     async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Blob>>;
+    async fn store_blob(&self, blob: Blob) -> anyhow::Result<BlobHash>;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -105,7 +107,18 @@ pub trait MailboxItem: Clone + Serialize + DeserializeOwned + Send + Sync + 'sta
     fn topic(&self) -> Self::Topic;
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, derive_more::Deref)]
+#[derive(
+    Clone,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    derive_more::Deref,
+    derive_more::From,
+    derive_more::Into,
+)]
 pub struct Blob(bytes::Bytes);
 
 impl Blob {
@@ -118,8 +131,38 @@ impl Blob {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, derive_more::Deref)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    derive_more::Deref,
+    derive_more::Display,
+    derive_more::From,
+)]
 pub struct BlobHash(blake3::Hash);
+
+impl BlobHash {
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(blake3::Hash::from_bytes(bytes))
+    }
+}
+
+#[cfg(feature = "proptest")]
+impl proptest::arbitrary::Arbitrary for BlobHash {
+    type Strategy = proptest::strategy::BoxedStrategy<Self>;
+    type Parameters = ();
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        use proptest::prelude::Strategy;
+        proptest::prelude::any::<[u8; 32]>()
+            .prop_map(|a| BlobHash(blake3::Hash::from_bytes(a)))
+            .boxed()
+    }
+}
 
 /// Extra traits for ItemTraits which are feature-dependent.
 #[cfg(feature = "named-id")]

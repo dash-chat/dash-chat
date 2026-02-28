@@ -38,16 +38,6 @@ where
     Store: MailboxStore<Item>,
     Item::Topic: OptionalItemTraits,
 {
-    fn new(store: Store, config: MailboxesConfig, trigger: mpsc::Sender<()>) -> Self {
-        Self {
-            mailboxes: Arc::new(Mutex::new(Default::default())),
-            topics: Arc::new(Mutex::new(Default::default())),
-            store,
-            config,
-            trigger,
-        }
-    }
-
     pub async fn register(&self, mailbox: impl MailboxClient<Item>) {
         // TODO: check for existing mailbox with different ID but same "URL" (which is currently abstracted away and inaccessible here, darn)
         // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.
@@ -135,6 +125,16 @@ where
         );
 
         Ok(r)
+    }
+
+    fn new(store: Store, config: MailboxesConfig, trigger: mpsc::Sender<()>) -> Self {
+        Self {
+            mailboxes: Arc::new(Mutex::new(Default::default())),
+            topics: Arc::new(Mutex::new(Default::default())),
+            store,
+            config,
+            trigger,
+        }
     }
 
     async fn one_iteration(&self, mut mailbox_index: usize) -> (tokio::time::Duration, usize) {

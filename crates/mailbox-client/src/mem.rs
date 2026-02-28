@@ -26,16 +26,22 @@ impl<Item: MailboxItem> MemMailboxClient<Item> {
 
 #[async_trait::async_trait]
 impl<Item: MailboxItem> BlobStore for MemMailboxClient<Item> {
-    async fn store_blob(&self, blob: Blob) -> anyhow::Result<()> {
-        let mut store = self.mailbox.blobs.write().await;
-        store.insert(blob.to_hash(), blob);
-        Ok(())
+    async fn has_blob(&self, hash: BlobHash) -> anyhow::Result<bool> {
+        let store = self.mailbox.blobs.read().await;
+        Ok(store.contains_key(&hash))
     }
 
     async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Blob>> {
         let store = self.mailbox.blobs.read().await;
         let blob = store.get(&hash).cloned();
         Ok(blob)
+    }
+
+    async fn store_blob(&self, blob: Blob) -> anyhow::Result<BlobHash> {
+        let mut store = self.mailbox.blobs.write().await;
+        let hash = blob.to_hash();
+        store.insert(hash.clone(), blob);
+        Ok(hash)
     }
 }
 #[async_trait::async_trait]
@@ -235,13 +241,13 @@ mod tests {
     #[tokio::test]
     async fn test_mem_blobs() {
         let mailbox = MemMailbox::<Msg>::new();
-        let client = mailbox.client();
+        let client1 = mailbox.client();
+        let client2 = mailbox.client();
 
         let blob = Blob::from_static(b"hello");
 
-        client.store_blob(blob.clone()).await.unwrap();
-
-        let fetched = client.get_blob(blob.to_hash()).await.unwrap().unwrap();
+        client1.store_blob(blob.clone()).await.unwrap();
+        let fetched = client2.get_blob(blob.to_hash()).await.unwrap().unwrap();
         assert_eq!(fetched, blob);
     }
 

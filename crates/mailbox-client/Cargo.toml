@@ -19,6 +19,7 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 named-id = { git = "https://github.com/maackle/named-id.git", optional = true }
+proptest = { version = "1.4.0", optional = true }
 
 # TODO: pull out the toy mailbox request/response types so they can be
 #       independently depended upon
@@ -32,4 +33,6 @@ pretty_assertions = "1.4.1"
 
 
 [features]
+default = ["proptest"]
+proptest = ["dep:proptest"]
 named-id = ["dep:named-id"]
