@@ -15,16 +15,21 @@ mod store_dollops;
 mod watermark;
 mod watermarks_table;
 
+mod blobs_table;
+mod get_blobs;
+mod store_blobs;
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
 
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
 pub use dollops_table::{DollopsKey, DollopsKeyError, DollopsKeyPrefix, DOLLOPS_TABLE};
+pub use get_blobs::get_blobs;
 pub use get_dollops::get_dollops_for_topics;
 pub use mailbox_api::{
     Author, GetDollopsRequest, GetDollopsResponse, Opaq, SequenceNumber, StoreDollopsRequest,
     TopicId,
 };
+pub use store_blobs::store_blobs;
 pub use store_dollops::store_dollops;
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
@@ -109,6 +114,8 @@ pub fn create_app_with_arc(db: Arc<Database>) -> Router {
         .route("/health", get(health_check))
         .route("/dollops/store", post(store_dollops))
         .route("/dollops/get", post(get_dollops_for_topics))
+        .route("/blobs/get", post(get_blobs))
+        .route("/blobs/store", post(store_blobs))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)

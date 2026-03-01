@@ -4659,6 +4659,7 @@ dependencies = [
  "bytes",
  "derive_more 1.0.0",
  "proptest",
+ "redb",
  "serde",
  "serde_json",
 ]
