@@ -1,12 +1,12 @@
 use mailbox_server::{
-    cleanup_old_messages, GetDollopsResponse, LogKey, WatermarksKey, DOLLOPS_TABLE,
+    cleanup_old_messages, DollopsKey, GetDollopsResponse, WatermarksKey, DOLLOPS_TABLE,
     WATERMARKS_TABLE,
 };
 use redb::{ReadableDatabase, ReadableTable};
 use std::time::Duration;
 
 /// Tests that cleanup of old messages does not affect watermarks or cause
-/// the server to re-request blobs it already received.
+/// the server to re-request dollops it already received.
 ///
 /// This is critical for the sync protocol: the watermark represents
 /// "we had sequences 0..=watermark at some point" - cleanup should not
@@ -20,7 +20,7 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     let topic = "test-topic";
     let author = "author-1";
 
-    // Step 1: Insert OLD blobs directly into DB (8 days ago - will be cleaned up)
+    // Step 1: Insert OLD dollops directly into DB (8 days ago - will be cleaned up)
     let old_time = std::time::SystemTime::now() - Duration::from_secs(8 * 24 * 60 * 60);
     let old_uuid = uuid::Uuid::new_v7(uuid::Timestamp::from_unix(
         uuid::NoContext,
@@ -34,22 +34,22 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     {
         let write_txn = db.begin_write().unwrap();
         {
-            let mut blobs = write_txn.open_table(DOLLOPS_TABLE).unwrap();
+            let mut dollops = write_txn.open_table(DOLLOPS_TABLE).unwrap();
             let mut watermarks = write_txn.open_table(WATERMARKS_TABLE).unwrap();
 
-            // Insert old blobs (seq 0, 1, 2)
+            // Insert old dollops (seq 0, 1, 2)
             for seq in 0..=2 {
-                let key = LogKey::new(topic.into(), author.into(), seq, old_uuid).unwrap();
-                blobs
+                let key = DollopsKey::new(topic.into(), author.into(), seq, old_uuid).unwrap();
+                dollops
                     .insert(&key, format!("old message {}", seq).as_bytes())
                     .unwrap();
             }
 
-            // Insert new blobs (seq 3, 4, 5) with current UUID
+            // Insert new dollops (seq 3, 4, 5) with current UUID
             let new_uuid = uuid::Uuid::now_v7();
             for seq in 3..=5 {
-                let key = LogKey::new(topic.into(), author.into(), seq, new_uuid).unwrap();
-                blobs
+                let key = DollopsKey::new(topic.into(), author.into(), seq, new_uuid).unwrap();
+                dollops
                     .insert(&key, format!("new message {}", seq).as_bytes())
                     .unwrap();
             }
@@ -61,14 +61,14 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
         write_txn.commit().unwrap();
     }
 
-    // Step 2: Verify initial state - 6 blobs, watermark is 5
+    // Step 2: Verify initial state - 6 dollops, watermark is 5
     {
         let read_txn = db.begin_read().unwrap();
-        let blobs = read_txn.open_table(DOLLOPS_TABLE).unwrap();
+        let dollops = read_txn.open_table(DOLLOPS_TABLE).unwrap();
         let watermarks = read_txn.open_table(WATERMARKS_TABLE).unwrap();
 
-        let count = blobs.iter().unwrap().count();
-        assert_eq!(count, 6, "Should have 6 blobs initially");
+        let count = dollops.iter().unwrap().count();
+        assert_eq!(count, 6, "Should have 6 dollops initially");
 
         let watermark_key = WatermarksKey::new(topic.into(), author.into()).unwrap();
         let watermark = watermarks.get(&watermark_key).unwrap().unwrap().value();
@@ -78,14 +78,17 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     // Step 3: Run cleanup
     cleanup_old_messages(&db).await.unwrap();
 
-    // Step 4: Verify old blobs are deleted, new blobs remain
+    // Step 4: Verify old dollops are deleted, new dollops remain
     {
         let read_txn = db.begin_read().unwrap();
-        let blobs = read_txn.open_table(DOLLOPS_TABLE).unwrap();
+        let dollops = read_txn.open_table(DOLLOPS_TABLE).unwrap();
 
-        // Count remaining blobs
-        let count = blobs.iter().unwrap().count();
-        assert_eq!(count, 3, "Should have 3 new blobs remaining after cleanup");
+        // Count remaining dollops
+        let count = dollops.iter().unwrap().count();
+        assert_eq!(
+            count, 3,
+            "Should have 3 new dollops remaining after cleanup"
+        );
     }
 
     // Step 5: Verify watermark is STILL 5 (not reset)
@@ -97,7 +100,7 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
         assert_eq!(watermark, 5, "Watermark should be preserved after cleanup");
     }
 
-    // Step 6: Test get_blobs - verify missing response is correct
+    // Step 6: Test get_dollops - verify missing response is correct
     let app = mailbox_server::create_app_with_arc(db.clone());
     let config = axum_test::TestServerConfig {
         transport: Some(axum_test::Transport::HttpRandomPort),
@@ -128,14 +131,14 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
         topic_response.missing
     );
 
-    // Blobs should be empty - client already has up to 5, no new blobs to send
+    // dollops should be empty - client already has up to 5, no new dollops to send
     assert!(
         topic_response.dollops.is_empty()
             || topic_response
                 .dollops
                 .get("author-1")
                 .map_or(true, |b| b.is_empty()),
-        "No blobs should be returned - client already has everything. Got: {:?}",
+        "No dollops should be returned - client already has everything. Got: {:?}",
         topic_response.dollops
     );
 }

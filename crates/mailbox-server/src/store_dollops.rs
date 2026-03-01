@@ -3,7 +3,9 @@ use mailbox_api::*;
 use redb::{Database, ReadableTable};
 use std::collections::BTreeSet;
 
-use crate::{AppState, DollopsKeyPrefix, LogKey, WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE};
+use crate::{
+    AppState, DollopsKey, DollopsKeyPrefix, WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE,
+};
 
 pub async fn store_dollops(
     State(state): State<AppState>,
@@ -57,7 +59,7 @@ fn store_dollops_inner(db: &Database, request: &StoreDollopsRequest) -> Result<(
                 let mut stored_seqs: BTreeSet<SequenceNumber> = BTreeSet::new();
 
                 for (seq_num, dollop) in sequences {
-                    let key = LogKey::new_now(topic_id.clone(), author.clone(), *seq_num)
+                    let key = DollopsKey::new_now(topic_id.clone(), author.clone(), *seq_num)
                         .map_err(|e| e.to_string())?;
 
                     dollops_table
@@ -106,7 +108,7 @@ fn store_dollops_inner(db: &Database, request: &StoreDollopsRequest) -> Result<(
 /// Computes the new watermark after storing dollops.
 /// Returns None if no watermark can be established (no sequence 0).
 fn compute_new_watermark(
-    dollops_table: &redb::Table<LogKey, &[u8]>,
+    dollops_table: &redb::Table<DollopsKey, &[u8]>,
     topic_id: &str,
     author: &str,
     current_watermark: Option<SequenceNumber>,
@@ -152,7 +154,7 @@ fn compute_new_watermark(
 
 /// Checks if a dollop exists for the given topic:author:seq
 fn dollop_exists(
-    table: &redb::Table<LogKey, &[u8]>,
+    table: &redb::Table<DollopsKey, &[u8]>,
     topic_id: &str,
     author: &str,
     seq_num: SequenceNumber,

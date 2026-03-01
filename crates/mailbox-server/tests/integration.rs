@@ -24,7 +24,7 @@ async fn test_store_and_retrieve_single_message() {
     let store_response = server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic-1": {
                     "author-a": {
                         "0": message_b64
@@ -68,7 +68,7 @@ async fn test_store_and_retrieve_multiple_messages_same_topic() {
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic-multi": {
                     "author-1": {
                         "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"First message".to_vec()),
@@ -114,7 +114,7 @@ async fn test_retrieve_messages_from_multiple_topics() {
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "topic-a": {
                     "author-1": {
                         "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, topic1_msg)
@@ -143,13 +143,13 @@ async fn test_retrieve_messages_from_multiple_topics() {
     get_response.assert_status_ok();
 
     let body: GetDollopsResponse = get_response.json();
-    let blobs_for_topics = &body.dollops_by_topic;
+    let dollops_for_topics = &body.dollops_by_topic;
 
-    assert!(blobs_for_topics.contains_key("topic-a"));
-    assert!(blobs_for_topics.contains_key("topic-b"));
+    assert!(dollops_for_topics.contains_key("topic-a"));
+    assert!(dollops_for_topics.contains_key("topic-b"));
 
-    let topic_a_response = &blobs_for_topics["topic-a"];
-    let topic_b_response = &blobs_for_topics["topic-b"];
+    let topic_a_response = &dollops_for_topics["topic-a"];
+    let topic_b_response = &dollops_for_topics["topic-b"];
 
     assert_eq!(topic_a_response.dollops["author-1"].len(), 1);
     assert_eq!(topic_b_response.dollops["author-1"].len(), 1);
@@ -179,10 +179,10 @@ async fn test_retrieve_empty_topic() {
     get_response.assert_status_ok();
 
     let body: GetDollopsResponse = get_response.json();
-    let blobs_for_topics = &body.dollops_by_topic;
+    let dollops_for_topics = &body.dollops_by_topic;
 
-    assert!(blobs_for_topics.contains_key("non-existent-topic"));
-    let topic_response = &blobs_for_topics["non-existent-topic"];
+    assert!(dollops_for_topics.contains_key("non-existent-topic"));
+    let topic_response = &dollops_for_topics["non-existent-topic"];
     assert_eq!(topic_response.dollops.len(), 0);
     assert!(topic_response.missing.is_empty());
 }
@@ -194,7 +194,7 @@ async fn test_topic_isolation() {
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "isolated-topic-1": {
                     "author-1": {
                         "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1")
@@ -220,12 +220,12 @@ async fn test_topic_isolation() {
         .await;
 
     let body: GetDollopsResponse = get_response.json();
-    let blobs_for_topics = &body.dollops_by_topic;
+    let dollops_for_topics = &body.dollops_by_topic;
 
-    let topic_1_response = &blobs_for_topics["isolated-topic-1"];
+    let topic_1_response = &dollops_for_topics["isolated-topic-1"];
     assert_eq!(topic_1_response.dollops["author-1"].len(), 1);
     assert!(topic_1_response.missing.is_empty());
-    assert!(!blobs_for_topics.contains_key("isolated-topic-2"));
+    assert!(!dollops_for_topics.contains_key("isolated-topic-2"));
 }
 
 #[tokio::test]
@@ -236,7 +236,7 @@ async fn test_sequence_number_filtering() {
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic": {
                     "author-x": {
                         "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
@@ -295,7 +295,7 @@ async fn test_get_returns_all_authors_for_topic() {
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic": {
                     "author-a": {
                         "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - Message 0"),
@@ -369,14 +369,14 @@ async fn test_get_returns_all_authors_for_topic() {
 }
 
 #[tokio::test]
-async fn test_missing_blobs_server_behind() {
+async fn test_missing_dollops_server_behind() {
     let (server, _temp_file) = create_test_server();
 
     // Store only messages 0-2 on server
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic": {
                     "author-x": {
                         "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
@@ -406,8 +406,8 @@ async fn test_missing_blobs_server_behind() {
     let body: GetDollopsResponse = get_response.json();
     let topic_response = &body.dollops_by_topic["test-topic"];
 
-    // Server should return empty blobs (nothing new for client)
-    // The author might not even exist in blobs if all were filtered out
+    // Server should return empty dollops (nothing new for client)
+    // The author might not even exist in dollops if all were filtered out
     assert!(topic_response
         .dollops
         .get("author-x")
@@ -421,10 +421,10 @@ async fn test_missing_blobs_server_behind() {
 }
 
 #[tokio::test]
-async fn test_missing_blobs_server_has_nothing() {
+async fn test_missing_dollops_server_has_nothing() {
     let (server, _temp_file) = create_test_server();
 
-    // Don't store any blobs
+    // Don't store any dollops
 
     // Client says it has up to sequence 3
     let get_response = server
@@ -443,7 +443,7 @@ async fn test_missing_blobs_server_has_nothing() {
     let body: GetDollopsResponse = get_response.json();
     let topic_response = &body.dollops_by_topic["test-topic"];
 
-    // Server should return empty blobs
+    // Server should return empty dollops
     assert!(topic_response.dollops.is_empty());
 
     // Server should report missing all sequences 0-3
@@ -454,14 +454,14 @@ async fn test_missing_blobs_server_has_nothing() {
 }
 
 #[tokio::test]
-async fn test_missing_blobs_multiple_authors() {
+async fn test_missing_dollops_multiple_authors() {
     let (server, _temp_file) = create_test_server();
 
-    // Store blobs for author-a (0-1) but nothing for author-b
+    // Store dollops for author-a (0-1) but nothing for author-b
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic": {
                     "author-a": {
                         "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - 0"),
@@ -511,7 +511,7 @@ async fn test_no_missing_when_server_is_ahead() {
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic": {
                     "author-x": {
                         "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),

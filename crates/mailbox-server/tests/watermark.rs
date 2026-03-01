@@ -9,7 +9,7 @@ async fn test_watermark_contiguous_store() {
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic": {
                     "log-x": {
                         "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
@@ -54,7 +54,7 @@ async fn test_watermark_with_gap_does_not_advance() {
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic": {
                     "log-x": {
                         "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
@@ -100,7 +100,7 @@ async fn test_watermark_gap_fill_extends_watermark() {
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic": {
                     "log-x": {
                         "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
@@ -118,7 +118,7 @@ async fn test_watermark_gap_fill_extends_watermark() {
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic": {
                     "log-x": {
                         "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2")
@@ -161,7 +161,7 @@ async fn test_watermark_no_seq_zero() {
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic": {
                     "log-x": {
                         "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
@@ -208,7 +208,7 @@ async fn test_watermark_independent_per_log() {
     server
         .post("/dollops/store")
         .json(&json!({
-            "blobs": {
+            "dollops": {
                 "test-topic": {
                     "log-a": {
                         "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log A - 0"),

@@ -10,7 +10,7 @@ pub fn create_test_db() -> (Database, NamedTempFile) {
 
     let write_txn = db.begin_write().unwrap();
     {
-        let _LOGS_TABLE = write_txn.open_table(DOLLOPS_TABLE).unwrap();
+        let _dollops_table = write_txn.open_table(DOLLOPS_TABLE).unwrap();
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE).unwrap();
     }
     write_txn.commit().unwrap();

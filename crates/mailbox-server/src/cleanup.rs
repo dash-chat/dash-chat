@@ -2,7 +2,7 @@ use redb::{Database, ReadableTable};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::{LogKey, DOLLOPS_TABLE};
+use crate::{DollopsKey, DOLLOPS_TABLE};
 
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60); // 5 minutes
 const MESSAGE_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60); // 7 days
@@ -40,14 +40,14 @@ pub async fn cleanup_old_messages(db: &Database) -> Result<(), Box<dyn std::erro
         let mut table = write_txn.open_table(DOLLOPS_TABLE)?;
 
         // Collect keys to delete
-        let mut keys_to_delete: Vec<LogKey> = Vec::new();
+        let mut keys_to_delete: Vec<DollopsKey> = Vec::new();
 
         for entry in table.iter()? {
             let (key, _value) = entry?;
-            let blob_key: LogKey = key.value();
+            let dollop_key: DollopsKey = key.value();
 
-            if blob_key.uuid < cutoff_uuid {
-                keys_to_delete.push(blob_key);
+            if dollop_key.uuid < cutoff_uuid {
+                keys_to_delete.push(dollop_key);
             }
         }
 
@@ -98,11 +98,12 @@ mod tests {
                 .as_secs(),
             0,
         ));
-        let old_key = LogKey::new("test-topic".into(), "log-1".into(), 0, old_uuid).unwrap();
+        let old_key = DollopsKey::new("test-topic".into(), "log-1".into(), 0, old_uuid).unwrap();
 
         // Insert a recent message (1 day ago)
         let recent_uuid = uuid::Uuid::now_v7();
-        let recent_key = LogKey::new("test-topic".into(), "log-1".into(), 1, recent_uuid).unwrap();
+        let recent_key =
+            DollopsKey::new("test-topic".into(), "log-1".into(), 1, recent_uuid).unwrap();
 
         {
             let write_txn = db.begin_write().unwrap();

@@ -1,10 +1,9 @@
 use axum::{extract::State, http::StatusCode, Json};
 use redb::{Database, ReadableDatabase};
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AppState, DollopsKeyPrefix, LogKey, Opaq, WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE,
+    AppState, DollopsKey, DollopsKeyPrefix, Opaq, WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE,
 };
 
 use mailbox_api::*;
@@ -55,7 +54,7 @@ fn get_dollops_for_topics_inner(
         let mut stored_seqs_per_author: BTreeMap<Author, BTreeSet<SequenceNumber>> =
             BTreeMap::new();
 
-        // Use prefix-based range query to only iterate over blobs for this topic
+        // Use prefix-based range query to only iterate over dollops for this topic
         let prefix = DollopsKeyPrefix::Topic(topic_id.clone());
 
         for entry in dollops_table
@@ -64,9 +63,9 @@ fn get_dollops_for_topics_inner(
         {
             let (key, value) = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
 
-            let blob_key: LogKey = key.value();
-            let author = blob_key.author.clone();
-            let seq_num = blob_key.sequence_number;
+            let dollop_key: DollopsKey = key.value();
+            let author = dollop_key.author.clone();
+            let seq_num = dollop_key.sequence_number;
 
             // Track sequences we have for requested authors (for missing calculation)
             if requested_authors.contains_key(&author) {
@@ -81,10 +80,10 @@ fn get_dollops_for_topics_inner(
                 // Author is in the request: only include if seq_num > min_seq_num
                 seq_num > *min_seq_num
             } else {
-                // Author is NOT in the request: include all blobs for this author
+                // Author is NOT in the request: include all dollops for this author
                 // TODO: implement pagination or asynchronous data streaming
                 // (https://www.ruststepbystep.com/how-to-stream-data-asynchronously-in-rust-with-axum/)
-                // to handle huge amounts of blobs being returned
+                // to handle huge amounts of dollops being returned
                 true
             };
 
@@ -96,7 +95,7 @@ fn get_dollops_for_topics_inner(
             }
         }
 
-        // Calculate missing blobs using watermarks and stored sequences
+        // Calculate missing dollops using watermarks and stored sequences
         let mut missing: BTreeMap<Author, Vec<SequenceNumber>> = BTreeMap::new();
         for (author, client_max_seq) in requested_authors {
             let watermarks_key =
@@ -139,7 +138,7 @@ fn get_dollops_for_topics_inner(
 
             if !missing_seq_nums.is_empty() {
                 tracing::debug!(
-                    "Server missing {} blobs for author {} in topic {} (sequences: {:?})",
+                    "Server missing {} dollops for author {} in topic {} (sequences: {:?})",
                     missing_seq_nums.len(),
                     author,
                     topic_id,

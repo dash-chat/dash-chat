@@ -74,14 +74,14 @@ where
             let topic_id = Self::encode_topic_id(&op.topic());
             let log_id = Self::device_id_to_log_id(&op.author());
             let seq_num = op.seq_num();
-            let blob = Self::serialize_operation(&op)?;
+            let dollop = Self::serialize_operation(&op)?;
 
             dollops
                 .entry(topic_id)
                 .or_default()
                 .entry(log_id)
                 .or_default()
-                .insert(seq_num, blob);
+                .insert(seq_num, dollop);
         }
 
         let request = StoreDollopsRequest { dollops };

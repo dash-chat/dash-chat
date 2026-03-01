@@ -19,7 +19,7 @@ mod watermarks_table;
 pub mod test_utils;
 
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
-pub use dollops_table::{DollopsKeyError, DollopsKeyPrefix, LogKey, DOLLOPS_TABLE};
+pub use dollops_table::{DollopsKey, DollopsKeyError, DollopsKeyPrefix, DOLLOPS_TABLE};
 pub use get_dollops::get_dollops_for_topics;
 pub use mailbox_api::{
     Author, GetDollopsRequest, GetDollopsResponse, Opaq, SequenceNumber, StoreDollopsRequest,
@@ -85,12 +85,12 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
 
     let write_txn = db.begin_write()?;
     {
-        let _LOGS_TABLE = write_txn.open_table(DOLLOPS_TABLE)?;
+        let _dollops_table = write_txn.open_table(DOLLOPS_TABLE)?;
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE)?;
     }
     write_txn.commit()?;
 
-    // Compute initial watermarks from existing blobs
+    // Compute initial watermarks from existing dollops
     compute_initial_watermarks(&db)?;
 
     tracing::info!("Database initialized successfully");

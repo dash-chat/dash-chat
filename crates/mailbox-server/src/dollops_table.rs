@@ -28,7 +28,7 @@ pub enum DollopsKeyError {
 ///
 /// This format enables direct byte comparison that matches struct field ordering.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LogKey {
+pub struct DollopsKey {
     // NOTE: order of these fields matters!
     pub topic_id: String,
     pub author: String,
@@ -36,7 +36,7 @@ pub struct LogKey {
     pub uuid: Uuid,
 }
 
-impl LogKey {
+impl DollopsKey {
     /// Creates a new DollopsKey with validation
     pub fn new(
         topic_id: String,
@@ -101,7 +101,7 @@ impl LogKey {
     }
 }
 
-impl fmt::Display for LogKey {
+impl fmt::Display for DollopsKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -111,8 +111,8 @@ impl fmt::Display for LogKey {
     }
 }
 
-impl Value for LogKey {
-    type SelfType<'a> = LogKey;
+impl Value for DollopsKey {
+    type SelfType<'a> = DollopsKey;
     type AsBytes<'a> = Vec<u8>;
 
     fn fixed_width() -> Option<usize> {
@@ -158,7 +158,7 @@ impl Value for LogKey {
                 .expect("Invalid UUID bytes"),
         );
 
-        LogKey {
+        DollopsKey {
             topic_id,
             author,
             sequence_number,
@@ -186,7 +186,7 @@ impl Value for LogKey {
     }
 }
 
-impl Key for LogKey {
+impl Key for DollopsKey {
     fn compare(data1: &[u8], data2: &[u8]) -> Ordering {
         // Direct byte comparison preserves ordering because:
         // - Null byte (0x00) delimiters are smaller than any valid UTF-8 byte
@@ -211,21 +211,21 @@ pub enum DollopsKeyPrefix {
 impl DollopsKeyPrefix {
     /// Returns a DollopsKey for the lower bound of a range query.
     /// Uses minimal values (empty author, seq 0, nil UUID) for unspecified parts.
-    pub fn range_start(&self) -> LogKey {
+    pub fn range_start(&self) -> DollopsKey {
         match self {
-            DollopsKeyPrefix::Topic(topic) => LogKey {
+            DollopsKeyPrefix::Topic(topic) => DollopsKey {
                 topic_id: topic.clone(),
                 author: String::new(),
                 sequence_number: 0,
                 uuid: Uuid::nil(),
             },
-            DollopsKeyPrefix::TopicAuthor(topic, author) => LogKey {
+            DollopsKeyPrefix::TopicAuthor(topic, author) => DollopsKey {
                 topic_id: topic.clone(),
                 author: author.clone(),
                 sequence_number: 0,
                 uuid: Uuid::nil(),
             },
-            DollopsKeyPrefix::TopicAuthorSeq(topic, author, seq) => LogKey {
+            DollopsKeyPrefix::TopicAuthorSeq(topic, author, seq) => DollopsKey {
                 topic_id: topic.clone(),
                 author: author.clone(),
                 sequence_number: *seq,
@@ -236,22 +236,22 @@ impl DollopsKeyPrefix {
 
     /// Returns a DollopsKey for the upper bound of a range query (exclusive).
     /// Uses maximal values for unspecified parts.
-    pub fn range_end(&self) -> LogKey {
+    pub fn range_end(&self) -> DollopsKey {
         match self {
-            DollopsKeyPrefix::Topic(topic) => LogKey {
+            DollopsKeyPrefix::Topic(topic) => DollopsKey {
                 topic_id: topic.clone(),
                 // U+FFFF is the highest Unicode code point, sorts after all valid authors
                 author: String::from("\u{FFFF}"),
                 sequence_number: u64::MAX,
                 uuid: Uuid::max(),
             },
-            DollopsKeyPrefix::TopicAuthor(topic, author) => LogKey {
+            DollopsKeyPrefix::TopicAuthor(topic, author) => DollopsKey {
                 topic_id: topic.clone(),
                 author: author.clone(),
                 sequence_number: u64::MAX,
                 uuid: Uuid::max(),
             },
-            DollopsKeyPrefix::TopicAuthorSeq(topic, author, seq) => LogKey {
+            DollopsKeyPrefix::TopicAuthorSeq(topic, author, seq) => DollopsKey {
                 topic_id: topic.clone(),
                 author: author.clone(),
                 sequence_number: *seq,
@@ -264,7 +264,7 @@ impl DollopsKeyPrefix {
 // Database key format: topic_id + 0x00 + author + 0x00 + seq_be8 + uuid_16
 // The UUID v7 suffix is used for cleanup based on message age
 // Binary format enables direct byte comparison for efficient database operations
-pub const DOLLOPS_TABLE: TableDefinition<LogKey, &[u8]> = TableDefinition::new("dollops");
+pub const DOLLOPS_TABLE: TableDefinition<DollopsKey, &[u8]> = TableDefinition::new("dollops");
 
 #[cfg(test)]
 mod tests {
@@ -273,16 +273,16 @@ mod tests {
     #[test]
     fn test_dollops_key_roundtrip() {
         let uuid = Uuid::now_v7();
-        let key = LogKey::new("topic1".into(), "author1".into(), 42, uuid).unwrap();
+        let key = DollopsKey::new("topic1".into(), "author1".into(), 42, uuid).unwrap();
         let serialized = key.to_string();
-        let parsed = LogKey::parse(&serialized).unwrap();
+        let parsed = DollopsKey::parse(&serialized).unwrap();
         assert_eq!(key, parsed);
     }
 
     #[test]
     fn test_dollops_key_zero_padding() {
         let uuid = Uuid::now_v7();
-        let key = LogKey::new("topic".into(), "author".into(), 5, uuid).unwrap();
+        let key = DollopsKey::new("topic".into(), "author".into(), 5, uuid).unwrap();
         let serialized = key.to_string();
         assert!(serialized.contains(":00000000000000000005:"));
     }
@@ -290,8 +290,8 @@ mod tests {
     #[test]
     fn test_dollops_key_ordering() {
         let uuid = Uuid::now_v7();
-        let key9 = LogKey::new("topic".into(), "author".into(), 9, uuid).unwrap();
-        let key10 = LogKey::new("topic".into(), "author".into(), 10, uuid).unwrap();
+        let key9 = DollopsKey::new("topic".into(), "author".into(), 9, uuid).unwrap();
+        let key10 = DollopsKey::new("topic".into(), "author".into(), 10, uuid).unwrap();
 
         // With zero-padding, 9 should sort before 10
         assert!(key9.to_string() < key10.to_string());
@@ -300,44 +300,44 @@ mod tests {
     #[test]
     fn test_dollops_key_rejects_colon_in_topic() {
         let uuid = Uuid::now_v7();
-        let result = LogKey::new("topic:bad".into(), "author".into(), 0, uuid);
+        let result = DollopsKey::new("topic:bad".into(), "author".into(), 0, uuid);
         assert!(matches!(result, Err(DollopsKeyError::InvalidTopicId(_))));
     }
 
     #[test]
     fn test_dollops_key_rejects_colon_in_author() {
         let uuid = Uuid::now_v7();
-        let result = LogKey::new("topic".into(), "author:bad".into(), 0, uuid);
+        let result = DollopsKey::new("topic".into(), "author:bad".into(), 0, uuid);
         assert!(matches!(result, Err(DollopsKeyError::InvalidAuthor(_))));
     }
 
     #[test]
     fn test_dollops_key_rejects_null_in_topic() {
         let uuid = Uuid::now_v7();
-        let result = LogKey::new("topic\0bad".into(), "author".into(), 0, uuid);
+        let result = DollopsKey::new("topic\0bad".into(), "author".into(), 0, uuid);
         assert!(matches!(result, Err(DollopsKeyError::InvalidTopicId(_))));
     }
 
     #[test]
     fn test_dollops_key_rejects_null_in_author() {
         let uuid = Uuid::now_v7();
-        let result = LogKey::new("topic".into(), "author\0bad".into(), 0, uuid);
+        let result = DollopsKey::new("topic".into(), "author\0bad".into(), 0, uuid);
         assert!(matches!(result, Err(DollopsKeyError::InvalidAuthor(_))));
     }
 
     #[test]
     fn test_dollops_key_binary_roundtrip() {
         let uuid = Uuid::now_v7();
-        let key = LogKey::new("topic1".into(), "author1".into(), 42, uuid).unwrap();
-        let bytes = LogKey::as_bytes(&key);
-        let parsed = LogKey::from_bytes(&bytes);
+        let key = DollopsKey::new("topic1".into(), "author1".into(), 42, uuid).unwrap();
+        let bytes = DollopsKey::as_bytes(&key);
+        let parsed = DollopsKey::from_bytes(&bytes);
         assert_eq!(key, parsed);
     }
 
     #[test]
     fn test_watermarks_key_from_dollops_key() {
         let uuid = Uuid::now_v7();
-        let dollops_key = LogKey::new("topic".into(), "author".into(), 42, uuid).unwrap();
+        let dollops_key = DollopsKey::new("topic".into(), "author".into(), 42, uuid).unwrap();
         let watermarks_key = dollops_key.watermarks_key();
         assert_eq!(watermarks_key.topic_id, "topic");
         assert_eq!(watermarks_key.author, "author");
@@ -353,11 +353,11 @@ mod tests {
 
         assert!(start < end);
         assert_eq!(
-            LogKey::compare(&LogKey::as_bytes(&start), &LogKey::as_bytes(&end)),
+            DollopsKey::compare(&DollopsKey::as_bytes(&start), &DollopsKey::as_bytes(&end)),
             Ordering::Less
         );
 
-        let key = LogKey::new(
+        let key = DollopsKey::new(
             "d8883c1402ed3c078953620a5bf2afc8fafca9601186e7133ca6b1bf72c35cfb".into(),
             "3cb6797ce981200974303722ca17cbd2691593f2b05fbe5b6152f0b813127a7e".into(),
             0,
@@ -370,11 +370,11 @@ mod tests {
 
         // Making sure that database comparison works correctly
         assert_eq!(
-            LogKey::compare(&LogKey::as_bytes(&start), &LogKey::as_bytes(&key)),
+            DollopsKey::compare(&DollopsKey::as_bytes(&start), &DollopsKey::as_bytes(&key)),
             Ordering::Less
         );
         assert_eq!(
-            LogKey::compare(&LogKey::as_bytes(&key), &LogKey::as_bytes(&end)),
+            DollopsKey::compare(&DollopsKey::as_bytes(&key), &DollopsKey::as_bytes(&end)),
             Ordering::Less
         );
 

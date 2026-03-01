@@ -1,18 +1,18 @@
 use redb::{Database, ReadableDatabase, ReadableTable};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{LogKey, WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE};
+use crate::{DollopsKey, WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE};
 use mailbox_api::*;
 
-/// Computes initial watermarks by scanning all existing blobs.
-/// Called once at startup to ensure watermarks are in sync with stored blobs.
+/// Computes initial watermarks by scanning all existing dollops.
+/// Called once at startup to ensure watermarks are in sync with stored dollops.
 ///
 /// Note: We only need the keys to extract sequence numbers, but redb doesn't
 /// provide a keys-only iterator. Keys and values share the same B-tree pages,
 /// so the page bytes are loaded together. We avoid deserializing values by
 /// dropping the AccessGuard<V> without calling .value().
 pub fn compute_initial_watermarks(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
-    tracing::info!("Computing initial watermarks from existing blobs");
+    tracing::info!("Computing initial watermarks from existing dollops");
 
     // Step 1: Collect all sequence numbers per topic:author
     let mut sequences_per_log: BTreeMap<WatermarksKey, BTreeSet<SequenceNumber>> = BTreeMap::new();
@@ -27,13 +27,13 @@ pub fn compute_initial_watermarks(db: &Database) -> Result<(), Box<dyn std::erro
             let (key, value) = entry?;
             drop(value);
 
-            let blob_key: LogKey = key.value();
-            let watermarks_key = blob_key.watermarks_key();
+            let dollop_key: DollopsKey = key.value();
+            let watermarks_key = dollop_key.watermarks_key();
 
             sequences_per_log
                 .entry(watermarks_key)
                 .or_default()
-                .insert(blob_key.sequence_number);
+                .insert(dollop_key.sequence_number);
         }
     }
 

@@ -62,8 +62,8 @@ Content-Type: application/json
   "dollops": {
     "topic-id-1": {
       "log-id-a": {
-        "0": "SGVsbG8=",           // base64-encoded blob at sequence 0
-        "1": "V29ybGQ="            // base64-encoded blob at sequence 1
+        "0": "SGVsbG8=",           // base64-encoded dollop at sequence 0
+        "1": "V29ybGQ="            // base64-encoded dollop at sequence 1
       }
     }
   }

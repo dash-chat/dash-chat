@@ -18,7 +18,7 @@ fn create_store_request(
 ) -> serde_json::Value {
     let message_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, message);
     json!({
-        "blobs": {
+        "dollops": {
             topic_id: {
                 "author-1": {
                     seq_num.to_string(): message_b64
