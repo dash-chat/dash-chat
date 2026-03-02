@@ -17,7 +17,8 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(10))
         .build()
         .expect("Failed to build HTTP client")
 });

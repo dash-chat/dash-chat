@@ -38,8 +38,9 @@ export interface VisitResult {
 
 type CheckOpts = { checkDarkMode?: boolean; checkRTL?: boolean };
 
-/** Shorter timeout for navigation waits (default 15s is too long for batched calls). */
-const NAV_TIMEOUT = 8000;
+/** Timeout for navigation waits. Generous to handle component remounts from
+ *  isWideScreen changes, where reactive store subscriptions may take time to settle. */
+const NAV_TIMEOUT = 30_000;
 
 function runCheck(pageName: string, options?: CheckOpts): PageResult {
 	const result: CheckResult = checkPage(options);

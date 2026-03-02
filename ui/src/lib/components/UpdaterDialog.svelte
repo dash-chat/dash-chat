@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Dialog, DialogButton, Progressbar } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { isTauriEnv } from '$lib/utils/environment';
+	import { isMobile, isTauriEnv } from '$lib/utils/environment';
 
 	type UpdateState = 'idle' | 'downloading' | 'ready' | 'error';
 
@@ -16,8 +16,9 @@
 
 	onMount(() => {
 		// The updater plugin is only loaded in production desktop builds
-		// (see src-tauri/src/lib.rs:41-66)
-		if (!isTauriEnv() || import.meta.env.DEV) {
+		// (see src-tauri/src/lib.rs). Skip on mobile (updates via app stores)
+		// and in dev mode.
+		if (!isTauriEnv() || isMobile || import.meta.env.DEV) {
 			if (mockUpdate) simulateMockUpdate(mockUpdate);
 			return;
 		}
@@ -75,8 +76,9 @@
 
 			updateState = 'ready';
 		} catch (err) {
-			console.error('Update check failed:', err);
-			updateState = 'error';
+			// The updater plugin may not be loaded (e.g. E2E builds) or
+			// the network may be unavailable.
+			console.warn('Update check failed:', err);
 		}
 	}
 

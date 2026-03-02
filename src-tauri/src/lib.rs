@@ -38,12 +38,12 @@ pub fn run() {
     }
     #[cfg(not(mobile))]
     {
-        if tauri::is_dev() {
+        if cfg!(feature = "e2e-tests") {
+            // E2E tests run multiple built instances side-by-side;
+            // skip single-instance, updater, and MCP bridge plugins.
+        } else if tauri::is_dev() {
             // MCP for Claude Code to control the tauri app
             builder = builder.plugin(tauri_plugin_mcp_bridge::init());
-        } else if std::env::var("E2E_TEST").is_ok() {
-            // E2E tests run multiple built instances side-by-side;
-            // skip single-instance and production-only plugins.
         } else {
             builder = builder
                 .plugin(tauri_plugin_single_instance::init(
