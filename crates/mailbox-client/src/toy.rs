@@ -6,7 +6,7 @@ use super::*;
 
 pub trait ToyItemTraits: ItemTraits {
     fn as_bytes(&self) -> &[u8];
-    fn from_str(s: &str) -> Result<Self, anyhow::Error>;
+    fn from_bytes(bytes: &[u8]) -> Result<Self, anyhow::Error>;
 }
 
 /// A client for the toy mailbox server.
@@ -71,9 +71,15 @@ where
     }
 
     async fn publish_blob(&self, blob: Opaq) -> anyhow::Result<()> {
+        let request = StoreBlobsRequest { blobs: vec![blob] };
+        // XXX: REMOVE
+        println!(
+            "publishing blob with HTTP request: {:#?}",
+            serde_json::to_string(&request)?
+        );
         let response = HTTP_CLIENT
             .post(format!("{}/blobs/store", self.base_url))
-            .json(&StoreBlobsRequest { blobs: vec![blob] })
+            .json(&request)
             .send()
             .await?;
 
@@ -221,12 +227,14 @@ where
     }
 
     fn log_id_from_string(s: &str) -> Result<Item::Topic, anyhow::Error> {
-        let topic: Item::Topic = Item::Topic::from_str(s)?;
+        let bytes = hex::decode(s)?;
+        let topic: Item::Topic = Item::Topic::from_bytes(&bytes)?;
         Ok(topic)
     }
 
     fn device_id_from_string(s: &str) -> Result<Item::Author, anyhow::Error> {
-        let author: Item::Author = Item::Author::from_str(s)?;
+        let bytes = hex::decode(s)?;
+        let author: Item::Author = Item::Author::from_bytes(&bytes)?;
         Ok(author)
     }
 

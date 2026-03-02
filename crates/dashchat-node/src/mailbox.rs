@@ -37,12 +37,8 @@ impl mailbox_client::toy::ToyItemTraits for TopicId {
         &**self
     }
 
-    fn from_str(s: &str) -> Result<Self, anyhow::Error> {
-        let bytes: [u8; 32] = hex::decode(s)?
-            .try_into()
-            .map_err(|e| anyhow::anyhow!("Invalid TopicId: {e:?}"))?;
-
-        Ok(TopicId::from(bytes))
+    fn from_bytes(bytes: &[u8]) -> Result<Self, anyhow::Error> {
+        Ok(TopicId::from(<[u8; 32]>::try_from(bytes)?))
     }
 }
 
@@ -51,12 +47,8 @@ impl mailbox_client::toy::ToyItemTraits for DeviceId {
         PublicKey::as_bytes(&*self)
     }
 
-    fn from_str(s: &str) -> Result<Self, anyhow::Error> {
-        let bytes: [u8; 32] = hex::decode(s)?
-            .try_into()
-            .map_err(|e| anyhow::anyhow!("Invalid DeviceId: {e:?}"))?;
-
-        Ok(DeviceId::from(PublicKey::from_bytes(&bytes)?))
+    fn from_bytes(bytes: &[u8]) -> Result<Self, anyhow::Error> {
+        Ok(DeviceId::from(PublicKey::from_bytes(bytes.try_into()?)?))
     }
 }
 

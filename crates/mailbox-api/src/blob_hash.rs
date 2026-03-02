@@ -19,6 +19,13 @@ impl OpaqHash {
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(blake3::Hash::from_bytes(bytes))
     }
+
+    pub fn try_from_hex(hex: &str) -> Result<Self, anyhow::Error> {
+        let bytes = hex::decode(hex)?;
+        Ok(Self::from_bytes(bytes.try_into().map_err(|e| {
+            anyhow::anyhow!("OpaqHash does not decode to 32 bytes: {e:?}")
+        })?))
+    }
 }
 
 #[cfg(feature = "proptest")]

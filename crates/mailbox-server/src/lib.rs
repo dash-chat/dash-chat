@@ -92,6 +92,7 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
     let write_txn = db.begin_write()?;
     {
         let _dollops_table = write_txn.open_table(DOLLOPS_TABLE)?;
+        let _blobs_table = write_txn.open_table(BLOBS_TABLE)?;
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE)?;
     }
     write_txn.commit()?;

@@ -4654,10 +4654,12 @@ dependencies = [
 name = "mailbox-api"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "base64 0.22.1",
  "blake3",
  "bytes",
  "derive_more 1.0.0",
+ "hex",
  "proptest",
  "proptest-derive",
  "redb",
@@ -4684,6 +4686,7 @@ dependencies = [
  "proptest",
  "reqwest 0.12.28",
  "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
