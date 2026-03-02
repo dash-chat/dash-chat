@@ -38,21 +38,56 @@ where
 }
 
 #[async_trait::async_trait]
-impl<Item: MailboxItem> BlobStore for ToyMailboxClient<Item>
+impl<Item: MailboxItem> RemoteBlobStore for ToyMailboxClient<Item>
 where
     Item::Topic: ToyItemTraits,
     Item::Author: ToyItemTraits,
 {
-    async fn has_blob(&self, hash: OpaqHash) -> anyhow::Result<bool> {
-        todo!()
+    async fn fetch_blob(&self, hash: OpaqHash) -> anyhow::Result<Option<Opaq>> {
+        let response = HTTP_CLIENT
+            .post(format!("{}/blobs/get", self.base_url))
+            .json(&GetBlobsRequest {
+                blob_hashes: vec![hash],
+            })
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            Ok(response
+                .json::<GetBlobsResponse>()
+                .await?
+                .blobs
+                .first()
+                .cloned())
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(anyhow::anyhow!(
+                "Failed to fetch blob: {} - {}",
+                status,
+                body
+            ))
+        }
     }
 
-    async fn get_blob(&self, hash: OpaqHash) -> anyhow::Result<Option<Opaq>> {
-        todo!()
-    }
+    async fn publish_blob(&self, blob: Opaq) -> anyhow::Result<()> {
+        let response = HTTP_CLIENT
+            .post(format!("{}/blobs/store", self.base_url))
+            .json(&StoreBlobsRequest { blobs: vec![blob] })
+            .send()
+            .await?;
 
-    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<OpaqHash> {
-        todo!()
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(anyhow::anyhow!(
+                "Failed to publish blob: {} - {}",
+                status,
+                body
+            ))
+        }
     }
 }
 

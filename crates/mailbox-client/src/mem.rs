@@ -31,23 +31,18 @@ impl<Item: MailboxItem> MailboxClient<Item> for MemMailboxClient<Item> {
 }
 
 #[async_trait::async_trait]
-impl<Item: MailboxItem> BlobStore for MemMailboxClient<Item> {
-    async fn has_blob(&self, hash: OpaqHash) -> anyhow::Result<bool> {
-        let store = self.mailbox.blobs.read().await;
-        Ok(store.contains_key(&hash))
-    }
-
-    async fn get_blob(&self, hash: OpaqHash) -> anyhow::Result<Option<Opaq>> {
+impl<Item: MailboxItem> RemoteBlobStore for MemMailboxClient<Item> {
+    async fn fetch_blob(&self, hash: OpaqHash) -> anyhow::Result<Option<Opaq>> {
         let store = self.mailbox.blobs.read().await;
         let blob = store.get(&hash).cloned();
         Ok(blob)
     }
 
-    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<OpaqHash> {
+    async fn publish_blob(&self, blob: Opaq) -> anyhow::Result<()> {
         let mut store = self.mailbox.blobs.write().await;
         let hash = blob.to_hash();
         store.insert(hash.clone(), blob);
-        Ok(hash)
+        Ok(())
     }
 }
 
@@ -249,8 +244,8 @@ mod tests {
 
         let blob = Opaq::from_static(b"hello");
 
-        client1.store_blob(blob.clone()).await.unwrap();
-        let fetched = client2.get_blob(blob.to_hash()).await.unwrap().unwrap();
+        client1.publish_blob(blob.clone()).await.unwrap();
+        let fetched = client2.fetch_blob(blob.to_hash()).await.unwrap().unwrap();
         assert_eq!(fetched, blob);
     }
 

@@ -21,6 +21,7 @@ mod store_blobs;
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
 
+pub use blobs_table::BLOBS_TABLE;
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
 pub use dollops_table::{DollopsKey, DollopsKeyError, DollopsKeyPrefix, DOLLOPS_TABLE};
 pub use get_blobs::get_blobs;

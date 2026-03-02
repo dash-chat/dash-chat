@@ -1,3 +1,4 @@
+use mailbox_api::{GetBlobsResponse, Opaq};
 use mailbox_server::{test_utils::create_test_server, GetDollopsResponse};
 use serde_json::json;
 
@@ -11,6 +12,42 @@ async fn test_health_check() {
     response.assert_json(&json!({
         "status": "ok"
     }));
+}
+
+#[tokio::test]
+async fn test_store_and_retrieve_blobs() {
+    let (server, _temp_file) = create_test_server();
+
+    let message_data = Opaq::from_static(b"Hello, World!");
+    let message_hash = message_data.to_hash();
+    let message_b64 = base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        message_data.as_ref(),
+    );
+
+    let store_response = server
+        .post("/blobs/store")
+        .json(&json!({
+            "blobs": [message_b64]
+        }))
+        .await;
+
+    store_response.assert_status(axum::http::StatusCode::CREATED);
+
+    let get_response = server
+        .post("/blobs/get")
+        .json(&json!({
+            "blob_hashes": [message_hash]
+        }))
+        .await;
+
+    get_response.assert_status_ok();
+
+    let body: GetBlobsResponse = get_response.json();
+    assert!(body.blobs.contains(&message_data));
+
+    let retrieved_message = &body.blobs[0];
+    assert_eq!(*retrieved_message, message_data);
 }
 
 #[tokio::test]
