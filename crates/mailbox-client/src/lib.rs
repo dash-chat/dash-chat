@@ -17,12 +17,14 @@ use tracing::Instrument;
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+pub(crate) static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
         .expect("Failed to build HTTP client")
 });
+
+pub use mailbox_api::{Opaq, OpaqHash};
 
 pub trait MailboxClient<Item: MailboxItem>: LogStore<Item> + BlobStore {
     fn id(&self) -> MailboxId;
@@ -51,9 +53,9 @@ pub trait LogStore<Item: MailboxItem>: Send + Sync + 'static {
 /// The interface for remotely storing and retrieving blobs from a mailbox server.
 #[async_trait::async_trait]
 pub trait BlobStore: Clone + Send + Sync + 'static {
-    async fn has_blob(&self, hash: BlobHash) -> anyhow::Result<bool>;
-    async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Opaq>>;
-    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<BlobHash>;
+    async fn has_blob(&self, hash: OpaqHash) -> anyhow::Result<bool>;
+    async fn get_blob(&self, hash: OpaqHash) -> anyhow::Result<Option<Opaq>>;
+    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<OpaqHash>;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

@@ -1,4 +1,4 @@
-use mailbox_api::BlobHash;
+use mailbox_api::OpaqHash;
 use redb::TableDefinition;
 
 /// Error type for BlobsKey operations
@@ -8,7 +8,7 @@ pub enum BlobsKeyError {
     ParseError(String),
 }
 
-pub const BLOBS_TABLE: TableDefinition<BlobHash, &[u8]> = TableDefinition::new("blobs");
+pub const BLOBS_TABLE: TableDefinition<OpaqHash, &[u8]> = TableDefinition::new("blobs");
 
 #[cfg(test)]
 mod tests {

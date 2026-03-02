@@ -28,7 +28,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
+    let signal =
+        tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for server stop event"));
     spawn_server(args.db_path.into(), args.addr, signal).await?;
 
     Ok(())

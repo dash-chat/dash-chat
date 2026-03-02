@@ -32,18 +32,18 @@ impl<Item: MailboxItem> MailboxClient<Item> for MemMailboxClient<Item> {
 
 #[async_trait::async_trait]
 impl<Item: MailboxItem> BlobStore for MemMailboxClient<Item> {
-    async fn has_blob(&self, hash: BlobHash) -> anyhow::Result<bool> {
+    async fn has_blob(&self, hash: OpaqHash) -> anyhow::Result<bool> {
         let store = self.mailbox.blobs.read().await;
         Ok(store.contains_key(&hash))
     }
 
-    async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Opaq>> {
+    async fn get_blob(&self, hash: OpaqHash) -> anyhow::Result<Option<Opaq>> {
         let store = self.mailbox.blobs.read().await;
         let blob = store.get(&hash).cloned();
         Ok(blob)
     }
 
-    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<BlobHash> {
+    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<OpaqHash> {
         let mut store = self.mailbox.blobs.write().await;
         let hash = blob.to_hash();
         store.insert(hash.clone(), blob);

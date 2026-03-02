@@ -4659,6 +4659,7 @@ dependencies = [
  "bytes",
  "derive_more 1.0.0",
  "proptest",
+ "proptest-derive",
  "redb",
  "serde",
  "serde_json",
@@ -6965,6 +6966,17 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
+]
+
+[[package]]
+name = "proptest-derive"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c57924a81864dddafba92e1bf92f9bf82f97096c44489548a60e888e1547549b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

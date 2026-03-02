@@ -13,36 +13,36 @@ use serde::{Deserialize, Serialize};
     derive_more::Display,
     derive_more::From,
 )]
-pub struct BlobHash(pub(crate) blake3::Hash);
+pub struct OpaqHash(pub(crate) blake3::Hash);
 
-impl BlobHash {
+impl OpaqHash {
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(blake3::Hash::from_bytes(bytes))
     }
 }
 
 #[cfg(feature = "proptest")]
-impl proptest::arbitrary::Arbitrary for BlobHash {
+impl proptest::arbitrary::Arbitrary for OpaqHash {
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
     type Parameters = ();
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         use proptest::prelude::Strategy;
         proptest::prelude::any::<[u8; 32]>()
-            .prop_map(|a| BlobHash(blake3::Hash::from_bytes(a)))
+            .prop_map(|a| OpaqHash(blake3::Hash::from_bytes(a)))
             .boxed()
     }
 }
 
 #[cfg(feature = "redb")]
-impl redb::Key for BlobHash {
+impl redb::Key for OpaqHash {
     fn compare(data1: &[u8], data2: &[u8]) -> std::cmp::Ordering {
         data1.cmp(data2)
     }
 }
 
 #[cfg(feature = "redb")]
-impl redb::Value for BlobHash {
-    type SelfType<'a> = BlobHash;
+impl redb::Value for OpaqHash {
+    type SelfType<'a> = OpaqHash;
     type AsBytes<'a> = [u8; 32];
 
     fn fixed_width() -> Option<usize> {

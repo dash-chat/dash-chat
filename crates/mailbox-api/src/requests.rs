@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::{BlobHash, Opaq};
+use crate::{Opaq, OpaqHash};
 
 pub type TopicId = String;
 pub type Author = String;
@@ -32,7 +32,7 @@ pub struct StoreDollopsRequest {
 
 #[derive(Serialize, Deserialize)]
 pub struct GetBlobsRequest {
-    pub blob_hashes: Vec<BlobHash>,
+    pub blob_hashes: Vec<OpaqHash>,
 }
 
 #[derive(Serialize, Deserialize)]

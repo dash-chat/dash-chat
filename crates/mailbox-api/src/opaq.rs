@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::BlobHash;
+use crate::OpaqHash;
 
 /// Opaque bytes, representing either a Dollop or a Blob
 #[derive(
@@ -26,8 +26,8 @@ impl Opaq {
         Self(bytes.into())
     }
 
-    pub fn to_hash(&self) -> BlobHash {
-        BlobHash(blake3::hash(self.as_ref()))
+    pub fn to_hash(&self) -> OpaqHash {
+        OpaqHash(blake3::hash(self.as_ref()))
     }
 }
 

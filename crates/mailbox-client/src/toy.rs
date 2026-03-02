@@ -43,15 +43,15 @@ where
     Item::Topic: ToyItemTraits,
     Item::Author: ToyItemTraits,
 {
-    async fn has_blob(&self, hash: BlobHash) -> anyhow::Result<bool> {
+    async fn has_blob(&self, hash: OpaqHash) -> anyhow::Result<bool> {
         todo!()
     }
 
-    async fn get_blob(&self, hash: BlobHash) -> anyhow::Result<Option<Opaq>> {
+    async fn get_blob(&self, hash: OpaqHash) -> anyhow::Result<Option<Opaq>> {
         todo!()
     }
 
-    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<BlobHash> {
+    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<OpaqHash> {
         todo!()
     }
 }
