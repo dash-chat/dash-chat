@@ -15,6 +15,7 @@
 		ListInput,
 		List,
 		Button,
+		Link,
 		useTheme,
 	} from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -54,6 +55,13 @@
 				onClick={() => goto(`/group-chat/${chatId}/info`)}
 			/>
 		{/snippet}
+		{#snippet right()}
+			{#if theme === 'ios'}
+				<Link onClick={save}>
+					{m.save()}
+				</Link>
+			{/if}
+		{/snippet}
 	</Navbar>
 
 	{#await $info then info}
@@ -83,12 +91,14 @@
 			</div>
 		</div>
 
-		<Button
-			onClick={save}
-			class="fixed-action-btn"
-			rounded
-		>
-			{m.save()}
-		</Button>
+		{#if theme === 'material'}
+			<Button
+				onClick={save}
+				class="fixed-action-btn"
+				rounded
+			>
+				{m.save()}
+			</Button>
+		{/if}
 	{/await}
 </Page>

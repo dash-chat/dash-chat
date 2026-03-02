@@ -285,7 +285,8 @@
 										textIos: isWhite ? 'text-black' : 'text-white',
 										textMaterial: isWhite ? 'text-black' : 'text-white',
 									}}
-									clearMaterial
+									clearIos
+								clearMaterial
 									small
 									data-testid="add-contact-copy-btn"
 									onClick={async () => {

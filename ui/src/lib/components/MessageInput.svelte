@@ -72,7 +72,6 @@
 <div
 	bind:this={div}
 	class="message-input-bar m-2 pb-safe"
-	class:ios={theme === 'ios'}
 	class:bg-md-light-surface={theme === 'material'}
 	class:dark:bg-md-dark-surface={theme === 'material'}
 >
@@ -124,10 +123,6 @@
 </div>
 
 <style>
-	.message-input-bar.ios {
-		padding-bottom: max(8px, env(safe-area-inset-bottom));
-	}
-
 	.input-container {
 		flex: 1;
 		display: flex;

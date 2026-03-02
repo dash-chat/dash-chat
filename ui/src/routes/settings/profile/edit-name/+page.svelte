@@ -79,7 +79,7 @@
 			titleClass="opacity1"
 			transparent={true}
 			rightClass={myProfile?.name === name && myProfile?.surname === surname
-				? 'pointer-events-none opacity-50'
+				? 'ios-right-disabled'
 				: ''}
 		>
 			{#snippet left()}

@@ -8,7 +8,7 @@ mod utils;
 mod mailbox;
 #[cfg(not(mobile))]
 mod menu;
-#[cfg(mobile)]
+#[cfg(target_os = "android")]
 mod push_notifications;
 #[cfg(not(mobile))]
 mod tray;
