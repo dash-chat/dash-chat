@@ -38,7 +38,7 @@ pub fn run() {
     }
     #[cfg(not(mobile))]
     {
-        if std::env::var("E2E_TEST").is_ok() {
+        if cfg!(feature = "e2e-tests") {
             // E2E tests run multiple built instances side-by-side;
             // skip single-instance, updater, and MCP bridge plugins.
         } else if tauri::is_dev() {

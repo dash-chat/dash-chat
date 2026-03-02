@@ -34,10 +34,7 @@
 	import { goto } from '$app/navigation';
 	window.__setLocale = setLocale;
 
-	// Register test utils in dev mode and E2E builds (VITE_E2E=1)
-	if (import.meta.env.DEV || import.meta.env.VITE_E2E) {
-		import('../../tests/setup-utils').then(({ registerTestUtils }) => registerTestUtils(goto));
-	}
+	import('../../tests/setup-utils').then(({ registerTestUtils }) => registerTestUtils(goto));
 
 	let { children } = $props();
 

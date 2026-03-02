@@ -101,5 +101,8 @@ tauri-plugin-updater = "2.9"
 tauri-plugin-mcp-bridge = "0.8"
 mailbox-server = { path = "../crates/mailbox-server" }
 
+[features]
+e2e-tests = []
+
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

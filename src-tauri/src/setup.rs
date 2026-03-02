@@ -10,6 +10,7 @@ use crate::{commands::logs::simplify, filesystem::FileSystem};
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     // Manage the mDNS service daemon
     app_handle.manage(mdns_sd::ServiceDaemon::new()?);
+
     let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle).local_data_dir()?;
     log::info!("Using local data path: {local_data_path:?}");
 
@@ -69,6 +70,12 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
             if let Err(err) = app_handle.emit("p2panda://new-operation", simplified_operation) {
                 log::error!("Failed to emit operation: {err:?}");
+            }
+
+            // Small delay between emissions to avoid overwhelming the WebKitGTK
+            // event loop with rapid-fire events (which can freeze the webview).
+            if cfg!(feature = "e2e-tests") {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             }
         }
     });

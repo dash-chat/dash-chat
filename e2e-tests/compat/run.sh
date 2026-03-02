@@ -96,9 +96,6 @@ if [ "$NEEDS_CHECKOUT" = "true" ]; then
     require_clean_tree
 fi
 
-# Enable test utilities in Vite builds
-export VITE_E2E=1
-
 # --- Step 1: Build current version ---
 
 echo "=== Building current version ==="

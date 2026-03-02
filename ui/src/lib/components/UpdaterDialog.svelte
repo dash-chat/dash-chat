@@ -16,11 +16,9 @@
 
 	onMount(() => {
 		// The updater plugin is only loaded in production desktop builds
-		// (see src-tauri/src/lib.rs:41-66). Skip on mobile (updates via app
-		// stores), in dev mode, and E2E builds where the plugin isn't
-		// registered — calling check() would fail and show an error dialog
-		// that blocks the UI.
-		if (!isTauriEnv() || isMobile || import.meta.env.DEV || import.meta.env.VITE_E2E) {
+		// (see src-tauri/src/lib.rs). Skip on mobile (updates via app stores)
+		// and in dev mode.
+		if (!isTauriEnv() || isMobile || import.meta.env.DEV) {
 			if (mockUpdate) simulateMockUpdate(mockUpdate);
 			return;
 		}
@@ -78,8 +76,9 @@
 
 			updateState = 'ready';
 		} catch (err) {
-			console.error('Update check failed:', err);
-			updateState = 'error';
+			// The updater plugin may not be loaded (e.g. E2E builds) or
+			// the network may be unavailable.
+			console.warn('Update check failed:', err);
 		}
 	}
 

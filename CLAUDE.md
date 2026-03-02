@@ -389,7 +389,8 @@ cd e2e-tests && SKIP_BUILD=1 pnpm test
 **Key details:**
 - Tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`
 - Two `tauri-driver` instances run on ports 4444 and 4446
-- Launch scripts (`e2e-tests/scripts/`) set `DATA_DIR` and `E2E_TEST` env vars
+- Launch scripts (`e2e-tests/scripts/`) set `DATA_DIR` and `MAILBOX_URL` env vars
+- The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events
 - Test data is stored in `.dbs/e2e/` and cleaned up after each run
 
 **REQUIREMENT:** New UI features must include E2E test coverage in `e2e-tests/specs/`.
