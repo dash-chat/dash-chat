@@ -73,10 +73,13 @@
 				bind:avatar={pickerAvatar}
 				bind:isTextEditorOpen={textEditorOpen}
 				onClose={closePicker}
+				onSave={selectAvatar}
+				saveLabel={m.save()}
+				saveDisabled={!pickerHasChanges}
 			/>
 		</div>
 
-		{#if !textEditorOpen}
+		{#if !textEditorOpen && theme === 'material'}
 			<Button
 				rounded
 				tonal
@@ -93,7 +96,7 @@
 			titleClass="opacity1"
 			transparent={true}
 			rightClass={name === undefined || name === ''
-				? 'pointer-events-none opacity-50'
+				? 'ios-right-disabled'
 				: ''}
 		>
 			{#snippet right()}

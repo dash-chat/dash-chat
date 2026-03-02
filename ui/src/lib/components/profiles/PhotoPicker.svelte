@@ -4,7 +4,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiCamera, mdiImage, mdiArrowLeft } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button, Link, Navbar, Segmented, SegmentedButton } from 'konsta/svelte';
+	import { Button, Link, Navbar, Segmented, SegmentedButton, useTheme } from 'konsta/svelte';
 	import { resizeAndExport } from '$lib/utils/image';
 	import { isMobile } from '$lib/utils/environment';
 
@@ -13,12 +13,20 @@
 		isTextEditorOpen = $bindable(false),
 		onSelect,
 		onClose,
+		onSave,
+		saveLabel,
+		saveDisabled = false,
 	}: {
 		avatar?: string | undefined;
 		isTextEditorOpen?: boolean;
 		onSelect?: () => void;
 		onClose?: () => void;
+		onSave?: () => void;
+		saveLabel?: string;
+		saveDisabled?: boolean;
 	} = $props();
+
+	const theme = $derived(useTheme());
 
 	let view = $state<'picker' | 'text'>('picker');
 	$effect(() => {
@@ -155,12 +163,21 @@
 />
 
 {#if view === 'picker'}
-	{#if onClose}
-		<Navbar transparent>
+	{#if onClose || (onSave && theme === 'ios')}
+		<Navbar transparent rightClass={saveDisabled ? 'ios-right-disabled' : ''}>
 			{#snippet left()}
-				<Link iconOnly onClick={onClose} data-testid="edit-photo-close">
-					<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 24px"></wa-icon>
-				</Link>
+				{#if onClose}
+					<Link iconOnly onClick={onClose} data-testid="edit-photo-close">
+						<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 24px"></wa-icon>
+					</Link>
+				{/if}
+			{/snippet}
+			{#snippet right()}
+				{#if theme === 'ios' && onSave}
+					<Link onClick={onSave} data-testid="edit-photo-save-link">
+						{saveLabel || m.save()}
+					</Link>
+				{/if}
 			{/snippet}
 		</Navbar>
 	{/if}
@@ -248,11 +265,18 @@
 	</div>
 {:else}
 	<!-- Text avatar editor -->
-	<Navbar transparent>
+	<Navbar transparent rightClass={!textValue ? 'ios-right-disabled' : ''}>
 		{#snippet left()}
 			<Link iconOnly onClick={() => (view = 'picker')} data-testid="edit-photo-back">
 				<wa-icon src={wrapPathInSvg(mdiArrowLeft)} style="font-size: 24px"></wa-icon>
 			</Link>
+		{/snippet}
+		{#snippet right()}
+			{#if theme === 'ios'}
+				<Link onClick={generateTextAvatar}>
+					{m.done()}
+				</Link>
+			{/if}
 		{/snippet}
 	</Navbar>
 
@@ -304,15 +328,17 @@
 		</div>
 	{/if}
 
-	<Button
-		rounded
-		tonal
-		disabled={!textValue}
-		onClick={generateTextAvatar}
-				class="fixed-action-btn"
-	>
-		{m.done()}
-	</Button>
+	{#if theme === 'material'}
+		<Button
+			rounded
+			tonal
+			disabled={!textValue}
+			onClick={generateTextAvatar}
+			class="fixed-action-btn"
+		>
+			{m.done()}
+		</Button>
+	{/if}
 {/if}
 
 <style>

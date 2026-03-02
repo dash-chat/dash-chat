@@ -269,6 +269,11 @@ emoji-picker {
 	border-radius: 16px;
 }
 
+.ios-right-disabled {
+	pointer-events: none;
+	opacity: 0.5;
+}
+
 .fixed-action-btn {
 	position: fixed;
 	inset-inline-end: 1rem;

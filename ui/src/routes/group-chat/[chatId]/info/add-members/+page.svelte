@@ -42,7 +42,7 @@
 		titleClass="opacity1"
 		transparent={true}
 		rightClass={selectedContacts.length === 0
-			? 'pointer-events-none opacity-50'
+			? 'ios-right-disabled'
 			: ''}
 	>
 		{#snippet left()}

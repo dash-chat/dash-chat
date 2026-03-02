@@ -97,7 +97,7 @@
 			title={m.about()}
 			titleClass="opacity1"
 			transparent={true}
-			rightClass={!hasChanges ? 'pointer-events-none opacity-50' : ''}
+			rightClass={!hasChanges ? 'ios-right-disabled' : ''}
 		>
 			{#snippet left()}
 				<NavbarBackLink
