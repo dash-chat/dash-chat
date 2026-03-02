@@ -39,7 +39,7 @@ type MemStore = p2panda_auth::processor::Store<Operation<Extensions>>;
 
 #[derive(Clone)]
 pub struct HackyGroupStore {
-    groups: MemStore,
+    pub(crate) groups: MemStore,
     file_write_mutex: Arc<Mutex<()>>,
 }
 
@@ -64,7 +64,7 @@ impl HackyGroupStore {
 #[derive(Clone)]
 pub struct LocalStore {
     db: Arc<Database>,
-    groups: HackyGroupStore,
+    pub(crate) groups: HackyGroupStore,
 }
 
 impl LocalStore {
@@ -107,30 +107,6 @@ impl LocalStore {
             private_key: self.private_key()?,
             agent_id: self.agent_id()?,
         })
-    }
-
-    pub async fn process_group_operation(&self, action: AuthExtension) -> anyhow::Result<()> {
-        type Resolver = StrongRemove<PublicKey, Hash, Operation<Extensions>, ()>;
-
-        let groups_y = self.groups.groups.get_state().await?;
-
-        let AuthExtension { group_id, action } = action;
-        // let previous: Vec<Hash> = groups_store.get_state().await.unwrap().crdt.heads();
-
-        // let (hash, header, header_bytes, operation) =
-        //     create_operation(&private_key, seq_num, backlink, &previous, extensions);
-
-        // if let Err(err) =
-        //     p2panda_auth::processor::process::<_, _, Resolver>(&groups_store, &operation).await
-        // {
-        //     println!();
-        //     println!("error: {err:?}");
-        //     println!();
-        //     continue;
-        // };
-
-        todo!();
-        Ok(())
     }
 
     pub fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {

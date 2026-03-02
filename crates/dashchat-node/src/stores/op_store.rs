@@ -98,7 +98,7 @@ where
         private_key: &PrivateKey,
         topic: Topic<K>,
         payload: DashAction,
-        deps: Vec<p2panda_core::Hash>,
+        previous: Vec<p2panda_core::Hash>,
         alias: Option<&str>,
     ) -> Result<(Header, Option<Body>), anyhow::Error> {
         let device_id = DeviceId::from(private_key.public_key());
@@ -140,7 +140,7 @@ where
             timestamp,
             seq_num,
             backlink,
-            previous: deps,
+            previous,
             extensions,
         };
 

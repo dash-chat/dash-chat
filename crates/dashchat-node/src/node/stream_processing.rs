@@ -4,6 +4,7 @@ use futures::Stream;
 use futures::StreamExt;
 use futures::stream::SelectAll;
 use mailbox_client::MailboxItem;
+use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_core::Operation;
 use serde::{Deserialize, Serialize};
 use tokio::task;
@@ -169,6 +170,10 @@ impl Node {
         is_author: bool,
         _is_repair: bool,
     ) -> anyhow::Result<()> {
+        if let Err(err) = self.process_extensions(&operation).await {
+            tracing::error!(?err, "process extensions error");
+            return Err(err);
+        }
         let Operation { header, body, hash } = operation;
 
         let topic = header.extensions.topic;
@@ -209,6 +214,25 @@ impl Node {
         self.op_store.mark_op_processed(topic, &hash);
 
         anyhow::Ok(())
+    }
+
+    async fn process_extensions(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
+        match &operation.header.extensions.auth {
+            Some(_) => {
+                if let Err(err) = p2panda_auth::processor::process::<_, _, DashResolver>(
+                    &self.local_store.groups.groups,
+                    operation,
+                )
+                .await
+                {
+                    println!();
+                    println!("error: {err:?}");
+                    println!();
+                };
+            }
+            None => {}
+        }
+        Ok(())
     }
 
     pub async fn notify_payload(&self, header: &Header, payload: &Payload) -> anyhow::Result<()> {

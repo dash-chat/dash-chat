@@ -7,6 +7,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::Result;
+use p2panda_auth::group::resolver::StrongRemove;
 
 use crate::error::{AddContactError, Error};
 use crate::filesystem::Filesystem;
@@ -14,7 +15,7 @@ use chrono::{Duration, Utc};
 use futures::Stream;
 use named_id::Rename;
 use named_id::*;
-use p2panda_core::Body;
+use p2panda_core::{Body, Hash, PublicKey};
 use p2panda_spaces::ActorId;
 use p2panda_store::{LogStore, SqliteStore};
 use p2panda_stream::IngestExt;
@@ -67,6 +68,8 @@ impl Default for NodeConfig {
         }
     }
 }
+
+pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
 
 pub type Orderer<S> =
     PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
