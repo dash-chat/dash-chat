@@ -91,6 +91,7 @@
 				linkProps={{ href: '/new-message/add-contact' }}
 				title={m.addContact()}
 				chevron={false}
+				data-testid="new-message-add-contact"
 			>
 				{#snippet media()}
 					<wa-icon src={wrapPathInSvg(mdiAccountPlus)}></wa-icon>

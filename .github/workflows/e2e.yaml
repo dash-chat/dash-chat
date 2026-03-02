@@ -1,0 +1,76 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            webkit2gtk-driver \
+            xvfb
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@master
+        with:
+          version: 10
+          cache: true
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      - name: Install pnpm dependencies
+        run: pnpm install
+
+      - name: Build UI packages
+        run: pnpm -F ./packages/stores build
+
+      - name: Build Tauri app (release, no-bundle)
+        run: pnpm tauri build --no-bundle --features e2e-tests
+
+      - name: Make launch scripts executable
+        run: chmod +x e2e-tests/scripts/*.sh
+
+      - name: Run E2E tests
+        run: set -o pipefail && xvfb-run pnpm test 2>&1 | tee e2e-output.log
+        working-directory: e2e-tests
+        env:
+          SKIP_BUILD: '1'
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: e2e-tests/e2e-output.log
+          retention-days: 7
+
+      - name: Cleanup E2E data
+        if: always()
+        run: rm -rf .dbs/e2e

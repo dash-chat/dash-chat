@@ -188,7 +188,7 @@ export class DirectChatStore {
 	});
 
 	summary = reactive(async () => {
-		const profile = await this.contactsStore.profiles(this.peer);
+		const profile = await this.peerProfile();
 		const message = await this.lastMessage();
 		const unreadCount = await this.unreadCount();
 

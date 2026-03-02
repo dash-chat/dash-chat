@@ -15,6 +15,7 @@
 		ListInput,
 		List,
 		Button,
+		Link,
 		useTheme,
 	} from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -29,11 +30,15 @@
 	let name = $state<string>('');
 	let description = $state<string>('');
 
+	let initialized = false;
 	info.subscribe(i => {
 		i.then(info => {
-			if (!avatar) avatar = info?.avatar;
-			if (!name) name = info?.name || '';
-			if (!description) description = info?.description || '';
+			if (!initialized) {
+				initialized = true;
+				avatar = info?.avatar;
+				name = info?.name || '';
+				description = info?.description || '';
+			}
 		});
 	});
 	const theme = $derived(useTheme());
@@ -49,6 +54,13 @@
 			<NavbarBackLink
 				onClick={() => goto(`/group-chat/${chatId}/info`)}
 			/>
+		{/snippet}
+		{#snippet right()}
+			{#if theme === 'ios'}
+				<Link onClick={save}>
+					{m.save()}
+				</Link>
+			{/if}
 		{/snippet}
 	</Navbar>
 
@@ -79,12 +91,14 @@
 			</div>
 		</div>
 
-		<Button
-			onClick={save}
-			class="fixed-action-btn"
-			rounded
-		>
-			{m.save()}
-		</Button>
+		{#if theme === 'material'}
+			<Button
+				onClick={save}
+				class="fixed-action-btn"
+				rounded
+			>
+				{m.save()}
+			</Button>
+		{/if}
 	{/await}
 </Page>

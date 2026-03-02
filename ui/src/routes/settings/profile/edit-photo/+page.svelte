@@ -5,9 +5,11 @@
 	import { goto } from '$app/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button, Page, Preloader } from 'konsta/svelte';
+	import { Button, Page, Preloader, useTheme } from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import PhotoPicker from '$lib/components/profiles/PhotoPicker.svelte';
+
+	const theme = $derived(useTheme());
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let avatar = $state<string | undefined>(undefined);
@@ -18,13 +20,17 @@
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	let originalAvatar = $state<string | undefined>(undefined);
 
+	let initialized = false;
 	$effect(() => {
 		$myProfile.then((profile) => {
-			if (!name) name = profile?.name || '';
-			if (originalAvatar === undefined) originalAvatar = profile?.avatar;
-			if (avatar === undefined) avatar = profile?.avatar;
-			if (!surname) surname = profile?.surname;
-			if (!about) about = profile?.about;
+			if (!initialized) {
+				initialized = true;
+				name = profile?.name || '';
+				originalAvatar = profile?.avatar;
+				avatar = profile?.avatar;
+				surname = profile?.surname;
+				about = profile?.about;
+			}
 		});
 	});
 
@@ -68,10 +74,13 @@
 				bind:avatar
 				bind:isTextEditorOpen={textEditorOpen}
 				onClose={() => goto('/settings/profile')}
+				onSave={save}
+				saveLabel={m.save()}
+				saveDisabled={!hasChanges}
 			/>
 		</div>
 
-		{#if !textEditorOpen}
+		{#if !textEditorOpen && theme === 'material'}
 			<!-- Save button -->
 			<Button
 				rounded

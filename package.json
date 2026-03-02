@@ -3,10 +3,13 @@
 	"private": true,
 	"scripts": {
 		"start": "mprocs",
+		"dev": "concurrently --kill-others-on-fail \"pnpm -F dash-chat-stores dev\" \"pnpm -F ui dev\"",
+		"prepare": "pnpm -F dash-chat-stores build",
 		"test": "cargo test",
 		"tauri": "tauri"
 	},
 	"devDependencies": {
+		"concurrently": "^9.2.1",
 		"@eslint/js": "^9.36.0",
 		"@tauri-apps/cli": "^2.8.4",
 		"@trivago/prettier-plugin-sort-imports": "^4.3.0",
