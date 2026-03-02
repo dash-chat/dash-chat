@@ -5,6 +5,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { allocateDriverPorts, allocatePort } from './helpers/allocate-port';
+import {
+	killAndWait,
+	killAllE2EProcesses,
+	killLeftoverMailboxServers,
+	killPortHolders,
+} from './helpers/cleanup';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -15,72 +21,6 @@ const ALL_PORTS = [port1, nativePort1, port2, nativePort2];
 let mailboxServer: ChildProcess;
 let tauriDriver1: ChildProcess;
 let tauriDriver2: ChildProcess;
-
-/** Kill a child process with SIGKILL and wait for it to exit (up to timeoutMs). */
-function killAndWait(
-	proc: ChildProcess | undefined,
-	timeoutMs = 5_000,
-): Promise<void> {
-	if (!proc || proc.exitCode !== null) return Promise.resolve();
-	return new Promise(resolve => {
-		const timer = setTimeout(() => {
-			// Already sent SIGKILL, just resolve
-			resolve();
-		}, timeoutMs);
-		proc.once('exit', () => {
-			clearTimeout(timer);
-			resolve();
-		});
-		try {
-			proc.kill('SIGKILL');
-		} catch {
-			clearTimeout(timer);
-			resolve();
-		}
-	});
-}
-
-/** Kill all E2E dash-chat and tauri-driver processes (NOT the mailbox server). */
-function killAllE2EProcesses() {
-	try {
-		execSync('pkill -9 tauri-driver', { stdio: 'ignore' });
-	} catch {
-		/* ignore */
-	}
-	try {
-		execSync(
-			'for pid in $(pgrep -f "target/(debug|release)/dash-chat"); do ' +
-				'grep -qz "\.dbs/e2e" /proc/$pid/environ 2>/dev/null && kill -9 $pid 2>/dev/null; ' +
-				'done',
-			{ stdio: 'ignore' },
-		);
-	} catch {
-		/* ignore */
-	}
-}
-
-/** Kill leftover mailbox-server processes from previous interrupted runs. */
-function killLeftoverMailboxServers() {
-	try {
-		execSync('pkill -9 -f mailbox-server', { stdio: 'ignore' });
-	} catch {
-		/* ignore */
-	}
-}
-
-/** Kill any process listening on the given TCP ports. */
-function killPortHolders(ports: number[]) {
-	for (const p of ports) {
-		try {
-			execSync(
-				`ss -tlnp 'sport = :${p}' | grep -oP 'pid=\\K[0-9]+' | xargs -r kill -9`,
-				{ stdio: 'ignore' },
-			);
-		} catch {
-			/* ignore */
-		}
-	}
-}
 
 export const config: Options.Testrunner = {
 	runner: 'local',

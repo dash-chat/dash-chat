@@ -3,6 +3,7 @@
 	import { Dialog, DialogButton, Progressbar } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isMobile, isTauriEnv } from '$lib/utils/environment';
+	import type { Update } from '@tauri-apps/plugin-updater';
 
 	type UpdateState = 'idle' | 'downloading' | 'ready' | 'error';
 
@@ -35,7 +36,11 @@
 			updateState = event.detail;
 		};
 		window.addEventListener('test-simulate-update', handler as EventListener);
-		return () => window.removeEventListener('test-simulate-update', handler as EventListener);
+		return () =>
+			window.removeEventListener(
+				'test-simulate-update',
+				handler as EventListener,
+			);
 	});
 
 	async function simulateMockUpdate(mode: 'download' | 'error') {
@@ -49,7 +54,7 @@
 		progress = 0;
 		const chunk = 2_500_000;
 		for (let i = 0; i < 20; i++) {
-			await new Promise((r) => setTimeout(r, 150));
+			await new Promise(r => setTimeout(r, 150));
 			progress += chunk;
 		}
 		updateState = 'ready';
@@ -57,16 +62,24 @@
 
 	async function checkForUpdate() {
 		try {
-			const { check } = await import('@tauri-apps/plugin-updater');
-			const update = await check();
-			if (!update) return;
+			let update: Update | null;
+			try {
+				const { check } = await import('@tauri-apps/plugin-updater');
+				update = await check();
+				if (!update) return;
+			} catch (err) {
+				// The updater plugin may not be loaded (e.g. E2E builds) or
+				// the network may be unavailable.
+				console.warn('Update check failed:', err);
+				return;
+			}
 
 			version = update.version;
 			updateState = 'downloading';
 			contentLength = 0;
 			progress = 0;
 
-			await update.downloadAndInstall((event) => {
+			await update.downloadAndInstall(event => {
 				if (event.event === 'Started') {
 					contentLength = event.data.contentLength ?? 0;
 				} else if (event.event === 'Progress') {
@@ -76,9 +89,8 @@
 
 			updateState = 'ready';
 		} catch (err) {
-			// The updater plugin may not be loaded (e.g. E2E builds) or
-			// the network may be unavailable.
-			console.warn('Update check failed:', err);
+			console.warn('Update download failed:', err);
+			updateState = 'error';
 		}
 	}
 
@@ -97,7 +109,10 @@
 	}
 </script>
 
-<Dialog opened={updateState === 'downloading'} data-testid="updater-downloading">
+<Dialog
+	opened={updateState === 'downloading'}
+	data-testid="updater-downloading"
+>
 	{#snippet title()}
 		{m.updateAvailable()} — v{version}
 	{/snippet}
@@ -105,7 +120,9 @@
 	<div class="mx-4 mt-3 mb-1">
 		<Progressbar progress={progressFraction()} />
 	</div>
-	<p class="px-4 text-xs opacity-50 text-right">{Math.round(progressFraction() * 100)}%</p>
+	<p class="px-4 text-xs opacity-50 text-right">
+		{Math.round(progressFraction() * 100)}%
+	</p>
 </Dialog>
 
 <Dialog opened={updateState === 'ready'} data-testid="updater-ready">
@@ -123,12 +140,18 @@
 	{/snippet}
 </Dialog>
 
-<Dialog opened={updateState === 'error'} onBackdropClick={dismiss} data-testid="updater-error">
+<Dialog
+	opened={updateState === 'error'}
+	onBackdropClick={dismiss}
+	data-testid="updater-error"
+>
 	{#snippet title()}
 		{m.updateAvailable()}
 	{/snippet}
 	<p class="px-4 text-sm opacity-70">{m.updateError()}</p>
 	{#snippet buttons()}
-		<DialogButton onClick={dismiss} data-testid="updater-ok-btn">{m.updateOk()}</DialogButton>
+		<DialogButton onClick={dismiss} data-testid="updater-ok-btn"
+			>{m.updateOk()}</DialogButton
+		>
 	{/snippet}
 </Dialog>
