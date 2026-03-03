@@ -11,6 +11,7 @@ import {
 	killLeftoverMailboxServers,
 	killPortHolders,
 } from './helpers/cleanup';
+import { waitForPortFree, waitForPortListening } from './helpers/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -142,8 +143,8 @@ export const config: Options.Testrunner = {
 		// Kill anything still holding our specific ports (handles orphaned
 		// dash-chat processes that inherited tauri-driver's listening sockets).
 		killPortHolders(ALL_PORTS);
-		// Give OS time to fully release sockets after SIGKILL.
-		await new Promise(r => setTimeout(r, 2_000));
+		// Wait for ports to be fully released after SIGKILL.
+		await Promise.all(ALL_PORTS.map(p => waitForPortFree(p)));
 
 		// Clean agent app data for a fresh start (important for specFileRetries).
 		for (const agent of ['agent-1', 'agent-2']) {
@@ -179,7 +180,11 @@ export const config: Options.Testrunner = {
 			console.error(`[tauri-driver:${port2}] ${data.toString().trim()}`);
 		});
 
-		return new Promise(resolve => setTimeout(resolve, 500));
+		// Wait for tauri-driver instances to accept connections.
+		await Promise.all([
+			waitForPortListening(port1),
+			waitForPortListening(port2),
+		]);
 	},
 
 	async afterSession() {

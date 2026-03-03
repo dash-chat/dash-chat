@@ -74,8 +74,12 @@ sed -i "s|darksoil-studio/dash-chat/v[0-9]\+\.[0-9]\+\.[0-9]\+|darksoil-studio/d
 
 echo "  Updated $SITE_INDEX"
 
-# 4. Commit, tag, and push
-git -C "$ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$SITE_INDEX"
+# 4. Update Cargo.lock to reflect the new version
+(cd "$ROOT" && cargo update --workspace)
+echo "  Updated Cargo.lock"
+
+# 5. Commit, tag, and push
+git -C "$ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$SITE_INDEX" "$ROOT/Cargo.lock"
 git -C "$ROOT" commit -m "Release $TAG"
 git -C "$ROOT" tag "$TAG"
 echo "  Created commit and tag $TAG"
@@ -86,3 +90,4 @@ echo "  Pushed to remote"
 
 echo ""
 echo "Done! Released $TAG"
+
