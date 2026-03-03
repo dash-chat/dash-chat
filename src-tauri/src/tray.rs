@@ -34,7 +34,7 @@ pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
             }
             "quit" => {
                 tauri::async_runtime::block_on(async move {
-                    let _ = crate::mailbox::stop_local_mailbox(&app).await;
+                    let _ = crate::mailbox::server::stop_local_mailbox(&app).await;
                 });
                 // Signal the run-loop to stop calling prevent_exit(), then
                 // exit gracefully so all destructors run.

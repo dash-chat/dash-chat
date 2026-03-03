@@ -1,6 +1,3 @@
-use p2panda_auth::group::resolver::StrongRemove;
-use p2panda_core::{Hash, PublicKey};
-
 use crate::{DashAction, topic::TopicKind};
 
 use super::*;
@@ -19,10 +16,7 @@ impl Node {
             DashAction::Payload(_) => {
                 vec![]
             }
-            DashAction::GroupControl(_) => {
-                type Resolver = StrongRemove<PublicKey, Hash, Operation, ()>;
-                self.local_store.groups.heads().await?
-            }
+            DashAction::GroupControl(_) => self.local_store.groups.heads().await?,
         };
 
         let (header, body) = self

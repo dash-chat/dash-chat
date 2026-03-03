@@ -1,19 +1,23 @@
 name: Build and deploy site
-on: 
+on:
   push:
     branches:
       - main
 
-permissions: 
-  contents: write
+permissions:
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
-    concurrency: ci-${{ github.ref }} # Recommended if you intend to make multiple deployments in quick succession.
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout 🛎️
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install nix
         uses: cachix/install-nix-action@v27
@@ -25,12 +29,22 @@ jobs:
         with:
           name: darksoil-studio
 
-      - name: Install and Build 🔧 
+      - name: Install and Build 🔧
         run: |
           nix develop --accept-flake-config --command bash -c "pnpm install && pnpm -F site build"
 
-      - name: Deploy 🚀
-        uses: JamesIves/github-pages-deploy-action@v4.3.3
+      - name: Upload artifact 📦
+        uses: actions/upload-pages-artifact@v3
         with:
-          branch: gh-pages # The branch the action should deploy to.
-          folder: packages/site/dist # The folder the action should deploy.
+          path: packages/site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy 🚀
+        id: deployment
+        uses: actions/deploy-pages@v4

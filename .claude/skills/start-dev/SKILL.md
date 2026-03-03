@@ -33,7 +33,7 @@ Parse the task output for these KEY=VALUE lines:
 
 Also available (for reference):
 - `UI_PORT=<port>` — Vite dev server port
-- `MAILBOX_PORT=<port>` — Mailbox server port
+- `MAILBOX_URL=<url>` — Mailbox server URL
 - `DEV_DBS_PATH=<path>` — Temp directory for databases and logs
 
 ## Step 4: Connect via Tauri MCP bridge

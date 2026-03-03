@@ -14,6 +14,8 @@
 
     nixos-generators.url = "github:nix-community/nixos-generators";
 
+    tauri-driver.url = "github:dash-chat/tauri-driver";
+
     tauri-plugin-holochain.url =
       "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
   };
@@ -42,7 +44,7 @@
       systems =
         [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
 
-      perSystem = { inputs', lib, system, ... }:
+      perSystem = { inputs', self', lib, system, ... }:
         let
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
@@ -66,7 +68,7 @@
           devShells.default = pkgs.mkShell {
             inputsFrom =
               [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-            packages = [ pkgs.mprocs pkgs.pnpm rust ];
+            packages = [ pkgs.mprocs pkgs.pnpm rust inputs'.tauri-driver.packages.tauri-driver ];
             shellHook = lib.optionalString pkgs.stdenv.isLinux ''
               export LD_LIBRARY_PATH=${
                 lib.makeLibraryPath tauriLibraries
@@ -83,6 +85,25 @@
               inputs'.tauri-plugin-holochain.devShells.holochainTauriAndroidDev
             ];
             packages = [ rust ];
+          };
+
+          devShells.iosDev = let
+            rust = pkgs.rust-bin.fromRustupToolchainFile
+              ./rust-toolchain.ios.toml;
+          in pkgs.mkShell {
+            inputsFrom = [ devShells.default ];
+            packages = [ rust ]
+              ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
+            shellHook = lib.optionalString pkgs.stdenv.isDarwin ''
+              # Make libiconv findable by the linker even when xcodebuild
+              # strips NIX_LDFLAGS from the environment.
+              export LIBRARY_PATH="${
+                lib.makeLibraryPath [ pkgs.libiconv ]
+              }''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+
+              # Unset SDKROOT so xcrun can locate the iOS SDK from Xcode.
+              unset SDKROOT
+            '';
           };
 
         };

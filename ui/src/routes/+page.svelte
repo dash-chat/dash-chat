@@ -1,19 +1,24 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { type ContactsStore } from 'dash-chat-stores';
+	import { type ContactsStore, type ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/AllChats.svelte';
+	import GetStarted from '$lib/components/GetStarted.svelte';
 	import { Fab, Link, Navbar, Page, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	const theme = $derived(useTheme());
 
+	let getStartedVisible = $state(true);
 	const contactsStore: ContactsStore = getContext('contacts-store');
+	const chatsStore: ChatsStore = getContext('chats-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const contacts = useReactivePromise(contactsStore.contactsAgentIds);
+	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
 </script>
 
 <Page>
@@ -42,11 +47,23 @@
 
 	<div class={theme==='ios' ? "mt-4": ''}></div>
 
-	<AllChats ></AllChats>
+	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
+
+	{#await $contacts then contactsList}
+		{#await $chatSummaries then chats}
+			{@const showGetStarted = contactsList.length === 0 && chats.length === 0}
+
+			{#if showGetStarted && !isWideScreen.value}
+				<div class="fixed bottom-0 left-0 right-0 z-10 pb-safe">
+					<GetStarted bind:visible={getStartedVisible} />
+				</div>
+			{/if}
+		{/await}
+	{/await}
 
 	{#if theme == 'material' && !isWideScreen.value}
 		<Fab
-			class="absolute right-safe-4 bottom-safe-4 z-20"
+			class="fixed-action-btn z-20"
 			onClick={() => goto('/new-message')}
 			data-testid="home-new-message-fab"
 		>

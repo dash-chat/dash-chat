@@ -4,8 +4,6 @@ use std::sync::Arc;
 use p2panda_core::PublicKey;
 use tokio::sync::RwLock;
 
-use async_trait::async_trait;
-
 #[derive(Clone, Debug)]
 pub struct AuthorStore<T>(pub(crate) Arc<RwLock<HashMap<T, HashSet<PublicKey>>>>);
 

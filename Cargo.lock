@@ -1870,20 +1870,20 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.10.0"
+version = "0.10.3"
 dependencies = [
  "anyhow",
  "app_dirs2",
  "async-trait",
  "dashchat-node",
  "env_logger",
+ "fs2",
  "futures",
  "hex",
  "hyper-tls",
  "image",
  "jni",
  "libc",
- "localip",
  "log",
  "mailbox-client",
  "mailbox-server",
@@ -1893,7 +1893,16 @@ dependencies = [
  "ndk-sys",
  "opener",
  "openssl-sys",
+ "p2panda-auth",
  "p2panda-core",
+ "p2panda-discovery",
+ "p2panda-encryption",
+ "p2panda-net",
+ "p2panda-spaces",
+ "p2panda-store",
+ "p2panda-stream",
+ "p2panda-sync",
+ "regex",
  "serde",
  "serde_json",
  "sonix-i18n",
@@ -1904,14 +1913,19 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-deep-link",
  "tauri-plugin-dialog",
+ "tauri-plugin-fs",
  "tauri-plugin-keepawake",
  "tauri-plugin-log",
+ "tauri-plugin-mailto",
  "tauri-plugin-mcp-bridge",
  "tauri-plugin-notification",
  "tauri-plugin-process",
+ "tauri-plugin-sharekit",
  "tauri-plugin-single-instance",
+ "tauri-plugin-system-bars-styles",
  "tauri-plugin-updater",
  "tauri-plugin-virtual-keyboard-padding",
+ "time",
  "tokio",
  "url2",
  "uuid",
@@ -2900,6 +2914,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]
@@ -4464,6 +4488,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "is-docker"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "928bae27f42bc99b60d9ac7334e3a21d10ad8f1835a4e12ec3ec0464765ed1b3"
+dependencies = [
+ "once_cell",
+]
+
+[[package]]
+name = "is-wsl"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "173609498df190136aa7dea1a91db051746d339e18476eed5ca40521f02d7aa5"
+dependencies = [
+ "is-docker",
+ "once_cell",
+]
+
+[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4788,12 +4831,6 @@ name = "litrs"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
-
-[[package]]
-name = "localip"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4f334bdde73abdaa7f51751218f7872d8e7c452144111e62726206bc0eaa76e"
 
 [[package]]
 name = "lock_api"
@@ -6088,6 +6125,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
+name = "open"
+version = "5.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43bb73a7fa3799b198970490a51174027ba0d4ec504b03cd08caf513d40024bc"
+dependencies = [
+ "is-wsl",
+ "libc",
+ "pathdiff",
+]
+
+[[package]]
 name = "opener"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6462,6 +6510,12 @@ name = "pastey"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35fb2e5f958ec131621fdd531e9fc186ed768cbe395337403ae56c17a74c68ec"
+
+[[package]]
+name = "pathdiff"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
 name = "peeking_take_while"
@@ -9363,6 +9417,20 @@ dependencies = [
  "tauri-plugin",
  "thiserror 2.0.18",
  "time",
+ "tracing",
+]
+
+[[package]]
+name = "tauri-plugin-mailto"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-mailto?branch=main#0338bcefae60bdaf2fa7a3e433205b78dbe931a7"
+dependencies = [
+ "open",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -9453,6 +9521,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-sharekit"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "875bdd9fb587e38505db5394df2542f2af4f63d5b2b6356728c9d73692c26900"
+dependencies = [
+ "log",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
+ "objc2-foundation 0.3.2",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
+ "windows 0.61.3",
+ "windows-collections 0.2.0",
+]
+
+[[package]]
 name = "tauri-plugin-single-instance"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9466,6 +9555,19 @@ dependencies = [
  "tracing",
  "windows-sys 0.60.2",
  "zbus 5.14.0",
+]
+
+[[package]]
+name = "tauri-plugin-system-bars-styles"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-system-bars-styles?branch=main#f30c9bef9ba92cb4473d0168fd5066d7d08c0afe"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

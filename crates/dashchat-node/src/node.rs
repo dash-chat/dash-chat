@@ -10,7 +10,6 @@ use anyhow::Result;
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
-use p2panda_auth::processor::AuthExtension;
 
 use crate::error::{AddContactError, Error};
 use crate::filesystem::Filesystem;
@@ -551,10 +550,6 @@ impl Node {
         if let Some(cancel_and_wait) = self.stream_task.take() {
             cancel_and_wait.cancel_and_wait().await;
         }
-    }
-
-    async fn store_contact(&self, contact: QrCode) -> anyhow::Result<()> {
-        todo!()
     }
 
     /// Store someone as a contact, and:

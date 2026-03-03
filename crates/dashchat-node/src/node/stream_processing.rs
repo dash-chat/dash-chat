@@ -4,7 +4,6 @@ use futures::Stream;
 use futures::StreamExt;
 use futures::stream::SelectAll;
 use mailbox_client::MailboxItem;
-use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_core::Operation;
 use serde::{Deserialize, Serialize};
 use tokio::task;

@@ -31,7 +31,7 @@
 
 use std::marker::PhantomData;
 
-use crate::{AgentId, ChatId};
+use crate::AgentId;
 use named_id::*;
 
 use p2panda_spaces::ActorId;

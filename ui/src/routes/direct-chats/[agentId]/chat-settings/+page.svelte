@@ -68,13 +68,13 @@
 					>
 					</wa-avatar>
 
-					<button class="flex items-center gap-1" onclick={() => (showPeerProfile = true)}>
+					<div class="flex cursor-pointer items-center gap-1" onclick={() => (showPeerProfile = true)} role="button" tabindex="0">
 						<span class="text-xl font-semibold" data-testid="chat-settings-peer-name">{fullName(profile!)}</span>
 						<wa-icon
 							class="small-icon quiet"
 							src={wrapPathInSvg(mdiChevronRight)}
 						></wa-icon>
-					</button>
+					</div>
 
 					{#if profile?.about}
 						<span class="quiet text-center">{profile.about}</span>

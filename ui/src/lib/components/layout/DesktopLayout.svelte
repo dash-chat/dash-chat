@@ -1,20 +1,37 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { page } from '$app/state';
+	import type { ContactsStore, ChatsStore } from 'dash-chat-stores';
+	import { getContext } from 'svelte';
+	import { page, navigating } from '$app/state';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import ChatListPanel from './ChatListPanel.svelte';
 	import SettingsPanel from './SettingsPanel.svelte';
 	import NewMessagePanel from './NewMessagePanel.svelte';
 	import EmptyState from './EmptyState.svelte';
+	import GetStarted from '$lib/components/GetStarted.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
+	const contactsStore: ContactsStore = getContext('contacts-store');
+	const chatsStore: ChatsStore = getContext('chats-store');
+	const contacts = useReactivePromise(contactsStore.contactsAgentIds);
+	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+
+	const isHome = $derived(page.url.pathname === '/');
 	const isSettings = $derived(page.url.pathname.startsWith('/settings'));
 	const isNewMessage = $derived(
 		page.url.pathname.startsWith('/new-message') ||
 			page.state.sidebarPanel === 'new-message',
 	);
+	const isNavigatingToSidebarRoute = $derived(
+		navigating.to?.url.pathname === '/' ||
+			navigating.to?.url.pathname === '/settings' ||
+			navigating.to?.url.pathname === '/new-message',
+	);
 	const isSidebarRoute = $derived(
-		page.url.pathname === '/' ||
+		isNavigatingToSidebarRoute ||
+			!page.url?.pathname ||
+			page.url.pathname === '/' ||
 			page.url.pathname === '/settings' ||
 			page.url.pathname === '/new-message',
 	);
@@ -33,6 +50,18 @@
 	<div class="desktop-content" class:desktop-content-settings={isSettings}>
 		{#if isSidebarRoute}
 			<EmptyState />
+			{#if isHome}
+				{#await $contacts then contactsList}
+				{#await $chatSummaries then chats}
+					{@const showGetStarted = contactsList.length === 0 && chats.length === 0}
+					{#if showGetStarted}
+						<div class="absolute bottom-0 left-0 right-0 z-10">
+							<GetStarted />
+						</div>
+					{/if}
+				{/await}
+			{/await}
+			{/if}
 		{:else}
 			{@render children()}
 		{/if}
@@ -67,12 +96,10 @@
 		padding-left: 12px;
 	}
 
-	@media (prefers-color-scheme: dark) {
-		.desktop-sidebar {
-			background-color: var(--k-color-md-dark-surface);
-		}
-		.desktop-content {
-			background-color: var(--k-color-md-dark-surface);
-		}
+	:global(.dark) .desktop-sidebar {
+		background-color: var(--k-color-md-dark-surface);
+	}
+	:global(.dark) .desktop-content {
+		background-color: var(--k-color-md-dark-surface);
 	}
 </style>

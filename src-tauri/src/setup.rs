@@ -1,4 +1,3 @@
-use crate::menu::build_menu;
 use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::AppHandle;
 use tauri::{Emitter, Manager};
@@ -11,17 +10,18 @@ use crate::{commands::logs::simplify, filesystem::FileSystem};
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     // Manage the mDNS service daemon
     app_handle.manage(mdns_sd::ServiceDaemon::new()?);
+
     let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle).local_data_dir()?;
     log::info!("Using local data path: {local_data_path:?}");
 
     #[cfg(not(mobile))]
     {
-        app_handle.set_menu(build_menu(&app_handle)?)?;
-        app_handle.manage(crate::mailbox::LocalMailboxMutex::default());
+        app_handle.set_menu(crate::menu::build_menu(&app_handle)?)?;
+        app_handle.manage(crate::mailbox::server::LocalMailboxMutex::default());
         crate::tray::setup_tray(&app_handle)?;
 
         if crate::settings::load_mailbox_enabled(&app_handle) {
-            crate::mailbox::start_local_mailbox(&app_handle).await?;
+            crate::mailbox::server::start_local_mailbox(&app_handle).await?;
         }
 
         // Hide the main window when launched with --minimized (autostart)
@@ -36,14 +36,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     let (notification_tx, mut notification_rx) = tokio::sync::mpsc::channel(100);
     let node = dashchat_node::Node::new(local_data_path, config, Some(notification_tx)).await?;
 
-    let mailbox_url = if tauri::is_dev() {
-        // Use the IP address of the compiling machine to support tauri android dev
-        // pointing to the compiling computer's IP address
-        let mailbox_port = std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
-        format!("http://{}:{}", env!("LOCAL_IP_ADDRESS"), mailbox_port)
-    } else {
-        "https://mailbox-server.production.dash-chat.dash-chat.garnix.me".to_string()
-    };
+    let mailbox_url = crate::mailbox::default_mailbox_url();
 
     let mailbox_client = ToyMailboxClient::new(DASHCHAT_MAILBOX_ID.to_string(), mailbox_url);
     node.mailboxes.register(mailbox_client).await;
@@ -77,6 +70,12 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
             if let Err(err) = app_handle.emit("p2panda://new-operation", simplified_operation) {
                 log::error!("Failed to emit operation: {err:?}");
+            }
+
+            // Small delay between emissions to avoid overwhelming the WebKitGTK
+            // event loop with rapid-fire events (which can freeze the webview).
+            if cfg!(feature = "e2e-tests") {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             }
         }
     });

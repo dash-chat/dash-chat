@@ -1,5 +1,5 @@
 import { S } from '../selectors';
-import { typeInto, click, nextTick, waitForText } from '../helpers';
+import { typeInto, click, nextTick, waitFor, waitForText } from '../helpers';
 
 /**
  * Send and verify message delivery flow.
@@ -32,6 +32,7 @@ export const steps = {
 
 /** Type and send a message in the current chat. */
 export async function sendMessage(text: string): Promise<void> {
+	await waitFor(steps.messageInput);
 	typeInto(steps.messageInput, text);
 	await nextTick();
 	click(steps.sendButton);

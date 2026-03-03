@@ -1,15 +1,15 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::BTreeSet,
     io::Write,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use chrono::{DateTime, Utc};
-use p2panda_auth::{Access, group::resolver::StrongRemove, processor::AuthExtension};
+use p2panda_auth::Access;
 use p2panda_core::{Hash, Operation, PublicKey};
 use redb::*;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 
 use crate::{
     contact::InboxTopic,
