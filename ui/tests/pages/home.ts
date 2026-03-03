@@ -7,11 +7,6 @@ export function goToSettings() {
 	return { action: 'click' as const, selector: selectors.settingsLink };
 }
 
-/** Navigate to contacts page */
-export function goToContacts() {
-	return { action: 'click' as const, selector: selectors.contactsLink };
-}
-
 /** Navigate to new message (iOS theme — navbar link) */
 export function goToNewMessageLink() {
 	return { action: 'click' as const, selector: selectors.newMessageLink };

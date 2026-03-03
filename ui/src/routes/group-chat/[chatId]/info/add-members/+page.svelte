@@ -42,7 +42,7 @@
 		titleClass="opacity1"
 		transparent={true}
 		rightClass={selectedContacts.length === 0
-			? 'pointer-events-none opacity-50'
+			? 'ios-right-disabled'
 			: ''}
 	>
 		{#snippet left()}
@@ -103,8 +103,7 @@
 		{#if theme === 'material'}
 			<Button
 				onClick={addMembers}
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				class="fixed-action-btn"
 				rounded
 				disabled={selectedContacts.length === 0}
 			>

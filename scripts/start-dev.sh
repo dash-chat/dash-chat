@@ -13,10 +13,17 @@ cd "$PROJECT_DIR"
 
 UI_PORT=$(node -e "const s=require('net').createServer();s.listen(0,()=>{console.log(s.address().port);s.close()})")
 MAILBOX_PORT=$(node -e "const s=require('net').createServer();s.listen(0,()=>{console.log(s.address().port);s.close()})")
+if command -v hostname &>/dev/null && hostname -I &>/dev/null; then
+    LOCAL_IP=$(hostname -I | awk '{print $1}')
+else
+    LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "127.0.0.1")
+fi
+MAILBOX_URL="http://$LOCAL_IP:$MAILBOX_PORT"
 DEV_DBS_PATH=$(mktemp -d)
 
 echo "UI_PORT=$UI_PORT"
 echo "MAILBOX_PORT=$MAILBOX_PORT"
+echo "MAILBOX_URL=$MAILBOX_URL"
 echo "DEV_DBS_PATH=$DEV_DBS_PATH"
 
 LOGS_DIR="$DEV_DBS_PATH/logs"
@@ -34,18 +41,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# --- Step 2: Build stores ---
-
-echo "Building stores..."
-pnpm -F ./packages/stores build
-echo "STORES_BUILT=true"
-
-# --- Step 3: Start background processes ---
-
-# Stores watcher
-pnpm -F ./packages/stores dev > "$LOGS_DIR/stores.log" 2>&1 &
-PIDS+=($!)
-echo "STORES_PID=$!"
+# --- Step 2: Start background processes ---
 
 # Mailbox server
 cargo run -p mailbox-server -- \
@@ -54,21 +50,17 @@ cargo run -p mailbox-server -- \
 PIDS+=($!)
 echo "MAILBOX_PID=$!"
 
-# UI dev server
-UI_PORT="$UI_PORT" pnpm -F ./ui start > "$LOGS_DIR/ui.log" 2>&1 &
-PIDS+=($!)
-echo "UI_PID=$!"
-
-# Tauri agent 1
-AGENT=1 MAILBOX_PORT="$MAILBOX_PORT" DEV_DBS_PATH="$DEV_DBS_PATH" \
+# Tauri agent 1 (beforeDevCommand runs pnpm dev: stores watcher + Vite)
+export UI_PORT
+DATA_DIR="$DEV_DBS_PATH/agent-1" MAILBOX_URL="$MAILBOX_URL" \
   pnpm tauri dev --config "{\"build\":{\"devUrl\":\"http://localhost:$UI_PORT\"}}" \
   > "$LOGS_DIR/agent1.log" 2>&1 &
 PIDS+=($!)
 echo "AGENT1_PID=$!"
 
-# Tauri agent 2
-AGENT=2 MAILBOX_PORT="$MAILBOX_PORT" DEV_DBS_PATH="$DEV_DBS_PATH" \
-  pnpm tauri dev --config "{\"build\":{\"devUrl\":\"http://localhost:$UI_PORT\"}}" \
+# Tauri agent 2 (skip beforeDevCommand since UI dev server is already running)
+DATA_DIR="$DEV_DBS_PATH/agent-2" MAILBOX_URL="$MAILBOX_URL" \
+  pnpm tauri dev --config "{\"build\":{\"beforeDevCommand\":\"\",\"devUrl\":\"http://localhost:$UI_PORT\"}}" \
   > "$LOGS_DIR/agent2.log" 2>&1 &
 PIDS+=($!)
 echo "AGENT2_PID=$!"

@@ -44,4 +44,5 @@ service-account-key.json
 
 # Development environment database files
 *.redb
-.dev-dbs
+.dbs
+.e2e-binaries

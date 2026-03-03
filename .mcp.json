@@ -7,6 +7,15 @@
         "@hypothesi/tauri-mcp-server"
       ],
       "env": {}
+    },
+    "ios-simulator": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "ios-simulator-mcp"
+      ],
+      "env": {}
     }
   }
 }

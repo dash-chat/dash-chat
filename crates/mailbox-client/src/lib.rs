@@ -15,7 +15,13 @@ use tracing::Instrument;
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| reqwest::Client::new());
+pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("Failed to build HTTP client")
+});
 
 #[async_trait::async_trait]
 pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
