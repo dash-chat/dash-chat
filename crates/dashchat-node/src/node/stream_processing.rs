@@ -219,12 +219,7 @@ impl Node {
         match &operation.header.extensions.auth {
             Some(auth) => {
                 tracing::info!(?auth, "processing auth extensions");
-                if let Err(err) = p2panda_auth::processor::process::<_, _, DashResolver>(
-                    &self.local_store.groups.groups,
-                    operation,
-                )
-                .await
-                {
+                if let Err(err) = self.local_store.groups.process(operation).await {
                     tracing::error!(?err, "error processing auth extensions");
                 };
             }

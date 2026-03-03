@@ -133,7 +133,7 @@ impl Node {
         notification_tx: Option<mpsc::Sender<Notification>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
-        let local_store = LocalStore::new(filesystem.local_store_path())?;
+        let local_store = LocalStore::new(filesystem.local_store_path()).await?;
         let node_data = local_store.node_data()?;
 
         let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;

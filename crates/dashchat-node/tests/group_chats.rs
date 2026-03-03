@@ -215,4 +215,9 @@ async fn test_group_chat() {
         bobbi_messages.first().map(|m| m.content.clone()),
         Some("Hello".into())
     );
+
+    let alice_dir = alice.shutdown().await;
+    let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir).await;
+    let alice_members = alice.get_group_members(chat_id).await.unwrap();
+    assert_eq!(alice_members, expected_members);
 }

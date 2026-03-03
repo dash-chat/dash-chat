@@ -16,14 +16,12 @@ impl Node {
         let action = action.into();
 
         let previous = match &action {
-            DashAction::Payload(payload) => {
+            DashAction::Payload(_) => {
                 vec![]
             }
-            DashAction::GroupControl(auth) => {
+            DashAction::GroupControl(_) => {
                 type Resolver = StrongRemove<PublicKey, Hash, Operation, ()>;
-                let groups_y = self.local_store.groups.groups.get_state().await?;
-                // let AuthExtension { group_id, action } = action;
-                groups_y.crdt.heads()
+                self.local_store.groups.heads().await?
             }
         };
 
