@@ -96,15 +96,12 @@ if [ "$NEEDS_CHECKOUT" = "true" ]; then
     require_clean_tree
 fi
 
-# Enable test utilities in Vite builds
-export VITE_E2E=1
-
 # --- Step 1: Build current version ---
 
 echo "=== Building current version ==="
 mkdir -p "$BINARIES_DIR/current"
 
-pnpm install && pnpm --recursive build && pnpm tauri build --debug --no-bundle
+pnpm install && pnpm --recursive build && pnpm tauri build --debug --no-bundle --features e2e-tests
 
 BINARY_PATH="$ROOT/target/debug/dash-chat"
 [ -f "$BINARY_PATH" ] || die "Current binary not found at $BINARY_PATH"

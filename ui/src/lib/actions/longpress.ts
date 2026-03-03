@@ -12,6 +12,11 @@ export const longpress: Action<HTMLElement, LongPressParams> = (
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let triggered = false;
 
+	// Prevent iOS from showing native text selection UI on long-press
+	node.style.setProperty('-webkit-user-select', 'none');
+	node.style.setProperty('user-select', 'none');
+	node.style.setProperty('-webkit-touch-callout', 'none');
+
 	function onTouchStart(e: TouchEvent) {
 		triggered = false;
 		timer = setTimeout(() => {

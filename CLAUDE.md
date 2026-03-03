@@ -149,6 +149,7 @@ This is a pnpm workspace with multiple packages:
 - UI built with Konsta UI components (mobile-first design)
 - Internationalization using @inlang/paraglide-js
 - Image compression before upload
+- **iOS theme action buttons**: In the iOS theme, all primary action buttons (Save, Done, Create, Add, Next) must appear as a `<Link>` in the Navbar's `right` snippet — never as a bottom FAB. The bottom FAB (`class="fixed-action-btn"`) is Material-only. Use `{#if theme === 'ios'}` in the navbar right snippet and `{#if theme === 'material'}` around the FAB. Apply disabled styling via `rightClass="ios-right-disabled"` on the Navbar (defined in `app.css`).
 
 ### Desktop Layout
 
@@ -389,10 +390,13 @@ cd e2e-tests && SKIP_BUILD=1 pnpm test
 **Key details:**
 - Tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`
 - Two `tauri-driver` instances run on ports 4444 and 4446
-- Launch scripts (`e2e-tests/scripts/`) set `DATA_DIR` and `E2E_TEST` env vars
+- Launch scripts (`e2e-tests/scripts/`) set `DATA_DIR` and `MAILBOX_URL` env vars
+- The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events
 - Test data is stored in `.dbs/e2e/` and cleaned up after each run
 
 **REQUIREMENT:** New UI features must include E2E test coverage in `e2e-tests/specs/`.
+
+**REQUIREMENT:** The review-checks E2E test (`e2e-tests/specs/review-checks.spec.ts`) must visit every page in the app. When adding a new page, add it to `ui/tests/review/visit-all-pages.ts` so it is covered by the overflow, dark-mode, and RTL checks.
 
 ### Backwards Compatibility Tests
 
@@ -414,7 +418,6 @@ cd e2e-tests && bash compat/run.sh v0.10.0 v0.10.1
 
 **Key files:**
 - `compat/run.sh` — Orchestrator script (entry point)
-- `compat/apply-patches.sh` — Patches old versions for E2E support (DATA_DIR, E2E_TEST, MAILBOX_URL, registerTestUtils)
 - `compat/wdio.compat.ts` — WDIO config (reads COMPAT_PHASE and COMPAT_BINARY env vars)
 - `specs/compat-setup.spec.ts` — Phase 1: create data with old version
 - `specs/compat-verify.spec.ts` — Phase 2: verify with current version

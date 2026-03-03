@@ -284,7 +284,7 @@
 			{:then code}
 				{#await $qrColor then color}
 					{@const isWhite = color === '#ffffff'}
-					<div class="column gap-4" style="flex: 1">
+					<div class="column" style="flex:1">
 						<div class="column center-in-desktop gap-4 mx-4 mt-4">
 							<Card
 								class="qr-card p-2.5 pb-2"
@@ -309,6 +309,7 @@
 												textIos: isWhite ? 'text-black' : 'text-white',
 												textMaterial: isWhite ? 'text-black' : 'text-white',
 											}}
+											clearIos
 											clearMaterial
 											small
 											data-testid="add-contact-copy-btn"

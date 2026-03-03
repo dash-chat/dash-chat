@@ -87,6 +87,25 @@
             packages = [ rust ];
           };
 
+          devShells.iosDev = let
+            rust = pkgs.rust-bin.fromRustupToolchainFile
+              ./rust-toolchain.ios.toml;
+          in pkgs.mkShell {
+            inputsFrom = [ devShells.default ];
+            packages = [ rust ]
+              ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
+            shellHook = lib.optionalString pkgs.stdenv.isDarwin ''
+              # Make libiconv findable by the linker even when xcodebuild
+              # strips NIX_LDFLAGS from the environment.
+              export LIBRARY_PATH="${
+                lib.makeLibraryPath [ pkgs.libiconv ]
+              }''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+
+              # Unset SDKROOT so xcrun can locate the iOS SDK from Xcode.
+              unset SDKROOT
+            '';
+          };
+
         };
     };
 }

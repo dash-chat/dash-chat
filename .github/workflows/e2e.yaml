@@ -52,15 +52,13 @@ jobs:
         run: pnpm -F ./packages/stores build
 
       - name: Build Tauri app (debug, no-bundle)
-        run: pnpm tauri build --debug --no-bundle
-        env:
-          VITE_E2E: '1'
+        run: pnpm tauri build --debug --no-bundle --features e2e-tests
 
       - name: Make launch scripts executable
         run: chmod +x e2e-tests/scripts/*.sh
 
       - name: Run E2E tests
-        run: xvfb-run pnpm test 2>&1 | tee e2e-output.log
+        run: set -o pipefail && xvfb-run pnpm test 2>&1 | tee e2e-output.log
         working-directory: e2e-tests
         env:
           SKIP_BUILD: '1'

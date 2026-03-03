@@ -4,14 +4,17 @@
  * Runs against the CURRENT version binary using data created by the old
  * version in the setup phase. Verifies that profiles, contacts, and messages
  * all persisted correctly, and that new messages can be sent.
- *
- * Uses executeAsync with done callbacks because the W3C WebDriver
- * "execute/sync" endpoint cannot serialize Promises.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+	waitForBothAgents,
+	openDirectChat,
+	sendMessage,
+	waitForMessage,
+} from '../helpers/setup-agents';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -38,19 +41,7 @@ describe('Compat verify — check data with current version', () => {
 		}
 		state = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
 
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
-
-		await Promise.all([
-			agent1.waitUntil(
-				async () => agent1.execute(() => typeof window.__test !== 'undefined'),
-				{ timeout: 30_000, interval: 500, timeoutMsg: 'agent1: window.__test not registered' },
-			),
-			agent2.waitUntil(
-				async () => agent2.execute(() => typeof window.__test !== 'undefined'),
-				{ timeout: 30_000, interval: 500, timeoutMsg: 'agent2: window.__test not registered' },
-			),
-		]);
+		await waitForBothAgents();
 	});
 
 	it('both agents skip profile creation (profiles persisted)', async () => {
@@ -95,59 +86,32 @@ describe('Compat verify — check data with current version', () => {
 		);
 	});
 
+	it('old messages are still visible after upgrade', async () => {
+		const agent1 = browser.getInstance('agent1');
+		const agent2 = browser.getInstance('agent2');
+
+		await openDirectChat(agent1, state.bobName);
+		await waitForMessage(agent1, state.msgAlice);
+		await waitForMessage(agent1, state.msgBob);
+
+		await openDirectChat(agent2, state.aliceName);
+		await waitForMessage(agent2, state.msgAlice);
+		await waitForMessage(agent2, state.msgBob);
+	});
+
 	it('can send new messages after upgrade', async () => {
 		const agent1 = browser.getInstance('agent1');
 		const agent2 = browser.getInstance('agent2');
 
-		// Navigate into the chat by clicking the contact name in the chat list
-		const clickErr1 = await agent1.executeAsync(
-			(name: string, done: (r: string | null) => void) => {
-				window.__test.openDirectChat(name).then(() => done(null), (e) => done(String(e)));
-			},
-			state.bobName,
-		);
-		expect(clickErr1).toBeNull();
-
-		const clickErr2 = await agent2.executeAsync(
-			(name: string, done: (r: string | null) => void) => {
-				window.__test.openDirectChat(name).then(() => done(null), (e) => done(String(e)));
-			},
-			state.aliceName,
-		);
-		expect(clickErr2).toBeNull();
+		await openDirectChat(agent1, state.bobName);
+		await openDirectChat(agent2, state.aliceName);
 
 		// Alice sends a new message
-		const sendErr1 = await agent1.executeAsync(
-			(text: string, done: (r: string | null) => void) => {
-				window.__test.sendMessage(text).then(() => done(null), (e) => done(String(e)));
-			},
-			NEW_MSG_ALICE,
-		);
-		expect(sendErr1).toBeNull();
-
-		const recvErr1 = await agent2.executeAsync(
-			(text: string, done: (r: string | null) => void) => {
-				window.__test.waitForMessage(text).then(() => done(null), (e) => done(String(e)));
-			},
-			NEW_MSG_ALICE,
-		);
-		expect(recvErr1).toBeNull();
+		await sendMessage(agent1, NEW_MSG_ALICE);
+		await waitForMessage(agent2, NEW_MSG_ALICE);
 
 		// Bob sends a new message
-		const sendErr2 = await agent2.executeAsync(
-			(text: string, done: (r: string | null) => void) => {
-				window.__test.sendMessage(text).then(() => done(null), (e) => done(String(e)));
-			},
-			NEW_MSG_BOB,
-		);
-		expect(sendErr2).toBeNull();
-
-		const recvErr2 = await agent1.executeAsync(
-			(text: string, done: (r: string | null) => void) => {
-				window.__test.waitForMessage(text).then(() => done(null), (e) => done(String(e)));
-			},
-			NEW_MSG_BOB,
-		);
-		expect(recvErr2).toBeNull();
+		await sendMessage(agent2, NEW_MSG_BOB);
+		await waitForMessage(agent1, NEW_MSG_BOB);
 	});
 });

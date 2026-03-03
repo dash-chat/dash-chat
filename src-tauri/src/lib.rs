@@ -8,7 +8,7 @@ mod utils;
 mod mailbox;
 #[cfg(not(mobile))]
 mod menu;
-#[cfg(mobile)]
+#[cfg(target_os = "android")]
 mod push_notifications;
 #[cfg(not(mobile))]
 mod tray;
@@ -23,6 +23,8 @@ pub(crate) static FORCE_QUIT: std::sync::atomic::AtomicBool =
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    filesystem::init_data_dir();
+
     i18n::init_i18n();
 
     let mut builder = tauri::Builder::default();
@@ -36,12 +38,12 @@ pub fn run() {
     }
     #[cfg(not(mobile))]
     {
-        if tauri::is_dev() {
+        if cfg!(feature = "e2e-tests") {
+            // E2E tests run multiple built instances side-by-side;
+            // skip single-instance, updater, and MCP bridge plugins.
+        } else if tauri::is_dev() {
             // MCP for Claude Code to control the tauri app
             builder = builder.plugin(tauri_plugin_mcp_bridge::init());
-        } else if std::env::var("E2E_TEST").is_ok() {
-            // E2E tests run multiple built instances side-by-side;
-            // skip single-instance and production-only plugins.
         } else {
             builder = builder
                 .plugin(tauri_plugin_single_instance::init(
@@ -89,8 +91,8 @@ pub fn run() {
             // commands::group_chat::send_message,
             // commands::group_chat::get_messages,
         ])
-        .plugin(
-            tauri_plugin_log::Builder::default()
+        .plugin({
+            let mut log_builder = tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Warn)
                 .level_for("dashchat_node", log::LevelFilter::Debug)
                 .level_for("mailbox_client", log::LevelFilter::Debug)
@@ -112,9 +114,22 @@ pub fn run() {
                         record.level(),
                         message
                     ))
-                })
-                .build(),
-        )
+                });
+
+            // When DATA_DIR is set, write logs into DATA_DIR/logs instead of the
+            // OS-specific log directory so each dev/test instance gets its own logs.
+            if let Ok(data_dir) = std::env::var("DATA_DIR") {
+                log_builder = log_builder.clear_targets().targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
+                        path: std::path::PathBuf::from(data_dir).join("logs"),
+                        file_name: None,
+                    }),
+                ]);
+            }
+
+            log_builder.build()
+        })
         // .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())

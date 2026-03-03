@@ -31,7 +31,8 @@ jobs:
 
       - name: Install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
-        # Includes Swatinem/rust-cache by default
+        with:
+          rustflags: '' # TODO: remove this when we want to disallow warnings in our rust code in CI
 
       - name: Install system dependencies
         run: |

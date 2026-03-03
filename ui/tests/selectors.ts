@@ -77,6 +77,7 @@ export const S = {
 	},
 	editPhoto: {
 		back: tid('edit-photo-back'),
+		close: tid('edit-photo-close'),
 		saveButton: tid('edit-photo-save-btn'),
 	},
 	contacts: {
@@ -124,5 +125,13 @@ export const S = {
 		reasonSelect: tid('contact-us-reason-select'),
 		includeDebugLog: tid('contact-us-include-debug-log'),
 		nextButton: tid('contact-us-next-btn'),
+	},
+	updater: {
+		downloading: tid('updater-downloading'),
+		ready: tid('updater-ready'),
+		error: tid('updater-error'),
+		laterBtn: tid('updater-later-btn'),
+		restartBtn: tid('updater-restart-btn'),
+		okBtn: tid('updater-ok-btn'),
 	},
 } as const;

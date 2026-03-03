@@ -7,12 +7,16 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import {
 		Button,
+		Link,
 		Page,
 		Navbar,
 		NavbarBackLink,
 		Segmented,
 		SegmentedButton,
+		useTheme,
 	} from 'konsta/svelte';
+
+	const theme = $derived(useTheme());
 
 	// Get initial values from URL params or use defaults
 	const initialText = $page.url.searchParams.get('text') || '';
@@ -66,21 +70,26 @@
 </script>
 
 <Page>
-	<Navbar title={m.preview()} transparent titleClass="opacity1">
+	<Navbar title={m.preview()} transparent titleClass="opacity1" rightClass={!text ? 'ios-right-disabled' : ''}>
 		{#snippet left()}
 			<NavbarBackLink onClick={() => goto('/settings/profile/edit-photo')} />
+		{/snippet}
+		{#snippet right()}
+			{#if theme === 'ios'}
+				<Link onClick={done}>
+					{m.done()}
+				</Link>
+			{/if}
 		{/snippet}
 		{#snippet subnavbar()}
 			<Segmented strong>
 				<SegmentedButton
-					strong
 					active={activeTab === 'text'}
 					onClick={() => (activeTab = 'text')}
 				>
 					{m.text()}
 				</SegmentedButton>
 				<SegmentedButton
-					strong
 					active={activeTab === 'color'}
 					onClick={() => (activeTab = 'color')}
 				>
@@ -135,15 +144,16 @@
 		{/if}
 	</div>
 
-	<!-- Done button -->
-	<Button
-		rounded
-		tonal
-		onClick={done}
-		class="fixed-action-btn"
-	>
-		{m.done()}
-	</Button>
+	{#if theme === 'material'}
+		<Button
+			rounded
+			tonal
+			onClick={done}
+			class="fixed-action-btn"
+		>
+			{m.done()}
+		</Button>
+	{/if}
 </Page>
 
 <style>

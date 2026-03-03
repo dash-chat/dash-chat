@@ -3,6 +3,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Options } from '@wdio/types';
 import { allocateDriverPorts } from '../helpers/allocate-port';
+import {
+	killAndWait,
+	killAllE2EProcesses,
+	killPortHolders,
+} from '../helpers/cleanup';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..');
@@ -22,6 +27,7 @@ const specFile =
 		: path.join(E2E_DIR, 'specs', 'compat-verify.spec.ts');
 
 const { port1, nativePort1, port2, nativePort2 } = allocateDriverPorts();
+const ALL_PORTS = [port1, nativePort1, port2, nativePort2];
 
 let tauriDriver1: ChildProcess;
 let tauriDriver2: ChildProcess;
@@ -67,7 +73,14 @@ export const config: Options.Testrunner = {
 
 	// No onPrepare build step — the orchestrator handles building
 
-	beforeSession() {
+	async beforeSession() {
+		// Force-kill any leftover processes from a previous phase.
+		await Promise.all([killAndWait(tauriDriver1), killAndWait(tauriDriver2)]);
+		killAllE2EProcesses();
+		killPortHolders(ALL_PORTS);
+		// Give OS time to fully release sockets after SIGKILL.
+		await new Promise(r => setTimeout(r, 2_000));
+
 		tauriDriver1 = spawn(
 			'tauri-driver',
 			['--port', String(port1), '--native-port', String(nativePort1)],
@@ -89,9 +102,12 @@ export const config: Options.Testrunner = {
 		return new Promise((resolve) => setTimeout(resolve, 500));
 	},
 
-	afterSession() {
-		if (tauriDriver1) tauriDriver1.kill();
-		if (tauriDriver2) tauriDriver2.kill();
+	async afterSession() {
+		// SIGKILL tauri-drivers and wait for exit to free ports.
+		await Promise.all([killAndWait(tauriDriver1), killAndWait(tauriDriver2)]);
+		// Kill orphaned dash-chat instances and anything holding our ports.
+		killAllE2EProcesses();
+		killPortHolders(ALL_PORTS);
 		// Do NOT clean up .dbs/compat/ — data must persist between setup and verify phases
 	},
 };

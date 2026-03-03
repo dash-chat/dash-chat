@@ -36,7 +36,8 @@ body {
 @media screen and (min-width: 600px) {
 	.center-in-desktop {
 		align-self: center;
-		width: 600px;
+		max-width: 600px;
+		width: 100%;
 	}
 }
 
@@ -266,6 +267,11 @@ emoji-picker {
 
 .k-list.rounded-2xl a.cursor-pointer {
 	border-radius: 16px;
+}
+
+.ios-right-disabled {
+	pointer-events: none;
+	opacity: 0.5;
 }
 
 .fixed-action-btn {

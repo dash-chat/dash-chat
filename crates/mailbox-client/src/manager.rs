@@ -13,7 +13,7 @@ impl Default for MailboxesConfig {
     fn default() -> Self {
         Self {
             success_interval: Duration::from_secs(1),
-            error_interval: Duration::from_secs(1),
+            error_interval: Duration::from_secs(5),
             min_interval: Duration::from_secs(1),
         }
     }

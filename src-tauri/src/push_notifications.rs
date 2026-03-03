@@ -1,7 +1,6 @@
 use jni::objects::JClass;
 use jni::JNIEnv;
 use tauri::{AppHandle, Listener, Manager};
-// use tauri_plugin_holochain::*;
 use tauri_plugin_notification::*;
 
 use crate::utils::with_retries;
