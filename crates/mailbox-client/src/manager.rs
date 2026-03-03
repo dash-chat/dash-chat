@@ -1,20 +1,103 @@
 use crate::store::MailboxStore;
+use tokio::time::Instant;
 
 use super::*;
 
 #[derive(Clone, Debug)]
 pub struct MailboxesConfig {
-    pub success_interval: Duration,
-    pub error_interval: Duration,
-    pub min_interval: Duration,
+    /// Polling interval for healthy mailboxes
+    pub active_interval: Duration,
+    /// Polling interval after recent errors
+    pub degraded_interval: Duration,
+    /// Polling interval after repeated failures
+    pub stopped_interval: Duration,
+    /// Delay between consecutive mailbox polls
+    pub between_polls_delay: Duration,
+    /// Number of consecutive errors to enter Degraded status
+    pub degraded_threshold: u32,
+    /// Number of consecutive errors to enter Stopped status
+    pub stopped_threshold: u32,
 }
 
 impl Default for MailboxesConfig {
     fn default() -> Self {
         Self {
-            success_interval: Duration::from_secs(1),
-            error_interval: Duration::from_secs(5),
-            min_interval: Duration::from_secs(1),
+            active_interval: Duration::from_secs(5),
+            degraded_interval: Duration::from_secs(30),
+            stopped_interval: Duration::from_secs(300),
+            between_polls_delay: Duration::from_millis(500),
+            degraded_threshold: 2,
+            stopped_threshold: 3,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SyncStatus {
+    Active,
+    Degraded,
+    Stopped,
+}
+
+impl SyncStatus {
+    fn interval(&self, config: &MailboxesConfig) -> Duration {
+        match self {
+            SyncStatus::Active => config.active_interval,
+            SyncStatus::Degraded => config.degraded_interval,
+            SyncStatus::Stopped => config.stopped_interval,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct MailboxTracker {
+    status: SyncStatus,
+    consecutive_errors: u32,
+    next_poll: Instant,
+}
+
+impl MailboxTracker {
+    fn new() -> Self {
+        Self {
+            status: SyncStatus::Active,
+            consecutive_errors: 0,
+            next_poll: Instant::now(),
+        }
+    }
+
+    fn record_success(&mut self, config: &MailboxesConfig) {
+        self.consecutive_errors = 0;
+        self.status = SyncStatus::Active;
+        self.next_poll = Instant::now() + config.active_interval;
+    }
+
+    fn record_error(&mut self, config: &MailboxesConfig) {
+        self.consecutive_errors += 1;
+        self.status = if self.consecutive_errors >= config.stopped_threshold {
+            SyncStatus::Stopped
+        } else if self.consecutive_errors >= config.degraded_threshold {
+            SyncStatus::Degraded
+        } else {
+            self.status
+        };
+        self.next_poll = Instant::now() + self.status.interval(config);
+    }
+
+    fn reschedule(&mut self, config: &MailboxesConfig) {
+        self.next_poll = Instant::now() + self.status.interval(config);
+    }
+}
+
+struct TrackedMailbox<Item: MailboxItem> {
+    client: Arc<dyn MailboxClient<Item>>,
+    tracker: MailboxTracker,
+}
+
+impl<Item: MailboxItem> Clone for TrackedMailbox<Item> {
+    fn clone(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            tracker: self.tracker.clone(),
         }
     }
 }
@@ -25,7 +108,7 @@ where
     Item: MailboxItem,
     Store: MailboxStore<Item>,
 {
-    mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<dyn MailboxClient<Item>>>>>,
+    mailboxes: Arc<Mutex<BTreeMap<MailboxId, TrackedMailbox<Item>>>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Store,
     config: MailboxesConfig,
@@ -52,13 +135,17 @@ where
         // TODO: check for existing mailbox with different ID but same "URL" (which is currently abstracted away and inaccessible here, darn)
         // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.
         let id = mailbox.id();
-        let mb = Arc::new(mailbox);
-        let existing = self.mailboxes.lock().await.insert(id.clone(), mb);
+        let tracked = TrackedMailbox {
+            client: Arc::new(mailbox),
+            tracker: MailboxTracker::new(),
+        };
+        let existing = self.mailboxes.lock().await.insert(id.clone(), tracked);
         if existing.is_some() {
             // TODO: potentially track multiple clients for a single mailbox ID, e.g. multiple mDNS discovered addresses for the same node
             // TODO: at least, make sure the URL being replaced is "better" than the previous one, i.e. ipv4 instead of ipv6
             tracing::warn!("overwriting existing mailbox for {id}");
         }
+        self.trigger_sync();
     }
 
     pub async fn clear(&self) {
@@ -102,28 +189,33 @@ where
         let r = manager.clone();
         tokio::spawn(
             async move {
-                let mut next_mailbox = 0;
-                let mut next_interval;
-                let mut last_iteration: tokio::time::Instant = tokio::time::Instant::now();
                 loop {
-                    // TODO: track which client caused an error, and eventually remove it from the active list
-                    // TODO: do something smarter than round-robin
-                    (next_interval, next_mailbox) = manager.one_iteration(next_mailbox).await;
+                    let next = manager.find_next_due().await;
 
-                    // The two match conditions are:
-                    // - Ok(Some(())): a trigger was received
-                    // - Err(_): the timeout elapsed
-                    if let Ok(None) = tokio::time::timeout(next_interval, trigger_rx.recv()).await {
-                        break;
+                    match next {
+                        None => {
+                            // No mailboxes registered, wait for a trigger
+                            match trigger_rx.recv().await {
+                                Some(()) => continue,
+                                None => break,
+                            }
+                        }
+                        Some((id, wait)) => {
+                            if !wait.is_zero() {
+                                // Sleep until the next mailbox is due, or a trigger wakes us
+                                match tokio::time::timeout(wait, trigger_rx.recv()).await {
+                                    Ok(None) => break,   // channel closed
+                                    Ok(Some(())) => {},  // triggered early, re-evaluate
+                                    Err(_) => {},        // timeout elapsed
+                                }
+                                // Re-evaluate which mailbox is actually due now
+                                continue;
+                            }
+
+                            manager.poll_mailbox(&id).await;
+                            tokio::time::sleep(manager.config.between_polls_delay).await;
+                        }
                     }
-
-                    // Ensure a minimum polling interval so we don't poll too often
-                    let elapsed = last_iteration.elapsed();
-                    if elapsed < manager.config.min_interval {
-                        tokio::time::sleep(manager.config.min_interval - elapsed).await;
-                    }
-
-                    last_iteration = tokio::time::Instant::now();
                 }
 
                 #[allow(unused)]
@@ -137,39 +229,63 @@ where
         Ok(r)
     }
 
-    async fn one_iteration(&self, mut mailbox_index: usize) -> (tokio::time::Duration, usize) {
-        mailbox_index += 1;
-        let (id, client, total) = {
-            let mm = self.mailboxes.lock().await;
-            let total = mm.len();
-            if mailbox_index >= total {
-                mailbox_index = 0;
-            }
+    async fn find_next_due(&self) -> Option<(MailboxId, Duration)> {
+        let mm = self.mailboxes.lock().await;
+        if mm.is_empty() {
+            return None;
+        }
 
-            let (id, client) = match mm.iter().nth(mailbox_index) {
-                Some((id, mailbox)) => (id.clone(), mailbox.clone()),
-                None => {
-                    tracing::warn!("empty mailbox list, no mailbox to fetch from");
-                    return (self.config.error_interval, mailbox_index);
-                }
-            };
-            (id, client, total)
+        let now = Instant::now();
+        let (id, tracked) = mm
+            .iter()
+            .min_by_key(|(_, t)| t.tracker.next_poll)
+            .unwrap();
+
+        let wait = if tracked.tracker.next_poll <= now {
+            Duration::ZERO
+        } else {
+            tracked.tracker.next_poll - now
         };
-        tracing::info!("polling mailbox {id} ({mailbox_index} of {total})");
+
+        Some((id.clone(), wait))
+    }
+
+    async fn poll_mailbox(&self, id: &MailboxId) {
+        let client = {
+            let mm = self.mailboxes.lock().await;
+            match mm.get(id) {
+                Some(tracked) => tracked.client.clone(),
+                None => return,
+            }
+        };
 
         let topics = self.subscribed_topics().await;
         if topics.is_empty() {
-            tracing::warn!("no topics subscribed, nothing to fetch this interval");
-            return (self.config.error_interval, mailbox_index);
+            tracing::trace!("no topics subscribed, skipping poll for {id}");
+            let mut mm = self.mailboxes.lock().await;
+            if let Some(tracked) = mm.get_mut(id) {
+                tracked.tracker.reschedule(&self.config);
+            }
+            return;
         }
 
-        match self.sync_topics(topics.into_iter(), client.clone()).await {
-            Ok(()) => {
-                return (self.config.success_interval, mailbox_index);
-            }
-            Err(err) => {
-                tracing::error!(?err, "fetch mailbox error");
-                return (self.config.error_interval, mailbox_index);
+        tracing::info!("polling mailbox {id}");
+        let result = self.sync_topics(topics.into_iter(), client).await;
+
+        let mut mm = self.mailboxes.lock().await;
+        if let Some(tracked) = mm.get_mut(id) {
+            match result {
+                Ok(()) => tracked.tracker.record_success(&self.config),
+                Err(err) => {
+                    tracing::error!(?err, mailbox = %id, "mailbox sync error");
+                    tracked.tracker.record_error(&self.config);
+                    tracing::info!(
+                        mailbox = %id,
+                        status = ?tracked.tracker.status,
+                        errors = tracked.tracker.consecutive_errors,
+                        "mailbox status updated"
+                    );
+                }
             }
         }
     }
