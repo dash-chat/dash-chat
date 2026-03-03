@@ -78,8 +78,8 @@ export const config: Options.Testrunner = {
 		killPortHolders(ALL_PORTS);
 
 		if (!process.env.SKIP_BUILD) {
-			console.log('Building Tauri app (release, no-bundle)...');
-			execSync('pnpm tauri build --no-bundle --features e2e-tests', {
+			console.log('Building Tauri app (debug, no-bundle)...');
+			execSync('pnpm tauri build --debug --no-bundle --features e2e-tests', {
 				cwd: ROOT,
 				stdio: 'inherit',
 			});

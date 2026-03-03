@@ -396,6 +396,8 @@ cd e2e-tests && SKIP_BUILD=1 pnpm test
 
 **REQUIREMENT:** New UI features must include E2E test coverage in `e2e-tests/specs/`.
 
+**REQUIREMENT:** The review-checks E2E test (`e2e-tests/specs/review-checks.spec.ts`) must visit every page in the app. When adding a new page, add it to `ui/tests/review/visit-all-pages.ts` so it is covered by the overflow, dark-mode, and RTL checks.
+
 ### Backwards Compatibility Tests
 
 The `e2e-tests/compat/` directory contains tests that verify data created by older versions can be read by the current version. This catches breaking changes to the data model before they ship.

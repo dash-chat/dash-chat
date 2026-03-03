@@ -18,14 +18,43 @@ import {
 	exchangeContacts,
 } from '../helpers/setup-agents';
 
-type VisitResult = { ok: boolean; result?: { pages: unknown[]; summary: { totalIssues: number; pagesVisited: number } }; error?: string };
+type PageResult = { page: string; overflow?: string[]; darkMode?: { issues?: string[] } };
+type VisitResult = { ok: boolean; result?: { pages: PageResult[]; summary: { totalIssues: number; pagesVisited: number } }; error?: string };
+
+/** Format all issues from a visit result into a readable failure message. */
+function formatIssues(res: VisitResult): string {
+	const lines: string[] = [];
+	for (const p of res.result?.pages ?? []) {
+		const issues: string[] = [];
+		if (p.overflow?.length) issues.push(...p.overflow.map((o) => `  overflow: ${o}`));
+		if (p.darkMode?.issues?.length) issues.push(...p.darkMode.issues.map((d) => `  dark-mode: ${d}`));
+		if (issues.length) lines.push(`[${p.page}]\n${issues.join('\n')}`);
+	}
+	return lines.join('\n');
+}
+
+/** Assert that visitAllPages completed without errors or issues. */
+function assertNoIssues(res: VisitResult): void {
+	if (!res.ok) {
+		throw new Error(`visitAllPages failed: ${res.error}`);
+	}
+	const total = res.result?.summary.totalIssues ?? 0;
+	if (total > 0) {
+		throw new Error(`Found ${total} issue(s):\n${formatIssues(res)}`);
+	}
+}
 
 /** Helper: call visitAllPages on an agent and return the result.
  *  Uses sync execute to start the async function in the browser, then polls
  *  for completion via waitUntil — avoiding executeAsync's 30s hard timeout. */
 async function runVisit(
 	agent: WebdriverIO.Browser,
-	options: { hasChat?: boolean; checkDarkMode?: boolean; checkRTL?: boolean },
+	options: {
+		/** Include direct-chat and chat-settings pages (requires prior contact exchange + messaging). */
+		hasChat?: boolean;
+		checkDarkMode?: boolean;
+		checkRTL?: boolean;
+	},
 ): Promise<VisitResult> {
 	// Wait for HOME elements before starting (switchCombo layout changes can
 	// cause {#await} blocks to re-enter pending state temporarily).
@@ -204,45 +233,25 @@ describe('Review checks', function () {
 		it('Material Desktop', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', true);
-			const res = await runVisit(agent1, { hasChat: true });
-			expect(res.ok).toBe(true);
-			if (res.result && res.result.summary.totalIssues > 0) {
-				console.log('Issues found:', JSON.stringify(res.result.pages.filter((p: any) => p.overflow?.length > 0), null, 2));
-			}
-			expect(res.result?.summary.totalIssues).toBe(0);
+			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 
 		it('Material Mobile', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', false);
-			const res = await runVisit(agent1, { hasChat: true });
-			expect(res.ok).toBe(true);
-			if (res.result && res.result.summary.totalIssues > 0) {
-				console.log('Issues found:', JSON.stringify(res.result.pages.filter((p: any) => p.overflow?.length > 0), null, 2));
-			}
-			expect(res.result?.summary.totalIssues).toBe(0);
+			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 
 		it('iOS Desktop', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', true);
-			const res = await runVisit(agent1, { hasChat: true });
-			expect(res.ok).toBe(true);
-			if (res.result && res.result.summary.totalIssues > 0) {
-				console.log('Issues found:', JSON.stringify(res.result.pages.filter((p: any) => p.overflow?.length > 0), null, 2));
-			}
-			expect(res.result?.summary.totalIssues).toBe(0);
+			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 
 		it('iOS Mobile', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', false);
-			const res = await runVisit(agent1, { hasChat: true });
-			expect(res.ok).toBe(true);
-			if (res.result && res.result.summary.totalIssues > 0) {
-				console.log('Issues found:', JSON.stringify(res.result.pages.filter((p: any) => p.overflow?.length > 0), null, 2));
-			}
-			expect(res.result?.summary.totalIssues).toBe(0);
+			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 	});
 
@@ -250,36 +259,25 @@ describe('Review checks', function () {
 		it('Material Desktop', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', true, true);
-			const res = await runVisit(agent1, { hasChat: true, checkDarkMode: true });
-			expect(res.ok).toBe(true);
-			if (res.result && res.result.summary.totalIssues > 0) {
-				console.log('Dark mode issues:', JSON.stringify(res.result.pages.filter((p: any) => (p.overflow?.length > 0) || (p.darkMode?.issues?.length > 0)), null, 2));
-			}
-			expect(res.result?.summary.totalIssues).toBe(0);
+			assertNoIssues(await runVisit(agent1, { hasChat: true, checkDarkMode: true }));
 		});
 
 		it('Material Mobile', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', false, true);
-			const res = await runVisit(agent1, { hasChat: true, checkDarkMode: true });
-			expect(res.ok).toBe(true);
-			expect(res.result?.summary.totalIssues).toBe(0);
+			assertNoIssues(await runVisit(agent1, { hasChat: true, checkDarkMode: true }));
 		});
 
 		it('iOS Desktop', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', true, true);
-			const res = await runVisit(agent1, { hasChat: true, checkDarkMode: true });
-			expect(res.ok).toBe(true);
-			expect(res.result?.summary.totalIssues).toBe(0);
+			assertNoIssues(await runVisit(agent1, { hasChat: true, checkDarkMode: true }));
 		});
 
 		it('iOS Mobile', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', false, true);
-			const res = await runVisit(agent1, { hasChat: true, checkDarkMode: true });
-			expect(res.ok).toBe(true);
-			expect(res.result?.summary.totalIssues).toBe(0);
+			assertNoIssues(await runVisit(agent1, { hasChat: true, checkDarkMode: true }));
 		});
 	});
 
@@ -307,36 +305,25 @@ describe('Review checks', function () {
 		it('Material Desktop', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', true);
-			const res = await runVisit(agent1, { hasChat: true });
-			expect(res.ok).toBe(true);
-			if (res.result && res.result.summary.totalIssues > 0) {
-				console.log('German issues:', JSON.stringify(res.result.pages.filter((p: any) => p.overflow?.length > 0), null, 2));
-			}
-			expect(res.result?.summary.totalIssues).toBe(0);
+			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 
 		it('Material Mobile', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', false);
-			const res = await runVisit(agent1, { hasChat: true });
-			expect(res.ok).toBe(true);
-			expect(res.result?.summary.totalIssues).toBe(0);
+			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 
 		it('iOS Desktop', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', true);
-			const res = await runVisit(agent1, { hasChat: true });
-			expect(res.ok).toBe(true);
-			expect(res.result?.summary.totalIssues).toBe(0);
+			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 
 		it('iOS Mobile', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', false);
-			const res = await runVisit(agent1, { hasChat: true });
-			expect(res.ok).toBe(true);
-			expect(res.result?.summary.totalIssues).toBe(0);
+			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 	});
 
@@ -368,49 +355,29 @@ describe('Review checks', function () {
 		it('Material Desktop', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', true);
-			// Re-apply RTL after theme change
-			await agent1.execute(() => {
-				document.documentElement.dir = 'rtl';
-			});
-			const res = await runVisit(agent1, { hasChat: true, checkRTL: true });
-			expect(res.ok).toBe(true);
-			if (res.result && res.result.summary.totalIssues > 0) {
-				console.log('Farsi issues:', JSON.stringify(res.result.pages.filter((p: any) => p.overflow?.length > 0), null, 2));
-			}
-			expect(res.result?.summary.totalIssues).toBe(0);
+			await agent1.execute(() => { document.documentElement.dir = 'rtl'; });
+			assertNoIssues(await runVisit(agent1, { hasChat: true, checkRTL: true }));
 		});
 
 		it('Material Mobile', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', false);
-			await agent1.execute(() => {
-				document.documentElement.dir = 'rtl';
-			});
-			const res = await runVisit(agent1, { hasChat: true, checkRTL: true });
-			expect(res.ok).toBe(true);
-			expect(res.result?.summary.totalIssues).toBe(0);
+			await agent1.execute(() => { document.documentElement.dir = 'rtl'; });
+			assertNoIssues(await runVisit(agent1, { hasChat: true, checkRTL: true }));
 		});
 
 		it('iOS Desktop', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', true);
-			await agent1.execute(() => {
-				document.documentElement.dir = 'rtl';
-			});
-			const res = await runVisit(agent1, { hasChat: true, checkRTL: true });
-			expect(res.ok).toBe(true);
-			expect(res.result?.summary.totalIssues).toBe(0);
+			await agent1.execute(() => { document.documentElement.dir = 'rtl'; });
+			assertNoIssues(await runVisit(agent1, { hasChat: true, checkRTL: true }));
 		});
 
 		it('iOS Mobile', async function () {
 			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', false);
-			await agent1.execute(() => {
-				document.documentElement.dir = 'rtl';
-			});
-			const res = await runVisit(agent1, { hasChat: true, checkRTL: true });
-			expect(res.ok).toBe(true);
-			expect(res.result?.summary.totalIssues).toBe(0);
+			await agent1.execute(() => { document.documentElement.dir = 'rtl'; });
+			assertNoIssues(await runVisit(agent1, { hasChat: true, checkRTL: true }));
 		});
 	});
 });

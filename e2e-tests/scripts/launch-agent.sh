@@ -17,4 +17,4 @@ export GTK_A11Y=none
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 mkdir -p "$DATA_DIR"
-exec "$ROOT/target/release/dash-chat"
+exec "$ROOT/target/debug/dash-chat"
