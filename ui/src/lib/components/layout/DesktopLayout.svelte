@@ -51,7 +51,8 @@
 		{#if isSidebarRoute}
 			<EmptyState />
 			{#if isHome}
-				{#await Promise.all([$contacts, $chatSummaries]) then [contactsList, chats]}
+				{#await $contacts then contactsList}
+				{#await $chatSummaries then chats}
 					{@const showGetStarted = contactsList.length === 0 && chats.length === 0}
 					{#if showGetStarted}
 						<div class="absolute bottom-0 left-0 right-0 z-10">
@@ -59,6 +60,7 @@
 						</div>
 					{/if}
 				{/await}
+			{/await}
 			{/if}
 		{:else}
 			{@render children()}

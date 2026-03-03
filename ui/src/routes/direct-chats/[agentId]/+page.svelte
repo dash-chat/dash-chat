@@ -468,7 +468,9 @@
 
 <div class="absolute inset-0" data-testid="direct-chat-page">
 	<Page class="messages-page">
-		{#await Promise.all([$myDeviceId, $peerProfile, $contactRequest]) then [myDeviceId, profile, contactRequest]}
+		{#await $myDeviceId then myDeviceId}
+		{#await $peerProfile then profile}
+		{#await $contactRequest then contactRequest}
 					{#if searchMode}
 						<Navbar
 							transparent={true}
@@ -529,7 +531,8 @@
 					{/if}
 
 					<div class="column">
-						{#await Promise.all([$readMessageHashes, $messagesSets]) then [readHashes, messagesSetsInDays]}
+						{#await $readMessageHashes then readHashes}
+					{#await $messagesSets then messagesSetsInDays}
 								{@const unreadDivider = getUnreadDividerInfo(messagesSetsInDays, readHashes, myDeviceId)}
 								<div
 									use:scrolltobottom
@@ -845,6 +848,7 @@
 									</div>
 								</div>
 						{/await}
+						{/await}
 					</div>
 					{#if contactRequest}
 						<Dialog
@@ -953,6 +957,8 @@
 						{/if}
 					</Sheet>
 		{/await}
+		{/await}
+		{/await}
 
 		<SafetyTipsSheet
 			opened={showSecurityTips}
@@ -969,7 +975,8 @@
 	</Page>
 
 	<!-- Overlay for bottom UI elements -->
-	{#await Promise.all([$myDeviceId, $contactRequest]) then [myDeviceId, contactRequest]}
+	{#await $myDeviceId then myDeviceId}
+	{#await $contactRequest then contactRequest}
 		<div class="absolute inset-0 pointer-events-none">
 			{#if showScrollToBottom && !searchMode}
 				{#await $unreadCount then count}
@@ -1108,5 +1115,6 @@
 				</div>
 			{/if}
 		</div>
+	{/await}
 	{/await}
 </div>
