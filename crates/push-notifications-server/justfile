@@ -17,17 +17,14 @@ setup-db: wait-cassandra
     docker exec -i cassandra cqlsh < schema.cql
     @echo "Schema applied"
 
-# Run the server locally (requires GOOGLE_APPLICATION_CREDENTIALS and FCM_PROJECT_ID)
+# Run the server locally
 run:
     CASSANDRA_URL=127.0.0.1:9042 \
-    ADDR=0.0.0.0:3000 \
-    # TODO: change when FCM project is created
-    # FCM_PROJECT_ID=dashchat \
-    cargo run -p push-server
+    cargo run -p push-notifications-server -- --service-account-key service-account-key.json
 
 # Run tests
 test:
-    cargo test -p push-server
+    cargo test -p push-notifications-server
 
 # Show Cassandra logs
 logs-cassandra:

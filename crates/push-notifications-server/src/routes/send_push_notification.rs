@@ -8,15 +8,15 @@ use crate::{
     types::{PublicKey, PushNotification},
 };
 
-#[derive(Deserialize)]
-pub struct SendPushRequest {
+#[derive(Deserialize, serde::Serialize)]
+pub struct SendPushNotificationRequest {
     pub recipients: Vec<PublicKey>,
     pub notification: PushNotification,
 }
 
-pub async fn send_push(
+pub(crate) async fn send_push_notification(
     State(state): State<AppState>,
-    Json(req): Json<SendPushRequest>,
+    Json(req): Json<SendPushNotificationRequest>,
 ) -> Result<StatusCode, AppError> {
     let tasks = req.recipients.iter().map(|public_key| {
         let state = state.clone();
@@ -25,7 +25,7 @@ pub async fn send_push(
         async move {
             match state.db.get_fcm_token(&public_key).await {
                 Ok(Some(fcm_token)) => {
-                    if let Err(e) = crate::fcm::send_fcm_notification(&fcm_token, &notification.body).await {
+                    if let Err(e) = state.fcm.send_push_notification(&fcm_token, &notification).await {
                         tracing::warn!(public_key = %public_key, "failed to send FCM notification: {e:#}");
                     } else {
                         tracing::info!(public_key = %public_key, "sent push notification");

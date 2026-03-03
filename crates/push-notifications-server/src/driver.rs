@@ -11,5 +11,6 @@ pub trait Driver: Send + Sync + 'static {
         public_key: &PublicKey,
         fcm_token: &FcmToken,
     ) -> anyhow::Result<()>;
+
     async fn get_fcm_token(&self, public_key: &PublicKey) -> anyhow::Result<Option<FcmToken>>;
 }

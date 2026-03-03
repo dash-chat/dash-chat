@@ -7,15 +7,15 @@ use crate::{
     types::{FcmToken, PublicKey},
 };
 
-#[derive(Deserialize)]
-pub struct StoreTokenRequest {
+#[derive(Deserialize, serde::Serialize)]
+pub struct RegisterFcmTokenRequest {
     pub public_key: PublicKey,
     pub fcm_token: FcmToken,
 }
 
-pub async fn store_token(
+pub(crate) async fn register_fcm_token(
     State(state): State<AppState>,
-    Json(req): Json<StoreTokenRequest>,
+    Json(req): Json<RegisterFcmTokenRequest>,
 ) -> Result<StatusCode, AppError> {
     state
         .db

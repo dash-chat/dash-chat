@@ -8,8 +8,9 @@ pub struct PublicKey(String);
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Display, From, Into, Deref)]
 pub struct FcmToken(String);
 
-/// This is what Google sees.
+/// This is what Google & Apple see.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PushNotification {
+    pub title: String,
     pub body: String,
 }
