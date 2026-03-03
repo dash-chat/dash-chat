@@ -77,8 +77,8 @@ pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
 pub type Orderer<S> =
     PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
 
-// pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
-pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
+pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
+// pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
 
 #[derive(Clone)]
 pub(crate) struct CancelAndWait<R> {
@@ -136,8 +136,8 @@ impl Node {
         let local_store = LocalStore::new(filesystem.local_store_path())?;
         let node_data = local_store.node_data()?;
 
-        let op_store = OpStore::new_memory();
-        // let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
+        let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
+        // let op_store = OpStore::new_memory();
 
         let (stream_tx, stream_rx) = mpsc::channel(100);
 
