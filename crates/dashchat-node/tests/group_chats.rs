@@ -9,20 +9,8 @@ use std::time::Duration;
 use dashchat_node::{testing::*, *};
 use mailbox_client::mem::MemMailbox;
 
+use maplit::btreemap;
 use named_id::*;
-
-// #[test]
-// fn test_group_2() {
-//     tokio::runtime::Builder::new_current_thread()
-//         .enable_all()
-//         .thread_stack_size(32_000_000)
-//         .worker_threads(4)
-//         .build()
-//         .unwrap()
-//         .block_on(async {
-//             run_test_group_2().await;
-//         })
-// }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_direct_chat() {
@@ -94,6 +82,135 @@ async fn test_direct_chat() {
     let bobbi_messages = bobbi.get_messages(chat_id).await.unwrap();
 
     assert_eq!(alice_messages, bobbi_messages);
+    assert_eq!(
+        bobbi_messages.first().map(|m| m.content.clone()),
+        Some("Hello".into())
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_group_chat() {
+    dashchat_node::testing::setup_tracing(
+        &[
+            "dashchat=info",
+            "p2panda_stream=warn",
+            "p2panda_auth=warn",
+            "p2panda_encryption=warn",
+            "p2panda_spaces=warn",
+            "named_id=warn",
+        ],
+        true,
+    );
+
+    let mailbox = MemMailbox::new();
+    let alice = TestNode::new(NodeConfig::testing(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let cammy = TestNode::new(NodeConfig::testing(), "cammy")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    introduce_and_wait([&alice, &bobbi, &cammy]).await;
+
+    println!("nodes:");
+    println!("alice: {:?}", alice.device_id().short());
+    println!("bobbi: {:?}", bobbi.device_id().short());
+    println!("cammy: {:?}", cammy.device_id().short());
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+    cammy
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::manage(),
+        })
+        .await
+        .unwrap();
+
+    alice.send_message(chat_id, "Hello".into()).await.unwrap();
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    consistency(
+        [&alice, &bobbi],
+        &[chat_id.into()],
+        &ClusterConfig::default(),
+    )
+    .await
+    .unwrap();
+
+    bobbi
+        .add_group_member(chat_id, *cammy.device_id(), p2panda_auth::Access::write())
+        .await
+        .unwrap();
+
+    cammy
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    consistency(
+        [&alice, &bobbi, &cammy],
+        &[chat_id.into()],
+        &ClusterConfig::default(),
+    )
+    .await
+    .unwrap();
+
+    wait_for(
+        Duration::from_millis(100),
+        Duration::from_secs(10),
+        || async {
+            let msgs = [
+                alice.get_messages(chat_id).await.unwrap().len(),
+                bobbi.get_messages(chat_id).await.unwrap().len(),
+                cammy.get_messages(chat_id).await.unwrap().len(),
+            ];
+            msgs.iter().all(|m| *m == 1).ok_or(msgs)
+        },
+    )
+    .await
+    .unwrap();
+
+    let alice_messages = alice.get_messages(chat_id).await.unwrap();
+    let bobbi_messages = bobbi.get_messages(chat_id).await.unwrap();
+    let cammy_messages = cammy.get_messages(chat_id).await.unwrap();
+
+    let alice_members = alice.get_group_members(chat_id).await.unwrap();
+    let bobbi_members = bobbi.get_group_members(chat_id).await.unwrap();
+    let cammy_members = cammy.get_group_members(chat_id).await.unwrap();
+
+    let expected_members = maplit::btreeset![
+        (alice.device_id(), p2panda_auth::Access::manage()),
+        (bobbi.device_id(), p2panda_auth::Access::manage()),
+        (cammy.device_id(), p2panda_auth::Access::write()),
+    ];
+
+    assert_eq!(alice_members, expected_members);
+    assert_eq!(bobbi_members, expected_members);
+    assert_eq!(cammy_members, expected_members);
+
+    assert_eq!(alice_messages, bobbi_messages);
+    assert_eq!(alice_messages, cammy_messages);
     assert_eq!(
         bobbi_messages.first().map(|m| m.content.clone()),
         Some("Hello".into())

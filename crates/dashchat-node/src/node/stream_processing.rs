@@ -182,27 +182,26 @@ impl Node {
         // author_store.add_author(topic, header.public_key).await;
         tracing::debug!(?topic, "adding author");
 
-        tracing::info!(topic = ?topic.renamed(), hash = ?hash.renamed(), "PROC: processing operation");
+        tracing::debug!(topic = ?topic.renamed(), hash = ?hash.renamed(), "PROC: processing operation");
 
         let payload = body.map(|body| Payload::try_from_body(&body)).transpose()?;
 
         tracing::trace!(?payload, "RECEIVED PAYLOAD");
 
         // if !is_repair {
-        if let Err(err) = self
-            .process_payload(&header, payload.as_ref(), is_author)
-            .await
-        {
-            tracing::error!(
-                hash = ?header.hash().renamed(),
-                ?payload,
-                ?err,
-                "process operation error"
-            );
-            return Err(err);
+        if let Some(payload) = payload.as_ref() {
+            if let Err(err) = self.process_payload(&header, payload, is_author).await {
+                tracing::error!(
+                    hash = ?header.hash().renamed(),
+                    ?payload,
+                    ?err,
+                    "process operation error"
+                );
+                return Err(err);
+            }
         }
 
-        tracing::info!(hash = ?hash.renamed(), "processed operation");
+        tracing::debug!(hash = ?hash.renamed(), "processed operation");
 
         if let Some(payload) = payload.as_ref() {
             self.notify_payload(&header, payload).await?;
@@ -218,16 +217,15 @@ impl Node {
 
     async fn process_extensions(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
         match &operation.header.extensions.auth {
-            Some(_) => {
+            Some(auth) => {
+                tracing::info!(?auth, "processing auth extensions");
                 if let Err(err) = p2panda_auth::processor::process::<_, _, DashResolver>(
                     &self.local_store.groups.groups,
                     operation,
                 )
                 .await
                 {
-                    println!();
-                    println!("error: {err:?}");
-                    println!();
+                    tracing::error!(?err, "error processing auth extensions");
                 };
             }
             None => {}
@@ -253,17 +251,17 @@ impl Node {
         &self,
         // topic: Topic<K>,
         header: &Header,
-        payload: Option<&Payload>,
+        payload: &Payload,
         _is_author: bool,
     ) -> anyhow::Result<()> {
         let topic = header.extensions.topic;
         // TODO: maybe have different loops for the different kinds of topics and the different payloads in each
         match &payload {
-            Some(Payload::Chat(ChatPayload::JoinGroup(_chat_id))) => {
+            Payload::Chat(ChatPayload::JoinGroup(_chat_id)) => {
                 // TODO: maybe close down the chat tasks if we are kicked out?
             }
 
-            Some(Payload::Inbox(invitation)) => {
+            Payload::Inbox(invitation) => {
                 let active_topics = self.local_store.get_active_inbox_topics()?;
                 if !active_topics.iter().any(|it| **it.topic == *topic) {
                     // not for me, ignore
@@ -281,20 +279,16 @@ impl Node {
                 }
             }
 
-            Some(Payload::Chat(ChatPayload::Message(_) | ChatPayload::Reaction(_))) => {
+            Payload::Chat(ChatPayload::Message(_) | ChatPayload::Reaction(_)) => {
                 // Nothing to do.
             }
 
-            Some(Payload::Announcements(_)) => {
+            Payload::Announcements(_) => {
                 // Nothing to do.
             }
 
-            Some(Payload::DeviceGroup(_)) => {
+            Payload::DeviceGroup(_) => {
                 // Nothing to do.
-            }
-
-            None => {
-                tracing::error!(?topic, "no payload");
             }
         }
         Ok(())

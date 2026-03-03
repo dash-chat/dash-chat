@@ -197,7 +197,8 @@ impl Topic<kind::Announcements> {
 
 impl Topic<kind::Chat> {
     pub fn random() -> Self {
-        Self::new(rand::random())
+        let pk = p2panda_core::PrivateKey::new().public_key();
+        Self::new(*pk.as_bytes())
     }
 
     pub fn direct_chat(mut pks: [AgentId; 2]) -> Self {

@@ -83,6 +83,7 @@
 				case 'AuthorOperation':
 				case 'CreateQrCode':
 				case 'CreateDirectChat':
+				case 'StoreContact':
 					showToast(m.errorAddContact(), 'error');
 					break;
 				default:
@@ -186,7 +187,6 @@
 				{m.addContact()}
 			{/if}
 		{/snippet}
-
 	</Navbar>
 
 	{#if tab === 'code'}
@@ -233,7 +233,11 @@
 					<span class="mx-6 mb-2">{m.shareCodeWarning()}</span>
 
 					<div class="column gap-1">
-						<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
+						<List
+							nested
+							strongIos
+							inset={isWideScreen.value || theme === 'ios'}
+						>
 							<ListInput
 								floatingLabel
 								label={m.enterYourContactsCode()}

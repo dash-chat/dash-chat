@@ -1,4 +1,5 @@
 use named_id::{RenameAll, RenameNone};
+use p2panda_auth::group::GroupAction;
 use p2panda_auth::processor::AuthExtension;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use p2panda_core::{Body, Extension, Hash, PruneFlag, PublicKey};
@@ -117,6 +118,20 @@ impl DashAction {
         Ok(match self {
             DashAction::Payload(payload) => Some(payload.try_into_body()?),
             DashAction::GroupControl(_) => None,
+        })
+    }
+
+    pub fn extract_auth_extension(&self) -> Option<AuthExtension> {
+        match self {
+            DashAction::GroupControl(auth) => Some(auth.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn group_action(group_id: ChatId, action: GroupAction<PublicKey, ()>) -> Self {
+        DashAction::GroupControl(AuthExtension {
+            group_id: group_id.to_group_pubkey(),
+            action,
         })
     }
 }

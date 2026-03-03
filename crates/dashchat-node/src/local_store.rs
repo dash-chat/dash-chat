@@ -1,4 +1,8 @@
-use std::{collections::BTreeSet, path::Path, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashMap},
+    path::Path,
+    sync::Arc,
+};
 
 use chrono::{DateTime, Utc};
 use p2panda_auth::{Access, group::resolver::StrongRemove, processor::AuthExtension};
@@ -15,6 +19,7 @@ use crate::{
 mod impls;
 
 const IDENTITY_TABLE: TableDefinition<&'static str, [u8; 32]> = TableDefinition::new("identity");
+const CONTACTS_TABLE: TableDefinition<[u8; 32], [u8; 32]> = TableDefinition::new("contacts");
 const SUBSCRIBED_TOPICS_TABLE: TableDefinition<[u8; 32], ()> =
     TableDefinition::new("subscribed_topics");
 const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> =
@@ -51,10 +56,6 @@ impl HackyGroupStore {
         }
     }
 
-    pub async fn apply(&self) {
-        let _lock = self.file_write_mutex.lock().await;
-    }
-
     pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(PublicKey, Access)>> {
         let group_id = topic.to_group_pubkey();
         Ok(self.groups.get_state().await?.crdt.inner.members(group_id))
@@ -86,6 +87,7 @@ impl LocalStore {
         let txn = self.db.begin_write()?;
         {
             let mut identity = txn.open_table(IDENTITY_TABLE)?;
+            let _ = txn.open_table(CONTACTS_TABLE)?;
             let _ = txn.open_table(ACTIVE_INBOXES_TABLE)?;
             let _ = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
 
@@ -117,6 +119,28 @@ impl LocalStore {
             .map(|entry| Ok(entry.map(|(topic, _)| TopicId::from(topic.value()))?))
             .collect::<anyhow::Result<BTreeSet<TopicId>>>()?;
         Ok(topics)
+    }
+
+    pub fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(CONTACTS_TABLE)?;
+        let Some(entry) = table.get(device_id.as_bytes())? else {
+            return Ok(None);
+        };
+        Ok(Some(AgentId::from_bytes(&entry.value())?))
+    }
+
+    pub fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
+        let txn = self.db.begin_write()?;
+        {
+            let mut table = txn.open_table(CONTACTS_TABLE)?;
+            table.insert(
+                contact.device_pubkey.as_bytes(),
+                contact.agent_id.as_bytes(),
+            )?;
+        }
+        txn.commit()?;
+        Ok(())
     }
 
     pub fn register_topic_as_subscribed<K: AutoRegisteredTopic>(

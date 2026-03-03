@@ -6,6 +6,7 @@ use crate::{DashAction, topic::TopicKind};
 use super::*;
 
 impl Node {
+    #[tracing::instrument(skip_all, fields(me=?self.device_id().renamed()))]
     pub(super) async fn author_operation<K: TopicKind>(
         &self,
         topic: Topic<K>,

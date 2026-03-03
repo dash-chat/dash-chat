@@ -117,16 +117,11 @@ where
             None => (0, None),
         };
 
-        let auth = match payload {
-            DashAction::GroupControl(auth) => {
-                todo!();
-                Some(auth)
-            }
-            _ => None,
-        };
+        // TODO: is this the place to integrate group auth processing?
+
         let extensions = Extensions {
             topic: topic.clone().into(),
-            auth,
+            auth: payload.extract_auth_extension(),
         };
 
         let timestamp = timestamp_now();

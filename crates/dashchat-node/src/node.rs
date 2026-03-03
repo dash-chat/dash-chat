@@ -1,13 +1,16 @@
 pub(crate) mod author_operation;
 mod stream_processing;
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::Result;
+use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
+use p2panda_auth::group::{GroupAction, GroupMember};
+use p2panda_auth::processor::AuthExtension;
 
 use crate::error::{AddContactError, Error};
 use crate::filesystem::Filesystem;
@@ -34,7 +37,7 @@ use crate::payload::{
 use crate::stores::OpStore;
 use crate::topic::{Topic, TopicId};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
+    AgentId, AsBody, ChatId, ChatReaction, DashAction, DeviceGroupId, DeviceGroupPayload, DeviceId,
     DirectChatId, Header, Operation,
 };
 
@@ -74,7 +77,8 @@ pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
 pub type Orderer<S> =
     PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
 
-pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
+// pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
+pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
 
 #[derive(Clone)]
 pub(crate) struct CancelAndWait<R> {
@@ -132,8 +136,8 @@ impl Node {
         let local_store = LocalStore::new(filesystem.local_store_path())?;
         let node_data = local_store.node_data()?;
 
-        // let op_store = OpStore::new_memory();
-        let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
+        let op_store = OpStore::new_memory();
+        // let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
 
         let (stream_tx, stream_rx) = mpsc::channel(100);
 
@@ -294,6 +298,135 @@ impl Node {
         Ok(())
     }
 
+    pub async fn create_group(
+        &self,
+        mut initial_members: BTreeMap<PublicKey, p2panda_auth::Access>,
+    ) -> anyhow::Result<ChatId> {
+        let chat_id = Topic::random();
+
+        let agents = initial_members
+            .iter()
+            .map(|(public_key, _)| self.local_store.lookup_contact(DeviceId::from(*public_key)))
+            .filter_map(|m| match m {
+                Ok(None) => {
+                    tracing::warn!("Contact not found");
+                    None
+                }
+                Ok(Some(agent)) => Some(Ok(agent)),
+                Err(e) => {
+                    tracing::error!("Error looking up contact: {}", e);
+                    Some(Err(e))
+                }
+            })
+            .collect::<anyhow::Result<Vec<AgentId>>>()?;
+
+        // The creator must always have Manage access
+        initial_members.insert(*self.device_id(), p2panda_auth::Access::manage());
+
+        let initial_members: Vec<_> = initial_members
+            .into_iter()
+            .map(|(public_key, access)| (GroupMember::Individual(public_key), access))
+            .collect();
+
+        self.author_operation(
+            chat_id,
+            DashAction::group_action(chat_id, GroupAction::Create { initial_members }),
+            Some(&format!("create_group({})", chat_id.renamed())),
+        )
+        .await?;
+
+        self.register_topic(chat_id).await?;
+
+        for agent in agents {
+            self.invite_to_group(chat_id, agent).await?;
+        }
+        Ok(chat_id)
+    }
+
+    async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
+        let payload = Payload::Chat(ChatPayload::JoinGroup(chat_id));
+        tracing::info!(
+            "{} is inviting {} to group {}",
+            self.device_id().renamed(),
+            person.renamed(),
+            chat_id.renamed(),
+        );
+        self.author_operation(
+            self.direct_chat_topic(person),
+            payload,
+            Some(&format!(
+                "invite_to_group({}, {})",
+                chat_id.renamed(),
+                person.renamed()
+            )),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn add_group_member(
+        &self,
+        chat_id: ChatId,
+        member: PublicKey,
+        access: p2panda_auth::Access,
+    ) -> anyhow::Result<()> {
+        self.author_operation(
+            chat_id,
+            DashAction::group_action(
+                chat_id,
+                GroupAction::Add {
+                    member: GroupMember::Individual(member),
+                    access,
+                },
+            ),
+            Some(&format!("add_group_member({})", chat_id.renamed())),
+        )
+        .await?;
+
+        let agent_id = self.local_store.lookup_contact(DeviceId::from(member))?;
+        if let Some(agent_id) = agent_id {
+            self.invite_to_group(chat_id, agent_id).await?;
+        } else {
+            tracing::warn!("Contact not found: {}", DeviceId::from(member).renamed());
+        }
+
+        Ok(())
+    }
+
+    pub async fn remove_group_member(
+        &self,
+        chat_id: ChatId,
+        member: PublicKey,
+    ) -> anyhow::Result<()> {
+        self.author_operation(
+            chat_id,
+            DashAction::group_action(
+                chat_id,
+                GroupAction::Remove {
+                    member: GroupMember::Individual(member),
+                },
+            ),
+            Some(&format!("remove_group_member({})", chat_id.renamed())),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_group_members(
+        &self,
+        chat_id: ChatId,
+    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        let members = self
+            .local_store
+            .groups
+            .members(chat_id)
+            .await?
+            .into_iter()
+            .map(|(m, a)| (DeviceId::from(m), a))
+            .collect();
+        Ok(members)
+    }
+
     /// "Joining" a chat means subscribing to messages for that chat.
     /// This needs to be accompanied by being added as a member of the chat Space by an existing member
     /// -- you're not fully a member until someone adds you.
@@ -420,6 +553,10 @@ impl Node {
         }
     }
 
+    async fn store_contact(&self, contact: QrCode) -> anyhow::Result<()> {
+        todo!()
+    }
+
     /// Store someone as a contact, and:
     /// - register their spaces keybundle so we can add them to spaces
     /// - subscribe to their inbox
@@ -428,6 +565,10 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
     pub async fn add_contact(&self, contact: QrCode) -> Result<AgentId, AddContactError> {
         tracing::debug!("adding contact: {:?}", contact);
+
+        self.local_store
+            .save_contact(contact.clone())
+            .map_err(|e| AddContactError::StoreContact(e.to_string()))?;
 
         // SPACES: Register the member in the spaces manager
 
