@@ -16,9 +16,9 @@ use push_notifications_server::driver::Driver;
 #[derive(Parser)]
 #[command(about = "Dash Chat push notifications server")]
 struct Cli {
-    /// Port to listen on
-    #[arg(long, default_value_t = 3000)]
-    port: u16,
+    /// Address to bind the server to
+    #[arg(short, long, default_value = "0.0.0.0:3000")]
+    addr: String,
 
     /// Path to the Google service account key JSON file
     #[arg(long)]
@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
         }
     };
 
-    let addr = format!("0.0.0.0:{}", cli.port);
+    let addr = &cli.addr;
 
     tracing::info!(
         "loading FCM credentials from {}",

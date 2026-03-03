@@ -7,8 +7,10 @@ procs:
     shell: pnpm tauri dev
     env:
       MAILBOX_URL: "http://localhost:3000"
-  mailbox-server:
-    shell: cargo run -p mailbox-server -- --db-path "$PWD/.dbs/dev/mailbox-server/mailbox.db" --addr 0.0.0.0:3000
+  mailbox-server: cargo run -p mailbox-server -- --db-path "$PWD/.dbs/dev/mailbox-server/mailbox.db" --addr 0.0.0.0:3000
+  push-notifications-server:
+    shell: cargo run -p push-notifications-server -- --service-account-key crates/push-notifications-server/service-account-key.json --addr 0.0.0.0:3001
+    autostart: false
   android:
     shell: |
       if command -v hostname &>/dev/null && hostname -I &>/dev/null; then
@@ -17,6 +19,7 @@ procs:
         LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "127.0.0.1")
       fi
       export MAILBOX_URL="http://$LOCAL_IP:3000"
+      export PUSH_NOTIFICATIONS_URL="http://$LOCAL_IP:3001"
       pnpm tauri android dev
     autostart: false
   logcat:

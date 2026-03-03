@@ -318,7 +318,14 @@ impl Node {
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        let topic_id: TopicId = Topic::announcements(self.agent_id()).into();
+        self.get_profile_for_agent(self.agent_id()).await
+    }
+
+    pub async fn get_profile_for_agent(
+        &self,
+        agent_id: AgentId,
+    ) -> anyhow::Result<Option<Profile>> {
+        let topic_id: TopicId = Topic::announcements(agent_id).into();
         let authors = self.get_authors(topic_id.clone()).await?;
         let ops = self
             .get_interleaved_logs(topic_id, authors.into_iter().collect())
@@ -340,6 +347,49 @@ impl Node {
             return Ok(None);
         };
         Ok(Some(profile.clone()))
+    }
+
+    /// Resolve a DeviceId to an AgentId and Profile by scanning subscribed announcement topics.
+    ///
+    /// Announcement topics are derived from AgentId bytes (`Topic::announcements(agent_id)`),
+    /// so the topic bytes themselves encode the AgentId. We check each announcement topic's
+    /// authors to find which one contains the given DeviceId.
+    pub async fn resolve_device_profile(
+        &self,
+        device_id: DeviceId,
+    ) -> Option<(AgentId, Profile)> {
+        let subscribed = match self.local_store.subscribed_topics() {
+            Ok(topics) => topics,
+            Err(_) => return None,
+        };
+
+        for topic_id in subscribed {
+            let authors = match self.op_store.get_log_heights(&topic_id).await {
+                Ok(a) => a,
+                Err(_) => continue,
+            };
+
+            let has_device = authors.iter().any(|(d, _)| *d == device_id);
+            if !has_device {
+                continue;
+            }
+
+            // Try to interpret this topic as an announcements topic.
+            // Announcements topics are created with Topic::announcements(agent_id),
+            // which uses the agent_id bytes directly as the topic bytes.
+            let actor_id = match ActorId::from_bytes(&*topic_id) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+            let agent_id = AgentId::from(actor_id);
+
+            // Try to get a profile from this topic. If it has one, it's an announcements topic.
+            if let Ok(Some(profile)) = self.get_profile_for_agent(agent_id).await {
+                return Some((agent_id, profile));
+            }
+        }
+
+        None
     }
 
     /// Get all messages for a chat from the logs.

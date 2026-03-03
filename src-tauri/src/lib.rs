@@ -1,19 +1,17 @@
 mod commands;
 mod filesystem;
 mod i18n;
+mod mailbox;
+mod node;
+mod push_notifications;
 mod settings;
 mod setup;
 mod utils;
 
-mod mailbox;
 #[cfg(not(mobile))]
 mod menu;
-#[cfg(target_os = "android")]
-mod push_notifications;
 #[cfg(not(mobile))]
 mod tray;
-
-const DASHCHAT_MAILBOX_ID: &str = "dashchat-mailbox";
 
 /// When set to `true`, the run-loop's `ExitRequested` handler will no longer
 /// call `api.prevent_exit()`, allowing the app to shut down gracefully
@@ -143,31 +141,6 @@ pub fn run() {
                 tauri::async_runtime::block_on(async move { setup::async_setup(handle).await });
 
             result?;
-
-            // app.handle()
-            //     .listen("holochain://setup-completed", move |_event| {
-            //         let handle2 = handle.clone();
-            //         tauri::async_runtime::spawn(async move {
-            //             if let Err(err) = setup(handle2.clone()).await {
-            //                 log::error!("Failed to setup: {err:?}");
-            //                 return;
-            //             }
-
-            //             #[cfg(mobile)]
-            //             if let Err(err) =
-            //                 push_notifications::setup_push_notifications(handle2.clone())
-            //             {
-            //                 log::error!("Failed to setup push notifications: {err:?}");
-            //             }
-            //         });
-            //         let handle = handle.clone();
-            //         tauri::async_runtime::spawn(async move {
-            //             if let Err(err) = open_window(handle.clone()).await {
-            //                 log::error!("Failed to setup: {err:?}");
-            //             }
-            //         });
-            //     });
-
             Ok(())
         })
         .build(tauri::generate_context!())

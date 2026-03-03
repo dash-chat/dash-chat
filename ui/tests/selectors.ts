@@ -134,4 +134,9 @@ export const S = {
 		restartBtn: tid('updater-restart-btn'),
 		okBtn: tid('updater-ok-btn'),
 	},
+	onboarding: {
+		nextButton: tid('onboarding-next-btn'),
+		backButton: tid('onboarding-back-btn'),
+		startButton: tid('onboarding-start-btn'),
+	},
 } as const;

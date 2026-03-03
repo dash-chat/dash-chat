@@ -1,191 +1,78 @@
-use jni::objects::JClass;
-use jni::JNIEnv;
-use tauri::{AppHandle, Listener, Manager};
-use tauri_plugin_notification::*;
+use dashchat_node::{Node, Notification};
+use push_notifications_server::client::PushNotificationsClient;
+use push_notifications_server::types::{PublicKey, PushNotification};
+use tauri::{AppHandle, Manager};
 
-use crate::utils::with_retries;
+#[cfg(target_os = "android")]
+pub mod mobile;
 
-mod android_logs;
+const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str =
+    "https://push-notifications-server.production.dash-chat.dash-chat.garnix.me";
 
-pub fn setup_push_notifications(handle: AppHandle) -> anyhow::Result<()> {
-    let h = handle.clone();
-    handle.listen("notification://new-fcm-token", move |event| {
-        if let Ok(token) = serde_json::from_str::<String>(event.payload()) {
-            log::warn!("New FCM token: {:?}. Registering it in with the push notifications service_providers.", token);
-            let h = h.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(err) = register_fcm_token(h, token.clone()).await {
-                    log::error!("Error registering FCM token: {:?}", err);
-                } else {
-                    log::info!("Successfully registered FCM token.");
-                }
-            });
+/// Returns the push notifications server URL to use.
+///
+/// Resolution order:
+/// 1. `PUSH_NOTIFICATIONS_URL` runtime env var (E2E tests)
+/// 2. `PUSH_NOTIFICATIONS_URL` compile-time env var (dev builds via mprocs / start-dev.sh)
+/// 3. Production URL
+pub fn push_notifications_url() -> String {
+    if let Ok(url) = std::env::var("PUSH_NOTIFICATIONS_URL") {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            log::error!(
+                "PUSH_NOTIFICATIONS_URL env var is not a valid URL: {url}, falling back to next option"
+            );
+        } else {
+            return url;
         }
-    });
-
-    Ok(())
+    }
+    if let Some(url) = option_env!("PUSH_NOTIFICATIONS_URL") {
+        log::info!("Using compile-time PUSH_NOTIFICATIONS_URL: {url}");
+        return url.to_string();
+    }
+    if tauri::is_dev() {
+        panic!("PUSH_NOTIFICATIONS_URL must be set in dev builds (via env var or compile-time env)");
+    }
+    PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL.to_string()
 }
 
-async fn register_fcm_token(handle: AppHandle, token: String) -> anyhow::Result<()> {
-    let fcm_project_id = handle.notification().fcm_project_id()?;
+pub async fn send_push_notification_to_recipients(
+    app_handle: &AppHandle,
+    notification: &Notification,
+) {
+    let node = app_handle.state::<Node>();
 
-    with_retries(
-        async move || {
-            // let _r: () = make_service_request(
-            //     &app_ws,
-            //     PUSH_NOTIFICATIONS_SERVICE_HASH.to_vec(),
-            //     "register_fcm_token".into(),
-            //     RegisterFcmTokenInput {
-            //         fcm_project_id: fcm_project_id.clone(),
-            //         token: token.clone(),
-            //     },
-            // )
-            // .await?;
-            Ok(())
-        },
-        60,
-        1000,
-    )
-    .await?;
+    // Only send push notifications for operations we authored
+    let my_device_id = node.device_id();
+    if dashchat_node::DeviceId::from(notification.header.public_key) != my_device_id {
+        return;
+    }
 
-    Ok(())
+    let topic_id = notification.header.extensions.topic.clone();
+    let authors = match node.get_authors(topic_id).await {
+        Ok(authors) => authors,
+        Err(err) => {
+            log::error!("Failed to get authors for topic: {err:?}");
+            return;
+        }
+    };
+
+    let recipients: Vec<PublicKey> = authors
+        .into_iter()
+        .filter(|author| *author != my_device_id)
+        .map(|author| PublicKey::from(author.to_string()))
+        .collect();
+
+    if recipients.is_empty() {
+        return;
+    }
+
+    let client = PushNotificationsClient::new(push_notifications_url());
+    let push = PushNotification {
+        title: "Dash Chat".to_string(),
+        body: notification.header.hash().to_hex(),
+    };
+
+    if let Err(err) = client.send_push_notification(recipients, push).await {
+        log::error!("Failed to send push notification: {err:?}");
+    }
 }
-
-// Entry point to receive notifications
-#[tauri_plugin_notification::receive_push_notification]
-pub fn receive_push_notification(
-    notification: NotificationData,
-    context: ReceivePushNotificationContext,
-) -> Option<NotificationData> {
-    unimplemented!()
-    // env_logger::Builder::new()
-    //     .format(|buf, record| writeln!(buf, "[{}] {}", record.level(), record.args()))
-    //     .target(env_logger::Target::Stdout)
-    //     .filter(None, log::LevelFilter::Info)
-    //     .filter_module("holochain_sqlite", log::LevelFilter::Off)
-    //     .filter_module("tracing::span", log::LevelFilter::Off)
-    //     .filter_module("iroh", log::LevelFilter::Warn)
-    //     .filter_module("holochain_runtime", log::LevelFilter::Debug)
-    //     .filter_module("dash-chat", log::LevelFilter::Debug)
-    //     .try_init();
-
-    // unsafe {
-    //     android_logs::setup_android_logs();
-    // }
-    // log::info!("Received push notification: {:?}.", notification);
-
-    // tauri::async_runtime::block_on(async move {
-    //     // let (Some(title), Some(body)) = (notification.title.clone(), notification.body.clone())
-    //     // else {
-    //     //     log::warn!("Received a push notification without title or body: {notification:?}.");
-    //     //     return None;
-    //     // };
-    //     // let zome_name = ZomeName::from(title);
-    //     // let notification_id = body;
-    //     // let Ok(notification) =
-    //     //     get_notification(context.data_dir, zome_name.clone(), notification_id.clone()).await
-    //     // else {
-    //     //     log::error!("Failed to get notifications.");
-    //     //     return None;
-    //     // };
-    //     // if let Some(n) = &notification {
-    //     //     log::info!("Showing notification: {:?}.", n);
-    //     // } else {
-    //     //     log::info!("Notification was not necessary to display.");
-    //     // }
-    //     notification
-    // })
-}
-
-// async fn get_notification(
-//     data_dir: std::path::PathBuf,
-//     zome_name: ZomeName,
-//     notification_id: String,
-// ) -> anyhow::Result<Option<NotificationData>> {
-//     let holochain_dir = data_dir
-//         .join("files")
-//         .join("dash-chat")
-//         .join(crate::get_version())
-//         .join("holochain");
-
-//     log::info!("Attempting to fetch notification");
-
-//     let runtime = tauri_plugin_holochain::launch_holochain_runtime(
-//         vec_to_locked(vec![]),
-//         HolochainPluginConfig::new(holochain_dir, network_config()),
-//     )
-//     .await?;
-
-//     let app_ws = runtime.app_websocket(app_id(), AllowedOrigins::Any).await?;
-
-//     log::info!("Holochain runtime launched.");
-
-//     let notification: Option<notifications_zome_trait::Notification> = with_retries(
-//         async || {
-//             log::debug!("[receive_push_notification] Calling receive messages.");
-
-//             app_ws
-//                 .call_zome(
-//                     ZomeCallTarget::RoleName("main".into()),
-//                     "safehold_async_messages".into(),
-//                     "receive_messages".into(),
-//                     ExternIO::encode(())?,
-//                 )
-//                 .await?;
-
-//             log::debug!("[receive_push_notification] Calling get_notification.");
-
-//             let notification: Option<notifications_zome_trait::Notification> = app_ws
-//                 .call_zome(
-//                     ZomeCallTarget::RoleName("main".into()),
-//                     zome_name.clone(),
-//                     "get_notification".into(),
-//                     ExternIO::encode(GetNotificationInput {
-//                         notification_id: notification_id.clone(),
-//                         locale: String::from("en-US"),
-//                     })?,
-//                 )
-//                 .await?
-//                 .decode()?;
-
-//             Ok(notification)
-//         },
-//         10,
-//         400,
-//     )
-//     .await?;
-
-//     let Some(notification) = notification else {
-//         return Ok(None);
-//     };
-
-//     log::info!("Received push notification");
-
-//     // let large_icon = match notification.large_icon {
-//     //     None => None,
-//     //     Some(large_icon) => {
-//     //         let image_bytes = large_icon.as_bytes().to_vec();
-//     //         let img = image::ImageReader::new(image::Cursor::new(image_bytes))
-//     //             .with_guessed_format()?
-//     //             .decode()?;
-
-//     //         let mut bytes: Vec<u8> = Vec::new();
-//     //         img.write_to(&mut image::Cursor::new(&mut bytes), image::ImageFormat::Bmp)?;
-
-//     //         Some()
-//     //     }
-//     // };
-
-//     Ok(Some(NotificationData {
-//         title: Some(notification.title),
-//         body: Some(notification.body),
-//         group: notification.group,
-//         summary: notification.summary,
-//         large_body: notification.large_body,
-//         group_summary: notification.group_summary,
-//         icon: Some(notification.icon.unwrap_or("ic_stat_icon".to_string())),
-//         icon_color: notification.icon_color,
-//         large_icon: notification.large_icon,
-//         ..Default::default()
-//     }))
-// }

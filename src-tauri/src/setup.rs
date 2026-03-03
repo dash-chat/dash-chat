@@ -1,10 +1,8 @@
+use dashchat_node::Notification;
 use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::AppHandle;
 use tauri::{Emitter, Manager};
 
-use mailbox_client::toy::ToyMailboxClient;
-
-use crate::DASHCHAT_MAILBOX_ID;
 use crate::{commands::logs::simplify, filesystem::FileSystem};
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
@@ -13,6 +11,11 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle).local_data_dir()?;
     log::info!("Using local data path: {local_data_path:?}");
+
+    #[cfg(mobile)]
+    {
+        crate::push_notifications::mobile::setup_push_notifications(app_handle.clone());
+    }
 
     #[cfg(not(mobile))]
     {
@@ -32,22 +35,31 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         }
     }
 
-    let config = dashchat_node::NodeConfig::default();
-    let (notification_tx, mut notification_rx) = tokio::sync::mpsc::channel(100);
-    let node = dashchat_node::Node::new(local_data_path, config, Some(notification_tx)).await?;
-
-    let mailbox_url = crate::mailbox::default_mailbox_url();
-
-    let mailbox_client = ToyMailboxClient::new(DASHCHAT_MAILBOX_ID.to_string(), mailbox_url);
-    node.mailboxes.register(mailbox_client).await;
+    let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
+    let node = crate::node::build_node(local_data_path, Some(notification_tx)).await?;
 
     app_handle.manage(node.clone());
 
     crate::mailbox::spawn_local_mailbox_mdns_discovery(&app_handle, node)?;
 
+    spawn_notification_loop(app_handle.clone(), notification_rx);
+
+    Ok(())
+}
+
+fn spawn_notification_loop(
+    app_handle: AppHandle,
+    mut notification_rx: tokio::sync::mpsc::Receiver<Notification>,
+) {
     tauri::async_runtime::spawn(async move {
         while let Some(notification) = notification_rx.recv().await {
             log::info!("Received notification: {:?}", notification);
+
+            crate::push_notifications::send_push_notification_to_recipients(
+                &app_handle,
+                &notification,
+            )
+            .await;
 
             let body = match encode_cbor(&notification.payload) {
                 Ok(body) => body,
@@ -79,6 +91,4 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
             }
         }
     });
-
-    Ok(())
 }

@@ -1,3 +1,6 @@
+# Full local setup from scratch: start Cassandra, apply schema, run server
+dev: start-cassandra setup-db run
+
 # Start a local Cassandra node via Docker
 start-cassandra:
     docker run -d --name cassandra -p 9042:9042 cassandra:5
@@ -37,6 +40,3 @@ cqlsh:
 # Stop and remove the Cassandra container
 stop-cassandra:
     docker stop cassandra && docker rm cassandra
-
-# Full local setup from scratch: start Cassandra, apply schema, run server
-dev: start-cassandra setup-db run

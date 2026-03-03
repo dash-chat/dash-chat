@@ -194,5 +194,20 @@
 	"updateRestart": "Restart",
 	"updateLater": "Later",
 	"updateError": "Update failed. Please try again later.",
-	"updateOk": "Ok"
+	"updateOk": "Ok",
+
+	"welcomeToDashChat": "Welcome to Dash Chat!",
+	"aPrivateP2pChatApp": "A private peer-to-peer chat app.",
+	"youOwnYourData": "You own your data.",
+	"messagesStoredOnDevice": "Your messages are stored in your device.",
+	"preserveYourPrivacy": "Preserve your privacy.",
+	"allMessagesEncrypted": "All messages are end-to-end encrypted.",
+	"chatEvenWhenOffline": "Chat even when offline.",
+	"chatOfflineExplanation": "Dash Chat works as long as you can connect to your friends' devices.",
+	"dashChatIsPreAlpha": "Dash Chat is in pre-alpha.",
+	"preAlphaExplanation": "We are still building Dash Chat. The app is ready for testing and experimentation, but not to be used as a daily driver.",
+	"thatsIt": "That's it!",
+	"haveFunUsingDashChat": "Have fun using Dash Chat.",
+	"startApp": "Start app",
+	"back": "Back"
 }

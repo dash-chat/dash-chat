@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use axum::{Router, routing::post};
 
+pub mod client;
 pub mod driver;
 mod error;
 pub mod fcm_client;

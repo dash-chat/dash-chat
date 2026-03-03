@@ -1940,6 +1940,7 @@ dependencies = [
  "p2panda-store",
  "p2panda-stream",
  "p2panda-sync",
+ "push-notifications-server",
  "regex",
  "serde",
  "serde_json",
