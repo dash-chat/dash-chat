@@ -3,6 +3,9 @@ pub mod mem;
 pub mod store;
 pub mod toy;
 
+#[cfg(test)]
+pub mod testing;
+
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     sync::Arc,

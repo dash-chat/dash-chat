@@ -29,6 +29,7 @@ p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashc
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+tokio = { version = "1.43.0", features = ["test-util"] }
 
 
 [features]

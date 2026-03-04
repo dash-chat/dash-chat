@@ -55,8 +55,8 @@ async fn mailbox_late_join(
     bobbi_mailbox: impl MailboxClient<MailboxOperation>,
 ) {
     let mut config = NodeConfig::testing();
-    config.mailboxes_config.success_interval = Duration::from_millis(1000);
-    config.mailboxes_config.error_interval = Duration::from_millis(1000);
+    config.mailboxes_config.active_interval = Duration::from_millis(1000);
+    config.mailboxes_config.between_polls_delay = Duration::from_millis(100);
 
     // Start with no mailbox
     let alice = TestNode::new(config.clone(), "alice").await;
@@ -124,8 +124,8 @@ async fn test_mailbox_restart_relay() {
     );
 
     let mut config = NodeConfig::testing();
-    config.mailboxes_config.success_interval = Duration::from_millis(1000);
-    config.mailboxes_config.error_interval = Duration::from_millis(1000);
+    config.mailboxes_config.active_interval = Duration::from_millis(1000);
+    config.mailboxes_config.between_polls_delay = Duration::from_millis(100);
 
     // Start a test mailbox server
     let (server, _temp_file) = mailbox_server::test_utils::create_test_server();
