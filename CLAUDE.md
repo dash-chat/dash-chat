@@ -68,6 +68,12 @@ pnpm tauri android dev
 
 # View Android logs
 adb logcat | grep -F "`adb shell ps | grep studio.darksoil.dashchat | tr -s [:space:] ' ' | cut -d' ' -f2`"
+
+# Run on iOS simulator
+pnpm tauri ios dev "iPhone 16"
+
+# Run on physical iOS device
+pnpm tauri ios dev --device
 ```
 
 ## Architecture
@@ -438,6 +444,50 @@ cd e2e-tests && bash compat/run.sh v0.10.0 v0.10.1
 - **Mobile**: Android and iOS support
   - Android-specific: barcode scanner, push notifications
   - iOS-specific: barcode scanner, push notifications, safe area insets
+
+### iOS Virtual Keyboard Handling
+
+The `tauri-plugin-virtual-keyboard-padding` plugin handles iOS keyboard behavior in WKWebView. Without it, iOS shows a scrollable white gap behind the keyboard.
+
+**How the plugin works:**
+1. Removes WKWebView's built-in keyboard notification observers (prevents auto contentInset/contentOffset adjustments)
+2. Clamps `scrollView.contentOffset` to `.zero` via `UIScrollViewDelegate`
+3. Resizes WKWebView frame by keyboard height so focused inputs remain visible
+4. Injects CSS to override `.min-h-screen`/`.h-screen` with pixel values (100vh doesn't update on frame resize)
+5. Auto-detects background color from rendered `.k-page` element via JavaScript and applies to native view hierarchy (prevents color flash during animation)
+6. Removes the "Done" toolbar by swizzling `WKContentView.inputAccessoryView`
+
+**Plugin source:** `tauri-plugin-virtual-keyboard-padding` (sibling repo). `Cargo.toml` uses git URL; for local dev change to `path = "../../tauri-plugin-virtual-keyboard-padding"`.
+
+**CSS requirement:** `html` and `body` must have `background-color: transparent !important` (set in `app.css`) so the native background color shows through during keyboard animation.
+
+### iOS Simulator Testing
+
+Testing keyboard behavior and UI interactions in the iOS simulator has inherent limitations due to idb + WKWebView interop issues. **Keyboard behavior is best verified on a real device.**
+
+**What works in the simulator:**
+- `idb ui tap --udid <UDID> <x> <y>` can focus *some* WKWebView inputs (e.g. Konsta `ListInput` with `placeholder` prop). Coordinates are in device points (iPhone 16: 393x852).
+- Typing via AppleScript `keystroke` when hardware keyboard is connected (toggle with Cmd+Shift+K in Simulator)
+- `xcrun simctl pbcopy <UDID>` to set pasteboard content
+- `xcrun simctl io <UDID> screenshot <path>` to capture screenshots
+- Visual verification of keyboard show/hide (no scrollbar, proper frame resize)
+
+**What doesn't work:**
+- `idb ui tap` doesn't reliably reach all WKWebView elements (floating-label Konsta inputs don't respond)
+- `idb ui text` doesn't type into WKWebView inputs
+- Tapping virtual keyboard keys dismisses the keyboard instead of typing
+- `xcrun simctl keyboard input` is not available on iOS 18
+- AppleScript `click at` screen coordinates doesn't reach WKWebView content
+
+**Recommended workflow for iOS simulator testing:**
+1. Start with `pnpm tauri ios dev "iPhone 16"`
+2. Disconnect hardware keyboard (Cmd+Shift+K) to show software keyboard
+3. Use `idb ui tap` to focus inputs (works for some elements)
+4. Connect hardware keyboard (Cmd+Shift+K) to type via AppleScript
+5. Toggle back to verify keyboard visual behavior
+6. Use `xcrun simctl io <UDID> screenshot` to capture and inspect state
+
+**iOS app icon note:** iOS icons must have NO alpha channel. The `tauri icon --ios-color` command generates RGBA PNGs (Tauri CLI bug). Fix by stripping alpha from all icons in `src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/`.
 
 ## Important Notes
 
