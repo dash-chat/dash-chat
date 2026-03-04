@@ -10,6 +10,7 @@ use anyhow::Result;
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
+use p2panda_auth::processor::AuthExtension;
 
 use crate::error::{AddContactError, Error};
 use crate::filesystem::Filesystem;
@@ -156,6 +157,7 @@ impl Node {
 
         node.stream_task = Some(node.spawn_stream_process_loop(stream_rx));
 
+        node.initialize_device_group().await?;
         node.initialize_stored_topics().await?;
 
         Ok(node)
@@ -299,32 +301,18 @@ impl Node {
 
     pub async fn create_group(
         &self,
-        mut initial_members: BTreeMap<PublicKey, p2panda_auth::Access>,
+        mut initial_members: BTreeMap<AgentId, p2panda_auth::Access>,
     ) -> anyhow::Result<ChatId> {
         let chat_id = Topic::random();
 
-        let agents = initial_members
-            .iter()
-            .map(|(public_key, _)| self.local_store.lookup_contact(DeviceId::from(*public_key)))
-            .filter_map(|m| match m {
-                Ok(None) => {
-                    tracing::warn!("Contact not found");
-                    None
-                }
-                Ok(Some(agent)) => Some(Ok(agent)),
-                Err(e) => {
-                    tracing::error!("Error looking up contact: {}", e);
-                    Some(Err(e))
-                }
-            })
-            .collect::<anyhow::Result<Vec<AgentId>>>()?;
+        let agents = initial_members.keys().cloned().collect::<Vec<_>>();
 
         // The creator must always have Manage access
-        initial_members.insert(*self.device_id(), p2panda_auth::Access::manage());
+        initial_members.insert(self.agent_id(), p2panda_auth::Access::manage());
 
         let initial_members: Vec<_> = initial_members
             .into_iter()
-            .map(|(public_key, access)| (GroupMember::Individual(public_key), access))
+            .map(|(agent_id, access)| (agent_id.to_group_member(), access))
             .collect();
 
         self.author_operation(
@@ -366,7 +354,7 @@ impl Node {
     pub async fn add_group_member(
         &self,
         chat_id: ChatId,
-        member: PublicKey,
+        agent_id: AgentId,
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
         self.author_operation(
@@ -374,20 +362,19 @@ impl Node {
             DashAction::group_action(
                 chat_id,
                 GroupAction::Add {
-                    member: GroupMember::Individual(member),
+                    member: agent_id.to_group_member(),
                     access,
                 },
             ),
-            Some(&format!("add_group_member({})", chat_id.renamed())),
+            Some(&format!(
+                "add_group_member({}, {})",
+                chat_id.renamed(),
+                agent_id.renamed()
+            )),
         )
         .await?;
 
-        let agent_id = self.local_store.lookup_contact(DeviceId::from(member))?;
-        if let Some(agent_id) = agent_id {
-            self.invite_to_group(chat_id, agent_id).await?;
-        } else {
-            tracing::warn!("Contact not found: {}", DeviceId::from(member).renamed());
-        }
+        self.invite_to_group(chat_id, agent_id).await?;
 
         Ok(())
     }
@@ -395,17 +382,21 @@ impl Node {
     pub async fn remove_group_member(
         &self,
         chat_id: ChatId,
-        member: PublicKey,
+        agent_id: AgentId,
     ) -> anyhow::Result<()> {
         self.author_operation(
             chat_id,
             DashAction::group_action(
                 chat_id,
                 GroupAction::Remove {
-                    member: GroupMember::Individual(member),
+                    member: agent_id.to_group_member(),
                 },
             ),
-            Some(&format!("remove_group_member({})", chat_id.renamed())),
+            Some(&format!(
+                "remove_group_member({}, {})",
+                chat_id.renamed(),
+                agent_id.renamed()
+            )),
         )
         .await?;
         Ok(())
@@ -414,15 +405,8 @@ impl Node {
     pub async fn get_group_members(
         &self,
         chat_id: ChatId,
-    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
-        let members = self
-            .local_store
-            .groups
-            .members(chat_id)
-            .await?
-            .into_iter()
-            .map(|(m, a)| (DeviceId::from(m), a))
-            .collect();
+    ) -> anyhow::Result<BTreeSet<(AgentId, Access)>> {
+        let members = self.local_store.groups.chat_group_members(chat_id).await?;
         Ok(members)
     }
 
@@ -484,6 +468,7 @@ impl Node {
         let chat_id = topic.into();
         let mut messages = vec![];
 
+        // TODO: need to filter messages by actual DeviceIds in the Agent's DeviceGroup
         let authors = self.get_authors(chat_id.into()).await?;
 
         for (header, payload) in self
@@ -494,18 +479,6 @@ impl Node {
                 messages.push(crate::chat::testing::ChatMessage::new(message, &header));
             }
         }
-
-        // for (events, author, timestamp) in events {
-        //     for event in events {
-        //         use crate::Cbor;
-        //         match event {
-        //             Event::Application { space_id, data } => {
-        //                 messages.push(ChatMessage::from_bytes(&data)?)
-        //             }
-        //             _ => {}
-        //         }
-        //     }
-        // }
 
         Ok(messages)
     }
@@ -716,7 +689,7 @@ impl Node {
     async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
         self.initialize_topic(
             *Topic::announcements(self.agent_id())
-                .with_name(&format!("announce({})", self.agent_id().renamed())),
+                .with_name(&format!("announcements({})", self.agent_id().renamed())),
         )
         .await?;
 
@@ -734,6 +707,37 @@ impl Node {
             self.initialize_topic(*topic).await?;
         }
 
+        Ok(())
+    }
+
+    async fn initialize_device_group(&self) -> anyhow::Result<()> {
+        let log = self
+            .get_log(self.device_group_topic().into(), self.device_id())
+            .await?;
+
+        let initialized = log.iter().any(|(header, _)| {
+            let Some(auth) = header.extension::<AuthExtension>() else {
+                return false;
+            };
+            auth.group_id == self.agent_id().to_group_member().id()
+                && matches!(auth.action, GroupAction::Create { .. })
+        });
+
+        if initialized {
+            return Ok(());
+        }
+
+        self.author_operation(
+            self.device_group_topic(),
+            DashAction::GroupControl(AuthExtension {
+                group_id: self.agent_id().to_group_member().id(),
+                action: GroupAction::Create {
+                    initial_members: vec![],
+                },
+            }),
+            Some("initialize_device_group"),
+        )
+        .await?;
         Ok(())
     }
 }

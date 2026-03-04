@@ -99,9 +99,39 @@ impl HackyGroupStore {
         Ok(())
     }
 
-    pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(PublicKey, Access)>> {
+    pub async fn device_group_members(
+        &self,
+        // TODO: change to device group topic
+        agent_id: AgentId,
+    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        let group_id = todo!("");
+        Ok(self
+            .groups
+            .get_state()
+            .await?
+            .crdt
+            .inner
+            .members(group_id)
+            .into_iter()
+            .map(|(m, a)| (DeviceId::from(m), a))
+            .collect())
+    }
+
+    pub async fn chat_group_members(
+        &self,
+        topic: ChatId,
+    ) -> anyhow::Result<BTreeSet<(AgentId, Access)>> {
         let group_id = topic.to_group_pubkey();
-        Ok(self.groups.get_state().await?.crdt.inner.members(group_id))
+        Ok(self
+            .groups
+            .get_state()
+            .await?
+            .crdt
+            .inner
+            .members(group_id)
+            .into_iter()
+            .map(|(m, a)| (AgentId::from_pubkey(m), a))
+            .collect())
     }
 }
 

@@ -136,7 +136,7 @@ async fn test_group_chat() {
 
     let chat_id = alice
         .create_group(btreemap! {
-            *bobbi.device_id() => p2panda_auth::Access::manage(),
+            bobbi.agent_id() => p2panda_auth::Access::manage(),
         })
         .await
         .unwrap();
@@ -158,7 +158,7 @@ async fn test_group_chat() {
     .unwrap();
 
     bobbi
-        .add_group_member(chat_id, *cammy.device_id(), p2panda_auth::Access::write())
+        .add_group_member(chat_id, cammy.agent_id(), p2panda_auth::Access::write())
         .await
         .unwrap();
 
@@ -200,9 +200,9 @@ async fn test_group_chat() {
     let cammy_members = cammy.get_group_members(chat_id).await.unwrap();
 
     let expected_members = maplit::btreeset![
-        (alice.device_id(), p2panda_auth::Access::manage()),
-        (bobbi.device_id(), p2panda_auth::Access::manage()),
-        (cammy.device_id(), p2panda_auth::Access::write()),
+        (alice.agent_id(), p2panda_auth::Access::manage()),
+        (bobbi.agent_id(), p2panda_auth::Access::manage()),
+        (cammy.agent_id(), p2panda_auth::Access::write()),
     ];
 
     assert_eq!(alice_members, expected_members);

@@ -68,14 +68,15 @@ pub mod kind {
     use super::*;
 
     macro_rules! topic_kind {
-        ($name:ident) => {
-            topic_kind_no_auto_register!($name);
+        ($(#[$meta:meta])* $name:ident) => {
+            topic_kind_no_auto_register!($(#[$meta])* $name);
             impl AutoRegisteredTopic for $name {}
         };
     }
 
     macro_rules! topic_kind_no_auto_register {
-        ($name:ident) => {
+        ($(#[$meta:meta])* $name:ident) => {
+            $(#[$meta])*
             #[derive(
                 Clone,
                 Copy,
@@ -102,8 +103,15 @@ pub mod kind {
         };
     }
 
-    topic_kind!(Announcements);
-    topic_kind!(DeviceGroup);
+    topic_kind!(
+        /// Announcements topic for profile updates and device group updates
+        Announcements
+    );
+
+    topic_kind!(
+        /// For internal record-keeping, like read messages, rejected contact requests, etc.
+        DeviceGroup
+    );
 
     // Either direct or group chat
     topic_kind!(Chat);
@@ -225,7 +233,9 @@ impl Topic<kind::Inbox> {
 }
 
 impl Topic<kind::DeviceGroup> {
-    // TODO: use a random topic stored in LocalStore instead
+    // TODO: use a random topic stored in LocalStore instead.
+    //       this should be a secret not known outside of the device group,
+    //       and AgentId is known by all contacts.
     pub fn device_group(agent_id: AgentId) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(agent_id.as_bytes());
