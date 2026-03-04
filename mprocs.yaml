@@ -3,10 +3,12 @@ procs:
     shell: pnpm tauri dev
     env:
       MAILBOX_URL: "http://localhost:3000"
+      PUSH_NOTIFICATIONS_URL: "http://localhost:3001"
   agent2:
     shell: pnpm tauri dev
     env:
       MAILBOX_URL: "http://localhost:3000"
+      PUSH_NOTIFICATIONS_URL: "http://localhost:3001"
   mailbox-server: cargo run -p mailbox-server -- --db-path "$PWD/.dbs/dev/mailbox-server/mailbox.db" --addr 0.0.0.0:3000
   push-notifications-server:
     shell: cargo run -p push-notifications-server -- --service-account-key crates/push-notifications-server/service-account-key.json --addr 0.0.0.0:3001

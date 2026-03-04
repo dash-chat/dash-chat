@@ -32,7 +32,7 @@ pub fn setup_push_notifications(handle: AppHandle) {
 
 async fn register_fcm_token(handle: AppHandle, token: String) -> anyhow::Result<()> {
     let node = handle.state::<Node>();
-    let public_key = PublicKey::from(node.agent_id().to_string());
+    let public_key = PublicKey::from(node.device_id().to_string());
 
     let client = PushNotificationsClient::new(super::push_notifications_url());
 

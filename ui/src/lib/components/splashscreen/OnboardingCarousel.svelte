@@ -138,24 +138,30 @@
 				{/each}
 			</div>
 
-			<!-- Navigation buttons -->
-			<div class="flex gap-3 w-full max-w-xs mt-4">
+			</div>
+
+		<!-- Navigation buttons -->
+		<div
+			class="fixed left-6 right-6 flex justify-between items-center pointer-events-none"
+			style="bottom: env(safe-area-inset-bottom, 0px)"
+		>
+			<div class="pointer-events-auto">
 				{#if currentPage > 0}
 					<Button
 						outline
 						rounded
-						class="flex-1"
 						onClick={back}
 						data-testid="onboarding-back-btn"
 					>
 						{m.back()}
 					</Button>
 				{/if}
+			</div>
 
+			<div class="pointer-events-auto">
 				{#if isLastPage}
 					<Button
 						rounded
-						class="flex-1"
 						onClick={startApp}
 						data-testid="onboarding-start-btn"
 					>
@@ -164,7 +170,6 @@
 				{:else}
 					<Button
 						rounded
-						class="flex-1"
 						onClick={next}
 						data-testid="onboarding-next-btn"
 					>

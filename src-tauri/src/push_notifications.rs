@@ -30,7 +30,9 @@ pub fn push_notifications_url() -> String {
         return url.to_string();
     }
     if tauri::is_dev() {
-        panic!("PUSH_NOTIFICATIONS_URL must be set in dev builds (via env var or compile-time env)");
+        panic!(
+            "PUSH_NOTIFICATIONS_URL must be set in dev builds (via env var or compile-time env)"
+        );
     }
     PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL.to_string()
 }
@@ -71,6 +73,8 @@ pub async fn send_push_notification_to_recipients(
         title: "Dash Chat".to_string(),
         body: notification.header.hash().to_hex(),
     };
+
+    log::info!("Sending push notification to recipients: {recipients:?}.");
 
     if let Err(err) = client.send_push_notification(recipients, push).await {
         log::error!("Failed to send push notification: {err:?}");
