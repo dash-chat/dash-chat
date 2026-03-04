@@ -47,26 +47,27 @@
 
 	<div class={theme==='ios' ? "mt-4": ''}></div>
 
-	{#await Promise.all([$contacts, $chatSummaries]) then [contactsList, chats]}
-		{@const showGetStarted = contactsList.length === 0 && chats.length === 0}
+	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
 
-		<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
+	{#await $contacts then contactsList}
+		{#await $chatSummaries then chats}
+			{@const showGetStarted = contactsList.length === 0 && chats.length === 0}
 
-		{#if showGetStarted && !isWideScreen.value}
-			<div class="fixed bottom-0 left-0 right-0 z-10 pb-safe">
-				<GetStarted bind:visible={getStartedVisible} />
-			</div>
-		{/if}
-
-		{#if theme == 'material' && !isWideScreen.value}
-			<Fab
-				class="fixed-action-btn z-20"
-				style={showGetStarted && getStartedVisible ? `bottom: calc(env(safe-area-inset-bottom, 0px) + 10rem)` : ''}
-				onClick={() => goto('/new-message')}
-				data-testid="home-new-message-fab"
-			>
-				<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
-			</Fab>
-		{/if}
+			{#if showGetStarted && !isWideScreen.value}
+				<div class="fixed bottom-0 left-0 right-0 z-10 pb-safe">
+					<GetStarted bind:visible={getStartedVisible} />
+				</div>
+			{/if}
+		{/await}
 	{/await}
+
+	{#if theme == 'material' && !isWideScreen.value}
+		<Fab
+			class="fixed-action-btn z-20"
+			onClick={() => goto('/new-message')}
+			data-testid="home-new-message-fab"
+		>
+			<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
+		</Fab>
+	{/if}
 </Page>

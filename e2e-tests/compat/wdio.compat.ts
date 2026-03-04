@@ -8,6 +8,7 @@ import {
 	killAllE2EProcesses,
 	killPortHolders,
 } from '../helpers/cleanup';
+import { waitForPortFree, waitForPortListening } from '../helpers/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..');
@@ -78,8 +79,8 @@ export const config: Options.Testrunner = {
 		await Promise.all([killAndWait(tauriDriver1), killAndWait(tauriDriver2)]);
 		killAllE2EProcesses();
 		killPortHolders(ALL_PORTS);
-		// Give OS time to fully release sockets after SIGKILL.
-		await new Promise(r => setTimeout(r, 2_000));
+		// Wait for ports to be fully released after SIGKILL.
+		await Promise.all(ALL_PORTS.map(p => waitForPortFree(p)));
 
 		tauriDriver1 = spawn(
 			'tauri-driver',
@@ -99,7 +100,11 @@ export const config: Options.Testrunner = {
 			console.error(`[tauri-driver:${port2}] ${data.toString().trim()}`);
 		});
 
-		return new Promise((resolve) => setTimeout(resolve, 500));
+		// Wait for tauri-driver instances to accept connections.
+		await Promise.all([
+			waitForPortListening(port1),
+			waitForPortListening(port2),
+		]);
 	},
 
 	async afterSession() {

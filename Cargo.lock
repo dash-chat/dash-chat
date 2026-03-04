@@ -1908,7 +1908,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "anyhow",
  "app_dirs2",

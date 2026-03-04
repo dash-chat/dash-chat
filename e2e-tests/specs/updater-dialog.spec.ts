@@ -30,9 +30,21 @@ describe('UpdaterDialog', () => {
 	});
 
 	afterEach(async () => {
-		// Dismiss any open dialog
+		// Dismiss any open dialog and wait for the opacity transition to complete.
 		await agent.execute(() => window.__test.simulateUpdate('idle'));
-		await agent.pause(500);
+		await agent.waitUntil(
+			async () => {
+				const anyVisible = await agent.execute(() => {
+					for (const id of ['updater-downloading', 'updater-ready', 'updater-error']) {
+						const el = document.querySelector(`[data-testid="${id}"]`);
+						if (el && getComputedStyle(el).opacity !== '0') return true;
+					}
+					return false;
+				});
+				return !anyVisible;
+			},
+			{ timeout: 5_000, timeoutMsg: 'Updater dialog not dismissed after setting idle' },
+		);
 	});
 
 	it('shows downloading dialog with progress bar', async () => {

@@ -69,21 +69,59 @@ async function runVisit(
 	await agent.execute(
 		(opts: { hasChat?: boolean; checkDarkMode?: boolean; checkRTL?: boolean }) => {
 			(window as any).__visitResult = undefined;
+			(window as any).__visitProgress = 'starting';
+
+			// Hard timeout: guarantee __visitResult is set even if the chain hangs.
+			const hardTimer = setTimeout(() => {
+				if (typeof (window as any).__visitResult !== 'string') {
+					const progress = (window as any).__visitProgress ?? 'unknown';
+					(window as any).__visitResult = JSON.stringify({
+						ok: false, error: `Hard timeout (100s) — last progress: ${progress}`,
+					});
+				}
+			}, 100_000);
+
 			window.__test
 				.visitAllPages(opts)
 				.then(
-					(r: any) => { (window as any).__visitResult = JSON.stringify({ ok: true, result: r }); },
-					(e: any) => { (window as any).__visitResult = JSON.stringify({ ok: false, error: String(e) }); },
-				);
+					(r: any) => {
+						clearTimeout(hardTimer);
+						(window as any).__visitResult = JSON.stringify({ ok: true, result: r });
+					},
+					(e: any) => {
+						clearTimeout(hardTimer);
+						(window as any).__visitResult = JSON.stringify({ ok: false, error: String(e) });
+					},
+				)
+				.catch((e: any) => {
+					clearTimeout(hardTimer);
+					(window as any).__visitResult = JSON.stringify({ ok: false, error: 'catch: ' + String(e) });
+				});
 		},
 		options,
 	);
 
 	// Poll until the result is available (up to 120s).
-	await agent.waitUntil(
-		async () => agent.execute(() => typeof (window as any).__visitResult === 'string'),
-		{ timeout: 120_000, interval: 2_000, timeoutMsg: 'Timeout waiting for visitAllPages to complete' },
-	);
+	try {
+		await agent.waitUntil(
+			async () => agent.execute(() => typeof (window as any).__visitResult === 'string'),
+			{ timeout: 120_000, interval: 2_000, timeoutMsg: 'Timeout waiting for visitAllPages to complete' },
+		);
+	} catch (e) {
+		// Read diagnostic info before throwing.
+		try {
+			const diag = await agent.execute(() => ({
+				progress: (window as any).__visitProgress,
+				hasResult: typeof (window as any).__visitResult,
+				hasTest: typeof (window as any).__test !== 'undefined',
+				url: window.location.href,
+			}));
+			console.log('[runVisit] TIMEOUT diagnostics:', JSON.stringify(diag));
+		} catch (diagErr) {
+			console.log('[runVisit] TIMEOUT — could not read diagnostics:', String(diagErr));
+		}
+		throw e;
+	}
 
 	// Retrieve and parse the result.
 	const raw: string = await agent.execute(() => (window as any).__visitResult);
@@ -92,6 +130,23 @@ async function runVisit(
 		console.log('[runVisit] visitAllPages error:', res.error);
 	}
 	return res;
+}
+
+/** Trigger a full page reload and wait for the app to be ready.
+ *  Clears window.__test before reloading so waitForTestUtils correctly
+ *  waits for re-registration instead of finding the stale reference. */
+async function reloadToHome(agent: WebdriverIO.Browser): Promise<void> {
+	await agent.execute(() => {
+		delete (window as any).__test;
+		window.location.href = '/';
+	});
+	await waitForTestUtils(agent);
+	await agent.waitUntil(
+		async () => agent.execute(
+			() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
+		),
+		{ timeout: 30_000, interval: 500, timeoutMsg: 'reloadToHome: HOME elements not found after reload' },
+	);
 }
 
 /** Helper: switch theme + layout on an agent.
@@ -104,10 +159,7 @@ async function switchCombo(
 	wideScreen: boolean,
 	dark?: boolean,
 ): Promise<void> {
-	// Full reload for clean state.
-	await agent.execute(() => { window.location.href = '/'; });
-	await agent.pause(3000);
-	await waitForTestUtils(agent);
+	await reloadToHome(agent);
 
 	// Apply theme, layout, and dark mode (all lost on reload).
 	await agent.execute(
@@ -123,16 +175,22 @@ async function switchCombo(
 		!!dark,
 	);
 
-	// Wait for HOME elements to appear after layout change.
+	// Wait for HOME elements to re-appear after layout change (switching to
+	// desktop causes DesktopLayout to mount fresh, re-rendering AllChats).
 	await agent.waitUntil(
 		async () => agent.execute(
 			() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
 		),
-		{ timeout: 30_000, interval: 500, timeoutMsg: 'switchCombo: HOME not found after reload + apply' },
+		{ timeout: 30_000, interval: 500, timeoutMsg: 'switchCombo: HOME not found after theme/layout apply' },
 	);
 }
 
 describe('Review checks', function () {
+	// Each combo does a full page reload + visit ~13 pages. With {#await}-based
+	// rendering, promise resolution adds overhead that accumulates across combos.
+	// Must be larger than runVisit's 120s poll timeout.
+	this.timeout(180_000);
+
 	before(async function () {
 		this.timeout(180_000);
 
@@ -146,8 +204,17 @@ describe('Review checks', function () {
 
 		await exchangeContacts(agent1, agent2);
 
-		// Let nodes settle after contact exchange (p2panda sync, mailbox subscribe).
-		await agent1.pause(5_000);
+		// Wait for both agents' chat pages to load after contact exchange.
+		await Promise.all([
+			agent1.waitUntil(
+				async () => agent1.execute(() => !!document.querySelector('[data-testid="message-input-textarea"]')),
+				{ timeout: 30_000, interval: 500, timeoutMsg: 'Agent1 message input not found after contact exchange' },
+			),
+			agent2.waitUntil(
+				async () => agent2.execute(() => !!document.querySelector('[data-testid="message-input-textarea"]')),
+				{ timeout: 30_000, interval: 500, timeoutMsg: 'Agent2 message input not found after contact exchange' },
+			),
+		]);
 
 		// Send messages using sync execute calls to avoid executeAsync hangs.
 		await agent1.execute((t: string) => {
@@ -163,13 +230,12 @@ describe('Review checks', function () {
 		}, 'Hello from Alice!');
 
 		// Wait for agent2 to receive the message.
-		await new Promise((r) => setTimeout(r, 3_000));
 		await agent2.waitUntil(
 			async () => agent2.execute(
 				(t: string) => !!document.querySelector('[data-testid="direct-chat-messages"]')?.textContent?.includes(t),
 				'Hello from Alice!',
 			),
-			{ timeout: 30_000, interval: 2_000, timeoutMsg: 'Agent2 did not receive message from Alice' },
+			{ timeout: 30_000, interval: 1_000, timeoutMsg: 'Agent2 did not receive message from Alice' },
 		);
 
 		// Agent2 replies.
@@ -185,7 +251,6 @@ describe('Review checks', function () {
 			btn.click();
 		}, 'Hello from Bob!');
 
-		await new Promise((r) => setTimeout(r, 3_000));
 		await agent1.waitUntil(
 			async () => agent1.execute(
 				(t: string) => !!document.querySelector('[data-testid="direct-chat-messages"]')?.textContent?.includes(t),
@@ -194,38 +259,19 @@ describe('Review checks', function () {
 			{ timeout: 30_000, interval: 1_000, timeoutMsg: 'Agent1 did not receive message from Bob' },
 		);
 
-		// Navigate agent1 to home via full page reload (goto('/') can re-mount the
-		// page and leave stores in a pending state).
-		await agent1.execute(() => { window.location.href = '/'; });
-		await agent1.pause(3000);
-		await waitForTestUtils(agent1);
-		await agent1.waitUntil(
-			async () => agent1.execute(
-				() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
-			),
-			{ timeout: 30_000, interval: 1_000 },
-		);
+		await reloadToHome(agent1);
 	});
 
 	// Ensure agent1 is on the home page before each test — if a previous test
 	// failed mid-navigation, the app could be on any page.
 	beforeEach(async function () {
-		this.timeout(60_000);
+		this.timeout(120_000);
 		const agent1 = browser.getInstance('agent1');
 		const isHome = await agent1.execute(
 			() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
 		);
 		if (!isHome) {
-			// Full page reload for reliable recovery (goto can fail if stores are broken).
-			await agent1.execute(() => { window.location.href = '/'; });
-			await agent1.pause(3000);
-			await waitForTestUtils(agent1);
-			await agent1.waitUntil(
-				async () => agent1.execute(
-					() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
-				),
-				{ timeout: 30_000, interval: 1_000, timeoutMsg: 'beforeEach: HOME elements not found after reload' },
-			);
+			await reloadToHome(agent1);
 		}
 	});
 
@@ -285,20 +331,20 @@ describe('Review checks', function () {
 		before(async function () {
 			this.timeout(60_000);
 			const agent1 = browser.getInstance('agent1');
-			// Navigate to home first: setLocale reloads the page at the current
-			// URL (locale-prefixed), so we must be on '/' before changing locale.
-			await agent1.execute(() => { window.location.href = '/'; });
-			await agent1.pause(3000);
+			// Navigate to home first: setLocale reloads at the current URL
+			// (locale-prefixed), so we must be on '/' before changing locale.
+			await reloadToHome(agent1);
+			// setLocale triggers a full page reload with the new locale prefix.
+			await agent1.execute(() => {
+				delete (window as any).__test;
+				window.__setLocale('de-de');
+			});
 			await waitForTestUtils(agent1);
-			await agent1.execute(() => window.__setLocale('de-de'));
-			await agent1.pause(3000);
-			await waitForTestUtils(agent1);
-			// Wait for HOME elements after locale reload (stores need to settle).
 			await agent1.waitUntil(
 				async () => agent1.execute(
 					() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
 				),
-				{ timeout: 30_000, interval: 1_000 },
+				{ timeout: 30_000, interval: 500, timeoutMsg: 'German locale: HOME not found after setLocale' },
 			);
 		});
 
@@ -332,24 +378,20 @@ describe('Review checks', function () {
 			this.timeout(60_000);
 			const agent1 = browser.getInstance('agent1');
 			// Navigate to home first: setLocale reloads at current URL.
-			await agent1.execute(() => { window.location.href = '/'; });
-			await agent1.pause(3000);
+			await reloadToHome(agent1);
+			// setLocale triggers a full page reload with the new locale prefix.
+			await agent1.execute(() => {
+				delete (window as any).__test;
+				window.__setLocale('fa-ir');
+			});
 			await waitForTestUtils(agent1);
-			await agent1.execute(() => window.__setLocale('fa-ir'));
-			await agent1.pause(3000);
-			await waitForTestUtils(agent1);
-			// Wait for HOME elements after locale reload (stores need to settle).
 			await agent1.waitUntil(
 				async () => agent1.execute(
 					() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
 				),
-				{ timeout: 30_000, interval: 1_000 },
+				{ timeout: 30_000, interval: 500, timeoutMsg: 'Farsi locale: HOME not found after setLocale' },
 			);
-			// Set RTL direction
-			await agent1.execute(() => {
-				document.documentElement.dir = 'rtl';
-			});
-			await agent1.pause(300);
+			await agent1.execute(() => { document.documentElement.dir = 'rtl'; });
 		});
 
 		it('Material Desktop', async function () {
