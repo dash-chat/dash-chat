@@ -81,15 +81,19 @@ export async function sendMessage(agent: WebdriverIO.Browser, text: string): Pro
 	if (err) throw new Error(`Send message failed: ${err}`);
 }
 
-/** Wait for a message to appear on an agent. Throws if it fails. */
-export async function waitForMessage(agent: WebdriverIO.Browser, text: string): Promise<void> {
-	const err = await agent.executeAsync(
-		(t: string, done: (r: string | null) => void) => {
-			window.__test.waitForMessage(t).then(() => done(null), (e) => done(String(e)));
-		},
-		text,
+/**
+ * Wait for a message to appear on an agent.
+ * Uses WDIO waitUntil with sync execute polling — avoids executeAsync with
+ * long-running scripts which can hang in tauri-driver.
+ */
+export async function waitForMessage(agent: WebdriverIO.Browser, text: string, timeout = 60_000): Promise<void> {
+	await agent.waitUntil(
+		async () => agent.execute(
+			(t: string) => !!document.querySelector('[data-testid="direct-chat-messages"]')?.textContent?.includes(t),
+			text,
+		),
+		{ timeout, interval: 1_000, timeoutMsg: `Message "${text}" not received within ${timeout}ms` },
 	);
-	if (err) throw new Error(`Wait for message failed: ${err}`);
 }
 
 /** Send a message and wait for it to be received by another agent. */
