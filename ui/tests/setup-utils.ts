@@ -26,7 +26,7 @@ import {
 } from './review/visit-all-pages';
 
 /** Trigger UpdaterDialog into a specific state via custom event. */
-function simulateUpdate(state: 'downloading' | 'ready' | 'error' | 'idle') {
+function simulateUpdate(state: 'available' | 'downloading' | 'ready' | 'error' | 'idle') {
 	window.dispatchEvent(new CustomEvent('test-simulate-update', { detail: state }));
 }
 

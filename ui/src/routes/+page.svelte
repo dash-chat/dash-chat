@@ -6,6 +6,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/AllChats.svelte';
+	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
 	import { Fab, Link, Navbar, Page, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -46,6 +47,8 @@
 	</Navbar>
 
 	<div class={theme==='ios' ? "mt-4": ''}></div>
+
+	<UpdaterBanner />
 
 	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
 

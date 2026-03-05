@@ -194,5 +194,7 @@
 	"updateRestart": "Restart",
 	"updateLater": "Later",
 	"updateError": "Update failed. Please try again later.",
-	"updateOk": "Ok"
+	"updateOk": "Ok",
+	"updateDownloadAction": "Update",
+	"updateRetry": "Retry"
 }

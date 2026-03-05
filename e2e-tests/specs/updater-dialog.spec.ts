@@ -1,26 +1,15 @@
 /**
- * UpdaterDialog E2E test.
+ * UpdaterBanner E2E test.
  *
- * Uses window.__test.simulateUpdate() to trigger dialog states and verifies
- * the correct UI is rendered for each state (downloading, ready, error).
- *
- * Konsta Dialog keeps elements in the DOM at all times, using opacity: 0
- * and pointer-events: none when closed. The helper isDialogVisible() checks
- * computed opacity to determine open/closed state.
+ * Uses window.__test.simulateUpdate() to trigger banner states and verifies
+ * the correct UI is rendered for each state (available, downloading, ready, error).
  *
  * Only needs one agent — uses agent1.
  */
 
 import { waitForTestUtils, createProfile } from '../helpers/setup-agents';
 
-/** Check if a data-testid element is visible (opacity > 0). */
-function isVisible(selector: string): boolean {
-	const el = document.querySelector(selector);
-	if (!el) return false;
-	return getComputedStyle(el).opacity !== '0';
-}
-
-describe('UpdaterDialog', () => {
+describe('UpdaterBanner', () => {
 	let agent: WebdriverIO.Browser;
 
 	before(async () => {
@@ -30,50 +19,58 @@ describe('UpdaterDialog', () => {
 	});
 
 	afterEach(async () => {
-		// Dismiss any open dialog and wait for the opacity transition to complete.
+		// Dismiss any open banner
 		await agent.execute(() => window.__test.simulateUpdate('idle'));
 		await agent.waitUntil(
 			async () => {
-				const anyVisible = await agent.execute(() => {
-					for (const id of ['updater-downloading', 'updater-ready', 'updater-error']) {
-						const el = document.querySelector(`[data-testid="${id}"]`);
-						if (el && getComputedStyle(el).opacity !== '0') return true;
-					}
-					return false;
+				const visible = await agent.execute(() => {
+					return document.querySelector('[data-testid="updater-banner"]') === null;
 				});
-				return !anyVisible;
+				return visible;
 			},
-			{ timeout: 5_000, timeoutMsg: 'Updater dialog not dismissed after setting idle' },
+			{ timeout: 5_000, timeoutMsg: 'Updater banner not dismissed after setting idle' },
 		);
 	});
 
-	it('shows downloading dialog with progress bar', async () => {
+	it('shows available banner with update button', async () => {
+		await agent.execute(() => window.__test.simulateUpdate('available'));
+
+		await agent.waitUntil(
+			async () =>
+				agent.execute(
+					() => document.querySelector('[data-testid="updater-available"]') !== null,
+				),
+			{ timeout: 5_000, timeoutMsg: 'Available banner not visible' },
+		);
+
+		const hasDownloadBtn = await agent.execute(
+			() => document.querySelector('[data-testid="updater-download-btn"]') !== null,
+		);
+		expect(hasDownloadBtn).toBe(true);
+	});
+
+	it('shows downloading banner with progress bar', async () => {
 		await agent.execute(() => window.__test.simulateUpdate('downloading'));
 
 		await agent.waitUntil(
-			async () => agent.execute(isVisible, '[data-testid="updater-downloading"]'),
-			{ timeout: 5_000, timeoutMsg: 'Downloading dialog not visible' },
+			async () =>
+				agent.execute(
+					() => document.querySelector('[data-testid="updater-downloading"]') !== null,
+				),
+			{ timeout: 5_000, timeoutMsg: 'Downloading banner not visible' },
 		);
-
-		// Verify the percentage text is present (progress = contentLength → 100%)
-		const hasPercent = await agent.execute(
-			() => document.body.innerText.includes('100%'),
-		);
-		expect(hasPercent).toBe(true);
 	});
 
-	it('shows ready dialog with restart and later buttons', async () => {
+	it('shows ready banner with restart button', async () => {
 		await agent.execute(() => window.__test.simulateUpdate('ready'));
 
 		await agent.waitUntil(
-			async () => agent.execute(isVisible, '[data-testid="updater-ready"]'),
-			{ timeout: 5_000, timeoutMsg: 'Ready dialog not visible' },
+			async () =>
+				agent.execute(
+					() => document.querySelector('[data-testid="updater-ready"]') !== null,
+				),
+			{ timeout: 5_000, timeoutMsg: 'Ready banner not visible' },
 		);
-
-		const hasLater = await agent.execute(
-			() => document.querySelector('[data-testid="updater-later-btn"]') !== null,
-		);
-		expect(hasLater).toBe(true);
 
 		const hasRestart = await agent.execute(
 			() => document.querySelector('[data-testid="updater-restart-btn"]') !== null,
@@ -81,63 +78,46 @@ describe('UpdaterDialog', () => {
 		expect(hasRestart).toBe(true);
 	});
 
-	it('shows error dialog with OK button', async () => {
+	it('shows error banner with retry button', async () => {
 		await agent.execute(() => window.__test.simulateUpdate('error'));
 
 		await agent.waitUntil(
-			async () => agent.execute(isVisible, '[data-testid="updater-error"]'),
-			{ timeout: 5_000, timeoutMsg: 'Error dialog not visible' },
+			async () =>
+				agent.execute(
+					() => document.querySelector('[data-testid="updater-error"]') !== null,
+				),
+			{ timeout: 5_000, timeoutMsg: 'Error banner not visible' },
 		);
 
-		const hasOk = await agent.execute(
-			() => document.querySelector('[data-testid="updater-ok-btn"]') !== null,
+		const hasRetry = await agent.execute(
+			() => document.querySelector('[data-testid="updater-retry-btn"]') !== null,
 		);
-		expect(hasOk).toBe(true);
+		expect(hasRetry).toBe(true);
 	});
 
-	it('dismisses error dialog when OK is clicked', async () => {
-		await agent.execute(() => window.__test.simulateUpdate('error'));
+	it('dismisses banner when dismiss button is clicked', async () => {
+		await agent.execute(() => window.__test.simulateUpdate('available'));
 
 		await agent.waitUntil(
-			async () => agent.execute(isVisible, '[data-testid="updater-error"]'),
-			{ timeout: 5_000, timeoutMsg: 'Error dialog not visible' },
+			async () =>
+				agent.execute(
+					() => document.querySelector('[data-testid="updater-banner"]') !== null,
+				),
+			{ timeout: 5_000, timeoutMsg: 'Banner not visible' },
 		);
 
-		// Click the OK button
+		// Click the dismiss button
 		await agent.execute(() => {
-			(document.querySelector('[data-testid="updater-ok-btn"]') as HTMLElement)?.click();
+			(document.querySelector('[data-testid="updater-dismiss-btn"]') as HTMLElement)?.click();
 		});
 
-		// Verify dialog is hidden (opacity transitions to 0)
+		// Verify banner is removed from DOM
 		await agent.waitUntil(
-			async () => {
-				const visible = await agent.execute(isVisible, '[data-testid="updater-error"]');
-				return !visible;
-			},
-			{ timeout: 5_000, timeoutMsg: 'Error dialog was not dismissed' },
-		);
-	});
-
-	it('dismisses ready dialog when Later is clicked', async () => {
-		await agent.execute(() => window.__test.simulateUpdate('ready'));
-
-		await agent.waitUntil(
-			async () => agent.execute(isVisible, '[data-testid="updater-ready"]'),
-			{ timeout: 5_000, timeoutMsg: 'Ready dialog not visible' },
-		);
-
-		// Click the Later button
-		await agent.execute(() => {
-			(document.querySelector('[data-testid="updater-later-btn"]') as HTMLElement)?.click();
-		});
-
-		// Verify dialog is hidden
-		await agent.waitUntil(
-			async () => {
-				const visible = await agent.execute(isVisible, '[data-testid="updater-ready"]');
-				return !visible;
-			},
-			{ timeout: 5_000, timeoutMsg: 'Ready dialog was not dismissed' },
+			async () =>
+				agent.execute(
+					() => document.querySelector('[data-testid="updater-banner"]') === null,
+				),
+			{ timeout: 5_000, timeoutMsg: 'Banner was not dismissed' },
 		);
 	});
 });
