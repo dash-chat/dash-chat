@@ -46,6 +46,7 @@ jobs:
       - name: Install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
+          rustflags: ''
           cache-on-failure: true
 
       - name: install dependencies
@@ -84,5 +85,4 @@ jobs:
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://docs.claude.com/en/docs/claude-code/cli-reference for available options
           base_branch: develop
-          timeout_minutes: 30
           claude_args: '--model claude-opus-4-6 --allowed-tools Bash(gh pr:*),Bash(pnpm:*),mcp__tauri__driver_session,mcp__tauri__webview_find_element,mcp__tauri__read_logs,mcp__tauri__webview_interact,mcp__tauri__webview_screenshot,mcp__tauri__webview_keyboard,mcp__tauri__webview_wait_for,mcp__tauri__webview_get_styles,mcp__tauri__webview_execute_js,mcp__tauri__manage_window'

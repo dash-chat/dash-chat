@@ -37,6 +37,7 @@ Dash Chat aims to match Signal's UX as closely as possible. A private repository
 │   ├── new-message/       # Contact picker + new-group/
 │   └── settings/          # All settings sub-pages
 └── ios/                   # iOS screenshots (same structure)
+└── desktop/                   # Desktop screenshots (same structure)
 ```
 
 Screenshots are named descriptively with sequence prefixes (e.g., `01-chat-list-empty.png`, `02-overflow-menu-open.png`). Browse the directory listing to find what you need.
