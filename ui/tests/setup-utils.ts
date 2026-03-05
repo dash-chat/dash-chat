@@ -25,8 +25,8 @@ import {
 	visitChatPages,
 } from './review/visit-all-pages';
 
-/** Trigger UpdaterDialog into a specific state via custom event. */
-function simulateUpdate(state: 'downloading' | 'ready' | 'error' | 'idle') {
+/** Trigger UpdaterBanner into a specific state via custom event. */
+function simulateUpdate(state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden') {
 	window.dispatchEvent(new CustomEvent('test-simulate-update', { detail: state }));
 }
 

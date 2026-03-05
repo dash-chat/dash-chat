@@ -32,7 +32,6 @@
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
 	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
-	import UpdaterDialog from '$lib/components/UpdaterDialog.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useSignal } from '$lib/stores/use-signal';
@@ -159,6 +158,5 @@
 			{/if}
 		</SplashscreenPrompt>
 		<ToastManager />
-		<UpdaterDialog />
 	</App>
 </KonstaProvider>
