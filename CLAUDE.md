@@ -8,6 +8,39 @@ Dash Chat is an end-to-end encrypted messenger built with Svelte 5 (frontend) an
 
 **Current Status**: Pre-alpha, being rebuilt on top of p2panda.
 
+## Signal UX Reference
+
+Dash Chat aims to match Signal's UX as closely as possible. A private repository of Signal screenshots (Android + iOS) is available at `dash-chat/signal-screenshots`.
+
+**Setup (run once per session if needed):**
+```bash
+# Clone if not already present
+[ -d /tmp/signal-reference ] || gh repo clone dash-chat/signal-screenshots /tmp/signal-reference
+```
+
+**When building or modifying UI, you MUST:**
+1. Read `/tmp/signal-reference/manifest.json` to find the relevant Signal screenshots for the Dash Chat route you're working on.
+2. Read the corresponding screenshots (both `android/` and `ios/` when available) to understand Signal's layout, spacing, typography, colors, and interaction patterns.
+3. Model your implementation after Signal's UX. Match the overall feel, not pixel-perfect details — adapt for Konsta UI components and our existing patterns.
+4. When verifying your UI changes, compare your screenshots against the Signal reference.
+
+**Directory structure:**
+```
+/tmp/signal-reference/
+├── manifest.json          # Maps Signal sections → Dash Chat routes
+├── android/               # Android (Material) screenshots
+│   ├── home/              # Chat list, search, overflow menu
+│   ├── create-account/    # Onboarding flow
+│   ├── direct-chat/       # 1:1 chat view + chat-settings/
+│   ├── group-chat/        # Group chat view
+│   ├── message-types/     # Image/voice/reactions/context menu
+│   ├── new-message/       # Contact picker + new-group/
+│   └── settings/          # All settings sub-pages
+└── ios/                   # iOS screenshots (same structure)
+```
+
+Screenshots are named descriptively with sequence prefixes (e.g., `01-chat-list-empty.png`, `02-overflow-menu-open.png`). Browse the directory listing to find what you need.
+
 ## General Coding Style
 
 Please read this coding style carefully and take it into account when planning or coding:
