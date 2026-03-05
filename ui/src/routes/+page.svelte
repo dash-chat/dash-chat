@@ -7,6 +7,7 @@
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/AllChats.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
+	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
 	import { Fab, Link, Navbar, Page, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
@@ -44,6 +45,10 @@
 			{/if}
 		{/snippet}
 	</Navbar>
+
+	{#if !isWideScreen.value}
+		<UpdaterBanner />
+	{/if}
 
 	<div class={theme==='ios' ? "mt-4": ''}></div>
 
