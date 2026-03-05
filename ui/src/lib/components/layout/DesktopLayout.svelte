@@ -81,7 +81,14 @@
 		border-right: 1px solid var(--k-hairline-color);
 		overflow-y: auto;
 		overflow-x: hidden;
-		background-color: var(--k-color-md-light-surface);
+	}
+
+	:global(.k-material) .desktop-sidebar {
+		background-color: var(--k-color-md-light-surface-2);
+	}
+
+	:global(.k-ios) .desktop-sidebar {
+		background-color: var(--color-ios-light-surface-2);
 	}
 
 	.desktop-content {
@@ -96,8 +103,12 @@
 		padding-left: 12px;
 	}
 
-	:global(.dark) .desktop-sidebar {
-		background-color: var(--k-color-md-dark-surface);
+	:global(.dark.k-material) .desktop-sidebar {
+		background-color: var(--k-color-md-dark-surface-2);
+	}
+
+	:global(.dark.k-ios) .desktop-sidebar {
+		background-color: var(--color-ios-dark-surface-2);
 	}
 	:global(.dark) .desktop-content {
 		background-color: var(--k-color-md-dark-surface);
