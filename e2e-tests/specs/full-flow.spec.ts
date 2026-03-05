@@ -10,22 +10,8 @@ import {
 	createProfile,
 	exchangeContacts,
 	sendMessage,
+	waitForMessage,
 } from '../helpers/setup-agents';
-
-/**
- * Poll for a message to appear in the messages container.
- * Uses WDIO's waitUntil with sync execute — avoids executeAsync with
- * long-running scripts which can hang in tauri-driver.
- */
-async function waitForMessageUI(agent: WebdriverIO.Browser, text: string, timeout = 60_000): Promise<void> {
-	await agent.waitUntil(
-		async () => agent.execute(
-			(t: string) => !!document.querySelector('[data-testid="direct-chat-messages"]')?.textContent?.includes(t),
-			text,
-		),
-		{ timeout, interval: 1_000, timeoutMsg: `Message "${text}" not received within ${timeout}ms` },
-	);
-}
 
 describe('Full messaging flow', () => {
 	before(async () => {
@@ -52,10 +38,10 @@ describe('Full messaging flow', () => {
 		await sendMessage(agent1, 'Hello from Alice!');
 
 		// Verify message appears on sender (should be near-instant)
-		await waitForMessageUI(agent1, 'Hello from Alice!', 10_000);
+		await waitForMessage(agent1, 'Hello from Alice!', 10_000);
 
 		// Wait for message on receiver via mailbox sync (may take up to ~30s on first run)
-		await waitForMessageUI(agent2, 'Hello from Alice!');
+		await waitForMessage(agent2, 'Hello from Alice!');
 	});
 
 	it('sends a reply from Bob to Alice', async () => {
@@ -64,8 +50,8 @@ describe('Full messaging flow', () => {
 
 		await sendMessage(agent2, 'Hello from Bob!');
 
-		await waitForMessageUI(agent2, 'Hello from Bob!', 10_000);
+		await waitForMessage(agent2, 'Hello from Bob!', 10_000);
 
-		await waitForMessageUI(agent1, 'Hello from Bob!');
+		await waitForMessage(agent1, 'Hello from Bob!');
 	});
 });
