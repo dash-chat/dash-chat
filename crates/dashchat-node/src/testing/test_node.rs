@@ -275,6 +275,12 @@ pub async fn consistency(
             .iter()
             .map(|node| {
                 let ops = node.op_store.processed_ops.read().unwrap();
+                let width = topics
+                    .iter()
+                    .map(|t| t.renamed().to_string().len())
+                    .max()
+                    .unwrap_or(0)
+                    + 1;
                 let topics = topics
                     .iter()
                     .flat_map(|topic| {
@@ -282,7 +288,15 @@ pub async fn consistency(
                             .cloned()
                             .unwrap_or_default()
                             .into_iter()
-                            .map(|h| format!("{} {}", h.short(), h.renamed()))
+                            .map(|h| {
+                                format!(
+                                    "{:>width$}: {} {}",
+                                    topic.renamed(),
+                                    h.short(),
+                                    h.renamed(),
+                                    width = width
+                                )
+                            })
                     })
                     .collect::<BTreeSet<_>>();
                 (node.device_id().renamed().to_string(), topics)

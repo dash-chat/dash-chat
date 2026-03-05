@@ -189,7 +189,10 @@ async fn test_group_chat() {
 
     consistency(
         [&alice, &bobbi, &cammy],
-        &[chat_id.into()],
+        &[
+            chat_id.into(),
+            bobbi.direct_chat_topic(cammy.agent_id()).into(),
+        ],
         &ClusterConfig::default(),
     )
     .await

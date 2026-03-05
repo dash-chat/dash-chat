@@ -150,7 +150,7 @@ where
             header.hash().with_serial();
         }
 
-        tracing::info!(
+        tracing::debug!(
             topic = ?topic.renamed(),
             hash = ?hash.renamed(),
             seq_num = header.seq_num,

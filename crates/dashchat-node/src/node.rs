@@ -38,7 +38,7 @@ use crate::stores::OpStore;
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DashAction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, GroupRep, Header, Operation,
+    DirectChatId, Header, Operation,
 };
 
 pub use crate::local_store::LocalStore;
@@ -267,14 +267,6 @@ impl Node {
         self.node_data.device_id()
     }
 
-    pub fn group_rep(&self, access: p2panda_auth::Access) -> GroupRep {
-        GroupRep {
-            agent_id: self.agent_id(),
-            representative_device_id: self.device_id(),
-            access,
-        }
-    }
-
     pub fn device_group_topic(&self) -> DeviceGroupId {
         Topic::device_group(self.agent_id()).into()
     }
@@ -313,33 +305,37 @@ impl Node {
 
     pub async fn create_group(
         &self,
-        initial_members: BTreeMap<AgentId, Access>,
+        mut initial_members: BTreeMap<AgentId, Access>,
     ) -> anyhow::Result<ChatId> {
         let chat_id = Topic::random();
 
-        let agents = initial_members.keys().collect::<Vec<_>>();
+        // The creator must always have Manage access
+        initial_members.insert(self.agent_id(), Access::manage());
+
+        let agents = initial_members.keys().copied().collect::<Vec<_>>();
 
         let mut initial_members = initial_members
             .into_iter()
             .map(|(m, a)| (m.to_group_member(), a))
             .collect::<BTreeMap<_, _>>();
 
-        // The creator must always have Manage access
-        initial_members.insert(self.agent_id().to_group_member(), Access::manage());
-
         #[cfg(feature = "auth-workaround")]
         {
-            // Add in all devices with manage access in the device group
-            for (m, a) in self
-                .local_store
-                .device_group_members(self.agent_id(), Access::manage())
-                .await?
-            {
-                initial_members.insert(m.to_group_member(), a);
+            for agent in agents.iter().copied() {
+                // Add in all devices with manage access in the device group
+                for (member, access) in self
+                    .local_store
+                    .device_group_members(agent, Access::manage())
+                    .await?
+                {
+                    initial_members.insert(member.to_group_member(), access);
+                }
             }
         }
 
         let initial_members = initial_members.into_iter().collect::<Vec<_>>();
+
+        tracing::info!(members = ?initial_members.clone().renamed(), "new group created with members");
 
         self.author_operation(
             chat_id,
@@ -378,6 +374,8 @@ impl Node {
                 }
             }
         }
+
+        tracing::info!(members = ?members.clone().renamed(), "members added to existing group");
 
         for (member, access) in members {
             self.author_operation(
@@ -443,7 +441,7 @@ impl Node {
     /// -- you're not fully a member until someone adds you.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().renamed())))]
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
-        tracing::info!(?chat_id, "joined group");
+        tracing::debug!(?chat_id, "joined group");
         self.register_topic(chat_id).await
     }
 

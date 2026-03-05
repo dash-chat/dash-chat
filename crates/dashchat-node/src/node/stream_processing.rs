@@ -96,13 +96,13 @@ impl Node {
                 loop {
                     tokio::select! {
                         Some(stream) = stream_rx.recv() => {
-                            tracing::info!("received new STREAM");
+                            tracing::trace!("received new STREAM");
                             // Stream is already Pin<Box<...>> from the channel, push directly
                             streams.push(stream);
                         }
 
                         Some(op) = streams.next() => {
-                            tracing::info!(op = ?op.hash.renamed(), topic = ?op.header.extensions.topic.renamed(), "processing stream item");
+                            tracing::debug!(op = ?op.hash.renamed(), topic = ?op.header.extensions.topic.renamed(), "processing stream item");
                             // Process the FromNetwork item here
                             if let Err(err) = node.process_stream_item(op).await {
                                 tracing::error!(?err, "process stream item error");

@@ -75,7 +75,7 @@ impl HackyGroupStore {
             .await
             .map_err(|err| anyhow::anyhow!("{:?}", err.renamed()))?;
 
-        tracing::info!(
+        tracing::debug!(
             author = ?operation.header.public_key.renamed(), 
             auth = ?operation.header.extensions.auth.clone().renamed(), 
             "processed operation for auth state");

@@ -74,9 +74,9 @@ impl Behavior {
             .await
             .context("no group invitation found")?;
 
-        tracing::info!(?chat_id, "accepted group invitation");
+        tracing::debug!(?chat_id, "accepted group invitation");
         self.node.join_group(chat_id).await?;
-        tracing::info!(?chat_id, "joined group");
+        tracing::debug!(?chat_id, "joined group");
         Ok(chat_id)
     }
 }
