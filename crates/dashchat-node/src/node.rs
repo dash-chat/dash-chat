@@ -38,7 +38,7 @@ use crate::stores::OpStore;
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DashAction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, Header, Operation,
+    DirectChatId, GroupRep, Header, Operation,
 };
 
 pub use crate::local_store::LocalStore;
@@ -267,6 +267,14 @@ impl Node {
         self.node_data.device_id()
     }
 
+    pub fn group_rep(&self, access: p2panda_auth::Access) -> GroupRep {
+        GroupRep {
+            agent_id: self.agent_id(),
+            representative_device_id: self.device_id(),
+            access,
+        }
+    }
+
     pub fn device_group_topic(&self) -> DeviceGroupId {
         Topic::device_group(self.agent_id()).into()
     }
@@ -305,19 +313,33 @@ impl Node {
 
     pub async fn create_group(
         &self,
-        mut initial_members: BTreeMap<AgentId, p2panda_auth::Access>,
+        initial_members: BTreeMap<AgentId, Access>,
     ) -> anyhow::Result<ChatId> {
         let chat_id = Topic::random();
 
-        let agents = initial_members.keys().cloned().collect::<Vec<_>>();
+        let agents = initial_members.keys().collect::<Vec<_>>();
+
+        let mut initial_members = initial_members
+            .into_iter()
+            .map(|(m, a)| (m.to_group_member(), a))
+            .collect::<BTreeMap<_, _>>();
 
         // The creator must always have Manage access
-        initial_members.insert(self.agent_id(), p2panda_auth::Access::manage());
+        initial_members.insert(self.agent_id().to_group_member(), Access::manage());
 
-        let initial_members: Vec<_> = initial_members
-            .into_iter()
-            .map(|(agent_id, access)| (agent_id.to_group_member(), access))
-            .collect();
+        #[cfg(feature = "auth-workaround")]
+        {
+            // Add in all devices with manage access in the device group
+            for (m, a) in self
+                .local_store
+                .device_group_members(self.agent_id(), Access::manage())
+                .await?
+            {
+                initial_members.insert(m.to_group_member(), a);
+            }
+        }
+
+        let initial_members = initial_members.into_iter().collect::<Vec<_>>();
 
         self.author_operation(
             chat_id,
@@ -334,60 +356,62 @@ impl Node {
         Ok(chat_id)
     }
 
-    async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
-        let payload = Payload::Chat(ChatPayload::JoinGroup(chat_id));
-        tracing::info!(
-            "{} is inviting {} to group {}",
-            self.device_id().renamed(),
-            person.renamed(),
-            chat_id.renamed(),
-        );
-        self.author_operation(
-            self.direct_chat_topic(person),
-            payload,
-            Some(&format!(
-                "invite_to_group({}, {})",
-                chat_id.renamed(),
-                person.renamed()
-            )),
-        )
-        .await?;
-        Ok(())
-    }
-
     pub async fn add_group_member(
         &self,
         chat_id: ChatId,
         agent_id: AgentId,
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
-        self.author_operation(
-            chat_id,
-            DashAction::group_action(
+        let mut members = vec![(agent_id.to_group_member(), access)];
+
+        // HACK: remove this block once p2panda-auth supports Manage access for Groups
+        #[cfg(feature = "auth-workaround")]
+        {
+            // Add in all devices with manage access in the device group
+            if access >= Access::manage() {
+                for (m, a) in self
+                    .local_store
+                    .device_group_members(agent_id, Access::manage())
+                    .await?
+                {
+                    members.push((m.to_group_member(), a));
+                }
+            }
+        }
+
+        for (member, access) in members {
+            self.author_operation(
                 chat_id,
-                GroupAction::Add {
-                    member: agent_id.to_group_member(),
-                    access,
-                },
-            ),
-            Some(&format!(
-                "add_group_member({}, {})",
-                chat_id.renamed(),
-                agent_id.renamed()
-            )),
-        )
-        .await?;
+                DashAction::group_action(
+                    chat_id,
+                    GroupAction::Add {
+                        member,
+                        access: access.clone(),
+                    },
+                ),
+                Some(&format!(
+                    "add_group_member({}, {})",
+                    chat_id.renamed(),
+                    member.renamed()
+                )),
+            )
+            .await?;
+        }
 
         self.invite_to_group(chat_id, agent_id).await?;
 
         Ok(())
     }
 
+    #[cfg(not(feature = "auth-workaround"))]
     pub async fn remove_group_member(
         &self,
         chat_id: ChatId,
         agent_id: AgentId,
     ) -> anyhow::Result<()> {
+        unimplemented!(
+            "Removing group members cannot be accomplished until p2panda-auth supports Manage access for Groups"
+        );
         self.author_operation(
             chat_id,
             DashAction::group_action(
@@ -687,6 +711,27 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        Ok(())
+    }
+
+    async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
+        let payload = Payload::Chat(ChatPayload::JoinGroup(chat_id));
+        tracing::info!(
+            "{} is inviting {} to group {}",
+            self.device_id().renamed(),
+            person.renamed(),
+            chat_id.renamed(),
+        );
+        self.author_operation(
+            self.direct_chat_topic(person),
+            payload,
+            Some(&format!(
+                "invite_to_group({}, {})",
+                chat_id.renamed(),
+                person.renamed()
+            )),
+        )
+        .await?;
         Ok(())
     }
 

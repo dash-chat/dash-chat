@@ -111,7 +111,7 @@ impl HackyGroupStore {
         // TODO: change to device group topic
         agent_id: AgentId,
     ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
-        let group_id = todo!("");
+        let group_id = agent_id.to_group_member().id();
         Ok(self
             .groups
             .get_state()
@@ -311,6 +311,12 @@ impl LocalStore {
         }
         txn.commit()?;
         Ok(())
+    }
+
+
+    pub async fn device_group_members(&self, agent_id: AgentId, min_access: Access) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        let groups = self.groups.lock().await;
+        Ok(groups.device_group_members(agent_id).await?.into_iter().filter(|(_, access)| *access >= min_access).collect())
     }
 
     pub async fn chat_group_members(&self, topic: ChatId) -> anyhow::Result<BTreeSet<(AgentId, Access)>> {
