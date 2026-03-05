@@ -111,7 +111,6 @@
 
 	let darkOverride: boolean | null = $state(null);
 	const effectiveDark = $derived(darkOverride ?? !!$isDark);
-
 	$effect(() => {
 		applyDarkMode(effectiveDark).catch((e) => {
 			showToast(m.errorApplyStyle(), 'error');
@@ -132,6 +131,14 @@
 		};
 		window.addEventListener('set-dark-mode', handler as EventListener);
 		return () => window.removeEventListener('set-dark-mode', handler as EventListener);
+	});
+
+	$effect(() => {
+		const handler = (event: CustomEvent<boolean>) => {
+			document.body.classList.toggle('mobile-frame', event.detail);
+		};
+		window.addEventListener('set-mobile-frame', handler as EventListener);
+		return () => window.removeEventListener('set-mobile-frame', handler as EventListener);
 	});
 
 </script>
