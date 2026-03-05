@@ -14,19 +14,19 @@ Dash Chat aims to match Signal's UX as closely as possible. A private repository
 
 **Setup (run once per session if needed):**
 ```bash
-# Clone if not already present
-[ -d /tmp/signal-reference ] || gh repo clone dash-chat/signal-screenshots /tmp/signal-reference
+# Clone if not already present (gitignored)
+[ -d signal-reference ] || gh repo clone dash-chat/signal-screenshots signal-reference
 ```
 
 **When building or modifying UI, you MUST:**
-1. Read `/tmp/signal-reference/manifest.json` to find the relevant Signal screenshots for the Dash Chat route you're working on.
+1. Read `signal-reference/manifest.json` to find the relevant Signal screenshots for the Dash Chat route you're working on.
 2. Read the corresponding screenshots (both `android/` and `ios/` when available) to understand Signal's layout, spacing, typography, colors, and interaction patterns.
 3. Model your implementation after Signal's UX. Match the overall feel, not pixel-perfect details — adapt for Konsta UI components and our existing patterns.
 4. When verifying your UI changes, compare your screenshots against the Signal reference.
 
 **Directory structure:**
 ```
-/tmp/signal-reference/
+signal-reference/
 ├── manifest.json          # Maps Signal sections → Dash Chat routes
 ├── android/               # Android (Material) screenshots
 │   ├── home/              # Chat list, search, overflow menu
