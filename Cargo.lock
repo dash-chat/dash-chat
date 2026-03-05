@@ -5226,6 +5226,7 @@ dependencies = [
 [[package]]
 name = "named-id"
 version = "0.1.0"
+source = "git+https://github.com/maackle/named-id.git#49e879be55795f314ffca56b7c178a52682aeb8c"
 dependencies = [
  "named-id-derive",
  "regex",
@@ -5236,6 +5237,7 @@ dependencies = [
 [[package]]
 name = "named-id-derive"
 version = "0.1.0"
+source = "git+https://github.com/maackle/named-id.git#49e879be55795f314ffca56b7c178a52682aeb8c"
 dependencies = [
  "proc-macro2",
  "quote",

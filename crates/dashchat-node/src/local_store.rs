@@ -47,11 +47,9 @@ type MemStore = p2panda_auth::processor::Store<Operation<Extensions>>;
 /// Until we have a persisted solution to group state, we store group state in-memory and dump
 /// to a file whenever it changes.
 /// XXX: this must be replaced ASAP!
-#[derive(Clone)]
 pub struct HackyGroupStore {
     groups: MemStore,
     file_path: PathBuf,
-    file_write_mutex: Arc<Mutex<()>>,
 }
 
 impl HackyGroupStore {
@@ -59,18 +57,20 @@ impl HackyGroupStore {
         let mut this = Self {
             groups: MemStore::default(),
             file_path: file_path.as_ref().to_path_buf(),
-            file_write_mutex: Arc::new(Mutex::new(())),
         };
         this.load_from_file().await?;
         Ok(this)
+    }
+
+    pub(crate) fn inner(&self) -> &MemStore {
+        &self.groups
     }
 
     pub async fn heads(&self) -> anyhow::Result<Vec<Hash>> {
         Ok(self.groups.get_state().await?.crdt.heads())
     }
 
-    pub async fn process(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
-        let _lock = self.file_write_mutex.lock().await;
+    pub async fn process(&mut self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
         let () = p2panda_auth::processor::process::<_, _, DashResolver>(&self.groups, operation)
             .await
             .map_err(|err| anyhow::anyhow!("{:?}", err.renamed()))?;
@@ -145,7 +145,7 @@ impl HackyGroupStore {
 #[derive(Clone)]
 pub struct LocalStore {
     db: Arc<Database>,
-    pub(crate) groups: HackyGroupStore,
+    pub(crate) groups: Arc<Mutex<HackyGroupStore>>,
 }
 
 impl LocalStore {
@@ -155,7 +155,7 @@ impl LocalStore {
         let groups_path = path.with_file_name("groups.cbor");
         let store = Self {
             db: Arc::new(database),
-            groups: HackyGroupStore::new(groups_path).await?,
+            groups: Arc::new(Mutex::new(HackyGroupStore::new(groups_path).await?)),
         };
         store.ensure_initialized()?;
 
@@ -311,6 +311,21 @@ impl LocalStore {
         }
         txn.commit()?;
         Ok(())
+    }
+
+    pub async fn chat_group_members(&self, topic: ChatId) -> anyhow::Result<BTreeSet<(AgentId, Access)>> {
+        let groups = self.groups.lock().await;
+        groups.chat_group_members(topic).await
+    }
+
+    pub async fn process_group_operation(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
+        let mut groups = self.groups.lock().await;
+        groups.process(operation).await
+    }
+
+    pub async fn group_state_tips(&self) -> anyhow::Result<Vec<Hash>> {
+        let groups = self.groups.lock().await;
+        groups.heads().await
     }
 }
 

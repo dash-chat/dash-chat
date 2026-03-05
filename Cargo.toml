@@ -39,5 +39,5 @@ p2panda-stream = { path = "/home/michael/gitfork/p2panda/p2panda-stream" }
 p2panda-sync = { path = "/home/michael/gitfork/p2panda/p2panda-sync" }
 p2panda-spaces = { path = "/home/michael/gitfork/p2panda/p2panda-spaces" }
 
-[patch."https://github.com/maackle/named-id.git"]
-named-id = { path = "/home/michael/proj/named-id" }
+# [patch."https://github.com/maackle/named-id.git"]
+# named-id = { path = "/home/michael/proj/named-id" }

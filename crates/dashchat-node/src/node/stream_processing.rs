@@ -217,9 +217,12 @@ impl Node {
     async fn process_extensions(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
         match &operation.header.extensions.auth {
             Some(auth) => {
-                tracing::info!(auth = %auth.clone().renamed(), "processing auth extensions");
-                if let Err(err) = self.local_store.groups.process(operation).await {
-                    tracing::error!(?err, "error processing auth extensions");
+                tracing::info!(
+                    operation_author = ?operation.header.public_key.renamed(),
+                    auth_extension = ?auth.clone().renamed(), 
+                    "processing auth extension");
+                if let Err(err) = self.local_store.process_group_operation(operation).await {
+                    tracing::error!(?err, "error processing auth extension");
                 };
             }
             None => {}

@@ -16,7 +16,7 @@ impl Node {
             DashAction::Payload(_) => {
                 vec![]
             }
-            DashAction::GroupControl(_) => self.local_store.groups.heads().await?,
+            DashAction::GroupControl(_) => self.local_store.group_state_tips().await?,
         };
 
         let (header, body) = self

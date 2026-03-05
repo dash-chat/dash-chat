@@ -410,7 +410,7 @@ impl Node {
         &self,
         chat_id: ChatId,
     ) -> anyhow::Result<BTreeSet<(AgentId, Access)>> {
-        let members = self.local_store.groups.chat_group_members(chat_id).await?;
+        let members = self.local_store.chat_group_members(chat_id).await?;
         Ok(members)
     }
 
