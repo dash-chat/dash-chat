@@ -4,7 +4,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiContentCopy } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+	import { writeText } from '$lib/utils/clipboard';
 	import { showToast } from '$lib/utils/toasts';
 	import { type SettingsStore } from 'dash-chat-stores';
 	import {

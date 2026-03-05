@@ -1,0 +1,53 @@
+name: PR Preview
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build stores and UI
+        run: pnpm --recursive build
+
+      - name: Prepare SPA fallback
+        run: cp ui/build/index.html ui/build/200.html
+
+      - name: Deploy to Surge
+        run: npx surge ui/build "dashchat-pr-${{ github.event.pull_request.number }}.surge.sh" --token ${{ secrets.SURGE_TOKEN }}
+
+      - name: Comment on PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: preview
+          message: |
+            **Preview deployed!**
+            https://dashchat-pr-${{ github.event.pull_request.number }}.surge.sh
+
+  teardown:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Teardown Surge deployment
+        run: npx surge teardown "dashchat-pr-${{ github.event.pull_request.number }}.surge.sh" --token ${{ secrets.SURGE_TOKEN }}

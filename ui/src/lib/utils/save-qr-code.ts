@@ -1,9 +1,6 @@
-import { shareFile } from '@choochmeque/tauri-plugin-sharekit-api';
-import { appCacheDir, join } from '@tauri-apps/api/path';
-import { save } from '@tauri-apps/plugin-dialog';
-import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
 import QrCreator from 'qr-creator';
 import { m } from '$lib/paraglide/messages.js';
+import { isTauriEnv } from '$lib/utils/environment';
 
 const FONT_FAMILY = "-apple-system, 'Segoe UI', Roboto, sans-serif";
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -132,7 +129,8 @@ function renderQrImage(
 }
 
 /**
- * Renders the QR code to a PNG image and saves it via a native save dialog.
+ * Renders the QR code to a PNG image and saves it via a native save dialog,
+ * or triggers a browser download when not in Tauri.
  */
 export async function saveQrCode(
 	code: string,
@@ -141,26 +139,45 @@ export async function saveQrCode(
 ): Promise<void> {
 	const bytes = await renderQrImage(code, qrColor, name);
 
-	const path = await save({
-		title: 'Save QR Code',
-		defaultPath: 'dashchat-qr-code.png',
-		filters: [{ name: 'PNG Image', extensions: ['png'] }],
-	});
-
-	if (path) {
-		await writeFile(path, bytes);
+	if (isTauriEnv()) {
+		const { save } = await import('@tauri-apps/plugin-dialog');
+		const { writeFile } = await import('@tauri-apps/plugin-fs');
+		const path = await save({
+			title: 'Save QR Code',
+			defaultPath: 'dashchat-qr-code.png',
+			filters: [{ name: 'PNG Image', extensions: ['png'] }],
+		});
+		if (path) {
+			await writeFile(path, bytes);
+		}
+	} else {
+		const blob = new Blob([bytes], { type: 'image/png' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'dashchat-qr-code.png';
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 }
 
 /**
- * Renders the QR code to a PNG image and shares it via native share sheet.
+ * Renders the QR code to a PNG image and shares it via native share sheet,
+ * or falls back to saving when not in Tauri.
  */
 export async function shareQrCode(
 	code: string,
 	qrColor: string,
 	name: string,
 ): Promise<void> {
+	if (!isTauriEnv()) {
+		return saveQrCode(code, qrColor, name);
+	}
+
 	const bytes = await renderQrImage(code, qrColor, name);
+	const { shareFile } = await import('@choochmeque/tauri-plugin-sharekit-api');
+	const { appCacheDir, join } = await import('@tauri-apps/api/path');
+	const { mkdir, writeFile } = await import('@tauri-apps/plugin-fs');
 
 	const cacheDir = await appCacheDir();
 	const shareDir = await join(cacheDir, 'share');

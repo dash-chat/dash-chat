@@ -2,9 +2,9 @@
 name: fix-issue
 description: >
   Pick up a GitHub issue, understand it, implement the fix, verify with the running app,
-  and open a PR with a task summary and screenshots of any UI changes.
+  and open a PR with a task summary.
 user-invocable: true
-allowed-tools: mcp__tauri__driver_session, mcp__tauri__webview_screenshot, mcp__tauri__webview_dom_snapshot, mcp__tauri__webview_find_element, mcp__tauri__webview_execute_js, mcp__tauri__webview_get_styles, mcp__tauri__read_logs, mcp__tauri__manage_window, mcp__tauri__ipc_execute_command, mcp__tauri__ipc_monitor, mcp__tauri__ipc_get_captured
+allowed-tools: mcp__tauri__driver_session, mcp__tauri__webview_dom_snapshot, mcp__tauri__webview_find_element, mcp__tauri__webview_execute_js, mcp__tauri__webview_get_styles, mcp__tauri__read_logs, mcp__tauri__manage_window, mcp__tauri__ipc_execute_command, mcp__tauri__ipc_monitor, mcp__tauri__ipc_get_captured
 ---
 
 # Fix GitHub Issue
@@ -51,10 +51,7 @@ Do NOT ask if the issue is perfectly clear. Move straight to planning.
 
 1. Invoke the **start-dev** skill to start the development environment.
 2. Connect via `driver_session` and use Tauri MCP tools to verify the fix works.
-3. For UI changes:
-   - Take screenshots of the affected screens **after** the fix.
-   - Verify layout, spacing, alignment, text, colors, and interactive states.
-   - Save screenshots to `/tmp/` for later upload.
+3. For UI changes, verify layout, spacing, alignment, text, colors, and interactive states.
 4. When done verifying, stop the driver session and kill dev processes via `TaskStop`.
 
 ## Step 5: Create the PR
@@ -76,10 +73,6 @@ Do NOT ask if the issue is perfectly clear. Move straight to planning.
 
    <1-3 bullet points describing what was done>
 
-   ## Screenshots
-
-   <If UI changes were made, embed screenshots here using the github-image-hosting skill>
-
    ## Test plan
 
    - [ ] <verification steps>
@@ -88,21 +81,6 @@ Do NOT ask if the issue is perfectly clear. Move straight to planning.
    EOF
    )"
    ```
-
-### Screenshots in PRs
-
-If UI changes were made and screenshots were captured in Step 4:
-
-1. Use the **github-image-hosting** skill to upload each screenshot to img402.dev.
-2. Embed the returned URLs in the PR body's Screenshots section.
-3. If there are before/after comparisons, use a markdown table:
-   ```markdown
-   | Before | After |
-   |--------|-------|
-   | ![before](url) | ![after](url) |
-   ```
-
-**Note:** The github-image-hosting skill only works in GitHub Actions. When running locally, attach screenshots manually or mention them in the PR description.
 
 ## Step 6: Return the PR URL
 

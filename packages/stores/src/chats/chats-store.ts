@@ -2,15 +2,15 @@ import { ReactivePromise, reactive } from 'signalium';
 
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
-import { DirectChatClient } from '../direct-chats/direct-chat-client';
+import { DirectChatClient, type IDirectChatClient } from '../direct-chats/direct-chat-client';
 import { DirectChatStore } from '../direct-chats/direct-chat-store';
-import { GroupChatClient } from '../group-chats/group-chat-client';
+import { GroupChatClient, type IGroupChatClient } from '../group-chats/group-chat-client';
 import { GroupChatStore } from '../group-chats/group-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, PublicKey, TopicId } from '../p2panda/types';
 import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
-import { ChatsClient } from './chats-client';
+import { type IChatsClient } from './chats-client';
 
 function random_hexadecimal(length: number) {
 	var result = '';
@@ -25,7 +25,9 @@ export class ChatsStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
-		public client: ChatsClient,
+		public client: IChatsClient,
+		private directChatClientFactory: () => IDirectChatClient = () => new DirectChatClient(),
+		private groupChatClientFactory: () => IGroupChatClient = () => new GroupChatClient(),
 	) {}
 
 	async createGroup(initialMembers: PublicKey[]): Promise<GroupChatStore> {
@@ -47,7 +49,7 @@ export class ChatsStore {
 			new GroupChatStore(
 				this.logsStore,
 				this.contactsStore,
-				new GroupChatClient(),
+				this.groupChatClientFactory(),
 				chatId,
 			),
 	);
@@ -57,7 +59,7 @@ export class ChatsStore {
 			new DirectChatStore(
 				this.logsStore,
 				this.contactsStore,
-				new DirectChatClient(),
+				this.directChatClientFactory(),
 				peer,
 			),
 	);
