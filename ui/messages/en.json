@@ -189,9 +189,11 @@
 	"sendErrorReport": "Send Error Report",
 
 	"updateAvailable": "Update available",
+	"updateDownload": "Download",
 	"updateDownloading": "Downloading update...",
 	"updateReady": "Update downloaded. Restart to apply.",
 	"updateRestart": "Restart",
+	"updateRetry": "Retry",
 	"updateLater": "Later",
 	"updateError": "Update failed. Please try again later.",
 	"updateOk": "Ok"

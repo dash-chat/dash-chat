@@ -127,11 +127,16 @@ export const S = {
 		nextButton: tid('contact-us-next-btn'),
 	},
 	updater: {
+		banner: tid('updater-banner'),
+		available: tid('updater-available'),
 		downloading: tid('updater-downloading'),
 		ready: tid('updater-ready'),
 		error: tid('updater-error'),
-		laterBtn: tid('updater-later-btn'),
+		downloadBtn: tid('updater-download-btn'),
+		dismissBtn: tid('updater-dismiss-btn'),
 		restartBtn: tid('updater-restart-btn'),
+		laterBtn: tid('updater-later-btn'),
+		retryBtn: tid('updater-retry-btn'),
 		okBtn: tid('updater-ok-btn'),
 	},
 } as const;

@@ -22,7 +22,7 @@
 
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
-	import UpdaterDialog from '$lib/components/UpdaterDialog.svelte';
+	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useSignal } from '$lib/stores/use-signal';
@@ -95,6 +95,7 @@
 <KonstaProvider {theme} dark={effectiveDark}>
 	<App safeAreas {theme} class={`k-${theme}`} dark={effectiveDark}>
 		<SplashscreenPrompt>
+			<UpdaterBanner />
 			{#if isWideScreen.value}
 				<DesktopLayout>
 					{@render children()}
@@ -104,6 +105,5 @@
 			{/if}
 		</SplashscreenPrompt>
 		<ToastManager />
-		<UpdaterDialog />
 	</App>
 </KonstaProvider>
