@@ -121,8 +121,6 @@ pub struct Node {
 
     local_store: LocalStore,
     node_data: NodeData,
-
-    _filesystem: Filesystem,
 }
 
 impl Node {
@@ -134,10 +132,18 @@ impl Node {
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
         let local_store = LocalStore::new(filesystem.local_store_path()).await?;
-        let node_data = local_store.node_data()?;
-
         let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
-        // let op_store = OpStore::new_memory();
+        Self::init(local_store, op_store, config, notification_tx).await
+    }
+
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?local_store.device_id().unwrap().renamed())))]
+    pub(crate) async fn init(
+        local_store: LocalStore,
+        op_store: OpStore<SqliteStore<TopicId, Extensions>>,
+        config: NodeConfig,
+        notification_tx: Option<mpsc::Sender<Notification>>,
+    ) -> Result<Self> {
+        let node_data = local_store.node_data()?;
 
         let (stream_tx, stream_rx) = mpsc::channel(100);
 
@@ -147,7 +153,6 @@ impl Node {
             op_store: op_store.clone(),
             mailboxes,
             config,
-            _filesystem: filesystem,
             local_store: local_store.clone(),
             node_data,
             notification_tx,
@@ -196,7 +201,11 @@ impl Node {
             Some(log) => Ok(log),
             None => {
                 let author = *author;
-                tracing::warn!("No log found for topic {topic:?} and author {author:?}");
+                tracing::warn!(
+                    topic = ?topic.renamed(),
+                    author = ?author.renamed(),
+                    "No log found"
+                );
                 Ok(vec![])
             }
         }
@@ -228,7 +237,7 @@ impl Node {
     ) -> Result<QrCode, crate::Error> {
         let inbox_topic = if inbox {
             let inbox_topic = InboxTopic {
-                topic: Topic::inbox().with_name(&format!("inbox({})", self.device_id().renamed())),
+                topic: Topic::inbox(self.device_id()),
                 expires_at: Utc::now() + self.config.contact_code_expiry,
             };
             self.initialize_topic(*inbox_topic.topic)
@@ -270,12 +279,7 @@ impl Node {
     pub fn direct_chat_topic(&self, other: AgentId) -> DirectChatId {
         let me = self.agent_id();
         // TODO: use two secrets from each party to construct the topic
-        let topic = Topic::direct_chat([me, other]);
-        if me > other {
-            topic.with_name(&format!("direct({},{})", other.renamed(), me.renamed()))
-        } else {
-            topic.with_name(&format!("direct({},{})", me.renamed(), other.renamed()))
-        }
+        Topic::direct_chat([me, other])
     }
 
     /// Create a new direct chat Space.
@@ -687,20 +691,11 @@ impl Node {
     }
 
     async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
-        self.initialize_topic(
-            *Topic::announcements(self.agent_id())
-                .with_name(&format!("announcements({})", self.agent_id().renamed())),
-        )
-        .await?;
+        self.initialize_topic(*Topic::announcements(self.agent_id()))
+            .await?;
 
         for topic in self.local_store.get_active_inbox_topics()?.iter() {
-            self.initialize_topic(
-                *topic
-                    .topic
-                    .clone()
-                    .with_name(&format!("inbox({})", self.device_id().renamed())),
-            )
-            .await?;
+            self.initialize_topic(*topic.topic.clone()).await?;
         }
 
         for topic in self.local_store.subscribed_topics()?.iter() {
@@ -710,10 +705,9 @@ impl Node {
         Ok(())
     }
 
-    async fn initialize_device_group(&self) -> anyhow::Result<()> {
-        let log = self
-            .get_log(self.device_group_topic().into(), self.device_id())
-            .await?;
+    async fn initialize_device_group(&self) -> anyhow::Result<bool> {
+        let topic = Topic::announcements(self.agent_id());
+        let log = self.get_log(topic.into(), self.device_id()).await?;
 
         let initialized = log.iter().any(|(header, _)| {
             let Some(auth) = header.extension::<AuthExtension>() else {
@@ -724,20 +718,36 @@ impl Node {
         });
 
         if initialized {
-            return Ok(());
+            return Ok(false);
         }
 
         self.author_operation(
-            self.device_group_topic(),
+            topic,
             DashAction::GroupControl(AuthExtension {
                 group_id: self.agent_id().to_group_member().id(),
                 action: GroupAction::Create {
-                    initial_members: vec![],
+                    initial_members: vec![(self.device_id().to_group_member(), Access::manage())],
                 },
             }),
             Some("initialize_device_group"),
         )
         .await?;
-        Ok(())
+        Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::TestNode;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_initialize_device_group() {
+        let node = TestNode::new(NodeConfig::default(), "test_node").await;
+        let did_initialize = node.initialize_device_group().await.unwrap();
+
+        // The device group should already be initialized and should not happen twice.
+        assert!(!did_initialize);
     }
 }

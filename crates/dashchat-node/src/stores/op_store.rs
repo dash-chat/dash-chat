@@ -235,8 +235,7 @@ where
 
 impl OpStore<SqliteStore<TopicId, Extensions>> {
     pub fn report<'a>(&self, _topics: impl IntoIterator<Item = &'a TopicId>) -> String {
-        tracing::warn!("report() not implemented for SqliteStore");
-        format!("report() not implemented for SqliteStore")
+        format!("( report() not implemented for SqliteStore )")
     }
 }
 

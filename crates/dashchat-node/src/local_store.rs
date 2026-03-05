@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use p2panda_auth::Access;
-use p2panda_core::{Hash, Operation, PublicKey};
+use p2panda_core::{Hash, Operation};
 use redb::*;
 use tokio::sync::Mutex;
 
@@ -71,7 +71,14 @@ impl HackyGroupStore {
 
     pub async fn process(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
         let _lock = self.file_write_mutex.lock().await;
-        p2panda_auth::processor::process::<_, _, DashResolver>(&self.groups, operation).await?;
+        let () = p2panda_auth::processor::process::<_, _, DashResolver>(&self.groups, operation)
+            .await
+            .map_err(|err| anyhow::anyhow!("{:?}", err.renamed()))?;
+
+        tracing::info!(
+            author = ?operation.header.public_key.renamed(), 
+            auth = ?operation.header.extensions.auth.clone().renamed(), 
+            "processed operation for auth state");
         self.save_to_file().await?;
         Ok(())
     }
@@ -275,6 +282,7 @@ impl LocalStore {
             .iter()?
             .map(|entry| Ok(entry.map(|(topic, _)| topic.value())?))
             .collect::<anyhow::Result<BTreeSet<InboxTopic>>>()?;
+        // TODO: maybe add the named-id here
         Ok(active_inboxes)
     }
 

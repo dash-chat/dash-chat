@@ -31,7 +31,7 @@
 
 use std::marker::PhantomData;
 
-use crate::AgentId;
+use crate::{AgentId, DeviceId};
 use named_id::*;
 
 use p2panda_spaces::ActorId;
@@ -149,7 +149,7 @@ impl Nameable for TopicId {
     fn shortener(&self) -> Option<Shortener> {
         Some(Shortener {
             length: 4,
-            prefix: "L",
+            prefix: "T",
         })
     }
 }
@@ -186,6 +186,11 @@ impl<K: TopicKind> Topic<K> {
         }
     }
 
+    pub fn with_short(self) -> Self {
+        self.id.with_short();
+        self
+    }
+
     pub fn with_name(self, name: &str) -> Self {
         self.id.with_name(name);
         self
@@ -199,14 +204,14 @@ impl<K: TopicKind> Topic<K> {
 
 impl Topic<kind::Announcements> {
     pub fn announcements(agent_id: AgentId) -> Self {
-        Self::new(*agent_id.as_bytes())
+        Self::new(*agent_id.as_bytes()).with_name(&format!("announcements({})", agent_id.renamed()))
     }
 }
 
 impl Topic<kind::Chat> {
     pub fn random() -> Self {
         let pk = p2panda_core::PrivateKey::new().public_key();
-        Self::new(*pk.as_bytes())
+        Self::new(*pk.as_bytes()).with_short()
     }
 
     pub fn direct_chat(mut pks: [AgentId; 2]) -> Self {
@@ -214,12 +219,16 @@ impl Topic<kind::Chat> {
         let mut hasher = blake3::Hasher::new();
         hasher.update(pks[0].as_bytes());
         hasher.update(pks[1].as_bytes());
-        Self::new(hasher.finalize().into())
+        Self::new(hasher.finalize().into()).with_name(&format!(
+            "direct({},{})",
+            pks[0].renamed(),
+            pks[1].renamed()
+        ))
     }
 
-    pub fn from_group_pubkey(pubkey: p2panda_core::PublicKey) -> Self {
-        Self::new(pubkey.as_bytes().clone().try_into().unwrap())
-    }
+    // pub fn from_group_pubkey(pubkey: p2panda_core::PublicKey) -> Self {
+    //     Self::new(pubkey.as_bytes().clone().try_into().unwrap()).with_short()
+    // }
 
     pub fn to_group_pubkey(self) -> p2panda_core::PublicKey {
         p2panda_core::PublicKey::from_bytes(&self.id.0).unwrap()
@@ -227,8 +236,8 @@ impl Topic<kind::Chat> {
 }
 
 impl Topic<kind::Inbox> {
-    pub fn inbox() -> Self {
-        Self::new(rand::random())
+    pub fn inbox(device_id: DeviceId) -> Self {
+        Self::new(rand::random()).with_name(&format!("inbox({})", device_id.renamed()))
     }
 }
 
@@ -240,6 +249,7 @@ impl Topic<kind::DeviceGroup> {
         let mut hasher = blake3::Hasher::new();
         hasher.update(agent_id.as_bytes());
         Self::new(hasher.finalize().into())
+            .with_name(&format!("device_group({})", agent_id.renamed()))
     }
 }
 

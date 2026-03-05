@@ -217,7 +217,7 @@ impl Node {
     async fn process_extensions(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
         match &operation.header.extensions.auth {
             Some(auth) => {
-                tracing::info!(?auth, "processing auth extensions");
+                tracing::info!(auth = %auth.clone().renamed(), "processing auth extensions");
                 if let Err(err) = self.local_store.groups.process(operation).await {
                     tracing::error!(?err, "error processing auth extensions");
                 };
@@ -262,7 +262,7 @@ impl Node {
                     return Ok(());
                 }
                 tracing::info!(
-                    ?invitation,
+                    invitation = ?invitation.clone().renamed(),
                     from = ?header.public_key.renamed(),
                     "received invitation message"
                 );

@@ -23,6 +23,12 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct DeviceId(PublicKey);
 
+impl DeviceId {
+    pub fn to_group_member(self) -> GroupMember<PublicKey> {
+        GroupMember::Individual(self.0)
+    }
+}
+
 /// The ID for an "agent" which may control multiple devices.
 #[derive(
     Clone,

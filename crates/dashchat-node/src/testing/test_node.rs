@@ -12,8 +12,8 @@ use mailbox_client::{MailboxClient, mem::MemMailbox};
 
 use crate::{
     AgentId, DeviceGroupPayload, LocalStore, NodeConfig, Notification, Payload, Profile,
-    filesystem::Filesystem, mailbox::MailboxOperation, node::Node, testing::behavior::Behavior,
-    topic::TopicId,
+    filesystem::Filesystem, mailbox::MailboxOperation, node::Node, stores::OpStore,
+    testing::behavior::Behavior, topic::TopicId,
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::Debug)]
@@ -37,15 +37,26 @@ impl TestNode {
         let local_store = LocalStore::new(filesystem.local_store_path())
             .await
             .unwrap();
-        if config.use_named_id {
-            local_store.device_id().unwrap().with_name(name);
-            local_store.agent_id().unwrap().with_name(name);
-        }
-        drop(local_store);
-
-        let node = Node::new(dir.path().into(), config.node_config, Some(notification_tx))
+        let op_store = OpStore::new_sqlite(filesystem.op_store_path())
             .await
             .unwrap();
+
+        if config.use_named_id {
+            local_store.device_id().unwrap().with_name(name);
+            local_store
+                .agent_id()
+                .unwrap()
+                .with_name(&name.to_uppercase());
+        }
+
+        let node = Node::init(
+            local_store,
+            op_store,
+            config.node_config,
+            Some(notification_tx),
+        )
+        .await
+        .unwrap();
         if config.create_profile {
             node.set_profile(Profile {
                 name: name.to_string(),
@@ -183,6 +194,7 @@ impl From<NodeConfig> for TestNodeConfig {
     fn from(node_config: NodeConfig) -> Self {
         Self {
             node_config,
+            use_named_id: true,
             ..Default::default()
         }
     }
@@ -263,8 +275,7 @@ pub async fn consistency(
             .iter()
             .map(|node| {
                 let ops = node.op_store.processed_ops.read().unwrap();
-
-                topics
+                let topics = topics
                     .iter()
                     .flat_map(|topic| {
                         ops.get(topic)
@@ -273,17 +284,18 @@ pub async fn consistency(
                             .into_iter()
                             .map(|h| format!("{} {}", h.short(), h.renamed()))
                     })
-                    .collect::<BTreeSet<_>>()
+                    .collect::<BTreeSet<_>>();
+                (node.device_id().renamed().to_string(), topics)
             })
             .collect::<Vec<_>>();
         let mut diffs = ConsistencyReport::new(sets);
         for i in 0..diffs.sets.len() {
             for j in 0..i {
-                if i != j && diffs.sets[i] != diffs.sets[j] {
-                    diffs.diffs.insert(
-                        (i, j),
-                        (diffs.sets[i].len() as isize - diffs.sets[j].len() as isize).abs(),
-                    );
+                let (a, b) = (&diffs.sets[i].1, &diffs.sets[j].1);
+                if i != j && a != b {
+                    diffs
+                        .diffs
+                        .insert((i, j), (a.len() as isize - b.len() as isize).abs());
                 }
             }
         }
@@ -298,7 +310,7 @@ pub async fn consistency(
         for n in nodes {
             println!(
                 ">>> {:?}\n{}\n",
-                n.device_id(),
+                n.device_id().renamed(),
                 n.op_store.report(topics.clone())
             );
         }
@@ -309,12 +321,12 @@ pub async fn consistency(
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ConsistencyReport {
-    sets: Vec<BTreeSet<String>>,
+    sets: Vec<(String, BTreeSet<String>)>,
     diffs: HashMap<(usize, usize), isize>,
 }
 
 impl ConsistencyReport {
-    pub fn new(sets: Vec<BTreeSet<String>>) -> Self {
+    pub fn new(sets: Vec<(String, BTreeSet<String>)>) -> Self {
         Self {
             sets,
             diffs: HashMap::new(),

@@ -32,6 +32,7 @@ impl Node {
 
         self.mailboxes.trigger_sync();
 
+        // Ok(header)
         let op = Operation {
             hash: header.hash().with_serial(),
             header,

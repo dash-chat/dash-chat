@@ -103,12 +103,12 @@ mod tests {
 
     #[test]
     fn test_contact_roundtrip() {
-        let pubkey = PublicKey::from_bytes(&[11; 32]).unwrap();
+        let device_id = DeviceId::from(PublicKey::from_bytes(&[11; 32]).unwrap());
         let agent_id = AgentId::from(ActorId::from_bytes(&[22; 32]).unwrap());
         let contact = QrCode {
-            device_pubkey: DeviceId::from(pubkey),
+            device_pubkey: device_id,
             inbox_topic: Some(InboxTopic {
-                topic: Topic::inbox(),
+                topic: Topic::inbox(device_id),
                 expires_at: Utc::now() + chrono::Duration::seconds(3600),
             }),
             agent_id,

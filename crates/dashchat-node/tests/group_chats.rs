@@ -119,9 +119,24 @@ async fn test_group_chat() {
     introduce_and_wait([&alice, &bobbi, &cammy]).await;
 
     println!("nodes:");
-    println!("alice: {:?}", alice.device_id().short());
-    println!("bobbi: {:?}", bobbi.device_id().short());
-    println!("cammy: {:?}", cammy.device_id().short());
+    println!(
+        "alice: {} {:?} {:?}",
+        alice.device_id().renamed(),
+        alice.device_id().short(),
+        *alice.device_id()
+    );
+    println!(
+        "bobbi: {} {:?} {:?}",
+        bobbi.device_id().renamed(),
+        bobbi.device_id().short(),
+        *bobbi.device_id()
+    );
+    println!(
+        "cammy: {} {:?} {:?}",
+        cammy.device_id().renamed(),
+        cammy.device_id().short(),
+        *cammy.device_id()
+    );
 
     alice
         .behavior()
@@ -151,7 +166,11 @@ async fn test_group_chat() {
 
     consistency(
         [&alice, &bobbi],
-        &[chat_id.into()],
+        &[
+            Topic::announcements(alice.agent_id()).into(),
+            Topic::announcements(bobbi.agent_id()).into(),
+            chat_id.into(),
+        ],
         &ClusterConfig::default(),
     )
     .await
