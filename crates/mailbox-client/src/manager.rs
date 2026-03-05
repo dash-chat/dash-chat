@@ -68,8 +68,7 @@ impl MailboxTracker {
     fn record_success(&mut self, config: &MailboxesConfig) {
         self.consecutive_errors = 0;
         self.status = SyncStatus::Active;
-        self.next_poll =
-            Instant::now() + config.active_interval + config.between_polls_delay;
+        self.next_poll = Instant::now() + config.active_interval + config.between_polls_delay;
     }
 
     fn record_error(&mut self, config: &MailboxesConfig) {
@@ -81,13 +80,11 @@ impl MailboxTracker {
         } else {
             self.status
         };
-        self.next_poll =
-            Instant::now() + self.status.interval(config) + config.between_polls_delay;
+        self.next_poll = Instant::now() + self.status.interval(config) + config.between_polls_delay;
     }
 
     fn reschedule(&mut self, config: &MailboxesConfig) {
-        self.next_poll =
-            Instant::now() + self.status.interval(config) + config.between_polls_delay;
+        self.next_poll = Instant::now() + self.status.interval(config) + config.between_polls_delay;
     }
 }
 
@@ -596,7 +593,10 @@ mod tests {
         tokio::time::advance(Duration::from_secs(3)).await;
 
         let (_found_id, wait) = mgr.find_next_due().await.unwrap();
-        assert_eq!(wait, config.active_interval + delay - Duration::from_secs(3));
+        assert_eq!(
+            wait,
+            config.active_interval + delay - Duration::from_secs(3)
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -808,7 +808,9 @@ mod tests {
             stopped_threshold: 1000,
         };
 
-        let mgr = Mailboxes::<Msg, DummyStore>::spawn(DummyStore, config).await.unwrap();
+        let mgr = Mailboxes::<Msg, DummyStore>::spawn(DummyStore, config)
+            .await
+            .unwrap();
 
         // Subscribe to a topic so poll_mailbox actually calls sync_topics
         let _rx = mgr.subscribe(0u8).await.unwrap();
@@ -898,12 +900,9 @@ mod tests {
             .map(|c| c.load(Ordering::Relaxed))
             .collect();
 
-        let avg_active =
-            active_polls.iter().sum::<u32>() as f64 / active_polls.len() as f64;
-        let avg_degraded =
-            degraded_polls.iter().sum::<u32>() as f64 / degraded_polls.len() as f64;
-        let avg_stopped =
-            stopped_polls.iter().sum::<u32>() as f64 / stopped_polls.len() as f64;
+        let avg_active = active_polls.iter().sum::<u32>() as f64 / active_polls.len() as f64;
+        let avg_degraded = degraded_polls.iter().sum::<u32>() as f64 / degraded_polls.len() as f64;
+        let avg_stopped = stopped_polls.iter().sum::<u32>() as f64 / stopped_polls.len() as f64;
 
         eprintln!("active polls:   {active_polls:?}  (avg {avg_active:.1})");
         eprintln!("degraded polls: {degraded_polls:?}  (avg {avg_degraded:.1})");
