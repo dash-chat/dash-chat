@@ -9,7 +9,6 @@
 		mdiClose,
 		mdiPalette,
 	} from '@mdi/js';
-	import { useTheme } from 'konsta/svelte';
 
 	interface Card {
 		id: string;
@@ -25,42 +24,37 @@
 	let { hasAvatar = false, visible = $bindable(true) }: { hasAvatar?: boolean; visible?: boolean } =
 		$props();
 
-	const theme = $derived(useTheme());
-
 	const allCards: Card[] = [
 		{
 			id: 'add-contact',
 			label: () => m.addContact(),
 			icon: mdiAccountPlus,
 			href: '/new-message/add-contact',
-			color: 'bg-amber-100 dark:bg-amber-900/30',
+			color: 'bg-amber-50 dark:bg-amber-950/30',
 		},
 		{
 			id: 'add-photo',
 			label: () => m.addPhoto(),
 			icon: mdiCamera,
 			href: '/settings/profile/edit-photo',
-			color: 'bg-blue-100 dark:bg-blue-900/30',
+			color: 'bg-sky-50 dark:bg-sky-950/30',
 		},
 		{
 			id: 'chat-color',
 			label: () => m.chatColor(),
 			icon: mdiPalette,
 			href: '/settings/appearance',
-			color: 'bg-purple-100 dark:bg-purple-900/30',
+			color: 'bg-violet-50 dark:bg-violet-950/30',
 		},
 		{
 			id: 'new-group',
 			label: () => m.newGroup(),
 			icon: mdiAccountMultiplePlus,
 			href: '/new-group',
-			color: 'bg-green-100 dark:bg-green-900/30',
+			color: 'bg-emerald-50 dark:bg-emerald-950/30',
 			hidden: true,
 		},
 	];
-
-	const glassClasses =
-		'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass';
 
 	function getDismissed(): string[] {
 		try {
@@ -96,28 +90,26 @@
 
 {#if visibleCards.length > 0}
 	<div class="px-4 pb-4">
-		<p class="mb-2 text-base font-medium">{m.getStarted()}</p>
-		<div class="flex gap-3 overflow-x-auto">
+		<p class="mb-2 text-base font-semibold">{m.getStarted()}</p>
+		<div class="flex gap-3 overflow-x-auto pb-1">
 			{#each visibleCards as card}
 				<a
 					href={card.href}
 					data-testid="get-started-{card.id}"
-					class="relative flex w-44 flex-col items-center rounded-2xl px-6 py-5 {theme === 'ios'
-						? glassClasses
-						: card.color}"
+					class="relative flex w-40 shrink-0 flex-col items-center rounded-xl border border-black/5 px-5 pb-5 pt-8 dark:border-white/10 {card.color}"
 				>
 					<button
-						class="absolute right-2 top-2 p-1 opacity-40"
+						class="absolute right-1.5 top-1.5 p-1 text-black/30 dark:text-white/30"
 						onclick={(e) => {
 							e.preventDefault();
 							dismiss(card.id);
 						}}
 					>
-						<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 18px"></wa-icon>
+						<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 16px"></wa-icon>
 					</button>
-					<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 28px; opacity: 0.6">
+					<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 24px; opacity: 0.7">
 					</wa-icon>
-					<span class="mt-2 text-center text-sm">{card.label()}</span>
+					<span class="mt-2 text-center text-sm font-medium">{card.label()}</span>
 				</a>
 			{/each}
 		</div>
