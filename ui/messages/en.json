@@ -171,6 +171,11 @@
 	"menuFile": "File",
 	"menuOpenLogsFolder": "Open Logs Folder",
 
+	"offlineFunctionality": "Offline functionality",
+	"localMessageServer": "Local Message Server",
+	"enableLocalMessageServer": "Enable Local Message Server",
+	"localMessageServerDescription": "Runs a local server to receive messages while the app is closed. Other devices on your network can deliver messages to this server.",
+
 	"help": "Help",
 	"contactUs": "Contact us",
 	"tellUsWhatsGoingOn": "Tell us what's going on",

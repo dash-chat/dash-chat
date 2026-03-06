@@ -54,6 +54,7 @@ export const S = {
 		appearanceLink: tid('settings-appearance-link'),
 		accountLink: tid('settings-account-link'),
 		helpLink: tid('settings-help-link'),
+		offlineLink: tid('settings-offline-link'),
 	},
 	profile: {
 		back: tid('profile-back'),
@@ -102,6 +103,10 @@ export const S = {
 	groupChat: {
 		back: tid('group-chat-back'),
 		infoLink: tid('group-chat-info-link'),
+	},
+	offline: {
+		back: tid('offline-back'),
+		localMailboxToggle: tid('offline-local-mailbox-toggle'),
 	},
 	appearance: {
 		back: tid('appearance-back'),
