@@ -21,12 +21,16 @@
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
 	const localMailboxEnabled = useReactivePromise(settingsStore.localMailboxEnabled);
+	let toggling = $state(false);
 
 	async function toggle(currentEnabled: boolean) {
+		toggling = true;
 		try {
 			await settingsStore.setLocalMailboxEnabled(!currentEnabled);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
+		} finally {
+			toggling = false;
 		}
 	}
 </script>
@@ -52,6 +56,7 @@
 						{#await $localMailboxEnabled then enabled}
 							<Toggle
 								checked={enabled}
+								disabled={toggling}
 								onChange={() => toggle(enabled)}
 							/>
 						{/await}
