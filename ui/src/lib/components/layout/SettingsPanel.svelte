@@ -18,6 +18,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import type { Action } from 'svelte/action';
 
 	const stopPropagation: Action = (node) => {
@@ -68,16 +69,16 @@
 				linkProps={{ href: '/settings/profile' }}
 				data-testid="settings-profile-link"
 				title={myProfile ? fullName(myProfile) : undefined}
-				titleFontSizeIos="text-xl"
-				titleFontSizeMaterial="text-xl"
+				titleFontSizeIos={isMobile ? 'text-xl' : 'text-base'}
+				titleFontSizeMaterial={isMobile ? 'text-xl' : 'text-base'}
 			>
 				{#snippet media()}
 					<wa-avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
 						style={isWideScreen.value || theme === 'ios'
-							? '--size: 64px'
-							: '--size: 64px; margin-left: 16px'}
+							? `--size: ${isMobile ? '64px' : '40px'}`
+							: `--size: ${isMobile ? '64px' : '40px'}; margin-left: 16px`}
 					>
 					</wa-avatar>
 				{/snippet}
@@ -107,7 +108,7 @@
 				{#snippet media()}
 					<wa-icon
 						src={wrapPathInSvg(mdiAccountCircleOutline)}
-						style="font-size: 28px"
+						style={`font-size: ${isMobile ? '28px' : '24px'}`}
 					></wa-icon>
 				{/snippet}
 			</ListItem>
@@ -122,7 +123,7 @@
 				{#snippet media()}
 					<wa-icon
 						src={wrapPathInSvg(mdiPaletteOutline)}
-						style="font-size: 28px"
+						style={`font-size: ${isMobile ? '28px' : '24px'}`}
 					></wa-icon>
 				{/snippet}
 			</ListItem>
@@ -140,7 +141,7 @@
 				{#snippet media()}
 					<wa-icon
 						src={wrapPathInSvg(mdiHelpCircleOutline)}
-						style="font-size: 28px"
+						style={`font-size: ${isMobile ? '28px' : '24px'}`}
 					></wa-icon>
 				{/snippet}
 			</ListItem>

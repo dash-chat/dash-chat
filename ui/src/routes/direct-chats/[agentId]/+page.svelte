@@ -70,6 +70,7 @@
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
 	import { longpress } from '$lib/actions/longpress';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -552,7 +553,7 @@
 												>
 												</wa-avatar>
 												<div class="flex items-center gap-1">
-													<span class="text-xl font-semibold"
+													<span class={`${isMobile ? 'text-xl' : 'text-lg'} font-semibold`}
 														>{fullName(profile!)}</span
 													>
 													<wa-icon

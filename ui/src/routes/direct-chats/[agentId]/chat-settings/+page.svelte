@@ -27,6 +27,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import { page } from '$app/state';
 	let agentId = page.params.agentId!;
 
@@ -69,7 +70,7 @@
 					</wa-avatar>
 
 					<div class="flex cursor-pointer items-center gap-1" onclick={() => (showPeerProfile = true)} role="button" tabindex="0">
-						<span class="text-xl font-semibold" data-testid="chat-settings-peer-name">{fullName(profile!)}</span>
+						<span class={`${isMobile ? 'text-xl' : 'text-lg'} font-semibold`} data-testid="chat-settings-peer-name">{fullName(profile!)}</span>
 						<wa-icon
 							class="small-icon quiet"
 							src={wrapPathInSvg(mdiChevronRight)}

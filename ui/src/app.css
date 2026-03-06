@@ -287,3 +287,40 @@ emoji-picker {
 	width: auto;
 }
 
+/*
+ * Desktop density overrides — scoped to .desktop (applied when !isMobile).
+ * Konsta UI generates Tailwind utility classes (e.g. text-[22px], text-[16px])
+ * for font sizes, so we use attribute selectors with !important to override them.
+ */
+.desktop {
+	font-size: 14px;
+}
+
+.desktop .k-navbar [class*='text-[22px]'] {
+	font-size: 16px !important;
+}
+
+.desktop .k-list-item [class*='text-[16px]'] {
+	font-size: 14px !important;
+}
+
+.desktop .k-list-item .text-sm {
+	font-size: 13px;
+}
+
+.desktop .k-list-item wa-avatar {
+	--size: 36px;
+}
+
+.desktop wa-icon {
+	font-size: 20px;
+}
+
+.desktop wa-icon[slot='start'],
+.desktop wa-icon[slot='end'] {
+	font-size: 18px;
+}
+
+.desktop .message {
+	font-size: 14px;
+}

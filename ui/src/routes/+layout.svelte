@@ -38,7 +38,7 @@
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
-	import { isIos, isMac, isTauriEnv } from '$lib/utils/environment';
+	import { isIos, isMac, isMobile, isTauriEnv } from '$lib/utils/environment';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
@@ -141,7 +141,7 @@
 {/if}
 
 <KonstaProvider {theme} dark={effectiveDark}>
-	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
+	<App safeAreas {theme} class="k-{theme}{isMobile ? '' : ' desktop'}" dark={effectiveDark}>
 		<SplashscreenPrompt>
 			{#if isWideScreen.value}
 				<DesktopLayout>
