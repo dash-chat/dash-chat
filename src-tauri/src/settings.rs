@@ -1,8 +1,8 @@
 use std::fs;
 
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Runtime};
 use crate::filesystem::FileSystem;
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Runtime};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -63,8 +63,13 @@ pub(crate) fn save_settings<R: Runtime>(handle: &AppHandle<R>, settings: &Settin
         }
     };
 
-    if let Err(err) = fs::write(&path, contents) {
+    if let Err(err) = fs::write(&path, &contents) {
         log::error!("Failed to write settings file at {path:?}: {err:?}");
+    }
+
+    // Notify the frontend so reactive stores pick up the change.
+    if let Ok(updated) = serde_json::to_value(settings) {
+        let _ = handle.emit("settings://updated", updated);
     }
 }
 

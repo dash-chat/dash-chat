@@ -98,12 +98,11 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
 }
 
 /// Persist the setting, toggle OS autostart, start/stop the mailbox server,
-/// sync the app menu checkbox, and emit the `settings://updated` event.
+/// and sync the app menu checkbox.
 pub async fn set_local_mailbox_server_enabled<R: Runtime>(
     handle: &AppHandle<R>,
     enabled: bool,
 ) -> anyhow::Result<()> {
-    use tauri::Emitter;
     use tauri_plugin_autostart::ManagerExt;
 
     crate::settings::save_mailbox_enabled(handle, enabled);
@@ -126,11 +125,6 @@ pub async fn set_local_mailbox_server_enabled<R: Runtime>(
 
     // Keep the app menu's checkbox in sync.
     sync_menu_toggle(handle, enabled);
-
-    // Notify the frontend so reactive stores pick up the change.
-    if let Ok(updated) = serde_json::to_value(crate::settings::load_settings(handle)) {
-        let _ = handle.emit("settings://updated", updated);
-    }
 
     Ok(())
 }
