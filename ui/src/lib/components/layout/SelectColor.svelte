@@ -16,6 +16,7 @@
 		Button,
 		useTheme,
 	} from 'konsta/svelte';
+	import { isIos } from '$lib/utils/environment';
 
 	let {
 		code,
@@ -72,7 +73,7 @@
 		{/snippet}
 
 		{#snippet right()}
-			{#if theme === 'ios'}
+			{#if isIos}
 				<Link onClick={save} data-testid="color-picker-done">
 					{m.done()}
 				</Link>
@@ -156,7 +157,7 @@
 		</div>
 	</div>
 
-	{#if theme === 'material'}
+	{#if !isIos}
 		<Button
 			rounded
 			inline

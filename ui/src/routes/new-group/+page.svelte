@@ -28,6 +28,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { mdiArrowNext } from '$lib/utils/icon';
+	import { isIos } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -56,7 +57,7 @@
 			{/snippet}
 
 			{#snippet right()}
-				{#if theme === 'ios'}
+				{#if isIos}
 					<Link onClick={() => (currentPage = 'group-info')} data-testid="new-group-next-link">
 						{selectedContacts.length === 0 ? m.omit() : m.next()}
 					</Link>
@@ -107,7 +108,7 @@
 			</div>
 		</div>
 
-		{#if theme === 'material'}
+		{#if !isIos}
 			<Button
 				onClick={() => (currentPage = 'group-info')}
 				data-testid="new-group-next-btn"
@@ -126,7 +127,7 @@
 			{/snippet}
 
 			{#snippet right()}
-				{#if theme === 'ios'}
+				{#if isIos}
 					<Link onClick={createGroupChat} data-testid="new-group-create-link">
 						{m.create()}
 					</Link>
@@ -153,7 +154,7 @@
 			</div>
 		</div>
 
-		{#if theme === 'material'}
+		{#if !isIos}
 			<Button
 				onClick={createGroupChat}
 				data-testid="new-group-create-btn"
