@@ -49,6 +49,7 @@
 	let { children } = $props();
 
 	const isPreview = !isTauriEnv();
+	const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
 
 	// --- Store initialization ---
 	let settingsStore: SettingsStore;
@@ -140,9 +141,47 @@
 		return () => window.removeEventListener('set-mobile-frame', handler as EventListener);
 	});
 
+	// Listen for postMessage commands from parent iframe toolbar
+	if (isInIframe) {
+		$effect(() => {
+			const handler = (event: MessageEvent) => {
+				const data = event.data;
+				if (!data || typeof data.type !== 'string') return;
+
+				switch (data.type) {
+					case 'theme-change':
+						window.dispatchEvent(new CustomEvent('theme-change', { detail: data.payload }));
+						break;
+					case 'set-dark-mode':
+						window.dispatchEvent(new CustomEvent('set-dark-mode', { detail: data.payload }));
+						break;
+					case 'set-wide-screen':
+						window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: data.payload }));
+						break;
+					case 'simulate-update':
+						window.dispatchEvent(
+							new CustomEvent('test-simulate-update', { detail: data.payload }),
+						);
+						break;
+					case 'reset':
+						localStorage.clear();
+						window.location.reload();
+						break;
+					case 'wipe':
+						localStorage.clear();
+						localStorage.setItem('__preview_seeded', 'true');
+						window.location.reload();
+						break;
+				}
+			};
+			window.addEventListener('message', handler);
+			return () => window.removeEventListener('message', handler);
+		});
+	}
+
 </script>
 
-{#if isPreview}
+{#if isPreview && !isInIframe}
 	<PreviewToolbar />
 {/if}
 

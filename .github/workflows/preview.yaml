@@ -34,8 +34,11 @@ jobs:
       - name: Build stores and UI
         run: pnpm --recursive build
 
+      - name: Generate preview wrapper
+        run: node ui/scripts/build-preview.js
+
       - name: Prepare SPA fallback
-        run: cp ui/build/index.html ui/build/200.html
+        run: cp ui/build/preview.html ui/build/200.html
 
       - name: Deploy to Surge
         run: npx surge ui/build "dashchat-pr-${{ github.event.pull_request.number }}.surge.sh" --token ${{ secrets.SURGE_TOKEN }}
