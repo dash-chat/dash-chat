@@ -85,10 +85,13 @@ export const config: Options.Testrunner = {
 		// Wait for ports to be fully released after SIGKILL.
 		await Promise.all(ALL_PORTS.map(p => waitForPortFree(p)));
 
-		// Clean agent app data for a fresh start (important for specFileRetries).
-		for (const agent of ['agent-1', 'agent-2']) {
-			const appData = path.join(ROOT, '.dbs', 'compat', agent, 'studio.darksoil.dashchat');
-			try { rmSync(appData, { recursive: true, force: true }); } catch { /* ignore */ }
+		// Clean agent app data for a fresh start on setup retries.
+		// Skip for verify phase — it needs data from the setup phase.
+		if (phase === 'setup') {
+			for (const agent of ['agent-1', 'agent-2']) {
+				const appData = path.join(ROOT, '.dbs', 'compat', agent, 'studio.darksoil.dashchat');
+				try { rmSync(appData, { recursive: true, force: true }); } catch { /* ignore */ }
+			}
 		}
 
 		tauriDriver1 = spawn(
