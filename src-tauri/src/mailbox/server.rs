@@ -14,9 +14,6 @@ pub(crate) struct LocalMailboxState {
 pub(crate) type LocalMailboxMutex = Mutex<Option<LocalMailboxState>>;
 
 pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
-    crate::tray::show_tray(handle)?;
-    set_dock_badge(handle, true);
-
     let mutex = handle.state::<LocalMailboxMutex>();
     let mut guard = mutex.lock().await;
     if guard.is_some() {
@@ -71,6 +68,11 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     });
 
     log::info!("Started local mailbox");
+
+    // Show tray and badge only after the server has been successfully started,
+    // so they don't linger if mDNS registration or setup fails.
+    crate::tray::show_tray(handle)?;
+    set_dock_badge(handle, true);
 
     Ok(())
 }
