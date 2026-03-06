@@ -8,6 +8,7 @@
 	import AllChats from '$lib/components/AllChats.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
 	import FirstChatTooltip from '$lib/components/FirstChatTooltip.svelte';
+	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
 	import { Fab, Link, Navbar, Page, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
@@ -45,6 +46,8 @@
 			{/if}
 		{/snippet}
 	</Navbar>
+
+	<UpdaterBanner />
 
 	<div class={theme==='ios' ? "mt-4": ''}></div>
 

@@ -171,6 +171,13 @@
 	"menuRunLocalMailbox": "Run Local Mailbox",
 	"menuFile": "File",
 	"menuOpenLogsFolder": "Open Logs Folder",
+	"quitConfirmTitle": "Quit Dash Chat?",
+	"quitConfirmMessage": "The Local Message Server is running. Are you sure you want to quit?",
+
+	"offlineFunctionality": "Offline functionality",
+	"localMessageServer": "Local Message Server",
+	"enableLocalMessageServer": "Enable Local Message Server",
+	"localMessageServerDescription": "Runs a local server to receive messages while the app is closed. Other devices on your network can deliver messages to this server.",
 
 	"help": "Help",
 	"contactUs": "Contact us",
@@ -192,8 +199,8 @@
 	"updateAvailable": "Update available",
 	"updateDownloading": "Downloading update...",
 	"updateReady": "Update downloaded. Restart to apply.",
-	"updateRestart": "Restart",
-	"updateLater": "Later",
 	"updateError": "Update failed. Please try again later.",
-	"updateOk": "Ok"
+	"updateTapToUpdate": "Tap to update Dash Chat.",
+	"updateTapToRestart": "Tap to restart and apply update.",
+	"updateTapToRetry": "Tap to retry."
 }

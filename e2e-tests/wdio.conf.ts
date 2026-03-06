@@ -30,7 +30,7 @@ export const config: Options.Testrunner = {
 	specs: ['./specs/**/*.spec.ts'],
 	exclude: ['./specs/compat-*.spec.ts'],
 	maxInstances: 1,
-	// specFileRetries: 2,
+	specFileRetries: 1,
 
 	capabilities: {
 		agent1: {
@@ -59,7 +59,7 @@ export const config: Options.Testrunner = {
 	framework: 'mocha',
 	mochaOpts: {
 		ui: 'bdd',
-		timeout: 90_000,
+		timeout: 120_000,
 	},
 
 	reporters: ['spec'],

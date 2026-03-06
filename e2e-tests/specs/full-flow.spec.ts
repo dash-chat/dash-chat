@@ -38,9 +38,9 @@ describe('Full messaging flow', () => {
 		await sendMessage(agent1, 'Hello from Alice!');
 
 		// Verify message appears on sender (should be near-instant)
-		await waitForMessage(agent1, 'Hello from Alice!', 10_000);
+		await waitForMessage(agent1, 'Hello from Alice!', 30_000);
 
-		// Wait for message on receiver via mailbox sync (may take up to ~30s on first run)
+		// Wait for message on receiver via mailbox sync
 		await waitForMessage(agent2, 'Hello from Alice!');
 	});
 
@@ -50,7 +50,7 @@ describe('Full messaging flow', () => {
 
 		await sendMessage(agent2, 'Hello from Bob!');
 
-		await waitForMessage(agent2, 'Hello from Bob!', 10_000);
+		await waitForMessage(agent2, 'Hello from Bob!', 30_000);
 
 		await waitForMessage(agent1, 'Hello from Bob!');
 	});

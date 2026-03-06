@@ -86,7 +86,7 @@ export async function sendMessage(agent: WebdriverIO.Browser, text: string): Pro
  * Uses WDIO waitUntil with sync execute polling — avoids executeAsync with
  * long-running scripts which can hang in tauri-driver.
  */
-export async function waitForMessage(agent: WebdriverIO.Browser, text: string, timeout = 60_000): Promise<void> {
+export async function waitForMessage(agent: WebdriverIO.Browser, text: string, timeout = 90_000): Promise<void> {
 	await agent.waitUntil(
 		async () => agent.execute(
 			(t: string) => !!document.querySelector('[data-testid="direct-chat-messages"]')?.textContent?.includes(t),

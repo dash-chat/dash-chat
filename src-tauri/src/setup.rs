@@ -21,7 +21,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         crate::tray::setup_tray(&app_handle)?;
 
         if crate::settings::load_mailbox_enabled(&app_handle) {
-            crate::mailbox::server::start_local_mailbox(&app_handle).await?;
+            crate::mailbox::server::set_local_mailbox_server_enabled(&app_handle, true).await?;
         }
 
         // Hide the main window when launched with --minimized (autostart)
@@ -32,7 +32,14 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         }
     }
 
-    let config = dashchat_node::NodeConfig::default();
+    let config = if cfg!(feature = "e2e-tests") {
+        let mut config = dashchat_node::NodeConfig::default();
+        config.mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
+        config.mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
+        config
+    } else {
+        dashchat_node::NodeConfig::default()
+    };
     let (notification_tx, mut notification_rx) = tokio::sync::mpsc::channel(100);
     let node = dashchat_node::Node::new(local_data_path, config, Some(notification_tx)).await?;
 
