@@ -1,6 +1,6 @@
-import QrCreator from 'qr-creator';
 import { m } from '$lib/paraglide/messages.js';
 import { isTauriEnv } from '$lib/utils/environment';
+import QrCreator from 'qr-creator';
 
 const FONT_FAMILY = "-apple-system, 'Segoe UI', Roboto, sans-serif";
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -93,7 +93,14 @@ function renderQrImage(
 
 	// White area behind QR
 	ctx.fillStyle = 'white';
-	roundRect(ctx, qrWhiteLeft, qrWhiteTop, whiteAreaSize, whiteAreaSize, qrWhiteRadius);
+	roundRect(
+		ctx,
+		qrWhiteLeft,
+		qrWhiteTop,
+		whiteAreaSize,
+		whiteAreaSize,
+		qrWhiteRadius,
+	);
 
 	// QR code
 	ctx.drawImage(qrCanvas, qrLeft, qrTop, qrDisplaySize, qrDisplaySize);
@@ -112,19 +119,13 @@ function renderQrImage(
 	ctx.fillText(subtitle, imgWidth / 2, subtitleTop + subtitleFontSize);
 
 	return new Promise((resolve, reject) => {
-		canvas.toBlob(
-			(blob) => {
-				if (!blob) {
-					reject(new Error('Failed to render QR image'));
-					return;
-				}
-				blob.arrayBuffer().then(
-					(buf) => resolve(new Uint8Array(buf)),
-					reject,
-				);
-			},
-			'image/png',
-		);
+		canvas.toBlob(blob => {
+			if (!blob) {
+				reject(new Error('Failed to render QR image'));
+				return;
+			}
+			blob.arrayBuffer().then(buf => resolve(new Uint8Array(buf)), reject);
+		}, 'image/png');
 	});
 }
 
@@ -142,9 +143,16 @@ export async function saveQrCode(
 	if (isTauriEnv()) {
 		const { save } = await import('@tauri-apps/plugin-dialog');
 		const { writeFile } = await import('@tauri-apps/plugin-fs');
+		const { downloadDir, join } = await import('@tauri-apps/api/path');
+		let defaultPath = 'dashchat-qr-code.png';
+		try {
+			defaultPath = await join(await downloadDir(), 'dashchat-qr-code.png');
+		} catch (e) {
+			console.warn('Failed to resolve downloads folder: ', e);
+		}
 		const path = await save({
 			title: 'Save QR Code',
-			defaultPath: 'dashchat-qr-code.png',
+			defaultPath,
 			filters: [{ name: 'PNG Image', extensions: ['png'] }],
 		});
 		if (path) {
