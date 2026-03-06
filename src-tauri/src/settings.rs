@@ -2,7 +2,6 @@ use std::fs;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Runtime};
-
 use crate::filesystem::FileSystem;
 
 #[derive(Debug, Default, Serialize, Deserialize)]

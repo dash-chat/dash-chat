@@ -97,6 +97,34 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
     Ok(())
 }
 
+/// Persist the setting, toggle OS autostart, and start/stop the mailbox server.
+pub async fn set_local_mailbox_server_enabled<R: Runtime>(
+    handle: &AppHandle<R>,
+    enabled: bool,
+) -> anyhow::Result<()> {
+    use tauri_plugin_autostart::ManagerExt;
+
+    crate::settings::save_mailbox_enabled(handle, enabled);
+
+    // The autostart plugin is only registered in release builds.
+    if !tauri::is_dev() {
+        let autostart = handle.autolaunch();
+        if enabled {
+            autostart.enable()?;
+        } else {
+            autostart.disable()?;
+        }
+    }
+
+    if enabled {
+        start_local_mailbox(handle).await?;
+    } else {
+        stop_local_mailbox(handle).await?;
+    }
+
+    Ok(())
+}
+
 fn free_port() -> anyhow::Result<u16> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     Ok(listener.local_addr()?.port())
