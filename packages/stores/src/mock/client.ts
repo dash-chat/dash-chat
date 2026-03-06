@@ -79,7 +79,7 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 			previous: [],
 			public_key: this._myPubKey,
 			seq_num: lastOperation ? lastOperation.header.seq_num + 1 : 0,
-			timestamp: timestamp ?? Date.now() * 1000,
+			timestamp: timestamp ?? Math.floor(Date.now() / 1000),
 			topic_id: topicId,
 		};
 

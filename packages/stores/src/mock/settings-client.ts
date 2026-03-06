@@ -20,6 +20,11 @@ export class MockSettingsClient implements ISettingsClient {
 		this.emitter.emit('updated', { ...this.settings });
 	}
 
+	async setLocalMailboxEnabled(enabled: boolean): Promise<void> {
+		this.settings.local_mailbox_enabled = enabled;
+		this.emitter.emit('updated', { ...this.settings });
+	}
+
 	onSettingsUpdated(handler: (settings: Settings) => void): () => void {
 		return this.emitter.on('updated', handler);
 	}
