@@ -42,12 +42,5 @@ pub fn set_setting(key: String, value: serde_json::Value, app: AppHandle) -> Res
 pub async fn set_local_mailbox_enabled(enabled: bool, app: AppHandle) -> Result<(), String> {
     crate::mailbox::server::set_local_mailbox_server_enabled(&app, enabled)
         .await
-        .map_err(|e| e.to_string())?;
-
-    // Emit updated settings so the frontend stays in sync.
-    let updated = serde_json::to_value(settings::load_settings(&app))
-        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
-    let _ = app.emit("settings://updated", updated);
-
-    Ok(())
+        .map_err(|e| e.to_string())
 }
