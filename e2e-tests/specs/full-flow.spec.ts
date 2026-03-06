@@ -8,6 +8,9 @@
 import {
 	waitForBothAgents,
 	createProfile,
+	getStartedCards,
+	dismissGetStartedCard,
+	waitForTestUtils,
 	exchangeContacts,
 	sendMessage,
 	waitForMessage,
@@ -23,6 +26,45 @@ describe('Full messaging flow', () => {
 		const agent2 = browser.getInstance('agent2');
 		await createProfile(agent1, 'Alice', 'Test');
 		await createProfile(agent2, 'Bob', 'Test');
+	});
+
+	it('shows Get Started cards on empty home', async () => {
+		const agent1 = browser.getInstance('agent1');
+
+		await agent1.waitUntil(
+			async () => (await getStartedCards(agent1)).length > 0,
+			{ timeout: 10_000, timeoutMsg: 'No Get Started cards visible' },
+		);
+
+		const cards = await getStartedCards(agent1);
+		expect(cards).toContain('add-contact');
+		expect(cards).toContain('add-photo');
+		expect(cards).toContain('chat-color');
+	});
+
+	it('dismisses a Get Started card and it persists after reload', async () => {
+		const agent1 = browser.getInstance('agent1');
+
+		await dismissGetStartedCard(agent1, 'add-contact');
+
+		await agent1.waitUntil(
+			async () => !(await getStartedCards(agent1)).includes('add-contact'),
+			{ timeout: 5_000, timeoutMsg: 'Add contact card still visible after dismiss' },
+		);
+
+		// Reload and verify dismissal persists
+		await agent1.execute(() => window.location.reload());
+		await waitForTestUtils(agent1);
+		await agent1.waitUntil(
+			async () => agent1.execute(() =>
+				!!document.querySelector('[data-testid="all-chats-list"], [data-testid="all-chats-empty"]'),
+			),
+			{ timeout: 10_000, timeoutMsg: 'Home page not loaded after reload' },
+		);
+
+		const cards = await getStartedCards(agent1);
+		expect(cards).not.toContain('add-contact');
+		expect(cards).toContain('add-photo');
 	});
 
 	it('exchanges contact codes between agents', async () => {
