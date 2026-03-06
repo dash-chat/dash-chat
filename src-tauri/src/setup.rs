@@ -21,7 +21,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         crate::tray::setup_tray(&app_handle)?;
 
         if crate::settings::load_mailbox_enabled(&app_handle) {
-            crate::mailbox::server::start_local_mailbox(&app_handle).await?;
+            crate::mailbox::server::set_local_mailbox_server_enabled(&app_handle, true).await?;
         }
 
         // Hide the main window when launched with --minimized (autostart)

@@ -69,18 +69,10 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
 
     log::info!("Started local mailbox");
 
-    // Show tray and badge only after the server has been successfully started,
-    // so they don't linger if mDNS registration or setup fails.
-    crate::tray::show_tray(handle)?;
-    set_dock_badge(handle, true);
-
     Ok(())
 }
 
 pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
-    crate::tray::hide_tray::<R>(handle)?;
-    set_dock_badge(handle, false);
-
     let mutex = handle.state::<LocalMailboxMutex>();
     let mut guard = mutex.lock().await;
     let Some(state) = guard.take() else {
@@ -99,6 +91,62 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
 
     log::info!("Local mailbox stopped");
     Ok(())
+}
+
+/// Start/stop the mailbox server, persist the setting, toggle OS autostart,
+/// sync the app menu checkbox, and update the tray/badge.
+pub async fn set_local_mailbox_server_enabled<R: Runtime>(
+    handle: &AppHandle<R>,
+    enabled: bool,
+) -> anyhow::Result<()> {
+    use tauri_plugin_autostart::ManagerExt;
+
+    // Start/stop first — only persist if the operation succeeds.
+    if enabled {
+        start_local_mailbox(handle).await?;
+        crate::tray::show_tray(handle)?;
+        set_dock_badge(handle, true);
+    } else {
+        crate::tray::hide_tray::<R>(handle)?;
+        set_dock_badge(handle, false);
+        stop_local_mailbox(handle).await?;
+    }
+
+    crate::settings::save_mailbox_enabled(handle, enabled);
+
+    // The autostart plugin is only registered in release builds.
+    // Log failures instead of propagating — autostart is a convenience
+    // feature and shouldn't block the mailbox from working.
+    if !tauri::is_dev() {
+        let autostart = handle.autolaunch();
+        let result = if enabled {
+            autostart.enable()
+        } else {
+            autostart.disable()
+        };
+        if let Err(err) = result {
+            log::error!("Failed to toggle autostart: {err:?}");
+        }
+    }
+
+    // Keep the app menu's checkbox in sync.
+    sync_menu_toggle(handle, enabled);
+
+    Ok(())
+}
+
+/// Update the "toggle-local-mailbox" CheckMenuItem in the app menu, if present.
+fn sync_menu_toggle<R: Runtime>(handle: &AppHandle<R>, enabled: bool) {
+    let Some(menu) = handle.menu() else { return };
+    for item in menu.items().unwrap_or_default() {
+        if let Some(submenu) = item.as_submenu() {
+            if let Some(toggle) = submenu.get("toggle-local-mailbox") {
+                if let Some(check) = toggle.as_check_menuitem() {
+                    let _ = check.set_checked(enabled);
+                }
+            }
+        }
+    }
 }
 
 /// Show or clear a badge on the dock/taskbar icon to indicate the mailbox is running.

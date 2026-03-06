@@ -77,6 +77,12 @@ pub fn confirm_quit_and_exit(app: &AppHandle<impl Runtime>) {
             tauri::async_runtime::block_on(async {
                 let _ = crate::mailbox::server::stop_local_mailbox(&app).await;
             });
+            // Disable autostart so the app doesn't relaunch after quit,
+            // but keep the mailbox-enabled setting so it starts on next manual launch.
+            if !tauri::is_dev() {
+                use tauri_plugin_autostart::ManagerExt;
+                let _ = app.autolaunch().disable();
+            }
             crate::FORCE_QUIT.store(true, Ordering::Relaxed);
             app.exit(0);
         }
