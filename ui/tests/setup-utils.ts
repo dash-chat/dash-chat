@@ -16,6 +16,7 @@ import { createProfile } from './flows/profile-creation';
 import { navigateToAddContact, getContactCode, addContact } from './flows/contact-exchange';
 import { sendMessage, waitForMessage } from './flows/send-message';
 import { openDirectChat } from './flows/open-chat';
+import { visibleCards as getStartedCards, dismissCard as dismissGetStartedCard } from './pages/get-started';
 import { checkOverflow, checkDarkMode, checkRTL, checkPage } from './review/checks';
 import {
 	visitAllPages,
@@ -43,6 +44,8 @@ export const testUtils = {
 	sendMessage,
 	waitForMessage,
 	openDirectChat,
+	getStartedCards,
+	dismissGetStartedCard,
 	simulateUpdate,
 	checkOverflow,
 	checkDarkMode,

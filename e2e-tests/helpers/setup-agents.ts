@@ -106,6 +106,16 @@ export async function sendAndReceiveMessage(
 	await waitForMessage(receiver, text);
 }
 
+/** Get IDs of currently visible Get Started cards. */
+export async function getStartedCards(agent: WebdriverIO.Browser): Promise<string[]> {
+	return await agent.execute(() => window.__test.getStartedCards()) as string[];
+}
+
+/** Dismiss a Get Started card by id. */
+export async function dismissGetStartedCard(agent: WebdriverIO.Browser, cardId: string): Promise<void> {
+	await agent.execute((id: string) => window.__test.dismissGetStartedCard(id), cardId);
+}
+
 /** Open a direct chat by contact name. Throws if it fails. */
 export async function openDirectChat(
 	agent: WebdriverIO.Browser,
