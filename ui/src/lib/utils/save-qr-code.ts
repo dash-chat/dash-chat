@@ -142,9 +142,11 @@ export async function saveQrCode(
 	if (isTauriEnv()) {
 		const { save } = await import('@tauri-apps/plugin-dialog');
 		const { writeFile } = await import('@tauri-apps/plugin-fs');
+		const { downloadDir, join } = await import('@tauri-apps/api/path');
+		const defaultPath = await join(await downloadDir(), 'dashchat-qr-code.png');
 		const path = await save({
 			title: 'Save QR Code',
-			defaultPath: 'dashchat-qr-code.png',
+			defaultPath,
 			filters: [{ name: 'PNG Image', extensions: ['png'] }],
 		});
 		if (path) {
