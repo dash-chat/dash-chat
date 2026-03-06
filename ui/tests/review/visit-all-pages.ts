@@ -106,6 +106,18 @@ export async function visitProfilePages(options?: VisitOptions): Promise<VisitRe
 	pages.push(runCheck('home', co));
 	await breathe();
 
+	// Home with FirstChatTooltip visible — clear the localStorage flag, navigate
+	// away and back to force component remount, run checks, then dismiss.
+	progress('profile:home-tooltip');
+	localStorage.removeItem('first-chat-tooltip-shown');
+	await nav('/settings', S.settings.profileLink);
+	await nav('/', HOME);
+	await waitFor(S.home.firstChatTooltip, NAV_TIMEOUT);
+	pages.push(runCheck('home-with-tooltip', co));
+	// Dismiss tooltip (click restores the localStorage flag internally)
+	(document.querySelector(S.home.firstChatTooltip) as HTMLElement)?.click();
+	await breathe();
+
 	// Settings
 	progress('profile:settings-click');
 	click(S.home.settingsLink);

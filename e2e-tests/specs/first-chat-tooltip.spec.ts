@@ -8,9 +8,10 @@
  */
 
 import { waitForTestUtils, createProfile } from '../helpers/setup-agents';
+import { S } from '../../ui/tests/selectors';
 
-const TOOLTIP = '[data-testid="first-chat-tooltip"]';
-const EMPTY_STATE = '[data-testid="all-chats-empty"]';
+const TOOLTIP = S.home.firstChatTooltip;
+const EMPTY_STATE = S.home.emptyState;
 
 describe('FirstChatTooltip', () => {
 	let agent: WebdriverIO.Browser;
