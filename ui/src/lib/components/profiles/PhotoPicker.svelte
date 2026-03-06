@@ -4,9 +4,9 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiCamera, mdiImage, mdiArrowLeft } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button, Link, Navbar, Segmented, SegmentedButton, useTheme } from 'konsta/svelte';
+	import { Button, Link, Navbar, Segmented, SegmentedButton } from 'konsta/svelte';
 	import { resizeAndExport } from '$lib/utils/image';
-	import { isMobile } from '$lib/utils/environment';
+	import { isMobile, isIos } from '$lib/utils/environment';
 
 	let {
 		avatar = $bindable(),
@@ -25,8 +25,6 @@
 		saveLabel?: string;
 		saveDisabled?: boolean;
 	} = $props();
-
-	const theme = $derived(useTheme());
 
 	let view = $state<'picker' | 'text'>('picker');
 	$effect(() => {
@@ -163,7 +161,7 @@
 />
 
 {#if view === 'picker'}
-	{#if onClose || (onSave && theme === 'ios')}
+	{#if onClose || (onSave && isIos)}
 		<Navbar transparent rightClass={saveDisabled ? 'ios-right-disabled' : ''}>
 			{#snippet left()}
 				{#if onClose}
@@ -173,7 +171,7 @@
 				{/if}
 			{/snippet}
 			{#snippet right()}
-				{#if theme === 'ios' && onSave}
+				{#if isIos && onSave}
 					<Link onClick={onSave} data-testid="edit-photo-save-link">
 						{saveLabel || m.save()}
 					</Link>
@@ -272,7 +270,7 @@
 			</Link>
 		{/snippet}
 		{#snippet right()}
-			{#if theme === 'ios'}
+			{#if isIos}
 				<Link onClick={generateTextAvatar}>
 					{m.done()}
 				</Link>
@@ -328,7 +326,7 @@
 		</div>
 	{/if}
 
-	{#if theme === 'material'}
+	{#if !isIos}
 		<Button
 			rounded
 			tonal

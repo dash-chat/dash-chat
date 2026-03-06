@@ -17,11 +17,11 @@
 		Link,
 		Preloader,
 		Checkbox,
-		useTheme,
 	} from 'konsta/svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import { isIos } from '$lib/utils/environment';
 	import { page } from '$app/state';
 	let chatId = page.params.chatId!;
 
@@ -29,7 +29,6 @@
 	let selectedContacts = $state<PublicKey[]>([]);
 
 	const contacts = useReactivePromise(contactsStore.profilesForAllContacts);
-	const theme = $derived(useTheme());
 
 	async function addMembers() {
 		goto(`/group-chat/${chatId}/info`);
@@ -51,7 +50,7 @@
 			/>
 		{/snippet}
 		{#snippet right()}
-			{#if theme === 'ios'}
+			{#if isIos}
 				<Link onClick={addMembers}>
 					{m.add()}
 				</Link>
@@ -100,7 +99,7 @@
 			</div>
 		</div>
 
-		{#if theme === 'material'}
+		{#if !isIos}
 			<Button
 				onClick={addMembers}
 				class="fixed-action-btn"
