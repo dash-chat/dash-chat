@@ -189,7 +189,7 @@ This is a pnpm workspace with multiple packages:
 - UI built with Konsta UI components (mobile-first design)
 - Internationalization using @inlang/paraglide-js
 - Image compression before upload
-- **iOS theme action buttons**: In the iOS theme, all primary action buttons (Save, Done, Create, Add, Next) must appear as a `<Link>` in the Navbar's `right` snippet — never as a bottom FAB. The bottom FAB (`class="fixed-action-btn"`) is Material-only. Use `{#if theme === 'ios'}` in the navbar right snippet and `{#if theme === 'material'}` around the FAB. Apply disabled styling via `rightClass="ios-right-disabled"` on the Navbar (defined in `app.css`).
+- **iOS theme action buttons**: On actual iOS devices, primary action buttons (Save, Done, Create, Add, Next) appear as a `<Link>` in the Navbar's `right` snippet. On all other platforms (including macOS desktop), they appear as a bottom FAB (`class="fixed-action-btn"`). Use `import { isIos } from '$lib/utils/environment'` and `{#if isIos}` in the navbar right snippet and `{#if !isIos}` around the FAB. Apply disabled styling via `rightClass="ios-right-disabled"` on the Navbar (defined in `app.css`).
 
 ### Desktop Layout
 
