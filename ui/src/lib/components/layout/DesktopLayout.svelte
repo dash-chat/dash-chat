@@ -102,17 +102,4 @@
 	:global(.dark) .desktop-content {
 		background-color: var(--color-md-dark-surface);
 	}
-
-	:global(.k-ios) .desktop-sidebar {
-		background-color: var(--color-ios-light-surface-2);
-	}
-	:global(.k-ios) .desktop-content {
-		background-color: var(--color-ios-light-surface-1);
-	}
-	:global(.k-ios.dark) .desktop-sidebar {
-		background-color: var(--color-ios-dark-surface-variant);
-	}
-	:global(.k-ios.dark) .desktop-content {
-		background-color: var(--color-ios-dark-surface-1);
-	}
 </style>
