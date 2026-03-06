@@ -18,25 +18,39 @@
 </script>
 
 {#if !alreadyShown && !dismissed}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class={theme === 'ios'
-			? 'fixed right-4 top-16 z-30'
-			: 'fixed bottom-24 right-4 z-30'}
+		class="tooltip-bubble {theme === 'ios'
+			? 'fixed end-4 top-16 z-30'
+			: 'fixed bottom-24 end-4 z-30'}"
+		role="status"
+		tabindex="0"
 		onclick={dismiss}
+		onkeydown={(e) => { if (e.key === 'Escape') dismiss(); }}
 		data-testid="first-chat-tooltip"
 	>
 		<div class="relative">
 			{#if theme === 'ios'}
-				<div class="absolute -top-2 right-5 h-0 w-0 border-x-8 border-b-8 border-x-transparent border-b-[#2c6bed]"></div>
+				<div class="arrow absolute -top-2 end-5 h-0 w-0 border-x-8 border-b-8 border-x-transparent"></div>
 			{/if}
-			<div class="rounded-lg bg-[#2c6bed] px-4 py-2.5 text-sm font-medium text-white shadow-lg">
+			<div class="tooltip-bg rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-lg">
 				{m.startFirstChatHere()}
 			</div>
 			{#if theme === 'material'}
-				<div class="absolute -bottom-2 right-8 h-0 w-0 border-x-8 border-t-8 border-x-transparent border-t-[#2c6bed]"></div>
+				<div class="arrow absolute -bottom-2 end-8 h-0 w-0 border-x-8 border-t-8 border-x-transparent"></div>
 			{/if}
 		</div>
 	</div>
 {/if}
+
+<style>
+	:root {
+		--tooltip-bg: #2c6bed;
+	}
+	.tooltip-bg {
+		background-color: var(--tooltip-bg);
+	}
+	.arrow {
+		border-bottom-color: var(--tooltip-bg);
+		border-top-color: var(--tooltip-bg);
+	}
+</style>
