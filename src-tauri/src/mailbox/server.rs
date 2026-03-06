@@ -14,8 +14,6 @@ pub(crate) struct LocalMailboxState {
 pub(crate) type LocalMailboxMutex = Mutex<Option<LocalMailboxState>>;
 
 pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
-    crate::tray::show_tray(handle)?;
-
     let mutex = handle.state::<LocalMailboxMutex>();
     let mut guard = mutex.lock().await;
     if guard.is_some() {
@@ -71,11 +69,17 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
 
     log::info!("Started local mailbox");
 
+    // Show tray and badge only after the server has been successfully started,
+    // so they don't linger if mDNS registration or setup fails.
+    crate::tray::show_tray(handle)?;
+    set_dock_badge(handle, true);
+
     Ok(())
 }
 
 pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
     crate::tray::hide_tray::<R>(handle)?;
+    set_dock_badge(handle, false);
 
     let mutex = handle.state::<LocalMailboxMutex>();
     let mut guard = mutex.lock().await;
@@ -95,6 +99,21 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
 
     log::info!("Local mailbox stopped");
     Ok(())
+}
+
+/// Show or clear a badge on the dock/taskbar icon to indicate the mailbox is running.
+/// The badge is app-level (macOS dock / Linux taskbar) but Tauri only exposes it
+/// through a Window, so we grab any available window as the access point.
+fn set_dock_badge<R: Runtime>(handle: &AppHandle<R>, active: bool) {
+    let window = handle
+        .get_webview_window("main")
+        .or_else(|| handle.webview_windows().into_values().next());
+    if let Some(window) = window {
+        let count = if active { Some(1) } else { None };
+        if let Err(err) = window.set_badge_count(count) {
+            log::warn!("Failed to set dock badge: {err:?}");
+        }
+    }
 }
 
 fn free_port() -> anyhow::Result<u16> {
