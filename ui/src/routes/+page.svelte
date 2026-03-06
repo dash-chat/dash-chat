@@ -7,6 +7,7 @@
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/AllChats.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
+	import FirstChatTooltip from '$lib/components/FirstChatTooltip.svelte';
 	import { Fab, Link, Navbar, Page, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
@@ -45,7 +46,13 @@
 		{/snippet}
 	</Navbar>
 
-	<div class={theme==='ios' ? "mt-4": ''}></div>
+	<div class={theme==='ios' ? "mt-4": ''}>
+		{#await $chatSummaries then chats}
+			{#if chats.length === 0 && !isWideScreen.value}
+				<FirstChatTooltip />
+			{/if}
+		{/await}
+	</div>
 
 	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
 

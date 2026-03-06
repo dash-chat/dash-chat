@@ -5,6 +5,7 @@ export const S = {
 		settingsLink: tid('home-settings-link'),
 		newMessageLink: tid('home-new-message-link'),
 		newMessageFab: tid('home-new-message-fab'),
+		firstChatTooltip: tid('first-chat-tooltip'),
 		chatList: tid('all-chats-list'),
 		emptyState: tid('all-chats-empty'),
 	},
