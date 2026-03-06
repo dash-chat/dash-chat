@@ -66,7 +66,6 @@
 	}
 
 	async function checkForUpdate() {
-		try {
 			try {
 				const { check } = await import('@tauri-apps/plugin-updater');
 				update = await check();
@@ -78,9 +77,6 @@
 
 			version = update.version;
 			bannerState = 'available';
-		} catch (err) {
-			console.warn('Update check failed:', err);
-		}
 	}
 
 	async function downloadAndInstall() {

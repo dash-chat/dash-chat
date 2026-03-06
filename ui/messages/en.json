@@ -191,10 +191,7 @@
 	"updateAvailable": "Update available",
 	"updateDownloading": "Downloading update...",
 	"updateReady": "Update downloaded. Restart to apply.",
-	"updateRestart": "Restart",
-	"updateLater": "Later",
 	"updateError": "Update failed. Please try again later.",
-	"updateOk": "Ok",
 	"updateTapToUpdate": "Tap to update Dash Chat.",
 	"updateTapToRestart": "Tap to restart and apply update.",
 	"updateTapToRetry": "Tap to retry."
