@@ -11,7 +11,7 @@ use tauri::State;
 pub async fn get_preferences(node: State<'_, Node>) -> Result<serde_json::Map<String, Value>, Error> {
     let preferences_file = fs::read_to_string(node.filesystem.preferences_path());
     if let Ok(contents) = preferences_file {
-        if let Ok(mut val)  = serde_json::from_str::<serde_json::Map<String, Value>>(&contents) {
+        if let Ok(val)  = serde_json::from_str::<serde_json::Map<String, Value>>(&contents) {
             return Ok(val)
         }
     }
