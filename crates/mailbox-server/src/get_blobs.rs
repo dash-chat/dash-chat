@@ -1,7 +1,6 @@
 use axum::{extract::State, http::StatusCode, Json};
 use mailbox_api::*;
-use redb::{Database, ReadableDatabase, ReadableTable};
-use std::collections::BTreeSet;
+use redb::{Database, ReadableDatabase};
 
 use crate::{blobs_table::BLOBS_TABLE, AppState};
 
