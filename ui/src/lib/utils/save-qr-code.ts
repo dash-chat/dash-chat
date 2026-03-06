@@ -1,6 +1,5 @@
 import { m } from '$lib/paraglide/messages.js';
 import { isTauriEnv } from '$lib/utils/environment';
-import { desktopDir } from '@tauri-apps/api/path';
 import QrCreator from 'qr-creator';
 
 const FONT_FAMILY = "-apple-system, 'Segoe UI', Roboto, sans-serif";
