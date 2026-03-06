@@ -13,10 +13,8 @@
 		NavbarBackLink,
 		Segmented,
 		SegmentedButton,
-		useTheme,
 	} from 'konsta/svelte';
-
-	const theme = $derived(useTheme());
+	import { isIos } from '$lib/utils/environment';
 
 	// Get initial values from URL params or use defaults
 	const initialText = $page.url.searchParams.get('text') || '';
@@ -75,7 +73,7 @@
 			<NavbarBackLink onClick={() => goto('/settings/profile/edit-photo')} />
 		{/snippet}
 		{#snippet right()}
-			{#if theme === 'ios'}
+			{#if isIos}
 				<Link onClick={done}>
 					{m.done()}
 				</Link>
@@ -144,7 +142,7 @@
 		{/if}
 	</div>
 
-	{#if theme === 'material'}
+	{#if !isIos}
 		<Button
 			rounded
 			tonal
