@@ -44,6 +44,9 @@ use crate::{
 pub use crate::local_store::LocalStore;
 pub use stream_processing::Notification;
 
+// pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
+pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
+
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
     pub contact_code_expiry: Duration,
@@ -76,9 +79,6 @@ pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
 
 pub type Orderer<S> =
     PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
-
-pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
-// pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
 
 #[derive(Clone)]
 pub(crate) struct CancelAndWait<R> {
@@ -132,14 +132,14 @@ impl Node {
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
         let local_store = LocalStore::new(filesystem.local_store_path()).await?;
-        let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
+        let op_store = NodeOpStore::create(filesystem.op_store_path()).await?;
         Self::init(local_store, op_store, config, notification_tx).await
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?local_store.device_id().unwrap().renamed())))]
     pub(crate) async fn init(
         local_store: LocalStore,
-        op_store: OpStore<SqliteStore<TopicId, Extensions>>,
+        op_store: NodeOpStore,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
     ) -> Result<Self> {

@@ -32,14 +32,14 @@ where
 }
 
 impl OpStore<MemoryStore<TopicId, Extensions>> {
-    pub fn new_memory() -> Self {
+    pub async fn create(_path: PathBuf) -> anyhow::Result<Self> {
         let store = MemoryStore::new();
-        Self::new(store)
+        Ok(Self::new(store))
     }
 }
 
 impl OpStore<SqliteStore<TopicId, Extensions>> {
-    pub async fn new_sqlite(database_file_path: PathBuf) -> anyhow::Result<Self> {
+    pub async fn create(database_file_path: PathBuf) -> anyhow::Result<Self> {
         let url = format!("sqlite://{}", database_file_path.to_string_lossy());
         p2panda_store::sqlite::store::create_database(&url).await?;
 
@@ -273,10 +273,9 @@ impl OpStore<MemoryStore<TopicId, Extensions>> {
                         desc
                     )
                 } else {
-                    let t = format!("{t:?}");
                     format!(
                         "• {:>24} {} {:2} {} : {}",
-                        t,
+                        t.renamed(),
                         header.public_key.renamed(),
                         header.seq_num,
                         h.renamed(),

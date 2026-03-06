@@ -12,8 +12,12 @@ use mailbox_client::{MailboxClient, mem::MemMailbox};
 
 use crate::{
     AgentId, DeviceGroupPayload, LocalStore, NodeConfig, Notification, Payload, Profile,
-    filesystem::Filesystem, mailbox::MailboxOperation, node::Node, stores::OpStore,
-    testing::behavior::Behavior, topic::TopicId,
+    filesystem::Filesystem,
+    mailbox::MailboxOperation,
+    node::{Node, NodeOpStore},
+    stores::OpStore,
+    testing::behavior::Behavior,
+    topic::TopicId,
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::Debug)]
@@ -37,7 +41,7 @@ impl TestNode {
         let local_store = LocalStore::new(filesystem.local_store_path())
             .await
             .unwrap();
-        let op_store = OpStore::new_sqlite(filesystem.op_store_path())
+        let op_store = NodeOpStore::create(filesystem.op_store_path())
             .await
             .unwrap();
 
@@ -271,6 +275,16 @@ pub async fn consistency(
     wait_for_resetting(config.poll_interval, config.poll_timeout, || async {
         // TODO: Fix this when we have a proper way to access operations
         // The operations field is now private in the new p2panda-store version
+
+        //
+        //
+        //
+        // HEY: this seems to be broken!
+        //
+        //
+        //
+        //
+
         let sets = nodes
             .iter()
             .map(|node| {
