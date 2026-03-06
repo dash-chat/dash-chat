@@ -18,7 +18,8 @@
 		label: () => string;
 		icon: string;
 		href: string;
-		color: string;
+		bg: string;
+		border: string;
 		hidden?: boolean;
 	}
 
@@ -42,28 +43,32 @@
 			label: () => m.addContact(),
 			icon: mdiAccountPlus,
 			href: '/new-message/add-contact',
-			color: 'bg-[#F7F0E4] dark:bg-amber-900/20',
+			bg: 'bg-[#EFE1CC] dark:bg-amber-900/25',
+			border: 'border-[#E0CFB0] dark:border-amber-800/20',
 		},
 		{
 			id: 'add-photo',
 			label: () => m.addPhoto(),
 			icon: mdiCamera,
 			href: '/settings/profile/edit-photo',
-			color: 'bg-[#EDEEE6] dark:bg-[#2A2E20]/20',
+			bg: 'bg-[#DDE4CC] dark:bg-[#2A2E20]/25',
+			border: 'border-[#CCD5B5] dark:border-[#2A2E20]/20',
 		},
 		{
 			id: 'chat-color',
 			label: () => m.chatColor(),
 			icon: mdiPalette,
 			href: '/settings/appearance',
-			color: 'bg-[#F7F0E4] dark:bg-amber-900/20',
+			bg: 'bg-[#EFE1CC] dark:bg-amber-900/25',
+			border: 'border-[#E0CFB0] dark:border-amber-800/20',
 		},
 		{
 			id: 'new-group',
 			label: () => m.newGroup(),
 			icon: mdiAccountMultiplePlus,
 			href: '/new-group',
-			color: 'bg-[#EDEEE6] dark:bg-[#2A2E20]/20',
+			bg: 'bg-[#DDE4CC] dark:bg-[#2A2E20]/25',
+			border: 'border-[#CCD5B5] dark:border-[#2A2E20]/20',
 			hidden: true,
 		},
 	];
@@ -106,16 +111,16 @@
 		<div class="flex gap-3 overflow-x-auto pb-1">
 			{#each visibleCards as card}
 				<div
-					class="relative w-44 shrink-0 rounded-[20px] border border-black/[0.06] dark:border-white/10 {card.color}"
+					class="relative w-44 shrink-0 rounded-[20px] border {card.bg} {card.border}"
 					data-testid="get-started-{card.id}"
 				>
 					<a
 						href={card.href}
-						class="flex flex-col items-center px-5 pb-6 pt-10"
+						class="flex flex-col items-center px-5 pb-5 pt-8"
 					>
-						<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 32px">
+						<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 28px">
 						</wa-icon>
-						<span class="mt-3 text-center text-sm font-semibold">{card.label()}</span>
+						<span class="mt-2 text-center text-sm font-semibold">{card.label()}</span>
 					</a>
 					<button
 						class="absolute right-2 top-2 z-10 p-1 text-black/40 dark:text-white/40"
