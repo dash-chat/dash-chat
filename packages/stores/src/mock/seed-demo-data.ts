@@ -50,9 +50,9 @@ function chatIdFor(agentA: string, agentB: string): string {
 	return hash([agentA, agentB].sort().join(':'));
 }
 
-/** Microsecond timestamps for ordering messages */
+/** Seconds-since-epoch timestamps (matching real backend) */
 function minutesAgo(minutes: number): number {
-	return (Date.now() - minutes * 60_000) * 1000;
+	return Math.floor((Date.now() - minutes * 60_000) / 1000);
 }
 
 export function seedDemoData(logsClient: LocalStorageLogsClient) {
