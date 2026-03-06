@@ -194,7 +194,7 @@ This is a pnpm workspace with multiple packages:
 ### Desktop Layout
 
 On wide screens (≥768px), the app uses a two-panel layout managed by `DesktopLayout.svelte`:
-- **Sidebar** (left, 320px): Shows the contextual panel based on the current route — `ChatListPanel` for chat routes, `SettingsPanel` for `/settings/*`, `NewMessagePanel` for `/new-message/*`.
+- **Sidebar** (left, 280px): Shows the contextual panel based on the current route — `ChatListPanel` for chat routes, `SettingsPanel` for `/settings/*`, `NewMessagePanel` for `/new-message/*`.
 - **Content** (right, flex): Shows the page content. For sidebar-only routes (`/` and `/settings`), an `EmptyState` placeholder is rendered instead.
 
 Pages like `/`, `/settings`, and `/new-message` always render their mobile content (wrapped in `<Page>`). On desktop, `DesktopLayout` handles showing the correct sidebar panel and decides whether to render `EmptyState` or the page's children in the content area. Pages never check `isWideScreen` to decide between EmptyState and their content — that logic lives solely in `DesktopLayout`.
