@@ -17,6 +17,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
+	import { isIos } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -97,7 +98,7 @@
 			title={m.about()}
 			titleClass="opacity1"
 			transparent={true}
-			rightClass={!hasChanges ? 'pointer-events-none opacity-50' : ''}
+			rightClass={!hasChanges ? 'ios-right-disabled' : ''}
 		>
 			{#snippet left()}
 				<NavbarBackLink
@@ -107,7 +108,7 @@
 			{/snippet}
 
 			{#snippet right()}
-				{#if theme === 'ios'}
+				{#if isIos}
 					<Link onClick={save} data-testid="edit-about-save-link">
 						{m.save()}
 					</Link>
@@ -153,7 +154,7 @@
 			</List>
 		</div>
 
-		{#if theme === 'material'}
+		{#if !isIos}
 			<Button
 				onClick={save}
 				class="fixed-action-btn"

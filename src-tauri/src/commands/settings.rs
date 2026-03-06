@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 use crate::settings;
 
@@ -30,9 +30,13 @@ pub fn set_setting(key: String, value: serde_json::Value, app: AppHandle) -> Res
 
     settings::save_settings(&app, &settings);
 
-    let updated = serde_json::to_value(&settings)
-        .map_err(|err| format!("Failed to serialize settings: {err}"))?;
-    let _ = app.emit("settings://updated", updated);
-
     Ok(())
+}
+
+#[cfg(not(mobile))]
+#[tauri::command]
+pub async fn set_local_mailbox_enabled(enabled: bool, app: AppHandle) -> Result<(), String> {
+    crate::mailbox::server::set_local_mailbox_server_enabled(&app, enabled)
+        .await
+        .map_err(|e| e.to_string())
 }

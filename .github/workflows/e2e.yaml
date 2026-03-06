@@ -52,9 +52,7 @@ jobs:
         run: pnpm -F ./packages/stores build
 
       - name: Build Tauri app (debug, no-bundle)
-        run: pnpm tauri build --debug --no-bundle
-        env:
-          VITE_E2E: '1'
+        run: pnpm tauri build --debug --no-bundle --features e2e-tests
 
       - name: Make launch scripts executable
         run: chmod +x e2e-tests/scripts/*.sh

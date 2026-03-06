@@ -10,6 +10,7 @@
 		ChatsStore,
 		LogsStore,
 		TauriLogsClient,
+		LocalStorageLogsClient,
 		type Payload,
 		ContactsClient,
 		ContactsStore,
@@ -17,58 +18,98 @@
 		DevicesStore,
 		SettingsClient,
 		SettingsStore,
+		MockContactsClient,
+		MockDevicesClient,
+		MockChatsClient,
+		MockDirectChatClient,
+		MockGroupChatClient,
+		MockSettingsClient,
+		seedDemoData,
+		DEMO_IDS,
 	} from 'dash-chat-stores';
 	import { App, KonstaProvider } from 'konsta/svelte';
 
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
+	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
-	import UpdaterDialog from '$lib/components/UpdaterDialog.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
+	import { isIos, isMac, isTauriEnv } from '$lib/utils/environment';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
 	import { goto } from '$app/navigation';
 	window.__setLocale = setLocale;
 
-	// Register test utils in dev mode and E2E builds (VITE_E2E=1)
-	if (import.meta.env.DEV || import.meta.env.VITE_E2E) {
-		import('../../tests/setup-utils').then(({ registerTestUtils }) => registerTestUtils(goto));
-	}
+	import('../../tests/setup-utils').then(({ registerTestUtils }) => registerTestUtils(goto));
 
 	let { children } = $props();
 
-	const settingsStore = new SettingsStore(new SettingsClient());
+	const isPreview = !isTauriEnv();
+
+	// --- Store initialization ---
+	let settingsStore: SettingsStore;
+	let logsStore: LogsStore<Payload>;
+	let devicesStore: DevicesStore;
+	let contactsStore: ContactsStore;
+	let chatsStore: ChatsStore;
+
+	if (isPreview) {
+		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
+		seedDemoData(mockLogsClient);
+
+		logsStore = new LogsStore<Payload>(mockLogsClient);
+		settingsStore = new SettingsStore(new MockSettingsClient());
+
+		const mockDevicesClient = new MockDevicesClient(DEMO_IDS.DEVICE_GROUP_TOPIC);
+		devicesStore = new DevicesStore(logsStore, mockDevicesClient);
+
+		const mockContactsClient = new MockContactsClient(
+			mockLogsClient,
+			DEMO_IDS.MY_AGENT_ID,
+			DEMO_IDS.MY_DEVICE_ID,
+			DEMO_IDS.DEVICE_GROUP_TOPIC,
+			[DEMO_IDS.INBOX_TOPIC],
+		);
+		contactsStore = new ContactsStore(logsStore, devicesStore, mockContactsClient);
+
+		const mockChatsClient = new MockChatsClient();
+		chatsStore = new ChatsStore(
+			logsStore,
+			contactsStore,
+			mockChatsClient,
+			() => new MockDirectChatClient(mockLogsClient, DEMO_IDS.MY_AGENT_ID),
+			() => new MockGroupChatClient(),
+		);
+	} else {
+		const logsClient = new TauriLogsClient<Payload>();
+		logsStore = new LogsStore<Payload>(logsClient);
+		settingsStore = new SettingsStore(new SettingsClient());
+
+		const devicesClient = new DevicesClient();
+		devicesStore = new DevicesStore(logsStore, devicesClient);
+
+		const contactsClient = new ContactsClient(logsClient);
+		contactsStore = new ContactsStore(logsStore, devicesStore, contactsClient);
+
+		const chatsClient = new ChatsClient();
+		chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
+	}
+
 	setContext('settings-store', settingsStore);
-
-	const logsClient = new TauriLogsClient<Payload>();
-	const logsStore = new LogsStore<Payload>(logsClient);
-
-	const devicesClient = new DevicesClient();
-	const devicesStore = new DevicesStore(logsStore, devicesClient);
 	setContext('devices-store', devicesStore);
-
-	const contactsClient = new ContactsClient(logsClient);
-	const contactsStore = new ContactsStore(
-		logsStore,
-		devicesStore,
-		contactsClient,
-	);
 	setContext('contacts-store', contactsStore);
-
-	const chatsClient = new ChatsClient();
-	const chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
 	setContext('chats-store', chatsStore);
 
 	const isDark = useSignal(settingsStore.isDark);
 
-	let theme: 'ios' | 'material' = $state('material');
+		let theme: 'ios' | 'material' = $state(isIos || isMac ? 'ios' : 'material');
+
 	let darkOverride: boolean | null = $state(null);
 	const effectiveDark = $derived(darkOverride ?? !!$isDark);
-
 	$effect(() => {
 		applyDarkMode(effectiveDark).catch((e) => {
 			showToast(m.errorApplyStyle(), 'error');
@@ -91,10 +132,22 @@
 		return () => window.removeEventListener('set-dark-mode', handler as EventListener);
 	});
 
+	$effect(() => {
+		const handler = (event: CustomEvent<boolean>) => {
+			document.body.classList.toggle('mobile-frame', event.detail);
+		};
+		window.addEventListener('set-mobile-frame', handler as EventListener);
+		return () => window.removeEventListener('set-mobile-frame', handler as EventListener);
+	});
+
 </script>
 
+{#if isPreview}
+	<PreviewToolbar />
+{/if}
+
 <KonstaProvider {theme} dark={effectiveDark}>
-	<App safeAreas {theme} class={`k-${theme}`} dark={effectiveDark}>
+	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
 		<SplashscreenPrompt>
 			{#if isWideScreen.value}
 				<DesktopLayout>
@@ -105,6 +158,5 @@
 			{/if}
 		</SplashscreenPrompt>
 		<ToastManager />
-		<UpdaterDialog />
 	</App>
 </KonstaProvider>

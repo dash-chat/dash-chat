@@ -149,39 +149,11 @@ where
 mod tests {
     use pretty_assertions::assert_eq;
 
+    use crate::testing::Msg;
+
     use super::*;
 
-    #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, derive_more::Debug)]
-    #[debug("Msg({author} {seq})")]
-    struct Msg {
-        topic: MsgTopic,
-        author: char,
-        seq: u64,
-    }
-
     pub type MsgTopic = u8;
-
-    impl MailboxItem for Msg {
-        type Hash = (Self::Author, u64);
-        type Author = char;
-        type Topic = MsgTopic;
-
-        fn hash(&self) -> Self::Hash {
-            (self.author, self.seq)
-        }
-
-        fn author(&self) -> Self::Author {
-            self.author.clone()
-        }
-
-        fn seq_num(&self) -> u64 {
-            self.seq
-        }
-
-        fn topic(&self) -> Self::Topic {
-            self.topic
-        }
-    }
 
     async fn fetch(
         client: &MemMailboxClient<Msg>,

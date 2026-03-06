@@ -7,6 +7,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { Button, Page, Preloader } from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
+	import { isIos } from '$lib/utils/environment';
 	import PhotoPicker from '$lib/components/profiles/PhotoPicker.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -72,10 +73,13 @@
 				bind:avatar
 				bind:isTextEditorOpen={textEditorOpen}
 				onClose={() => goto('/settings/profile')}
+				onSave={save}
+				saveLabel={m.save()}
+				saveDisabled={!hasChanges}
 			/>
 		</div>
 
-		{#if !textEditorOpen}
+		{#if !textEditorOpen && !isIos}
 			<!-- Save button -->
 			<Button
 				rounded

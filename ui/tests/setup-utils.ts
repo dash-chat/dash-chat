@@ -16,6 +16,7 @@ import { createProfile } from './flows/profile-creation';
 import { navigateToAddContact, getContactCode, addContact } from './flows/contact-exchange';
 import { sendMessage, waitForMessage } from './flows/send-message';
 import { openDirectChat } from './flows/open-chat';
+import { visibleCards as getStartedCards, dismissCard as dismissGetStartedCard } from './pages/get-started';
 import { checkOverflow, checkDarkMode, checkRTL, checkPage } from './review/checks';
 import {
 	visitAllPages,
@@ -25,8 +26,8 @@ import {
 	visitChatPages,
 } from './review/visit-all-pages';
 
-/** Trigger UpdaterDialog into a specific state via custom event. */
-function simulateUpdate(state: 'downloading' | 'ready' | 'error' | 'idle') {
+/** Trigger UpdaterBanner into a specific state via custom event. */
+function simulateUpdate(state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden') {
 	window.dispatchEvent(new CustomEvent('test-simulate-update', { detail: state }));
 }
 
@@ -43,6 +44,8 @@ export const testUtils = {
 	sendMessage,
 	waitForMessage,
 	openDirectChat,
+	getStartedCards,
+	dismissGetStartedCard,
 	simulateUpdate,
 	checkOverflow,
 	checkDarkMode,

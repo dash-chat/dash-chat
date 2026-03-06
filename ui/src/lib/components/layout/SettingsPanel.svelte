@@ -5,7 +5,13 @@
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { mdiAccountCircleOutline, mdiQrcode, mdiPaletteOutline, mdiHelpCircleOutline } from '@mdi/js';
+	import {
+		mdiAccountCircleOutline,
+		mdiQrcode,
+		mdiPaletteOutline,
+		mdiHelpCircleOutline,
+		mdiServerOutline,
+	} from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
 	import { page } from '$app/state';
@@ -18,6 +24,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import type { Action } from 'svelte/action';
 
 	const stopPropagation: Action = (node) => {
@@ -128,7 +135,27 @@
 			</ListItem>
 		</List>
 
-		<List strongIos nested inset={isWideScreen.value || theme === 'ios'}>
+		{#if !isMobile}
+			<List strongIos nested inset={isWideScreen.value || theme === 'ios'}>
+				<ListItem
+					link
+					class={isActive('/settings/offline') ? 'active' : ''}
+					linkProps={{ href: '/settings/offline' }}
+					data-testid="settings-offline-link"
+					title={m.offlineFunctionality()}
+					chevron={false}
+				>
+					{#snippet media()}
+						<wa-icon
+							src={wrapPathInSvg(mdiServerOutline)}
+							style="font-size: 28px"
+						></wa-icon>
+					{/snippet}
+				</ListItem>
+			</List>
+		{/if}
+
+		<List strongIos nested={theme !== 'ios'} inset={isWideScreen.value || theme === 'ios'}>
 			<ListItem
 				link
 				class={isActive('/settings/help') ? 'active' : ''}

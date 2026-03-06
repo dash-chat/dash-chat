@@ -4,7 +4,7 @@
  *
  * Split into three small functions to stay within MCP bridge's ~20s timeout:
  *   visitProfilePages  — home → settings → profile → sub-pages → home (~7 pages)
- *   visitOtherPages    — home → settings → appearance/account → home + new-message (~4 pages)
+ *   visitOtherPages    — home → settings → offline/appearance/account → home + new-message (~5 pages)
  *   visitChatPages     — home → direct-chat → chat-settings → home (~2 pages)
  *
  * visitAllPages combines all three (for E2E tests with longer timeouts).
@@ -38,8 +38,16 @@ export interface VisitResult {
 
 type CheckOpts = { checkDarkMode?: boolean; checkRTL?: boolean };
 
-/** Shorter timeout for navigation waits (default 15s is too long for batched calls). */
-const NAV_TIMEOUT = 8000;
+/** Timeout for navigation waits. Generous to handle component remounts from
+ *  isWideScreen changes, where reactive store subscriptions may take time to settle. */
+const NAV_TIMEOUT = 30_000;
+
+/** Yield to the event loop to prevent WebKitGTK from freezing.
+ *  Heavy synchronous DOM operations (checkOverflow scans all elements with
+ *  layout-triggering properties) can lock up WebKit if done back-to-back. */
+function breathe(): Promise<void> {
+	return new Promise(r => setTimeout(r, 200));
+}
 
 function runCheck(pageName: string, options?: CheckOpts): PageResult {
 	const result: CheckResult = checkPage(options);
@@ -58,10 +66,26 @@ function summarize(pages: PageResult[]): VisitResult {
 /** Selector that matches the home page regardless of whether chats exist. */
 const HOME = `${S.home.chatList}, ${S.home.emptyState}`;
 
-/** Navigate using SvelteKit goto (clean, no history stack issues). */
+/** Update progress tracker (read by runVisit's hard timeout for diagnostics). */
+function progress(step: string): void {
+	(window as any).__visitProgress = step;
+}
+
+/** Navigate using SvelteKit goto with a timeout guard.
+ *  SvelteKit's goto() can hang if the target page's load never completes.
+ *  Includes a breathe() after navigation to let WebKit's rendering pipeline
+ *  settle before heavy DOM operations (checkOverflow, checkDarkMode). */
 async function nav(path: string, waitSelector: string): Promise<void> {
-	await testUtils.goto(path);
+	progress(`goto:${path}`);
+	await Promise.race([
+		testUtils.goto(path),
+		new Promise<never>((_, reject) =>
+			setTimeout(() => reject(new Error(`goto("${path}") timed out after ${NAV_TIMEOUT}ms`)), NAV_TIMEOUT),
+		),
+	]);
+	progress(`waitFor:${waitSelector}`);
 	await waitFor(waitSelector, NAV_TIMEOUT);
+	await breathe();
 }
 
 /**
@@ -77,23 +101,30 @@ export async function visitProfilePages(options?: VisitOptions): Promise<VisitRe
 	};
 
 	// Home
+	progress('profile:home');
 	await waitFor(HOME, NAV_TIMEOUT);
 	pages.push(runCheck('home', co));
+	await breathe();
 
 	// Settings
+	progress('profile:settings-click');
 	click(S.home.settingsLink);
 	await waitFor(S.settings.profileLink, NAV_TIMEOUT);
 	pages.push(runCheck('settings', co));
+	await breathe();
 
 	// Profile — wait for content element (profile-back hidden on desktop)
+	progress('profile:profile-click');
 	click(S.settings.profileLink);
 	await waitFor(S.profile.editName, NAV_TIMEOUT);
 	pages.push(runCheck('profile', co));
+	await breathe();
 
 	// Edit Name → back (edit-name-back is always visible)
 	click(S.profile.editName);
 	await waitFor(S.editName.back, NAV_TIMEOUT);
 	pages.push(runCheck('edit-name', co));
+	await breathe();
 	click(S.editName.back);
 	await waitFor(S.profile.editName, NAV_TIMEOUT);
 
@@ -101,6 +132,7 @@ export async function visitProfilePages(options?: VisitOptions): Promise<VisitRe
 	click(S.profile.editAbout);
 	await waitFor(S.editAbout.back, NAV_TIMEOUT);
 	pages.push(runCheck('edit-about', co));
+	await breathe();
 	click(S.editAbout.back);
 	await waitFor(S.profile.editName, NAV_TIMEOUT);
 
@@ -108,6 +140,7 @@ export async function visitProfilePages(options?: VisitOptions): Promise<VisitRe
 	click(S.profile.editPhoto);
 	await waitFor(S.editPhoto.close, NAV_TIMEOUT);
 	pages.push(runCheck('edit-photo', co));
+	await breathe();
 	click(S.editPhoto.close);
 	await waitFor(S.profile.editName, NAV_TIMEOUT);
 
@@ -115,6 +148,7 @@ export async function visitProfilePages(options?: VisitOptions): Promise<VisitRe
 	click(S.profile.qrLink);
 	await waitFor(S.addContact.copyButton, NAV_TIMEOUT);
 	pages.push(runCheck('profile-add-contact', co));
+	await breathe();
 
 	// Back to home via goto (clean, avoids hidden back buttons)
 	await nav('/', HOME);
@@ -123,9 +157,9 @@ export async function visitProfilePages(options?: VisitOptions): Promise<VisitRe
 }
 
 /**
- * Visit other settings + new-message pages: home → settings → appearance →
- * account → home → new-message → add-contact → home.
- * ~4 page checks.
+ * Visit other settings + new-message pages: home → settings → offline →
+ * appearance → account → home → new-message → add-contact → home.
+ * ~5 page checks.
  */
 export async function visitOtherPages(options?: VisitOptions): Promise<VisitResult> {
 	const pages: PageResult[] = [];
@@ -134,20 +168,32 @@ export async function visitOtherPages(options?: VisitOptions): Promise<VisitResu
 		checkRTL: options?.checkRTL,
 	};
 
+	progress('other:waitHome');
 	await waitFor(HOME, NAV_TIMEOUT);
 
+	// Offline — use content selector (offline-back hidden on desktop)
+	progress('other:offline');
+	await nav('/settings/offline', S.offline.localMailboxToggle);
+	pages.push(runCheck('offline', co));
+	await breathe();
+
 	// Appearance — use content selector (appearance-back hidden on desktop)
+	progress('other:appearance');
 	await nav('/settings/appearance', S.appearance.light);
 	pages.push(runCheck('appearance', co));
+	await breathe();
 
 	// Account — navigate directly (account-back hidden on desktop)
 	await nav('/settings/account', S.account.deleteItem);
 	pages.push(runCheck('account', co));
+	await breathe();
 
 	// Back to home
 	await nav('/', HOME);
+	await breathe();
 
 	// New Message (theme-agnostic: try FAB first, fall back to link)
+	progress('other:newMessage');
 	const fab = document.querySelector(S.home.newMessageFab) as HTMLElement | null;
 	if (fab && fab.offsetWidth > 0) {
 		fab.click();
@@ -156,11 +202,13 @@ export async function visitOtherPages(options?: VisitOptions): Promise<VisitResu
 	}
 	await waitFor(S.newMessage.addContact, NAV_TIMEOUT);
 	pages.push(runCheck('new-message', co));
+	await breathe();
 
 	// Add Contact (from new-message) — use copyButton (always present)
 	click(S.newMessage.addContact);
 	await waitFor(S.addContact.copyButton, NAV_TIMEOUT);
 	pages.push(runCheck('new-message-add-contact', co));
+	await breathe();
 
 	// Back to home
 	await nav('/', HOME);
@@ -180,19 +228,23 @@ export async function visitChatPages(options?: VisitOptions): Promise<VisitResul
 		checkRTL: options?.checkRTL,
 	};
 
+	progress('chat:waitHome');
 	await waitFor(HOME, NAV_TIMEOUT);
 
 	if (options?.hasChat) {
+		progress('chat:clickChat');
 		const chatLink = document.querySelector(`${S.home.chatList} a`) as HTMLElement | null;
 		if (chatLink) {
 			chatLink.click();
 			await waitFor(S.directChat.messages, NAV_TIMEOUT);
 			pages.push(runCheck('direct-chat', co));
+			await breathe();
 
 			// Chat settings → back (chat-settings-back is always visible)
 			click(S.directChat.settingsLink);
 			await waitFor(S.chatSettings.back, NAV_TIMEOUT);
 			pages.push(runCheck('chat-settings', co));
+			await breathe();
 
 			// Back to home via goto
 			await nav('/', HOME);
@@ -217,9 +269,13 @@ export async function visitSettingsPages(options?: VisitOptions): Promise<VisitR
  * Takes ~15-25s — use for E2E tests (longer timeout), NOT for MCP webview_execute_js.
  */
 export async function visitAllPages(options?: VisitOptions): Promise<VisitResult> {
+	progress('visitAllPages:profilePages');
 	const profile = await visitProfilePages(options);
+	progress('visitAllPages:otherPages');
 	const other = await visitOtherPages(options);
+	progress('visitAllPages:chatPages');
 	const chat = await visitChatPages(options);
+	progress('visitAllPages:done');
 	const pages = [...profile.pages, ...other.pages, ...chat.pages];
 	return summarize(pages);
 }

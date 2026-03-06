@@ -6,18 +6,24 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { Button, Link, Navbar, Segmented, SegmentedButton } from 'konsta/svelte';
 	import { resizeAndExport } from '$lib/utils/image';
-	import { isMobile } from '$lib/utils/environment';
+	import { isMobile, isIos } from '$lib/utils/environment';
 
 	let {
 		avatar = $bindable(),
 		isTextEditorOpen = $bindable(false),
 		onSelect,
 		onClose,
+		onSave,
+		saveLabel,
+		saveDisabled = false,
 	}: {
 		avatar?: string | undefined;
 		isTextEditorOpen?: boolean;
 		onSelect?: () => void;
 		onClose?: () => void;
+		onSave?: () => void;
+		saveLabel?: string;
+		saveDisabled?: boolean;
 	} = $props();
 
 	let view = $state<'picker' | 'text'>('picker');
@@ -155,12 +161,21 @@
 />
 
 {#if view === 'picker'}
-	{#if onClose}
-		<Navbar transparent>
+	{#if onClose || (onSave && isIos)}
+		<Navbar transparent rightClass={saveDisabled ? 'ios-right-disabled' : ''}>
 			{#snippet left()}
-				<Link iconOnly onClick={onClose} data-testid="edit-photo-close">
-					<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 24px"></wa-icon>
-				</Link>
+				{#if onClose}
+					<Link iconOnly onClick={onClose} data-testid="edit-photo-close">
+						<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 24px"></wa-icon>
+					</Link>
+				{/if}
+			{/snippet}
+			{#snippet right()}
+				{#if isIos && onSave}
+					<Link onClick={onSave} data-testid="edit-photo-save-link">
+						{saveLabel || m.save()}
+					</Link>
+				{/if}
 			{/snippet}
 		</Navbar>
 	{/if}
@@ -248,11 +263,18 @@
 	</div>
 {:else}
 	<!-- Text avatar editor -->
-	<Navbar transparent>
+	<Navbar transparent rightClass={!textValue ? 'ios-right-disabled' : ''}>
 		{#snippet left()}
 			<Link iconOnly onClick={() => (view = 'picker')} data-testid="edit-photo-back">
 				<wa-icon src={wrapPathInSvg(mdiArrowLeft)} style="font-size: 24px"></wa-icon>
 			</Link>
+		{/snippet}
+		{#snippet right()}
+			{#if isIos}
+				<Link onClick={generateTextAvatar}>
+					{m.done()}
+				</Link>
+			{/if}
 		{/snippet}
 	</Navbar>
 
@@ -304,15 +326,17 @@
 		</div>
 	{/if}
 
-	<Button
-		rounded
-		tonal
-		disabled={!textValue}
-		onClick={generateTextAvatar}
-				class="fixed-action-btn"
-	>
-		{m.done()}
-	</Button>
+	{#if !isIos}
+		<Button
+			rounded
+			tonal
+			disabled={!textValue}
+			onClick={generateTextAvatar}
+			class="fixed-action-btn"
+		>
+			{m.done()}
+		</Button>
+	{/if}
 {/if}
 
 <style>

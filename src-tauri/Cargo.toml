@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.10.1"
+version = "0.10.3"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -74,8 +74,6 @@ uuid = "1"
 serde = "1"
 serde_json = "1"
 sonix-i18n = "0.1.1"
-jni = "0.21"
-ndk-context = "0.1"
 futures = "0.3"
 
 # Work around "hyper-tls" not found issue in nix build tauri app
@@ -92,6 +90,10 @@ openssl-sys = { version = "0.9", features = ["vendored"] }
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = "2.4"
 tauri-plugin-system-bars-styles = { git = "https://github.com/dash-chat/tauri-plugin-system-bars-styles", branch = "main" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
 ndk-sys = "0.6"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
@@ -100,6 +102,9 @@ tauri-plugin-keepawake = "0.1.0"
 tauri-plugin-updater = "2.9"
 tauri-plugin-mcp-bridge = "0.8"
 mailbox-server = { path = "../crates/mailbox-server" }
+
+[features]
+e2e-tests = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

@@ -10,6 +10,7 @@ use crate::{commands::logs::simplify, filesystem::FileSystem};
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     // Manage the mDNS service daemon
     app_handle.manage(mdns_sd::ServiceDaemon::new()?);
+
     let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle).local_data_dir()?;
     log::info!("Using local data path: {local_data_path:?}");
 
@@ -20,7 +21,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         crate::tray::setup_tray(&app_handle)?;
 
         if crate::settings::load_mailbox_enabled(&app_handle) {
-            crate::mailbox::server::start_local_mailbox(&app_handle).await?;
+            crate::mailbox::server::set_local_mailbox_server_enabled(&app_handle, true).await?;
         }
 
         // Hide the main window when launched with --minimized (autostart)
@@ -31,7 +32,14 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         }
     }
 
-    let config = dashchat_node::NodeConfig::default();
+    let config = if cfg!(feature = "e2e-tests") {
+        let mut config = dashchat_node::NodeConfig::default();
+        config.mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
+        config.mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
+        config
+    } else {
+        dashchat_node::NodeConfig::default()
+    };
     let (notification_tx, mut notification_rx) = tokio::sync::mpsc::channel(100);
     let node = dashchat_node::Node::new(local_data_path, config, Some(notification_tx)).await?;
 
@@ -69,6 +77,12 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
             if let Err(err) = app_handle.emit("p2panda://new-operation", simplified_operation) {
                 log::error!("Failed to emit operation: {err:?}");
+            }
+
+            // Small delay between emissions to avoid overwhelming the WebKitGTK
+            // event loop with rapid-fire events (which can freeze the webview).
+            if cfg!(feature = "e2e-tests") {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             }
         }
     });

@@ -46,3 +46,4 @@ service-account-key.json
 *.redb
 .dbs
 .e2e-binaries
+signal-reference

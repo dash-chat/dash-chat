@@ -15,9 +15,11 @@
 		ListInput,
 		List,
 		Button,
+		Link,
 		useTheme,
 	} from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isIos } from '$lib/utils/environment';
 	import { page } from '$app/state';
 	let chatId = page.params.chatId!;
 
@@ -54,6 +56,13 @@
 				onClick={() => goto(`/group-chat/${chatId}/info`)}
 			/>
 		{/snippet}
+		{#snippet right()}
+			{#if isIos}
+				<Link onClick={save}>
+					{m.save()}
+				</Link>
+			{/if}
+		{/snippet}
 	</Navbar>
 
 	{#await $info then info}
@@ -83,12 +92,14 @@
 			</div>
 		</div>
 
-		<Button
-			onClick={save}
-			class="fixed-action-btn"
-			rounded
-		>
-			{m.save()}
-		</Button>
+		{#if !isIos}
+			<Button
+				onClick={save}
+				class="fixed-action-btn"
+				rounded
+			>
+				{m.save()}
+			</Button>
+		{/if}
 	{/await}
 </Page>

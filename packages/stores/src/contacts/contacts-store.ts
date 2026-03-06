@@ -220,9 +220,9 @@ export class ContactsStore {
 			contacts.map(contact => this.profiles(contact)),
 		);
 
-		const profilesWithContacts: Array<[AgentId, Profile]> = profiles
-			.filter(p => !!p)
-			.map((profile, i) => [contacts[i], profile]);
+		const profilesWithContacts: Array<[AgentId, Profile]> = contacts
+			.map((contact, i) => [contact, profiles[i]] as [AgentId, Profile | undefined])
+			.filter((pair): pair is [AgentId, Profile] => !!pair[1]);
 
 		return profilesWithContacts;
 	});
