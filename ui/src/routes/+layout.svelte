@@ -32,7 +32,6 @@
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
 	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
-	import UpdaterDialog from '$lib/components/UpdaterDialog.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useSignal } from '$lib/stores/use-signal';
@@ -111,7 +110,6 @@
 
 	let darkOverride: boolean | null = $state(null);
 	const effectiveDark = $derived(darkOverride ?? !!$isDark);
-
 	$effect(() => {
 		applyDarkMode(effectiveDark).catch((e) => {
 			showToast(m.errorApplyStyle(), 'error');
@@ -134,6 +132,14 @@
 		return () => window.removeEventListener('set-dark-mode', handler as EventListener);
 	});
 
+	$effect(() => {
+		const handler = (event: CustomEvent<boolean>) => {
+			document.body.classList.toggle('mobile-frame', event.detail);
+		};
+		window.addEventListener('set-mobile-frame', handler as EventListener);
+		return () => window.removeEventListener('set-mobile-frame', handler as EventListener);
+	});
+
 </script>
 
 {#if isPreview}
@@ -152,6 +158,5 @@
 			{/if}
 		</SplashscreenPrompt>
 		<ToastManager />
-		<UpdaterDialog />
 	</App>
 </KonstaProvider>

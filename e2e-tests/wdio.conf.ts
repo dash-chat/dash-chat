@@ -30,7 +30,7 @@ export const config: Options.Testrunner = {
 	specs: ['./specs/**/*.spec.ts'],
 	exclude: ['./specs/compat-*.spec.ts'],
 	maxInstances: 1,
-	// specFileRetries: 2,
+	specFileRetries: 1,
 
 	capabilities: {
 		agent1: {

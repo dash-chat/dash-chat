@@ -3,6 +3,7 @@
 	let dark = $state(false);
 	let mobile = $state(false);
 	let open = $state(false);
+	let updater = $state(false);
 
 	function toggleTheme() {
 		theme = theme === 'ios' ? 'material' : 'ios';
@@ -17,6 +18,14 @@
 	function toggleLayout() {
 		mobile = !mobile;
 		window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: !mobile }));
+		window.dispatchEvent(new CustomEvent('set-mobile-frame', { detail: mobile }));
+	}
+
+	function toggleUpdater() {
+		updater = !updater;
+		window.dispatchEvent(
+			new CustomEvent('test-simulate-update', { detail: updater ? 'downloading' : 'idle' }),
+		);
 	}
 
 	function resetData() {
@@ -45,6 +54,9 @@
 			</button>
 			<button class="preview-btn" onclick={toggleLayout}>
 				{mobile ? 'Mobile' : 'Desktop'}
+			</button>
+			<button class="preview-btn" onclick={toggleUpdater}>
+				{updater ? 'Hide Update' : 'Show Update'}
 			</button>
 			<button class="preview-btn preview-btn-reset" onclick={resetData}>
 				Reset
