@@ -46,13 +46,11 @@
 		{/snippet}
 	</Navbar>
 
-	<div class={theme==='ios' ? "mt-4": ''}>
-		{#await $chatSummaries then chats}
-			{#if chats.length === 0 && !isWideScreen.value}
-				<FirstChatTooltip />
-			{/if}
-		{/await}
-	</div>
+	{#await $chatSummaries then chats}
+		{#if chats.length === 0 && !isWideScreen.value}
+			<FirstChatTooltip />
+		{/if}
+	{/await}
 
 	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
 
