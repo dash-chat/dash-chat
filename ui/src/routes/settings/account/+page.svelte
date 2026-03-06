@@ -14,6 +14,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
+	import { invoke } from '@tauri-apps/api/core';
 
 	const theme = $derived(useTheme());
 	let showDeleteDialog = $state(false);
@@ -23,7 +24,7 @@
 		loading = true;
 		try {
 			// TODO: Implement backend command for delete account
-			// await invoke('delete_account');
+			await invoke('delete_profile');
 			showToast(m.accountDeleted());
 			goto('/');
 		} catch (e) {

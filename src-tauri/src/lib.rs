@@ -50,6 +50,7 @@ pub fn run() {
             commands::preferences::get_preferences,
             commands::preferences::set_preferences,
             commands::profile::set_profile,
+            commands::profile::delete_profile,
             commands::devices::my_device_group_topic,
             commands::contacts::my_device_id,
             commands::contacts::my_agent_id,

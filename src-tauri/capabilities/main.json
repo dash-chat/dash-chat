@@ -4,6 +4,7 @@
 	"description": "Capability for the main window",
 	"windows": ["main"],
 	"permissions": [
+		"process:allow-restart",
 		"core:default",
 		"core:window:allow-set-title",
 		"log:default",

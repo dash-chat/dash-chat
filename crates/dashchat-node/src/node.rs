@@ -2,6 +2,7 @@ pub(crate) mod author_operation;
 mod stream_processing;
 
 use std::collections::{BTreeSet, HashSet};
+use std::fs;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -317,11 +318,9 @@ impl Node {
         Ok(())
     }
 
-    pub async fn delete_profile(&self) -> Result<(), crate::Error> {
-        // delete everything !
-
-        // and then reset to clean state !
-        Ok(())
+    pub fn delete_profile(&self) {
+        let _ =fs::remove_file(self.filesystem.local_store_path());
+        let _ =fs::remove_file(self.filesystem.op_store_path());
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
