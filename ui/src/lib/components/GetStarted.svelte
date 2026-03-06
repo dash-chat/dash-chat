@@ -18,8 +18,7 @@
 		label: () => string;
 		icon: string;
 		href: string;
-		bg: string;
-		border: string;
+		color: string;
 		hidden?: boolean;
 	}
 
@@ -43,32 +42,28 @@
 			label: () => m.addContact(),
 			icon: mdiAccountPlus,
 			href: '/new-message/add-contact',
-			bg: 'bg-[#F6EDE0] dark:bg-amber-900/20',
-			border: 'border-[#EBE0CF] dark:border-amber-800/15',
+			color: 'bg-[#F6EDE0] dark:bg-amber-900/20',
 		},
 		{
 			id: 'add-photo',
 			label: () => m.addPhoto(),
 			icon: mdiCamera,
 			href: '/settings/profile/edit-photo',
-			bg: 'bg-[#DEE5D6] dark:bg-[#2A2E20]/20',
-			border: 'border-[#D0D9C5] dark:border-[#2A2E20]/15',
+			color: 'bg-[#DEE5D6] dark:bg-[#2A2E20]/20',
 		},
 		{
 			id: 'chat-color',
 			label: () => m.chatColor(),
 			icon: mdiPalette,
 			href: '/settings/appearance',
-			bg: 'bg-[#F6EDE0] dark:bg-amber-900/20',
-			border: 'border-[#EBE0CF] dark:border-amber-800/15',
+			color: 'bg-[#F6EDE0] dark:bg-amber-900/20',
 		},
 		{
 			id: 'new-group',
 			label: () => m.newGroup(),
 			icon: mdiAccountMultiplePlus,
 			href: '/new-group',
-			bg: 'bg-[#DEE5D6] dark:bg-[#2A2E20]/20',
-			border: 'border-[#D0D9C5] dark:border-[#2A2E20]/15',
+			color: 'bg-[#DEE5D6] dark:bg-[#2A2E20]/20',
 			hidden: true,
 		},
 	];
@@ -108,15 +103,15 @@
 {#if visibleCards.length > 0}
 	<div class="px-4 pb-4">
 		<p class="mb-3 text-lg font-bold">{m.getStarted()}</p>
-		<div class="flex gap-3 overflow-x-auto pb-1">
+		<div class="flex gap-3.5 overflow-x-auto pb-1">
 			{#each visibleCards as card}
 				<div
-					class="relative w-44 shrink-0 rounded-[20px] border {card.bg} {card.border}"
+					class="relative w-[165px] shrink-0 rounded-[20px] {card.color}"
 					data-testid="get-started-{card.id}"
 				>
 					<a
 						href={card.href}
-						class="flex flex-col items-center px-5 pb-5 pt-8"
+						class="flex flex-col items-center px-5 pb-5 pt-7"
 					>
 						<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 28px">
 						</wa-icon>
