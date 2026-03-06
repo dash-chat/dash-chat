@@ -5,7 +5,7 @@
 	import { mdiSend, mdiEmoticonHappyOutline } from '@mdi/js';
 	import { useTheme } from 'konsta/svelte';
 	import { onMount } from 'svelte';
-	import { isIos, isMobile } from '$lib/utils/environment';
+	import { isIos } from '$lib/utils/environment';
 
 	interface Props {
 		value?: string;
@@ -99,7 +99,6 @@
 			<textarea
 				class="message-textarea"
 				data-testid="message-input-textarea"
-				style={isMobile ? undefined : 'font-size: 14px'}
 				{placeholder}
 				bind:value
 				bind:this={textarea}

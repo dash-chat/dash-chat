@@ -2,6 +2,9 @@
 /* import Konsta UI theme */
 @import 'konsta/svelte/theme.css';
 
+/* Desktop density variant — matches elements inside .desktop (set on <App> when !isMobile) */
+@custom-variant desktop (&:where(.desktop *));
+
 @theme {
 	--color-brand-primary: #007aff;
 	--color-brand-red: #ff0000;
@@ -288,39 +291,41 @@ emoji-picker {
 }
 
 /*
- * Desktop density overrides — scoped to .desktop (applied when !isMobile).
- * Konsta UI generates Tailwind utility classes (e.g. text-[22px], text-[16px])
- * for font sizes, so we use attribute selectors with !important to override them.
+ * Desktop density — override Tailwind's --spacing variable to shrink all
+ * spacing/padding/height utilities proportionally (75% of mobile).
+ * Font-size overrides target Konsta-internal classes we cannot control.
  */
 .desktop {
+	--spacing: 0.1875rem; /* 3px vs default 4px — tighter desktop density */
 	font-size: 14px;
 }
 
+/* Konsta Material navbar title (generates text-[22px]) */
 .desktop .k-navbar [class*='text-[22px]'] {
 	font-size: 16px !important;
 }
 
+/* Konsta list-item title row (generates text-[16px]) */
 .desktop .k-list-item [class*='text-[16px]'] {
 	font-size: 14px !important;
 }
 
+/* Konsta list-item subtitle / after text */
 .desktop .k-list-item .text-sm {
 	font-size: 13px;
 }
 
+/* Default list-item avatar size */
 .desktop .k-list-item wa-avatar {
 	--size: 36px;
 }
 
+/* Global icon size */
 .desktop wa-icon {
 	font-size: 20px;
 }
 
-.desktop wa-icon[slot='start'],
-.desktop wa-icon[slot='end'] {
-	font-size: 18px;
-}
-
-.desktop .message {
+/* Message input textarea */
+.desktop .message-textarea {
 	font-size: 14px;
 }

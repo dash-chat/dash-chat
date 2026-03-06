@@ -10,8 +10,6 @@
 	import { Link, Navbar, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pushState } from '$app/navigation';
-	import { isMobile } from '$lib/utils/environment';
-
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	const theme = $derived(useTheme());
@@ -25,7 +23,7 @@
 					<wa-avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
-						style={`--size: ${isMobile ? '42px' : '32px'}`}
+						class="[--size:42px] desktop:[--size:32px]"
 					>
 					</wa-avatar>
 				</Link>

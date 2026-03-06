@@ -37,7 +37,6 @@
 	import Layout from '../../../+layout.svelte';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { isMobile } from '$lib/utils/environment';
 	import { page } from '$app/state';
 	let chatId = page.params.chatId!;
 
@@ -161,7 +160,7 @@
 							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
 						</wa-avatar>
 
-						<span class={`${isMobile ? 'text-xl' : 'text-lg'} font-semibold`}>{info.name}</span>
+						<span class="text-xl desktop:text-lg font-semibold">{info.name}</span>
 
 						<span class="quiet">{info.description}</span>
 					</div>
