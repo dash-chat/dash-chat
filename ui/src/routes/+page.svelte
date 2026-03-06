@@ -46,6 +46,8 @@
 		{/snippet}
 	</Navbar>
 
+	<div class={theme==='ios' ? "mt-4": ''}></div>
+
 	{#await $chatSummaries then chats}
 		{#if chats.length === 0 && !isWideScreen.value}
 			<FirstChatTooltip />
