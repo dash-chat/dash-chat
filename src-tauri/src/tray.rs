@@ -17,15 +17,9 @@ pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
 
     let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(app_handle.default_window_icon().unwrap().clone())
+        .icon_as_template(true)
         .menu(&menu)
-        .show_menu_on_left_click(false)
-        .on_tray_icon_event(|tray, event| {
-            if let tauri::tray::TrayIconEvent::Click { .. } = event {
-                if let Err(err) = show_or_create_main_window(tray.app_handle()) {
-                    log::error!("Failed to show/create main window: {err:?}");
-                }
-            }
-        })
+        .show_menu_on_left_click(true)
         .on_menu_event(move |app, menu_event| match menu_event.id().as_ref() {
             "show" => {
                 if let Err(err) = show_or_create_main_window(app) {
@@ -33,13 +27,7 @@ pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
                 }
             }
             "quit" => {
-                tauri::async_runtime::block_on(async move {
-                    let _ = crate::mailbox::server::stop_local_mailbox(&app).await;
-                });
-                // Signal the run-loop to stop calling prevent_exit(), then
-                // exit gracefully so all destructors run.
-                crate::FORCE_QUIT.store(true, std::sync::atomic::Ordering::Relaxed);
-                app.exit(0);
+                confirm_quit_and_exit(app);
             }
             _ => {}
         })
@@ -60,6 +48,39 @@ pub fn hide_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
         tray.set_visible(false)?;
     }
     Ok(())
+}
+
+/// Show a quit-confirmation dialog on a background thread.
+/// If the user confirms, the local mailbox is stopped and the app exits.
+/// Guards against multiple simultaneous dialogs via `QUIT_DIALOG_OPEN`.
+pub fn confirm_quit_and_exit(app: &AppHandle<impl Runtime>) {
+    use std::sync::atomic::Ordering;
+    // Prevent stacking multiple dialogs
+    if crate::QUIT_DIALOG_OPEN.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+        let confirmed = app
+            .dialog()
+            .message(sonix_i18n::t!("quitConfirmMessage"))
+            .title(sonix_i18n::t!("quitConfirmTitle"))
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                sonix_i18n::t!("trayQuit").to_string(),
+                sonix_i18n::t!("cancel").to_string(),
+            ))
+            .blocking_show();
+        crate::QUIT_DIALOG_OPEN.store(false, Ordering::Relaxed);
+        if confirmed {
+            tauri::async_runtime::block_on(async {
+                let _ = crate::mailbox::server::stop_local_mailbox(&app).await;
+            });
+            crate::FORCE_QUIT.store(true, Ordering::Relaxed);
+            app.exit(0);
+        }
+    });
 }
 
 pub fn show_or_create_main_window<R: Runtime>(app: &AppHandle<R>) -> anyhow::Result<()> {
