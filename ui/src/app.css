@@ -302,15 +302,30 @@ emoji-picker {
 
 /*
  * Desktop density — override Tailwind theme variables to match Signal Desktop.
- * --spacing shrinks all spacing/padding/height utilities proportionally.
- * Font-size overrides target Konsta-internal arbitrary-value classes.
+ * --spacing controls all spacing/padding/height utilities proportionally.
+ * Navbar gets tighter --spacing for a compact 40px header.
  */
 .desktop {
-	--spacing: 0.15625rem; /* 2.5px — matches Signal Desktop density */
+	--spacing: 0.1875rem; /* 3px — general desktop density */
 	--text-xs: 0.6875rem; /* 11px */
 	--text-sm: 0.8125rem; /* 13px */
 	--text-base: 0.875rem; /* 14px */
 	font-size: 14px;
+}
+
+/* Compact navbar — tighter spacing for ~40px height like Signal Desktop */
+.desktop .k-navbar {
+	--spacing: 0.15625rem; /* 2.5px — h-16 → 40px, max-h-12 → 30px */
+}
+
+/* Tighter padding on navbar action links */
+.desktop .k-navbar .k-link {
+	padding-inline: 0.3125rem; /* 5px — Signal-style tight icon buttons */
+}
+
+/* Navbar icons smaller than body icons */
+.desktop .k-navbar wa-icon {
+	font-size: 18px;
 }
 
 /* Konsta Material navbar title (generates text-[22px] — arbitrary, no variable) */
