@@ -39,6 +39,7 @@ export const config: Options.Testrunner = {
 
 	specs: [specFile],
 	maxInstances: 1,
+	specFileRetries: 1,
 
 	capabilities: {
 		agent1: {
