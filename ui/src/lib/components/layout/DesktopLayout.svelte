@@ -81,7 +81,7 @@
 		border-right: 1px solid var(--k-hairline-color);
 		overflow-y: auto;
 		overflow-x: hidden;
-		background-color: var(--k-color-md-light-surface);
+		background-color: var(--color-md-light-surface-2);
 	}
 
 	.desktop-content {
@@ -89,7 +89,7 @@
 		min-width: 0;
 		position: relative;
 		overflow: hidden;
-		background-color: var(--k-color-md-light-surface);
+		background-color: var(--color-md-light-surface);
 	}
 
 	.desktop-content-settings :global(.k-navbar:not(:has(.k-navbar-back-link))) {
@@ -97,9 +97,9 @@
 	}
 
 	:global(.dark) .desktop-sidebar {
-		background-color: var(--k-color-md-dark-surface);
+		background-color: var(--color-md-dark-surface-2);
 	}
 	:global(.dark) .desktop-content {
-		background-color: var(--k-color-md-dark-surface);
+		background-color: var(--color-md-dark-surface);
 	}
 </style>

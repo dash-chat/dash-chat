@@ -14,8 +14,6 @@ pub(crate) struct LocalMailboxState {
 pub(crate) type LocalMailboxMutex = Mutex<Option<LocalMailboxState>>;
 
 pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
-    crate::tray::show_tray(handle)?;
-
     let mutex = handle.state::<LocalMailboxMutex>();
     let mut guard = mutex.lock().await;
     if guard.is_some() {
@@ -75,8 +73,6 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
 }
 
 pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
-    crate::tray::hide_tray::<R>(handle)?;
-
     let mutex = handle.state::<LocalMailboxMutex>();
     let mut guard = mutex.lock().await;
     let Some(state) = guard.take() else {
@@ -98,7 +94,7 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
 }
 
 /// Start/stop the mailbox server, persist the setting, toggle OS autostart,
-/// and sync the app menu checkbox.
+/// sync the app menu checkbox, and update the tray/badge.
 pub async fn set_local_mailbox_server_enabled<R: Runtime>(
     handle: &AppHandle<R>,
     enabled: bool,
@@ -108,7 +104,11 @@ pub async fn set_local_mailbox_server_enabled<R: Runtime>(
     // Start/stop first — only persist if the operation succeeds.
     if enabled {
         start_local_mailbox(handle).await?;
+        crate::tray::show_tray(handle)?;
+        set_dock_badge(handle, true);
     } else {
+        crate::tray::hide_tray::<R>(handle)?;
+        set_dock_badge(handle, false);
         stop_local_mailbox(handle).await?;
     }
 
@@ -140,6 +140,21 @@ fn sync_menu_toggle<R: Runtime>(handle: &AppHandle<R>, enabled: bool) {
                     let _ = check.set_checked(enabled);
                 }
             }
+        }
+    }
+}
+
+/// Show or clear a badge on the dock/taskbar icon to indicate the mailbox is running.
+/// The badge is app-level (macOS dock / Linux taskbar) but Tauri only exposes it
+/// through a Window, so we grab any available window as the access point.
+fn set_dock_badge<R: Runtime>(handle: &AppHandle<R>, active: bool) {
+    let window = handle
+        .get_webview_window("main")
+        .or_else(|| handle.webview_windows().into_values().next());
+    if let Some(window) = window {
+        let count = if active { Some(1) } else { None };
+        if let Err(err) = window.set_badge_count(count) {
+            log::warn!("Failed to set dock badge: {err:?}");
         }
     }
 }
