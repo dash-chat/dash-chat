@@ -21,8 +21,11 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
                 Ok(enabled) => {
                     let app_handle = app_handle.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(err) =
-                            crate::mailbox::server::set_local_mailbox_server_enabled(&app_handle, enabled).await
+                        if let Err(err) = crate::mailbox::server::set_local_mailbox_server_enabled(
+                            &app_handle,
+                            enabled,
+                        )
+                        .await
                         {
                             log::error!("Failed to toggle local mailbox: {err:?}");
                         }
