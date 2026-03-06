@@ -102,27 +102,27 @@
 
 {#if visibleCards.length > 0}
 	<div class="px-4 pb-4">
-		<p class="mb-2 text-base font-semibold">{m.getStarted()}</p>
+		<p class="mb-3 text-lg font-bold">{m.getStarted()}</p>
 		<div class="flex gap-3 overflow-x-auto pb-1">
 			{#each visibleCards as card}
 				<div
-					class="relative w-40 shrink-0 rounded-2xl border border-black/5 dark:border-white/10 {card.color}"
+					class="relative w-44 shrink-0 rounded-[20px] border border-black/[0.06] dark:border-white/10 {card.color}"
 					data-testid="get-started-{card.id}"
 				>
 					<a
 						href={card.href}
-						class="flex flex-col items-center px-5 pb-5 pt-8"
+						class="flex flex-col items-center px-5 pb-6 pt-10"
 					>
-						<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 28px; opacity: 0.8">
+						<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 32px">
 						</wa-icon>
-						<span class="mt-2 text-center text-sm font-medium">{card.label()}</span>
+						<span class="mt-3 text-center text-sm font-semibold">{card.label()}</span>
 					</a>
 					<button
-						class="absolute right-1.5 top-1.5 z-10 p-1 text-black/25 dark:text-white/25"
+						class="absolute right-2 top-2 z-10 p-1 text-black/40 dark:text-white/40"
 						data-testid="get-started-dismiss-{card.id}"
 						onclick={() => dismiss(card.id)}
 					>
-						<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 16px"></wa-icon>
+						<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 20px"></wa-icon>
 					</button>
 				</div>
 			{/each}
