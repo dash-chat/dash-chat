@@ -97,13 +97,20 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
     Ok(())
 }
 
-/// Persist the setting, toggle OS autostart, start/stop the mailbox server,
+/// Start/stop the mailbox server, persist the setting, toggle OS autostart,
 /// and sync the app menu checkbox.
 pub async fn set_local_mailbox_server_enabled<R: Runtime>(
     handle: &AppHandle<R>,
     enabled: bool,
 ) -> anyhow::Result<()> {
     use tauri_plugin_autostart::ManagerExt;
+
+    // Start/stop first — only persist if the operation succeeds.
+    if enabled {
+        start_local_mailbox(handle).await?;
+    } else {
+        stop_local_mailbox(handle).await?;
+    }
 
     crate::settings::save_mailbox_enabled(handle, enabled);
 
@@ -115,12 +122,6 @@ pub async fn set_local_mailbox_server_enabled<R: Runtime>(
         } else {
             autostart.disable()?;
         }
-    }
-
-    if enabled {
-        start_local_mailbox(handle).await?;
-    } else {
-        stop_local_mailbox(handle).await?;
     }
 
     // Keep the app menu's checkbox in sync.

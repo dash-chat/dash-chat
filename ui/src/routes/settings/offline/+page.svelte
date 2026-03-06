@@ -5,6 +5,7 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { type SettingsStore } from 'dash-chat-stores';
+	import { showToast } from '$lib/utils/toasts';
 	import {
 		BlockFooter,
 		BlockTitle,
@@ -20,6 +21,14 @@
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
 	const localMailboxEnabled = useReactivePromise(settingsStore.localMailboxEnabled);
+
+	async function toggle(currentEnabled: boolean) {
+		try {
+			await settingsStore.setLocalMailboxEnabled(!currentEnabled);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
+	}
 </script>
 
 <Page>
@@ -43,7 +52,7 @@
 						{#await $localMailboxEnabled then enabled}
 							<Toggle
 								checked={enabled}
-								onChange={() => settingsStore.setLocalMailboxEnabled(!enabled)}
+								onChange={() => toggle(enabled)}
 							/>
 						{/await}
 					{/snippet}
