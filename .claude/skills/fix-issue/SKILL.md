@@ -57,7 +57,7 @@ Do NOT ask if the issue is perfectly clear. Move straight to planning.
 
 ## Step 5: Self-review
 
-Before creating the PR, review your own changes:
+Before proceeding, review your own changes:
 
 1. Run `git diff` to see all modifications.
 2. Check each changed file for:
@@ -69,9 +69,29 @@ Before creating the PR, review your own changes:
 3. Fix any issues you find. Re-run `cargo test` and `pnpm -C ui check` if you made fixes.
 4. Verify the fix still addresses the original issue requirements.
 
-Do NOT skip this step. Do NOT proceed to the PR if you find issues — fix them first.
+Do NOT skip this step. Do NOT proceed if you find issues — fix them first.
 
-## Step 6: Create the PR
+## Step 6: Developer review
+
+**Skip this step if running in GitHub Actions** (check `$GITHUB_ACTIONS` env var).
+
+Let the developer review the changes in the running app:
+
+1. Invoke the **start-dev** skill to start the development environment.
+2. Connect via `driver_session` and take a screenshot to show the current state.
+3. Tell the developer the app is running and they can review the changes.
+4. Wait for the developer to confirm they are done reviewing (use `AskUserQuestion`).
+5. When done, stop the driver session and kill dev processes via `TaskStop`.
+
+## Step 7: Ask to create PR
+
+Use `AskUserQuestion` to ask the developer whether they want to create a PR from the changes. Present the summary of what was done and the list of changed files.
+
+If the developer says **no**, stop here — do not create a PR.
+
+If the developer says **yes**, proceed to Step 8.
+
+## Step 8: Create the PR
 
 1. Create a new branch from `develop`:
    ```bash
@@ -99,6 +119,6 @@ Do NOT skip this step. Do NOT proceed to the PR if you find issues — fix them 
    )"
    ```
 
-## Step 7: Return the PR URL
+## Step 9: Return the PR URL
 
 Print the PR URL so the user can review it.
