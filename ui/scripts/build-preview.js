@@ -1,24 +1,37 @@
 /**
- * Post-build script that generates preview.html — a shell page with an inline
- * toolbar at the top and the Svelte app rendered inside an <iframe>.
+ * Post-build script that injects a preview bootstrap into index.html.
+ *
+ * When the page loads as the top-level window (not inside an iframe), the
+ * bootstrap replaces the document with a toolbar + iframe shell that loads
+ * the app via `/?__embed`. When `?__embed` is present, the bootstrap is
+ * skipped and SvelteKit boots normally.
  *
  * This keeps the toolbar DOM fully isolated from the app, so fixed-position
- * elements (FAB, tooltips, banners) are never obscured or broken by the toolbar.
+ * elements (FAB, tooltips, banners) are never obscured by the toolbar.
  *
  * Usage:  node ui/scripts/build-preview.js
- * The output lands in ui/build/preview.html.
  */
 
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, copyFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const outPath = join(__dirname, '..', 'build', 'preview.html');
+const buildDir = join(__dirname, '..', 'build');
+const indexPath = join(buildDir, 'index.html');
+const fallbackPath = join(buildDir, '200.html');
 
 const TOOLBAR_HEIGHT = 48;
 
-const html = /* html */ `<!DOCTYPE html>
+// The bootstrap script that runs before SvelteKit.
+// If we're the top window AND don't have ?__embed, replace the page with
+// toolbar + iframe. Otherwise do nothing — SvelteKit boots as usual.
+const bootstrapScript = /* html */ `<script>
+(function() {
+  if (window.self !== window.top || location.search.indexOf('__embed') !== -1) return;
+
+  document.open();
+  document.write(${JSON.stringify(/* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -27,8 +40,6 @@ const html = /* html */ `<!DOCTYPE html>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; overflow: hidden; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; }
-
-  /* --- Toolbar --- */
   #toolbar {
     height: ${TOOLBAR_HEIGHT}px;
     background: #1a1a2e;
@@ -55,8 +66,6 @@ const html = /* html */ `<!DOCTYPE html>
   #toolbar button.reset:hover { background: #6a3030; }
   #toolbar button.danger { background: #6a2020; border-color: #8a3030; }
   #toolbar button.danger:hover { background: #8a3030; }
-
-  /* --- Iframe wrapper --- */
   #frame-wrap {
     flex: 1;
     display: flex;
@@ -65,24 +74,16 @@ const html = /* html */ `<!DOCTYPE html>
     overflow: hidden;
   }
   body.dark #frame-wrap { background: #222; }
-
-  #app-frame {
-    border: none;
-    width: 100%;
-    height: 100%;
-  }
+  #app-frame { border: none; width: 100%; height: 100%; }
   #app-frame.mobile {
     width: 390px;
     max-width: 100%;
     box-shadow: 0 0 0 1px rgba(0,0,0,0.1), 0 4px 24px rgba(0,0,0,0.15);
   }
-
-  /* Vertical stack */
   body { display: flex; flex-direction: column; }
 </style>
 </head>
 <body>
-
 <div id="toolbar">
   <button id="btn-theme">Material</button>
   <button id="btn-dark">Light</button>
@@ -91,70 +92,54 @@ const html = /* html */ `<!DOCTYPE html>
   <button id="btn-reset" class="reset">Reset</button>
   <button id="btn-wipe" class="danger">Wipe</button>
 </div>
-
 <div id="frame-wrap">
-  <iframe id="app-frame" src="/index.html"></iframe>
+  <iframe id="app-frame" src="/?__embed"></iframe>
 </div>
-
 <script>
 (function () {
   var frame = document.getElementById('app-frame');
-  var state = {
-    theme: 'material',
-    dark: false,
-    mobile: false,
-    updater: false,
-  };
-
+  var state = { theme: 'material', dark: false, mobile: false, updater: false };
   function send(type, payload) {
-    if (frame.contentWindow) {
-      frame.contentWindow.postMessage({ type: type, payload: payload }, '*');
-    }
+    if (frame.contentWindow) frame.contentWindow.postMessage({ type: type, payload: payload }, '*');
   }
-
-  // --- Theme ---
   document.getElementById('btn-theme').addEventListener('click', function () {
     state.theme = state.theme === 'ios' ? 'material' : 'ios';
     this.textContent = state.theme === 'ios' ? 'iOS' : 'Material';
     send('theme-change', { theme: state.theme });
   });
-
-  // --- Dark mode ---
   document.getElementById('btn-dark').addEventListener('click', function () {
     state.dark = !state.dark;
     this.textContent = state.dark ? 'Dark' : 'Light';
     document.body.classList.toggle('dark', state.dark);
     send('set-dark-mode', state.dark);
   });
-
-  // --- Layout ---
   document.getElementById('btn-layout').addEventListener('click', function () {
     state.mobile = !state.mobile;
     this.textContent = state.mobile ? 'Mobile' : 'Desktop';
     frame.classList.toggle('mobile', state.mobile);
     send('set-wide-screen', !state.mobile);
   });
-
-  // --- Updater ---
   document.getElementById('btn-updater').addEventListener('click', function () {
     state.updater = !state.updater;
     this.textContent = state.updater ? 'Hide Update' : 'Show Update';
     send('simulate-update', state.updater ? 'downloading' : 'idle');
   });
-
-  // --- Reset ---
-  document.getElementById('btn-reset').addEventListener('click', function () {
-    send('reset');
-  });
-
-  // --- Wipe ---
-  document.getElementById('btn-wipe').addEventListener('click', function () {
-    send('wipe');
-  });
+  document.getElementById('btn-reset').addEventListener('click', function () { send('reset'); });
+  document.getElementById('btn-wipe').addEventListener('click', function () { send('wipe'); });
 })();
-</script>
+<\\/script>
 </body>
-</html>`;
+</html>`)});
+  document.close();
+})();
+</script>`;
 
-writeFileSync(outPath, html, 'utf-8');
-console.log(`preview.html written to ${outPath}`);
+// Inject bootstrap right after <head> so it runs before any SvelteKit scripts
+const indexHtml = readFileSync(indexPath, 'utf-8');
+const injected = indexHtml.replace('<head>', '<head>' + bootstrapScript);
+writeFileSync(indexPath, injected, 'utf-8');
+
+// SPA fallback — copy the patched index.html so all routes get the bootstrap
+copyFileSync(indexPath, fallbackPath);
+
+console.log('Preview bootstrap injected into build/index.html');
