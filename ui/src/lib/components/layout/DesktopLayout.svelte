@@ -14,7 +14,6 @@
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const chatsStore: ChatsStore = getContext('chats-store');
-	const myProfile = useReactivePromise(contactsStore.myProfile);
 	const contacts = useReactivePromise(contactsStore.contactsAgentIds);
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
 
@@ -56,11 +55,9 @@
 				{#await $chatSummaries then chats}
 					{@const showGetStarted = contactsList.length === 0 && chats.length === 0}
 					{#if showGetStarted}
-						{#await $myProfile then profile}
-							<div class="absolute bottom-0 left-0 right-0 z-10">
-								<GetStarted hasAvatar={!!profile?.avatar} />
-							</div>
-						{/await}
+						<div class="absolute bottom-0 left-0 right-0 z-10">
+							<GetStarted />
+						</div>
 					{/if}
 				{/await}
 			{/await}

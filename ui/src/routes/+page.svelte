@@ -57,11 +57,9 @@
 			{@const showGetStarted = contactsList.length === 0 && chats.length === 0}
 
 			{#if showGetStarted && !isWideScreen.value}
-				{#await $myProfile then profile}
-					<div class="fixed bottom-0 left-0 right-0 z-10 pb-safe">
-						<GetStarted bind:visible={getStartedVisible} hasAvatar={!!profile?.avatar} />
-					</div>
-				{/await}
+				<div class="fixed bottom-0 left-0 right-0 z-10 pb-safe">
+					<GetStarted bind:visible={getStartedVisible} />
+				</div>
 			{/if}
 		{/await}
 	{/await}

@@ -12,6 +12,8 @@ export const S = {
 		addContact: tid('get-started-add-contact'),
 		addPhoto: tid('get-started-add-photo'),
 		chatColor: tid('get-started-chat-color'),
+		newGroup: tid('get-started-new-group'),
+		dismiss: (id: string) => tid(`get-started-dismiss-${id}`),
 	},
 	createProfile: {
 		nameInput: tid('create-profile-name'),

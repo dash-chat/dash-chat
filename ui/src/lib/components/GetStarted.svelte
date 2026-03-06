@@ -9,6 +9,9 @@
 		mdiClose,
 		mdiPalette,
 	} from '@mdi/js';
+	import type { ContactsStore } from 'dash-chat-stores';
+	import { getContext } from 'svelte';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 
 	interface Card {
 		id: string;
@@ -21,8 +24,17 @@
 
 	const DISMISSED_KEY = 'get-started-dismissed';
 
-	let { hasAvatar = false, visible = $bindable(true) }: { hasAvatar?: boolean; visible?: boolean } =
-		$props();
+	let { visible = $bindable(true) }: { visible?: boolean } = $props();
+
+	const contactsStore: ContactsStore = getContext('contacts-store');
+	const myProfile = useReactivePromise(contactsStore.myProfile);
+	let hasAvatar = $state(false);
+	$effect(() => {
+		const p = $myProfile;
+		p.then((profile) => {
+			hasAvatar = !!profile?.avatar;
+		});
+	});
 
 	const allCards: Card[] = [
 		{
@@ -30,28 +42,28 @@
 			label: () => m.addContact(),
 			icon: mdiAccountPlus,
 			href: '/new-message/add-contact',
-			color: 'bg-amber-50 dark:bg-amber-950/30',
+			color: 'bg-[#F7F0E4] dark:bg-amber-900/20',
 		},
 		{
 			id: 'add-photo',
 			label: () => m.addPhoto(),
 			icon: mdiCamera,
 			href: '/settings/profile/edit-photo',
-			color: 'bg-sky-50 dark:bg-sky-950/30',
+			color: 'bg-[#EDEEE6] dark:bg-[#2A2E20]/20',
 		},
 		{
 			id: 'chat-color',
 			label: () => m.chatColor(),
 			icon: mdiPalette,
 			href: '/settings/appearance',
-			color: 'bg-violet-50 dark:bg-violet-950/30',
+			color: 'bg-[#F7F0E4] dark:bg-amber-900/20',
 		},
 		{
 			id: 'new-group',
 			label: () => m.newGroup(),
 			icon: mdiAccountMultiplePlus,
 			href: '/new-group',
-			color: 'bg-emerald-50 dark:bg-emerald-950/30',
+			color: 'bg-[#EDEEE6] dark:bg-[#2A2E20]/20',
 			hidden: true,
 		},
 	];
@@ -93,24 +105,26 @@
 		<p class="mb-2 text-base font-semibold">{m.getStarted()}</p>
 		<div class="flex gap-3 overflow-x-auto pb-1">
 			{#each visibleCards as card}
-				<a
-					href={card.href}
+				<div
+					class="relative w-40 shrink-0 rounded-2xl border border-black/5 dark:border-white/10 {card.color}"
 					data-testid="get-started-{card.id}"
-					class="relative flex w-40 shrink-0 flex-col items-center rounded-xl border border-black/5 px-5 pb-5 pt-8 dark:border-white/10 {card.color}"
 				>
+					<a
+						href={card.href}
+						class="flex flex-col items-center px-5 pb-5 pt-8"
+					>
+						<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 28px; opacity: 0.8">
+						</wa-icon>
+						<span class="mt-2 text-center text-sm font-medium">{card.label()}</span>
+					</a>
 					<button
-						class="absolute right-1.5 top-1.5 p-1 text-black/30 dark:text-white/30"
-						onclick={(e) => {
-							e.preventDefault();
-							dismiss(card.id);
-						}}
+						class="absolute right-1.5 top-1.5 z-10 p-1 text-black/25 dark:text-white/25"
+						data-testid="get-started-dismiss-{card.id}"
+						onclick={() => dismiss(card.id)}
 					>
 						<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 16px"></wa-icon>
 					</button>
-					<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 24px; opacity: 0.7">
-					</wa-icon>
-					<span class="mt-2 text-center text-sm font-medium">{card.label()}</span>
-				</a>
+				</div>
 			{/each}
 		</div>
 	</div>
