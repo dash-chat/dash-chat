@@ -171,6 +171,10 @@ li.plain span {
 	background-color: var(--k-color-md-dark-surface);
 }
 
+:where(.desktop) .sticky-day-tag {
+	top: calc(40px + 8px);
+}
+
 .small-icon {
 	font-size: 16px;
 }
@@ -199,6 +203,12 @@ li.plain span {
 	width: 56px;
 	height: 56px;
 	border-radius: 16px;
+}
+
+:where(.desktop) .k-button.icon-only {
+	width: 44px;
+	height: 44px;
+	border-radius: 12px;
 }
 
 .search-highlight {
@@ -291,20 +301,21 @@ emoji-picker {
 }
 
 /*
- * Desktop density — override Tailwind's --spacing variable to shrink all
- * spacing/padding/height utilities proportionally (75% of mobile).
- * Font-size overrides target Konsta-internal classes we cannot control.
+ * Desktop density — override Tailwind theme variables to match Signal Desktop.
+ * --spacing shrinks all spacing/padding/height utilities proportionally.
+ * Font-size overrides target Konsta-internal arbitrary-value classes.
  */
 .desktop {
-	--spacing: 0.1875rem; /* 3px vs default 4px — tighter desktop density */
-	--text-sm: 0.8125rem; /* 13px vs default 14px */
-	--text-base: 0.875rem; /* 14px vs default 16px */
+	--spacing: 0.15625rem; /* 2.5px — matches Signal Desktop density */
+	--text-xs: 0.6875rem; /* 11px */
+	--text-sm: 0.8125rem; /* 13px */
+	--text-base: 0.875rem; /* 14px */
 	font-size: 14px;
 }
 
 /* Konsta Material navbar title (generates text-[22px] — arbitrary, no variable) */
 .desktop .k-navbar [class*='text-[22px]'] {
-	font-size: 16px !important;
+	font-size: 15px !important;
 }
 
 /* Konsta list-item title row (generates text-[16px] — arbitrary, no variable) */
