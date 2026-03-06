@@ -7,8 +7,12 @@
  * the app code stays unchanged.
  */
 
-/** Whether the app is running inside an iframe (e.g. Surge preview wrapper). */
-export const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+/** Whether the app is running inside the preview iframe wrapper.
+ *  Checks both the iframe hierarchy and the ?__embed query parameter
+ *  (used by the bootstrap to load the app inside its iframe). */
+export const isInIframe =
+	typeof window !== 'undefined' &&
+	(window.self !== window.top || location.search.indexOf('__embed') !== -1);
 
 /**
  * Start listening for postMessage commands from the parent iframe toolbar.
