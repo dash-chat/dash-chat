@@ -2,7 +2,14 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiAccountMultiplePlus, mdiAccountPlus, mdiClose } from '@mdi/js';
+	import {
+		mdiAccountMultiplePlus,
+		mdiAccountPlus,
+		mdiCamera,
+		mdiClose,
+		mdiPalette,
+	} from '@mdi/js';
+	import { useTheme } from 'konsta/svelte';
 
 	interface Card {
 		id: string;
@@ -15,6 +22,11 @@
 
 	const DISMISSED_KEY = 'get-started-dismissed';
 
+	let { hasAvatar = false, visible = $bindable(true) }: { hasAvatar?: boolean; visible?: boolean } =
+		$props();
+
+	const theme = $derived(useTheme());
+
 	const allCards: Card[] = [
 		{
 			id: 'add-contact',
@@ -22,6 +34,20 @@
 			icon: mdiAccountPlus,
 			href: '/new-message/add-contact',
 			color: 'bg-amber-100 dark:bg-amber-900/30',
+		},
+		{
+			id: 'add-photo',
+			label: () => m.addPhoto(),
+			icon: mdiCamera,
+			href: '/settings/profile/edit-photo',
+			color: 'bg-blue-100 dark:bg-blue-900/30',
+		},
+		{
+			id: 'chat-color',
+			label: () => m.chatColor(),
+			icon: mdiPalette,
+			href: '/settings/appearance',
+			color: 'bg-purple-100 dark:bg-purple-900/30',
 		},
 		{
 			id: 'new-group',
@@ -33,6 +59,9 @@
 		},
 	];
 
+	const glassClasses =
+		'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass';
+
 	function getDismissed(): string[] {
 		try {
 			return JSON.parse(localStorage.getItem(DISMISSED_KEY) || '[]');
@@ -43,8 +72,14 @@
 
 	let dismissed = $state(getDismissed());
 
-	let visibleCards = $derived(allCards.filter((c) => !c.hidden && !dismissed.includes(c.id)));
-	let { visible = $bindable(true) }: { visible?: boolean } = $props();
+	let visibleCards = $derived(
+		allCards.filter((c) => {
+			if (c.hidden) return false;
+			if (dismissed.includes(c.id)) return false;
+			if (c.id === 'add-photo' && hasAvatar) return false;
+			return true;
+		}),
+	);
 	$effect(() => {
 		visible = visibleCards.length > 0;
 	});
@@ -66,7 +101,10 @@
 			{#each visibleCards as card}
 				<a
 					href={card.href}
-					class="relative flex w-44 flex-col items-center rounded-2xl px-6 py-5 {card.color}"
+					data-testid="get-started-{card.id}"
+					class="relative flex w-44 flex-col items-center rounded-2xl px-6 py-5 {theme === 'ios'
+						? glassClasses
+						: card.color}"
 				>
 					<button
 						class="absolute right-2 top-2 p-1 opacity-40"
@@ -79,7 +117,7 @@
 					</button>
 					<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 28px; opacity: 0.6">
 					</wa-icon>
-					<span class="mt-2 text-sm">{card.label()}</span>
+					<span class="mt-2 text-center text-sm">{card.label()}</span>
 				</a>
 			{/each}
 		</div>
