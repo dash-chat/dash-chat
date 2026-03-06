@@ -136,18 +136,20 @@ for REF in "${REFS[@]}"; do
         git checkout "$REF" 2>/dev/null || { echo "SKIP: ref $REF not found"; FAILED_REFS+=("$REF_LABEL"); continue; }
 
         echo "--- Building $REF_LABEL ---"
-        (pnpm install && pnpm --recursive build && pnpm tauri build --debug --no-bundle) || {
+        (pnpm install && pnpm --recursive build && pnpm tauri build --debug --no-bundle --features e2e-tests) || {
             echo "SKIP: build failed for $REF_LABEL"
-            git checkout "$ORIGINAL_BRANCH" 2>/dev/null
+            git checkout -f "$ORIGINAL_BRANCH" 2>/dev/null
             FAILED_REFS+=("$REF_LABEL")
             continue
         }
 
-        [ -f "$BINARY_PATH" ] || { echo "SKIP: binary not found for $REF_LABEL"; git checkout "$ORIGINAL_BRANCH" 2>/dev/null; FAILED_REFS+=("$REF_LABEL"); continue; }
+        [ -f "$BINARY_PATH" ] || { echo "SKIP: binary not found for $REF_LABEL"; git checkout -f "$ORIGINAL_BRANCH" 2>/dev/null; FAILED_REFS+=("$REF_LABEL"); continue; }
         cp "$BINARY_PATH" "$REF_BINARY_DIR/dash-chat"
 
-        # Return to original branch and clean stale Rust artifacts
-        git checkout "$ORIGINAL_BRANCH" 2>/dev/null
+        # Return to original branch and clean stale Rust artifacts.
+        # Force checkout: pnpm install on the old ref may have modified
+        # tracked files (e.g. pnpm-lock.yaml), making a normal checkout fail.
+        git checkout -f "$ORIGINAL_BRANCH" 2>/dev/null
         cargo clean -p dash-chat -p dashchat-node
         pnpm install
     fi
