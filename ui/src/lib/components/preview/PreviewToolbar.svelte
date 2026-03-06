@@ -32,6 +32,12 @@
 		localStorage.clear();
 		window.location.reload();
 	}
+
+	function removeAllData() {
+		localStorage.clear();
+		localStorage.setItem('__preview_seeded', 'true');
+		window.location.reload();
+	}
 </script>
 
 <div class="preview-float">
@@ -54,6 +60,9 @@
 			</button>
 			<button class="preview-btn preview-btn-reset" onclick={resetData}>
 				Reset
+			</button>
+			<button class="preview-btn preview-btn-danger" onclick={removeAllData}>
+				Wipe
 			</button>
 		</div>
 	{/if}
@@ -119,5 +128,12 @@
 	}
 	.preview-btn-reset:hover {
 		background: #6a3030;
+	}
+	.preview-btn-danger {
+		background: #6a2020;
+		border-color: #8a3030;
+	}
+	.preview-btn-danger:hover {
+		background: #8a3030;
 	}
 </style>

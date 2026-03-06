@@ -8,6 +8,13 @@ export const S = {
 		chatList: tid('all-chats-list'),
 		emptyState: tid('all-chats-empty'),
 	},
+	getStarted: {
+		addContact: tid('get-started-add-contact'),
+		addPhoto: tid('get-started-add-photo'),
+		chatColor: tid('get-started-chat-color'),
+		newGroup: tid('get-started-new-group'),
+		dismiss: (id: string) => tid(`get-started-dismiss-${id}`),
+	},
 	createProfile: {
 		nameInput: tid('create-profile-name'),
 		surnameInput: tid('create-profile-surname'),
