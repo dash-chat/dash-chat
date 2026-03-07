@@ -8,6 +8,13 @@ export const S = {
 		chatList: tid('all-chats-list'),
 		emptyState: tid('all-chats-empty'),
 	},
+	getStarted: {
+		addContact: tid('get-started-add-contact'),
+		addPhoto: tid('get-started-add-photo'),
+		chatColor: tid('get-started-chat-color'),
+		newGroup: tid('get-started-new-group'),
+		dismiss: (id: string) => tid(`get-started-dismiss-${id}`),
+	},
 	createProfile: {
 		nameInput: tid('create-profile-name'),
 		surnameInput: tid('create-profile-surname'),
@@ -54,6 +61,7 @@ export const S = {
 		appearanceLink: tid('settings-appearance-link'),
 		accountLink: tid('settings-account-link'),
 		helpLink: tid('settings-help-link'),
+		offlineLink: tid('settings-offline-link'),
 	},
 	profile: {
 		back: tid('profile-back'),
@@ -103,6 +111,10 @@ export const S = {
 		back: tid('group-chat-back'),
 		infoLink: tid('group-chat-info-link'),
 	},
+	offline: {
+		back: tid('offline-back'),
+		localMailboxToggle: tid('offline-local-mailbox-toggle'),
+	},
 	appearance: {
 		back: tid('appearance-back'),
 		light: tid('appearance-light'),
@@ -127,11 +139,8 @@ export const S = {
 		nextButton: tid('contact-us-next-btn'),
 	},
 	updater: {
-		downloading: tid('updater-downloading'),
-		ready: tid('updater-ready'),
-		error: tid('updater-error'),
-		laterBtn: tid('updater-later-btn'),
-		restartBtn: tid('updater-restart-btn'),
-		okBtn: tid('updater-ok-btn'),
+		banner: tid('updater-banner'),
+		bannerTitle: tid('updater-banner-title'),
+		dismissBtn: tid('updater-dismiss-btn'),
 	},
 } as const;

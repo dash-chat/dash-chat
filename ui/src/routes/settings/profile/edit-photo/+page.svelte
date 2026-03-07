@@ -5,11 +5,10 @@
 	import { goto } from '$app/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button, Page, Preloader, useTheme } from 'konsta/svelte';
+	import { Button, Page, Preloader } from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
+	import { isIos } from '$lib/utils/environment';
 	import PhotoPicker from '$lib/components/profiles/PhotoPicker.svelte';
-
-	const theme = $derived(useTheme());
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let avatar = $state<string | undefined>(undefined);
@@ -80,7 +79,7 @@
 			/>
 		</div>
 
-		{#if !textEditorOpen && theme === 'material'}
+		{#if !textEditorOpen && !isIos}
 			<!-- Save button -->
 			<Button
 				rounded

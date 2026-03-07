@@ -6,6 +6,7 @@
 	import PhotoPicker from './PhotoPicker.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
+	import { isIos } from '$lib/utils/environment';
 	import {
 		Page,
 		Button,
@@ -79,7 +80,7 @@
 			/>
 		</div>
 
-		{#if !textEditorOpen && theme === 'material'}
+		{#if !textEditorOpen && !isIos}
 			<Button
 				rounded
 				tonal
@@ -100,7 +101,7 @@
 				: ''}
 		>
 			{#snippet right()}
-				{#if theme === 'ios'}
+				{#if isIos}
 					<Link
 						onClick={setProfile}
 						data-testid="create-profile-create-link"
@@ -168,7 +169,7 @@
 			</div>
 		</div>
 
-		{#if theme === 'material'}
+		{#if !isIos}
 			<Button
 				onClick={setProfile}
 				class="fixed-action-btn"
