@@ -235,7 +235,7 @@ where
 
 impl OpStore<SqliteStore<TopicId, Extensions>> {
     pub fn report<'a>(&self, _topics: impl IntoIterator<Item = &'a TopicId>) -> String {
-        format!("( report() not implemented for SqliteStore )")
+        format!("( report() is only implemented for MemoryStore )")
     }
 }
 
@@ -250,7 +250,9 @@ impl OpStore<MemoryStore<TopicId, Extensions>> {
                 topics.is_empty() || topics.iter().find(|topic| **topic == l).is_some()
             })
             .collect::<Vec<_>>();
-        ops.sort_by_key(|(_, (t, header, _, _))| (t, header.public_key.renamed(), header.seq_num));
+        ops.sort_by_key(|(_, (t, header, _, _))| {
+            (t, header.public_key.renamed().to_string(), header.seq_num)
+        });
         ops.into_iter()
             .map(|(h, (t, header, body, _))| {
                 let desc = match body
@@ -264,7 +266,7 @@ impl OpStore<MemoryStore<TopicId, Extensions>> {
                     Some(p) => format!("{p:?}"),
                     None => "_".to_string(),
                 };
-                if topics.len() == 1 {
+                if false && topics.len() == 1 {
                     format!(
                         "• {} {:2} {} : {}",
                         header.public_key.renamed(),

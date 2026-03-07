@@ -178,6 +178,11 @@ async fn test_group_chat() {
         .await
         .unwrap();
 
+    bobbi
+        .send_message(chat_id, "Great to be here".into())
+        .await
+        .unwrap();
+
     consistency(
         [&alice, &bobbi],
         &[
@@ -191,7 +196,7 @@ async fn test_group_chat() {
     .unwrap();
 
     bobbi
-        .add_group_member(chat_id, cammy.agent_id(), p2panda_auth::Access::write())
+        .add_group_member(chat_id, cammy.agent_id(), p2panda_auth::Access::manage())
         .await
         .unwrap();
 
@@ -201,8 +206,34 @@ async fn test_group_chat() {
         .await
         .unwrap();
 
+    cammy.send_message(chat_id, "Hi all".into()).await.unwrap();
+
     consistency(
         [&alice, &bobbi, &cammy],
+        &[chat_id.into()],
+        &ClusterConfig::default(),
+    )
+    .await
+    .unwrap();
+
+    cammy
+        .add_group_member(chat_id, danae.agent_id(), p2panda_auth::Access::write())
+        .await
+        .unwrap();
+
+    danae
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    danae
+        .send_message(chat_id, "Here I am".into())
+        .await
+        .unwrap();
+
+    consistency(
+        [&alice, &bobbi, &cammy, &danae],
         &[chat_id.into()],
         &ClusterConfig::default(),
     )
@@ -217,8 +248,9 @@ async fn test_group_chat() {
                 alice.get_messages(chat_id).await.unwrap().len(),
                 bobbi.get_messages(chat_id).await.unwrap().len(),
                 cammy.get_messages(chat_id).await.unwrap().len(),
+                danae.get_messages(chat_id).await.unwrap().len(),
             ];
-            msgs.iter().all(|m| *m == 1).ok_or(msgs)
+            msgs.iter().all(|m| *m == 4).ok_or(msgs)
         },
     )
     .await
@@ -227,22 +259,23 @@ async fn test_group_chat() {
     let alice_messages = alice.get_messages(chat_id).await.unwrap();
     let bobbi_messages = bobbi.get_messages(chat_id).await.unwrap();
     let cammy_messages = cammy.get_messages(chat_id).await.unwrap();
+    let danae_messages = danae.get_messages(chat_id).await.unwrap();
 
     let alice_members = alice.get_group_members(chat_id).await.unwrap();
     let bobbi_members = bobbi.get_group_members(chat_id).await.unwrap();
     let cammy_members = cammy.get_group_members(chat_id).await.unwrap();
+    let danae_members = danae.get_group_members(chat_id).await.unwrap();
 
     let expected_members = maplit::btreeset![
         (alice.device_id().into(), p2panda_auth::Access::manage()),
         (bobbi.device_id().into(), p2panda_auth::Access::manage()),
-        (
-            cammy.agent_id().to_group_member().id(),
-            p2panda_auth::Access::write()
-        ),
+        (cammy.device_id().into(), p2panda_auth::Access::manage()),
+        (danae.device_id().into(), p2panda_auth::Access::write()),
     ];
 
     assert_eq!(alice_messages, bobbi_messages);
     assert_eq!(alice_messages, cammy_messages);
+    assert_eq!(alice_messages, danae_messages);
     assert_eq!(
         bobbi_messages.first().map(|m| m.content.clone()),
         Some("Hello".into())
@@ -251,6 +284,7 @@ async fn test_group_chat() {
     assert_eq!(alice_members.renamed(), expected_members.clone().renamed());
     assert_eq!(bobbi_members, expected_members);
     assert_eq!(cammy_members, expected_members);
+    assert_eq!(danae_members, expected_members);
 
     let alice_dir = alice.shutdown().await;
     let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir).await;

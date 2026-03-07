@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -293,8 +293,7 @@ pub async fn consistency(
                     .iter()
                     .map(|t| t.renamed().to_string().len())
                     .max()
-                    .unwrap_or(0)
-                    + 1;
+                    .unwrap_or(0);
                 let topics = topics
                     .iter()
                     .flat_map(|topic| {
@@ -305,7 +304,7 @@ pub async fn consistency(
                             .map(|h| {
                                 format!(
                                     "{:>width$}: {} {}",
-                                    topic.renamed(),
+                                    topic.renamed().to_string(),
                                     h.short(),
                                     h.renamed(),
                                     width = width
@@ -317,13 +316,13 @@ pub async fn consistency(
             })
             .collect::<Vec<_>>();
         let mut diffs = ConsistencyReport::new(sets);
-        for i in 0..diffs.sets.len() {
-            for j in 0..i {
-                let (a, b) = (&diffs.sets[i].1, &diffs.sets[j].1);
+        for (n, (i, a)) in diffs.sets.iter().enumerate() {
+            for (j, b) in diffs.sets.iter().take(n) {
                 if i != j && a != b {
-                    diffs
-                        .diffs
-                        .insert((i, j), (a.len() as isize - b.len() as isize).abs());
+                    diffs.diffs.insert(
+                        (i.clone(), j.clone()),
+                        (a.len() as isize - b.len() as isize).abs(),
+                    );
                 }
             }
         }
@@ -344,21 +343,20 @@ pub async fn consistency(
         }
         println!("consistency report: {:#?}", diffs);
         anyhow::anyhow!("consistency check failed")
-    });
-    Ok(())
+    })
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ConsistencyReport {
     sets: Vec<(String, BTreeSet<String>)>,
-    diffs: HashMap<(usize, usize), isize>,
+    diffs: BTreeMap<(String, String), isize>,
 }
 
 impl ConsistencyReport {
     pub fn new(sets: Vec<(String, BTreeSet<String>)>) -> Self {
         Self {
             sets,
-            diffs: HashMap::new(),
+            diffs: BTreeMap::new(),
         }
     }
 }
@@ -417,6 +415,7 @@ impl<T: std::fmt::Debug> Watcher<T> {
     }
 }
 
+/// Wait for the closure to return Ok(()), up to the timeout
 pub async fn wait_for<F, E>(poll: Duration, timeout: Duration, f: impl Fn() -> F) -> Result<(), E>
 where
     F: Future<Output = Result<(), E>>,
@@ -441,6 +440,9 @@ where
     Ok(())
 }
 
+/// Wait for the closure to return Ok(()), up to the timeout.
+/// Whenever the function returns a different error than the last time,
+/// the timeout is reset.
 pub async fn wait_for_resetting<F, E>(
     poll: Duration,
     timeout: Duration,

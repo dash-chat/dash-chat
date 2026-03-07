@@ -44,8 +44,8 @@ use crate::{
 pub use crate::local_store::LocalStore;
 pub use stream_processing::Notification;
 
-// pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
-pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
+pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
+// pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {

@@ -102,7 +102,7 @@ impl Node {
                         }
 
                         Some(op) = streams.next() => {
-                            tracing::debug!(op = ?op.hash.renamed(), topic = ?op.header.extensions.topic.renamed(), "processing stream item");
+                            tracing::info!(op = ?op.hash.renamed(), topic = ?op.header.extensions.topic.renamed(), "processing stream item");
                             // Process the FromNetwork item here
                             if let Err(err) = node.process_stream_item(op).await {
                                 tracing::error!(?err, "process stream item error");
@@ -128,8 +128,35 @@ impl Node {
     }
 
     async fn process_stream_item(&self, operation: Operation<Extensions>) -> anyhow::Result<()> {
-        let hash = operation.hash;
+        let hash = operation.hash.renamed();
         let topic = operation.header.extensions.topic;
+
+        // Ok this is weird but hear me out:
+        // When we are added to a group with members we are not already contacts with,
+        // we need to subscribe to their AgentId so we can receiver their device group messages.
+        // Without this, we can't process group messages in order, because these are dependencies.
+        // That's why this shows up before the partial order check.
+        //
+        // TODO: handle this more cleanly, especially when it comes to removing members.
+        match &operation.header.extensions.auth {
+            Some(auth) => {
+                let members = match &auth.action {
+                    GroupAction::Create { initial_members } => initial_members.iter().map(|(member, _)| member).collect(),
+                    GroupAction::Add { member, .. } => vec![member],
+                    GroupAction::Remove { ..} => vec![],
+                    GroupAction::Promote { .. } => vec![],
+                    GroupAction::Demote { .. } => vec![],
+                };
+                for member in members {
+                    match member {
+                        GroupMember::Group(id) => self.register_topic(ChatId::from_group_pubkey(*id)).await?,
+                        GroupMember::Individual(_) => {},
+                    }
+                }
+            }
+            None => {}
+        }
+
 
         if let Err(err) = self.op_store.process_ordering(operation).await {
             tracing::error!(?err, "process ordering error");
@@ -144,6 +171,10 @@ impl Node {
             })
             .unwrap_or_default();
 
+        if reordered.is_empty() {
+            tracing::warn!(?topic, ?hash, "operation processed out of order");
+        }
+
         // let reordered = vec![operation];
 
         for operation in reordered {
@@ -152,7 +183,7 @@ impl Node {
                 Err(err) => {
                     tracing::error!(
                         ?topic,
-                        hash = ?hash.renamed(),
+                        ?hash,
                         ?err,
                         "process operation error"
                     )
