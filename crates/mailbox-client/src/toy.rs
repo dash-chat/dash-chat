@@ -72,11 +72,6 @@ where
 
     async fn publish_blob(&self, blob: Opaq) -> anyhow::Result<()> {
         let request = StoreBlobsRequest { blobs: vec![blob] };
-        // XXX: REMOVE
-        println!(
-            "publishing blob with HTTP request: {:#?}",
-            serde_json::to_string(&request)?
-        );
         let response = HTTP_CLIENT
             .post(format!("{}/blobs/store", self.base_url))
             .json(&request)

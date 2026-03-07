@@ -173,8 +173,6 @@ impl Node {
 
         let topic = header.extensions.topic;
 
-        // XXX: this eventually needs to be more selective than just adding any old author
-        // author_store.add_author(topic, header.public_key).await;
         tracing::debug!(?topic, "adding author");
 
         tracing::info!(topic = ?topic.renamed(), hash = ?hash.renamed(), "PROC: processing operation");
