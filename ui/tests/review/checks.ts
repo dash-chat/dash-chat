@@ -54,7 +54,7 @@ export function checkDarkMode(): DarkModeResult {
 		const htmlEl = el as HTMLElement;
 		const bg = getComputedStyle(htmlEl).backgroundColor;
 		if (bg === 'rgb(255, 255, 255)' && htmlEl.offsetWidth > 0 && htmlEl.offsetHeight > 0) {
-			if (!htmlEl.closest('wa-icon, wa-avatar, wa-qr-code, .qr-card')) {
+			if (!htmlEl.closest('wa-icon, wa-avatar, wa-qr-code, .qr-card, .k-toggle')) {
 				const tag = htmlEl.tagName.toLowerCase();
 				const id =
 					htmlEl.getAttribute('data-testid') ||

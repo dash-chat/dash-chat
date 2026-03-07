@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process';
+import { rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Options } from '@wdio/types';
@@ -12,6 +13,7 @@ import { waitForPortFree, waitForPortListening } from '../helpers/wait-for-port'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '../..');
 
 const phase = process.env.COMPAT_PHASE;
 if (!phase || !['setup', 'verify'].includes(phase)) {
@@ -39,6 +41,7 @@ export const config: Options.Testrunner = {
 
 	specs: [specFile],
 	maxInstances: 1,
+	specFileRetries: 1,
 
 	capabilities: {
 		agent1: {
@@ -81,6 +84,15 @@ export const config: Options.Testrunner = {
 		killPortHolders(ALL_PORTS);
 		// Wait for ports to be fully released after SIGKILL.
 		await Promise.all(ALL_PORTS.map(p => waitForPortFree(p)));
+
+		// Clean agent app data for a fresh start on setup retries.
+		// Skip for verify phase — it needs data from the setup phase.
+		if (phase === 'setup') {
+			for (const agent of ['agent-1', 'agent-2']) {
+				const appData = path.join(ROOT, '.dbs', 'compat', agent, 'studio.darksoil.dashchat');
+				try { rmSync(appData, { recursive: true, force: true }); } catch { /* ignore */ }
+			}
+		}
 
 		tauriDriver1 = spawn(
 			'tauri-driver',

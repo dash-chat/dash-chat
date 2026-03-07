@@ -46,6 +46,11 @@ export class SettingsStore {
 		return settings.qr_color || '#007aff';
 	});
 
+	localMailboxEnabled = reactive(async () => {
+		const settings = await this.settings();
+		return settings.local_mailbox_enabled;
+	});
+
 	isDark = reactive(async () => {
 		const systemDark = this.systemDarkSignal.value;
 		const scheme = await this.colorScheme();
@@ -60,5 +65,9 @@ export class SettingsStore {
 
 	async setQrColor(color: string): Promise<void> {
 		await this.client.setSetting('qr_color', color);
+	}
+
+	async setLocalMailboxEnabled(enabled: boolean): Promise<void> {
+		await this.client.setLocalMailboxEnabled(enabled);
 	}
 }

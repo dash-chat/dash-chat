@@ -7,11 +7,16 @@ export function useSignal<T, Args extends unknown[]>(
 ): Readable<T> {
 	const w = watcher(() => {
 		const value = v(...args);
-		const s = (value as any)['_signal'];
-		const version = (value as any)['value'];
 
-		if (value instanceof ReactivePromise && value.value !== undefined)
-			return value.value;
+		// For async reactives (returning ReactivePromise), track the RP's
+		// _version signal to ensure the watcher is dirtied through signalium's
+		// normal dependency graph when the RP's state changes. Without this,
+		// async re-runs don't increment updatedCount on the reactive signal,
+		// so the watcher wouldn't re-evaluate.
+		if (value instanceof ReactivePromise) {
+			(value as any)['_version']?.['value'];
+			if (value.value !== undefined) return value.value;
+		}
 		return value;
 	});
 	return {
@@ -34,10 +39,13 @@ export function useReactivePromise<T, Args extends unknown[]>(
 	const w = watcher(
 		() => {
 			const rp = v(...args);
-			// Entangle the watcher with the ReactivePromise's internal signal
-			// and value so that state changes (pending→resolved) dirty the watcher.
-			(rp as any)['_signal'];
-			(rp as any)['value'];
+			// Track the RP's _version signal to ensure the watcher is dirtied
+			// through signalium's normal dependency graph on ANY RP state change.
+			// Without this, async re-runs call _setPromise on the existing RP
+			// without incrementing updatedCount, so the watcher's edge check
+			// sees no change and skips re-evaluation. The _version signal is
+			// incremented on every _setFlags call (pending, resolved, etc.).
+			(rp as any)['_version']?.['value'];
 			// Return a snapshot so equals() can compare actual state, not identity.
 			return { isReady: rp.isReady, value: rp.value };
 		},

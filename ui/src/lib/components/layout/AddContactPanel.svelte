@@ -3,7 +3,7 @@
 	import '@awesome.me/webawesome/dist/components/qr-code/qr-code.js';
 	import '@awesome.me/webawesome/dist/components/copy-button/copy-button.js';
 	import { getContext } from 'svelte';
-	import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+	import { writeText } from '$lib/utils/clipboard';
 	import {
 		decodeContactCode,
 		encodeContactCode,
@@ -44,7 +44,7 @@
 	} from 'konsta/svelte';
 	import { goto } from '$app/navigation';
 	import { showToast } from '$lib/utils/toasts';
-	import { cancel } from '@tauri-apps/plugin-barcode-scanner';
+	import { isTauriEnv } from '$lib/utils/environment';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
 	import SelectColor from './SelectColor.svelte';
 
@@ -121,7 +121,10 @@
 	async function cancelScan() {
 		if (tab === 'code') return;
 		tab = 'code';
-		await cancel();
+		if (isTauriEnv()) {
+			const { cancel } = await import('@tauri-apps/plugin-barcode-scanner');
+			await cancel();
+		}
 	}
 
 	const qrColor = useReactivePromise(settingsStore.qrColor);

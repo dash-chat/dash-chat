@@ -1,11 +1,11 @@
-import {
-	Format,
-	requestPermissions,
-	scan,
-} from '@tauri-apps/plugin-barcode-scanner';
 import jsQR from 'jsqr';
+import { isTauriEnv } from '$lib/utils/environment';
 
 export async function scanQrcode(): Promise<string> {
+	if (!isTauriEnv()) {
+		throw new Error('QR code scanning requires the Tauri desktop/mobile app');
+	}
+	const { Format, requestPermissions, scan } = await import('@tauri-apps/plugin-barcode-scanner');
 	await requestPermissions();
 	const result = await scan({ windowed: true, formats: [Format.QRCode] });
 	return result.content;

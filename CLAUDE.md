@@ -8,6 +8,40 @@ Dash Chat is an end-to-end encrypted messenger built with Svelte 5 (frontend) an
 
 **Current Status**: Pre-alpha, being rebuilt on top of p2panda.
 
+## Signal UX Reference
+
+Dash Chat aims to match Signal's UX as closely as possible. A private repository of Signal screenshots (Android + iOS) is available at `dash-chat/signal-screenshots`.
+
+**Setup (run once per session if needed):**
+```bash
+# Clone if not already present (gitignored)
+[ -d signal-reference ] || gh repo clone dash-chat/signal-screenshots signal-reference
+```
+
+**When building or modifying UI, you MUST:**
+1. Read `signal-reference/manifest.json` to find the relevant Signal screenshots for the Dash Chat route you're working on.
+2. Read the corresponding screenshots (both `android/` and `ios/` when available) to understand Signal's layout, spacing, typography, colors, and interaction patterns.
+3. Model your implementation after Signal's UX. Match the overall feel, not pixel-perfect details — adapt for Konsta UI components and our existing patterns.
+4. When verifying your UI changes, compare your screenshots against the Signal reference.
+
+**Directory structure:**
+```
+signal-reference/
+├── manifest.json          # Maps Signal sections → Dash Chat routes
+├── android/               # Android (Material) screenshots
+│   ├── home/              # Chat list, search, overflow menu
+│   ├── create-account/    # Onboarding flow
+│   ├── direct-chat/       # 1:1 chat view + chat-settings/
+│   ├── group-chat/        # Group chat view
+│   ├── message-types/     # Image/voice/reactions/context menu
+│   ├── new-message/       # Contact picker + new-group/
+│   └── settings/          # All settings sub-pages
+└── ios/                   # iOS screenshots (same structure)
+└── desktop/                   # Desktop screenshots (same structure)
+```
+
+Screenshots are named descriptively with sequence prefixes (e.g., `01-chat-list-empty.png`, `02-overflow-menu-open.png`). Browse the directory listing to find what you need.
+
 ## General Coding Style
 
 Please read this coding style carefully and take it into account when planning or coding:
@@ -68,6 +102,12 @@ pnpm tauri android dev
 
 # View Android logs
 adb logcat | grep -F "`adb shell ps | grep studio.darksoil.dashchat | tr -s [:space:] ' ' | cut -d' ' -f2`"
+
+# Run on iOS simulator
+pnpm tauri ios dev "iPhone 16"
+
+# Run on physical iOS device
+pnpm tauri ios dev --device
 ```
 
 ## Architecture
@@ -149,12 +189,12 @@ This is a pnpm workspace with multiple packages:
 - UI built with Konsta UI components (mobile-first design)
 - Internationalization using @inlang/paraglide-js
 - Image compression before upload
-- **iOS theme action buttons**: In the iOS theme, all primary action buttons (Save, Done, Create, Add, Next) must appear as a `<Link>` in the Navbar's `right` snippet — never as a bottom FAB. The bottom FAB (`class="fixed-action-btn"`) is Material-only. Use `{#if theme === 'ios'}` in the navbar right snippet and `{#if theme === 'material'}` around the FAB. Apply disabled styling via `rightClass="ios-right-disabled"` on the Navbar (defined in `app.css`).
+- **iOS theme action buttons**: On actual iOS devices, primary action buttons (Save, Done, Create, Add, Next) appear as a `<Link>` in the Navbar's `right` snippet. On all other platforms (including macOS desktop), they appear as a bottom FAB (`class="fixed-action-btn"`). Use `import { isIos } from '$lib/utils/environment'` and `{#if isIos}` in the navbar right snippet and `{#if !isIos}` around the FAB. Apply disabled styling via `rightClass="ios-right-disabled"` on the Navbar (defined in `app.css`).
 
 ### Desktop Layout
 
 On wide screens (≥768px), the app uses a two-panel layout managed by `DesktopLayout.svelte`:
-- **Sidebar** (left, 320px): Shows the contextual panel based on the current route — `ChatListPanel` for chat routes, `SettingsPanel` for `/settings/*`, `NewMessagePanel` for `/new-message/*`.
+- **Sidebar** (left, 280px): Shows the contextual panel based on the current route — `ChatListPanel` for chat routes, `SettingsPanel` for `/settings/*`, `NewMessagePanel` for `/new-message/*`.
 - **Content** (right, flex): Shows the page content. For sidebar-only routes (`/` and `/settings`), an `EmptyState` placeholder is rendered instead.
 
 Pages like `/`, `/settings`, and `/new-message` always render their mobile content (wrapped in `<Page>`). On desktop, `DesktopLayout` handles showing the correct sidebar panel and decides whether to render `EmptyState` or the page's children in the content area. Pages never check `isWideScreen` to decide between EmptyState and their content — that logic lives solely in `DesktopLayout`.
@@ -438,6 +478,50 @@ cd e2e-tests && bash compat/run.sh v0.10.0 v0.10.1
 - **Mobile**: Android and iOS support
   - Android-specific: barcode scanner, push notifications
   - iOS-specific: barcode scanner, push notifications, safe area insets
+
+### iOS Virtual Keyboard Handling
+
+The `tauri-plugin-virtual-keyboard-padding` plugin handles iOS keyboard behavior in WKWebView. Without it, iOS shows a scrollable white gap behind the keyboard.
+
+**How the plugin works:**
+1. Removes WKWebView's built-in keyboard notification observers (prevents auto contentInset/contentOffset adjustments)
+2. Clamps `scrollView.contentOffset` to `.zero` via `UIScrollViewDelegate`
+3. Resizes WKWebView frame by keyboard height so focused inputs remain visible
+4. Injects CSS to override `.min-h-screen`/`.h-screen` with pixel values (100vh doesn't update on frame resize)
+5. Auto-detects background color from rendered `.k-page` element via JavaScript and applies to native view hierarchy (prevents color flash during animation)
+6. Removes the "Done" toolbar by swizzling `WKContentView.inputAccessoryView`
+
+**Plugin source:** `tauri-plugin-virtual-keyboard-padding` (sibling repo). `Cargo.toml` uses git URL; for local dev change to `path = "../../tauri-plugin-virtual-keyboard-padding"`.
+
+**CSS requirement:** `html` and `body` must have `background-color: transparent !important` (set in `app.css`) so the native background color shows through during keyboard animation.
+
+### iOS Simulator Testing
+
+Testing keyboard behavior and UI interactions in the iOS simulator has inherent limitations due to idb + WKWebView interop issues. **Keyboard behavior is best verified on a real device.**
+
+**What works in the simulator:**
+- `idb ui tap --udid <UDID> <x> <y>` can focus *some* WKWebView inputs (e.g. Konsta `ListInput` with `placeholder` prop). Coordinates are in device points (iPhone 16: 393x852).
+- Typing via AppleScript `keystroke` when hardware keyboard is connected (toggle with Cmd+Shift+K in Simulator)
+- `xcrun simctl pbcopy <UDID>` to set pasteboard content
+- `xcrun simctl io <UDID> screenshot <path>` to capture screenshots
+- Visual verification of keyboard show/hide (no scrollbar, proper frame resize)
+
+**What doesn't work:**
+- `idb ui tap` doesn't reliably reach all WKWebView elements (floating-label Konsta inputs don't respond)
+- `idb ui text` doesn't type into WKWebView inputs
+- Tapping virtual keyboard keys dismisses the keyboard instead of typing
+- `xcrun simctl keyboard input` is not available on iOS 18
+- AppleScript `click at` screen coordinates doesn't reach WKWebView content
+
+**Recommended workflow for iOS simulator testing:**
+1. Start with `pnpm tauri ios dev "iPhone 16"`
+2. Disconnect hardware keyboard (Cmd+Shift+K) to show software keyboard
+3. Use `idb ui tap` to focus inputs (works for some elements)
+4. Connect hardware keyboard (Cmd+Shift+K) to type via AppleScript
+5. Toggle back to verify keyboard visual behavior
+6. Use `xcrun simctl io <UDID> screenshot` to capture and inspect state
+
+**iOS app icon note:** iOS icons must have NO alpha channel. The `tauri icon --ios-color` command generates RGBA PNGs (Tauri CLI bug). Fix by stripping alpha from all icons in `src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/`.
 
 ## Important Notes
 

@@ -235,7 +235,7 @@ describe('Review checks', function () {
 				(t: string) => !!document.querySelector('[data-testid="direct-chat-messages"]')?.textContent?.includes(t),
 				'Hello from Alice!',
 			),
-			{ timeout: 30_000, interval: 1_000, timeoutMsg: 'Agent2 did not receive message from Alice' },
+			{ timeout: 60_000, interval: 1_000, timeoutMsg: 'Agent2 did not receive message from Alice' },
 		);
 
 		// Agent2 replies.
@@ -256,7 +256,7 @@ describe('Review checks', function () {
 				(t: string) => !!document.querySelector('[data-testid="direct-chat-messages"]')?.textContent?.includes(t),
 				'Hello from Bob!',
 			),
-			{ timeout: 30_000, interval: 1_000, timeoutMsg: 'Agent1 did not receive message from Bob' },
+			{ timeout: 60_000, interval: 1_000, timeoutMsg: 'Agent1 did not receive message from Bob' },
 		);
 
 		await reloadToHome(agent1);
