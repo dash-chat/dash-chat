@@ -12,6 +12,8 @@ use mailbox_client::mem::MemMailbox;
 use maplit::btreemap;
 use named_id::*;
 
+use pretty_assertions::assert_eq;
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_direct_chat() {
     dashchat_node::testing::setup_tracing(
@@ -50,9 +52,6 @@ async fn test_direct_chat() {
 
     let chat_id = alice.direct_chat_topic(bobbi.agent_id());
     assert_eq!(chat_id, bobbi.direct_chat_topic(alice.agent_id()));
-
-    assert!(alice.subscribed_topics().await.contains(&chat_id));
-    assert!(bobbi.subscribed_topics().await.contains(&chat_id));
 
     alice.send_message(chat_id, "Hello".into()).await.unwrap();
 
@@ -115,8 +114,12 @@ async fn test_group_chat() {
         .await
         .add_mailbox_client(mailbox.client())
         .await;
+    let danae = TestNode::new(NodeConfig::testing(), "danae")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
 
-    introduce_and_wait([&alice, &bobbi, &cammy]).await;
+    introduce_and_wait([&alice, &bobbi, &cammy, &danae]).await;
 
     println!("nodes:");
     println!(
@@ -137,15 +140,26 @@ async fn test_group_chat() {
         cammy.device_id().short(),
         *cammy.device_id()
     );
+    println!(
+        "danae: {} {:?} {:?}",
+        danae.device_id().renamed(),
+        danae.device_id().short(),
+        *danae.device_id()
+    );
 
     alice
         .behavior()
         .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
         .await
         .unwrap();
+    bobbi
+        .behavior()
+        .initiate_and_establish_contact(&cammy, ShareIntent::AddContact)
+        .await
+        .unwrap();
     cammy
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&danae, ShareIntent::AddContact)
         .await
         .unwrap();
 
@@ -219,14 +233,13 @@ async fn test_group_chat() {
     let cammy_members = cammy.get_group_members(chat_id).await.unwrap();
 
     let expected_members = maplit::btreeset![
-        (alice.agent_id(), p2panda_auth::Access::manage()),
-        (bobbi.agent_id(), p2panda_auth::Access::manage()),
-        (cammy.agent_id(), p2panda_auth::Access::write()),
+        (alice.device_id().into(), p2panda_auth::Access::manage()),
+        (bobbi.device_id().into(), p2panda_auth::Access::manage()),
+        (
+            cammy.agent_id().to_group_member().id(),
+            p2panda_auth::Access::write()
+        ),
     ];
-
-    assert_eq!(alice_members, expected_members);
-    assert_eq!(bobbi_members, expected_members);
-    assert_eq!(cammy_members, expected_members);
 
     assert_eq!(alice_messages, bobbi_messages);
     assert_eq!(alice_messages, cammy_messages);
@@ -234,6 +247,10 @@ async fn test_group_chat() {
         bobbi_messages.first().map(|m| m.content.clone()),
         Some("Hello".into())
     );
+
+    assert_eq!(alice_members.renamed(), expected_members.clone().renamed());
+    assert_eq!(bobbi_members, expected_members);
+    assert_eq!(cammy_members, expected_members);
 
     let alice_dir = alice.shutdown().await;
     let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir).await;

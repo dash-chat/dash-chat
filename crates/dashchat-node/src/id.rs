@@ -1,4 +1,4 @@
-use derive_more::{Debug, Deref, From};
+use derive_more::{Debug, Deref, From, derive::Into};
 use named_id::RenameAll;
 use p2panda_auth::group::GroupMember;
 use p2panda_core::PublicKey;
@@ -18,12 +18,17 @@ use serde::{Deserialize, Serialize};
     Serialize,
     Deserialize,
     From,
+    Into,
     Deref,
     RenameAll,
 )]
 pub struct DeviceId(PublicKey);
 
 impl DeviceId {
+    pub fn from_bytes(bytes: &[u8; 32]) -> anyhow::Result<Self> {
+        Ok(Self(PublicKey::from_bytes(bytes)?))
+    }
+
     pub fn to_group_member(self) -> GroupMember<PublicKey> {
         GroupMember::Individual(self.0)
     }

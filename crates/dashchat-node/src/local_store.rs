@@ -21,11 +21,13 @@ use crate::{
 mod impls;
 
 const IDENTITY_TABLE: TableDefinition<&'static str, [u8; 32]> = TableDefinition::new("identity");
-const CONTACTS_TABLE: TableDefinition<[u8; 32], [u8; 32]> = TableDefinition::new("contacts");
 const SUBSCRIBED_TOPICS_TABLE: TableDefinition<[u8; 32], ()> =
-    TableDefinition::new("subscribed_topics");
+TableDefinition::new("subscribed_topics");
 const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> =
-    TableDefinition::new("active_inboxes");
+TableDefinition::new("active_inboxes");
+
+#[cfg(feature = "auth-workaround")]
+const CONTACTS_TABLE: TableDefinition<[u8; 32], [u8; 32]> = TableDefinition::new("contacts");
 
 const PRIVATE_KEY_KEY: &str = "private_key";
 const AGENT_ID_KEY: &str = "agent_id";
@@ -127,7 +129,7 @@ impl HackyGroupStore {
     pub async fn chat_group_members(
         &self,
         topic: ChatId,
-    ) -> anyhow::Result<BTreeSet<(AgentId, Access)>> {
+    ) -> anyhow::Result<BTreeSet<(p2panda_core::PublicKey, Access)>> {
         let group_id = topic.to_group_pubkey();
         Ok(self
             .groups
@@ -137,7 +139,6 @@ impl HackyGroupStore {
             .inner
             .members(group_id)
             .into_iter()
-            .map(|(m, a)| (AgentId::from_pubkey(m), a))
             .collect())
     }
 }
@@ -169,9 +170,10 @@ impl LocalStore {
         let txn = self.db.begin_write()?;
         {
             let mut identity = txn.open_table(IDENTITY_TABLE)?;
-            let _ = txn.open_table(CONTACTS_TABLE)?;
             let _ = txn.open_table(ACTIVE_INBOXES_TABLE)?;
             let _ = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
+            #[cfg(feature = "auth-workaround")]
+            let _ = txn.open_table(CONTACTS_TABLE)?;
 
             let uninitialized =
                 identity.get(PRIVATE_KEY_KEY)?.is_none() && identity.get(AGENT_ID_KEY)?.is_none();
@@ -201,28 +203,6 @@ impl LocalStore {
             .map(|entry| Ok(entry.map(|(topic, _)| TopicId::from(topic.value()))?))
             .collect::<anyhow::Result<BTreeSet<TopicId>>>()?;
         Ok(topics)
-    }
-
-    pub fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(CONTACTS_TABLE)?;
-        let Some(entry) = table.get(device_id.as_bytes())? else {
-            return Ok(None);
-        };
-        Ok(Some(AgentId::from_bytes(&entry.value())?))
-    }
-
-    pub fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
-        let txn = self.db.begin_write()?;
-        {
-            let mut table = txn.open_table(CONTACTS_TABLE)?;
-            table.insert(
-                contact.device_pubkey.as_bytes(),
-                contact.agent_id.as_bytes(),
-            )?;
-        }
-        txn.commit()?;
-        Ok(())
     }
 
     pub fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
@@ -319,7 +299,7 @@ impl LocalStore {
         Ok(groups.device_group_members(agent_id).await?.into_iter().filter(|(_, access)| *access >= min_access).collect())
     }
 
-    pub async fn chat_group_members(&self, topic: ChatId) -> anyhow::Result<BTreeSet<(AgentId, Access)>> {
+    pub async fn chat_group_members(&self, topic: ChatId) -> anyhow::Result<BTreeSet<(p2panda_core::PublicKey, Access)>> {
         let groups = self.groups.lock().await;
         groups.chat_group_members(topic).await
     }
@@ -333,6 +313,49 @@ impl LocalStore {
         let groups = self.groups.lock().await;
         groups.heads().await
     }
+
+    #[cfg(feature = "auth-workaround")]
+    pub fn lookup_contact_agent(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(CONTACTS_TABLE)?;
+        let Some(entry) = table.get(device_id.as_bytes())? else {
+            return Ok(None);
+        };
+        Ok(Some(AgentId::from_bytes(&entry.value())?))
+    }
+
+    #[cfg(feature = "auth-workaround")]
+    pub fn lookup_contact_device(&self, agent_id: AgentId) -> anyhow::Result<Option<DeviceId>> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(CONTACTS_TABLE)?;
+        let Some(entry) = table.get(agent_id.as_bytes())? else {
+            return Ok(None);
+        };
+        Ok(Some(DeviceId::from_bytes(&entry.value())?))
+    }
+
+    /// Save bidirectional mapping between device ID and agent ID.
+    /// When this is called multiple times for a given agent ID, the effect will be
+    /// that many devices will map to the same agent, and that agent will map to the latest
+    /// device associated with.
+    #[cfg(feature = "auth-workaround")]
+    pub fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
+        let txn = self.db.begin_write()?;
+        {
+            let mut table = txn.open_table(CONTACTS_TABLE)?;
+            table.insert(
+                contact.device_pubkey.as_bytes(),
+                contact.agent_id.as_bytes(),
+            )?;
+            table.insert(
+                contact.agent_id.as_bytes(),
+                contact.device_pubkey.as_bytes(),
+            )?;
+        }
+        txn.commit()?;
+        Ok(())
+    }
+
 }
 
 #[cfg(test)]

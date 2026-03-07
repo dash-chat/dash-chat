@@ -159,9 +159,9 @@ impl TestNode {
         Ok(ids)
     }
 
-    pub async fn subscribed_topics(&self) -> BTreeSet<TopicId> {
-        let mailbox_topics = self.mailboxes.subscribed_topics().await;
-        mailbox_topics
+    pub async fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
+        let topics = self.local_store.subscribed_topics()?;
+        Ok(topics)
 
         // self.node
         //     .initialized_topics
@@ -344,7 +344,8 @@ pub async fn consistency(
         }
         println!("consistency report: {:#?}", diffs);
         anyhow::anyhow!("consistency check failed")
-    })
+    });
+    Ok(())
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]

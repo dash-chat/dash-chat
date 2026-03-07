@@ -29,6 +29,20 @@ impl Behavior {
         let qr = self.new_qr_code(share_intent, true).await?;
         other.add_contact(qr).await?;
         self.accept_next_contact().await?;
+
+        assert!(
+            other
+                .subscribed_topics()
+                .await
+                .unwrap()
+                .contains(&self.direct_chat_topic(other.agent_id()))
+        );
+        assert!(
+            self.subscribed_topics()
+                .await
+                .unwrap()
+                .contains(&other.direct_chat_topic(self.agent_id()))
+        );
         Ok(())
     }
 
@@ -46,12 +60,16 @@ impl Behavior {
                 let Payload::Inbox(InboxPayload::ContactRequest { code, .. }) = &n.payload else {
                     return None;
                 };
+                if code.device_pubkey == self.node.device_id() {
+                    return None;
+                }
                 Some(code.clone())
             })
             .await
             .context("no contact invitation found")?;
 
         self.node.add_contact(qr.clone()).await?;
+        tracing::info!(contact = ?qr.device_pubkey.renamed(), "contact accepted");
         Ok(qr)
     }
 
@@ -61,7 +79,7 @@ impl Behavior {
             .watcher
             .lock()
             .await
-            .watch_mapped(Duration::from_secs(5), |n: &Notification| {
+            .watch_mapped(Duration::from_secs(3), |n: &Notification| {
                 tracing::debug!(
                     hash = ?n.header.hash().renamed(),
                     "checking for group invitation"
