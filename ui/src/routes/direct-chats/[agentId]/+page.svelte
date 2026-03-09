@@ -41,6 +41,8 @@
 		mdiClose,
 		mdiMagnify,
 		mdiCalendarSearch,
+		mdiFile,
+		mdiDownload,
 	} from '@mdi/js';
 	import {
 		Page,
@@ -65,6 +67,8 @@
 	import type { Action } from 'svelte/action';
 	import { watcher } from 'signalium';
 	import MessageInput from '$lib/components/MessageInput.svelte';
+	import { type Media, mediaToAttachment, formatFileSize } from '$lib/types/media';
+	import { isTauriEnv } from '$lib/utils/environment';
 	import { condenseReactions } from '$lib/utils/emojis';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
@@ -126,7 +130,7 @@
 	}
 
 	let messageText = $state('');
-	let messageMedia = $state('');
+	let messageMedia = $state<Media | undefined>(undefined);
 	let showQuickBar = $state(false);
 	let showFullPicker = $state(false);
 	let emojiTargetedMessage: Message | undefined = $state(undefined);
@@ -185,11 +189,15 @@
 	async function sendMessage() {
 		const message = messageText;
 
-		if (!message || message.trim() === '') return;
+		if ((!message || message.trim() === '') && !messageMedia) return;
 
 		try {
-			await store.sendMessage(message);
+			const media = messageMedia
+				? await mediaToAttachment(messageMedia)
+				: undefined;
+			await store.sendMessage({ message, media });
 			messageText = '';
+			messageMedia = undefined;
 			// Hide the unread messages divider after sending, and allow it to reappear for future messages
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
@@ -201,6 +209,41 @@
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
+	async function saveFileAttachment(file: {
+		data: string;
+		name: string;
+		mime_type: string;
+	}) {
+		// data is a base64 data URL like "data:application/pdf;base64,..."
+		const base64 = file.data.split(',')[1] ?? file.data;
+		const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+
+		if (isTauriEnv()) {
+			const { save } = await import('@tauri-apps/plugin-dialog');
+			const { writeFile } = await import('@tauri-apps/plugin-fs');
+			const { downloadDir, join } = await import('@tauri-apps/api/path');
+			let defaultPath = file.name;
+			try {
+				defaultPath = await join(await downloadDir(), file.name);
+			} catch {
+				// fall through with just filename
+			}
+			const path = await save({ title: m.saveFile(), defaultPath });
+			if (path) {
+				await writeFile(path, bytes);
+				showToast(m.fileSaved());
+			}
+		} else {
+			const blob = new Blob([bytes], { type: file.mime_type });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = file.name;
+			a.click();
+			URL.revokeObjectURL(url);
+		}
+	}
+
 	let t: ReturnType<typeof setTimeout> | undefined;
 	let bottom = false;
 	let unsubNewMessage: (() => void) | undefined;
@@ -687,6 +730,28 @@
 																	class={`${messageClass(messageSet.length, i)} message my-message`}
 																	data-message-hash={hash}
 																>
+																	{#if message.content.media}
+																		{@const media = message.content.media}
+																		{#if media.kind === 'photos'}
+																			<div class="msg-photos">
+																				{#each media.photos as photo}
+																					<img src={photo.data} alt="" class="msg-photo" />
+																				{/each}
+																			</div>
+																		{:else}
+																			<button
+																				class="msg-file"
+																				onclick={() => saveFileAttachment(media.file)}
+																			>
+																				<wa-icon src={wrapPathInSvg(mdiFile)} class="msg-file-icon"></wa-icon>
+																				<div class="msg-file-info">
+																					<span class="msg-file-name">{media.file.name}</span>
+																					<span class="msg-file-size">{formatFileSize(media.file.size)}</span>
+																				</div>
+																				<wa-icon src={wrapPathInSvg(mdiDownload)} class="msg-file-download"></wa-icon>
+																			</button>
+																		{/if}
+																	{/if}
 																	<div
 																		class="row gap-2 mx-1"
 																		style="align-items: end"
@@ -694,11 +759,11 @@
 																		<span class="flex-1">
 																			{#if searchMode && searchQuery}
 																				{@html highlightMatch(
-																					message.content,
+																					message.content.message,
 																					searchQuery,
 																				)}
 																			{:else}
-																				{message.content}
+																				{message.content.message}
 																			{/if}
 																		</span>
 
@@ -774,6 +839,28 @@
 																	raised
 																	class={`${messageClass(messageSet.length, i)} message others-message`}
 																>
+																	{#if message.content.media}
+																		{@const media = message.content.media}
+																		{#if media.kind === 'photos'}
+																			<div class="msg-photos">
+																				{#each media.photos as photo}
+																					<img src={photo.data} alt="" class="msg-photo" />
+																				{/each}
+																			</div>
+																		{:else}
+																			<button
+																				class="msg-file"
+																				onclick={() => saveFileAttachment(media.file)}
+																			>
+																				<wa-icon src={wrapPathInSvg(mdiFile)} class="msg-file-icon"></wa-icon>
+																				<div class="msg-file-info">
+																					<span class="msg-file-name">{media.file.name}</span>
+																					<span class="msg-file-size">{formatFileSize(media.file.size)}</span>
+																				</div>
+																				<wa-icon src={wrapPathInSvg(mdiDownload)} class="msg-file-download"></wa-icon>
+																			</button>
+																		{/if}
+																	{/if}
 																	<div
 																		class="row gap-2 mx-1"
 																		style="align-items: end"
@@ -781,11 +868,11 @@
 																		<span class="flex-1">
 																			{#if searchMode && searchQuery}
 																				{@html highlightMatch(
-																					message.content,
+																					message.content.message,
 																					searchQuery,
 																				)}
 																			{:else}
-																				{message.content}
+																				{message.content.message}
 																			{/if}
 																		</span>
 
@@ -1110,6 +1197,7 @@
 						<MessageInput
 							bind:value={messageText}
 							bind:height={messageInputHeight}
+							media={messageMedia}
 							onSend={sendMessage}
 							onInput={async () => {
 								if (scrollIsAtBottom()) {
@@ -1118,10 +1206,7 @@
 								}
 							}}
 							onEmojiClick={() => (showFullPicker = true)}
-							onFilePicked={file => {
-								console.log('File picked:', file.name, file.size, file.type);
-								showToast(file.name);
-							}}
+							onMediaChange={media => (messageMedia = media)}
 						/>
 					</div>
 				{/if}

@@ -143,7 +143,8 @@ export class DirectChatStore {
 				if (topicId !== chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
 				if (op.header.public_key !== myDeviceId) return false;
-				if (op.body.payload.payload !== content) return false;
+				const payload = op.body.payload.payload;
+				if (payload.message !== content.message) return false;
 				return true;
 			}),
 			this.client.sendMessage(chatId, content),
@@ -194,7 +195,7 @@ export class DirectChatStore {
 
 		const lastEvent = message
 			? {
-					summary: message.content,
+					summary: message.content.message,
 					timestamp: message.timestamp,
 				}
 			: {

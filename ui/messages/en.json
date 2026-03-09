@@ -172,6 +172,8 @@
 	"menuRunLocalMailbox": "Run Local Mailbox",
 	"menuFile": "File",
 	"photosAndVideo": "Photos & video",
+	"saveFile": "Save File",
+	"fileSaved": "File saved",
 	"menuOpenLogsFolder": "Open Logs Folder",
 	"quitConfirmTitle": "Quit Dash Chat?",
 	"quitConfirmMessage": "The Local Message Server is running. Are you sure you want to quit?",

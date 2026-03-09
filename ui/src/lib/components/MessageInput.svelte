@@ -2,46 +2,94 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiSend, mdiEmoticonHappyOutline, mdiPlus, mdiImage, mdiFile } from '@mdi/js';
+	import {
+		mdiSend,
+		mdiEmoticonHappyOutline,
+		mdiPlus,
+		mdiImage,
+		mdiFile,
+		mdiClose,
+	} from '@mdi/js';
 	import { useTheme } from 'konsta/svelte';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { isIos } from '$lib/utils/environment';
+	import {
+		type Media,
+		type PhotoItem,
+		fileToDataUrl,
+		formatFileSize,
+	} from '$lib/types/media';
 
 	interface Props {
 		value?: string;
 		placeholder?: string;
 		height: string;
+		media?: Media | undefined;
 		onSend?: () => void;
 		onInput?: () => void;
 		onEmojiClick?: () => void;
-		onFilePicked?: (file: File) => void;
+		onMediaChange?: (media: Media | undefined) => void;
 	}
 
 	let {
 		value = $bindable(''),
 		height = $bindable(''),
 		placeholder = m.typeMessage(),
+		media = undefined,
 		onSend,
 		onInput,
 		onEmojiClick,
-		onFilePicked,
+		onMediaChange,
 	}: Props = $props();
 	let div: HTMLDivElement;
 	let showAttachMenu = $state(false);
 	let photoFilePicker: HTMLInputElement;
 	let fileFilePicker: HTMLInputElement;
 
-	function onFileSelected(input: HTMLInputElement) {
-		if (input.files && input.files[0]) {
-			onFilePicked?.(input.files[0]);
-			input.value = '';
+	let hasContent = $derived(value.trim().length > 0 || !!media);
+
+	async function onPhotosSelected(input: HTMLInputElement) {
+		if (!input.files || input.files.length === 0) return;
+		const photos: PhotoItem[] = [];
+		for (let i = 0; i < input.files.length; i++) {
+			const file = input.files[i];
+			const dataUrl = await fileToDataUrl(file);
+			photos.push({ dataUrl, file });
 		}
+		onMediaChange?.({ kind: 'photos', photos });
+		input.value = '';
 		showAttachMenu = false;
+		await tick();
+		updateHeight();
+	}
+
+	function onFilePickerSelected(input: HTMLInputElement) {
+		if (!input.files || !input.files[0]) return;
+		const file = input.files[0];
+		onMediaChange?.({ kind: 'file', file, name: file.name, size: file.size });
+		input.value = '';
+		showAttachMenu = false;
+		tick().then(updateHeight);
+	}
+
+	function removeMedia() {
+		onMediaChange?.(undefined);
+		tick().then(updateHeight);
+	}
+
+	function removePhoto(index: number) {
+		if (!media || media.kind !== 'photos') return;
+		const remaining = media.photos.filter((_, i) => i !== index);
+		onMediaChange?.(remaining.length > 0 ? { kind: 'photos', photos: remaining } : undefined);
+		tick().then(updateHeight);
+	}
+
+	function updateHeight() {
+		if (div) height = `${div.scrollHeight}px`;
 	}
 
 	const theme = $derived(useTheme());
 
-	let hasText = $derived(value.trim().length > 0);
 	let textarea: HTMLTextAreaElement;
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -70,10 +118,10 @@
 	}
 
 	function triggerOnSend() {
-		if (hasText) {
+		if (hasContent) {
 			onSend?.();
 			textarea.style.height = 'auto';
-			height = `${div.scrollHeight}px`;
+			tick().then(updateHeight);
 		}
 	}
 
@@ -91,16 +139,55 @@
 	<input
 		type="file"
 		accept="image/*,video/*"
+		multiple
 		bind:this={photoFilePicker}
 		class="hidden"
-		onchange={() => onFileSelected(photoFilePicker)}
+		onchange={() => onPhotosSelected(photoFilePicker)}
 	/>
 	<input
 		type="file"
 		bind:this={fileFilePicker}
 		class="hidden"
-		onchange={() => onFileSelected(fileFilePicker)}
+		onchange={() => onFilePickerSelected(fileFilePicker)}
 	/>
+
+	{#if media}
+		<div class="media-preview">
+			{#if media.kind === 'photos'}
+				<div class="photo-preview-row">
+					{#each media.photos as photo, i}
+						<div class="photo-thumb-wrapper">
+							<img src={photo.dataUrl} alt="" class="photo-thumb" />
+							<button
+								type="button"
+								class="thumb-remove"
+								onclick={() => removePhoto(i)}
+								aria-label="Remove"
+							>
+								<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
+							</button>
+						</div>
+					{/each}
+				</div>
+			{:else}
+				<div class="file-preview">
+					<wa-icon src={wrapPathInSvg(mdiFile)} class="file-preview-icon"></wa-icon>
+					<div class="file-preview-info">
+						<span class="file-preview-name">{media.name}</span>
+						<span class="file-preview-size">{formatFileSize(media.size)}</span>
+					</div>
+					<button
+						type="button"
+						class="thumb-remove"
+						onclick={removeMedia}
+						aria-label="Remove"
+					>
+						<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
+					</button>
+				</div>
+			{/if}
+		</div>
+	{/if}
 
 	<div
 		class="row gap-2"
@@ -183,9 +270,9 @@
 			type="button"
 			class="send-button"
 			data-testid="message-input-send"
-			class:active={hasText}
+			class:active={hasContent}
 			onclick={handleSendClick}
-			disabled={!hasText}
+			disabled={!hasContent}
 			aria-label="Send"
 		>
 			<wa-icon src={wrapPathInSvg(mdiSend)}></wa-icon>
@@ -372,5 +459,91 @@
 		width: 20px;
 		height: 20px;
 		opacity: 0.7;
+	}
+
+	/* Media preview */
+	.media-preview {
+		padding: 8px 8px 0;
+	}
+
+	.photo-preview-row {
+		display: flex;
+		gap: 6px;
+		overflow-x: auto;
+		padding-bottom: 4px;
+	}
+
+	.photo-thumb-wrapper {
+		position: relative;
+		flex-shrink: 0;
+	}
+
+	.photo-thumb {
+		width: 72px;
+		height: 72px;
+		object-fit: cover;
+		border-radius: 8px;
+	}
+
+	.thumb-remove {
+		position: absolute;
+		top: -6px;
+		right: -6px;
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		border: none;
+		background: rgba(0, 0, 0, 0.6);
+		color: white;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		padding: 0;
+	}
+
+	.thumb-remove :global(wa-icon) {
+		width: 14px;
+		height: 14px;
+	}
+
+	.file-preview {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 8px 12px;
+		border-radius: 10px;
+		background: rgba(128, 128, 128, 0.1);
+		position: relative;
+	}
+
+	.file-preview :global(.file-preview-icon) {
+		width: 28px;
+		height: 28px;
+		opacity: 0.6;
+		flex-shrink: 0;
+	}
+
+	.file-preview-info {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+
+	.file-preview-name {
+		font-size: 14px;
+		font-weight: 500;
+		color: var(--k-text-color);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.file-preview-size {
+		font-size: 12px;
+		color: var(--k-text-color);
+		opacity: 0.5;
 	}
 </style>

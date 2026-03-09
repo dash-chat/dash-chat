@@ -2,22 +2,49 @@ use named_id::RenameNone;
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    derive_more::From,
-    derive_more::Deref,
-    RenameNone,
-)]
-pub struct ChatMessageContent(String);
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
+pub struct PhotoAttachment {
+    pub data: String,
+    pub name: String,
+    pub mime_type: String,
+    pub size: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
+pub struct FileAttachment {
+    pub data: String,
+    pub name: String,
+    pub mime_type: String,
+    pub size: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum MediaAttachment {
+    #[serde(rename = "photos")]
+    Photos { photos: Vec<PhotoAttachment> },
+    #[serde(rename = "file")]
+    File { file: FileAttachment },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
+pub struct ChatMessageContent {
+    pub message: String,
+    pub media: Option<MediaAttachment>,
+}
+
+impl ChatMessageContent {
+    pub fn text(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            media: None,
+        }
+    }
+}
 
 impl From<&str> for ChatMessageContent {
     fn from(value: &str) -> Self {
-        Self(value.to_string())
+        Self::text(value)
     }
 }
 
@@ -68,7 +95,7 @@ pub mod testing {
             Some(
                 self.timestamp
                     .cmp(&other.timestamp)
-                    .then(self.content.cmp(&other.content))
+                    .then(self.content.message.cmp(&other.content.message))
                     .then(self.author.cmp(&other.author)),
             )
         }
@@ -78,7 +105,7 @@ pub mod testing {
         fn cmp(&self, other: &Self) -> Ordering {
             self.timestamp
                 .cmp(&other.timestamp)
-                .then(self.content.cmp(&other.content))
+                .then(self.content.message.cmp(&other.content.message))
                 .then(self.author.cmp(&other.author))
         }
     }

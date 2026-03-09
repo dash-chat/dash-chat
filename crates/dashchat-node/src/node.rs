@@ -390,8 +390,6 @@ impl Node {
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
 
-        let message = ChatMessageContent::from(message);
-
         let header = self
             .author_operation(
                 topic,

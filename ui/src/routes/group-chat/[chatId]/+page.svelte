@@ -52,7 +52,7 @@
 		const message = messageText;
 		if (!message || message.trim() === '') return;
 
-		await store.sendMessage(message);
+		await store.sendMessage({ message, media: undefined });
 		messageText = '';
 	}
 	const theme = $derived(useTheme());
@@ -95,7 +95,7 @@
 								{#if myActorId == message.author}
 									<Card raised class="message my-message">
 										<div class="row gap-2" style="align-items: end">
-											<span>{message.content}</span>
+											<span>{message.content.message}</span>
 
 											<div class="dark-quiet text-xs">
 												{#if lessThanAMinuteAgo(message.timestamp)}
@@ -131,7 +131,7 @@
 										</wa-avatar>
 										<Card raised class="message others-message">
 											<div class="row gap-2" style="align-items: end">
-												<span>{message.content}</span>
+												<span>{message.content.message}</span>
 
 												<div class="quiet text-xs">
 													{#if lessThanAMinuteAgo(message.timestamp)}

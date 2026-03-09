@@ -19,8 +19,8 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
         // Debug format: name/surname/about fields with quoted values
         r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
-        // Debug format: ChatMessageContent("...")
-        r#"ChatMessageContent\("[^"]*"\)"#,
+        // Debug format: ChatMessageContent { message: "...", ... }
+        r#"ChatMessageContent\s*\{[^}]*\}"#,
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
         // JSON format: "name":"...", "surname":"...", "about":"..."
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn redacts_chat_message_debug() {
-        let input = r#"ChatMessageContent("secret message here")"#;
+        let input = r#"ChatMessageContent { message: "secret message here", media: None }"#;
         let result = redact(input);
         assert!(
             !result.contains("secret message"),
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn redacts_full_notification_log_line() {
-        let input = r#"2024-02-15 INFO Received notification: Chat(Message(ChatMessageContent("hey there"))) from DeviceId(PublicKey([32, 145, 78, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]))"#;
+        let input = r#"2024-02-15 INFO Received notification: Chat(Message(ChatMessageContent { message: "hey there", media: None })) from DeviceId(PublicKey([32, 145, 78, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]))"#;
         let result = redact(input);
         assert!(
             !result.contains("hey there"),

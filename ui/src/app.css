@@ -124,6 +124,79 @@ li.plain span {
 	border-top-left-radius: 4px;
 }
 
+/* Message media */
+.msg-photos {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px;
+	margin: -8px -8px 4px -8px;
+	overflow: hidden;
+	border-radius: inherit;
+}
+.msg-photos:has(> :nth-child(2)) {
+	/* Grid for multiple photos */
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+}
+.msg-photo {
+	width: 100%;
+	aspect-ratio: 1;
+	object-fit: cover;
+	display: block;
+}
+.msg-photos:has(> :only-child) .msg-photo {
+	aspect-ratio: auto;
+	max-height: 300px;
+	border-radius: inherit;
+}
+.msg-file {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	padding: 8px 10px;
+	margin: -4px 0 4px 0;
+	border: none;
+	border-radius: 8px;
+	background: rgba(128, 128, 128, 0.15);
+	cursor: pointer;
+	text-align: left;
+	color: inherit;
+}
+.msg-file:hover {
+	background: rgba(128, 128, 128, 0.25);
+}
+.msg-file-icon {
+	width: 28px;
+	height: 28px;
+	opacity: 0.6;
+	flex-shrink: 0;
+}
+.msg-file-info {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+.msg-file-name {
+	font-size: 14px;
+	font-weight: 500;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.msg-file-size {
+	font-size: 12px;
+	opacity: 0.6;
+}
+.msg-file-download {
+	width: 20px;
+	height: 20px;
+	opacity: 0.5;
+	flex-shrink: 0;
+}
+
 .message-highlighted {
 	position: relative;
 	z-index: 51;

@@ -23,7 +23,28 @@ export interface ChatReaction {
 	target: Hash;
 }
 
-export type MessageContent = string;
+export interface PhotoAttachment {
+	data: string;
+	name: string;
+	mime_type: string;
+	size: number;
+}
+
+export interface FileAttachment {
+	data: string;
+	name: string;
+	mime_type: string;
+	size: number;
+}
+
+export type MediaAttachment =
+	| { kind: 'photos'; photos: PhotoAttachment[] }
+	| { kind: 'file'; file: FileAttachment };
+
+export interface MessageContent {
+	message: string;
+	media: MediaAttachment | undefined;
+}
 export type AnnouncementPayload = { type: 'SetProfile'; payload: Profile };
 export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
