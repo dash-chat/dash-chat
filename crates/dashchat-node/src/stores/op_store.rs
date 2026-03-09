@@ -250,9 +250,11 @@ impl OpStore<MemoryStore<TopicId, Extensions>> {
                 topics.is_empty() || topics.iter().find(|topic| **topic == l).is_some()
             })
             .collect::<Vec<_>>();
+
         ops.sort_by_key(|(_, (t, header, _, _))| {
             (t, header.public_key.renamed().to_string(), header.seq_num)
         });
+
         ops.into_iter()
             .map(|(h, (t, header, body, _))| {
                 let desc = match body
@@ -266,24 +268,15 @@ impl OpStore<MemoryStore<TopicId, Extensions>> {
                     Some(p) => format!("{p:?}"),
                     None => "_".to_string(),
                 };
-                if false && topics.len() == 1 {
-                    format!(
-                        "• {} {:2} {} : {}",
-                        header.public_key.renamed(),
-                        header.seq_num,
-                        h.renamed(),
-                        desc
-                    )
-                } else {
-                    format!(
-                        "• {:>24} {} {:2} {} : {}",
-                        t.renamed(),
-                        header.public_key.renamed(),
-                        header.seq_num,
-                        h.renamed(),
-                        desc
-                    )
-                }
+                let width = crate::util::max_width(&topics);
+                format!(
+                    "• {:>width$} {} {:2} {} : {}",
+                    t.renamed(),
+                    header.public_key.renamed(),
+                    header.seq_num,
+                    h.renamed(),
+                    desc
+                )
             })
             .collect::<Vec<_>>()
             .join("\n")

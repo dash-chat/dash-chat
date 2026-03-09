@@ -113,13 +113,19 @@ pub mod kind {
         DeviceGroup
     );
 
-    // Either direct or group chat
-    topic_kind!(Chat);
+    topic_kind!(
+        /// Either a direct or a group chat topic
+        Chat);
 
-    topic_kind!(Untyped);
+    topic_kind_no_auto_register!(
+        /// Topic for inboxes, for receiving responses to contact codes (QR codes)
+        /// 
+        /// Inbox topics cannot be automatically registered, they need to be registered separately to account for the expiry time        
+        Inbox);
 
-    // Inbox topics cannot be automatically registered, they need to be registered separately to account for the expiry time
-    topic_kind_no_auto_register!(Inbox);
+    topic_kind!(
+        /// Intermediate type, usually only used internally before casting to an actual semantic topic type
+        Untyped);
 }
 
 #[derive(

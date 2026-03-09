@@ -21,10 +21,8 @@ use crate::{
 mod impls;
 
 const IDENTITY_TABLE: TableDefinition<&'static str, [u8; 32]> = TableDefinition::new("identity");
-const SUBSCRIBED_TOPICS_TABLE: TableDefinition<[u8; 32], ()> =
-TableDefinition::new("subscribed_topics");
-const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> =
-TableDefinition::new("active_inboxes");
+const SUBSCRIBED_TOPICS_TABLE: TableDefinition<[u8; 32], ()> = TableDefinition::new("subscribed_topics");
+const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> = TableDefinition::new("active_inboxes");
 
 #[cfg(feature = "auth-workaround")]
 const CONTACTS_TABLE: TableDefinition<[u8; 32], [u8; 32]> = TableDefinition::new("contacts");

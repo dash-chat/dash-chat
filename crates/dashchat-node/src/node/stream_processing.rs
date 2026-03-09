@@ -133,7 +133,7 @@ impl Node {
 
         // Ok this is weird but hear me out:
         // When we are added to a group with members we are not already contacts with,
-        // we need to subscribe to their AgentId so we can receiver their device group messages.
+        // we need to subscribe to their AgentId so we can receive their device group messages.
         // Without this, we can't process group messages in order, because these are dependencies.
         // That's why this shows up before the partial order check.
         //
@@ -149,7 +149,7 @@ impl Node {
                 };
                 for member in members {
                     match member {
-                        GroupMember::Group(id) => self.register_topic(ChatId::from_group_pubkey(*id)).await?,
+                        GroupMember::Group(id) => self.register_topic(Topic::announcements(AgentId::from_pubkey(*id))).await?,
                         GroupMember::Individual(_) => {},
                     }
                 }

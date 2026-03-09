@@ -273,27 +273,11 @@ pub async fn consistency(
     let topics = topics.into_iter().collect::<HashSet<_>>();
     let nodes = nodes.into_iter().collect::<Vec<_>>();
     wait_for_resetting(config.poll_interval, config.poll_timeout, || async {
-        // TODO: Fix this when we have a proper way to access operations
-        // The operations field is now private in the new p2panda-store version
-
-        //
-        //
-        //
-        // HEY: this seems to be broken!
-        //
-        //
-        //
-        //
-
         let sets = nodes
             .iter()
             .map(|node| {
                 let ops = node.op_store.processed_ops.read().unwrap();
-                let width = topics
-                    .iter()
-                    .map(|t| t.renamed().to_string().len())
-                    .max()
-                    .unwrap_or(0);
+                let width = crate::util::max_width(&topics);
                 let topics = topics
                     .iter()
                     .flat_map(|topic| {
