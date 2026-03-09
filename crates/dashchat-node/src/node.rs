@@ -331,7 +331,7 @@ impl Node {
 
         self.author_operation(
             chat_id,
-            DashAction::group_action(chat_id, GroupAction::Create { initial_members }),
+            DashAction::group_action(chat_id, GroupAction::Create { initial_members })?,
             Some(&format!("create_group({})", chat_id.renamed())),
         )
         .await?;
@@ -379,7 +379,7 @@ impl Node {
                     member: GroupMember::Individual(member),
                     access,
                 },
-            ),
+            )?,
             Some(&format!("add_group_member({})", chat_id.renamed())),
         )
         .await?;
@@ -406,7 +406,7 @@ impl Node {
                 GroupAction::Remove {
                     member: GroupMember::Individual(member),
                 },
-            ),
+            )?,
             Some(&format!("remove_group_member({})", chat_id.renamed())),
         )
         .await?;

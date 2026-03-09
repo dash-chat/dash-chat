@@ -100,7 +100,7 @@ impl HackyGroupStore {
     }
 
     pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(PublicKey, Access)>> {
-        let group_id = topic.to_group_pubkey();
+        let group_id = topic.to_group_pubkey()?;
         Ok(self.groups.get_state().await?.crdt.inner.members(group_id))
     }
 }
