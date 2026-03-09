@@ -128,7 +128,10 @@ impl DashAction {
         }
     }
 
-    pub fn group_action(group_id: ChatId, action: GroupAction<PublicKey, ()>) -> anyhow::Result<Self> {
+    pub fn group_action(
+        group_id: ChatId,
+        action: GroupAction<PublicKey, ()>,
+    ) -> anyhow::Result<Self> {
         Ok(DashAction::GroupControl(AuthExtension {
             group_id: group_id.to_group_pubkey()?,
             action,
