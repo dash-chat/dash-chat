@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiSend, mdiEmoticonHappyOutline } from '@mdi/js';
+	import { mdiSend, mdiEmoticonHappyOutline, mdiPlus, mdiImage, mdiFile } from '@mdi/js';
 	import { useTheme } from 'konsta/svelte';
 	import { onMount } from 'svelte';
 	import { isIos } from '$lib/utils/environment';
@@ -14,6 +14,7 @@
 		onSend?: () => void;
 		onInput?: () => void;
 		onEmojiClick?: () => void;
+		onFilePicked?: (file: File) => void;
 	}
 
 	let {
@@ -23,8 +24,20 @@
 		onSend,
 		onInput,
 		onEmojiClick,
+		onFilePicked,
 	}: Props = $props();
 	let div: HTMLDivElement;
+	let showAttachMenu = $state(false);
+	let photoFilePicker: HTMLInputElement;
+	let fileFilePicker: HTMLInputElement;
+
+	function onFileSelected(input: HTMLInputElement) {
+		if (input.files && input.files[0]) {
+			onFilePicked?.(input.files[0]);
+			input.value = '';
+		}
+		showAttachMenu = false;
+	}
 
 	const theme = $derived(useTheme());
 
@@ -75,10 +88,68 @@
 	class:bg-md-light-surface={theme === 'material'}
 	class:dark:bg-md-dark-surface={theme === 'material'}
 >
+	<input
+		type="file"
+		accept="image/*,video/*"
+		bind:this={photoFilePicker}
+		class="hidden"
+		onchange={() => onFileSelected(photoFilePicker)}
+	/>
+	<input
+		type="file"
+		bind:this={fileFilePicker}
+		class="hidden"
+		onchange={() => onFileSelected(fileFilePicker)}
+	/>
+
 	<div
 		class="row gap-2"
 		style="align-items: flex-end; margin: 0 auto"
 	>
+		<div class="relative" style="align-self: flex-end; margin-bottom: 4px;">
+			<button
+				type="button"
+				class="attach-button"
+				data-testid="message-input-attach"
+				onclick={() => (showAttachMenu = !showAttachMenu)}
+				aria-label="Attach"
+			>
+				<wa-icon src={wrapPathInSvg(mdiPlus)}></wa-icon>
+			</button>
+			{#if showAttachMenu}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="fixed inset-0 z-10"
+					onclick={() => (showAttachMenu = false)}
+					onkeydown={() => {}}
+				></div>
+				<div class="attach-menu" data-testid="message-input-attach-menu">
+					<button
+						class="attach-menu-item"
+						data-testid="message-input-attach-photos"
+						onclick={() => {
+							showAttachMenu = false;
+							photoFilePicker.click();
+						}}
+					>
+						<wa-icon src={wrapPathInSvg(mdiImage)}></wa-icon>
+						<span>{m.photosAndVideo()}</span>
+					</button>
+					<button
+						class="attach-menu-item"
+						data-testid="message-input-attach-file"
+						onclick={() => {
+							showAttachMenu = false;
+							fileFilePicker.click();
+						}}
+					>
+						<wa-icon src={wrapPathInSvg(mdiFile)}></wa-icon>
+						<span>{m.menuFile()}</span>
+					</button>
+				</div>
+			{/if}
+		</div>
+
 		<div
 			class={theme === 'ios'
 				? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
@@ -235,5 +306,71 @@
 
 	.send-button :global(wa-icon) {
 		margin-left: 2px; /* Optical centering for send arrow */
+	}
+
+	.attach-button {
+		flex-shrink: 0;
+		width: 40px;
+		height: 40px;
+		border: none;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		padding: 0;
+		background: rgba(128, 128, 128, 0.15);
+		color: var(--k-text-color);
+		opacity: 0.6;
+		transition:
+			opacity 0.15s ease,
+			background-color 0.15s ease;
+	}
+
+	.attach-button:hover {
+		opacity: 0.8;
+		background: rgba(128, 128, 128, 0.25);
+	}
+
+	.attach-button :global(wa-icon) {
+		width: 22px;
+		height: 22px;
+	}
+
+	.attach-menu {
+		position: absolute;
+		bottom: calc(100% + 8px);
+		left: 0;
+		z-index: 20;
+		min-width: 180px;
+		border-radius: 12px;
+		padding: 4px 0;
+		background: var(--k-bars-bg-color);
+		border: 1px solid var(--k-hairline-color);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+	}
+
+	.attach-menu-item {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		width: 100%;
+		padding: 10px 16px;
+		border: none;
+		background: transparent;
+		cursor: pointer;
+		font-size: 15px;
+		color: var(--k-text-color);
+		transition: background-color 0.1s ease;
+	}
+
+	.attach-menu-item:hover {
+		background: rgba(128, 128, 128, 0.1);
+	}
+
+	.attach-menu-item :global(wa-icon) {
+		width: 20px;
+		height: 20px;
+		opacity: 0.7;
 	}
 </style>
