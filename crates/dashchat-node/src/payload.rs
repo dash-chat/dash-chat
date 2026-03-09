@@ -1,6 +1,8 @@
 use named_id::{RenameAll, RenameNone};
+use p2panda_auth::group::GroupAction;
+use p2panda_auth::processor::AuthExtension;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
-use p2panda_core::{Body, Extension, Hash, PruneFlag};
+use p2panda_core::{Body, Extension, Hash, PruneFlag, PublicKey};
 use serde::{Deserialize, Serialize};
 
 use crate::chat::ChatId;
@@ -8,14 +10,21 @@ use crate::contact::QrCode;
 use crate::topic::TopicId;
 use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, Topic};
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extensions {
     pub topic: TopicId,
+    pub auth: Option<AuthExtension>,
 }
 
 impl Extensions {
     pub fn topic(&self) -> Topic<crate::topic::kind::Untyped> {
         Topic::untyped(*self.topic)
+    }
+}
+
+impl Extension<AuthExtension> for Extensions {
+    fn extract(header: &Header) -> Option<AuthExtension> {
+        header.extensions.auth.clone()
     }
 }
 
@@ -94,6 +103,40 @@ pub enum Payload {
     /// Data only seen within your private device group.
     /// No other person sees these.
     DeviceGroup(DeviceGroupPayload),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, RenameAll, derive_more::From)]
+#[serde(tag = "type", content = "payload")]
+pub enum DashAction {
+    Payload(Payload),
+    #[named_id(skip)]
+    GroupControl(AuthExtension),
+}
+
+impl DashAction {
+    pub fn try_into_body(&self) -> Result<Option<Body>, EncodeError> {
+        Ok(match self {
+            DashAction::Payload(payload) => Some(payload.try_into_body()?),
+            DashAction::GroupControl(_) => None,
+        })
+    }
+
+    pub fn extract_auth_extension(&self) -> Option<AuthExtension> {
+        match self {
+            DashAction::GroupControl(auth) => Some(auth.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn group_action(
+        group_id: ChatId,
+        action: GroupAction<PublicKey, ()>,
+    ) -> anyhow::Result<Self> {
+        Ok(DashAction::GroupControl(AuthExtension {
+            group_id: group_id.to_group_pubkey()?,
+            action,
+        }))
+    }
 }
 
 impl Cbor for Payload {}

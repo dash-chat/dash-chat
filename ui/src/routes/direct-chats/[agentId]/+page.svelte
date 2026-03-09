@@ -100,6 +100,7 @@
 				case 'AuthorOperation':
 				case 'CreateQrCode':
 				case 'CreateDirectChat':
+				case 'StoreContact':
 					showToast(m.errorAddContact(), 'error');
 					break;
 				default:
@@ -532,7 +533,7 @@
 
 					<div class="column">
 						{#await $readMessageHashes then readHashes}
-					{#await $messagesSets then messagesSetsInDays}
+							{#await $messagesSets then messagesSetsInDays}
 								{@const unreadDivider = getUnreadDividerInfo(messagesSetsInDays, readHashes, myDeviceId)}
 								<div
 									use:scrolltobottom
@@ -659,14 +660,16 @@
 											{#each messageSetInDay.eventsSets as messageSet}
 												<div class="column" style="gap: 1px">
 													{#each messageSet as [hash, message], i}
-													{#if unreadDivider.hash === hash}
-														<div
-															class="unread-divider"
-															data-testid="direct-chat-unread-divider"
-														>
-															{m.unreadMessages({ count: unreadDivider.count })}
-														</div>
-													{/if}
+														{#if unreadDivider.hash === hash}
+															<div
+																class="unread-divider"
+																data-testid="direct-chat-unread-divider"
+															>
+																{m.unreadMessages({
+																	count: unreadDivider.count,
+																})}
+															</div>
+														{/if}
 														{#if myDeviceId == message.author}
 															<div
 																class="self-end max-w-[85%]"
@@ -1008,10 +1011,7 @@
 						class="mx-4 border-t border-gray-300 dark:border-gray-600"
 						style="margin: 0 auto"
 					></div>
-					<div
-						class="row items-center gap-2 px-4 py-3"
-						style="margin: 0 auto"
-					>
+					<div class="row items-center gap-2 px-4 py-3" style="margin: 0 auto">
 						<button onclick={() => dateInput?.click()}>
 							<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
 							></wa-icon>

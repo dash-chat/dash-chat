@@ -34,7 +34,7 @@ async fn test_reject_contact_request() {
     println!("bobbi: {:?}", bobbi.device_id().short());
 
     #[cfg(feature = "p2p")]
-    introduce_and_wait([&alice.network, &bobbi.network]).await;
+    introduce_and_wait([&alice, &bobbi]).await;
 
     // Alice generates a QR code with inbox
     let qr = alice
