@@ -9,7 +9,9 @@
 
 	let { children }: { children: Snippet } = $props();
 
-	const isHome = $derived(page.url.pathname === '/');
+	// Non-special URL schemes (tauri://) have empty pathname for the root,
+	// unlike http:// which normalizes to '/'.
+	const isHome = $derived(page.url.pathname === '/' || page.url.pathname === '');
 	const isSettings = $derived(page.url.pathname.startsWith('/settings'));
 	const isNewMessage = $derived(
 		page.url.pathname.startsWith('/new-message') ||
