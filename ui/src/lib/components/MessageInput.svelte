@@ -9,6 +9,8 @@
 		mdiImage,
 		mdiFile,
 		mdiClose,
+		mdiMicrophone,
+		mdiStop,
 	} from '@mdi/js';
 	import { useTheme } from 'konsta/svelte';
 	import { onMount, tick } from 'svelte';
@@ -19,6 +21,12 @@
 		fileToDataUrl,
 		formatFileSize,
 	} from '$lib/types/media';
+	import {
+		startRecording,
+		formatDuration,
+		type AudioRecorderHandle,
+	} from '$lib/utils/audio-recorder';
+	import { showToast } from '$lib/utils/toasts';
 
 	interface Props {
 		value?: string;
@@ -45,6 +53,12 @@
 	let showAttachMenu = $state(false);
 	let photoFilePicker: HTMLInputElement;
 	let fileFilePicker: HTMLInputElement;
+
+	// Audio recording state
+	let recording = $state(false);
+	let recorderHandle: AudioRecorderHandle | null = null;
+	let recordingElapsed = $state(0);
+	let recordingTimer: ReturnType<typeof setInterval> | null = null;
 
 	let hasContent = $derived(value.trim().length > 0 || !!media);
 
@@ -125,6 +139,74 @@
 		}
 	}
 
+	async function toggleRecording() {
+		if (recording) {
+			await stopRecording();
+		} else {
+			await startRecordingAudio();
+		}
+	}
+
+	async function startRecordingAudio() {
+		try {
+			recorderHandle = await startRecording();
+			recording = true;
+			recordingElapsed = 0;
+			recordingTimer = setInterval(() => {
+				if (recorderHandle) {
+					recordingElapsed = Date.now() - recorderHandle.startTime;
+				}
+			}, 200);
+		} catch (err) {
+			if (err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'NotFoundError')) {
+				showToast(m.microphonePermissionDenied());
+			} else {
+				console.error('Failed to start recording:', err);
+			}
+		}
+	}
+
+	async function stopRecording() {
+		const handle = recorderHandle;
+		if (!handle) return;
+		// Immediately reset state so the UI switches back and
+		// a second tap can't call stop() again during transcoding.
+		recorderHandle = null;
+		recording = false;
+		recordingElapsed = 0;
+		if (recordingTimer) {
+			clearInterval(recordingTimer);
+			recordingTimer = null;
+		}
+		try {
+			const result = await handle.stop();
+			onMediaChange?.({
+				kind: 'audio',
+				dataUrl: result.dataUrl,
+				mimeType: result.mimeType,
+				durationMs: result.durationMs,
+				size: result.size,
+			});
+			await tick();
+			updateHeight();
+		} catch (err) {
+			console.error('Failed to stop recording:', err);
+		}
+	}
+
+	function cancelRecording() {
+		if (recorderHandle) {
+			recorderHandle.cancel();
+		}
+		if (recordingTimer) {
+			clearInterval(recordingTimer);
+			recordingTimer = null;
+		}
+		recording = false;
+		recorderHandle = null;
+		recordingElapsed = 0;
+	}
+
 	onMount(() => {
 		height = `${div.scrollHeight}px`;
 	});
@@ -169,7 +251,7 @@
 						</div>
 					{/each}
 				</div>
-			{:else}
+			{:else if media.kind === 'file'}
 				<div class="file-preview">
 					<wa-icon src={wrapPathInSvg(mdiFile)} class="file-preview-icon"></wa-icon>
 					<div class="file-preview-info">
@@ -185,99 +267,154 @@
 						<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
 					</button>
 				</div>
-			{/if}
-		</div>
-	{/if}
-
-	<div
-		class="row gap-2"
-		style="align-items: flex-end; margin: 0 auto"
-	>
-		<div class="relative" style="align-self: flex-end; margin-bottom: 4px;">
-			<button
-				type="button"
-				class="attach-button"
-				data-testid="message-input-attach"
-				onclick={() => (showAttachMenu = !showAttachMenu)}
-				aria-label="Attach"
-			>
-				<wa-icon src={wrapPathInSvg(mdiPlus)}></wa-icon>
-			</button>
-			{#if showAttachMenu}
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div
-					class="fixed inset-0 z-10"
-					onclick={() => (showAttachMenu = false)}
-					onkeydown={() => {}}
-				></div>
-				<div class="attach-menu" data-testid="message-input-attach-menu">
+			{:else if media.kind === 'audio'}
+				<div class="audio-preview">
+					<audio src={media.dataUrl} controls class="audio-preview-player"></audio>
 					<button
-						class="attach-menu-item"
-						data-testid="message-input-attach-photos"
-						onclick={() => {
-							showAttachMenu = false;
-							photoFilePicker.click();
-						}}
+						type="button"
+						class="thumb-remove"
+						onclick={removeMedia}
+						aria-label="Remove"
 					>
-						<wa-icon src={wrapPathInSvg(mdiImage)}></wa-icon>
-						<span>{m.photosAndVideo()}</span>
-					</button>
-					<button
-						class="attach-menu-item"
-						data-testid="message-input-attach-file"
-						onclick={() => {
-							showAttachMenu = false;
-							fileFilePicker.click();
-						}}
-					>
-						<wa-icon src={wrapPathInSvg(mdiFile)}></wa-icon>
-						<span>{m.menuFile()}</span>
+						<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
 					</button>
 				</div>
 			{/if}
 		</div>
+	{/if}
 
+	{#if recording}
 		<div
-			class={theme === 'ios'
-				? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-				: 'input-container bg-white dark:bg-gray-800'}
+			class="row gap-2"
+			style="align-items: flex-end; margin: 0 auto"
 		>
-			{#if onEmojiClick && !isIos}
+			<button
+				type="button"
+				class="cancel-record-button"
+				onclick={cancelRecording}
+				aria-label="Cancel recording"
+				style="align-self: flex-end; margin-bottom: 4px;"
+			>
+				<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
+			</button>
+
+			<div class="recording-indicator">
+				<span class="recording-dot"></span>
+				<span class="recording-time">{formatDuration(recordingElapsed)}</span>
+			</div>
+
+			<button
+				type="button"
+				class="stop-record-button"
+				onclick={stopRecording}
+				aria-label="Stop recording"
+				data-testid="message-input-stop-record"
+			>
+				<wa-icon src={wrapPathInSvg(mdiStop)}></wa-icon>
+			</button>
+		</div>
+	{:else}
+		<div
+			class="row gap-2"
+			style="align-items: flex-end; margin: 0 auto"
+		>
+			<div
+				class={theme === 'ios'
+					? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+					: 'input-container bg-white dark:bg-gray-800'}
+			>
+				{#if onEmojiClick && !isIos}
+					<button
+						type="button"
+						class="icon-button emoji-btn"
+						onclick={onEmojiClick}
+						aria-label="Emoji"
+						data-testid="message-input-emoji"
+					>
+						<wa-icon src={wrapPathInSvg(mdiEmoticonHappyOutline)}></wa-icon>
+					</button>
+				{/if}
+
+				<textarea
+					class="message-textarea"
+					data-testid="message-input-textarea"
+					{placeholder}
+					bind:value
+					bind:this={textarea}
+					rows="1"
+					onkeydown={handleKeydown}
+					oninput={handleInput}
+				></textarea>
+			</div>
+
+			<button
+				type="button"
+				class="mic-button"
+				onclick={toggleRecording}
+				aria-label="Record voice message"
+				data-testid="message-input-mic"
+				style="align-self: flex-end; margin-bottom: 4px;"
+			>
+				<wa-icon src={wrapPathInSvg(mdiMicrophone)}></wa-icon>
+			</button>
+
+			<div class="relative" style="align-self: flex-end; margin-bottom: 4px;">
 				<button
 					type="button"
-					class="icon-button emoji-btn"
-					onclick={onEmojiClick}
-					aria-label="Emoji"
-					data-testid="message-input-emoji"
+					class="attach-button"
+					data-testid="message-input-attach"
+					onclick={() => (showAttachMenu = !showAttachMenu)}
+					aria-label="Attach"
 				>
-					<wa-icon src={wrapPathInSvg(mdiEmoticonHappyOutline)}></wa-icon>
+					<wa-icon src={wrapPathInSvg(mdiPlus)}></wa-icon>
 				</button>
-			{/if}
+				{#if showAttachMenu}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						class="fixed inset-0 z-10"
+						onclick={() => (showAttachMenu = false)}
+						onkeydown={() => {}}
+					></div>
+					<div class="attach-menu" data-testid="message-input-attach-menu">
+						<button
+							class="attach-menu-item"
+							data-testid="message-input-attach-photos"
+							onclick={() => {
+								showAttachMenu = false;
+								photoFilePicker.click();
+							}}
+						>
+							<wa-icon src={wrapPathInSvg(mdiImage)}></wa-icon>
+							<span>{m.photosAndVideo()}</span>
+						</button>
+						<button
+							class="attach-menu-item"
+							data-testid="message-input-attach-file"
+							onclick={() => {
+								showAttachMenu = false;
+								fileFilePicker.click();
+							}}
+						>
+							<wa-icon src={wrapPathInSvg(mdiFile)}></wa-icon>
+							<span>{m.menuFile()}</span>
+						</button>
+					</div>
+				{/if}
+			</div>
 
-			<textarea
-				class="message-textarea"
-				data-testid="message-input-textarea"
-				{placeholder}
-				bind:value
-				bind:this={textarea}
-				rows="1"
-				onkeydown={handleKeydown}
-				oninput={handleInput}
-			></textarea>
+			<button
+				type="button"
+				class="send-button"
+				data-testid="message-input-send"
+				class:active={hasContent}
+				onclick={handleSendClick}
+				disabled={!hasContent}
+				aria-label="Send"
+			>
+				<wa-icon src={wrapPathInSvg(mdiSend)}></wa-icon>
+			</button>
 		</div>
-
-		<button
-			type="button"
-			class="send-button"
-			data-testid="message-input-send"
-			class:active={hasContent}
-			onclick={handleSendClick}
-			disabled={!hasContent}
-			aria-label="Send"
-		>
-			<wa-icon src={wrapPathInSvg(mdiSend)}></wa-icon>
-		</button>
-	</div>
+	{/if}
 </div>
 
 <style>
@@ -424,10 +561,39 @@
 		height: 22px;
 	}
 
+	.mic-button {
+		flex-shrink: 0;
+		width: 40px;
+		height: 40px;
+		border: none;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		padding: 0;
+		background: rgba(128, 128, 128, 0.15);
+		color: var(--k-text-color);
+		opacity: 0.6;
+		transition:
+			opacity 0.15s ease,
+			background-color 0.15s ease;
+	}
+
+	.mic-button:hover {
+		opacity: 0.8;
+		background: rgba(128, 128, 128, 0.25);
+	}
+
+	.mic-button :global(wa-icon) {
+		width: 22px;
+		height: 22px;
+	}
+
 	.attach-menu {
 		position: absolute;
 		bottom: calc(100% + 8px);
-		left: 0;
+		right: 0;
 		z-index: 20;
 		min-width: 180px;
 		border-radius: 12px;
@@ -459,6 +625,99 @@
 		width: 20px;
 		height: 20px;
 		opacity: 0.7;
+	}
+
+	/* Recording UI */
+	.recording-indicator {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 0 12px;
+		height: 44px;
+		border-radius: 22px;
+		background: rgba(128, 128, 128, 0.1);
+	}
+
+	.recording-dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: #ef4444;
+		animation: pulse-dot 1s ease-in-out infinite;
+	}
+
+	@keyframes pulse-dot {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.3; }
+	}
+
+	.recording-time {
+		font-size: 15px;
+		font-variant-numeric: tabular-nums;
+		color: var(--k-text-color);
+	}
+
+	.cancel-record-button,
+	.stop-record-button {
+		flex-shrink: 0;
+		width: 40px;
+		height: 40px;
+		border: none;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		padding: 0;
+		transition:
+			opacity 0.15s ease,
+			background-color 0.15s ease;
+	}
+
+	.cancel-record-button {
+		background: rgba(128, 128, 128, 0.15);
+		color: var(--k-text-color);
+		opacity: 0.6;
+	}
+
+	.cancel-record-button:hover {
+		opacity: 0.8;
+		background: rgba(128, 128, 128, 0.25);
+	}
+
+	.stop-record-button {
+		background: #ef4444;
+		color: white;
+		opacity: 1;
+		margin-bottom: 4px;
+	}
+
+	.stop-record-button:hover {
+		filter: brightness(1.1);
+	}
+
+	.cancel-record-button :global(wa-icon),
+	.stop-record-button :global(wa-icon) {
+		width: 22px;
+		height: 22px;
+	}
+
+	/* Audio preview */
+	.audio-preview {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 12px;
+		border-radius: 10px;
+		background: rgba(128, 128, 128, 0.1);
+		position: relative;
+	}
+
+	.audio-preview-player {
+		flex: 1;
+		height: 36px;
+		min-width: 0;
 	}
 
 	/* Media preview */

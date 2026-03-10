@@ -68,6 +68,7 @@
 	import { watcher } from 'signalium';
 	import MessageInput from '$lib/components/MessageInput.svelte';
 	import { type Media, mediaToAttachment, formatFileSize } from '$lib/types/media';
+	import { formatDuration } from '$lib/utils/audio-recorder';
 	import { isTauriEnv } from '$lib/utils/environment';
 	import { condenseReactions } from '$lib/utils/emojis';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
@@ -738,7 +739,7 @@
 																					<img src={photo.data} alt="" class="msg-photo" />
 																				{/each}
 																			</div>
-																		{:else}
+																		{:else if media.kind === 'file'}
 																			<button
 																				class="msg-file"
 																				onclick={() => saveFileAttachment(media.file)}
@@ -750,6 +751,11 @@
 																				</div>
 																				<wa-icon src={wrapPathInSvg(mdiDownload)} class="msg-file-download"></wa-icon>
 																			</button>
+																		{:else if media.kind === 'audio'}
+																			<div class="msg-audio">
+																				<audio src={media.audio.data} controls class="msg-audio-player"></audio>
+																				<span class="msg-audio-duration">{formatDuration(media.audio.duration_ms)}</span>
+																			</div>
 																		{/if}
 																	{/if}
 																	<div
@@ -847,7 +853,7 @@
 																					<img src={photo.data} alt="" class="msg-photo" />
 																				{/each}
 																			</div>
-																		{:else}
+																		{:else if media.kind === 'file'}
 																			<button
 																				class="msg-file"
 																				onclick={() => saveFileAttachment(media.file)}
@@ -859,6 +865,11 @@
 																				</div>
 																				<wa-icon src={wrapPathInSvg(mdiDownload)} class="msg-file-download"></wa-icon>
 																			</button>
+																		{:else if media.kind === 'audio'}
+																			<div class="msg-audio">
+																				<audio src={media.audio.data} controls class="msg-audio-player"></audio>
+																				<span class="msg-audio-duration">{formatDuration(media.audio.duration_ms)}</span>
+																			</div>
 																		{/if}
 																	{/if}
 																	<div

@@ -37,9 +37,17 @@ export interface FileAttachment {
 	size: number;
 }
 
+export interface AudioAttachment {
+	data: string;
+	mime_type: string;
+	duration_ms: number;
+	size: number;
+}
+
 export type MediaAttachment =
 	| { kind: 'photos'; photos: PhotoAttachment[] }
-	| { kind: 'file'; file: FileAttachment };
+	| { kind: 'file'; file: FileAttachment }
+	| { kind: 'audio'; audio: AudioAttachment };
 
 export interface MessageContent {
 	message: string;

@@ -151,29 +151,22 @@ pub fn run() {
 
             result?;
 
-            // app.handle()
-            //     .listen("holochain://setup-completed", move |_event| {
-            //         let handle2 = handle.clone();
-            //         tauri::async_runtime::spawn(async move {
-            //             if let Err(err) = setup(handle2.clone()).await {
-            //                 log::error!("Failed to setup: {err:?}");
-            //                 return;
-            //             }
-
-            //             #[cfg(mobile)]
-            //             if let Err(err) =
-            //                 push_notifications::setup_push_notifications(handle2.clone())
-            //             {
-            //                 log::error!("Failed to setup push notifications: {err:?}");
-            //             }
-            //         });
-            //         let handle = handle.clone();
-            //         tauri::async_runtime::spawn(async move {
-            //             if let Err(err) = open_window(handle.clone()).await {
-            //                 log::error!("Failed to setup: {err:?}");
-            //             }
-            //         });
-            //     });
+            #[cfg(target_os = "linux")]
+            {
+                // Grant audio/video capture permissions in WebKitGTK so that
+                // getUserMedia() works for voice recording.
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    window.with_webview(|wv| {
+                        use webkit2gtk::{WebViewExt, PermissionRequestExt};
+                        let webview: webkit2gtk::WebView = wv.inner().clone();
+                        webview.connect_permission_request(|_wv, req| {
+                            req.allow();
+                            true
+                        });
+                    }).ok();
+                }
+            }
 
             Ok(())
         })

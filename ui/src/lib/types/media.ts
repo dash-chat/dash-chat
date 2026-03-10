@@ -19,8 +19,19 @@ export interface FileMedia {
 	size: number;
 }
 
+export interface AudioMedia {
+	kind: 'audio';
+	/** Base64 data URL of the recorded audio */
+	dataUrl: string;
+	mimeType: string;
+	/** Duration in milliseconds */
+	durationMs: number;
+	/** Size in bytes */
+	size: number;
+}
+
 /** UI-side media attachment (contains File refs for display and upload) */
-export type Media = PhotosMedia | FileMedia;
+export type Media = PhotosMedia | FileMedia | AudioMedia;
 
 // === Wire types (serializable, sent to backend as part of MessageContent) ===
 
@@ -40,9 +51,17 @@ export interface FileAttachment {
 	size: number;
 }
 
+export interface AudioAttachment {
+	data: string;
+	mime_type: string;
+	duration_ms: number;
+	size: number;
+}
+
 export type MediaAttachment =
 	| { kind: 'photos'; photos: PhotoAttachment[] }
-	| { kind: 'file'; file: FileAttachment };
+	| { kind: 'file'; file: FileAttachment }
+	| { kind: 'audio'; audio: AudioAttachment };
 
 /** Convert UI Media to wire-format MediaAttachment */
 export async function mediaToAttachment(
@@ -58,7 +77,7 @@ export async function mediaToAttachment(
 			})),
 		);
 		return { kind: 'photos', photos };
-	} else {
+	} else if (media.kind === 'file') {
 		const data = await fileToDataUrl(media.file);
 		return {
 			kind: 'file',
@@ -66,6 +85,16 @@ export async function mediaToAttachment(
 				data,
 				name: media.name,
 				mime_type: media.file.type,
+				size: media.size,
+			},
+		};
+	} else {
+		return {
+			kind: 'audio',
+			audio: {
+				data: media.dataUrl,
+				mime_type: media.mimeType,
+				duration_ms: media.durationMs,
 				size: media.size,
 			},
 		};

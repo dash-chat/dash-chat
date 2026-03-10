@@ -18,6 +18,17 @@ pub struct FileAttachment {
     pub size: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
+pub struct AudioAttachment {
+    /// Base64 data URL of the audio file.
+    pub data: String,
+    pub mime_type: String,
+    /// Duration in milliseconds.
+    pub duration_ms: u64,
+    /// Size in bytes.
+    pub size: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum MediaAttachment {
@@ -25,6 +36,8 @@ pub enum MediaAttachment {
     Photos { photos: Vec<PhotoAttachment> },
     #[serde(rename = "file")]
     File { file: FileAttachment },
+    #[serde(rename = "audio")]
+    Audio { audio: AudioAttachment },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]

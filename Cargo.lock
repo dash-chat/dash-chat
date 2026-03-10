@@ -1827,6 +1827,7 @@ dependencies = [
  "tokio",
  "url2",
  "uuid",
+ "webkit2gtk",
 ]
 
 [[package]]

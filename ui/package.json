@@ -29,6 +29,7 @@
 		"emoji-picker-element": "^1.29.0",
 		"jsqr": "^1.4.0",
 		"konsta": "^5.0.6",
+		"@breezystack/lamejs": "^1.2.7",
 		"qr-creator": "^1.0.0",
 		"signalium": "^2.1.5",
 		"tailwindcss": "^4.1.18",

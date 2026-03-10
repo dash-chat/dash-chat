@@ -147,6 +147,9 @@ importers:
       '@awesome.me/webawesome':
         specifier: 3.0.0-beta.6
         version: 3.0.0-beta.6(@floating-ui/utils@0.2.10)(@types/react@18.3.15)
+      '@breezystack/lamejs':
+        specifier: ^1.2.7
+        version: 1.2.7
       '@choochmeque/tauri-plugin-sharekit-api':
         specifier: ^0.3.0
         version: 0.3.0
@@ -476,6 +479,9 @@ packages:
 
   '@bitgo/blake2b@3.2.4':
     resolution: {integrity: sha512-46PEgEVPxecNJ/xczggIllSxIkFIvvbVM0OfIDdNJ5qpFHUeBCkNIiGdzC3fYZlsv7bVTdUZOj79GcFBLMYBqA==}
+
+  '@breezystack/lamejs@1.2.7':
+    resolution: {integrity: sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==}
 
   '@choochmeque/tauri-plugin-sharekit-api@0.3.0':
     resolution: {integrity: sha512-YuFbBOZIVQF2080stK4llB9l2KFKY3YuhurRVS0TeHEAiLWMbblsXuuwC4IufEM9hTChRGQyJIOnxNCn7+T/EQ==}
@@ -4806,6 +4812,8 @@ snapshots:
     dependencies:
       '@bitgo/blake2b-wasm': 3.2.3
       nanoassert: 2.0.0
+
+  '@breezystack/lamejs@1.2.7': {}
 
   '@choochmeque/tauri-plugin-sharekit-api@0.3.0':
     dependencies:

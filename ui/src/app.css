@@ -197,6 +197,27 @@ li.plain span {
 	flex-shrink: 0;
 }
 
+.msg-audio {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin: -4px -4px 4px -4px;
+	padding: 4px 8px;
+}
+
+.msg-audio-player {
+	flex: 1;
+	height: 32px;
+	min-width: 0;
+}
+
+.msg-audio-duration {
+	font-size: 11px;
+	opacity: 0.6;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
 .message-highlighted {
 	position: relative;
 	z-index: 51;

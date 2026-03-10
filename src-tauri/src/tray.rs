@@ -94,10 +94,24 @@ pub fn show_or_create_main_window<R: Runtime>(app: &AppHandle<R>) -> anyhow::Res
         window.show()?;
         window.set_focus()?;
     } else {
-        WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+        let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
             .title("Dash Chat")
             .inner_size(800.0, 600.0)
             .build()?;
+
+        #[cfg(target_os = "linux")]
+        {
+            window.with_webview(|wv| {
+                use webkit2gtk::{WebViewExt, PermissionRequestExt};
+                let webview: webkit2gtk::WebView = wv.inner().clone();
+                webview.connect_permission_request(|_wv, req| {
+                    req.allow();
+                    true
+                });
+            }).ok();
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = &window;
     }
     Ok(())
 }
