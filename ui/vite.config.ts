@@ -1,10 +1,11 @@
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
-// @ts-ignore no type declarations
+// @ts-expect-error no type declarations
 import localIpAddress from 'local-ip-address';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import type { ViteDevServer } from 'vite';
 import { defineConfig } from 'vite';
 
 // Resolve signalium's development ESM build for production builds
@@ -52,7 +53,7 @@ export default defineConfig(async () => ({
 		// If the desired port was already taken, another Vite is serving — exit cleanly.
 		{
 			name: 'exit-if-port-taken',
-			configureServer(server: any) {
+			configureServer(server: ViteDevServer) {
 				server.httpServer?.on('listening', () => {
 					const addr = server.httpServer?.address();
 					if (addr && typeof addr === 'object' && addr.port !== uiPort) {

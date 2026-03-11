@@ -66,7 +66,7 @@
 							<Toggle
 								checked={enabled}
 								disabled={toggling}
-								onChange={() => toggle(enabled ?? false)}
+								onChange={() => toggle(enabled)}
 							/>
 						{/await}
 					{/snippet}

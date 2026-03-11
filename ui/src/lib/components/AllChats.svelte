@@ -39,7 +39,7 @@
 
 <div class={className}>
 	{#await $chatSummaries then summaries}
-		{#if summaries && summaries.length > 0}
+		{#if summaries.length > 0}
 			<List
 				nested
 				inset={isWideScreen.value && theme === 'ios'}

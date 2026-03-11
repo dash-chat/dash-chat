@@ -114,7 +114,7 @@
 				inset={isWideScreen.value || theme === 'ios'}
 				data-testid="new-message-contact-list"
 			>
-				{#if !contacts || contacts.length === 0}
+				{#if contacts.length === 0}
 					<ListItem title={m.noContactsYet()} />
 				{:else}
 					{@const filteredContacts = contacts.filter(([_, profile]) =>

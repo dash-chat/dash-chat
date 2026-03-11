@@ -5,6 +5,5 @@ declare namespace App {
 }
 
 interface Window {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	__setLocale: any;
+	__setLocale: typeof import('$lib/paraglide/runtime').setLocale;
 }
