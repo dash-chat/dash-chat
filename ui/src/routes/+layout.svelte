@@ -119,10 +119,6 @@
 				localeKey = getLocale();
 			}
 		});
-	});
-
-	// Set document direction based on locale (RTL for Farsi, etc.)
-	$effect(() => {
 		document.documentElement.dir = rtlLocales.has(localeKey) ? 'rtl' : 'ltr';
 	});
 
