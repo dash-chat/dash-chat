@@ -9,7 +9,7 @@
 		mdiClose,
 		mdiPalette,
 	} from '@mdi/js';
-	import type { ContactsStore } from 'dash-chat-stores';
+	import type { ContactsStore, ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { useTheme } from 'konsta/svelte';
@@ -42,7 +42,11 @@
 	let { visible = $bindable(true) }: { visible?: boolean } = $props();
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
+	const chatsStore: ChatsStore = getContext('chats-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const contacts = useReactivePromise(contactsStore.contactsAgentIds);
+	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+
 	let hasAvatar = $state(false);
 	$effect(() => {
 		const p = $myProfile;
@@ -126,7 +130,9 @@
 	}
 </script>
 
-{#if visibleCards.length > 0}
+{#await $contacts then contactsList}
+{#await $chatSummaries then chats}
+{#if (contactsList?.length ?? 0) === 0 && (chats?.length ?? 0) === 0 && visibleCards.length > 0}
 	<div class="px-4 pb-4">
 		<p class="mb-3 text-lg font-bold">{m.getStarted()}</p>
 		<div class="flex gap-3.5 overflow-x-auto pb-1">
@@ -155,3 +161,5 @@
 		</div>
 	</div>
 {/if}
+{/await}
+{/await}

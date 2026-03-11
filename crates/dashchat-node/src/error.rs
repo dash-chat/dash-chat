@@ -29,6 +29,9 @@ pub enum AddContactError {
     #[error("Failed to create direct chat: {0}")]
     CreateDirectChat(String),
 
+    #[error("Failed to store contact info: {0}")]
+    StoreContact(String),
+
     #[error(transparent)]
     #[serde(untagged)]
     Common(#[from] Error),

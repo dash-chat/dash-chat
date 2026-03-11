@@ -67,7 +67,11 @@
 	import type { Action } from 'svelte/action';
 	import { watcher } from 'signalium';
 	import MessageInput from '$lib/components/MessageInput.svelte';
-	import { type Media, mediaToAttachment, formatFileSize } from '$lib/types/media';
+	import {
+		type Media,
+		mediaToAttachment,
+		formatFileSize,
+	} from '$lib/types/media';
 	import { isTauriEnv } from '$lib/utils/environment';
 	import { condenseReactions } from '$lib/utils/emojis';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
@@ -104,6 +108,7 @@
 				case 'AuthorOperation':
 				case 'CreateQrCode':
 				case 'CreateDirectChat':
+				case 'StoreContact':
 					showToast(m.errorAddContact(), 'error');
 					break;
 				default:
@@ -735,20 +740,37 @@
 																		{#if media.kind === 'photos'}
 																			<div class="msg-photos">
 																				{#each media.photos as photo}
-																					<img src={photo.data} alt="" class="msg-photo" />
+																					<img
+																						src={photo.data}
+																						alt=""
+																						class="msg-photo"
+																					/>
 																				{/each}
 																			</div>
 																		{:else}
 																			<button
 																				class="msg-file"
-																				onclick={() => saveFileAttachment(media.file)}
+																				onclick={() =>
+																					saveFileAttachment(media.file)}
 																			>
-																				<wa-icon src={wrapPathInSvg(mdiFile)} class="msg-file-icon"></wa-icon>
+																				<wa-icon
+																					src={wrapPathInSvg(mdiFile)}
+																					class="msg-file-icon"
+																				></wa-icon>
 																				<div class="msg-file-info">
-																					<span class="msg-file-name">{media.file.name}</span>
-																					<span class="msg-file-size">{formatFileSize(media.file.size)}</span>
+																					<span class="msg-file-name"
+																						>{media.file.name}</span
+																					>
+																					<span class="msg-file-size"
+																						>{formatFileSize(
+																							media.file.size,
+																						)}</span
+																					>
 																				</div>
-																				<wa-icon src={wrapPathInSvg(mdiDownload)} class="msg-file-download"></wa-icon>
+																				<wa-icon
+																					src={wrapPathInSvg(mdiDownload)}
+																					class="msg-file-download"
+																				></wa-icon>
 																			</button>
 																		{/if}
 																	{/if}
@@ -844,20 +866,37 @@
 																		{#if media.kind === 'photos'}
 																			<div class="msg-photos">
 																				{#each media.photos as photo}
-																					<img src={photo.data} alt="" class="msg-photo" />
+																					<img
+																						src={photo.data}
+																						alt=""
+																						class="msg-photo"
+																					/>
 																				{/each}
 																			</div>
 																		{:else}
 																			<button
 																				class="msg-file"
-																				onclick={() => saveFileAttachment(media.file)}
+																				onclick={() =>
+																					saveFileAttachment(media.file)}
 																			>
-																				<wa-icon src={wrapPathInSvg(mdiFile)} class="msg-file-icon"></wa-icon>
+																				<wa-icon
+																					src={wrapPathInSvg(mdiFile)}
+																					class="msg-file-icon"
+																				></wa-icon>
 																				<div class="msg-file-info">
-																					<span class="msg-file-name">{media.file.name}</span>
-																					<span class="msg-file-size">{formatFileSize(media.file.size)}</span>
+																					<span class="msg-file-name"
+																						>{media.file.name}</span
+																					>
+																					<span class="msg-file-size"
+																						>{formatFileSize(
+																							media.file.size,
+																						)}</span
+																					>
 																				</div>
-																				<wa-icon src={wrapPathInSvg(mdiDownload)} class="msg-file-download"></wa-icon>
+																				<wa-icon
+																					src={wrapPathInSvg(mdiDownload)}
+																					class="msg-file-download"
+																				></wa-icon>
 																			</button>
 																		{/if}
 																	{/if}

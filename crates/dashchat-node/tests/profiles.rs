@@ -82,8 +82,7 @@ async fn test_profiles_sync_between_contacts() {
     println!("alice: {:?}", alice.device_id().short());
     println!("bobbi: {:?}", bobbi.device_id().short());
 
-    #[cfg(feature = "p2p")]
-    introduce_and_wait([&alice.network, &bobbi.network]).await;
+    introduce_and_wait([&alice, &bobbi]).await;
 
     // Set initial profiles before adding contacts
     let profile = Profile {

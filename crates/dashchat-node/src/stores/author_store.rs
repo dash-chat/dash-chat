@@ -2,11 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use p2panda_core::PublicKey;
-use p2panda_sync::TopicQuery;
 use tokio::sync::RwLock;
-
-use async_trait::async_trait;
-use p2panda_sync::log_sync::TopicLogMap;
 
 #[derive(Clone, Debug)]
 pub struct AuthorStore<T>(pub(crate) Arc<RwLock<HashMap<T, HashSet<PublicKey>>>>);
@@ -49,24 +45,24 @@ impl<T: Eq + std::hash::Hash + std::fmt::Debug + Clone> AuthorStore<T> {
     }
 }
 
-#[async_trait]
-impl<Topic: Eq + std::hash::Hash + TopicQuery> TopicLogMap<Topic, Topic> for AuthorStore<Topic> {
-    /// During sync other peers are interested in all our append-only logs for a certain topic.
-    /// This method tells the sync protocol which logs we have available from which author for that
-    /// given topic.
-    async fn get(&self, topic: &Topic) -> Option<HashMap<PublicKey, Vec<Topic>>> {
-        let authors = self.authors(topic).await;
-        let map = match authors {
-            Some(authors) => {
-                let mut map = HashMap::with_capacity(authors.len());
-                for author in authors {
-                    // We write all data of one author into one log for now.
-                    map.insert(author.into(), vec![topic.clone()]);
-                }
-                map
-            }
-            None => HashMap::new(),
-        };
-        Some(map)
-    }
-}
+// #[async_trait]
+// impl<Topic: Eq + std::hash::Hash + TopicQuery> TopicLogMap<Topic, Topic> for AuthorStore<Topic> {
+//     /// During sync other peers are interested in all our append-only logs for a certain topic.
+//     /// This method tells the sync protocol which logs we have available from which author for that
+//     /// given topic.
+//     async fn get(&self, topic: &Topic) -> Option<HashMap<PublicKey, Vec<Topic>>> {
+//         let authors = self.authors(topic).await;
+//         let map = match authors {
+//             Some(authors) => {
+//                 let mut map = HashMap::with_capacity(authors.len());
+//                 for author in authors {
+//                     // We write all data of one author into one log for now.
+//                     map.insert(author.into(), vec![topic.clone()]);
+//                 }
+//                 map
+//             }
+//             None => HashMap::new(),
+//         };
+//         Some(map)
+//     }
+// }
