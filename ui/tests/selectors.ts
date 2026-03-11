@@ -119,6 +119,10 @@ export const S = {
 		back: tid('appearance-back'),
 		language: tid('appearance-language'),
 		theme: tid('appearance-theme'),
+		langOption: (locale: string) => tid(`appearance-lang-${locale}`),
+		themeSystem: tid('appearance-theme-system'),
+		themeLight: tid('appearance-theme-light'),
+		themeDark: tid('appearance-theme-dark'),
 	},
 	account: {
 		back: tid('account-back'),

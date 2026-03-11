@@ -127,7 +127,7 @@
 				{/snippet}
 				<List nested class="-mx-4">
 					{#each localesWithName as ln}
-						<ListItem label title={ln.name}>
+						<ListItem label title={ln.name} data-testid={`appearance-lang-${ln.locale}`}>
 							{#snippet after()}
 								<Radio
 									component="div"
@@ -151,7 +151,7 @@
 						{m.theme()}
 					{/snippet}
 					<List nested class="-mx-4">
-						<ListItem label title={m.systemDefault()}>
+						<ListItem label title={m.systemDefault()} data-testid="appearance-theme-system">
 							{#snippet after()}
 								<Radio
 									component="div"
@@ -161,7 +161,7 @@
 								/>
 							{/snippet}
 						</ListItem>
-						<ListItem label title={m.lightMode()}>
+						<ListItem label title={m.lightMode()} data-testid="appearance-theme-light">
 							{#snippet after()}
 								<Radio
 									component="div"
@@ -171,7 +171,7 @@
 								/>
 							{/snippet}
 						</ListItem>
-						<ListItem label title={m.darkMode()}>
+						<ListItem label title={m.darkMode()} data-testid="appearance-theme-dark">
 							{#snippet after()}
 								<Radio
 									component="div"

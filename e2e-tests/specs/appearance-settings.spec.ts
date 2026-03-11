@@ -42,24 +42,17 @@ describe('Appearance settings', () => {
 			(document.querySelector('[data-testid="appearance-language"]') as HTMLElement)?.click();
 		});
 
-		// Wait for dialog to appear
+		// Wait for dialog option to appear
 		await agent.waitUntil(
 			async () => agent.execute(
-				() => !!document.querySelector('.k-dialog'),
+				() => !!document.querySelector('[data-testid="appearance-lang-es"]'),
 			),
 			{ timeout: 5_000, timeoutMsg: 'Language dialog not opened' },
 		);
 
-		// Click the Español option (ListItem with label prop makes the whole item a clickable label)
+		// Click the Español option
 		await agent.execute(() => {
-			const items = document.querySelectorAll('.k-dialog li');
-			for (const item of items) {
-				if (item.textContent?.includes('Español')) {
-					(item as HTMLElement).click();
-					return;
-				}
-			}
-			throw new Error('Español option not found in dialog');
+			(document.querySelector('[data-testid="appearance-lang-es"]') as HTMLElement)?.click();
 		});
 
 		// Wait for dialog to close and language to update
@@ -109,20 +102,13 @@ describe('Appearance settings', () => {
 
 		await agent.waitUntil(
 			async () => agent.execute(
-				() => !!document.querySelector('.k-dialog'),
+				() => !!document.querySelector('[data-testid="appearance-lang-en"]'),
 			),
 			{ timeout: 5_000, timeoutMsg: 'Language dialog not opened' },
 		);
 
 		await agent.execute(() => {
-			const items = document.querySelectorAll('.k-dialog li');
-			for (const item of items) {
-				if (item.textContent?.includes('English')) {
-					(item as HTMLElement).click();
-					return;
-				}
-			}
-			throw new Error('English option not found in dialog');
+			(document.querySelector('[data-testid="appearance-lang-en"]') as HTMLElement)?.click();
 		});
 
 		await agent.waitUntil(
@@ -144,24 +130,18 @@ describe('Appearance settings', () => {
 				select.value = 'dark';
 				select.dispatchEvent(new Event('change', { bubbles: true }));
 			} else {
-				// On mobile, click the theme item to open dialog and select dark
+				// On mobile, click the theme item to open dialog
 				(document.querySelector('[data-testid="appearance-theme"]') as HTMLElement)?.click();
 			}
 		});
 
 		// If mobile, handle the dialog
 		const hasDialog = await agent.execute(
-			() => !!document.querySelector('.k-dialog'),
+			() => !!document.querySelector('[data-testid="appearance-theme-dark"]'),
 		);
 		if (hasDialog) {
 			await agent.execute(() => {
-				const items = document.querySelectorAll('.k-dialog li');
-				for (const item of items) {
-					if (item.textContent?.includes('Dark')) {
-						(item as HTMLElement).click();
-						return;
-					}
-				}
+				(document.querySelector('[data-testid="appearance-theme-dark"]') as HTMLElement)?.click();
 			});
 		}
 
@@ -186,17 +166,11 @@ describe('Appearance settings', () => {
 		});
 
 		const hasDialog = await agent.execute(
-			() => !!document.querySelector('.k-dialog'),
+			() => !!document.querySelector('[data-testid="appearance-theme-light"]'),
 		);
 		if (hasDialog) {
 			await agent.execute(() => {
-				const items = document.querySelectorAll('.k-dialog li');
-				for (const item of items) {
-					if (item.textContent?.includes('Light')) {
-						(item as HTMLElement).click();
-						return;
-					}
-				}
+				(document.querySelector('[data-testid="appearance-theme-light"]') as HTMLElement)?.click();
 			});
 		}
 
@@ -220,17 +194,11 @@ describe('Appearance settings', () => {
 		});
 
 		const hasDialog = await agent.execute(
-			() => !!document.querySelector('.k-dialog'),
+			() => !!document.querySelector('[data-testid="appearance-theme-system"]'),
 		);
 		if (hasDialog) {
 			await agent.execute(() => {
-				const items = document.querySelectorAll('.k-dialog li');
-				for (const item of items) {
-					if (item.textContent?.includes('System')) {
-						(item as HTMLElement).click();
-						return;
-					}
-				}
+				(document.querySelector('[data-testid="appearance-theme-system"]') as HTMLElement)?.click();
 			});
 		}
 

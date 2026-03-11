@@ -102,6 +102,14 @@ impl<R> CancelAndWait<R> {
         self.token.cancel();
         Some(self.handle.lock().await.take()?.await)
     }
+
+    /// Cancel the task and wait for it to finish, without consuming self.
+    pub async fn cancel(&self) {
+        self.token.cancel();
+        if let Some(handle) = self.handle.lock().await.take() {
+            let _ = handle.await;
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -148,7 +156,7 @@ impl Node {
             op_store: op_store.clone(),
             mailboxes,
             config,
-            filesystem: filesystem,
+            filesystem,
             local_store: local_store.clone(),
             node_data,
             notification_tx,
@@ -449,8 +457,13 @@ impl Node {
         Ok(())
     }
 
-    pub fn data_path(&self) -> &PathBuf {
-        self.filesystem.data_path()
+    /// Stop background tasks and delete all account data.
+    pub async fn delete_account(&self) -> anyhow::Result<()> {
+        if let Some(ref task) = self.stream_task {
+            task.cancel().await;
+        }
+        std::fs::remove_dir_all(self.filesystem.data_path())?;
+        Ok(())
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
