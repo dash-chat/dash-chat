@@ -72,6 +72,33 @@ describe('Appearance settings', () => {
 			},
 			{ timeout: 5_000, timeoutMsg: 'Language did not change to Español' },
 		);
+
+		// Navigate to settings and verify a translated string appears
+		await agent.executeAsync((done: (r: string | null) => void) => {
+			window.__test.goto('/settings').then(() => done(null), (e) => done(String(e)));
+		});
+		await agent.waitUntil(
+			async () => agent.execute(
+				() => !!document.querySelector('[data-testid="settings-profile-link"]'),
+			),
+			{ timeout: 5_000, timeoutMsg: 'Settings page not loaded' },
+		);
+		const profileText = await agent.execute(
+			() => document.querySelector('[data-testid="settings-profile-link"]')?.textContent,
+		);
+		// "Profile" in Spanish is "Mi perfil"
+		expect(profileText).toContain('Mi perfil');
+
+		// Navigate back to appearance
+		await agent.executeAsync((done: (r: string | null) => void) => {
+			window.__test.goto('/settings/appearance').then(() => done(null), (e) => done(String(e)));
+		});
+		await agent.waitUntil(
+			async () => agent.execute(
+				() => !!document.querySelector('[data-testid="appearance-language"]'),
+			),
+			{ timeout: 5_000, timeoutMsg: 'Appearance page not loaded after nav back' },
+		);
 	});
 
 	it('changes language back to English', async () => {

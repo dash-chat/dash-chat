@@ -2,7 +2,6 @@
 	import { goto } from '$app/navigation';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { setLocale } from '$lib/paraglide/runtime';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { type SettingsStore, type ColorScheme } from 'dash-chat-stores';
@@ -44,7 +43,6 @@
 	async function selectLanguage(locale: string) {
 		try {
 			await settingsStore.setLanguage(locale);
-			setLocale(locale as Parameters<typeof setLocale>[0]);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
@@ -97,7 +95,7 @@
 									<select
 										value={selectedScheme}
 										onchange={onThemeSelectChange}
-										class="theme-select"
+										class="appearance-auto border border-black/15 dark:border-white/20 rounded-md px-2 py-1.5 text-sm bg-transparent text-inherit cursor-pointer outline-none [&_option]:text-black [&_option]:bg-white dark:[&_option]:text-white dark:[&_option]:bg-[#1c1c1e]"
 									>
 										<option value="system">{m.systemDefault()}</option>
 										<option value="light">{m.lightMode()}</option>
@@ -189,20 +187,3 @@
 		{/await}
 	{/await}
 </Page>
-
-<style>
-	.theme-select {
-		appearance: auto;
-		border: 1px solid rgba(0, 0, 0, 0.15);
-		border-radius: 6px;
-		padding: 6px 8px;
-		font-size: 14px;
-		background: transparent;
-		color: inherit;
-		cursor: pointer;
-		outline: none;
-	}
-	:global(.dark) .theme-select {
-		border-color: rgba(255, 255, 255, 0.2);
-	}
-</style>

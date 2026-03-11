@@ -4,8 +4,9 @@ use tauri::Manager;
 use tauri::{AppHandle, State};
 
 #[tauri::command]
-pub fn delete_account(app: AppHandle, node: State<'_, Node>) {
-    node.delete_account();
+pub fn delete_account(app: AppHandle, node: State<'_, Node>) -> Result<(), String> {
+    let data_path = node.data_path().clone();
+    std::fs::remove_dir_all(&data_path).map_err(|e| e.to_string())?;
 
     #[cfg(mobile)]
     {
@@ -16,4 +17,6 @@ pub fn delete_account(app: AppHandle, node: State<'_, Node>) {
     {
         tauri::process::restart(&app.env());
     }
+
+    Ok(())
 }
