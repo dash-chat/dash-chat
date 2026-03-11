@@ -8,7 +8,11 @@ export interface ToastEvent {
 	error?: unknown;
 }
 
-export function showToast(message: string, variant: ToastVariant = 'default', error?: unknown) {
+export function showToast(
+	message: string,
+	variant: ToastVariant = 'default',
+	error?: unknown,
+) {
 	window.dispatchEvent(
 		new CustomEvent<ToastEvent>('app:toast', {
 			detail: { message, variant, error },

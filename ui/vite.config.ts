@@ -1,6 +1,7 @@
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
+// @ts-ignore no type declarations
 import localIpAddress from 'local-ip-address';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -16,7 +17,6 @@ const signaliumDevIndex = path.join(
 	'dist/esm/development/index.js',
 );
 
-// @ts-expect-error process is a nodejs global
 // const host = process.env.TAURI_DEV_HOST;
 const host = localIpAddress();
 const uiPort = parseInt(process.env.UI_PORT || '1420', 10);
@@ -52,7 +52,7 @@ export default defineConfig(async () => ({
 		// If the desired port was already taken, another Vite is serving — exit cleanly.
 		{
 			name: 'exit-if-port-taken',
-			configureServer(server) {
+			configureServer(server: any) {
 				server.httpServer?.on('listening', () => {
 					const addr = server.httpServer?.address();
 					if (addr && typeof addr === 'object' && addr.port !== uiPort) {

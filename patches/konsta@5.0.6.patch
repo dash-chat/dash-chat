@@ -1,0 +1,20 @@
+diff --git a/svelte/types/Navbar.d.ts b/svelte/types/Navbar.d.ts
+index c24d8b1f34ff3d2979e958fefed7f7a746231a2c..e80d5d426ed753dd53678921968d387fdb83bfac 100644
+--- a/svelte/types/Navbar.d.ts
++++ b/svelte/types/Navbar.d.ts
+@@ -184,14 +184,9 @@ export interface Props {
+ 
+ interface NavbarProps {}
+ interface NavbarProps extends Props {}
+-interface NavbarEvents extends Record<'',{}>{}
+ 
+ declare class Navbar extends SvelteComponent<
+-  NavbarProps & HTMLAttributes<HTMLDivElement>,
+-  NavbarEvents,
+-  {
+-    
+-  }
++  NavbarProps & Omit<HTMLAttributes<HTMLDivElement>, keyof Props>
+ > {}
+ 
+ export default Navbar;

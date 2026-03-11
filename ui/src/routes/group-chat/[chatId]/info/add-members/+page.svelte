@@ -40,14 +40,10 @@
 		title={m.addMembers()}
 		titleClass="opacity1"
 		transparent={true}
-		rightClass={selectedContacts.length === 0
-			? 'ios-right-disabled'
-			: ''}
+		rightClass={selectedContacts.length === 0 ? 'ios-right-disabled' : ''}
 	>
 		{#snippet left()}
-			<NavbarBackLink
-				onClick={() => goto(`/group-chat/${chatId}/info`)}
-			/>
+			<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}/info`)} />
 		{/snippet}
 		{#snippet right()}
 			{#if isIos}

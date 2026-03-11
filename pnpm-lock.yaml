@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  konsta@5.0.6:
+    hash: 7de4c411e9fb7f4d11c65bb6c42deb6f651d2a81f5d3736e9e68fc78a3eb0a3b
+    path: patches/konsta@5.0.6.patch
+
 importers:
 
   .:
@@ -32,6 +37,9 @@ importers:
       prettier:
         specifier: ^3.6.2
         version: 3.6.2
+      prettier-plugin-svelte:
+        specifier: ^3.5.1
+        version: 3.5.1(prettier@3.6.2)(svelte@5.49.2)
       rust-just:
         specifier: ^1.46.0
         version: 1.46.0
@@ -194,7 +202,7 @@ importers:
         version: 1.4.0
       konsta:
         specifier: ^5.0.6
-        version: 5.0.6
+        version: 5.0.6(patch_hash=7de4c411e9fb7f4d11c65bb6c42deb6f651d2a81f5d3736e9e68fc78a3eb0a3b)
       qr-creator:
         specifier: ^1.0.0
         version: 1.0.0
@@ -3569,8 +3577,8 @@ packages:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
     engines: {node: '>= 0.8.0'}
 
-  prettier-plugin-svelte@3.4.1:
-    resolution: {integrity: sha512-xL49LCloMoZRvSwa6IEdN2GV6cq2IqpYGstYtMT+5wmml1/dClEoI0MZR78MiVPpu6BdQFfN0/y73yO6+br5Pg==}
+  prettier-plugin-svelte@3.5.1:
+    resolution: {integrity: sha512-65+fr5+cgIKWKiqM1Doum4uX6bY8iFCdztvvp2RcF+AJoieaw9kJOFMNcJo/bkmKYsxFaM9OsVZK/gWauG/5mg==}
     peerDependencies:
       prettier: ^3.0.0
       svelte: ^3.2.0 || ^4.0.0-next.0 || ^5.0.0-next.0
@@ -7461,7 +7469,7 @@ snapshots:
 
   kleur@4.1.5: {}
 
-  konsta@5.0.6:
+  konsta@5.0.6(patch_hash=7de4c411e9fb7f4d11c65bb6c42deb6f651d2a81f5d3736e9e68fc78a3eb0a3b):
     dependencies:
       tailwind-merge: 3.4.0
 
@@ -7891,10 +7899,15 @@ snapshots:
 
   prelude-ls@1.2.1: {}
 
-  prettier-plugin-svelte@3.4.1(prettier@3.3.3)(svelte@4.2.20):
+  prettier-plugin-svelte@3.5.1(prettier@3.3.3)(svelte@4.2.20):
     dependencies:
       prettier: 3.3.3
       svelte: 4.2.20
+
+  prettier-plugin-svelte@3.5.1(prettier@3.6.2)(svelte@5.49.2):
+    dependencies:
+      prettier: 3.6.2
+      svelte: 5.49.2
 
   prettier@3.3.3: {}
 
@@ -8314,7 +8327,7 @@ snapshots:
       globrex: 0.1.2
       lodash: 4.17.21
       prettier: 3.3.3
-      prettier-plugin-svelte: 3.4.1(prettier@3.3.3)(svelte@4.2.20)
+      prettier-plugin-svelte: 3.5.1(prettier@3.3.3)(svelte@4.2.20)
       svelte: 4.2.20
       svelte2tsx: 0.7.47(svelte@4.2.20)(typescript@5.9.3)
       typescript: 5.9.3

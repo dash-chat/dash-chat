@@ -52,9 +52,7 @@
 <Page>
 	<Navbar title={m.editGroup()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
-			<NavbarBackLink
-				onClick={() => goto(`/group-chat/${chatId}/info`)}
-			/>
+			<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}/info`)} />
 		{/snippet}
 		{#snippet right()}
 			{#if isIos}
@@ -69,7 +67,10 @@
 		<div class="column">
 			<div class="column center-in-desktop">
 				<div class="mt-4">
-					<SelectAvatar defaultValue={info.avatar} bind:value={avatar} size={64}
+					<SelectAvatar
+						defaultValue={info?.avatar}
+						bind:value={avatar}
+						size={64}
 					></SelectAvatar>
 				</div>
 
@@ -93,11 +94,7 @@
 		</div>
 
 		{#if !isIos}
-			<Button
-				onClick={save}
-				class="fixed-action-btn"
-				rounded
-			>
+			<Button onClick={save} class="fixed-action-btn" rounded>
 				{m.save()}
 			</Button>
 		{/if}

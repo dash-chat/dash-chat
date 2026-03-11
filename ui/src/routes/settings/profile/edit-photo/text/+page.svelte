@@ -27,9 +27,18 @@
 
 	// Pastel color palette (similar to Signal)
 	const colors = [
-		'#ddd6fe', '#bfdbfe', '#cffafe', '#bbf7d0',
-		'#e9d5ff', '#fbcfe8', '#fce7f3', '#fecaca',
-		'#fef08a', '#d9f99d', '#e5e7eb', '#d1d5db',
+		'#ddd6fe',
+		'#bfdbfe',
+		'#cffafe',
+		'#bbf7d0',
+		'#e9d5ff',
+		'#fbcfe8',
+		'#fce7f3',
+		'#fecaca',
+		'#fef08a',
+		'#d9f99d',
+		'#e5e7eb',
+		'#d1d5db',
 	];
 
 	onMount(() => {
@@ -68,7 +77,12 @@
 </script>
 
 <Page>
-	<Navbar title={m.preview()} transparent titleClass="opacity1" rightClass={!text ? 'ios-right-disabled' : ''}>
+	<Navbar
+		title={m.preview()}
+		transparent
+		titleClass="opacity1"
+		rightClass={!text ? 'ios-right-disabled' : ''}
+	>
 		{#snippet left()}
 			<NavbarBackLink onClick={() => goto('/settings/profile/edit-photo')} />
 		{/snippet}
@@ -105,7 +119,8 @@
 		value={text}
 		oninput={handleInput}
 		maxlength="3"
-		onblur={() => activeTab === 'text' && setTimeout(() => hiddenInput?.focus(), 0)}
+		onblur={() =>
+			activeTab === 'text' && setTimeout(() => hiddenInput?.focus(), 0)}
 	/>
 
 	<div class="column" style="flex: 1; overflow-y: auto;">
@@ -118,7 +133,9 @@
 				type="button"
 			>
 				{#if activeTab === 'text'}
-					<span class="avatar-text">{text}<span class="avatar-cursor">|</span></span>
+					<span class="avatar-text"
+						>{text}<span class="avatar-cursor">|</span></span
+					>
 				{:else}
 					<span class="avatar-text">{text}</span>
 				{/if}
@@ -143,12 +160,7 @@
 	</div>
 
 	{#if !isIos}
-		<Button
-			rounded
-			tonal
-			onClick={done}
-			class="fixed-action-btn"
-		>
+		<Button rounded tonal onClick={done} class="fixed-action-btn">
 			{m.done()}
 		</Button>
 	{/if}
@@ -187,8 +199,14 @@
 	}
 
 	@keyframes blink {
-		0%, 50% { opacity: 1; }
-		51%, 100% { opacity: 0; }
+		0%,
+		50% {
+			opacity: 1;
+		}
+		51%,
+		100% {
+			opacity: 0;
+		}
 	}
 
 	.color-grid {

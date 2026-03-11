@@ -62,30 +62,35 @@
 	<Navbar transparent={true} titleClass="opacity1 w-full" centerTitle={false}>
 		{#snippet left()}
 			{#if !isWideScreen.value}
-				<NavbarBackLink onClick={() => goto('/')}  data-testid="group-chat-back" />
+				<NavbarBackLink
+					onClick={() => goto('/')}
+					data-testid="group-chat-back"
+				/>
 			{/if}
 		{/snippet}
 		{#snippet title()}
 			{#await $info then info}
-				<Link
-					href={`/group-chat/${chatId}/info`}
-					data-testid="group-chat-info-link"
-					class="gap-2"
-					style="display: flex; justify-content: start; align-items: center;"
-				>
-					<wa-avatar
-						image={info.avatar}
-						initials={info.name.slice(0, 2)}
-						style="--size: 2.5rem"
+				{#if info}
+					<Link
+						href={`/group-chat/${chatId}/info`}
+						data-testid="group-chat-info-link"
+						class="gap-2"
+						style="display: flex; justify-content: start; align-items: center;"
 					>
-					</wa-avatar>
-					<span>{info.name}</span>
-				</Link>
+						<wa-avatar
+							image={info.avatar}
+							initials={info.name.slice(0, 2)}
+							style="--size: 2.5rem"
+						>
+						</wa-avatar>
+						<span>{info.name}</span>
+					</Link>
+				{/if}
 			{/await}
 		{/snippet}
 	</Navbar>
 
-	<div class={`column ${theme === 'ios'? 'pb-16':''}`}>
+	<div class={`column ${theme === 'ios' ? 'pb-16' : ''}`}>
 		{#await $allMembers then members}
 			<div class="center-in-desktop" style="flex:1">
 				<div class="column m-2 gap-2">
@@ -121,8 +126,8 @@
 								{:else}
 									<div class="row gap-2 m-0">
 										<wa-avatar
-											image={members[message.author].profile?.avatar}
-											initials={members[message.author].profile?.name.slice(
+											image={members?.[message.author]?.profile?.avatar}
+											initials={members?.[message.author]?.profile?.name?.slice(
 												0,
 												2,
 											)}

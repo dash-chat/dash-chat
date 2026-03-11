@@ -7,7 +7,9 @@
 
 	function toggleTheme() {
 		theme = theme === 'ios' ? 'material' : 'ios';
-		window.dispatchEvent(new CustomEvent('theme-change', { detail: { theme } }));
+		window.dispatchEvent(
+			new CustomEvent('theme-change', { detail: { theme } }),
+		);
 	}
 
 	function toggleDark() {
@@ -17,14 +19,20 @@
 
 	function toggleLayout() {
 		mobile = !mobile;
-		window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: !mobile }));
-		window.dispatchEvent(new CustomEvent('set-mobile-frame', { detail: mobile }));
+		window.dispatchEvent(
+			new CustomEvent('set-wide-screen', { detail: !mobile }),
+		);
+		window.dispatchEvent(
+			new CustomEvent('set-mobile-frame', { detail: mobile }),
+		);
 	}
 
 	function toggleUpdater() {
 		updater = !updater;
 		window.dispatchEvent(
-			new CustomEvent('test-simulate-update', { detail: updater ? 'downloading' : 'idle' }),
+			new CustomEvent('test-simulate-update', {
+				detail: updater ? 'downloading' : 'idle',
+			}),
 		);
 	}
 
