@@ -21,8 +21,10 @@ use crate::{
 mod impls;
 
 const IDENTITY_TABLE: TableDefinition<&'static str, [u8; 32]> = TableDefinition::new("identity");
-const SUBSCRIBED_TOPICS_TABLE: TableDefinition<[u8; 32], ()> = TableDefinition::new("subscribed_topics");
-const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> = TableDefinition::new("active_inboxes");
+const SUBSCRIBED_TOPICS_TABLE: TableDefinition<[u8; 32], ()> =
+    TableDefinition::new("subscribed_topics");
+const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> =
+    TableDefinition::new("active_inboxes");
 
 #[cfg(feature = "auth-workaround")]
 const CONTACTS_TABLE: TableDefinition<[u8; 32], [u8; 32]> = TableDefinition::new("contacts");
@@ -291,18 +293,32 @@ impl LocalStore {
         Ok(())
     }
 
-
-    pub async fn device_group_members(&self, agent_id: AgentId, min_access: Access) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+    pub async fn device_group_members(
+        &self,
+        agent_id: AgentId,
+        min_access: Access,
+    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
         let groups = self.groups.lock().await;
-        Ok(groups.device_group_members(agent_id).await?.into_iter().filter(|(_, access)| *access >= min_access).collect())
+        Ok(groups
+            .device_group_members(agent_id)
+            .await?
+            .into_iter()
+            .filter(|(_, access)| *access >= min_access)
+            .collect())
     }
 
-    pub async fn chat_group_members(&self, topic: ChatId) -> anyhow::Result<BTreeSet<(p2panda_core::PublicKey, Access)>> {
+    pub async fn chat_group_members(
+        &self,
+        topic: ChatId,
+    ) -> anyhow::Result<BTreeSet<(p2panda_core::PublicKey, Access)>> {
         let groups = self.groups.lock().await;
         groups.chat_group_members(topic).await
     }
 
-    pub async fn process_group_operation(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
+    pub async fn process_group_operation(
+        &self,
+        operation: &Operation<Extensions>,
+    ) -> anyhow::Result<()> {
         let mut groups = self.groups.lock().await;
         groups.process(operation).await
     }
@@ -353,7 +369,6 @@ impl LocalStore {
         txn.commit()?;
         Ok(())
     }
-
 }
 
 #[cfg(test)]

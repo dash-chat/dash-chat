@@ -141,22 +141,26 @@ impl Node {
         match &operation.header.extensions.auth {
             Some(auth) => {
                 let members = match &auth.action {
-                    GroupAction::Create { initial_members } => initial_members.iter().map(|(member, _)| member).collect(),
+                    GroupAction::Create { initial_members } => {
+                        initial_members.iter().map(|(member, _)| member).collect()
+                    }
                     GroupAction::Add { member, .. } => vec![member],
-                    GroupAction::Remove { ..} => vec![],
+                    GroupAction::Remove { .. } => vec![],
                     GroupAction::Promote { .. } => vec![],
                     GroupAction::Demote { .. } => vec![],
                 };
                 for member in members {
                     match member {
-                        GroupMember::Group(id) => self.register_topic(Topic::announcements(AgentId::from_pubkey(*id))).await?,
-                        GroupMember::Individual(_) => {},
+                        GroupMember::Group(id) => {
+                            self.register_topic(Topic::announcements(AgentId::from_pubkey(*id)))
+                                .await?
+                        }
+                        GroupMember::Individual(_) => {}
                     }
                 }
             }
             None => {}
         }
-
 
         if let Err(err) = self.op_store.process_ordering(operation).await {
             tracing::error!(?err, "process ordering error");
@@ -181,12 +185,7 @@ impl Node {
             match self.process_operation(operation, false, false).await {
                 Ok(()) => (),
                 Err(err) => {
-                    tracing::error!(
-                        ?topic,
-                        ?hash,
-                        ?err,
-                        "process operation error"
-                    )
+                    tracing::error!(?topic, ?hash, ?err, "process operation error")
                 }
             }
         }
