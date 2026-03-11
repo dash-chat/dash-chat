@@ -341,7 +341,7 @@ impl Node {
 
         self.author_operation(
             chat_id,
-            DashAction::group_action(chat_id, GroupAction::Create { initial_members }),
+            DashAction::group_action(chat_id, GroupAction::Create { initial_members })?,
             Some(&format!("create_group({})", chat_id.renamed())),
         )
         .await?;

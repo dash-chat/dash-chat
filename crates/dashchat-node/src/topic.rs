@@ -236,8 +236,8 @@ impl Topic<kind::Chat> {
         Self::new(pubkey.as_bytes().clone().try_into().unwrap()).with_short()
     }
 
-    pub fn to_group_pubkey(self) -> p2panda_core::PublicKey {
-        p2panda_core::PublicKey::from_bytes(&self.id.0).unwrap()
+    pub fn to_group_pubkey(self) -> anyhow::Result<p2panda_core::PublicKey> {
+        Ok(p2panda_core::PublicKey::from_bytes(&self.id.0)?)
     }
 }
 
