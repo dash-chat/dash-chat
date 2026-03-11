@@ -45,7 +45,9 @@
 	import { goto } from '$app/navigation';
 	window.__setLocale = setLocale;
 
-	import('../../tests/setup-utils').then(({ registerTestUtils }) => registerTestUtils(goto));
+	import('../../tests/setup-utils').then(({ registerTestUtils }) =>
+		registerTestUtils(goto),
+	);
 
 	let { children } = $props();
 
@@ -65,7 +67,9 @@
 		logsStore = new LogsStore<Payload>(mockLogsClient);
 		settingsStore = new SettingsStore(new MockSettingsClient());
 
-		const mockDevicesClient = new MockDevicesClient(DEMO_IDS.DEVICE_GROUP_TOPIC);
+		const mockDevicesClient = new MockDevicesClient(
+			DEMO_IDS.DEVICE_GROUP_TOPIC,
+		);
 		devicesStore = new DevicesStore(logsStore, mockDevicesClient);
 
 		const mockContactsClient = new MockContactsClient(
@@ -75,7 +79,11 @@
 			DEMO_IDS.DEVICE_GROUP_TOPIC,
 			[DEMO_IDS.INBOX_TOPIC],
 		);
-		contactsStore = new ContactsStore(logsStore, devicesStore, mockContactsClient);
+		contactsStore = new ContactsStore(
+			logsStore,
+			devicesStore,
+			mockContactsClient,
+		);
 
 		const mockChatsClient = new MockChatsClient();
 		chatsStore = new ChatsStore(
@@ -122,12 +130,12 @@
 		document.documentElement.dir = rtlLocales.has(localeKey) ? 'rtl' : 'ltr';
 	});
 
-		let theme: 'ios' | 'material' = $state(isIos || isMac ? 'ios' : 'material');
+	let theme: 'ios' | 'material' = $state(isIos || isMac ? 'ios' : 'material');
 
 	let darkOverride: boolean | null = $state(null);
 	const effectiveDark = $derived(darkOverride ?? !!$isDark);
 	$effect(() => {
-		applyDarkMode(effectiveDark).catch((e) => {
+		applyDarkMode(effectiveDark).catch(e => {
 			showToast(m.errorApplyStyle(), 'error');
 		});
 	});
@@ -137,7 +145,8 @@
 			theme = event.detail.theme;
 		};
 		window.addEventListener('theme-change', handler as EventListener);
-		return () => window.removeEventListener('theme-change', handler as EventListener);
+		return () =>
+			window.removeEventListener('theme-change', handler as EventListener);
 	});
 
 	$effect(() => {
@@ -145,7 +154,8 @@
 			darkOverride = event.detail;
 		};
 		window.addEventListener('set-dark-mode', handler as EventListener);
-		return () => window.removeEventListener('set-dark-mode', handler as EventListener);
+		return () =>
+			window.removeEventListener('set-dark-mode', handler as EventListener);
 	});
 
 	$effect(() => {
@@ -153,9 +163,9 @@
 			document.body.classList.toggle('mobile-frame', event.detail);
 		};
 		window.addEventListener('set-mobile-frame', handler as EventListener);
-		return () => window.removeEventListener('set-mobile-frame', handler as EventListener);
+		return () =>
+			window.removeEventListener('set-mobile-frame', handler as EventListener);
 	});
-
 </script>
 
 {#if isPreview}

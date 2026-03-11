@@ -65,7 +65,10 @@
 	<Navbar title={m.appearance()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#if !isWideScreen.value}
-				<NavbarBackLink onClick={() => goto('/settings')} data-testid="appearance-back" />
+				<NavbarBackLink
+					onClick={() => goto('/settings')}
+					data-testid="appearance-back"
+				/>
 			{/if}
 		{/snippet}
 	</Navbar>

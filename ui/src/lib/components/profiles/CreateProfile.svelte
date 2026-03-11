@@ -96,16 +96,11 @@
 			title={m.setProfile()}
 			titleClass="opacity1"
 			transparent={true}
-			rightClass={name === undefined || name === ''
-				? 'ios-right-disabled'
-				: ''}
+			rightClass={name === undefined || name === '' ? 'ios-right-disabled' : ''}
 		>
 			{#snippet right()}
 				{#if isIos}
-					<Link
-						onClick={setProfile}
-						data-testid="create-profile-create-link"
-					>
+					<Link onClick={setProfile} data-testid="create-profile-create-link">
 						{m.create()}
 					</Link>
 				{/if}

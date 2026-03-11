@@ -39,7 +39,10 @@
 	<Navbar title={m.account()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#if !isWideScreen.value}
-				<NavbarBackLink onClick={() => goto('/settings')} data-testid="account-back" />
+				<NavbarBackLink
+					onClick={() => goto('/settings')}
+					data-testid="account-back"
+				/>
 			{/if}
 		{/snippet}
 	</Navbar>
@@ -48,17 +51,17 @@
 		<div class="column center-in-desktop">
 			<BlockTitle>{m.account()}</BlockTitle>
 			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
-			<ListItem
-				title={m.deleteAccount()}
-				link
-				chevron={false}
-				onClick={() => (showDeleteDialog = true)}
-				data-testid="account-delete"
-				colors={{
-					primaryTextIos: 'text-red-500',
-					primaryTextMaterial: 'text-red-500',
-				}}
-			/>
+				<ListItem
+					title={m.deleteAccount()}
+					link
+					chevron={false}
+					onClick={() => (showDeleteDialog = true)}
+					data-testid="account-delete"
+					colors={{
+						primaryTextIos: 'text-red-500',
+						primaryTextMaterial: 'text-red-500',
+					}}
+				/>
 			</List>
 		</div>
 	</div>
@@ -66,16 +69,21 @@
 	<Dialog
 		opened={showDeleteDialog}
 		onBackdropClick={() => (showDeleteDialog = false)}
+		title={m.deleteAccount()}
 	>
-		{#snippet title()}
-			{m.deleteAccount()}
-		{/snippet}
 		<span>{m.areYouSureDeleteAccount()}</span>
 		{#snippet buttons()}
-			<DialogButton onClick={() => (showDeleteDialog = false)} data-testid="account-delete-cancel">
+			<DialogButton
+				onClick={() => (showDeleteDialog = false)}
+				data-testid="account-delete-cancel"
+			>
 				{m.cancel()}
 			</DialogButton>
-			<DialogButton onClick={handleDeleteAccount} disabled={loading} data-testid="account-delete-confirm">
+			<DialogButton
+				onClick={handleDeleteAccount}
+				disabled={loading}
+				data-testid="account-delete-confirm"
+			>
 				{loading ? '...' : m.delete()}
 			</DialogButton>
 		{/snippet}

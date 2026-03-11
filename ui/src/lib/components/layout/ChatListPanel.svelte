@@ -47,9 +47,7 @@
 
 	<UpdaterBanner />
 
-	<div class={theme==='ios' ? "mt-4": ''}></div>
+	<div class={theme === 'ios' ? 'mt-4' : ''}></div>
 
 	<AllChats class="flex flex-1 flex-col"></AllChats>
-
-
 </div>
