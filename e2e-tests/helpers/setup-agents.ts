@@ -116,6 +116,42 @@ export async function dismissGetStartedCard(agent: WebdriverIO.Browser, cardId: 
 	await agent.execute((id: string) => window.__test.dismissGetStartedCard(id), cardId);
 }
 
+/** Navigate to appearance settings page. Throws if it fails. */
+export async function gotoAppearance(agent: WebdriverIO.Browser): Promise<void> {
+	const err = await agent.executeAsync((done: (r: string | null) => void) => {
+		window.__test.goto('/settings/appearance').then(() => done(null), (e) => done(String(e)));
+	});
+	if (err) throw new Error(`Navigation to appearance failed: ${err}`);
+	await agent.waitUntil(
+		async () => agent.execute(
+			() => !!document.querySelector('[data-testid="appearance-language"]'),
+		),
+		{ timeout: 5_000, timeoutMsg: 'Appearance page not loaded' },
+	);
+}
+
+/** Select a language on the appearance page. Throws if it fails. */
+export async function selectLanguage(agent: WebdriverIO.Browser, locale: string): Promise<void> {
+	await agent.waitUntil(
+		async () => agent.execute(
+			() => !!document.querySelector('[data-testid="appearance-language"]'),
+		),
+		{ timeout: 5_000, timeoutMsg: 'Appearance page not ready for language selection' },
+	);
+	const err = await agent.executeAsync((loc: string, done: (r: string | null) => void) => {
+		window.__test.selectLanguage(loc).then(() => done(null), (e) => done(String(e)));
+	}, locale);
+	if (err) throw new Error(`selectLanguage(${locale}) failed: ${err}`);
+}
+
+/** Select a theme on the appearance page. Throws if it fails. */
+export async function selectTheme(agent: WebdriverIO.Browser, scheme: string): Promise<void> {
+	const err = await agent.executeAsync((s: string, done: (r: string | null) => void) => {
+		window.__test.selectTheme(s).then(() => done(null), (e) => done(String(e)));
+	}, scheme);
+	if (err) throw new Error(`selectTheme(${scheme}) failed: ${err}`);
+}
+
 /** Open a direct chat by contact name. Throws if it fails. */
 export async function openDirectChat(
 	agent: WebdriverIO.Browser,

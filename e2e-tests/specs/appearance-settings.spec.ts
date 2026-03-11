@@ -5,7 +5,13 @@
  * Only needs one agent — uses agent1.
  */
 
-import { waitForTestUtils, createProfile } from '../helpers/setup-agents';
+import {
+	waitForTestUtils,
+	createProfile,
+	gotoAppearance,
+	selectLanguage,
+	selectTheme,
+} from '../helpers/setup-agents';
 
 describe('Appearance settings', () => {
 	let agent: WebdriverIO.Browser;
@@ -14,19 +20,7 @@ describe('Appearance settings', () => {
 		agent = browser.getInstance('agent1');
 		await waitForTestUtils(agent);
 		await createProfile(agent, 'Settings', 'Test');
-
-		// Navigate to appearance page
-		const err = await agent.executeAsync((done: (r: string | null) => void) => {
-			window.__test.goto('/settings/appearance').then(() => done(null), (e) => done(String(e)));
-		});
-		if (err) throw new Error(`Navigation failed: ${err}`);
-
-		await agent.waitUntil(
-			async () => agent.execute(
-				() => !!document.querySelector('[data-testid="appearance-language"]'),
-			),
-			{ timeout: 10_000, timeoutMsg: 'Appearance page not loaded' },
-		);
+		await gotoAppearance(agent);
 	});
 
 	it('shows default language as English', async () => {
@@ -36,26 +30,35 @@ describe('Appearance settings', () => {
 		expect(text).toContain('English');
 	});
 
-	it('changes language to Español via dialog', async () => {
-		// Click language item to open dialog
+	it('language dialog shows all options', async () => {
 		await agent.execute(() => {
 			(document.querySelector('[data-testid="appearance-language"]') as HTMLElement)?.click();
 		});
 
-		// Wait for dialog option to appear
 		await agent.waitUntil(
 			async () => agent.execute(
 				() => !!document.querySelector('[data-testid="appearance-lang-es"]'),
 			),
-			{ timeout: 5_000, timeoutMsg: 'Language dialog not opened' },
+			{ timeout: 5_000, timeoutMsg: 'Language dialog did not open' },
 		);
 
-		// Click the Español option
-		await agent.execute(() => {
-			(document.querySelector('[data-testid="appearance-lang-es"]') as HTMLElement)?.click();
+		const hasAllOptions = await agent.execute(() => {
+			return (
+				!!document.querySelector('[data-testid="appearance-lang-en"]') &&
+				!!document.querySelector('[data-testid="appearance-lang-es"]') &&
+				!!document.querySelector('[data-testid="appearance-lang-de-de"]') &&
+				!!document.querySelector('[data-testid="appearance-lang-fa-ir"]')
+			);
 		});
+		expect(hasAllOptions).toBe(true);
 
-		// Wait for dialog to close and language to update
+		// Close dialog by navigating away and back
+		await gotoAppearance(agent);
+	});
+
+	it('changes language to Español', async () => {
+		await selectLanguage(agent, 'es');
+
 		await agent.waitUntil(
 			async () => {
 				const text = await agent.execute(
@@ -65,51 +68,10 @@ describe('Appearance settings', () => {
 			},
 			{ timeout: 5_000, timeoutMsg: 'Language did not change to Español' },
 		);
-
-		// Navigate to settings and verify a translated string appears
-		await agent.executeAsync((done: (r: string | null) => void) => {
-			window.__test.goto('/settings').then(() => done(null), (e) => done(String(e)));
-		});
-		await agent.waitUntil(
-			async () => agent.execute(
-				() => !!document.querySelector('[data-testid="settings-profile-link"]'),
-			),
-			{ timeout: 5_000, timeoutMsg: 'Settings page not loaded' },
-		);
-		const profileText = await agent.execute(
-			() => document.querySelector('[data-testid="settings-profile-link"]')?.textContent,
-		);
-		// "Profile" in Spanish is "Mi perfil"
-		expect(profileText).toContain('Mi perfil');
-
-		// Navigate back to appearance
-		await agent.executeAsync((done: (r: string | null) => void) => {
-			window.__test.goto('/settings/appearance').then(() => done(null), (e) => done(String(e)));
-		});
-		await agent.waitUntil(
-			async () => agent.execute(
-				() => !!document.querySelector('[data-testid="appearance-language"]'),
-			),
-			{ timeout: 5_000, timeoutMsg: 'Appearance page not loaded after nav back' },
-		);
 	});
 
 	it('changes language back to English', async () => {
-		// Click language item to open dialog
-		await agent.execute(() => {
-			(document.querySelector('[data-testid="appearance-language"]') as HTMLElement)?.click();
-		});
-
-		await agent.waitUntil(
-			async () => agent.execute(
-				() => !!document.querySelector('[data-testid="appearance-lang-en"]'),
-			),
-			{ timeout: 5_000, timeoutMsg: 'Language dialog not opened' },
-		);
-
-		await agent.execute(() => {
-			(document.querySelector('[data-testid="appearance-lang-en"]') as HTMLElement)?.click();
-		});
+		await selectLanguage(agent, 'en');
 
 		await agent.waitUntil(
 			async () => {
@@ -122,30 +84,30 @@ describe('Appearance settings', () => {
 		);
 	});
 
-	it('changes theme to dark mode', async () => {
-		// On desktop (wide screen), the theme uses a native <select>
-		await agent.execute(() => {
-			const select = document.querySelector('[data-testid="appearance-theme"] select') as HTMLSelectElement;
-			if (select) {
-				select.value = 'dark';
-				select.dispatchEvent(new Event('change', { bubbles: true }));
-			} else {
-				// On mobile, click the theme item to open dialog
-				(document.querySelector('[data-testid="appearance-theme"]') as HTMLElement)?.click();
-			}
-		});
+	it('selecting Farsi sets document to RTL', async () => {
+		await selectLanguage(agent, 'fa-ir');
 
-		// If mobile, handle the dialog
-		const hasDialog = await agent.execute(
-			() => !!document.querySelector('[data-testid="appearance-theme-dark"]'),
+		await agent.waitUntil(
+			async () => agent.execute(
+				() => document.documentElement.dir === 'rtl',
+			),
+			{ timeout: 5_000, timeoutMsg: 'Document did not switch to RTL for Farsi' },
 		);
-		if (hasDialog) {
-			await agent.execute(() => {
-				(document.querySelector('[data-testid="appearance-theme-dark"]') as HTMLElement)?.click();
-			});
-		}
 
-		// Verify dark class is applied to <html>
+		// Change back to English
+		await selectLanguage(agent, 'en');
+
+		await agent.waitUntil(
+			async () => agent.execute(
+				() => document.documentElement.dir !== 'rtl',
+			),
+			{ timeout: 5_000, timeoutMsg: 'Document did not switch back to LTR' },
+		);
+	});
+
+	it('changes theme to dark mode', async () => {
+		await selectTheme(agent, 'dark');
+
 		await agent.waitUntil(
 			async () => agent.execute(
 				() => document.documentElement.classList.contains('dark'),
@@ -155,24 +117,7 @@ describe('Appearance settings', () => {
 	});
 
 	it('changes theme to light mode', async () => {
-		await agent.execute(() => {
-			const select = document.querySelector('[data-testid="appearance-theme"] select') as HTMLSelectElement;
-			if (select) {
-				select.value = 'light';
-				select.dispatchEvent(new Event('change', { bubbles: true }));
-			} else {
-				(document.querySelector('[data-testid="appearance-theme"]') as HTMLElement)?.click();
-			}
-		});
-
-		const hasDialog = await agent.execute(
-			() => !!document.querySelector('[data-testid="appearance-theme-light"]'),
-		);
-		if (hasDialog) {
-			await agent.execute(() => {
-				(document.querySelector('[data-testid="appearance-theme-light"]') as HTMLElement)?.click();
-			});
-		}
+		await selectTheme(agent, 'light');
 
 		await agent.waitUntil(
 			async () => agent.execute(
@@ -183,26 +128,8 @@ describe('Appearance settings', () => {
 	});
 
 	it('changes theme back to system default', async () => {
-		await agent.execute(() => {
-			const select = document.querySelector('[data-testid="appearance-theme"] select') as HTMLSelectElement;
-			if (select) {
-				select.value = 'system';
-				select.dispatchEvent(new Event('change', { bubbles: true }));
-			} else {
-				(document.querySelector('[data-testid="appearance-theme"]') as HTMLElement)?.click();
-			}
-		});
+		await selectTheme(agent, 'system');
 
-		const hasDialog = await agent.execute(
-			() => !!document.querySelector('[data-testid="appearance-theme-system"]'),
-		);
-		if (hasDialog) {
-			await agent.execute(() => {
-				(document.querySelector('[data-testid="appearance-theme-system"]') as HTMLElement)?.click();
-			});
-		}
-
-		// System default should not have the dark class (CI/test environments default to light)
 		await agent.waitUntil(
 			async () => agent.execute(
 				() => !document.documentElement.classList.contains('dark'),

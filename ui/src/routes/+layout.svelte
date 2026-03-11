@@ -38,9 +38,10 @@
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMac, isTauriEnv } from '$lib/utils/environment';
+	import { rtlLocales } from '$lib/utils/localization';
 
 	import { m } from '$lib/paraglide/messages.js';
-	import { setLocale } from '$lib/paraglide/runtime';
+	import { setLocale, getLocale } from '$lib/paraglide/runtime';
 	import { goto } from '$app/navigation';
 	window.__setLocale = setLocale;
 
@@ -107,13 +108,22 @@
 	const isDark = useSignal(settingsStore.isDark);
 	const savedLanguage = useReactivePromise(settingsStore.language);
 
+	// Reactive locale key — forces re-render of all children when locale changes.
+	let localeKey = $state(getLocale());
+
 	$effect(() => {
 		const promise = $savedLanguage;
 		promise.then((lang) => {
 			if (lang) {
-				setLocale(lang as Parameters<typeof setLocale>[0]);
+				setLocale(lang as Parameters<typeof setLocale>[0], { reload: false });
+				localeKey = getLocale();
 			}
 		});
+	});
+
+	// Set document direction based on locale (RTL for Farsi, etc.)
+	$effect(() => {
+		document.documentElement.dir = rtlLocales.has(localeKey) ? 'rtl' : 'ltr';
 	});
 
 		let theme: 'ios' | 'material' = $state(isIos || isMac ? 'ios' : 'material');
@@ -156,6 +166,7 @@
 	<PreviewToolbar />
 {/if}
 
+{#key localeKey}
 <KonstaProvider {theme} dark={effectiveDark}>
 	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
 		<SplashscreenPrompt>
@@ -170,3 +181,4 @@
 		<ToastManager />
 	</App>
 </KonstaProvider>
+{/key}

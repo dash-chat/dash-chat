@@ -462,6 +462,7 @@ impl Node {
         if let Some(ref task) = self.stream_task {
             task.cancel().await;
         }
+        self.mailboxes.clear().await;
         std::fs::remove_dir_all(self.filesystem.data_path())?;
         Ok(())
     }

@@ -10,3 +10,5 @@ export const localesWithName: Array<{ locale: string; name: string }> = [
 	{ locale: 'de-de', name: 'Deutsch' },
 	{ locale: 'fa-ir', name: 'فارسی' },
 ];
+
+export const rtlLocales = new Set(['fa-ir']);

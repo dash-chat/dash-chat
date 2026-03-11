@@ -33,6 +33,8 @@ export function checkOverflow(): string[] {
 	}
 	document.querySelectorAll('*').forEach((el) => {
 		if (el.id === 'svelte-announcer') return;
+		// Skip elements inside closed Konsta dialogs (kept in DOM with pointer-events-none)
+		if ((el as HTMLElement).closest?.('.pointer-events-none')) return;
 		if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
 			const text = el.textContent?.substring(0, 50);
 			if (text?.trim()) {
@@ -52,6 +54,8 @@ export function checkDarkMode(): DarkModeResult {
 	}
 	document.querySelectorAll('*').forEach((el) => {
 		const htmlEl = el as HTMLElement;
+		// Skip elements inside closed Konsta dialogs
+		if (htmlEl.closest('.pointer-events-none')) return;
 		const bg = getComputedStyle(htmlEl).backgroundColor;
 		if (bg === 'rgb(255, 255, 255)' && htmlEl.offsetWidth > 0 && htmlEl.offsetHeight > 0) {
 			if (!htmlEl.closest('wa-icon, wa-avatar, wa-qr-code, .qr-card, .k-toggle')) {
