@@ -19,7 +19,7 @@ We need a system that:
 ### Core Concepts
 
 - **V0**: The original, pre-versioning format. Serializes bare (no wrapper), identical to what old clients produce and expect.
-- **V1+**: Explicitly versioned. Serializes as `{ "v": "<version>", "d": <data> }`.
+- **V1+**: Explicitly versioned. Serializes as a map with an embedded `"v"` tag (e.g., `{ "v": "1", "message": "hello", ... }`).
 - **Capability**: A named feature domain (e.g., `Messaging`) that groups related types. Each capability has a version number representing the highest version a client supports.
 - **Downgrade**: Converting a payload to an older version for compatibility with a peer.
 
@@ -30,7 +30,7 @@ A single generic enum handles the bare-vs-tagged wire format for all versioned t
 ```rust
 /// Transparent versioning wrapper.
 /// - `Bare`: the V0 type (serialized without any wrapper)
-/// - `Tagged`: an enum of V1+ versions (serialized as `{ "v": "N", "d": ... }`)
+/// - `Tagged`: an enum of V1+ versions (internally tagged with `"v"` field)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Compat<Bare, Tagged> {
     Unversioned(Bare),
@@ -40,15 +40,15 @@ pub enum Compat<Bare, Tagged> {
 
 **Serialization:**
 - `Unversioned(bare)` → serializes `bare` directly (no wrapper)
-- `Versioned(tagged)` → delegates to `tagged`'s own `Serialize`, which uses `#[serde(tag = "v", content = "d")]`
+- `Versioned(tagged)` → delegates to `tagged`'s own `Serialize`, which uses `#[serde(tag = "v")]`
 
 **Deserialization:**
-1. Attempt to deserialize as `Tagged` (expects a CBOR map with both `"v"` AND `"d"` keys — both must be present)
+1. Attempt to deserialize as `Tagged` (expects a CBOR map with a `"v"` key)
 2. If that fails, deserialize as `Bare` (V0 fallback)
 
-**Constraint:** The `Bare` type must not serialize as a CBOR map containing both `"v"` and `"d"` keys at the top level, as this would collide with the versioned envelope format. In practice this is unlikely — V0 types predate versioning and were not designed with these field names — but implementers should verify when adding versioning to a type.
+**Constraint:** The `Bare` type must not serialize as a CBOR map containing a `"v"` key at the top level, as this would collide with the internally tagged format. In practice this is unlikely — V0 types predate versioning and were not designed with this field name — but implementers should verify when adding versioning to a type.
 
-**Forward compatibility:** If a client receives a `Tagged` payload with an unknown version (e.g., a V1 client receives `{ "v": "2", "d": ... }`), the `Tagged` enum's serde deserialization will fail (no matching variant). The `Compat` deserializer then falls back to trying `Bare`, which will also fail if the wire format is not the V0 shape. The operation is skipped. The application layer should handle per-operation deserialization failures gracefully (log a warning, skip the operation) rather than failing the entire topic sync. The UI should indicate that unsupported message types were received, prompting the user to upgrade.
+**Forward compatibility:** If a client receives a `Tagged` payload with an unknown version (e.g., a V1 client receives `{ "v": "2", ... }`), the `Tagged` enum's serde deserialization will fail (no matching variant). The `Compat` deserializer then falls back to trying `Bare`, which will also fail if the wire format is not the V0 shape. The operation is skipped. The application layer should handle per-operation deserialization failures gracefully (log a warning, skip the operation) rather than failing the entire topic sync. The UI should indicate that unsupported message types were received, prompting the user to upgrade.
 
 Old clients that predate versioning:
 - Successfully read V0 messages (identical wire format)
@@ -70,7 +70,7 @@ pub struct ChatMessageContentV0(pub String);
 /// V1+ versions, each as an enum variant.
 /// Serde tags handle wire discrimination.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "v", content = "d")]
+#[serde(tag = "v")]
 enum ChatMessageVersions {
     #[serde(rename = "1")]
     V1(ChatMessageV1),
@@ -87,7 +87,7 @@ struct ChatMessageV1 {
 
 **Wire format examples:**
 - V0: `"hello"` (bare CBOR string — identical to original `ChatMessageContent(String)`)
-- V1: `{ "v": "1", "d": { "message": "hello", "media": null } }`
+- V1: `{ "v": "1", "message": "hello", "media": null }`
 
 **Getter methods** materialize a consistent view across versions:
 
