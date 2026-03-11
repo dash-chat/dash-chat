@@ -2,6 +2,7 @@
 
 mod chat;
 mod contact;
+mod compat;
 mod error;
 mod filesystem;
 pub mod node;
@@ -29,6 +30,7 @@ pub use node::{LocalStore, Node, NodeConfig, Notification};
 pub use p2panda_core::PrivateKey;
 pub use p2panda_spaces::ActorId;
 pub use payload::*;
+pub use compat::*;
 pub use topic::Topic;
 
 pub trait Cbor: serde::Serialize + serde::de::DeserializeOwned {
