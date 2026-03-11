@@ -2,5 +2,9 @@ packages:
   - ui
   - packages/*
   - e2e-tests
+
 onlyBuiltDependencies:
   - esbuild
+
+patchedDependencies:
+  konsta@5.0.6: patches/konsta@5.0.6.patch

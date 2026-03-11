@@ -987,10 +987,8 @@
 						<Dialog
 							opened={showAcceptDialog}
 							onBackdropClick={() => (showAcceptDialog = false)}
+							title={m.acceptRequestTitle()}
 						>
-							{#snippet title()}
-								{m.acceptRequestTitle()}
-							{/snippet}
 							<span>{m.acceptRequestDescription()}</span>
 							{#snippet buttons()}
 								<DialogButton onClick={() => (showAcceptDialog = false)}>
@@ -1010,10 +1008,8 @@
 						<Dialog
 							opened={showRejectDialog}
 							onBackdropClick={() => (showRejectDialog = false)}
+							title={m.rejectRequestTitle()}
 						>
-							{#snippet title()}
-								{m.rejectRequestTitle()}
-							{/snippet}
 							<span>{m.rejectRequestDescription()}</span>
 							{#snippet buttons()}
 								<DialogButton onClick={() => (showRejectDialog = false)}>

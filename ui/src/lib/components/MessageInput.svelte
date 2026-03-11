@@ -80,7 +80,9 @@
 	function removePhoto(index: number) {
 		if (!media || media.kind !== 'photos') return;
 		const remaining = media.photos.filter((_, i) => i !== index);
-		onMediaChange?.(remaining.length > 0 ? { kind: 'photos', photos: remaining } : undefined);
+		onMediaChange?.(
+			remaining.length > 0 ? { kind: 'photos', photos: remaining } : undefined,
+		);
 		tick().then(updateHeight);
 	}
 
@@ -171,7 +173,8 @@
 				</div>
 			{:else}
 				<div class="file-preview">
-					<wa-icon src={wrapPathInSvg(mdiFile)} class="file-preview-icon"></wa-icon>
+					<wa-icon src={wrapPathInSvg(mdiFile)} class="file-preview-icon"
+					></wa-icon>
 					<div class="file-preview-info">
 						<span class="file-preview-name">{media.name}</span>
 						<span class="file-preview-size">{formatFileSize(media.size)}</span>
@@ -189,10 +192,7 @@
 		</div>
 	{/if}
 
-	<div
-		class="row gap-2"
-		style="align-items: flex-end; margin: 0 auto"
-	>
+	<div class="row gap-2" style="align-items: flex-end; margin: 0 auto">
 		<div class="relative" style="align-self: flex-end; margin-bottom: 4px;">
 			<button
 				type="button"

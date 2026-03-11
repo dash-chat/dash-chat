@@ -8,7 +8,7 @@ const mediaQuery =
 let wide = $state(isMobile ? (mediaQuery?.matches ?? false) : true);
 
 if (isMobile) {
-	mediaQuery?.addEventListener('change', (e) => {
+	mediaQuery?.addEventListener('change', e => {
 		wide = e.matches;
 	});
 }

@@ -20,7 +20,9 @@
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
-	const localMailboxEnabled = useReactivePromise(settingsStore.localMailboxEnabled);
+	const localMailboxEnabled = useReactivePromise(
+		settingsStore.localMailboxEnabled,
+	);
 	let toggling = $state(false);
 
 	async function toggle(currentEnabled: boolean) {
@@ -36,10 +38,17 @@
 </script>
 
 <Page>
-	<Navbar title={m.offlineFunctionality()} titleClass="opacity1" transparent={true}>
+	<Navbar
+		title={m.offlineFunctionality()}
+		titleClass="opacity1"
+		transparent={true}
+	>
 		{#snippet left()}
 			{#if !isWideScreen.value}
-				<NavbarBackLink onClick={() => goto('/settings')} data-testid="offline-back" />
+				<NavbarBackLink
+					onClick={() => goto('/settings')}
+					data-testid="offline-back"
+				/>
 			{/if}
 		{/snippet}
 	</Navbar>
@@ -63,7 +72,8 @@
 					{/snippet}
 				</ListItem>
 			</List>
-			<BlockFooter class="px-4">{m.localMessageServerDescription()}</BlockFooter>
+			<BlockFooter class="px-4">{m.localMessageServerDescription()}</BlockFooter
+			>
 		</div>
 	</div>
 </Page>

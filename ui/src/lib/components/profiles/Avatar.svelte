@@ -5,24 +5,21 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { Preloader } from 'konsta/svelte';
 
-	let { chatActorId }: { chatActorId: PublicKey} = $props();
+	let { chatActorId }: { chatActorId: PublicKey } = $props();
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
-	const profile= useReactivePromise(contactsStore.profiles, chatActorId);
+	const profile = useReactivePromise(contactsStore.profiles, chatActorId);
 </script>
 
 {#await $profile}
-		<div
-			class="column"
-			style="display: flex; align-items: center; justify-content: center"
-		>
-			<Preloader />
-		</div>
-{:then profile}
-	<wa-avatar
-		image={profile?.avatar}
-		initials={profile?.name.slice(0, 2)}
+	<div
+		class="column"
+		style="display: flex; align-items: center; justify-content: center"
 	>
+		<Preloader />
+	</div>
+{:then profile}
+	<wa-avatar image={profile?.avatar} initials={profile?.name.slice(0, 2)}>
 	</wa-avatar>
 {/await}

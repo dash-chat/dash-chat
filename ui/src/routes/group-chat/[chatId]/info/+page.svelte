@@ -171,12 +171,18 @@
 								count: Object.keys(members).length,
 							})}</BlockTitle
 						>
-						<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
+						<List
+							nested
+							strongIos
+							inset={isWideScreen.value || theme === 'ios'}
+						>
 							{#if me.admin}
 								<ListItem
 									link
 									chevron={false}
-									linkProps={{ href: `/group-chat/${chatId}/info/add-members` }}
+									linkProps={{
+										href: `/group-chat/${chatId}/info/add-members`,
+									}}
 									title={m.addMembers()}
 								>
 									{#snippet media()}
@@ -225,7 +231,12 @@
 										<span class="font-semibold">{member.profile?.name}</span>
 									</div>
 
-									<List nested strongIos inset={isWideScreen.value || theme === 'ios'} class="mb-2">
+									<List
+										nested
+										strongIos
+										inset={isWideScreen.value || theme === 'ios'}
+										class="mb-2"
+									>
 										{#if me.admin}
 											{#if member.admin}
 												<ListItem
@@ -281,7 +292,12 @@
 							{/each}
 						</List>
 
-						<List nested strongIos inset={isWideScreen.value || theme === 'ios'} class="z-1">
+						<List
+							nested
+							strongIos
+							inset={isWideScreen.value || theme === 'ios'}
+							class="z-1"
+						>
 							<ListItem
 								title={m.leaveGroup()}
 								link
@@ -324,10 +340,8 @@
 				dialogType = null;
 				dialogActorId = null;
 			}}
+			title={m.demoteFromAdministrator()}
 		>
-			{#snippet title()}
-				{m.demoteFromAdministrator()}
-			{/snippet}
 			<span>{m.areYouSureDemote()}</span>
 			{#snippet buttons()}
 				<DialogButton
@@ -354,10 +368,8 @@
 				dialogType = null;
 				dialogActorId = null;
 			}}
+			title={m.promoteToAdministrator()}
 		>
-			{#snippet title()}
-				{m.promoteToAdministrator()}
-			{/snippet}
 			<span>{m.areYouSurePromote()}</span>
 			{#snippet buttons()}
 				<DialogButton
@@ -384,10 +396,8 @@
 				dialogType = null;
 				dialogActorId = null;
 			}}
+			title={m.removeMember()}
 		>
-			{#snippet title()}
-				{m.removeMember()}
-			{/snippet}
 			<span>{m.areYouSureRemoveMember()}</span>
 			{#snippet buttons()}
 				<DialogButton
@@ -411,10 +421,8 @@
 		<Dialog
 			opened={dialogType === 'leave'}
 			onBackdropClick={() => (dialogType = null)}
+			title={m.leaveGroup()}
 		>
-			{#snippet title()}
-				{m.leaveGroup()}
-			{/snippet}
 			<span>{m.areYouSureLeaveGroup()}</span>
 			{#snippet buttons()}
 				<DialogButton onClick={() => (dialogType = null)}
@@ -429,10 +437,8 @@
 		<Dialog
 			opened={dialogType === 'delete'}
 			onBackdropClick={() => (dialogType = null)}
+			title={m.deleteGroup()}
 		>
-			{#snippet title()}
-				{m.deleteGroup()}
-			{/snippet}
 			<span>{m.areYouSureDeleteGroup()}</span>
 			{#snippet buttons()}
 				<DialogButton onClick={() => (dialogType = null)}
