@@ -38,8 +38,8 @@ export interface FileAttachment {
 }
 
 export type MediaAttachment =
-	| { kind: 'photos'; photos: PhotoAttachment[] }
-	| { kind: 'file'; file: FileAttachment };
+	| { type: 'Photos'; payload: { photos: PhotoAttachment[] } }
+	| { type: 'File'; payload: { file: FileAttachment } };
 
 export interface MessageContent {
 	message: string;

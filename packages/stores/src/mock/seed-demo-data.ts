@@ -120,27 +120,27 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 
 	aliceClient.createSync(aliceChatId, {
 		type: 'Chat',
-		payload: { type: 'Message', payload: 'Hey! Have you tried the new encrypted messaging?' },
+		payload: { type: 'Message', payload: { message: 'Hey! Have you tried the new encrypted messaging?' } },
 	}, minutesAgo(30));
 
 	logsClient.createSync(aliceChatId, {
 		type: 'Chat',
-		payload: { type: 'Message', payload: 'Yes! The p2p sync is working great.' },
+		payload: { type: 'Message', payload: { message: 'Yes! The p2p sync is working great.' } },
 	}, minutesAgo(28));
 
 	aliceClient.createSync(aliceChatId, {
 		type: 'Chat',
-		payload: { type: 'Message', payload: 'I love that it works offline too' },
+		payload: { type: 'Message', payload: { message: 'I love that it works offline too' } },
 	}, minutesAgo(25));
 
 	logsClient.createSync(aliceChatId, {
 		type: 'Chat',
-		payload: { type: 'Message', payload: 'Absolutely. No servers needed!' },
+		payload: { type: 'Message', payload: { message: 'Absolutely. No servers needed!' } },
 	}, minutesAgo(20));
 
 	aliceClient.createSync(aliceChatId, {
 		type: 'Chat',
-		payload: { type: 'Message', payload: 'See you at the meetup tomorrow?' },
+		payload: { type: 'Message', payload: { message: 'See you at the meetup tomorrow?' } },
 	}, minutesAgo(5));
 
 	// Bob: short conversation
@@ -149,12 +149,12 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 
 	bobClient.createSync(bobChatId, {
 		type: 'Chat',
-		payload: { type: 'Message', payload: 'Check out this article on E2EE' },
+		payload: { type: 'Message', payload: { message: 'Check out this article on E2EE' } },
 	}, minutesAgo(60));
 
 	logsClient.createSync(bobChatId, {
 		type: 'Chat',
-		payload: { type: 'Message', payload: 'Thanks, will read it later!' },
+		payload: { type: 'Message', payload: { message: 'Thanks, will read it later!' } },
 	}, minutesAgo(55));
 
 	// Carol: single message
@@ -163,7 +163,7 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 
 	carolClient.createSync(carolChatId, {
 		type: 'Chat',
-		payload: { type: 'Message', payload: 'Welcome to Dash Chat!' },
+		payload: { type: 'Message', payload: { message: 'Welcome to Dash Chat!' } },
 	}, minutesAgo(180));
 
 	// Dave: no messages (contact only)

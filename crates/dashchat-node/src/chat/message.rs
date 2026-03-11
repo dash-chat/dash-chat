@@ -19,7 +19,7 @@ pub struct FileAttachment {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind")]
+#[serde(tag = "type", content = "payload")]
 pub enum MediaAttachment {
     #[serde(rename = "photos")]
     Photos { photos: Vec<PhotoAttachment> },
