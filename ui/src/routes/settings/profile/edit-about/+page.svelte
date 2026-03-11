@@ -30,7 +30,7 @@
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	let initialized = false;
 	$effect(() => {
-		$myProfile.then((profile) => {
+		$myProfile.then(profile => {
 			if (!initialized) {
 				initialized = true;
 				name = profile?.name || '';

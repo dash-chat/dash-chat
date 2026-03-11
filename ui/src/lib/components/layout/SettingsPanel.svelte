@@ -27,7 +27,7 @@
 	import { isMobile } from '$lib/utils/environment';
 	import type { Action } from 'svelte/action';
 
-	const stopPropagation: Action = (node) => {
+	const stopPropagation: Action = node => {
 		const stop = (e: Event) => {
 			e.stopPropagation();
 			e.preventDefault();
@@ -96,7 +96,8 @@
 						use:stopPropagation
 						style={isWideScreen.value || theme === 'ios' ? '' : 'margin: 16px'}
 					>
-						<wa-icon src={wrapPathInSvg(mdiQrcode)} style="font-size: 18px"></wa-icon>
+						<wa-icon src={wrapPathInSvg(mdiQrcode)} style="font-size: 18px"
+						></wa-icon>
 					</a>
 				{/snippet}
 			</ListItem>
@@ -155,7 +156,11 @@
 			</List>
 		{/if}
 
-		<List strongIos nested={theme !== 'ios'} inset={isWideScreen.value || theme === 'ios'}>
+		<List
+			strongIos
+			nested={theme !== 'ios'}
+			inset={isWideScreen.value || theme === 'ios'}
+		>
 			<ListItem
 				link
 				class={isActive('/settings/help') ? 'active' : ''}

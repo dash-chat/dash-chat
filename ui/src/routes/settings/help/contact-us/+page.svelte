@@ -105,7 +105,10 @@
 			<div class="flex gap-2 px-4 mt-6">
 				{#each feelings as emoji}
 					<button
-						class="flex items-center justify-center w-12 h-12 rounded-full border-none cursor-pointer [-webkit-tap-highlight-color:transparent] active:opacity-70 {feeling === emoji ? 'bg-[var(--k-color-brand-primary,#007aff)]' : 'bg-[var(--k-color-bg-300,rgba(128,128,128,0.15))]'}"
+						class="flex items-center justify-center w-12 h-12 rounded-full border-none cursor-pointer [-webkit-tap-highlight-color:transparent] active:opacity-70 {feeling ===
+						emoji
+							? 'bg-[var(--k-color-brand-primary,#007aff)]'
+							: 'bg-[var(--k-color-bg-300,rgba(128,128,128,0.15))]'}"
 						onclick={() => (feeling = feeling === emoji ? null : emoji)}
 						data-testid="contact-us-feeling-{emoji}"
 					>

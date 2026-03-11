@@ -4,7 +4,13 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiCamera, mdiImage, mdiArrowLeft } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button, Link, Navbar, Segmented, SegmentedButton } from 'konsta/svelte';
+	import {
+		Button,
+		Link,
+		Navbar,
+		Segmented,
+		SegmentedButton,
+	} from 'konsta/svelte';
 	import { resizeAndExport } from '$lib/utils/image';
 	import { isMobile, isIos } from '$lib/utils/environment';
 
@@ -37,16 +43,37 @@
 	let avatarFilePicker: HTMLInputElement;
 
 	const defaultAvatars = [
-		'🐸', '🐱', '🐶', '🦊',
-		'🐻', '🐼', '🦁', '🐷',
-		'🐧', '🦉', '🐢', '🦄',
-		'👻', '🐰', '🐮', '🐵',
+		'🐸',
+		'🐱',
+		'🐶',
+		'🦊',
+		'🐻',
+		'🐼',
+		'🦁',
+		'🐷',
+		'🐧',
+		'🦉',
+		'🐢',
+		'🦄',
+		'👻',
+		'🐰',
+		'🐮',
+		'🐵',
 	];
 
 	const colors = [
-		'#ddd6fe', '#bfdbfe', '#cffafe', '#bbf7d0',
-		'#e9d5ff', '#fbcfe8', '#fce7f3', '#fecaca',
-		'#fef08a', '#d9f99d', '#e5e7eb', '#d1d5db',
+		'#ddd6fe',
+		'#bfdbfe',
+		'#cffafe',
+		'#bbf7d0',
+		'#e9d5ff',
+		'#fbcfe8',
+		'#fce7f3',
+		'#fecaca',
+		'#fef08a',
+		'#d9f99d',
+		'#e5e7eb',
+		'#d1d5db',
 	];
 
 	function onAvatarUploaded() {
@@ -166,7 +193,8 @@
 			{#snippet left()}
 				{#if onClose}
 					<Link iconOnly onClick={onClose} data-testid="edit-photo-close">
-						<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 24px"></wa-icon>
+						<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 24px"
+						></wa-icon>
 					</Link>
 				{/if}
 			{/snippet}
@@ -190,9 +218,7 @@
 					onclick={removeAvatar}
 					aria-label={m.removePhoto()}
 				>
-					<wa-icon
-						src={wrapPathInSvg(mdiClose)}
-						style="font-size: 20px"
+					<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 20px"
 					></wa-icon>
 				</button>
 			{/if}
@@ -200,10 +226,7 @@
 	</div>
 
 	<!-- Action buttons: Camera, Photo, Text -->
-	<div
-		class="row gap-4"
-		style="justify-content: center; padding: 0 16px 24px;"
-	>
+	<div class="row gap-4" style="justify-content: center; padding: 0 16px 24px;">
 		{#if isMobile}
 			<div class="column" style="align-items: center; gap: 8px;">
 				<Button
@@ -211,27 +234,22 @@
 					onClick={() => avatarFilePicker.click()}
 					class="icon-only"
 				>
-					<wa-icon
-						src={wrapPathInSvg(mdiCamera)}
-						style="font-size: 28px"
+					<wa-icon src={wrapPathInSvg(mdiCamera)} style="font-size: 28px"
 					></wa-icon>
 				</Button>
-				<span class="text-sm" style="color: var(--k-text-color)">{m.camera()}</span>
+				<span class="text-sm" style="color: var(--k-text-color)"
+					>{m.camera()}</span
+				>
 			</div>
 		{/if}
 
 		<div class="column" style="align-items: center; gap: 8px;">
-			<Button
-				tonal
-				onClick={() => avatarFilePicker.click()}
-				class="icon-only"
-			>
-				<wa-icon
-					src={wrapPathInSvg(mdiImage)}
-					style="font-size: 28px"
+			<Button tonal onClick={() => avatarFilePicker.click()} class="icon-only">
+				<wa-icon src={wrapPathInSvg(mdiImage)} style="font-size: 28px"
 				></wa-icon>
 			</Button>
-			<span class="text-sm" style="color: var(--k-text-color)">{m.photo()}</span>
+			<span class="text-sm" style="color: var(--k-text-color)">{m.photo()}</span
+			>
 		</div>
 
 		<div class="column" style="align-items: center; gap: 8px;">
@@ -265,8 +283,13 @@
 	<!-- Text avatar editor -->
 	<Navbar transparent rightClass={!textValue ? 'ios-right-disabled' : ''}>
 		{#snippet left()}
-			<Link iconOnly onClick={() => (view = 'picker')} data-testid="edit-photo-back">
-				<wa-icon src={wrapPathInSvg(mdiArrowLeft)} style="font-size: 24px"></wa-icon>
+			<Link
+				iconOnly
+				onClick={() => (view = 'picker')}
+				data-testid="edit-photo-back"
+			>
+				<wa-icon src={wrapPathInSvg(mdiArrowLeft)} style="font-size: 24px"
+				></wa-icon>
 			</Link>
 		{/snippet}
 		{#snippet right()}
@@ -305,7 +328,10 @@
 		>
 			{#if activeTab === 'text'}
 				<span class="text-[56px] font-medium text-pink-900"
-					>{textValue}<span class="text-[56px] font-light text-pink-900 animate-[blink_1s_infinite] -ml-0.5">|</span></span
+					>{textValue}<span
+						class="text-[56px] font-light text-pink-900 animate-[blink_1s_infinite] -ml-0.5"
+						>|</span
+					></span
 				>
 			{:else}
 				<span class="text-[56px] font-medium text-pink-900">{textValue}</span>
@@ -317,7 +343,10 @@
 		<div class="grid grid-cols-4 gap-4 px-6 py-6 justify-items-center">
 			{#each colors as color}
 				<button
-					class="w-[72px] h-[72px] rounded-full border-[3px] cursor-pointer transition-transform duration-200 hover:scale-105 active:scale-95 {selectedColor === color ? 'border-gray-700' : 'border-transparent'}"
+					class="w-[72px] h-[72px] rounded-full border-[3px] cursor-pointer transition-transform duration-200 hover:scale-105 active:scale-95 {selectedColor ===
+					color
+						? 'border-gray-700'
+						: 'border-transparent'}"
 					style="background-color: {color};"
 					onclick={() => (selectedColor = color)}
 				>

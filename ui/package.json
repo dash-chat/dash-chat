@@ -8,8 +8,10 @@
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && prettier --check 'src/**/*.{ts,svelte}'",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"format": "prettier --write 'src/**/*.{ts,svelte}'",
+		"format:check": "prettier --check 'src/**/*.{ts,svelte}'"
 	},
 	"dependencies": {
 		"@awesome.me/webawesome": "3.0.0-beta.6",

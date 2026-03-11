@@ -75,16 +75,27 @@
 
 {#if opened}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="fixed inset-0 z-50 bg-black/30" onclick={onClose} oncontextmenu={(e) => { e.preventDefault(); onClose(); }}>
+	<div
+		class="fixed inset-0 z-50 bg-black/30"
+		onclick={onClose}
+		oncontextmenu={e => {
+			e.preventDefault();
+			onClose();
+		}}
+	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div
 			class="fixed z-50 flex items-center gap-1 rounded-full bg-white px-2 py-1.5 shadow-lg dark:bg-gray-800"
 			style={barStyle}
-			onclick={(e) => e.stopPropagation()}
+			onclick={e => e.stopPropagation()}
 		>
 			{#each QUICK_EMOJIS as emoji}
 				<button
-					class="flex h-9 w-9 items-center justify-center rounded-full text-xl transition-transform hover:scale-110 {hasReacted(emoji) ? 'bg-blue-100 dark:bg-blue-900' : ''}"
+					class="flex h-9 w-9 items-center justify-center rounded-full text-xl transition-transform hover:scale-110 {hasReacted(
+						emoji,
+					)
+						? 'bg-blue-100 dark:bg-blue-900'
+						: ''}"
 					onclick={() => onReaction(emoji)}
 				>
 					{emoji}
@@ -95,7 +106,10 @@
 				onclick={onExpand}
 				aria-label="More reactions"
 			>
-				<wa-icon src={wrapPathInSvg(mdiDotsHorizontal)} style="font-size: 1.25rem"></wa-icon>
+				<wa-icon
+					src={wrapPathInSvg(mdiDotsHorizontal)}
+					style="font-size: 1.25rem"
+				></wa-icon>
 			</button>
 		</div>
 	</div>

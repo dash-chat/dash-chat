@@ -33,7 +33,7 @@ export function useSignal<T, Args extends unknown[]>(
 }
 
 export function useReactivePromise<T, Args extends unknown[]>(
-	v: ReactiveFn<ReactivePromise<T>, Args>,
+	v: (...args: Args) => ReactivePromise<T>,
 	...args: Args
 ): Readable<Promise<T>> {
 	const w = watcher(

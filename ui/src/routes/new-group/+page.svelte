@@ -53,12 +53,18 @@
 	<Page>
 		<Navbar title={m.newGroup()} titleClass="opacity1" transparent={true}>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => window.history.back()}  data-testid="new-group-back" />
+				<NavbarBackLink
+					onClick={() => window.history.back()}
+					data-testid="new-group-back"
+				/>
 			{/snippet}
 
 			{#snippet right()}
 				{#if isIos}
-					<Link onClick={() => (currentPage = 'group-info')} data-testid="new-group-next-link">
+					<Link
+						onClick={() => (currentPage = 'group-info')}
+						data-testid="new-group-next-link"
+					>
 						{selectedContacts.length === 0 ? m.omit() : m.next()}
 					</Link>
 				{/if}
@@ -123,7 +129,10 @@
 	<Page>
 		<Navbar title={m.groupName()} titleClass="opacity1" transparent={true}>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => (currentPage = 'members')} data-testid="new-group-info-back" />
+				<NavbarBackLink
+					onClick={() => (currentPage = 'members')}
+					data-testid="new-group-info-back"
+				/>
 			{/snippet}
 
 			{#snippet right()}
@@ -137,7 +146,11 @@
 
 		<div class="column" style="flex: 1">
 			<div class="center-in-desktop m-1">
-				<List inset={isWideScreen.value || theme === 'ios'} strongIos nested={theme!=='ios'}>
+				<List
+					inset={isWideScreen.value || theme === 'ios'}
+					strongIos
+					nested={theme !== 'ios'}
+				>
 					<ListInput
 						type="text"
 						bind:value={groupName}
