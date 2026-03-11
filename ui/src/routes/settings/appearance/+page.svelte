@@ -121,10 +121,8 @@
 			<Dialog
 				opened={showLanguageDialog}
 				onBackdropClick={() => (showLanguageDialog = false)}
+				title={m.language()}
 			>
-				{#snippet title()}
-					{m.language()}
-				{/snippet}
 				<List nested class="-mx-4">
 					{#each localesWithName as ln}
 						<ListItem
@@ -150,10 +148,8 @@
 				<Dialog
 					opened={showThemeDialog}
 					onBackdropClick={() => (showThemeDialog = false)}
+					title={m.theme()}
 				>
-					{#snippet title()}
-						{m.theme()}
-					{/snippet}
 					<List nested class="-mx-4">
 						<ListItem
 							label
