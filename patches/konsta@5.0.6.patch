@@ -1,3 +1,15 @@
+diff --git a/svelte/components/Dialog.svelte b/svelte/components/Dialog.svelte
+index f83845881302040a240af0d836464932551573e6..711eaddc598a715800f44f46cd4752262a70084f 100644
+--- a/svelte/components/Dialog.svelte
++++ b/svelte/components/Dialog.svelte
+@@ -3,6 +3,7 @@
+   import { DialogColors } from '../../shared/colors/DialogColors.js';
+   import { useDarkClasses } from '../shared/use-dark-classes.js';
+   import { useThemeClasses } from '../shared/use-theme-classes.js';
++  import { printText } from '../shared/print-text.js';
+   import Glass from './Glass.svelte';
+ 
+   let {
 diff --git a/svelte/types/Navbar.d.ts b/svelte/types/Navbar.d.ts
 index c24d8b1f34ff3d2979e958fefed7f7a746231a2c..e80d5d426ed753dd53678921968d387fdb83bfac 100644
 --- a/svelte/types/Navbar.d.ts

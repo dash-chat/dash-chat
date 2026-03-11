@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   konsta@5.0.6:
-    hash: 7de4c411e9fb7f4d11c65bb6c42deb6f651d2a81f5d3736e9e68fc78a3eb0a3b
+    hash: e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f
     path: patches/konsta@5.0.6.patch
 
 importers:
@@ -202,7 +202,7 @@ importers:
         version: 1.4.0
       konsta:
         specifier: ^5.0.6
-        version: 5.0.6(patch_hash=7de4c411e9fb7f4d11c65bb6c42deb6f651d2a81f5d3736e9e68fc78a3eb0a3b)
+        version: 5.0.6(patch_hash=e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f)
       qr-creator:
         specifier: ^1.0.0
         version: 1.0.0
@@ -7469,7 +7469,7 @@ snapshots:
 
   kleur@4.1.5: {}
 
-  konsta@5.0.6(patch_hash=7de4c411e9fb7f4d11c65bb6c42deb6f651d2a81f5d3736e9e68fc78a3eb0a3b):
+  konsta@5.0.6(patch_hash=e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f):
     dependencies:
       tailwind-merge: 3.4.0
 
