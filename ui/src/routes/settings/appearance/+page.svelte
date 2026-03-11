@@ -51,7 +51,7 @@
 
 	function nameFromLocale(locale: string | null | undefined): string {
 		if (!locale) return localesWithName[0].name;
-		return localesWithName.find((l) => l.locale === locale)?.name ?? locale;
+		return localesWithName.find(l => l.locale === locale)?.name ?? locale;
 	}
 
 	function schemeLabel(scheme: ColorScheme | undefined): string {
@@ -90,10 +90,7 @@
 
 						<!-- Theme: native select on desktop, dialog on mobile -->
 						{#if isWideScreen.value}
-							<ListItem
-								title={m.theme()}
-								data-testid="appearance-theme"
-							>
+							<ListItem title={m.theme()} data-testid="appearance-theme">
 								{#snippet after()}
 									<select
 										value={selectedScheme}
@@ -130,7 +127,11 @@
 				{/snippet}
 				<List nested class="-mx-4">
 					{#each localesWithName as ln}
-						<ListItem label title={ln.name} data-testid={`appearance-lang-${ln.locale}`}>
+						<ListItem
+							label
+							title={ln.name}
+							data-testid={`appearance-lang-${ln.locale}`}
+						>
 							{#snippet after()}
 								<Radio
 									component="div"
@@ -154,7 +155,11 @@
 						{m.theme()}
 					{/snippet}
 					<List nested class="-mx-4">
-						<ListItem label title={m.systemDefault()} data-testid="appearance-theme-system">
+						<ListItem
+							label
+							title={m.systemDefault()}
+							data-testid="appearance-theme-system"
+						>
 							{#snippet after()}
 								<Radio
 									component="div"
@@ -164,7 +169,11 @@
 								/>
 							{/snippet}
 						</ListItem>
-						<ListItem label title={m.lightMode()} data-testid="appearance-theme-light">
+						<ListItem
+							label
+							title={m.lightMode()}
+							data-testid="appearance-theme-light"
+						>
 							{#snippet after()}
 								<Radio
 									component="div"
@@ -174,7 +183,11 @@
 								/>
 							{/snippet}
 						</ListItem>
-						<ListItem label title={m.darkMode()} data-testid="appearance-theme-dark">
+						<ListItem
+							label
+							title={m.darkMode()}
+							data-testid="appearance-theme-dark"
+						>
 							{#snippet after()}
 								<Radio
 									component="div"

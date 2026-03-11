@@ -121,7 +121,7 @@
 
 	$effect(() => {
 		const promise = $savedLanguage;
-		promise.then((lang) => {
+		promise.then(lang => {
 			if (lang) {
 				setLocale(lang as Parameters<typeof setLocale>[0], { reload: false });
 				localeKey = getLocale();
@@ -173,18 +173,18 @@
 {/if}
 
 {#key localeKey}
-<KonstaProvider {theme} dark={effectiveDark}>
-	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
-		<SplashscreenPrompt>
-			{#if isWideScreen.value}
-				<DesktopLayout>
+	<KonstaProvider {theme} dark={effectiveDark}>
+		<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
+			<SplashscreenPrompt>
+				{#if isWideScreen.value}
+					<DesktopLayout>
+						{@render children()}
+					</DesktopLayout>
+				{:else}
 					{@render children()}
-				</DesktopLayout>
-			{:else}
-				{@render children()}
-			{/if}
-		</SplashscreenPrompt>
-		<ToastManager />
-	</App>
-</KonstaProvider>
+				{/if}
+			</SplashscreenPrompt>
+			<ToastManager />
+		</App>
+	</KonstaProvider>
 {/key}
