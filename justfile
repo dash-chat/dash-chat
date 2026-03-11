@@ -2,7 +2,7 @@ alias d := dev
 
 # start two dash chat instances connected to a local mailbox server
 dev:
-    mprocs
+    pnpm exec mprocs
 
 test:
     cd crates/dashchat-node && cargo nextest run
