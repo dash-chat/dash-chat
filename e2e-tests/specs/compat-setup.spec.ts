@@ -29,6 +29,7 @@ const MSG_BOB = 'Hello from old Bob!';
 
 describe('Compat setup — create data with old version', () => {
 	before(async () => {
+		console.log("%%%");
 		await waitForBothAgents();
 	});
 

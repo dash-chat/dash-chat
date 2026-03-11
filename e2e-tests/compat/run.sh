@@ -241,9 +241,9 @@ done
 # --- Summary ---
 
 echo ""
-echo "========================================"
+echo "======================================="
 echo "=== Backwards Compatibility Results ==="
-echo "========================================"
+echo "======================================="
 
 if [ ${#PASSED_REFS[@]} -gt 0 ]; then
     echo "PASSED: ${PASSED_REFS[*]}"
