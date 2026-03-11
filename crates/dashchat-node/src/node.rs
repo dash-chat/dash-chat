@@ -2,6 +2,7 @@ pub(crate) mod author_operation;
 mod stream_processing;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::fs;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -123,7 +124,7 @@ pub struct Node {
     local_store: LocalStore,
     node_data: NodeData,
 
-    _filesystem: Filesystem,
+    pub filesystem: Filesystem,
 }
 
 impl Node {
@@ -148,7 +149,7 @@ impl Node {
             op_store: op_store.clone(),
             mailboxes,
             config,
-            _filesystem: filesystem,
+            filesystem: filesystem,
             local_store: local_store.clone(),
             node_data,
             notification_tx,
@@ -447,6 +448,10 @@ impl Node {
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
         Ok(())
+    }
+
+    pub fn delete_account(&self) {
+        let _ = fs::remove_dir_all(self.filesystem.data_path());
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {

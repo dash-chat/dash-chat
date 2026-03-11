@@ -10,6 +10,7 @@ pub(crate) struct Settings {
     pub local_mailbox_enabled: bool,
     pub qr_color: Option<String>,
     pub color_scheme: Option<String>,
+    pub language: Option<String>,
 }
 
 pub(crate) fn load_settings<R: Runtime>(handle: &AppHandle<R>) -> Settings {

@@ -51,6 +51,11 @@ export class SettingsStore {
 		return settings.local_mailbox_enabled;
 	});
 
+	language = reactive(async (): Promise<string | null> => {
+		const settings = await this.settings();
+		return settings.language;
+	});
+
 	isDark = reactive(async () => {
 		const systemDark = this.systemDarkSignal.value;
 		const scheme = await this.colorScheme();
@@ -69,5 +74,9 @@ export class SettingsStore {
 
 	async setLocalMailboxEnabled(enabled: boolean): Promise<void> {
 		await this.client.setLocalMailboxEnabled(enabled);
+	}
+
+	async setLanguage(language: string | null): Promise<void> {
+		await this.client.setSetting('language', language);
 	}
 }

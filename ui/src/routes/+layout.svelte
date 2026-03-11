@@ -34,7 +34,7 @@
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useSignal } from '$lib/stores/use-signal';
+	import { useSignal, useReactivePromise } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMac, isTauriEnv } from '$lib/utils/environment';
@@ -105,6 +105,16 @@
 	setContext('chats-store', chatsStore);
 
 	const isDark = useSignal(settingsStore.isDark);
+	const savedLanguage = useReactivePromise(settingsStore.language);
+
+	$effect(() => {
+		const promise = $savedLanguage;
+		promise.then((lang) => {
+			if (lang) {
+				setLocale(lang as Parameters<typeof setLocale>[0]);
+			}
+		});
+	});
 
 		let theme: 'ios' | 'material' = $state(isIos || isMac ? 'ios' : 'material');
 

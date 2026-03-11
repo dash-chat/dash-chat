@@ -117,9 +117,8 @@ export const S = {
 	},
 	appearance: {
 		back: tid('appearance-back'),
-		light: tid('appearance-light'),
-		dark: tid('appearance-dark'),
-		system: tid('appearance-system'),
+		language: tid('appearance-language'),
+		theme: tid('appearance-theme'),
 	},
 	account: {
 		back: tid('account-back'),

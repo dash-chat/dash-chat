@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { invoke } from '@tauri-apps/api/core';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
@@ -22,8 +23,7 @@
 	async function handleDeleteAccount() {
 		loading = true;
 		try {
-			// TODO: Implement backend command for delete account
-			// await invoke('delete_account');
+			await invoke('delete_account');
 			showToast(m.accountDeleted());
 			goto('/');
 		} catch (e) {

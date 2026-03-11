@@ -6,6 +6,7 @@ export interface Settings {
 	qr_color: string | null;
 	color_scheme: string | null;
 	local_mailbox_enabled: boolean;
+	language: string | null;
 }
 
 export interface ISettingsClient {

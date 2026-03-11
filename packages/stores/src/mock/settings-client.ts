@@ -7,6 +7,7 @@ export class MockSettingsClient implements ISettingsClient {
 		qr_color: null,
 		color_scheme: null,
 		local_mailbox_enabled: false,
+		language: null,
 	};
 
 	private emitter = new Emittery<{ updated: Settings }>();

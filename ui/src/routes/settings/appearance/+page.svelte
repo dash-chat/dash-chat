@@ -2,30 +2,64 @@
 	import { goto } from '$app/navigation';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
+	import { setLocale } from '$lib/paraglide/runtime';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { type SettingsStore, type ColorScheme } from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
+	import { localesWithName } from '$lib/utils/localization';
 	import {
-		BlockTitle,
+		Dialog,
 		List,
 		ListItem,
 		Navbar,
 		NavbarBackLink,
 		Page,
+		Radio,
 		useTheme,
 	} from 'konsta/svelte';
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
 	const colorScheme = useReactivePromise(settingsStore.colorScheme);
+	const language = useReactivePromise(settingsStore.language);
 
-	async function select(scheme: ColorScheme) {
+	let showThemeDialog = $state(false);
+	let showLanguageDialog = $state(false);
+
+	async function selectScheme(scheme: ColorScheme) {
 		try {
 			await settingsStore.setColorScheme(scheme);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
+		showThemeDialog = false;
+	}
+
+	function onThemeSelectChange(e: Event) {
+		const target = e.target as HTMLSelectElement;
+		selectScheme(target.value as ColorScheme);
+	}
+
+	async function selectLanguage(locale: string) {
+		try {
+			await settingsStore.setLanguage(locale);
+			setLocale(locale as Parameters<typeof setLocale>[0]);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
+		showLanguageDialog = false;
+	}
+
+	function nameFromLocale(locale: string | null | undefined): string {
+		if (!locale) return localesWithName[0].name;
+		return localesWithName.find((l) => l.locale === locale)?.name ?? locale;
+	}
+
+	function schemeLabel(scheme: ColorScheme | undefined): string {
+		if (scheme === 'light') return m.lightMode();
+		if (scheme === 'dark') return m.darkMode();
+		return m.systemDefault();
 	}
 </script>
 
@@ -38,52 +72,137 @@
 		{/snippet}
 	</Navbar>
 
-	{#await $colorScheme then selected}
-		<div class="column" style="flex: 1">
-			<div class="column center-in-desktop">
-				<BlockTitle>{m.colorScheme()}</BlockTitle>
-				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
-					<ListItem
-						title={m.lightMode()}
-						link
-						chevron={false}
-						onClick={() => select('light')}
-						data-testid="appearance-light"
-					>
-						{#snippet after()}
-							{#if selected === 'light'}
-								<span class="text-brand-primary">✓</span>
-							{/if}
-						{/snippet}
-					</ListItem>
-					<ListItem
-						title={m.darkMode()}
-						link
-						chevron={false}
-						onClick={() => select('dark')}
-						data-testid="appearance-dark"
-					>
-						{#snippet after()}
-							{#if selected === 'dark'}
-								<span class="text-brand-primary">✓</span>
-							{/if}
-						{/snippet}
-					</ListItem>
-					<ListItem
-						title={m.systemDefault()}
-						link
-						chevron={false}
-						onClick={() => select('system')}
-						data-testid="appearance-system"
-					>
-						{#snippet after()}
-							{#if selected === 'system'}
-								<span class="text-brand-primary">✓</span>
-							{/if}
-						{/snippet}
-					</ListItem>
-				</List>
+	{#await $colorScheme then selectedScheme}
+		{#await $language then currentLanguage}
+			<div class="column" style="flex: 1">
+				<div class="column center-in-desktop">
+					<List strongIos inset={isWideScreen.value || theme === 'ios'}>
+						<!-- Language -->
+						<ListItem
+							title={m.language()}
+							after={nameFromLocale(currentLanguage)}
+							link
+							chevron={false}
+							onClick={() => (showLanguageDialog = true)}
+							data-testid="appearance-language"
+						/>
+
+						<!-- Theme: native select on desktop, dialog on mobile -->
+						{#if isWideScreen.value}
+							<ListItem
+								title={m.theme()}
+								data-testid="appearance-theme"
+							>
+								{#snippet after()}
+									<select
+										value={selectedScheme}
+										onchange={onThemeSelectChange}
+										class="theme-select"
+									>
+										<option value="system">{m.systemDefault()}</option>
+										<option value="light">{m.lightMode()}</option>
+										<option value="dark">{m.darkMode()}</option>
+									</select>
+								{/snippet}
+							</ListItem>
+						{:else}
+							<ListItem
+								title={m.theme()}
+								after={schemeLabel(selectedScheme)}
+								link
+								chevron={false}
+								onClick={() => (showThemeDialog = true)}
+								data-testid="appearance-theme"
+							/>
+						{/if}
+					</List>
+				</div>
 			</div>
-		</div>
+
+			<!-- Language dialog -->
+			<Dialog
+				opened={showLanguageDialog}
+				onBackdropClick={() => (showLanguageDialog = false)}
+			>
+				{#snippet title()}
+					{m.language()}
+				{/snippet}
+				<List nested class="-mx-4">
+					{#each localesWithName as ln}
+						<ListItem label title={ln.name}>
+							{#snippet after()}
+								<Radio
+									component="div"
+									value={ln.locale}
+									checked={ln.locale === (currentLanguage ?? 'en')}
+									onChange={() => selectLanguage(ln.locale)}
+								/>
+							{/snippet}
+						</ListItem>
+					{/each}
+				</List>
+			</Dialog>
+
+			<!-- Theme dialog (mobile only) -->
+			{#if !isWideScreen.value}
+				<Dialog
+					opened={showThemeDialog}
+					onBackdropClick={() => (showThemeDialog = false)}
+				>
+					{#snippet title()}
+						{m.theme()}
+					{/snippet}
+					<List nested class="-mx-4">
+						<ListItem label title={m.systemDefault()}>
+							{#snippet after()}
+								<Radio
+									component="div"
+									value="system"
+									checked={selectedScheme === 'system'}
+									onChange={() => selectScheme('system')}
+								/>
+							{/snippet}
+						</ListItem>
+						<ListItem label title={m.lightMode()}>
+							{#snippet after()}
+								<Radio
+									component="div"
+									value="light"
+									checked={selectedScheme === 'light'}
+									onChange={() => selectScheme('light')}
+								/>
+							{/snippet}
+						</ListItem>
+						<ListItem label title={m.darkMode()}>
+							{#snippet after()}
+								<Radio
+									component="div"
+									value="dark"
+									checked={selectedScheme === 'dark'}
+									onChange={() => selectScheme('dark')}
+								/>
+							{/snippet}
+						</ListItem>
+					</List>
+				</Dialog>
+			{/if}
+		{/await}
 	{/await}
 </Page>
+
+<style>
+	.theme-select {
+		appearance: auto;
+		border: 1px solid rgba(0, 0, 0, 0.15);
+		border-radius: 6px;
+		padding: 6px 8px;
+		font-size: 14px;
+		background: transparent;
+		color: inherit;
+		cursor: pointer;
+		outline: none;
+	}
+	:global(.dark) .theme-select {
+		border-color: rgba(255, 255, 255, 0.2);
+	}
+</style>

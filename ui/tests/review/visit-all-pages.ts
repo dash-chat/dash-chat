@@ -179,7 +179,7 @@ export async function visitOtherPages(options?: VisitOptions): Promise<VisitResu
 
 	// Appearance — use content selector (appearance-back hidden on desktop)
 	progress('other:appearance');
-	await nav('/settings/appearance', S.appearance.light);
+	await nav('/settings/appearance', S.appearance.language);
 	pages.push(runCheck('appearance', co));
 	await breathe();
 
