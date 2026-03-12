@@ -49,11 +49,11 @@
 	{:then myProfile}
 		<div class="column" style="flex: 1">
 			<div class="column center-in-desktop">
-				<div class="column mt-2 mb-4 gap-2" style="align-items: center">
+				<div class="column mt-4 mb-4 gap-2" style="align-items: center">
 					<wa-avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
-						style="--size: 64px;"
+						style="--size: 140px;"
 					>
 					</wa-avatar>
 
