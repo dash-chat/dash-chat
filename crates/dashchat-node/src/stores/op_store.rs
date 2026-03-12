@@ -32,14 +32,14 @@ where
 }
 
 impl OpStore<MemoryStore<TopicId, Extensions>> {
-    pub fn new_memory() -> Self {
+    pub async fn create(_path: PathBuf) -> anyhow::Result<Self> {
         let store = MemoryStore::new();
-        Self::new(store)
+        Ok(Self::new(store))
     }
 }
 
 impl OpStore<SqliteStore<TopicId, Extensions>> {
-    pub async fn new_sqlite(database_file_path: PathBuf) -> anyhow::Result<Self> {
+    pub async fn create(database_file_path: PathBuf) -> anyhow::Result<Self> {
         let url = format!("sqlite://{}", database_file_path.to_string_lossy());
         p2panda_store::sqlite::store::create_database(&url).await?;
 
@@ -150,7 +150,7 @@ where
             header.hash().with_serial();
         }
 
-        tracing::info!(
+        tracing::debug!(
             topic = ?topic.renamed(),
             hash = ?hash.renamed(),
             seq_num = header.seq_num,
@@ -235,8 +235,7 @@ where
 
 impl OpStore<SqliteStore<TopicId, Extensions>> {
     pub fn report<'a>(&self, _topics: impl IntoIterator<Item = &'a TopicId>) -> String {
-        tracing::warn!("report() not implemented for SqliteStore");
-        format!("report() not implemented for SqliteStore")
+        format!("( report() is only implemented for MemoryStore )")
     }
 }
 
@@ -251,7 +250,11 @@ impl OpStore<MemoryStore<TopicId, Extensions>> {
                 topics.is_empty() || topics.iter().find(|topic| **topic == l).is_some()
             })
             .collect::<Vec<_>>();
-        ops.sort_by_key(|(_, (t, header, _, _))| (t, header.public_key.renamed(), header.seq_num));
+
+        ops.sort_by_key(|(_, (t, header, _, _))| {
+            (t, header.public_key.renamed().to_string(), header.seq_num)
+        });
+
         ops.into_iter()
             .map(|(h, (t, header, body, _))| {
                 let desc = match body
@@ -265,25 +268,15 @@ impl OpStore<MemoryStore<TopicId, Extensions>> {
                     Some(p) => format!("{p:?}"),
                     None => "_".to_string(),
                 };
-                if topics.len() == 1 {
-                    format!(
-                        "• {} {:2} {} : {}",
-                        header.public_key.renamed(),
-                        header.seq_num,
-                        h.renamed(),
-                        desc
-                    )
-                } else {
-                    let t = format!("{t:?}");
-                    format!(
-                        "• {:>24} {} {:2} {} : {}",
-                        t,
-                        header.public_key.renamed(),
-                        header.seq_num,
-                        h.renamed(),
-                        desc
-                    )
-                }
+                let width = crate::util::max_width(&topics);
+                format!(
+                    "• {:>width$} {} {:2} {} : {}",
+                    t.renamed(),
+                    header.public_key.renamed(),
+                    header.seq_num,
+                    h.renamed(),
+                    desc
+                )
             })
             .collect::<Vec<_>>()
             .join("\n")

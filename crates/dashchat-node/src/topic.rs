@@ -31,7 +31,7 @@
 
 use std::marker::PhantomData;
 
-use crate::AgentId;
+use crate::{AgentId, DeviceId};
 use named_id::*;
 
 use p2panda_spaces::ActorId;
@@ -68,14 +68,15 @@ pub mod kind {
     use super::*;
 
     macro_rules! topic_kind {
-        ($name:ident) => {
-            topic_kind_no_auto_register!($name);
+        ($(#[$meta:meta])* $name:ident) => {
+            topic_kind_no_auto_register!($(#[$meta])* $name);
             impl AutoRegisteredTopic for $name {}
         };
     }
 
     macro_rules! topic_kind_no_auto_register {
-        ($name:ident) => {
+        ($(#[$meta:meta])* $name:ident) => {
+            $(#[$meta])*
             #[derive(
                 Clone,
                 Copy,
@@ -102,16 +103,29 @@ pub mod kind {
         };
     }
 
-    topic_kind!(Announcements);
-    topic_kind!(DeviceGroup);
+    topic_kind!(
+        /// Announcements topic for profile updates and device group updates
+        Announcements
+    );
 
-    // Either direct or group chat
-    topic_kind!(Chat);
+    topic_kind!(
+        /// For internal record-keeping, like read messages, rejected contact requests, etc.
+        DeviceGroup
+    );
 
-    topic_kind!(Untyped);
+    topic_kind!(
+        /// Either a direct or a group chat topic
+        Chat);
 
-    // Inbox topics cannot be automatically registered, they need to be registered separately to account for the expiry time
-    topic_kind_no_auto_register!(Inbox);
+    topic_kind_no_auto_register!(
+        /// Topic for inboxes, for receiving responses to contact codes (QR codes)
+        /// 
+        /// Inbox topics cannot be automatically registered, they need to be registered separately to account for the expiry time        
+        Inbox);
+
+    topic_kind!(
+        /// Intermediate type, usually only used internally before casting to an actual semantic topic type
+        Untyped);
 }
 
 #[derive(
@@ -141,7 +155,7 @@ impl Nameable for TopicId {
     fn shortener(&self) -> Option<Shortener> {
         Some(Shortener {
             length: 4,
-            prefix: "L",
+            prefix: "T",
         })
     }
 }
@@ -178,6 +192,11 @@ impl<K: TopicKind> Topic<K> {
         }
     }
 
+    pub fn with_short(self) -> Self {
+        self.id.with_short();
+        self
+    }
+
     pub fn with_name(self, name: &str) -> Self {
         self.id.with_name(name);
         self
@@ -191,14 +210,14 @@ impl<K: TopicKind> Topic<K> {
 
 impl Topic<kind::Announcements> {
     pub fn announcements(agent_id: AgentId) -> Self {
-        Self::new(*agent_id.as_bytes())
+        Self::new(*agent_id.as_bytes()).with_name(&format!("announcements({})", agent_id.renamed()))
     }
 }
 
 impl Topic<kind::Chat> {
     pub fn random() -> Self {
         let pk = p2panda_core::PrivateKey::new().public_key();
-        Self::new(*pk.as_bytes())
+        Self::new(*pk.as_bytes()).with_short()
     }
 
     pub fn direct_chat(mut pks: [AgentId; 2]) -> Self {
@@ -206,11 +225,15 @@ impl Topic<kind::Chat> {
         let mut hasher = blake3::Hasher::new();
         hasher.update(pks[0].as_bytes());
         hasher.update(pks[1].as_bytes());
-        Self::new(hasher.finalize().into())
+        Self::new(hasher.finalize().into()).with_name(&format!(
+            "direct({},{})",
+            pks[0].renamed(),
+            pks[1].renamed()
+        ))
     }
 
     pub fn from_group_pubkey(pubkey: p2panda_core::PublicKey) -> Self {
-        Self::new(*pubkey.as_bytes())
+        Self::new(pubkey.as_bytes().clone().try_into().unwrap()).with_short()
     }
 
     pub fn to_group_pubkey(self) -> anyhow::Result<p2panda_core::PublicKey> {
@@ -219,17 +242,20 @@ impl Topic<kind::Chat> {
 }
 
 impl Topic<kind::Inbox> {
-    pub fn inbox() -> Self {
-        Self::new(rand::random())
+    pub fn inbox(device_id: DeviceId) -> Self {
+        Self::new(rand::random()).with_name(&format!("inbox({})", device_id.renamed()))
     }
 }
 
 impl Topic<kind::DeviceGroup> {
-    // TODO: use a random topic stored in LocalStore instead
+    // TODO: use a random topic stored in LocalStore instead.
+    //       this should be a secret not known outside of the device group,
+    //       and AgentId is known by all contacts.
     pub fn device_group(agent_id: AgentId) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(agent_id.as_bytes());
         Self::new(hasher.finalize().into())
+            .with_name(&format!("device_group({})", agent_id.renamed()))
     }
 }
 

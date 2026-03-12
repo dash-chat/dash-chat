@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use p2panda_auth::Access;
-use p2panda_core::{Hash, Operation, PublicKey};
+use p2panda_core::{Hash, Operation};
 use redb::*;
 use tokio::sync::Mutex;
 
@@ -21,13 +21,15 @@ use crate::{
 mod impls;
 
 const IDENTITY_TABLE: TableDefinition<&'static str, [u8; 32]> = TableDefinition::new("identity");
-const CONTACTS_TABLE: TableDefinition<[u8; 32], [u8; 32]> = TableDefinition::new("contacts");
 const COMPAT_CAPABILITIES_TABLE: TableDefinition<[u8; 32], Capabilities> =
     TableDefinition::new("compat-capabilities");
 const SUBSCRIBED_TOPICS_TABLE: TableDefinition<[u8; 32], ()> =
     TableDefinition::new("subscribed_topics");
 const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> =
     TableDefinition::new("active_inboxes");
+
+#[cfg(feature = "auth-workaround")]
+const CONTACTS_TABLE: TableDefinition<[u8; 32], [u8; 32]> = TableDefinition::new("contacts");
 
 const PRIVATE_KEY_KEY: &str = "private_key";
 const AGENT_ID_KEY: &str = "agent_id";
@@ -49,11 +51,9 @@ type MemStore = p2panda_auth::processor::Store<Operation<Extensions>>;
 /// Until we have a persisted solution to group state, we store group state in-memory and dump
 /// to a file whenever it changes.
 /// XXX: this must be replaced ASAP!
-#[derive(Clone)]
 pub struct HackyGroupStore {
     groups: MemStore,
     file_path: PathBuf,
-    file_write_mutex: Arc<Mutex<()>>,
 }
 
 impl HackyGroupStore {
@@ -61,19 +61,29 @@ impl HackyGroupStore {
         let mut this = Self {
             groups: MemStore::default(),
             file_path: file_path.as_ref().to_path_buf(),
-            file_write_mutex: Arc::new(Mutex::new(())),
         };
         this.load_from_file().await?;
         Ok(this)
+    }
+
+    #[allow(unused)]
+    pub(crate) fn inner(&self) -> &MemStore {
+        &self.groups
     }
 
     pub async fn heads(&self) -> anyhow::Result<Vec<Hash>> {
         Ok(self.groups.get_state().await?.crdt.heads())
     }
 
-    pub async fn process(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
-        let _lock = self.file_write_mutex.lock().await;
-        p2panda_auth::processor::process::<_, _, DashResolver>(&self.groups, operation).await?;
+    pub async fn process(&mut self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
+        let () = p2panda_auth::processor::process::<_, _, DashResolver>(&self.groups, operation)
+            .await
+            .map_err(|err| anyhow::anyhow!("{:?}", err.renamed()))?;
+
+        tracing::debug!(
+            author = ?operation.header.public_key.renamed(), 
+            auth = ?operation.header.extensions.auth.clone().renamed(), 
+            "processed operation for auth state");
         self.save_to_file().await?;
         Ok(())
     }
@@ -101,7 +111,28 @@ impl HackyGroupStore {
         Ok(())
     }
 
-    pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(DeviceId, Access)>> {
+    pub async fn device_group_members(
+        &self,
+        // TODO: change to device group topic
+        agent_id: AgentId,
+    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        let group_id = agent_id.to_group_member().id();
+        Ok(self
+            .groups
+            .get_state()
+            .await?
+            .crdt
+            .inner
+            .members(group_id)
+            .into_iter()
+            .map(|(m, a)| (DeviceId::from(m), a))
+            .collect())
+    }
+
+    pub async fn chat_group_members(
+        &self,
+        topic: ChatId,
+    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
         let group_id = topic.to_group_pubkey()?;
         Ok(self
             .groups
@@ -119,7 +150,7 @@ impl HackyGroupStore {
 #[derive(Clone)]
 pub struct LocalStore {
     db: Arc<Database>,
-    pub(crate) groups: HackyGroupStore,
+    pub(crate) groups: Arc<Mutex<HackyGroupStore>>,
 }
 
 impl LocalStore {
@@ -129,7 +160,7 @@ impl LocalStore {
         let groups_path = path.with_file_name("groups.cbor");
         let store = Self {
             db: Arc::new(database),
-            groups: HackyGroupStore::new(groups_path).await?,
+            groups: Arc::new(Mutex::new(HackyGroupStore::new(groups_path).await?)),
         };
         store.ensure_initialized()?;
 
@@ -143,10 +174,11 @@ impl LocalStore {
         let txn = self.db.begin_write()?;
         {
             let mut identity = txn.open_table(IDENTITY_TABLE)?;
-            let _ = txn.open_table(CONTACTS_TABLE)?;
             let _ = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
             let _ = txn.open_table(ACTIVE_INBOXES_TABLE)?;
             let _ = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
+            #[cfg(feature = "auth-workaround")]
+            let _ = txn.open_table(CONTACTS_TABLE)?;
 
             let uninitialized =
                 identity.get(PRIVATE_KEY_KEY)?.is_none() && identity.get(AGENT_ID_KEY)?.is_none();
@@ -178,32 +210,6 @@ impl LocalStore {
         Ok(topics)
     }
 
-    pub fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(CONTACTS_TABLE)?;
-        let Some(entry) = table.get(device_id.as_bytes())? else {
-            return Ok(None);
-        };
-        Ok(Some(AgentId::from_bytes(&entry.value())?))
-    }
-
-    pub fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
-        let txn = self.db.begin_write()?;
-        {
-            let mut table = txn.open_table(CONTACTS_TABLE)?;
-            table.insert(
-                contact.device_pubkey.as_bytes(),
-                contact.agent_id.as_bytes(),
-            )?;
-            if let Some(capabilities) = contact.capabilities {
-                let mut table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
-                table.insert(contact.device_pubkey.as_bytes(), capabilities)?;
-            }
-        }
-        txn.commit()?;
-        Ok(())
-    }
-
     pub fn get_capabilities(&self, device_id: DeviceId) -> anyhow::Result<Capabilities> {
         let txn = self.db.begin_read()?;
         let table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
@@ -213,7 +219,7 @@ impl LocalStore {
 
     /// Find the infimum of the capabilities of all members with read access or above
     pub async fn get_group_capabilities(&self, topic: ChatId) -> anyhow::Result<Capabilities> {
-        let members = self.groups.members(topic).await?;
+        let members = self.chat_group_members(topic).await?;
         let txn = self.db.begin_read()?;
         let table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
         let capabilities = members
@@ -290,6 +296,7 @@ impl LocalStore {
             .iter()?
             .map(|entry| Ok(entry.map(|(topic, _)| topic.value())?))
             .collect::<anyhow::Result<BTreeSet<InboxTopic>>>()?;
+        // TODO: maybe add the named-id here
         Ok(active_inboxes)
     }
 
@@ -319,6 +326,94 @@ impl LocalStore {
         txn.commit()?;
         Ok(())
     }
+
+    pub async fn device_group_members(
+        &self,
+        agent_id: AgentId,
+        min_access: Access,
+    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        let groups = self.groups.lock().await;
+        Ok(groups
+            .device_group_members(agent_id)
+            .await?
+            .into_iter()
+            .filter(|(_, access)| *access >= min_access)
+            .collect())
+    }
+
+    pub async fn chat_group_members(
+        &self,
+        topic: ChatId,
+    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        let groups = self.groups.lock().await;
+        groups.chat_group_members(topic).await
+    }
+
+    pub async fn process_group_operation(
+        &self,
+        operation: &Operation<Extensions>,
+    ) -> anyhow::Result<()> {
+        let mut groups = self.groups.lock().await;
+        groups.process(operation).await
+    }
+
+    pub async fn group_state_tips(&self) -> anyhow::Result<Vec<Hash>> {
+        let groups = self.groups.lock().await;
+        groups.heads().await
+    }
+
+    #[cfg(feature = "auth-workaround")]
+    pub fn lookup_contact_agent(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(CONTACTS_TABLE)?;
+        let Some(entry) = table.get(device_id.as_bytes())? else {
+            return Ok(None);
+        };
+        Ok(Some(AgentId::from_bytes(&entry.value())?))
+    }
+
+    #[cfg(feature = "auth-workaround")]
+    pub fn lookup_contact_device(&self, agent_id: AgentId) -> anyhow::Result<Option<DeviceId>> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(CONTACTS_TABLE)?;
+        let Some(entry) = table.get(agent_id.as_bytes())? else {
+            return Ok(None);
+        };
+        Ok(Some(DeviceId::from_bytes(&entry.value())?))
+    }
+
+    /// Save bidirectional mapping between device ID and agent ID.
+    /// When this is called multiple times for a given agent ID, the effect will be
+    /// that many devices will map to the same agent, and that agent will map to the latest
+    /// device associated with.
+    pub fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
+        let txn = self.db.begin_write()?;
+
+        #[cfg(feature = "auth-workaround")]
+        {
+            let mut table = txn.open_table(CONTACTS_TABLE)?;
+            table.insert(
+                contact.device_pubkey.as_bytes(),
+                contact.agent_id.as_bytes(),
+            )?;
+            table.insert(
+                contact.agent_id.as_bytes(),
+                contact.device_pubkey.as_bytes(),
+            )?;
+        }
+
+        {
+            if let Some(capabilities) = contact.capabilities {
+                let mut table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
+                table.insert(contact.device_pubkey.as_bytes(), capabilities)?;
+            }
+        }
+        txn.commit()?;
+        Ok(())
+    }
+
+
+
 }
 
 #[cfg(test)]

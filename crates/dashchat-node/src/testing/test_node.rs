@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -12,7 +12,10 @@ use mailbox_client::{MailboxClient, mem::MemMailbox};
 
 use crate::{
     AgentId, DeviceGroupPayload, LocalStore, NodeConfig, Notification, Payload, Profile,
-    filesystem::Filesystem, mailbox::MailboxOperation, node::Node, testing::behavior::Behavior,
+    filesystem::Filesystem,
+    mailbox::MailboxOperation,
+    node::{Node, NodeOpStore},
+    testing::behavior::Behavior,
     topic::TopicId,
 };
 
@@ -37,15 +40,26 @@ impl TestNode {
         let local_store = LocalStore::new(filesystem.local_store_path())
             .await
             .unwrap();
-        if config.use_named_id {
-            local_store.device_id().unwrap().with_name(name);
-            local_store.agent_id().unwrap().with_name(name);
-        }
-        drop(local_store);
-
-        let node = Node::new(dir.path().into(), config.node_config, Some(notification_tx))
+        let op_store = NodeOpStore::create(filesystem.op_store_path())
             .await
             .unwrap();
+
+        if config.use_named_id {
+            local_store.device_id().unwrap().with_name(name);
+            local_store
+                .agent_id()
+                .unwrap()
+                .with_name(&name.to_uppercase());
+        }
+
+        let node = Node::init(
+            local_store,
+            op_store,
+            config.node_config,
+            Some(notification_tx),
+        )
+        .await
+        .unwrap();
         if config.create_profile {
             node.set_profile(Profile {
                 name: name.to_string(),
@@ -144,9 +158,9 @@ impl TestNode {
         Ok(ids)
     }
 
-    pub async fn subscribed_topics(&self) -> BTreeSet<TopicId> {
-        let mailbox_topics = self.mailboxes.subscribed_topics().await;
-        mailbox_topics
+    pub async fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
+        let topics = self.local_store.subscribed_topics()?;
+        Ok(topics)
 
         // self.node
         //     .initialized_topics
@@ -183,6 +197,7 @@ impl From<NodeConfig> for TestNodeConfig {
     fn from(node_config: NodeConfig) -> Self {
         Self {
             node_config,
+            use_named_id: true,
             ..Default::default()
         }
     }
@@ -257,32 +272,39 @@ pub async fn consistency(
     let topics = topics.into_iter().collect::<HashSet<_>>();
     let nodes = nodes.into_iter().collect::<Vec<_>>();
     wait_for_resetting(config.poll_interval, config.poll_timeout, || async {
-        // TODO: Fix this when we have a proper way to access operations
-        // The operations field is now private in the new p2panda-store version
         let sets = nodes
             .iter()
             .map(|node| {
                 let ops = node.op_store.processed_ops.read().unwrap();
-
-                topics
+                let width = crate::util::max_width(&topics);
+                let topics = topics
                     .iter()
                     .flat_map(|topic| {
                         ops.get(topic)
                             .cloned()
                             .unwrap_or_default()
                             .into_iter()
-                            .map(|h| format!("{} {}", h.short(), h.renamed()))
+                            .map(|h| {
+                                format!(
+                                    "{:>width$}: {} {}",
+                                    topic.renamed().to_string(),
+                                    h.short(),
+                                    h.renamed(),
+                                    width = width
+                                )
+                            })
                     })
-                    .collect::<BTreeSet<_>>()
+                    .collect::<BTreeSet<_>>();
+                (node.device_id().renamed().to_string(), topics)
             })
             .collect::<Vec<_>>();
         let mut diffs = ConsistencyReport::new(sets);
-        for i in 0..diffs.sets.len() {
-            for j in 0..i {
-                if i != j && diffs.sets[i] != diffs.sets[j] {
+        for (n, (i, a)) in diffs.sets.iter().enumerate() {
+            for (j, b) in diffs.sets.iter().take(n) {
+                if i != j && a != b {
                     diffs.diffs.insert(
-                        (i, j),
-                        (diffs.sets[i].len() as isize - diffs.sets[j].len() as isize).abs(),
+                        (i.clone(), j.clone()),
+                        (a.len() as isize - b.len() as isize).abs(),
                     );
                 }
             }
@@ -298,7 +320,7 @@ pub async fn consistency(
         for n in nodes {
             println!(
                 ">>> {:?}\n{}\n",
-                n.device_id(),
+                n.device_id().renamed(),
                 n.op_store.report(topics.clone())
             );
         }
@@ -309,15 +331,15 @@ pub async fn consistency(
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ConsistencyReport {
-    sets: Vec<BTreeSet<String>>,
-    diffs: HashMap<(usize, usize), isize>,
+    sets: Vec<(String, BTreeSet<String>)>,
+    diffs: BTreeMap<(String, String), isize>,
 }
 
 impl ConsistencyReport {
-    pub fn new(sets: Vec<BTreeSet<String>>) -> Self {
+    pub fn new(sets: Vec<(String, BTreeSet<String>)>) -> Self {
         Self {
             sets,
-            diffs: HashMap::new(),
+            diffs: BTreeMap::new(),
         }
     }
 }
@@ -376,6 +398,7 @@ impl<T: std::fmt::Debug> Watcher<T> {
     }
 }
 
+/// Wait for the closure to return Ok(()), up to the timeout
 pub async fn wait_for<F, E>(poll: Duration, timeout: Duration, f: impl Fn() -> F) -> Result<(), E>
 where
     F: Future<Output = Result<(), E>>,
@@ -400,6 +423,9 @@ where
     Ok(())
 }
 
+/// Wait for the closure to return Ok(()), up to the timeout.
+/// Whenever the function returns a different error than the last time,
+/// the timeout is reset.
 pub async fn wait_for_resetting<F, E>(
     poll: Duration,
     timeout: Duration,

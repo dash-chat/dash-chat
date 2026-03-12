@@ -131,10 +131,10 @@ async fn test_profiles_sync_between_contacts() {
                 .ok_or("no log found")?
                 .iter()
                 .find(|(_, body)| {
-                    let p = Payload::try_from_body(body.as_ref().unwrap()).unwrap();
+                    let p = body.as_ref().map(|b| Payload::try_from_body(b).unwrap());
                     matches!(
                         p,
-                        Payload::Announcements(AnnouncementsPayload::SetProfile(p)) if p == profile
+                        Some(Payload::Announcements(AnnouncementsPayload::SetProfile(p))) if p == profile
                     )
                 })
                 .ok_or("no profile found")

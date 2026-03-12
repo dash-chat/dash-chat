@@ -53,7 +53,10 @@ maplit = "1.0"
 pretty_assertions = "1.4.1"
 
 [features]
-default = ["testing", "instrument"]
+default = ["testing", "instrument", "auth-workaround"]
 instrument = []
 testing = ["tempfile", "nanoid"]
 p2p = []
+
+# This flag and all code behind it can be removed once p2panda-auth supports Manage access for Groups
+auth-workaround = []
