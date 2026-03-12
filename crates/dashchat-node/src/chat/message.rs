@@ -83,6 +83,7 @@ impl From<&str> for ChatMessageContent {
 impl VersionConvert for ChatMessageContent {
     const CAPABILITY: Capability = Capability::Messaging;
 
+    // TODO: just take Capabilities?
     fn to_version(&self, target: u16) -> Result<Self, VersionConvertError> {
         match (self, target) {
             (Compat::Unversioned(_), 0) => Ok(self.clone()),
@@ -95,12 +96,12 @@ impl VersionConvert for ChatMessageContent {
                     )))
                 }
             }
-            (Compat::Unversioned(v0), 1) => Ok(Compat::Versioned(ChatMessageVersions::V1(
-                ChatMessageV1 {
+            (Compat::Unversioned(v0), 1) => {
+                Ok(Compat::Versioned(ChatMessageVersions::V1(ChatMessageV1 {
                     message: v0.0.clone(),
                     media: None,
-                },
-            ))),
+                })))
+            }
             (Compat::Versioned(_), 1) => Ok(self.clone()),
             _ => Err(VersionConvertError::UnknownVersion),
         }
@@ -117,9 +118,9 @@ pub struct ChatReaction {
 #[cfg(feature = "testing")]
 pub mod testing {
     use super::*;
-    use std::cmp::Ordering;
-    use named_id::RenameAll;
     use crate::{Cbor, DeviceId, Header};
+    use named_id::RenameAll;
+    use std::cmp::Ordering;
 
     #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
     pub struct ChatMessage {

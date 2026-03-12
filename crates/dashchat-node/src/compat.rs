@@ -1,3 +1,4 @@
+use derive_more::derive::{Deref, From};
 use named_id::{AnyNameable, Rename};
 use serde::de::Deserializer;
 use serde::ser::Serializer;
@@ -49,12 +50,30 @@ where
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Capability {
     Messaging,
+    SomethingElse,
 }
 
-pub type Capabilities = BTreeMap<Capability, u16>;
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deref, From, Serialize, Deserialize)]
+pub struct Capabilities(BTreeMap<Capability, u16>);
+
+impl Capabilities {
+    pub fn with_capability(mut self, cap: Capability, version: u16) -> Self {
+        self.0.insert(cap, version);
+        self
+    }
+
+    pub fn infimum(&self, other: &Self) -> Self {
+        Self(
+            self.0
+                .iter()
+                .map(|(k, &v)| (k.clone(), v.min(other.0.get(k).copied().unwrap_or(0))))
+                .collect(),
+        )
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VersionConvertError {

@@ -77,7 +77,16 @@ impl FromStr for QrCode {
         let bytes = hex::decode(s)?;
         // Try 5-tuple first (with capabilities), fall back to 4-tuple (old format)
         if let Ok((device_pubkey, inbox_topic, agent_id, share_intent, capabilities)) =
-            decode_cbor::<(DeviceId, Option<InboxTopic>, AgentId, ShareIntent, Option<Capabilities>), _>(bytes.as_slice())
+            decode_cbor::<
+                (
+                    DeviceId,
+                    Option<InboxTopic>,
+                    AgentId,
+                    ShareIntent,
+                    Option<Capabilities>,
+                ),
+                _,
+            >(bytes.as_slice())
         {
             Ok(QrCode {
                 device_pubkey,
@@ -144,19 +153,17 @@ mod tests {
     #[test]
     fn test_contact_with_capabilities_roundtrip() {
         use crate::compat::Capability;
-        use std::collections::BTreeMap;
 
         let pubkey = PublicKey::from_bytes(&[11; 32]).unwrap();
         let agent_id = AgentId::from(ActorId::from_bytes(&[22; 32]).unwrap());
-        let mut caps = BTreeMap::new();
-        caps.insert(Capability::Messaging, 1u16);
+        let caps = Capabilities::default().with_capability(Capability::Messaging, 1);
 
         let contact = QrCode {
             device_pubkey: DeviceId::from(pubkey),
             inbox_topic: None,
             agent_id,
             share_intent: ShareIntent::AddContact,
-            capabilities: Some(caps.clone()),
+            capabilities: Some(caps),
         };
         let encoded = contact.to_string();
         let decoded = QrCode::from_str(&encoded).unwrap();

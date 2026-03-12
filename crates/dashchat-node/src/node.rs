@@ -36,8 +36,8 @@ use crate::payload::{
 use crate::stores::OpStore;
 use crate::topic::{Topic, TopicId};
 use crate::{
-    AgentId, AsBody, Capabilities, ChatId, ChatReaction, DashAction, DeviceGroupId,
-    DeviceGroupPayload, DeviceId, DirectChatId, Header, Operation,
+    AgentId, AsBody, Capabilities, Capability, ChatId, ChatReaction, DashAction, DeviceGroupId,
+    DeviceGroupPayload, DeviceId, DirectChatId, Header, Operation, VersionConvert,
 };
 
 pub use crate::local_store::LocalStore;
@@ -257,13 +257,6 @@ impl Node {
 
     pub fn device_id(&self) -> DeviceId {
         self.node_data.device_id()
-    }
-
-    /// Look up the known capabilities for a peer.
-    /// Returns empty map (all V0) if unknown.
-    pub fn capabilities_for(&self, _peer: &AgentId) -> Capabilities {
-        // TODO: look up from stored capabilities
-        Capabilities::default()
     }
 
     pub fn device_group_topic(&self) -> DeviceGroupId {
@@ -528,15 +521,12 @@ impl Node {
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
 
-        // TODO: resolve target peer(s) from topic, look up capabilities via
-        // capabilities_for(), and use VersionConvert::to_version() to downgrade
-        // message to the lowest common version if needed.
+        let group_caps = self.local_store.get_group_capabilities(topic).await?;
+        let message =
+            message.to_version(group_caps.get(&Capability::Messaging).copied().unwrap_or(0))?;
+
         let header = self
-            .author_operation(
-                topic,
-                Payload::Chat(ChatPayload::Message(message.clone())),
-                None,
-            )
+            .author_operation(topic, Payload::Chat(ChatPayload::Message(message)), None)
             .await?;
 
         Ok(header)

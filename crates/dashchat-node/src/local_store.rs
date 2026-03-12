@@ -22,6 +22,8 @@ mod impls;
 
 const IDENTITY_TABLE: TableDefinition<&'static str, [u8; 32]> = TableDefinition::new("identity");
 const CONTACTS_TABLE: TableDefinition<[u8; 32], [u8; 32]> = TableDefinition::new("contacts");
+const COMPAT_CAPABILITIES_TABLE: TableDefinition<[u8; 32], Capabilities> =
+    TableDefinition::new("compat-capabilities");
 const SUBSCRIBED_TOPICS_TABLE: TableDefinition<[u8; 32], ()> =
     TableDefinition::new("subscribed_topics");
 const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> =
@@ -99,9 +101,18 @@ impl HackyGroupStore {
         Ok(())
     }
 
-    pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(PublicKey, Access)>> {
+    pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(DeviceId, Access)>> {
         let group_id = topic.to_group_pubkey()?;
-        Ok(self.groups.get_state().await?.crdt.inner.members(group_id))
+        Ok(self
+            .groups
+            .get_state()
+            .await?
+            .crdt
+            .inner
+            .members(group_id)
+            .into_iter()
+            .map(|(m, a)| (DeviceId::from(m), a))
+            .collect())
     }
 }
 
@@ -133,6 +144,7 @@ impl LocalStore {
         {
             let mut identity = txn.open_table(IDENTITY_TABLE)?;
             let _ = txn.open_table(CONTACTS_TABLE)?;
+            let _ = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
             let _ = txn.open_table(ACTIVE_INBOXES_TABLE)?;
             let _ = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
 
@@ -183,9 +195,42 @@ impl LocalStore {
                 contact.device_pubkey.as_bytes(),
                 contact.agent_id.as_bytes(),
             )?;
+            if let Some(capabilities) = contact.capabilities {
+                let mut table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
+                table.insert(contact.device_pubkey.as_bytes(), capabilities)?;
+            }
         }
         txn.commit()?;
         Ok(())
+    }
+
+    pub fn get_capabilities(&self, device_id: DeviceId) -> anyhow::Result<Capabilities> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
+        let capabilities = table.get(device_id.as_bytes())?;
+        Ok(capabilities.map(|caps| caps.value()).unwrap_or_default())
+    }
+
+    /// Find the infimum of the capabilities of all members with read access or above
+    pub async fn get_group_capabilities(&self, topic: ChatId) -> anyhow::Result<Capabilities> {
+        let members = self.groups.members(topic).await?;
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
+        let capabilities = members
+            .iter()
+            .filter_map(|(member, access)| {
+                // Only include members with read access or above
+                (*access >= Access::read()).then(|| {
+                    table
+                        .get(member.as_bytes())
+                        .map(|caps| caps.map(|caps| caps.value()).unwrap_or_default())
+                })
+            })
+            .collect::<Result<Vec<Capabilities>, redb::StorageError>>()?;
+        Ok(capabilities
+            .into_iter()
+            .reduce(|a, b| a.infimum(&b))
+            .unwrap_or_default())
     }
 
     pub fn register_topic_as_subscribed<K: AutoRegisteredTopic>(

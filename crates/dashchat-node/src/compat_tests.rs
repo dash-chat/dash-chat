@@ -21,6 +21,21 @@ struct TestV1 {
 type TestCompat = Compat<BareString, TestVersions>;
 
 #[test]
+fn capabilities_infimum() {
+    let caps1 = Capabilities::default()
+        .with_capability(Capability::Messaging, 1)
+        .with_capability(Capability::SomethingElse, 3);
+    let caps2 = Capabilities::default()
+        .with_capability(Capability::Messaging, 2)
+        .with_capability(Capability::SomethingElse, 4);
+    let expected = Capabilities::default()
+        .with_capability(Capability::Messaging, 1)
+        .with_capability(Capability::SomethingElse, 3);
+    assert_eq!(caps1.infimum(&caps2), expected);
+    assert_eq!(caps2.infimum(&caps1), expected);
+}
+
+#[test]
 fn compat_roundtrip_v0() {
     let bare = BareString("hello".into());
     let compat = TestCompat::Unversioned(bare.clone());
@@ -81,14 +96,19 @@ fn compat_unknown_version_fails() {
     // Should fail to deserialize as TestCompat since version "999" is unknown
     // and the map with "v" key won't match BareString either
     let result: Result<TestCompat, _> = decode_cbor(bytes.as_slice());
-    assert!(result.is_err(), "expected error for unknown version, got: {result:?}");
+    assert!(
+        result.is_err(),
+        "expected error for unknown version, got: {result:?}"
+    );
 }
 
 #[cfg(test)]
 mod chat_message_compat_tests {
-    use p2panda_core::cbor::{decode_cbor, encode_cbor};
-    use crate::chat::{ChatMessageContent, ChatMessageContentV0, ChatMessageVersions, ChatMessageV1};
+    use crate::chat::{
+        ChatMessageContent, ChatMessageContentV0, ChatMessageV1, ChatMessageVersions,
+    };
     use crate::compat::{VersionConvert, VersionConvertError};
+    use p2panda_core::cbor::{decode_cbor, encode_cbor};
 
     #[test]
     fn chat_message_v0_roundtrip() {
@@ -122,7 +142,10 @@ mod chat_message_compat_tests {
     fn version_convert_v1_to_v0() {
         let v1 = ChatMessageContent::text("hello");
         let v0 = v1.to_version(0).unwrap();
-        assert_eq!(v0, ChatMessageContent::Unversioned(ChatMessageContentV0("hello".into())));
+        assert_eq!(
+            v0,
+            ChatMessageContent::Unversioned(ChatMessageContentV0("hello".into()))
+        );
     }
 
     #[test]
