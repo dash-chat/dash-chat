@@ -52,7 +52,7 @@
 		const message = messageText;
 		if (!message || message.trim() === '') return;
 
-		await store.sendMessage({ message, media: undefined });
+		await store.sendMessage({ v: '1', message, media: undefined });
 		messageText = '';
 	}
 	const theme = $derived(useTheme());

@@ -200,7 +200,7 @@
 			const media = messageMedia
 				? await mediaToAttachment(messageMedia)
 				: undefined;
-			await store.sendMessage({ message, media });
+			await store.sendMessage({ v: '1', message, media });
 			messageText = '';
 			messageMedia = undefined;
 			// Hide the unread messages divider after sending, and allow it to reappear for future messages

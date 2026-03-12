@@ -42,6 +42,7 @@ export type MediaAttachment =
 	| { type: 'File'; payload: { file: FileAttachment } };
 
 export interface MessageContent {
+	v: '1';
 	message: string;
 	media: MediaAttachment | undefined;
 }

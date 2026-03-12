@@ -51,7 +51,7 @@ export class GroupChatStore {
 		const messages: Array<Message> = [
 			{
 				hash: '123',
-				content: { message: 'heeey', media: undefined },
+				content: { v: '1', message: 'heeey', media: undefined },
 				author: await this.contactsStore.myAgentId(),
 				timestamp: Date.now(),
 				reactions: {}
