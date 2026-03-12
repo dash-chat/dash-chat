@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -15,7 +15,6 @@ use crate::{
     filesystem::Filesystem,
     mailbox::MailboxOperation,
     node::{Node, NodeOpStore},
-    stores::OpStore,
     testing::behavior::Behavior,
     topic::TopicId,
 };

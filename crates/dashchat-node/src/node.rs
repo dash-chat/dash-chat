@@ -376,15 +376,16 @@ impl Node {
         tracing::info!(members = ?members.clone().renamed(), "members added to existing group");
 
         for (member, access) in members {
+            let action = DashAction::group_action(
+                chat_id,
+                GroupAction::Add {
+                    member,
+                    access: access.clone(),
+                },
+            )?;
             self.author_operation(
                 chat_id,
-                DashAction::group_action(
-                    chat_id,
-                    GroupAction::Add {
-                        member,
-                        access: access.clone(),
-                    },
-                ),
+                action,
                 Some(&format!(
                     "add_group_member({}, {})",
                     chat_id.renamed(),

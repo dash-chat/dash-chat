@@ -64,6 +64,7 @@ impl HackyGroupStore {
         Ok(this)
     }
 
+    #[allow(unused)]
     pub(crate) fn inner(&self) -> &MemStore {
         &self.groups
     }
@@ -130,7 +131,7 @@ impl HackyGroupStore {
         &self,
         topic: ChatId,
     ) -> anyhow::Result<BTreeSet<(p2panda_core::PublicKey, Access)>> {
-        let group_id = topic.to_group_pubkey();
+        let group_id = topic.to_group_pubkey()?;
         Ok(self
             .groups
             .get_state()
