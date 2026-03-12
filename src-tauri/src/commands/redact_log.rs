@@ -19,8 +19,10 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
         // Debug format: name/surname/about fields with quoted values
         r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
-        // Debug format: ChatMessageContent { message: "...", ... }
-        r#"ChatMessageContent\s*\{[^}]*\}"#,
+        // Debug format: ChatMessageV1 { message: "...", ... } (V1 versioned)
+        r#"ChatMessageV1\s*\{[^}]*\}"#,
+        // Debug format: ChatMessageContentV0("...") (V0 unversioned)
+        r#"ChatMessageContentV0\("[^"]*"\)"#,
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
         // JSON format: "name":"...", "surname":"...", "about":"..."
@@ -189,8 +191,19 @@ mod tests {
     }
 
     #[test]
-    fn redacts_chat_message_debug() {
-        let input = r#"ChatMessageContent { message: "secret message here", media: None }"#;
+    fn redacts_chat_message_v1_debug() {
+        let input =
+            r#"Versioned(V1(ChatMessageV1 { message: "secret message here", media: None }))"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("secret message"),
+            "message not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_chat_message_v0_debug() {
+        let input = r#"Unversioned(ChatMessageContentV0("secret message here"))"#;
         let result = redact(input);
         assert!(
             !result.contains("secret message"),
@@ -259,7 +272,7 @@ mod tests {
 
     #[test]
     fn redacts_full_notification_log_line() {
-        let input = r#"2024-02-15 INFO Received notification: Chat(Message(ChatMessageContent { message: "hey there", media: None })) from DeviceId(PublicKey([32, 145, 78, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]))"#;
+        let input = r#"2024-02-15 INFO Received notification: Chat(Message(Versioned(V1(ChatMessageV1 { message: "hey there", media: None })))) from DeviceId(PublicKey([32, 145, 78, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]))"#;
         let result = redact(input);
         assert!(
             !result.contains("hey there"),
