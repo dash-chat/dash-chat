@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::chat::ChatId;
 use crate::contact::QrCode;
 use crate::topic::TopicId;
-use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, Topic};
+use crate::{AgentId, AsBody, Capabilities, Cbor, ChatMessageContent, ChatReaction, Topic};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extensions {
@@ -42,6 +42,8 @@ pub struct Profile {
 #[serde(tag = "type", content = "payload")]
 pub enum AnnouncementsPayload {
     SetProfile(Profile),
+    #[named_id(skip)]
+    SetCapabilities(Capabilities),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
