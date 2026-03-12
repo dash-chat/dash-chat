@@ -1,3 +1,4 @@
+use named_id::{AnyNameable, Rename};
 use serde::de::Deserializer;
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
@@ -8,6 +9,12 @@ use std::fmt;
 pub enum Compat<Bare, Tagged> {
     Unversioned(Bare),
     Versioned(Tagged),
+}
+
+impl<Bare: fmt::Debug, Tagged: fmt::Debug> Rename for Compat<Bare, Tagged> {
+    fn nameables(&self) -> Vec<AnyNameable> {
+        Vec::new()
+    }
 }
 
 impl<Bare, Tagged> Serialize for Compat<Bare, Tagged>
