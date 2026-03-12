@@ -247,6 +247,7 @@ impl Node {
             inbox_topic,
             agent_id: self.node_data.agent_id,
             share_intent,
+            capabilities: None,
         })
     }
 

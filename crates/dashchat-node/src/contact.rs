@@ -4,6 +4,7 @@ use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
+use crate::compat::Capabilities;
 use crate::{AgentId, DeviceId, Topic, topic::kind};
 
 /// The content for a QR code or deep link.
@@ -36,6 +37,9 @@ pub struct QrCode {
     pub inbox_topic: Option<InboxTopic>,
     /// The intent of the QR code: whether to add this node as a contact or a device.
     pub share_intent: ShareIntent,
+    /// Capabilities supported by this node, for version negotiation.
+    #[named_id(skip)]
+    pub capabilities: Option<Capabilities>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
@@ -60,6 +64,7 @@ impl std::fmt::Display for QrCode {
             &self.inbox_topic,
             &self.agent_id,
             &self.share_intent,
+            &self.capabilities,
         ))
         .map_err(|_| std::fmt::Error)?;
         write!(f, "{}", hex::encode(bytes))
@@ -70,13 +75,28 @@ impl FromStr for QrCode {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = hex::decode(s)?;
-        let (device_pubkey, inbox_topic, agent_id, share_intent) = decode_cbor(bytes.as_slice())?;
-        Ok(QrCode {
-            device_pubkey,
-            inbox_topic,
-            agent_id,
-            share_intent,
-        })
+        // Try 5-tuple first (with capabilities), fall back to 4-tuple (old format)
+        if let Ok((device_pubkey, inbox_topic, agent_id, share_intent, capabilities)) =
+            decode_cbor::<(DeviceId, Option<InboxTopic>, AgentId, ShareIntent, Option<Capabilities>), _>(bytes.as_slice())
+        {
+            Ok(QrCode {
+                device_pubkey,
+                inbox_topic,
+                agent_id,
+                share_intent,
+                capabilities,
+            })
+        } else {
+            let (device_pubkey, inbox_topic, agent_id, share_intent) =
+                decode_cbor(bytes.as_slice())?;
+            Ok(QrCode {
+                device_pubkey,
+                inbox_topic,
+                agent_id,
+                share_intent,
+                capabilities: None,
+            })
+        }
     }
 }
 
@@ -113,10 +133,52 @@ mod tests {
             }),
             agent_id,
             share_intent: ShareIntent::AddDevice,
+            capabilities: None,
         };
         let encoded = contact.to_string();
         let decoded = QrCode::from_str(&encoded).unwrap();
 
         assert_eq!(contact, decoded);
+    }
+
+    #[test]
+    fn test_contact_with_capabilities_roundtrip() {
+        use crate::compat::Capability;
+        use std::collections::BTreeMap;
+
+        let pubkey = PublicKey::from_bytes(&[11; 32]).unwrap();
+        let agent_id = AgentId::from(ActorId::from_bytes(&[22; 32]).unwrap());
+        let mut caps = BTreeMap::new();
+        caps.insert(Capability::Messaging, 1u16);
+
+        let contact = QrCode {
+            device_pubkey: DeviceId::from(pubkey),
+            inbox_topic: None,
+            agent_id,
+            share_intent: ShareIntent::AddContact,
+            capabilities: Some(caps.clone()),
+        };
+        let encoded = contact.to_string();
+        let decoded = QrCode::from_str(&encoded).unwrap();
+        assert_eq!(contact, decoded);
+    }
+
+    #[test]
+    fn test_old_contact_without_capabilities() {
+        let pubkey = PublicKey::from_bytes(&[11; 32]).unwrap();
+        let agent_id = AgentId::from(ActorId::from_bytes(&[22; 32]).unwrap());
+        let device_id = DeviceId::from(pubkey);
+
+        // Encode as old 4-tuple format
+        let bytes = encode_cbor(&(
+            &device_id,
+            &None::<InboxTopic>,
+            &agent_id,
+            &ShareIntent::AddContact,
+        ))
+        .unwrap();
+        let hex_str = hex::encode(bytes);
+        let decoded = QrCode::from_str(&hex_str).unwrap();
+        assert_eq!(decoded.capabilities, None);
     }
 }
