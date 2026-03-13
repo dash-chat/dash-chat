@@ -1,5 +1,5 @@
 use derive_more::derive::{Deref, From};
-use named_id::{AnyNameable, Rename};
+use named_id::{AnyNameable, Rename, RenameNone};
 use serde::de::Deserializer;
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ pub enum Compat<Bare, Tagged> {
 }
 
 impl<Bare: fmt::Debug, Tagged: fmt::Debug> Rename for Compat<Bare, Tagged> {
-    fn nameables(&self) -> Vec<AnyNameable> {
+    fn nameables(&self) -> Vec<AnyNameable<'_>> {
         Vec::new()
     }
 }
@@ -56,7 +56,7 @@ pub enum Capability {
     SomethingElse,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deref, From, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deref, From, Serialize, Deserialize, RenameNone)]
 pub struct Capabilities(BTreeMap<Capability, u16>);
 
 impl Capabilities {
@@ -72,6 +72,14 @@ impl Capabilities {
                 .map(|(k, &v)| (k.clone(), v.min(other.0.get(k).copied().unwrap_or(0))))
                 .collect(),
         )
+    }
+
+    pub fn current() -> Self {
+        Self::zero().with_capability(Capability::Messaging, 1)
+    }
+
+    pub fn zero() -> Self {
+        Self(Default::default())
     }
 }
 
@@ -98,5 +106,7 @@ pub trait VersionConvert: Sized {
 }
 
 #[cfg(test)]
-#[path = "compat_tests.rs"]
-mod compat_tests;
+mod test_compat;
+
+#[cfg(test)]
+mod test_chat_message_compat;

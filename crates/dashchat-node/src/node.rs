@@ -51,6 +51,7 @@ pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
 pub struct NodeConfig {
     pub contact_code_expiry: Duration,
     pub mailboxes_config: MailboxesConfig,
+    capabilities: Capabilities,
 }
 
 impl NodeConfig {
@@ -64,6 +65,7 @@ impl NodeConfig {
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
+            capabilities: Capabilities::current(),
         }
     }
 }
@@ -73,6 +75,7 @@ impl Default for NodeConfig {
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
+            capabilities: Capabilities::current(),
         }
     }
 }
@@ -258,7 +261,7 @@ impl Node {
             inbox_topic,
             agent_id: self.node_data.agent_id,
             share_intent,
-            capabilities: None,
+            capabilities: self.config.capabilities.clone(),
         })
     }
 
@@ -288,30 +291,34 @@ impl Node {
     /// Create a new direct chat Space.
     /// Note that only one node should create the space!
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
-    pub async fn create_direct_chat_space(&self, other: AgentId) -> anyhow::Result<()> {
+    pub async fn create_direct_chat(&self, other: AgentId) -> anyhow::Result<()> {
         let topic = self.direct_chat_topic(other);
 
-        let my_actor = self.agent_id();
-        self.register_topic(topic).await?;
-
-        tracing::info!(
-            my_actor = ?my_actor.renamed(),
-            other = ?other.renamed(),
-            topic = ?topic.renamed(),
-            "creating direct chat space"
-        );
-
-        tracing::info!(?topic, ?topic, "created direct chat space");
+        self.initialize_group(
+            topic,
+            BTreeMap::from([(self.agent_id(), Access::write()), (other, Access::write())]),
+            false,
+        )
+        .await?;
 
         Ok(())
     }
 
-    pub async fn create_group(
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    pub async fn create_group_chat(
         &self,
-        mut initial_agents: BTreeMap<AgentId, Access>,
+        initial_agents: BTreeMap<AgentId, Access>,
     ) -> anyhow::Result<ChatId> {
         let chat_id = Topic::random();
+        self.initialize_group(chat_id, initial_agents, true).await
+    }
 
+    async fn initialize_group(
+        &self,
+        chat_id: ChatId,
+        mut initial_agents: BTreeMap<AgentId, Access>,
+        invite: bool,
+    ) -> anyhow::Result<ChatId> {
         let agents_to_invite = initial_agents.keys().copied().collect::<Vec<_>>();
 
         // The creator must always have Manage access
@@ -349,8 +356,10 @@ impl Node {
 
         self.register_topic(chat_id).await?;
 
-        for agent in agents_to_invite {
-            self.invite_to_group(chat_id, agent).await?;
+        if invite {
+            for agent in agents_to_invite {
+                self.invite_to_group(chat_id, agent).await?;
+            }
         }
         Ok(chat_id)
     }
@@ -510,22 +519,72 @@ impl Node {
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
-    pub async fn send_message(
+    #[deprecated = "direct messages should be implemented as groups"]
+    pub async fn send_direct_message(
+        &self,
+        peer: AgentId,
+        message: ChatMessageContent,
+    ) -> anyhow::Result<Header> {
+        let direct_topic = self.direct_chat_topic(peer);
+
+        let caps = self.get_direct_chat_capabilities(peer)?;
+        let message = message.to_version(caps.get(&Capability::Messaging).copied().unwrap_or(0))?;
+
+        dbg!(&message);
+
+        let header = self
+            .author_operation(
+                direct_topic,
+                Payload::Chat(ChatPayload::Message(message)),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    pub async fn send_group_message(
         &self,
         topic: impl Into<ChatId>,
         message: ChatMessageContent,
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
 
-        let group_caps = self.local_store.get_group_capabilities(topic).await?;
+        let group_caps = self.get_group_capabilities(topic).await?;
         let message =
             message.to_version(group_caps.get(&Capability::Messaging).copied().unwrap_or(0))?;
+
+        dbg!(&message);
 
         let header = self
             .author_operation(topic, Payload::Chat(ChatPayload::Message(message)), None)
             .await?;
 
         Ok(header)
+    }
+
+    /// Get the lowest common capability set for all members of the group including this node.
+    ///
+    /// Assumption: this node is a member of the group.
+    pub fn get_direct_chat_capabilities(&self, peer: AgentId) -> anyhow::Result<Capabilities> {
+        #[cfg(feature = "auth-workaround")]
+        #[cfg(not(feature = "auth-workaround"))]
+        todo!("must reliably get device IDs for an agent");
+
+        let capabilities = self.local_store.get_contact_capabilities(peer)?;
+        Ok(capabilities.infimum(&self.config.capabilities))
+    }
+
+    /// Get the lowest common capability set for all members of the group including this node.
+    ///
+    /// Assumption: this node is a member of the group.
+    pub async fn get_group_capabilities(&self, topic: ChatId) -> anyhow::Result<Capabilities> {
+        Ok(self
+            .local_store
+            .get_group_peer_capabilities(topic)
+            .await?
+            .infimum(&self.config.capabilities))
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
@@ -614,10 +673,6 @@ impl Node {
         // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
 
         let agent = contact.agent_id;
-        let direct_topic = self.direct_chat_topic(agent);
-        self.register_topic(direct_topic)
-            .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
         self.author_operation(
             self.device_group_topic(),
@@ -660,7 +715,7 @@ impl Node {
 
         // Only the initiator of contactship should create the direct chat space
         if contact.share_intent == ShareIntent::AddContact && contact.inbox_topic.is_none() {
-            self.create_direct_chat_space(agent)
+            self.create_direct_chat(agent)
                 .await
                 .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
         }

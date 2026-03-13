@@ -38,8 +38,12 @@ pub struct QrCode {
     /// The intent of the QR code: whether to add this node as a contact or a device.
     pub share_intent: ShareIntent,
     /// Capabilities supported by this node, for version negotiation.
-    #[named_id(skip)]
-    pub capabilities: Option<Capabilities>,
+    #[serde(default = "default_capabilities")]
+    pub capabilities: Capabilities,
+}
+
+fn default_capabilities() -> Capabilities {
+    Capabilities::zero()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
@@ -93,7 +97,7 @@ impl FromStr for QrCode {
                 inbox_topic,
                 agent_id,
                 share_intent,
-                capabilities,
+                capabilities: capabilities.unwrap_or(Capabilities::zero()),
             })
         } else {
             let (device_pubkey, inbox_topic, agent_id, share_intent) =
@@ -103,7 +107,7 @@ impl FromStr for QrCode {
                 inbox_topic,
                 agent_id,
                 share_intent,
-                capabilities: None,
+                capabilities: Capabilities::zero(),
             })
         }
     }
@@ -142,7 +146,7 @@ mod tests {
             }),
             agent_id,
             share_intent: ShareIntent::AddDevice,
-            capabilities: None,
+            capabilities: Capabilities::zero(),
         };
         let encoded = contact.to_string();
         let decoded = QrCode::from_str(&encoded).unwrap();
@@ -156,14 +160,14 @@ mod tests {
 
         let pubkey = PublicKey::from_bytes(&[11; 32]).unwrap();
         let agent_id = AgentId::from(ActorId::from_bytes(&[22; 32]).unwrap());
-        let caps = Capabilities::default().with_capability(Capability::Messaging, 1);
+        let capabilities = Capabilities::zero().with_capability(Capability::Messaging, 1);
 
         let contact = QrCode {
             device_pubkey: DeviceId::from(pubkey),
             inbox_topic: None,
             agent_id,
             share_intent: ShareIntent::AddContact,
-            capabilities: Some(caps),
+            capabilities,
         };
         let encoded = contact.to_string();
         let decoded = QrCode::from_str(&encoded).unwrap();
@@ -186,6 +190,6 @@ mod tests {
         .unwrap();
         let hex_str = hex::encode(bytes);
         let decoded = QrCode::from_str(&hex_str).unwrap();
-        assert_eq!(decoded.capabilities, None);
+        assert_eq!(decoded.capabilities, Capabilities::zero());
     }
 }

@@ -53,7 +53,10 @@ async fn test_direct_chat() {
     let chat_id = alice.direct_chat_topic(bobbi.agent_id());
     assert_eq!(chat_id, bobbi.direct_chat_topic(alice.agent_id()));
 
-    alice.send_message(chat_id, "Hello".into()).await.unwrap();
+    alice
+        .send_direct_message(bobbi.agent_id(), "Hello".into())
+        .await
+        .unwrap();
 
     // consistency(
     //     [&alice, &bobbi],
@@ -164,13 +167,16 @@ async fn test_group_chat() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_group_chat(btreemap! {
             bobbi.agent_id() => p2panda_auth::Access::manage(),
         })
         .await
         .unwrap();
 
-    alice.send_message(chat_id, "Hello".into()).await.unwrap();
+    alice
+        .send_group_message(chat_id, "Hello".into())
+        .await
+        .unwrap();
 
     bobbi
         .behavior()
@@ -179,7 +185,7 @@ async fn test_group_chat() {
         .unwrap();
 
     bobbi
-        .send_message(chat_id, "Great to be here".into())
+        .send_group_message(chat_id, "Great to be here".into())
         .await
         .unwrap();
 
@@ -206,7 +212,10 @@ async fn test_group_chat() {
         .await
         .unwrap();
 
-    cammy.send_message(chat_id, "Hi all".into()).await.unwrap();
+    cammy
+        .send_group_message(chat_id, "Hi all".into())
+        .await
+        .unwrap();
 
     consistency(
         [&alice, &bobbi, &cammy],
@@ -228,7 +237,7 @@ async fn test_group_chat() {
         .unwrap();
 
     danae
-        .send_message(chat_id, "Here I am".into())
+        .send_group_message(chat_id, "Here I am".into())
         .await
         .unwrap();
 

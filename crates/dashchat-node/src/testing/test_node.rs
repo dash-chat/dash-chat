@@ -181,6 +181,8 @@ pub struct TestNodeConfig {
     pub create_profile: bool,
     /// Use a named-id for the device and agent IDs
     pub use_named_id: bool,
+    /// The capabilities to set on the node
+    pub capabilities: crate::compat::Capabilities,
 }
 
 impl Default for TestNodeConfig {
@@ -189,6 +191,7 @@ impl Default for TestNodeConfig {
             node_config: NodeConfig::default(),
             create_profile: true,
             use_named_id: true,
+            capabilities: crate::compat::Capabilities::current(),
         }
     }
 }

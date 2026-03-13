@@ -87,8 +87,14 @@ async fn messaging_v0_to_v1() {
         .await;
 
     let chat = alice.direct_chat_topic(bobbi.agent_id());
-    alice.send_message(chat, "Hello".into()).await.unwrap();
-    bobbi.send_message(chat, "Hello back".into()).await.unwrap();
+    alice
+        .send_group_message(chat, "Hello".into())
+        .await
+        .unwrap();
+    bobbi
+        .send_group_message(chat, "Hello back".into())
+        .await
+        .unwrap();
 
     crate::testing::wait_for(
         Duration::from_millis(100),

@@ -14,7 +14,7 @@ pub async fn direct_chat_send_message(
     content: ChatMessageContent,
     node: State<'_, Node>,
 ) -> Result<(), String> {
-    node.send_message(chat_id, content)
+    node.send_group_message(chat_id, content)
         .await
         .map_err(|err| format!("{err:?}"))?;
     Ok(())

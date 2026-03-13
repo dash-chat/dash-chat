@@ -49,7 +49,7 @@ async fn test_inbox_2() {
     tracing::info!(%direct_chat_topic, ?direct_chat_topic, "direct chat id");
 
     alice
-        .send_message(direct_chat_topic, "Hello".into())
+        .send_direct_message(bobbi.agent_id(), "Hello".into())
         .await
         .unwrap();
 }

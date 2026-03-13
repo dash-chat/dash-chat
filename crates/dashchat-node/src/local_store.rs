@@ -210,33 +210,45 @@ impl LocalStore {
         Ok(topics)
     }
 
-    pub fn get_capabilities(&self, device_id: DeviceId) -> anyhow::Result<Capabilities> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
-        let capabilities = table.get(device_id.as_bytes())?;
-        Ok(capabilities.map(|caps| caps.value()).unwrap_or_default())
+
+    pub(super) fn get_contact_capabilities(
+        &self,
+        peer: AgentId,
+    ) -> anyhow::Result<Capabilities> {
+        let devices: Vec<DeviceId> = self.lookup_contact_device(peer)?.into_iter().collect();
+        self.get_capabilities_for_devices(devices)
     }
 
-    /// Find the infimum of the capabilities of all members with read access or above
-    pub async fn get_group_capabilities(&self, topic: ChatId) -> anyhow::Result<Capabilities> {
+    /// Find the infimum of the capabilities of all other members of the group with read access or above.
+    ///
+    /// Note, this should still be combined (via [`Capabilities::infimum`]) with the capabilities of the node itself.
+    pub(super) async fn get_group_peer_capabilities(
+        &self,
+        topic: ChatId,
+    ) -> anyhow::Result<Capabilities> {
         let members = self.chat_group_members(topic).await?;
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
-        let capabilities = members
+        debug_assert!(
+            members.len() >= 1,
+            "Group must have at least 1 member to get capabilities. Group = {}",
+            topic.renamed()
+        );
+        let devices = members
             .iter()
             .filter_map(|(member, access)| {
                 // Only include members with read access or above
-                (*access >= Access::read()).then(|| {
-                    table
-                        .get(member.as_bytes())
-                        .map(|caps| caps.map(|caps| caps.value()).unwrap_or_default())
-                })
+                (*access >= Access::read()).then_some(*member)
             })
-            .collect::<Result<Vec<Capabilities>, redb::StorageError>>()?;
-        Ok(capabilities
-            .into_iter()
-            .reduce(|a, b| a.infimum(&b))
-            .unwrap_or_default())
+            .collect();
+        self.get_capabilities_for_devices(devices)
+    }
+
+    fn get_capabilities_for_devices(&self, devices: Vec<DeviceId>) -> anyhow::Result<Capabilities> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
+        let capabilities = devices.iter().map(|device| table.get(device.as_bytes()).map(|caps| caps.map(|caps| caps.value())
+                .unwrap_or(Capabilities::zero())
+            )).collect::<Result<Vec<Capabilities>, StorageError>>()?.into_iter().reduce(|a, b| a.infimum(&b)).unwrap_or(Capabilities::zero());
+        Ok(capabilities)
     }
 
     pub fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
@@ -374,6 +386,7 @@ impl LocalStore {
 
     #[cfg(feature = "auth-workaround")]
     pub fn lookup_contact_device(&self, agent_id: AgentId) -> anyhow::Result<Option<DeviceId>> {
+        
         let txn = self.db.begin_read()?;
         let table = txn.open_table(CONTACTS_TABLE)?;
         let Some(entry) = table.get(agent_id.as_bytes())? else {
@@ -403,11 +416,10 @@ impl LocalStore {
         }
 
         {
-            if let Some(capabilities) = contact.capabilities {
-                let mut table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
-                table.insert(contact.device_pubkey.as_bytes(), capabilities)?;
-            }
+            let mut table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
+            table.insert(contact.device_pubkey.as_bytes(), contact.capabilities)?;
         }
+
         txn.commit()?;
         Ok(())
     }
@@ -505,5 +517,16 @@ mod tests {
 
         let loaded_topics = store.get_active_inbox_topics().unwrap();
         assert_eq!(loaded_topics, topics);
+    }
+
+    #[tokio::test]
+    async fn test_get_group_peer_capabilities() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_get_group_peer_capabilities.db");
+        let store = LocalStore::new(&path).await.unwrap();
+
+        let topic = ChatId::new([1; 32]);
+        let members = store.chat_group_members(topic).await.unwrap();
+        assert_eq!(members.len(), 1);
     }
 }
