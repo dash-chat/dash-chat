@@ -336,8 +336,14 @@ where
                     .await
                     .map_err(|err| anyhow::anyhow!("failed to get log for {topic:?}: {err}"))?
                 else {
+                    tracing::warn!(author = ?author, topic = ?topic, lowest = ?lowest, "missing log for author and topic");
                     continue;
                 };
+
+                // If there is nothing beyond the lowest sequence number, skip
+                if log.is_empty() {
+                    continue;
+                }
 
                 for seq in &seqs {
                     // The items in the 0..lowest range are not included in the log vector,
@@ -351,6 +357,9 @@ where
             }
         }
 
+        if !ops_to_publish.is_empty() {
+            tracing::info!(items = ops_to_publish.len(), "publishing dollops",);
+        }
         mailbox.publish(ops_to_publish).await?;
 
         Ok(())

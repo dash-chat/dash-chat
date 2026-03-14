@@ -10,6 +10,10 @@ path = "src/lib.rs"
 name = "mailbox-server"
 path = "src/main.rs"
 
+[[bin]]
+name = "dump-db"
+path = "bin/dump-db.rs"
+
 [dependencies]
 axum = "0.7"
 futures = "0.3"

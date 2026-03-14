@@ -40,6 +40,15 @@ impl proptest::arbitrary::Arbitrary for OpaqHash {
     }
 }
 
+impl named_id::Nameable for OpaqHash {
+    fn shortener(&self) -> Option<named_id::Shortener> {
+        Some(named_id::Shortener {
+            length: 4,
+            prefix: "Q",
+        })
+    }
+}
+
 #[cfg(feature = "redb")]
 impl redb::Key for OpaqHash {
     fn compare(data1: &[u8], data2: &[u8]) -> std::cmp::Ordering {
