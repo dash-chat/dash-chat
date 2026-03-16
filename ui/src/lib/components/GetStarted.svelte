@@ -133,7 +133,7 @@
 {#await $contacts then contactsList}
 	{#await $chatSummaries then chats}
 		{#if (contactsList?.length ?? 0) === 0 && (chats?.length ?? 0) === 0 && visibleCards.length > 0}
-			<div class="px-4 pb-4">
+			<div class="px-4">
 				<p class="mb-3 text-lg font-bold">{m.getStarted()}</p>
 				<div class="flex gap-3.5 overflow-x-auto pb-1">
 					{#each visibleCards as card}

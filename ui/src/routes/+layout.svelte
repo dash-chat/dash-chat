@@ -38,7 +38,6 @@
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMac, isTauriEnv } from '$lib/utils/environment';
-	import { isInIframe, listenForPreviewMessages } from '$lib/utils/preview';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
@@ -52,6 +51,7 @@
 	let { children } = $props();
 
 	const isPreview = !isTauriEnv();
+	const showToolbar = isPreview || import.meta.env.DEV;
 
 	// --- Store initialization ---
 	let settingsStore: SettingsStore;
@@ -143,18 +143,9 @@
 			window.removeEventListener('set-dark-mode', handler as EventListener);
 	});
 
-	$effect(() => {
-		const handler = (event: CustomEvent<boolean>) => {
-			document.body.classList.toggle('mobile-frame', event.detail);
-		};
-		window.addEventListener('set-mobile-frame', handler as EventListener);
-		return () =>
-			window.removeEventListener('set-mobile-frame', handler as EventListener);
-	});
-
 </script>
 
-{#if isPreview && !isInIframe}
+{#if showToolbar}
 	<PreviewToolbar />
 {/if}
 

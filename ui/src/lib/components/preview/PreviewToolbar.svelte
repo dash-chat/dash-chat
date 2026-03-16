@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { isTauriEnv } from '$lib/utils/environment';
+
+	const isPreview = !isTauriEnv();
 	let theme = $state<'ios' | 'material'>('material');
 	let dark = $state(false);
 	let mobile = $state(false);
@@ -21,9 +24,6 @@
 		mobile = !mobile;
 		window.dispatchEvent(
 			new CustomEvent('set-wide-screen', { detail: !mobile }),
-		);
-		window.dispatchEvent(
-			new CustomEvent('set-mobile-frame', { detail: mobile }),
 		);
 	}
 
@@ -66,12 +66,14 @@
 			<button class="preview-btn" onclick={toggleUpdater}>
 				{updater ? 'Hide Update' : 'Show Update'}
 			</button>
-			<button class="preview-btn preview-btn-reset" onclick={resetData}>
-				Reset
-			</button>
-			<button class="preview-btn preview-btn-danger" onclick={removeAllData}>
-				Wipe
-			</button>
+			{#if isPreview}
+				<button class="preview-btn preview-btn-reset" onclick={resetData}>
+					Reset
+				</button>
+				<button class="preview-btn preview-btn-danger" onclick={removeAllData}>
+					Wipe
+				</button>
+			{/if}
 		</div>
 	{/if}
 </div>

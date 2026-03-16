@@ -19,9 +19,7 @@
 
 {#if !alreadyShown && !dismissed}
 	<div
-		class="tooltip-bubble {theme === 'ios'
-			? 'fixed end-4 top-16 z-30'
-			: 'fixed bottom-24 end-4 z-30'}"
+		class="tooltip-bubble"
 		role="status"
 		tabindex="0"
 		onclick={dismiss}
@@ -30,13 +28,13 @@
 	>
 		<div class="relative">
 			{#if theme === 'ios'}
-				<div class="arrow absolute -top-2 end-5 h-0 w-0 border-x-8 border-b-8 border-x-transparent"></div>
+				<div class="arrow absolute -top-2 end-3.5 h-0 w-0 border-x-8 border-b-8 border-x-transparent"></div>
 			{/if}
 			<div class="tooltip-bg rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-lg">
 				{m.startFirstChatHere()}
 			</div>
 			{#if theme === 'material'}
-				<div class="arrow absolute -bottom-2 end-8 h-0 w-0 border-x-8 border-t-8 border-x-transparent"></div>
+				<div class="arrow absolute -bottom-2 end-5 h-0 w-0 border-x-8 border-t-8 border-x-transparent"></div>
 			{/if}
 		</div>
 	</div>
