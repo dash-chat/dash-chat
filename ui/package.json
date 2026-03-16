@@ -7,10 +7,11 @@
 		"start": "pnpm dev",
 		"dev": "vite dev",
 		"build": "vite build",
-		"preview": "node scripts/serve-preview.js",
-		"preview:build": "vite build && node scripts/build-preview.js",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"preview": "vite preview",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && prettier --check 'src/**/*.{ts,svelte}'",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"format": "prettier --write 'src/**/*.{ts,svelte}'",
+		"format:check": "prettier --check 'src/**/*.{ts,svelte}'"
 	},
 	"dependencies": {
 		"@awesome.me/webawesome": "3.0.0-beta.6",

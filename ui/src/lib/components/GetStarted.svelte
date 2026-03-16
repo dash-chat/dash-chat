@@ -9,7 +9,7 @@
 		mdiClose,
 		mdiPalette,
 	} from '@mdi/js';
-	import type { ContactsStore } from 'dash-chat-stores';
+	import type { ContactsStore, ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { useTheme } from 'konsta/svelte';
@@ -42,11 +42,15 @@
 	let { visible = $bindable(true) }: { visible?: boolean } = $props();
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
+	const chatsStore: ChatsStore = getContext('chats-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const contacts = useReactivePromise(contactsStore.contactsAgentIds);
+	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+
 	let hasAvatar = $state(false);
 	$effect(() => {
 		const p = $myProfile;
-		p.then((profile) => {
+		p.then(profile => {
 			hasAvatar = !!profile?.avatar;
 		});
 	});
@@ -105,7 +109,7 @@
 	let dismissed = $state(getDismissed());
 
 	let visibleCards = $derived(
-		allCards.filter((c) => {
+		allCards.filter(c => {
 			if (c.hidden) return false;
 			if (dismissed.includes(c.id)) return false;
 			if (c.id === 'add-photo' && hasAvatar) return false;
@@ -126,32 +130,41 @@
 	}
 </script>
 
-{#if visibleCards.length > 0}
-	<div class="px-4 pb-4">
-		<p class="mb-3 text-lg font-bold">{m.getStarted()}</p>
-		<div class="flex gap-3.5 overflow-x-auto pb-1">
-			{#each visibleCards as card}
-				<div
-					class="relative w-[165px] shrink-0 rounded-[20px] {cardClasses(card.tone)}"
-					data-testid="get-started-{card.id}"
-				>
-					<a
-						href={card.href}
-						class="flex flex-col items-center px-5 pb-5 pt-7"
-					>
-						<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 28px">
-						</wa-icon>
-						<span class="mt-2 text-center text-sm font-semibold">{card.label()}</span>
-					</a>
-					<button
-						class="absolute right-2 top-2 z-10 p-1 text-black/40 dark:text-white/40"
-						data-testid="get-started-dismiss-{card.id}"
-						onclick={() => dismiss(card.id)}
-					>
-						<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 20px"></wa-icon>
-					</button>
+{#await $contacts then contactsList}
+	{#await $chatSummaries then chats}
+		{#if (contactsList?.length ?? 0) === 0 && (chats?.length ?? 0) === 0 && visibleCards.length > 0}
+			<div class="px-4 pb-4">
+				<p class="mb-3 text-lg font-bold">{m.getStarted()}</p>
+				<div class="flex gap-3.5 overflow-x-auto pb-1">
+					{#each visibleCards as card}
+						<div
+							class="relative w-[165px] shrink-0 rounded-[20px] {cardClasses(
+								card.tone,
+							)}"
+							data-testid="get-started-{card.id}"
+						>
+							<a
+								href={card.href}
+								class="flex flex-col items-center px-5 pb-5 pt-7"
+							>
+								<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 28px">
+								</wa-icon>
+								<span class="mt-2 text-center text-sm font-semibold"
+									>{card.label()}</span
+								>
+							</a>
+							<button
+								class="absolute right-2 top-2 z-10 p-1 text-black/40 dark:text-white/40"
+								data-testid="get-started-dismiss-{card.id}"
+								onclick={() => dismiss(card.id)}
+							>
+								<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 20px"
+								></wa-icon>
+							</button>
+						</div>
+					{/each}
 				</div>
-			{/each}
-		</div>
-	</div>
-{/if}
+			</div>
+		{/if}
+	{/await}
+{/await}

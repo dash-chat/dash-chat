@@ -1,21 +1,31 @@
-use crate::topic::TopicKind;
+use crate::{DashAction, topic::TopicKind};
 
 use super::*;
 
 impl Node {
+    #[tracing::instrument(skip_all, fields(me=?self.device_id().renamed()))]
     pub(super) async fn author_operation<K: TopicKind>(
         &self,
         topic: Topic<K>,
-        payload: Payload,
+        action: impl Into<DashAction>,
         alias: Option<&str>,
     ) -> Result<Header, anyhow::Error> {
+        let action = action.into();
+
+        let previous = match &action {
+            DashAction::Payload(_) => {
+                vec![]
+            }
+            DashAction::GroupControl(_) => self.local_store.groups.heads().await?,
+        };
+
         let (header, body) = self
             .op_store
             .author_operation(
                 &self.node_data.private_key,
                 topic.clone(),
-                payload.clone(),
-                vec![],
+                action.clone(),
+                previous,
                 alias,
             )
             .await?;

@@ -27,7 +27,7 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-sharekit = "0.3"
 tauri-plugin-fs = "2"
-tauri-plugin-log = { version="2.0.0", features = ["tracing"] }
+tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
 
 tauri-plugin-virtual-keyboard-padding = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding", branch = "main" }
 tauri-plugin-mailto = { git = "https://github.com/dash-chat/tauri-plugin-mailto", branch = "main" }
@@ -38,21 +38,15 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
 dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { path = "../crates/mailbox-client" }
 
-p2panda-auth = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-encryption = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-discovery = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
-  "mdns",
-] }
-p2panda-net = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-store = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-stream = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-sync = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
-  "log-sync",
-] }
-p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
-  "test_utils",
-] }
+p2panda-auth = { workspace = true }
+p2panda-core = { workspace = true }
+p2panda-encryption = { workspace = true }
+p2panda-discovery = { workspace = true }
+p2panda-net = { workspace = true }
+p2panda-store = { workspace = true }
+p2panda-stream = { workspace = true }
+p2panda-sync = { workspace = true }
+p2panda-spaces = { workspace = true }
 
 fs2 = "0.4"
 anyhow = "1.0.95"

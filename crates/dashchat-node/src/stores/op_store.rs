@@ -97,18 +97,14 @@ where
         &self,
         private_key: &PrivateKey,
         topic: Topic<K>,
-        payload: Payload,
-        deps: Vec<p2panda_core::Hash>,
+        payload: DashAction,
+        previous: Vec<p2panda_core::Hash>,
         alias: Option<&str>,
     ) -> Result<(Header, Option<Body>), anyhow::Error> {
         let device_id = DeviceId::from(private_key.public_key());
         let topic = topic.clone();
 
-        let body = Some(payload.try_into_body()?);
-
-        let extensions = Extensions {
-            topic: topic.clone().into(),
-        };
+        let body = payload.try_into_body()?;
 
         let lock = self.write_mutex.lock().await;
         let latest_operation = self
@@ -119,6 +115,13 @@ where
         let (seq_num, backlink) = match latest_operation {
             Some((header, _)) => (header.seq_num + 1, Some(header.hash())),
             None => (0, None),
+        };
+
+        // TODO: is this the place to integrate group auth processing?
+
+        let extensions = Extensions {
+            topic: topic.clone().into(),
+            auth: payload.extract_auth_extension(),
         };
 
         let timestamp = timestamp_now();
@@ -132,7 +135,7 @@ where
             timestamp,
             seq_num,
             backlink,
-            previous: deps,
+            previous,
             extensions,
         };
 
@@ -407,7 +410,7 @@ where
         public_key: &PublicKey,
         topic: &TopicId,
         from: Option<u64>,
-    ) -> Result<Option<Vec<Hash>>, Self::Error> {
+    ) -> Result<Option<Vec<(u64, Hash)>>, Self::Error> {
         self.store.get_log_hashes(public_key, topic, from).await
     }
 }

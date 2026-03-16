@@ -1,10 +1,19 @@
-use std::{collections::BTreeSet, path::Path, sync::Arc};
+use std::{
+    collections::BTreeSet,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use chrono::{DateTime, Utc};
+use p2panda_auth::Access;
+use p2panda_core::{Hash, Operation, PublicKey};
 use redb::*;
+use tokio::sync::Mutex;
 
 use crate::{
     contact::InboxTopic,
+    node::DashResolver,
     topic::{AutoRegisteredTopic, TopicId},
     *,
 };
@@ -12,6 +21,7 @@ use crate::{
 mod impls;
 
 const IDENTITY_TABLE: TableDefinition<&'static str, [u8; 32]> = TableDefinition::new("identity");
+const CONTACTS_TABLE: TableDefinition<[u8; 32], [u8; 32]> = TableDefinition::new("contacts");
 const SUBSCRIBED_TOPICS_TABLE: TableDefinition<[u8; 32], ()> =
     TableDefinition::new("subscribed_topics");
 const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> =
@@ -32,16 +42,83 @@ impl NodeData {
     }
 }
 
+type MemStore = p2panda_auth::processor::Store<Operation<Extensions>>;
+
+/// Until we have a persisted solution to group state, we store group state in-memory and dump
+/// to a file whenever it changes.
+/// XXX: this must be replaced ASAP!
+#[derive(Clone)]
+pub struct HackyGroupStore {
+    groups: MemStore,
+    file_path: PathBuf,
+    file_write_mutex: Arc<Mutex<()>>,
+}
+
+impl HackyGroupStore {
+    pub async fn new(file_path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let mut this = Self {
+            groups: MemStore::default(),
+            file_path: file_path.as_ref().to_path_buf(),
+            file_write_mutex: Arc::new(Mutex::new(())),
+        };
+        this.load_from_file().await?;
+        Ok(this)
+    }
+
+    pub async fn heads(&self) -> anyhow::Result<Vec<Hash>> {
+        Ok(self.groups.get_state().await?.crdt.heads())
+    }
+
+    pub async fn process(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
+        let _lock = self.file_write_mutex.lock().await;
+        p2panda_auth::processor::process::<_, _, DashResolver>(&self.groups, operation).await?;
+        self.save_to_file().await?;
+        Ok(())
+    }
+
+    async fn save_to_file(&self) -> anyhow::Result<()> {
+        let groups = self.groups.get_state().await?;
+        let temp = self.file_path.with_file_name("groups.cbor.tmp");
+        let mut file = std::fs::File::create(&temp)?;
+        let bytes = p2panda_core::cbor::encode_cbor(&groups)?;
+        file.write_all(&bytes)?;
+        std::fs::rename(&temp, &self.file_path)?;
+        Ok(())
+    }
+
+    async fn load_from_file(&mut self) -> anyhow::Result<()> {
+        let Ok(file) = std::fs::File::open(&self.file_path) else {
+            tracing::warn!(
+                "Unable to open groups state file at {}. If it is supposed to exist, this is a bug.",
+                self.file_path.display()
+            );
+            return Ok(());
+        };
+        let state = p2panda_core::cbor::decode_cbor(&file)?;
+        self.groups.set_state(state).await?;
+        Ok(())
+    }
+
+    pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(PublicKey, Access)>> {
+        let group_id = topic.to_group_pubkey()?;
+        Ok(self.groups.get_state().await?.crdt.inner.members(group_id))
+    }
+}
+
 #[derive(Clone)]
 pub struct LocalStore {
     db: Arc<Database>,
+    pub(crate) groups: HackyGroupStore,
 }
 
 impl LocalStore {
-    pub fn new(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let database = Database::create(path)?;
+    pub async fn new(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let path = path.as_ref().to_path_buf();
+        let database = Database::create(&path)?;
+        let groups_path = path.with_file_name("groups.cbor");
         let store = Self {
             db: Arc::new(database),
+            groups: HackyGroupStore::new(groups_path).await?,
         };
         store.ensure_initialized()?;
 
@@ -55,6 +132,7 @@ impl LocalStore {
         let txn = self.db.begin_write()?;
         {
             let mut identity = txn.open_table(IDENTITY_TABLE)?;
+            let _ = txn.open_table(CONTACTS_TABLE)?;
             let _ = txn.open_table(ACTIVE_INBOXES_TABLE)?;
             let _ = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
 
@@ -86,6 +164,28 @@ impl LocalStore {
             .map(|entry| Ok(entry.map(|(topic, _)| TopicId::from(topic.value()))?))
             .collect::<anyhow::Result<BTreeSet<TopicId>>>()?;
         Ok(topics)
+    }
+
+    pub fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(CONTACTS_TABLE)?;
+        let Some(entry) = table.get(device_id.as_bytes())? else {
+            return Ok(None);
+        };
+        Ok(Some(AgentId::from_bytes(&entry.value())?))
+    }
+
+    pub fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
+        let txn = self.db.begin_write()?;
+        {
+            let mut table = txn.open_table(CONTACTS_TABLE)?;
+            table.insert(
+                contact.device_pubkey.as_bytes(),
+                contact.agent_id.as_bytes(),
+            )?;
+        }
+        txn.commit()?;
+        Ok(())
     }
 
     pub fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
@@ -184,11 +284,11 @@ mod tests {
     use crate::topic::Topic;
     use chrono::{Duration, Utc};
 
-    #[test]
-    fn test_initialize_idempotent() {
+    #[tokio::test]
+    async fn test_initialize_idempotent() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test_initialize_random.db");
-        let store = LocalStore::new(&path).unwrap();
+        let store = LocalStore::new(&path).await.unwrap();
         let private_key = store.private_key().unwrap();
         let agent_id = store.agent_id().unwrap();
         store.ensure_initialized().unwrap();
@@ -200,7 +300,7 @@ mod tests {
 
         drop(store);
 
-        let store = LocalStore::new(path).unwrap();
+        let store = LocalStore::new(path).await.unwrap();
         assert_eq!(
             store.private_key().unwrap().as_bytes(),
             private_key.as_bytes()
@@ -208,11 +308,11 @@ mod tests {
         assert_eq!(store.agent_id().unwrap(), agent_id);
     }
 
-    #[test]
-    fn test_prune_expired_active_inbox_topics() {
+    #[tokio::test]
+    async fn test_prune_expired_active_inbox_topics() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test_prune_inbox_topics.db");
-        let store = LocalStore::new(&path).unwrap();
+        let store = LocalStore::new(&path).await.unwrap();
 
         // Generate inbox topics with various expiration times
         let now = Utc::now();

@@ -62,7 +62,10 @@
 	<Navbar transparent={true} titleClass="opacity1 w-full" centerTitle={false}>
 		{#snippet left()}
 			{#if !isWideScreen.value}
-				<NavbarBackLink onClick={() => goto('/')}  data-testid="group-chat-back" />
+				<NavbarBackLink
+					onClick={() => goto('/')}
+					data-testid="group-chat-back"
+				/>
 			{/if}
 		{/snippet}
 		{#snippet title()}
@@ -85,7 +88,7 @@
 		{/snippet}
 	</Navbar>
 
-	<div class={`column ${theme === 'ios'? 'pb-16':''}`}>
+	<div class={`column ${theme === 'ios' ? 'pb-16' : ''}`}>
 		{#await $allMembers then members}
 			<div class="center-in-desktop" style="flex:1">
 				<div class="column m-2 gap-2">
