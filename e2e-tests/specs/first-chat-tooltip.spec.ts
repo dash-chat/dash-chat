@@ -8,10 +8,6 @@
  */
 
 import { waitForTestUtils, createProfile } from '../helpers/setup-agents';
-import { S } from '../../ui/tests/selectors';
-
-const TOOLTIP = S.home.firstChatTooltip;
-const EMPTY_STATE = S.home.emptyState;
 
 describe('FirstChatTooltip', () => {
 	let agent: WebdriverIO.Browser;
@@ -29,36 +25,29 @@ describe('FirstChatTooltip', () => {
 		// Wait for home page with empty state
 		await agent.waitUntil(
 			async () =>
-				agent.execute(
-					(sel: string) => document.querySelector(sel) !== null,
-					EMPTY_STATE,
-				),
+				agent.execute(() => window.__test.homeLoaded() !== null),
 			{ timeout: 10_000, timeoutMsg: 'Home page empty state not visible' },
 		);
 
 		// Tooltip should be visible
 		await agent.waitUntil(
 			async () =>
-				agent.execute(
-					(sel: string) => document.querySelector(sel) !== null,
-					TOOLTIP,
-				),
+				agent.execute(() => window.__test.firstChatTooltip() !== null),
 			{ timeout: 5_000, timeoutMsg: 'First chat tooltip not visible on first run' },
 		);
 	});
 
 	it('dismisses tooltip on click', async () => {
 		// Click the tooltip
-		await agent.execute((sel: string) => {
-			(document.querySelector(sel) as HTMLElement)?.click();
-		}, TOOLTIP);
+		await agent.execute(() => {
+			(window.__test.firstChatTooltip() as HTMLElement)?.click();
+		});
 
 		// Verify tooltip is removed from DOM
 		await agent.waitUntil(
 			async () => {
 				const exists = await agent.execute(
-					(sel: string) => document.querySelector(sel) !== null,
-					TOOLTIP,
+					() => window.__test.firstChatTooltip() !== null,
 				);
 				return !exists;
 			},
@@ -76,17 +65,13 @@ describe('FirstChatTooltip', () => {
 		await waitForTestUtils(agent);
 		await agent.waitUntil(
 			async () =>
-				agent.execute(
-					(sel: string) => document.querySelector(sel) !== null,
-					EMPTY_STATE,
-				),
+				agent.execute(() => window.__test.homeLoaded() !== null),
 			{ timeout: 10_000, timeoutMsg: 'Home page not loaded after reload' },
 		);
 
 		// Tooltip should NOT be visible
 		const exists = await agent.execute(
-			(sel: string) => document.querySelector(sel) !== null,
-			TOOLTIP,
+			() => window.__test.firstChatTooltip() !== null,
 		);
 		expect(exists).toBe(false);
 	});
