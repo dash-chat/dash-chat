@@ -39,7 +39,7 @@
 		{/snippet}
 
 		{#snippet right()}
-			{#if theme == 'ios'}
+			{#if theme === 'ios'}
 				<Link iconOnly href="/new-message" data-testid="home-new-message-link">
 					<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
 				</Link>
@@ -74,7 +74,7 @@
 					{/if}
 				{/await}
 				<Fab
-					class="z-20 mr-4"
+					class="z-20 me-4"
 					style="align-self: end;"
 					onClick={() => goto('/new-message')}
 					data-testid="home-new-message-fab"
