@@ -16,6 +16,11 @@ describe('FirstChatTooltip', () => {
 		agent = browser.getInstance('agent1');
 		await waitForTestUtils(agent);
 
+		// Force narrow layout so the tooltip renders (default window is 800px, above the 768px threshold)
+		await agent.execute(() =>
+			window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: false })),
+		);
+
 		// Clear any previous tooltip state so the test starts fresh
 		await agent.execute(() => localStorage.removeItem('first-chat-tooltip-shown'));
 		await createProfile(agent, 'Tooltip', 'Test');
