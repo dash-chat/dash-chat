@@ -51,9 +51,9 @@
 
 	<div class={theme === 'ios' ? 'mt-4' : ''}></div>
 
-	{#if theme === 'ios'}
+	{#if theme === 'ios' && !isWideScreen.value}
 		{#await $chatSummaries then chats}
-			{#if chats.length === 0 && !isWideScreen.value}
+			{#if chats.length === 0}
 				<div class="fixed end-4 top-[4.5rem] z-30">
 					<FirstChatTooltip />
 				</div>
@@ -67,7 +67,7 @@
 		<div class="flex flex-col fixed bottom-4 left-0 right-0 z-10 pb-safe">
 			{#if theme == 'material'}
 				{#await $chatSummaries then chats}
-					{#if chats.length === 0 && !isWideScreen.value}
+					{#if chats.length === 0}
 						<div class="self-end me-4 mb-2 z-30">
 							<FirstChatTooltip />
 						</div>
