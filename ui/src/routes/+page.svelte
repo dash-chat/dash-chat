@@ -51,33 +51,37 @@
 
 	<div class={theme === 'ios' ? 'mt-4' : ''}></div>
 
-	{#await $chatSummaries then chats}
-		{#if chats.length === 0 && !isWideScreen.value && theme === 'ios'}
-			<div class="fixed end-4 top-[4.5rem] z-30">
-				<FirstChatTooltip />
-			</div>
-		{/if}
-	{/await}
+	{#if theme === 'ios'}
+		{#await $chatSummaries then chats}
+			{#if chats.length === 0 && !isWideScreen.value}
+				<div class="fixed end-4 top-[4.5rem] z-30">
+					<FirstChatTooltip />
+				</div>
+			{/if}
+		{/await}
+	{/if}
 
 	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
 
-	{#if theme == 'material'}
+	{#if !isWideScreen.value}
 		<div class="flex flex-col fixed bottom-4 left-0 right-0 z-10 pb-safe">
-			{#await $chatSummaries then chats}
-				{#if chats.length === 0 && !isWideScreen.value}
-					<div class="self-end me-4 mb-2 z-30">
-						<FirstChatTooltip />
-					</div>
-				{/if}
-			{/await}
-			<Fab
-				class="z-20 mr-4"
-				style="align-self: end;"
-				onClick={() => goto('/new-message')}
-				data-testid="home-new-message-fab"
-			>
-				<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
-			</Fab>
+			{#if theme == 'material'}
+				{#await $chatSummaries then chats}
+					{#if chats.length === 0 && !isWideScreen.value}
+						<div class="self-end me-4 mb-2 z-30">
+							<FirstChatTooltip />
+						</div>
+					{/if}
+				{/await}
+				<Fab
+					class="z-20 mr-4"
+					style="align-self: end;"
+					onClick={() => goto('/new-message')}
+					data-testid="home-new-message-fab"
+				>
+					<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
+				</Fab>
+			{/if}
 			<GetStarted bind:visible={getStartedVisible} />
 		</div>
 	{/if}
