@@ -46,7 +46,7 @@
 		{#if isSidebarRoute}
 			<EmptyState />
 			{#if isHome}
-				<div class="absolute bottom-0 left-0 right-0 z-10">
+				<div class="absolute bottom-3 left-0 right-0 z-10">
 					<GetStarted />
 				</div>
 			{/if}
