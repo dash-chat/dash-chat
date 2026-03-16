@@ -1,10 +1,11 @@
+use named_id::{RenameAll, RenameNone};
 use serde::{Deserialize, Serialize};
 
 use crate::{DeviceId, Header, Operation, topic::TopicId};
 use mailbox_client::MailboxItem;
 use p2panda_core::{Body, PublicKey};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, RenameNone)]
 pub struct MailboxOperation {
     pub header: Header,
     pub body: Option<Body>,

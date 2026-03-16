@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
+use named_id::RenameNone;
 use serde::{Deserialize, Serialize};
 
 use crate::{MailboxItem, store::MailboxStore};
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, derive_more::Debug)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, derive_more::Debug, RenameNone)]
 #[debug("Msg({author} {seq})")]
 pub struct Msg {
     pub topic: u8,

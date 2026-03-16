@@ -14,6 +14,7 @@ use std::{
 };
 
 use mailbox_api::*;
+use named_id::Rename;
 use once_cell::sync::Lazy;
 use tokio::sync::{Mutex, mpsc};
 use tracing::Instrument;
@@ -87,7 +88,16 @@ pub type MailboxId = String;
 pub type SeqNum = u64;
 
 pub trait ItemTraits:
-    Copy + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync
+    Copy
+    + Eq
+    + Ord
+    + std::hash::Hash
+    + std::fmt::Debug
+    + Serialize
+    + DeserializeOwned
+    + Rename
+    + Send
+    + Sync
 {
 }
 
@@ -99,12 +109,15 @@ impl<T> ItemTraits for T where
         + std::fmt::Debug
         + Serialize
         + DeserializeOwned
+        + Rename
         + Send
         + Sync
 {
 }
 
-pub trait MailboxItem: Clone + Serialize + DeserializeOwned + Send + Sync + 'static {
+pub trait MailboxItem:
+    Clone + Serialize + DeserializeOwned + Rename + Send + Sync + 'static
+{
     type Hash: ItemTraits;
     type Author: ItemTraits;
     type Topic: ItemTraits;

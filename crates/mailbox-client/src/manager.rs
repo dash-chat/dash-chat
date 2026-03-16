@@ -265,7 +265,10 @@ where
             return;
         }
 
-        tracing::info!("polling mailbox {id}");
+        tracing::info!(
+            "polling mailbox {id} for topics {:?}",
+            topics.clone().renamed()
+        );
         let result = self.sync_topics(topics.into_iter(), client).await;
 
         let mut mm = self.mailboxes.lock().await;
@@ -317,7 +320,6 @@ where
             }
 
             let Some(sender) = self.topics.lock().await.get(&topic).cloned() else {
-                #[cfg(feature = "named-id")]
                 tracing::warn!(topic = ?topic.renamed(), "no sender for topic");
                 continue;
             };

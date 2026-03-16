@@ -10,6 +10,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod cleanup;
 mod dollops_table;
+pub mod dump;
 mod get_dollops;
 mod store_dollops;
 mod watermark;
@@ -116,6 +117,7 @@ pub fn create_app_with_arc(db: Arc<Database>) -> Router {
         .route("/health", get(health_check))
         .route("/dollops/store", post(store_dollops))
         .route("/dollops/get", post(get_dollops_for_topics))
+        .route("/dollops/dump", get(dump::dump_dollops))
         .route("/blobs/get", post(get_blobs))
         .route("/blobs/store", post(store_blobs))
         .layer(CorsLayer::permissive())
