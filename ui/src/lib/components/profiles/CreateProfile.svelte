@@ -72,7 +72,7 @@
 		<div class="column" style="flex: 1; overflow-y: auto">
 			<PhotoPicker
 				bind:avatar={pickerAvatar}
-				bind:isTextEditorOpen={textEditorOpen}
+				bind:inModalState={textEditorOpen}
 				onClose={closePicker}
 				onSave={selectAvatar}
 				saveLabel={m.save()}

@@ -56,7 +56,7 @@
 	}
 
 	const hasChanges = $derived(avatar !== originalAvatar);
-	let textEditorOpen = $state(false);
+	let inModalState = $state(false);
 </script>
 
 <Page>
@@ -71,7 +71,7 @@
 		<div class="column" style="flex: 1; overflow-y: auto;">
 			<PhotoPicker
 				bind:avatar
-				bind:isTextEditorOpen={textEditorOpen}
+				bind:inModalState={inModalState}
 				onClose={() => goto('/settings/profile')}
 				onSave={save}
 				saveLabel={m.save()}
@@ -79,7 +79,7 @@
 			/>
 		</div>
 
-		{#if !textEditorOpen && !isIos}
+		{#if !inModalState && !isIos}
 			<!-- Save button -->
 			<Button
 				rounded

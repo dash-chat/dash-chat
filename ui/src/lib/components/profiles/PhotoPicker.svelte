@@ -16,7 +16,7 @@
 
 	let {
 		avatar = $bindable(),
-		isTextEditorOpen = $bindable(false),
+		inModalState = $bindable(false),
 		onSelect,
 		onClose,
 		onSave,
@@ -24,7 +24,7 @@
 		saveDisabled = false,
 	}: {
 		avatar?: string | undefined;
-		isTextEditorOpen?: boolean;
+		inModalState?: boolean;
 		onSelect?: () => void;
 		onClose?: () => void;
 		onSave?: () => void;
@@ -34,7 +34,7 @@
 
 	let view = $state<'picker' | 'text'>('picker');
 	$effect(() => {
-		isTextEditorOpen = view === 'text';
+		inModalState = view === 'text';
 	});
 	let textValue = $state('');
 	let selectedColor = $state('#fce7f3');
