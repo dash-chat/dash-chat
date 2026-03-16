@@ -142,7 +142,6 @@
 		return () =>
 			window.removeEventListener('set-dark-mode', handler as EventListener);
 	});
-
 </script>
 
 {#if showToolbar}

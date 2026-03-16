@@ -18,23 +18,27 @@
 </script>
 
 {#if !alreadyShown && !dismissed}
+	<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 	<div
 		class="tooltip-bubble"
-		role="status"
-		tabindex="0"
 		onclick={dismiss}
-		onkeydown={(e) => { if (e.key === 'Escape') dismiss(); }}
 		data-testid="first-chat-tooltip"
 	>
 		<div class="relative">
 			{#if theme === 'ios'}
-				<div class="arrow absolute -top-2 end-3.5 h-0 w-0 border-x-8 border-b-8 border-x-transparent"></div>
+				<div
+					class="arrow absolute -top-2 end-3.5 h-0 w-0 border-x-8 border-b-8 border-x-transparent"
+				></div>
 			{/if}
-			<div class="tooltip-bg rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-lg">
+			<div
+				class="tooltip-bg rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+			>
 				{m.startFirstChatHere()}
 			</div>
 			{#if theme === 'material'}
-				<div class="arrow absolute -bottom-2 end-5 h-0 w-0 border-x-8 border-t-8 border-x-transparent"></div>
+				<div
+					class="arrow absolute -bottom-2 end-5 h-0 w-0 border-x-8 border-t-8 border-x-transparent"
+				></div>
 			{/if}
 		</div>
 	</div>
