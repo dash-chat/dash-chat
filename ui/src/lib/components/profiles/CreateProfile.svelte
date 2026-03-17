@@ -3,7 +3,7 @@
 	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { getContext } from 'svelte';
 	import type { ContactsStore, Error } from 'dash-chat-stores';
-	import PhotoPicker from './PhotoPicker.svelte';
+	import AvatarPicker from './AvatarPicker.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos } from '$lib/utils/environment';
@@ -70,7 +70,7 @@
 <Page>
 	{#if showPicker}
 		<div class="column" style="flex: 1; overflow-y: auto">
-			<PhotoPicker
+			<AvatarPicker
 				bind:avatar={pickerAvatar}
 				bind:inModalState={textEditorOpen}
 				onClose={closePicker}
