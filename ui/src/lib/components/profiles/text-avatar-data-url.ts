@@ -1,7 +1,7 @@
 const AVATAR_DATA_URL_PREFIX = 'data:application/x-dashchat-avatar,';
 const TEXT_AVATAR_TYPE_NAME = 'TextAvatarData';
 const TEXT_AVATAR_VERSION = '1';
-const COLOR_REGEX = /^#[0-9a-f]{6}$/i;
+const COLOR_REGEX = /^#[0-9a-fA-F]{6}$/i;
 const TEXT_REGEX = /^[A-Z0-9]{1,3}$/;
 
 export class TextAvatarData {
@@ -12,8 +12,7 @@ export class TextAvatarData {
 
   sanitizedHexColor(): string {
     // Ensure the color is a valid hex code and sanitize it
-    const hexColorRegex = /^#([0-9A-Fa-f]{3}){1,2}$/;
-    if (hexColorRegex.test(this.color)) {
+    if (COLOR_REGEX.test(this.color)) {
       return this.color;
     }
     // Fallback to a default color if invalid
