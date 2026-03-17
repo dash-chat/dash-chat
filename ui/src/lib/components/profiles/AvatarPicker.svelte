@@ -227,8 +227,11 @@
 	</div>
 {:else}
 	<TextAvatarPicker
-		bind:avatar
-		onSelect={() => (view = 'picker')}
+		existingAvatar={avatar}
+		onSelect={nextAvatar => {
+			avatar = nextAvatar;
+			view = 'picker';
+		}}
 		onClose={() => (view = 'picker')}
 	/>
 {/if}

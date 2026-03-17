@@ -13,21 +13,7 @@
 	import { isIos } from '$lib/utils/environment';
 	import { TextAvatarData } from './text-avatar-data-url';
 
-	let {
-		avatar = $bindable(),
-		onSelect,
-		onClose,
-	}: {
-		avatar?: string | undefined;
-		onSelect?: () => void;
-		onClose?: () => void;
-	} = $props();
-
-	let textValue = $state('');
-	let selectedColor = $state('#fce7f3');
-	let activeTab = $state<'text' | 'color'>('text');
-	let hiddenInput: HTMLInputElement;
-
+	const defaultColor = '#fce7f3';
 	const colors = [
 		'#ddd6fe',
 		'#bfdbfe',
@@ -35,7 +21,7 @@
 		'#bbf7d0',
 		'#e9d5ff',
 		'#fbcfe8',
-		'#fce7f3',
+		defaultColor,
 		'#fecaca',
 		'#fef08a',
 		'#d9f99d',
@@ -43,24 +29,52 @@
 		'#d1d5db',
 	];
 
+	let {
+		existingAvatar,
+		onSelect,
+		onClose,
+	}: {
+		existingAvatar?: string | undefined;
+		onSelect?: (avatar: string) => void;
+		onClose?: () => void;
+	} = $props();
+
+	const initializeTextAvatar = (avatar?: string) =>
+		TextAvatarData.deserialize(avatar) ?? new TextAvatarData(defaultColor, '');
+
+	// svelte-ignore state_referenced_locally
+	let currentTextAvatar = $state(initializeTextAvatar(existingAvatar));
+
+	$effect(() => {
+		currentTextAvatar = initializeTextAvatar(existingAvatar);
+	});
+
+	let activeTab = $state<'text' | 'color'>('text');
+	let hiddenInput: HTMLInputElement;
+
 	function generateTextAvatar() {
-		avatar = new TextAvatarData(
-			selectedColor,
-			textValue.toUpperCase(),
-		).serialize();
-		console.log('Generated text avatar:', avatar);
-		onSelect?.();
+		onSelect?.(currentTextAvatar.serialize());
 	}
 
 	function handleTextInput(e: Event) {
 		const input = e.target as HTMLInputElement;
-		textValue = input.value.slice(0, 3).toUpperCase();
+		currentTextAvatar = new TextAvatarData(
+			currentTextAvatar.color,
+			input.value.slice(0, 3).toUpperCase(),
+		);
 	}
 
 	function focusTextInput() {
 		if (activeTab === 'text') {
 			hiddenInput?.focus();
+		} else {
+			activeTab = 'text';
+			setTimeout(() => hiddenInput?.focus(), 100);
 		}
+	}
+
+	function handleColorSelect(color: string) {
+		currentTextAvatar = new TextAvatarData(color, currentTextAvatar.text);
 	}
 
 	$effect(() => {
@@ -74,7 +88,7 @@
 	type="text"
 	class="absolute opacity-0 pointer-events-none"
 	bind:this={hiddenInput}
-	value={textValue}
+	value={currentTextAvatar.text}
 	oninput={handleTextInput}
 	maxlength="3"
 	onblur={() =>
@@ -82,7 +96,10 @@
 />
 
 <!-- Text avatar editor -->
-<Navbar transparent rightClass={!textValue ? 'ios-right-disabled' : ''}>
+<Navbar
+	transparent
+	rightClass={!currentTextAvatar.text ? 'ios-right-disabled' : ''}
+>
 	{#snippet left()}
 		<Link iconOnly onClick={onClose} data-testid="edit-photo-back">
 			<wa-icon src={wrapPathInSvg(mdiArrowLeft)} style="font-size: 24px"
@@ -119,19 +136,21 @@
 <div class="column" style="align-items: center; padding: 24px 0;">
 	<button
 		class="w-[180px] h-[180px] rounded-full flex items-center justify-center border-none cursor-pointer"
-		style="background-color: {selectedColor};"
+		style="background-color: {currentTextAvatar.color};"
 		onclick={focusTextInput}
 		type="button"
 	>
 		{#if activeTab === 'text'}
 			<span class="text-[56px] font-medium text-pink-900"
-				>{textValue}<span
+				>{currentTextAvatar.text}<span
 					class="text-[56px] font-light text-pink-900 animate-[blink_1s_infinite] -ml-0.5"
 					>|</span
 				></span
 			>
 		{:else}
-			<span class="text-[56px] font-medium text-pink-900">{textValue}</span>
+			<span class="text-[56px] font-medium text-pink-900"
+				>{currentTextAvatar.text}</span
+			>
 		{/if}
 	</button>
 </div>
@@ -140,13 +159,13 @@
 	<div class="grid grid-cols-4 gap-4 px-6 py-6 justify-items-center">
 		{#each colors as color}
 			<button
-				class="w-[72px] h-[72px] rounded-full border-[3px] cursor-pointer transition-transform duration-200 hover:scale-105 active:scale-95 {selectedColor ===
+				class="w-[72px] h-[72px] rounded-full border-[3px] cursor-pointer transition-transform duration-200 hover:scale-105 active:scale-95 {currentTextAvatar.color ===
 				color
 					? 'border-gray-700'
 					: 'border-transparent'}"
 				style="background-color: {color};"
 				aria-label="Select color {color}"
-				onclick={() => (selectedColor = color)}
+				onclick={() => handleColorSelect(color)}
 			>
 			</button>
 		{/each}
@@ -157,7 +176,7 @@
 	<Button
 		rounded
 		tonal
-		disabled={!textValue}
+		disabled={!currentTextAvatar.text}
 		onClick={generateTextAvatar}
 		class="fixed-action-btn"
 	>
