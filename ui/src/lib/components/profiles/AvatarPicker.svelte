@@ -32,10 +32,6 @@
 	$effect(() => {
 		inModalState = view === 'text';
 	});
-	let textValue = $state('');
-	let selectedColor = $state('#fce7f3');
-	let activeTab = $state<'text' | 'color'>('text');
-	let hiddenInput: HTMLInputElement;
 	let avatarFilePicker: HTMLInputElement;
 
 	const defaultAvatars = [
@@ -100,29 +96,8 @@
 	}
 
 	function openTextEditor() {
-		textValue = '';
-		selectedColor = '#fce7f3';
-		activeTab = 'text';
 		view = 'text';
-		// setTimeout(() => hiddenInput?.focus(), 100);
 	}
-
-	// function handleTextInput(e: Event) {
-	// 	const input = e.target as HTMLInputElement;
-	// 	textValue = input.value.slice(0, 3).toUpperCase();
-	// }
-
-	// function focusTextInput() {
-	// 	if (activeTab === 'text') {
-	// 		hiddenInput?.focus();
-	// 	}
-	// }
-
-	// $effect(() => {
-	// 	if (view === 'text' && activeTab === 'text') {
-	// 		setTimeout(() => hiddenInput?.focus(), 100);
-	// 	}
-	// });
 </script>
 
 <input
