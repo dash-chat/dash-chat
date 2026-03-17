@@ -44,25 +44,8 @@
 	];
 
 	function generateTextAvatar() {
-		const canvas = document.createElement('canvas');
-		canvas.width = 256;
-		canvas.height = 256;
-		const ctx = canvas.getContext('2d')!;
-
-		ctx.fillStyle = selectedColor;
-		ctx.beginPath();
-		ctx.arc(128, 128, 128, 0, Math.PI * 2);
-		ctx.fill();
-
-		ctx.fillStyle = '#831843';
-		ctx.font = '500 100px sans-serif';
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.fillText(textValue.toUpperCase(), 128, 135);
-
-		avatar = canvas.toDataURL('image/png');
-		// avatar = `data:text/plain;charset=utf-8,${selectedColor}|${encodeURIComponent(textValue.toUpperCase())}`;
-		// console.log('Generated text avatar:', avatar);
+		avatar = `data:text/plain;charset=utf-8,${selectedColor}|${encodeURIComponent(textValue.toUpperCase())}`;
+		console.log('Generated text avatar:', avatar);
 		onSelect?.();
 	}
 
