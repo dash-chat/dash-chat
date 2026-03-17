@@ -1,6 +1,5 @@
 <script lang="ts">
 	import TextAvatarPicker from './TextAvatarPicker.svelte';
-
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiCamera, mdiImage } from '@mdi/js';
@@ -210,16 +209,3 @@
 		onClose={() => (view = 'picker')}
 	/>
 {/if}
-
-<style>
-	@keyframes blink {
-		0%,
-		50% {
-			opacity: 1;
-		}
-		51%,
-		100% {
-			opacity: 0;
-		}
-	}
-</style>
