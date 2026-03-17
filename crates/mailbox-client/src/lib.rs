@@ -48,10 +48,12 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     ) -> Result<FetchResponse<Item>, anyhow::Error>;
 }
 
+/// Map of topics to pairings of authors and log heights
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(bound(deserialize = "Item: DeserializeOwned"))]
 pub struct FetchRequest<Item: MailboxItem>(pub BTreeMap<Item::Topic, FetchTopicRequest<Item>>);
 
+/// Map of log authors to the height of their logs
 pub type FetchTopicRequest<Item> = BTreeMap<<Item as MailboxItem>::Author, u64>;
 
 /// Returned by the `fetch` method.

@@ -86,11 +86,11 @@ where
         // Convert FetchRequest to GetBlobsRequest
         let mut topics: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
 
-        for (log_id, authors) in request.0.iter() {
+        for (log_id, heights) in request.0.iter() {
             let topic_id = Self::encode_topic_id(log_id);
             let mut log_map: BTreeMap<String, u64> = BTreeMap::new();
 
-            for (device_id, height) in authors.iter() {
+            for (device_id, height) in heights.iter() {
                 let server_log_id = Self::device_id_to_log_id(device_id);
                 log_map.insert(server_log_id, *height);
             }

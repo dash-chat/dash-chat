@@ -30,6 +30,7 @@ pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 pub type TopicId = String;
 pub type Author = String;
 pub type SequenceNumber = u64;
+pub type LogHeight = u64;
 
 #[derive(Clone)]
 pub struct AppState {

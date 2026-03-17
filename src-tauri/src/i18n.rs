@@ -12,11 +12,11 @@ const FA_MESSAGES: &str = include_str!("../../ui/messages/fa-ir.json");
 /// `sonix_i18n::init` (which requires identical key sets) doesn't fail.
 pub fn init_i18n() {
     let en: Value = serde_json::from_str(EN_MESSAGES).expect("Failed to parse en.json");
-    let es: Value = serde_json::from_str(ES_MESSAGES).expect("Failed to parse es.json");
-    let de: Value = serde_json::from_str(DE_MESSAGES).expect("Failed to parse de-de.json");
-    let fa: Value = serde_json::from_str(FA_MESSAGES).expect("Failed to parse fa-ir.json");
+    let _es: Value = serde_json::from_str(ES_MESSAGES).expect("Failed to parse es.json");
+    let _de: Value = serde_json::from_str(DE_MESSAGES).expect("Failed to parse de-de.json");
+    let _fa: Value = serde_json::from_str(FA_MESSAGES).expect("Failed to parse fa-ir.json");
 
-    let en_obj = en.as_object().expect("en.json must be an object").clone();
+    let _en_obj = en.as_object().expect("en.json must be an object").clone();
 
     // Backfill missing keys from English into each locale
     let locales: Vec<(&str, Value)> = vec![
@@ -37,6 +37,7 @@ pub fn init_i18n() {
 }
 
 /// For each key in `reference` that is missing in `locale`, insert the English value.
+#[allow(unused)]
 fn backfill(locale: Value, reference: &serde_json::Map<String, Value>) -> Value {
     let mut obj = match locale {
         Value::Object(map) => map,

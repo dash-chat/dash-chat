@@ -4,13 +4,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AppState, Author, Blob, BlobsKey, BlobsKeyPrefix, SequenceNumber, TopicId, WatermarksKey,
-    BLOBS_TABLE, WATERMARKS_TABLE,
+    AppState, Author, Blob, BlobsKey, BlobsKeyPrefix, LogHeight, SequenceNumber, TopicId,
+    WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE,
 };
 
 #[derive(Serialize, Deserialize)]
 pub struct GetBlobsRequest {
-    pub topics: BTreeMap<TopicId, BTreeMap<Author, SequenceNumber>>,
+    /// Map of topics to pairings of authors and log heights
+    pub topics: BTreeMap<TopicId, BTreeMap<Author, LogHeight>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -93,10 +94,10 @@ fn get_blobs_for_topics_inner(
                     .insert(seq_num);
             }
 
-            // Check if this author was requested with a specific sequence number filter
-            let should_include = if let Some(min_seq_num) = requested_authors.get(&author) {
-                // Author is in the request: only include if seq_num > min_seq_num
-                seq_num > *min_seq_num
+            // Check if this author was requested with a specific log height filter
+            let should_include = if let Some(log_height) = requested_authors.get(&author) {
+                // Only include if seq_num is beyond what the client holds locally
+                seq_num >= *log_height
             } else {
                 // Author is NOT in the request: include all blobs for this author
                 // TODO: implement pagination or asynchronous data streaming
