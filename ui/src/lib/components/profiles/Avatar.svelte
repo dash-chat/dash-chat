@@ -3,6 +3,8 @@
 	import { TextAvatarData } from './text-avatar-data-url';
 	import type { Snippet } from 'svelte';
 
+	const TEXT_AVATAR_TEXT_COLOR = '#831843';
+
 	let {
 		image,
 		initials,
@@ -29,7 +31,7 @@
 			return style;
 		}
 
-		const textAvatarStyle = `background-color: ${textAvatarData.sanitizedHexColor()}; color: #831843;`;
+		const textAvatarStyle = `background-color: ${textAvatarData.sanitizedHexColor()}; color: ${TEXT_AVATAR_TEXT_COLOR};`;
 		return style ? `${style}; ${textAvatarStyle}` : textAvatarStyle;
 	});
 </script>
