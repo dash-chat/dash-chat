@@ -265,7 +265,7 @@ where
             return;
         }
 
-        tracing::info!(
+        tracing::debug!(
             "polling mailbox {id} for topics {:?}",
             topics.clone().renamed()
         );
@@ -303,6 +303,7 @@ where
                 BTreeMap::from_iter(self.store.get_log_heights(&topic).await?.into_iter());
             request.insert(topic, heights);
         }
+        tracing::info!("dollop fetch request: {:?}", request.clone().renamed());
 
         let FetchResponse(response) = mailbox.fetch(FetchRequest(request)).await?;
 
@@ -312,7 +313,7 @@ where
             if items.is_empty() && missing.is_empty() {
                 tracing::trace!(topic = ?topic, "Syncing with mailbox: nothing to do");
             } else {
-                tracing::info!(
+                tracing::debug!(
                     items = items.len(),
                     missing = missing.len(),
                     "fetched items"
@@ -332,11 +333,13 @@ where
                 let Some(lowest) = seqs.iter().min() else {
                     continue;
                 };
-                let Some(log) = self
-                    .store
-                    .get_log(&author, &topic, *lowest)
-                    .await
-                    .map_err(|err| anyhow::anyhow!("failed to get log for {topic:?}: {err}"))?
+                let Some(log) =
+                    self.store
+                        .get_log(&author, &topic, *lowest)
+                        .await
+                        .map_err(|err| {
+                            anyhow::anyhow!("failed to get log for {:?}: {err}", topic.renamed())
+                        })?
                 else {
                     tracing::warn!(author = ?author, topic = ?topic, lowest = ?lowest, "missing log for author and topic");
                     continue;

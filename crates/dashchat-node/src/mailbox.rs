@@ -1,4 +1,4 @@
-use named_id::{RenameAll, RenameNone};
+use named_id::RenameNone;
 use serde::{Deserialize, Serialize};
 
 use crate::{DeviceId, Header, Operation, topic::TopicId};

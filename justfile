@@ -5,7 +5,7 @@ dev:
     mprocs
 
 test:
-    cd crates/dashchat-node && cargo nextest run
+    cd crates/dashchat-node && cargo nextest run && cd ..
 
 e2e-test:
     pnpm -F ./e2e-tests test

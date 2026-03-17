@@ -30,14 +30,10 @@ pub fn dump_db(
         let (key, _) = entry?;
         let key: DollopsKey = key.value();
         keys.entry(key.topic_id)
-            .and_modify(|v: &mut BTreeMap<String, BTreeSet<u64>>| {
-                v.entry(key.author)
-                    .and_modify(|v: &mut BTreeSet<u64>| {
-                        v.insert(key.sequence_number);
-                    })
-                    .or_insert(BTreeSet::new());
-            })
-            .or_insert(BTreeMap::new());
+            .or_insert(BTreeMap::new())
+            .entry(key.author)
+            .or_insert(BTreeSet::new())
+            .insert(key.sequence_number);
     }
 
     Ok(keys)
