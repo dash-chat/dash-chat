@@ -20,6 +20,7 @@
 		Preloader,
 		useTheme,
 	} from 'konsta/svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 
 	const theme = $derived(useTheme());
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -50,12 +51,11 @@
 		<div class="column" style="flex: 1">
 			<div class="column center-in-desktop">
 				<div class="column mt-2 mb-4 gap-2" style="align-items: center">
-					<wa-avatar
+					<Avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
 						style="--size: 64px;"
-					>
-					</wa-avatar>
+					/>
 
 					<Button
 						tonal

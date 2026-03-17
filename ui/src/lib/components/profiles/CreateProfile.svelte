@@ -20,6 +20,7 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCamera, mdiAccount } from '@mdi/js';
+	import Avatar from './Avatar.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let name = $state<string | undefined>(undefined);
@@ -121,12 +122,7 @@
 					onclick={openPicker}
 				>
 					{#if avatar}
-						<wa-avatar
-							image={avatar}
-							alt="Avatar"
-							shape="circle"
-							style="--size: 56px"
-						></wa-avatar>
+						<Avatar image={avatar} alt="Avatar" style="--size: 56px" />
 					{:else}
 						<Button
 							rounded

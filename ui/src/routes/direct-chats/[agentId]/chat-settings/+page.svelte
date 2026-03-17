@@ -28,6 +28,7 @@
 	} from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { page } from '$app/state';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	let agentId = page.params.agentId!;
 
 	const theme = $derived(useTheme());
@@ -64,12 +65,11 @@
 		<div class="column" style="flex: 1">
 			<div class="column center-in-desktop">
 				<div class="column m-6 gap-2" style="align-items: center">
-					<wa-avatar
+					<Avatar
 						image={profile?.avatar}
 						initials={profile?.name.slice(0, 2)}
 						style="--size: 80px;"
-					>
-					</wa-avatar>
+					/>
 
 					<div
 						class="flex cursor-pointer items-center gap-1"

@@ -28,6 +28,7 @@
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -76,12 +77,11 @@
 					class="gap-2"
 					style="display: flex; justify-content: start; align-items: center;"
 				>
-					<wa-avatar
+					<Avatar
 						image={info.avatar}
 						initials={info.name.slice(0, 2)}
 						style="--size: 2.5rem"
-					>
-					</wa-avatar>
+					/>
 					<span>{info.name}</span>
 				</Link>
 			{/await}
@@ -123,15 +123,14 @@
 									</Card>
 								{:else}
 									<div class="row gap-2 m-0">
-										<wa-avatar
+										<Avatar
 											image={members[message.author].profile?.avatar}
 											initials={members[message.author].profile?.name.slice(
 												0,
 												2,
 											)}
 											style="--size: 2.5rem"
-										>
-										</wa-avatar>
+										/>
 										<Card raised class="message others-message">
 											<div class="row gap-2" style="align-items: end">
 												<span>{message.content}</span>

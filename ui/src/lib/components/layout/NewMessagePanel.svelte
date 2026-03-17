@@ -22,6 +22,7 @@
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from '../profiles/Avatar.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
@@ -128,11 +129,10 @@
 							chevron={false}
 						>
 							{#snippet media()}
-								<wa-avatar
+								<Avatar
 									image={profile.avatar}
 									initials={profile.name.slice(0, 2)}
-								>
-								</wa-avatar>
+								/>
 							{/snippet}
 						</ListItem>
 					{:else}

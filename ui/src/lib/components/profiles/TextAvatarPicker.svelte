@@ -16,11 +16,11 @@
 	let {
 		avatar = $bindable(),
 		onSelect,
-    onClose,
+		onClose,
 	}: {
 		avatar?: string | undefined;
 		onSelect?: () => void;
-    onClose?: () => void;
+		onClose?: () => void;
 	} = $props();
 
 	let textValue = $state('');
@@ -61,6 +61,8 @@
 		ctx.fillText(textValue.toUpperCase(), 128, 135);
 
 		avatar = canvas.toDataURL('image/png');
+		// avatar = `data:text/plain;charset=utf-8,${selectedColor}|${encodeURIComponent(textValue.toUpperCase())}`;
+		// console.log('Generated text avatar:', avatar);
 		onSelect?.();
 	}
 
@@ -90,18 +92,13 @@
 	oninput={handleTextInput}
 	maxlength="3"
 	onblur={() =>
-		activeTab === 'text' &&
-		setTimeout(() => hiddenInput?.focus(), 0)}
+		activeTab === 'text' && setTimeout(() => hiddenInput?.focus(), 0)}
 />
 
 <!-- Text avatar editor -->
 <Navbar transparent rightClass={!textValue ? 'ios-right-disabled' : ''}>
 	{#snippet left()}
-		<Link
-			iconOnly
-			onClick={onClose}
-			data-testid="edit-photo-back"
-		>
+		<Link iconOnly onClick={onClose} data-testid="edit-photo-back">
 			<wa-icon src={wrapPathInSvg(mdiArrowLeft)} style="font-size: 24px"
 			></wa-icon>
 		</Link>
@@ -162,7 +159,7 @@
 					? 'border-gray-700'
 					: 'border-transparent'}"
 				style="background-color: {color};"
-        aria-label="Select color {color}"
+				aria-label="Select color {color}"
 				onclick={() => (selectedColor = color)}
 			>
 			</button>

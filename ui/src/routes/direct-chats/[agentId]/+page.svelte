@@ -70,6 +70,7 @@
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
 	import { longpress } from '$lib/actions/longpress';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -516,12 +517,11 @@
 										href={`/direct-chats/${agentId}/chat-settings`}
 										data-testid="direct-chat-settings-link"
 									>
-										<wa-avatar
+										<Avatar
 											image={profile!.avatar}
 											initials={profile!.name.slice(0, 2)}
 											style="--size: 2.5rem"
-										>
-										</wa-avatar>
+										/>
 										<span data-testid="direct-chat-peer-name"
 											>{fullName(profile!)}</span
 										>
@@ -550,12 +550,11 @@
 												class="column my-6 gap-2 items-center"
 												onclick={() => (showPeerProfile = true)}
 											>
-												<wa-avatar
+												<Avatar
 													image={profile.avatar}
 													initials={profile.name.slice(0, 2)}
 													style="--size: 80px;"
-												>
-												</wa-avatar>
+												/>
 												<div class="flex items-center gap-1">
 													<span class="text-xl font-semibold"
 														>{fullName(profile!)}</span

@@ -26,6 +26,7 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import type { Action } from 'svelte/action';
+	import Avatar from '../profiles/Avatar.svelte';
 
 	const stopPropagation: Action = node => {
 		const stop = (e: Event) => {
@@ -79,14 +80,13 @@
 				titleFontSizeMaterial="text-xl"
 			>
 				{#snippet media()}
-					<wa-avatar
+					<Avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
 						style={isWideScreen.value || theme === 'ios'
 							? '--size: 64px'
 							: '--size: 64px; margin-left: 16px'}
-					>
-					</wa-avatar>
+					/>
 				{/snippet}
 				{#snippet after()}
 					<a

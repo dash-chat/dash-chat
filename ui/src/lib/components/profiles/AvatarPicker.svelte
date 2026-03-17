@@ -1,18 +1,15 @@
 <script lang="ts">
-  import TextAvatarPicker from './TextAvatarPicker.svelte';
+	import TextAvatarPicker from './TextAvatarPicker.svelte';
 
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiCamera, mdiImage } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
-	import {
-		Button,
-		Link,
-		Navbar
-	} from 'konsta/svelte';
+	import { Button, Link, Navbar } from 'konsta/svelte';
 	import { resizeAndExport } from '$lib/utils/image';
 	import { isMobile, isIos } from '$lib/utils/environment';
+	import Avatar from './Avatar.svelte';
 
 	let {
 		avatar = $bindable(),
@@ -161,7 +158,7 @@
 	<!-- Avatar preview with remove button -->
 	<div class="column" style="align-items: center; padding: 16px 0 24px;">
 		<div style="position: relative; display: inline-block;">
-			<wa-avatar style="--size: 140px" image={avatar}></wa-avatar>
+			<Avatar style="--size: 140px" image={avatar} />
 			{#if avatar}
 				<button
 					class="absolute top-2 right-2 w-10 h-10 rounded-[10px] bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center transition-colors duration-200 hover:bg-gray-100 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
@@ -230,7 +227,11 @@
 		{/each}
 	</div>
 {:else}
-	<TextAvatarPicker bind:avatar onSelect={() => (view = 'picker')} onClose={() => (view = 'picker')} />
+	<TextAvatarPicker
+		bind:avatar
+		onSelect={() => (view = 'picker')}
+		onClose={() => (view = 'picker')}
+	/>
 {/if}
 
 <style>

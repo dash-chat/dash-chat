@@ -13,6 +13,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	const theme = $derived(useTheme());
 
 	let getStartedVisible = $state(true);
@@ -28,12 +29,11 @@
 		{#snippet left()}
 			{#await $myProfile then myProfile}
 				<Link iconOnly href="/settings" data-testid="home-settings-link">
-					<wa-avatar
+					<Avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
 						style="--size: 42px"
-					>
-					</wa-avatar>
+					/>
 				</Link>
 			{/await}
 		{/snippet}

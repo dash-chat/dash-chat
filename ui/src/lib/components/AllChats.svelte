@@ -19,6 +19,7 @@
 	import { useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from './profiles/Avatar.svelte';
 
 	let { class: className = '' }: { class?: string } = $props();
 
@@ -54,11 +55,10 @@
 						chevron={false}
 					>
 						{#snippet media()}
-							<wa-avatar
+							<Avatar
 								image={summary.avatar}
 								initials={summary.name.slice(0, 2)}
-							>
-							</wa-avatar>
+							/>
 						{/snippet}
 						{#snippet after()}
 							{#if beforeYesterday(summary.lastEvent.timestamp)}

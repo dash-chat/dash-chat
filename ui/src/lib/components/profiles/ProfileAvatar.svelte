@@ -4,6 +4,7 @@
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { Preloader } from 'konsta/svelte';
+	import Avatar from './Avatar.svelte';
 
 	let { chatActorId }: { chatActorId: PublicKey } = $props();
 
@@ -20,6 +21,5 @@
 		<Preloader />
 	</div>
 {:then profile}
-	<wa-avatar image={profile?.avatar} initials={profile?.name.slice(0, 2)}>
-	</wa-avatar>
+	<Avatar image={profile?.avatar} initials={profile?.name.slice(0, 2)} />
 {/await}

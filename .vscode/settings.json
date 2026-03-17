@@ -1,7 +1,8 @@
 {
 	"editor.defaultFormatter": "esbenp.prettier-vscode",
 	"[svelte]": {
-		"editor.defaultFormatter": "svelte.svelte-vscode"
+		"editor.defaultFormatter": "svelte.svelte-vscode",
+		"editor.formatOnSave": true
 	},
 	"files.exclude": {
 		"node_modules/.pnpm/node_modules/site/**/dist/": true,
