@@ -12,6 +12,7 @@
 	} from 'konsta/svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { TextAvatarData } from './text-avatar-data-url';
+	import { TEXT_AVATAR_TEXT_COLOR } from './Avatar.svelte';
 
 	const defaultColor = '#fce7f3';
 	const colors = [
@@ -141,15 +142,18 @@
 		type="button"
 	>
 		{#if activeTab === 'text'}
-			<span class="text-[56px] font-medium text-pink-900"
+			<span
+				class="text-[56px] font-medium"
+				style="color: {TEXT_AVATAR_TEXT_COLOR}"
 				>{currentTextAvatar.text}<span
-					class="text-[56px] font-light text-pink-900 animate-[blink_1s_infinite] -ml-0.5"
-					>|</span
+					class="text-[56px] font-light animate-[blink_1s_infinite] -ml-0.5"
+					style="color: {TEXT_AVATAR_TEXT_COLOR}">|</span
 				></span
 			>
 		{:else}
-			<span class="text-[56px] font-medium text-pink-900"
-				>{currentTextAvatar.text}</span
+			<span
+				class="text-[56px] font-medium"
+				style="color: {TEXT_AVATAR_TEXT_COLOR}">{currentTextAvatar.text}</span
 			>
 		{/if}
 	</button>
@@ -185,7 +189,7 @@
 {/if}
 
 <style>
-	@keyframes blink {
+	@keyframes -global-blink {
 		0%,
 		50% {
 			opacity: 1;

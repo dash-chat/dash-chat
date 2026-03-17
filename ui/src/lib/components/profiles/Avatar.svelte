@@ -1,9 +1,11 @@
+<script module lang="ts">
+	export const TEXT_AVATAR_TEXT_COLOR = '#831843';
+</script>
+
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { TextAvatarData } from './text-avatar-data-url';
 	import type { Snippet } from 'svelte';
-
-	const TEXT_AVATAR_TEXT_COLOR = '#831843';
 
 	let {
 		image,
