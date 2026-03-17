@@ -1,5 +1,4 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import type { ContactsStore, PublicKey } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { getContext } from 'svelte';
 	import type { ContactsStore, Error } from 'dash-chat-stores';
 	import AvatarPicker from './AvatarPicker.svelte';

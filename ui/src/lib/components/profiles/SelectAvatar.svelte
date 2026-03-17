@@ -1,5 +1,4 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { resizeAndExport } from '$lib/utils/image';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccount, mdiPlus } from '@mdi/js';

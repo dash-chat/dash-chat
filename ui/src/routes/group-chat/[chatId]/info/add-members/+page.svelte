@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiAccountMultiplePlus, mdiAccountPlus } from '@mdi/js';
 	import type { ContactsStore, PublicKey } from 'dash-chat-stores';

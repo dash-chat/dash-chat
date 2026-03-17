@@ -2,7 +2,6 @@
 	import TextAvatarPicker from './TextAvatarPicker.svelte';
 
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiCamera, mdiImage } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
