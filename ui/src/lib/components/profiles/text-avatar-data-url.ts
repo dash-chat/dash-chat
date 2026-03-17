@@ -1,6 +1,8 @@
 const AVATAR_DATA_URL_PREFIX = 'data:application/x-dashchat-avatar,';
 const TEXT_AVATAR_TYPE_NAME = 'TextAvatarData';
 const TEXT_AVATAR_VERSION = '1';
+const COLOR_REGEX = /^#[0-9a-f]{6}$/i;
+const TEXT_REGEX = /^[A-Z0-9]{1,3}$/;
 
 export class TextAvatarData {
 	constructor(
@@ -19,7 +21,7 @@ export class TextAvatarData {
   }
 
 	serialize(): string {
-		return `${AVATAR_DATA_URL_PREFIX}${TEXT_AVATAR_TYPE_NAME}|${TEXT_AVATAR_VERSION}|${this.color}|${encodeURIComponent(this.text)}`;
+		return `${AVATAR_DATA_URL_PREFIX}${TEXT_AVATAR_TYPE_NAME}|${TEXT_AVATAR_VERSION}|${encodeURIComponent(this.color)}|${encodeURIComponent(this.text)}`;
 	}
 
 	static deserialize(value: string | undefined): TextAvatarData | undefined {
@@ -29,22 +31,27 @@ export class TextAvatarData {
 
 		if (value.startsWith(AVATAR_DATA_URL_PREFIX)) {
 			const payload = value.slice(AVATAR_DATA_URL_PREFIX.length);
-			const [typeName = '', version = '', color = '', encodedText = ''] =
+			const [typeName = '', version = '', encodedColor = '', encodedText = ''] =
 				payload.split('|', 4);
 
 			if (
 				typeName !== TEXT_AVATAR_TYPE_NAME ||
 				version !== TEXT_AVATAR_VERSION ||
-				!color ||
+				!encodedColor ||
 				!encodedText
 			) {
 				return undefined;
 			}
 
 			try {
+				const color = decodeURIComponent(encodedColor);
 				const text = decodeURIComponent(encodedText);
 
 				if (!color || !text) {
+					return undefined;
+				}
+
+				if (!COLOR_REGEX.test(color) || !TEXT_REGEX.test(text)) {
 					return undefined;
 				}
 

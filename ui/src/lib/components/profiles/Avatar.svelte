@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { TextAvatarData } from './text-avatar-data-url';
+	import type { Snippet } from 'svelte';
 
 	let {
 		image,
@@ -15,7 +16,7 @@
 		alt?: string | undefined;
 		style?: string | undefined;
 		id?: string | undefined;
-		children?: any;
+		children?: Snippet | undefined;
 	} = $props();
 
 	const textAvatarData = $derived(TextAvatarData.deserialize(image));
@@ -39,5 +40,5 @@
 	initials={avatarInitials}
 	style={avatarStyle}
 	{alt}
-	shape="circle">{children}</wa-avatar
+	shape="circle">{@render children?.()}</wa-avatar
 >
