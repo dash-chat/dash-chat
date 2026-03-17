@@ -137,7 +137,7 @@
 <div class="column" style="align-items: center; padding: 24px 0;">
 	<button
 		class="w-[180px] h-[180px] rounded-full flex items-center justify-center border-none cursor-pointer"
-		style="background-color: {currentTextAvatar.color};"
+		style="background-color: {currentTextAvatar.sanitizedHexColor()};"
 		onclick={focusTextInput}
 		type="button"
 	>
