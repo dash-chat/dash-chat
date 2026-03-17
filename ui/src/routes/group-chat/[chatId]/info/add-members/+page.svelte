@@ -20,7 +20,7 @@
 	} from 'konsta/svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import ProfileAvatar from '$lib/components/profiles/ProfileAvatar.svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { page } from '$app/state';
 	let chatId = page.params.chatId!;
@@ -69,7 +69,7 @@
 					{#each contacts as [publicKey, profile]}
 						<ListItem label title={profile.name}>
 							{#snippet media()}
-								<Avatar chatActorId={publicKey}></Avatar>
+								<ProfileAvatar chatActorId={publicKey}></ProfileAvatar>
 							{/snippet}
 
 							{#snippet after()}

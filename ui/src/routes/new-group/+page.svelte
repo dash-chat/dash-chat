@@ -10,7 +10,7 @@
 	import { mdiAccountMultiplePlus } from '@mdi/js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import ProfileAvatar from '$lib/components/profiles/ProfileAvatar.svelte';
 	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
 	import {
 		Page,
@@ -87,7 +87,7 @@
 						{#each contacts as [publicKey, profile]}
 							<ListItem label title={profile.name}>
 								{#snippet media()}
-									<Avatar chatActorId={publicKey}></Avatar>
+									<ProfileAvatar chatActorId={publicKey}></ProfileAvatar>
 								{/snippet}
 
 								{#snippet after()}
