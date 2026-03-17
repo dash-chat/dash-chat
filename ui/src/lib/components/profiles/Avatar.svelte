@@ -28,7 +28,7 @@
 			return style;
 		}
 
-		const textAvatarStyle = `background-color: ${textAvatarData.color}; color: #831843;`;
+		const textAvatarStyle = `background-color: ${textAvatarData.sanitizedHexColor()}; color: #831843;`;
 		return style ? `${style}; ${textAvatarStyle}` : textAvatarStyle;
 	});
 </script>

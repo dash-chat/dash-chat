@@ -8,6 +8,16 @@ export class TextAvatarData {
 		public text: string,
 	) {}
 
+  sanitizedHexColor(): string {
+    // Ensure the color is a valid hex code and sanitize it
+    const hexColorRegex = /^#([0-9A-Fa-f]{3}){1,2}$/;
+    if (hexColorRegex.test(this.color)) {
+      return this.color;
+    }
+    // Fallback to a default color if invalid
+    return '#cccccc';
+  }
+
 	serialize(): string {
 		return `${AVATAR_DATA_URL_PREFIX}${TEXT_AVATAR_TYPE_NAME}|${TEXT_AVATAR_VERSION}|${this.color}|${encodeURIComponent(this.text)}`;
 	}
