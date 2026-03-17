@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { resizeAndExport } from '$lib/utils/image';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiAccount, mdiPlus } from '@mdi/js';
+	import { mdiAccount } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button, Fab } from 'konsta/svelte';
+	import { Button } from 'konsta/svelte';
 	import Avatar from './Avatar.svelte';
 
 	let {
