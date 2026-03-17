@@ -71,7 +71,7 @@
 		<div class="column" style="flex: 1; overflow-y: auto;">
 			<AvatarPicker
 				bind:avatar
-				bind:inModalState={inModalState}
+				bind:inModalState
 				onClose={() => goto('/settings/profile')}
 				onSave={save}
 				saveLabel={m.save()}
