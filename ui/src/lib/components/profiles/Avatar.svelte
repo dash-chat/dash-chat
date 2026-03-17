@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
+	import { TextAvatarData } from './text-avatar-data-url';
 
 	let {
 		image,
@@ -17,32 +18,7 @@
 		children?: any;
 	} = $props();
 
-	type TextAvatarData = {
-		color: string;
-		text: string;
-	};
-
-	function parseTextAvatarDataUrl(
-		value: string | undefined,
-	): TextAvatarData | undefined {
-		if (!value?.startsWith('data:text')) {
-			return undefined;
-		}
-
-		const [, payload = ''] = value.split(',', 2);
-		const [color = '', encodedText = ''] = payload.split('|', 2);
-
-		if (!color || !encodedText) {
-			return undefined;
-		}
-
-		return {
-			color,
-			text: decodeURIComponent(encodedText),
-		};
-	}
-
-	const textAvatarData = $derived(parseTextAvatarDataUrl(image));
+	const textAvatarData = $derived(TextAvatarData.deserialize(image));
 	const avatarImage = $derived(
 		image?.startsWith('data:image') ? image : undefined,
 	);

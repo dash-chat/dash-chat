@@ -11,6 +11,7 @@
 		SegmentedButton,
 	} from 'konsta/svelte';
 	import { isIos } from '$lib/utils/environment';
+	import { TextAvatarData } from './text-avatar-data-url';
 
 	let {
 		avatar = $bindable(),
@@ -43,7 +44,10 @@
 	];
 
 	function generateTextAvatar() {
-		avatar = `data:text/plain;charset=utf-8,${selectedColor}|${encodeURIComponent(textValue.toUpperCase())}`;
+		avatar = new TextAvatarData(
+			selectedColor,
+			textValue.toUpperCase(),
+		).serialize();
 		console.log('Generated text avatar:', avatar);
 		onSelect?.();
 	}
