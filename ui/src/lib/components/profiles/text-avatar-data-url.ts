@@ -10,14 +10,14 @@ export class TextAvatarData {
 		public text: string,
 	) {}
 
-  sanitizedHexColor(): string {
-    // Ensure the color is a valid hex code and sanitize it
-    if (COLOR_REGEX.test(this.color)) {
-      return this.color;
-    }
-    // Fallback to a default color if invalid
-    return '#cccccc';
-  }
+	sanitizedHexColor(): string {
+		// Ensure the color is a valid hex code and sanitize it
+		if (COLOR_REGEX.test(this.color)) {
+			return this.color;
+		}
+		// Fallback to a default color if invalid
+		return '#cccccc';
+	}
 
 	serialize(): string {
 		return `${AVATAR_DATA_URL_PREFIX}${TEXT_AVATAR_TYPE_NAME}|${TEXT_AVATAR_VERSION}|${encodeURIComponent(this.color)}|${encodeURIComponent(this.text)}`;
