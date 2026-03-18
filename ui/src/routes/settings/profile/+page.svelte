@@ -53,7 +53,7 @@
 					<Avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
-						style="--size: 64px;"
+						style="--size: 100px;"
 					/>
 
 					<Button
