@@ -11,7 +11,9 @@ export class TextAvatarData {
 	) {}
 
 	private static validate(color: string, text: string): boolean {
-		return !!color && !!text && COLOR_REGEX.test(color) && TEXT_REGEX.test(text);
+		return (
+			!!color && !!text && COLOR_REGEX.test(color) && TEXT_REGEX.test(text)
+		);
 	}
 
 	sanitizedHexColor(): string {
