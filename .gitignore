@@ -46,3 +46,6 @@ service-account-key.json
 .dbs
 .e2e-binaries
 signal-reference
+
+# Development environment log files
+*.log
