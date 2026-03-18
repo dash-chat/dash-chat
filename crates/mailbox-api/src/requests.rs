@@ -12,7 +12,7 @@ pub struct GetDollopsRequest {
     pub topics: BTreeMap<TopicId, BTreeMap<Author, SequenceNumber>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GetDollopsForTopicResponse {
     // The dollops that the client does not have
     pub dollops: BTreeMap<Author, BTreeMap<SequenceNumber, Opaq>>,
@@ -20,7 +20,7 @@ pub struct GetDollopsForTopicResponse {
     pub missing: BTreeMap<Author, Vec<SequenceNumber>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GetDollopsResponse {
     pub dollops_by_topic: BTreeMap<TopicId, GetDollopsForTopicResponse>,
 }

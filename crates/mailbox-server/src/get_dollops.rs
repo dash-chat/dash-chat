@@ -157,8 +157,28 @@ fn get_dollops_for_topics_inner(
         );
     }
 
-    if request.topics.len() > 0 {
-        tracing::debug!("Retrieved dollops for {} topics", request.topics.len());
+    let mut debug_msg = vec![];
+    for (topic_id, response) in &dollops_by_topic {
+        if response.dollops.is_empty() && response.missing.is_empty() {
+            continue;
+        }
+        debug_msg.push(format!(
+            "- Topic: {} ({} dollops, {} missing)",
+            topic_id,
+            response.dollops.len(),
+            response.missing.len()
+        ));
+        for (author, dollops) in response.dollops.iter() {
+            debug_msg.push(format!(
+                "  - Author: {} {:?}",
+                author,
+                dollops.keys().collect::<Vec<_>>()
+            ));
+        }
+    }
+
+    if !debug_msg.is_empty() {
+        tracing::debug!("Retrieved dollops: {:#?}", debug_msg);
     }
     Ok(GetDollopsResponse { dollops_by_topic })
 }
