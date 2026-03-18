@@ -65,6 +65,8 @@
 	const theme = $derived(useTheme());
 	const pickerHasChanges = $derived(pickerAvatar !== avatar);
 	let textEditorOpen = $state(false);
+
+	const avatarSize = 100;
 </script>
 
 <Page>
@@ -117,7 +119,7 @@
 				<button
 					type="button"
 					class="avatar-btn"
-					style="position: relative; align-self: center; cursor: pointer"
+					style="height: 100%; position: relative; align-self: center; cursor: pointer"
 					onclick={openPicker}
 				>
 					{#if avatar}
@@ -125,23 +127,24 @@
 							image={avatar}
 							alt="Avatar"
 							shape="circle"
-							style="--size: 56px"
+							style="--size: {avatarSize}px;"
 						></wa-avatar>
 					{:else}
 						<Button
 							rounded
-							style="border-radius: 50%; height: 56px; width: 56px"
+							style="border-radius: 50%; height: {avatarSize}px; width: {avatarSize}px"
 						>
 							<wa-icon
 								src={wrapPathInSvg(mdiAccount)}
 								label={m.addAvatarImage()}
+								style="font-size: {avatarSize * 0.6}px;"
 							></wa-icon>
 						</Button>
 					{/if}
 					<Card
 						class="icon-only-card"
 						raised
-						style="position: absolute; pointer-events: none; bottom: -6px; right: -6px; z-index: 10"
+						style="position: absolute; pointer-events: none; bottom: 0px; right: -6px; z-index: 10;"
 					>
 						<wa-icon src={wrapPathInSvg(mdiCamera)}></wa-icon>
 					</Card>

@@ -53,7 +53,7 @@
 					<wa-avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
-						style="--size: 140px;"
+						style="--size: 100px;"
 					>
 					</wa-avatar>
 
