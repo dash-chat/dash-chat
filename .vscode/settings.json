@@ -4,6 +4,13 @@
 		"editor.defaultFormatter": "svelte.svelte-vscode",
 		"editor.formatOnSave": true
 	},
+	"[typescript]": {
+		"editor.formatOnSave": true
+	},
+	"[rust]": {
+		"editor.defaultFormatter": "rust-lang.rust-analyzer",
+		"editor.formatOnSave": true
+	},
 	"files.exclude": {
 		"**/node_modules/": true,
 		"target": true,
