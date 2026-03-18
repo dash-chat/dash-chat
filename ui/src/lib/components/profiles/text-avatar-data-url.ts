@@ -6,8 +6,8 @@ const TEXT_REGEX = /^[A-Z0-9]{1,3}$/;
 
 export class TextAvatarData {
 	constructor(
-		public color: string,
-		public text: string,
+		public readonly color: string,
+		public readonly text: string,
 	) {}
 
 	sanitizedHexColor(): string {
