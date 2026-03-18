@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import type { ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -20,6 +19,7 @@
 		Preloader,
 		useTheme,
 	} from 'konsta/svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 
 	const theme = $derived(useTheme());
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -50,12 +50,11 @@
 		<div class="column" style="flex: 1">
 			<div class="column center-in-desktop">
 				<div class="column mt-2 mb-4 gap-2" style="align-items: center">
-					<wa-avatar
+					<Avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
 						style="--size: 64px;"
-					>
-					</wa-avatar>
+					/>
 
 					<Button
 						tonal

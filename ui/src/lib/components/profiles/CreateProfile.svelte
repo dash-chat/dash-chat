@@ -1,9 +1,8 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { getContext } from 'svelte';
 	import type { ContactsStore, Error } from 'dash-chat-stores';
-	import PhotoPicker from './PhotoPicker.svelte';
+	import AvatarPicker from './AvatarPicker.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos } from '$lib/utils/environment';
@@ -20,6 +19,7 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCamera, mdiAccount } from '@mdi/js';
+	import Avatar from './Avatar.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let name = $state<string | undefined>(undefined);
@@ -70,9 +70,9 @@
 <Page>
 	{#if showPicker}
 		<div class="column" style="flex: 1; overflow-y: auto">
-			<PhotoPicker
+			<AvatarPicker
 				bind:avatar={pickerAvatar}
-				bind:isTextEditorOpen={textEditorOpen}
+				bind:inModalState={textEditorOpen}
 				onClose={closePicker}
 				onSave={selectAvatar}
 				saveLabel={m.save()}
@@ -121,12 +121,7 @@
 					onclick={openPicker}
 				>
 					{#if avatar}
-						<wa-avatar
-							image={avatar}
-							alt="Avatar"
-							shape="circle"
-							style="--size: 56px"
-						></wa-avatar>
+						<Avatar image={avatar} alt="Avatar" style="--size: 56px" />
 					{:else}
 						<Button
 							rounded
