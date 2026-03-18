@@ -10,6 +10,10 @@ export class TextAvatarData {
 		public readonly text: string,
 	) {}
 
+	private static validate(color: string, text: string): boolean {
+		return !!color && !!text && COLOR_REGEX.test(color) && TEXT_REGEX.test(text);
+	}
+
 	sanitizedHexColor(): string {
 		// Ensure the color is a valid hex code and sanitize it
 		if (COLOR_REGEX.test(this.color)) {
@@ -19,7 +23,11 @@ export class TextAvatarData {
 		return '#cccccc';
 	}
 
-	serialize(): string {
+	serialize(): string | undefined {
+		if (!TextAvatarData.validate(this.color, this.text)) {
+			return undefined;
+		}
+
 		return `${AVATAR_DATA_URL_PREFIX}${TEXT_AVATAR_TYPE_NAME}|${TEXT_AVATAR_VERSION}|${encodeURIComponent(this.color)}|${encodeURIComponent(this.text)}`;
 	}
 
@@ -35,9 +43,7 @@ export class TextAvatarData {
 
 			if (
 				typeName !== TEXT_AVATAR_TYPE_NAME ||
-				version !== TEXT_AVATAR_VERSION ||
-				!encodedColor ||
-				!encodedText
+				version !== TEXT_AVATAR_VERSION
 			) {
 				return undefined;
 			}
@@ -46,11 +52,7 @@ export class TextAvatarData {
 				const color = decodeURIComponent(encodedColor);
 				const text = decodeURIComponent(encodedText);
 
-				if (!color || !text) {
-					return undefined;
-				}
-
-				if (!COLOR_REGEX.test(color) || !TEXT_REGEX.test(text)) {
+				if (!TextAvatarData.validate(color, text)) {
 					return undefined;
 				}
 

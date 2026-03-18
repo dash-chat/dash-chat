@@ -36,7 +36,7 @@
 		onClose,
 	}: {
 		existingAvatar?: string | undefined;
-		onSelect?: (avatar: string) => void;
+		onSelect?: (avatar: string | undefined) => void;
 		onClose?: () => void;
 	} = $props();
 
@@ -54,7 +54,8 @@
 	let hiddenInput: HTMLInputElement;
 
 	function generateTextAvatar() {
-		onSelect?.(currentTextAvatar.serialize());
+		const serializedAvatar = currentTextAvatar.serialize();
+		onSelect?.(serializedAvatar);
 	}
 
 	function handleTextInput(e: Event) {
