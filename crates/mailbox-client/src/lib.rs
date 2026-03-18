@@ -57,7 +57,7 @@ pub trait LogStore<Item: MailboxItem>: Send + Sync + 'static {
 
 /// The interface for remotely storing and retrieving blobs from a mailbox server.
 #[async_trait::async_trait]
-pub trait RemoteBlobStore: Clone + Send + Sync + 'static {
+pub trait RemoteBlobStore: Send + Sync + 'static {
     async fn fetch_blob(&self, hash: OpaqHash) -> anyhow::Result<Option<Opaq>>;
     async fn publish_blob(&self, blob: Opaq) -> anyhow::Result<()>;
 }
@@ -126,6 +126,10 @@ pub trait MailboxItem:
     fn seq_num(&self) -> SeqNum;
     fn author(&self) -> Self::Author;
     fn topic(&self) -> Self::Topic;
+
+    /// Returns the hashes of blobs referenced by this item.
+    /// Used during sync to ensure blobs are transferred alongside log items.
+    fn blob_refs(&self) -> Vec<OpaqHash>;
 }
 
 /// Extra traits for ItemTraits which are feature-dependent.

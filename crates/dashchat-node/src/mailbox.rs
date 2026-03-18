@@ -2,7 +2,7 @@ use named_id::RenameNone;
 use serde::{Deserialize, Serialize};
 
 use crate::{DeviceId, Header, Operation, topic::TopicId};
-use mailbox_client::MailboxItem;
+use mailbox_client::{MailboxItem, OpaqHash};
 use p2panda_core::{Body, PublicKey};
 
 #[derive(Clone, Debug, Serialize, Deserialize, RenameNone)]
@@ -30,6 +30,14 @@ impl MailboxItem for MailboxOperation {
 
     fn topic(&self) -> TopicId {
         self.header.extensions.topic
+    }
+
+    fn blob_refs(&self) -> Vec<OpaqHash> {
+        self.header
+            .payload_hash
+            .into_iter()
+            .map(|h| OpaqHash::from_bytes(*h.as_bytes()))
+            .collect()
     }
 }
 

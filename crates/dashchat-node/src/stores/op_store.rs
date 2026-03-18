@@ -418,9 +418,18 @@ where
     S: OperationStore<TopicId, Extensions> + LogStore<TopicId, Extensions>,
     S: Send + Sync + 'static,
 {
-    // async fn store_blob(&self, blob: Blob) -> Result<(), anyhow::Error> {
-    //     self.store.store_blob(blob).await
-    // }
+    async fn get_blob(
+        &self,
+        _hash: &mailbox_client::OpaqHash,
+    ) -> Result<Option<mailbox_client::Opaq>, anyhow::Error> {
+        // TODO: implement local blob storage lookup
+        Ok(None)
+    }
+
+    async fn store_blob(&self, _blob: mailbox_client::Opaq) -> Result<(), anyhow::Error> {
+        // TODO: implement local blob storage
+        Ok(())
+    }
 
     async fn get_log(
         &self,

@@ -89,14 +89,16 @@ impl MailboxTracker {
 }
 
 struct TrackedMailbox<Item: MailboxItem> {
-    client: Arc<dyn LogStore<Item>>,
+    log_store: Arc<dyn LogStore<Item>>,
+    blob_store: Arc<dyn RemoteBlobStore>,
     tracker: MailboxTracker,
 }
 
 impl<Item: MailboxItem> Clone for TrackedMailbox<Item> {
     fn clone(&self) -> Self {
         Self {
-            client: self.client.clone(),
+            log_store: self.log_store.clone(),
+            blob_store: self.blob_store.clone(),
             tracker: self.tracker.clone(),
         }
     }
@@ -135,8 +137,10 @@ where
         // TODO: check for existing mailbox with different ID but same "URL" (which is currently abstracted away and inaccessible here, darn)
         // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.
         let id = mailbox.id();
+        let arc = Arc::new(mailbox);
         let tracked = TrackedMailbox {
-            client: Arc::new(mailbox),
+            log_store: arc.clone() as Arc<dyn LogStore<Item>>,
+            blob_store: arc as Arc<dyn RemoteBlobStore>,
             tracker: MailboxTracker::new(),
         };
         let existing = self.mailboxes.lock().await.insert(id.clone(), tracked);
@@ -247,10 +251,10 @@ where
     }
 
     async fn poll_mailbox(&self, id: &MailboxId) {
-        let client = {
+        let (log_store, blob_store) = {
             let mm = self.mailboxes.lock().await;
             match mm.get(id) {
-                Some(tracked) => tracked.client.clone(),
+                Some(tracked) => (tracked.log_store.clone(), tracked.blob_store.clone()),
                 None => return,
             }
         };
@@ -269,7 +273,9 @@ where
             "polling mailbox {id} for topics {:?}",
             topics.clone().renamed()
         );
-        let result = self.sync_topics(topics.into_iter(), client).await;
+        let result = self
+            .sync_topics(topics.into_iter(), log_store, blob_store)
+            .await;
 
         let mut mm = self.mailboxes.lock().await;
         if let Some(tracked) = mm.get_mut(id) {
@@ -292,10 +298,12 @@ where
     /// Immediately sync the given topics with the given mailbox:
     /// - Ensure all items held by the mailbox are fetched
     /// - Publish any items that the mailbox is missing to the mailbox
+    /// - Sync blobs referenced by fetched and published items
     pub async fn sync_topics(
         &self,
         topics: impl Iterator<Item = Item::Topic>,
-        mailbox: Arc<dyn LogStore<Item>>,
+        log_store: Arc<dyn LogStore<Item>>,
+        blob_store: Arc<dyn RemoteBlobStore>,
     ) -> anyhow::Result<()> {
         let mut request = BTreeMap::new();
         for topic in topics {
@@ -305,9 +313,12 @@ where
         }
         tracing::info!("dollop fetch request: {:?}", request.clone().renamed());
 
-        let FetchResponse(response) = mailbox.fetch(FetchRequest(request)).await?;
+        let FetchResponse(response) = log_store.fetch(FetchRequest(request)).await?;
 
         let mut ops_to_publish = vec![];
+        // Track blob hashes to avoid duplicate transfers within this sync round
+        let mut synced_blobs = std::collections::HashSet::new();
+
         for (topic, response) in response.into_iter() {
             let FetchTopicResponse { items, missing } = response;
             if items.is_empty() && missing.is_empty() {
@@ -324,6 +335,36 @@ where
                 tracing::warn!(topic = ?topic.renamed(), "no sender for topic");
                 continue;
             };
+
+            // Fetch blobs referenced by received items
+            // TODO: implement different policies for fetching, e.g. fetch in background
+            for item in &items {
+                for blob_hash in item.blob_refs() {
+                    if synced_blobs.insert(blob_hash.clone()) {
+                        match blob_store.fetch_blob(blob_hash.clone()).await {
+                            Ok(Some(blob)) => {
+                                if let Err(err) = self.store.store_blob(blob).await {
+                                    tracing::warn!(
+                                        ?err,
+                                        ?blob_hash,
+                                        "failed to store fetched blob locally"
+                                    );
+                                }
+                            }
+                            Ok(None) => {
+                                tracing::debug!(?blob_hash, "blob not found on remote");
+                            }
+                            Err(err) => {
+                                tracing::warn!(
+                                    ?err,
+                                    ?blob_hash,
+                                    "failed to fetch blob from remote"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
 
             for item in items {
                 sender.send(item.into()).await?;
@@ -356,6 +397,35 @@ where
                     // Adjust the index to take this into account:
                     let index = seq - lowest;
                     if let Some(item) = log.get(index as usize) {
+                        // Publish blobs referenced by items the server is missing
+                        for blob_hash in item.blob_refs() {
+                            if synced_blobs.insert(blob_hash.clone()) {
+                                match self.store.get_blob(&blob_hash).await {
+                                    Ok(Some(blob)) => {
+                                        if let Err(err) = blob_store.publish_blob(blob).await {
+                                            tracing::warn!(
+                                                ?err,
+                                                ?blob_hash,
+                                                "failed to publish blob to remote"
+                                            );
+                                        }
+                                    }
+                                    Ok(None) => {
+                                        tracing::debug!(
+                                            ?blob_hash,
+                                            "blob not found locally, cannot publish to remote"
+                                        );
+                                    }
+                                    Err(err) => {
+                                        tracing::warn!(
+                                            ?err,
+                                            ?blob_hash,
+                                            "failed to get blob from local store"
+                                        );
+                                    }
+                                }
+                            }
+                        }
                         ops_to_publish.push(item.clone());
                     }
                 }
@@ -365,7 +435,7 @@ where
         if !ops_to_publish.is_empty() {
             tracing::info!(items = ops_to_publish.len(), "publishing dollops",);
         }
-        mailbox.publish(ops_to_publish).await?;
+        log_store.publish(ops_to_publish).await?;
 
         Ok(())
     }
