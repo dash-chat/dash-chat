@@ -24,7 +24,7 @@ pub fn spawn_cleanup_task(db: Arc<Database>) -> tokio::task::JoinHandle<()> {
 
 /// Deletes all messages older than MESSAGE_MAX_AGE
 pub async fn cleanup_old_messages(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
-    tracing::info!("Starting cleanup of old messages");
+    tracing::trace!("Starting cleanup of old messages");
 
     let cutoff_time = std::time::SystemTime::now() - MESSAGE_MAX_AGE;
     let cutoff_uuid = uuid::Uuid::new_v7(uuid::Timestamp::from_unix(
@@ -60,7 +60,9 @@ pub async fn cleanup_old_messages(db: &Database) -> Result<(), Box<dyn std::erro
 
     write_txn.commit()?;
 
-    tracing::info!("Cleanup completed: deleted {} old messages", deleted_count);
+    if deleted_count > 0 {
+        tracing::info!("Cleanup completed: deleted {} old messages", deleted_count);
+    }
 
     Ok(())
 }

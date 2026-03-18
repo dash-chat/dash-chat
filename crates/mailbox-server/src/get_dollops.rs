@@ -157,6 +157,8 @@ fn get_dollops_for_topics_inner(
         );
     }
 
-    tracing::debug!("Retrieved dollops for {} topics", request.topics.len());
+    if request.topics.len() > 0 {
+        tracing::debug!("Retrieved dollops for {} topics", request.topics.len());
+    }
     Ok(GetDollopsResponse { dollops_by_topic })
 }
