@@ -8,7 +8,7 @@
 	import { Button, Page, Preloader } from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos } from '$lib/utils/environment';
-	import PhotoPicker from '$lib/components/profiles/PhotoPicker.svelte';
+	import AvatarPicker from '$lib/components/profiles/AvatarPicker.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let avatar = $state<string | undefined>(undefined);
@@ -56,7 +56,7 @@
 	}
 
 	const hasChanges = $derived(avatar !== originalAvatar);
-	let textEditorOpen = $state(false);
+	let inModalState = $state(false);
 </script>
 
 <Page>
@@ -69,9 +69,9 @@
 		</div>
 	{:then myProfile}
 		<div class="column" style="flex: 1; overflow-y: auto;">
-			<PhotoPicker
+			<AvatarPicker
 				bind:avatar
-				bind:isTextEditorOpen={textEditorOpen}
+				bind:inModalState
 				onClose={() => goto('/settings/profile')}
 				onSave={save}
 				saveLabel={m.save()}
@@ -79,7 +79,7 @@
 			/>
 		</div>
 
-		{#if !textEditorOpen && !isIos}
+		{#if !inModalState && !isIos}
 			<!-- Save button -->
 			<Button
 				rounded

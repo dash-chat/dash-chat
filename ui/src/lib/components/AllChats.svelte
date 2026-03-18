@@ -2,7 +2,6 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import '@awesome.me/webawesome/dist/components/button/button.js';
 	import '@awesome.me/webawesome/dist/components/badge/badge.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 	import { ChatsStore } from 'dash-chat-stores';
@@ -19,6 +18,7 @@
 	import { useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from './profiles/Avatar.svelte';
 
 	let { class: className = '' }: { class?: string } = $props();
 
@@ -54,11 +54,10 @@
 						chevron={false}
 					>
 						{#snippet media()}
-							<wa-avatar
+							<Avatar
 								image={summary.avatar}
 								initials={summary.name.slice(0, 2)}
-							>
-							</wa-avatar>
+							/>
 						{/snippet}
 						{#snippet after()}
 							{#if beforeYesterday(summary.lastEvent.timestamp)}
