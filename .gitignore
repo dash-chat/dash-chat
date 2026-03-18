@@ -48,4 +48,4 @@ service-account-key.json
 signal-reference
 
 # Development environment log files
-mprocs.log
+*.log
