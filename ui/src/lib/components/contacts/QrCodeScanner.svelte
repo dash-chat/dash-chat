@@ -22,10 +22,12 @@
 	let cancelled = false;
 
 	export async function cancelScanner() {
-		if (!cancelled && isTauriEnv()) {
+		if (cancelled) return;
+		cancelled = true;
+
+		if (isTauriEnv()) {
 			const { cancel } = await import('@tauri-apps/plugin-barcode-scanner');
 			await cancel();
-			cancelled = true;
 		}
 	}
 
