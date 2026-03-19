@@ -40,6 +40,8 @@
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
 	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
 
+	type TabName = 'code' | 'scan';
+
 	let { showBack = true }: { showBack?: boolean } = $props();
 
 	const theme = $derived(useTheme());
@@ -49,7 +51,8 @@
 
 	let myCode = contactsStore.client.createContactCode().then(encodeContactCode);
 
-	let tab = $state<'code' | 'scan'>('code');
+	let tab = $state<TabName>('code');
+	let scannerRef: QrCodeScanner | null = $state(null);
 
 	async function receiveCode(code: string) {
 		try {
@@ -140,6 +143,16 @@
 
 	let imageFilePicker: HTMLInputElement;
 
+	async function switchTab(nextTab: TabName) {
+		if (nextTab === tab) return;
+
+		if (tab === 'scan' && nextTab !== 'scan' && scannerRef) {
+			await scannerRef.cancelScanner();
+		}
+
+		tab = nextTab;
+	}
+
 	async function onImageSelected() {
 		if (!imageFilePicker.files || !imageFilePicker.files[0]) return;
 		try {
@@ -210,7 +223,7 @@
 								small
 								rounded
 								tonal={tab !== 'code'}
-								onClick={() => (tab = 'code')}
+								onClick={() => void switchTab('code')}
 								data-testid="add-contact-code-tab"
 								>{m.code()}
 							</Button>
@@ -220,7 +233,7 @@
 								small
 								rounded
 								tonal={tab !== 'scan'}
-								onClick={() => (tab = 'scan')}
+								onClick={() => void switchTab('scan')}
 								data-testid="add-contact-scan-tab"
 								>{m.scan()}
 							</Button>
@@ -234,13 +247,13 @@
 							<ToolbarPane>
 								<TabbarLink
 									active={tab === 'code'}
-									onclick={() => (tab = 'code')}
+									onclick={() => void switchTab('code')}
 									label={m.code()}
 									data-testid="add-contact-code-tab"
 								/>
 								<TabbarLink
 									active={tab !== 'code'}
-									onclick={() => (tab = 'scan')}
+									onclick={() => void switchTab('scan')}
 									label={m.scan()}
 									data-testid="add-contact-scan-tab"
 								/>
@@ -306,6 +319,7 @@
 			{/await}
 		{:else}
 			<QrCodeScanner
+				bind:this={scannerRef}
 				onSelectImage={receiveCode}
 				onRequestPickFile={onScannerRequestPickFile}
 			/>

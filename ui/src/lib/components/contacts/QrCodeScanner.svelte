@@ -19,6 +19,13 @@
 		onRequestPickFile: RequestPickFileHandler;
 	} = $props();
 
+	export async function cancelScanner() {
+		if (isTauriEnv()) {
+			const { cancel } = await import('@tauri-apps/plugin-barcode-scanner');
+			await cancel();
+		}
+	}
+
 	onMount(async () => {
 		try {
 			const code = await scanQrCode();
@@ -26,13 +33,6 @@
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorScanningQrCode(), 'error');
-		}
-	});
-
-	onDestroy(async () => {
-		if (isTauriEnv()) {
-			const { cancel } = await import('@tauri-apps/plugin-barcode-scanner');
-			await cancel();
 		}
 	});
 </script>
