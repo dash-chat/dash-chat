@@ -13,14 +13,12 @@
 		type SettingsStore,
 	} from 'dash-chat-stores';
 	import type { AddContactError } from 'dash-chat-stores';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiImageSearchOutline } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { isMobile } from '$lib/utils/environment';
-	import { scanQrcode, scanQrFromImage } from '$lib/utils/qrcode';
+	import { scanQrFromImage } from '$lib/utils/qrcode';
 	import {
 		Page,
 		Navbar,
@@ -41,6 +39,7 @@
 	import SelectColor from './SelectColor.svelte';
 	import MyCodeCard from '$lib/components/contacts/MyCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
+	import QRCodeScanner from '$lib/components/contacts/QRCodeScanner.svelte';
 
 	let { showBack = true }: { showBack?: boolean } = $props();
 
@@ -100,16 +99,9 @@
 		}
 	}
 
-	async function scan() {
+	function scan() {
 		if (tab === 'scan') return;
 		tab = 'scan';
-		try {
-			const code = await scanQrcode();
-			await receiveCode(code);
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorScanningQrCode(), 'error');
-		}
 	}
 
 	async function cancelScan() {
@@ -174,6 +166,14 @@
 		} finally {
 			imageFilePicker.value = '';
 		}
+	}
+
+	async function onScannerSelectImage(code: string) {
+		await receiveCode(code);
+	}
+
+	function onScannerRequestPickFile() {
+		imageFilePicker.click();
 	}
 </script>
 
@@ -324,74 +324,10 @@
 				{/await}
 			{/await}
 		{:else}
-			<div class="column" style="position: relative; flex: 1;">
-				<div
-					class="row p-4 top-2"
-					style="color: white; position: absolute; width: 100%; align-items: center; justify-content: center; z-index: 1; text-align: center"
-				>
-					<span class="w-60">{m.scanQrCodeOfYourContact()}</span>
-				</div>
-				<div
-					class="column"
-					style="flex: 1; align-items: center; justify-content: center"
-				>
-					<div class="barcode-scanner--area--container">
-						<div class="square surround-cover">
-							<div class="barcode-scanner--area--outer surround-cover"></div>
-						</div>
-					</div>
-				</div>
-				<div
-					style="position: absolute; bottom: 24px; left: 0; right: 0; display: flex; justify-content: center; z-index: 1;"
-				>
-					<button
-						class="w-14 h-14 rounded-full bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.3)] transition-transform duration-200 hover:scale-105 active:scale-95"
-						onclick={() => imageFilePicker.click()}
-						aria-label={m.photo()}
-						data-testid="add-contact-select-image-btn"
-					>
-						<wa-icon
-							src={wrapPathInSvg(mdiImageSearchOutline)}
-							style="font-size: 28px"
-						></wa-icon>
-					</button>
-				</div>
-			</div>
+			<QRCodeScanner
+				onSelectImage={onScannerSelectImage}
+				onRequestPickFile={onScannerRequestPickFile}
+			/>
 		{/if}
 	</Page>
 {/if}
-
-<style>
-	.square {
-		width: 100%;
-		position: relative;
-		overflow: hidden;
-		transition: 0.3s;
-	}
-	.square:after {
-		content: '';
-		top: 0;
-		display: block;
-		padding-bottom: 100%;
-	}
-	.square > div {
-		position: absolute;
-		top: 0;
-		left: 0;
-		bottom: 0;
-		right: 0;
-	}
-
-	.surround-cover {
-		box-shadow: 0 0 0 99999px rgba(0, 0, 0, 0.5);
-	}
-
-	.barcode-scanner--area--container {
-		width: 80%;
-		max-width: min(500px, 80vh);
-	}
-	.barcode-scanner--area--outer {
-		display: flex;
-		border-radius: 1em;
-	}
-</style>
