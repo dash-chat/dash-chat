@@ -38,7 +38,7 @@
 	import SelectColor from './SelectColor.svelte';
 	import MyCodeCard from '$lib/components/contacts/MyCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
-	import QRCodeScanner from '$lib/components/contacts/QRCodeScanner.svelte';
+	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
 
 	let { showBack = true }: { showBack?: boolean } = $props();
 
@@ -151,10 +151,6 @@
 		} finally {
 			imageFilePicker.value = '';
 		}
-	}
-
-	async function onScannerSelectImage(code: string) {
-		await receiveCode(code);
 	}
 
 	function onScannerRequestPickFile() {
@@ -309,8 +305,8 @@
 				{/await}
 			{/await}
 		{:else}
-			<QRCodeScanner
-				onSelectImage={onScannerSelectImage}
+			<QrCodeScanner
+				onSelectImage={receiveCode}
 				onRequestPickFile={onScannerRequestPickFile}
 			/>
 		{/if}
