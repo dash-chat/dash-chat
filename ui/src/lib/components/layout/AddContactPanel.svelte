@@ -14,13 +14,7 @@
 	} from 'dash-chat-stores';
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import {
-		mdiLinkVariant,
-		mdiShareVariant,
-		mdiTrayArrowDown,
-		mdiPalette,
-		mdiImageSearchOutline,
-	} from '@mdi/js';
+	import { mdiImageSearchOutline } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -46,6 +40,7 @@
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
 	import SelectColor from './SelectColor.svelte';
 	import MyCodeCard from '$lib/components/contacts/MyCodeCard.svelte';
+	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
 
 	let { showBack = true }: { showBack?: boolean } = $props();
 
@@ -140,6 +135,26 @@
 			const name = await getMyName();
 			const color = await toPromise(settingsStore.qrColor);
 			await shareQrCode(code, color, name);
+		} catch (e) {
+			console.error(e);
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
+	}
+
+	async function copyCodeLink(code: string) {
+		await writeText(code);
+		showToast(m.copiedCodeToClipboard());
+	}
+
+	async function openColorPicker() {
+		colorForPicker = await toPromise(settingsStore.qrColor);
+		colorPickerOpen = true;
+	}
+
+	async function saveCode(code: string, color: string) {
+		try {
+			const name = await getMyName();
+			await saveQrCode(code, color ?? '#007aff', name);
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
@@ -267,100 +282,17 @@
 				</div>
 			{:then code}
 				{#await $qrColor then color}
-					{@const isWhite = color === '#ffffff'}
 					<div class="column" style="flex:1">
 						<div class="column center-in-desktop gap-4 mx-4 mt-4">
 							<MyCodeCard {code} {color} />
 
-							<!-- Action buttons: Link, Share, Save, Color -->
-							<div class="row gap-4" style="justify-content: center;">
-								<div
-									class="column"
-									style="display: none; align-items: center; gap: 8px;"
-								>
-									<Button
-										tonal
-										onClick={async () => {
-											await writeText(code);
-											showToast(m.copiedCodeToClipboard());
-										}}
-										class="icon-only"
-										data-testid="add-contact-link-btn"
-									>
-										<wa-icon
-											src={wrapPathInSvg(mdiLinkVariant)}
-											style="font-size: 28px"
-										></wa-icon>
-									</Button>
-									<span class="text-sm" style="color: var(--k-text-color)"
-										>{m.link()}</span
-									>
-								</div>
-
-								{#if isMobile}
-									<div class="column" style="align-items: center; gap: 8px;">
-										<Button
-											tonal
-											onClick={() => shareCode(code)}
-											class="icon-only"
-											data-testid="add-contact-share-btn"
-										>
-											<wa-icon
-												src={wrapPathInSvg(mdiShareVariant)}
-												style="font-size: 28px"
-											></wa-icon>
-										</Button>
-										<span class="text-sm" style="color: var(--k-text-color)"
-											>{m.share()}</span
-										>
-									</div>
-								{:else}
-									<div class="column" style="align-items: center; gap: 8px;">
-										<Button
-											tonal
-											onClick={async () => {
-												try {
-													const name = await getMyName();
-													await saveQrCode(code, color ?? '#007aff', name);
-												} catch (e) {
-													console.error(e);
-													showToast(m.errorUnexpected(), 'unexpected', e);
-												}
-											}}
-											class="icon-only"
-											data-testid="add-contact-save-btn"
-										>
-											<wa-icon
-												src={wrapPathInSvg(mdiTrayArrowDown)}
-												style="font-size: 28px"
-											></wa-icon>
-										</Button>
-										<span class="text-sm" style="color: var(--k-text-color)"
-											>{m.save()}</span
-										>
-									</div>
-								{/if}
-
-								<div class="column" style="align-items: center; gap: 8px;">
-									<Button
-										tonal
-										onClick={async () => {
-											colorForPicker = await toPromise(settingsStore.qrColor);
-											colorPickerOpen = true;
-										}}
-										class="icon-only"
-										data-testid="add-contact-color-btn"
-									>
-										<wa-icon
-											src={wrapPathInSvg(mdiPalette)}
-											style="font-size: 28px"
-										></wa-icon>
-									</Button>
-									<span class="text-sm" style="color: var(--k-text-color)"
-										>{m.color()}</span
-									>
-								</div>
-							</div>
+							<QrActionButtons
+								{isMobile}
+								onCopyLink={() => copyCodeLink(code)}
+								onShare={() => shareCode(code)}
+								onSave={() => saveCode(code, color)}
+								onOpenColorPicker={openColorPicker}
+							/>
 
 							<span class="mx-2 mb-2 text-center quiet" style="font-size: 13px"
 								>{m.shareCodeWarning()}</span
