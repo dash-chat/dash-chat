@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiImageSearchOutline } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { scanQrCode } from '$lib/utils/qrcode';
 	import { showToast } from '$lib/utils/toasts';
+	import { isTauriEnv } from '$lib/utils/environment';
 
 	type SelectImageHandler = (code: string) => void | Promise<void>;
 	type RequestPickFileHandler = () => void | Promise<void>;
@@ -25,6 +26,13 @@
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorScanningQrCode(), 'error');
+		}
+	});
+
+	onDestroy(async () => {
+		if (isTauriEnv()) {
+			const { cancel } = await import('@tauri-apps/plugin-barcode-scanner');
+			await cancel();
 		}
 	});
 </script>

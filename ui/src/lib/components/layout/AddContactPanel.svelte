@@ -34,7 +34,6 @@
 	} from 'konsta/svelte';
 	import { goto } from '$app/navigation';
 	import { showToast } from '$lib/utils/toasts';
-	import { isTauriEnv } from '$lib/utils/environment';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
 	import SelectColor from './SelectColor.svelte';
 	import MyCodeCard from '$lib/components/contacts/MyCodeCard.svelte';
@@ -96,20 +95,6 @@
 				default:
 					showToast(m.errorUnexpected(), 'unexpected', e);
 			}
-		}
-	}
-
-	function scan() {
-		if (tab === 'scan') return;
-		tab = 'scan';
-	}
-
-	async function cancelScan() {
-		if (tab === 'code') return;
-		tab = 'code';
-		if (isTauriEnv()) {
-			const { cancel } = await import('@tauri-apps/plugin-barcode-scanner');
-			await cancel();
 		}
 	}
 
@@ -229,7 +214,7 @@
 								small
 								rounded
 								tonal={tab !== 'code'}
-								onClick={cancelScan}
+								onClick={() => (tab = 'code')}
 								data-testid="add-contact-code-tab"
 								>{m.code()}
 							</Button>
@@ -239,7 +224,7 @@
 								small
 								rounded
 								tonal={tab !== 'scan'}
-								onClick={scan}
+								onClick={() => (tab = 'scan')}
 								data-testid="add-contact-scan-tab"
 								>{m.scan()}
 							</Button>
@@ -253,13 +238,13 @@
 							<ToolbarPane>
 								<TabbarLink
 									active={tab === 'code'}
-									onclick={cancelScan}
+									onclick={() => (tab = 'code')}
 									label={m.code()}
 									data-testid="add-contact-code-tab"
 								/>
 								<TabbarLink
 									active={tab !== 'code'}
-									onclick={scan}
+									onclick={() => (tab = 'scan')}
 									label={m.scan()}
 									data-testid="add-contact-scan-tab"
 								/>
