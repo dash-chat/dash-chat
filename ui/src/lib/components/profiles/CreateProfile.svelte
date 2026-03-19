@@ -152,12 +152,14 @@
 				<List inset={isWideScreen.value || theme === 'ios'} strongIos>
 					<ListInput
 						type="text"
+						value={name ?? ''}
 						onInput={e => (name = e.target.value)}
 						placeholder={m.nameMandatory()}
 						data-testid="create-profile-name"
 					></ListInput>
 					<ListInput
 						type="text"
+						value={surname ?? ''}
 						onInput={e => (surname = e.target.value)}
 						placeholder={m.surnameOptional()}
 						data-testid="create-profile-surname"
