@@ -32,6 +32,7 @@
 	}
 
 	onMount(async () => {
+		cancelled = false;
 		try {
 			const code = await scanQrCode();
 			await onSelectImage(code);
