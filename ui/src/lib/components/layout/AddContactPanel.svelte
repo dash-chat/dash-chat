@@ -1,7 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/qr-code/qr-code.js';
-	import '@awesome.me/webawesome/dist/components/copy-button/copy-button.js';
 	import { getContext } from 'svelte';
 	import {
 		decodeContactCode,
