@@ -3,7 +3,6 @@
 	import '@awesome.me/webawesome/dist/components/qr-code/qr-code.js';
 	import '@awesome.me/webawesome/dist/components/copy-button/copy-button.js';
 	import { getContext } from 'svelte';
-	import { writeText } from '$lib/utils/clipboard';
 	import {
 		decodeContactCode,
 		encodeContactCode,
@@ -119,11 +118,6 @@
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
-	}
-
-	async function copyCodeLink(code: string) {
-		await writeText(code);
-		showToast(m.copiedCodeToClipboard());
 	}
 
 	async function openColorPicker() {
@@ -282,7 +276,6 @@
 
 							<QrActionButtons
 								{isMobile}
-								onCopyLink={() => copyCodeLink(code)}
 								onShare={() => shareCode(code)}
 								onSave={() => saveCode(code, color)}
 								onOpenColorPicker={openColorPicker}

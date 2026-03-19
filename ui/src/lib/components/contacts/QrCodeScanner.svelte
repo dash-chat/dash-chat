@@ -35,6 +35,10 @@
 			showToast(m.errorScanningQrCode(), 'error');
 		}
 	});
+
+	onDestroy(() => {
+		cancelScanner();
+	});
 </script>
 
 <div class="column" style="position: relative; flex: 1;">
