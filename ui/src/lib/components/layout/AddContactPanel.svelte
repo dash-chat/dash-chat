@@ -15,7 +15,6 @@
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
-		mdiContentCopy,
 		mdiLinkVariant,
 		mdiShareVariant,
 		mdiTrayArrowDown,
@@ -34,7 +33,6 @@
 		NavbarBackLink,
 		ListInput,
 		List,
-		Card,
 		Preloader,
 		Button,
 		useTheme,
@@ -47,6 +45,7 @@
 	import { isTauriEnv } from '$lib/utils/environment';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
 	import SelectColor from './SelectColor.svelte';
+	import MyCodeCard from '$lib/components/contacts/MyCodeCard.svelte';
 
 	let { showBack = true }: { showBack?: boolean } = $props();
 
@@ -130,11 +129,6 @@
 	const qrColor = useReactivePromise(settingsStore.qrColor);
 	let colorPickerOpen = $state(false);
 	let colorForPicker = $state('#007aff');
-
-	async function copyLink(code: string) {
-		await writeText(code);
-		showToast(m.copiedCodeToClipboard());
-	}
 
 	async function getMyName(): Promise<string> {
 		const profile = await toPromise(contactsStore.myProfile);
@@ -276,45 +270,7 @@
 					{@const isWhite = color === '#ffffff'}
 					<div class="column" style="flex:1">
 						<div class="column center-in-desktop gap-4 mx-4 mt-4">
-							<Card
-								class="qr-card p-2.5 pb-2"
-								style="background-color: {color}"
-							>
-								<div class="column" style="align-items: center">
-									<div
-										class="column w-full p-3"
-										style="align-items: center; justify-content: center; background-color: white; border-radius: 10px;"
-									>
-										<wa-qr-code
-											value={code}
-											size="180"
-											fill={isWhite ? '#000000' : color}
-										></wa-qr-code>
-									</div>
-
-									<div class="py-1">
-										<Button
-											colors={{
-												touchRipple: isWhite ? 'black' : 'white',
-												textIos: isWhite ? 'text-black' : 'text-white',
-												textMaterial: isWhite ? 'text-black' : 'text-white',
-											}}
-											clearIos
-											clearMaterial
-											small
-											data-testid="add-contact-copy-btn"
-											onClick={async () => {
-												await writeText(code);
-												showToast(m.copiedCodeToClipboard());
-											}}
-										>
-											<wa-icon src={wrapPathInSvg(mdiContentCopy)}> </wa-icon>
-
-											{code.slice(0, 15)}...
-										</Button>
-									</div>
-								</div>
-							</Card>
+							<MyCodeCard {code} {color} />
 
 							<!-- Action buttons: Link, Share, Save, Color -->
 							<div class="row gap-4" style="justify-content: center;">
@@ -324,7 +280,10 @@
 								>
 									<Button
 										tonal
-										onClick={() => copyLink(code)}
+										onClick={async () => {
+											await writeText(code);
+											showToast(m.copiedCodeToClipboard());
+										}}
 										class="icon-only"
 										data-testid="add-contact-link-btn"
 									>
@@ -471,13 +430,6 @@
 {/if}
 
 <style>
-	:global(.qr-card) {
-		align-self: center;
-		width: fit-content;
-		margin: 0 !important;
-		transition: background-color 0.3s ease;
-	}
-
 	.square {
 		width: 100%;
 		position: relative;
