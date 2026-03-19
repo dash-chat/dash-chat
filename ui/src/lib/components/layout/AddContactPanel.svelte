@@ -36,7 +36,7 @@
 	import { showToast } from '$lib/utils/toasts';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
 	import SelectColor from './SelectColor.svelte';
-	import MyCodeCard from '$lib/components/contacts/MyCodeCard.svelte';
+	import MyQrCodeCard from '$lib/components/contacts/MyQrCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
 	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
 
@@ -265,7 +265,7 @@
 				{#await $qrColor then color}
 					<div class="column" style="flex:1">
 						<div class="column center-in-desktop gap-4 mx-4 mt-4">
-							<MyCodeCard {code} {color} />
+							<MyQrCodeCard {code} {color} />
 
 							<QrActionButtons
 								{isMobile}
