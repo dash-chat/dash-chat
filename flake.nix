@@ -75,7 +75,10 @@
             inputsFrom =
               [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
             shellHook = lib.optionalString pkgs.stdenv.isLinux ''
-              export CARGO_BUILD_RUSTFLAGS="-C link-args=-Wl,-rpath,${
+              export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
+                lib.makeLibraryPath tauriLibraries
+              }"
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
                 lib.makeLibraryPath tauriLibraries
               }"
             '';
@@ -85,7 +88,7 @@
             rust = pkgs.rust-bin.fromRustupToolchainFile
               ./rust-toolchain.android.toml;
           in pkgs.mkShell {
-            packages = [ rust ];
+            packages = [ rust ] ++ packages;
             inputsFrom = [
               devShells.default
               inputs'.tauri-plugin-holochain.devShells.holochainTauriAndroidDev
