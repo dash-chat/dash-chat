@@ -189,6 +189,8 @@ where
         let r = manager.clone();
         tokio::spawn(
             async move {
+                tracing::info!("mailbox manager: poll mailboxes loop started");
+
                 loop {
                     let next = manager.find_next_due().await;
 
@@ -257,7 +259,7 @@ where
 
         let topics = self.subscribed_topics().await;
         if topics.is_empty() {
-            tracing::trace!("no topics subscribed, skipping poll for {id}");
+            tracing::warn!("no topics subscribed, skipping poll for {id}");
             let mut mm = self.mailboxes.lock().await;
             if let Some(tracked) = mm.get_mut(id) {
                 tracked.tracker.reschedule(&self.config);
@@ -303,7 +305,7 @@ where
                 BTreeMap::from_iter(self.store.get_log_heights(&topic).await?.into_iter());
             request.insert(topic, heights);
         }
-        tracing::info!("dollop fetch request: {:?}", request.clone().renamed());
+        tracing::debug!("dollop fetch request: {:?}", request.clone().renamed());
 
         let FetchResponse(response) = mailbox.fetch(FetchRequest(request)).await?;
 
