@@ -1,3 +1,4 @@
+pub mod blob_queue;
 pub mod manager;
 pub mod mem;
 pub mod mem_server;

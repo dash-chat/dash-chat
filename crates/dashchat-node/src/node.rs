@@ -107,7 +107,7 @@ impl<R> CancelAndWait<R> {
 pub struct Node {
     pub op_store: NodeOpStore,
 
-    pub mailboxes: Mailboxes<MailboxOperation, NodeOpStore>,
+    pub mailboxes: Mailboxes<MailboxOperation, NodeOpStore, mailbox_client::blob_queue::MemBlobPublishQueue>,
 
     // groups: p2panda_auth::group::Groups,
     config: NodeConfig,
@@ -141,7 +141,12 @@ impl Node {
 
         let (stream_tx, stream_rx) = mpsc::channel(100);
 
-        let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
+        let mailboxes = Mailboxes::spawn(
+            op_store.clone(),
+            mailbox_client::blob_queue::MemBlobPublishQueue::new(),
+            config.mailboxes_config.clone(),
+        )
+        .await?;
 
         let mut node = Self {
             op_store: op_store.clone(),
