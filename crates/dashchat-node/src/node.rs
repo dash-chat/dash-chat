@@ -103,12 +103,14 @@ impl<R> CancelAndWait<R> {
     }
 }
 
+pub type MailboxManager =
+    Arc<Mailboxes<MailboxOperation, NodeOpStore, mailbox_client::blob_queue::RedbBlobPublishQueue>>;
+
 #[derive(Clone)]
 pub struct Node {
     pub op_store: NodeOpStore,
 
-    pub mailboxes:
-        Mailboxes<MailboxOperation, NodeOpStore, mailbox_client::blob_queue::RedbBlobPublishQueue>,
+    pub mailboxes: MailboxManager,
 
     // groups: p2panda_auth::group::Groups,
     config: NodeConfig,

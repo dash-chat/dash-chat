@@ -413,24 +413,11 @@ where
 }
 
 #[async_trait::async_trait]
-impl<S> mailbox_client::store::MailboxStore<MailboxOperation> for OpStore<S>
+impl<S> mailbox_client::store::LocalMailboxLogStore<MailboxOperation> for OpStore<S>
 where
     S: OperationStore<TopicId, Extensions> + LogStore<TopicId, Extensions>,
     S: Send + Sync + 'static,
 {
-    async fn get_blob(
-        &self,
-        _hash: &mailbox_client::OpaqHash,
-    ) -> Result<Option<mailbox_client::Opaq>, anyhow::Error> {
-        // TODO: implement local blob storage lookup
-        Ok(None)
-    }
-
-    async fn store_blob(&self, _blob: mailbox_client::Opaq) -> Result<(), anyhow::Error> {
-        // TODO: implement local blob storage
-        Ok(())
-    }
-
     async fn get_log(
         &self,
         author: &DeviceId,
@@ -453,5 +440,27 @@ where
         Ok(BTreeMap::from_iter(
             OpStore::get_log_heights(self, topic).await?.into_iter(),
         ))
+    }
+}
+
+#[async_trait::async_trait]
+impl<S> mailbox_client::store::LocalMailboxOpaqStore for OpStore<S>
+where
+    S: OperationStore<TopicId, Extensions> + LogStore<TopicId, Extensions>,
+    S: Send + Sync + 'static,
+{
+    async fn has_blob(&self, _hash: mailbox_client::OpaqHash) -> anyhow::Result<bool> {
+        todo!("access payloads directly in p2panda operation store")
+    }
+
+    async fn get_blob(
+        &self,
+        _hash: mailbox_client::OpaqHash,
+    ) -> Result<Option<mailbox_client::Opaq>, anyhow::Error> {
+        todo!("access payloads directly in p2panda operation store")
+    }
+
+    async fn store_blob(&self, _blob: mailbox_client::Opaq) -> Result<(), anyhow::Error> {
+        todo!("access payloads directly in p2panda operation store")
     }
 }

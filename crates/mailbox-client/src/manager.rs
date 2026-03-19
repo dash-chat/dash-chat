@@ -1,5 +1,5 @@
 use crate::blob_queue::{BlobPublishEntry, BlobPublishQueue};
-use crate::store::MailboxStore;
+use crate::store::LocalMailboxStore;
 use tokio::time::Instant;
 
 use super::*;
@@ -115,7 +115,7 @@ impl<Item: MailboxItem> Clone for TrackedMailbox<Item> {
 pub struct Mailboxes<Item, Store, BlobQueue>
 where
     Item: MailboxItem,
-    Store: MailboxStore<Item>,
+    Store: LocalMailboxStore<Item>,
     BlobQueue: BlobPublishQueue,
 {
     mailboxes: Arc<Mutex<BTreeMap<MailboxId, TrackedMailbox<Item>>>>,
@@ -131,7 +131,7 @@ where
 impl<Item, Store, BlobQueue> Mailboxes<Item, Store, BlobQueue>
 where
     Item: MailboxItem,
-    Store: MailboxStore<Item>,
+    Store: LocalMailboxStore<Item>,
     BlobQueue: BlobPublishQueue,
     Item::Topic: OptionalItemTraits,
 {
@@ -210,9 +210,9 @@ where
         store: Store,
         blob_queue: BlobQueue,
         config: MailboxesConfig,
-    ) -> Result<Self, anyhow::Error> {
+    ) -> Result<Arc<Self>, anyhow::Error> {
         let (trigger_tx, mut trigger_rx) = mpsc::channel(1);
-        let manager = Self::new(store, blob_queue, config, trigger_tx);
+        let manager = Arc::new(Self::new(store, blob_queue, config, trigger_tx));
         let r = manager.clone();
 
         // Spawn the mailbox polling loop
@@ -328,7 +328,7 @@ where
             };
 
             // Get the blob data from local store
-            let blob = match self.store.get_blob(&blob_hash).await {
+            let blob = match self.store.get_blob(blob_hash).await {
                 Ok(Some(blob)) => blob,
                 Ok(None) => {
                     tracing::warn!(
