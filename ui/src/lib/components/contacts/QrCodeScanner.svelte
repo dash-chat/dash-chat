@@ -19,10 +19,13 @@
 		onRequestPickFile: RequestPickFileHandler;
 	} = $props();
 
+	let cancelled = false;
+
 	export async function cancelScanner() {
-		if (isTauriEnv()) {
+		if (!cancelled && isTauriEnv()) {
 			const { cancel } = await import('@tauri-apps/plugin-barcode-scanner');
 			await cancel();
+			cancelled = true;
 		}
 	}
 
@@ -37,6 +40,7 @@
 	});
 
 	onDestroy(() => {
+		// Fire and forget, we don't want to await this and block the UI from closing
 		cancelScanner();
 	});
 </script>
