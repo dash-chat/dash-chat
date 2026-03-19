@@ -107,7 +107,8 @@ impl<R> CancelAndWait<R> {
 pub struct Node {
     pub op_store: NodeOpStore,
 
-    pub mailboxes: Mailboxes<MailboxOperation, NodeOpStore, mailbox_client::blob_queue::MemBlobPublishQueue>,
+    pub mailboxes:
+        Mailboxes<MailboxOperation, NodeOpStore, mailbox_client::blob_queue::RedbBlobPublishQueue>,
 
     // groups: p2panda_auth::group::Groups,
     config: NodeConfig,
@@ -141,9 +142,11 @@ impl Node {
 
         let (stream_tx, stream_rx) = mpsc::channel(100);
 
+        let blob_queue =
+            mailbox_client::blob_queue::RedbBlobPublishQueue::from_db(local_store.db())?;
         let mailboxes = Mailboxes::spawn(
             op_store.clone(),
-            mailbox_client::blob_queue::MemBlobPublishQueue::new(),
+            blob_queue,
             config.mailboxes_config.clone(),
         )
         .await?;
@@ -422,11 +425,12 @@ impl Node {
         Ok(header)
     }
 
-    /// Abort the stream processing background task, allowing database handles to be released.
+    /// Abort all background tasks, allowing database handles to be released.
     pub async fn shutdown(mut self) {
         if let Some(cancel_and_wait) = self.stream_task.take() {
             cancel_and_wait.cancel_and_wait().await;
         }
+        self.mailboxes.shutdown().await;
     }
 
     /// Store someone as a contact, and:

@@ -124,6 +124,8 @@ where
     blob_queue: BlobQueue,
     config: MailboxesConfig,
     trigger: mpsc::Sender<()>,
+    /// Handles to background tasks, aborted on shutdown.
+    task_handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 }
 
 impl<Item, Store, BlobQueue> Mailboxes<Item, Store, BlobQueue>
@@ -146,6 +148,7 @@ where
             blob_queue,
             config,
             trigger,
+            task_handles: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -213,7 +216,7 @@ where
         let r = manager.clone();
 
         // Spawn the mailbox polling loop
-        tokio::spawn(
+        let poll_handle = tokio::spawn(
             async move {
                 loop {
                     let next = manager.find_next_due().await;
@@ -253,7 +256,7 @@ where
 
         // Spawn the blob publish drain loop
         let drain = r.clone();
-        tokio::spawn(
+        let drain_handle = tokio::spawn(
             async move {
                 loop {
                     tokio::time::sleep(drain.config.blob_drain_interval).await;
@@ -263,7 +266,21 @@ where
             .instrument(tracing::info_span!("blob publish drain")),
         );
 
+        r.task_handles
+            .lock()
+            .await
+            .extend([poll_handle, drain_handle]);
+
         Ok(r)
+    }
+
+    /// Abort background tasks and release all resources (including file locks).
+    pub async fn shutdown(&self) {
+        let handles: Vec<_> = self.task_handles.lock().await.drain(..).collect();
+        for handle in handles {
+            handle.abort();
+            let _ = handle.await;
+        }
     }
 
     /// Drain pending entries from the blob publish queue,
