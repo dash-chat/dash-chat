@@ -121,7 +121,7 @@ where
 
         let extensions = Extensions {
             topic: topic.clone().into(),
-            auth: payload.extract_auth_extension(),
+            hacky_group: payload.extract_hacky_group_extension(),
         };
 
         let timestamp = timestamp_now();

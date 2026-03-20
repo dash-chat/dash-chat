@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use named_id::{RenameAll, RenameNone};
 use p2panda_auth::group::GroupAction;
 use p2panda_auth::processor::AuthExtension;
@@ -5,15 +7,28 @@ use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use p2panda_core::{Body, Extension, Hash, PruneFlag, PublicKey};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "auth-workaround")]
+use crate::DeviceId;
 use crate::chat::ChatId;
 use crate::contact::QrCode;
 use crate::topic::TopicId;
 use crate::{AgentId, AsBody, Capabilities, Cbor, ChatMessageContent, ChatReaction, Topic};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
 pub struct Extensions {
     pub topic: TopicId,
-    pub auth: Option<AuthExtension>,
+    pub hacky_group: Option<HackyGroupExtension>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
+pub struct HackyGroupExtension {
+    pub auth: AuthExtension,
+
+    /// The auth workaround is all about replacing AgentIds and DeviceIds when Manage access is used.
+    /// In at least one case, we need the original AgentIds, so this mapping adds them back in.
+    /// This can go away once we remove the auth workaround.
+    #[cfg(feature = "auth-workaround")]
+    pub device_agent_mapping: BTreeMap<DeviceId, AgentId>,
 }
 
 impl Extensions {
@@ -24,7 +39,11 @@ impl Extensions {
 
 impl Extension<AuthExtension> for Extensions {
     fn extract(header: &Header) -> Option<AuthExtension> {
-        header.extensions.auth.clone()
+        header
+            .extensions
+            .hacky_group
+            .as_ref()
+            .map(|e| e.auth.clone())
     }
 }
 
@@ -117,7 +136,7 @@ pub enum Payload {
 pub enum DashAction {
     Payload(Payload),
     #[named_id(skip)]
-    GroupControl(AuthExtension),
+    GroupControl(HackyGroupExtension),
 }
 
 impl DashAction {
@@ -128,9 +147,9 @@ impl DashAction {
         })
     }
 
-    pub fn extract_auth_extension(&self) -> Option<AuthExtension> {
+    pub fn extract_hacky_group_extension(&self) -> Option<HackyGroupExtension> {
         match self {
-            DashAction::GroupControl(auth) => Some(auth.clone()),
+            DashAction::GroupControl(hacky_group) => Some(hacky_group.clone()),
             _ => None,
         }
     }
@@ -138,10 +157,14 @@ impl DashAction {
     pub fn group_action(
         group_id: ChatId,
         action: GroupAction<PublicKey, ()>,
+        #[cfg(feature = "auth-workaround")] device_agent_mapping: BTreeMap<DeviceId, AgentId>,
     ) -> anyhow::Result<Self> {
-        Ok(DashAction::GroupControl(AuthExtension {
-            group_id: group_id.to_group_pubkey()?,
-            action,
+        Ok(DashAction::GroupControl(HackyGroupExtension {
+            auth: AuthExtension {
+                group_id: group_id.to_group_pubkey()?,
+                action,
+            },
+            device_agent_mapping,
         }))
     }
 }

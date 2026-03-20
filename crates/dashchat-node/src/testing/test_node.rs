@@ -299,7 +299,9 @@ pub async fn consistency(
                 (node.device_id().renamed().to_string(), topics)
             })
             .collect::<Vec<_>>();
+
         let mut diffs = ConsistencyReport::new(sets);
+
         for (n, (i, a)) in diffs.sets.iter().enumerate() {
             for (j, b) in diffs.sets.iter().take(n) {
                 if i != j && a != b {

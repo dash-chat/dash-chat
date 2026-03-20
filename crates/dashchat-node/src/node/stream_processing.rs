@@ -127,6 +127,7 @@ impl Node {
         CancelAndWait::new(handle, token2)
     }
 
+    #[tracing::instrument(skip_all, fields(me=?self.device_id().renamed()))]
     async fn process_stream_item(&self, operation: Operation<Extensions>) -> anyhow::Result<()> {
         let hash = operation.hash.renamed();
         let topic = operation.header.extensions.topic;
@@ -138,9 +139,9 @@ impl Node {
         // That's why this shows up before the partial order check.
         //
         // TODO: handle this more cleanly, especially when it comes to removing members.
-        match &operation.header.extensions.auth {
-            Some(auth) => {
-                let members = match &auth.action {
+        match &operation.header.extensions.hacky_group {
+            Some(hacky_group) => {
+                let members = match &hacky_group.auth.action {
                     GroupAction::Create { initial_members } => {
                         initial_members.iter().map(|(member, _)| member).collect()
                     }
@@ -150,17 +151,24 @@ impl Node {
                     GroupAction::Demote { .. } => vec![],
                 };
                 for member in members {
-                    match member {
+                    let agent_id = match member {
                         GroupMember::Group(id) => {
-                            self.register_topic(Topic::announcements(AgentId::from_pubkey(*id)))
-                                .await?
+                            AgentId::from_pubkey(*id)
                         }
-                        GroupMember::Individual(_) => {}
-                    }
+                        GroupMember::Individual(id) => {
+                            let device_id = DeviceId::from(*id);
+                            let agent_id = hacky_group.device_agent_mapping.get(&device_id).expect("hacky group extension missing device agent mapping!").clone();
+                            agent_id
+                        }
+                    };
+                    println!("<HACKY> {} registered {}", self.agent_id().renamed(), agent_id.renamed());
+                    self.register_topic(Topic::announcements(agent_id)).await?
                 }
             }
             None => {}
         }
+
+        let deps = operation.header.previous.clone();
 
         if let Err(err) = self.op_store.process_ordering(operation).await {
             tracing::error!(?err, "process ordering error");
@@ -176,7 +184,7 @@ impl Node {
             .unwrap_or_default();
 
         if reordered.is_empty() {
-            tracing::warn!(?topic, ?hash, "operation processed out of order");
+            tracing::warn!(topic = %topic.renamed(), hash = %hash.renamed(), deps = %deps.renamed(), "operation processed out of order");
         }
 
         // let reordered = vec![operation];
@@ -245,15 +253,13 @@ impl Node {
     }
 
     async fn process_extensions(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
-        match &operation.header.extensions.auth {
+        match &operation.header.extensions.hacky_group {
             Some(auth) => {
                 tracing::info!(
                     operation_author = ?operation.header.public_key.renamed(),
                     auth_extension = ?auth.clone().renamed(), 
                     "processing auth extension");
-                if let Err(err) = self.local_store.process_group_operation(operation).await {
-                    tracing::error!(?err, "error processing auth extension");
-                };
+                self.local_store.process_group_operation(operation).await?;
             }
             None => {}
         }

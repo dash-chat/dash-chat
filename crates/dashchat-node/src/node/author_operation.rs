@@ -38,6 +38,8 @@ impl Node {
             header,
             body,
         };
+
+        // XXX: TODO: really the operation needs to be processed first to see if it even ought to be ingested.
         self.process_authored_ingested_operation(op).await
     }
 

@@ -38,14 +38,15 @@ use crate::stores::OpStore;
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, Capabilities, Capability, ChatId, ChatReaction, DashAction, DeviceGroupId,
-    DeviceGroupPayload, DeviceId, DirectChatId, Header, Operation, VersionConvert,
+    DeviceGroupPayload, DeviceId, DirectChatId, HackyGroupExtension, Header, Operation,
+    VersionConvert,
 };
 
 pub use crate::local_store::LocalStore;
 pub use stream_processing::Notification;
 
-pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
-// pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
+// pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
+pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
@@ -326,32 +327,56 @@ impl Node {
             .entry(self.agent_id())
             .or_insert(Access::manage());
 
+        #[cfg(not(feature = "auth-workaround"))]
         let mut initial_members = initial_agents
             .iter()
             .map(|(m, a)| (m.to_group_member(), *a))
             .collect::<BTreeMap<_, _>>();
 
+        // Because we can't have Manage access for Groups, we need replace those agents with their devices.
+        // This is the "auth-workaround".
         #[cfg(feature = "auth-workaround")]
-        {
-            for (agent, access) in initial_agents
-                .iter()
-                .filter(|(_, access)| **access >= Access::manage())
-            {
-                let Some(device_id) = self.local_store.lookup_contact_device(*agent)? else {
-                    continue;
-                };
-                // Add in all devices with manage access in the device group
-                initial_members.insert(device_id.to_group_member(), access.clone());
-            }
-        }
-
-        let initial_members = initial_members.into_iter().collect::<Vec<_>>();
+        let (initial_members, device_agent_mapping) = {
+            let mut device_agent_mapping = BTreeMap::new();
+            let initial_members = initial_agents
+                .into_iter()
+                .filter_map(|(agent, access)| {
+                    if access >= Access::manage() {
+                        // Replace the agent with their device
+                        if agent == self.agent_id() {
+                            // I don't store myself as a contact, so I'm a special case.
+                            let device_id = self.device_id();
+                            device_agent_mapping.insert(device_id, agent);
+                            Some(Ok((device_id.to_group_member(), access)))
+                        } else {
+                            Some(
+                                self.local_store
+                                    .lookup_contact_device(agent)
+                                    .transpose()?
+                                    .map(|device_id| {
+                                        device_agent_mapping.insert(device_id, agent);
+                                        (device_id.to_group_member(), access)
+                                    }),
+                            )
+                        }
+                    } else {
+                        // For all other access, just use the agent
+                        Some(Ok((agent.to_group_member(), access)))
+                    }
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            (initial_members, device_agent_mapping)
+        };
 
         tracing::info!(members = ?initial_members.clone().renamed(), "new group created with members");
 
         self.author_operation(
             chat_id,
-            DashAction::group_action(chat_id, GroupAction::Create { initial_members })?,
+            DashAction::group_action(
+                chat_id,
+                GroupAction::Create { initial_members },
+                device_agent_mapping,
+            )?,
             Some(&format!("create_group({})", chat_id.renamed())),
         )
         .await?;
@@ -372,40 +397,56 @@ impl Node {
         agent_id: AgentId,
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
-        let mut members = vec![(agent_id.to_group_member(), access)];
-
         // HACK: remove this block once p2panda-auth supports Manage access for Groups
         #[cfg(feature = "auth-workaround")]
-        {
-            // Add in all devices with manage access in the device group
-            if access >= Access::manage() {
-                if let Some(device_id) = self.local_store.lookup_contact_device(agent_id)? {
-                    members.push((device_id.to_group_member(), access));
-                };
-            }
-        }
+        let (member, device_agent_mapping) = if access >= Access::manage() {
+            let mut device_agent_mapping = BTreeMap::new();
+            let member = if agent_id == self.agent_id() {
+                let device_id = self.device_id();
+                device_agent_mapping.insert(device_id, agent_id);
+                device_id.to_group_member()
+            } else {
+                self.local_store
+                    .lookup_contact_device(agent_id)?
+                    .map(|device_id| {
+                        device_agent_mapping.insert(device_id, agent_id);
+                        device_id.to_group_member()
+                    })
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "couldn't add contact to group: contact {} not found",
+                            agent_id.renamed()
+                        )
+                    })?
+            };
+            (member, device_agent_mapping)
+        } else {
+            (agent_id.to_group_member(), BTreeMap::new())
+        };
 
-        tracing::info!(members = ?members.clone().renamed(), "members added to existing group");
+        #[cfg(not(feature = "auth-workaround"))]
+        let member = agent_id.to_group_member();
 
-        for (member, access) in members {
-            let action = DashAction::group_action(
-                chat_id,
-                GroupAction::Add {
-                    member,
-                    access: access.clone(),
-                },
-            )?;
-            self.author_operation(
-                chat_id,
-                action,
-                Some(&format!(
-                    "add_group_member({}, {})",
-                    chat_id.renamed(),
-                    member.renamed()
-                )),
-            )
-            .await?;
-        }
+        tracing::info!(member = ?member.clone().renamed(), "member added to existing group");
+
+        let action = DashAction::group_action(
+            chat_id,
+            GroupAction::Add {
+                member,
+                access: access.clone(),
+            },
+            device_agent_mapping,
+        )?;
+        self.author_operation(
+            chat_id,
+            action,
+            Some(&format!(
+                "add_group_member({}, {})",
+                chat_id.renamed(),
+                member.renamed()
+            )),
+        )
+        .await?;
 
         self.invite_to_group(chat_id, agent_id).await?;
 
@@ -781,6 +822,10 @@ impl Node {
     }
 
     async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
+        if person == self.agent_id() {
+            return Ok(());
+        }
+
         let payload = Payload::Chat(ChatPayload::JoinGroup(chat_id));
         tracing::info!(
             "{} is inviting {} to group {}",
@@ -836,13 +881,22 @@ impl Node {
 
         self.author_operation(
             announcements_topic,
-            DashAction::GroupControl(AuthExtension {
-                group_id: self.agent_id().to_group_member().id(),
-                action: GroupAction::Create {
-                    initial_members: vec![(self.device_id().to_group_member(), Access::manage())],
+            DashAction::GroupControl(HackyGroupExtension {
+                auth: AuthExtension {
+                    group_id: self.agent_id().to_group_member().id(),
+                    action: GroupAction::Create {
+                        initial_members: vec![(
+                            self.device_id().to_group_member(),
+                            Access::manage(),
+                        )],
+                    },
                 },
+                device_agent_mapping: [(self.device_id(), self.agent_id())].into_iter().collect(),
             }),
-            Some("initialize_device_group"),
+            Some(&format!(
+                "initialize_device_group({})",
+                self.agent_id().renamed()
+            )),
         )
         .await?;
 
