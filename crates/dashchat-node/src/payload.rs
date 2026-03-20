@@ -42,8 +42,11 @@ pub struct Profile {
 #[serde(tag = "type", content = "payload")]
 pub enum AnnouncementsPayload {
     SetProfile(Profile),
+
     #[named_id(skip)]
-    SetCapabilities(Capabilities),
+    SetCapabilities {
+        capabilities: Capabilities,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
@@ -76,8 +79,6 @@ pub enum ChatPayload {
     /// which instructs anyone who is a contact of this person to send them
     /// this JoinGroup message 1:1, to increase their ability to receive it.
     JoinGroup(ChatId),
-    // /// Informs the group of the compatibility capabilities of the sender.
-    // SetCapabilities(Capabilities),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, RenameNone)]

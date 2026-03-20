@@ -403,7 +403,7 @@ impl LocalStore {
     /// that many devices will map to the same agent, and that agent will map to the latest
     /// device associated with.
     pub fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
-        let txn = self.db.begin_write()?;
+        let mut txn = self.db.begin_write()?;
 
         #[cfg(feature = "auth-workaround")]
         {
@@ -417,16 +417,25 @@ impl LocalStore {
                 contact.device_pubkey.as_bytes(),
             )?;
         }
-
-        {
-            let mut table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
-            table.insert(contact.device_pubkey.as_bytes(), contact.capabilities)?;
-        }
+        
+        Self::set_device_capabilities_txn(&mut txn, contact.device_pubkey, contact.capabilities)?;
 
         txn.commit()?;
         Ok(())
     }
 
+    pub fn set_device_capabilities(&self, device_id: DeviceId, capabilities: Capabilities) -> anyhow::Result<()> {
+        let mut txn = self.db.begin_write()?;
+        Self::set_device_capabilities_txn(&mut txn, device_id, capabilities)?;
+        txn.commit()?;
+        Ok(())
+    }
+
+    fn set_device_capabilities_txn(txn: &mut WriteTransaction, device_id: DeviceId, capabilities: Capabilities) -> anyhow::Result<()> {
+        let mut table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
+        table.insert(device_id.as_bytes(), capabilities)?;
+        Ok(())
+    }
 
 
 }

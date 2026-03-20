@@ -817,8 +817,10 @@ impl Node {
     }
 
     async fn initialize_device_group(&self) -> anyhow::Result<bool> {
-        let topic = Topic::announcements(self.agent_id());
-        let log = self.get_log(topic.into(), self.device_id()).await?;
+        let announcements_topic = Topic::announcements(self.agent_id());
+        let log = self
+            .get_log(announcements_topic.into(), self.device_id())
+            .await?;
 
         let initialized = log.iter().any(|(header, _)| {
             let Some(auth) = header.extension::<AuthExtension>() else {
@@ -833,7 +835,7 @@ impl Node {
         }
 
         self.author_operation(
-            topic,
+            announcements_topic,
             DashAction::GroupControl(AuthExtension {
                 group_id: self.agent_id().to_group_member().id(),
                 action: GroupAction::Create {
@@ -843,6 +845,17 @@ impl Node {
             Some("initialize_device_group"),
         )
         .await?;
+
+        self.author_operation(
+            announcements_topic,
+            Payload::Announcements(AnnouncementsPayload::SetCapabilities {
+                capabilities: self.config.capabilities.clone(),
+            }),
+            Some(&format!("set_capabilities({})", self.device_id().renamed())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
         Ok(true)
     }
 }

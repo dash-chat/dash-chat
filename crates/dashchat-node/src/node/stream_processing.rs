@@ -306,15 +306,13 @@ impl Node {
                 }
             }
 
-            Payload::Chat(ChatPayload::Message(_) | ChatPayload::Reaction(_)) => {
-                // Nothing to do.
+            Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
+                if header.public_key != *self.device_id() {
+                    self.local_store.set_device_capabilities(header.public_key.into(), capabilities.clone())?;
+                }
             }
 
-            Payload::Announcements(_) => {
-                // Nothing to do.
-            }
-
-            Payload::DeviceGroup(_) => {
+            _ => {
                 // Nothing to do.
             }
         }
