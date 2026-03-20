@@ -60,6 +60,7 @@ impl TestNode {
         )
         .await
         .unwrap();
+
         if config.create_profile {
             node.set_profile(Profile {
                 name: name.to_string(),
@@ -181,17 +182,14 @@ pub struct TestNodeConfig {
     pub create_profile: bool,
     /// Use a named-id for the device and agent IDs
     pub use_named_id: bool,
-    /// The capabilities to set on the node
-    pub capabilities: crate::compat::Capabilities,
 }
 
 impl Default for TestNodeConfig {
     fn default() -> Self {
         Self {
-            node_config: NodeConfig::default(),
+            node_config: NodeConfig::testing(),
             create_profile: true,
             use_named_id: true,
-            capabilities: crate::compat::Capabilities::current(),
         }
     }
 }
@@ -263,15 +261,15 @@ impl<const N: usize> TestCluster<N> {
         &self,
         topics: impl IntoIterator<Item = &TopicId>,
     ) -> anyhow::Result<()> {
-        consistency(self.nodes().await.iter(), topics, &self.config).await
+        consistency(self.nodes().await.iter(), topics).await
     }
 }
 
 pub async fn consistency(
     nodes: impl IntoIterator<Item = &TestNode>,
     topics: impl IntoIterator<Item = &TopicId>,
-    config: &ClusterConfig,
 ) -> anyhow::Result<()> {
+    let config = ClusterConfig::default();
     let topics = topics.into_iter().collect::<HashSet<_>>();
     let nodes = nodes.into_iter().collect::<Vec<_>>();
     wait_for_resetting(config.poll_interval, config.poll_timeout, || async {

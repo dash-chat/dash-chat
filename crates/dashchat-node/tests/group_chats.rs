@@ -9,9 +9,10 @@ use std::time::Duration;
 use dashchat_node::{testing::*, *};
 use mailbox_client::mem::MemMailbox;
 
-use maplit::btreemap;
+use maplit::{btreemap, btreeset};
 use named_id::*;
 
+use p2panda_auth::Access;
 use pretty_assertions::assert_eq;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -53,32 +54,28 @@ async fn test_direct_chat() {
     let chat_id = alice.direct_chat_topic(bobbi.agent_id());
     assert_eq!(chat_id, bobbi.direct_chat_topic(alice.agent_id()));
 
+    consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let members = alice.get_group_members(chat_id).await.unwrap();
+    assert_eq!(
+        members,
+        btreeset! {
+            (alice.device_id(), Access::write()),
+            (bobbi.device_id(), Access::write()),
+        }
+    );
+    assert_eq!(bobbi.get_group_members(chat_id).await.unwrap(), members);
+
     alice
         .send_direct_message(bobbi.agent_id(), "Hello".into())
         .await
         .unwrap();
 
-    // consistency(
-    //     [&alice, &bobbi],
-    //     &[chat_id.into()],
-    //     &ClusterConfig::default(),
-    // )
-    // .await
-    // .unwrap();
-
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(10),
-        || async {
-            let msgs = [
-                alice.get_messages(chat_id).await.unwrap().len(),
-                bobbi.get_messages(chat_id).await.unwrap().len(),
-            ];
-            msgs.iter().all(|m| *m == 1).ok_or(msgs)
-        },
-    )
-    .await
-    .unwrap();
+    consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
 
     let alice_messages = alice.get_messages(chat_id).await.unwrap();
     let bobbi_messages = bobbi.get_messages(chat_id).await.unwrap();
@@ -105,7 +102,11 @@ async fn test_group_chat() {
     );
 
     let mailbox = MemMailbox::new();
-    let alice = TestNode::new(NodeConfig::testing(), "alice")
+    let mut alice_config = NodeConfig::testing();
+    // TODO: add SetCapabilities to Announcements topic so everyone else can know about that.
+    // TODO: also there is a bug here even without different capabilities (test fails)
+    // alice_config.capabilities = Capabilities::zero();
+    let alice = TestNode::new(alice_config, "alice")
         .await
         .add_mailbox_client(mailbox.client())
         .await;
@@ -196,7 +197,6 @@ async fn test_group_chat() {
             Topic::announcements(bobbi.agent_id()).into(),
             chat_id.into(),
         ],
-        &ClusterConfig::default(),
     )
     .await
     .unwrap();
@@ -217,13 +217,9 @@ async fn test_group_chat() {
         .await
         .unwrap();
 
-    consistency(
-        [&alice, &bobbi, &cammy],
-        &[chat_id.into()],
-        &ClusterConfig::default(),
-    )
-    .await
-    .unwrap();
+    consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
 
     cammy
         .add_group_member(chat_id, danae.agent_id(), p2panda_auth::Access::write())
@@ -241,13 +237,9 @@ async fn test_group_chat() {
         .await
         .unwrap();
 
-    consistency(
-        [&alice, &bobbi, &cammy, &danae],
-        &[chat_id.into()],
-        &ClusterConfig::default(),
-    )
-    .await
-    .unwrap();
+    consistency([&alice, &bobbi, &cammy, &danae], &[chat_id.into()])
+        .await
+        .unwrap();
 
     wait_for(
         Duration::from_millis(100),

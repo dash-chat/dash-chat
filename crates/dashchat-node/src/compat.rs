@@ -74,6 +74,13 @@ impl Capabilities {
         )
     }
 
+    pub fn infimum_opt(&self, other: Option<Self>) -> Self {
+        match other {
+            Some(other) => self.infimum(&other),
+            None => self.clone(),
+        }
+    }
+
     pub fn current() -> Self {
         Self::zero().with_capability(Capability::Messaging, 1)
     }

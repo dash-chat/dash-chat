@@ -1995,6 +1995,7 @@ dependencies = [
  "chrono",
  "dashchat-node",
  "derive_more 1.0.0",
+ "ed25519-dalek 2.2.0",
  "futures",
  "hex",
  "itertools",

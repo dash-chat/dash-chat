@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use crate::Capabilities;
 use crate::chat::{ChatMessageContent, ChatMessageContentV0, ChatMessageV1, ChatMessageVersions};
 use crate::compat::{VersionConvert, VersionConvertError};
-use crate::testing::{TestNode, TestNodeConfig};
+use crate::testing::{TestNode, TestNodeConfig, consistency};
+use crate::{Capabilities, ShareIntent};
 use mailbox_client::mem::MemMailbox;
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 
@@ -72,9 +72,11 @@ fn version_convert_unknown_version() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn messaging_v0_to_v1() {
+    dashchat_node::testing::setup_tracing(&["dashchat=warn"], true);
+
     let mut alice_config = TestNodeConfig::default();
     let bobbi_config = TestNodeConfig::default();
-    alice_config.capabilities = Capabilities::zero();
+    alice_config.node_config.capabilities = Capabilities::zero();
 
     let mailbox = MemMailbox::new();
     let alice = TestNode::new(alice_config, "alice")
@@ -85,6 +87,47 @@ async fn messaging_v0_to_v1() {
         .await
         .add_mailbox_client(mailbox.client())
         .await;
+
+    println!("alice: {:?}", alice.device_id().to_hex());
+    println!("bobbi: {:?}", bobbi.device_id().to_hex());
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let topic = alice.direct_chat_topic(bobbi.agent_id());
+
+    consistency([&alice, &bobbi], &[topic.into()])
+        .await
+        .unwrap();
+
+    let alice_bobbi_caps = alice
+        .local_store
+        .get_contact_capabilities(bobbi.agent_id())
+        .unwrap();
+    let bobbi_alice_caps = bobbi
+        .local_store
+        .get_contact_capabilities(alice.agent_id())
+        .unwrap();
+
+    assert_eq!(alice_bobbi_caps, Some(Capabilities::current()));
+    assert_eq!(bobbi_alice_caps, Some(Capabilities::zero()));
+
+    let alice_caps = alice
+        .local_store
+        .get_group_peer_capabilities(topic)
+        .await
+        .unwrap();
+    let bobbi_caps = bobbi
+        .local_store
+        .get_group_peer_capabilities(topic)
+        .await
+        .unwrap();
+
+    assert_eq!(alice_caps, Some(Capabilities::current()));
+    assert_eq!(bobbi_caps, Some(Capabilities::zero()));
 
     let chat = alice.direct_chat_topic(bobbi.agent_id());
     alice

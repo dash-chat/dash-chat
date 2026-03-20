@@ -222,21 +222,18 @@ impl Topic<kind::Chat> {
 
     /// Derive a direct chat topic from two agent IDs.
     pub fn direct_chat(mut pks: [AgentId; 2]) -> Self {
-        // XXX: just take the lower agent ID, as a quick way to get a valid pubkey
         pks.sort();
-        Self::new(*pks[0].as_bytes())
 
-        // XXX: This is more like what we want, but p2panda requires auth group IDs to be valid pubkeys. We'd have to use a KDF to derive a proper pubkey, so for now we use the simpler but unacceptable version above.
-        // {
-        //     let mut hasher = blake3::Hasher::new();
-        //     hasher.update(pks[0].as_bytes());
-        //     hasher.update(pks[1].as_bytes());
-        //     Self::new(hasher.finalize().into()).with_name(&format!(
-        //         "direct({},{})",
-        //         pks[0].renamed(),
-        //         pks[1].renamed()
-        //     ))
-        // }
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(pks[0].as_bytes());
+        hasher.update(pks[1].as_bytes());
+        let hash: [u8; 32] = hasher.finalize().into();
+        let pubkey = crate::util::ed25519_pubkey_from_hash(hash);
+        Self::new(*pubkey.as_bytes()).with_name(&format!(
+            "direct({},{})",
+            pks[0].renamed(),
+            pks[1].renamed()
+        ))
     }
 
     pub fn from_group_pubkey(pubkey: p2panda_core::PublicKey) -> Self {

@@ -214,24 +214,22 @@ impl LocalStore {
     pub(super) fn get_contact_capabilities(
         &self,
         peer: AgentId,
-    ) -> anyhow::Result<Capabilities> {
+    ) -> anyhow::Result<Option<Capabilities>> {
         let devices: Vec<DeviceId> = self.lookup_contact_device(peer)?.into_iter().collect();
+        dbg!(&devices);
         self.get_capabilities_for_devices(devices)
     }
 
     /// Find the infimum of the capabilities of all other members of the group with read access or above.
+    /// 
+    /// This is dependent on eventual consistency, and as other members join, the capabilities may change.
     ///
     /// Note, this should still be combined (via [`Capabilities::infimum`]) with the capabilities of the node itself.
     pub(super) async fn get_group_peer_capabilities(
         &self,
         topic: ChatId,
-    ) -> anyhow::Result<Capabilities> {
+    ) -> anyhow::Result<Option<Capabilities>> {
         let members = self.chat_group_members(topic).await?;
-        debug_assert!(
-            members.len() >= 1,
-            "Group must have at least 1 member to get capabilities. Group = {}",
-            topic.renamed()
-        );
         let devices = members
             .iter()
             .filter_map(|(member, access)| {
@@ -242,12 +240,17 @@ impl LocalStore {
         self.get_capabilities_for_devices(devices)
     }
 
-    fn get_capabilities_for_devices(&self, devices: Vec<DeviceId>) -> anyhow::Result<Capabilities> {
+    /// Get the minimum capabilities for a list of devices
+    /// 
+    /// Devices without capabilities set are not included in the calculation.
+    /// If the device list is empty, or if no devices in the list have capabilities, return None.
+    fn get_capabilities_for_devices(&self, devices: Vec<DeviceId>) -> anyhow::Result<Option<Capabilities>> {
         let txn = self.db.begin_read()?;
         let table = txn.open_table(COMPAT_CAPABILITIES_TABLE)?;
-        let capabilities = devices.iter().map(|device| table.get(device.as_bytes()).map(|caps| caps.map(|caps| caps.value())
-                .unwrap_or(Capabilities::zero())
-            )).collect::<Result<Vec<Capabilities>, StorageError>>()?.into_iter().reduce(|a, b| a.infimum(&b)).unwrap_or(Capabilities::zero());
+        let capabilities = devices.iter().flat_map(|device| table.get(device.as_bytes()).map(|caps| caps.map(|caps| caps.value())).transpose())
+            .collect::<Result<Vec<Capabilities>, StorageError>>()?
+            .into_iter()
+            .reduce(|a, b| a.infimum(&b));
         Ok(capabilities)
     }
 

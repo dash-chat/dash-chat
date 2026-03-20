@@ -57,6 +57,12 @@ pub enum InboxPayload {
 #[derive(Clone, Debug, Serialize, Deserialize, RenameAll)]
 #[serde(tag = "type", content = "payload")]
 pub enum ChatPayload {
+    /// A normal chat messaqge
+    Message(ChatMessageContent),
+
+    /// A reaction to a message
+    Reaction(ChatReaction),
+
     /// Instructs the recipient to subscribe to the group chat topic.
     /// This is only sent in direct chat messages.
     /// It's invalid to send in a group chat, because you must be
@@ -70,10 +76,8 @@ pub enum ChatPayload {
     /// which instructs anyone who is a contact of this person to send them
     /// this JoinGroup message 1:1, to increase their ability to receive it.
     JoinGroup(ChatId),
-
-    Message(ChatMessageContent),
-
-    Reaction(ChatReaction),
+    // /// Informs the group of the compatibility capabilities of the sender.
+    // SetCapabilities(Capabilities),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, RenameNone)]

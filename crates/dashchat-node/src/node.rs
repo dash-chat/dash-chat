@@ -51,7 +51,7 @@ pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
 pub struct NodeConfig {
     pub contact_code_expiry: Duration,
     pub mailboxes_config: MailboxesConfig,
-    capabilities: Capabilities,
+    pub capabilities: Capabilities,
 }
 
 impl NodeConfig {
@@ -321,8 +321,10 @@ impl Node {
     ) -> anyhow::Result<ChatId> {
         let agents_to_invite = initial_agents.keys().copied().collect::<Vec<_>>();
 
-        // The creator must always have Manage access
-        initial_agents.insert(self.agent_id(), Access::manage());
+        // The creator must be present, and defaults to Manage access
+        initial_agents
+            .entry(self.agent_id())
+            .or_insert(Access::manage());
 
         let mut initial_members = initial_agents
             .iter()
@@ -555,8 +557,6 @@ impl Node {
         let message =
             message.to_version(group_caps.get(&Capability::Messaging).copied().unwrap_or(0))?;
 
-        dbg!(&message);
-
         let header = self
             .author_operation(topic, Payload::Chat(ChatPayload::Message(message)), None)
             .await?;
@@ -573,18 +573,23 @@ impl Node {
         todo!("must reliably get device IDs for an agent");
 
         let capabilities = self.local_store.get_contact_capabilities(peer)?;
-        Ok(capabilities.infimum(&self.config.capabilities))
+        Ok(self.config.capabilities.infimum_opt(capabilities))
     }
 
     /// Get the lowest common capability set for all members of the group including this node.
     ///
     /// Assumption: this node is a member of the group.
     pub async fn get_group_capabilities(&self, topic: ChatId) -> anyhow::Result<Capabilities> {
-        Ok(self
-            .local_store
-            .get_group_peer_capabilities(topic)
-            .await?
-            .infimum(&self.config.capabilities))
+        let caps = self.local_store.get_group_peer_capabilities(topic).await?;
+        match &caps {
+            None => {
+                tracing::warn!(
+                    "no capabilities found for group {topic}, using node's capabilities"
+                );
+            }
+            _ => {}
+        }
+        Ok(self.config.capabilities.infimum_opt(caps))
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
@@ -615,6 +620,7 @@ impl Node {
     /// - send an invitation to them to do the same
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
     pub async fn add_contact(&self, contact: QrCode) -> Result<AgentId, AddContactError> {
+        println!("adding contact: {:?}", contact);
         tracing::debug!("adding contact: {:?}", contact);
 
         #[cfg(feature = "auth-workaround")]
@@ -673,6 +679,10 @@ impl Node {
         // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
 
         let agent = contact.agent_id;
+        let direct_topic = self.direct_chat_topic(agent);
+        self.register_topic(direct_topic)
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
         self.author_operation(
             self.device_group_topic(),
