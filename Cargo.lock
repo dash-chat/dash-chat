@@ -6337,7 +6337,6 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.5.1"
-source = "git+https://github.com/maackle/p2panda.git?branch=dashchat-auth-processor#4a4d2dc4e8f39dd375c8fd2b1cb06a0ca2063bcd"
 dependencies = [
  "derive_more 1.0.0",
  "named-id",
@@ -6370,7 +6369,6 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.5.1"
-source = "git+https://github.com/maackle/p2panda.git?branch=dashchat-auth-processor#4a4d2dc4e8f39dd375c8fd2b1cb06a0ca2063bcd"
 dependencies = [
  "blake3",
  "ciborium",
@@ -6386,7 +6384,6 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.5.1"
-source = "git+https://github.com/maackle/p2panda.git?branch=dashchat-auth-processor#4a4d2dc4e8f39dd375c8fd2b1cb06a0ca2063bcd"
 dependencies = [
  "blake3",
  "futures-util",
@@ -6400,7 +6397,6 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.5.1"
-source = "git+https://github.com/maackle/p2panda.git?branch=dashchat-auth-processor#4a4d2dc4e8f39dd375c8fd2b1cb06a0ca2063bcd"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -6425,7 +6421,6 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.5.1"
-source = "git+https://github.com/maackle/p2panda.git?branch=dashchat-auth-processor#4a4d2dc4e8f39dd375c8fd2b1cb06a0ca2063bcd"
 dependencies = [
  "ciborium",
  "futures-channel",
@@ -6452,7 +6447,6 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.5.1"
-source = "git+https://github.com/maackle/p2panda.git?branch=dashchat-auth-processor#4a4d2dc4e8f39dd375c8fd2b1cb06a0ca2063bcd"
 dependencies = [
  "named-id",
  "p2panda-auth",
@@ -6469,7 +6463,6 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.5.1"
-source = "git+https://github.com/maackle/p2panda.git?branch=dashchat-auth-processor#4a4d2dc4e8f39dd375c8fd2b1cb06a0ca2063bcd"
 dependencies = [
  "ciborium",
  "hex",
@@ -6482,7 +6475,6 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.5.1"
-source = "git+https://github.com/maackle/p2panda.git?branch=dashchat-auth-processor#4a4d2dc4e8f39dd375c8fd2b1cb06a0ca2063bcd"
 dependencies = [
  "ciborium",
  "futures-channel",
@@ -6499,7 +6491,6 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.5.1"
-source = "git+https://github.com/maackle/p2panda.git?branch=dashchat-auth-processor#4a4d2dc4e8f39dd375c8fd2b1cb06a0ca2063bcd"
 dependencies = [
  "futures",
  "futures-util",

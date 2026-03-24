@@ -6,7 +6,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use p2panda_auth::{Access, processor::ProcessorError};
+use p2panda_auth::{Access};
 use p2panda_core::{Hash, Operation};
 use redb::*;
 use tokio::sync::Mutex;
