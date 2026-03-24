@@ -41,6 +41,9 @@ result*
 **/*/google-services.json
 service-account-key.json
 
+# Android studio
+src-tauri/gen/android/.idea/
+
 # Development environment database files
 *.redb
 .dbs
