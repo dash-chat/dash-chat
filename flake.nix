@@ -120,10 +120,13 @@
             # CC subprocesses, causing ring 'uintptr_t and size_t differ' errors.
             # We can't fix this via shellHook (nix re-applies derivation vars afterward),
             # so we wrap each NDK compiler to unset the host headers at invocation time.
-            linuxNdkPrebuilt = "${androidSdkR26}/libexec/android-sdk/ndk-bundle/toolchains/llvm/prebuilt/linux-x86_64";
             mkAndroidCC = bin: pkgs.writeShellScript "${bin}-android-isolated" ''
+              if [ -z "''${NDK_PREBUILT_DIR:-}" ]; then
+                echo "NDK_PREBUILT_DIR is not set" >&2
+                exit 1
+              fi
               unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH
-              exec "${linuxNdkPrebuilt}/bin/${bin}" "$@"
+              exec "$NDK_PREBUILT_DIR/bin/${bin}" "$@"
             '';
           in pkgs.mkShell {
             packages = [ rust androidSdkR26 ] ++ packages;
