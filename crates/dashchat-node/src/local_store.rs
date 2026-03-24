@@ -48,6 +48,11 @@ impl LocalStore {
         Ok(store)
     }
 
+    /// Returns a shared handle to the underlying redb database.
+    pub fn db(&self) -> Arc<Database> {
+        self.db.clone()
+    }
+
     /// If the database is not initialized, initialize with random keys
     fn ensure_initialized(&self) -> anyhow::Result<()> {
         let private_key = PrivateKey::new();

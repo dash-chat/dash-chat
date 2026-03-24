@@ -1,11 +1,21 @@
 use std::collections::BTreeMap;
 
-use crate::MailboxItem;
+use crate::{MailboxItem, Opaq, OpaqHash};
+
+/// The interface for locally storing and retrieving log information for syncing with a mailbox.
+pub trait LocalMailboxStore<Item: MailboxItem>:
+    LocalMailboxLogStore<Item> + LocalMailboxOpaqStore
+{
+}
+impl<T, I> LocalMailboxStore<I> for T
+where
+    I: MailboxItem,
+    T: LocalMailboxLogStore<I> + LocalMailboxOpaqStore,
+{
+}
 
 #[async_trait::async_trait]
-pub trait MailboxStore<Item: MailboxItem>: Clone + Send + Sync + 'static {
-    // async fn store_blob(&self, blob: Blob) -> Result<(), anyhow::Error>;
-
+pub trait LocalMailboxLogStore<Item: MailboxItem>: Send + Sync + 'static {
     async fn get_log(
         &self,
         author: &Item::Author,
@@ -17,4 +27,12 @@ pub trait MailboxStore<Item: MailboxItem>: Clone + Send + Sync + 'static {
         &self,
         topic: &Item::Topic,
     ) -> Result<BTreeMap<Item::Author, u64>, anyhow::Error>;
+}
+
+/// The interface for remotely storing and retrieving blobs from a mailbox server.
+#[async_trait::async_trait]
+pub trait LocalMailboxOpaqStore: Send + Sync + 'static {
+    async fn has_blob(&self, hash: OpaqHash) -> anyhow::Result<bool>;
+    async fn get_blob(&self, hash: OpaqHash) -> anyhow::Result<Option<Opaq>>;
+    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<()>;
 }

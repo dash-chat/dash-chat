@@ -20,6 +20,7 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 proptest = { version = "1.10.0", optional = true }
+redb = { version = "3.1", optional = true }
 
 mailbox-api = { path = "../mailbox-api" }
 
@@ -28,6 +29,7 @@ p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashc
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+tempfile = "3.24"
 tokio = { version = "1.43.0", features = ["test-util"] }
 
 
@@ -35,3 +37,4 @@ tokio = { version = "1.43.0", features = ["test-util"] }
 default = ["named-id", "proptest"]
 proptest = ["dep:proptest"]
 named-id = []
+blob-publish-queue-redb = ["dep:redb"]

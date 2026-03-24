@@ -10,7 +10,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 mailbox-server = { path = "../mailbox-server" }
-mailbox-client = { path = "../mailbox-client" }
+mailbox-client = { path = "../mailbox-client", features = ["blob-publish-queue-redb"] }
 
 # p2panda-core = "0.3.1"
 # p2panda-discovery = { version = "0.3.1", features = ["mdns"] }

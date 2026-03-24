@@ -3,7 +3,10 @@ use std::collections::BTreeMap;
 use named_id::RenameNone;
 use serde::{Deserialize, Serialize};
 
-use crate::{MailboxItem, store::MailboxStore};
+use crate::{
+    MailboxItem, Opaq, OpaqHash,
+    store::{LocalMailboxLogStore, LocalMailboxOpaqStore},
+};
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, derive_more::Debug, RenameNone)]
 #[debug("Msg({author} {seq})")]
@@ -30,13 +33,16 @@ impl MailboxItem for Msg {
     fn topic(&self) -> Self::Topic {
         self.topic
     }
+    fn blob_refs(&self) -> Vec<OpaqHash> {
+        vec![]
+    }
 }
 
 #[derive(Clone)]
 pub struct DummyStore;
 
 #[async_trait::async_trait]
-impl MailboxStore<Msg> for DummyStore {
+impl LocalMailboxLogStore<Msg> for DummyStore {
     async fn get_log(
         &self,
         _author: &char,
@@ -47,5 +53,18 @@ impl MailboxStore<Msg> for DummyStore {
     }
     async fn get_log_heights(&self, _topic: &u8) -> Result<BTreeMap<char, u64>, anyhow::Error> {
         Ok(BTreeMap::new())
+    }
+}
+
+#[async_trait::async_trait]
+impl LocalMailboxOpaqStore for DummyStore {
+    async fn has_blob(&self, _hash: OpaqHash) -> Result<bool, anyhow::Error> {
+        Ok(false)
+    }
+    async fn get_blob(&self, _hash: OpaqHash) -> Result<Option<Opaq>, anyhow::Error> {
+        Ok(None)
+    }
+    async fn store_blob(&self, _blob: Opaq) -> Result<(), anyhow::Error> {
+        Ok(())
     }
 }

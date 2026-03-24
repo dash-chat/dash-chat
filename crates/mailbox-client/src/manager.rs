@@ -1,4 +1,5 @@
-use crate::store::MailboxStore;
+use crate::blob_queue::{BlobPublishEntry, BlobPublishQueue};
+use crate::store::LocalMailboxStore;
 use tokio::time::Instant;
 
 use super::*;
@@ -17,6 +18,10 @@ pub struct MailboxesConfig {
     pub degraded_threshold: u32,
     /// Number of consecutive errors to enter Stopped status
     pub stopped_threshold: u32,
+    /// How often the blob publish drain task checks for work
+    pub blob_drain_interval: Duration,
+    /// Max blobs to dequeue per drain cycle
+    pub blob_drain_batch_size: usize,
 }
 
 impl Default for MailboxesConfig {
@@ -28,6 +33,8 @@ impl Default for MailboxesConfig {
             between_polls_delay: Duration::from_millis(500),
             degraded_threshold: 2,
             stopped_threshold: 3,
+            blob_drain_interval: Duration::from_secs(2),
+            blob_drain_batch_size: 10,
         }
     }
 }
@@ -89,45 +96,59 @@ impl MailboxTracker {
 }
 
 struct TrackedMailbox<Item: MailboxItem> {
-    client: Arc<dyn LogStore<Item>>,
+    log_store: Arc<dyn LogStore<Item>>,
+    blob_store: Arc<dyn RemoteBlobStore>,
     tracker: MailboxTracker,
 }
 
 impl<Item: MailboxItem> Clone for TrackedMailbox<Item> {
     fn clone(&self) -> Self {
         Self {
-            client: self.client.clone(),
+            log_store: self.log_store.clone(),
+            blob_store: self.blob_store.clone(),
             tracker: self.tracker.clone(),
         }
     }
 }
 
 #[derive(Clone)]
-pub struct Mailboxes<Item, Store>
+pub struct Mailboxes<Item, Store, BlobQueue>
 where
     Item: MailboxItem,
-    Store: MailboxStore<Item>,
+    Store: LocalMailboxStore<Item>,
+    BlobQueue: BlobPublishQueue,
 {
     mailboxes: Arc<Mutex<BTreeMap<MailboxId, TrackedMailbox<Item>>>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Store,
+    blob_queue: BlobQueue,
     config: MailboxesConfig,
     trigger: mpsc::Sender<()>,
+    /// Handles to background tasks, aborted on shutdown.
+    task_handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 }
 
-impl<Item, Store> Mailboxes<Item, Store>
+impl<Item, Store, BlobQueue> Mailboxes<Item, Store, BlobQueue>
 where
     Item: MailboxItem,
-    Store: MailboxStore<Item>,
+    Store: LocalMailboxStore<Item>,
+    BlobQueue: BlobPublishQueue,
     Item::Topic: OptionalItemTraits,
 {
-    fn new(store: Store, config: MailboxesConfig, trigger: mpsc::Sender<()>) -> Self {
+    fn new(
+        store: Store,
+        blob_queue: BlobQueue,
+        config: MailboxesConfig,
+        trigger: mpsc::Sender<()>,
+    ) -> Self {
         Self {
             mailboxes: Arc::new(Mutex::new(Default::default())),
             topics: Arc::new(Mutex::new(Default::default())),
             store,
+            blob_queue,
             config,
             trigger,
+            task_handles: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -135,8 +156,10 @@ where
         // TODO: check for existing mailbox with different ID but same "URL" (which is currently abstracted away and inaccessible here, darn)
         // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.
         let id = mailbox.id();
+        let arc = Arc::new(mailbox);
         let tracked = TrackedMailbox {
-            client: Arc::new(mailbox),
+            log_store: arc.clone() as Arc<dyn LogStore<Item>>,
+            blob_store: arc as Arc<dyn RemoteBlobStore>,
             tracker: MailboxTracker::new(),
         };
         let existing = self.mailboxes.lock().await.insert(id.clone(), tracked);
@@ -183,11 +206,17 @@ where
         Ok(())
     }
 
-    pub async fn spawn(store: Store, config: MailboxesConfig) -> Result<Self, anyhow::Error> {
+    pub async fn spawn(
+        store: Store,
+        blob_queue: BlobQueue,
+        config: MailboxesConfig,
+    ) -> Result<Arc<Self>, anyhow::Error> {
         let (trigger_tx, mut trigger_rx) = mpsc::channel(1);
-        let manager = Self::new(store, config, trigger_tx);
+        let manager = Arc::new(Self::new(store, blob_queue, config, trigger_tx));
         let r = manager.clone();
-        tokio::spawn(
+
+        // Spawn the mailbox polling loop
+        let poll_handle = tokio::spawn(
             async move {
                 tracing::info!("mailbox manager: poll mailboxes loop started");
 
@@ -227,7 +256,110 @@ where
             .instrument(tracing::info_span!("poll mailboxes")),
         );
 
+        // Spawn the blob publish drain loop
+        let drain = r.clone();
+        let drain_handle = tokio::spawn(
+            async move {
+                loop {
+                    tokio::time::sleep(drain.config.blob_drain_interval).await;
+                    drain.drain_blob_queue().await;
+                }
+            }
+            .instrument(tracing::info_span!("blob publish drain")),
+        );
+
+        r.task_handles
+            .lock()
+            .await
+            .extend([poll_handle, drain_handle]);
+
         Ok(r)
+    }
+
+    /// Abort background tasks and release all resources (including file locks).
+    pub async fn shutdown(&self) {
+        let handles: Vec<_> = self.task_handles.lock().await.drain(..).collect();
+        for handle in handles {
+            handle.abort();
+            let _ = handle.await;
+        }
+    }
+
+    /// Drain pending entries from the blob publish queue,
+    /// publishing each blob to the appropriate mailbox.
+    async fn drain_blob_queue(&self) {
+        let batch = match self
+            .blob_queue
+            .dequeue_batch(self.config.blob_drain_batch_size)
+            .await
+        {
+            Ok(batch) => batch,
+            Err(err) => {
+                tracing::error!(?err, "failed to dequeue blob publish batch");
+                return;
+            }
+        };
+
+        if batch.is_empty() {
+            return;
+        }
+
+        tracing::debug!(count = batch.len(), "draining blob publish queue");
+
+        for entry in batch {
+            let BlobPublishEntry {
+                id,
+                blob_hash,
+                mailbox_id,
+            } = entry;
+
+            // Look up the blob store for this mailbox
+            let blob_store = {
+                let mm = self.mailboxes.lock().await;
+                mm.get(&mailbox_id).map(|t| t.blob_store.clone())
+            };
+
+            let Some(blob_store) = blob_store else {
+                // Mailbox no longer registered — nack so it can be retried
+                // if the mailbox comes back
+                tracing::debug!(%mailbox_id, ?blob_hash, "mailbox not registered, nacking blob");
+                if let Err(err) = self.blob_queue.nack(id).await {
+                    tracing::error!(?err, "failed to nack blob publish entry");
+                }
+                continue;
+            };
+
+            // Get the blob data from local store
+            let blob = match self.store.get_blob(blob_hash).await {
+                Ok(Some(blob)) => blob,
+                Ok(None) => {
+                    tracing::warn!(
+                        ?blob_hash,
+                        "blob not found locally, acking to remove from queue"
+                    );
+                    let _ = self.blob_queue.ack(id).await;
+                    continue;
+                }
+                Err(err) => {
+                    tracing::warn!(?err, ?blob_hash, "failed to get blob from local store");
+                    let _ = self.blob_queue.nack(id).await;
+                    continue;
+                }
+            };
+
+            // Publish to remote
+            match blob_store.publish_blob(blob).await {
+                Ok(()) => {
+                    if let Err(err) = self.blob_queue.ack(id).await {
+                        tracing::error!(?err, "failed to ack blob publish entry");
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(?err, ?blob_hash, %mailbox_id, "failed to publish blob to remote");
+                    let _ = self.blob_queue.nack(id).await;
+                }
+            }
+        }
     }
 
     async fn find_next_due(&self) -> Option<(MailboxId, Duration)> {
@@ -249,10 +381,10 @@ where
     }
 
     async fn poll_mailbox(&self, id: &MailboxId) {
-        let client = {
+        let (log_store, blob_store) = {
             let mm = self.mailboxes.lock().await;
             match mm.get(id) {
-                Some(tracked) => tracked.client.clone(),
+                Some(tracked) => (tracked.log_store.clone(), tracked.blob_store.clone()),
                 None => return,
             }
         };
@@ -271,7 +403,9 @@ where
             "polling mailbox {id} for topics {:?}",
             topics.clone().renamed()
         );
-        let result = self.sync_topics(topics.into_iter(), client).await;
+        let result = self
+            .sync_topics(topics.into_iter(), id, log_store, blob_store)
+            .await;
 
         let mut mm = self.mailboxes.lock().await;
         if let Some(tracked) = mm.get_mut(id) {
@@ -293,11 +427,14 @@ where
 
     /// Immediately sync the given topics with the given mailbox:
     /// - Ensure all items held by the mailbox are fetched
-    /// - Publish any items that the mailbox is missing to the mailbox
+    /// - Enqueue blobs referenced by missing items for background publishing
+    /// - Fetch blobs referenced by received items inline
     pub async fn sync_topics(
         &self,
         topics: impl Iterator<Item = Item::Topic>,
-        mailbox: Arc<dyn LogStore<Item>>,
+        mailbox_id: &MailboxId,
+        log_store: Arc<dyn LogStore<Item>>,
+        blob_store: Arc<dyn RemoteBlobStore>,
     ) -> anyhow::Result<()> {
         let mut request = BTreeMap::new();
         for topic in topics {
@@ -307,9 +444,12 @@ where
         }
         tracing::debug!("dollop fetch request: {:?}", request.clone().renamed());
 
-        let FetchResponse(response) = mailbox.fetch(FetchRequest(request)).await?;
+        let FetchResponse(response) = log_store.fetch(FetchRequest(request)).await?;
 
         let mut ops_to_publish = vec![];
+        // Track blob hashes to avoid duplicate transfers within this sync round
+        let mut synced_blobs = std::collections::HashSet::new();
+
         for (topic, response) in response.into_iter() {
             let FetchTopicResponse { items, missing } = response;
             if items.is_empty() && missing.is_empty() {
@@ -326,6 +466,36 @@ where
                 tracing::warn!(topic = ?topic.renamed(), "no sender for topic");
                 continue;
             };
+
+            // Fetch blobs referenced by received items (inline — needed immediately)
+            // TODO: implement different policies for fetching, e.g. fetch in background
+            for item in &items {
+                for blob_hash in item.blob_refs() {
+                    if synced_blobs.insert(blob_hash.clone()) {
+                        match blob_store.fetch_blob(blob_hash.clone()).await {
+                            Ok(Some(blob)) => {
+                                if let Err(err) = self.store.store_blob(blob).await {
+                                    tracing::warn!(
+                                        ?err,
+                                        ?blob_hash,
+                                        "failed to store fetched blob locally"
+                                    );
+                                }
+                            }
+                            Ok(None) => {
+                                tracing::debug!(?blob_hash, "blob not found on remote");
+                            }
+                            Err(err) => {
+                                tracing::warn!(
+                                    ?err,
+                                    ?blob_hash,
+                                    "failed to fetch blob from remote"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
 
             for item in items {
                 sender.send(item.into()).await?;
@@ -347,7 +517,6 @@ where
                     continue;
                 };
 
-                // If there is nothing beyond the lowest sequence number, skip
                 if log.is_empty() {
                     continue;
                 }
@@ -358,6 +527,22 @@ where
                     // Adjust the index to take this into account:
                     let index = seq - lowest;
                     if let Some(item) = log.get(index as usize) {
+                        // Enqueue blobs referenced by items the server is missing
+                        for blob_hash in item.blob_refs() {
+                            if synced_blobs.insert(blob_hash.clone()) {
+                                if let Err(err) = self
+                                    .blob_queue
+                                    .enqueue(blob_hash.clone(), mailbox_id.clone())
+                                    .await
+                                {
+                                    tracing::warn!(
+                                        ?err,
+                                        ?blob_hash,
+                                        "failed to enqueue blob for publishing"
+                                    );
+                                }
+                            }
+                        }
                         ops_to_publish.push(item.clone());
                     }
                 }
@@ -367,7 +552,7 @@ where
         if !ops_to_publish.is_empty() {
             tracing::info!(items = ops_to_publish.len(), "publishing dollops",);
         }
-        mailbox.publish(ops_to_publish).await?;
+        log_store.publish(ops_to_publish).await?;
 
         Ok(())
     }
@@ -379,6 +564,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        blob_queue::MemBlobPublishQueue,
         mem::MemMailbox,
         testing::{DummyStore, Msg},
     };
@@ -447,13 +633,15 @@ mod tests {
             between_polls_delay: Duration::from_millis(500),
             degraded_threshold: 2,
             stopped_threshold: 3,
+            blob_drain_interval: Duration::from_secs(2),
+            blob_drain_batch_size: 10,
         }
     }
 
     /// Create a Mailboxes instance without spawning the background loop
-    fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
+    fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore, MemBlobPublishQueue> {
         let (trigger_tx, _trigger_rx) = mpsc::channel(1);
-        Mailboxes::new(DummyStore, config, trigger_tx)
+        Mailboxes::new(DummyStore, MemBlobPublishQueue::new(), config, trigger_tx)
     }
 
     // -- MailboxTracker unit tests --
@@ -853,11 +1041,17 @@ mod tests {
             // during the test; stopped clients are forced manually.
             degraded_threshold: 1,
             stopped_threshold: 1000,
+            blob_drain_interval: Duration::from_secs(60),
+            blob_drain_batch_size: 10,
         };
 
-        let mgr = Mailboxes::<Msg, DummyStore>::spawn(DummyStore, config)
-            .await
-            .unwrap();
+        let mgr = Mailboxes::<Msg, DummyStore, MemBlobPublishQueue>::spawn(
+            DummyStore,
+            MemBlobPublishQueue::new(),
+            config,
+        )
+        .await
+        .unwrap();
 
         // Subscribe to a topic so poll_mailbox actually calls sync_topics
         let _rx = mgr.subscribe(0u8).await.unwrap();
