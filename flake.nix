@@ -50,7 +50,25 @@
           pkgs = import inputs.nixpkgs {
             inherit system overlays;
             config = {
-              allowUnfree = true;
+              allowUnfreePredicate = pkg:
+                let
+                  name = lib.getName pkg;
+                  androidUnfreeNames = [
+                    "androidsdk"
+                    "platform-tools"
+                    "build-tools"
+                    "cmdline-tools"
+                    "tools"
+                    "platforms"
+                    "sources"
+                    "system-images"
+                    "emulator"
+                    "ndk"
+                    "cmake"
+                    "patcher"
+                  ];
+                in lib.hasPrefix "android-sdk-" name
+                || builtins.elem name androidUnfreeNames;
               android_sdk.accept_license = true;
             };
           };
