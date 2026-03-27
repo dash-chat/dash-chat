@@ -58,13 +58,13 @@ impl LocalMailboxLogStore<Msg> for DummyStore {
 
 #[async_trait::async_trait]
 impl LocalMailboxOpaqStore for DummyStore {
-    async fn has_blob(&self, _hash: OpaqHash) -> Result<bool, anyhow::Error> {
+    async fn has_mailbox_opaq(&self, _hash: OpaqHash) -> Result<bool, anyhow::Error> {
         Ok(false)
     }
-    async fn get_blob(&self, _hash: OpaqHash) -> Result<Option<Opaq>, anyhow::Error> {
+    async fn get_mailbox_opaq(&self, _hash: OpaqHash) -> Result<Option<Opaq>, anyhow::Error> {
         Ok(None)
     }
-    async fn store_blob(&self, _blob: Opaq) -> Result<(), anyhow::Error> {
+    async fn store_mailbox_opaq(&self, _blob: Opaq) -> Result<(), anyhow::Error> {
         Ok(())
     }
 }

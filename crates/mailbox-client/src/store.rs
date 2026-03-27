@@ -32,7 +32,7 @@ pub trait LocalMailboxLogStore<Item: MailboxItem>: Send + Sync + 'static {
 /// The interface for remotely storing and retrieving blobs from a mailbox server.
 #[async_trait::async_trait]
 pub trait LocalMailboxOpaqStore: Send + Sync + 'static {
-    async fn has_blob(&self, hash: OpaqHash) -> anyhow::Result<bool>;
-    async fn get_blob(&self, hash: OpaqHash) -> anyhow::Result<Option<Opaq>>;
-    async fn store_blob(&self, blob: Opaq) -> anyhow::Result<()>;
+    async fn has_mailbox_opaq(&self, hash: OpaqHash) -> anyhow::Result<bool>;
+    async fn get_mailbox_opaq(&self, hash: OpaqHash) -> anyhow::Result<Option<Opaq>>;
+    async fn store_mailbox_opaq(&self, blob: Opaq) -> anyhow::Result<()>;
 }

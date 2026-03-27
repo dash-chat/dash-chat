@@ -34,7 +34,7 @@ pub struct BlobPublishEntry {
 /// - `dequeue_batch` returns the oldest entries first (FIFO)
 /// - `ack` removes a completed entry; `nack` returns it to the queue for retry
 #[async_trait::async_trait]
-pub trait BlobPublishQueue: Clone + Send + Sync + 'static {
+pub trait BlobPublishQueue: Send + Sync + 'static {
     /// Add a blob to the publish queue for a specific mailbox.
     /// Should be idempotent: re-enqueueing the same (hash, mailbox) pair is a no-op.
     async fn enqueue(&self, blob_hash: OpaqHash, mailbox_id: MailboxId) -> anyhow::Result<()>;

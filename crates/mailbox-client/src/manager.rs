@@ -111,7 +111,6 @@ impl<Item: MailboxItem> Clone for TrackedMailbox<Item> {
     }
 }
 
-#[derive(Clone)]
 pub struct Mailboxes<Item, Store, BlobQueue>
 where
     Item: MailboxItem,
@@ -120,8 +119,8 @@ where
 {
     mailboxes: Arc<Mutex<BTreeMap<MailboxId, TrackedMailbox<Item>>>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
-    store: Store,
-    blob_queue: BlobQueue,
+    store: Arc<Store>,
+    blob_queue: Arc<BlobQueue>,
     config: MailboxesConfig,
     trigger: mpsc::Sender<()>,
     /// Handles to background tasks, aborted on shutdown.
@@ -136,8 +135,8 @@ where
     Item::Topic: OptionalItemTraits,
 {
     fn new(
-        store: Store,
-        blob_queue: BlobQueue,
+        store: Arc<Store>,
+        blob_queue: Arc<BlobQueue>,
         config: MailboxesConfig,
         trigger: mpsc::Sender<()>,
     ) -> Self {
@@ -210,9 +209,9 @@ where
         store: Store,
         blob_queue: BlobQueue,
         config: MailboxesConfig,
-    ) -> Result<Arc<Self>, anyhow::Error> {
+    ) -> Result<Self, anyhow::Error> {
         let (trigger_tx, mut trigger_rx) = mpsc::channel(1);
-        let manager = Arc::new(Self::new(store, blob_queue, config, trigger_tx));
+        let manager = Self::new(store.into(), blob_queue.into(), config, trigger_tx);
         let r = manager.clone();
 
         // Spawn the mailbox polling loop
@@ -330,7 +329,7 @@ where
             };
 
             // Get the blob data from local store
-            let blob = match self.store.get_blob(blob_hash).await {
+            let blob = match self.store.get_mailbox_opaq(blob_hash).await {
                 Ok(Some(blob)) => blob,
                 Ok(None) => {
                     tracing::warn!(
@@ -474,7 +473,7 @@ where
                     if synced_blobs.insert(blob_hash.clone()) {
                         match blob_store.fetch_blob(blob_hash.clone()).await {
                             Ok(Some(blob)) => {
-                                if let Err(err) = self.store.store_blob(blob).await {
+                                if let Err(err) = self.store.store_mailbox_opaq(blob).await {
                                     tracing::warn!(
                                         ?err,
                                         ?blob_hash,
@@ -555,6 +554,25 @@ where
         log_store.publish(ops_to_publish).await?;
 
         Ok(())
+    }
+}
+
+impl<Item, Store, BlobQueue> Clone for Mailboxes<Item, Store, BlobQueue>
+where
+    Item: MailboxItem,
+    Store: LocalMailboxStore<Item>,
+    BlobQueue: BlobPublishQueue,
+{
+    fn clone(&self) -> Self {
+        Self {
+            mailboxes: self.mailboxes.clone(),
+            topics: self.topics.clone(),
+            store: self.store.clone(),
+            blob_queue: self.blob_queue.clone(),
+            config: self.config.clone(),
+            trigger: self.trigger.clone(),
+            task_handles: self.task_handles.clone(),
+        }
     }
 }
 
@@ -641,7 +659,12 @@ mod tests {
     /// Create a Mailboxes instance without spawning the background loop
     fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore, MemBlobPublishQueue> {
         let (trigger_tx, _trigger_rx) = mpsc::channel(1);
-        Mailboxes::new(DummyStore, MemBlobPublishQueue::new(), config, trigger_tx)
+        Mailboxes::new(
+            DummyStore.into(),
+            MemBlobPublishQueue::new().into(),
+            config,
+            trigger_tx,
+        )
     }
 
     // -- MailboxTracker unit tests --

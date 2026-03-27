@@ -146,12 +146,14 @@ impl Node {
 
         let blob_queue =
             mailbox_client::blob_queue::RedbBlobPublishQueue::from_db(local_store.db())?;
-        let mailboxes = Mailboxes::spawn(
-            op_store.clone(),
-            blob_queue,
-            config.mailboxes_config.clone(),
-        )
-        .await?;
+        let mailboxes = Arc::new(
+            Mailboxes::spawn(
+                op_store.clone(),
+                blob_queue,
+                config.mailboxes_config.clone(),
+            )
+            .await?,
+        );
 
         let mut node = Self {
             op_store: op_store.clone(),

@@ -119,6 +119,7 @@ impl BlobPublishQueue for RedbBlobPublishQueue {
             let table = txn.open_table(BLOB_QUEUE_TABLE)?;
             let mut in_flight = in_flight.blocking_lock();
             let mut batch = Vec::new();
+            let mut items = 0;
             for entry in table.iter()? {
                 let (k, v): (redb::AccessGuard<'_, u64>, redb::AccessGuard<'_, &[u8]>) = entry?;
                 let id = k.value();
@@ -132,10 +133,12 @@ impl BlobPublishQueue for RedbBlobPublishQueue {
                     blob_hash,
                     mailbox_id,
                 });
+                items += 1;
                 if batch.len() >= limit {
                     break;
                 }
             }
+            dbg!(&items);
             Ok(batch)
         })
         .await?

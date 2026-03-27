@@ -449,18 +449,18 @@ where
     S: OperationStore<TopicId, Extensions> + LogStore<TopicId, Extensions>,
     S: Send + Sync + 'static,
 {
-    async fn has_blob(&self, _hash: mailbox_client::OpaqHash) -> anyhow::Result<bool> {
+    async fn has_mailbox_opaq(&self, _hash: mailbox_client::OpaqHash) -> anyhow::Result<bool> {
         todo!("access payloads directly in p2panda operation store")
     }
 
-    async fn get_blob(
+    async fn get_mailbox_opaq(
         &self,
         _hash: mailbox_client::OpaqHash,
     ) -> Result<Option<mailbox_client::Opaq>, anyhow::Error> {
         todo!("access payloads directly in p2panda operation store")
     }
 
-    async fn store_blob(&self, _blob: mailbox_client::Opaq) -> Result<(), anyhow::Error> {
+    async fn store_mailbox_opaq(&self, _blob: mailbox_client::Opaq) -> Result<(), anyhow::Error> {
         todo!("access payloads directly in p2panda operation store")
     }
 }
