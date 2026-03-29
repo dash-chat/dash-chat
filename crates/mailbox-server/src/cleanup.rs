@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::{DollopsKey, DOLLOPS_TABLE};
 
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60); // 5 minutes
-const MESSAGE_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60); // 7 days
+const MESSAGE_MAX_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60); // 30 days
 
 /// Spawns a background task that periodically cleans up old messages
 pub fn spawn_cleanup_task(db: Arc<Database>) -> tokio::task::JoinHandle<()> {

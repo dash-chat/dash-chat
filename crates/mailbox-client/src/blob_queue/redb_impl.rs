@@ -138,7 +138,6 @@ impl BlobPublishQueue for RedbBlobPublishQueue {
                     break;
                 }
             }
-            dbg!(&items);
             Ok(batch)
         })
         .await?
