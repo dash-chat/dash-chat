@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
@@ -38,6 +37,7 @@
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { page } from '$app/state';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	let chatId = page.params.chatId!;
 
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -128,12 +128,11 @@
 					class="gap-2"
 					style="display: flex; justify-content: start; align-items: center; flex: 1"
 				>
-					<wa-avatar
+					<Avatar
 						image={info.avatar}
 						initials={info.name.slice(0, 2)}
 						style="--size: 2.5rem"
-					>
-					</wa-avatar>
+					/>
 					<span>{info.name}</span>
 				</div>
 			{/snippet}
@@ -156,9 +155,9 @@
 			<div class="column" style="flex: 1">
 				<div class="column center-in-desktop gap-8 p-2">
 					<div class="column" style="align-items: center; gap: 1rem">
-						<wa-avatar image={info.avatar} style="--size: 5rem">
+						<Avatar image={info.avatar} style="--size: 5rem">
 							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
-						</wa-avatar>
+						</Avatar>
 
 						<span class="text-xl font-semibold">{info.name}</span>
 
@@ -202,10 +201,11 @@
 									onclick={() => (sheetOpenFor = actorId)}
 								>
 									{#snippet media()}
-										<wa-avatar
+										<Avatar
 											image={member.profile?.avatar}
 											initials={member.profile?.name.slice(0, 2)}
-										></wa-avatar>
+											style="--size: 32px;"
+										/>
 									{/snippet}
 
 									{#snippet after()}
@@ -224,10 +224,11 @@
 										class="flex-col gap-4 py-4"
 										style="display: flex; align-items: center;"
 									>
-										<wa-avatar
+										<Avatar
 											image={member.profile?.avatar}
 											initials={member.profile?.name.slice(0, 2)}
-										></wa-avatar>
+											style="--size: 32px;"
+										/>
 										<span class="font-semibold">{member.profile?.name}</span>
 									</div>
 
@@ -453,9 +454,6 @@
 </Page>
 
 <style>
-	wa-avatar {
-		--size: 32px;
-	}
 	wa-icon {
 		width: 32px;
 	}

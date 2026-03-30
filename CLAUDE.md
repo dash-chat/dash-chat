@@ -434,6 +434,8 @@ cd e2e-tests && SKIP_BUILD=1 pnpm test
 - The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events
 - Test data is stored in `.dbs/e2e/` and cleaned up after each run
 
+**REQUIREMENT:** E2E tests must use `window.__test` helpers for DOM queries instead of inlining `document.querySelector` calls. Add helper functions to `ui/tests/pages/*.ts`, register them in `ui/tests/setup-utils.ts`, then call them via `agent.execute(() => window.__test.myHelper())` in the spec. This keeps DOM selectors in one place and makes tests readable.
+
 **REQUIREMENT:** New UI features must include E2E test coverage in `e2e-tests/specs/`.
 
 **REQUIREMENT:** The review-checks E2E test (`e2e-tests/specs/review-checks.spec.ts`) must visit every page in the app. When adding a new page, add it to `ui/tests/review/visit-all-pages.ts` so it is covered by the overflow, dark-mode, and RTL checks.

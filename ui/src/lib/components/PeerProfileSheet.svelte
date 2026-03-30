@@ -1,12 +1,12 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Sheet, Dialog } from 'konsta/svelte';
 	import { fullName, type Profile } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccount, mdiAccountGroup } from '@mdi/js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from './profiles/Avatar.svelte';
 
 	interface Props {
 		opened: boolean;
@@ -19,12 +19,11 @@
 
 {#snippet profileContent()}
 	{#if profile}
-		<wa-avatar
+		<Avatar
 			image={profile.avatar}
 			initials={profile.name.slice(0, 2)}
 			style="--size: 200px;"
-		>
-		</wa-avatar>
+		/>
 
 		<div class="flex w-full flex-col gap-3 px-2">
 			<span class="text-2xl">{m.about()}</span>

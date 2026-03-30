@@ -1,9 +1,23 @@
 {
 	"editor.defaultFormatter": "esbenp.prettier-vscode",
 	"[svelte]": {
-		"editor.defaultFormatter": "svelte.svelte-vscode"
+		"editor.defaultFormatter": "svelte.svelte-vscode",
+		"editor.formatOnSave": true
+	},
+	"[typescript]": {
+		"editor.formatOnSave": true
 	},
 	"[rust]": {
-		"editor.defaultFormatter": "rust-lang.rust-analyzer"
+		"editor.defaultFormatter": "rust-lang.rust-analyzer",
+		"editor.formatOnSave": true
+	},
+	"files.exclude": {
+		"**/node_modules/": true,
+		"target": true,
+		".dbs": true,
+		".direnv": true,
+		"ui/.svelte-kit": true,
+		"ui/build": true,
+		"*.log": true
 	}
 }
