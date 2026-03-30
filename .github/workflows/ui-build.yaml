@@ -27,3 +27,6 @@ jobs:
 
       - name: Build UI packages
         run: pnpm --recursive build
+
+      - name: Check Svelte types and formatting
+        run: pnpm -F ui check

@@ -17,6 +17,9 @@ import { navigateToAddContact, getContactCode, addContact } from './flows/contac
 import { sendMessage, waitForMessage } from './flows/send-message';
 import { openDirectChat } from './flows/open-chat';
 import { visibleCards as getStartedCards, dismissCard as dismissGetStartedCard } from './pages/get-started';
+import { homeLoaded, firstChatTooltip } from './pages/home';
+import { messageInput, sendButton, messagesContainer } from './pages/direct-chat';
+import { updaterBanner, updaterBannerTitle, updaterDismissBtn } from './pages/updater-banner';
 import { checkOverflow, checkDarkMode, checkRTL, checkPage } from './review/checks';
 import {
 	visitAllPages,
@@ -46,6 +49,14 @@ export const testUtils = {
 	openDirectChat,
 	getStartedCards,
 	dismissGetStartedCard,
+	homeLoaded,
+	firstChatTooltip,
+	messageInput,
+	sendButton,
+	messagesContainer,
+	updaterBanner,
+	updaterBannerTitle,
+	updaterDismissBtn,
 	simulateUpdate,
 	checkOverflow,
 	checkDarkMode,

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 	import { m, yesterday } from '$lib/paraglide/messages.js';
@@ -70,6 +69,7 @@
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
 	import { longpress } from '$lib/actions/longpress';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -470,8 +470,8 @@
 <div class="absolute inset-0" data-testid="direct-chat-page">
 	<Page class="messages-page">
 		{#await $myDeviceId then myDeviceId}
-		{#await $peerProfile then profile}
-		{#await $contactRequest then contactRequest}
+			{#await $peerProfile then profile}
+				{#await $contactRequest then contactRequest}
 					{#if searchMode}
 						<Navbar
 							transparent={true}
@@ -516,12 +516,11 @@
 										href={`/direct-chats/${agentId}/chat-settings`}
 										data-testid="direct-chat-settings-link"
 									>
-										<wa-avatar
+										<Avatar
 											image={profile!.avatar}
 											initials={profile!.name.slice(0, 2)}
 											style="--size: 2.5rem"
-										>
-										</wa-avatar>
+										/>
 										<span data-testid="direct-chat-peer-name"
 											>{fullName(profile!)}</span
 										>
@@ -534,7 +533,11 @@
 					<div class="column">
 						{#await $readMessageHashes then readHashes}
 							{#await $messagesSets then messagesSetsInDays}
-								{@const unreadDivider = getUnreadDividerInfo(messagesSetsInDays, readHashes, myDeviceId)}
+								{@const unreadDivider = getUnreadDividerInfo(
+									messagesSetsInDays,
+									readHashes,
+									myDeviceId,
+								)}
 								<div
 									use:scrolltobottom
 									class="column"
@@ -546,12 +549,11 @@
 												class="column my-6 gap-2 items-center"
 												onclick={() => (showPeerProfile = true)}
 											>
-												<wa-avatar
+												<Avatar
 													image={profile.avatar}
 													initials={profile.name.slice(0, 2)}
 													style="--size: 80px;"
-												>
-												</wa-avatar>
+												/>
 												<div class="flex items-center gap-1">
 													<span class="text-xl font-semibold"
 														>{fullName(profile!)}</span
@@ -850,17 +852,15 @@
 										{/each}
 									</div>
 								</div>
-						{/await}
+							{/await}
 						{/await}
 					</div>
 					{#if contactRequest}
 						<Dialog
 							opened={showAcceptDialog}
 							onBackdropClick={() => (showAcceptDialog = false)}
+							title={m.acceptRequestTitle()}
 						>
-							{#snippet title()}
-								{m.acceptRequestTitle()}
-							{/snippet}
 							<span>{m.acceptRequestDescription()}</span>
 							{#snippet buttons()}
 								<DialogButton onClick={() => (showAcceptDialog = false)}>
@@ -880,10 +880,8 @@
 						<Dialog
 							opened={showRejectDialog}
 							onBackdropClick={() => (showRejectDialog = false)}
+							title={m.rejectRequestTitle()}
 						>
-							{#snippet title()}
-								{m.rejectRequestTitle()}
-							{/snippet}
 							<span>{m.rejectRequestDescription()}</span>
 							{#snippet buttons()}
 								<DialogButton onClick={() => (showRejectDialog = false)}>
@@ -959,8 +957,8 @@
 							</Block>
 						{/if}
 					</Sheet>
-		{/await}
-		{/await}
+				{/await}
+			{/await}
 		{/await}
 
 		<SafetyTipsSheet
@@ -979,142 +977,145 @@
 
 	<!-- Overlay for bottom UI elements -->
 	{#await $myDeviceId then myDeviceId}
-	{#await $contactRequest then contactRequest}
-		<div class="absolute inset-0 pointer-events-none">
-			{#if showScrollToBottom && !searchMode}
-				{#await $unreadCount then count}
-					<button
-						class="pointer-events-auto absolute right-4 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
-						style={`bottom: calc(${messageInputHeight || '60px'} + 1.4rem)`}
-						onclick={() => scrollToBottom()}
-						aria-label="Scroll to bottom"
-						data-testid="direct-chat-scroll-bottom"
-					>
-						{#if count && count > 0}
-							<Badge
-								class="absolute -top-1 -right-1"
-								data-testid="direct-chat-unread-badge"
-							>
-								{count > 99 ? '99+' : count}
-							</Badge>
-						{/if}
-						<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
-					</button>
-				{/await}
-			{/if}
-
-			{#if searchMode}
-				<div
-					class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
-				>
-					<div
-						class="mx-4 border-t border-gray-300 dark:border-gray-600"
-						style="margin: 0 auto"
-					></div>
-					<div class="row items-center gap-2 px-4 py-3" style="margin: 0 auto">
-						<button onclick={() => dateInput?.click()}>
-							<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
-							></wa-icon>
-						</button>
-						<input
-							type="date"
-							class="absolute opacity-0 h-0 w-0"
-							bind:this={dateInput}
-							onchange={e => jumpToDate(e.currentTarget.value)}
-						/>
-						<span class="flex-1 text-center text-sm quiet">
-							{#if !searchQuery}
-								<!-- empty -->
-							{:else if matchingHashes.length === 0}
-								{m.noResults()}
-							{:else}
-								{m.searchResultsCount({
-									current: String(currentMatchIndex + 1),
-									total: String(matchingHashes.length),
-								})}
+		{#await $contactRequest then contactRequest}
+			<div class="absolute inset-0 pointer-events-none">
+				{#if showScrollToBottom && !searchMode}
+					{#await $unreadCount then count}
+						<button
+							class="pointer-events-auto absolute right-4 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
+							style={`bottom: calc(${messageInputHeight || '60px'} + 1.4rem)`}
+							onclick={() => scrollToBottom()}
+							aria-label="Scroll to bottom"
+							data-testid="direct-chat-scroll-bottom"
+						>
+							{#if count && count > 0}
+								<Badge
+									class="absolute -top-1 -right-1"
+									data-testid="direct-chat-unread-badge"
+								>
+									{count > 99 ? '99+' : count}
+								</Badge>
 							{/if}
-						</span>
-						<button
-							disabled={!matchingHashes.length}
-							onclick={goToPreviousMatch}
-							class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-						>
-							<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
-						</button>
-						<button
-							disabled={!matchingHashes.length}
-							onclick={goToNextMatch}
-							class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-						>
 							<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
 						</button>
-					</div>
-				</div>
-			{:else if contactRequest}
-				<div
-					class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
-				>
+					{/await}
+				{/if}
+
+				{#if searchMode}
 					<div
-						class="mx-4 border-t border-gray-300 dark:border-gray-600"
-						style="margin: 0 auto"
-					></div>
-					<div
-						class="flex flex-col items-center gap-3 px-6 py-3"
-						style="margin: 0 auto"
+						class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
 					>
-						<p class="text-center text-sm text-gray-600 dark:text-gray-400">
-							{@html m
-								.contactRequestBanner({
-									name: contactRequest.profile.name
-										.replace(/&/g, '&amp;')
-										.replace(/</g, '&lt;')
-										.replace(/>/g, '&gt;')
-										.replace(/"/g, '&quot;'),
-								})
-								.replace(
-									/\*\*(.*?)\*\*/g,
-									'<strong class="text-black dark:text-white">$1</strong>',
-								)}
-						</p>
-						<div class="flex w-full gap-2">
-							<Button
-								class="neutral-tonal-button text-red-500 flex-1"
-								rounded
-								tonal
-								data-testid="direct-chat-reject-btn"
-								onClick={() => (showRejectDialog = true)}>{m.reject()}</Button
+						<div
+							class="mx-4 border-t border-gray-300 dark:border-gray-600"
+							style="margin: 0 auto"
+						></div>
+						<div
+							class="row items-center gap-2 px-4 py-3"
+							style="margin: 0 auto"
+						>
+							<button onclick={() => dateInput?.click()}>
+								<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
+								></wa-icon>
+							</button>
+							<input
+								type="date"
+								class="absolute opacity-0 h-0 w-0"
+								bind:this={dateInput}
+								onchange={e => jumpToDate(e.currentTarget.value)}
+							/>
+							<span class="flex-1 text-center text-sm quiet">
+								{#if !searchQuery}
+									<!-- empty -->
+								{:else if matchingHashes.length === 0}
+									{m.noResults()}
+								{:else}
+									{m.searchResultsCount({
+										current: String(currentMatchIndex + 1),
+										total: String(matchingHashes.length),
+									})}
+								{/if}
+							</span>
+							<button
+								disabled={!matchingHashes.length}
+								onclick={goToPreviousMatch}
+								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
 							>
-							<Button
-								class="neutral-tonal-button flex-1"
-								rounded
-								tonal
-								data-testid="direct-chat-accept-btn"
-								onClick={() => (showAcceptDialog = true)}>{m.accept()}</Button
+								<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
+							</button>
+							<button
+								disabled={!matchingHashes.length}
+								onclick={goToNextMatch}
+								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
 							>
+								<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
+							</button>
 						</div>
 					</div>
-				</div>
-			{:else}
-				<div
-					class="pointer-events-auto absolute bottom-0 left-0 right-0"
-					class:bg-md-light-surface={theme === 'material'}
-					class:dark:bg-md-dark-surface={theme === 'material'}
-				>
-					<MessageInput
-						bind:value={messageText}
-						bind:height={messageInputHeight}
-						onSend={sendMessage}
-						onInput={async () => {
-							if (scrollIsAtBottom()) {
-								await tick();
-								scrollToBottom();
-							}
-						}}
-						onEmojiClick={() => (showFullPicker = true)}
-					/>
-				</div>
-			{/if}
-		</div>
-	{/await}
+				{:else if contactRequest}
+					<div
+						class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
+					>
+						<div
+							class="mx-4 border-t border-gray-300 dark:border-gray-600"
+							style="margin: 0 auto"
+						></div>
+						<div
+							class="flex flex-col items-center gap-3 px-6 py-3"
+							style="margin: 0 auto"
+						>
+							<p class="text-center text-sm text-gray-600 dark:text-gray-400">
+								{@html m
+									.contactRequestBanner({
+										name: contactRequest.profile.name
+											.replace(/&/g, '&amp;')
+											.replace(/</g, '&lt;')
+											.replace(/>/g, '&gt;')
+											.replace(/"/g, '&quot;'),
+									})
+									.replace(
+										/\*\*(.*?)\*\*/g,
+										'<strong class="text-black dark:text-white">$1</strong>',
+									)}
+							</p>
+							<div class="flex w-full gap-2">
+								<Button
+									class="neutral-tonal-button text-red-500 flex-1"
+									rounded
+									tonal
+									data-testid="direct-chat-reject-btn"
+									onClick={() => (showRejectDialog = true)}>{m.reject()}</Button
+								>
+								<Button
+									class="neutral-tonal-button flex-1"
+									rounded
+									tonal
+									data-testid="direct-chat-accept-btn"
+									onClick={() => (showAcceptDialog = true)}>{m.accept()}</Button
+								>
+							</div>
+						</div>
+					</div>
+				{:else}
+					<div
+						class="pointer-events-auto absolute bottom-0 left-0 right-0"
+						class:bg-md-light-surface={theme === 'material'}
+						class:dark:bg-md-dark-surface={theme === 'material'}
+					>
+						<MessageInput
+							bind:value={messageText}
+							bind:height={messageInputHeight}
+							onSend={sendMessage}
+							onInput={async () => {
+								if (scrollIsAtBottom()) {
+									await tick();
+									scrollToBottom();
+								}
+							}}
+							onEmojiClick={() => (showFullPicker = true)}
+						/>
+					</div>
+				{/if}
+			</div>
+		{/await}
 	{/await}
 </div>

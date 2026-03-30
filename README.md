@@ -26,8 +26,9 @@ Please contact the Dash Chat team at hello [at] dashchat [dot] org if you're int
 
 1. Install [Rust](https://rust-lang.org/tools/install/).
 2. Install [pnpm](https://pnpm.io/).
-3. Install the [Tauri pre-requisits](https://tauri.app/start/prerequisites/) for your platform.
-4. Run `pnpm install`.
+3. Install [just](https://just.systems/man/en/).
+4. Install the [Tauri pre-requisits](https://tauri.app/start/prerequisites/) for your platform.
+5. Run `pnpm install`.
 
   OR
 

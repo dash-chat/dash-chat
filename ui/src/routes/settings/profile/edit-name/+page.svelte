@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import type { ContactsStore, Error } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -31,7 +30,7 @@
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	let initialized = false;
 	$effect(() => {
-		$myProfile.then((profile) => {
+		$myProfile.then(profile => {
 			if (!initialized) {
 				initialized = true;
 				name = profile?.name || '';
@@ -84,7 +83,10 @@
 				: ''}
 		>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => goto('/settings/profile')} data-testid="edit-name-back" />
+				<NavbarBackLink
+					onClick={() => goto('/settings/profile')}
+					data-testid="edit-name-back"
+				/>
 			{/snippet}
 
 			{#snippet right()}

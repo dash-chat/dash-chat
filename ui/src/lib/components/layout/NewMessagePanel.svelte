@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiAccountMultiplePlus, mdiAccountPlus } from '@mdi/js';
 	import type { ContactsStore } from 'dash-chat-stores';
@@ -22,6 +21,7 @@
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from '../profiles/Avatar.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
@@ -128,11 +128,10 @@
 							chevron={false}
 						>
 							{#snippet media()}
-								<wa-avatar
+								<Avatar
 									image={profile.avatar}
 									initials={profile.name.slice(0, 2)}
-								>
-								</wa-avatar>
+								/>
 							{/snippet}
 						</ListItem>
 					{:else}

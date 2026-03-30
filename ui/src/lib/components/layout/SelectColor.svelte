@@ -63,13 +63,10 @@
 		centerTitle={theme === 'ios'}
 		titleClass="opacity1"
 		transparent={true}
+		title={m.color()}
 	>
 		{#snippet left()}
 			<NavbarBackLink data-testid="color-picker-back" onClick={onClose} />
-		{/snippet}
-
-		{#snippet title()}
-			{m.color()}
 		{/snippet}
 
 		{#snippet right()}

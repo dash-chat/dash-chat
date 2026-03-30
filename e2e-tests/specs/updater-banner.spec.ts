@@ -27,7 +27,7 @@ describe('UpdaterBanner', () => {
 		await agent.waitUntil(
 			async () => {
 				const exists = await agent.execute(
-					() => document.querySelector('[data-testid="updater-banner"]') !== null,
+					() => window.__test.updaterBanner() !== null,
 				);
 				return !exists;
 			},
@@ -40,14 +40,12 @@ describe('UpdaterBanner', () => {
 
 		await agent.waitUntil(
 			async () =>
-				agent.execute(
-					() => document.querySelector('[data-testid="updater-banner"]') !== null,
-				),
+				agent.execute(() => window.__test.updaterBanner() !== null),
 			{ timeout: 5_000, timeoutMsg: 'Available banner not visible' },
 		);
 
 		const hasTitle = await agent.execute(
-			() => document.querySelector('[data-testid="updater-banner-title"]') !== null,
+			() => window.__test.updaterBannerTitle() !== null,
 		);
 		expect(hasTitle).toBe(true);
 	});
@@ -57,9 +55,7 @@ describe('UpdaterBanner', () => {
 
 		await agent.waitUntil(
 			async () =>
-				agent.execute(
-					() => document.querySelector('[data-testid="updater-banner"]') !== null,
-				),
+				agent.execute(() => window.__test.updaterBanner() !== null),
 			{ timeout: 5_000, timeoutMsg: 'Downloading banner not visible' },
 		);
 	});
@@ -69,9 +65,7 @@ describe('UpdaterBanner', () => {
 
 		await agent.waitUntil(
 			async () =>
-				agent.execute(
-					() => document.querySelector('[data-testid="updater-banner"]') !== null,
-				),
+				agent.execute(() => window.__test.updaterBanner() !== null),
 			{ timeout: 5_000, timeoutMsg: 'Ready banner not visible' },
 		);
 	});
@@ -81,9 +75,7 @@ describe('UpdaterBanner', () => {
 
 		await agent.waitUntil(
 			async () =>
-				agent.execute(
-					() => document.querySelector('[data-testid="updater-banner"]') !== null,
-				),
+				agent.execute(() => window.__test.updaterBanner() !== null),
 			{ timeout: 5_000, timeoutMsg: 'Error banner not visible' },
 		);
 	});
@@ -93,22 +85,20 @@ describe('UpdaterBanner', () => {
 
 		await agent.waitUntil(
 			async () =>
-				agent.execute(
-					() => document.querySelector('[data-testid="updater-banner"]') !== null,
-				),
+				agent.execute(() => window.__test.updaterBanner() !== null),
 			{ timeout: 5_000, timeoutMsg: 'Banner not visible' },
 		);
 
 		// Click the dismiss button
 		await agent.execute(() => {
-			(document.querySelector('[data-testid="updater-dismiss-btn"]') as HTMLElement)?.click();
+			(window.__test.updaterDismissBtn() as HTMLElement)?.click();
 		});
 
 		// Verify banner is removed from DOM
 		await agent.waitUntil(
 			async () => {
 				const exists = await agent.execute(
-					() => document.querySelector('[data-testid="updater-banner"]') !== null,
+					() => window.__test.updaterBanner() !== null,
 				);
 				return !exists;
 			},

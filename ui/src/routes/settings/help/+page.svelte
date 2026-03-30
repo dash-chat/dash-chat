@@ -19,7 +19,10 @@
 	<Navbar title={m.help()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#if !isWideScreen.value}
-				<NavbarBackLink onClick={() => goto('/settings')} data-testid="help-back" />
+				<NavbarBackLink
+					onClick={() => goto('/settings')}
+					data-testid="help-back"
+				/>
 			{/if}
 		{/snippet}
 	</Navbar>

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
@@ -52,9 +51,7 @@
 <Page>
 	<Navbar title={m.editGroup()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
-			<NavbarBackLink
-				onClick={() => goto(`/group-chat/${chatId}/info`)}
-			/>
+			<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}/info`)} />
 		{/snippet}
 		{#snippet right()}
 			{#if isIos}
@@ -93,11 +90,7 @@
 		</div>
 
 		{#if !isIos}
-			<Button
-				onClick={save}
-				class="fixed-action-btn"
-				rounded
-			>
+			<Button onClick={save} class="fixed-action-btn" rounded>
 				{m.save()}
 			</Button>
 		{/if}

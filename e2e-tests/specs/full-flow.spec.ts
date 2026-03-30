@@ -56,9 +56,7 @@ describe('Full messaging flow', () => {
 		await agent1.execute(() => window.location.reload());
 		await waitForTestUtils(agent1);
 		await agent1.waitUntil(
-			async () => agent1.execute(() =>
-				!!document.querySelector('[data-testid="all-chats-list"], [data-testid="all-chats-empty"]'),
-			),
+			async () => agent1.execute(() => window.__test.homeLoaded() !== null),
 			{ timeout: 10_000, timeoutMsg: 'Home page not loaded after reload' },
 		);
 

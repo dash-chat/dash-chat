@@ -79,6 +79,7 @@ where
         }
     }
 
+    /// Get the "height" of each log, which is actually the highest sequence number of the log.
     pub async fn get_log_heights(
         &self,
         topic: &TopicId,
@@ -362,6 +363,7 @@ where
         self.store.latest_operation(public_key, topic).await
     }
 
+    /// Get the "height" of each log, which is actually the highest sequence number of the log.
     async fn get_log_heights(&self, topic: &TopicId) -> Result<Vec<(PublicKey, u64)>, Self::Error> {
         self.store.get_log_heights(topic).await
     }

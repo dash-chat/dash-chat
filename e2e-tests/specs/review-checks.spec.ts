@@ -60,7 +60,7 @@ async function runVisit(
 	// cause {#await} blocks to re-enter pending state temporarily).
 	await agent.waitUntil(
 		async () => agent.execute(
-			() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
+			() => window.__test.homeLoaded() !== null,
 		),
 		{ timeout: 30_000, interval: 500, timeoutMsg: 'runVisit: HOME elements not found before starting visitAllPages' },
 	);
@@ -143,7 +143,7 @@ async function reloadToHome(agent: WebdriverIO.Browser): Promise<void> {
 	await waitForTestUtils(agent);
 	await agent.waitUntil(
 		async () => agent.execute(
-			() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
+			() => window.__test.homeLoaded() !== null,
 		),
 		{ timeout: 30_000, interval: 500, timeoutMsg: 'reloadToHome: HOME elements not found after reload' },
 	);
@@ -179,7 +179,7 @@ async function switchCombo(
 	// desktop causes DesktopLayout to mount fresh, re-rendering AllChats).
 	await agent.waitUntil(
 		async () => agent.execute(
-			() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
+			() => window.__test.homeLoaded() !== null,
 		),
 		{ timeout: 30_000, interval: 500, timeoutMsg: 'switchCombo: HOME not found after theme/layout apply' },
 	);
@@ -207,24 +207,24 @@ describe('Review checks', function () {
 		// Wait for both agents' chat pages to load after contact exchange.
 		await Promise.all([
 			agent1.waitUntil(
-				async () => agent1.execute(() => !!document.querySelector('[data-testid="message-input-textarea"]')),
+				async () => agent1.execute(() => window.__test.messageInput() !== null),
 				{ timeout: 30_000, interval: 500, timeoutMsg: 'Agent1 message input not found after contact exchange' },
 			),
 			agent2.waitUntil(
-				async () => agent2.execute(() => !!document.querySelector('[data-testid="message-input-textarea"]')),
+				async () => agent2.execute(() => window.__test.messageInput() !== null),
 				{ timeout: 30_000, interval: 500, timeoutMsg: 'Agent2 message input not found after contact exchange' },
 			),
 		]);
 
 		// Send messages using sync execute calls to avoid executeAsync hangs.
 		await agent1.execute((t: string) => {
-			const el = document.querySelector('[data-testid="message-input-textarea"]') as HTMLTextAreaElement;
+			const el = window.__test.messageInput() as HTMLTextAreaElement;
 			if (!el) throw new Error('message-input-textarea not found');
 			const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
 			setter.call(el, t);
 			el.dispatchEvent(new Event('input', { bubbles: true }));
 			el.dispatchEvent(new Event('change', { bubbles: true }));
-			const btn = document.querySelector('[data-testid="message-input-send"]') as HTMLElement;
+			const btn = window.__test.sendButton() as HTMLElement;
 			if (!btn) throw new Error('message-input-send not found');
 			btn.click();
 		}, 'Hello from Alice!');
@@ -232,7 +232,7 @@ describe('Review checks', function () {
 		// Wait for agent2 to receive the message.
 		await agent2.waitUntil(
 			async () => agent2.execute(
-				(t: string) => !!document.querySelector('[data-testid="direct-chat-messages"]')?.textContent?.includes(t),
+				(t: string) => !!window.__test.messagesContainer()?.textContent?.includes(t),
 				'Hello from Alice!',
 			),
 			{ timeout: 60_000, interval: 1_000, timeoutMsg: 'Agent2 did not receive message from Alice' },
@@ -240,20 +240,20 @@ describe('Review checks', function () {
 
 		// Agent2 replies.
 		await agent2.execute((t: string) => {
-			const el = document.querySelector('[data-testid="message-input-textarea"]') as HTMLTextAreaElement;
+			const el = window.__test.messageInput() as HTMLTextAreaElement;
 			if (!el) throw new Error('message-input-textarea not found');
 			const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
 			setter.call(el, t);
 			el.dispatchEvent(new Event('input', { bubbles: true }));
 			el.dispatchEvent(new Event('change', { bubbles: true }));
-			const btn = document.querySelector('[data-testid="message-input-send"]') as HTMLElement;
+			const btn = window.__test.sendButton() as HTMLElement;
 			if (!btn) throw new Error('message-input-send not found');
 			btn.click();
 		}, 'Hello from Bob!');
 
 		await agent1.waitUntil(
 			async () => agent1.execute(
-				(t: string) => !!document.querySelector('[data-testid="direct-chat-messages"]')?.textContent?.includes(t),
+				(t: string) => !!window.__test.messagesContainer()?.textContent?.includes(t),
 				'Hello from Bob!',
 			),
 			{ timeout: 60_000, interval: 1_000, timeoutMsg: 'Agent1 did not receive message from Bob' },
@@ -268,7 +268,7 @@ describe('Review checks', function () {
 		this.timeout(120_000);
 		const agent1 = browser.getInstance('agent1');
 		const isHome = await agent1.execute(
-			() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
+			() => window.__test.homeLoaded() !== null,
 		);
 		if (!isHome) {
 			await reloadToHome(agent1);
@@ -342,7 +342,7 @@ describe('Review checks', function () {
 			await waitForTestUtils(agent1);
 			await agent1.waitUntil(
 				async () => agent1.execute(
-					() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
+					() => window.__test.homeLoaded() !== null,
 				),
 				{ timeout: 30_000, interval: 500, timeoutMsg: 'German locale: HOME not found after setLocale' },
 			);
@@ -387,7 +387,7 @@ describe('Review checks', function () {
 			await waitForTestUtils(agent1);
 			await agent1.waitUntil(
 				async () => agent1.execute(
-					() => !!document.querySelector('[data-testid="all-chats-list"]') || !!document.querySelector('[data-testid="all-chats-empty"]'),
+					() => window.__test.homeLoaded() !== null,
 				),
 				{ timeout: 30_000, interval: 500, timeoutMsg: 'Farsi locale: HOME not found after setLocale' },
 			);
