@@ -189,7 +189,7 @@ impl Node {
                 }
             }
         }
-        logs.sort_by_key(|(h, _)| h.timestamp);
+        logs.sort_by_key(|(h, _)| (h.timestamp, h.signature.map(|s| s.to_bytes()), h.public_key));
         Ok(logs)
     }
 
