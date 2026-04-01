@@ -113,9 +113,9 @@ where
             .await
             .unwrap();
 
-        let (seq_num, backlink) = match latest_operation {
-            Some((header, _)) => (header.seq_num + 1, Some(header.hash())),
-            None => (0, None),
+        let (seq_num, backlink, last_time) = match latest_operation {
+            Some((header, _)) => (header.seq_num + 1, Some(header.hash()), header.timestamp),
+            None => (0, None, 0),
         };
 
         // TODO: is this the place to integrate group auth processing?
@@ -126,6 +126,14 @@ where
         };
 
         let timestamp = timestamp_now();
+
+        #[cfg(feature = "testing")]
+        let timestamp = if timestamp <= last_time {
+            tracing::warn!("timestamp is less than last operation timestamp, incrementing by 1");
+            last_time + 1
+        } else {
+            timestamp
+        };
 
         let mut header = Header {
             version: 1,

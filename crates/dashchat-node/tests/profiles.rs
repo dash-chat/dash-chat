@@ -51,6 +51,8 @@ async fn test_set_profile_overwrites_previous_profile() {
 
     let alice = TestNode::new(NodeConfig::testing(), "alice").await;
 
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
     // Update profile with new name and avatar
     let updated_profile = Profile {
         name: "Alice Updated".to_string(),

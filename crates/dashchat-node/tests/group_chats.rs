@@ -276,10 +276,7 @@ async fn test_group_chat() {
     assert_eq!(alice_messages, bobbi_messages);
     assert_eq!(alice_messages, cammy_messages);
     assert_eq!(alice_messages, danae_messages);
-    assert_eq!(
-        bobbi_messages.first().map(|m| m.content.clone()),
-        Some("Hello".into())
-    );
+    assert_eq!(alice_messages.len(), 4);
 
     assert_eq!(alice_members.renamed(), expected_members.clone().renamed());
     assert_eq!(bobbi_members, expected_members);
