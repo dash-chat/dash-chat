@@ -10,7 +10,8 @@ use anyhow::Result;
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
-use p2panda_auth::processor::AuthExtension;
+use p2panda_auth::processor::GroupsArgs;
+use p2panda_store::SqliteStore;
 
 use crate::error::{AddContactError, Error};
 use crate::filesystem::Filesystem;
@@ -20,9 +21,8 @@ use named_id::Rename;
 use named_id::*;
 use p2panda_core::{Body, Hash, PublicKey};
 use p2panda_spaces::ActorId;
-use p2panda_store::{LogStore, SqliteStore};
-use p2panda_stream::IngestExt;
-use p2panda_stream::partial::operations::PartialOrder;
+use p2panda_store::logs::LogStore;
+
 use tokio::sync::mpsc;
 
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
@@ -45,8 +45,9 @@ use crate::{
 pub use crate::local_store::LocalStore;
 pub use stream_processing::Notification;
 
+pub type NodeOpStore = OpStore<SqliteStore>;
 // pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
-pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
+// pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
@@ -370,11 +371,14 @@ impl Node {
 
         tracing::info!(members = ?initial_members.clone().renamed(), "new group created with members");
 
+        // TODO: use filtered tips
+        let deps = self.local_store.group_state_tips().await?;
         self.author_operation(
             chat_id,
             DashAction::group_action(
                 chat_id,
                 GroupAction::Create { initial_members },
+                deps,
                 device_agent_mapping,
             )?,
             Some(&format!("create_group({})", chat_id.renamed())),
@@ -868,7 +872,7 @@ impl Node {
             .await?;
 
         let initialized = log.iter().any(|(header, _)| {
-            let Some(auth) = header.extension::<AuthExtension>() else {
+            let Some(auth) = header.extension::<GroupsArgs>() else {
                 return false;
             };
             auth.group_id == self.agent_id().to_group_member().id()
@@ -879,10 +883,12 @@ impl Node {
             return Ok(false);
         }
 
+        let dependencies = self.local_store.group_state_tips().await?;
+
         self.author_operation(
             announcements_topic,
             DashAction::GroupControl(HackyGroupExtension {
-                auth: AuthExtension {
+                args: GroupsArgs {
                     group_id: self.agent_id().to_group_member().id(),
                     action: GroupAction::Create {
                         initial_members: vec![(
@@ -890,6 +896,7 @@ impl Node {
                             Access::manage(),
                         )],
                     },
+                    dependencies,
                 },
                 device_agent_mapping: [(self.device_id(), self.agent_id())].into_iter().collect(),
             }),

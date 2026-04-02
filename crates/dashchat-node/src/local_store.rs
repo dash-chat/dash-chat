@@ -8,6 +8,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use p2panda_auth::{Access};
 use p2panda_core::{Hash, Operation};
+use p2panda_store::SqliteStore;
 use redb::*;
 use tokio::sync::Mutex;
 
@@ -46,41 +47,38 @@ impl NodeData {
     }
 }
 
-type MemStore = p2panda_auth::processor::Store<Operation<Extensions>>;
+type GroupsProcessor = p2panda_auth::processor::GroupsProcessor<Extensions, TopicId>;
 
 /// Until we have a persisted solution to group state, we store group state in-memory and dump
 /// to a file whenever it changes.
 /// XXX: this must be replaced ASAP!
 pub struct HackyGroupStore {
-    groups: MemStore,
-    file_path: PathBuf,
+    store: SqliteStore,
 }
 
+/// Singleton context for group state (only one needed globally)
+const GROUPS_CONTEXT: TopicId = TopicId::new([0; 32]);
+
 impl HackyGroupStore {
-    pub async fn new(file_path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let mut this = Self {
-            groups: MemStore::default(),
-            file_path: file_path.as_ref().to_path_buf(),
-        };
-        this.load_from_file().await?;
-        Ok(this)
+    pub async fn new(store: SqliteStore) -> anyhow::Result<Self> {
+        Ok(Self { store })
     }
 
     #[allow(unused)]
-    pub(crate) fn inner(&self) -> &MemStore {
-        &self.groups
+    pub(crate) fn inner(&self) -> &SqliteStore {
+        &self.store
     }
 
     pub async fn heads(&self) -> anyhow::Result<Vec<Hash>> {
-        Ok(self.groups.get_state().await?.crdt.heads())
+        Ok(self.store.get_state().await?.crdt.heads())
     }
 
     pub async fn process(&mut self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
-        match p2panda_auth::processor::process::<_, _, DashResolver>(&self.groups, operation)
+        match GroupsProcessor::process(&GROUPS_CONTEXT, &self.store, operation)
             .await {
                 Ok(()) => {}
                     #[cfg(feature = "auth-workaround")]
-                    Err(p2panda_auth::processor::ProcessorError::Groups(p2panda_auth::group::GroupCrdtError::ManagerGroupsNotAllowed(_))) => {
+                    Err(p2panda_auth::processor::GroupsProcessorError::Groups(p2panda_auth::group::GroupCrdtError::ManagerGroupsNotAllowed(_))) => {
                         // This error is expected as long as we have the workaround
                         tracing::warn!(operation = ?operation.hash.renamed(), "manager groups not allowed (this is expected as long as we have the auth-workaround)");
                         return Ok(())
@@ -101,7 +99,7 @@ impl HackyGroupStore {
     }
 
     async fn save_to_file(&self) -> anyhow::Result<()> {
-        let groups = self.groups.get_state().await?;
+        let groups = self.store.get_state().await?;
         let temp = self.file_path.with_file_name("groups.cbor.tmp");
         let mut file = std::fs::File::create(&temp)?;
         let bytes = p2panda_core::cbor::encode_cbor(&groups)?;
@@ -119,7 +117,7 @@ impl HackyGroupStore {
             return Ok(());
         };
         let state = p2panda_core::cbor::decode_cbor(&file)?;
-        self.groups.set_state(state).await?;
+        self.store.set_state(state).await?;
         Ok(())
     }
 
@@ -130,7 +128,7 @@ impl HackyGroupStore {
     ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
         let group_id = agent_id.to_group_member().id();
         Ok(self
-            .groups
+            .store
             .get_state()
             .await?
             .crdt
@@ -147,7 +145,7 @@ impl HackyGroupStore {
     ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
         let group_id = topic.to_group_pubkey()?;
         Ok(self
-            .groups
+            .store
             .get_state()
             .await?
             .crdt

@@ -41,7 +41,7 @@ checksum = "b169f7a6d4742236a0a00c541b845991d0ac43e546831af1249753ab4c3aa3a0"
 dependencies = [
  "cfg-if",
  "cipher",
- "cpufeatures",
+ "cpufeatures 0.2.17",
 ]
 
 [[package]]
@@ -930,7 +930,7 @@ dependencies = [
  "cc",
  "cfg-if",
  "constant_time_eq",
- "cpufeatures",
+ "cpufeatures 0.2.17",
 ]
 
 [[package]]
@@ -1274,7 +1274,18 @@ checksum = "c3613f74bd2eac03dad61bd53dbe620703d4371614fe0bc3b9f04dd36fe4e818"
 dependencies = [
  "cfg-if",
  "cipher",
- "cpufeatures",
+ "cpufeatures 0.2.17",
+]
+
+[[package]]
+name = "chacha20"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f8d983286843e49675a4b7a2d174efe136dc93a18d69130dd18198a6c167601"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.0",
+ "rand_core 0.10.0",
 ]
 
 [[package]]
@@ -1284,7 +1295,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10cd79432192d1c0f4e1a0fef9527696cc039165d729fb41b3f4f4f354c2dc35"
 dependencies = [
  "aead",
- "chacha20",
+ "chacha20 0.9.1",
  "cipher",
  "poly1305",
  "zeroize",
@@ -1602,6 +1613,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cpufeatures"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "crc"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1777,7 +1797,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fb8b7c4503de7d6ae7b42ab72a5a59857b4c937ec27a3d4539dba95b5ab2be"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "curve25519-dalek-derive",
  "digest 0.10.7",
  "fiat-crypto 0.2.9",
@@ -1793,7 +1813,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f9200d1d13637f15a6acb71e758f64624048d85b31a5fdbfd8eca1e2687d0b7"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "curve25519-dalek-derive",
  "digest 0.11.0-rc.10",
  "fiat-crypto 0.3.0",
@@ -1946,7 +1966,7 @@ dependencies = [
  "opener",
  "openssl-sys",
  "p2panda-auth",
- "p2panda-core 0.5.1",
+ "p2panda-core",
  "p2panda-discovery",
  "p2panda-encryption",
  "p2panda-net",
@@ -2005,7 +2025,7 @@ dependencies = [
  "named-id",
  "nanoid",
  "p2panda-auth",
- "p2panda-core 0.5.1",
+ "p2panda-core",
  "p2panda-discovery",
  "p2panda-encryption",
  "p2panda-net",
@@ -3282,8 +3302,8 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1",
- "windows-result 0.4.1",
+ "windows-link 0.1.3",
+ "windows-result 0.3.4",
 ]
 
 [[package]]
@@ -3355,6 +3375,7 @@ dependencies = [
  "js-sys",
  "libc",
  "r-efi 6.0.0",
+ "rand_core 0.10.0",
  "wasip2",
  "wasip3",
  "wasm-bindgen",
@@ -3966,7 +3987,7 @@ dependencies = [
  "tokio",
  "tower-service",
  "tracing",
- "windows-registry 0.6.1",
+ "windows-registry",
 ]
 
 [[package]]
@@ -3981,7 +4002,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -4997,7 +5018,7 @@ dependencies = [
  "named-id",
  "nanoid",
  "once_cell",
- "p2panda-core 0.4.0",
+ "p2panda-core",
  "pretty_assertions",
  "reqwest 0.12.28",
  "serde",
@@ -5316,7 +5337,7 @@ dependencies = [
 [[package]]
 name = "named-id"
 version = "0.1.0"
-source = "git+https://github.com/maackle/named-id.git#49e879be55795f314ffca56b7c178a52682aeb8c"
+source = "git+https://github.com/maackle/named-id.git#e5ccce98131a9cd2189c9f98e6fa0919dd4fa82f"
 dependencies = [
  "named-id-derive",
  "regex",
@@ -5327,7 +5348,7 @@ dependencies = [
 [[package]]
 name = "named-id-derive"
 version = "0.1.0"
-source = "git+https://github.com/maackle/named-id.git#49e879be55795f314ffca56b7c178a52682aeb8c"
+source = "git+https://github.com/maackle/named-id.git#e5ccce98131a9cd2189c9f98e6fa0919dd4fa82f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5713,7 +5734,7 @@ version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff32365de1b6743cb203b710788263c44a03de03802daf96092f2da4fe6ba4d7"
 dependencies = [
- "proc-macro-crate 3.5.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -6336,11 +6357,10 @@ dependencies = [
 
 [[package]]
 name = "p2panda-auth"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
- "derive_more 1.0.0",
- "named-id",
- "p2panda-core 0.5.1",
+ "p2panda-core",
+ "p2panda-store",
  "p2panda-stream",
  "petgraph",
  "rand 0.9.2",
@@ -6348,33 +6368,17 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
 name = "p2panda-core"
-version = "0.4.0"
-source = "git+https://github.com/maackle/p2panda.git?branch=dashchat#950c89526eef62fa55b20929660f0c3c55c7abfa"
+version = "0.5.2"
 dependencies = [
  "blake3",
  "ciborium",
  "ed25519-dalek 2.2.0",
  "hex",
- "named-id",
- "rand 0.8.5",
- "serde",
- "serde_bytes",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "p2panda-core"
-version = "0.5.1"
-dependencies = [
- "blake3",
- "ciborium",
- "ed25519-dalek 2.2.0",
- "hex",
- "named-id",
  "rand 0.8.5",
  "serde",
  "serde_bytes",
@@ -6383,12 +6387,13 @@ dependencies = [
 
 [[package]]
 name = "p2panda-discovery"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "blake3",
  "futures-util",
- "rand 0.9.2",
- "rand_chacha 0.9.0",
+ "p2panda-core",
+ "p2panda-store",
+ "rand 0.10.0",
  "serde",
  "thiserror 2.0.18",
  "tokio",
@@ -6396,7 +6401,7 @@ dependencies = [
 
 [[package]]
 name = "p2panda-encryption"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -6405,22 +6410,20 @@ dependencies = [
  "hpke-rs",
  "hpke-rs-crypto",
  "hpke-rs-rust-crypto",
- "named-id",
- "p2panda-core 0.5.1",
+ "p2panda-core",
  "rand_chacha 0.9.0",
  "serde",
  "serde_bytes",
  "sha2 0.10.9",
  "subtle",
  "thiserror 2.0.18",
- "tracing",
  "x25519-dalek",
  "zeroize",
 ]
 
 [[package]]
 name = "p2panda-net"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "ciborium",
  "futures-channel",
@@ -6429,13 +6432,13 @@ dependencies = [
  "iroh",
  "iroh-base",
  "iroh-gossip",
- "p2panda-core 0.5.1",
+ "p2panda-core",
  "p2panda-discovery",
  "p2panda-store",
  "p2panda-sync",
  "ractor",
- "rand 0.9.2",
- "rand_chacha 0.9.0",
+ "rand 0.10.0",
+ "rand_chacha 0.10.0",
  "serde",
  "thiserror 2.0.18",
  "tokio",
@@ -6446,55 +6449,47 @@ dependencies = [
 
 [[package]]
 name = "p2panda-spaces"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
- "named-id",
  "p2panda-auth",
- "p2panda-core 0.5.1",
+ "p2panda-core",
  "p2panda-encryption",
  "petgraph",
  "serde",
  "thiserror 2.0.18",
  "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
 name = "p2panda-store"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
- "ciborium",
- "hex",
- "p2panda-core 0.5.1",
+ "p2panda-core",
+ "serde",
  "sqlx",
  "thiserror 2.0.18",
- "trait-variant",
+ "tokio",
 ]
 
 [[package]]
 name = "p2panda-stream"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
- "ciborium",
- "futures-channel",
- "futures-util",
- "named-id",
- "p2panda-core 0.5.1",
+ "futures-core",
+ "p2panda-core",
  "p2panda-store",
  "pin-project",
- "pin-utils",
- "serde",
  "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]
 name = "p2panda-sync"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "futures",
  "futures-util",
- "p2panda-core 0.5.1",
+ "p2panda-core",
  "p2panda-store",
  "pin-project-lite",
  "serde",
@@ -7028,7 +7023,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8159bd90725d2df49889a078b54f4f79e87f1f8a8444194cdca81d38f5393abf"
 dependencies = [
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "opaque-debug",
  "universal-hash",
 ]
@@ -7040,7 +7035,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d1fe60d06143b2430aa532c94cfe9e29783047f06c0d7fd359a9a51b729fa25"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "opaque-debug",
  "universal-hash",
 ]
@@ -7471,6 +7466,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc266eb313df6c5c09c1c7b1fbe2510961e5bcd3add930c1e31f7ed9da0feff8"
+dependencies = [
+ "chacha20 0.10.0",
+ "getrandom 0.4.2",
+ "rand_core 0.10.0",
+]
+
+[[package]]
 name = "rand_chacha"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7501,6 +7507,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_chacha"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e6af7f3e25ded52c41df4e0b1af2d047e45896c2f3281792ed68a1c243daedb"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.10.0",
+]
+
+[[package]]
 name = "rand_core"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7526,6 +7542,12 @@ checksum = "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c"
 dependencies = [
  "getrandom 0.3.4",
 ]
+
+[[package]]
+name = "rand_core"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c8d0fd677905edcbeedbf2edb6494d676f0e98d54d5cf9bda0b061cb8fb8aba"
 
 [[package]]
 name = "rand_hc"
@@ -8555,7 +8577,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "digest 0.10.7",
 ]
 
@@ -8572,7 +8594,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "digest 0.10.7",
 ]
 
@@ -8583,7 +8605,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1e3878ab0f98e35b2df35fe53201d088299b41a6bb63e3e34dada2ac4abd924"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "digest 0.11.0-rc.10",
 ]
 
@@ -9534,7 +9556,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "url",
- "windows-registry 0.5.3",
+ "windows-registry",
  "windows-result 0.3.4",
 ]
 
@@ -10455,17 +10477,6 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
-]
-
-[[package]]
-name = "trait-variant"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70977707304198400eb4835a78f6a9f928bf41bba420deb8fdb175cd965d77a7"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]
@@ -11465,17 +11476,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "windows-registry"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02752bf7fbdcce7f2a27a742f798510f3e5ad88dbe84871e5168e2120c3d5720"
-dependencies = [
- "windows-link 0.2.1",
- "windows-result 0.4.1",
- "windows-strings 0.5.1",
-]
-
-[[package]]
 name = "windows-result"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11999,8 +11999,8 @@ dependencies = [
  "log",
  "serde",
  "thiserror 2.0.18",
- "windows 0.62.2",
- "windows-core 0.62.2",
+ "windows 0.61.3",
+ "windows-core 0.61.2",
 ]
 
 [[package]]

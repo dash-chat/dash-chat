@@ -5,8 +5,8 @@ use std::{
 };
 
 use p2panda_core::{Body, Hash, Operation, PublicKey, RawOperation};
-use p2panda_store::{LogStore, MemoryStore, OperationStore, SqliteStore};
-use p2panda_stream::operation::IngestResult;
+use p2panda_store::{SqliteStore, logs::LogStore, operations::OperationStore};
+use p2panda_stream::ingest::IngestResult;
 use tokio::sync::Mutex;
 
 use crate::{
@@ -18,54 +18,39 @@ use crate::{
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::DerefMut)]
-pub struct OpStore<S>
-where
-    S: OperationStore<TopicId, Extensions> + LogStore<TopicId, Extensions>,
-    S: Send + Sync,
-{
+pub struct OpStore {
     #[deref]
     #[deref_mut]
-    pub(crate) store: S,
+    pub(crate) store: SqliteStore,
     pub orderer: Arc<tokio::sync::RwLock<Orderer<S>>>,
     pub processed_ops: Arc<RwLock<HashMap<TopicId, HashSet<Hash>>>>,
     write_mutex: Arc<Mutex<()>>,
 }
 
-impl OpStore<MemoryStore<TopicId, Extensions>> {
-    pub async fn create(_path: PathBuf) -> anyhow::Result<Self> {
-        let store = MemoryStore::new();
-        Ok(Self::new(store))
-    }
-}
-
-impl OpStore<SqliteStore<TopicId, Extensions>> {
+impl OpStore {
     pub async fn create(database_file_path: PathBuf) -> anyhow::Result<Self> {
         let url = format!("sqlite://{}", database_file_path.to_string_lossy());
-        p2panda_store::sqlite::store::create_database(&url).await?;
+        p2panda_store::sqlite::create_database(&url).await?;
 
         let pool = sqlx::SqlitePool::connect(&url).await.map_err(|e| {
             anyhow::anyhow!("failed to connect to sqlite at '{database_file_path:?}': {e}")
         })?;
 
-        if p2panda_store::sqlite::store::run_pending_migrations(&pool)
+        if p2panda_store::sqlite::run_pending_migrations(&pool)
             .await
             .is_err()
         {
             pool.close().await;
             panic!("Database migration failed");
         }
-        let store = SqliteStore::new(pool);
+        let store = SqliteStore::from_pool(pool);
 
         Ok(Self::new(store))
     }
 }
 
-impl<S> OpStore<S>
-where
-    S: OperationStore<TopicId, Extensions> + LogStore<TopicId, Extensions>,
-    S: Send + Sync,
-{
-    pub fn new(store: S) -> Self {
+impl OpStore {
+    pub fn new(store: SqliteStore) -> Self {
         let orderer = Arc::new(tokio::sync::RwLock::new(Orderer::new(
             store.clone(),
             Default::default(),
@@ -166,7 +151,7 @@ where
             "PUB: authoring operation"
         );
 
-        let result = p2panda_stream::operation::ingest_operation(
+        let result = p2panda_stream::ingest::ingest_operation(
             &mut *self.clone(),
             header.clone(),
             body.clone(),
@@ -242,7 +227,7 @@ where
     }
 }
 
-impl OpStore<SqliteStore<TopicId, Extensions>> {
+impl OpStore {
     pub fn report<'a>(&self, _topics: impl IntoIterator<Item = &'a TopicId>) -> String {
         format!("( report() is only implemented for MemoryStore )")
     }
@@ -292,12 +277,13 @@ impl OpStore<MemoryStore<TopicId, Extensions>> {
     }
 }
 
-impl<S> OperationStore<TopicId, Extensions> for OpStore<S>
+impl<S> OperationStore<Operation, Hash, TopicId> for OpStore<S>
 where
-    S: OperationStore<TopicId, Extensions> + LogStore<TopicId, Extensions> + Send + Sync,
+    S: OperationStore<Operation, Hash, TopicId>
+        + LogStore<Operation, PublicKey, TopicId, u64, Hash>,
     <S as OperationStore<TopicId, Extensions>>::Error: std::error::Error + Send + Sync,
 {
-    type Error = <S as OperationStore<TopicId, Extensions>>::Error;
+    type Error = <S as OperationStore<Operation, Hash, TopicId>>::Error;
 
     async fn insert_operation(
         &mut self,

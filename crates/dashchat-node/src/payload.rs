@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use named_id::{RenameAll, RenameNone};
 use p2panda_auth::group::GroupAction;
-use p2panda_auth::processor::AuthExtension;
+use p2panda_auth::processor::GroupsArgs;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use p2panda_core::{Body, Extension, Hash, PruneFlag, PublicKey};
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ pub struct Extensions {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
 pub struct HackyGroupExtension {
-    pub auth: AuthExtension,
+    pub args: GroupsArgs,
 
     /// The auth workaround is all about replacing AgentIds and DeviceIds when Manage access is used.
     /// In at least one case, we need the original AgentIds, so this mapping adds them back in.
@@ -37,8 +37,8 @@ impl Extensions {
     }
 }
 
-impl Extension<AuthExtension> for Extensions {
-    fn extract(header: &Header) -> Option<AuthExtension> {
+impl Extension<GroupsArgs> for Extensions {
+    fn extract(header: &Header) -> Option<GroupsArgs> {
         header
             .extensions
             .hacky_group
@@ -157,12 +157,14 @@ impl DashAction {
     pub fn group_action(
         group_id: ChatId,
         action: GroupAction<PublicKey, ()>,
+        dependencies: Vec<Hash>,
         #[cfg(feature = "auth-workaround")] device_agent_mapping: BTreeMap<DeviceId, AgentId>,
     ) -> anyhow::Result<Self> {
         Ok(DashAction::GroupControl(HackyGroupExtension {
-            auth: AuthExtension {
+            args: GroupsArgs {
                 group_id: group_id.to_group_pubkey()?,
                 action,
+                dependencies,
             },
             device_agent_mapping,
         }))

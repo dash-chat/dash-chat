@@ -185,7 +185,7 @@ pub struct Topic<K: TopicKind = kind::Untyped> {
 impl<K: TopicKind> p2panda_spaces::traits::SpaceId for Topic<K> {}
 
 impl<K: TopicKind> Topic<K> {
-    pub(crate) fn new(id: [u8; 32]) -> Self {
+    pub(crate) const fn new(id: [u8; 32]) -> Self {
         Self {
             id: TopicId(id),
             kind: PhantomData::<K>,
