@@ -8,7 +8,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use p2panda_auth::{Access};
 use p2panda_core::{Hash, Operation};
-use p2panda_store::SqliteStore;
+use p2panda_store::{SqliteStore, groups::GroupsStore};
 use redb::*;
 use tokio::sync::Mutex;
 
@@ -70,7 +70,7 @@ impl HackyGroupStore {
     }
 
     pub async fn heads(&self) -> anyhow::Result<Vec<Hash>> {
-        Ok(self.store.get_state().await?.crdt.heads())
+        Ok(self.store.get_state(&GROUPS_CONTEXT).await?.expect("singleton state must exist").crdt.heads())
     }
 
     pub async fn process(&mut self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
@@ -94,32 +94,9 @@ impl HackyGroupStore {
             auth = ?operation.header.extensions.hacky_group.clone().renamed(), 
             "processed operation for auth state");
 
-        self.save_to_file().await.expect("failed to save hacky groups state to file");
         Ok(())
     }
 
-    async fn save_to_file(&self) -> anyhow::Result<()> {
-        let groups = self.store.get_state().await?;
-        let temp = self.file_path.with_file_name("groups.cbor.tmp");
-        let mut file = std::fs::File::create(&temp)?;
-        let bytes = p2panda_core::cbor::encode_cbor(&groups)?;
-        file.write_all(&bytes)?;
-        std::fs::rename(&temp, &self.file_path)?;
-        Ok(())
-    }
-
-    async fn load_from_file(&mut self) -> anyhow::Result<()> {
-        let Ok(file) = std::fs::File::open(&self.file_path) else {
-            tracing::warn!(
-                "Unable to open groups state file at {}. If it is supposed to exist, this is a bug.",
-                self.file_path.display()
-            );
-            return Ok(());
-        };
-        let state = p2panda_core::cbor::decode_cbor(&file)?;
-        self.store.set_state(state).await?;
-        Ok(())
-    }
 
     pub async fn device_group_members(
         &self,
@@ -129,8 +106,9 @@ impl HackyGroupStore {
         let group_id = agent_id.to_group_member().id();
         Ok(self
             .store
-            .get_state()
+            .get_state(&GROUPS_CONTEXT)
             .await?
+            .expect("singleton state must exist")
             .crdt
             .inner
             .members(group_id)
@@ -146,8 +124,9 @@ impl HackyGroupStore {
         let group_id = topic.to_group_pubkey()?;
         Ok(self
             .store
-            .get_state()
+            .get_state(&GROUPS_CONTEXT)
             .await?
+            .expect("singleton state must exist")
             .crdt
             .inner
             .members(group_id)
@@ -160,17 +139,16 @@ impl HackyGroupStore {
 #[derive(Clone)]
 pub struct LocalStore {
     db: Arc<Database>,
-    pub(crate) groups: Arc<Mutex<HackyGroupStore>>,
 }
 
 impl LocalStore {
+    // TODO: move groups out, now that it's handled by p2panda store
     pub async fn new(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let database = Database::create(&path)?;
         let groups_path = path.with_file_name("groups.cbor");
         let store = Self {
             db: Arc::new(database),
-            groups: Arc::new(Mutex::new(HackyGroupStore::new(groups_path).await?)),
         };
         store.ensure_initialized()?;
 
@@ -352,41 +330,6 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn device_group_members(
-        &self,
-        agent_id: AgentId,
-        min_access: Access,
-    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
-        let groups = self.groups.lock().await;
-        Ok(groups
-            .device_group_members(agent_id)
-            .await?
-            .into_iter()
-            .filter(|(_, access)| *access >= min_access)
-            .collect())
-    }
-
-    pub async fn chat_group_members(
-        &self,
-        topic: ChatId,
-    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
-        let groups = self.groups.lock().await;
-        groups.chat_group_members(topic).await
-    }
-
-    pub async fn process_group_operation(
-        &self,
-        operation: &Operation<Extensions>,
-    ) -> anyhow::Result<()> {
-        let mut groups = self.groups.lock().await;
-        groups.process(operation).await
-    }
-
-    pub async fn group_state_tips(&self) -> anyhow::Result<Vec<Hash>> {
-        let groups = self.groups.lock().await;
-        groups.heads().await
-    }
-
     #[cfg(feature = "auth-workaround")]
     pub fn lookup_contact_agent(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
         let txn = self.db.begin_read()?;
@@ -446,9 +389,46 @@ impl LocalStore {
         table.insert(device_id.as_bytes(), capabilities)?;
         Ok(())
     }
-
-
 }
+
+/*
+
+    pub async fn device_group_members(
+        &self,
+        agent_id: AgentId,
+        min_access: Access,
+    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        let groups = self.groups.lock().await;
+        Ok(groups
+            .device_group_members(agent_id)
+            .await?
+            .into_iter()
+            .filter(|(_, access)| *access >= min_access)
+            .collect())
+    }
+
+    pub async fn chat_group_members(
+        &self,
+        topic: ChatId,
+    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        let groups = self.groups.lock().await;
+        groups.chat_group_members(topic).await
+    }
+
+    pub async fn process_group_operation(
+        &self,
+        operation: &Operation<Extensions>,
+    ) -> anyhow::Result<()> {
+        let mut groups = self.groups.lock().await;
+        groups.process(operation).await
+    }
+
+    pub async fn group_state_tips(&self) -> anyhow::Result<Vec<Hash>> {
+        let groups = self.groups.lock().await;
+        groups.heads().await
+    }
+
+*/
 
 #[cfg(test)]
 mod tests {
@@ -462,6 +442,7 @@ mod tests {
     async fn test_initialize_idempotent() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test_initialize_random.db");
+        let groups = SqliteStore::temporary().await;
         let store = LocalStore::new(&path).await.unwrap();
         let private_key = store.private_key().unwrap();
         let agent_id = store.agent_id().unwrap();
@@ -486,6 +467,7 @@ mod tests {
     async fn test_prune_expired_active_inbox_topics() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test_prune_inbox_topics.db");
+        let groups = SqliteStore::temporary().await;
         let store = LocalStore::new(&path).await.unwrap();
 
         // Generate inbox topics with various expiration times
@@ -545,6 +527,7 @@ mod tests {
     async fn test_get_group_peer_capabilities() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test_get_group_peer_capabilities.db");
+        let groups = SqliteStore::temporary().await;
         let store = LocalStore::new(&path).await.unwrap();
 
         let topic = ChatId::new([1; 32]);

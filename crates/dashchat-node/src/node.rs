@@ -15,11 +15,12 @@ use p2panda_store::SqliteStore;
 
 use crate::error::{AddContactError, Error};
 use crate::filesystem::Filesystem;
+use crate::util::first;
 use chrono::{Duration, Utc};
 use futures::Stream;
 use named_id::Rename;
 use named_id::*;
-use p2panda_core::{Body, Hash, PublicKey};
+use p2panda_core::{Body, Hash, PublicKey, Timestamp};
 use p2panda_spaces::ActorId;
 use p2panda_store::logs::LogStore;
 
@@ -45,7 +46,7 @@ use crate::{
 pub use crate::local_store::LocalStore;
 pub use stream_processing::Notification;
 
-pub type NodeOpStore = OpStore<SqliteStore>;
+pub type NodeOpStore = OpStore;
 // pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
 // pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
 
@@ -83,9 +84,6 @@ impl Default for NodeConfig {
 }
 
 pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
-
-pub type Orderer<S> =
-    PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
 
 #[derive(Clone)]
 pub(crate) struct CancelAndWait<R> {
@@ -127,6 +125,7 @@ pub struct Node {
     stream_task: Option<CancelAndWait<()>>,
 
     pub(crate) local_store: LocalStore,
+    pub(crate) groups_store: HackyGroupStore,
     node_data: NodeData,
 }
 
@@ -182,15 +181,15 @@ impl Node {
     ) -> anyhow::Result<Vec<(Header, Option<Payload>)>> {
         let mut logs = Vec::new();
         for author in authors {
-            for (h, b) in self.get_log(topic_id, author).await? {
-                if let Some(body) = b {
+            for op in self.get_log(topic_id, author).await? {
+                if let Some(body) = op.body {
                     if let Ok(payload) = Payload::try_from_body(&body) {
-                        logs.push((h, Some(payload)));
+                        logs.push((op.header, Some(payload)));
                     } else {
                         tracing::error!("Failed to decode payload: {body:?}");
                     }
                 } else {
-                    logs.push((h, None));
+                    logs.push((op.header, None));
                 }
             }
         }
@@ -202,10 +201,14 @@ impl Node {
         &self,
         topic: TopicId,
         author: DeviceId,
-    ) -> anyhow::Result<Vec<(Header, Option<Body>)>> {
+    ) -> anyhow::Result<Vec<Operation>> {
         let _heights = self.op_store.get_log_heights(&topic).await?;
-        match self.op_store.get_log(&author, &topic, None).await? {
-            Some(log) => Ok(log),
+        match self
+            .op_store
+            .get_log_entries(&author, &topic, None, None)
+            .await?
+        {
+            Some(log) => Ok(log.into_iter().map(first).collect()),
             None => {
                 let author = *author;
                 tracing::warn!(
@@ -433,12 +436,16 @@ impl Node {
 
         tracing::info!(member = ?member.clone().renamed(), "member added to existing group");
 
+        // TODO: filter
+        let deps = self.groups_store.group_state_tips().await?;
+
         let action = DashAction::group_action(
             chat_id,
             GroupAction::Add {
                 member,
                 access: access.clone(),
             },
+            deps,
             device_agent_mapping,
         )?;
         self.author_operation(
@@ -488,7 +495,7 @@ impl Node {
         &self,
         chat_id: ChatId,
     ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
-        let members = self.local_store.chat_group_members(chat_id).await?;
+        let members = self.groups_store.chat_group_members(chat_id).await?;
         Ok(members)
     }
 
@@ -520,7 +527,7 @@ impl Node {
             .get_interleaved_logs(topic_id, authors.into_iter().collect())
             .await?;
 
-        let mut set_profile_ops: Vec<(u64, Profile)> = ops
+        let mut set_profile_ops: Vec<(Timestamp, Profile)> = ops
             .into_iter()
             .filter_map(|(header, payload)| match payload {
                 Some(Payload::Announcements(AnnouncementsPayload::SetProfile(profile))) => {

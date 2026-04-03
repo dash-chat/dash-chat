@@ -20,7 +20,7 @@ pub struct Extensions {
     pub hacky_group: Option<HackyGroupExtension>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, Serialize, Deserialize, RenameAll)]
 pub struct HackyGroupExtension {
     pub args: GroupsArgs,
 
@@ -43,7 +43,7 @@ impl Extension<GroupsArgs> for Extensions {
             .extensions
             .hacky_group
             .as_ref()
-            .map(|e| e.auth.clone())
+            .map(|e| e.args.clone())
     }
 }
 

@@ -43,3 +43,11 @@ pub fn ed25519_pubkey_from_hash(mut hash: [u8; 32]) -> PublicKey {
     let pubkey = signing_key.verifying_key();
     PublicKey::from_bytes(pubkey.as_bytes()).unwrap()
 }
+
+pub fn first<T, U>(pair: (T, U)) -> T {
+    pair.0
+}
+
+pub fn second<T, U>(pair: (T, U)) -> U {
+    pair.1
+}

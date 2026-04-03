@@ -12,32 +12,19 @@ impl Node {
     ) -> Result<Header, anyhow::Error> {
         let action = action.into();
 
-        let previous = match &action {
-            DashAction::Payload(_) => {
-                vec![]
-            }
-            DashAction::GroupControl(args) => args.dependencies.clone(),
-        };
-
-        let (header, body) = self
+        let op = self
             .op_store
             .author_operation(
                 &self.node_data.private_key,
                 topic.clone(),
                 action.clone(),
-                previous,
                 alias,
             )
             .await?;
 
-        self.mailboxes.trigger_sync();
+        op.hash.with_serial();
 
-        // Ok(header)
-        let op = Operation {
-            hash: header.hash().with_serial(),
-            header,
-            body,
-        };
+        self.mailboxes.trigger_sync();
 
         // XXX: TODO: really the operation needs to be processed first to see if it even ought to be ingested.
         self.process_authored_ingested_operation(op).await

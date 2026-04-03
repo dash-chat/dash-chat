@@ -1,0 +1,13 @@
+[package]
+name = "comcap"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+derive_more = { version = "1.0.0", features = ["full"] }
+named-id = { git = "https://github.com/maackle/named-id.git" }
+serde = { version = "1.0.213", features = ["derive"] }
+
+[dev-dependencies]
+postcard = "1"
+serde_json = "1"

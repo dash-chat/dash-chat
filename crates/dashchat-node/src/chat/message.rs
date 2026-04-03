@@ -1,8 +1,9 @@
+use derive_more::derive::{Deref, From};
 use named_id::RenameNone;
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 
-use crate::compat::{Capability, Compat, VersionConvert, VersionConvertError};
+use comcap::{Capability, Compat, VersionConvert, VersionConvertError};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
 pub struct PhotoAttachment {
@@ -49,7 +50,8 @@ pub struct ChatMessageV1 {
 }
 
 /// Versioned ChatMessageContent: V0 (bare string) or V1+ (tagged).
-pub type ChatMessageContent = Compat<ChatMessageContentV0, ChatMessageVersions>;
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Deref, From)]
+pub struct ChatMessageContent(Compat<ChatMessageContentV0, ChatMessageVersions>);
 
 impl ChatMessageContent {
     pub fn text(message: impl Into<String>) -> Self {
@@ -57,17 +59,18 @@ impl ChatMessageContent {
             message: message.into(),
             media: None,
         }))
+        .into()
     }
 
     pub fn message(&self) -> &str {
-        match self {
+        match &**self {
             Compat::Unversioned(v0) => &v0.0,
             Compat::Versioned(ChatMessageVersions::V1(v1)) => &v1.message,
         }
     }
 
     pub fn media(&self) -> Option<&MediaAttachment> {
-        match self {
+        match &**self {
             Compat::Unversioned(_) => None,
             Compat::Versioned(ChatMessageVersions::V1(v1)) => v1.media.as_ref(),
         }
@@ -85,22 +88,21 @@ impl VersionConvert for ChatMessageContent {
 
     // TODO: just take Capabilities?
     fn to_version(&self, target: u16) -> Result<Self, VersionConvertError> {
-        match (self, target) {
+        match (&**self, target) {
             (Compat::Unversioned(_), 0) => Ok(self.clone()),
             (Compat::Versioned(ChatMessageVersions::V1(v1)), 0) => {
                 if v1.message.is_empty() {
                     Err(VersionConvertError::Lossy)
                 } else {
-                    Ok(Compat::Unversioned(ChatMessageContentV0(
-                        v1.message.clone(),
-                    )))
+                    Ok(Compat::Unversioned(ChatMessageContentV0(v1.message.clone())).into())
                 }
             }
             (Compat::Unversioned(v0), 1) => {
                 Ok(Compat::Versioned(ChatMessageVersions::V1(ChatMessageV1 {
                     message: v0.0.clone(),
                     media: None,
-                })))
+                }))
+                .into())
             }
             (Compat::Versioned(_), 1) => Ok(self.clone()),
             _ => Err(VersionConvertError::UnknownVersion),
@@ -120,13 +122,14 @@ pub mod testing {
     use super::*;
     use crate::{Cbor, DeviceId, Header};
     use named_id::RenameAll;
+    use p2panda_core::Timestamp;
     use std::cmp::Ordering;
 
     #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
     pub struct ChatMessage {
         pub content: ChatMessageContent,
         pub author: DeviceId,
-        pub timestamp: u64,
+        pub timestamp: Timestamp,
     }
 
     impl ChatMessage {

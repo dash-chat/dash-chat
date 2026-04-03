@@ -27,6 +27,7 @@ ed25519-dalek = "2.2.0"
 thiserror = "2.0"
 async-trait = "0.1.85"
 derive_more = { version = "1.0.0", features = ["full"] }
+comcap = { path = "../comcap" }
 futures = "0.3"
 redb = "3.1"
 tokio = { version = "1.43.0", features = ["fs"] }

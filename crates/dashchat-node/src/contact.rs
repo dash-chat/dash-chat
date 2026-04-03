@@ -4,8 +4,8 @@ use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-use crate::compat::Capabilities;
 use crate::{AgentId, DeviceId, Topic, topic::kind};
+use comcap::Capabilities;
 
 /// The content for a QR code or deep link.
 ///
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_contact_with_capabilities_roundtrip() {
-        use crate::compat::Capability;
+        use comcap::Capability;
 
         let pubkey = PublicKey::from_bytes(&[11; 32]).unwrap();
         let agent_id = AgentId::from(ActorId::from_bytes(&[22; 32]).unwrap());

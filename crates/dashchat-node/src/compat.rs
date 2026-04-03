@@ -1,119 +1,151 @@
-use derive_more::derive::{Deref, From};
-use named_id::{AnyNameable, Rename, RenameNone};
-use serde::de::Deserializer;
-use serde::ser::Serializer;
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::fmt;
+use std::time::Duration;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Compat<Bare, Tagged> {
-    Unversioned(Bare),
-    Versioned(Tagged),
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl<Bare: fmt::Debug, Tagged: fmt::Debug> Rename for Compat<Bare, Tagged> {
-    fn nameables(&self) -> Vec<AnyNameable<'_>> {
-        Vec::new()
-    }
-}
-
-impl<Bare, Tagged> Serialize for Compat<Bare, Tagged>
-where
-    Bare: Serialize,
-    Tagged: Serialize,
-{
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Compat::Unversioned(bare) => bare.serialize(serializer),
-            Compat::Versioned(tagged) => tagged.serialize(serializer),
-        }
-    }
-}
-
-impl<'de, Bare, Tagged> Deserialize<'de> for Compat<Bare, Tagged>
-where
-    Bare: Deserialize<'de>,
-    Tagged: Deserialize<'de>,
-{
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Helper<B, T> {
-            Tagged(T),
-            Bare(B),
-        }
-        match Helper::<Bare, Tagged>::deserialize(deserializer)? {
-            Helper::Tagged(t) => Ok(Compat::Versioned(t)),
-            Helper::Bare(b) => Ok(Compat::Unversioned(b)),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum Capability {
-    Messaging,
-    SomethingElse,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deref, From, Serialize, Deserialize, RenameNone)]
-pub struct Capabilities(BTreeMap<Capability, u16>);
-
-impl Capabilities {
-    pub fn with_capability(mut self, cap: Capability, version: u16) -> Self {
-        self.0.insert(cap, version);
-        self
+    #[test]
+    fn chat_message_v0_roundtrip() {
+        let v0 = ChatMessageContent::Unversioned(ChatMessageContentV0("hello".into()));
+        let bytes = encode_cbor(&v0).unwrap();
+        let bare_bytes = encode_cbor(&ChatMessageContentV0("hello".into())).unwrap();
+        assert_eq!(bytes, bare_bytes);
+        let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
+        assert_eq!(decoded, v0);
     }
 
-    pub fn infimum(&self, other: &Self) -> Self {
-        Self(
-            self.0
-                .iter()
-                .map(|(k, &v)| (k.clone(), v.min(other.0.get(k).copied().unwrap_or(0))))
-                .collect(),
+    #[test]
+    fn chat_message_v1_roundtrip() {
+        let v1 = ChatMessageContent::text("hello");
+        let bytes = encode_cbor(&v1).unwrap();
+        let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
+        assert_eq!(decoded, v1);
+    }
+
+    #[test]
+    fn chat_message_getters() {
+        let v0 = ChatMessageContent::Unversioned(ChatMessageContentV0("hello".into()));
+        assert_eq!(v0.message(), "hello");
+        assert!(v0.media().is_none());
+        let v1 = ChatMessageContent::text("world");
+        assert_eq!(v1.message(), "world");
+        assert!(v1.media().is_none());
+    }
+
+    #[test]
+    fn version_convert_v1_to_v0() {
+        let v1 = ChatMessageContent::text("hello");
+        let v0 = v1.to_version(0).unwrap();
+        assert_eq!(
+            v0,
+            ChatMessageContent::Unversioned(ChatMessageContentV0("hello".into()))
+        );
+    }
+
+    #[test]
+    fn version_convert_v0_to_v1() {
+        let v0 = ChatMessageContent::Unversioned(ChatMessageContentV0("hello".into()));
+        let v1 = v0.to_version(1).unwrap();
+        assert_eq!(v1.message(), "hello");
+        assert!(v1.media().is_none());
+    }
+
+    #[test]
+    fn version_convert_empty_message_is_lossy() {
+        let v1_empty = ChatMessageContent::Versioned(ChatMessageVersions::V1(ChatMessageV1 {
+            message: "".into(),
+            media: None,
+        }));
+        let result = v1_empty.to_version(0);
+        assert_eq!(result, Err(VersionConvertError::Lossy));
+    }
+
+    #[test]
+    fn version_convert_unknown_version() {
+        let v0 = ChatMessageContent::Unversioned(ChatMessageContentV0("hello".into()));
+        let result = v0.to_version(99);
+        assert_eq!(result, Err(VersionConvertError::UnknownVersion));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn messaging_v0_to_v1() {
+        dashchat_node::testing::setup_tracing(&["dashchat=warn"], true);
+
+        let mut alice_config = TestNodeConfig::default();
+        let bobbi_config = TestNodeConfig::default();
+        alice_config.node_config.capabilities = Capabilities::zero();
+
+        let mailbox = MemMailbox::new();
+        let alice = TestNode::new(alice_config, "alice")
+            .await
+            .add_mailbox_client(mailbox.client())
+            .await;
+        let bobbi = TestNode::new(bobbi_config, "bobbi")
+            .await
+            .add_mailbox_client(mailbox.client())
+            .await;
+
+        println!("alice: {:?}", alice.device_id().to_hex());
+        println!("bobbi: {:?}", bobbi.device_id().to_hex());
+
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+            .await
+            .unwrap();
+
+        let topic = alice.direct_chat_topic(bobbi.agent_id());
+
+        consistency([&alice, &bobbi], &[topic.into()])
+            .await
+            .unwrap();
+
+        let alice_bobbi_caps = alice
+            .local_store
+            .get_contact_capabilities(bobbi.agent_id())
+            .unwrap();
+        let bobbi_alice_caps = bobbi
+            .local_store
+            .get_contact_capabilities(alice.agent_id())
+            .unwrap();
+
+        assert_eq!(alice_bobbi_caps, Some(Capabilities::current()));
+        assert_eq!(bobbi_alice_caps, Some(Capabilities::zero()));
+
+        let alice_caps = alice
+            .local_store
+            .get_group_peer_capabilities(topic)
+            .await
+            .unwrap();
+        let bobbi_caps = bobbi
+            .local_store
+            .get_group_peer_capabilities(topic)
+            .await
+            .unwrap();
+
+        assert_eq!(alice_caps, Some(Capabilities::current()));
+        assert_eq!(bobbi_caps, Some(Capabilities::zero()));
+
+        let chat = alice.direct_chat_topic(bobbi.agent_id());
+        alice
+            .send_group_message(chat, "Hello".into())
+            .await
+            .unwrap();
+        bobbi
+            .send_group_message(chat, "Hello back".into())
+            .await
+            .unwrap();
+
+        crate::testing::wait_for(
+            Duration::from_millis(100),
+            Duration::from_secs(5),
+            || async {
+                (alice.get_messages(chat).await.unwrap().len() == 2
+                    && bobbi.get_messages(chat).await.unwrap().len() == 2)
+                    .ok_or("messages not received")
+            },
         )
-    }
-
-    pub fn infimum_opt(&self, other: Option<Self>) -> Self {
-        match other {
-            Some(other) => self.infimum(&other),
-            None => self.clone(),
-        }
-    }
-
-    pub fn current() -> Self {
-        Self::zero().with_capability(Capability::Messaging, 1)
-    }
-
-    pub fn zero() -> Self {
-        Self(Default::default())
+        .await
+        .unwrap();
     }
 }
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum VersionConvertError {
-    Lossy,
-    UnknownVersion,
-}
-
-impl fmt::Display for VersionConvertError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            VersionConvertError::Lossy => write!(f, "lossy version conversion"),
-            VersionConvertError::UnknownVersion => write!(f, "unknown version"),
-        }
-    }
-}
-
-impl std::error::Error for VersionConvertError {}
-
-pub trait VersionConvert: Sized {
-    const CAPABILITY: Capability;
-    fn to_version(&self, target_version: u16) -> Result<Self, VersionConvertError>;
-}
-
-#[cfg(test)]
-mod test_compat;
-
-#[cfg(test)]
-mod test_chat_message_compat;
