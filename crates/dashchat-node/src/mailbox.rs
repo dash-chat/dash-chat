@@ -99,6 +99,55 @@ mod tests {
     /// - alice and bobbi add a mailbox after the fact
     /// - bobbi still gets the message later
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_mailbox_blob_upload_retry() {
+        let mb = MemMailbox::new();
+        let config = NodeConfig::testing();
+
+        // Start with no mailbox
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let bobbi = TestNode::new(config.clone(), "bobbi").await;
+
+        println!("=== adding mailboxes ===");
+        alice.add_mailbox_client(mb.client()).await;
+        bobbi.add_mailbox_client(mb.client()).await;
+
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+            .await
+            .unwrap();
+
+        let chat = alice.direct_chat_topic(bobbi.agent_id());
+        alice.send_message(chat, "hello".into()).await.unwrap();
+
+        mb.stop();
+
+        bobbi.send_message(chat, "dobrý den".into()).await.unwrap();
+
+        let bobbi_messages = bobbi.get_messages(chat).await.unwrap();
+        assert_eq!(bobbi_messages.len(), 1);
+        assert_eq!(
+            bobbi_messages.first().map(|m| m.content.clone()),
+            Some("dobrý den".into())
+        );
+
+        mb.start();
+
+        consistency([&alice, &bobbi], &[chat.into()], &ClusterConfig::default())
+            .await
+            .unwrap();
+
+        let alice_messages = alice.get_messages(chat).await.unwrap();
+        let bobbi_messages = bobbi.get_messages(chat).await.unwrap();
+        assert_eq!(alice_messages.len(), 2);
+        assert_eq!(alice_messages, bobbi_messages);
+    }
+
+    /// Very simple test which circumvents the contact adding system:
+    /// - alice sends a message to a direct chat topic
+    /// - alice and bobbi add a mailbox after the fact
+    /// - bobbi still gets the message later
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_mailbox_late_join() {
         dashchat_node::testing::setup_tracing(
             &[

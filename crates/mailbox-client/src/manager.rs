@@ -207,7 +207,7 @@ where
 
     pub async fn spawn(
         store: Store,
-        blob_queue: BlobQueue,
+        blob_queue: Arc<BlobQueue>,
         config: MailboxesConfig,
     ) -> Result<Self, anyhow::Error> {
         let (trigger_tx, mut trigger_rx) = mpsc::channel(1);
@@ -1070,7 +1070,7 @@ mod tests {
 
         let mgr = Mailboxes::<Msg, DummyStore, MemBlobPublishQueue>::spawn(
             DummyStore,
-            MemBlobPublishQueue::new(),
+            MemBlobPublishQueue::new().into(),
             config,
         )
         .await

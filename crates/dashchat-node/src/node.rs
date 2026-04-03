@@ -144,8 +144,10 @@ impl Node {
 
         let (stream_tx, stream_rx) = mpsc::channel(100);
 
-        let blob_queue =
-            mailbox_client::blob_queue::RedbBlobPublishQueue::from_db(local_store.db())?;
+        let blob_queue = Arc::new(mailbox_client::blob_queue::RedbBlobPublishQueue::from_db(
+            local_store.db(),
+        )?);
+
         let mailboxes = Arc::new(
             Mailboxes::spawn(
                 op_store.clone(),

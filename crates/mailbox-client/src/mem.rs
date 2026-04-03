@@ -4,7 +4,7 @@ use super::*;
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    sync::Arc,
+    sync::{Arc, atomic::Ordering},
 };
 
 use tokio::sync::RwLock;
@@ -33,12 +33,18 @@ impl<Item: MailboxItem> MailboxClient<Item> for MemMailboxClient<Item> {
 #[async_trait::async_trait]
 impl<Item: MailboxItem> RemoteBlobStore for MemMailboxClient<Item> {
     async fn fetch_blob(&self, hash: OpaqHash) -> anyhow::Result<Option<Opaq>> {
+        if !self.mailbox.running.load(Ordering::Relaxed) {
+            return Err(anyhow::anyhow!("mailbox is not running"));
+        }
         let store = self.mailbox.blobs.read().await;
         let blob = store.get(&hash).cloned();
         Ok(blob)
     }
 
     async fn publish_blob(&self, blob: Opaq) -> anyhow::Result<()> {
+        if !self.mailbox.running.load(Ordering::Relaxed) {
+            return Err(anyhow::anyhow!("mailbox is not running"));
+        }
         let mut store = self.mailbox.blobs.write().await;
         let hash = blob.to_hash();
         store.insert(hash.clone(), blob);
