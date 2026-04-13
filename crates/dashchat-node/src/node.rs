@@ -30,7 +30,7 @@ use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 
 use crate::chat::ChatMessageContent;
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
-use crate::local_store::NodeData;
+use crate::local_store::{HackyGroupStore, NodeData};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{
     AnnouncementsPayload, ChatPayload, Extensions, InboxPayload, Payload, Profile,
@@ -155,11 +155,14 @@ impl Node {
 
         let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
 
+        let groups_store = HackyGroupStore::new(op_store.store.clone()).await?;
+
         let mut node = Self {
             op_store: op_store.clone(),
             mailboxes,
             config,
             local_store: local_store.clone(),
+            groups_store,
             node_data,
             notification_tx,
             stream_tx,
@@ -375,7 +378,7 @@ impl Node {
         tracing::info!(members = ?initial_members.clone().renamed(), "new group created with members");
 
         // TODO: use filtered tips
-        let deps = self.local_store.group_state_tips().await?;
+        let deps = self.groups_store.heads().await?;
         self.author_operation(
             chat_id,
             DashAction::group_action(
@@ -436,8 +439,8 @@ impl Node {
 
         tracing::info!(member = ?member.clone().renamed(), "member added to existing group");
 
-        // TODO: filter
-        let deps = self.groups_store.group_state_tips().await?;
+        // TODO: use filtered tips
+        let deps = self.groups_store.heads().await?;
 
         let action = DashAction::group_action(
             chat_id,
@@ -890,7 +893,8 @@ impl Node {
             return Ok(false);
         }
 
-        let dependencies = self.local_store.group_state_tips().await?;
+        // TODO: use filtered tips
+        let dependencies = self.groups_store.heads().await?;
 
         self.author_operation(
             announcements_topic,

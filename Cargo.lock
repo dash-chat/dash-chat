@@ -1454,17 +1454,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "comcap"
-version = "0.1.0"
-dependencies = [
- "derive_more 1.0.0",
- "named-id",
- "postcard",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2024,7 +2013,6 @@ dependencies = [
  "blake3",
  "bytes",
  "chrono",
- "comcap",
  "dashchat-node",
  "derive_more 1.0.0",
  "ed25519-dalek 2.2.0",

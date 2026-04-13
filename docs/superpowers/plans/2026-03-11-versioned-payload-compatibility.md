@@ -49,7 +49,7 @@ mod tests {
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
     use serde::{Deserialize, Serialize};
 
-    use comcap::Compat;
+    use crate::compat::Compat;
 
     /// A simple bare V0 type for testing.
     #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -303,7 +303,7 @@ mod chat_message_compat_tests {
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
 
     use crate::chat::{ChatMessageContent, ChatMessageContentV0};
-    use comcap::Compat;
+    use crate::compat::Compat;
 
     #[test]
     fn chat_message_v0_roundtrip() {
@@ -339,7 +339,7 @@ mod chat_message_compat_tests {
 
     #[test]
     fn version_convert_v1_to_v0() {
-        use comcap::{VersionConvert, VersionConvertError};
+        use crate::compat::{VersionConvert, VersionConvertError};
 
         let v1 = ChatMessageContent::text("hello");
         let v0 = v1.to_version(0).unwrap();
@@ -348,7 +348,7 @@ mod chat_message_compat_tests {
 
     #[test]
     fn version_convert_v0_to_v1() {
-        use comcap::VersionConvert;
+        use crate::compat::VersionConvert;
 
         let v0 = ChatMessageContent::Unversioned(ChatMessageContentV0("hello".into()));
         let v1 = v0.to_version(1).unwrap();
@@ -358,7 +358,7 @@ mod chat_message_compat_tests {
 
     #[test]
     fn version_convert_empty_message_is_lossy() {
-        use comcap::{VersionConvert, VersionConvertError};
+        use crate::compat::{VersionConvert, VersionConvertError};
         use crate::chat::{ChatMessageV1, ChatMessageVersions};
 
         let v1_media_only = ChatMessageContent::Versioned(ChatMessageVersions::V1(ChatMessageV1 {
@@ -371,7 +371,7 @@ mod chat_message_compat_tests {
 
     #[test]
     fn version_convert_unknown_version() {
-        use comcap::{VersionConvert, VersionConvertError};
+        use crate::compat::{VersionConvert, VersionConvertError};
 
         let v0 = ChatMessageContent::Unversioned(ChatMessageContentV0("hello".into()));
         let result = v0.to_version(99);
@@ -402,7 +402,7 @@ use named_id::RenameNone;
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 
-use comcap::{
+use crate::compat::{
     Capability, Compat, VersionConvert, VersionConvertError,
 };
 
@@ -682,7 +682,7 @@ Add to `crates/dashchat-node/src/contact.rs` tests module:
 ```rust
 #[test]
 fn test_contact_with_capabilities_roundtrip() {
-    use comcap::{Capabilities, Capability};
+    use crate::compat::{Capabilities, Capability};
     use std::collections::BTreeMap;
 
     let pubkey = PublicKey::from_bytes(&[11; 32]).unwrap();
@@ -790,7 +790,7 @@ impl FromStr for QrCode {
 
 Add import at top of contact.rs:
 ```rust
-use comcap::Capabilities;
+use crate::compat::Capabilities;
 ```
 
 - [ ] **Step 4: Run tests**

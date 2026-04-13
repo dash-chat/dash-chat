@@ -10,9 +10,9 @@ use tokio::sync::Mutex;
 
 use crate::{
     mailbox::MailboxOperation,
-    // node::Orderer,
     payload::{Extensions, Payload},
     topic::{Topic, TopicId, TopicKind},
+    util::first,
     *,
 };
 
@@ -42,13 +42,11 @@ impl OpStore {
             pool.close().await;
             panic!("Database migration failed");
         }
-        let store = SqliteStore::from_pool(pool)?;
+        let store = SqliteStore::from_pool(pool);
 
         Ok(Self::new(store))
     }
-}
 
-impl OpStore {
     pub fn new(store: SqliteStore) -> Self {
         // let orderer = Arc::new(tokio::sync::RwLock::new(Orderer::new(
         //     store.clone(),
@@ -165,6 +163,20 @@ impl OpStore {
         drop(lock);
 
         Ok(operation)
+    }
+
+    pub async fn get_log_entries(
+        &self,
+        author: &DeviceId,
+        topic: &TopicId,
+        from: Option<u64>,
+        until: Option<u64>,
+    ) -> anyhow::Result<Option<Vec<Operation<Extensions>>>> {
+        Ok(self
+            .store
+            .get_log_entries(author, topic, from, until)
+            .await?
+            .map(|ops| ops.into_iter().map(first).collect()))
     }
 
     // // SAM: could be generic https://github.com/p2panda/p2panda/blob/65727c7fff64376f9d2367686c2ed5132ff7c4e0/p2panda-stream/src/ordering/partial/mod.rs#L83

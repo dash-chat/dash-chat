@@ -8,13 +8,15 @@ use std::{
 use chrono::{DateTime, Utc};
 use p2panda_auth::{Access};
 use p2panda_core::{Hash, Operation};
-use p2panda_store::{SqliteStore, groups::GroupsStore};
+use p2panda_store::{SqliteStore};
 use redb::*;
-use tokio::sync::Mutex;
+
+pub trait GroupsStore: p2panda_store::groups::GroupsStore<p2panda_core::Hash, p2panda_auth::group::GroupCrdtState<p2panda_core::PublicKey, Hash, p2panda_auth::processor::GroupsOperation<()>, ()>> {}
+impl<T> GroupsStore for T where T: p2panda_store::groups::GroupsStore<p2panda_core::Hash, p2panda_auth::group::GroupCrdtState<p2panda_core::PublicKey, Hash, p2panda_auth::processor::GroupsOperation<()>, ()>> {}
 
 use crate::{
     contact::InboxTopic,
-    node::DashResolver,
+    compat::Capabilities,
     topic::{AutoRegisteredTopic, TopicId},
     *,
 };
@@ -52,6 +54,7 @@ type GroupsProcessor = p2panda_auth::processor::GroupsProcessor<Extensions, Topi
 /// Until we have a persisted solution to group state, we store group state in-memory and dump
 /// to a file whenever it changes.
 /// XXX: this must be replaced ASAP!
+#[derive(Clone)]
 pub struct HackyGroupStore {
     store: SqliteStore,
 }

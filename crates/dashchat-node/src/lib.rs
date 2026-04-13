@@ -1,7 +1,8 @@
 #![feature(bool_to_result)]
 
 mod chat;
-mod compat;
+pub mod compat;
+mod compat_tests;
 mod contact;
 mod error;
 mod filesystem;
@@ -23,7 +24,7 @@ pub mod testing;
 use named_id::*;
 
 pub use chat::*;
-pub use comcap::*;
+pub use compat::*;
 pub use contact::{QrCode, ShareIntent};
 pub use error::{AddContactError, Error};
 pub use id::*;

@@ -3,7 +3,7 @@ use named_id::RenameNone;
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 
-use comcap::{Capability, Compat, VersionConvert, VersionConvertError};
+use crate::compat::{Capability, Compat, VersionConvert, VersionConvertError};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
 pub struct PhotoAttachment {
