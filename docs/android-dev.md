@@ -9,7 +9,7 @@ just android-dev
 Seeing the logs for the app running in a connected device:
 
 ```bash
-just android-dev
+just android-logcat
 ```
 
 Building and installing the app:
