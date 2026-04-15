@@ -12355,3 +12355,39 @@ dependencies = [
  "syn 2.0.117",
  "winnow 0.7.14",
 ]
+
+[[patch.unused]]
+name = "p2panda-auth"
+version = "0.5.2"
+
+[[patch.unused]]
+name = "p2panda-core"
+version = "0.5.2"
+
+[[patch.unused]]
+name = "p2panda-discovery"
+version = "0.5.2"
+
+[[patch.unused]]
+name = "p2panda-encryption"
+version = "0.5.2"
+
+[[patch.unused]]
+name = "p2panda-net"
+version = "0.5.2"
+
+[[patch.unused]]
+name = "p2panda-spaces"
+version = "0.5.2"
+
+[[patch.unused]]
+name = "p2panda-store"
+version = "0.5.2"
+
+[[patch.unused]]
+name = "p2panda-stream"
+version = "0.5.2"
+
+[[patch.unused]]
+name = "p2panda-sync"
+version = "0.5.2"

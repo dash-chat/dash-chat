@@ -8,6 +8,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use p2panda_auth::Access;
 use p2panda_core::{Hash, Operation, PublicKey};
+use p2panda_store::SqliteStore;
 use redb::*;
 use tokio::sync::Mutex;
 
@@ -42,22 +43,23 @@ impl NodeData {
     }
 }
 
-type MemStore = p2panda_auth::processor::Store<Operation<Extensions>>;
-
 /// Until we have a persisted solution to group state, we store group state in-memory and dump
 /// to a file whenever it changes.
 /// XXX: this must be replaced ASAP!
 #[derive(Clone)]
 pub struct HackyGroupStore {
-    groups: MemStore,
+    groups: SqliteStore<TopicId, Extensions>,
     file_path: PathBuf,
     file_write_mutex: Arc<Mutex<()>>,
 }
 
 impl HackyGroupStore {
-    pub async fn new(file_path: impl AsRef<Path>) -> anyhow::Result<Self> {
+    pub async fn new(
+        file_path: impl AsRef<Path>,
+        sqlite: SqliteStore<TopicId, Extensions>,
+    ) -> anyhow::Result<Self> {
         let mut this = Self {
-            groups: MemStore::default(),
+            groups: sqlite,
             file_path: file_path.as_ref().to_path_buf(),
             file_write_mutex: Arc::new(Mutex::new(())),
         };
@@ -112,13 +114,16 @@ pub struct LocalStore {
 }
 
 impl LocalStore {
-    pub async fn new(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+    pub async fn new(
+        path: impl AsRef<Path>,
+        sqlite: SqliteStore<TopicId, Extensions>,
+    ) -> anyhow::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let database = Database::create(&path)?;
         let groups_path = path.with_file_name("groups.cbor");
         let store = Self {
             db: Arc::new(database),
-            groups: HackyGroupStore::new(groups_path).await?,
+            groups: HackyGroupStore::new(groups_path, sqlite).await?,
         };
         store.ensure_initialized()?;
 
