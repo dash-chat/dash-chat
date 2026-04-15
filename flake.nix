@@ -67,32 +67,33 @@
             inputs'.tauri-driver.packages.tauri-driver
           ];
         in rec {
-
           devShells.default = let
             rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           in pkgs.mkShell {
             packages = [ rust ] ++ packages;
             inputsFrom =
               [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-            shellHook = lib.optionalString pkgs.stdenv.isLinux ''
-              export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
-                lib.makeLibraryPath tauriLibraries
-              }"
-              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
-                lib.makeLibraryPath tauriLibraries
-              }"
-            '';
+            # shellHook = lib.optionalString pkgs.stdenv.isLinux ''
+            #   export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
+            #     lib.makeLibraryPath tauriLibraries
+            #   }"
+            #   export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
+            #     lib.makeLibraryPath tauriLibraries
+            #   }"
+            # '';
           };
 
           devShells.androidDev = let
             rust = pkgs.rust-bin.fromRustupToolchainFile
               ./rust-toolchain.android.toml;
           in pkgs.mkShell {
-            packages = [ rust ] ++ packages;
-            inputsFrom = [
-              devShells.default
-              inputs'.tauri-plugin-holochain.devShells.holochainTauriAndroidDev
-            ];
+            packages = [ rust ];
+            inputsFrom =
+              [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
+          };
+
+          devShells.tauriAndroidDev = pkgs.mkShell {
+            inputsFrom = [ devShells.androidDev devShells.default ];
           };
 
           devShells.iosDev = let
