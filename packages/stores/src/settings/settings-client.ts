@@ -11,6 +11,7 @@ export interface Settings {
 export interface ISettingsClient {
 	getSettings(): Promise<Settings>;
 	setSetting(key: string, value: unknown): Promise<void>;
+	setLocalMailboxEnabled(enabled: boolean): Promise<void>;
 	onSettingsUpdated(handler: (settings: Settings) => void): UnsubscribeFunction;
 }
 
@@ -21,6 +22,10 @@ export class SettingsClient implements ISettingsClient {
 
 	setSetting(key: string, value: unknown): Promise<void> {
 		return invoke('set_setting', { key, value });
+	}
+
+	setLocalMailboxEnabled(enabled: boolean): Promise<void> {
+		return invoke('set_local_mailbox_enabled', { enabled });
 	}
 
 	onSettingsUpdated(handler: (settings: Settings) => void): UnsubscribeFunction {

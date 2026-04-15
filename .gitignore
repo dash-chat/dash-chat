@@ -1,6 +1,5 @@
 ## editors
 /.idea
-/.vscode
 
 ## system files
 .DS_Store
@@ -46,3 +45,7 @@ service-account-key.json
 *.redb
 .dbs
 .e2e-binaries
+signal-reference
+
+# Development environment log files
+*.log

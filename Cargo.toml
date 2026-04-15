@@ -11,6 +11,23 @@ resolver = "2"
 
 [workspace.dependencies]
 
+p2panda-auth = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
+  "processor",
+] }
+p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
+p2panda-encryption = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
+p2panda-discovery = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
+p2panda-net = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
+p2panda-store = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
+  "sqlite",
+] }
+p2panda-stream = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
+p2panda-sync = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
+p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
+  "test_utils",
+] }
+
+
 # [patch."https://github.com/maackle/p2panda.git"]
 # p2panda-auth = { path = "/home/michael/gitfork/p2panda/p2panda-auth" }
 # p2panda-core = { path = "/home/michael/gitfork/p2panda/p2panda-core" }

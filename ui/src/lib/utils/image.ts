@@ -1,7 +1,7 @@
 export function resizeAndExport(
 	img: HTMLImageElement,
-	maxWidth: number  =300,
-	maxHeight: number =300,
+	maxWidth: number = 300,
+	maxHeight: number = 300,
 ) {
 	let width = img.width;
 	let height = img.height;
@@ -28,4 +28,3 @@ export function resizeAndExport(
 	// return the .toDataURL of the temp canvas
 	return canvas.toDataURL();
 }
-

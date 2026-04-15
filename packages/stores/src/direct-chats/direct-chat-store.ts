@@ -9,7 +9,7 @@ import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import { ChatReaction, ChatSummary, MessageContent, Payload } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { toPromise } from '../utils/to-promise';
-import { DirectChatClient } from './direct-chat-client';
+import { type IDirectChatClient } from './direct-chat-client';
 
 export interface Message {
 	hash: string;
@@ -24,7 +24,7 @@ export class DirectChatStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
-		public client: DirectChatClient,
+		public client: IDirectChatClient,
 		public peer: AgentId,
 	) {}
 

@@ -1,11 +1,11 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { getContext } from 'svelte';
 	import type { ContactsStore, Error } from 'dash-chat-stores';
-	import PhotoPicker from './PhotoPicker.svelte';
+	import AvatarPicker from './AvatarPicker.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
+	import { isIos } from '$lib/utils/environment';
 	import {
 		Page,
 		Button,
@@ -19,6 +19,7 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCamera, mdiAccount } from '@mdi/js';
+	import Avatar from './Avatar.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let name = $state<string | undefined>(undefined);
@@ -64,14 +65,16 @@
 	const theme = $derived(useTheme());
 	const pickerHasChanges = $derived(pickerAvatar !== avatar);
 	let textEditorOpen = $state(false);
+
+	const avatarSize = 100;
 </script>
 
 <Page>
 	{#if showPicker}
 		<div class="column" style="flex: 1; overflow-y: auto">
-			<PhotoPicker
+			<AvatarPicker
 				bind:avatar={pickerAvatar}
-				bind:isTextEditorOpen={textEditorOpen}
+				bind:inModalState={textEditorOpen}
 				onClose={closePicker}
 				onSave={selectAvatar}
 				saveLabel={m.save()}
@@ -79,7 +82,7 @@
 			/>
 		</div>
 
-		{#if !textEditorOpen && theme === 'material'}
+		{#if !textEditorOpen && !isIos}
 			<Button
 				rounded
 				tonal
@@ -95,16 +98,11 @@
 			title={m.setProfile()}
 			titleClass="opacity1"
 			transparent={true}
-			rightClass={name === undefined || name === ''
-				? 'ios-right-disabled'
-				: ''}
+			rightClass={name === undefined || name === '' ? 'ios-right-disabled' : ''}
 		>
 			{#snippet right()}
-				{#if theme === 'ios'}
-					<Link
-						onClick={setProfile}
-						data-testid="create-profile-create-link"
-					>
+				{#if isIos}
+					<Link onClick={setProfile} data-testid="create-profile-create-link">
 						{m.create()}
 					</Link>
 				{/if}
@@ -121,31 +119,31 @@
 				<button
 					type="button"
 					class="avatar-btn"
-					style="position: relative; align-self: center; cursor: pointer"
+					style="height: 100%; position: relative; align-self: center; cursor: pointer"
 					onclick={openPicker}
 				>
 					{#if avatar}
-						<wa-avatar
+						<Avatar
 							image={avatar}
 							alt="Avatar"
-							shape="circle"
-							style="--size: 56px"
-						></wa-avatar>
+							style="--size: {avatarSize}px"
+						/>
 					{:else}
 						<Button
 							rounded
-							style="border-radius: 50%; height: 56px; width: 56px"
+							style="border-radius: 50%; height: {avatarSize}px; width: {avatarSize}px"
 						>
 							<wa-icon
 								src={wrapPathInSvg(mdiAccount)}
 								label={m.addAvatarImage()}
+								style="font-size: {avatarSize * 0.6}px;"
 							></wa-icon>
 						</Button>
 					{/if}
 					<Card
 						class="icon-only-card"
 						raised
-						style="position: absolute; pointer-events: none; bottom: -6px; right: -6px; z-index: 10"
+						style="position: absolute; pointer-events: none; bottom: 0px; right: -6px; z-index: 10;"
 					>
 						<wa-icon src={wrapPathInSvg(mdiCamera)}></wa-icon>
 					</Card>
@@ -154,12 +152,14 @@
 				<List inset={isWideScreen.value || theme === 'ios'} strongIos>
 					<ListInput
 						type="text"
+						value={name ?? ''}
 						onInput={e => (name = e.target.value)}
 						placeholder={m.nameMandatory()}
 						data-testid="create-profile-name"
 					></ListInput>
 					<ListInput
 						type="text"
+						value={surname ?? ''}
 						onInput={e => (surname = e.target.value)}
 						placeholder={m.surnameOptional()}
 						data-testid="create-profile-surname"
@@ -168,7 +168,7 @@
 			</div>
 		</div>
 
-		{#if theme === 'material'}
+		{#if !isIos}
 			<Button
 				onClick={setProfile}
 				class="fixed-action-btn"

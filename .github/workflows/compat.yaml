@@ -13,11 +13,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: [HEAD]
+        version: [HEAD, v0.10.3]
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history to check out old tags
+          fetch-tags: true
+
+      - name: Fetch all tags
+        run: git fetch --tags --force
 
       - name: Install system dependencies
         run: |

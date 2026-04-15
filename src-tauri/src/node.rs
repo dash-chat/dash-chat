@@ -29,11 +29,19 @@ pub async fn build_node(
         }
     }
 
-    // Slow path: create the node (no lock held across await)
-    let config = NodeConfig::default();
+    /// Slow path: create the node (no lock held across await)
+
+    let config = if cfg!(feature = "e2e-tests") {
+        let mut config = dashchat_node::NodeConfig::default();
+        config.mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
+        config.mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
+        config
+    } else {
+        dashchat_node::NodeConfig::default()
+    };
     let node = Node::new(data_path.clone(), config, notification_tx).await?;
 
-    let mailbox_url = crate::mailbox::mailbox_url();
+    let mailbox_url = crate::mailbox::default_mailbox_url();
     let mailbox_client =
         mailbox_client::toy::ToyMailboxClient::new(DASHCHAT_MAILBOX_ID.to_string(), mailbox_url);
     node.mailboxes.register(mailbox_client).await;

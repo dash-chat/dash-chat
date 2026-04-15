@@ -14,7 +14,7 @@ pub mod server;
 /// 1. `MAILBOX_URL` runtime env var (E2E tests)
 /// 2. `MAILBOX_URL` compile-time env var (dev builds via mprocs / start-dev.sh)
 /// 3. Production URL
-pub fn mailbox_url() -> String {
+pub fn default_mailbox_url() -> String {
     if let Ok(url) = std::env::var("MAILBOX_URL") {
         if !(url.starts_with("http://") || url.starts_with("https://")) {
             log::error!(

@@ -4,7 +4,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiContentCopy } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+	import { writeText } from '$lib/utils/clipboard';
 	import { showToast } from '$lib/utils/toasts';
 	import { type SettingsStore } from 'dash-chat-stores';
 	import {
@@ -16,6 +16,7 @@
 		Button,
 		useTheme,
 	} from 'konsta/svelte';
+	import { isIos } from '$lib/utils/environment';
 
 	let {
 		code,
@@ -62,17 +63,14 @@
 		centerTitle={theme === 'ios'}
 		titleClass="opacity1"
 		transparent={true}
+		title={m.color()}
 	>
 		{#snippet left()}
 			<NavbarBackLink data-testid="color-picker-back" onClick={onClose} />
 		{/snippet}
 
-		{#snippet title()}
-			{m.color()}
-		{/snippet}
-
 		{#snippet right()}
-			{#if theme === 'ios'}
+			{#if isIos}
 				<Link onClick={save} data-testid="color-picker-done">
 					{m.done()}
 				</Link>
@@ -156,7 +154,7 @@
 		</div>
 	</div>
 
-	{#if theme === 'material'}
+	{#if !isIos}
 		<Button
 			rounded
 			inline

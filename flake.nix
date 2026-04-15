@@ -49,8 +49,6 @@
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
 
-          rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-
           tauriLibraries = with pkgs; [
             webkitgtk_4_1
             gtk3
@@ -63,16 +61,26 @@
             libsoup_3
             libayatana-appindicator
           ];
+          packages = [
+            pkgs.mprocs
+            pkgs.pnpm
+            inputs'.tauri-driver.packages.tauri-driver
+          ];
         in rec {
 
-          devShells.default = pkgs.mkShell {
+          devShells.default = let
+            rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          in pkgs.mkShell {
+            packages = [ rust ] ++ packages;
             inputsFrom =
               [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-            packages = [ pkgs.mprocs pkgs.pnpm rust inputs'.tauri-driver.packages.tauri-driver ];
             shellHook = lib.optionalString pkgs.stdenv.isLinux ''
-              export LD_LIBRARY_PATH=${
+              export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
                 lib.makeLibraryPath tauriLibraries
-              }:$LD_LIBRARY_PATH
+              }"
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
+                lib.makeLibraryPath tauriLibraries
+              }"
             '';
           };
 
@@ -80,16 +88,16 @@
             rust = pkgs.rust-bin.fromRustupToolchainFile
               ./rust-toolchain.android.toml;
           in pkgs.mkShell {
+            packages = [ rust ] ++ packages;
             inputsFrom = [
               devShells.default
               inputs'.tauri-plugin-holochain.devShells.holochainTauriAndroidDev
             ];
-            packages = [ rust ];
           };
 
           devShells.iosDev = let
-            rust = pkgs.rust-bin.fromRustupToolchainFile
-              ./rust-toolchain.ios.toml;
+            rust =
+              pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.ios.toml;
           in pkgs.mkShell {
             inputsFrom = [ devShells.default ];
             packages = [ rust ]

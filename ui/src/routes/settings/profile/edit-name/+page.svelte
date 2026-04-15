@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import type { ContactsStore, Error } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -19,6 +18,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
+	import { isIos } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -30,7 +30,7 @@
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	let initialized = false;
 	$effect(() => {
-		$myProfile.then((profile) => {
+		$myProfile.then(profile => {
 			if (!initialized) {
 				initialized = true;
 				name = profile?.name || '';
@@ -83,11 +83,14 @@
 				: ''}
 		>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => goto('/settings/profile')} data-testid="edit-name-back" />
+				<NavbarBackLink
+					onClick={() => goto('/settings/profile')}
+					data-testid="edit-name-back"
+				/>
 			{/snippet}
 
 			{#snippet right()}
-				{#if theme === 'ios'}
+				{#if isIos}
 					<Link onClick={save} data-testid="edit-name-save-link">
 						{m.save()}
 					</Link>
@@ -119,7 +122,7 @@
 			</List>
 		</div>
 
-		{#if theme === 'material'}
+		{#if !isIos}
 			<Button
 				onClick={save}
 				class="fixed-action-btn"

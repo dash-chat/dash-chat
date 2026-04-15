@@ -1,13 +1,17 @@
+import { isMobile } from '$lib/utils/environment';
+
 const mediaQuery =
 	typeof window !== 'undefined'
 		? window.matchMedia('(min-width: 768px) and (min-height: 500px)')
 		: undefined;
 
-let wide = $state(mediaQuery?.matches ?? false);
+let wide = $state(isMobile ? (mediaQuery?.matches ?? false) : true);
 
-mediaQuery?.addEventListener('change', (e) => {
-	wide = e.matches;
-});
+if (isMobile) {
+	mediaQuery?.addEventListener('change', e => {
+		wide = e.matches;
+	});
+}
 
 if (typeof window !== 'undefined') {
 	window.addEventListener('set-wide-screen', ((e: CustomEvent<boolean>) => {

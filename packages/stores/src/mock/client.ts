@@ -58,10 +58,19 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 		return operations.map(([k, v]) => v);
 	}
 
-	async create<T>(topicId: TopicId, body: T) {
-		const log = await this.getLog(topicId, this._myPubKey);
-		const descendantOperations = log.sort(
-			(o1, o2) => o2.header.timestamp - o1.header.timestamp,
+	async create<T>(topicId: TopicId, body: T, timestamp?: number) {
+		this.createSync(topicId, body, timestamp);
+	}
+
+	/** Synchronous version of create — used by seedDemoData to write all data before stores read. */
+	createSync<T>(topicId: TopicId, body: T, timestamp?: number) {
+		const logKey = `${topicId}/${this._myPubKey}`;
+		const items = this.getItems();
+		const operations: SimplifiedOperation<any>[] = Object.entries(items)
+			.filter(([key]) => key.startsWith(logKey))
+			.map(([, v]) => JSON.parse(v));
+		const descendantOperations = operations.sort(
+			(o1, o2) => o2.header.seq_num - o1.header.seq_num,
 		);
 		const lastOperation = descendantOperations[0];
 
@@ -70,7 +79,7 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 			previous: [],
 			public_key: this._myPubKey,
 			seq_num: lastOperation ? lastOperation.header.seq_num + 1 : 0,
-			timestamp: Date.now() * 1000,
+			timestamp: timestamp ?? Math.floor(Date.now() / 1000),
 			topic_id: topicId,
 		};
 
@@ -82,8 +91,8 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 			header,
 		};
 
-		const logKey = `${topicId}/${this._myPubKey}/${header.seq_num}`;
-		localStorage.setItem(logKey, JSON.stringify(operation));
+		const storageKey = `${topicId}/${this._myPubKey}/${header.seq_num}`;
+		localStorage.setItem(storageKey, JSON.stringify(operation));
 
 		const authorsLogKey = `${topicId}/authors/${this._myPubKey}`;
 		localStorage.setItem(authorsLogKey, this._myPubKey);

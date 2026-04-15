@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 	import { m } from '$lib/paraglide/messages.js';
@@ -28,6 +27,7 @@
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -62,7 +62,10 @@
 	<Navbar transparent={true} titleClass="opacity1 w-full" centerTitle={false}>
 		{#snippet left()}
 			{#if !isWideScreen.value}
-				<NavbarBackLink onClick={() => goto('/')}  data-testid="group-chat-back" />
+				<NavbarBackLink
+					onClick={() => goto('/')}
+					data-testid="group-chat-back"
+				/>
 			{/if}
 		{/snippet}
 		{#snippet title()}
@@ -73,19 +76,18 @@
 					class="gap-2"
 					style="display: flex; justify-content: start; align-items: center;"
 				>
-					<wa-avatar
+					<Avatar
 						image={info.avatar}
 						initials={info.name.slice(0, 2)}
 						style="--size: 2.5rem"
-					>
-					</wa-avatar>
+					/>
 					<span>{info.name}</span>
 				</Link>
 			{/await}
 		{/snippet}
 	</Navbar>
 
-	<div class={`column ${theme === 'ios'? 'pb-16':''}`}>
+	<div class={`column ${theme === 'ios' ? 'pb-16' : ''}`}>
 		{#await $allMembers then members}
 			<div class="center-in-desktop" style="flex:1">
 				<div class="column m-2 gap-2">
@@ -120,15 +122,14 @@
 									</Card>
 								{:else}
 									<div class="row gap-2 m-0">
-										<wa-avatar
+										<Avatar
 											image={members[message.author].profile?.avatar}
 											initials={members[message.author].profile?.name.slice(
 												0,
 												2,
 											)}
 											style="--size: 2.5rem"
-										>
-										</wa-avatar>
+										/>
 										<Card raised class="message others-message">
 											<div class="row gap-2" style="align-items: end">
 												<span>{message.content}</span>
