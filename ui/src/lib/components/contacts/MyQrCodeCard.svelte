@@ -24,7 +24,7 @@
 	}
 </script>
 
-<Card class="my-code-card p-2.5 pb-2" style="background-color: {color}">
+<Card class="qr-card my-code-card p-2.5 pb-2" style="background-color: {color}">
 	<div class="column" style="align-items: center">
 		<div
 			class="column w-full p-3"
