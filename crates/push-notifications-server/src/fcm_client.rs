@@ -76,25 +76,20 @@ impl Fcm for RealFcmClient {
             "title".to_string(),
             Value::String(notification.title.clone()),
         );
-        map.insert(
-            "body".to_string(),
-            Value::String(notification.body.clone()),
-        );
+        map.insert("body".to_string(), Value::String(notification.body.clone()));
         message.data = Some(map.clone());
 
         let mut apns_config = ApnsConfig::default();
         let mut alert_data = Map::new();
         alert_data.insert(
             "title".to_string(),
-            Value::String(notification.title.clone()),
+            Value::String(String::from("You have a new message.")),
         );
-        alert_data.insert(
-            "body".to_string(),
-            Value::String(notification.body.clone()),
-        );
+        // alert_data.insert("body".to_string(), Value::String(notification.body.clone()));
         let mut aps_data = Map::new();
         aps_data.insert("alert".to_string(), Value::Object(alert_data));
-        aps_data.insert("mutable-content".to_string(), Value::Number(1.into()));
+        // Uncomment this when we enable
+        // aps_data.insert("mutable-content".to_string(), Value::Number(1.into()));
         let mut apns_data = HashMap::new();
         apns_data.insert("aps".to_string(), Value::Object(aps_data));
         apns_config.payload = Some(apns_data);

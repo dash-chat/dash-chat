@@ -3,7 +3,7 @@ use push_notifications_server::client::PushNotificationsClient;
 use push_notifications_server::types::{PublicKey, PushNotification};
 use tauri::{AppHandle, Manager};
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 pub mod mobile;
 
 const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str =

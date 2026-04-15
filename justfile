@@ -1,5 +1,8 @@
 alias d := dev
 
+# push notifications
+mod push 'scripts/push.just'
+
 # start two dash chat instances connected to a local mailbox server
 dev:
     pnpm exec mprocs

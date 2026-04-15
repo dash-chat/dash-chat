@@ -1,6 +1,5 @@
-#[cfg(feature = "cassandra")]
-pub mod cassandra;
 pub mod mem;
+pub mod redb;
 
 use crate::types::{FcmToken, PublicKey};
 

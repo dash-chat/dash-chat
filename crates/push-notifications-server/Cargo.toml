@@ -25,7 +25,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 mockall = { version = "0.13", optional = true }
-scylla = { version = "1", optional = true }
+redb = "3.1"
 
 [dev-dependencies]
 axum-test = "18"
@@ -34,7 +34,4 @@ pretty_assertions = "1.4.1"
 push-notifications-server = { path = ".", features = ["test-utils"] }
 
 [features]
-default = ["cassandra"]
-
-cassandra = ["dep:scylla"]
 test-utils = ["dep:mockall"]

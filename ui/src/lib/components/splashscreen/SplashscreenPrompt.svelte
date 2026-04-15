@@ -2,8 +2,6 @@
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import CreateProfile from '$lib/components/profiles/CreateProfile.svelte';
-	import OnboardingCarousel from './OnboardingCarousel.svelte';
-	import { splashscreenDismissed } from './utils';
 	import type { ContactsStore } from 'dash-chat-stores';
 	import { Preloader } from 'konsta/svelte';
 
@@ -22,8 +20,6 @@
 {:then myProfile}
 	{#if myProfile}
 		<slot></slot>
-	{:else if !$splashscreenDismissed}
-		<OnboardingCarousel />
 	{:else}
 		<CreateProfile></CreateProfile>
 	{/if}

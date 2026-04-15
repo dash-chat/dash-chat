@@ -6,10 +6,8 @@ use clap::Parser;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use push_notifications_server::driver::mem::MemDb;
+use push_notifications_server::driver::redb::RedbDriver;
 use push_notifications_server::fcm_client::RealFcmClient;
-
-#[cfg(feature = "cassandra")]
-use push_notifications_server::driver::cassandra::Cassandra;
 
 use push_notifications_server::driver::Driver;
 
@@ -23,12 +21,14 @@ struct Cli {
     /// Path to the Google service account key JSON file
     #[arg(long)]
     service_account_key: PathBuf,
-}
 
-#[allow(unused)]
-enum DriverType {
-    Mem,
-    Cassandra,
+    /// Path to the redb database file
+    #[arg(long, conflicts_with = "mem")]
+    db_path: Option<PathBuf>,
+
+    /// Use an in-memory database instead of redb
+    #[arg(long, conflicts_with = "db_path")]
+    mem: bool,
 }
 
 #[tokio::main]
@@ -46,22 +46,16 @@ async fn main() -> Result<()> {
         cli.service_account_key.display()
     );
 
-    let driver_type = DriverType::Mem;
-
-    let db: Arc<dyn Driver> = match driver_type {
-        DriverType::Mem => Arc::new(MemDb::new()),
-        #[cfg(feature = "cassandra")]
-        DriverType::Cassandra => {
-            let cassandra_url =
-                std::env::var("CASSANDRA_URL").unwrap_or_else(|_| "127.0.0.1:9042".to_string());
-
-            tracing::info!("connecting to Cassandra at {cassandra_url}");
-            Arc::new(Cassandra::new(&cassandra_url).await?)
-        }
-        #[cfg(not(feature = "cassandra"))]
-        DriverType::Cassandra => {
-            anyhow::bail!("cassandra feature is not enabled");
-        }
+    let db: Arc<dyn Driver> = if cli.mem {
+        tracing::info!("using in-memory database");
+        Arc::new(MemDb::new())
+    } else {
+        let db_path = cli
+            .db_path
+            .as_deref()
+            .context("--db-path is required when --mem is not set")?;
+        tracing::info!("opening database at {}", db_path.display());
+        Arc::new(RedbDriver::new(db_path)?)
     };
 
     let addr = &cli.addr;

@@ -5,7 +5,7 @@
 	import AvatarPicker from './AvatarPicker.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
-	import { isIos } from '$lib/utils/environment';
+	import { isIos, isMobile } from '$lib/utils/environment';
 	import {
 		Page,
 		Button,
@@ -42,6 +42,21 @@
 		showPicker = false;
 	}
 
+	async function requestNotificationPermission() {
+		if (!isMobile) return;
+		try {
+			const { isPermissionGranted, requestPermission } = await import(
+				'@tauri-apps/plugin-notification'
+			);
+			const granted = await isPermissionGranted();
+			if (!granted) {
+				await requestPermission();
+			}
+		} catch (e) {
+			console.error('Failed to setup push notifications:', e);
+		}
+	}
+
 	async function setProfile() {
 		try {
 			await contactsStore.client.setProfile({
@@ -50,6 +65,7 @@
 				avatar,
 				about: undefined,
 			});
+			await requestNotificationPermission();
 		} catch (e) {
 			console.error(e);
 			const error = e as Error;

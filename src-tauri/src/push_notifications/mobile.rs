@@ -36,7 +36,6 @@ async fn register_fcm_token(handle: AppHandle, token: String) -> anyhow::Result<
 
     let client = PushNotificationsClient::new(super::push_notifications_url());
 
-    let mut retry_count = 0;
     loop {
         match client
             .register_fcm_token(public_key.clone(), FcmToken::from(token.clone()))
@@ -46,10 +45,6 @@ async fn register_fcm_token(handle: AppHandle, token: String) -> anyhow::Result<
             Err(err) => {
                 log::warn!("register_fcm_token failed: {err:?}. Retrying in 1000ms.");
                 tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-                retry_count += 1;
-                if retry_count == 60 {
-                    return Err(anyhow::anyhow!("Timeout. Last error: {err:?}"));
-                }
             }
         }
     }
