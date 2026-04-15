@@ -33,7 +33,7 @@ jobs:
           ref: develop
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@master
+        uses: pnpm/action-setup@v6
         with:
           version: 10.33.0
           cache: true
