@@ -37,7 +37,7 @@
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
-	import { isIos, isMac, isTauriEnv } from '$lib/utils/environment';
+	import { isIos, isMac, isMobile, isTauriEnv } from '$lib/utils/environment';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
@@ -51,7 +51,7 @@
 	let { children } = $props();
 
 	const isPreview = !isTauriEnv();
-	const showToolbar = isPreview || import.meta.env.DEV;
+	const showToolbar = (isPreview || import.meta.env.DEV) && !isMobile;
 
 	// --- Store initialization ---
 	let settingsStore: SettingsStore;
