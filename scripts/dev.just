@@ -1,6 +1,7 @@
 set working-directory := '..'
 
 # start two dash chat instances connected to a local mailbox server
+[default]
 dev:
     pnpm exec mprocs
 
