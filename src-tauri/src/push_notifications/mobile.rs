@@ -144,11 +144,20 @@ pub fn receive_push_notification(
             return None;
         };
 
-        // Resolve the sender's profile name
-        let sender_name = node
-            .resolve_device_profile(sender_device_id)
-            .await
-            .map(|(_, profile)| profile.name);
+        // Resolve the sender's profile name via the contacts table
+        let sender_name = if let Some(agent_id) = node
+            .lookup_contact(sender_device_id)
+            .ok()
+            .flatten()
+        {
+            node.get_profile_for_agent(agent_id)
+                .await
+                .ok()
+                .flatten()
+                .map(|profile| profile.name)
+        } else {
+            None
+        };
 
         let topic_id = header.extensions.topic;
 
