@@ -39,9 +39,7 @@ android-dev:
 
 # build and install the android app via adb
 android-install:
-    nix develop git+file:.#androidDev --command \
-        pnpm tauri android build --apk && \
-        adb install src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+    nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build --apk && adb install src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"
 
 # uninstall the android app via adb
 android-uninstall:
