@@ -27,8 +27,5 @@
 	"type": "module",
 	"engines": {
 		"pnpm": ">=9.0.0"
-	},
-	"pnpm": {
-		"onlyBuiltDependencies": ["*"]
 	}
 }

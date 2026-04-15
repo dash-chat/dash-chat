@@ -3,8 +3,7 @@ packages:
   - packages/*
   - e2e-tests
 
-onlyBuiltDependencies:
-  - esbuild
+neverBuiltDependencies: []
 
 patchedDependencies:
   konsta@5.0.6: patches/konsta@5.0.6.patch
