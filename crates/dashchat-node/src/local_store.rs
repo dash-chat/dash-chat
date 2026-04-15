@@ -68,7 +68,7 @@ impl HackyGroupStore {
     }
 
     pub async fn heads(&self) -> anyhow::Result<Vec<Hash>> {
-        Ok(self.groups.get_state().await?.crdt.heads())
+        Ok(self.groups.get_heads().await?)
     }
 
     pub async fn process(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
