@@ -24,11 +24,11 @@ jobs:
 
       - name: Review Translations
         uses: anthropics/claude-code-action@v1
+        timeout-minutes: 15
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: "claude"
           base_branch: develop
-          timeout-minutes: 15
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
@@ -48,7 +48,7 @@ jobs:
             - Minor punctuation differences that are normal for the target language
             - Keys that are intentionally the same as English (like "QR", "Bitcoin", "Dash Chat")
 
-            If everything looks good, approve the PR with a short comment. If there are issues, leave a detailed review comment explaining what needs fixing.
+            If everything looks good, comment on the PR with a short comment. If there are issues, leave a detailed review comment explaining what needs fixing.
 
             Before posting your review comment, check for previous comments from Claude on this PR,
             and using the GitHub GraphQL API, modify them to be hidden with the classifier "OUTDATED".
