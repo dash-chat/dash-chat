@@ -3,7 +3,5 @@ packages:
   - packages/*
   - e2e-tests
 
-neverBuiltDependencies: []
-
 patchedDependencies:
   konsta@5.0.6: patches/konsta@5.0.6.patch
