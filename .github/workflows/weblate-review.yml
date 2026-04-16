@@ -1,0 +1,59 @@
+name: Weblate Translation Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - "ui/messages/*.json"
+
+jobs:
+  review-translations:
+    if: github.event.pull_request.user.login == 'weblate'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Review Translations
+        uses: anthropics/claude-code-action@v1
+        timeout-minutes: 15
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "claude"
+          base_branch: develop
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this Weblate translation PR. Use `gh pr diff` to see the changes.
+
+            For each changed translation file, compare against `ui/messages/en.json` (the source strings) and check for:
+
+            1. **Completeness**: Are all keys from en.json present? Flag any missing keys.
+            2. **Placeholder consistency**: Ensure `{{variable}}` placeholders match the English source exactly (same names, same count). Missing or extra placeholders will break the UI.
+            3. **Plural forms**: Keys like `*_one` / `*_other` must both be present if the English source has them.
+            4. **Formatting issues**: Untranslated strings left as English (except proper nouns like "Dash Chat", "QR", "Bitcoin"), broken JSON syntax, trailing/leading whitespace issues, or Markdown (`**bold**`) that was removed or malformed.
+            5. **Obvious mistranslations**: Flag anything that looks clearly wrong (e.g. "Delete" translated as "Save"), but note you're not a professional translator — defer to the Weblate community on nuance.
+
+            Do NOT flag:
+            - Stylistic translation choices (formal vs informal, synonym preferences)
+            - Minor punctuation differences that are normal for the target language
+            - Keys that are intentionally the same as English (like "QR", "Bitcoin", "Dash Chat")
+
+            If everything looks good, comment on the PR with a short comment. If there are issues, leave a detailed review comment explaining what needs fixing.
+
+            Before posting your review comment, check for previous comments from Claude on this PR,
+            and using the GitHub GraphQL API, modify them to be hidden with the classifier "OUTDATED".
+            If you need a reference, check https://docs.github.com/en/graphql/reference/mutations#minimizecomment
+
+            Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
+
+          claude_args: "--model claude-sonnet-4-6 --allowed-tools Bash(gh api:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read"
