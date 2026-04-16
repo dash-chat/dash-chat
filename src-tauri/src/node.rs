@@ -30,7 +30,6 @@ pub async fn build_node(
     }
 
     /// Slow path: create the node (no lock held across await)
-
     let config = if cfg!(feature = "e2e-tests") {
         let mut config = dashchat_node::NodeConfig::default();
         config.mailboxes_config.active_interval = std::time::Duration::from_millis(1000);

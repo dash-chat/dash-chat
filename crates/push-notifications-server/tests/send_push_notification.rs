@@ -21,10 +21,7 @@ async fn send_push_notification() {
     };
 
     let mut mock_fcm = MockFcm::new();
-    mock_fcm
-        .expect_validate()
-        .once()
-        .returning(|| Ok(()));
+    mock_fcm.expect_validate().once().returning(|| Ok(()));
     mock_fcm
         .expect_send_push_notification()
         .with(eq("test-fcm-token"), always())
