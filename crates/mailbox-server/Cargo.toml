@@ -41,3 +41,8 @@ optional = true
 mailbox-server = { path = ".", features = ["test_utils"] }
 futures = "0.3"
 serial_test = "3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[[bench]]
+name = "concurrent_users"
+harness = false
