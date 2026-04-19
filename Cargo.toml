@@ -10,7 +10,6 @@ members = ["crates/*", "src-tauri"]
 resolver = "2"
 
 [workspace.dependencies]
-
 p2panda-auth = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
   "processor",
 ] }

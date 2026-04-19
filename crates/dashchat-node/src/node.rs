@@ -78,7 +78,7 @@ pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
 pub type Orderer<S> =
     PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
 
-pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
+pub type NodeOpStore = OpStore<SqliteStore>;
 // pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
 
 #[derive(Clone)]

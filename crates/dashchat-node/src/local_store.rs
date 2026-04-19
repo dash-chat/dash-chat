@@ -48,16 +48,13 @@ impl NodeData {
 /// XXX: this must be replaced ASAP!
 #[derive(Clone)]
 pub struct HackyGroupStore {
-    groups: SqliteStore<TopicId, Extensions>,
+    groups: SqliteStore,
     file_path: PathBuf,
     file_write_mutex: Arc<Mutex<()>>,
 }
 
 impl HackyGroupStore {
-    pub async fn new(
-        file_path: impl AsRef<Path>,
-        sqlite: SqliteStore<TopicId, Extensions>,
-    ) -> anyhow::Result<Self> {
+    pub async fn new(file_path: impl AsRef<Path>, sqlite: SqliteStore) -> anyhow::Result<Self> {
         let mut this = Self {
             groups: sqlite,
             file_path: file_path.as_ref().to_path_buf(),
@@ -114,10 +111,7 @@ pub struct LocalStore {
 }
 
 impl LocalStore {
-    pub async fn new(
-        path: impl AsRef<Path>,
-        sqlite: SqliteStore<TopicId, Extensions>,
-    ) -> anyhow::Result<Self> {
+    pub async fn new(path: impl AsRef<Path>, sqlite: SqliteStore) -> anyhow::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let database = Database::create(&path)?;
         let groups_path = path.with_file_name("groups.cbor");

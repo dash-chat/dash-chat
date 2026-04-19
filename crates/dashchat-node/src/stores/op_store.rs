@@ -5,8 +5,7 @@ use std::{
 };
 
 use p2panda_core::{Body, Hash, Operation, PublicKey, RawOperation};
-use p2panda_store::{LogStore, MemoryStore, OperationStore, SqliteStore};
-use p2panda_stream::operation::IngestResult;
+use p2panda_store::{SqliteStore, operations::OperationStore};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -38,7 +37,7 @@ impl OpStore<MemoryStore<TopicId, Extensions>> {
     }
 }
 
-impl OpStore<SqliteStore<TopicId, Extensions>> {
+impl OpStore<SqliteStore> {
     pub async fn new_sqlite(database_file_path: PathBuf) -> anyhow::Result<Self> {
         let url = format!("sqlite://{}", database_file_path.to_string_lossy());
         p2panda_store::sqlite::store::create_database(&url).await?;
@@ -234,7 +233,7 @@ where
     }
 }
 
-impl OpStore<SqliteStore<TopicId, Extensions>> {
+impl OpStore<SqliteStore> {
     pub fn report<'a>(&self, _topics: impl IntoIterator<Item = &'a TopicId>) -> String {
         tracing::warn!("report() not implemented for SqliteStore");
         format!("report() not implemented for SqliteStore")
