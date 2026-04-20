@@ -6486,6 +6486,8 @@ name = "p2panda-store"
 version = "0.5.2"
 dependencies = [
  "p2panda-core",
+ "rand 0.10.1",
+ "rand_chacha 0.10.0",
  "serde",
  "sqlx",
  "thiserror 2.0.18",

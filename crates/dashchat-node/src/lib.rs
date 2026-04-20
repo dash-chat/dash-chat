@@ -27,6 +27,7 @@ pub use error::{AddContactError, Error};
 pub use id::*;
 pub use node::{LocalStore, Node, NodeConfig, Notification};
 pub use p2panda_core::PrivateKey;
+use p2panda_core::Timestamp;
 pub use p2panda_spaces::ActorId;
 pub use payload::*;
 pub use topic::Topic;
@@ -50,12 +51,4 @@ pub trait AsBody: Cbor {
     fn try_from_body(body: &p2panda_core::Body) -> Result<Self, p2panda_core::cbor::DecodeError> {
         Self::from_bytes(body.to_bytes().as_slice())
     }
-}
-
-pub fn timestamp_now() -> u64 {
-    use std::time::SystemTime;
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("time from operation system")
-        .as_secs()
 }

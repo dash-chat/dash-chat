@@ -4,24 +4,21 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use p2panda_core::{Body, Hash, Operation, PublicKey, RawOperation};
-use p2panda_store::{SqliteStore, operations::OperationStore};
+use p2panda_core::{Body, Hash, Operation};
+use p2panda_store::{SqliteStore, logs::LogStore};
+
 use tokio::sync::Mutex;
 
 use crate::{
     mailbox::MailboxOperation,
     node::Orderer,
-    payload::{Extensions, Payload},
+    payload::Extensions,
     topic::{Topic, TopicId, TopicKind},
     *,
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::DerefMut)]
-pub struct OpStore<S>
-where
-    S: OperationStore<TopicId, Extensions> + LogStore<TopicId, Extensions>,
-    S: Send + Sync,
-{
+pub struct OpStore<S = SqliteStore> {
     #[deref]
     #[deref_mut]
     pub(crate) store: S,
@@ -30,9 +27,10 @@ where
     write_mutex: Arc<Mutex<()>>,
 }
 
-impl OpStore<MemoryStore<TopicId, Extensions>> {
-    pub fn new_memory() -> Self {
-        let store = MemoryStore::new();
+impl OpStore {
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn new_temporary() -> Self {
+        let store = SqliteStore::temporary().await;
         Self::new(store)
     }
 }
@@ -40,31 +38,27 @@ impl OpStore<MemoryStore<TopicId, Extensions>> {
 impl OpStore<SqliteStore> {
     pub async fn new_sqlite(database_file_path: PathBuf) -> anyhow::Result<Self> {
         let url = format!("sqlite://{}", database_file_path.to_string_lossy());
-        p2panda_store::sqlite::store::create_database(&url).await?;
+        p2panda_store::sqlite::create_database(&url).await?;
 
         let pool = sqlx::SqlitePool::connect(&url).await.map_err(|e| {
             anyhow::anyhow!("failed to connect to sqlite at '{database_file_path:?}': {e}")
         })?;
 
-        if p2panda_store::sqlite::store::run_pending_migrations(&pool)
+        if p2panda_store::sqlite::run_pending_migrations(&pool)
             .await
             .is_err()
         {
             pool.close().await;
             panic!("Database migration failed");
         }
-        let store = SqliteStore::new(pool);
+        let store = SqliteStore::from_pool(pool);
 
         Ok(Self::new(store))
     }
 }
 
-impl<S> OpStore<S>
-where
-    S: OperationStore<TopicId, Extensions> + LogStore<TopicId, Extensions>,
-    S: Send + Sync,
-{
-    pub fn new(store: S) -> Self {
+impl OpStore {
+    pub fn new(store: SqliteStore) -> Self {
         let orderer = Arc::new(tokio::sync::RwLock::new(Orderer::new(
             store.clone(),
             Default::default(),
@@ -83,14 +77,15 @@ where
         &self,
         topic: &TopicId,
     ) -> Result<Vec<(DeviceId, u64)>, anyhow::Error> {
-        Ok(self
-            .store
-            .get_log_heights(&topic)
-            .await
-            .map_err(|err| anyhow::anyhow!("failed to get log heights for {topic:?}: {err}"))?
-            .into_iter()
-            .map(|(pk, height)| (DeviceId::from(pk), height))
-            .collect::<Vec<_>>())
+        todo!("need new log heights query to match the old one")
+        // Ok(self
+        //     .store
+        //     .get_log_heights(&topic)
+        //     .await
+        //     .map_err(|err| anyhow::anyhow!("failed to get log heights for {topic:?}: {err}"))?
+        //     .into_iter()
+        //     .map(|(pk, height)| (DeviceId::from(pk), height))
+        //     .collect::<Vec<_>>())
     }
 
     pub async fn author_operation<K: TopicKind>(
@@ -108,12 +103,13 @@ where
 
         let lock = self.write_mutex.lock().await;
         let latest_operation = self
-            .latest_operation(&device_id, &topic.into())
+            .store
+            .get_latest_entry(&device_id, &topic.into())
             .await
             .unwrap();
 
         let (seq_num, backlink) = match latest_operation {
-            Some((header, _)) => (header.seq_num + 1, Some(header.hash())),
+            Some(op) => (op.header.seq_num + 1, Some(op.hash)),
             None => (0, None),
         };
 
@@ -124,7 +120,7 @@ where
             auth: payload.extract_auth_extension(),
         };
 
-        let timestamp = timestamp_now();
+        let timestamp = Timestamp::now();
 
         let mut header = Header {
             version: 1,
@@ -135,7 +131,6 @@ where
             timestamp,
             seq_num,
             backlink,
-            previous,
             extensions,
         };
 
@@ -157,40 +152,20 @@ where
             "PUB: authoring operation"
         );
 
-        let result = p2panda_stream::operation::ingest_operation(
+        let operation = Operation { hash, header, body };
+
+        let new = p2panda_stream::ingest::ingest_operation(
             &mut *self.clone(),
-            header.clone(),
-            body.clone(),
-            header.to_bytes(),
+            &operation,
+            &topic.into(),
             &topic.into(),
             false,
         )
         .await?;
 
-        match result {
-            IngestResult::Complete(op @ Operation { hash: hash2, .. }) => {
-                assert_eq!(hash, hash2);
-
-                // NOTE: if we fail to process here, incoming operations will be stuck as pending!
-                self.process_ordering(op.clone()).await?;
-            }
-
-            IngestResult::Retry(h, _, _, missing) => {
-                let backlink = h.backlink.as_ref().map(|h| h.renamed());
-                tracing::error!(
-                    ?topic,
-                    hash = ?hash.renamed(),
-                    ?backlink,
-                    ?missing,
-                    "operation could not be ingested"
-                );
-                panic!("operation could not be ingested, check your sequence numbers!");
-            }
-
-            IngestResult::Outdated(op) => {
-                tracing::error!(?op, "operation is outdated");
-                panic!("operation is outdated");
-            }
+        if new {
+            // self.process_ordering(op.clone()).await?;
+            self.mark_op_processed(topic, &hash);
         }
 
         // Let the next op be authored as soon as this one's ingested
@@ -199,20 +174,20 @@ where
         Ok((header, body))
     }
 
-    // SAM: could be generic https://github.com/p2panda/p2panda/blob/65727c7fff64376f9d2367686c2ed5132ff7c4e0/p2panda-stream/src/ordering/partial/mod.rs#L83
-    pub async fn process_ordering(&self, operation: Operation<Extensions>) -> anyhow::Result<()> {
-        self.orderer.write().await.process(operation).await?;
-        Ok(())
-    }
+    // // SAM: could be generic https://github.com/p2panda/p2panda/blob/65727c7fff64376f9d2367686c2ed5132ff7c4e0/p2panda-stream/src/ordering/partial/mod.rs#L83
+    // pub async fn process_ordering(&self, operation: Operation<Extensions>) -> anyhow::Result<()> {
+    //     self.orderer.write().await.process(operation).await?;
+    //     Ok(())
+    // }
 
-    pub async fn next_ordering(&self) -> anyhow::Result<Vec<Operation<Extensions>>> {
-        let mut ordering = self.orderer.write().await;
-        let mut next = vec![];
-        while let Some(op) = ordering.next().await? {
-            next.push(op);
-        }
-        Ok(next)
-    }
+    // pub async fn next_ordering(&self) -> anyhow::Result<Vec<Operation<Extensions>>> {
+    //     let mut ordering = self.orderer.write().await;
+    //     let mut next = vec![];
+    //     while let Some(op) = ordering.next().await? {
+    //         next.push(op);
+    //     }
+    //     Ok(next)
+    // }
 
     pub fn mark_op_processed(&self, topic: TopicId, hash: &Hash) {
         self.processed_ops
@@ -240,188 +215,58 @@ impl OpStore<SqliteStore> {
     }
 }
 
-impl OpStore<MemoryStore<TopicId, Extensions>> {
-    pub fn report<'a>(&self, topics: impl IntoIterator<Item = &'a TopicId>) -> String {
-        let topics = topics.into_iter().collect::<Vec<_>>();
-        let s = self.store.read_store();
-        let mut ops = s
-            .operations
-            .iter()
-            .filter(|(_, (l, _, _, _))| {
-                topics.is_empty() || topics.iter().find(|topic| **topic == l).is_some()
-            })
-            .collect::<Vec<_>>();
-        ops.sort_by_key(|(_, (t, header, _, _))| (t, header.public_key.renamed(), header.seq_num));
-        ops.into_iter()
-            .map(|(h, (t, header, body, _))| {
-                let desc = match body
-                    .clone()
-                    .map(|body| Payload::try_from_body(&body).unwrap())
-                {
-                    // Some(Payload::Space(args)) => {
-                    //     let space_op = GroupOp::new(header.clone(), args);
-                    //     format!("{:?}", space_op.arg_type())
-                    // }
-                    Some(p) => format!("{p:?}"),
-                    None => "_".to_string(),
-                };
-                if topics.len() == 1 {
-                    format!(
-                        "• {} {:2} {} : {}",
-                        header.public_key.renamed(),
-                        header.seq_num,
-                        h.renamed(),
-                        desc
-                    )
-                } else {
-                    let t = format!("{t:?}");
-                    format!(
-                        "• {:>24} {} {:2} {} : {}",
-                        t,
-                        header.public_key.renamed(),
-                        header.seq_num,
-                        h.renamed(),
-                        desc
-                    )
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-}
-
-impl<S> OperationStore<TopicId, Extensions> for OpStore<S>
-where
-    S: OperationStore<TopicId, Extensions> + LogStore<TopicId, Extensions> + Send + Sync,
-    <S as OperationStore<TopicId, Extensions>>::Error: std::error::Error + Send + Sync,
-{
-    type Error = <S as OperationStore<TopicId, Extensions>>::Error;
-
-    async fn insert_operation(
-        &mut self,
-        hash: Hash,
-        header: &Header,
-        body: Option<&Body>,
-        header_bytes: &[u8],
-        topic: &TopicId,
-    ) -> Result<bool, Self::Error> {
-        self.store
-            .insert_operation(hash, header, body, header_bytes, topic)
-            .await
-    }
-
-    async fn get_operation(
-        &self,
-        hash: Hash,
-    ) -> Result<Option<(Header, Option<Body>)>, Self::Error> {
-        self.store.get_operation(hash).await
-    }
-
-    async fn get_raw_operation(&self, hash: Hash) -> Result<Option<RawOperation>, Self::Error> {
-        self.store.get_raw_operation(hash).await
-    }
-
-    async fn has_operation(&self, hash: Hash) -> Result<bool, Self::Error> {
-        self.store.has_operation(hash).await
-    }
-
-    async fn delete_operation(&mut self, hash: Hash) -> Result<bool, Self::Error> {
-        self.store.delete_operation(hash).await
-    }
-
-    async fn delete_payload(&mut self, hash: Hash) -> Result<bool, Self::Error> {
-        self.store.delete_payload(hash).await
-    }
-}
-
-impl<S> LogStore<TopicId, Extensions> for OpStore<S>
-where
-    S: LogStore<TopicId, Extensions>,
-    S: OperationStore<TopicId, Extensions>,
-    S: Send + Sync,
-    <S as LogStore<TopicId, Extensions>>::Error: std::error::Error + Send + Sync,
-{
-    type Error = <S as LogStore<TopicId, Extensions>>::Error;
-
-    async fn get_log(
-        &self,
-        public_key: &PublicKey,
-        topic: &TopicId,
-        from: Option<u64>,
-    ) -> Result<Option<Vec<(Header, Option<Body>)>>, Self::Error> {
-        self.store.get_log(public_key, topic, from).await
-    }
-
-    async fn get_raw_log(
-        &self,
-        public_key: &PublicKey,
-        topic: &TopicId,
-        from: Option<u64>,
-    ) -> Result<Option<Vec<RawOperation>>, Self::Error> {
-        self.store.get_raw_log(public_key, topic, from).await
-    }
-
-    async fn latest_operation(
-        &self,
-        public_key: &PublicKey,
-        topic: &TopicId,
-    ) -> Result<Option<(Header, Option<Body>)>, Self::Error> {
-        self.store.latest_operation(public_key, topic).await
-    }
-
-    /// Get the "height" of each log, which is actually the highest sequence number of the log.
-    async fn get_log_heights(&self, topic: &TopicId) -> Result<Vec<(PublicKey, u64)>, Self::Error> {
-        self.store.get_log_heights(topic).await
-    }
-
-    async fn delete_operations(
-        &mut self,
-        public_key: &PublicKey,
-        topic: &TopicId,
-        before: u64,
-    ) -> Result<bool, Self::Error> {
-        self.store
-            .delete_operations(public_key, topic, before)
-            .await
-    }
-
-    async fn delete_payloads(
-        &mut self,
-        public_key: &PublicKey,
-        topic: &TopicId,
-        from: u64,
-        to: u64,
-    ) -> Result<bool, Self::Error> {
-        self.store
-            .delete_payloads(public_key, topic, from, to)
-            .await
-    }
-
-    async fn get_log_size(
-        &self,
-        public_key: &PublicKey,
-        topic: &TopicId,
-        from: Option<u64>,
-    ) -> Result<Option<u64>, Self::Error> {
-        self.store.get_log_size(public_key, topic, from).await
-    }
-
-    async fn get_log_hashes(
-        &self,
-        public_key: &PublicKey,
-        topic: &TopicId,
-        from: Option<u64>,
-    ) -> Result<Option<Vec<(u64, Hash)>>, Self::Error> {
-        self.store.get_log_hashes(public_key, topic, from).await
-    }
-}
+// impl OpStore<MemoryStore<TopicId, Extensions>> {
+//     pub fn report<'a>(&self, topics: impl IntoIterator<Item = &'a TopicId>) -> String {
+//         let topics = topics.into_iter().collect::<Vec<_>>();
+//         let s = self.store.read_store();
+//         let mut ops = s
+//             .operations
+//             .iter()
+//             .filter(|(_, (l, _, _, _))| {
+//                 topics.is_empty() || topics.iter().find(|topic| **topic == l).is_some()
+//             })
+//             .collect::<Vec<_>>();
+//         ops.sort_by_key(|(_, (t, header, _, _))| (t, header.public_key.renamed(), header.seq_num));
+//         ops.into_iter()
+//             .map(|(h, (t, header, body, _))| {
+//                 let desc = match body
+//                     .clone()
+//                     .map(|body| Payload::try_from_body(&body).unwrap())
+//                 {
+//                     // Some(Payload::Space(args)) => {
+//                     //     let space_op = GroupOp::new(header.clone(), args);
+//                     //     format!("{:?}", space_op.arg_type())
+//                     // }
+//                     Some(p) => format!("{p:?}"),
+//                     None => "_".to_string(),
+//                 };
+//                 if topics.len() == 1 {
+//                     format!(
+//                         "• {} {:2} {} : {}",
+//                         header.public_key.renamed(),
+//                         header.seq_num,
+//                         h.renamed(),
+//                         desc
+//                     )
+//                 } else {
+//                     let t = format!("{t:?}");
+//                     format!(
+//                         "• {:>24} {} {:2} {} : {}",
+//                         t,
+//                         header.public_key.renamed(),
+//                         header.seq_num,
+//                         h.renamed(),
+//                         desc
+//                     )
+//                 }
+//             })
+//             .collect::<Vec<_>>()
+//             .join("\n")
+//     }
+// }
 
 #[async_trait::async_trait]
-impl<S> mailbox_client::store::MailboxStore<MailboxOperation> for OpStore<S>
-where
-    S: OperationStore<TopicId, Extensions> + LogStore<TopicId, Extensions>,
-    S: Send + Sync + 'static,
-{
+impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
     async fn get_log(
         &self,
         author: &DeviceId,
@@ -430,12 +275,15 @@ where
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
         let log = self
             .store
-            .get_log(author, topic, Some(from))
+            .get_log_entries(author, topic, Some(from), None)
             .await
             .map_err(|err| anyhow::anyhow!("failed to get log for {author:?}: {topic:?}: {err}"))?;
         Ok(log.map(|log| {
             log.into_iter()
-                .map(|(header, body)| MailboxOperation { header, body })
+                .map(|(op, _)| MailboxOperation {
+                    header: op.header,
+                    body: op.body,
+                })
                 .collect()
         }))
     }

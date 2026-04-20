@@ -43,25 +43,19 @@ impl NodeData {
     }
 }
 
+type GroupsProcessor = p2panda_auth::processor::GroupsProcessor<Extensions, TopicId>;
+
 /// Until we have a persisted solution to group state, we store group state in-memory and dump
 /// to a file whenever it changes.
 /// XXX: this must be replaced ASAP!
 #[derive(Clone)]
 pub struct HackyGroupStore {
     groups: SqliteStore,
-    file_path: PathBuf,
-    file_write_mutex: Arc<Mutex<()>>,
 }
 
 impl HackyGroupStore {
-    pub async fn new(file_path: impl AsRef<Path>, sqlite: SqliteStore) -> anyhow::Result<Self> {
-        let mut this = Self {
-            groups: sqlite,
-            file_path: file_path.as_ref().to_path_buf(),
-            file_write_mutex: Arc::new(Mutex::new(())),
-        };
-        this.load_from_file().await?;
-        Ok(this)
+    pub async fn new(sqlite: SqliteStore) -> anyhow::Result<Self> {
+        Ok(Self { groups: sqlite })
     }
 
     pub async fn heads(&self) -> anyhow::Result<Vec<Hash>> {
@@ -69,32 +63,7 @@ impl HackyGroupStore {
     }
 
     pub async fn process(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
-        let _lock = self.file_write_mutex.lock().await;
-        p2panda_auth::processor::process::<_, _, DashResolver>(&self.groups, operation).await?;
-        self.save_to_file().await?;
-        Ok(())
-    }
-
-    async fn save_to_file(&self) -> anyhow::Result<()> {
-        let groups = self.groups.get_state().await?;
-        let temp = self.file_path.with_file_name("groups.cbor.tmp");
-        let mut file = std::fs::File::create(&temp)?;
-        let bytes = p2panda_core::cbor::encode_cbor(&groups)?;
-        file.write_all(&bytes)?;
-        std::fs::rename(&temp, &self.file_path)?;
-        Ok(())
-    }
-
-    async fn load_from_file(&mut self) -> anyhow::Result<()> {
-        let Ok(file) = std::fs::File::open(&self.file_path) else {
-            tracing::warn!(
-                "Unable to open groups state file at {}. If it is supposed to exist, this is a bug.",
-                self.file_path.display()
-            );
-            return Ok(());
-        };
-        let state = p2panda_core::cbor::decode_cbor(&file)?;
-        self.groups.set_state(state).await?;
+        GroupsProcessor::process(operation).await?;
         Ok(())
     }
 

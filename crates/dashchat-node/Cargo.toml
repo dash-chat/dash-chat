@@ -51,9 +51,10 @@ mailbox-server = { path = "../mailbox-server", features = ["test_utils"] }
 itertools = "0.14.0"
 maplit = "1.0"
 pretty_assertions = "1.4.1"
+p2panda-store = { workspace = true, features = ["test_utils"] }
 
 [features]
 default = ["testing", "instrument"]
 instrument = []
-testing = ["tempfile", "nanoid"]
+testing = ["tempfile", "nanoid", "p2panda-store/test_utils"]
 p2p = []
