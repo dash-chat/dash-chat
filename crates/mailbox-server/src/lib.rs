@@ -2,6 +2,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use push_notifications_server::client::PushNotificationsClient;
 use redb::Database;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -34,6 +35,7 @@ pub type SequenceNumber = u64;
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<Database>,
+    pub push_client: Option<Arc<PushNotificationsClient>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -44,6 +46,7 @@ struct HealthResponse {
 pub async fn spawn_server(
     db_path: PathBuf,
     addr: String,
+    push_notifications_url: Option<String>,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = init_db(db_path)?;
@@ -53,7 +56,12 @@ pub async fn spawn_server(
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
 
-    let app = create_app_with_arc(db_arc);
+    let push_client = push_notifications_url.map(|url| {
+        tracing::info!("Push notifications integration enabled: {url}");
+        Arc::new(PushNotificationsClient::new(url))
+    });
+
+    let app = create_app_with_arc(db_arc, push_client);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let addr = listener.local_addr()?;
@@ -101,11 +109,14 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
 }
 
 pub fn create_app(db: Database) -> Router {
-    create_app_with_arc(Arc::new(db))
+    create_app_with_arc(Arc::new(db), None)
 }
 
-pub fn create_app_with_arc(db: Arc<Database>) -> Router {
-    let state = AppState { db };
+pub fn create_app_with_arc(
+    db: Arc<Database>,
+    push_client: Option<Arc<PushNotificationsClient>>,
+) -> Router {
+    let state = AppState { db, push_client };
 
     Router::new()
         .route("/health", get(health_check))

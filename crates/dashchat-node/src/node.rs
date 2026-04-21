@@ -113,6 +113,7 @@ pub struct Node {
     // groups: p2panda_auth::group::Groups,
     config: NodeConfig,
     notification_tx: Option<mpsc::Sender<Notification>>,
+    topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
 
     /// Add new subscription streams
     stream_tx: mpsc::Sender<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
@@ -132,6 +133,7 @@ impl Node {
         data_path: PathBuf,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
+        topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
         let local_store = LocalStore::new(filesystem.local_store_path()).await?;
@@ -152,6 +154,7 @@ impl Node {
             local_store: local_store.clone(),
             node_data,
             notification_tx,
+            topic_subscribed_tx,
             stream_tx,
             stream_task: None,
         };
@@ -455,6 +458,10 @@ impl Node {
 
     pub fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
         self.local_store.lookup_contact(device_id)
+    }
+
+    pub fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
+        self.local_store.subscribed_topics()
     }
 
     pub async fn get_profile_for_agent(

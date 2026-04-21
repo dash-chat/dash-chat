@@ -1,6 +1,6 @@
-use dashchat_node::{Node, Notification};
+use dashchat_node::Node;
 use push_notifications_server::client::PushNotificationsClient;
-use push_notifications_server::types::{PublicKey, PushNotification};
+use push_notifications_server::types::{PublicKey, TopicId};
 use tauri::{AppHandle, Manager};
 
 #[cfg(mobile)]
@@ -37,46 +37,67 @@ pub fn push_notifications_url() -> String {
     PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL.to_string()
 }
 
-pub async fn send_push_notification_to_recipients(
-    app_handle: &AppHandle,
-    notification: &Notification,
-) {
+/// Sync all subscribed topics with the push notifications server.
+///
+/// Called at startup to ensure the server has the full, up-to-date list of
+/// topics this device is subscribed to (replacing any stale state).
+pub async fn sync_subscriptions(app_handle: &AppHandle) {
     let node = app_handle.state::<Node>();
+    let public_key = PublicKey::from(node.device_id().to_string());
 
-    // Only send push notifications for operations we authored
-    let my_device_id = node.device_id();
-    if dashchat_node::DeviceId::from(notification.header.public_key) != my_device_id {
-        return;
-    }
-
-    let topic_id = notification.header.extensions.topic.clone();
-    let authors = match node.get_authors(topic_id).await {
-        Ok(authors) => authors,
+    let topic_ids: Vec<TopicId> = match node.subscribed_topics() {
+        Ok(topics) => topics
+            .into_iter()
+            .map(|t| TopicId::from(hex::encode(&*t)))
+            .collect(),
         Err(err) => {
-            log::error!("Failed to get authors for topic: {err:?}");
+            log::error!("Failed to get subscribed topics: {err:?}");
             return;
         }
     };
 
-    let recipients: Vec<PublicKey> = authors
-        .into_iter()
-        .filter(|author| *author != my_device_id)
-        .map(|author| PublicKey::from(author.to_string()))
-        .collect();
+    log::info!(
+        "Syncing {} topic subscriptions with push notifications server.",
+        topic_ids.len()
+    );
 
-    if recipients.is_empty() {
+    let client = PushNotificationsClient::new(push_notifications_url());
+
+    if let Err(err) = client.set_subscriptions(public_key, topic_ids).await {
+        log::error!("Failed to set subscriptions: {err:?}");
+    }
+}
+
+/// Subscribe the current device to push notifications for the given topics.
+pub async fn subscribe_to_topics(app_handle: &AppHandle, topic_ids: Vec<TopicId>) {
+    if topic_ids.is_empty() {
         return;
     }
 
+    let node = app_handle.state::<Node>();
+    let public_key = PublicKey::from(node.device_id().to_string());
+
     let client = PushNotificationsClient::new(push_notifications_url());
-    let push = PushNotification {
-        title: "Dash Chat".to_string(),
-        body: notification.header.hash().to_hex(),
-    };
 
-    log::info!("Sending push notification to recipients: {recipients:?}.");
+    log::info!(
+        "Subscribing to {} topics on push notifications server.",
+        topic_ids.len()
+    );
 
-    if let Err(err) = client.send_push_notification(recipients, push).await {
-        log::error!("Failed to send push notification: {err:?}");
+    if let Err(err) = client.subscribe(public_key, topic_ids).await {
+        log::error!("Failed to subscribe to topics: {err:?}");
     }
+}
+
+/// Listens for new topic subscriptions and registers them with the push notifications server.
+pub fn spawn_topic_subscription_loop(
+    app_handle: AppHandle,
+    mut topic_subscribed_rx: tokio::sync::mpsc::Receiver<dashchat_node::topic::TopicId>,
+) {
+    tauri::async_runtime::spawn(async move {
+        while let Some(topic_id) = topic_subscribed_rx.recv().await {
+            let hex_topic = TopicId::from(hex::encode(&*topic_id));
+            subscribe_to_topics(&app_handle, vec![hex_topic]).await;
+        }
+    });
 }

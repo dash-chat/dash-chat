@@ -44,7 +44,7 @@ let
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
         serviceConfig = {
-          ExecStart = "${mailbox}/bin/mailbox-server --addr 0.0.0.0:80";
+          ExecStart = "${mailbox}/bin/mailbox-server --addr 0.0.0.0:80 --push-notifications-url https://push-notifications-server.production.dash-chat.dash-chat.garnix.me";
           Restart = "always";
         };
       };

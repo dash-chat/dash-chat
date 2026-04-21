@@ -21,25 +21,56 @@ pub async fn store_blobs(
     // Use spawn_blocking because redb's begin_write() is a blocking call that waits
     // for exclusive write access. Running this directly in async context would block
     // tokio worker threads and cause deadlocks under concurrent load.
-    tokio::task::spawn_blocking(move || store_blobs_inner(&db, &payload))
-        .await
-        .map_err(|e| {
-            tracing::error!("Task join error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-        })?
-        .map_err(|e| {
-            tracing::error!("{}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, e)
-        })?;
+    let topics_with_new_blobs =
+        tokio::task::spawn_blocking(move || store_blobs_inner(&db, &payload))
+            .await
+            .map_err(|e| {
+                tracing::error!("Task join error: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            })?
+            .map_err(|e| {
+                tracing::error!("{}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, e)
+            })?;
+
+    // Notify push notification subscribers for topics that received new data (non-blocking)
+    if !topics_with_new_blobs.is_empty() {
+        if let Some(push_client) = &state.push_client {
+            let push_client = push_client.clone();
+            tokio::spawn(async move {
+                let topics_to_notify = topics_with_new_blobs
+                    .into_iter()
+                    .map(|(topic, ops)| {
+                        let topic = push_notifications_server::types::TopicId::from(topic);
+                        let ops = ops
+                            .into_iter()
+                            .map(push_notifications_server::types::OperationId::from)
+                            .collect();
+                        (topic, ops)
+                    })
+                    .collect();
+                tracing::info!("Notifying subscribers for topics.");
+                if let Err(e) = push_client.notify_topics_request(topics_to_notify).await {
+                    tracing::warn!("Failed to notify push subscribers: {e:#}");
+                }
+            });
+        }
+    }
+
     Ok(StatusCode::CREATED)
 }
 
-fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), String> {
+/// Returns a map of topic_id → set of operation IDs (author:seq) for newly inserted blobs.
+fn store_blobs_inner(
+    db: &Database,
+    request: &StoreBlobsRequest,
+) -> Result<BTreeMap<TopicId, BTreeSet<String>>, String> {
     let write_txn = db
         .begin_write()
         .map_err(|e| format!("Failed to begin transaction: {}", e))?;
 
     let mut blob_count = 0;
+    let mut topics_with_new_blobs: BTreeMap<TopicId, BTreeSet<String>> = BTreeMap::new();
 
     {
         let mut blobs_table = write_txn
@@ -97,6 +128,10 @@ fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), S
                             current_watermark,
                             wm
                         );
+                        topics_with_new_blobs
+                            .entry(topic_id.clone())
+                            .or_default()
+                            .extend(stored_seqs.iter().map(|seq| format!("{}:{}", author, seq)));
                     }
                 }
             }
@@ -108,7 +143,7 @@ fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), S
         .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
     tracing::debug!("Stored {} blobs", blob_count);
-    Ok(())
+    Ok(topics_with_new_blobs)
 }
 
 /// Computes the new watermark after storing blobs.

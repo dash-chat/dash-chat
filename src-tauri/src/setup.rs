@@ -1,4 +1,3 @@
-use dashchat_node::Notification;
 use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::AppHandle;
 use tauri::{Emitter, Manager};
@@ -33,13 +32,28 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     }
 
     let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
-    let node = crate::node::build_node(local_data_path, Some(notification_tx)).await?;
+
+    #[cfg(mobile)]
+    let (topic_subscribed_tx, topic_subscribed_rx) = tokio::sync::mpsc::channel(100);
+
+    let node = crate::node::build_and_cache_node(
+        local_data_path,
+        Some(notification_tx),
+        #[cfg(mobile)]
+        Some(topic_subscribed_tx),
+        #[cfg(not(mobile))]
+        None,
+    )
+    .await?;
 
     app_handle.manage(node.clone());
 
     #[cfg(mobile)]
     {
-        crate::push_notifications::mobile::setup_push_notifications(app_handle.clone());
+        crate::push_notifications::mobile::setup_push_notifications(
+            app_handle.clone(),
+            topic_subscribed_rx,
+        );
     }
 
     crate::mailbox::spawn_local_mailbox_mdns_discovery(&app_handle, node)?;
@@ -51,17 +65,11 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
 fn spawn_notification_loop(
     app_handle: AppHandle,
-    mut notification_rx: tokio::sync::mpsc::Receiver<Notification>,
+    mut notification_rx: tokio::sync::mpsc::Receiver<dashchat_node::Notification>,
 ) {
     tauri::async_runtime::spawn(async move {
         while let Some(notification) = notification_rx.recv().await {
             log::info!("Received notification: {:?}", notification);
-
-            crate::push_notifications::send_push_notification_to_recipients(
-                &app_handle,
-                &notification,
-            )
-            .await;
 
             let body = match encode_cbor(&notification.payload) {
                 Ok(body) => body,

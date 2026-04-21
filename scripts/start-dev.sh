@@ -46,7 +46,8 @@ trap cleanup EXIT INT TERM
 # Mailbox server
 cargo run -p mailbox-server -- \
   --db-path "$DEV_DBS_PATH/mailbox-server/mailbox.db" \
-  --addr "0.0.0.0:$MAILBOX_PORT" > "$LOGS_DIR/mailbox.log" 2>&1 &
+  --addr "0.0.0.0:$MAILBOX_PORT" \
+  --push-notifications-url "http://localhost:3001" > "$LOGS_DIR/mailbox.log" 2>&1 &
 PIDS+=($!)
 echo "MAILBOX_PID=$!"
 

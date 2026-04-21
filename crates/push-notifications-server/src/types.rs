@@ -8,6 +8,20 @@ pub struct PublicKey(String);
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Display, From, Into, Deref)]
 pub struct FcmToken(String);
 
+/// A topic identifier (hex-encoded).
+#[derive(
+    Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From,
+    Into, Deref,
+)]
+pub struct TopicId(String);
+
+/// An operation ID.
+#[derive(
+    Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From,
+    Into, Deref,
+)]
+pub struct OperationId(String);
+
 /// This is what Google & Apple see.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PushNotification {

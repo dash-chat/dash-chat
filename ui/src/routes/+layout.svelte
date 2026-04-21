@@ -115,7 +115,7 @@
 	setContext('chats-store', chatsStore);
 
 	if (!isPreview && isMobile) {
-		setupNotificationNavigation(chatsStore);
+		setupNotificationNavigation(chatsStore, contactsStore);
 	}
 
 	const isDark = useSignal(settingsStore.isDark);

@@ -7,7 +7,10 @@ use tauri_plugin_notification::*;
 #[cfg(target_os = "android")]
 mod android;
 
-pub fn setup_push_notifications(handle: AppHandle) {
+pub fn setup_push_notifications(
+    handle: AppHandle,
+    topic_subscribed_rx: tokio::sync::mpsc::Receiver<dashchat_node::topic::TopicId>,
+) {
     let h = handle.clone();
 
     // Re-register every time the app starts
@@ -47,6 +50,13 @@ pub fn setup_push_notifications(handle: AppHandle) {
             });
         }
     });
+
+    // Sync all subscribed topics at startup, then listen for new ones
+    let h = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        crate::push_notifications::sync_subscriptions(&h).await;
+    });
+    crate::push_notifications::spawn_topic_subscription_loop(handle, topic_subscribed_rx);
 }
 
 async fn register_fcm_token(handle: AppHandle, token: String) -> anyhow::Result<()> {

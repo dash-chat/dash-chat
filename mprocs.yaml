@@ -9,7 +9,7 @@ procs:
     env:
       MAILBOX_URL: "http://localhost:3000"
       PUSH_NOTIFICATIONS_URL: "http://localhost:3001"
-  mailbox-server: cargo run -p mailbox-server -- --db-path "$PWD/.dbs/dev/mailbox-server/mailbox.db" --addr 0.0.0.0:3000
+  mailbox-server: cargo run -p mailbox-server -- --db-path "$PWD/.dbs/dev/mailbox-server/mailbox.db" --addr 0.0.0.0:3000 --push-notifications-url http://localhost:3001
   push-notifications-server:
     shell: just push server
     autostart: false

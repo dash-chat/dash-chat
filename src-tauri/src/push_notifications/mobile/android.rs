@@ -7,11 +7,8 @@ use std::{
 use jni::objects::JClass;
 use jni::JNIEnv;
 use log::Level;
-use p2panda_store::OperationStore;
-use dashchat_node::{AsBody, Node, Notification, Payload, Topic};
-use push_notifications_server::client::PushNotificationsClient;
-use push_notifications_server::types::{FcmToken, PublicKey, PushNotification};
-use tauri::{AppHandle, Listener, Manager};
+use dashchat_node::{AsBody, Payload, Topic};
+use p2panda_store::LogStore;
 use tauri_plugin_notification::*;
 
 pub fn android_log(level: Level, tag: &CStr, msg: &CStr) {
@@ -71,14 +68,24 @@ pub fn receive_push_notification(
 
     log::info!("Received push notification: {notification:?}");
 
-    // The operation hash is sent as the notification body
-    let op_hash_hex = notification.body.as_deref()?;
-    let op_hash: p2panda_core::Hash = op_hash_hex.parse().ok()?;
+    // Title = topic ID (hex), Body = operation ID ("author_hex:seq_num")
+    let topic_hex = notification.title.as_deref()?;
+    let op_id = notification.body.as_deref()?;
+
+    // Parse "author_hex:seq_num"
+    let (author_hex, seq_str) = op_id.split_once(':')?;
+    let seq_num: u64 = seq_str.parse().ok()?;
+
+    let author_bytes: [u8; 32] = hex::decode(author_hex).ok()?.try_into().ok()?;
+    let public_key = p2panda_core::PublicKey::from_bytes(&author_bytes).ok()?;
+
+    let topic_bytes: [u8; 32] = hex::decode(topic_hex).ok()?.try_into().ok()?;
+    let topic_id = dashchat_node::topic::TopicId::from(topic_bytes);
 
     let data_path = context.data_dir.join("studio.darksoil.dashchat");
 
     tauri::async_runtime::block_on(async move {
-        let node = match crate::node::build_node(data_path, None).await {
+        let node = match crate::node::get_or_build_node(data_path).await {
             Ok(node) => node,
             Err(err) => {
                 log::error!("Failed to create node for push notification: {err:?}");
@@ -92,32 +99,33 @@ pub fn receive_push_notification(
         // Poll for the operation to arrive (up to 15 seconds)
         let mut found = false;
         for _ in 0..75 {
-            match node.op_store.has_operation(op_hash).await {
-                Ok(true) => {
+            let log = node
+                .op_store
+                .get_log(&public_key, &topic_id, Some(seq_num))
+                .await;
+            if let Ok(Some(entries)) = &log {
+                if !entries.is_empty() {
                     found = true;
                     break;
                 }
-                _ => {
-                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                }
             }
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
 
         if !found {
             log::warn!(
-                "Operation {op_hash_hex} not found after polling, showing generic notification"
+                "Operation {op_id} in topic {topic_hex} not found after polling, showing generic notification"
             );
             return Some(generic_notification());
         }
 
-        // Get the operation and decode its payload
-        let (header, body) = match node.op_store.get_operation(op_hash).await {
-            Ok(Some(op)) => op,
-            _ => {
-                log::error!("Failed to get operation {op_hash_hex}");
-                return Some(generic_notification());
-            }
-        };
+        // Get the operation
+        let entries = node
+            .op_store
+            .get_log(&public_key, &topic_id, Some(seq_num))
+            .await
+            .ok()?;
+        let (header, body) = entries?.into_iter().next()?;
 
         // Don't show notifications for our own messages
         let sender_device_id = dashchat_node::DeviceId::from(header.public_key);
@@ -133,8 +141,6 @@ pub fn receive_push_notification(
                 return Some(generic_notification());
             }
         };
-
-        let topic_id = header.extensions.topic;
 
         match payload {
             Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
@@ -188,6 +194,7 @@ pub fn receive_push_notification(
                     title: Some(sonix_i18n::t!("newContactRequest")),
                     body: Some(profile.name),
                     icon: Some("ic_stat_icon".to_string()),
+                    group: Some(topic_hex.to_string()),
                     ..Default::default()
                 })
             }

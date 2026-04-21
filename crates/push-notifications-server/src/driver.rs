@@ -1,7 +1,7 @@
 pub mod mem;
 pub mod redb;
 
-use crate::types::{FcmToken, PublicKey};
+use crate::types::{FcmToken, PublicKey, TopicId};
 
 #[async_trait::async_trait]
 pub trait Driver: Send + Sync + 'static {
@@ -12,4 +12,26 @@ pub trait Driver: Send + Sync + 'static {
     ) -> anyhow::Result<()>;
 
     async fn get_fcm_token(&self, public_key: &PublicKey) -> anyhow::Result<Option<FcmToken>>;
+
+    async fn subscribe_to_topics(
+        &self,
+        public_key: &PublicKey,
+        topic_ids: &[TopicId],
+    ) -> anyhow::Result<()>;
+
+    async fn unsubscribe_from_topics(
+        &self,
+        public_key: &PublicKey,
+        topic_ids: &[TopicId],
+    ) -> anyhow::Result<()>;
+
+    async fn get_subscribers(&self, topic_id: &TopicId) -> anyhow::Result<Vec<PublicKey>>;
+
+    /// Replace all subscriptions for a public key with the given set.
+    /// Removes any existing subscriptions not in `topic_ids`.
+    async fn set_subscriptions(
+        &self,
+        public_key: &PublicKey,
+        topic_ids: &[TopicId],
+    ) -> anyhow::Result<()>;
 }
