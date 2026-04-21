@@ -1,5 +1,4 @@
 use dashchat_node::{AsBody, Node, Notification, Payload, Topic};
-use p2panda_store::OperationStore;
 use push_notifications_server::client::PushNotificationsClient;
 use push_notifications_server::types::{FcmToken, PublicKey, PushNotification};
 use tauri::{AppHandle, Listener, Manager};
@@ -10,6 +9,28 @@ mod android;
 
 pub fn setup_push_notifications(handle: AppHandle) {
     let h = handle.clone();
+
+    // Re-register every time the app starts
+    // This makes it so that a loss of data in the push notifications server will be recovered from
+    if let Ok(PermissionState::Granted) = h.notification().permission_state() {
+        match h.notification().register_for_push_notifications() {
+            Ok(token) => {
+                let h = h.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err) = register_fcm_token(h, token.clone()).await {
+                        log::error!("Error registering FCM token: {:?}", err);
+                    } else {
+                        log::info!("Successfully registered FCM token.");
+                    }
+                });
+            }
+            Err(err) => {
+                log::error!("Error registering for push notifications: {:?}.", err);
+            }
+        }
+    }
+
+    // React to whenever the token changes
     handle.listen("notification://new-fcm-token", move |event| {
         if let Ok(token) = serde_json::from_str::<String>(event.payload()) {
             log::warn!(

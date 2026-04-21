@@ -14,11 +14,6 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle).local_data_dir()?;
     log::info!("Using local data path: {local_data_path:?}");
 
-    #[cfg(mobile)]
-    {
-        crate::push_notifications::mobile::setup_push_notifications(app_handle.clone());
-    }
-
     #[cfg(not(mobile))]
     {
         app_handle.set_menu(crate::menu::build_menu(&app_handle)?)?;
@@ -41,6 +36,11 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     let node = crate::node::build_node(local_data_path, Some(notification_tx)).await?;
 
     app_handle.manage(node.clone());
+
+    #[cfg(mobile)]
+    {
+        crate::push_notifications::mobile::setup_push_notifications(app_handle.clone());
+    }
 
     crate::mailbox::spawn_local_mailbox_mdns_discovery(&app_handle, node)?;
 

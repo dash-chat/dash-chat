@@ -114,7 +114,7 @@
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
 
-	if (!isPreview) {
+	if (!isPreview && isMobile) {
 		setupNotificationNavigation(chatsStore);
 	}
 

@@ -1,12 +1,18 @@
-use jni::objects::JClass;
-use jni::JNIEnv;
 use std::{
     ffi::CStr,
     io::BufRead,
     os::fd::{AsRawFd, FromRawFd},
 };
 
+use jni::objects::JClass;
+use jni::JNIEnv;
 use log::Level;
+use p2panda_store::OperationStore;
+use dashchat_node::{AsBody, Node, Notification, Payload, Topic};
+use push_notifications_server::client::PushNotificationsClient;
+use push_notifications_server::types::{FcmToken, PublicKey, PushNotification};
+use tauri::{AppHandle, Listener, Manager};
+use tauri_plugin_notification::*;
 
 pub fn android_log(level: Level, tag: &CStr, msg: &CStr) {
     let prio = match level {
@@ -59,7 +65,7 @@ pub fn receive_push_notification(
     context: ReceivePushNotificationContext,
 ) -> Option<NotificationData> {
     unsafe {
-        android::setup_android_logs();
+        setup_android_logs();
     }
     crate::i18n::init_i18n();
 
@@ -128,61 +134,65 @@ pub fn receive_push_notification(
             }
         };
 
-        // Only show notifications for chat messages
-        let dashchat_node::ChatPayload::Message(content) = (match payload {
-            Payload::Chat(chat_payload) => Some(chat_payload),
-            _ => None,
-        })?
-        else {
-            return None;
-        };
-
-        // Resolve the sender's agent ID and profile name via the contacts table
-        let sender_agent_id = node.lookup_contact(sender_device_id).ok().flatten();
-
-        let sender_name = if let Some(agent_id) = sender_agent_id {
-            node.get_profile_for_agent(agent_id)
-                .await
-                .ok()
-                .flatten()
-                .map(|profile| profile.name)
-        } else {
-            None
-        };
-
         let topic_id = header.extensions.topic;
 
-        let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
+        match payload {
+            Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
+                // Resolve the sender's agent ID and profile name via the contacts table
+                let sender_agent_id = node.lookup_contact(sender_device_id).ok().flatten();
 
-        // Determine the chat route for notification tap navigation
-        let chat_route = sender_agent_id
-            .filter(|&agent_id| {
-                let direct_topic = Topic::direct_chat([node.agent_id(), agent_id]);
-                *direct_topic == topic_id
-            })
-            .map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()))
-            .unwrap_or_else(|| format!("/group-chat/{}", hex::encode(&*topic_id)));
+                let sender_name = if let Some(agent_id) = sender_agent_id {
+                    node.get_profile_for_agent(agent_id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|profile| profile.name)
+                } else {
+                    None
+                };
 
-        // Don't show notification if the user is already viewing this chat
-        if is_viewing_chat(&chat_route) {
-            log::info!("Suppressing push notification: user is viewing the active chat");
-            return None;
+                let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
+
+                // Determine the chat route for notification tap navigation
+                let chat_route = sender_agent_id
+                    .filter(|&agent_id| {
+                        let direct_topic = Topic::direct_chat([node.agent_id(), agent_id]);
+                        *direct_topic == topic_id
+                    })
+                    .map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()))
+                    .unwrap_or_else(|| format!("/group-chat/{}", hex::encode(&*topic_id)));
+
+                // Don't show notification if the user is already viewing this chat
+                if is_viewing_chat(&chat_route) {
+                    log::info!("Suppressing push notification: user is viewing the active chat");
+                    return None;
+                }
+
+                let message_text: &str = &content;
+                let body_text = if message_text.chars().count() > 200 {
+                    format!("{}...", message_text.chars().take(200).collect::<String>())
+                } else {
+                    message_text.to_string()
+                };
+
+                Some(NotificationData {
+                    title: Some(title),
+                    body: Some(body_text),
+                    icon: Some("ic_stat_icon".to_string()),
+                    group: Some(hex::encode(&*topic_id)),
+                    ..Default::default()
+                })
+            }
+            Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { profile, .. }) => {
+                Some(NotificationData {
+                    title: Some(sonix_i18n::t!("newContactRequest")),
+                    body: Some(profile.name),
+                    icon: Some("ic_stat_icon".to_string()),
+                    ..Default::default()
+                })
+            }
+            _ => None,
         }
-
-        let message_text: &str = &content;
-        let body_text = if message_text.chars().count() > 200 {
-            format!("{}...", message_text.chars().take(200).collect::<String>())
-        } else {
-            message_text.to_string()
-        };
-
-        Some(NotificationData {
-            title: Some(title),
-            body: Some(body_text),
-            icon: Some("ic_stat_icon".to_string()),
-            group: Some(hex::encode(&*topic_id)),
-            ..Default::default()
-        })
     })
 }
 

@@ -54,6 +54,7 @@
 	"scanQrCodeOfYourContact": "Scan the QR code from your contact's device.",
 	"messageRequest": "Message request.",
 	"contactRequests": "Contact requests",
+	"newContactRequest": "New contact request",
 	"myContacts": "My contacts",
 	"reject": "Reject",
 	"accept": "Accept",
