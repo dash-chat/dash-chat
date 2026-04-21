@@ -17,7 +17,7 @@ use chrono::{Duration, Utc};
 use futures::Stream;
 use named_id::Rename;
 use named_id::*;
-use p2panda_core::{Body, Hash, PublicKey, Timestamp};
+use p2panda_core::{Hash, PublicKey, Timestamp};
 use p2panda_spaces::ActorId;
 use p2panda_store::SqliteStore;
 use tokio::sync::mpsc;

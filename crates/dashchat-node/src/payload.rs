@@ -19,6 +19,12 @@ impl Extensions {
     pub fn topic(&self) -> Topic<crate::topic::kind::Untyped> {
         Topic::untyped(*self.topic)
     }
+
+    pub fn dependencies(&self) -> Vec<Hash> {
+        self.auth
+            .as_ref()
+            .map_or(vec![], |auth| auth.dependencies.clone())
+    }
 }
 
 impl Extension<GroupsArgs> for Extensions {
