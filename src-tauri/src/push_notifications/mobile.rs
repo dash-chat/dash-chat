@@ -1,4 +1,4 @@
-use dashchat_node::{AsBody, Node, Notification, Payload};
+use dashchat_node::{AsBody, Node, Notification, Payload, Topic};
 use jni::objects::JClass;
 use jni::JNIEnv;
 use p2panda_store::OperationStore;
@@ -139,12 +139,10 @@ pub fn receive_push_notification(
             return None;
         };
 
-        // Resolve the sender's profile name via the contacts table
-        let sender_name = if let Some(agent_id) = node
-            .lookup_contact(sender_device_id)
-            .ok()
-            .flatten()
-        {
+        // Resolve the sender's agent ID and profile name via the contacts table
+        let sender_agent_id = node.lookup_contact(sender_device_id).ok().flatten();
+
+        let sender_name = if let Some(agent_id) = sender_agent_id {
             node.get_profile_for_agent(agent_id)
                 .await
                 .ok()
@@ -158,9 +156,24 @@ pub fn receive_push_notification(
 
         let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
 
+        // Determine the chat route for notification tap navigation
+        let chat_route = sender_agent_id
+            .filter(|&agent_id| {
+                let direct_topic = Topic::direct_chat([node.agent_id(), agent_id]);
+                *direct_topic == topic_id
+            })
+            .map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()))
+            .unwrap_or_else(|| format!("/group-chat/{}", hex::encode(&*topic_id)));
+
+        // Don't show notification if the user is already viewing this chat
+        if is_viewing_chat(&chat_route) {
+            log::info!("Suppressing push notification: user is viewing the active chat");
+            return None;
+        }
+
         let message_text: &str = &content;
-        let body_text = if message_text.len() > 200 {
-            format!("{}...", &message_text[..200])
+        let body_text = if message_text.chars().count() > 200 {
+            format!("{}...", message_text.chars().take(200).collect::<String>())
         } else {
             message_text.to_string()
         };
@@ -182,4 +195,25 @@ fn generic_notification() -> NotificationData {
         icon: Some("ic_stat_icon".to_string()),
         ..Default::default()
     }
+}
+
+/// Checks whether the main window's current URL path matches the given chat route.
+fn is_viewing_chat(chat_route: &str) -> bool {
+    let handle = match crate::APP_HANDLE.lock().ok().and_then(|h| h.clone()) {
+        Some(h) => h,
+        None => return false,
+    };
+
+    use tauri::Manager;
+    let window = match handle.get_webview_window("main") {
+        Some(w) => w,
+        None => return false,
+    };
+
+    let url = match window.url() {
+        Ok(u) => u,
+        Err(_) => return false,
+    };
+
+    url.path() == chat_route
 }

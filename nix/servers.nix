@@ -31,7 +31,7 @@ let
           StateDirectory = "push-notifications";
         };
       };
-    networking.firewall.allowedTCPPorts = [ 3001 ];
+    networking.firewall.allowedTCPPorts = [ 80 ];
   };
 
   mailbox_server_module = {

@@ -36,7 +36,7 @@ storybook-static
 target
 
 .direnv/
-.hc*
+.envrc
 result*
 **/*/google-services.json
 service-account-key.json

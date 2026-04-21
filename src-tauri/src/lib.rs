@@ -19,6 +19,11 @@ mod tray;
 pub(crate) static FORCE_QUIT: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// Global AppHandle so that code running outside the normal Tauri lifecycle
+/// (e.g. Android's `receive_push_notification`) can query window state.
+pub(crate) static APP_HANDLE: std::sync::Mutex<Option<tauri::AppHandle>> =
+    std::sync::Mutex::new(None);
+
 /// Prevents multiple quit-confirmation dialogs from stacking up.
 #[cfg(not(mobile))]
 pub(crate) static QUIT_DIALOG_OPEN: std::sync::atomic::AtomicBool =

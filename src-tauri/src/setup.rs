@@ -6,6 +6,8 @@ use tauri::{Emitter, Manager};
 use crate::{commands::logs::simplify, filesystem::FileSystem};
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
+    *crate::APP_HANDLE.lock().unwrap() = Some(app_handle.clone());
+
     // Manage the mDNS service daemon
     app_handle.manage(mdns_sd::ServiceDaemon::new()?);
 

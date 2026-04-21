@@ -38,6 +38,7 @@
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMac, isMobile, isTauriEnv } from '$lib/utils/environment';
+	import { setupNotificationNavigation } from '$lib/utils/notifications';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
@@ -112,6 +113,10 @@
 	setContext('devices-store', devicesStore);
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
+
+	if (!isPreview) {
+		setupNotificationNavigation(chatsStore);
+	}
 
 	const isDark = useSignal(settingsStore.isDark);
 

@@ -1,3 +1,5 @@
+set working-directory := '..'
+
 # run the push notifications dev server
 server:
     #!/usr/bin/env bash
