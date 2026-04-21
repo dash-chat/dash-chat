@@ -65,6 +65,7 @@
           ];
           packages = [
             pkgs.mprocs
+            pkgs.just
             pkgs.pnpm
             pkgs.cargo-nextest
             inputs'.tauri-driver.packages.tauri-driver

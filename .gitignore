@@ -38,6 +38,7 @@ target
 .direnv/
 .envrc
 result*
+src-tauri/gen/apple/build/
 **/*/google-services.json
 service-account-key.json
 

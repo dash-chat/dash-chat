@@ -23,7 +23,18 @@ procs:
       export MAILBOX_URL="http://$LOCAL_IP:3000"
       export PUSH_NOTIFICATIONS_URL="http://$LOCAL_IP:3001"
       just android dev
-    autostart: false
+    autostart: false  
   logcat:
     shell: just android logcat
+    autostart: false
+  ios:
+    shell: |
+      if command -v hostname &>/dev/null && hostname -I &>/dev/null; then
+        LOCAL_IP=$(hostname -I | awk '{print $1}')
+      else
+        LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "127.0.0.1")
+      fi
+      export MAILBOX_URL="http://$LOCAL_IP:3000"
+      export PUSH_NOTIFICATIONS_URL="http://$LOCAL_IP:3001"
+      just ios dev
     autostart: false
