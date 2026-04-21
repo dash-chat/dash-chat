@@ -17,30 +17,26 @@ use chrono::{Duration, Utc};
 use futures::Stream;
 use named_id::Rename;
 use named_id::*;
-use p2panda_core::{Body, Hash, PublicKey};
+use p2panda_core::{Body, Hash, PublicKey, Timestamp};
 use p2panda_spaces::ActorId;
-use p2panda_store::{LogStore, SqliteStore};
-use p2panda_stream::IngestExt;
-use p2panda_stream::partial::operations::PartialOrder;
+use p2panda_store::SqliteStore;
 use tokio::sync::mpsc;
 
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 
 use crate::chat::ChatMessageContent;
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
-use crate::local_store::NodeData;
 use crate::mailbox::MailboxOperation;
 use crate::payload::{
     AnnouncementsPayload, ChatPayload, Extensions, InboxPayload, Payload, Profile,
 };
-use crate::stores::OpStore;
+use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore, new_sqlite};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DashAction, DeviceGroupId, DeviceGroupPayload, DeviceId,
     DirectChatId, Header, Operation,
 };
 
-pub use crate::local_store::LocalStore;
 pub use stream_processing::Notification;
 
 #[derive(Clone, Debug)]
@@ -75,8 +71,8 @@ impl Default for NodeConfig {
 
 pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
 
-pub type Orderer<S> =
-    PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
+// pub type Orderer<S> =
+//     PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
 
 pub type NodeOpStore = OpStore<SqliteStore>;
 // pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
@@ -121,7 +117,8 @@ pub struct Node {
     stream_task: Option<CancelAndWait<()>>,
 
     local_store: LocalStore,
-    node_data: NodeData,
+    group_store: GroupStore,
+    node_keys: NodeKeys,
 
     _filesystem: Filesystem,
 }
@@ -135,22 +132,24 @@ impl Node {
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
         let local_store = LocalStore::new(filesystem.local_store_path()).await?;
-        let node_data = local_store.node_data()?;
+        let node_keys = local_store.node_keys()?;
 
-        let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
-        // let op_store = OpStore::new_memory();
+        let sqlite = new_sqlite(filesystem.op_store_path()).await?;
+        let op_store = OpStore::new(sqlite.clone());
+        let group_store = GroupStore::new(sqlite.clone());
 
         let (stream_tx, stream_rx) = mpsc::channel(100);
 
         let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
 
         let mut node = Self {
-            op_store: op_store.clone(),
+            op_store,
             mailboxes,
             config,
             _filesystem: filesystem,
-            local_store: local_store.clone(),
-            node_data,
+            local_store,
+            group_store,
+            node_keys,
             notification_tx,
             stream_tx,
             stream_task: None,
@@ -170,36 +169,20 @@ impl Node {
     ) -> anyhow::Result<Vec<(Header, Option<Payload>)>> {
         let mut logs = Vec::new();
         for author in authors {
-            for (h, b) in self.get_log(topic_id, author).await? {
-                if let Some(body) = b {
+            for op in self.op_store.get_log(&author, &topic_id, None).await? {
+                if let Some(body) = op.body {
                     if let Ok(payload) = Payload::try_from_body(&body) {
-                        logs.push((h, Some(payload)));
+                        logs.push((op.header, Some(payload)));
                     } else {
                         tracing::error!("Failed to decode payload: {body:?}");
                     }
                 } else {
-                    logs.push((h, None));
+                    logs.push((op.header, None));
                 }
             }
         }
         logs.sort_by_key(|(h, _)| h.timestamp);
         Ok(logs)
-    }
-
-    pub async fn get_log(
-        &self,
-        topic: TopicId,
-        author: DeviceId,
-    ) -> anyhow::Result<Vec<(Header, Option<Body>)>> {
-        let _heights = self.op_store.get_log_heights(&topic).await?;
-        match self.op_store.get_log(&author, &topic, None).await? {
-            Some(log) => Ok(log),
-            None => {
-                let author = *author;
-                tracing::warn!("No log found for topic {topic:?} and author {author:?}");
-                Ok(vec![])
-            }
-        }
     }
 
     pub async fn get_authors(&self, topic_id: TopicId) -> anyhow::Result<HashSet<DeviceId>> {
@@ -245,17 +228,17 @@ impl Node {
         Ok(QrCode {
             device_pubkey: self.device_id(),
             inbox_topic,
-            agent_id: self.node_data.agent_id,
+            agent_id: self.node_keys.agent_id,
             share_intent,
         })
     }
 
     pub fn agent_id(&self) -> AgentId {
-        self.node_data.agent_id
+        self.node_keys.agent_id
     }
 
     pub fn device_id(&self) -> DeviceId {
-        self.node_data.device_id()
+        self.node_keys.device_id()
     }
 
     pub fn device_group_topic(&self) -> DeviceGroupId {
@@ -329,9 +312,10 @@ impl Node {
             .map(|(public_key, access)| (GroupMember::Individual(public_key), access))
             .collect();
 
+        let deps = self.group_store.heads().await?;
         self.author_operation(
             chat_id,
-            DashAction::group_action(chat_id, GroupAction::Create { initial_members })?,
+            DashAction::group_action(chat_id, GroupAction::Create { initial_members }, deps)?,
             Some(&format!("create_group({})", chat_id.renamed())),
         )
         .await?;
@@ -371,6 +355,8 @@ impl Node {
         member: PublicKey,
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
+        let deps = self.group_store.heads().await?;
+
         self.author_operation(
             chat_id,
             DashAction::group_action(
@@ -379,6 +365,7 @@ impl Node {
                     member: GroupMember::Individual(member),
                     access,
                 },
+                deps,
             )?,
             Some(&format!("add_group_member({})", chat_id.renamed())),
         )
@@ -399,6 +386,7 @@ impl Node {
         chat_id: ChatId,
         member: PublicKey,
     ) -> anyhow::Result<()> {
+        let deps = self.group_store.heads().await?;
         self.author_operation(
             chat_id,
             DashAction::group_action(
@@ -406,6 +394,7 @@ impl Node {
                 GroupAction::Remove {
                     member: GroupMember::Individual(member),
                 },
+                deps,
             )?,
             Some(&format!("remove_group_member({})", chat_id.renamed())),
         )
@@ -418,8 +407,7 @@ impl Node {
         chat_id: ChatId,
     ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
         let members = self
-            .local_store
-            .groups
+            .group_store
             .members(chat_id)
             .await?
             .into_iter()
@@ -456,7 +444,7 @@ impl Node {
             .get_interleaved_logs(topic_id, authors.into_iter().collect())
             .await?;
 
-        let mut set_profile_ops: Vec<(u64, Profile)> = ops
+        let mut set_profile_ops: Vec<(Timestamp, Profile)> = ops
             .into_iter()
             .filter_map(|(header, payload)| match payload {
                 Some(Payload::Announcements(AnnouncementsPayload::SetProfile(profile))) => {

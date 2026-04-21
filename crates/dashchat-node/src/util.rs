@@ -24,3 +24,11 @@ where
 pub fn actor_to_pubkey(actor: ActorId) -> PublicKey {
     PublicKey::from_bytes(actor.as_bytes()).unwrap()
 }
+
+pub fn first<T, U>(pair: (T, U)) -> T {
+    pair.0
+}
+
+pub fn second<T, U>(pair: (T, U)) -> U {
+    pair.1
+}

@@ -1,20 +1,10 @@
-use std::{
-    collections::BTreeSet,
-    io::Write,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::BTreeSet, path::Path, sync::Arc};
 
 use chrono::{DateTime, Utc};
-use p2panda_auth::Access;
-use p2panda_core::{Hash, Operation, PublicKey};
-use p2panda_store::SqliteStore;
 use redb::*;
-use tokio::sync::Mutex;
 
 use crate::{
     contact::InboxTopic,
-    node::DashResolver,
     topic::{AutoRegisteredTopic, TopicId},
     *,
 };
@@ -32,61 +22,28 @@ const PRIVATE_KEY_KEY: &str = "private_key";
 const AGENT_ID_KEY: &str = "agent_id";
 
 #[derive(Clone, Debug)]
-pub struct NodeData {
+pub struct NodeKeys {
     pub private_key: PrivateKey,
     pub agent_id: AgentId,
 }
 
-impl NodeData {
+impl NodeKeys {
     pub fn device_id(&self) -> DeviceId {
         DeviceId::from(self.private_key.public_key())
-    }
-}
-
-type GroupsProcessor = p2panda_auth::processor::GroupsProcessor<Extensions, TopicId>;
-
-/// Until we have a persisted solution to group state, we store group state in-memory and dump
-/// to a file whenever it changes.
-/// XXX: this must be replaced ASAP!
-#[derive(Clone)]
-pub struct HackyGroupStore {
-    groups: SqliteStore,
-}
-
-impl HackyGroupStore {
-    pub async fn new(sqlite: SqliteStore) -> anyhow::Result<Self> {
-        Ok(Self { groups: sqlite })
-    }
-
-    pub async fn heads(&self) -> anyhow::Result<Vec<Hash>> {
-        Ok(self.groups.get_heads().await?)
-    }
-
-    pub async fn process(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
-        GroupsProcessor::process(operation).await?;
-        Ok(())
-    }
-
-    pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(PublicKey, Access)>> {
-        let group_id = topic.to_group_pubkey()?;
-        Ok(self.groups.get_state().await?.crdt.inner.members(group_id))
     }
 }
 
 #[derive(Clone)]
 pub struct LocalStore {
     db: Arc<Database>,
-    pub(crate) groups: HackyGroupStore,
 }
 
 impl LocalStore {
-    pub async fn new(path: impl AsRef<Path>, sqlite: SqliteStore) -> anyhow::Result<Self> {
+    pub async fn new(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let database = Database::create(&path)?;
-        let groups_path = path.with_file_name("groups.cbor");
         let store = Self {
             db: Arc::new(database),
-            groups: HackyGroupStore::new(groups_path, sqlite).await?,
         };
         store.ensure_initialized()?;
 
@@ -117,8 +74,8 @@ impl LocalStore {
         Ok(())
     }
 
-    pub fn node_data(&self) -> anyhow::Result<NodeData> {
-        Ok(NodeData {
+    pub fn node_keys(&self) -> anyhow::Result<NodeKeys> {
+        Ok(NodeKeys {
             private_key: self.private_key()?,
             agent_id: self.agent_id()?,
         })

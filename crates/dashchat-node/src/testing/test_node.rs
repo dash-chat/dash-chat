@@ -11,9 +11,9 @@ use tokio::sync::{Mutex, mpsc::Receiver};
 use mailbox_client::{MailboxClient, mem::MemMailbox};
 
 use crate::{
-    AgentId, DeviceGroupPayload, LocalStore, NodeConfig, Notification, Payload, Profile,
-    filesystem::Filesystem, mailbox::MailboxOperation, node::Node, testing::behavior::Behavior,
-    topic::TopicId,
+    AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
+    filesystem::Filesystem, mailbox::MailboxOperation, node::Node, stores::LocalStore,
+    testing::behavior::Behavior, topic::TopicId,
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::Debug)]

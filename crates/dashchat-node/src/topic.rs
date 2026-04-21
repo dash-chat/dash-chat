@@ -133,6 +133,12 @@ pub mod kind {
 #[debug("{}", self)]
 pub struct TopicId([u8; 32]);
 
+impl TopicId {
+    pub const fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+}
+
 impl p2panda_spaces::traits::SpaceId for TopicId {}
 
 pub type DashChatTopicId = TopicId;

@@ -47,6 +47,7 @@ impl Node {
             tracing::warn!("topic already iniitalized, skipping");
             return Ok(());
         };
+
         let stream = ReceiverStream::new(mailbox_rx)
             .filter_map(async |op| {
                 let hash = op.hash();
@@ -131,20 +132,20 @@ impl Node {
         let hash = operation.hash;
         let topic = operation.header.extensions.topic;
 
-        if let Err(err) = self.op_store.process_ordering(operation).await {
-            tracing::error!(?err, "process ordering error");
-        }
+        // if let Err(err) = self.op_store.process_ordering(operation).await {
+        //     tracing::error!(?err, "process ordering error");
+        // }
 
-        let reordered = self
-            .op_store
-            .next_ordering()
-            .await
-            .map_err(|err| {
-                tracing::error!(?err, "next ordering error");
-            })
-            .unwrap_or_default();
+        // let reordered = self
+        //     .op_store
+        //     .next_ordering()
+        //     .await
+        //     .map_err(|err| {
+        //         tracing::error!(?err, "next ordering error");
+        //     })
+        //     .unwrap_or_default();
 
-        // let reordered = vec![operation];
+        let reordered = vec![operation];
 
         for operation in reordered {
             match self.process_operation(operation, false, false).await {
@@ -218,7 +219,7 @@ impl Node {
         match &operation.header.extensions.auth {
             Some(auth) => {
                 tracing::info!(?auth, "processing auth extensions");
-                if let Err(err) = self.local_store.groups.process(operation).await {
+                if let Err(err) = self.group_store.process(operation).await {
                     tracing::error!(?err, "error processing auth extensions");
                 };
             }

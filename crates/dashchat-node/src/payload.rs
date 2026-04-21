@@ -1,6 +1,5 @@
 use named_id::{RenameAll, RenameNone};
-use p2panda_auth::group::GroupAction;
-use p2panda_auth::processor::AuthExtension;
+use p2panda_auth::{group::GroupAction, processor::GroupsArgs};
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use p2panda_core::{Body, Extension, Hash, PruneFlag, PublicKey};
 use serde::{Deserialize, Serialize};
@@ -13,7 +12,7 @@ use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, Topic};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extensions {
     pub topic: TopicId,
-    pub auth: Option<AuthExtension>,
+    pub auth: Option<GroupsArgs>,
 }
 
 impl Extensions {
@@ -22,8 +21,8 @@ impl Extensions {
     }
 }
 
-impl Extension<AuthExtension> for Extensions {
-    fn extract(header: &Header) -> Option<AuthExtension> {
+impl Extension<GroupsArgs> for Extensions {
+    fn extract(header: &Header) -> Option<GroupsArgs> {
         header.extensions.auth.clone()
     }
 }
@@ -110,7 +109,7 @@ pub enum Payload {
 pub enum DashAction {
     Payload(Payload),
     #[named_id(skip)]
-    GroupControl(AuthExtension),
+    GroupControl(GroupsArgs),
 }
 
 impl DashAction {
@@ -121,7 +120,7 @@ impl DashAction {
         })
     }
 
-    pub fn extract_auth_extension(&self) -> Option<AuthExtension> {
+    pub fn extract_auth_extension(&self) -> Option<GroupsArgs> {
         match self {
             DashAction::GroupControl(auth) => Some(auth.clone()),
             _ => None,
@@ -131,10 +130,12 @@ impl DashAction {
     pub fn group_action(
         group_id: ChatId,
         action: GroupAction<PublicKey, ()>,
+        dependencies: Vec<Hash>,
     ) -> anyhow::Result<Self> {
-        Ok(DashAction::GroupControl(AuthExtension {
+        Ok(DashAction::GroupControl(GroupsArgs {
             group_id: group_id.to_group_pubkey()?,
             action,
+            dependencies,
         }))
     }
 }
