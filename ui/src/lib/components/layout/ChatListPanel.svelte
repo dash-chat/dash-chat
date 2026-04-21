@@ -6,26 +6,28 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/AllChats.svelte';
+	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
+
 	import { Link, Navbar, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pushState } from '$app/navigation';
+	import Avatar from '../profiles/Avatar.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	const theme = $derived(useTheme());
 </script>
 
-<div class="chat-list-panel">
+<div class="flex flex-col relative h-full">
 	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
 				<Link iconOnly href="/settings" data-testid="home-settings-link">
-					<wa-avatar
+					<Avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
 						style="--size: 42px"
-					>
-					</wa-avatar>
+					/>
 				</Link>
 			{/await}
 		{/snippet}
@@ -43,15 +45,9 @@
 		{/snippet}
 	</Navbar>
 
-	<div class={theme==='ios' ? "mt-4": ''}></div>
-	
-	<AllChats></AllChats>
-</div>
+	<UpdaterBanner />
 
-<style>
-	.chat-list-panel {
-		display: flex;
-		flex-direction: column;
-		position: relative;
-	}
-</style>
+	<div class={theme === 'ios' ? 'mt-4' : ''}></div>
+
+	<AllChats class="flex flex-1 flex-col"></AllChats>
+</div>

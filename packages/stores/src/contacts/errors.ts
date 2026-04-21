@@ -7,4 +7,5 @@ export type AddContactError =
 	| { kind: 'ProfileNotCreated'; message: null }
 	| { kind: 'CreateQrCode'; message: string }
 	| { kind: 'CreateDirectChat'; message: string }
+	| { kind: 'StoreContact'; message: string }
 	| Error;

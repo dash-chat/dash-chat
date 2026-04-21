@@ -15,6 +15,8 @@
 
     nixos-generators.url = "github:nix-community/nixos-generators";
 
+    tauri-driver.url = "github:dash-chat/tauri-driver";
+
     tauri-plugin-holochain.url =
       "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
   };
@@ -43,29 +45,76 @@
       systems =
         [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
 
-      perSystem = { inputs', system, ... }:
+      perSystem = { inputs', self', lib, system, ... }:
         let
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
 
-          rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          tauriLibraries = with pkgs; [
+            webkitgtk_4_1
+            gtk3
+            cairo
+            gdk-pixbuf
+            glib
+            dbus
+            openssl
+            librsvg
+            libsoup_3
+            libayatana-appindicator
+          ];
+          packages = [
+            pkgs.mprocs
+            pkgs.pnpm
+            pkgs.cargo-nextest
+            inputs'.tauri-driver.packages.tauri-driver
+          ];
         in rec {
-
-          devShells.default = pkgs.mkShell {
+          devShells.default = let
+            rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          in pkgs.mkShell {
+            packages = [ rust ] ++ packages;
             inputsFrom =
               [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-            packages = [ pkgs.mprocs pkgs.pnpm rust ];
+            shellHook = lib.optionalString pkgs.stdenv.isLinux ''
+              export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
+                lib.makeLibraryPath tauriLibraries
+              }"
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
+                lib.makeLibraryPath tauriLibraries
+              }"
+            '';
           };
 
           devShells.androidDev = let
             rust = pkgs.rust-bin.fromRustupToolchainFile
               ./rust-toolchain.android.toml;
           in pkgs.mkShell {
-            inputsFrom = [
-              devShells.default
-              inputs'.tauri-plugin-holochain.devShells.holochainTauriAndroidDev
-            ];
             packages = [ rust ];
+            inputsFrom =
+              [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
+          };
+
+          devShells.tauriAndroidDev = pkgs.mkShell {
+            inputsFrom = [ devShells.androidDev devShells.default ];
+          };
+
+          devShells.iosDev = let
+            rust =
+              pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.ios.toml;
+          in pkgs.mkShell {
+            inputsFrom = [ devShells.default ];
+            packages = [ rust ]
+              ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
+            shellHook = lib.optionalString pkgs.stdenv.isDarwin ''
+              # Make libiconv findable by the linker even when xcodebuild
+              # strips NIX_LDFLAGS from the environment.
+              export LIBRARY_PATH="${
+                lib.makeLibraryPath [ pkgs.libiconv ]
+              }''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+
+              # Unset SDKROOT so xcrun can locate the iOS SDK from Xcode.
+              unset SDKROOT
+            '';
           };
 
         };

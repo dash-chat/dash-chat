@@ -3,11 +3,18 @@ export const tid = (id: string) => `[data-testid="${id}"]`;
 export const S = {
 	home: {
 		settingsLink: tid('home-settings-link'),
-		contactsLink: tid('home-contacts-link'),
 		newMessageLink: tid('home-new-message-link'),
 		newMessageFab: tid('home-new-message-fab'),
+		firstChatTooltip: tid('first-chat-tooltip'),
 		chatList: tid('all-chats-list'),
 		emptyState: tid('all-chats-empty'),
+	},
+	getStarted: {
+		addContact: tid('get-started-add-contact'),
+		addPhoto: tid('get-started-add-photo'),
+		chatColor: tid('get-started-chat-color'),
+		newGroup: tid('get-started-new-group'),
+		dismiss: (id: string) => tid(`get-started-dismiss-${id}`),
 	},
 	createProfile: {
 		nameInput: tid('create-profile-name'),
@@ -24,6 +31,7 @@ export const S = {
 		codeInput: tid('add-contact-code-input'),
 	},
 	directChat: {
+		page: tid('direct-chat-page'),
 		back: tid('direct-chat-back'),
 		searchBack: tid('direct-chat-search-back'),
 		settingsLink: tid('direct-chat-settings-link'),
@@ -51,7 +59,10 @@ export const S = {
 		back: tid('settings-back'),
 		profileLink: tid('settings-profile-link'),
 		qrLink: tid('settings-qr-link'),
+		appearanceLink: tid('settings-appearance-link'),
 		accountLink: tid('settings-account-link'),
+		helpLink: tid('settings-help-link'),
+		offlineLink: tid('settings-offline-link'),
 	},
 	profile: {
 		back: tid('profile-back'),
@@ -75,16 +86,17 @@ export const S = {
 	},
 	editPhoto: {
 		back: tid('edit-photo-back'),
+		close: tid('edit-photo-close'),
 		saveButton: tid('edit-photo-save-btn'),
 	},
 	contacts: {
 		back: tid('contacts-back'),
-		addLink: tid('contacts-add-link'),
 		list: tid('contacts-list'),
 	},
 	newMessage: {
 		back: tid('new-message-back'),
 		search: tid('new-message-search'),
+		addContact: tid('new-message-add-contact'),
 		contactList: tid('new-message-contact-list'),
 	},
 	newGroup: {
@@ -100,10 +112,36 @@ export const S = {
 		back: tid('group-chat-back'),
 		infoLink: tid('group-chat-info-link'),
 	},
+	offline: {
+		back: tid('offline-back'),
+		localMailboxToggle: tid('offline-local-mailbox-toggle'),
+	},
+	appearance: {
+		back: tid('appearance-back'),
+		light: tid('appearance-light'),
+		dark: tid('appearance-dark'),
+		system: tid('appearance-system'),
+	},
 	account: {
 		back: tid('account-back'),
 		deleteItem: tid('account-delete'),
 		deleteConfirm: tid('account-delete-confirm'),
 		deleteCancel: tid('account-delete-cancel'),
+	},
+	help: {
+		back: tid('help-back'),
+		contactUsLink: tid('help-contact-us'),
+	},
+	contactUs: {
+		back: tid('contact-us-back'),
+		messageInput: tid('contact-us-message-input'),
+		reasonSelect: tid('contact-us-reason-select'),
+		includeDebugLog: tid('contact-us-include-debug-log'),
+		nextButton: tid('contact-us-next-btn'),
+	},
+	updater: {
+		banner: tid('updater-banner'),
+		bannerTitle: tid('updater-banner-title'),
+		dismissBtn: tid('updater-dismiss-btn'),
 	},
 } as const;

@@ -18,6 +18,7 @@ jobs:
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: read
@@ -29,20 +30,25 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
-      - name: setup node
-        uses: actions/setup-node@v1
-        with:
-          node-version: 20.12.2
+          ref: develop
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@master
+        uses: pnpm/action-setup@v6
         with:
-            version: 10.15.0  # Optional: specify a pnpm version
-            cache: true
+          version: 10.33.0
+          cache: true
 
-      - name: install Rust stable
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.12.2
+          cache: 'pnpm'
+
+      - name: Install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+          cache-on-failure: true
 
       - name: install dependencies
         run: |
@@ -79,4 +85,5 @@ jobs:
           # Optional: Add claude_args to customize behavior and configuration
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://docs.claude.com/en/docs/claude-code/cli-reference for available options
-          claude_args: '--model claude-opus-4-6 --allowed-tools Bash(gh pr:*),Bash(pnpm:*),mcp__tauri__driver_session,mcp__tauri__webview_find_element,mcp__tauri__read_logs,mcp__tauri__webview_interact,mcp__tauri__webview_screenshot,mcp__tauri__webview_keyboard,mcp__tauri__webview_wait_for,mcp__tauri__webview_get_styles,mcp__tauri__webview_execute_js,mcp__tauri__manage_window'
+          base_branch: develop
+          claude_args: '--model claude-opus-4-6 --allowed-tools Bash(cargo:*),Bash(gh:*),Bash(npx:*),Bash(pnpm:*),mcp__tauri__driver_session,mcp__tauri__webview_find_element,mcp__tauri__read_logs,mcp__tauri__webview_interact,mcp__tauri__webview_screenshot,mcp__tauri__webview_keyboard,mcp__tauri__webview_wait_for,mcp__tauri__webview_get_styles,mcp__tauri__webview_execute_js,mcp__tauri__manage_window'

@@ -1,0 +1,545 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 63;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		4380A7765D172905688252C7 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1B5923DA7F6F96396E562A7A /* libapp.a */; };
+		4C3E029E49111E66C1BE312D /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9CE74103604DFA7DBAE8E0C /* Security.framework */; };
+		50EBC9542537AB2C4D796BE8 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5FC8565E83EC0B2AC4D3C959 /* MetalKit.framework */; };
+		560AC8213C97D501718FD79D /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E6E4903B506C4ED629DAF785 /* QuartzCore.framework */; };
+		59B25155F8ACA00E17434812 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F89358BBE357B19AE7BF3DC5 /* Assets.xcassets */; };
+		643555E9417C7AAF39BC7DA4 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = D11DDC068DE46CC27B1D0D6B /* assets */; };
+		8823607EF8A492C3DCBF2103 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 32B26AFAD7D83E1A669D22A7 /* UIKit.framework */; };
+		8AD067333F71898D09A74F8C /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EFA6F408E0B94A4467A98671 /* WebKit.framework */; };
+		ADB09C5318968EBA6AEFE842 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0B233AF045E16F15B53BDF18 /* main.mm */; };
+		BBCF0C01ED9E2B789638FB39 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 4E934CB66A6EFDED8A7140E1 /* LaunchScreen.storyboard */; };
+		BF5CA451C3C87851B08BEDF2 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4B55E5851C4FCBB5648AAAE4 /* CoreGraphics.framework */; };
+		F9015C731EA3878F23601595 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 259BA298A3F6E74B3EFE04CB /* Metal.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0447FA6925BAAFC10F4DBA13 /* contacts.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = contacts.rs; sourceTree = "<group>"; };
+		06F17EB3ED5B0BD9321DD467 /* i18n.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = i18n.rs; sourceTree = "<group>"; };
+		0B233AF045E16F15B53BDF18 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		1B5923DA7F6F96396E562A7A /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		259BA298A3F6E74B3EFE04CB /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		32B26AFAD7D83E1A669D22A7 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		359FB2105388AF1995FEB55F /* setup.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = setup.rs; sourceTree = "<group>"; };
+		4B55E5851C4FCBB5648AAAE4 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		4E934CB66A6EFDED8A7140E1 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		5FC8565E83EC0B2AC4D3C959 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		63DE98A978F11C243F0A30CB /* settings.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = settings.rs; sourceTree = "<group>"; };
+		66C39C7975F9DACBFBA3F22E /* mailbox.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mailbox.rs; sourceTree = "<group>"; };
+		6C7FA8875A604E4573B60905 /* direct_chats.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = direct_chats.rs; sourceTree = "<group>"; };
+		788D3CDC26B727BA1C41D139 /* profile.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = profile.rs; sourceTree = "<group>"; };
+		8279D5B08E9EE3886CFC2D05 /* settings.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = settings.rs; sourceTree = "<group>"; };
+		8770D5513374A27D217626E1 /* server.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = server.rs; sourceTree = "<group>"; };
+		8EDDE94982E4A3D33FEADFF7 /* main.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = main.rs; sourceTree = "<group>"; };
+		9323F8232A2E49143D69634B /* filesystem.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = filesystem.rs; sourceTree = "<group>"; };
+		95DDB5AB5C2CD86BB7BB8AE6 /* mod.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mod.rs; sourceTree = "<group>"; };
+		970274B61A0B130265B8167E /* menu.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = menu.rs; sourceTree = "<group>"; };
+		9AE27A5EF83148E8E8A939F5 /* group_chat.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = group_chat.rs; sourceTree = "<group>"; };
+		AB1CCBF888A60C43A95C87F3 /* push_notifications.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = push_notifications.rs; sourceTree = "<group>"; };
+		AF3E0E9FD52F5C966036D166 /* dash-chat_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "dash-chat_iOS.entitlements"; sourceTree = "<group>"; };
+		C19CBD4A53D241FD81F7D90D /* tray.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = tray.rs; sourceTree = "<group>"; };
+		C34F863351A4699075675361 /* Dash Chat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Dash Chat.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C857B543B98437BA43FFF947 /* chats.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = chats.rs; sourceTree = "<group>"; };
+		C9CE74103604DFA7DBAE8E0C /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		D11DDC068DE46CC27B1D0D6B /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
+		D2105A851AC98CC04F63516F /* android_logs.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = android_logs.rs; sourceTree = "<group>"; };
+		D5C4C4CA0CEA7953DB728A79 /* devices.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = devices.rs; sourceTree = "<group>"; };
+		D7F72D98AEFF47E0CC1A8B49 /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		DBF2DA613EFF7132A1589681 /* utils.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = utils.rs; sourceTree = "<group>"; };
+		E314E9BC10C6ABA44255B75A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		E6E4903B506C4ED629DAF785 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		EA3D4F30F2759740C9F9632E /* logs.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = logs.rs; sourceTree = "<group>"; };
+		EA650C69B61AD9B4CB070D77 /* redact_log.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = redact_log.rs; sourceTree = "<group>"; };
+		EFA6F408E0B94A4467A98671 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		F566EBCD813608C3CF98B69E /* lib.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = lib.rs; sourceTree = "<group>"; };
+		F89358BBE357B19AE7BF3DC5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AB3C8759DF258BE9A005EF44 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4380A7765D172905688252C7 /* libapp.a in Frameworks */,
+				BF5CA451C3C87851B08BEDF2 /* CoreGraphics.framework in Frameworks */,
+				F9015C731EA3878F23601595 /* Metal.framework in Frameworks */,
+				50EBC9542537AB2C4D796BE8 /* MetalKit.framework in Frameworks */,
+				560AC8213C97D501718FD79D /* QuartzCore.framework in Frameworks */,
+				4C3E029E49111E66C1BE312D /* Security.framework in Frameworks */,
+				8823607EF8A492C3DCBF2103 /* UIKit.framework in Frameworks */,
+				8AD067333F71898D09A74F8C /* WebKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		026525EBF2ECCEE46CDA4BC0 = {
+			isa = PBXGroup;
+			children = (
+				D11DDC068DE46CC27B1D0D6B /* assets */,
+				F89358BBE357B19AE7BF3DC5 /* Assets.xcassets */,
+				4E934CB66A6EFDED8A7140E1 /* LaunchScreen.storyboard */,
+				5F1640F62BD6C0FF7BFA4BC2 /* dash-chat_iOS */,
+				14B9867636FBA2C2552F98C9 /* Externals */,
+				E83379195823E5955C1C39DE /* Sources */,
+				C73FA6D28D53DD096CB4F09C /* src */,
+				74CD414C9FEAC42C08214928 /* Frameworks */,
+				BF2B00AC8D8033D52EE5878F /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		14B9867636FBA2C2552F98C9 /* Externals */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Externals;
+			sourceTree = "<group>";
+		};
+		5F1640F62BD6C0FF7BFA4BC2 /* dash-chat_iOS */ = {
+			isa = PBXGroup;
+			children = (
+				AF3E0E9FD52F5C966036D166 /* dash-chat_iOS.entitlements */,
+				E314E9BC10C6ABA44255B75A /* Info.plist */,
+			);
+			path = "dash-chat_iOS";
+			sourceTree = "<group>";
+		};
+		74CD414C9FEAC42C08214928 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				4B55E5851C4FCBB5648AAAE4 /* CoreGraphics.framework */,
+				1B5923DA7F6F96396E562A7A /* libapp.a */,
+				259BA298A3F6E74B3EFE04CB /* Metal.framework */,
+				5FC8565E83EC0B2AC4D3C959 /* MetalKit.framework */,
+				E6E4903B506C4ED629DAF785 /* QuartzCore.framework */,
+				C9CE74103604DFA7DBAE8E0C /* Security.framework */,
+				32B26AFAD7D83E1A669D22A7 /* UIKit.framework */,
+				EFA6F408E0B94A4467A98671 /* WebKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		790125491B07B3B216153CA5 /* commands */ = {
+			isa = PBXGroup;
+			children = (
+				C857B543B98437BA43FFF947 /* chats.rs */,
+				0447FA6925BAAFC10F4DBA13 /* contacts.rs */,
+				D5C4C4CA0CEA7953DB728A79 /* devices.rs */,
+				6C7FA8875A604E4573B60905 /* direct_chats.rs */,
+				9AE27A5EF83148E8E8A939F5 /* group_chat.rs */,
+				EA3D4F30F2759740C9F9632E /* logs.rs */,
+				95DDB5AB5C2CD86BB7BB8AE6 /* mod.rs */,
+				788D3CDC26B727BA1C41D139 /* profile.rs */,
+				EA650C69B61AD9B4CB070D77 /* redact_log.rs */,
+				63DE98A978F11C243F0A30CB /* settings.rs */,
+			);
+			path = commands;
+			sourceTree = "<group>";
+		};
+		91D27EE39D415EF43446F235 /* bindings */ = {
+			isa = PBXGroup;
+			children = (
+				D7F72D98AEFF47E0CC1A8B49 /* bindings.h */,
+			);
+			path = bindings;
+			sourceTree = "<group>";
+		};
+		BCF484188F0E17A9973BE1C8 /* push_notifications */ = {
+			isa = PBXGroup;
+			children = (
+				D2105A851AC98CC04F63516F /* android_logs.rs */,
+			);
+			path = push_notifications;
+			sourceTree = "<group>";
+		};
+		BF2B00AC8D8033D52EE5878F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C34F863351A4699075675361 /* Dash Chat.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C73FA6D28D53DD096CB4F09C /* src */ = {
+			isa = PBXGroup;
+			children = (
+				9323F8232A2E49143D69634B /* filesystem.rs */,
+				06F17EB3ED5B0BD9321DD467 /* i18n.rs */,
+				F566EBCD813608C3CF98B69E /* lib.rs */,
+				66C39C7975F9DACBFBA3F22E /* mailbox.rs */,
+				8EDDE94982E4A3D33FEADFF7 /* main.rs */,
+				970274B61A0B130265B8167E /* menu.rs */,
+				AB1CCBF888A60C43A95C87F3 /* push_notifications.rs */,
+				8279D5B08E9EE3886CFC2D05 /* settings.rs */,
+				359FB2105388AF1995FEB55F /* setup.rs */,
+				C19CBD4A53D241FD81F7D90D /* tray.rs */,
+				DBF2DA613EFF7132A1589681 /* utils.rs */,
+				790125491B07B3B216153CA5 /* commands */,
+				D61A39891EB99151509B735F /* mailbox */,
+				BCF484188F0E17A9973BE1C8 /* push_notifications */,
+			);
+			name = src;
+			path = ../../src;
+			sourceTree = "<group>";
+		};
+		D61A39891EB99151509B735F /* mailbox */ = {
+			isa = PBXGroup;
+			children = (
+				8770D5513374A27D217626E1 /* server.rs */,
+			);
+			path = mailbox;
+			sourceTree = "<group>";
+		};
+		E83379195823E5955C1C39DE /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				FDEF85376FA4BD2507BDE69E /* dash-chat */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		FDEF85376FA4BD2507BDE69E /* dash-chat */ = {
+			isa = PBXGroup;
+			children = (
+				0B233AF045E16F15B53BDF18 /* main.mm */,
+				91D27EE39D415EF43446F235 /* bindings */,
+			);
+			path = "dash-chat";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		C1722EF9C228AED41A28302A /* dash-chat_iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C93A9FF1E636F1015FE3E514 /* Build configuration list for PBXNativeTarget "dash-chat_iOS" */;
+			buildPhases = (
+				A206911C64BE8EF9637A3492 /* Build Rust Code */,
+				5842340EFDFF6D2C22E22851 /* Sources */,
+				5C1662138B6DDF78C1BA8683 /* Resources */,
+				AB3C8759DF258BE9A005EF44 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "dash-chat_iOS";
+			packageProductDependencies = (
+			);
+			productName = "dash-chat_iOS";
+			productReference = C34F863351A4699075675361 /* Dash Chat.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8089D74A27E9E9925A015C3B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+			};
+			buildConfigurationList = 833D57EE8274ED7EECB45353 /* Build configuration list for PBXProject "dash-chat" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 026525EBF2ECCEE46CDA4BC0;
+			minimizedProjectReferenceProxies = 1;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				C1722EF9C228AED41A28302A /* dash-chat_iOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		5C1662138B6DDF78C1BA8683 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				59B25155F8ACA00E17434812 /* Assets.xcassets in Resources */,
+				BBCF0C01ED9E2B789638FB39 /* LaunchScreen.storyboard in Resources */,
+				643555E9417C7AAF39BC7DA4 /* assets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A206911C64BE8EF9637A3492 /* Build Rust Code */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Code";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a",
+				"$(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "pnpm tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		5842340EFDFF6D2C22E22851 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ADB09C5318968EBA6AEFE842 /* main.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		44ABFC92AF58D3478391E84E /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = debug;
+		};
+		5BC8566CEA0B761E63F61517 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = release;
+		};
+		762DFDF4C6E2516B70E7060C /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "dash-chat_iOS/dash-chat_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 4XN3VLHC68;
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "dash-chat_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat;
+				PRODUCT_NAME = "Dash Chat";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+			};
+			name = release;
+		};
+		E05A056B6562644711F2631A /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "dash-chat_iOS/dash-chat_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 4XN3VLHC68;
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "dash-chat_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat.dev;
+				PRODUCT_NAME = "Dash Chat Dev";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+			};
+			name = debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		833D57EE8274ED7EECB45353 /* Build configuration list for PBXProject "dash-chat" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				44ABFC92AF58D3478391E84E /* debug */,
+				5BC8566CEA0B761E63F61517 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		C93A9FF1E636F1015FE3E514 /* Build configuration list for PBXNativeTarget "dash-chat_iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E05A056B6562644711F2631A /* debug */,
+				762DFDF4C6E2516B70E7060C /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 8089D74A27E9E9925A015C3B /* Project object */;
+}

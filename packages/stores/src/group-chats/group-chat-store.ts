@@ -5,7 +5,7 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, PublicKey } from '../p2panda/types';
 import { ChatId, MessageContent, Payload } from '../types';
-import { GroupChatClient  } from './group-chat-client';
+import { type IGroupChatClient } from './group-chat-client';
 import { Message } from '../direct-chats/direct-chat-store';
 
 export interface GroupInfo {
@@ -24,7 +24,7 @@ export class GroupChatStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
-		public client: GroupChatClient,
+		public client: IGroupChatClient,
 		public chatId: ChatId,
 	) {}
 

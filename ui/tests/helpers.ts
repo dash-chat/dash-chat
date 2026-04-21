@@ -37,9 +37,10 @@ export function waitForText(selector: string, text: string, timeout = 15_000): P
 }
 
 export function typeInto(selector: string, value: string): void {
-	const el = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement;
-	const proto =
-		el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+	const el = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | null;
+	if (!el) throw new Error(`typeInto: element not found for "${selector}"`);
+	const isTextArea = el.tagName === 'TEXTAREA';
+	const proto = isTextArea ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
 	const setter = Object.getOwnPropertyDescriptor(proto, 'value')!.set!;
 	setter.call(el, value);
 	el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -49,10 +50,13 @@ export function typeInto(selector: string, value: string): void {
 export function click(selector: string): void {
 	const el =
 		document.querySelector(selector + ' a') || document.querySelector(selector);
-	(el as HTMLElement)?.click();
+	if (!el) throw new Error(`click: element not found for "${selector}"`);
+	(el as HTMLElement).click();
 }
 
-/** Wait one animation frame for framework reactivity to settle. */
+/** Wait for framework reactivity to settle.
+ *  Uses setTimeout instead of requestAnimationFrame because rAF may never
+ *  fire in offscreen/headless WebKitGTK contexts (e.g. tauri-driver). */
 export function nextTick(): Promise<void> {
-	return new Promise((r) => requestAnimationFrame(() => r()));
+	return new Promise((r) => setTimeout(r, 50));
 }

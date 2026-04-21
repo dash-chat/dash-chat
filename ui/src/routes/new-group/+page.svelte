@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { m, members } from '$lib/paraglide/messages.js';
 
 	import { getContext } from 'svelte';
@@ -10,7 +9,7 @@
 	import { mdiAccountMultiplePlus } from '@mdi/js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import ProfileAvatar from '$lib/components/profiles/ProfileAvatar.svelte';
 	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
 	import {
 		Page,
@@ -28,6 +27,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { mdiArrowNext } from '$lib/utils/icon';
+	import { isIos } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -52,12 +52,18 @@
 	<Page>
 		<Navbar title={m.newGroup()} titleClass="opacity1" transparent={true}>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => window.history.back()}  data-testid="new-group-back" />
+				<NavbarBackLink
+					onClick={() => window.history.back()}
+					data-testid="new-group-back"
+				/>
 			{/snippet}
 
 			{#snippet right()}
-				{#if theme === 'ios'}
-					<Link onClick={() => (currentPage = 'group-info')} data-testid="new-group-next-link">
+				{#if isIos}
+					<Link
+						onClick={() => (currentPage = 'group-info')}
+						data-testid="new-group-next-link"
+					>
 						{selectedContacts.length === 0 ? m.omit() : m.next()}
 					</Link>
 				{/if}
@@ -80,7 +86,7 @@
 						{#each contacts as [publicKey, profile]}
 							<ListItem label title={profile.name}>
 								{#snippet media()}
-									<Avatar chatActorId={publicKey}></Avatar>
+									<ProfileAvatar chatActorId={publicKey}></ProfileAvatar>
 								{/snippet}
 
 								{#snippet after()}
@@ -107,12 +113,11 @@
 			</div>
 		</div>
 
-		{#if theme === 'material'}
+		{#if !isIos}
 			<Button
 				onClick={() => (currentPage = 'group-info')}
 				data-testid="new-group-next-btn"
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				class="fixed-action-btn"
 				rounded
 			>
 				{selectedContacts.length === 0 ? m.omit() : m.next()}
@@ -123,11 +128,14 @@
 	<Page>
 		<Navbar title={m.groupName()} titleClass="opacity1" transparent={true}>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => (currentPage = 'members')} data-testid="new-group-info-back" />
+				<NavbarBackLink
+					onClick={() => (currentPage = 'members')}
+					data-testid="new-group-info-back"
+				/>
 			{/snippet}
 
 			{#snippet right()}
-				{#if theme === 'ios'}
+				{#if isIos}
 					<Link onClick={createGroupChat} data-testid="new-group-create-link">
 						{m.create()}
 					</Link>
@@ -137,7 +145,11 @@
 
 		<div class="column" style="flex: 1">
 			<div class="center-in-desktop m-1">
-				<List inset={isWideScreen.value || theme === 'ios'} strongIos nested={theme!=='ios'}>
+				<List
+					inset={isWideScreen.value || theme === 'ios'}
+					strongIos
+					nested={theme !== 'ios'}
+				>
 					<ListInput
 						type="text"
 						bind:value={groupName}
@@ -154,12 +166,11 @@
 			</div>
 		</div>
 
-		{#if theme === 'material'}
+		{#if !isIos}
 			<Button
 				onClick={createGroupChat}
 				data-testid="new-group-create-btn"
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				class="fixed-action-btn"
 				rounded
 			>
 				{m.create()}

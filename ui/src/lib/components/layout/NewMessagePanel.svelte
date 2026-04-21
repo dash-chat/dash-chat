@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiAccountMultiplePlus, mdiAccountPlus } from '@mdi/js';
 	import type { ContactsStore } from 'dash-chat-stores';
@@ -22,11 +21,16 @@
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from '../profiles/Avatar.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
 	const contacts = useReactivePromise(contactsStore.profilesForAllContacts);
 	const theme = $derived(useTheme());
+
+	const isAddContact = $derived(
+		page.url.pathname === '/new-message/add-contact',
+	);
 
 	let searchQuery = $state('');
 </script>
@@ -49,7 +53,7 @@
 
 	<div class="column" style="flex: 1">
 		<div
-			class={theme === 'ios' ? 'mt-6 px-4' : 'pl-5 pr-10'}
+			class={theme === 'ios' ? 'mt-6 px-4' : 'ps-5 pe-10'}
 			data-testid="new-message-search"
 		>
 			<Searchbar
@@ -83,9 +87,11 @@
 			</ListItem>
 			<ListItem
 				link
+				class={isAddContact ? 'active' : ''}
 				linkProps={{ href: '/new-message/add-contact' }}
 				title={m.addContact()}
 				chevron={false}
+				data-testid="new-message-add-contact"
 			>
 				{#snippet media()}
 					<wa-icon src={wrapPathInSvg(mdiAccountPlus)}></wa-icon>
@@ -122,11 +128,10 @@
 							chevron={false}
 						>
 							{#snippet media()}
-								<wa-avatar
+								<Avatar
 									image={profile.avatar}
 									initials={profile.name.slice(0, 2)}
-								>
-								</wa-avatar>
+								/>
 							{/snippet}
 						</ListItem>
 					{:else}

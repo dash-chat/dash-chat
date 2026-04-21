@@ -1,4 +1,4 @@
-name: "test"
+name: "cargo test"
 on:
   push:
     branches: [ main, develop ]
@@ -6,12 +6,12 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  test-and-build:
+  cargo-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt install libwebkit2gtk-4.1-dev \
@@ -24,30 +24,10 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@master
-        with:
-          version: 10
-          cache: true
-
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: '' # TODO: remove this when we want to disallow warnings in our rust code in CI
 
-      - name: Check Rust formatting
-        run: cargo fmt --check
-
       - name: Test
         run: cargo test
-
-      - name: Install pnpm dependencies
-        run: pnpm install
-
-      - name: Build UI packages
-        run: pnpm --recursive build

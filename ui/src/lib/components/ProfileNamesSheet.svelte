@@ -15,9 +15,7 @@
 </script>
 
 {#snippet content()}
-	<wa-icon
-		src={wrapPathInSvg(mdiAccountQuestion)}
-		style="font-size: 3rem"
+	<wa-icon src={wrapPathInSvg(mdiAccountQuestion)} style="font-size: 3rem"
 	></wa-icon>
 
 	<p class="text-center text-base">

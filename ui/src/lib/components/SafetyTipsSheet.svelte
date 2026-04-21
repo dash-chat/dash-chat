@@ -122,7 +122,9 @@
 	>
 		{#each tips as tip}
 			<wa-carousel-item>
-				<div class="mx-2 flex flex-col items-center rounded-2xl bg-white p-4 dark:bg-black">
+				<div
+					class="mx-2 flex flex-col items-center rounded-2xl bg-white p-4 dark:bg-black"
+				>
 					<div class="mb-4 w-full rounded-2xl bg-gray-50 p-6 dark:bg-gray-800">
 						<div class="flex min-h-24 items-center justify-center text-5xl">
 							{tip.emoji}
@@ -161,7 +163,11 @@
 {/snippet}
 
 {#if isWideScreen.value}
-	<Dialog {opened} onBackdropClick={handleClose} class="!w-[32rem] !max-w-[90%]">
+	<Dialog
+		{opened}
+		onBackdropClick={handleClose}
+		class="!w-[32rem] !max-w-[90%]"
+	>
 		<div class="flex flex-col items-center gap-4">
 			{@render content()}
 		</div>

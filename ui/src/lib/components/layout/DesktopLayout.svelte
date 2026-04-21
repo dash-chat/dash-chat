@@ -1,20 +1,32 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { page } from '$app/state';
+	import { page, navigating } from '$app/state';
 	import ChatListPanel from './ChatListPanel.svelte';
 	import SettingsPanel from './SettingsPanel.svelte';
 	import NewMessagePanel from './NewMessagePanel.svelte';
 	import EmptyState from './EmptyState.svelte';
+	import GetStarted from '$lib/components/GetStarted.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
+	// Non-special URL schemes (tauri://) have empty pathname for the root,
+	// unlike http:// which normalizes to '/'.
+	const pathname: string = $derived(page.url.pathname);
+	const isHome = $derived(pathname === '/' || pathname === '');
 	const isSettings = $derived(page.url.pathname.startsWith('/settings'));
 	const isNewMessage = $derived(
 		page.url.pathname.startsWith('/new-message') ||
 			page.state.sidebarPanel === 'new-message',
 	);
+	const isNavigatingToSidebarRoute = $derived(
+		navigating.to?.url.pathname === '/' ||
+			navigating.to?.url.pathname === '/settings' ||
+			navigating.to?.url.pathname === '/new-message',
+	);
 	const isSidebarRoute = $derived(
-		page.url.pathname === '/' ||
+		isNavigatingToSidebarRoute ||
+			!page.url?.pathname ||
+			page.url.pathname === '/' ||
 			page.url.pathname === '/settings' ||
 			page.url.pathname === '/new-message',
 	);
@@ -33,6 +45,11 @@
 	<div class="desktop-content" class:desktop-content-settings={isSettings}>
 		{#if isSidebarRoute}
 			<EmptyState />
+			{#if isHome}
+				<div class="absolute bottom-3 left-0 right-0 z-10">
+					<GetStarted />
+				</div>
+			{/if}
 		{:else}
 			{@render children()}
 		{/if}
@@ -47,12 +64,12 @@
 	}
 
 	.desktop-sidebar {
-		width: 320px;
-		min-width: 320px;
+		width: 280px;
+		min-width: 280px;
 		border-right: 1px solid var(--k-hairline-color);
 		overflow-y: auto;
 		overflow-x: hidden;
-		background-color: var(--k-color-md-light-surface);
+		background-color: var(--color-md-light-surface-2);
 	}
 
 	.desktop-content {
@@ -60,19 +77,17 @@
 		min-width: 0;
 		position: relative;
 		overflow: hidden;
-		background-color: var(--k-color-md-light-surface);
+		background-color: var(--color-md-light-surface);
 	}
 
 	.desktop-content-settings :global(.k-navbar:not(:has(.k-navbar-back-link))) {
 		padding-left: 12px;
 	}
 
-	@media (prefers-color-scheme: dark) {
-		.desktop-sidebar {
-			background-color: var(--k-color-md-dark-surface);
-		}
-		.desktop-content {
-			background-color: var(--k-color-md-dark-surface);
-		}
+	:global(.dark) .desktop-sidebar {
+		background-color: var(--color-md-dark-surface-2);
+	}
+	:global(.dark) .desktop-content {
+		background-color: var(--color-md-dark-surface);
 	}
 </style>

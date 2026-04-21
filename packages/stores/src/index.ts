@@ -4,7 +4,7 @@ export * from './p2panda/simplified-types.js';
 export * from './p2panda/tauri-logs-client.js';
 export * from './p2panda/types.js';
 
-export * from './mock/client.js';
+export * from './mock/index.js';
 export * from './types.js';
 
 export * from './contacts/contacts-store.js';
@@ -23,6 +23,9 @@ export * from './group-chats/group-chat-client.js';
 
 export * from './chats/chats-store.js';
 export * from './chats/chats-client.js';
+
+export * from './settings/settings-client.js';
+export * from './settings/settings-store.js';
 
 export * from './utils/to-promise.js';
 export * from './utils/memo.js';

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import type { ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -20,6 +19,7 @@
 		Preloader,
 		useTheme,
 	} from 'konsta/svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 
 	const theme = $derived(useTheme());
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -49,18 +49,18 @@
 	{:then myProfile}
 		<div class="column" style="flex: 1">
 			<div class="column center-in-desktop">
-				<div class="column m-10 gap-4" style="align-items: center">
-					<wa-avatar
+				<div class="column mt-2 mb-4 gap-2" style="align-items: center">
+					<Avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
-						style="--size: 80px;"
-					>
-					</wa-avatar>
+						style="--size: 100px;"
+					/>
 
 					<Button
 						tonal
 						style="width: auto"
 						rounded
+						small
 						onClick={() => goto('/settings/profile/edit-photo')}
 						data-testid="profile-edit-photo">{m.editPhoto()}</Button
 					>
@@ -97,7 +97,7 @@
 
 				<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
 					<ListItem
-						title={m.myQrCode()}
+						title={m.qrCodeOrLink()}
 						link
 						linkProps={{ href: '/settings/profile/add-contact' }}
 						data-testid="profile-qr-link"

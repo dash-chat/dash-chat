@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import type { ContactsStore, Error } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -19,6 +18,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
+	import { isIos } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -28,12 +28,16 @@
 	let about = $state<string | undefined>(undefined);
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
-	myProfile.subscribe(m => {
-		m.then(myProfile => {
-			if (!name) name = myProfile?.name || '';
-			if (!surname) surname = myProfile?.surname;
-			if (!avatar) avatar = myProfile?.avatar;
-			if (!about) about = myProfile?.about;
+	let initialized = false;
+	$effect(() => {
+		$myProfile.then(profile => {
+			if (!initialized) {
+				initialized = true;
+				name = profile?.name || '';
+				surname = profile?.surname;
+				avatar = profile?.avatar;
+				about = profile?.about;
+			}
 		});
 	});
 
@@ -54,7 +58,7 @@
 					showToast(m.errorSetProfile(), 'error');
 					break;
 				default:
-					showToast(m.errorUnexpected(), 'error');
+					showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		}
 	}
@@ -75,15 +79,18 @@
 			titleClass="opacity1"
 			transparent={true}
 			rightClass={myProfile?.name === name && myProfile?.surname === surname
-				? 'pointer-events-none opacity-50'
+				? 'ios-right-disabled'
 				: ''}
 		>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => goto('/settings/profile')} data-testid="edit-name-back" />
+				<NavbarBackLink
+					onClick={() => goto('/settings/profile')}
+					data-testid="edit-name-back"
+				/>
 			{/snippet}
 
 			{#snippet right()}
-				{#if theme === 'ios'}
+				{#if isIos}
 					<Link onClick={save} data-testid="edit-name-save-link">
 						{m.save()}
 					</Link>
@@ -115,14 +122,13 @@
 			</List>
 		</div>
 
-		{#if theme === 'material'}
+		{#if !isIos}
 			<Button
 				onClick={save}
-				class="end-4 bottom-4"
-				style="position: fixed; width: auto"
+				class="fixed-action-btn"
 				rounded
 				data-testid="edit-name-save-btn"
-				disabled={myProfile?.name === name && myProfile.surname === surname}
+				disabled={myProfile?.name === name && myProfile?.surname === surname}
 			>
 				{m.save()}
 			</Button>

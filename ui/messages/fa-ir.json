@@ -42,5 +42,11 @@
     "name": "نام",
     "addAvatarImage": "تصویر آواتار را اضافه کنید",
     "members": "اعضا",
-    "selectAChat": "Select a chat to start messaging."
+    "selectAChat": "یک چت را برای شروع پیام‌رسانی انتخاب کنید.",
+    "trayTitle": "صندوق پستی محلی DashChat",
+    "trayShow": "نمایش",
+    "trayQuit": "خروج",
+    "menuRunLocalMailbox": "اجرای صندوق پستی محلی",
+    "menuFile": "فایل",
+    "menuOpenLogsFolder": "باز کردن پوشه گزارش‌ها"
 }

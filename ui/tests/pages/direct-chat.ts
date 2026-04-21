@@ -66,3 +66,18 @@ export function assertMessagesVisible() {
 export function getUnreadCount() {
 	return `document.querySelector('${selectors.unreadBadge}')?.textContent`;
 }
+
+/** Return the message input textarea element if present */
+export function messageInput() {
+	return document.querySelector(messageInputSelectors.textarea);
+}
+
+/** Return the send button element if present */
+export function sendButton() {
+	return document.querySelector(messageInputSelectors.send);
+}
+
+/** Return the messages container element if present */
+export function messagesContainer() {
+	return document.querySelector(selectors.messages);
+}

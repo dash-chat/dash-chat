@@ -3,19 +3,33 @@ pub mod mem;
 pub mod store;
 pub mod toy;
 
+#[cfg(test)]
+pub mod testing;
+
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     sync::Arc,
     time::Duration,
 };
 
+use once_cell::sync::Lazy;
 use tokio::sync::{Mutex, mpsc};
 use tracing::Instrument;
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
+pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("Failed to build HTTP client")
+});
+
 #[async_trait::async_trait]
 pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
+    fn id(&self) -> MailboxId;
+
     /// Publish an operation to the mailbox for the given topic.
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error>;
 
@@ -56,6 +70,7 @@ pub struct FetchTopicResponse<Item: MailboxItem> {
     pub missing: HashMap<<Item as MailboxItem>::Author, Vec<u64>>,
 }
 
+pub type MailboxId = String;
 pub type SeqNum = u64;
 
 pub trait ItemTraits:

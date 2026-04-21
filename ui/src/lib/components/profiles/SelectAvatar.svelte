@@ -1,10 +1,10 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { resizeAndExport } from '$lib/utils/image';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiAccount, mdiPlus } from '@mdi/js';
+	import { mdiAccount } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button, Fab } from 'konsta/svelte';
+	import { Button } from 'konsta/svelte';
+	import Avatar from './Avatar.svelte';
 
 	let {
 		value = $bindable(),
@@ -55,14 +55,13 @@
 		style="align-items: center; height: {size + 4}px"
 		onclick={() => avatarFilePicker.click()}
 	>
-		<wa-avatar
+		<Avatar
 			id="avatar"
 			image={value}
 			alt="Avatar"
-			shape="circle"
 			initials=""
 			style="--size: {size}px"
-		></wa-avatar>
+		/>
 	</div>
 {:else if defaultValue}
 	<div
@@ -70,14 +69,13 @@
 		style="align-items: center; height: {size + 4}px"
 		onclick={() => avatarFilePicker.click()}
 	>
-		<wa-avatar
+		<Avatar
 			id="avatar"
 			image={defaultValue}
 			alt="Avatar"
-			shape="circle"
 			initials=""
 			style="--size: {size}px"
-		></wa-avatar>
+		/>
 	</div>
 {:else}
 	<div class="column" style="align-items: center; height: {size + 4}px">

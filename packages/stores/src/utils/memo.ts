@@ -9,6 +9,7 @@ export function memo<K extends string | number, V>(
 	factory: (key: K) => V,
 ): (key: K) => V {
 	const cache: Record<K, V> = {} as Record<K, V>;
+	// TODO: add cache eviction strategy
 
 	return (key: K): V => {
 		if (!(key in cache)) {

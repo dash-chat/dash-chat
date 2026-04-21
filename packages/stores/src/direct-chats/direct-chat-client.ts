@@ -4,6 +4,7 @@ import { AgentId, Hash } from '../p2panda/types';
 import { ChatId, ChatReaction, MessageContent } from '../types';
 
 export interface IDirectChatClient {
+	chatId(peer: AgentId): Promise<ChatId>;
 	sendMessage(chatId: ChatId, content: MessageContent): Promise<void>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
 	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void>;

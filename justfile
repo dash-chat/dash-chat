@@ -1,17 +1,15 @@
-alias d := dev
-
 # start two dash chat instances connected to a local mailbox server
-dev:
-    mprocs
+mod dev 'scripts/dev.just'
 
-test:
-    cd crates/dashchat-node && cargo nextest run
+# android development 
+mod android 'scripts/android.just'
 
-# uninstall the android app via adb
-uninstall-android:
-    adb uninstall studio.darksoil.dashchat
+# running tests
+mod test 'scripts/tests.just'
 
-# clean all paths used by the dev environment
-clean-dev:
-    -@adb uninstall studio.darksoil.dashchat 2>/dev/null
-    rm -rf .dev-dbs
+# building and running the tauri app
+mod binary 'scripts/binary.just'
+
+# cut a new release (e.g. just release 0.11.0)
+release version:
+    ./scripts/release.sh {{version}}

@@ -29,12 +29,14 @@ pub type MemMailboxLogs<Item> = HashMap<
 
 #[derive(Clone)]
 pub struct MemMailbox<Item: MailboxItem> {
+    id: MailboxId,
     ops: Arc<RwLock<MemMailboxLogs<Item>>>,
 }
 
 impl<Item: MailboxItem> MemMailbox<Item> {
     pub fn new() -> Self {
         Self {
+            id: nanoid::nanoid!(),
             ops: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -53,6 +55,10 @@ where
     Item::Topic: OptionalItemTraits,
     Item::Hash: OptionalItemTraits,
 {
+    fn id(&self) -> MailboxId {
+        self.mailbox.id.clone()
+    }
+
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error> {
         let mut store = self.mailbox.ops.write().await;
         // ops.entry(topic).or_insert_with(Vec::new).push(op.into());
@@ -151,39 +157,11 @@ where
 mod tests {
     use pretty_assertions::assert_eq;
 
+    use crate::testing::Msg;
+
     use super::*;
 
-    #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, derive_more::Debug)]
-    #[debug("Msg({author} {seq})")]
-    struct Msg {
-        topic: MsgTopic,
-        author: char,
-        seq: u64,
-    }
-
     pub type MsgTopic = u8;
-
-    impl MailboxItem for Msg {
-        type Author = char;
-        type Hash = (Self::Author, u64);
-        type Topic = MsgTopic;
-
-        fn hash(&self) -> Self::Hash {
-            (self.author, self.seq)
-        }
-
-        fn author(&self) -> Self::Author {
-            self.author.clone()
-        }
-
-        fn seq_num(&self) -> u64 {
-            self.seq
-        }
-
-        fn topic(&self) -> Self::Topic {
-            self.topic
-        }
-    }
 
     async fn fetch(
         client: &MemMailboxClient<Msg>,

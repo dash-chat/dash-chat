@@ -44,8 +44,8 @@ async fn test_mailbox_late_join_toy() {
     let url = url.trim_end_matches('/').to_string();
 
     // Create clients pointing to the same server
-    let alice_mailbox = ToyMailboxClient::<MailboxOperation>::new(&url);
-    let bobbi_mailbox = ToyMailboxClient::<MailboxOperation>::new(&url);
+    let alice_mailbox = ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url);
+    let bobbi_mailbox = ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url);
 
     mailbox_late_join(alice_mailbox, bobbi_mailbox).await;
 }
@@ -55,8 +55,8 @@ async fn mailbox_late_join(
     bobbi_mailbox: impl MailboxClient<MailboxOperation>,
 ) {
     let mut config = NodeConfig::testing();
-    config.mailboxes_config.success_interval = Duration::from_millis(1000);
-    config.mailboxes_config.error_interval = Duration::from_millis(1000);
+    config.mailboxes_config.active_interval = Duration::from_millis(1000);
+    config.mailboxes_config.between_polls_delay = Duration::from_millis(100);
 
     // Start with no mailbox
     let alice = TestNode::new(config.clone(), "alice").await;
@@ -124,8 +124,8 @@ async fn test_mailbox_restart_relay() {
     );
 
     let mut config = NodeConfig::testing();
-    config.mailboxes_config.success_interval = Duration::from_millis(1000);
-    config.mailboxes_config.error_interval = Duration::from_millis(1000);
+    config.mailboxes_config.active_interval = Duration::from_millis(1000);
+    config.mailboxes_config.between_polls_delay = Duration::from_millis(100);
 
     // Start a test mailbox server
     let (server, _temp_file) = mailbox_server::test_utils::create_test_server();
@@ -147,10 +147,16 @@ async fn test_mailbox_restart_relay() {
     bobbi.add_contact(qr).await.unwrap();
 
     alice
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(&url))
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            "mailbox-1".into(),
+            &url,
+        ))
         .await;
     bobbi
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(&url))
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            "mailbox-1".into(),
+            &url,
+        ))
         .await;
 
     alice.behavior().accept_next_contact().await.unwrap();
@@ -185,10 +191,16 @@ async fn test_mailbox_restart_relay() {
 
     // Add fresh mailbox clients
     alice
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(&url))
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            "mailbox-1".into(),
+            &url,
+        ))
         .await;
     bobbi
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(&url))
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            "mailbox-1".into(),
+            &url,
+        ))
         .await;
 
     // === Phase 3: Post-restart — send more messages and verify all are received ===
