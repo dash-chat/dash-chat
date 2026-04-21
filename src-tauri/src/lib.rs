@@ -21,6 +21,11 @@ const DASHCHAT_MAILBOX_ID: &str = "dashchat-mailbox";
 pub(crate) static FORCE_QUIT: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// Prevents multiple quit-confirmation dialogs from stacking up.
+#[cfg(not(mobile))]
+pub(crate) static QUIT_DIALOG_OPEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     filesystem::init_data_dir();
@@ -85,6 +90,8 @@ pub fn run() {
             commands::direct_chats::direct_chat_send_reaction,
             commands::settings::get_settings,
             commands::settings::set_setting,
+            #[cfg(not(mobile))]
+            commands::settings::set_local_mailbox_enabled,
             // commands::chats::create_group,
             // commands::group_chat::add_member,
             // commands::group_chat::send_message,
@@ -170,16 +177,32 @@ pub fn run() {
 
             Ok(())
         })
+        .on_window_event(|window, event| {
+            #[cfg(not(mobile))]
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                use tauri::Manager;
+                // When the local mailbox is running, hide the window instead of closing
+                // so the app keeps running in the background with the tray icon.
+                if settings::load_mailbox_enabled(window.app_handle())
+                    && !FORCE_QUIT.load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            #[cfg(not(mobile))]
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
-                // Keep the app running in the background when local mailbox is enabled,
-                // unless a force-quit has been requested (e.g. from the tray "Quit" action).
+                // When the local mailbox is running and quit is requested (Cmd+Q, dock Quit),
+                // prevent exit and show a confirmation dialog.
                 if settings::load_mailbox_enabled(app_handle)
                     && !FORCE_QUIT.load(std::sync::atomic::Ordering::Relaxed)
                 {
                     api.prevent_exit();
+                    tray::confirm_quit_and_exit(app_handle);
                 }
             }
         });

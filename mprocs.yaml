@@ -17,8 +17,8 @@ procs:
         LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "127.0.0.1")
       fi
       export MAILBOX_URL="http://$LOCAL_IP:3000"
-      pnpm tauri android dev
+      just android dev
     autostart: false
   logcat:
-    shell: just logcat
+    shell: just android logcat
     autostart: false

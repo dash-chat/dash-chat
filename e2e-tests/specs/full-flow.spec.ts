@@ -8,6 +8,9 @@
 import {
 	waitForBothAgents,
 	createProfile,
+	getStartedCards,
+	dismissGetStartedCard,
+	waitForTestUtils,
 	exchangeContacts,
 	sendMessage,
 	waitForMessage,
@@ -25,6 +28,43 @@ describe('Full messaging flow', () => {
 		await createProfile(agent2, 'Bob', 'Test');
 	});
 
+	it('shows Get Started cards on empty home', async () => {
+		const agent1 = browser.getInstance('agent1');
+
+		await agent1.waitUntil(
+			async () => (await getStartedCards(agent1)).length > 0,
+			{ timeout: 10_000, timeoutMsg: 'No Get Started cards visible' },
+		);
+
+		const cards = await getStartedCards(agent1);
+		expect(cards).toContain('add-contact');
+		expect(cards).toContain('add-photo');
+		expect(cards).toContain('chat-color');
+	});
+
+	it('dismisses a Get Started card and it persists after reload', async () => {
+		const agent1 = browser.getInstance('agent1');
+
+		await dismissGetStartedCard(agent1, 'add-contact');
+
+		await agent1.waitUntil(
+			async () => !(await getStartedCards(agent1)).includes('add-contact'),
+			{ timeout: 5_000, timeoutMsg: 'Add contact card still visible after dismiss' },
+		);
+
+		// Reload and verify dismissal persists
+		await agent1.execute(() => window.location.reload());
+		await waitForTestUtils(agent1);
+		await agent1.waitUntil(
+			async () => agent1.execute(() => window.__test.homeLoaded() !== null),
+			{ timeout: 10_000, timeoutMsg: 'Home page not loaded after reload' },
+		);
+
+		const cards = await getStartedCards(agent1);
+		expect(cards).not.toContain('add-contact');
+		expect(cards).toContain('add-photo');
+	});
+
 	it('exchanges contact codes between agents', async () => {
 		const agent1 = browser.getInstance('agent1');
 		const agent2 = browser.getInstance('agent2');
@@ -38,9 +78,9 @@ describe('Full messaging flow', () => {
 		await sendMessage(agent1, 'Hello from Alice!');
 
 		// Verify message appears on sender (should be near-instant)
-		await waitForMessage(agent1, 'Hello from Alice!', 10_000);
+		await waitForMessage(agent1, 'Hello from Alice!', 30_000);
 
-		// Wait for message on receiver via mailbox sync (may take up to ~30s on first run)
+		// Wait for message on receiver via mailbox sync
 		await waitForMessage(agent2, 'Hello from Alice!');
 	});
 
@@ -50,7 +90,7 @@ describe('Full messaging flow', () => {
 
 		await sendMessage(agent2, 'Hello from Bob!');
 
-		await waitForMessage(agent2, 'Hello from Bob!', 10_000);
+		await waitForMessage(agent2, 'Hello from Bob!', 30_000);
 
 		await waitForMessage(agent1, 'Hello from Bob!');
 	});

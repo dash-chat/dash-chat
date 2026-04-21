@@ -39,3 +39,9 @@ pub struct DeviceId(PublicKey);
     RenameAll,
 )]
 pub struct AgentId(ActorId);
+
+impl AgentId {
+    pub fn from_bytes(bytes: &[u8; 32]) -> anyhow::Result<Self> {
+        Ok(Self(ActorId::from_bytes(bytes)?))
+    }
+}

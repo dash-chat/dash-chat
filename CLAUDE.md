@@ -189,12 +189,12 @@ This is a pnpm workspace with multiple packages:
 - UI built with Konsta UI components (mobile-first design)
 - Internationalization using @inlang/paraglide-js
 - Image compression before upload
-- **iOS theme action buttons**: In the iOS theme, all primary action buttons (Save, Done, Create, Add, Next) must appear as a `<Link>` in the Navbar's `right` snippet — never as a bottom FAB. The bottom FAB (`class="fixed-action-btn"`) is Material-only. Use `{#if theme === 'ios'}` in the navbar right snippet and `{#if theme === 'material'}` around the FAB. Apply disabled styling via `rightClass="ios-right-disabled"` on the Navbar (defined in `app.css`).
+- **iOS theme action buttons**: On actual iOS devices, primary action buttons (Save, Done, Create, Add, Next) appear as a `<Link>` in the Navbar's `right` snippet. On all other platforms (including macOS desktop), they appear as a bottom FAB (`class="fixed-action-btn"`). Use `import { isIos } from '$lib/utils/environment'` and `{#if isIos}` in the navbar right snippet and `{#if !isIos}` around the FAB. Apply disabled styling via `rightClass="ios-right-disabled"` on the Navbar (defined in `app.css`).
 
 ### Desktop Layout
 
 On wide screens (≥768px), the app uses a two-panel layout managed by `DesktopLayout.svelte`:
-- **Sidebar** (left, 320px): Shows the contextual panel based on the current route — `ChatListPanel` for chat routes, `SettingsPanel` for `/settings/*`, `NewMessagePanel` for `/new-message/*`.
+- **Sidebar** (left, 280px): Shows the contextual panel based on the current route — `ChatListPanel` for chat routes, `SettingsPanel` for `/settings/*`, `NewMessagePanel` for `/new-message/*`.
 - **Content** (right, flex): Shows the page content. For sidebar-only routes (`/` and `/settings`), an `EmptyState` placeholder is rendered instead.
 
 Pages like `/`, `/settings`, and `/new-message` always render their mobile content (wrapped in `<Page>`). On desktop, `DesktopLayout` handles showing the correct sidebar panel and decides whether to render `EmptyState` or the page's children in the content area. Pages never check `isWideScreen` to decide between EmptyState and their content — that logic lives solely in `DesktopLayout`.
@@ -433,6 +433,8 @@ cd e2e-tests && SKIP_BUILD=1 pnpm test
 - Launch scripts (`e2e-tests/scripts/`) set `DATA_DIR` and `MAILBOX_URL` env vars
 - The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events
 - Test data is stored in `.dbs/e2e/` and cleaned up after each run
+
+**REQUIREMENT:** E2E tests must use `window.__test` helpers for DOM queries instead of inlining `document.querySelector` calls. Add helper functions to `ui/tests/pages/*.ts`, register them in `ui/tests/setup-utils.ts`, then call them via `agent.execute(() => window.__test.myHelper())` in the spec. This keeps DOM selectors in one place and makes tests readable.
 
 **REQUIREMENT:** New UI features must include E2E test coverage in `e2e-tests/specs/`.
 

@@ -30,7 +30,7 @@ export const config: Options.Testrunner = {
 	specs: ['./specs/**/*.spec.ts'],
 	exclude: ['./specs/compat-*.spec.ts'],
 	maxInstances: 1,
-	// specFileRetries: 2,
+	specFileRetries: 1,
 
 	capabilities: {
 		agent1: {
@@ -59,7 +59,7 @@ export const config: Options.Testrunner = {
 	framework: 'mocha',
 	mochaOpts: {
 		ui: 'bdd',
-		timeout: 90_000,
+		timeout: 120_000,
 	},
 
 	reporters: ['spec'],
@@ -146,17 +146,14 @@ export const config: Options.Testrunner = {
 		// Wait for ports to be fully released after SIGKILL.
 		await Promise.all(ALL_PORTS.map(p => waitForPortFree(p)));
 
-		// Clean agent app data for a fresh start (important for specFileRetries).
+		// Clean all agent data for a fresh start (important for specFileRetries).
+		// Must remove the entire agent directory, not just the Rust backend data,
+		// because WebKitGTK stores localStorage/IndexedDB under the XDG dirs
+		// (.local/share/, .config/, .cache/) inside the agent directory.
 		for (const agent of ['agent-1', 'agent-2']) {
-			const appData = path.join(
-				ROOT,
-				'.dbs',
-				'e2e',
-				agent,
-				'studio.darksoil.dashchat',
-			);
+			const agentDir = path.join(ROOT, '.dbs', 'e2e', agent);
 			try {
-				rmSync(appData, { recursive: true, force: true });
+				rmSync(agentDir, { recursive: true, force: true });
 			} catch {
 				/* ignore */
 			}

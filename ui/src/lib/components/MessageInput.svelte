@@ -75,10 +75,7 @@
 	class:bg-md-light-surface={theme === 'material'}
 	class:dark:bg-md-dark-surface={theme === 'material'}
 >
-	<div
-		class="row gap-2"
-		style="align-items: flex-end; margin: 0 auto"
-	>
+	<div class="row gap-2" style="align-items: flex-end; margin: 0 auto">
 		<div
 			class={theme === 'ios'
 				? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'

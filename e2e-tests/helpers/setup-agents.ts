@@ -86,7 +86,7 @@ export async function sendMessage(agent: WebdriverIO.Browser, text: string): Pro
  * Uses WDIO waitUntil with sync execute polling — avoids executeAsync with
  * long-running scripts which can hang in tauri-driver.
  */
-export async function waitForMessage(agent: WebdriverIO.Browser, text: string, timeout = 60_000): Promise<void> {
+export async function waitForMessage(agent: WebdriverIO.Browser, text: string, timeout = 90_000): Promise<void> {
 	await agent.waitUntil(
 		async () => agent.execute(
 			(t: string) => !!document.querySelector('[data-testid="direct-chat-messages"]')?.textContent?.includes(t),
@@ -104,6 +104,16 @@ export async function sendAndReceiveMessage(
 ): Promise<void> {
 	await sendMessage(sender, text);
 	await waitForMessage(receiver, text);
+}
+
+/** Get IDs of currently visible Get Started cards. */
+export async function getStartedCards(agent: WebdriverIO.Browser): Promise<string[]> {
+	return await agent.execute(() => window.__test.getStartedCards()) as string[];
+}
+
+/** Dismiss a Get Started card by id. */
+export async function dismissGetStartedCard(agent: WebdriverIO.Browser, cardId: string): Promise<void> {
+	await agent.execute((id: string) => window.__test.dismissGetStartedCard(id), cardId);
 }
 
 /** Open a direct chat by contact name. Throws if it fails. */

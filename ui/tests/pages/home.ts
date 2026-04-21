@@ -17,12 +17,15 @@ export function goToNewMessageFab() {
 	return { action: 'click' as const, selector: selectors.newMessageFab };
 }
 
-/** Assert the chat list is visible */
-export function assertChatListVisible() {
-	return `!!document.querySelector('${selectors.chatList}')`;
+/** Return the home page element (chat list or empty state) if present */
+export function homeLoaded() {
+	return (
+		document.querySelector(selectors.chatList) ??
+		document.querySelector(selectors.emptyState)
+	);
 }
 
-/** Assert empty state is shown */
-export function assertEmptyState() {
-	return `!!document.querySelector('${selectors.emptyState}')`;
+/** Return the first-chat tooltip element if present */
+export function firstChatTooltip() {
+	return document.querySelector(selectors.firstChatTooltip);
 }

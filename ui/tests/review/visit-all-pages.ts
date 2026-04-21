@@ -4,7 +4,7 @@
  *
  * Split into three small functions to stay within MCP bridge's ~20s timeout:
  *   visitProfilePages  — home → settings → profile → sub-pages → home (~7 pages)
- *   visitOtherPages    — home → settings → appearance/account → home + new-message (~4 pages)
+ *   visitOtherPages    — home → settings → offline/appearance/account → home + new-message (~5 pages)
  *   visitChatPages     — home → direct-chat → chat-settings → home (~2 pages)
  *
  * visitAllPages combines all three (for E2E tests with longer timeouts).
@@ -106,6 +106,21 @@ export async function visitProfilePages(options?: VisitOptions): Promise<VisitRe
 	pages.push(runCheck('home', co));
 	await breathe();
 
+	// Home with FirstChatTooltip visible — only possible when chat list is empty
+	// (tooltip is gated behind chats.length === 0 and !isWideScreen). Skip when
+	// chats exist since the tooltip won't render regardless of localStorage.
+	if (document.querySelector(S.home.emptyState)) {
+		progress('profile:home-tooltip');
+		localStorage.removeItem('first-chat-tooltip-shown');
+		await nav('/settings', S.settings.profileLink);
+		await nav('/', HOME);
+		await waitFor(S.home.firstChatTooltip, NAV_TIMEOUT);
+		pages.push(runCheck('home-with-tooltip', co));
+		// Dismiss tooltip (click restores the localStorage flag internally)
+		(document.querySelector(S.home.firstChatTooltip) as HTMLElement)?.click();
+		await breathe();
+	}
+
 	// Settings
 	progress('profile:settings-click');
 	click(S.home.settingsLink);
@@ -157,9 +172,9 @@ export async function visitProfilePages(options?: VisitOptions): Promise<VisitRe
 }
 
 /**
- * Visit other settings + new-message pages: home → settings → appearance →
- * account → home → new-message → add-contact → home.
- * ~4 page checks.
+ * Visit other settings + new-message pages: home → settings → offline →
+ * appearance → account → home → new-message → add-contact → home.
+ * ~5 page checks.
  */
 export async function visitOtherPages(options?: VisitOptions): Promise<VisitResult> {
 	const pages: PageResult[] = [];
@@ -170,6 +185,12 @@ export async function visitOtherPages(options?: VisitOptions): Promise<VisitResu
 
 	progress('other:waitHome');
 	await waitFor(HOME, NAV_TIMEOUT);
+
+	// Offline — use content selector (offline-back hidden on desktop)
+	progress('other:offline');
+	await nav('/settings/offline', S.offline.localMailboxToggle);
+	pages.push(runCheck('offline', co));
+	await breathe();
 
 	// Appearance — use content selector (appearance-back hidden on desktop)
 	progress('other:appearance');

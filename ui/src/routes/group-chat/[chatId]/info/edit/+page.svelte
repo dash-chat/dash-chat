@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
@@ -19,6 +18,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isIos } from '$lib/utils/environment';
 	import { page } from '$app/state';
 	let chatId = page.params.chatId!;
 
@@ -51,12 +51,10 @@
 <Page>
 	<Navbar title={m.editGroup()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
-			<NavbarBackLink
-				onClick={() => goto(`/group-chat/${chatId}/info`)}
-			/>
+			<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}/info`)} />
 		{/snippet}
 		{#snippet right()}
-			{#if theme === 'ios'}
+			{#if isIos}
 				<Link onClick={save}>
 					{m.save()}
 				</Link>
@@ -91,12 +89,8 @@
 			</div>
 		</div>
 
-		{#if theme === 'material'}
-			<Button
-				onClick={save}
-				class="fixed-action-btn"
-				rounded
-			>
+		{#if !isIos}
+			<Button onClick={save} class="fixed-action-btn" rounded>
 				{m.save()}
 			</Button>
 		{/if}

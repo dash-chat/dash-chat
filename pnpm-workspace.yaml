@@ -2,5 +2,11 @@ packages:
   - ui
   - packages/*
   - e2e-tests
-onlyBuiltDependencies:
-  - esbuild
+
+allowBuilds:
+  edgedriver: true
+  esbuild: true
+  geckodriver: true
+
+patchedDependencies:
+  konsta@5.0.6: patches/konsta@5.0.6.patch
