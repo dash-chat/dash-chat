@@ -3,8 +3,11 @@ use std::pin::Pin;
 use futures::Stream;
 use futures::StreamExt;
 use futures::stream::SelectAll;
-use mailbox_client::MailboxItem;
-use p2panda_core::Operation;
+use p2panda_stream::StreamLayerExt;
+use p2panda_stream::ingest::Ingest;
+use p2panda_stream::ingest::IngestArgs;
+use p2panda_stream::ingest::IngestError;
+use p2panda_stream::ingest::IngestResult;
 use serde::{Deserialize, Serialize};
 use tokio::task;
 use tokio_stream::wrappers::ReceiverStream;
@@ -18,6 +21,25 @@ use super::*;
 pub struct Notification {
     pub header: Header,
     pub payload: Payload,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Event {
+    pub operation: Operation,
+    // TODO: use () for LogId?
+    pub args: IngestArgs<TopicId, TopicId>,
+}
+
+impl std::borrow::Borrow<IngestArgs<TopicId, TopicId>> for Event {
+    fn borrow(&self) -> &IngestArgs<TopicId, TopicId> {
+        &self.args
+    }
+}
+
+impl std::borrow::Borrow<Operation> for Event {
+    fn borrow(&self) -> &Operation {
+        &self.operation
+    }
 }
 
 impl Node {
@@ -48,23 +70,29 @@ impl Node {
             return Ok(());
         };
 
+        let ingest: Ingest<SqliteStore, Event, TopicId, Extensions, TopicId> =
+            Ingest::new((*self.op_store).clone());
+
         let stream = ReceiverStream::new(mailbox_rx)
-            .filter_map(async |op| {
-                let hash = op.hash();
-                if hash == op.header.hash() {
-                    let header_bytes = op.header.to_bytes();
-                    Some((op.header, op.body, header_bytes))
-                } else {
-                    tracing::error!(hash = ?hash.renamed(), "hash mismatch from mailbox server");
-                    None
+            .map(|op| {
+                let op = Operation::from(op);
+                Event {
+                    args: IngestArgs {
+                        log_id: op.header.extensions.topic,
+                        topic: op.header.extensions.topic,
+                        prune_flag: false,
+                    },
+                    operation: op,
                 }
             })
-            .ingest(self.op_store.clone(), 128)
+            .layer(ingest)
             .filter_map(|result| async {
                 match result {
-                    Ok(operation) => Some(operation),
-                    Err(err) => {
-                        tracing::warn!(?err, "ingest operation error");
+                    Ok((event, IngestResult::Inserted | IngestResult::AlreadyExists)) => {
+                        Some(event.operation)
+                    }
+                    Err((event, err)) => {
+                        tracing::error!(?event, ?err, "ingest error, op not ingested!");
                         None
                     }
                 }
@@ -80,9 +108,7 @@ impl Node {
 
     pub(super) fn spawn_stream_process_loop(
         &self,
-        mut stream_rx: mpsc::Receiver<
-            Pin<Box<dyn Stream<Item = Operation<Extensions>> + Send + 'static>>,
-        >,
+        mut stream_rx: mpsc::Receiver<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
     ) -> CancelAndWait<()> {
         let node = self.clone();
 
@@ -128,7 +154,7 @@ impl Node {
         CancelAndWait::new(handle, token2)
     }
 
-    async fn process_stream_item(&self, operation: Operation<Extensions>) -> anyhow::Result<()> {
+    async fn process_stream_item(&self, operation: Operation) -> anyhow::Result<()> {
         let hash = operation.hash;
         let topic = operation.header.extensions.topic;
 
@@ -166,7 +192,7 @@ impl Node {
     pub async fn process_operation(
         &self,
         // topic: Topic<K>,
-        operation: Operation<Extensions>,
+        operation: Operation,
         is_author: bool,
         _is_repair: bool,
     ) -> anyhow::Result<()> {
@@ -215,7 +241,7 @@ impl Node {
         anyhow::Ok(())
     }
 
-    async fn process_extensions(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
+    async fn process_extensions(&self, operation: &Operation) -> anyhow::Result<()> {
         match &operation.header.extensions.auth {
             Some(auth) => {
                 tracing::info!(?auth, "processing auth extensions");
