@@ -111,18 +111,32 @@ async fn register_fcm_token(handle: AppHandle, token: String) -> anyhow::Result<
 
     let client = handle.state::<PushNotificationsClient>();
 
-    loop {
+    let mut delay = std::time::Duration::from_secs(1);
+    let max_delay = std::time::Duration::from_secs(60);
+    let max_attempts: u32 = 10;
+
+    for attempt in 1..=max_attempts {
         match client
             .register_fcm_token(public_key.clone(), FcmToken::from(token.clone()))
             .await
         {
             Ok(()) => return Ok(()),
             Err(err) => {
-                log::warn!("register_fcm_token failed: {err:?}. Retrying in 1000ms.");
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                if attempt == max_attempts {
+                    return Err(anyhow::anyhow!(
+                        "register_fcm_token failed after {max_attempts} attempts: {err:?}"
+                    ));
+                }
+                log::warn!(
+                    "register_fcm_token failed (attempt {attempt}/{max_attempts}): {err:?}. Retrying in {}s.",
+                    delay.as_secs()
+                );
+                tokio::time::sleep(delay).await;
+                delay = (delay * 2).min(max_delay);
             }
         }
     }
+    unreachable!()
 }
 
 /// Sync all subscribed topics with the push notifications server.
