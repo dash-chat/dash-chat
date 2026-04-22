@@ -16,7 +16,10 @@ impl IntoResponse for AppError {
             AppError::Validation(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
             AppError::Internal(e) => {
                 tracing::error!("{:#}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
                     .into_response()
             }
         }

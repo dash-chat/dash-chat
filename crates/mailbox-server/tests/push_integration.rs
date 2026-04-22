@@ -76,11 +76,13 @@ async fn drain_push_tasks(push_tasks: &Arc<tokio::sync::Mutex<tokio::task::JoinS
 /// Full integration test: subscribe → store blobs → push notification sent.
 #[tokio::test]
 async fn mailbox_store_triggers_push_notification() {
-    let public_key =
-        PublicKey::from("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string());
+    let public_key = PublicKey::from(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+    );
     let fcm_token = FcmToken::from("fcm-token-xyz".to_string());
-    let topic_id =
-        TopicId::from("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string());
+    let topic_id = TopicId::from(
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+    );
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));
@@ -179,11 +181,13 @@ async fn mailbox_store_no_subscribers_no_push() {
 /// (watermark doesn't advance on duplicate data).
 #[tokio::test]
 async fn mailbox_store_duplicate_blob_no_second_push() {
-    let public_key =
-        PublicKey::from("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string());
+    let public_key = PublicKey::from(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+    );
     let fcm_token = FcmToken::from("fcm-token-xyz".to_string());
-    let topic_id =
-        TopicId::from("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string());
+    let topic_id = TopicId::from(
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string(),
+    );
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));

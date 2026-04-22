@@ -71,7 +71,11 @@ async fn notify_topic(
     tasks
 }
 
-async fn notify_of_operation(state: AppState, public_key: PublicKey, notification: PushNotification) {
+async fn notify_of_operation(
+    state: AppState,
+    public_key: PublicKey,
+    notification: PushNotification,
+) {
     let fcm_token = match state.db.get_fcm_token(&public_key).await {
         Ok(Some(token)) => token,
         Ok(None) => {

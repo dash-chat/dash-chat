@@ -26,9 +26,7 @@ async fn notify_topic_sends_to_subscribers() {
     mock_fcm
         .expect_send_push_notification()
         .once()
-        .withf(|token, notif| {
-            token == "test-fcm-token" && notif.body == "test-op"
-        })
+        .withf(|token, notif| token == "test-fcm-token" && notif.body == "test-op")
         .returning(|_, _| SendResult::Ok);
 
     let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
