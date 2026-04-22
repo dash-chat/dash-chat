@@ -26,39 +26,20 @@ pub async fn store_blobs(
             .await
             .map_err(|e| {
                 tracing::error!("Task join error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
             })?
             .map_err(|e| {
                 tracing::error!("{}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
             })?;
 
-    // Notify push notification subscribers for topics that received new data (non-blocking)
-    if !topics_with_new_blobs.is_empty() {
-        if let Some(push_client) = &state.push_client {
-            let push_client = push_client.clone();
-            let mut push_tasks = state.push_tasks.lock().await;
-            // Reap completed tasks to prevent slow memory leak
-            while push_tasks.try_join_next().is_some() {}
-            push_tasks.spawn(async move {
-                let topics_to_notify = topics_with_new_blobs
-                    .into_iter()
-                    .map(|(topic, ops)| {
-                        let topic = push_notifications_client::types::TopicId::from(topic);
-                        let ops = ops
-                            .into_iter()
-                            .map(push_notifications_client::types::OperationId::from)
-                            .collect();
-                        (topic, ops)
-                    })
-                    .collect();
-                tracing::info!("Notifying subscribers for topics.");
-                if let Err(e) = push_client.notify_topics_request(topics_to_notify).await {
-                    tracing::warn!("Failed to notify push subscribers: {e:#}");
-                }
-            });
-        }
-    }
+    notify_push_subscribers(&state, topics_with_new_blobs).await;
 
     Ok(StatusCode::CREATED)
 }
@@ -211,4 +192,38 @@ fn blob_exists(
         .map_err(|e| format!("Failed to create iterator: {}", e))?;
 
     Ok(iter.next().is_some())
+}
+
+/// Notify push notification subscribers for topics that received new data (non-blocking).
+async fn notify_push_subscribers(
+    state: &AppState,
+    topics_with_new_blobs: BTreeMap<TopicId, BTreeSet<String>>,
+) {
+    if topics_with_new_blobs.is_empty() {
+        return;
+    }
+    let Some(push_client) = &state.push_client else {
+        return;
+    };
+    let push_client = push_client.clone();
+    let mut push_tasks = state.push_tasks.lock().await;
+    // Reap completed tasks to prevent slow memory leak
+    while push_tasks.try_join_next().is_some() {}
+    push_tasks.spawn(async move {
+        let topics_to_notify = topics_with_new_blobs
+            .into_iter()
+            .map(|(topic, ops)| {
+                let topic = push_notifications_client::types::TopicId::from(topic);
+                let ops = ops
+                    .into_iter()
+                    .map(push_notifications_client::types::OperationId::from)
+                    .collect();
+                (topic, ops)
+            })
+            .collect();
+        tracing::info!("Notifying subscribers for topics.");
+        if let Err(e) = push_client.notify_topics(topics_to_notify).await {
+            tracing::warn!("Failed to notify push subscribers: {e:#}");
+        }
+    });
 }

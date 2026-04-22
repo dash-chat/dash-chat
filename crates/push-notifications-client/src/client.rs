@@ -77,7 +77,7 @@ impl PushNotificationsClient {
         Ok(())
     }
 
-    pub async fn notify_topics_request(
+    pub async fn notify_topics(
         &self,
         topics_to_notify: HashMap<TopicId, HashSet<OperationId>>,
     ) -> anyhow::Result<()> {
