@@ -68,16 +68,16 @@ impl Fcm for RealFcmClient {
     async fn validate(&self) -> Result<()> {
         let mut message = Message::default();
 
-        let mut map = HashMap::new();
-        map.insert(
+        let mut data = HashMap::new();
+        data.insert(
             "title".to_string(),
             Value::String("Dash Chat test notification".into()),
         );
-        map.insert(
+        data.insert(
             "body".to_string(),
             Value::String("Validating FCM credentials".into()),
         );
-        message.data = Some(map);
+        message.data = Some(data);
         message.topic = Some("test".into());
 
         self.client
@@ -95,13 +95,13 @@ impl Fcm for RealFcmClient {
     ) -> SendResult {
         let mut message = Message::default();
 
-        let mut map = HashMap::new();
-        map.insert(
+        let mut data = HashMap::new();
+        data.insert(
             "title".to_string(),
             Value::String(notification.title.clone()),
         );
-        map.insert("body".to_string(), Value::String(notification.body.clone()));
-        message.data = Some(map.clone());
+        data.insert("body".to_string(), Value::String(notification.body.clone()));
+        message.data = Some(data.clone());
 
         let mut apns_config = ApnsConfig::default();
         let mut alert_data = Map::new();
@@ -120,7 +120,7 @@ impl Fcm for RealFcmClient {
         message.apns = Some(apns_config);
 
         let mut android_config = AndroidConfig::default();
-        android_config.data = Some(map);
+        android_config.data = Some(data);
         message.android = Some(android_config);
 
         message.token = Some(token.to_string());
