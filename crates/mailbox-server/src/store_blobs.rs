@@ -26,11 +26,11 @@ pub async fn store_blobs(
             .await
             .map_err(|e| {
                 tracing::error!("Task join error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
             })?
             .map_err(|e| {
                 tracing::error!("{}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, e)
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
             })?;
 
     // Notify push notification subscribers for topics that received new data (non-blocking)
