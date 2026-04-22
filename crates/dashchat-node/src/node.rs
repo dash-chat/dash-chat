@@ -192,8 +192,8 @@ impl Node {
             .op_store
             .get_log_heights(&topic_id)
             .await?
-            .into_iter()
-            .map(|(pk, _)| DeviceId::from(pk))
+            .keys()
+            .cloned()
             .collect::<HashSet<_>>();
         Ok(authors)
     }
@@ -624,7 +624,7 @@ impl Node {
         self.author_operation(
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact.clone())),
-            Some(&format!("add_contact/invitation({})", agent.renamed())),
+            Some(&format!("add_contact/add_contact({})", agent.renamed())),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
@@ -647,7 +647,7 @@ impl Node {
             self.author_operation(
                 inbox_topic.topic,
                 Payload::Inbox(InboxPayload::ContactRequest { code, profile }),
-                Some(&format!("add_contact/invitation({})", agent.renamed())),
+                Some(&format!("add_contact/contact_request({})", agent.renamed())),
             )
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?;

@@ -29,7 +29,7 @@ pub use p2panda_core::PrivateKey;
 use p2panda_core::Timestamp;
 pub use p2panda_spaces::ActorId;
 pub use payload::*;
-pub use topic::Topic;
+pub use topic::{LogId, Topic, TopicId};
 
 pub trait Cbor: serde::Serialize + serde::de::DeserializeOwned {
     fn as_bytes(&self) -> Result<Vec<u8>, p2panda_core::cbor::EncodeError> {

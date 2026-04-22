@@ -3,6 +3,7 @@ use std::pin::Pin;
 use futures::Stream;
 use futures::StreamExt;
 use futures::stream::SelectAll;
+use p2panda_store::topics::TopicStore;
 use p2panda_stream::StreamLayerExt;
 use p2panda_stream::ingest::Ingest;
 use p2panda_stream::ingest::IngestArgs;
@@ -11,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::Instrument;
 
+use crate::LogId;
 use crate::{payload::InboxPayload, topic::AutoRegisteredTopic};
 
 use super::*;
@@ -24,12 +26,11 @@ pub struct Notification {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Event {
     pub operation: Operation,
-    // TODO: use () for LogId?
-    pub args: IngestArgs<TopicId, TopicId>,
+    pub args: IngestArgs<LogId, TopicId>,
 }
 
-impl std::borrow::Borrow<IngestArgs<TopicId, TopicId>> for Event {
-    fn borrow(&self) -> &IngestArgs<TopicId, TopicId> {
+impl std::borrow::Borrow<IngestArgs<LogId, TopicId>> for Event {
+    fn borrow(&self) -> &IngestArgs<LogId, TopicId> {
         &self.args
     }
 }
@@ -64,6 +65,9 @@ impl Node {
     /// - when initializing the node, for each existing group chat
     pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
         self.subscription_tx.send(topic).await?;
+        // self.op_store
+        //     .associate(&topic, &self.node_keys.device_id(), &LogId)
+        //     .await?;
         Ok(())
     }
 
@@ -76,7 +80,7 @@ impl Node {
             return Ok(None);
         };
 
-        let ingest: Ingest<SqliteStore, Event, TopicId, Extensions, TopicId> =
+        let ingest: Ingest<SqliteStore, Event, LogId, Extensions, TopicId> =
             Ingest::new((*self.op_store).clone());
 
         let stream = ReceiverStream::new(mailbox_rx)
@@ -107,6 +111,7 @@ impl Node {
         Ok(Some(Box::pin(stream)))
     }
 
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().renamed())))]
     pub(super) fn spawn_stream_process_loop(
         &self,
         mut subscription_rx: mpsc::Receiver<TopicId>,
@@ -118,6 +123,8 @@ impl Node {
             .enable_all()
             .build()
             .expect("runtime for current thread");
+
+        let me = self.device_id();
 
         let handle = std::thread::spawn(move || {
             let local = tokio::task::LocalSet::new();
@@ -133,7 +140,7 @@ impl Node {
                             Some(topic) = subscription_rx.recv() => {
                                 match node.initialize_topic_stream(topic).await {
                                     Ok(Some(stream)) => {
-                                        tracing::info!("received new STREAM");
+                                        tracing::info!(topic = ?topic.renamed(), "received new STREAM");
                                         streams.push(Box::pin(stream));
                                     }
                                     Ok(None) => {
@@ -165,7 +172,7 @@ impl Node {
                         }
                     }
                 }
-                .instrument(tracing::info_span!("stream_process_loop"))
+                .instrument(tracing::info_span!("stream_process_loop", me = ?me.renamed()))
             );
 
             rt.block_on(local);

@@ -1,5 +1,5 @@
 use derive_more::{Deref, From};
-use named_id::RenameAll;
+use named_id::{RenameAll, RenameNone};
 use p2panda_core::PublicKey;
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize};

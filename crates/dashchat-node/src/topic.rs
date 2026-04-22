@@ -139,6 +139,8 @@ impl TopicId {
     }
 }
 
+pub type LogId = TopicId;
+
 impl p2panda_spaces::traits::SpaceId for TopicId {}
 
 pub type DashChatTopicId = TopicId;

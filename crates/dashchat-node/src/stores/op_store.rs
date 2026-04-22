@@ -1,10 +1,12 @@
+mod queries;
+
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::{Arc, RwLock},
 };
 
-use p2panda_core::{Body, Hash};
-use p2panda_store::{SqliteStore, logs::LogStore};
+use p2panda_core::{Hash, PublicKey, SeqNum};
+use p2panda_store::{SqliteStore, logs::LogStore, topics::TopicStore};
 
 use tokio::sync::Mutex;
 
@@ -65,72 +67,9 @@ impl OpStore {
     pub async fn get_log_heights(
         &self,
         topic: &TopicId,
-    ) -> Result<Vec<(DeviceId, u64)>, anyhow::Error> {
-        todo!("need new log heights query to match the old one")
-        // Ok(self
-        //     .store
-        //     .get_log_heights(&topic)
-        //     .await
-        //     .map_err(|err| anyhow::anyhow!("failed to get log heights for {topic:?}: {err}"))?
-        //     .into_iter()
-        //     .map(|(pk, height)| (DeviceId::from(pk), height))
-        //     .collect::<Vec<_>>())
+    ) -> Result<BTreeMap<DeviceId, SeqNum>, anyhow::Error> {
+        queries::get_log_heights_by_author(&self.store, topic).await
     }
-
-    // async fn get_log_heights(
-    //     &self,
-    //     author: &PublicKey,
-    //     logs: &[L],
-    // ) -> Result<Option<BTreeMap<L, SeqNum>>, Self::Error> {
-    //     let mut encoded_log_ids = Vec::new();
-    //     for log in logs {
-    //         let encoded_log_id =
-    //             encode_cbor(&log).map_err(|err| SqliteError::Encode("log id".to_string(), err))?;
-    //         encoded_log_ids.push(encoded_log_id);
-    //     }
-
-    //     // This query formation approach is required since there is currently no
-    //     // way to directly bind arrays as comma-separated lists in sqlx.
-    //     let params = format!("?{}", ", ?".repeat(encoded_log_ids.len() - 1));
-    //     let query_str = format!(
-    //         "
-    //         SELECT
-    //             log_id,
-    //             CAST(MAX(CAST(seq_num AS NUMERIC)) AS TEXT) as seq_num
-    //         FROM
-    //             operations_v1
-    //         WHERE
-    //             public_key = ?
-    //             AND log_id IN ( {} )
-    //         GROUP BY
-    //             log_id
-    //         ",
-    //         params
-    //     );
-
-    //     let mut query = query_as::<_, LogHeightRow>(&query_str).bind(author.to_string());
-
-    //     for log_id in encoded_log_ids {
-    //         query = query.bind(log_id)
-    //     }
-
-    //     let log_heights_query = query.fetch_all(&self.pool).await?;
-
-    //     let log_heights = if log_heights_query.is_empty() {
-    //         None
-    //     } else {
-    //         let mut log_heights = BTreeMap::new();
-
-    //         for row in log_heights_query {
-    //             let (log_id, seq_num) = row.try_into()?;
-    //             log_heights.insert(log_id, seq_num);
-    //         }
-
-    //         Some(log_heights)
-    //     };
-
-    //     Ok(log_heights)
-    // }
 
     pub async fn author_operation<K: TopicKind>(
         &self,
@@ -147,6 +86,12 @@ impl OpStore {
         let lock = self.write_mutex.lock().await;
         let latest_operation: Option<Operation> =
             self.store.get_latest_entry(&device_id, &*topic).await?;
+
+        // dbg!();
+        // dbg!(&latest_operation);
+        // dbg!(&device_id.to_hex());
+        // dbg!(&topic);
+        // dbg!();
 
         let (seq_num, backlink) = match latest_operation {
             Some(op) => (op.header.seq_num + 1, Some(op.hash)),
@@ -333,6 +278,9 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
     }
 
     async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(DeviceId, u64)>> {
-        OpStore::get_log_heights(self, topic).await
+        Ok(OpStore::get_log_heights(self, topic)
+            .await?
+            .into_iter()
+            .collect())
     }
 }
