@@ -4,9 +4,28 @@ import QrCreator from 'qr-creator';
 
 const FONT_FAMILY = "-apple-system, 'Segoe UI', Roboto, sans-serif";
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const SHARE_CANCELLED_ERROR_MESSAGE = 'Share cancelled';
 
 function sanitizeHexColor(color: string, fallback = '#007aff'): string {
 	return HEX_COLOR_RE.test(color) ? color : fallback;
+}
+
+function getErrorMessage(error: unknown): string | null {
+	if (typeof error === 'string') return error;
+	if (error instanceof Error) return error.message;
+	if (
+		error &&
+		typeof error === 'object' &&
+		'message' in error &&
+		typeof error.message === 'string'
+	) {
+		return error.message;
+	}
+	return null;
+}
+
+function isShareCancelledError(error: unknown): boolean {
+	return getErrorMessage(error)?.trim() === SHARE_CANCELLED_ERROR_MESSAGE;
 }
 
 function roundRect(
@@ -159,7 +178,9 @@ export async function saveQrCode(
 			await writeFile(path, bytes);
 		}
 	} else {
-		const blob = new Blob([bytes], { type: 'image/png' });
+		const blobBytes = new Uint8Array(bytes.byteLength);
+		blobBytes.set(bytes);
+		const blob = new Blob([blobBytes], { type: 'image/png' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
@@ -193,8 +214,13 @@ export async function shareQrCode(
 	const path = await join(shareDir, 'dashchat-qr-code.png');
 	await writeFile(path, bytes);
 
-	await shareFile(`file://${path}`, {
-		mimeType: 'image/png',
-		title: 'dashchat-qr-code.png',
-	});
+	try {
+		await shareFile(`file://${path}`, {
+			mimeType: 'image/png',
+			title: 'dashchat-qr-code.png',
+		});
+	} catch (error) {
+		if (isShareCancelledError(error)) return;
+		throw error;
+	}
 }
