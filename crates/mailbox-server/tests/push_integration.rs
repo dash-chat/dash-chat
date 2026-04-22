@@ -29,25 +29,58 @@ async fn start_push_server(mock_fcm: MockFcm) -> String {
 }
 
 /// Creates a mailbox TestServer connected to the given push notifications URL.
-fn start_mailbox_server(push_url: String) -> (TestServer, tempfile::NamedTempFile) {
+/// Returns the push_tasks handle so tests can await completion instead of sleeping.
+fn start_mailbox_server(
+    push_url: String,
+) -> (
+    TestServer,
+    tempfile::NamedTempFile,
+    Arc<tokio::sync::Mutex<tokio::task::JoinSet<()>>>,
+) {
     let (db, temp_file) = create_test_db();
     let push_client = PushNotificationsClient::new(push_url);
     let push_tasks = Arc::new(tokio::sync::Mutex::new(tokio::task::JoinSet::new()));
-    let app = mailbox_server::create_app(Arc::new(db), Some(Arc::new(push_client)), push_tasks);
+    let app = mailbox_server::create_app(
+        Arc::new(db),
+        Some(Arc::new(push_client)),
+        push_tasks.clone(),
+    );
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),
         ..TestServerConfig::default()
     };
     let server = TestServer::new_with_config(app, config).unwrap();
-    (server, temp_file)
+    (server, temp_file, push_tasks)
+}
+
+/// Waits for all spawned push notification tasks to complete, with a timeout.
+async fn drain_push_tasks(push_tasks: &Arc<tokio::sync::Mutex<tokio::task::JoinSet<()>>>) {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let done = {
+            let mut tasks = push_tasks.lock().await;
+            // try_join_next returns None when there are no remaining tasks
+            while tasks.try_join_next().is_some() {}
+            tasks.is_empty()
+        };
+        if done {
+            break;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            panic!("push tasks did not complete within 5s");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
 }
 
 /// Full integration test: subscribe → store blobs → push notification sent.
 #[tokio::test]
 async fn mailbox_store_triggers_push_notification() {
-    let public_key = PublicKey::from("device-abc".to_string());
+    let public_key =
+        PublicKey::from("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string());
     let fcm_token = FcmToken::from("fcm-token-xyz".to_string());
-    let topic_id = TopicId::from("chat-topic-1".to_string());
+    let topic_id =
+        TopicId::from("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string());
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));
@@ -85,7 +118,7 @@ async fn mailbox_store_triggers_push_notification() {
     assert_eq!(resp.status(), 204);
 
     // Mailbox server connected to the push server
-    let (mailbox, _tmp) = start_mailbox_server(push_url);
+    let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url);
 
     let blob_data = base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,
@@ -96,7 +129,7 @@ async fn mailbox_store_triggers_push_notification() {
         .post("/blobs/store")
         .json(&json!({
             "blobs": {
-                "chat-topic-1": {
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
                     "author-1": {
                         "0": blob_data
                     }
@@ -106,8 +139,7 @@ async fn mailbox_store_triggers_push_notification() {
         .await;
     resp.assert_status(StatusCode::CREATED);
 
-    // Give the spawned push notification task time to complete
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    drain_push_tasks(&push_tasks).await;
 
     // MockFcm panics on drop if expect_send_push_notification wasn't called exactly once
 }
@@ -120,7 +152,7 @@ async fn mailbox_store_no_subscribers_no_push() {
     // No send expected
 
     let push_url = start_push_server(mock_fcm).await;
-    let (mailbox, _tmp) = start_mailbox_server(push_url);
+    let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url);
 
     let blob_data =
         base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"some-data");
@@ -139,7 +171,7 @@ async fn mailbox_store_no_subscribers_no_push() {
         .await;
     resp.assert_status(StatusCode::CREATED);
 
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    drain_push_tasks(&push_tasks).await;
     // MockFcm panics on drop if send_push_notification was called unexpectedly
 }
 
@@ -147,9 +179,11 @@ async fn mailbox_store_no_subscribers_no_push() {
 /// (watermark doesn't advance on duplicate data).
 #[tokio::test]
 async fn mailbox_store_duplicate_blob_no_second_push() {
-    let public_key = PublicKey::from("device-abc".to_string());
+    let public_key =
+        PublicKey::from("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string());
     let fcm_token = FcmToken::from("fcm-token-xyz".to_string());
-    let topic_id = TopicId::from("chat-topic-dup".to_string());
+    let topic_id =
+        TopicId::from("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string());
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));
@@ -182,7 +216,7 @@ async fn mailbox_store_duplicate_blob_no_second_push() {
         .await
         .unwrap();
 
-    let (mailbox, _tmp) = start_mailbox_server(push_url);
+    let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url);
 
     let blob_data = base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,
@@ -191,7 +225,7 @@ async fn mailbox_store_duplicate_blob_no_second_push() {
 
     let store_body = json!({
         "blobs": {
-            "chat-topic-dup": {
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": {
                 "author-1": {
                     "0": blob_data
                 }
@@ -202,12 +236,12 @@ async fn mailbox_store_duplicate_blob_no_second_push() {
     // First store — should trigger push
     let resp = mailbox.post("/blobs/store").json(&store_body).await;
     resp.assert_status(StatusCode::CREATED);
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    drain_push_tasks(&push_tasks).await;
 
     // Second store with same data — watermark won't advance, no push
     let resp = mailbox.post("/blobs/store").json(&store_body).await;
     resp.assert_status(StatusCode::CREATED);
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    drain_push_tasks(&push_tasks).await;
 
     // MockFcm asserts exactly 1 call on drop
 }
