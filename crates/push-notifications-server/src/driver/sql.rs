@@ -37,6 +37,13 @@ impl SqlDriver {
         .await
         .context("failed to create topic_subscribers table")?;
 
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_topic_subscribers_pubkey ON topic_subscribers (public_key)",
+        )
+        .execute(&pool)
+        .await
+        .context("failed to create public_key index on topic_subscribers")?;
+
         Ok(Self { pool })
     }
 }
