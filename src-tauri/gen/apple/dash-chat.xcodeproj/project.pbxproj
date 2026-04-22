@@ -17,6 +17,7 @@
 		8AD067333F71898D09A74F8C /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EFA6F408E0B94A4467A98671 /* WebKit.framework */; };
 		ADB09C5318968EBA6AEFE842 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0B233AF045E16F15B53BDF18 /* main.mm */; };
 		BBCF0C01ED9E2B789638FB39 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 4E934CB66A6EFDED8A7140E1 /* LaunchScreen.storyboard */; };
+		BD219C622F98C52C00B97E83 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = BD219C612F98C52C00B97E83 /* GoogleService-Info.plist */; };
 		BF5CA451C3C87851B08BEDF2 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4B55E5851C4FCBB5648AAAE4 /* CoreGraphics.framework */; };
 		F9015C731EA3878F23601595 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 259BA298A3F6E74B3EFE04CB /* Metal.framework */; };
 /* End PBXBuildFile section */
@@ -45,6 +46,8 @@
 		9AE27A5EF83148E8E8A939F5 /* group_chat.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = group_chat.rs; sourceTree = "<group>"; };
 		AB1CCBF888A60C43A95C87F3 /* push_notifications.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = push_notifications.rs; sourceTree = "<group>"; };
 		AF3E0E9FD52F5C966036D166 /* dash-chat_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "dash-chat_iOS.entitlements"; sourceTree = "<group>"; };
+		BD00B5012F98C6C700487840 /* dash-chat_iOSrelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "dash-chat_iOSrelease.entitlements"; sourceTree = "<group>"; };
+		BD219C612F98C52C00B97E83 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		C19CBD4A53D241FD81F7D90D /* tray.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = tray.rs; sourceTree = "<group>"; };
 		C34F863351A4699075675361 /* Dash Chat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Dash Chat.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C857B543B98437BA43FFF947 /* chats.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = chats.rs; sourceTree = "<group>"; };
@@ -107,6 +110,8 @@
 		5F1640F62BD6C0FF7BFA4BC2 /* dash-chat_iOS */ = {
 			isa = PBXGroup;
 			children = (
+				BD00B5012F98C6C700487840 /* dash-chat_iOSrelease.entitlements */,
+				BD219C612F98C52C00B97E83 /* GoogleService-Info.plist */,
 				AF3E0E9FD52F5C966036D166 /* dash-chat_iOS.entitlements */,
 				E314E9BC10C6ABA44255B75A /* Info.plist */,
 			);
@@ -272,6 +277,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				59B25155F8ACA00E17434812 /* Assets.xcassets in Resources */,
+				BD219C622F98C52C00B97E83 /* GoogleService-Info.plist in Resources */,
 				BBCF0C01ED9E2B789638FB39 /* LaunchScreen.storyboard in Resources */,
 				643555E9417C7AAF39BC7DA4 /* assets in Resources */,
 			);
@@ -440,7 +446,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "dash-chat_iOS/dash-chat_iOS.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "dash-chat_iOS/dash-chat_iOSrelease.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_TEAM = 4XN3VLHC68;
 				ENABLE_BITCODE = NO;

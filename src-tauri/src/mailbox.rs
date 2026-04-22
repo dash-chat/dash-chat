@@ -12,7 +12,7 @@ pub mod server;
 ///
 /// Resolution order:
 /// 1. `MAILBOX_URL` runtime env var (E2E tests)
-/// 2. `MAILBOX_URL` compile-time env var (dev builds via mprocs / start-dev.sh)
+/// 2. `MAILBOX_URL` compile-time env var (set by build.rs in debug builds)
 /// 3. Production URL
 pub fn default_mailbox_url() -> String {
     if let Ok(url) = std::env::var("MAILBOX_URL") {
@@ -27,9 +27,6 @@ pub fn default_mailbox_url() -> String {
     if let Some(url) = option_env!("MAILBOX_URL") {
         log::info!("Using compile-time MAILBOX_URL: {url}");
         return url.to_string();
-    }
-    if tauri::is_dev() {
-        panic!("MAILBOX_URL must be set in dev builds (via env var or compile-time env)");
     }
     PRODUCTION_MAILBOX_URL.to_string()
 }

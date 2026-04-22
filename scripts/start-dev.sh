@@ -13,17 +13,10 @@ cd "$PROJECT_DIR"
 
 UI_PORT=$(node -e "const s=require('net').createServer();s.listen(0,()=>{console.log(s.address().port);s.close()})")
 MAILBOX_PORT=$(node -e "const s=require('net').createServer();s.listen(0,()=>{console.log(s.address().port);s.close()})")
-if command -v hostname &>/dev/null && hostname -I &>/dev/null; then
-    LOCAL_IP=$(hostname -I | awk '{print $1}')
-else
-    LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "127.0.0.1")
-fi
-MAILBOX_URL="http://$LOCAL_IP:$MAILBOX_PORT"
 DEV_DBS_PATH=$(mktemp -d)
 
 echo "UI_PORT=$UI_PORT"
 echo "MAILBOX_PORT=$MAILBOX_PORT"
-echo "MAILBOX_URL=$MAILBOX_URL"
 echo "DEV_DBS_PATH=$DEV_DBS_PATH"
 
 LOGS_DIR="$DEV_DBS_PATH/logs"

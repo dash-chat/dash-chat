@@ -1,40 +1,19 @@
 procs:
   agent1:
     shell: pnpm tauri dev
-    env:
-      MAILBOX_URL: "http://localhost:3000"
-      PUSH_NOTIFICATIONS_URL: "http://localhost:3001"
   agent2:
     shell: pnpm tauri dev
-    env:
-      MAILBOX_URL: "http://localhost:3000"
-      PUSH_NOTIFICATIONS_URL: "http://localhost:3001"
-  mailbox-server: cargo run -p mailbox-server -- --db-path "$PWD/.dbs/dev/mailbox-server/mailbox.db" --addr 0.0.0.0:3000 --push-notifications-url http://localhost:3001
+  mailbox-server: 
+    shell: cargo run -p mailbox-server -- --db-path "$PWD/.dbs/dev/mailbox-server/mailbox.db" --addr 0.0.0.0:3000 --push-notifications-url http://localhost:3001
   push-notifications-server:
     shell: just push server
     autostart: false
   android:
-    shell: |
-      if command -v hostname &>/dev/null && hostname -I &>/dev/null; then
-        LOCAL_IP=$(hostname -I | awk '{print $1}')
-      else
-        LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "127.0.0.1")
-      fi
-      export MAILBOX_URL="http://$LOCAL_IP:3000"
-      export PUSH_NOTIFICATIONS_URL="http://$LOCAL_IP:3001"
-      just android dev
-    autostart: false  
+    shell: just android dev
+    autostart: false
   logcat:
     shell: just android logcat
     autostart: false
   ios:
-    shell: |
-      if command -v hostname &>/dev/null && hostname -I &>/dev/null; then
-        LOCAL_IP=$(hostname -I | awk '{print $1}')
-      else
-        LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "127.0.0.1")
-      fi
-      export MAILBOX_URL="http://$LOCAL_IP:3000"
-      export PUSH_NOTIFICATIONS_URL="http://$LOCAL_IP:3001"
-      just ios dev
+    shell: just ios dev
     autostart: false

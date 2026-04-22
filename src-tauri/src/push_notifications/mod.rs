@@ -15,27 +15,22 @@ const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str =
 /// Returns the push notifications server URL to use.
 ///
 /// Resolution order:
-/// 1. `PUSH_NOTIFICATIONS_URL` runtime env var (E2E tests)
-/// 2. `PUSH_NOTIFICATIONS_URL` compile-time env var (dev builds via mprocs / start-dev.sh)
+/// 1. `PUSH_NOTIFICATIONS_SERVER_URL` runtime env var (E2E tests)
+/// 2. `PUSH_NOTIFICATIONS_SERVER_URL` compile-time env var (set by build.rs in debug builds)
 /// 3. Production URL
 fn push_notifications_url() -> String {
-    if let Ok(url) = std::env::var("PUSH_NOTIFICATIONS_URL") {
+    if let Ok(url) = std::env::var("PUSH_NOTIFICATIONS_SERVER_URL") {
         if !(url.starts_with("http://") || url.starts_with("https://")) {
             log::error!(
-                "PUSH_NOTIFICATIONS_URL env var is not a valid URL: {url}, falling back to next option"
+                "PUSH_NOTIFICATIONS_SERVER_URL env var is not a valid URL: {url}, falling back to next option"
             );
         } else {
             return url;
         }
     }
-    if let Some(url) = option_env!("PUSH_NOTIFICATIONS_URL") {
-        log::info!("Using compile-time PUSH_NOTIFICATIONS_URL: {url}");
+    if let Some(url) = option_env!("PUSH_NOTIFICATIONS_SERVER_URL") {
+        log::info!("Using compile-time PUSH_NOTIFICATIONS_SERVER_URL: {url}");
         return url.to_string();
-    }
-    if tauri::is_dev() {
-        panic!(
-            "PUSH_NOTIFICATIONS_URL must be set in dev builds (via env var or compile-time env)"
-        );
     }
     PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL.to_string()
 }
