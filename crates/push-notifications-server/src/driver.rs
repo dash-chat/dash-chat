@@ -15,6 +15,8 @@ pub trait Driver: Send + Sync + 'static {
 
     async fn get_fcm_token(&self, public_key: &PublicKey) -> anyhow::Result<Option<FcmToken>>;
 
+    async fn remove_fcm_token(&self, public_key: &PublicKey) -> anyhow::Result<()>;
+
     async fn subscribe_to_topics(
         &self,
         public_key: &PublicKey,

@@ -34,6 +34,11 @@ impl Driver for MemDb {
         Ok(self.tokens.lock().await.get(public_key).cloned())
     }
 
+    async fn remove_fcm_token(&self, public_key: &PublicKey) -> Result<()> {
+        self.tokens.lock().await.remove(public_key);
+        Ok(())
+    }
+
     async fn subscribe_to_topics(
         &self,
         public_key: &PublicKey,

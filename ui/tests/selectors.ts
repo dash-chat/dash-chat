@@ -144,9 +144,4 @@ export const S = {
 		bannerTitle: tid('updater-banner-title'),
 		dismissBtn: tid('updater-dismiss-btn'),
 	},
-	onboarding: {
-		nextButton: tid('onboarding-next-btn'),
-		backButton: tid('onboarding-back-btn'),
-		startButton: tid('onboarding-start-btn'),
-	},
 } as const;

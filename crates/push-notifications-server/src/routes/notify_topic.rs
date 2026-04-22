@@ -4,7 +4,7 @@ use futures::future::join_all;
 use push_notifications_client::requests::NotifyTopicsRequest;
 use push_notifications_client::types::PushNotification;
 
-use crate::{AppState, error::AppError};
+use crate::{AppState, error::AppError, fcm_client::SendResult};
 
 pub(crate) async fn notify_topics(
     State(state): State<AppState>,
@@ -21,6 +21,9 @@ pub(crate) async fn notify_topics(
             }
         };
 
+        // One push per operation: iOS Notification Service Extensions can only
+        // transform a single incoming notification, so each operation needs its own push
+        // for the client to resolve it into a user-facing message.
         for op_id in op_ids {
             let notification = PushNotification {
                 title: topic_id.to_string(),
@@ -34,12 +37,21 @@ pub(crate) async fn notify_topics(
                 tasks.push(async move {
                     match state.db.get_fcm_token(&public_key).await {
                         Ok(Some(fcm_token)) => {
-                            if let Err(e) = state
+                            match state
                                 .fcm
                                 .send_push_notification(&fcm_token, &notification)
                                 .await
                             {
-                                tracing::warn!(public_key = %public_key, "failed to send FCM notification: {e:#}");
+                                SendResult::Ok => {}
+                                SendResult::InvalidToken => {
+                                    tracing::info!(public_key = %public_key, "FCM token is invalid, removing");
+                                    if let Err(e) = state.db.remove_fcm_token(&public_key).await {
+                                        tracing::warn!(public_key = %public_key, "failed to remove invalid FCM token: {e:#}");
+                                    }
+                                }
+                                SendResult::Error(e) => {
+                                    tracing::warn!(public_key = %public_key, "failed to send FCM notification: {e}");
+                                }
                             }
                         }
                         Ok(None) => {

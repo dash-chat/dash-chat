@@ -7,7 +7,7 @@ use push_notifications_client::client::PushNotificationsClient;
 use push_notifications_client::requests::{RegisterFcmTokenRequest, SubscribeRequest};
 use push_notifications_client::types::{FcmToken, PublicKey, TopicId};
 use push_notifications_server::driver::mem::MemDb;
-use push_notifications_server::fcm_client::MockFcm;
+use push_notifications_server::fcm_client::{MockFcm, SendResult};
 use serde_json::json;
 
 /// Starts a push notifications server with the given mock FCM on a random port.
@@ -32,7 +32,8 @@ async fn start_push_server(mock_fcm: MockFcm) -> String {
 fn start_mailbox_server(push_url: String) -> (TestServer, tempfile::NamedTempFile) {
     let (db, temp_file) = create_test_db();
     let push_client = PushNotificationsClient::new(push_url);
-    let app = mailbox_server::create_app_with_arc(Arc::new(db), Some(Arc::new(push_client)));
+    let push_tasks = Arc::new(tokio::sync::Mutex::new(tokio::task::JoinSet::new()));
+    let app = mailbox_server::create_app(Arc::new(db), Some(Arc::new(push_client)), push_tasks);
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),
         ..TestServerConfig::default()
@@ -54,7 +55,7 @@ async fn mailbox_store_triggers_push_notification() {
         .expect_send_push_notification()
         .withf(|token, _| token == "fcm-token-xyz")
         .once()
-        .returning(|_, _| Ok(()));
+        .returning(|_, _| SendResult::Ok);
 
     let push_url = start_push_server(mock_fcm).await;
 
@@ -157,7 +158,7 @@ async fn mailbox_store_duplicate_blob_no_second_push() {
         .expect_send_push_notification()
         .withf(|token, _| token == "fcm-token-xyz")
         .once()
-        .returning(|_, _| Ok(()));
+        .returning(|_, _| SendResult::Ok);
 
     let push_url = start_push_server(mock_fcm).await;
 

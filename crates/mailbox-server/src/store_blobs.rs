@@ -37,7 +37,7 @@ pub async fn store_blobs(
     if !topics_with_new_blobs.is_empty() {
         if let Some(push_client) = &state.push_client {
             let push_client = push_client.clone();
-            tokio::spawn(async move {
+            state.push_tasks.lock().await.spawn(async move {
                 let topics_to_notify = topics_with_new_blobs
                     .into_iter()
                     .map(|(topic, ops)| {

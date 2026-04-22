@@ -63,6 +63,29 @@ async fn store_fcm_token_overwrites() {
     assert_eq!(result, Some(FcmToken::from("tok-2".to_string())));
 }
 
+#[tokio::test]
+async fn remove_fcm_token_deletes_token() {
+    let db = create_driver().await;
+    let alice = PublicKey::from("alice".to_string());
+
+    db.store_fcm_token(&alice, &FcmToken::from("tok-1".to_string()))
+        .await
+        .unwrap();
+
+    db.remove_fcm_token(&alice).await.unwrap();
+
+    assert_eq!(db.get_fcm_token(&alice).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn remove_fcm_token_nonexistent_is_noop() {
+    let db = create_driver().await;
+
+    db.remove_fcm_token(&PublicKey::from("nobody".to_string()))
+        .await
+        .unwrap();
+}
+
 // --- subscribe / get_subscribers ---
 
 #[tokio::test]

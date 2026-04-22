@@ -54,7 +54,6 @@
 	"scanQrCodeOfYourContact": "Scan the QR code from your contact's device.",
 	"messageRequest": "Message request.",
 	"contactRequests": "Contact requests",
-	"newContactRequest": "New contact request",
 	"myContacts": "My contacts",
 	"reject": "Reject",
 	"accept": "Accept",
@@ -205,21 +204,5 @@
 	"updateError": "Update failed. Please try again later.",
 	"updateTapToUpdate": "Tap to update Dash Chat.",
 	"updateTapToRestart": "Tap to restart and apply update.",
-	"updateTapToRetry": "Tap to retry.",
-	"updateOk": "Ok",
-
-	"welcomeToDashChat": "Welcome to Dash Chat!",
-	"aPrivateP2pChatApp": "A private peer-to-peer chat app.",
-	"youOwnYourData": "You own your data.",
-	"messagesStoredOnDevice": "Your messages are stored in your device.",
-	"preserveYourPrivacy": "Preserve your privacy.",
-	"allMessagesEncrypted": "All messages are end-to-end encrypted.",
-	"chatEvenWhenOffline": "Chat even when offline.",
-	"chatOfflineExplanation": "Dash Chat works as long as you can connect to your friends' devices.",
-	"dashChatIsPreAlpha": "Dash Chat is in pre-alpha.",
-	"preAlphaExplanation": "We are still building Dash Chat. The app is ready for testing and experimentation, but not to be used as a daily driver.",
-	"thatsIt": "That's it!",
-	"haveFunUsingDashChat": "Have fun using Dash Chat.",
-	"startApp": "Start app",
-	"back": "Back"
+	"updateTapToRetry": "Tap to retry."
 }

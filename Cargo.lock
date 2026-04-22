@@ -1896,7 +1896,7 @@ dependencies = [
  "mailbox-client",
  "mailbox-server",
  "mdns-sd",
- "nanoid 0.4.0",
+ "nanoid 0.5.0",
  "ndk-context",
  "ndk-sys",
  "opener",
@@ -10137,7 +10137,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification"
 version = "2.3.3"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#6834a95201641a3f45be19b774f96b677c5d1e20"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#0195fb589ba37b416968629f048cf2000ee15e2e"
 dependencies = [
  "log",
  "notify-rust",
@@ -10158,7 +10158,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-macros"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#6834a95201641a3f45be19b774f96b677c5d1e20"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#0195fb589ba37b416968629f048cf2000ee15e2e"
 dependencies = [
  "jni",
  "libc",
@@ -10172,7 +10172,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-models"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#6834a95201641a3f45be19b774f96b677c5d1e20"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#0195fb589ba37b416968629f048cf2000ee15e2e"
 dependencies = [
  "rand 0.8.6",
  "serde",

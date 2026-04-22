@@ -65,6 +65,15 @@ impl Driver for SqlDriver {
         Ok(row.map(|r| FcmToken::from(r.get::<String, _>("fcm_token"))))
     }
 
+    async fn remove_fcm_token(&self, public_key: &PublicKey) -> Result<()> {
+        sqlx::query("DELETE FROM fcm_tokens WHERE public_key = $1")
+            .bind(public_key.as_str())
+            .execute(&self.pool)
+            .await
+            .context("failed to remove FCM token")?;
+        Ok(())
+    }
+
     async fn subscribe_to_topics(
         &self,
         public_key: &PublicKey,

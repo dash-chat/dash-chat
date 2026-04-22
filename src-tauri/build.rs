@@ -8,10 +8,9 @@ fn main() {
     // builds so mobile devices on the same LAN can reach them. Release builds
     // fall through to the production URLs at runtime.
     if std::env::var("PROFILE").as_deref() == Ok("debug") {
-        let mailbox_port =
-            std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
-        let push_port = std::env::var("PUSH_NOTIFICATIONS_SERVER_PORT")
-            .unwrap_or_else(|_| "3001".to_string());
+        let mailbox_port = std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
+        let push_port =
+            std::env::var("PUSH_NOTIFICATIONS_SERVER_PORT").unwrap_or_else(|_| "3001".to_string());
         let host = local_ip().unwrap_or_else(|| {
             println!(
                 "cargo:warning=Could not detect local IP; falling back to 127.0.0.1. \

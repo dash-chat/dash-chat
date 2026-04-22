@@ -59,9 +59,9 @@ Mailbox Server (port 3000)
 
 | Variable | Purpose | Set by |
 |---|---|---|
-| `PUSH_NOTIFICATIONS_URL` | URL of the push server | mprocs.yaml, start-dev.sh |
+| `PUSH_NOTIFICATIONS_SERVER_URL` | URL of the push server | mprocs.yaml, start-dev.sh |
 
 Resolution order in the app:
-1. Runtime env var `PUSH_NOTIFICATIONS_URL`
-2. Compile-time env var `PUSH_NOTIFICATIONS_URL`
+1. Runtime env var `PUSH_NOTIFICATIONS_SERVER_URL`
+2. Compile-time env var `PUSH_NOTIFICATIONS_SERVER_URL`
 3. Production URL (release builds only; dev builds panic without it)

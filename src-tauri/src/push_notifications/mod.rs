@@ -66,6 +66,20 @@ pub fn setup_push_notifications(
     // React to whenever the token changes
     handle.listen("notification://new-fcm-token", move |event| {
         if let Ok(token) = serde_json::from_str::<String>(event.payload()) {
+            // Skip if the user hasn't granted notification permission.
+            // The plugin can emit cached/refreshed tokens from Firebase even
+            // when the user hasn't explicitly consented in this session, so
+            // we gate the server-side registration here.
+            match h.notification().permission_state() {
+                Ok(PermissionState::Granted) => {}
+                state => {
+                    log::info!(
+                        "Ignoring new FCM token — notification permission is {state:?}, not Granted."
+                    );
+                    return;
+                }
+            }
+
             log::warn!(
                 "New FCM token: {:?}. Registering it with the push notifications server.",
                 token

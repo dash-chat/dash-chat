@@ -46,12 +46,12 @@ async fn main() -> Result<()> {
         cli.service_account_key.display()
     );
 
-    sqlx::any::install_default_drivers();
-
     let db: Arc<dyn Driver> = if cli.mem {
         tracing::info!("using in-memory database");
         Arc::new(MemDb::new())
     } else {
+        sqlx::any::install_default_drivers();
+
         let db_path = cli
             .db_path
             .as_deref()

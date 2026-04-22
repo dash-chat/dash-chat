@@ -12,7 +12,7 @@ use push_notifications_client::types::{FcmToken, OperationId, PublicKey, TopicId
 use push_notifications_server::build;
 use push_notifications_server::driver::Driver;
 use push_notifications_server::driver::mem::MemDb;
-use push_notifications_server::fcm_client::MockFcm;
+use push_notifications_server::fcm_client::{MockFcm, SendResult};
 
 #[tokio::test]
 async fn notify_topic_sends_to_subscribers() {
@@ -25,9 +25,11 @@ async fn notify_topic_sends_to_subscribers() {
     mock_fcm.expect_validate().once().returning(|| Ok(()));
     mock_fcm
         .expect_send_push_notification()
-        .with(eq("test-fcm-token"), always())
         .once()
-        .returning(|_, _| Ok(()));
+        .withf(|token, notif| {
+            token == "test-fcm-token" && notif.title == "test-topic" && notif.body == "test-op"
+        })
+        .returning(|_, _| SendResult::Ok);
 
     let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
         .await
@@ -172,9 +174,9 @@ async fn set_subscriptions_replaces_and_notifies_correctly() {
     // Only topic-b notification should fire (topic-a was replaced away)
     mock_fcm
         .expect_send_push_notification()
-        .with(eq("test-fcm-token"), always())
         .once()
-        .returning(|_, _| Ok(()));
+        .withf(|token, notif| token == "test-fcm-token" && notif.title == "topic-b")
+        .returning(|_, _| SendResult::Ok);
 
     let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
         .await
@@ -233,7 +235,7 @@ async fn set_subscriptions_replaces_and_notifies_correctly() {
 // --- error scenarios ---
 
 #[tokio::test]
-async fn fcm_failure_does_not_fail_endpoint() {
+async fn fcm_transient_failure_does_not_remove_token() {
     let public_key = PublicKey::from("test-public-key".to_string());
     let fcm_token = FcmToken::from("test-fcm-token".to_string());
     let topic_id = TopicId::from("test-topic".to_string());
@@ -243,18 +245,18 @@ async fn fcm_failure_does_not_fail_endpoint() {
     mock_fcm
         .expect_send_push_notification()
         .once()
-        .returning(|_, _| Err(anyhow::anyhow!("FCM service unavailable")));
+        .returning(|_, _| SendResult::Error("FCM service unavailable".to_string()));
 
-    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
-        .await
-        .unwrap();
+    let db = Arc::new(MemDb::new());
+
+    let app = build(db.clone(), Arc::new(mock_fcm)).await.unwrap();
     let server = TestServer::new(app).unwrap();
 
     server
         .post("/register-fcm-token")
         .json(&RegisterFcmTokenRequest {
             public_key: public_key.clone(),
-            fcm_token,
+            fcm_token: fcm_token.clone(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -276,6 +278,12 @@ async fn fcm_failure_does_not_fail_endpoint() {
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
+
+    // Token should be preserved (transient error, not invalid token)
+    assert_eq!(
+        db.get_fcm_token(&public_key).await.unwrap(),
+        Some(fcm_token)
+    );
 }
 
 #[tokio::test]
@@ -305,4 +313,41 @@ async fn notify_subscriber_without_token_does_not_fail() {
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn invalid_token_is_removed() {
+    let public_key = PublicKey::from("test-public-key".to_string());
+    let fcm_token = FcmToken::from("expired-token".to_string());
+    let topic_id = TopicId::from("test-topic".to_string());
+
+    let mut mock_fcm = MockFcm::new();
+    mock_fcm.expect_validate().once().returning(|| Ok(()));
+    mock_fcm
+        .expect_send_push_notification()
+        .with(eq("expired-token"), always())
+        .once()
+        .returning(|_, _| SendResult::InvalidToken);
+
+    let db = Arc::new(MemDb::new());
+
+    db.store_fcm_token(&public_key, &fcm_token).await.unwrap();
+    db.subscribe_to_topics(&public_key, &[topic_id.clone()].into())
+        .await
+        .unwrap();
+
+    let app = build(db.clone(), Arc::new(mock_fcm)).await.unwrap();
+    let server = TestServer::new(app).unwrap();
+
+    // Notify — FCM reports token invalid, should remove it
+    server
+        .post("/notify-topic")
+        .json(&NotifyTopicsRequest {
+            topics_to_notify: [(topic_id, [OperationId::from("op-1".to_string())].into())].into(),
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+
+    // Token should have been removed from the database
+    assert_eq!(db.get_fcm_token(&public_key).await.unwrap(), None);
 }

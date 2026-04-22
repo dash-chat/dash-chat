@@ -7,6 +7,7 @@ use redb::Database;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::{future::Future, path::PathBuf};
+use tokio::task::JoinSet;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod blob;
@@ -36,6 +37,7 @@ pub type SequenceNumber = u64;
 pub struct AppState {
     pub db: Arc<Database>,
     pub push_client: Option<Arc<PushNotificationsClient>>,
+    pub push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -61,7 +63,8 @@ pub async fn spawn_server(
         Arc::new(PushNotificationsClient::new(url))
     });
 
-    let app = create_app_with_arc(db_arc, push_client);
+    let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
+    let app = create_app(db_arc, push_client, Arc::clone(&push_tasks));
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let addr = listener.local_addr()?;
@@ -70,8 +73,14 @@ pub async fn spawn_server(
 
     let server = axum::serve(listener, app);
     server.with_graceful_shutdown(signal).await?;
+
     // TODO: cleanup task needs to be cleaned up even if the server is aborted.
     //      the database stays open as long as this task holds a reference to the db arc.
+
+    // Drain pending push notification tasks before shutting down
+    let mut tasks = push_tasks.lock().await;
+    while tasks.join_next().await.is_some() {}
+
     cleanup_task.abort();
     tracing::info!("Mailbox server gracefully shut down");
 
@@ -108,15 +117,16 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
     Ok(db)
 }
 
-pub fn create_app(db: Database) -> Router {
-    create_app_with_arc(Arc::new(db), None)
-}
-
-pub fn create_app_with_arc(
+pub fn create_app(
     db: Arc<Database>,
     push_client: Option<Arc<PushNotificationsClient>>,
+    push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
 ) -> Router {
-    let state = AppState { db, push_client };
+    let state = AppState {
+        db,
+        push_client,
+        push_tasks,
+    };
 
     Router::new()
         .route("/health", get(health_check))

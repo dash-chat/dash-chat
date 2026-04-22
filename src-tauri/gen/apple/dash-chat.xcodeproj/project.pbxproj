@@ -229,6 +229,7 @@
 			buildConfigurationList = C93A9FF1E636F1015FE3E514 /* Build configuration list for PBXNativeTarget "dash-chat_iOS" */;
 			buildPhases = (
 				A206911C64BE8EF9637A3492 /* Build Rust Code */,
+				DEADBEEF123456789ABCDEF0 /* Extract Firebase Categories */,
 				5842340EFDFF6D2C22E22851 /* Sources */,
 				5C1662138B6DDF78C1BA8683 /* Resources */,
 				AB3C8759DF258BE9A005EF44 /* Frameworks */,
@@ -306,6 +307,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "pnpm tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
+		};
+		DEADBEEF123456789ABCDEF0 /* Extract Firebase Categories */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Externals/$(ARCHS)/$(CONFIGURATION)/libapp.a",
+			);
+			name = "Extract Firebase Categories";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\nLIBAPP=\"$SRCROOT/Externals/$ARCHS/$CONFIGURATION/libapp.a\"\nOUTDIR=\"$DERIVED_FILE_DIR/firebase-categories\"\nOUTLIB=\"$OUTDIR/libfb-categories.a\"\nrm -rf \"$OUTDIR\"\nmkdir -p \"$OUTDIR\"\ncd \"$OUTDIR\"\nCATEGORY_OBJS=$(ar -t \"$LIBAPP\" 2>/dev/null | grep -E '\\+.*\\.m\\.o$' | sort -u || true)\nif [ -n \"$CATEGORY_OBJS\" ]; then\n  ar -x \"$LIBAPP\" $CATEGORY_OBJS 2>/dev/null || true\nfi\nif ls *.o >/dev/null 2>&1; then\n  ar -rcs \"$OUTLIB\" *.o\n  echo \"Generated $OUTLIB with $(ls *.o | wc -l | tr -d ' ') category objects\"\nelse\n  printf 'static int _keep;\\n' > keep.c\n  xcrun clang -c -target \"$ARCHS-apple-ios\" keep.c -o keep.o\n  ar -rcs \"$OUTLIB\" keep.o\n  echo \"Warning: no category objects found in $LIBAPP\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -474,6 +496,7 @@
 					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
 					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
 				);
+				OTHER_LDFLAGS = "$(inherited) -force_load \"$(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a\"";
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat;
 				PRODUCT_NAME = "Dash Chat";
 				SDKROOT = iphoneos;
@@ -516,6 +539,7 @@
 					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
 					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
 				);
+				OTHER_LDFLAGS = "$(inherited) -force_load \"$(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a\"";
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat;
 				PRODUCT_NAME = "Dash Chat";
 				SDKROOT = iphoneos;
