@@ -37,7 +37,10 @@ pub async fn store_blobs(
     if !topics_with_new_blobs.is_empty() {
         if let Some(push_client) = &state.push_client {
             let push_client = push_client.clone();
-            state.push_tasks.lock().await.spawn(async move {
+            let mut push_tasks = state.push_tasks.lock().await;
+            // Reap completed tasks to prevent slow memory leak
+            while push_tasks.try_join_next().is_some() {}
+            push_tasks.spawn(async move {
                 let topics_to_notify = topics_with_new_blobs
                     .into_iter()
                     .map(|(topic, ops)| {
