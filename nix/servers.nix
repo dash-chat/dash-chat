@@ -26,7 +26,7 @@ let
         wants = [ "network-online.target" ];
         serviceConfig = {
           ExecStart =
-            "${push}/bin/push-notifications-server --addr 0.0.0.0:80 --service-account-key /var/lib/push-notifications/service-account-key.json --db-path /var/lib/push-notifications/push-notifications.redb";
+            "${push}/bin/push-notifications-server --addr 0.0.0.0:80 --service-account-key /var/lib/push-notifications/service-account-key.json --db-path /var/lib/push-notifications/push-notifications.sqlite";
           Restart = "always";
           StateDirectory = "push-notifications";
         };

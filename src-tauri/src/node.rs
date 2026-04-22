@@ -42,7 +42,7 @@ pub async fn build_and_cache_node(
 ) -> anyhow::Result<Node> {
     let node = build_node(data_path.clone(), notification_tx, topic_subscribed_tx).await?;
 
-    let mut guard = NODES.lock().unwrap();
+    let mut guard = NODES.lock().expect("NODES mutex poisoned");
     let map = guard.get_or_insert_with(HashMap::new);
     map.insert(data_path, node.clone());
 
@@ -59,7 +59,7 @@ pub async fn build_and_cache_node(
 pub async fn get_or_build_node(data_path: PathBuf) -> anyhow::Result<Node> {
     // Fast path: return cached node if the app is already running
     {
-        let guard = NODES.lock().unwrap();
+        let guard = NODES.lock().expect("NODES mutex poisoned");
         if let Some(map) = guard.as_ref() {
             if let Some(node) = map.get(&data_path) {
                 return Ok(node.clone());
