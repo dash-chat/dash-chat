@@ -97,6 +97,8 @@ pub fn receive_push_notification(
         node.mailboxes.trigger_sync();
 
         // Poll for the operation to arrive (up to 15 seconds)
+        // PERF: consider adding the ability for the op store to notify when an op is stored,
+        //     instead of polling
         let mut found = false;
         for _ in 0..75 {
             let log = node
