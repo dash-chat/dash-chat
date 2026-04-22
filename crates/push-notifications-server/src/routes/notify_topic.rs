@@ -10,6 +10,7 @@ pub(crate) async fn notify_topics(
     State(state): State<AppState>,
     Json(req): Json<NotifyTopicsRequest>,
 ) -> Result<StatusCode, AppError> {
+    req.validate()?;
     let mut tasks = Vec::new();
 
     for (topic_id, op_ids) in &req.topics_to_notify {

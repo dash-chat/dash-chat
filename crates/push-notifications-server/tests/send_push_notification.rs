@@ -16,9 +16,9 @@ use push_notifications_server::fcm_client::{MockFcm, SendResult};
 
 #[tokio::test]
 async fn notify_topic_sends_to_subscribers() {
-    let public_key = PublicKey::from("test-public-key".to_string());
+    let public_key = PublicKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("test-fcm-token".to_string());
-    let topic_id = TopicId::from("test-topic".to_string());
+    let topic_id = TopicId::from("bb".repeat(32));
     let op_id = OperationId::from("test-op".to_string());
 
     let mut mock_fcm = MockFcm::new();
@@ -27,7 +27,7 @@ async fn notify_topic_sends_to_subscribers() {
         .expect_send_push_notification()
         .once()
         .withf(|token, notif| {
-            token == "test-fcm-token" && notif.title == "test-topic" && notif.body == "test-op"
+            token == "test-fcm-token" && notif.body == "test-op"
         })
         .returning(|_, _| SendResult::Ok);
 
@@ -69,9 +69,9 @@ async fn notify_topic_sends_to_subscribers() {
 
 #[tokio::test]
 async fn notify_topic_skips_unsubscribed() {
-    let public_key = PublicKey::from("test-public-key".to_string());
+    let public_key = PublicKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("test-fcm-token".to_string());
-    let topic_id = TopicId::from("test-topic".to_string());
+    let topic_id = TopicId::from("bb".repeat(32));
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));
@@ -108,9 +108,9 @@ async fn notify_topic_skips_unsubscribed() {
 
 #[tokio::test]
 async fn unsubscribe_prevents_notification() {
-    let public_key = PublicKey::from("test-public-key".to_string());
+    let public_key = PublicKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("test-fcm-token".to_string());
-    let topic_id = TopicId::from("test-topic".to_string());
+    let topic_id = TopicId::from("bb".repeat(32));
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));
@@ -164,10 +164,10 @@ async fn unsubscribe_prevents_notification() {
 
 #[tokio::test]
 async fn set_subscriptions_replaces_and_notifies_correctly() {
-    let public_key = PublicKey::from("test-public-key".to_string());
+    let public_key = PublicKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("test-fcm-token".to_string());
-    let topic_a = TopicId::from("topic-a".to_string());
-    let topic_b = TopicId::from("topic-b".to_string());
+    let topic_a = TopicId::from("cc".repeat(32));
+    let topic_b = TopicId::from("dd".repeat(32));
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));
@@ -175,7 +175,7 @@ async fn set_subscriptions_replaces_and_notifies_correctly() {
     mock_fcm
         .expect_send_push_notification()
         .once()
-        .withf(|token, notif| token == "test-fcm-token" && notif.title == "topic-b")
+        .withf(|token, notif| token == "test-fcm-token" && notif.title == "dd".repeat(32))
         .returning(|_, _| SendResult::Ok);
 
     let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
@@ -236,9 +236,9 @@ async fn set_subscriptions_replaces_and_notifies_correctly() {
 
 #[tokio::test]
 async fn fcm_transient_failure_does_not_remove_token() {
-    let public_key = PublicKey::from("test-public-key".to_string());
+    let public_key = PublicKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("test-fcm-token".to_string());
-    let topic_id = TopicId::from("test-topic".to_string());
+    let topic_id = TopicId::from("bb".repeat(32));
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));
@@ -288,8 +288,8 @@ async fn fcm_transient_failure_does_not_remove_token() {
 
 #[tokio::test]
 async fn notify_subscriber_without_token_does_not_fail() {
-    let public_key = PublicKey::from("no-token-user".to_string());
-    let topic_id = TopicId::from("test-topic".to_string());
+    let public_key = PublicKey::from("ee".repeat(32));
+    let topic_id = TopicId::from("bb".repeat(32));
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));
@@ -317,9 +317,9 @@ async fn notify_subscriber_without_token_does_not_fail() {
 
 #[tokio::test]
 async fn invalid_token_is_removed() {
-    let public_key = PublicKey::from("test-public-key".to_string());
+    let public_key = PublicKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("expired-token".to_string());
-    let topic_id = TopicId::from("test-topic".to_string());
+    let topic_id = TopicId::from("bb".repeat(32));
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));

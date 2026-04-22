@@ -8,6 +8,7 @@ pub(crate) async fn subscribe(
     State(state): State<AppState>,
     Json(req): Json<SubscribeRequest>,
 ) -> Result<StatusCode, AppError> {
+    req.validate()?;
     state
         .db
         .subscribe_to_topics(&req.public_key, &req.topic_ids)

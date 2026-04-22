@@ -8,6 +8,7 @@ pub(crate) async fn set_subscriptions(
     State(state): State<AppState>,
     Json(req): Json<SetSubscriptionsRequest>,
 ) -> Result<StatusCode, AppError> {
+    req.validate()?;
     state
         .db
         .set_subscriptions(&req.public_key, &req.topic_ids)

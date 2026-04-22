@@ -8,6 +8,7 @@ pub(crate) async fn unsubscribe(
     State(state): State<AppState>,
     Json(req): Json<UnsubscribeRequest>,
 ) -> Result<StatusCode, AppError> {
+    req.validate()?;
     state
         .db
         .unsubscribe_from_topics(&req.public_key, &req.topic_ids)

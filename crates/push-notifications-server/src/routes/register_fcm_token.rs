@@ -8,6 +8,7 @@ pub(crate) async fn register_fcm_token(
     State(state): State<AppState>,
     Json(req): Json<RegisterFcmTokenRequest>,
 ) -> Result<StatusCode, AppError> {
+    req.validate()?;
     state
         .db
         .store_fcm_token(&req.public_key, &req.fcm_token)
