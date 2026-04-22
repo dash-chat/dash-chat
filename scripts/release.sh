@@ -28,9 +28,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TAURI_CONF="$ROOT/src-tauri/tauri.conf.json"
 CARGO_TOML="$ROOT/src-tauri/Cargo.toml"
 SITE_INDEX="$ROOT/packages/site/index.html"
+IOS_PLIST="$ROOT/src-tauri/gen/apple/dash-chat_iOS/Info.plist"
 
 # Check that all files exist
-for f in "$TAURI_CONF" "$CARGO_TOML" "$SITE_INDEX"; do
+for f in "$TAURI_CONF" "$CARGO_TOML" "$SITE_INDEX" "$IOS_PLIST"; do
   if [ ! -f "$f" ]; then
     echo "Error: $f not found"
     exit 1
@@ -74,12 +75,17 @@ sed -i "s|darksoil-studio/dash-chat/v[0-9]\+\.[0-9]\+\.[0-9]\+|darksoil-studio/d
 
 echo "  Updated $SITE_INDEX"
 
-# 4. Update Cargo.lock to reflect the new version
+# 4. Update iOS Info.plist (CFBundleShortVersionString and CFBundleVersion)
+sed -i "/<key>CFBundleShortVersionString<\/key>/{ n; s|<string>[^<]*</string>|<string>$VERSION</string>| }" "$IOS_PLIST"
+sed -i "/<key>CFBundleVersion<\/key>/{ n; s|<string>[^<]*</string>|<string>$VERSION</string>| }" "$IOS_PLIST"
+echo "  Updated $IOS_PLIST"
+
+# 5. Update Cargo.lock to reflect the new version
 (cd "$ROOT" && cargo update --workspace)
 echo "  Updated Cargo.lock"
 
-# 5. Commit, tag, and push
-git -C "$ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$SITE_INDEX" "$ROOT/Cargo.lock"
+# 6. Commit, tag, and push
+git -C "$ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$SITE_INDEX" "$IOS_PLIST" "$ROOT/Cargo.lock"
 git -C "$ROOT" commit -m "Release $TAG"
 git -C "$ROOT" tag "$TAG"
 echo "  Created commit and tag $TAG"

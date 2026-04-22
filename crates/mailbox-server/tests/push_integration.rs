@@ -13,12 +13,9 @@ use serde_json::json;
 /// Starts a push notifications server with the given mock FCM on a random port.
 /// Returns the base URL (e.g. "http://127.0.0.1:12345").
 async fn start_push_server(mock_fcm: MockFcm) -> String {
-    let push_app = push_notifications_server::build(
-        Arc::new(MemDb::new()),
-        Arc::new(mock_fcm),
-    )
-    .await
-    .unwrap();
+    let push_app = push_notifications_server::build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
+        .await
+        .unwrap();
 
     let push_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let push_addr = push_listener.local_addr().unwrap();
@@ -35,8 +32,7 @@ async fn start_push_server(mock_fcm: MockFcm) -> String {
 fn start_mailbox_server(push_url: String) -> (TestServer, tempfile::NamedTempFile) {
     let (db, temp_file) = create_test_db();
     let push_client = PushNotificationsClient::new(push_url);
-    let app =
-        mailbox_server::create_app_with_arc(Arc::new(db), Some(Arc::new(push_client)));
+    let app = mailbox_server::create_app_with_arc(Arc::new(db), Some(Arc::new(push_client)));
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),
         ..TestServerConfig::default()
@@ -125,10 +121,8 @@ async fn mailbox_store_no_subscribers_no_push() {
     let push_url = start_push_server(mock_fcm).await;
     let (mailbox, _tmp) = start_mailbox_server(push_url);
 
-    let blob_data = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
-        b"some-data",
-    );
+    let blob_data =
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"some-data");
 
     let resp = mailbox
         .post("/blobs/store")

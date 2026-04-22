@@ -4,10 +4,10 @@ use std::{
     os::fd::{AsRawFd, FromRawFd},
 };
 
+use dashchat_node::{AsBody, Payload, Topic};
 use jni::objects::JClass;
 use jni::JNIEnv;
 use log::Level;
-use dashchat_node::{AsBody, Payload, Topic};
 use p2panda_store::LogStore;
 use tauri_plugin_notification::*;
 
@@ -175,10 +175,9 @@ pub fn receive_push_notification(
                 }
 
                 let message_text: &str = &content;
-                let body_text = if message_text.chars().count() > 200 {
-                    format!("{}...", message_text.chars().take(200).collect::<String>())
-                } else {
-                    message_text.to_string()
+                let body_text = match message_text.char_indices().nth(200) {
+                    Some((idx, _)) => format!("{}...", &message_text[..idx]),
+                    None => message_text.to_string(),
                 };
 
                 Some(NotificationData {

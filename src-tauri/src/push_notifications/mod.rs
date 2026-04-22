@@ -39,6 +39,8 @@ pub fn setup_push_notifications(
     handle: AppHandle,
     topic_subscribed_rx: tokio::sync::mpsc::Receiver<dashchat_node::topic::TopicId>,
 ) {
+    handle.manage(PushNotificationsClient::new(push_notifications_url()));
+
     let h = handle.clone();
 
     // Re-register every time the app starts
@@ -82,7 +84,9 @@ pub fn setup_push_notifications(
     // Sync all subscribed topics at startup, then listen for new ones
     let h = handle.clone();
     tauri::async_runtime::spawn(async move {
-        sync_subscriptions(&h).await;
+        if let Err(err) = sync_subscriptions(&h).await {
+            log::error!("Failed to sync subscriptions: {err:?}");
+        }
     });
     spawn_topic_subscription_loop(handle, topic_subscribed_rx);
 }
@@ -91,7 +95,7 @@ async fn register_fcm_token(handle: AppHandle, token: String) -> anyhow::Result<
     let node = handle.state::<Node>();
     let public_key = PublicKey::from(node.device_id().to_string());
 
-    let client = PushNotificationsClient::new(push_notifications_url());
+    let client = handle.state::<PushNotificationsClient>();
 
     loop {
         match client
@@ -111,52 +115,49 @@ async fn register_fcm_token(handle: AppHandle, token: String) -> anyhow::Result<
 ///
 /// Called at startup to ensure the server has the full, up-to-date list of
 /// topics this device is subscribed to (replacing any stale state).
-async fn sync_subscriptions(app_handle: &AppHandle) {
+async fn sync_subscriptions(app_handle: &AppHandle) -> anyhow::Result<()> {
     let node = app_handle.state::<Node>();
     let public_key = PublicKey::from(node.device_id().to_string());
 
-    let topic_ids: HashSet<TopicId> = match node.subscribed_topics() {
-        Ok(topics) => topics
-            .into_iter()
-            .map(|t| TopicId::from(hex::encode(&*t)))
-            .collect(),
-        Err(err) => {
-            log::error!("Failed to get subscribed topics: {err:?}");
-            return;
-        }
-    };
+    let topic_ids: HashSet<TopicId> = node
+        .subscribed_topics()?
+        .into_iter()
+        .map(|t| TopicId::from(hex::encode(&*t)))
+        .collect();
 
     log::info!(
         "Syncing {} topic subscriptions with push notifications server.",
         topic_ids.len()
     );
 
-    let client = PushNotificationsClient::new(push_notifications_url());
+    let client = app_handle.state::<PushNotificationsClient>();
+    client.set_subscriptions(public_key, topic_ids).await?;
 
-    if let Err(err) = client.set_subscriptions(public_key, topic_ids).await {
-        log::error!("Failed to set subscriptions: {err:?}");
-    }
+    Ok(())
 }
 
 /// Subscribe the current device to push notifications for the given topics.
-async fn subscribe_to_topics(app_handle: &AppHandle, topic_ids: HashSet<TopicId>) {
+async fn subscribe_to_topics(
+    app_handle: &AppHandle,
+    topic_ids: HashSet<TopicId>,
+) -> anyhow::Result<()> {
     if topic_ids.is_empty() {
-        return;
+        return Ok(());
     }
 
     let node = app_handle.state::<Node>();
     let public_key = PublicKey::from(node.device_id().to_string());
 
-    let client = PushNotificationsClient::new(push_notifications_url());
+    let client = app_handle.state::<PushNotificationsClient>();
 
     log::info!(
         "Subscribing to {} topics on push notifications server.",
         topic_ids.len()
     );
 
-    if let Err(err) = client.subscribe(public_key, topic_ids).await {
-        log::error!("Failed to subscribe to topics: {err:?}");
-    }
+    client.subscribe(public_key, topic_ids).await?;
+
+    Ok(())
 }
 
 /// Listens for new topic subscriptions and registers them with the push notifications server.
@@ -167,7 +168,9 @@ fn spawn_topic_subscription_loop(
     tauri::async_runtime::spawn(async move {
         while let Some(topic_id) = topic_subscribed_rx.recv().await {
             let hex_topic = TopicId::from(hex::encode(&*topic_id));
-            subscribe_to_topics(&app_handle, [hex_topic].into()).await;
+            if let Err(err) = subscribe_to_topics(&app_handle, [hex_topic].into()).await {
+                log::error!("Failed to subscribe to topic: {err:?}");
+            }
         }
     });
 }

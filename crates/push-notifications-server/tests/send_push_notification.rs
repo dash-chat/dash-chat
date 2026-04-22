@@ -5,10 +5,12 @@ use axum_test::TestServer;
 use mockall::predicate::*;
 
 use push_notifications_client::requests::{
-    NotifyTopicsRequest, RegisterFcmTokenRequest, SubscribeRequest,
+    NotifyTopicsRequest, RegisterFcmTokenRequest, SetSubscriptionsRequest, SubscribeRequest,
+    UnsubscribeRequest,
 };
 use push_notifications_client::types::{FcmToken, OperationId, PublicKey, TopicId};
 use push_notifications_server::build;
+use push_notifications_server::driver::Driver;
 use push_notifications_server::driver::mem::MemDb;
 use push_notifications_server::fcm_client::MockFcm;
 
@@ -93,12 +95,214 @@ async fn notify_topic_skips_unsubscribed() {
     let response = server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(
-                topic_id,
-                [OperationId::from("test-op".to_string())].into(),
-            )]
-            .into(),
+            topics_to_notify: [(topic_id, [OperationId::from("test-op".to_string())].into())]
+                .into(),
         })
         .await;
     response.assert_status(StatusCode::NO_CONTENT);
+}
+
+// --- unsubscribe ---
+
+#[tokio::test]
+async fn unsubscribe_prevents_notification() {
+    let public_key = PublicKey::from("test-public-key".to_string());
+    let fcm_token = FcmToken::from("test-fcm-token".to_string());
+    let topic_id = TopicId::from("test-topic".to_string());
+
+    let mut mock_fcm = MockFcm::new();
+    mock_fcm.expect_validate().once().returning(|| Ok(()));
+    // No send expected after unsubscribe
+
+    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
+        .await
+        .unwrap();
+    let server = TestServer::new(app).unwrap();
+
+    // Register + subscribe
+    server
+        .post("/register-fcm-token")
+        .json(&RegisterFcmTokenRequest {
+            public_key: public_key.clone(),
+            fcm_token,
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+
+    server
+        .post("/subscribe")
+        .json(&SubscribeRequest {
+            public_key: public_key.clone(),
+            topic_ids: [topic_id.clone()].into(),
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+
+    // Unsubscribe
+    server
+        .post("/unsubscribe")
+        .json(&UnsubscribeRequest {
+            public_key: public_key.clone(),
+            topic_ids: [topic_id.clone()].into(),
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+
+    // Notify — should NOT send (unsubscribed)
+    server
+        .post("/notify-topic")
+        .json(&NotifyTopicsRequest {
+            topics_to_notify: [(topic_id, [OperationId::from("op-1".to_string())].into())].into(),
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+}
+
+// --- set_subscriptions ---
+
+#[tokio::test]
+async fn set_subscriptions_replaces_and_notifies_correctly() {
+    let public_key = PublicKey::from("test-public-key".to_string());
+    let fcm_token = FcmToken::from("test-fcm-token".to_string());
+    let topic_a = TopicId::from("topic-a".to_string());
+    let topic_b = TopicId::from("topic-b".to_string());
+
+    let mut mock_fcm = MockFcm::new();
+    mock_fcm.expect_validate().once().returning(|| Ok(()));
+    // Only topic-b notification should fire (topic-a was replaced away)
+    mock_fcm
+        .expect_send_push_notification()
+        .with(eq("test-fcm-token"), always())
+        .once()
+        .returning(|_, _| Ok(()));
+
+    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
+        .await
+        .unwrap();
+    let server = TestServer::new(app).unwrap();
+
+    // Register token
+    server
+        .post("/register-fcm-token")
+        .json(&RegisterFcmTokenRequest {
+            public_key: public_key.clone(),
+            fcm_token,
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+
+    // Subscribe to topic-a
+    server
+        .post("/subscribe")
+        .json(&SubscribeRequest {
+            public_key: public_key.clone(),
+            topic_ids: [topic_a.clone()].into(),
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+
+    // Replace subscriptions: drop topic-a, add topic-b
+    server
+        .post("/set-subscriptions")
+        .json(&SetSubscriptionsRequest {
+            public_key: public_key.clone(),
+            topic_ids: [topic_b.clone()].into(),
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+
+    // Notify topic-a — should NOT send (replaced away)
+    server
+        .post("/notify-topic")
+        .json(&NotifyTopicsRequest {
+            topics_to_notify: [(topic_a, [OperationId::from("op-1".to_string())].into())].into(),
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+
+    // Notify topic-b — should send
+    server
+        .post("/notify-topic")
+        .json(&NotifyTopicsRequest {
+            topics_to_notify: [(topic_b, [OperationId::from("op-2".to_string())].into())].into(),
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+}
+
+// --- error scenarios ---
+
+#[tokio::test]
+async fn fcm_failure_does_not_fail_endpoint() {
+    let public_key = PublicKey::from("test-public-key".to_string());
+    let fcm_token = FcmToken::from("test-fcm-token".to_string());
+    let topic_id = TopicId::from("test-topic".to_string());
+
+    let mut mock_fcm = MockFcm::new();
+    mock_fcm.expect_validate().once().returning(|| Ok(()));
+    mock_fcm
+        .expect_send_push_notification()
+        .once()
+        .returning(|_, _| Err(anyhow::anyhow!("FCM service unavailable")));
+
+    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
+        .await
+        .unwrap();
+    let server = TestServer::new(app).unwrap();
+
+    server
+        .post("/register-fcm-token")
+        .json(&RegisterFcmTokenRequest {
+            public_key: public_key.clone(),
+            fcm_token,
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+
+    server
+        .post("/subscribe")
+        .json(&SubscribeRequest {
+            public_key: public_key.clone(),
+            topic_ids: [topic_id.clone()].into(),
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+
+    // Notify — FCM fails but the endpoint should still return 204
+    server
+        .post("/notify-topic")
+        .json(&NotifyTopicsRequest {
+            topics_to_notify: [(topic_id, [OperationId::from("op-1".to_string())].into())].into(),
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn notify_subscriber_without_token_does_not_fail() {
+    let public_key = PublicKey::from("no-token-user".to_string());
+    let topic_id = TopicId::from("test-topic".to_string());
+
+    let mut mock_fcm = MockFcm::new();
+    mock_fcm.expect_validate().once().returning(|| Ok(()));
+    // No send expected — user has no FCM token registered
+
+    let db = Arc::new(MemDb::new());
+
+    // Subscribe directly via the driver (no token registered)
+    db.subscribe_to_topics(&public_key, &[topic_id.clone()].into())
+        .await
+        .unwrap();
+
+    let app = build(db, Arc::new(mock_fcm)).await.unwrap();
+    let server = TestServer::new(app).unwrap();
+
+    // Notify — should gracefully skip the subscriber with no token
+    server
+        .post("/notify-topic")
+        .json(&NotifyTopicsRequest {
+            topics_to_notify: [(topic_id, [OperationId::from("op-1".to_string())].into())].into(),
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
 }

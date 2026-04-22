@@ -10,15 +10,37 @@ pub struct FcmToken(String);
 
 /// A topic identifier (hex-encoded).
 #[derive(
-    Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From,
-    Into, Deref,
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Display,
+    From,
+    Into,
+    Deref,
 )]
 pub struct TopicId(String);
 
 /// An operation ID.
 #[derive(
-    Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From,
-    Into, Deref,
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Display,
+    From,
+    Into,
+    Deref,
 )]
 pub struct OperationId(String);
 
