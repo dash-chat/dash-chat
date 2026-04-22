@@ -3,10 +3,12 @@ mod filesystem;
 mod i18n;
 mod mailbox;
 mod node;
-mod push_notifications;
 mod settings;
 mod setup;
 mod utils;
+
+#[cfg(mobile)]
+mod push_notifications;
 
 #[cfg(not(mobile))]
 mod menu;

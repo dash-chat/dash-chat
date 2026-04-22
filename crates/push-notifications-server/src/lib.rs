@@ -2,12 +2,10 @@ use std::sync::Arc;
 
 use axum::{Router, routing::post};
 
-pub mod client;
 pub mod driver;
 mod error;
 pub mod fcm_client;
-pub mod routes;
-pub mod types;
+mod routes;
 
 use crate::fcm_client::Fcm;
 

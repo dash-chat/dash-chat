@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use sqlx::{AnyPool, Row};
 
-use crate::{
-    driver::Driver,
-    types::{FcmToken, PublicKey, TopicId},
-};
+use std::collections::HashSet;
+
+use crate::driver::Driver;
+use push_notifications_client::types::{FcmToken, PublicKey, TopicId};
 
 pub struct SqlDriver {
     pool: AnyPool,
@@ -68,7 +68,7 @@ impl Driver for SqlDriver {
     async fn subscribe_to_topics(
         &self,
         public_key: &PublicKey,
-        topic_ids: &[TopicId],
+        topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await.context("failed to begin transaction")?;
         for topic_id in topic_ids {
@@ -89,7 +89,7 @@ impl Driver for SqlDriver {
     async fn unsubscribe_from_topics(
         &self,
         public_key: &PublicKey,
-        topic_ids: &[TopicId],
+        topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await.context("failed to begin transaction")?;
         for topic_id in topic_ids {
@@ -122,7 +122,7 @@ impl Driver for SqlDriver {
     async fn set_subscriptions(
         &self,
         public_key: &PublicKey,
-        topic_ids: &[TopicId],
+        topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await.context("failed to begin transaction")?;
 

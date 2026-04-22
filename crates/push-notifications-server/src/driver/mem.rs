@@ -3,10 +3,8 @@ use tokio::sync::Mutex;
 
 use anyhow::Result;
 
-use crate::{
-    driver::Driver,
-    types::{FcmToken, PublicKey, TopicId},
-};
+use crate::driver::Driver;
+use push_notifications_client::types::{FcmToken, PublicKey, TopicId};
 
 pub struct MemDb {
     tokens: Mutex<HashMap<PublicKey, FcmToken>>,
@@ -39,7 +37,7 @@ impl Driver for MemDb {
     async fn subscribe_to_topics(
         &self,
         public_key: &PublicKey,
-        topic_ids: &[TopicId],
+        topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
         let mut subs = self.subscriptions.lock().await;
         for topic_id in topic_ids {
@@ -53,7 +51,7 @@ impl Driver for MemDb {
     async fn unsubscribe_from_topics(
         &self,
         public_key: &PublicKey,
-        topic_ids: &[TopicId],
+        topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
         let mut subs = self.subscriptions.lock().await;
         for topic_id in topic_ids {
@@ -78,14 +76,13 @@ impl Driver for MemDb {
     async fn set_subscriptions(
         &self,
         public_key: &PublicKey,
-        topic_ids: &[TopicId],
+        topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
-        let new_topics: HashSet<TopicId> = topic_ids.iter().cloned().collect();
         let mut subs = self.subscriptions.lock().await;
 
         // Remove public_key from topics not in new set
         subs.retain(|topic_id, subscribers| {
-            if !new_topics.contains(topic_id) {
+            if !topic_ids.contains(topic_id) {
                 subscribers.remove(public_key);
                 !subscribers.is_empty()
             } else {

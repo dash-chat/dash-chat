@@ -41,10 +41,10 @@ pub async fn store_blobs(
                 let topics_to_notify = topics_with_new_blobs
                     .into_iter()
                     .map(|(topic, ops)| {
-                        let topic = push_notifications_server::types::TopicId::from(topic);
+                        let topic = push_notifications_client::types::TopicId::from(topic);
                         let ops = ops
                             .into_iter()
-                            .map(push_notifications_server::types::OperationId::from)
+                            .map(push_notifications_client::types::OperationId::from)
                             .collect();
                         (topic, ops)
                     })

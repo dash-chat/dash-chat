@@ -1,12 +1,8 @@
-use anyhow::{Context, Result};
+use anyhow::Context;
 
-use crate::routes::notify_topic::NotifyTopicsRequest;
-use crate::routes::register_fcm_token::RegisterFcmTokenRequest;
-use crate::routes::set_subscriptions::SetSubscriptionsRequest;
-use crate::routes::subscribe::SubscribeRequest;
-use crate::routes::unsubscribe::UnsubscribeRequest;
+use crate::requests::*;
 use crate::types::{FcmToken, OperationId, PublicKey, TopicId};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{HashMap, HashSet};
 
 pub struct PushNotificationsClient {
     base_url: String,
@@ -25,7 +21,7 @@ impl PushNotificationsClient {
         &self,
         public_key: PublicKey,
         fcm_token: FcmToken,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         self.http
             .post(format!("{}/register-fcm-token", self.base_url))
             .json(&RegisterFcmTokenRequest {
@@ -44,8 +40,8 @@ impl PushNotificationsClient {
     pub async fn subscribe(
         &self,
         public_key: PublicKey,
-        topic_ids: Vec<TopicId>,
-    ) -> Result<()> {
+        topic_ids: HashSet<TopicId>,
+    ) -> anyhow::Result<()> {
         self.http
             .post(format!("{}/subscribe", self.base_url))
             .json(&SubscribeRequest {
@@ -64,8 +60,8 @@ impl PushNotificationsClient {
     pub async fn unsubscribe(
         &self,
         public_key: PublicKey,
-        topic_ids: Vec<TopicId>,
-    ) -> Result<()> {
+        topic_ids: HashSet<TopicId>,
+    ) -> anyhow::Result<()> {
         self.http
             .post(format!("{}/unsubscribe", self.base_url))
             .json(&UnsubscribeRequest {
@@ -83,13 +79,11 @@ impl PushNotificationsClient {
 
     pub async fn notify_topics_request(
         &self,
-        topics_to_notify: BTreeMap<TopicId, BTreeSet<OperationId>>,
-    ) -> Result<()> {
+        topics_to_notify: HashMap<TopicId, HashSet<OperationId>>,
+    ) -> anyhow::Result<()> {
         self.http
             .post(format!("{}/notify-topic", self.base_url))
-            .json(&NotifyTopicsRequest {
-                topics_to_notify,
-            })
+            .json(&NotifyTopicsRequest { topics_to_notify })
             .send()
             .await
             .context("failed to send notify-topic request")?
@@ -102,8 +96,8 @@ impl PushNotificationsClient {
     pub async fn set_subscriptions(
         &self,
         public_key: PublicKey,
-        topic_ids: Vec<TopicId>,
-    ) -> Result<()> {
+        topic_ids: HashSet<TopicId>,
+    ) -> anyhow::Result<()> {
         self.http
             .post(format!("{}/set-subscriptions", self.base_url))
             .json(&SetSubscriptionsRequest {

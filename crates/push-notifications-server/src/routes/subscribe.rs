@@ -1,17 +1,8 @@
 use axum::{extract::State, http::StatusCode, Json};
-use serde::Deserialize;
 
-use crate::{
-    error::AppError,
-    types::{PublicKey, TopicId},
-    AppState,
-};
+use push_notifications_client::requests::SubscribeRequest;
 
-#[derive(Deserialize, serde::Serialize)]
-pub struct SubscribeRequest {
-    pub public_key: PublicKey,
-    pub topic_ids: Vec<TopicId>,
-}
+use crate::{error::AppError, AppState};
 
 pub(crate) async fn subscribe(
     State(state): State<AppState>,

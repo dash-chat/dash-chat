@@ -3,11 +3,11 @@ use std::sync::Arc;
 use axum::http::StatusCode;
 use axum_test::{TestServer, TestServerConfig, Transport};
 use mailbox_server::test_utils::create_test_db;
+use push_notifications_client::client::PushNotificationsClient;
+use push_notifications_client::requests::{RegisterFcmTokenRequest, SubscribeRequest};
+use push_notifications_client::types::{FcmToken, PublicKey, TopicId};
 use push_notifications_server::driver::mem::MemDb;
 use push_notifications_server::fcm_client::MockFcm;
-use push_notifications_server::routes::register_fcm_token::RegisterFcmTokenRequest;
-use push_notifications_server::routes::subscribe::SubscribeRequest;
-use push_notifications_server::types::{FcmToken, PublicKey, TopicId};
 use serde_json::json;
 
 /// Starts a push notifications server with the given mock FCM on a random port.
@@ -34,8 +34,7 @@ async fn start_push_server(mock_fcm: MockFcm) -> String {
 /// Creates a mailbox TestServer connected to the given push notifications URL.
 fn start_mailbox_server(push_url: String) -> (TestServer, tempfile::NamedTempFile) {
     let (db, temp_file) = create_test_db();
-    let push_client =
-        push_notifications_server::client::PushNotificationsClient::new(push_url);
+    let push_client = PushNotificationsClient::new(push_url);
     let app =
         mailbox_server::create_app_with_arc(Arc::new(db), Some(Arc::new(push_client)));
     let config = TestServerConfig {
@@ -81,7 +80,7 @@ async fn mailbox_store_triggers_push_notification() {
         .post(format!("{push_url}/subscribe"))
         .json(&SubscribeRequest {
             public_key,
-            topic_ids: vec![topic_id],
+            topic_ids: [topic_id].into(),
         })
         .send()
         .await
@@ -182,7 +181,7 @@ async fn mailbox_store_duplicate_blob_no_second_push() {
     http.post(format!("{push_url}/subscribe"))
         .json(&SubscribeRequest {
             public_key,
-            topic_ids: vec![topic_id],
+            topic_ids: [topic_id].into(),
         })
         .send()
         .await

@@ -1,17 +1,8 @@
 use axum::{Json, extract::State, http::StatusCode};
-use serde::Deserialize;
 
-use crate::{
-    AppState,
-    error::AppError,
-    types::{FcmToken, PublicKey},
-};
+use push_notifications_client::requests::RegisterFcmTokenRequest;
 
-#[derive(Deserialize, serde::Serialize)]
-pub struct RegisterFcmTokenRequest {
-    pub public_key: PublicKey,
-    pub fcm_token: FcmToken,
-}
+use crate::{AppState, error::AppError};
 
 pub(crate) async fn register_fcm_token(
     State(state): State<AppState>,

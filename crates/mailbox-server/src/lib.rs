@@ -2,7 +2,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use push_notifications_server::client::PushNotificationsClient;
+use push_notifications_client::client::PushNotificationsClient;
 use redb::Database;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

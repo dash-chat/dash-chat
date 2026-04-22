@@ -1910,7 +1910,7 @@ dependencies = [
  "p2panda-store",
  "p2panda-stream",
  "p2panda-sync",
- "push-notifications-server",
+ "push-notifications-client",
  "regex",
  "serde",
  "serde_json",
@@ -5196,6 +5196,7 @@ dependencies = [
  "clap",
  "futures",
  "mailbox-server",
+ "push-notifications-client",
  "push-notifications-server",
  "redb",
  "reqwest 0.12.28",
@@ -7565,6 +7566,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "push-notifications-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "derive_more 2.1.1",
+ "reqwest 0.12.28",
+ "serde",
+]
+
+[[package]]
 name = "push-notifications-server"
 version = "0.1.0"
 dependencies = [
@@ -7580,6 +7591,7 @@ dependencies = [
  "gcp_auth",
  "mockall",
  "pretty_assertions",
+ "push-notifications-client",
  "push-notifications-server",
  "reqwest 0.12.28",
  "serde",

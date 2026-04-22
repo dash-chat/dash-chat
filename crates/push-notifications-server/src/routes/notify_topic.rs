@@ -1,18 +1,10 @@
 use axum::{Json, extract::State, http::StatusCode};
 use futures::future::join_all;
-use serde::Deserialize;
-use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{
-    AppState,
-    error::AppError,
-    types::{OperationId, PushNotification, TopicId},
-};
+use push_notifications_client::requests::NotifyTopicsRequest;
+use push_notifications_client::types::PushNotification;
 
-#[derive(Deserialize, serde::Serialize)]
-pub struct NotifyTopicsRequest {
-    pub topics_to_notify: BTreeMap<TopicId, BTreeSet<OperationId>>,
-}
+use crate::{AppState, error::AppError};
 
 pub(crate) async fn notify_topics(
     State(state): State<AppState>,

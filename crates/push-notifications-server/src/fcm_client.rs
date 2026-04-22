@@ -9,7 +9,7 @@ use fcm_v1::auth::Authenticator;
 use fcm_v1::message::Message;
 use serde_json::{Map, Value};
 
-use crate::types::PushNotification;
+use push_notifications_client::types::PushNotification;
 
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait::async_trait]

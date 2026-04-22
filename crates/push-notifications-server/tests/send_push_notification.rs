@@ -4,13 +4,13 @@ use axum::http::StatusCode;
 use axum_test::TestServer;
 use mockall::predicate::*;
 
+use push_notifications_client::requests::{
+    NotifyTopicsRequest, RegisterFcmTokenRequest, SubscribeRequest,
+};
+use push_notifications_client::types::{FcmToken, OperationId, PublicKey, TopicId};
 use push_notifications_server::build;
 use push_notifications_server::driver::mem::MemDb;
 use push_notifications_server::fcm_client::MockFcm;
-use push_notifications_server::routes::notify_topic::NotifyTopicsRequest;
-use push_notifications_server::routes::register_fcm_token::RegisterFcmTokenRequest;
-use push_notifications_server::routes::subscribe::SubscribeRequest;
-use push_notifications_server::types::{FcmToken, OperationId, PublicKey, TopicId};
 
 #[tokio::test]
 async fn notify_topic_sends_to_subscribers() {
@@ -48,7 +48,7 @@ async fn notify_topic_sends_to_subscribers() {
         .post("/subscribe")
         .json(&SubscribeRequest {
             public_key: public_key.clone(),
-            topic_ids: vec![topic_id.clone()],
+            topic_ids: [topic_id.clone()].into(),
         })
         .await;
     response.assert_status(StatusCode::NO_CONTENT);
