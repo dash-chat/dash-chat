@@ -213,7 +213,7 @@ fn generic_notification() -> NotificationData {
 
 /// Checks whether the main window's current URL path matches the given chat route.
 fn is_viewing_chat(chat_route: &str) -> bool {
-    let handle = match crate::APP_HANDLE.lock().ok().and_then(|h| h.clone()) {
+    let handle = match crate::APP_HANDLE.get() {
         Some(h) => h,
         None => return false,
     };

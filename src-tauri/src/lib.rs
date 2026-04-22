@@ -23,8 +23,7 @@ pub(crate) static FORCE_QUIT: std::sync::atomic::AtomicBool =
 
 /// Global AppHandle so that code running outside the normal Tauri lifecycle
 /// (e.g. Android's `receive_push_notification`) can query window state.
-pub(crate) static APP_HANDLE: std::sync::Mutex<Option<tauri::AppHandle>> =
-    std::sync::Mutex::new(None);
+pub(crate) static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 
 /// Prevents multiple quit-confirmation dialogs from stacking up.
 #[cfg(not(mobile))]

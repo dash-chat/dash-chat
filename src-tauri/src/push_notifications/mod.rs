@@ -80,10 +80,7 @@ pub fn setup_push_notifications(
                 }
             }
 
-            log::warn!(
-                "New FCM token: {:?}. Registering it with the push notifications server.",
-                token
-            );
+            log::info!("New FCM token received. Registering it with the push notifications server.");
             let h = h.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(err) = register_fcm_token(h, token.clone()).await {
