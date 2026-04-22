@@ -40,6 +40,7 @@ target
 result*
 src-tauri/gen/apple/build/
 **/*/google-services.json
+**/*/GoogleService-Info.plist
 service-account-key.json
 
 # Development environment database files
