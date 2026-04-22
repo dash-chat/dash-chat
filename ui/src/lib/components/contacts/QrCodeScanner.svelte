@@ -66,7 +66,7 @@
 		</div>
 	</div>
 	<div
-		style="position: absolute; bottom: 24px; left: 0; right: 0; display: flex; justify-content: center; z-index: 1;"
+		style="position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); left: 0; right: 0; display: flex; justify-content: center; z-index: 1;"
 	>
 		<button
 			class="w-14 h-14 rounded-full bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.3)] transition-transform duration-200 hover:scale-105 active:scale-95"
