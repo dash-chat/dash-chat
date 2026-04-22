@@ -44,6 +44,8 @@ pub fn setup_push_notifications(
     handle: AppHandle,
     topic_subscribed_rx: tokio::sync::mpsc::Receiver<dashchat_node::topic::TopicId>,
 ) {
+    handle.manage(PushNotificationsClient::new(push_notifications_url()));
+
     let h = handle.clone();
 
     // Re-register every time the app starts
@@ -98,7 +100,7 @@ async fn register_fcm_token(handle: AppHandle, token: String) -> anyhow::Result<
     let node = handle.state::<Node>();
     let public_key = PublicKey::from(node.device_id().to_string());
 
-    let client = PushNotificationsClient::new(push_notifications_url());
+    let client = handle.state::<PushNotificationsClient>();
 
     loop {
         match client
@@ -133,7 +135,7 @@ async fn sync_subscriptions(app_handle: &AppHandle) -> anyhow::Result<()> {
         topic_ids.len()
     );
 
-    let client = PushNotificationsClient::new(push_notifications_url());
+    let client = app_handle.state::<PushNotificationsClient>();
     client.set_subscriptions(public_key, topic_ids).await?;
 
     Ok(())
@@ -151,7 +153,7 @@ async fn subscribe_to_topics(
     let node = app_handle.state::<Node>();
     let public_key = PublicKey::from(node.device_id().to_string());
 
-    let client = PushNotificationsClient::new(push_notifications_url());
+    let client = app_handle.state::<PushNotificationsClient>();
 
     log::info!(
         "Subscribing to {} topics on push notifications server.",

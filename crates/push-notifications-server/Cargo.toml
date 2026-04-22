@@ -29,11 +29,13 @@ mockall = { version = "0.13", optional = true }
 sqlx = { version = "0.8", features = ["runtime-tokio", "any", "sqlite"] }
 
 [dev-dependencies]
+anyhow = "1"
 axum-test = "18"
 mockall = "0.13"
 pretty_assertions = "1.4.1"
 push-notifications-client = { path = "../push-notifications-client" }
 push-notifications-server = { path = ".", features = ["test-utils"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "any", "sqlite"] }
 
 [features]
 test-utils = ["dep:mockall"]
