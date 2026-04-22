@@ -1,8 +1,8 @@
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{Json, extract::State, http::StatusCode};
 
 use push_notifications_client::requests::UnsubscribeRequest;
 
-use crate::{error::AppError, AppState};
+use crate::{AppState, error::AppError};
 
 pub(crate) async fn unsubscribe(
     State(state): State<AppState>,

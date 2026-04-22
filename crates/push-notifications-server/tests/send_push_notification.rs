@@ -93,11 +93,8 @@ async fn notify_topic_skips_unsubscribed() {
     let response = server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(
-                topic_id,
-                [OperationId::from("test-op".to_string())].into(),
-            )]
-            .into(),
+            topics_to_notify: [(topic_id, [OperationId::from("test-op".to_string())].into())]
+                .into(),
         })
         .await;
     response.assert_status(StatusCode::NO_CONTENT);

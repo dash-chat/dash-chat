@@ -70,7 +70,11 @@ impl Driver for SqlDriver {
         public_key: &PublicKey,
         topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
-        let mut tx = self.pool.begin().await.context("failed to begin transaction")?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .context("failed to begin transaction")?;
         for topic_id in topic_ids {
             sqlx::query(
                 "INSERT INTO topic_subscribers (topic_id, public_key) VALUES ($1, $2)
@@ -91,28 +95,29 @@ impl Driver for SqlDriver {
         public_key: &PublicKey,
         topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
-        let mut tx = self.pool.begin().await.context("failed to begin transaction")?;
-        for topic_id in topic_ids {
-            sqlx::query(
-                "DELETE FROM topic_subscribers WHERE topic_id = $1 AND public_key = $2",
-            )
-            .bind(topic_id.as_str())
-            .bind(public_key.as_str())
-            .execute(&mut *tx)
+        let mut tx = self
+            .pool
+            .begin()
             .await
-            .context("failed to unsubscribe from topic")?;
+            .context("failed to begin transaction")?;
+        for topic_id in topic_ids {
+            sqlx::query("DELETE FROM topic_subscribers WHERE topic_id = $1 AND public_key = $2")
+                .bind(topic_id.as_str())
+                .bind(public_key.as_str())
+                .execute(&mut *tx)
+                .await
+                .context("failed to unsubscribe from topic")?;
         }
         tx.commit().await.context("failed to commit transaction")?;
         Ok(())
     }
 
     async fn get_subscribers(&self, topic_id: &TopicId) -> Result<Vec<PublicKey>> {
-        let rows =
-            sqlx::query("SELECT public_key FROM topic_subscribers WHERE topic_id = $1")
-                .bind(topic_id.as_str())
-                .fetch_all(&self.pool)
-                .await
-                .context("failed to get subscribers")?;
+        let rows = sqlx::query("SELECT public_key FROM topic_subscribers WHERE topic_id = $1")
+            .bind(topic_id.as_str())
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to get subscribers")?;
         Ok(rows
             .into_iter()
             .map(|r| PublicKey::from(r.get::<String, _>("public_key")))
@@ -124,7 +129,11 @@ impl Driver for SqlDriver {
         public_key: &PublicKey,
         topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
-        let mut tx = self.pool.begin().await.context("failed to begin transaction")?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .context("failed to begin transaction")?;
 
         // Remove subscriptions not in the new set
         if topic_ids.is_empty() {

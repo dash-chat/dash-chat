@@ -21,13 +21,7 @@ async fn build_node(
     } else {
         dashchat_node::NodeConfig::default()
     };
-    let node = Node::new(
-        data_path,
-        config,
-        notification_tx,
-        topic_subscribed_tx,
-    )
-    .await?;
+    let node = Node::new(data_path, config, notification_tx, topic_subscribed_tx).await?;
 
     let mailbox_url = crate::mailbox::default_mailbox_url();
     let mailbox_client =
