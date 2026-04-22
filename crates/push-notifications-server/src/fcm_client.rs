@@ -33,7 +33,7 @@ impl RealFcmClient {
             .await
             .context("failed to authenticate with service account key")?;
 
-        let client = fcm_v1::Client::new(auth, project_id, false, Duration::from_secs(2));
+        let client = fcm_v1::Client::new(auth, project_id, false, Duration::from_secs(5));
 
         Ok(Self { client })
     }

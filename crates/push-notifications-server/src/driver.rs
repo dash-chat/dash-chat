@@ -1,5 +1,5 @@
 pub mod mem;
-pub mod redb;
+pub mod sql;
 
 use crate::types::{FcmToken, PublicKey, TopicId};
 

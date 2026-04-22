@@ -6,7 +6,7 @@ use clap::Parser;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use push_notifications_server::driver::mem::MemDb;
-use push_notifications_server::driver::redb::RedbDriver;
+use push_notifications_server::driver::sql::SqlDriver;
 use push_notifications_server::fcm_client::RealFcmClient;
 
 use push_notifications_server::driver::Driver;
@@ -22,11 +22,11 @@ struct Cli {
     #[arg(long)]
     service_account_key: PathBuf,
 
-    /// Path to the redb database file
+    /// Path to the SQLite database file
     #[arg(long, conflicts_with = "mem")]
     db_path: Option<PathBuf>,
 
-    /// Use an in-memory database instead of redb
+    /// Use an in-memory database instead of SQLite
     #[arg(long, conflicts_with = "db_path")]
     mem: bool,
 }
@@ -46,6 +46,8 @@ async fn main() -> Result<()> {
         cli.service_account_key.display()
     );
 
+    sqlx::any::install_default_drivers();
+
     let db: Arc<dyn Driver> = if cli.mem {
         tracing::info!("using in-memory database");
         Arc::new(MemDb::new())
@@ -54,8 +56,13 @@ async fn main() -> Result<()> {
             .db_path
             .as_deref()
             .context("--db-path is required when --mem is not set")?;
+        // Create parent directory if it does not exist
+        if let Some(parent) = db_path.parent().filter(|p| !p.exists()) {
+            std::fs::create_dir_all(parent)?;
+        }
+        let url = format!("sqlite:{}?mode=rwc", db_path.display());
         tracing::info!("opening database at {}", db_path.display());
-        Arc::new(RedbDriver::new(db_path)?)
+        Arc::new(SqlDriver::new(&url).await?)
     };
 
     let addr = &cli.addr;
