@@ -22,7 +22,7 @@ pub fn create_test_db() -> (Database, NamedTempFile) {
 /// Creates a test server with HTTP transport so server_address() works
 pub fn create_test_server() -> (TestServer, NamedTempFile) {
     let (db, temp_file) = create_test_db();
-    let app = create_app(db);
+    let app = create_app(db, 2);
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),
         ..TestServerConfig::default()

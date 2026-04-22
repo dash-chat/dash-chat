@@ -14,6 +14,14 @@ struct Args {
     /// Address to bind the server to
     #[arg(short, long, default_value = "0.0.0.0:3000")]
     addr: String,
+
+    /// Maximum payload size in megabytes
+    #[arg(long, default_value = "2")]
+    payload_max_size_mb: u64,
+
+    /// Maximum age data before cleanup
+    #[arg(long, default_value = "7")]
+    data_max_age_days: u64,
 }
 
 #[tokio::main]
@@ -30,7 +38,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let signal =
         tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for server stop event"));
-    spawn_server(args.db_path.into(), args.addr, signal).await?;
+    spawn_server(
+        args.db_path.into(),
+        args.addr,
+        args.payload_max_size_mb as usize,
+        args.data_max_age_days,
+        signal,
+    )
+    .await?;
 
     Ok(())
 }

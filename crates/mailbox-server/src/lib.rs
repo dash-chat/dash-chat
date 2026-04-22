@@ -1,4 +1,5 @@
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{get, post},
     Json, Router,
 };
@@ -49,16 +50,18 @@ struct HealthResponse {
 pub async fn spawn_server(
     db_path: PathBuf,
     addr: String,
+    payload_max_size_mb: usize,
+    data_max_age_days: u64,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = init_db(db_path)?;
     let db_arc = Arc::new(db);
 
     // Spawn background cleanup task
-    let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
+    let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc), data_max_age_days);
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
 
-    let app = create_app_with_arc(db_arc);
+    let app = create_app_with_arc(db_arc, payload_max_size_mb);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let addr = listener.local_addr()?;
@@ -106,11 +109,11 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
     Ok(db)
 }
 
-pub fn create_app(db: Database) -> Router {
-    create_app_with_arc(Arc::new(db))
+pub fn create_app(db: Database, payload_max_size_mb: usize) -> Router {
+    create_app_with_arc(Arc::new(db), payload_max_size_mb)
 }
 
-pub fn create_app_with_arc(db: Arc<Database>) -> Router {
+pub fn create_app_with_arc(db: Arc<Database>, payload_max_size_mb: usize) -> Router {
     let state = AppState { db };
 
     Router::new()
@@ -122,5 +125,6 @@ pub fn create_app_with_arc(db: Arc<Database>) -> Router {
         .route("/blobs/store", post(store_blobs))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
+        .layer(DefaultBodyLimit::max(1024 * 1024 * payload_max_size_mb))
         .with_state(state)
 }

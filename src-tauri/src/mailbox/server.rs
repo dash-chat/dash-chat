@@ -55,7 +55,8 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
 
     let addr = format!("0.0.0.0:{port}");
     let server = tokio::spawn(async move {
-        match mailbox_server::spawn_server(path, addr, stop_signal_rx).await {
+        // TODO: configurable params
+        match mailbox_server::spawn_server(path, addr, 2, 7, stop_signal_rx).await {
             Ok(_) => (),
             Err(e) => log::error!("Failed to start local mailbox: {e:?}"),
         }

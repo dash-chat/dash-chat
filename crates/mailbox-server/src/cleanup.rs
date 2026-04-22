@@ -5,17 +5,20 @@ use std::time::Duration;
 use crate::{DollopsKey, DOLLOPS_TABLE};
 
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60); // 5 minutes
-const MESSAGE_MAX_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60); // 30 days
 
 /// Spawns a background task that periodically cleans up old messages
-pub fn spawn_cleanup_task(db: Arc<Database>) -> tokio::task::JoinHandle<()> {
+pub fn spawn_cleanup_task(
+    db: Arc<Database>,
+    data_max_age_days: u64,
+) -> tokio::task::JoinHandle<()> {
+    let data_max_age = Duration::from_secs(data_max_age_days * 24 * 60 * 60);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(CLEANUP_INTERVAL);
 
         loop {
             interval.tick().await;
 
-            if let Err(e) = cleanup_old_messages(&db).await {
+            if let Err(e) = cleanup_old_messages(&db, data_max_age).await {
                 tracing::error!("Failed to cleanup old messages: {}", e);
             }
         }
@@ -23,10 +26,13 @@ pub fn spawn_cleanup_task(db: Arc<Database>) -> tokio::task::JoinHandle<()> {
 }
 
 /// Deletes all messages older than MESSAGE_MAX_AGE
-pub async fn cleanup_old_messages(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cleanup_old_messages(
+    db: &Database,
+    data_max_age: Duration,
+) -> Result<(), Box<dyn std::error::Error>> {
     tracing::trace!("Starting cleanup of old messages");
 
-    let cutoff_time = std::time::SystemTime::now() - MESSAGE_MAX_AGE;
+    let cutoff_time = std::time::SystemTime::now() - data_max_age;
     let cutoff_uuid = uuid::Uuid::new_v7(uuid::Timestamp::from_unix(
         uuid::NoContext,
         cutoff_time.duration_since(std::time::UNIX_EPOCH)?.as_secs(),
@@ -128,7 +134,9 @@ mod tests {
         }
 
         // Run cleanup
-        cleanup_old_messages(&db).await.unwrap();
+        cleanup_old_messages(&db, Duration::from_secs(7 * 24 * 60 * 60))
+            .await
+            .unwrap();
 
         // Verify old message is deleted and recent message remains
         {

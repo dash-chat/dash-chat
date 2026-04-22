@@ -17,6 +17,8 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     let (db, _temp_file) = mailbox_server::test_utils::create_test_db();
     let db = std::sync::Arc::new(db);
 
+    let max_age = Duration::from_secs(7 * 24 * 60 * 60);
+
     let topic = "test-topic";
     let author = "author-1";
 
@@ -76,7 +78,7 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     }
 
     // Step 3: Run cleanup
-    cleanup_old_messages(&db).await.unwrap();
+    cleanup_old_messages(&db, max_age).await.unwrap();
 
     // Step 4: Verify old dollops are deleted, new dollops remain
     {
@@ -101,7 +103,7 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     }
 
     // Step 6: Test get_dollops - verify missing response is correct
-    let app = mailbox_server::create_app_with_arc(db.clone());
+    let app = mailbox_server::create_app_with_arc(db.clone(), 2);
     let config = axum_test::TestServerConfig {
         transport: Some(axum_test::Transport::HttpRandomPort),
         ..Default::default()
