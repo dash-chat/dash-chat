@@ -63,9 +63,17 @@ impl Node {
     /// - when creating a new group chat
     /// - when initializing the node, for each existing group chat
     pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
+        self.subscription_tx.send(topic).await?;
+        Ok(())
+    }
+
+    async fn initialize_topic_stream(
+        &self,
+        topic: TopicId,
+    ) -> anyhow::Result<Option<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>> {
         let Some(mailbox_rx) = self.mailboxes.subscribe(topic.into()).await? else {
             tracing::warn!("topic already iniitalized, skipping");
-            return Ok(());
+            return Ok(None);
         };
 
         let ingest: Ingest<SqliteStore, Event, TopicId, Extensions, TopicId> =
@@ -96,17 +104,12 @@ impl Node {
                 }
             });
 
-        self.stream_tx
-            .send(Pin::from(Box::new(stream)))
-            .await
-            .map_err(|_| anyhow::anyhow!("stream channel closed"))?;
-
-        Ok(())
+        Ok(Some(Box::pin(stream)))
     }
 
     pub(super) fn spawn_stream_process_loop(
         &self,
-        mut stream_rx: mpsc::Receiver<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
+        mut subscription_rx: mpsc::Receiver<TopicId>,
         mut cancel_rx: mpsc::Receiver<()>,
     ) -> std::thread::JoinHandle<()> {
         let node = self.clone();
@@ -124,12 +127,22 @@ impl Node {
                     let node = node.clone();
                     let mut streams = SelectAll::new();
 
+
                     loop {
                         tokio::select! {
-                            Some(stream) = stream_rx.recv() => {
-                                tracing::info!("received new STREAM");
-                                // Stream is already Pin<Box<...>> from the channel, push directly
-                                streams.push(stream);
+                            Some(topic) = subscription_rx.recv() => {
+                                match node.initialize_topic_stream(topic).await {
+                                    Ok(Some(stream)) => {
+                                        tracing::info!("received new STREAM");
+                                        streams.push(Box::pin(stream));
+                                    }
+                                    Ok(None) => {
+                                        tracing::info!("topic already initialized, skipping");
+                                    }
+                                    Err(err) => {
+                                        tracing::error!(?err, "error initializing topic stream");
+                                    }
+                                }
                             }
 
                             Some(op) = streams.next() => {

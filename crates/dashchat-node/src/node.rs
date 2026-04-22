@@ -111,7 +111,7 @@ pub struct Node {
     notification_tx: Option<mpsc::Sender<Notification>>,
 
     /// Add new subscription streams
-    stream_tx: mpsc::Sender<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
+    subscription_tx: mpsc::Sender<TopicId>,
 
     /// Abort handle for the stream processing background task
     stream_cancel: Option<mpsc::Sender<()>>,
@@ -138,7 +138,7 @@ impl Node {
         let op_store = OpStore::new(sqlite.clone());
         let group_store = GroupStore::new(sqlite.clone());
 
-        let (stream_tx, stream_rx) = mpsc::channel(100);
+        let (subscription_tx, subscription_rx) = mpsc::channel(100);
 
         let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
 
@@ -151,12 +151,12 @@ impl Node {
             group_store,
             node_keys,
             notification_tx,
-            stream_tx,
+            subscription_tx,
             stream_cancel: None,
         };
 
         let (cancel_tx, cancel_rx) = mpsc::channel(1);
-        node.spawn_stream_process_loop(stream_rx, cancel_rx);
+        node.spawn_stream_process_loop(subscription_rx, cancel_rx);
         node.stream_cancel = Some(cancel_tx);
 
         node.initialize_stored_topics().await?;
