@@ -114,7 +114,7 @@ pub struct Node {
     stream_tx: mpsc::Sender<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
 
     /// Abort handle for the stream processing background task
-    stream_task: Option<CancelAndWait<()>>,
+    stream_cancel: Option<mpsc::Sender<()>>,
 
     local_store: LocalStore,
     group_store: GroupStore,
@@ -152,10 +152,12 @@ impl Node {
             node_keys,
             notification_tx,
             stream_tx,
-            stream_task: None,
+            stream_cancel: None,
         };
 
-        node.stream_task = Some(node.spawn_stream_process_loop(stream_rx));
+        let (cancel_tx, cancel_rx) = mpsc::channel(1);
+        node.spawn_stream_process_loop(stream_rx, cancel_rx);
+        node.stream_cancel = Some(cancel_tx);
 
         node.initialize_stored_topics().await?;
 
@@ -537,8 +539,13 @@ impl Node {
 
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(mut self) {
-        if let Some(cancel_and_wait) = self.stream_task.take() {
-            cancel_and_wait.cancel_and_wait().await;
+        if let Some(cancel) = self.stream_cancel.take() {
+            if let Err(err) = cancel.send(()).await {
+                tracing::warn!(
+                    "failed to send cancel signal to stream processing task: {}",
+                    err
+                );
+            }
         }
     }
 

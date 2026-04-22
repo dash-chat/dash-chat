@@ -6,10 +6,8 @@ use futures::stream::SelectAll;
 use p2panda_stream::StreamLayerExt;
 use p2panda_stream::ingest::Ingest;
 use p2panda_stream::ingest::IngestArgs;
-use p2panda_stream::ingest::IngestError;
 use p2panda_stream::ingest::IngestResult;
 use serde::{Deserialize, Serialize};
-use tokio::task;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::Instrument;
 
@@ -109,49 +107,58 @@ impl Node {
     pub(super) fn spawn_stream_process_loop(
         &self,
         mut stream_rx: mpsc::Receiver<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
-    ) -> CancelAndWait<()> {
+        mut cancel_rx: mpsc::Receiver<()>,
+    ) -> std::thread::JoinHandle<()> {
         let node = self.clone();
 
-        let token = tokio_util::sync::CancellationToken::new();
-        let token2 = token.clone();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime for current thread");
 
-        let handle = task::spawn(
-            async move {
-                let node = node.clone();
-                let mut streams = SelectAll::new();
+        let handle = std::thread::spawn(move || {
+            let local = tokio::task::LocalSet::new();
 
-                loop {
-                    tokio::select! {
-                        Some(stream) = stream_rx.recv() => {
-                            tracing::info!("received new STREAM");
-                            // Stream is already Pin<Box<...>> from the channel, push directly
-                            streams.push(stream);
-                        }
+            local.spawn_local(
+                async move {
+                    let node = node.clone();
+                    let mut streams = SelectAll::new();
 
-                        Some(op) = streams.next() => {
-                            tracing::info!(op = ?op.hash.renamed(), topic = ?op.header.extensions.topic.renamed(), "processing stream item");
-                            // Process the FromNetwork item here
-                            if let Err(err) = node.process_stream_item(op).await {
-                                tracing::error!(?err, "process stream item error");
+                    loop {
+                        tokio::select! {
+                            Some(stream) = stream_rx.recv() => {
+                                tracing::info!("received new STREAM");
+                                // Stream is already Pin<Box<...>> from the channel, push directly
+                                streams.push(stream);
                             }
-                        }
 
-                        _ = token.cancelled() => {
-                            tracing::info!("stream processing loop cancelled");
-                            break;
-                        }
+                            Some(op) = streams.next() => {
+                                tracing::info!(op = ?op.hash.renamed(), topic = ?op.header.extensions.topic.renamed(), "processing stream item");
+                                // Process the FromNetwork item here
+                                if let Err(err) = node.process_stream_item(op).await {
+                                    tracing::error!(?err, "process stream item error");
+                                }
+                            }
 
-                        else => {
-                            // Both stream_rx is closed and streams is exhausted
-                            break;
+                            Some(()) = cancel_rx.recv() => {
+                                tracing::info!("stream processing loop cancelled");
+                                break;
+                            }
+
+                            else => {
+                                // Both stream_rx is closed and streams is exhausted
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            .instrument(tracing::info_span!("stream_process_loop")),
-        );
+                .instrument(tracing::info_span!("stream_process_loop"))
+            );
 
-        CancelAndWait::new(handle, token2)
+            rt.block_on(local);
+        });
+
+        handle
     }
 
     async fn process_stream_item(&self, operation: Operation) -> anyhow::Result<()> {

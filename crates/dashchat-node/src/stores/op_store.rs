@@ -77,6 +77,61 @@ impl OpStore {
         //     .collect::<Vec<_>>())
     }
 
+    // async fn get_log_heights(
+    //     &self,
+    //     author: &PublicKey,
+    //     logs: &[L],
+    // ) -> Result<Option<BTreeMap<L, SeqNum>>, Self::Error> {
+    //     let mut encoded_log_ids = Vec::new();
+    //     for log in logs {
+    //         let encoded_log_id =
+    //             encode_cbor(&log).map_err(|err| SqliteError::Encode("log id".to_string(), err))?;
+    //         encoded_log_ids.push(encoded_log_id);
+    //     }
+
+    //     // This query formation approach is required since there is currently no
+    //     // way to directly bind arrays as comma-separated lists in sqlx.
+    //     let params = format!("?{}", ", ?".repeat(encoded_log_ids.len() - 1));
+    //     let query_str = format!(
+    //         "
+    //         SELECT
+    //             log_id,
+    //             CAST(MAX(CAST(seq_num AS NUMERIC)) AS TEXT) as seq_num
+    //         FROM
+    //             operations_v1
+    //         WHERE
+    //             public_key = ?
+    //             AND log_id IN ( {} )
+    //         GROUP BY
+    //             log_id
+    //         ",
+    //         params
+    //     );
+
+    //     let mut query = query_as::<_, LogHeightRow>(&query_str).bind(author.to_string());
+
+    //     for log_id in encoded_log_ids {
+    //         query = query.bind(log_id)
+    //     }
+
+    //     let log_heights_query = query.fetch_all(&self.pool).await?;
+
+    //     let log_heights = if log_heights_query.is_empty() {
+    //         None
+    //     } else {
+    //         let mut log_heights = BTreeMap::new();
+
+    //         for row in log_heights_query {
+    //             let (log_id, seq_num) = row.try_into()?;
+    //             log_heights.insert(log_id, seq_num);
+    //         }
+
+    //         Some(log_heights)
+    //     };
+
+    //     Ok(log_heights)
+    // }
+
     pub async fn author_operation<K: TopicKind>(
         &self,
         private_key: &PrivateKey,
