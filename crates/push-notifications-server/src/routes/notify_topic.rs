@@ -20,13 +20,7 @@ pub(crate) async fn notify_topics(
     let topic_ids: HashSet<_> = req.topics_to_notify.keys().cloned().collect();
 
     // Batch-fetch subscribers for all topics in a single query
-    let topic_subscribers = match state.db.get_subscribers_for_topics(&topic_ids).await {
-        Ok(subs) => subs,
-        Err(e) => {
-            tracing::warn!("failed to get subscribers: {e:#}");
-            return Ok(StatusCode::NO_CONTENT);
-        }
-    };
+    let topic_subscribers = state.db.get_subscribers_for_topics(&topic_ids).await?;
 
     // Batch-fetch FCM tokens for all unique subscribers in a single query
     let all_subscribers: Vec<PublicKey> = topic_subscribers
@@ -37,13 +31,7 @@ pub(crate) async fn notify_topics(
         .into_iter()
         .collect();
 
-    let fcm_tokens = match state.db.get_fcm_tokens(&all_subscribers).await {
-        Ok(tokens) => tokens,
-        Err(e) => {
-            tracing::warn!("failed to get FCM tokens: {e:#}");
-            return Ok(StatusCode::NO_CONTENT);
-        }
-    };
+    let fcm_tokens = state.db.get_fcm_tokens(&all_subscribers).await?;
 
     let mut tasks = Vec::new();
 
