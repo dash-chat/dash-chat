@@ -36,7 +36,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     #[cfg(mobile)]
     let (topic_subscribed_tx, topic_subscribed_rx) = tokio::sync::mpsc::channel(100);
 
-    let node = crate::node::build_and_cache_node(
+    let node = crate::node::build_node(
         local_data_path,
         Some(notification_tx),
         #[cfg(mobile)]
@@ -47,6 +47,10 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     .await?;
 
     app_handle.manage(node.clone());
+
+    // Clear any temporary nodes that were created by push notifications before
+    // the app fully started. The authoritative Node is now managed by Tauri.
+    crate::node::clear_cached_nodes();
 
     #[cfg(mobile)]
     {

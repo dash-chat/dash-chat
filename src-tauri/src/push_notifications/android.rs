@@ -85,12 +85,24 @@ pub fn receive_push_notification(
     let data_path = context.data_dir.join("studio.darksoil.dashchat");
 
     tauri::async_runtime::block_on(async move {
-        let node = match crate::node::get_or_build_node(data_path).await {
-            Ok(node) => node,
-            Err(err) => {
-                log::error!("Failed to create node for push notification: {err:?}");
-                return None;
-            }
+        // 1. Try to get the Node from the running app's managed state
+        // 2. Fall back to the NODES cache (reuse an existing node for this path)
+        // 3. Last resort: build a new node and cache it
+        let node = if let Some(handle) = crate::APP_HANDLE.get() {
+            use tauri::Manager;
+            handle.try_state::<dashchat_node::Node>().map(|s| s.inner().clone())
+        } else {
+            None
+        };
+        let node = match node {
+            Some(node) => node,
+            None => match crate::node::get_or_build_node(data_path).await {
+                Ok(node) => node,
+                Err(err) => {
+                    log::error!("Failed to create node for push notification: {err:?}");
+                    return None;
+                }
+            },
         };
 
         // Trigger a mailbox sync to fetch the new operation

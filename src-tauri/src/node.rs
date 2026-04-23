@@ -6,9 +6,11 @@ use dashchat_node::Node;
 
 const DASHCHAT_MAILBOX_ID: &str = "dashchat-mailbox";
 
+/// Cache for Node instances built when receiving a push notification in the background
+/// Only to be reused when multiple notifications are processed sequentially
 static NODES: Mutex<Option<HashMap<PathBuf, Node>>> = Mutex::new(None);
 
-async fn build_node(
+pub async fn build_node(
     data_path: PathBuf,
     notification_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::Notification>>,
     topic_subscribed_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::topic::TopicId>>,
@@ -31,31 +33,13 @@ async fn build_node(
     Ok(node)
 }
 
-/// Build a Node for app startup with notification channels, and cache it.
+/// Get an existing cached Node, or create one without notification channels and cache it.
 ///
-/// Always creates a fresh Node (replacing any previously cached one for this path),
-/// ensuring the notification channels are properly wired up.
-pub async fn build_and_cache_node(
-    data_path: PathBuf,
-    notification_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::Notification>>,
-    topic_subscribed_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::topic::TopicId>>,
-) -> anyhow::Result<Node> {
-    let node = build_node(data_path.clone(), notification_tx, topic_subscribed_tx).await?;
-
-    let mut guard = NODES.lock().expect("NODES mutex poisoned");
-    let map = guard.get_or_insert_with(HashMap::new);
-    map.insert(data_path, node.clone());
-
-    Ok(node)
-}
-
-/// Get an existing cached Node, or create a temporary one without notification channels.
-///
-/// Used by `receive_push_notification` which runs in an Android background service
-/// and only needs DB access + mailbox sync. If the app is already running, this reuses
-/// the existing Node (avoiding duplicate SQLite connections). If not, it creates a
-/// temporary Node that is NOT cached — so when the app later starts via
-/// `build_and_cache_node`, it will create a proper Node with channels.
+/// Used by `receive_push_notification` as a fallback when the app's managed state
+/// is not available. Reuses a cached Node if one exists for this path (avoiding
+/// duplicate SQLite connections), otherwise creates and caches a new one.
+/// Cached nodes are cleared by `clear_cached_nodes` once `async_setup` manages
+/// the authoritative Node.
 pub async fn get_or_build_node(data_path: PathBuf) -> anyhow::Result<Node> {
     // Fast path: return cached node if the app is already running
     {
@@ -67,6 +51,19 @@ pub async fn get_or_build_node(data_path: PathBuf) -> anyhow::Result<Node> {
         }
     }
 
-    // App is not running — create a temporary node without channels (not cached)
-    build_node(data_path, None, None).await
+    // App is not running — create a node without channels and cache it
+    let node = build_node(data_path.clone(), None, None).await?;
+
+    let mut guard = NODES.lock().expect("NODES mutex poisoned");
+    let map = guard.get_or_insert_with(HashMap::new);
+    map.insert(data_path, node.clone());
+
+    Ok(node)
+}
+
+/// Drop all cached nodes. Called by `async_setup` after the authoritative Node
+/// (with notification channels) has been managed by Tauri.
+pub fn clear_cached_nodes() {
+    let mut guard = NODES.lock().expect("NODES mutex poisoned");
+    *guard = None;
 }
