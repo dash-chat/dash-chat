@@ -7,10 +7,6 @@ use std::collections::{HashMap, HashSet};
 use crate::driver::Driver;
 use push_notifications_client::types::{FcmToken, PublicKey, TopicId};
 
-/// Maximum bind parameters per query, staying well under SQLite's
-/// SQLITE_MAX_VARIABLE_NUMBER (999 on older builds, 32766 on newer).
-const MAX_BIND_PARAMS: usize = 900;
-
 pub struct SqlDriver {
     pool: AnyPool,
 }
@@ -63,9 +59,12 @@ impl SqlDriver {
     }
 }
 
-/// Build a batch INSERT query for a slice of topic IDs.
+/// Build a batch INSERT query: `INSERT INTO topic_subscribers (topic_id, public_key) VALUES ($1, $2), ($3, $4), ... ON CONFLICT DO NOTHING`
 /// Returns the query string and a flat list of bind values (topic_id, public_key pairs).
-fn build_batch_insert(public_key: &PublicKey, topic_ids: &[&TopicId]) -> (String, Vec<String>) {
+fn build_batch_insert(
+    public_key: &PublicKey,
+    topic_ids: &HashSet<TopicId>,
+) -> (String, Vec<String>) {
     let mut placeholders = Vec::with_capacity(topic_ids.len());
     let mut binds = Vec::with_capacity(topic_ids.len() * 2);
     for (i, topic_id) in topic_ids.iter().enumerate() {
@@ -100,30 +99,37 @@ impl Driver for SqlDriver {
         &self,
         public_keys: &[PublicKey],
     ) -> Result<HashMap<PublicKey, FcmToken>> {
-        let mut result = HashMap::new();
-        for chunk in public_keys.chunks(MAX_BIND_PARAMS) {
-            let placeholders: Vec<String> =
-                (1..=chunk.len()).map(|i| format!("${i}")).collect();
-            let query = format!(
-                "SELECT public_key, fcm_token FROM fcm_tokens WHERE public_key IN ({})",
-                placeholders.join(", ")
-            );
-            let mut q = sqlx::query(&query);
-            for pk in chunk {
-                q = q.bind(pk.as_str());
-            }
-            let rows = q
-                .fetch_all(&self.pool)
-                .await
-                .context("failed to get FCM tokens")?;
-            for r in rows {
-                result.insert(
+        if public_keys.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let placeholders: Vec<String> = public_keys
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("${}", i + 1))
+            .collect();
+        let query = format!(
+            "SELECT public_key, fcm_token FROM fcm_tokens WHERE public_key IN ({})",
+            placeholders.join(", ")
+        );
+        let mut q = sqlx::query(&query);
+        for pk in public_keys {
+            q = q.bind(pk.as_str());
+        }
+        let rows = q
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to get FCM tokens")?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                (
                     PublicKey::from(r.get::<String, _>("public_key")),
                     FcmToken::from(r.get::<String, _>("fcm_token")),
-                );
-            }
-        }
-        Ok(result)
+                )
+            })
+            .collect())
     }
 
     async fn remove_fcm_token(&self, public_key: &PublicKey) -> Result<()> {
@@ -143,24 +149,14 @@ impl Driver for SqlDriver {
         if topic_ids.is_empty() {
             return Ok(());
         }
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("failed to begin transaction")?;
-        let all_ids: Vec<&TopicId> = topic_ids.iter().collect();
-        // Each row uses 2 bind params (topic_id, public_key)
-        for chunk in all_ids.chunks(MAX_BIND_PARAMS / 2) {
-            let (query, binds) = build_batch_insert(public_key, chunk);
-            let mut q = sqlx::query(&query);
-            for val in &binds {
-                q = q.bind(val);
-            }
-            q.execute(&mut *tx)
-                .await
-                .context("failed to subscribe to topics")?;
+        let (query, binds) = build_batch_insert(public_key, topic_ids);
+        let mut q = sqlx::query(&query);
+        for val in &binds {
+            q = q.bind(val);
         }
-        tx.commit().await.context("failed to commit transaction")?;
+        q.execute(&self.pool)
+            .await
+            .context("failed to subscribe to topics")?;
         Ok(())
     }
 
@@ -172,29 +168,22 @@ impl Driver for SqlDriver {
         if topic_ids.is_empty() {
             return Ok(());
         }
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("failed to begin transaction")?;
-        let all_ids: Vec<&TopicId> = topic_ids.iter().collect();
-        // $1 is public_key, so each chunk can use MAX_BIND_PARAMS - 1 topic IDs
-        for chunk in all_ids.chunks(MAX_BIND_PARAMS - 1) {
-            let placeholders: Vec<String> =
-                (2..=chunk.len() + 1).map(|i| format!("${i}")).collect();
-            let query = format!(
-                "DELETE FROM topic_subscribers WHERE public_key = $1 AND topic_id IN ({})",
-                placeholders.join(", ")
-            );
-            let mut q = sqlx::query(&query).bind(public_key.as_str());
-            for tid in chunk {
-                q = q.bind(tid.as_str());
-            }
-            q.execute(&mut *tx)
-                .await
-                .context("failed to unsubscribe from topics")?;
+        let placeholders: Vec<String> = topic_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("${}", i + 2))
+            .collect();
+        let query = format!(
+            "DELETE FROM topic_subscribers WHERE public_key = $1 AND topic_id IN ({})",
+            placeholders.join(", ")
+        );
+        let mut q = sqlx::query(&query).bind(public_key.as_str());
+        for tid in topic_ids {
+            q = q.bind(tid.as_str());
         }
-        tx.commit().await.context("failed to commit transaction")?;
+        q.execute(&self.pool)
+            .await
+            .context("failed to unsubscribe from topics")?;
         Ok(())
     }
 
@@ -202,28 +191,33 @@ impl Driver for SqlDriver {
         &self,
         topic_ids: &HashSet<TopicId>,
     ) -> Result<HashMap<TopicId, Vec<PublicKey>>> {
+        if topic_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let placeholders: Vec<String> = topic_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("${}", i + 1))
+            .collect();
+        let query = format!(
+            "SELECT topic_id, public_key FROM topic_subscribers WHERE topic_id IN ({})",
+            placeholders.join(", ")
+        );
+        let mut q = sqlx::query(&query);
+        for tid in topic_ids {
+            q = q.bind(tid.as_str());
+        }
+        let rows = q
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to get subscribers")?;
+
         let mut result: HashMap<TopicId, Vec<PublicKey>> = HashMap::new();
-        let all_ids: Vec<&TopicId> = topic_ids.iter().collect();
-        for chunk in all_ids.chunks(MAX_BIND_PARAMS) {
-            let placeholders: Vec<String> =
-                (1..=chunk.len()).map(|i| format!("${i}")).collect();
-            let query = format!(
-                "SELECT topic_id, public_key FROM topic_subscribers WHERE topic_id IN ({})",
-                placeholders.join(", ")
-            );
-            let mut q = sqlx::query(&query);
-            for tid in chunk {
-                q = q.bind(tid.as_str());
-            }
-            let rows = q
-                .fetch_all(&self.pool)
-                .await
-                .context("failed to get subscribers")?;
-            for row in rows {
-                let tid = TopicId::from(row.get::<String, _>("topic_id"));
-                let pk = PublicKey::from(row.get::<String, _>("public_key"));
-                result.entry(tid).or_default().push(pk);
-            }
+        for row in rows {
+            let tid = TopicId::from(row.get::<String, _>("topic_id"));
+            let pk = PublicKey::from(row.get::<String, _>("public_key"));
+            result.entry(tid).or_default().push(pk);
         }
         Ok(result)
     }
@@ -239,44 +233,23 @@ impl Driver for SqlDriver {
             .await
             .context("failed to begin transaction")?;
 
-        // Remove subscriptions not in the new set
-        if topic_ids.is_empty() {
-            sqlx::query("DELETE FROM topic_subscribers WHERE public_key = $1")
-                .bind(public_key.as_str())
-                .execute(&mut *tx)
+        // Remove all existing subscriptions for this key
+        sqlx::query("DELETE FROM topic_subscribers WHERE public_key = $1")
+            .bind(public_key.as_str())
+            .execute(&mut *tx)
+            .await
+            .context("failed to clear subscriptions")?;
+
+        // Batch insert the new set
+        if !topic_ids.is_empty() {
+            let (insert_query, binds) = build_batch_insert(public_key, topic_ids);
+            let mut q = sqlx::query(&insert_query);
+            for val in &binds {
+                q = q.bind(val);
+            }
+            q.execute(&mut *tx)
                 .await
-                .context("failed to clear subscriptions")?;
-        } else {
-            let all_ids: Vec<&TopicId> = topic_ids.iter().collect();
-
-            // DELETE NOT IN — chunked
-            for chunk in all_ids.chunks(MAX_BIND_PARAMS - 1) {
-                let placeholders: Vec<String> =
-                    (2..=chunk.len() + 1).map(|i| format!("${i}")).collect();
-                let query = format!(
-                    "DELETE FROM topic_subscribers WHERE public_key = $1 AND topic_id NOT IN ({})",
-                    placeholders.join(", ")
-                );
-                let mut q = sqlx::query(&query).bind(public_key.as_str());
-                for tid in chunk {
-                    q = q.bind(tid.as_str());
-                }
-                q.execute(&mut *tx)
-                    .await
-                    .context("failed to remove old subscriptions")?;
-            }
-
-            // Batch insert — chunked
-            for chunk in all_ids.chunks(MAX_BIND_PARAMS / 2) {
-                let (insert_query, binds) = build_batch_insert(public_key, chunk);
-                let mut q = sqlx::query(&insert_query);
-                for val in &binds {
-                    q = q.bind(val);
-                }
-                q.execute(&mut *tx)
-                    .await
-                    .context("failed to insert subscriptions")?;
-            }
+                .context("failed to insert subscriptions")?;
         }
 
         tx.commit().await.context("failed to commit transaction")?;

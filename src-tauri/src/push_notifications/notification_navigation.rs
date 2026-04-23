@@ -1,4 +1,4 @@
-use dashchat_node::{payload::InboxPayload, topic::TopicId, AgentId, Node, Payload, Topic};
+use dashchat_node::{topic::TopicId, AgentId, InboxPayload, Node, Payload, Topic};
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::NotificationActionPerformedPayload;
 
@@ -11,7 +11,7 @@ async fn resolve_route_for_topic(node: &Node, topic_id: &TopicId) -> String {
     // Check if this is an inbox topic (contact request)
     if let Ok(inbox_topics) = node.get_active_inbox_topics() {
         for inbox_topic in &inbox_topics {
-            if **inbox_topic.topic == *topic_id {
+            if *inbox_topic.topic == *topic_id {
                 if let Some(agent_id) = get_contact_request_agent(node, topic_id).await {
                     return format!("/direct-chats/{}", agent_id.to_hex());
                 }

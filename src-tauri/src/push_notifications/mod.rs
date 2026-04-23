@@ -1,9 +1,11 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use dashchat_node::{topic::TopicId, AsBody, Node, Notification, Payload, Topic};
+use dashchat_node::{AsBody, Node, Notification, Payload, Topic};
 use push_notifications_client::client::PushNotificationsClient;
-use push_notifications_client::types::{FcmToken, PublicKey, PushNotification, TopicId};
+use push_notifications_client::types::{
+    FcmToken, PublicKey, PushNotification, TopicId as PushTopicId,
+};
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
@@ -151,10 +153,10 @@ async fn sync_subscriptions(app_handle: &AppHandle) -> anyhow::Result<()> {
     let node = app_handle.state::<Node>();
     let public_key = PublicKey::from(node.device_id().to_string());
 
-    let topic_ids: HashSet<TopicId> = node
+    let topic_ids: HashSet<PushTopicId> = node
         .subscribed_topics()?
         .into_iter()
-        .map(|t| TopicId::from(hex::encode(&*t)))
+        .map(|t| PushTopicId::from(hex::encode(&*t)))
         .collect();
 
     log::info!(
@@ -173,7 +175,7 @@ async fn sync_subscriptions(app_handle: &AppHandle) -> anyhow::Result<()> {
 /// Subscribe the current device to push notifications for the given topics.
 async fn subscribe_to_topics(
     app_handle: &AppHandle,
-    topic_ids: HashSet<TopicId>,
+    topic_ids: HashSet<PushTopicId>,
 ) -> anyhow::Result<()> {
     if topic_ids.is_empty() {
         return Ok(());
@@ -234,7 +236,7 @@ fn spawn_topic_subscription_loop(
 ) {
     tauri::async_runtime::spawn(async move {
         while let Some(topic_id) = topic_subscribed_rx.recv().await {
-            let hex_topic = TopicId::from(hex::encode(&*topic_id));
+            let hex_topic = PushTopicId::from(hex::encode(&*topic_id));
             if let Err(err) = subscribe_to_topics(&app_handle, [hex_topic].into()).await {
                 log::error!("Failed to subscribe to topic: {err:?}");
                 sync_notify.notify_one();
