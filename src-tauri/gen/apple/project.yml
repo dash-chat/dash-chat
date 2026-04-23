@@ -53,6 +53,9 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 0.10.1
         CFBundleVersion: "0.10.1"
+        FirebaseAppDelegateProxyEnabled: false
+        FirebaseMessagingAutoInitEnabled: false
+        FirebaseDataCollectionDefaultEnabled: false
     entitlements:
       path: dash-chat_iOS/dash-chat_iOS.entitlements
     scheme:
@@ -68,6 +71,7 @@ targets:
         LIBRARY_SEARCH_PATHS[arch=arm64]: $(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: true
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+        OTHER_LDFLAGS: $(inherited) -force_load "$(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a"
       groups: [app]
     dependencies:
       - framework: libapp.a
@@ -86,3 +90,44 @@ targets:
         outputFiles:
           - $(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a
           - $(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a
+      - script: |
+          set -eu
+          # Extract every ObjC category object file (Foo+Bar.m.o) out of
+          # libapp.a into a sidecar archive that we -force_load from
+          # OTHER_LDFLAGS. This defeats the linker's dead-code stripping of
+          # category methods that Firebase dispatches dynamically via
+          # objc_msgSend (e.g. +[NSError messagingErrorWithCode:...],
+          # +[NSData gul_dataByGzippingData:...]).
+          #
+          # Why not -ObjC? Apple's newer linker (Xcode 15+) has been known to
+          # strip categories from static libs even with -ObjC + -dead_strip.
+          # Why not -force_load on libapp.a itself? libapp.a contains duplicate
+          # copies of Tauri/SwiftRs objects (one per Swift plugin that imports
+          # them), causing duplicate-symbol errors under force_load.
+          LIBAPP="$SRCROOT/Externals/$ARCHS/$CONFIGURATION/libapp.a"
+          OUTDIR="$DERIVED_FILE_DIR/firebase-categories"
+          OUTLIB="$OUTDIR/libfb-categories.a"
+          rm -rf "$OUTDIR"
+          mkdir -p "$OUTDIR"
+          cd "$OUTDIR"
+          CATEGORY_OBJS=$(ar -t "$LIBAPP" 2>/dev/null | grep -E '\+.*\.m\.o$' | sort -u || true)
+          if [ -n "$CATEGORY_OBJS" ]; then
+            # shellcheck disable=SC2086
+            ar -x "$LIBAPP" $CATEGORY_OBJS 2>/dev/null || true
+          fi
+          if ls *.o >/dev/null 2>&1; then
+            ar -rcs "$OUTLIB" *.o
+            echo "Generated $OUTLIB with $(ls *.o | wc -l | tr -d ' ') category objects"
+          else
+            # Placeholder so -force_load doesn't fail the link.
+            printf 'static int _keep;\n' > keep.c
+            xcrun clang -c -target "$ARCHS-apple-ios" keep.c -o keep.o
+            ar -rcs "$OUTLIB" keep.o
+            echo "Warning: no category objects found in $LIBAPP"
+          fi
+        name: Extract Firebase Categories
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/Externals/$(ARCHS)/$(CONFIGURATION)/libapp.a
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a

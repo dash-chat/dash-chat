@@ -12,6 +12,7 @@ export interface ContactRequest {
 	profile: Profile;
 	code: ContactCode;
 	timestamp: number;
+	topicId: TopicId;
 }
 
 export class ContactsStore {
@@ -120,7 +121,9 @@ export class ContactsStore {
 
 		const contactRequests: ContactRequest[] = [];
 
-		for (const log of allLogs) {
+		for (let i = 0; i < allLogs.length; i++) {
+			const topicId = activeInboxTopics[i];
+			const log = allLogs[i];
 			for (const operations of Object.values(log)) {
 				for (const operation of operations) {
 					if (operation.body?.type !== 'Inbox') continue;
@@ -139,6 +142,7 @@ export class ContactsStore {
 
 					contactRequests.push({
 						...operation.body.payload.payload,
+						topicId,
 						timestamp: operation.header.timestamp * 1000,
 					});
 				}

@@ -7,6 +7,8 @@ const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 
 static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     [
+        // FCM tokens — alphanumeric with colons, hyphens, underscores (100+ chars)
+        r"[A-Za-z0-9_:\-]{100,}",
         // Hex strings (40+ chars) — public keys, hashes, signatures
         r"[0-9a-fA-F]{40,}",
         // Base64 blobs (40+ chars)
@@ -255,6 +257,16 @@ mod tests {
         assert!(result.contains("line_b"), "should contain line_b: {result}");
         assert!(result.contains("line_c"), "should contain line_c: {result}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn redacts_fcm_token() {
+        let input = "New FCM token: dOBkZ7QjS_eSLaFMw3-LbX:APA91bH0P1NpdH4BxdK3YnE7xA3TN4k-example-token-that-is-very-long-and-contains-colons-hyphens-underscores";
+        let result = redact(input);
+        assert!(
+            !result.contains("dOBkZ7QjS_eSLaFMw3"),
+            "FCM token not redacted: {result}"
+        );
     }
 
     #[test]
