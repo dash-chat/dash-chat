@@ -93,6 +93,8 @@ pub fn run() {
             commands::direct_chats::direct_chat_send_reaction,
             commands::settings::get_settings,
             commands::settings::set_setting,
+            #[cfg(mobile)]
+            commands::settings::set_notifications_enabled,
             #[cfg(not(mobile))]
             commands::settings::set_local_mailbox_enabled,
             // commands::chats::create_group,

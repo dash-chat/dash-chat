@@ -33,6 +33,22 @@ pub fn set_setting(key: String, value: serde_json::Value, app: AppHandle) -> Res
     Ok(())
 }
 
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn set_notifications_enabled(enabled: bool, app: AppHandle) -> Result<(), String> {
+    let mut s = settings::load_settings(&app);
+    s.notifications_enabled = enabled;
+    settings::save_settings(&app, &s);
+
+    if enabled {
+        crate::push_notifications::register_push_notifications(&app)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 #[cfg(not(mobile))]
 #[tauri::command]
 pub async fn set_local_mailbox_enabled(enabled: bool, app: AppHandle) -> Result<(), String> {

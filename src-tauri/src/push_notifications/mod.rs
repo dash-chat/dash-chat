@@ -57,7 +57,12 @@ pub fn setup_push_notifications(
 
     // Re-register every time the app starts
     // This makes it so that a loss of data in the push notifications server will be recovered from
-    if let Ok(PermissionState::Granted) = h.notification().permission_state() {
+    if crate::settings::load_settings(&h).notifications_enabled
+        && matches!(
+            h.notification().permission_state(),
+            Ok(PermissionState::Granted)
+        )
+    {
         match h.notification().register_for_push_notifications() {
             Ok(token) => {
                 let h = h.clone();
@@ -78,10 +83,12 @@ pub fn setup_push_notifications(
     // React to whenever the token changes
     handle.listen("notification://new-fcm-token", move |event| {
         if let Ok(token) = serde_json::from_str::<String>(event.payload()) {
-            // Skip if the user hasn't granted notification permission.
-            // The plugin can emit cached/refreshed tokens from Firebase even
-            // when the user hasn't explicitly consented in this session, so
-            // we gate the server-side registration here.
+            // Skip if notifications are disabled in settings or the user
+            // hasn't granted OS-level notification permission.
+            if !crate::settings::load_settings(&h).notifications_enabled {
+                log::info!("Ignoring new FCM token — notifications disabled in settings.");
+                return;
+            }
             match h.notification().permission_state() {
                 Ok(PermissionState::Granted) => {}
                 state => {
@@ -143,6 +150,28 @@ async fn register_fcm_token_with_retries(handle: AppHandle, token: String) -> an
         || client.register_fcm_token(public_key.clone(), FcmToken::from(token.clone())),
     )
     .await
+}
+
+/// Register for push notifications and sync subscriptions with the server.
+///
+/// Called when the user re-enables notifications from settings so the FCM
+/// token and topic subscriptions are sent to the push notifications server.
+pub async fn register_push_notifications(handle: &AppHandle) -> anyhow::Result<()> {
+    let token = handle.notification().register_for_push_notifications()?;
+
+    register_fcm_token_with_retries(handle.clone(), token).await?;
+    log::info!("Successfully registered FCM token.");
+
+    dashchat_utils::retry_with_backoff::<(), anyhow::Error, _, _>(
+        None,
+        std::time::Duration::from_secs(5),
+        std::time::Duration::from_secs(60),
+        "sync_subscriptions",
+        || sync_subscriptions(handle),
+    )
+    .await?;
+
+    Ok(())
 }
 
 /// Sync all subscribed topics with the push notifications server.

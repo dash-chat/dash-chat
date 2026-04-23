@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { getContext } from 'svelte';
-	import type { ContactsStore, Error } from 'dash-chat-stores';
+	import type { ContactsStore, Error, SettingsStore } from 'dash-chat-stores';
 	import AvatarPicker from './AvatarPicker.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
@@ -22,6 +22,7 @@
 	import Avatar from './Avatar.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
+	const settingsStore: SettingsStore = getContext('settings-store');
 	let name = $state<string | undefined>(undefined);
 	let surname = $state<string | undefined>(undefined);
 	let avatar = $state<string | undefined>(undefined);
@@ -48,9 +49,13 @@
 			const { isPermissionGranted, requestPermission } = await import(
 				'@tauri-apps/plugin-notification'
 			);
-			const granted = await isPermissionGranted();
+			let granted = await isPermissionGranted();
 			if (!granted) {
-				await requestPermission();
+				const result = await requestPermission();
+				granted = result === 'granted';
+			}
+			if (granted) {
+				await settingsStore.setNotificationsEnabled(true);
 			}
 		} catch (e) {
 			console.error('Failed to setup push notifications:', e);
