@@ -85,6 +85,7 @@ impl Node {
 
         let stream = ReceiverStream::new(mailbox_rx)
             .map(|op| {
+                tracing::info!(topic = ?op.header.extensions.topic.renamed(), op = ?op.header.hash().renamed(), "received new operation from mailbox");
                 let op = Operation::from(op);
                 Event {
                     args: IngestArgs {
@@ -140,8 +141,8 @@ impl Node {
                             Some(topic) = subscription_rx.recv() => {
                                 match node.initialize_topic_stream(topic).await {
                                     Ok(Some(stream)) => {
-                                        tracing::info!(topic = ?topic.renamed(), "received new STREAM");
-                                        streams.push(Box::pin(stream));
+                                        tracing::info!(topic = ?topic.renamed(), "subscribed to new topic");
+                                        streams.push(stream);
                                     }
                                     Ok(None) => {
                                         tracing::info!("topic already initialized, skipping");
@@ -154,7 +155,6 @@ impl Node {
 
                             Some(op) = streams.next() => {
                                 tracing::info!(op = ?op.hash.renamed(), topic = ?op.header.extensions.topic.renamed(), "processing stream item");
-                                // Process the FromNetwork item here
                                 if let Err(err) = node.process_stream_item(op).await {
                                     tracing::error!(?err, "process stream item error");
                                 }

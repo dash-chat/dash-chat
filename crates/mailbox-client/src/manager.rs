@@ -1,6 +1,9 @@
 use crate::store::MailboxStore;
 use tokio::time::Instant;
 
+#[cfg(feature = "named-id")]
+use named_id::Rename;
+
 use super::*;
 
 #[derive(Clone, Debug)]
@@ -330,6 +333,7 @@ where
                 let Some(lowest) = seqs.iter().min() else {
                     continue;
                 };
+                tracing::error!(author = ?author.renamed(), topic = ?topic.renamed(), lowest = ?lowest, "fetching log for missing operations");
                 let Some(log) = self
                     .store
                     .get_log(&author, &topic, *lowest)

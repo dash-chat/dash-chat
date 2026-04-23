@@ -13,6 +13,11 @@ pub struct LogHeightRow {
     pub(crate) seq_num: String,
 }
 
+pub(super) async fn dump_logs(
+    db: &SqliteStore,
+) -> Result<Vec<(DeviceId, LogId, SeqNum)>, anyhow::Error> {
+}
+
 pub(super) async fn get_log_heights_by_author(
     db: &SqliteStore,
     log_id: &LogId,

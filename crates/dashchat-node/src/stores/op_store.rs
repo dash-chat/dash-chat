@@ -267,6 +267,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
             .get_log_entries(author, topic, Some(from), None)
             .await
             .map_err(|err| anyhow::anyhow!("failed to get log for {author:?}: {topic:?}: {err}"))?;
+
         Ok(log.map(|log| {
             log.into_iter()
                 .map(|(op, _)| MailboxOperation {

@@ -10,6 +10,10 @@ members = ["crates/*", "src-tauri"]
 resolver = "2"
 
 [workspace.dependencies]
+
+mailbox-client = { path = "crates/mailbox-client", features = ["named-id"] }
+mailbox-server = { path = "crates/mailbox-server" }
+
 p2panda-auth = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
   "processor",
 ] }

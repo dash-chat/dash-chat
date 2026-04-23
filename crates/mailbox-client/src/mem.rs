@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use mailbox_server::TopicId;
 use tokio::sync::RwLock;
 
 /// A client for the in-memory mailbox server.
@@ -46,6 +47,19 @@ impl<Item: MailboxItem> MemMailbox<Item> {
             mailbox: self.clone(),
             subscribed_topics: Arc::new(RwLock::new(BTreeSet::new())),
         }
+    }
+
+    pub async fn log_heights(&self) -> BTreeMap<Item::Topic, BTreeMap<Item::Author, u64>> {
+        let ops = self.ops.read().await;
+        let mut log_heights = BTreeMap::new();
+        for (topic, ops) in ops.iter() {
+            let mut topic_heights = BTreeMap::new();
+            for (author, ops) in ops.iter() {
+                topic_heights.insert(*author, ops.len() as u64);
+            }
+            log_heights.insert(*topic, topic_heights);
+        }
+        log_heights
     }
 }
 

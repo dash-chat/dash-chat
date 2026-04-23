@@ -124,7 +124,6 @@ pub struct Node {
 }
 
 impl Node {
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all))]
     pub async fn new(
         data_path: PathBuf,
         config: NodeConfig,

@@ -4,7 +4,7 @@ use crate::{DeviceId, Header, Operation, topic::TopicId};
 use mailbox_client::MailboxItem;
 use p2panda_core::{Body, PublicKey};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MailboxOperation {
     pub header: Header,
     pub body: Option<Body>,
@@ -102,6 +102,7 @@ mod tests {
         dashchat_node::testing::setup_tracing(
             &[
                 "dashchat=info",
+                "mailbox_client=debug",
                 "p2panda_stream=warn",
                 "p2panda_auth=warn",
                 "p2panda_encryption=warn",
@@ -121,6 +122,8 @@ mod tests {
         let chat = alice.direct_chat_topic(bobbi.agent_id());
         alice.register_topic(chat).await.unwrap();
         alice.send_message(chat, "Hello".into()).await.unwrap();
+
+        dbg!(&mb.log_heights().await);
 
         println!("=== adding mailboxes ===");
         bobbi.add_mailbox_client(mb.client()).await;
