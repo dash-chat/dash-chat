@@ -4,6 +4,7 @@ use crate::requests::*;
 use crate::types::{FcmToken, OperationId, PublicKey, TopicId};
 use std::collections::{HashMap, HashSet};
 
+#[derive(Debug)]
 pub struct PushNotificationsClient {
     base_url: String,
     http: reqwest::Client,
