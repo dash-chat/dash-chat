@@ -152,7 +152,9 @@ pub fn receive_push_notification(
                 let sender_agent_id = match node.lookup_contact(sender_device_id) {
                     Ok(agent_id) => agent_id,
                     Err(err) => {
-                        log::error!("Failed to lookup contact for sender {sender_device_id}: {err:?}");
+                        log::error!(
+                            "Failed to lookup contact for sender {sender_device_id}: {err:?}"
+                        );
                         None
                     }
                 };
