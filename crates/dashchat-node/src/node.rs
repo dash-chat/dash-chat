@@ -109,6 +109,7 @@ pub struct Node {
     // groups: p2panda_auth::group::Groups,
     config: NodeConfig,
     notification_tx: Option<mpsc::Sender<Notification>>,
+    topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
 
     /// Add new subscription streams
     subscription_tx: mpsc::Sender<TopicId>,
@@ -130,11 +131,20 @@ impl Node {
         data_path: PathBuf,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
+        topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
         let local_store = LocalStore::new(filesystem.local_store_path()).await?;
         let node_keys = local_store.node_keys()?;
-        Self::init(filesystem, local_store, node_keys, config, notification_tx).await
+        Self::init(
+            filesystem,
+            local_store,
+            node_keys,
+            config,
+            notification_tx,
+            topic_subscribed_tx,
+        )
+        .await
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?node_keys.device_id().renamed())))]
@@ -144,6 +154,7 @@ impl Node {
         node_keys: NodeKeys,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
+        topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let sqlite = new_sqlite(filesystem.op_store_path()).await?;
         let op_store = OpStore::new(sqlite.clone());
@@ -163,6 +174,7 @@ impl Node {
             node_keys,
             notification_tx,
             subscription_tx,
+            topic_subscribed_tx,
             stream_cancel: None,
             stream_handle: Arc::new(Mutex::new(None)),
         };
@@ -453,7 +465,26 @@ impl Node {
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        let topic_id: TopicId = Topic::announcements(self.agent_id()).into();
+        self.get_profile_for_agent(self.agent_id()).await
+    }
+
+    pub fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
+        self.local_store.lookup_contact(device_id)
+    }
+
+    pub fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
+        self.local_store.all_contact_agent_ids()
+    }
+
+    pub fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
+        self.local_store.subscribed_topics()
+    }
+
+    pub async fn get_profile_for_agent(
+        &self,
+        agent_id: AgentId,
+    ) -> anyhow::Result<Option<Profile>> {
+        let topic_id: TopicId = Topic::announcements(agent_id).into();
         let authors = self.get_authors(topic_id.clone()).await?;
         let ops = self
             .get_interleaved_logs(topic_id, authors.into_iter().collect())

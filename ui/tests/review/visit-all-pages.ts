@@ -198,6 +198,12 @@ export async function visitOtherPages(options?: VisitOptions): Promise<VisitResu
 	pages.push(runCheck('appearance', co));
 	await breathe();
 
+	// Notifications — mobile only, use content selector
+	progress('other:notifications');
+	await nav('/settings/notifications', S.notifications.toggle);
+	pages.push(runCheck('notifications', co));
+	await breathe();
+
 	// Account — navigate directly (account-back hidden on desktop)
 	await nav('/settings/account', S.account.deleteItem);
 	pages.push(runCheck('account', co));

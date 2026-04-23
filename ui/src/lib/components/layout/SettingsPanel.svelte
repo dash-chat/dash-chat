@@ -6,6 +6,7 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import {
 		mdiAccountCircleOutline,
+		mdiBellOutline,
 		mdiQrcode,
 		mdiPaletteOutline,
 		mdiHelpCircleOutline,
@@ -133,10 +134,29 @@
 					></wa-icon>
 				{/snippet}
 			</ListItem>
+			{#if isMobile}
+				<ListItem
+					link
+					class={isActive('/settings/notifications') ? 'active' : ''}
+					linkProps={{ href: '/settings/notifications' }}
+					data-testid="settings-notifications-link"
+					title={m.notifications()}
+					chevron={false}
+				>
+					{#snippet media()}
+						<wa-icon src={wrapPathInSvg(mdiBellOutline)} style="font-size: 28px"
+						></wa-icon>
+					{/snippet}
+				</ListItem>
+			{/if}
 		</List>
 
 		{#if !isMobile}
-			<List strongIos nested inset={isWideScreen.value || theme === 'ios'}>
+			<List
+				strongIos
+				nested={theme !== 'ios'}
+				inset={isWideScreen.value || theme === 'ios'}
+			>
 				<ListItem
 					link
 					class={isActive('/settings/offline') ? 'active' : ''}

@@ -7,6 +7,7 @@ export class MockSettingsClient implements ISettingsClient {
 		qr_color: null,
 		color_scheme: null,
 		local_mailbox_enabled: false,
+		notifications_enabled: false,
 	};
 
 	private emitter = new Emittery<{ updated: Settings }>();
@@ -22,6 +23,11 @@ export class MockSettingsClient implements ISettingsClient {
 
 	async setLocalMailboxEnabled(enabled: boolean): Promise<void> {
 		this.settings.local_mailbox_enabled = enabled;
+		this.emitter.emit('updated', { ...this.settings });
+	}
+
+	async setNotificationsEnabled(enabled: boolean): Promise<void> {
+		this.settings.notifications_enabled = enabled;
 		this.emitter.emit('updated', { ...this.settings });
 	}
 

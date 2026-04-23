@@ -51,6 +51,11 @@ export class SettingsStore {
 		return settings.local_mailbox_enabled;
 	});
 
+	notificationsEnabled = reactive(async () => {
+		const settings = await this.settings();
+		return settings.notifications_enabled;
+	});
+
 	isDark = reactive(async () => {
 		const systemDark = this.systemDarkSignal.value;
 		const scheme = await this.colorScheme();
@@ -69,5 +74,9 @@ export class SettingsStore {
 
 	async setLocalMailboxEnabled(enabled: boolean): Promise<void> {
 		await this.client.setLocalMailboxEnabled(enabled);
+	}
+
+	async setNotificationsEnabled(enabled: boolean): Promise<void> {
+		await this.client.setNotificationsEnabled(enabled);
 	}
 }

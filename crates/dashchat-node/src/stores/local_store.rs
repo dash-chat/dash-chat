@@ -91,6 +91,20 @@ impl LocalStore {
         Ok(topics)
     }
 
+    pub fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(CONTACTS_TABLE)?;
+        let mut agent_ids = Vec::new();
+        for entry in table.iter()? {
+            let (_, value) = entry?;
+            agent_ids.push(AgentId::from_bytes(&value.value())?);
+        }
+        // Deduplicate since multiple devices can map to the same agent
+        agent_ids.sort();
+        agent_ids.dedup();
+        Ok(agent_ids)
+    }
+
     pub fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
         let txn = self.db.begin_read()?;
         let table = txn.open_table(CONTACTS_TABLE)?;

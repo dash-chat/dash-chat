@@ -109,6 +109,10 @@ impl Node {
                 }
             });
 
+        if let Some(tx) = &self.topic_subscribed_tx {
+            let _ = tx.send(topic).await;
+        }
+
         Ok(Some(Box::pin(stream)))
     }
 

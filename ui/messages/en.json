@@ -101,6 +101,7 @@
 	"getStarted": "Get started",
 
 	"newMessage": "New message",
+	"newContactRequest": "New contact request",
 	"typeMessage": "Type a message...",
 
 	"groupName": "Group name",
@@ -136,6 +137,9 @@
 	"lightMode": "Light",
 	"darkMode": "Dark",
 	"systemDefault": "System (default)",
+	"notifications": "Notifications",
+	"enableNotifications": "Enable notifications",
+	"messages": "Messages",
 	"account": "Account",
 	"deleteAccount": "Delete account",
 	"deleteAccountWarning": "This will permanently delete your account and all your data. This action cannot be undone.",

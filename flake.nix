@@ -39,6 +39,7 @@
         ./nix/servers.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix
+        ./crates/push-notifications-server/default.nix
       ];
 
       systems =
@@ -60,14 +61,16 @@
             librsvg
             libsoup_3
             libayatana-appindicator
+            pango
           ];
           packages = [
             pkgs.mprocs
+            pkgs.just
             pkgs.pnpm
+            pkgs.cargo-nextest
             inputs'.tauri-driver.packages.tauri-driver
           ];
         in rec {
-
           devShells.default = let
             rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           in pkgs.mkShell {
@@ -88,11 +91,9 @@
             rust = pkgs.rust-bin.fromRustupToolchainFile
               ./rust-toolchain.android.toml;
           in pkgs.mkShell {
-            packages = [ rust ] ++ packages;
-            inputsFrom = [
-              devShells.default
-              inputs'.tauri-plugin-holochain.devShells.holochainTauriAndroidDev
-            ];
+            packages = [ rust ];
+            inputsFrom =
+              [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
           };
 
           devShells.iosDev = let

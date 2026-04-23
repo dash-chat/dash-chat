@@ -36,9 +36,10 @@ jobs:
           node-version: 20.12.2
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3 # docs https://pnpm.io/continuous-integration#github-actions
+        uses: pnpm/action-setup@v6
         with:
-            version: 10.15.0  # Optional: specify a pnpm version
+          version: 10.33.0
+          cache: true 
 
       - name: Install and prepare
         run: |
@@ -124,6 +125,12 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           nix_path: nixpkgs=channel:nixos-25.11
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+          cache: true 
 
       - uses: cachix/cachix-action@v15
         with:

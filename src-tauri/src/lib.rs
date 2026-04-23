@@ -1,25 +1,28 @@
 mod commands;
 mod filesystem;
 mod i18n;
+mod mailbox;
 mod settings;
 mod setup;
 mod utils;
 
-mod mailbox;
+#[cfg(mobile)]
+mod push_notifications;
+
 #[cfg(not(mobile))]
 mod menu;
-#[cfg(target_os = "android")]
-mod push_notifications;
 #[cfg(not(mobile))]
 mod tray;
-
-const DASHCHAT_MAILBOX_ID: &str = "dashchat-mailbox";
 
 /// When set to `true`, the run-loop's `ExitRequested` handler will no longer
 /// call `api.prevent_exit()`, allowing the app to shut down gracefully
 /// (running all destructors) even when local-mailbox mode is active.
 pub(crate) static FORCE_QUIT: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+
+/// Global AppHandle so that code running outside the normal Tauri lifecycle
+/// (e.g. Android's `receive_push_notification`) can query window state.
+pub(crate) static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 
 /// Prevents multiple quit-confirmation dialogs from stacking up.
 #[cfg(not(mobile))]
@@ -90,6 +93,8 @@ pub fn run() {
             commands::direct_chats::direct_chat_send_reaction,
             commands::settings::get_settings,
             commands::settings::set_setting,
+            #[cfg(mobile)]
+            commands::settings::set_notifications_enabled,
             #[cfg(not(mobile))]
             commands::settings::set_local_mailbox_enabled,
             // commands::chats::create_group,
@@ -150,31 +155,6 @@ pub fn run() {
                 tauri::async_runtime::block_on(async move { setup::async_setup(handle).await });
 
             result?;
-
-            // app.handle()
-            //     .listen("holochain://setup-completed", move |_event| {
-            //         let handle2 = handle.clone();
-            //         tauri::async_runtime::spawn(async move {
-            //             if let Err(err) = setup(handle2.clone()).await {
-            //                 log::error!("Failed to setup: {err:?}");
-            //                 return;
-            //             }
-
-            //             #[cfg(mobile)]
-            //             if let Err(err) =
-            //                 push_notifications::setup_push_notifications(handle2.clone())
-            //             {
-            //                 log::error!("Failed to setup push notifications: {err:?}");
-            //             }
-            //         });
-            //         let handle = handle.clone();
-            //         tauri::async_runtime::spawn(async move {
-            //             if let Err(err) = open_window(handle.clone()).await {
-            //                 log::error!("Failed to setup: {err:?}");
-            //             }
-            //         });
-            //     });
-
             Ok(())
         })
         .on_window_event(|window, event| {

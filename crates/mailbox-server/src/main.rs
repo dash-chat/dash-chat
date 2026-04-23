@@ -14,6 +14,10 @@ struct Args {
     /// Address to bind the server to
     #[arg(short, long, default_value = "0.0.0.0:3000")]
     addr: String,
+
+    /// URL of the push notifications server (enables push notification integration)
+    #[arg(long)]
+    push_notifications_url: Option<String>,
 }
 
 #[tokio::main]
@@ -21,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "mailbox_server=debug,tower_http=debug".into()),
+                .unwrap_or_else(|_| "mailbox_server=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -29,7 +33,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
-    spawn_server(args.db_path.into(), args.addr, signal).await?;
+    spawn_server(
+        args.db_path.into(),
+        args.addr,
+        args.push_notifications_url,
+        signal,
+    )
+    .await?;
 
     Ok(())
 }

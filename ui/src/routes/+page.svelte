@@ -54,7 +54,7 @@
 	{#if theme === 'ios' && !isWideScreen.value}
 		{#await $chatSummaries then chats}
 			{#if chats.length === 0}
-				<div class="fixed end-4 top-[4.5rem] z-30">
+				<div class="fixed end-4 top-[6.5rem] z-30">
 					<FirstChatTooltip />
 				</div>
 			{/if}

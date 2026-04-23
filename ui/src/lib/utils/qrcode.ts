@@ -1,7 +1,7 @@
 import { isTauriEnv } from '$lib/utils/environment';
 import jsQR from 'jsqr';
 
-export async function scanQrcode(): Promise<string> {
+export async function scanQrCode(): Promise<string> {
 	if (!isTauriEnv()) {
 		throw new Error('QR code scanning requires the Tauri desktop/mobile app');
 	}
