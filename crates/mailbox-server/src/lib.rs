@@ -14,6 +14,7 @@ mod blob;
 mod blobs_table;
 mod cleanup;
 mod get_blobs;
+mod notify_topics_subscribers;
 mod store_blobs;
 mod watermark;
 mod watermarks_table;

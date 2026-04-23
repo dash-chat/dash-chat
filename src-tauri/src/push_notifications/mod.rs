@@ -7,6 +7,8 @@ use push_notifications_client::types::{FcmToken, PublicKey, PushNotification, To
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
+mod node_cache;
+
 #[cfg(target_os = "android")]
 mod android;
 
@@ -40,6 +42,10 @@ pub fn setup_push_notifications(
     handle: AppHandle,
     topic_subscribed_rx: tokio::sync::mpsc::Receiver<dashchat_node::topic::TopicId>,
 ) {
+    // Clear any temporary nodes that were created by push notifications before
+    // the app fully started. The authoritative Node is now managed by Tauri.
+    tauri::async_runtime::spawn(node_cache::clear());
+
     handle.manage(PushNotificationsClient::new(push_notifications_url()));
 
     let h = handle.clone();
@@ -51,7 +57,7 @@ pub fn setup_push_notifications(
             Ok(token) => {
                 let h = h.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(err) = register_fcm_token(h, token.clone()).await {
+                    if let Err(err) = register_fcm_token_with_retries(h, token.clone()).await {
                         log::error!("Error registering FCM token: {:?}", err);
                     } else {
                         log::info!("Successfully registered FCM token.");
@@ -116,38 +122,20 @@ pub fn setup_push_notifications(
     spawn_topic_subscription_loop(handle, topic_subscribed_rx, sync_notify);
 }
 
-async fn register_fcm_token(handle: AppHandle, token: String) -> anyhow::Result<()> {
+async fn register_fcm_token_with_retries(handle: AppHandle, token: String) -> anyhow::Result<()> {
     let node = handle.state::<Node>();
     let public_key = PublicKey::from(node.device_id().to_string());
 
     let client = handle.state::<PushNotificationsClient>();
 
-    let mut delay = std::time::Duration::from_secs(1);
-    let max_delay = std::time::Duration::from_secs(60);
-    let max_attempts: u32 = 10;
-
-    for attempt in 1..=max_attempts {
-        match client
-            .register_fcm_token(public_key.clone(), FcmToken::from(token.clone()))
-            .await
-        {
-            Ok(()) => return Ok(()),
-            Err(err) => {
-                if attempt == max_attempts {
-                    return Err(anyhow::anyhow!(
-                        "register_fcm_token failed after {max_attempts} attempts: {err:?}"
-                    ));
-                }
-                log::warn!(
-                    "register_fcm_token failed (attempt {attempt}/{max_attempts}): {err:?}. Retrying in {}s.",
-                    delay.as_secs()
-                );
-                tokio::time::sleep(delay).await;
-                delay = (delay * 2).min(max_delay);
-            }
-        }
-    }
-    Err(anyhow::anyhow!("register_fcm_token: exhausted retries"))
+    dashchat_utils::retry_with_backoff(
+        None,
+        std::time::Duration::from_secs(1),
+        std::time::Duration::from_secs(60),
+        "register_fcm_token",
+        || client.register_fcm_token(public_key.clone(), FcmToken::from(token.clone())),
+    )
+    .await
 }
 
 /// Sync all subscribed topics with the push notifications server.
@@ -217,25 +205,16 @@ fn spawn_subscription_sync_watcher(app_handle: AppHandle, sync_notify: Arc<tokio
 
             log::info!("Subscription sync watcher triggered, will retry with backoff.");
 
-            let mut delay = std::time::Duration::from_secs(5);
-            let max_delay = std::time::Duration::from_secs(300);
-
-            loop {
-                tokio::time::sleep(delay).await;
-
-                match sync_subscriptions(&app_handle).await {
-                    Ok(()) => {
-                        log::info!("Successfully synced subscriptions after retry.");
-                        break;
-                    }
-                    Err(err) => {
-                        log::warn!(
-                            "Subscription sync retry failed: {err:?}. Next retry in {}s.",
-                            delay.as_secs()
-                        );
-                        delay = (delay * 2).min(max_delay);
-                    }
-                }
+            if let Ok(_) = dashchat_utils::retry_with_backoff::<(), anyhow::Error, _, _>(
+                None,
+                std::time::Duration::from_secs(5),
+                std::time::Duration::from_secs(60),
+                "sync_subscriptions",
+                || sync_subscriptions(&app_handle),
+            )
+            .await
+            {
+                log::info!("Successfully synced subscriptions after retry.");
             }
         }
     });

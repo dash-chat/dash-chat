@@ -1,8 +1,36 @@
+use std::path::PathBuf;
+
+use dashchat_node::Node;
 use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::AppHandle;
 use tauri::{Emitter, Manager};
 
 use crate::{commands::logs::simplify, filesystem::FileSystem};
+
+const DASHCHAT_MAILBOX_ID: &str = "dashchat-mailbox";
+
+pub(crate) async fn build_node(
+    data_path: PathBuf,
+    notification_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::Notification>>,
+    topic_subscribed_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::topic::TopicId>>,
+) -> anyhow::Result<Node> {
+    let config = if cfg!(feature = "e2e-tests") {
+        let mut config = dashchat_node::NodeConfig::default();
+        config.mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
+        config.mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
+        config
+    } else {
+        dashchat_node::NodeConfig::default()
+    };
+    let node = Node::new(data_path, config, notification_tx, topic_subscribed_tx).await?;
+
+    let mailbox_url = crate::mailbox::default_mailbox_url();
+    let mailbox_client =
+        mailbox_client::toy::ToyMailboxClient::new(DASHCHAT_MAILBOX_ID.to_string(), mailbox_url);
+    node.mailboxes.register(mailbox_client).await;
+
+    Ok(node)
+}
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     let _ = crate::APP_HANDLE.set(app_handle.clone());
@@ -36,7 +64,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     #[cfg(mobile)]
     let (topic_subscribed_tx, topic_subscribed_rx) = tokio::sync::mpsc::channel(100);
 
-    let node = crate::node::build_node(
+    let node = build_node(
         local_data_path,
         Some(notification_tx),
         #[cfg(mobile)]
@@ -47,10 +75,6 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     .await?;
 
     app_handle.manage(node.clone());
-
-    // Clear any temporary nodes that were created by push notifications before
-    // the app fully started. The authoritative Node is now managed by Tauri.
-    crate::node::clear_cached_nodes();
 
     #[cfg(mobile)]
     {

@@ -1884,6 +1884,7 @@ dependencies = [
  "app_dirs2",
  "async-trait",
  "dashchat-node",
+ "dashchat-utils",
  "env_logger",
  "fs2",
  "futures",
@@ -1982,6 +1983,13 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "dashchat-utils"
+version = "0.1.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]
@@ -5194,6 +5202,7 @@ dependencies = [
  "axum-test",
  "base64 0.22.1",
  "clap",
+ "dashchat-utils",
  "futures",
  "mailbox-server",
  "push-notifications-client",

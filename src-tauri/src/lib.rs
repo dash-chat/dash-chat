@@ -2,7 +2,6 @@ mod commands;
 mod filesystem;
 mod i18n;
 mod mailbox;
-mod node;
 mod settings;
 mod setup;
 mod utils;
