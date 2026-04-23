@@ -80,6 +80,7 @@ pub fn run() {
             commands::logs::get_authors,
             commands::redact_log::get_redacted_log,
             commands::profile::set_profile,
+            commands::account::delete_account,
             commands::devices::my_device_group_topic,
             commands::contacts::my_device_id,
             commands::contacts::my_agent_id,

@@ -102,6 +102,14 @@ impl<R> CancelAndWait<R> {
         self.token.cancel();
         Some(self.handle.lock().await.take()?.await)
     }
+
+    /// Cancel the task and wait for it to finish, without consuming self.
+    pub async fn cancel(&self) {
+        self.token.cancel();
+        if let Some(handle) = self.handle.lock().await.take() {
+            let _ = handle.await;
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -124,7 +132,7 @@ pub struct Node {
     local_store: LocalStore,
     node_data: NodeData,
 
-    _filesystem: Filesystem,
+    filesystem: Filesystem,
 }
 
 impl Node {
@@ -150,7 +158,7 @@ impl Node {
             op_store: op_store.clone(),
             mailboxes,
             config,
-            _filesystem: filesystem,
+            filesystem,
             local_store: local_store.clone(),
             node_data,
             notification_tx,
@@ -449,6 +457,16 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        Ok(())
+    }
+
+    /// Stop background tasks and delete all account data.
+    pub async fn delete_account(&self) -> anyhow::Result<()> {
+        if let Some(ref task) = self.stream_task {
+            task.cancel().await;
+        }
+        self.mailboxes.clear().await;
+        std::fs::remove_dir_all(self.filesystem.data_path())?;
         Ok(())
     }
 
