@@ -62,6 +62,7 @@ export const S = {
 		appearanceLink: tid('settings-appearance-link'),
 		accountLink: tid('settings-account-link'),
 		helpLink: tid('settings-help-link'),
+		notificationsLink: tid('settings-notifications-link'),
 		offlineLink: tid('settings-offline-link'),
 	},
 	profile: {
@@ -111,6 +112,10 @@ export const S = {
 	groupChat: {
 		back: tid('group-chat-back'),
 		infoLink: tid('group-chat-info-link'),
+	},
+	notifications: {
+		back: tid('notifications-back'),
+		toggle: tid('notifications-toggle'),
 	},
 	offline: {
 		back: tid('offline-back'),

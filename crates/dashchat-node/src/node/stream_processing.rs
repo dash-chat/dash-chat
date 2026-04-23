@@ -74,6 +74,10 @@ impl Node {
             .await
             .map_err(|_| anyhow::anyhow!("stream channel closed"))?;
 
+        if let Some(tx) = &self.topic_subscribed_tx {
+            let _ = tx.send(topic).await;
+        }
+
         Ok(())
     }
 
