@@ -1,17 +1,17 @@
 use axum::{Json, extract::State, http::StatusCode};
 
-use push_notifications_client::requests::SubscribeRequest;
+use push_notifications_client::requests::AddTopicSubscriptionsRequest;
 
 use crate::{AppState, error::AppError};
 
-pub(crate) async fn subscribe(
+pub(crate) async fn add_topic_subscriptions(
     State(state): State<AppState>,
-    Json(req): Json<SubscribeRequest>,
+    Json(req): Json<AddTopicSubscriptionsRequest>,
 ) -> Result<StatusCode, AppError> {
     req.validate()?;
     state
         .db
-        .subscribe_to_topics(&req.public_key, &req.topic_ids)
+        .add_topic_subscriptions(&req.public_key, &req.topic_ids)
         .await?;
     tracing::info!(
         public_key = %req.public_key,

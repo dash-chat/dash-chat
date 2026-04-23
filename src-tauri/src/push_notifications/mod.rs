@@ -133,7 +133,7 @@ async fn register_fcm_token(handle: AppHandle, token: String) -> anyhow::Result<
             }
         }
     }
-    unreachable!()
+    Err(anyhow::anyhow!("register_fcm_token: exhausted retries"))
 }
 
 /// Sync all subscribed topics with the push notifications server.
@@ -156,7 +156,9 @@ async fn sync_subscriptions(app_handle: &AppHandle) -> anyhow::Result<()> {
     );
 
     let client = app_handle.state::<PushNotificationsClient>();
-    client.set_subscriptions(public_key, topic_ids).await?;
+    client
+        .update_topic_subscriptions(public_key, topic_ids)
+        .await?;
 
     Ok(())
 }
@@ -180,7 +182,9 @@ async fn subscribe_to_topics(
         topic_ids.len()
     );
 
-    client.subscribe(public_key, topic_ids).await?;
+    client
+        .add_topic_subscriptions(public_key, topic_ids)
+        .await?;
 
     Ok(())
 }

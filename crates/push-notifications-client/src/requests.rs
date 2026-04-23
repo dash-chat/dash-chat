@@ -9,7 +9,7 @@ const MAX_FCM_TOKEN_LEN: usize = 4096;
 /// Maximum length for an operation ID string.
 const MAX_OPERATION_ID_LEN: usize = 512;
 /// Maximum number of topics in a single request.
-const MAX_TOPICS_PER_REQUEST: usize = 1000;
+const MAX_TOPICS_PER_REQUEST: usize = 10_000;
 /// Maximum number of operation IDs per topic in a notify request.
 const MAX_OPS_PER_TOPIC: usize = 1000;
 
@@ -100,12 +100,12 @@ impl RegisterFcmTokenRequest {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct SubscribeRequest {
+pub struct AddTopicSubscriptionsRequest {
     pub public_key: PublicKey,
     pub topic_ids: HashSet<TopicId>,
 }
 
-impl SubscribeRequest {
+impl AddTopicSubscriptionsRequest {
     pub fn validate(&self) -> Result<(), ValidationError> {
         validate_public_key(&self.public_key)?;
         validate_topic_ids(&self.topic_ids)?;
@@ -114,12 +114,12 @@ impl SubscribeRequest {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct UnsubscribeRequest {
+pub struct RemoveTopicSubscriptionsRequest {
     pub public_key: PublicKey,
     pub topic_ids: HashSet<TopicId>,
 }
 
-impl UnsubscribeRequest {
+impl RemoveTopicSubscriptionsRequest {
     pub fn validate(&self) -> Result<(), ValidationError> {
         validate_public_key(&self.public_key)?;
         validate_topic_ids(&self.topic_ids)?;
@@ -128,12 +128,12 @@ impl UnsubscribeRequest {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct SetSubscriptionsRequest {
+pub struct UpdateTopicSubscriptionsRequest {
     pub public_key: PublicKey,
     pub topic_ids: HashSet<TopicId>,
 }
 
-impl SetSubscriptionsRequest {
+impl UpdateTopicSubscriptionsRequest {
     pub fn validate(&self) -> Result<(), ValidationError> {
         validate_public_key(&self.public_key)?;
         validate_topic_ids(&self.topic_ids)?;

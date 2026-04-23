@@ -1,5 +1,5 @@
+pub(crate) mod add_topic_subscriptions;
 pub(crate) mod notify_topic;
 pub(crate) mod register_fcm_token;
-pub(crate) mod set_subscriptions;
-pub(crate) mod subscribe;
-pub(crate) mod unsubscribe;
+pub(crate) mod remove_topic_subscriptions;
+pub(crate) mod update_topic_subscriptions;

@@ -37,42 +37,42 @@ impl PushNotificationsClient {
         Ok(())
     }
 
-    pub async fn subscribe(
+    pub async fn add_topic_subscriptions(
         &self,
         public_key: PublicKey,
         topic_ids: HashSet<TopicId>,
     ) -> anyhow::Result<()> {
         self.http
-            .post(format!("{}/subscribe", self.base_url))
-            .json(&SubscribeRequest {
+            .post(format!("{}/topic-subscriptions/add", self.base_url))
+            .json(&AddTopicSubscriptionsRequest {
                 public_key,
                 topic_ids,
             })
             .send()
             .await
-            .context("failed to send subscribe request")?
+            .context("failed to send add topic subscriptions request")?
             .error_for_status()
-            .context("subscribe request failed")?;
+            .context("add topic subscriptions request failed")?;
 
         Ok(())
     }
 
-    pub async fn unsubscribe(
+    pub async fn remove_topic_subscriptions(
         &self,
         public_key: PublicKey,
         topic_ids: HashSet<TopicId>,
     ) -> anyhow::Result<()> {
         self.http
-            .post(format!("{}/unsubscribe", self.base_url))
-            .json(&UnsubscribeRequest {
+            .post(format!("{}/topic-subscriptions/remove", self.base_url))
+            .json(&RemoveTopicSubscriptionsRequest {
                 public_key,
                 topic_ids,
             })
             .send()
             .await
-            .context("failed to send unsubscribe request")?
+            .context("failed to send remove topic subscriptions request")?
             .error_for_status()
-            .context("unsubscribe request failed")?;
+            .context("remove topic subscriptions request failed")?;
 
         Ok(())
     }
@@ -93,22 +93,22 @@ impl PushNotificationsClient {
         Ok(())
     }
 
-    pub async fn set_subscriptions(
+    pub async fn update_topic_subscriptions(
         &self,
         public_key: PublicKey,
         topic_ids: HashSet<TopicId>,
     ) -> anyhow::Result<()> {
         self.http
-            .post(format!("{}/set-subscriptions", self.base_url))
-            .json(&SetSubscriptionsRequest {
+            .post(format!("{}/topic-subscriptions/update", self.base_url))
+            .json(&UpdateTopicSubscriptionsRequest {
                 public_key,
                 topic_ids,
             })
             .send()
             .await
-            .context("failed to send set-subscriptions request")?
+            .context("failed to send update topic subscriptions request")?
             .error_for_status()
-            .context("set-subscriptions request failed")?;
+            .context("update topic subscriptions request failed")?;
 
         Ok(())
     }

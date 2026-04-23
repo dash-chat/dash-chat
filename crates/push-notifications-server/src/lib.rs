@@ -26,11 +26,17 @@ pub async fn build(db: Arc<dyn driver::Driver>, fcm: Arc<dyn Fcm>) -> anyhow::Re
             "/register-fcm-token",
             post(routes::register_fcm_token::register_fcm_token),
         )
-        .route("/subscribe", post(routes::subscribe::subscribe))
-        .route("/unsubscribe", post(routes::unsubscribe::unsubscribe))
         .route(
-            "/set-subscriptions",
-            post(routes::set_subscriptions::set_subscriptions),
+            "/topic-subscriptions/add",
+            post(routes::add_topic_subscriptions::add_topic_subscriptions),
+        )
+        .route(
+            "/topic-subscriptions/remove",
+            post(routes::remove_topic_subscriptions::remove_topic_subscriptions),
+        )
+        .route(
+            "/topic-subscriptions/update",
+            post(routes::update_topic_subscriptions::update_topic_subscriptions),
         )
         .route("/notify-topic", post(routes::notify_topic::notify_topics))
         .with_state(state);

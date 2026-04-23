@@ -1,17 +1,17 @@
 use axum::{Json, extract::State, http::StatusCode};
 
-use push_notifications_client::requests::UnsubscribeRequest;
+use push_notifications_client::requests::RemoveTopicSubscriptionsRequest;
 
 use crate::{AppState, error::AppError};
 
-pub(crate) async fn unsubscribe(
+pub(crate) async fn remove_topic_subscriptions(
     State(state): State<AppState>,
-    Json(req): Json<UnsubscribeRequest>,
+    Json(req): Json<RemoveTopicSubscriptionsRequest>,
 ) -> Result<StatusCode, AppError> {
     req.validate()?;
     state
         .db
-        .unsubscribe_from_topics(&req.public_key, &req.topic_ids)
+        .remove_topic_subscriptions(&req.public_key, &req.topic_ids)
         .await?;
     tracing::info!(
         public_key = %req.public_key,

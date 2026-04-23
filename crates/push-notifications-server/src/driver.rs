@@ -20,13 +20,13 @@ pub trait Driver: Send + Sync + 'static {
 
     async fn remove_fcm_token(&self, public_key: &PublicKey) -> anyhow::Result<()>;
 
-    async fn subscribe_to_topics(
+    async fn add_topic_subscriptions(
         &self,
         public_key: &PublicKey,
         topic_ids: &HashSet<TopicId>,
     ) -> anyhow::Result<()>;
 
-    async fn unsubscribe_from_topics(
+    async fn remove_topic_subscriptions(
         &self,
         public_key: &PublicKey,
         topic_ids: &HashSet<TopicId>,
@@ -39,7 +39,7 @@ pub trait Driver: Send + Sync + 'static {
 
     /// Replace all subscriptions for a public key with the given set.
     /// Removes any existing subscriptions not in `topic_ids`.
-    async fn set_subscriptions(
+    async fn update_topic_subscriptions(
         &self,
         public_key: &PublicKey,
         topic_ids: &HashSet<TopicId>,

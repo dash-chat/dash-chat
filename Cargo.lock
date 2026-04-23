@@ -7589,6 +7589,7 @@ dependencies = [
  "fcm_v1",
  "futures",
  "gcp_auth",
+ "hex",
  "mockall",
  "pretty_assertions",
  "push-notifications-client",

@@ -5,8 +5,8 @@ use axum_test::TestServer;
 use mockall::predicate::*;
 
 use push_notifications_client::requests::{
-    NotifyTopicsRequest, RegisterFcmTokenRequest, SetSubscriptionsRequest, SubscribeRequest,
-    UnsubscribeRequest,
+    AddTopicSubscriptionsRequest, NotifyTopicsRequest, RegisterFcmTokenRequest,
+    RemoveTopicSubscriptionsRequest, UpdateTopicSubscriptionsRequest,
 };
 use push_notifications_client::types::{FcmToken, OperationId, PublicKey, TopicId};
 use push_notifications_server::build;
@@ -47,8 +47,8 @@ async fn notify_topic_sends_to_subscribers() {
 
     // 2. Subscribe to topic
     let response = server
-        .post("/subscribe")
-        .json(&SubscribeRequest {
+        .post("/topic-subscriptions/add")
+        .json(&AddTopicSubscriptionsRequest {
             public_key: public_key.clone(),
             topic_ids: [topic_id.clone()].into(),
         })
@@ -130,8 +130,8 @@ async fn unsubscribe_prevents_notification() {
         .assert_status(StatusCode::NO_CONTENT);
 
     server
-        .post("/subscribe")
-        .json(&SubscribeRequest {
+        .post("/topic-subscriptions/add")
+        .json(&AddTopicSubscriptionsRequest {
             public_key: public_key.clone(),
             topic_ids: [topic_id.clone()].into(),
         })
@@ -140,8 +140,8 @@ async fn unsubscribe_prevents_notification() {
 
     // Unsubscribe
     server
-        .post("/unsubscribe")
-        .json(&UnsubscribeRequest {
+        .post("/topic-subscriptions/remove")
+        .json(&RemoveTopicSubscriptionsRequest {
             public_key: public_key.clone(),
             topic_ids: [topic_id.clone()].into(),
         })
@@ -193,8 +193,8 @@ async fn set_subscriptions_replaces_and_notifies_correctly() {
 
     // Subscribe to topic-a
     server
-        .post("/subscribe")
-        .json(&SubscribeRequest {
+        .post("/topic-subscriptions/add")
+        .json(&AddTopicSubscriptionsRequest {
             public_key: public_key.clone(),
             topic_ids: [topic_a.clone()].into(),
         })
@@ -203,8 +203,8 @@ async fn set_subscriptions_replaces_and_notifies_correctly() {
 
     // Replace subscriptions: drop topic-a, add topic-b
     server
-        .post("/set-subscriptions")
-        .json(&SetSubscriptionsRequest {
+        .post("/topic-subscriptions/update")
+        .json(&UpdateTopicSubscriptionsRequest {
             public_key: public_key.clone(),
             topic_ids: [topic_b.clone()].into(),
         })
@@ -260,8 +260,8 @@ async fn fcm_transient_failure_does_not_remove_token() {
         .assert_status(StatusCode::NO_CONTENT);
 
     server
-        .post("/subscribe")
-        .json(&SubscribeRequest {
+        .post("/topic-subscriptions/add")
+        .json(&AddTopicSubscriptionsRequest {
             public_key: public_key.clone(),
             topic_ids: [topic_id.clone()].into(),
         })
@@ -294,7 +294,7 @@ async fn notify_subscriber_without_token_does_not_fail() {
     let db = Arc::new(MemDb::new());
 
     // Subscribe directly via the driver (no token registered)
-    db.subscribe_to_topics(&public_key, &[topic_id.clone()].into())
+    db.add_topic_subscriptions(&public_key, &[topic_id.clone()].into())
         .await
         .unwrap();
 
@@ -328,7 +328,7 @@ async fn invalid_token_is_removed() {
     let db = Arc::new(MemDb::new());
 
     db.store_fcm_token(&public_key, &fcm_token).await.unwrap();
-    db.subscribe_to_topics(&public_key, &[topic_id.clone()].into())
+    db.add_topic_subscriptions(&public_key, &[topic_id.clone()].into())
         .await
         .unwrap();
 

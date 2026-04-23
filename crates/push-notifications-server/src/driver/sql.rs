@@ -109,7 +109,7 @@ impl Driver for SqlDriver {
         Ok(())
     }
 
-    async fn subscribe_to_topics(
+    async fn add_topic_subscriptions(
         &self,
         public_key: &PublicKey,
         topic_ids: &HashSet<TopicId>,
@@ -134,7 +134,7 @@ impl Driver for SqlDriver {
         Ok(())
     }
 
-    async fn unsubscribe_from_topics(
+    async fn remove_topic_subscriptions(
         &self,
         public_key: &PublicKey,
         topic_ids: &HashSet<TopicId>,
@@ -191,7 +191,7 @@ impl Driver for SqlDriver {
         Ok(result)
     }
 
-    async fn set_subscriptions(
+    async fn update_topic_subscriptions(
         &self,
         public_key: &PublicKey,
         topic_ids: &HashSet<TopicId>,

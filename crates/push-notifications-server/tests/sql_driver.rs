@@ -16,12 +16,22 @@ async fn create_driver() -> SqlDriver {
     SqlDriver::new(&url).await.unwrap()
 }
 
+/// Generate a valid 64-char hex public key from a u8 seed.
+fn pub_key(seed: u8) -> PublicKey {
+    PublicKey::from(format!("{:02x}", seed).repeat(32))
+}
+
+/// Generate a valid 64-char hex topic ID from a u8 seed.
+fn topic(seed: u8) -> TopicId {
+    TopicId::from(format!("{:02x}", seed).repeat(32))
+}
+
 // --- FCM tokens ---
 
 #[tokio::test]
 async fn store_and_get_fcm_token() {
     let db = create_driver().await;
-    let alice = PublicKey::from("alice".to_string());
+    let alice = pub_key(1);
 
     db.store_fcm_token(&alice, &FcmToken::from("tok-1".to_string()))
         .await
@@ -37,7 +47,7 @@ async fn store_and_get_fcm_token() {
 #[tokio::test]
 async fn get_fcm_token_missing() {
     let db = create_driver().await;
-    let nobody = PublicKey::from("nobody".to_string());
+    let nobody = pub_key(99);
 
     let tokens = db.get_fcm_tokens(&[nobody.clone()]).await.unwrap();
     assert_eq!(tokens.get(&nobody), None);
@@ -46,7 +56,7 @@ async fn get_fcm_token_missing() {
 #[tokio::test]
 async fn store_fcm_token_overwrites() {
     let db = create_driver().await;
-    let alice = PublicKey::from("alice".to_string());
+    let alice = pub_key(1);
 
     db.store_fcm_token(&alice, &FcmToken::from("tok-1".to_string()))
         .await
@@ -65,7 +75,7 @@ async fn store_fcm_token_overwrites() {
 #[tokio::test]
 async fn remove_fcm_token_deletes_token() {
     let db = create_driver().await;
-    let alice = PublicKey::from("alice".to_string());
+    let alice = pub_key(1);
 
     db.store_fcm_token(&alice, &FcmToken::from("tok-1".to_string()))
         .await
@@ -81,9 +91,7 @@ async fn remove_fcm_token_deletes_token() {
 async fn remove_fcm_token_nonexistent_is_noop() {
     let db = create_driver().await;
 
-    db.remove_fcm_token(&PublicKey::from("nobody".to_string()))
-        .await
-        .unwrap();
+    db.remove_fcm_token(&pub_key(99)).await.unwrap();
 }
 
 // --- subscribe / get_subscribers ---
@@ -91,11 +99,11 @@ async fn remove_fcm_token_nonexistent_is_noop() {
 #[tokio::test]
 async fn subscribe_and_get_subscribers() {
     let db = create_driver().await;
-    let alice = PublicKey::from("alice".to_string());
-    let t1 = TopicId::from("t1".to_string());
-    let t2 = TopicId::from("t2".to_string());
+    let alice = pub_key(1);
+    let t1 = topic(1);
+    let t2 = topic(2);
 
-    db.subscribe_to_topics(&alice, &[t1.clone(), t2.clone()].into_iter().collect())
+    db.add_topic_subscriptions(&alice, &[t1.clone(), t2.clone()].into_iter().collect())
         .await
         .unwrap();
 
@@ -110,23 +118,20 @@ async fn subscribe_and_get_subscribers() {
 #[tokio::test]
 async fn subscribe_is_idempotent() {
     let db = create_driver().await;
-    let alice = PublicKey::from("alice".to_string());
-    let t1: HashSet<TopicId> = [TopicId::from("t1".to_string())].into();
+    let alice = pub_key(1);
+    let t1: HashSet<TopicId> = [topic(1)].into();
 
-    db.subscribe_to_topics(&alice, &t1).await.unwrap();
-    db.subscribe_to_topics(&alice, &t1).await.unwrap();
+    db.add_topic_subscriptions(&alice, &t1).await.unwrap();
+    db.add_topic_subscriptions(&alice, &t1).await.unwrap();
 
     let subs = db.get_subscribers_for_topics(&t1).await.unwrap();
-    assert_eq!(
-        subs.get(&TopicId::from("t1".to_string())).unwrap(),
-        &vec![alice]
-    );
+    assert_eq!(subs.get(&topic(1)).unwrap(), &vec![alice]);
 }
 
 #[tokio::test]
 async fn get_subscribers_empty_topic() {
     let db = create_driver().await;
-    let t = TopicId::from("nobody".to_string());
+    let t = topic(99);
 
     let subs = db
         .get_subscribers_for_topics(&[t.clone()].into())
@@ -138,15 +143,15 @@ async fn get_subscribers_empty_topic() {
 #[tokio::test]
 async fn multiple_subscribers_same_topic() {
     let db = create_driver().await;
-    let alice = PublicKey::from("alice".to_string());
-    let bob = PublicKey::from("bob".to_string());
-    let t1: HashSet<TopicId> = [TopicId::from("t1".to_string())].into();
+    let alice = pub_key(1);
+    let bob = pub_key(2);
+    let t1: HashSet<TopicId> = [topic(1)].into();
 
-    db.subscribe_to_topics(&alice, &t1).await.unwrap();
-    db.subscribe_to_topics(&bob, &t1).await.unwrap();
+    db.add_topic_subscriptions(&alice, &t1).await.unwrap();
+    db.add_topic_subscriptions(&bob, &t1).await.unwrap();
 
     let subs = db.get_subscribers_for_topics(&t1).await.unwrap();
-    let mut topic_subs = subs.get(&TopicId::from("t1".to_string())).unwrap().clone();
+    let mut topic_subs = subs.get(&topic(1)).unwrap().clone();
     topic_subs.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
     assert_eq!(topic_subs, vec![alice, bob]);
 }
@@ -156,15 +161,15 @@ async fn multiple_subscribers_same_topic() {
 #[tokio::test]
 async fn unsubscribe_removes_subscription() {
     let db = create_driver().await;
-    let alice = PublicKey::from("alice".to_string());
-    let t1 = TopicId::from("t1".to_string());
-    let t2 = TopicId::from("t2".to_string());
+    let alice = pub_key(1);
+    let t1 = topic(1);
+    let t2 = topic(2);
 
-    db.subscribe_to_topics(&alice, &[t1.clone(), t2.clone()].into_iter().collect())
+    db.add_topic_subscriptions(&alice, &[t1.clone(), t2.clone()].into_iter().collect())
         .await
         .unwrap();
 
-    db.unsubscribe_from_topics(&alice, &[t1.clone()].into())
+    db.remove_topic_subscriptions(&alice, &[t1.clone()].into())
         .await
         .unwrap();
 
@@ -179,20 +184,17 @@ async fn unsubscribe_removes_subscription() {
 #[tokio::test]
 async fn unsubscribe_only_affects_target_user() {
     let db = create_driver().await;
-    let alice = PublicKey::from("alice".to_string());
-    let bob = PublicKey::from("bob".to_string());
-    let t1: HashSet<TopicId> = [TopicId::from("t1".to_string())].into();
+    let alice = pub_key(1);
+    let bob = pub_key(2);
+    let t1: HashSet<TopicId> = [topic(1)].into();
 
-    db.subscribe_to_topics(&alice, &t1).await.unwrap();
-    db.subscribe_to_topics(&bob, &t1).await.unwrap();
+    db.add_topic_subscriptions(&alice, &t1).await.unwrap();
+    db.add_topic_subscriptions(&bob, &t1).await.unwrap();
 
-    db.unsubscribe_from_topics(&alice, &t1).await.unwrap();
+    db.remove_topic_subscriptions(&alice, &t1).await.unwrap();
 
     let subs = db.get_subscribers_for_topics(&t1).await.unwrap();
-    assert_eq!(
-        subs.get(&TopicId::from("t1".to_string())).unwrap(),
-        &vec![bob]
-    );
+    assert_eq!(subs.get(&topic(1)).unwrap(), &vec![bob]);
 }
 
 // --- set_subscriptions ---
@@ -200,20 +202,20 @@ async fn unsubscribe_only_affects_target_user() {
 #[tokio::test]
 async fn set_subscriptions_replaces_all() {
     let db = create_driver().await;
-    let alice = PublicKey::from("alice".to_string());
-    let t1 = TopicId::from("t1".to_string());
-    let t2 = TopicId::from("t2".to_string());
-    let t3 = TopicId::from("t3".to_string());
-    let t4 = TopicId::from("t4".to_string());
+    let alice = pub_key(1);
+    let t1 = topic(1);
+    let t2 = topic(2);
+    let t3 = topic(3);
+    let t4 = topic(4);
 
-    db.subscribe_to_topics(
+    db.add_topic_subscriptions(
         &alice,
         &[t1.clone(), t2.clone(), t3.clone()].into_iter().collect(),
     )
     .await
     .unwrap();
 
-    db.set_subscriptions(&alice, &[t2.clone(), t4.clone()].into_iter().collect())
+    db.update_topic_subscriptions(&alice, &[t2.clone(), t4.clone()].into_iter().collect())
         .await
         .unwrap();
 
@@ -230,15 +232,15 @@ async fn set_subscriptions_replaces_all() {
 #[tokio::test]
 async fn set_subscriptions_empty_clears_all() {
     let db = create_driver().await;
-    let alice = PublicKey::from("alice".to_string());
-    let t1 = TopicId::from("t1".to_string());
-    let t2 = TopicId::from("t2".to_string());
+    let alice = pub_key(1);
+    let t1 = topic(1);
+    let t2 = topic(2);
 
-    db.subscribe_to_topics(&alice, &[t1.clone(), t2.clone()].into_iter().collect())
+    db.add_topic_subscriptions(&alice, &[t1.clone(), t2.clone()].into_iter().collect())
         .await
         .unwrap();
 
-    db.set_subscriptions(&alice, &HashSet::new()).await.unwrap();
+    db.update_topic_subscriptions(&alice, &HashSet::new()).await.unwrap();
 
     let subs = db
         .get_subscribers_for_topics(&[t1.clone(), t2.clone()].into())
@@ -251,16 +253,16 @@ async fn set_subscriptions_empty_clears_all() {
 #[tokio::test]
 async fn set_subscriptions_does_not_affect_other_users() {
     let db = create_driver().await;
-    let alice = PublicKey::from("alice".to_string());
-    let bob = PublicKey::from("bob".to_string());
-    let t1 = TopicId::from("t1".to_string());
-    let t2 = TopicId::from("t2".to_string());
+    let alice = pub_key(1);
+    let bob = pub_key(2);
+    let t1 = topic(1);
+    let t2 = topic(2);
     let t1_t2: HashSet<TopicId> = [t1.clone(), t2.clone()].into();
 
-    db.subscribe_to_topics(&alice, &t1_t2).await.unwrap();
-    db.subscribe_to_topics(&bob, &t1_t2).await.unwrap();
+    db.add_topic_subscriptions(&alice, &t1_t2).await.unwrap();
+    db.add_topic_subscriptions(&bob, &t1_t2).await.unwrap();
 
-    db.set_subscriptions(&alice, &[t2.clone()].into())
+    db.update_topic_subscriptions(&alice, &[t2.clone()].into())
         .await
         .unwrap();
 
@@ -278,11 +280,11 @@ async fn set_subscriptions_does_not_affect_other_users() {
 #[tokio::test]
 async fn set_subscriptions_from_empty() {
     let db = create_driver().await;
-    let alice = PublicKey::from("alice".to_string());
-    let t1 = TopicId::from("t1".to_string());
-    let t2 = TopicId::from("t2".to_string());
+    let alice = pub_key(1);
+    let t1 = topic(1);
+    let t2 = topic(2);
 
-    db.set_subscriptions(&alice, &[t1.clone(), t2.clone()].into_iter().collect())
+    db.update_topic_subscriptions(&alice, &[t1.clone(), t2.clone()].into_iter().collect())
         .await
         .unwrap();
 

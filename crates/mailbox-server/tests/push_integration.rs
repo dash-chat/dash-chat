@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use axum_test::{TestServer, TestServerConfig, Transport};
 use mailbox_server::test_utils::create_test_db;
 use push_notifications_client::client::PushNotificationsClient;
-use push_notifications_client::requests::{RegisterFcmTokenRequest, SubscribeRequest};
+use push_notifications_client::requests::{RegisterFcmTokenRequest, AddTopicSubscriptionsRequest};
 use push_notifications_client::types::{FcmToken, PublicKey, TopicId};
 use push_notifications_server::driver::mem::MemDb;
 use push_notifications_server::fcm_client::{MockFcm, SendResult};
@@ -109,8 +109,8 @@ async fn mailbox_store_triggers_push_notification() {
     assert_eq!(resp.status(), 204);
 
     let resp = http
-        .post(format!("{push_url}/subscribe"))
-        .json(&SubscribeRequest {
+        .post(format!("{push_url}/topic-subscriptions/add"))
+        .json(&AddTopicSubscriptionsRequest {
             public_key,
             topic_ids: [topic_id].into(),
         })
@@ -211,8 +211,8 @@ async fn mailbox_store_duplicate_blob_no_second_push() {
         .await
         .unwrap();
 
-    http.post(format!("{push_url}/subscribe"))
-        .json(&SubscribeRequest {
+    http.post(format!("{push_url}/topic-subscriptions/add"))
+        .json(&AddTopicSubscriptionsRequest {
             public_key,
             topic_ids: [topic_id].into(),
         })
