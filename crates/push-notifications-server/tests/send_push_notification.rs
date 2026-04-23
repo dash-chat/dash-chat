@@ -278,10 +278,8 @@ async fn fcm_transient_failure_does_not_remove_token() {
         .assert_status(StatusCode::NO_CONTENT);
 
     // Token should be preserved (transient error, not invalid token)
-    assert_eq!(
-        db.get_fcm_token(&public_key).await.unwrap(),
-        Some(fcm_token)
-    );
+    let tokens = db.get_fcm_tokens(&[public_key.clone()]).await.unwrap();
+    assert_eq!(tokens.get(&public_key), Some(&fcm_token));
 }
 
 #[tokio::test]
@@ -347,5 +345,6 @@ async fn invalid_token_is_removed() {
         .assert_status(StatusCode::NO_CONTENT);
 
     // Token should have been removed from the database
-    assert_eq!(db.get_fcm_token(&public_key).await.unwrap(), None);
+    let tokens = db.get_fcm_tokens(&[public_key.clone()]).await.unwrap();
+    assert_eq!(tokens.get(&public_key), None);
 }

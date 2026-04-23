@@ -30,8 +30,12 @@ impl Driver for MemDb {
         Ok(())
     }
 
-    async fn get_fcm_token(&self, public_key: &PublicKey) -> Result<Option<FcmToken>> {
-        Ok(self.tokens.lock().await.get(public_key).cloned())
+    async fn get_fcm_tokens(&self, public_keys: &[PublicKey]) -> Result<HashMap<PublicKey, FcmToken>> {
+        let tokens = self.tokens.lock().await;
+        Ok(public_keys
+            .iter()
+            .filter_map(|pk| tokens.get(pk).map(|t| (pk.clone(), t.clone())))
+            .collect())
     }
 
     async fn remove_fcm_token(&self, public_key: &PublicKey) -> Result<()> {
@@ -70,12 +74,21 @@ impl Driver for MemDb {
         Ok(())
     }
 
-    async fn get_subscribers(&self, topic_id: &TopicId) -> Result<Vec<PublicKey>> {
+    async fn get_subscribers_for_topics(
+        &self,
+        topic_ids: &HashSet<TopicId>,
+    ) -> Result<HashMap<TopicId, Vec<PublicKey>>> {
         let subs = self.subscriptions.lock().await;
-        Ok(subs
-            .get(topic_id)
-            .map(|s| s.iter().cloned().collect())
-            .unwrap_or_default())
+        Ok(topic_ids
+            .iter()
+            .map(|tid| {
+                let subscribers = subs
+                    .get(tid)
+                    .map(|s| s.iter().cloned().collect())
+                    .unwrap_or_default();
+                (tid.clone(), subscribers)
+            })
+            .collect())
     }
 
     async fn set_subscriptions(

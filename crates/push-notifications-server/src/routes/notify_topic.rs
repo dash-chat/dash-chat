@@ -1,11 +1,11 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 
 use axum::{Json, extract::State, http::StatusCode};
 use futures::future::join_all;
 
 use push_notifications_client::requests::NotifyTopicsRequest;
-use push_notifications_client::types::{OperationId, PublicKey, PushNotification, TopicId};
+use push_notifications_client::types::{FcmToken, OperationId, PublicKey, PushNotification, TopicId};
 
 use crate::{AppState, error::AppError, fcm_client::SendResult};
 
@@ -14,10 +14,40 @@ pub(crate) async fn notify_topics(
     Json(req): Json<NotifyTopicsRequest>,
 ) -> Result<StatusCode, AppError> {
     req.validate()?;
+
+    let topic_ids: HashSet<_> = req.topics_to_notify.keys().cloned().collect();
+
+    // Batch-fetch subscribers for all topics in a single query
+    let topic_subscribers = match state.db.get_subscribers_for_topics(&topic_ids).await {
+        Ok(subs) => subs,
+        Err(e) => {
+            tracing::warn!("failed to get subscribers: {e:#}");
+            return Ok(StatusCode::NO_CONTENT);
+        }
+    };
+
+    // Batch-fetch FCM tokens for all unique subscribers in a single query
+    let all_subscribers: Vec<PublicKey> = topic_subscribers
+        .values()
+        .flatten()
+        .cloned()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let fcm_tokens = match state.db.get_fcm_tokens(&all_subscribers).await {
+        Ok(tokens) => tokens,
+        Err(e) => {
+            tracing::warn!("failed to get FCM tokens: {e:#}");
+            return Ok(StatusCode::NO_CONTENT);
+        }
+    };
+
     let mut tasks = Vec::new();
 
     for (topic_id, op_ids) in &req.topics_to_notify {
-        tasks.extend(notify_topic(&state, topic_id, op_ids).await);
+        let subscribers = topic_subscribers.get(topic_id);
+        tasks.extend(notify_topic(&state, topic_id, op_ids, subscribers, &fcm_tokens));
     }
 
     if tasks.is_empty() {
@@ -35,17 +65,15 @@ pub(crate) async fn notify_topics(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn notify_topic(
+fn notify_topic(
     state: &AppState,
     topic_id: &TopicId,
     op_ids: &HashSet<OperationId>,
+    subscribers: Option<&Vec<PublicKey>>,
+    fcm_tokens: &HashMap<PublicKey, FcmToken>,
 ) -> Vec<impl Future<Output = ()>> {
-    let subscribers = match state.db.get_subscribers(topic_id).await {
-        Ok(subs) => subs,
-        Err(e) => {
-            tracing::warn!(topic_id = %topic_id, "failed to get subscribers: {e:#}");
-            return Vec::new();
-        }
+    let Some(subscribers) = subscribers else {
+        return Vec::new();
     };
 
     let mut tasks = Vec::new();
@@ -59,35 +87,27 @@ async fn notify_topic(
             body: op_id.to_string(),
         };
 
-        for public_key in &subscribers {
-            tasks.push(notify_of_operation(
-                state.clone(),
-                public_key.clone(),
-                notification.clone(),
-            ));
+        for public_key in subscribers {
+            if let Some(fcm_token) = fcm_tokens.get(public_key) {
+                tasks.push(send_notification(
+                    state.clone(),
+                    public_key.clone(),
+                    fcm_token.clone(),
+                    notification.clone(),
+                ));
+            }
         }
     }
 
     tasks
 }
 
-async fn notify_of_operation(
+async fn send_notification(
     state: AppState,
     public_key: PublicKey,
+    fcm_token: FcmToken,
     notification: PushNotification,
 ) {
-    let fcm_token = match state.db.get_fcm_token(&public_key).await {
-        Ok(Some(token)) => token,
-        Ok(None) => {
-            tracing::debug!(public_key = %public_key, "no FCM token registered, skipping");
-            return;
-        }
-        Err(e) => {
-            tracing::warn!(public_key = %public_key, "failed to look up FCM token: {e:#}");
-            return;
-        }
-    };
-
     match state
         .fcm
         .send_push_notification(&fcm_token, &notification)

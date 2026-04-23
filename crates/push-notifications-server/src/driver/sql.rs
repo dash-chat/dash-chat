@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use sqlx::{AnyPool, Row};
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::driver::Driver;
 use push_notifications_client::types::{FcmToken, PublicKey, TopicId};
@@ -63,13 +63,38 @@ impl Driver for SqlDriver {
         Ok(())
     }
 
-    async fn get_fcm_token(&self, public_key: &PublicKey) -> Result<Option<FcmToken>> {
-        let row = sqlx::query("SELECT fcm_token FROM fcm_tokens WHERE public_key = $1")
-            .bind(public_key.as_str())
-            .fetch_optional(&self.pool)
+    async fn get_fcm_tokens(&self, public_keys: &[PublicKey]) -> Result<HashMap<PublicKey, FcmToken>> {
+        if public_keys.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let placeholders: Vec<String> = public_keys
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("${}", i + 1))
+            .collect();
+        let query = format!(
+            "SELECT public_key, fcm_token FROM fcm_tokens WHERE public_key IN ({})",
+            placeholders.join(", ")
+        );
+        let mut q = sqlx::query(&query);
+        for pk in public_keys {
+            q = q.bind(pk.as_str());
+        }
+        let rows = q
+            .fetch_all(&self.pool)
             .await
-            .context("failed to get FCM token")?;
-        Ok(row.map(|r| FcmToken::from(r.get::<String, _>("fcm_token"))))
+            .context("failed to get FCM tokens")?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                (
+                    PublicKey::from(r.get::<String, _>("public_key")),
+                    FcmToken::from(r.get::<String, _>("fcm_token")),
+                )
+            })
+            .collect())
     }
 
     async fn remove_fcm_token(&self, public_key: &PublicKey) -> Result<()> {
@@ -128,16 +153,39 @@ impl Driver for SqlDriver {
         Ok(())
     }
 
-    async fn get_subscribers(&self, topic_id: &TopicId) -> Result<Vec<PublicKey>> {
-        let rows = sqlx::query("SELECT public_key FROM topic_subscribers WHERE topic_id = $1")
-            .bind(topic_id.as_str())
+    async fn get_subscribers_for_topics(
+        &self,
+        topic_ids: &HashSet<TopicId>,
+    ) -> Result<HashMap<TopicId, Vec<PublicKey>>> {
+        if topic_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let placeholders: Vec<String> = topic_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("${}", i + 1))
+            .collect();
+        let query = format!(
+            "SELECT topic_id, public_key FROM topic_subscribers WHERE topic_id IN ({})",
+            placeholders.join(", ")
+        );
+        let mut q = sqlx::query(&query);
+        for tid in topic_ids {
+            q = q.bind(tid.as_str());
+        }
+        let rows = q
             .fetch_all(&self.pool)
             .await
             .context("failed to get subscribers")?;
-        Ok(rows
-            .into_iter()
-            .map(|r| PublicKey::from(r.get::<String, _>("public_key")))
-            .collect())
+
+        let mut result: HashMap<TopicId, Vec<PublicKey>> = HashMap::new();
+        for row in rows {
+            let tid = TopicId::from(row.get::<String, _>("topic_id"));
+            let pk = PublicKey::from(row.get::<String, _>("public_key"));
+            result.entry(tid).or_default().push(pk);
+        }
+        Ok(result)
     }
 
     async fn set_subscriptions(

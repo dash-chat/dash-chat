@@ -1,7 +1,7 @@
 pub mod mem;
 pub mod sql;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use push_notifications_client::types::{FcmToken, PublicKey, TopicId};
 
@@ -13,7 +13,10 @@ pub trait Driver: Send + Sync + 'static {
         fcm_token: &FcmToken,
     ) -> anyhow::Result<()>;
 
-    async fn get_fcm_token(&self, public_key: &PublicKey) -> anyhow::Result<Option<FcmToken>>;
+    async fn get_fcm_tokens(
+        &self,
+        public_keys: &[PublicKey],
+    ) -> anyhow::Result<HashMap<PublicKey, FcmToken>>;
 
     async fn remove_fcm_token(&self, public_key: &PublicKey) -> anyhow::Result<()>;
 
@@ -29,7 +32,10 @@ pub trait Driver: Send + Sync + 'static {
         topic_ids: &HashSet<TopicId>,
     ) -> anyhow::Result<()>;
 
-    async fn get_subscribers(&self, topic_id: &TopicId) -> anyhow::Result<Vec<PublicKey>>;
+    async fn get_subscribers_for_topics(
+        &self,
+        topic_ids: &HashSet<TopicId>,
+    ) -> anyhow::Result<HashMap<TopicId, Vec<PublicKey>>>;
 
     /// Replace all subscriptions for a public key with the given set.
     /// Removes any existing subscriptions not in `topic_ids`.
