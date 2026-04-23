@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use dashchat_node::{AsBody, Node, Notification, Payload, Topic};
 use push_notifications_client::client::PushNotificationsClient;
@@ -92,14 +93,27 @@ pub fn setup_push_notifications(
         }
     });
 
-    // Sync all subscribed topics at startup, then listen for new ones
+    // Watcher that retries sync_subscriptions when notified of a failure.
+    // Uses exponential backoff until the server is reachable, then goes
+    // back to sleep until the next failure notification.
+    let sync_notify = Arc::new(tokio::sync::Notify::new());
+
+    // Sync all subscribed topics at startup
     let h = handle.clone();
+    let notify = sync_notify.clone();
     tauri::async_runtime::spawn(async move {
         if let Err(err) = sync_subscriptions(&h).await {
-            log::error!("Failed to sync subscriptions: {err:?}");
+            log::error!("Failed to sync subscriptions at startup: {err:?}");
+            notify.notify_one();
         }
     });
-    spawn_topic_subscription_loop(handle, topic_subscribed_rx);
+
+    // Background watcher: retries full sync on failure with exponential backoff
+    let h = handle.clone();
+    spawn_subscription_sync_watcher(h, sync_notify.clone());
+
+    // Listen for new topic subscriptions and register them with the server
+    spawn_topic_subscription_loop(handle, topic_subscribed_rx, sync_notify);
 }
 
 async fn register_fcm_token(handle: AppHandle, token: String) -> anyhow::Result<()> {
@@ -189,16 +203,57 @@ async fn subscribe_to_topics(
     Ok(())
 }
 
+/// Background watcher that retries a full subscription sync when notified.
+///
+/// When any subscription operation fails (likely due to no connectivity),
+/// the caller notifies this watcher via `sync_notify`. The watcher then
+/// retries `sync_subscriptions` with exponential backoff until it succeeds.
+/// Since `sync_subscriptions` does a full replace of all topics, it covers
+/// both the initial sync and any topics that failed to subscribe individually.
+fn spawn_subscription_sync_watcher(app_handle: AppHandle, sync_notify: Arc<tokio::sync::Notify>) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            sync_notify.notified().await;
+
+            log::info!("Subscription sync watcher triggered, will retry with backoff.");
+
+            let mut delay = std::time::Duration::from_secs(5);
+            let max_delay = std::time::Duration::from_secs(300);
+
+            loop {
+                tokio::time::sleep(delay).await;
+
+                match sync_subscriptions(&app_handle).await {
+                    Ok(()) => {
+                        log::info!("Successfully synced subscriptions after retry.");
+                        break;
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "Subscription sync retry failed: {err:?}. Next retry in {}s.",
+                            delay.as_secs()
+                        );
+                        delay = (delay * 2).min(max_delay);
+                    }
+                }
+            }
+        }
+    });
+}
+
 /// Listens for new topic subscriptions and registers them with the push notifications server.
+/// On failure, notifies the sync watcher to retry a full sync when connectivity is restored.
 fn spawn_topic_subscription_loop(
     app_handle: AppHandle,
     mut topic_subscribed_rx: tokio::sync::mpsc::Receiver<dashchat_node::topic::TopicId>,
+    sync_notify: Arc<tokio::sync::Notify>,
 ) {
     tauri::async_runtime::spawn(async move {
         while let Some(topic_id) = topic_subscribed_rx.recv().await {
             let hex_topic = TopicId::from(hex::encode(&*topic_id));
             if let Err(err) = subscribe_to_topics(&app_handle, [hex_topic].into()).await {
                 log::error!("Failed to subscribe to topic: {err:?}");
+                sync_notify.notify_one();
             }
         }
     });
