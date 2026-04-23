@@ -51,6 +51,8 @@ pub unsafe fn setup_android_logs() {
     });
 }
 
+static ANDROID_LOGS_ONCE: std::sync::Once = std::sync::Once::new();
+
 /// Entry point called by Android's FirebaseMessagingService when a push notification arrives.
 ///
 /// This runs outside the normal app lifecycle — no AppHandle or managed state is available.
@@ -61,9 +63,9 @@ pub fn receive_push_notification(
     notification: NotificationData,
     context: ReceivePushNotificationContext,
 ) -> Option<NotificationData> {
-    unsafe {
+    ANDROID_LOGS_ONCE.call_once(|| unsafe {
         setup_android_logs();
-    }
+    });
     crate::i18n::init_i18n();
 
     log::info!("Received push notification: {notification:?}");
