@@ -23,7 +23,7 @@ pub async fn build(db: Arc<dyn driver::Driver>, fcm: Arc<dyn Fcm>) -> anyhow::Re
 
     let router = Router::new()
         .route(
-            "/register-fcm-token",
+            "/fcm-tokens/register",
             post(routes::register_fcm_token::register_fcm_token),
         )
         .route(
@@ -37,6 +37,10 @@ pub async fn build(db: Arc<dyn driver::Driver>, fcm: Arc<dyn Fcm>) -> anyhow::Re
         .route(
             "/topic-subscriptions/update",
             post(routes::update_topic_subscriptions::update_topic_subscriptions),
+        )
+        .route(
+            "/fcm-tokens/unregister",
+            post(routes::unregister_fcm_token::unregister_fcm_token),
         )
         .route("/notify-topic", post(routes::notify_topic::notify_topics))
         .with_state(state);

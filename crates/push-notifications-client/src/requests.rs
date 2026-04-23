@@ -100,6 +100,18 @@ impl RegisterFcmTokenRequest {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct UnregisterFcmTokenRequest {
+    pub public_key: PublicKey,
+}
+
+impl UnregisterFcmTokenRequest {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_public_key(&self.public_key)?;
+        Ok(())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct AddTopicSubscriptionsRequest {
     pub public_key: PublicKey,
     pub topic_ids: HashSet<TopicId>,

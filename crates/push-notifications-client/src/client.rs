@@ -36,11 +36,21 @@ impl PushNotificationsClient {
     ) -> anyhow::Result<()> {
         let resp = self
             .http
-            .post(format!("{}/register-fcm-token", self.base_url))
+            .post(format!("{}/fcm-tokens/register", self.base_url))
             .json(&RegisterFcmTokenRequest {
                 public_key,
                 fcm_token,
             })
+            .send()
+            .await?;
+        check_response(resp).await
+    }
+
+    pub async fn unregister_fcm_token(&self, public_key: PublicKey) -> anyhow::Result<()> {
+        let resp = self
+            .http
+            .post(format!("{}/fcm-tokens/unregister", self.base_url))
+            .json(&UnregisterFcmTokenRequest { public_key })
             .send()
             .await?;
         check_response(resp).await

@@ -44,6 +44,10 @@ pub async fn set_notifications_enabled(enabled: bool, app: AppHandle) -> Result<
         crate::push_notifications::register_push_notifications(&app)
             .await
             .map_err(|e| e.to_string())?;
+    } else {
+        crate::push_notifications::unregister_push_notifications(&app)
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
     Ok(())

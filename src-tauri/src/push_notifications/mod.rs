@@ -174,6 +174,24 @@ pub async fn register_push_notifications(handle: &AppHandle) -> anyhow::Result<(
     Ok(())
 }
 
+/// Unregister the FCM token from the push notifications server.
+///
+/// Called when the user disables notifications from settings.
+pub async fn unregister_push_notifications(handle: &AppHandle) -> anyhow::Result<()> {
+    let node = handle.state::<Node>();
+    let public_key = PublicKey::from(node.device_id().to_string());
+    let client = handle.state::<PushNotificationsClient>();
+
+    dashchat_utils::retry_with_backoff(
+        None,
+        std::time::Duration::from_secs(1),
+        std::time::Duration::from_secs(60),
+        "unregister_fcm_token",
+        || client.unregister_fcm_token(public_key.clone()),
+    )
+    .await
+}
+
 /// Sync all subscribed topics with the push notifications server.
 ///
 /// Called at startup to ensure the server has the full, up-to-date list of
