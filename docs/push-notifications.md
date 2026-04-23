@@ -64,4 +64,4 @@ Mailbox Server (port 3000)
 Resolution order in the app:
 1. Runtime env var `PUSH_NOTIFICATIONS_SERVER_URL`
 2. Compile-time env var `PUSH_NOTIFICATIONS_SERVER_URL`
-3. Production URL (release builds only; dev builds panic without it)
+3. Production URL (fallback for all builds)
