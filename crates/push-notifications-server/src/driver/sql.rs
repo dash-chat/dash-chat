@@ -48,6 +48,24 @@ impl SqlDriver {
     }
 }
 
+/// Build a batch INSERT query: `INSERT INTO topic_subscribers (topic_id, public_key) VALUES ($1, $2), ($3, $4), ... ON CONFLICT DO NOTHING`
+/// Returns the query string and a flat list of bind values (topic_id, public_key pairs).
+fn build_batch_insert(public_key: &PublicKey, topic_ids: &HashSet<TopicId>) -> (String, Vec<String>) {
+    let mut placeholders = Vec::with_capacity(topic_ids.len());
+    let mut binds = Vec::with_capacity(topic_ids.len() * 2);
+    for (i, topic_id) in topic_ids.iter().enumerate() {
+        let p = i * 2;
+        placeholders.push(format!("(${}, ${})", p + 1, p + 2));
+        binds.push(topic_id.to_string());
+        binds.push(public_key.to_string());
+    }
+    let query = format!(
+        "INSERT INTO topic_subscribers (topic_id, public_key) VALUES {} ON CONFLICT DO NOTHING",
+        placeholders.join(", ")
+    );
+    (query, binds)
+}
+
 #[async_trait::async_trait]
 impl Driver for SqlDriver {
     async fn store_fcm_token(&self, public_key: &PublicKey, fcm_token: &FcmToken) -> Result<()> {
@@ -114,23 +132,17 @@ impl Driver for SqlDriver {
         public_key: &PublicKey,
         topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("failed to begin transaction")?;
-        for topic_id in topic_ids {
-            sqlx::query(
-                "INSERT INTO topic_subscribers (topic_id, public_key) VALUES ($1, $2)
-                 ON CONFLICT DO NOTHING",
-            )
-            .bind(topic_id.as_str())
-            .bind(public_key.as_str())
-            .execute(&mut *tx)
-            .await
-            .context("failed to subscribe to topic")?;
+        if topic_ids.is_empty() {
+            return Ok(());
         }
-        tx.commit().await.context("failed to commit transaction")?;
+        let (query, binds) = build_batch_insert(public_key, topic_ids);
+        let mut q = sqlx::query(&query);
+        for val in &binds {
+            q = q.bind(val);
+        }
+        q.execute(&self.pool)
+            .await
+            .context("failed to subscribe to topics")?;
         Ok(())
     }
 
@@ -139,20 +151,26 @@ impl Driver for SqlDriver {
         public_key: &PublicKey,
         topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("failed to begin transaction")?;
-        for topic_id in topic_ids {
-            sqlx::query("DELETE FROM topic_subscribers WHERE topic_id = $1 AND public_key = $2")
-                .bind(topic_id.as_str())
-                .bind(public_key.as_str())
-                .execute(&mut *tx)
-                .await
-                .context("failed to unsubscribe from topic")?;
+        if topic_ids.is_empty() {
+            return Ok(());
         }
-        tx.commit().await.context("failed to commit transaction")?;
+        // DELETE ... WHERE public_key = $1 AND topic_id IN ($2, $3, ...)
+        let placeholders: Vec<String> = topic_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("${}", i + 2))
+            .collect();
+        let query = format!(
+            "DELETE FROM topic_subscribers WHERE public_key = $1 AND topic_id IN ({})",
+            placeholders.join(", ")
+        );
+        let mut q = sqlx::query(&query).bind(public_key.as_str());
+        for tid in topic_ids {
+            q = q.bind(tid.as_str());
+        }
+        q.execute(&self.pool)
+            .await
+            .context("failed to unsubscribe from topics")?;
         Ok(())
     }
 
@@ -227,19 +245,16 @@ impl Driver for SqlDriver {
             q.execute(&mut *tx)
                 .await
                 .context("failed to remove old subscriptions")?;
-        }
 
-        // Insert new subscriptions
-        for topic_id in topic_ids {
-            sqlx::query(
-                "INSERT INTO topic_subscribers (topic_id, public_key) VALUES ($1, $2)
-                 ON CONFLICT DO NOTHING",
-            )
-            .bind(topic_id.as_str())
-            .bind(public_key.as_str())
-            .execute(&mut *tx)
-            .await
-            .context("failed to insert subscription")?;
+            // Batch insert new subscriptions
+            let (insert_query, binds) = build_batch_insert(public_key, topic_ids);
+            let mut q = sqlx::query(&insert_query);
+            for val in &binds {
+                q = q.bind(val);
+            }
+            q.execute(&mut *tx)
+                .await
+                .context("failed to insert subscriptions")?;
         }
 
         tx.commit().await.context("failed to commit transaction")?;
