@@ -1,5 +1,6 @@
-use derive_more::{Deref, From};
+use derive_more::{Debug, Deref, From, derive::Into};
 use named_id::RenameAll;
+use p2panda_auth::group::GroupMember;
 use p2panda_core::PublicKey;
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize};
@@ -17,16 +18,26 @@ use serde::{Deserialize, Serialize};
     Serialize,
     Deserialize,
     From,
+    Into,
     Deref,
     RenameAll,
 )]
 pub struct DeviceId(PublicKey);
 
+impl DeviceId {
+    pub fn from_bytes(bytes: &[u8; 32]) -> anyhow::Result<Self> {
+        Ok(Self(PublicKey::from_bytes(bytes)?))
+    }
+
+    pub fn to_group_member(self) -> GroupMember<PublicKey> {
+        GroupMember::Individual(self.0)
+    }
+}
+
 /// The ID for an "agent" which may control multiple devices.
 #[derive(
     Clone,
     Copy,
-    Debug,
     PartialEq,
     Eq,
     PartialOrd,
@@ -35,13 +46,23 @@ pub struct DeviceId(PublicKey);
     Serialize,
     Deserialize,
     From,
+    Debug,
     Deref,
     RenameAll,
 )]
+#[debug("AgentId({})", _0)]
 pub struct AgentId(ActorId);
 
 impl AgentId {
     pub fn from_bytes(bytes: &[u8; 32]) -> anyhow::Result<Self> {
         Ok(Self(ActorId::from_bytes(bytes)?))
+    }
+
+    pub fn from_pubkey(pubkey: PublicKey) -> Self {
+        Self(ActorId::from_bytes(pubkey.as_bytes()).unwrap())
+    }
+
+    pub fn to_group_member(self) -> GroupMember<PublicKey> {
+        GroupMember::Group(PublicKey::from_bytes(self.0.as_bytes()).unwrap())
     }
 }

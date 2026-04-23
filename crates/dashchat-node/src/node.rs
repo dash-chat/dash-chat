@@ -10,6 +10,7 @@ use anyhow::Result;
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
+use p2panda_auth::processor::AuthExtension;
 
 use crate::error::{AddContactError, Error};
 use crate::filesystem::Filesystem;
@@ -43,6 +44,9 @@ use crate::{
 pub use crate::local_store::LocalStore;
 pub use stream_processing::Notification;
 
+pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
+// pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
+
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
     pub contact_code_expiry: Duration,
@@ -53,10 +57,10 @@ impl NodeConfig {
     #[cfg(feature = "testing")]
     pub fn testing() -> Self {
         let mut mailboxes_config = MailboxesConfig::default();
-        mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
-        mailboxes_config.degraded_interval = std::time::Duration::from_millis(2000);
+        mailboxes_config.active_interval = std::time::Duration::from_millis(500);
+        mailboxes_config.degraded_interval = std::time::Duration::from_millis(500);
         mailboxes_config.stopped_interval = std::time::Duration::from_millis(5000);
-        mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
+        mailboxes_config.between_polls_delay = std::time::Duration::from_millis(10);
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
@@ -77,9 +81,6 @@ pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
 
 pub type Orderer<S> =
     PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
-
-pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
-// pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
 
 #[derive(Clone)]
 pub(crate) struct CancelAndWait<R> {
@@ -120,10 +121,8 @@ pub struct Node {
     /// Abort handle for the stream processing background task
     stream_task: Option<CancelAndWait<()>>,
 
-    local_store: LocalStore,
+    pub(crate) local_store: LocalStore,
     node_data: NodeData,
-
-    _filesystem: Filesystem,
 }
 
 impl Node {
@@ -135,10 +134,18 @@ impl Node {
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
         let local_store = LocalStore::new(filesystem.local_store_path()).await?;
-        let node_data = local_store.node_data()?;
+        let op_store = NodeOpStore::create(filesystem.op_store_path()).await?;
+        Self::init(local_store, op_store, config, notification_tx).await
+    }
 
-        let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
-        // let op_store = OpStore::new_memory();
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?local_store.device_id().unwrap().renamed())))]
+    pub(crate) async fn init(
+        local_store: LocalStore,
+        op_store: NodeOpStore,
+        config: NodeConfig,
+        notification_tx: Option<mpsc::Sender<Notification>>,
+    ) -> Result<Self> {
+        let node_data = local_store.node_data()?;
 
         let (stream_tx, stream_rx) = mpsc::channel(100);
 
@@ -148,7 +155,6 @@ impl Node {
             op_store: op_store.clone(),
             mailboxes,
             config,
-            _filesystem: filesystem,
             local_store: local_store.clone(),
             node_data,
             notification_tx,
@@ -158,6 +164,7 @@ impl Node {
 
         node.stream_task = Some(node.spawn_stream_process_loop(stream_rx));
 
+        node.initialize_device_group().await?;
         node.initialize_stored_topics().await?;
 
         Ok(node)
@@ -182,7 +189,7 @@ impl Node {
                 }
             }
         }
-        logs.sort_by_key(|(h, _)| h.timestamp);
+        logs.sort_by_key(|(h, _)| (h.timestamp, h.signature.map(|s| s.to_bytes()), h.public_key));
         Ok(logs)
     }
 
@@ -196,7 +203,11 @@ impl Node {
             Some(log) => Ok(log),
             None => {
                 let author = *author;
-                tracing::warn!("No log found for topic {topic:?} and author {author:?}");
+                tracing::warn!(
+                    topic = ?topic.renamed(),
+                    author = ?author.renamed(),
+                    "No log found"
+                );
                 Ok(vec![])
             }
         }
@@ -228,7 +239,7 @@ impl Node {
     ) -> Result<QrCode, crate::Error> {
         let inbox_topic = if inbox {
             let inbox_topic = InboxTopic {
-                topic: Topic::inbox().with_name(&format!("inbox({})", self.device_id().renamed())),
+                topic: Topic::inbox(self.device_id()),
                 expires_at: Utc::now() + self.config.contact_code_expiry,
             };
             self.initialize_topic(*inbox_topic.topic)
@@ -270,12 +281,7 @@ impl Node {
     pub fn direct_chat_topic(&self, other: AgentId) -> DirectChatId {
         let me = self.agent_id();
         // TODO: use two secrets from each party to construct the topic
-        let topic = Topic::direct_chat([me, other]);
-        if me > other {
-            topic.with_name(&format!("direct({},{})", other.renamed(), me.renamed()))
-        } else {
-            topic.with_name(&format!("direct({},{})", me.renamed(), other.renamed()))
-        }
+        Topic::direct_chat([me, other])
     }
 
     /// Create a new direct chat Space.
@@ -301,33 +307,37 @@ impl Node {
 
     pub async fn create_group(
         &self,
-        mut initial_members: BTreeMap<PublicKey, p2panda_auth::Access>,
+        mut initial_agents: BTreeMap<AgentId, Access>,
     ) -> anyhow::Result<ChatId> {
         let chat_id = Topic::random();
 
-        let agents = initial_members
-            .iter()
-            .map(|(public_key, _)| self.local_store.lookup_contact(DeviceId::from(*public_key)))
-            .filter_map(|m| match m {
-                Ok(None) => {
-                    tracing::warn!("Contact not found");
-                    None
-                }
-                Ok(Some(agent)) => Some(Ok(agent)),
-                Err(e) => {
-                    tracing::error!("Error looking up contact: {}", e);
-                    Some(Err(e))
-                }
-            })
-            .collect::<anyhow::Result<Vec<AgentId>>>()?;
+        let agents_to_invite = initial_agents.keys().copied().collect::<Vec<_>>();
 
         // The creator must always have Manage access
-        initial_members.insert(*self.device_id(), p2panda_auth::Access::manage());
+        initial_agents.insert(self.agent_id(), Access::manage());
 
-        let initial_members: Vec<_> = initial_members
-            .into_iter()
-            .map(|(public_key, access)| (GroupMember::Individual(public_key), access))
-            .collect();
+        let mut initial_members = initial_agents
+            .iter()
+            .map(|(m, a)| (m.to_group_member(), *a))
+            .collect::<BTreeMap<_, _>>();
+
+        #[cfg(feature = "auth-workaround")]
+        {
+            for (agent, access) in initial_agents
+                .iter()
+                .filter(|(_, access)| **access >= Access::manage())
+            {
+                let Some(device_id) = self.local_store.lookup_contact_device(*agent)? else {
+                    continue;
+                };
+                // Add in all devices with manage access in the device group
+                initial_members.insert(device_id.to_group_member(), access.clone());
+            }
+        }
+
+        let initial_members = initial_members.into_iter().collect::<Vec<_>>();
+
+        tracing::info!(members = ?initial_members.clone().renamed(), "new group created with members");
 
         self.author_operation(
             chat_id,
@@ -338,76 +348,80 @@ impl Node {
 
         self.register_topic(chat_id).await?;
 
-        for agent in agents {
+        for agent in agents_to_invite {
             self.invite_to_group(chat_id, agent).await?;
         }
         Ok(chat_id)
     }
 
-    async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
-        let payload = Payload::Chat(ChatPayload::JoinGroup(chat_id));
-        tracing::info!(
-            "{} is inviting {} to group {}",
-            self.device_id().renamed(),
-            person.renamed(),
-            chat_id.renamed(),
-        );
-        self.author_operation(
-            self.direct_chat_topic(person),
-            payload,
-            Some(&format!(
-                "invite_to_group({}, {})",
-                chat_id.renamed(),
-                person.renamed()
-            )),
-        )
-        .await?;
-        Ok(())
-    }
-
     pub async fn add_group_member(
         &self,
         chat_id: ChatId,
-        member: PublicKey,
+        agent_id: AgentId,
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
-        self.author_operation(
-            chat_id,
-            DashAction::group_action(
+        let mut members = vec![(agent_id.to_group_member(), access)];
+
+        // HACK: remove this block once p2panda-auth supports Manage access for Groups
+        #[cfg(feature = "auth-workaround")]
+        {
+            // Add in all devices with manage access in the device group
+            if access >= Access::manage() {
+                if let Some(device_id) = self.local_store.lookup_contact_device(agent_id)? {
+                    members.push((device_id.to_group_member(), access));
+                };
+            }
+        }
+
+        tracing::info!(members = ?members.clone().renamed(), "members added to existing group");
+
+        for (member, access) in members {
+            let action = DashAction::group_action(
                 chat_id,
                 GroupAction::Add {
-                    member: GroupMember::Individual(member),
-                    access,
+                    member,
+                    access: access.clone(),
                 },
-            )?,
-            Some(&format!("add_group_member({})", chat_id.renamed())),
-        )
-        .await?;
-
-        let agent_id = self.local_store.lookup_contact(DeviceId::from(member))?;
-        if let Some(agent_id) = agent_id {
-            self.invite_to_group(chat_id, agent_id).await?;
-        } else {
-            tracing::warn!("Contact not found: {}", DeviceId::from(member).renamed());
+            )?;
+            self.author_operation(
+                chat_id,
+                action,
+                Some(&format!(
+                    "add_group_member({}, {})",
+                    chat_id.renamed(),
+                    member.renamed()
+                )),
+            )
+            .await?;
         }
+
+        self.invite_to_group(chat_id, agent_id).await?;
 
         Ok(())
     }
 
+    #[cfg(not(feature = "auth-workaround"))]
     pub async fn remove_group_member(
         &self,
         chat_id: ChatId,
-        member: PublicKey,
+        agent_id: AgentId,
     ) -> anyhow::Result<()> {
+        unimplemented!(
+            "Removing group members cannot be accomplished until p2panda-auth supports Manage access for Groups (when the `auth-workaround` feature is removed)"
+        );
         self.author_operation(
             chat_id,
             DashAction::group_action(
                 chat_id,
                 GroupAction::Remove {
-                    member: GroupMember::Individual(member),
+                    member: agent_id.to_group_member(),
                 },
-            )?,
-            Some(&format!("remove_group_member({})", chat_id.renamed())),
+            ),
+            Some(&format!(
+                "remove_group_member({}, {})",
+                chat_id.renamed(),
+                agent_id.renamed()
+            )),
         )
         .await?;
         Ok(())
@@ -416,15 +430,8 @@ impl Node {
     pub async fn get_group_members(
         &self,
         chat_id: ChatId,
-    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
-        let members = self
-            .local_store
-            .groups
-            .members(chat_id)
-            .await?
-            .into_iter()
-            .map(|(m, a)| (DeviceId::from(m), a))
-            .collect();
+    ) -> anyhow::Result<BTreeSet<(PublicKey, Access)>> {
+        let members = self.local_store.chat_group_members(chat_id).await?;
         Ok(members)
     }
 
@@ -433,7 +440,7 @@ impl Node {
     /// -- you're not fully a member until someone adds you.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().renamed())))]
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
-        tracing::info!(?chat_id, "joined group");
+        tracing::debug!(?chat_id, "joined group");
         self.register_topic(chat_id).await
     }
 
@@ -486,6 +493,7 @@ impl Node {
         let chat_id = topic.into();
         let mut messages = vec![];
 
+        // TODO: need to filter messages by actual DeviceIds in the Agent's DeviceGroup
         let authors = self.get_authors(chat_id.into()).await?;
 
         for (header, payload) in self
@@ -496,18 +504,6 @@ impl Node {
                 messages.push(crate::chat::testing::ChatMessage::new(message, &header));
             }
         }
-
-        // for (events, author, timestamp) in events {
-        //     for event in events {
-        //         use crate::Cbor;
-        //         match event {
-        //             Event::Application { space_id, data } => {
-        //                 messages.push(ChatMessage::from_bytes(&data)?)
-        //             }
-        //             _ => {}
-        //         }
-        //     }
-        // }
 
         Ok(messages)
     }
@@ -563,18 +559,19 @@ impl Node {
     pub async fn add_contact(&self, contact: QrCode) -> Result<AgentId, AddContactError> {
         tracing::debug!("adding contact: {:?}", contact);
 
+        #[cfg(feature = "auth-workaround")]
         self.local_store
             .save_contact(contact.clone())
             .map_err(|e| AddContactError::StoreContact(e.to_string()))?;
 
-        // SPACES: Register the member in the spaces manager
+        // TODO: SPACES: Register the member in the spaces manager
 
-        // Must subscribe to the new member's device group in order to receive their
-        // group control messages.
-        // TODO: is this idempotent? If not we must make sure to do this only once.
         self.register_topic(Topic::announcements(contact.agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+
+        // Must subscribe to the new member's device group in order to receive their
+        // group control messages.
 
         // TODO: use all of this commented out stuff when spaces are possible again
         // // XXX: there should be a better way to wait for the device group to be created,
@@ -617,9 +614,6 @@ impl Node {
         // // XXX: need sleep a little more for all the messages to be processed
         // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
 
-        // self.initialize_topic(Topic::announcements(actor), false)
-        //     .await?;
-
         let agent = contact.agent_id;
         let direct_topic = self.direct_chat_topic(agent);
         self.register_topic(direct_topic)
@@ -634,10 +628,15 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        // This is only run by the person who scanned the QR code.
         if let Some(inbox_topic) = contact.inbox_topic.clone() {
+            // Note, the contact won't send anything back,
+            // but we need to subscribe so we can sync with the contact
             self.initialize_topic(*inbox_topic.topic)
                 .await
                 .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+
+            // Create the code to send back (with my info)
             let code = self
                 .new_qr_code(ShareIntent::AddContact, false)
                 .await
@@ -649,6 +648,8 @@ impl Node {
             else {
                 return Err(AddContactError::ProfileNotCreated);
             };
+
+            // Author it so the QR code creator will get it on the inbox topic
             self.author_operation(
                 inbox_topic.topic,
                 Payload::Inbox(InboxPayload::ContactRequest { code, profile }),
@@ -715,21 +716,33 @@ impl Node {
         Ok(())
     }
 
-    async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
-        self.initialize_topic(
-            *Topic::announcements(self.agent_id())
-                .with_name(&format!("announce({})", self.agent_id().renamed())),
+    async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
+        let payload = Payload::Chat(ChatPayload::JoinGroup(chat_id));
+        tracing::info!(
+            "{} is inviting {} to group {}",
+            self.device_id().renamed(),
+            person.renamed(),
+            chat_id.renamed(),
+        );
+        self.author_operation(
+            self.direct_chat_topic(person),
+            payload,
+            Some(&format!(
+                "invite_to_group({}, {})",
+                chat_id.renamed(),
+                person.renamed()
+            )),
         )
         .await?;
+        Ok(())
+    }
+
+    async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
+        self.initialize_topic(*Topic::announcements(self.agent_id()))
+            .await?;
 
         for topic in self.local_store.get_active_inbox_topics()?.iter() {
-            self.initialize_topic(
-                *topic
-                    .topic
-                    .clone()
-                    .with_name(&format!("inbox({})", self.device_id().renamed())),
-            )
-            .await?;
+            self.initialize_topic(*topic.topic.clone()).await?;
         }
 
         for topic in self.local_store.subscribed_topics()?.iter() {
@@ -737,5 +750,51 @@ impl Node {
         }
 
         Ok(())
+    }
+
+    async fn initialize_device_group(&self) -> anyhow::Result<bool> {
+        let topic = Topic::announcements(self.agent_id());
+        let log = self.get_log(topic.into(), self.device_id()).await?;
+
+        let initialized = log.iter().any(|(header, _)| {
+            let Some(auth) = header.extension::<AuthExtension>() else {
+                return false;
+            };
+            auth.group_id == self.agent_id().to_group_member().id()
+                && matches!(auth.action, GroupAction::Create { .. })
+        });
+
+        if initialized {
+            return Ok(false);
+        }
+
+        self.author_operation(
+            topic,
+            DashAction::GroupControl(AuthExtension {
+                group_id: self.agent_id().to_group_member().id(),
+                action: GroupAction::Create {
+                    initial_members: vec![(self.device_id().to_group_member(), Access::manage())],
+                },
+            }),
+            Some("initialize_device_group"),
+        )
+        .await?;
+        Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::TestNode;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_initialize_device_group() {
+        let node = TestNode::new(NodeConfig::default(), "test_node").await;
+        let did_initialize = node.initialize_device_group().await.unwrap();
+
+        // The device group should already be initialized and should not happen twice.
+        assert!(!did_initialize);
     }
 }

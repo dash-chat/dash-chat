@@ -96,7 +96,7 @@ impl Node {
                 loop {
                     tokio::select! {
                         Some(stream) = stream_rx.recv() => {
-                            tracing::info!("received new STREAM");
+                            tracing::trace!("received new STREAM");
                             // Stream is already Pin<Box<...>> from the channel, push directly
                             streams.push(stream);
                         }
@@ -128,8 +128,39 @@ impl Node {
     }
 
     async fn process_stream_item(&self, operation: Operation<Extensions>) -> anyhow::Result<()> {
-        let hash = operation.hash;
+        let hash = operation.hash.renamed();
         let topic = operation.header.extensions.topic;
+
+        // Ok this is weird but hear me out:
+        // When we are added to a group with members we are not already contacts with,
+        // we need to subscribe to their AgentId so we can receive their device group messages.
+        // Without this, we can't process group messages in order, because these are dependencies.
+        // That's why this shows up before the partial order check.
+        //
+        // TODO: handle this more cleanly, especially when it comes to removing members.
+        match &operation.header.extensions.auth {
+            Some(auth) => {
+                let members = match &auth.action {
+                    GroupAction::Create { initial_members } => {
+                        initial_members.iter().map(|(member, _)| member).collect()
+                    }
+                    GroupAction::Add { member, .. } => vec![member],
+                    GroupAction::Remove { .. } => vec![],
+                    GroupAction::Promote { .. } => vec![],
+                    GroupAction::Demote { .. } => vec![],
+                };
+                for member in members {
+                    match member {
+                        GroupMember::Group(id) => {
+                            self.register_topic(Topic::announcements(AgentId::from_pubkey(*id)))
+                                .await?
+                        }
+                        GroupMember::Individual(_) => {}
+                    }
+                }
+            }
+            None => {}
+        }
 
         if let Err(err) = self.op_store.process_ordering(operation).await {
             tracing::error!(?err, "process ordering error");
@@ -144,18 +175,17 @@ impl Node {
             })
             .unwrap_or_default();
 
+        if reordered.is_empty() {
+            tracing::warn!(?topic, ?hash, "operation processed out of order");
+        }
+
         // let reordered = vec![operation];
 
         for operation in reordered {
             match self.process_operation(operation, false, false).await {
                 Ok(()) => (),
                 Err(err) => {
-                    tracing::error!(
-                        ?topic,
-                        hash = ?hash.renamed(),
-                        ?err,
-                        "process operation error"
-                    )
+                    tracing::error!(?topic, ?hash, ?err, "process operation error")
                 }
             }
         }
@@ -217,9 +247,12 @@ impl Node {
     async fn process_extensions(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
         match &operation.header.extensions.auth {
             Some(auth) => {
-                tracing::info!(?auth, "processing auth extensions");
-                if let Err(err) = self.local_store.groups.process(operation).await {
-                    tracing::error!(?err, "error processing auth extensions");
+                tracing::info!(
+                    operation_author = ?operation.header.public_key.renamed(),
+                    auth_extension = ?auth.clone().renamed(), 
+                    "processing auth extension");
+                if let Err(err) = self.local_store.process_group_operation(operation).await {
+                    tracing::error!(?err, "error processing auth extension");
                 };
             }
             None => {}
@@ -262,7 +295,7 @@ impl Node {
                     return Ok(());
                 }
                 tracing::info!(
-                    ?invitation,
+                    invitation = ?invitation.clone().renamed(),
                     from = ?header.public_key.renamed(),
                     "received invitation message"
                 );

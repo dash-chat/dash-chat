@@ -16,7 +16,7 @@ impl Node {
             DashAction::Payload(_) => {
                 vec![]
             }
-            DashAction::GroupControl(_) => self.local_store.groups.heads().await?,
+            DashAction::GroupControl(_) => self.local_store.group_state_tips().await?,
         };
 
         let (header, body) = self
@@ -32,6 +32,7 @@ impl Node {
 
         self.mailboxes.trigger_sync();
 
+        // Ok(header)
         let op = Operation {
             hash: header.hash().with_serial(),
             header,

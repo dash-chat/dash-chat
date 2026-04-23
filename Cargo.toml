@@ -11,19 +11,19 @@ resolver = "2"
 
 [workspace.dependencies]
 
-p2panda-auth = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
+p2panda-auth = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor", features = [
   "processor",
 ] }
-p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-encryption = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-discovery = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-net = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-store = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
+p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor" }
+p2panda-encryption = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor" }
+p2panda-discovery = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor" }
+p2panda-net = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor" }
+p2panda-store = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor", features = [
   "sqlite",
 ] }
-p2panda-stream = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-sync = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
+p2panda-stream = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor" }
+p2panda-sync = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor" }
+p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor", features = [
   "test_utils",
 ] }
 
@@ -38,3 +38,6 @@ p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "das
 # p2panda-stream = { path = "/home/michael/gitfork/p2panda/p2panda-stream" }
 # p2panda-sync = { path = "/home/michael/gitfork/p2panda/p2panda-sync" }
 # p2panda-spaces = { path = "/home/michael/gitfork/p2panda/p2panda-spaces" }
+
+# [patch."https://github.com/maackle/named-id.git"]
+# named-id = { path = "/home/michael/proj/named-id" }
