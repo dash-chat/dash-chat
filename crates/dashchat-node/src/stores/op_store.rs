@@ -23,21 +23,14 @@ pub struct OpStore<S = SqliteStore> {
     #[deref]
     #[deref_mut]
     pub(crate) store: S,
-    // pub orderer: Arc<tokio::sync::RwLock<Orderer<S>>>,
     pub processed_ops: Arc<RwLock<HashMap<TopicId, HashSet<Hash>>>>,
     write_mutex: Arc<Mutex<()>>,
 }
 
 impl OpStore {
     pub fn new(store: SqliteStore) -> Self {
-        // let orderer = Arc::new(tokio::sync::RwLock::new(Orderer::new(
-        //     store.clone(),
-        //     Default::default(),
-        // )));
-
         Self {
             store,
-            // orderer,
             write_mutex: Arc::new(Mutex::new(())),
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -87,18 +80,10 @@ impl OpStore {
         let latest_operation: Option<Operation> =
             self.store.get_latest_entry(&device_id, &*topic).await?;
 
-        // dbg!();
-        // dbg!(&latest_operation);
-        // dbg!(&device_id.to_hex());
-        // dbg!(&topic);
-        // dbg!();
-
         let (seq_num, backlink) = match latest_operation {
             Some(op) => (op.header.seq_num + 1, Some(op.hash)),
             None => (0, None),
         };
-
-        // TODO: is this the place to integrate group auth processing?
 
         let extensions = Extensions {
             topic: topic.clone().into(),
@@ -153,7 +138,6 @@ impl OpStore {
         .await?;
 
         if new {
-            // self.process_ordering(op.clone()).await?;
             self.mark_op_processed(topic, &hash);
         }
 
@@ -162,21 +146,6 @@ impl OpStore {
 
         Ok(operation)
     }
-
-    // // SAM: could be generic https://github.com/p2panda/p2panda/blob/65727c7fff64376f9d2367686c2ed5132ff7c4e0/p2panda-stream/src/ordering/partial/mod.rs#L83
-    // pub async fn process_ordering(&self, operation: Operation<Extensions>) -> anyhow::Result<()> {
-    //     self.orderer.write().await.process(operation).await?;
-    //     Ok(())
-    // }
-
-    // pub async fn next_ordering(&self) -> anyhow::Result<Vec<Operation<Extensions>>> {
-    //     let mut ordering = self.orderer.write().await;
-    //     let mut next = vec![];
-    //     while let Some(op) = ordering.next().await? {
-    //         next.push(op);
-    //     }
-    //     Ok(next)
-    // }
 
     pub fn mark_op_processed(&self, topic: TopicId, hash: &Hash) {
         self.processed_ops
@@ -203,56 +172,6 @@ impl OpStore<SqliteStore> {
         format!("report() not implemented for SqliteStore")
     }
 }
-
-// impl OpStore<MemoryStore<TopicId, Extensions>> {
-//     pub fn report<'a>(&self, topics: impl IntoIterator<Item = &'a TopicId>) -> String {
-//         let topics = topics.into_iter().collect::<Vec<_>>();
-//         let s = self.store.read_store();
-//         let mut ops = s
-//             .operations
-//             .iter()
-//             .filter(|(_, (l, _, _, _))| {
-//                 topics.is_empty() || topics.iter().find(|topic| **topic == l).is_some()
-//             })
-//             .collect::<Vec<_>>();
-//         ops.sort_by_key(|(_, (t, header, _, _))| (t, header.public_key.renamed(), header.seq_num));
-//         ops.into_iter()
-//             .map(|(h, (t, header, body, _))| {
-//                 let desc = match body
-//                     .clone()
-//                     .map(|body| Payload::try_from_body(&body).unwrap())
-//                 {
-//                     // Some(Payload::Space(args)) => {
-//                     //     let space_op = GroupOp::new(header.clone(), args);
-//                     //     format!("{:?}", space_op.arg_type())
-//                     // }
-//                     Some(p) => format!("{p:?}"),
-//                     None => "_".to_string(),
-//                 };
-//                 if topics.len() == 1 {
-//                     format!(
-//                         "• {} {:2} {} : {}",
-//                         header.public_key.renamed(),
-//                         header.seq_num,
-//                         h.renamed(),
-//                         desc
-//                     )
-//                 } else {
-//                     let t = format!("{t:?}");
-//                     format!(
-//                         "• {:>24} {} {:2} {} : {}",
-//                         t,
-//                         header.public_key.renamed(),
-//                         header.seq_num,
-//                         h.renamed(),
-//                         desc
-//                     )
-//                 }
-//             })
-//             .collect::<Vec<_>>()
-//             .join("\n")
-//     }
-// }
 
 #[async_trait::async_trait]
 impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {

@@ -51,6 +51,7 @@ pub async fn dump_logs(db: &SqliteStore) -> Result<Vec<(DeviceId, LogId, SeqNum)
     Ok(result)
 }
 
+/// Get the "height" (the highest sequence number) of each log of the given ID, paired with its author.
 pub(super) async fn get_log_heights_by_author(
     db: &SqliteStore,
     log_id: &LogId,

@@ -64,9 +64,6 @@ impl Node {
     /// - when initializing the node, for each existing group chat
     pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
         self.subscription_tx.send(topic).await?;
-        // self.op_store
-        //     .associate(&topic, &self.node_keys.device_id(), &LogId)
-        //     .await?;
         Ok(())
     }
 
@@ -187,19 +184,6 @@ impl Node {
     async fn process_stream_item(&self, operation: Operation) -> anyhow::Result<()> {
         let hash = operation.hash;
         let topic = operation.header.extensions.topic;
-
-        // if let Err(err) = self.op_store.process_ordering(operation).await {
-        //     tracing::error!(?err, "process ordering error");
-        // }
-
-        // let reordered = self
-        //     .op_store
-        //     .next_ordering()
-        //     .await
-        //     .map_err(|err| {
-        //         tracing::error!(?err, "next ordering error");
-        //     })
-        //     .unwrap_or_default();
 
         let reordered = vec![operation];
 
