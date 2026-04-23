@@ -144,9 +144,7 @@
 					chevron={false}
 				>
 					{#snippet media()}
-						<wa-icon
-							src={wrapPathInSvg(mdiBellOutline)}
-							style="font-size: 28px"
+						<wa-icon src={wrapPathInSvg(mdiBellOutline)} style="font-size: 28px"
 						></wa-icon>
 					{/snippet}
 				</ListItem>
@@ -154,7 +152,11 @@
 		</List>
 
 		{#if !isMobile}
-			<List strongIos nested={theme !== 'ios'} inset={isWideScreen.value || theme === 'ios'}>
+			<List
+				strongIos
+				nested={theme !== 'ios'}
+				inset={isWideScreen.value || theme === 'ios'}
+			>
 				<ListItem
 					link
 					class={isActive('/settings/offline') ? 'active' : ''}
