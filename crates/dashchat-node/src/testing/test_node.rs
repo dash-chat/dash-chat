@@ -43,9 +43,14 @@ impl TestNode {
         }
         drop(local_store);
 
-        let node = Node::new(dir.path().into(), config.node_config, Some(notification_tx))
-            .await
-            .unwrap();
+        let node = Node::new(
+            dir.path().into(),
+            config.node_config,
+            Some(notification_tx),
+            None,
+        )
+        .await
+        .unwrap();
         if config.create_profile {
             node.set_profile(Profile {
                 name: name.to_string(),
@@ -83,7 +88,7 @@ impl TestNode {
         local_store.agent_id().unwrap().with_name(name);
         drop(local_store);
 
-        let node = Node::new(store_dir.path().into(), config, Some(notification_tx))
+        let node = Node::new(store_dir.path().into(), config, Some(notification_tx), None)
             .await
             .unwrap();
 

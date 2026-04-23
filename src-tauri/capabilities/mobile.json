@@ -9,6 +9,9 @@
 		"barcode-scanner:allow-request-permissions",
 		"barcode-scanner:allow-scan",
 		"barcode-scanner:allow-cancel",
-		"system-bars-styles:default"
+		"system-bars-styles:default",
+		"notification:default",
+		"notification:allow-is-permission-granted",
+		"notification:allow-request-permission"
 	]
 }

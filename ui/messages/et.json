@@ -189,5 +189,17 @@
     "securityTipVagueMessagesTitle": "Ebaselged või asjakohatud sõnumid",
     "securityTipVagueMessagesDescription": "Spämmerid alustavad sageli lihtsa sõnumiga, näiteks „Tere“, et su tähelepanu köita. Kui sa vastad, võivad nad sinuga edasi suhelda.",
     "securityTipLinksTitle": "Linkidega sõnumid",
-    "securityTipLinksDescription": "Ole ettevaatlik tundmatutelt inimestelt saadud sõnumitega, mis sisaldavad veebilinke. Ära iialgi ava linke, mille on saatnud inimesed, keda sa ei usalda."
+    "securityTipLinksDescription": "Ole ettevaatlik tundmatutelt inimestelt saadud sõnumitega, mis sisaldavad veebilinke. Ära iialgi ava linke, mille on saatnud inimesed, keda sa ei usalda.",
+    "addPhoto": "Lisa foto",
+    "chatColor": "Vestluse värv",
+    "startFirstChatHere": "Alusta oma esimest vestlust siin.",
+    "quitConfirmTitle": "Kas väljud rakendusest Dash Chat?",
+    "quitConfirmMessage": "Kohalik sõnumiserver on töös. Kas ikka oled kindel, et soovid väljuda?",
+    "updateTapToUpdate": "Dash Chati uuendamiseks klõpsa.",
+    "updateTapToRestart": "Klõpsa uuesti käivitamiseks ja uuenduse kasutuselevõtmiseks.",
+    "updateTapToRetry": "Klõpsa uuesti proovimiseks.",
+    "offlineFunctionality": "Funktsionaalsus tööks ilma võrguühenduseta",
+    "localMessageServer": "Kohalik sõnumiserver",
+    "enableLocalMessageServer": "Võta kohalik sõnumiserver kasutusele",
+    "localMessageServerDescription": "Käivitab sinu seadmes kohaliku serveri, mis võtab vastu sõnumeid ka siis, kui rakendus on suletud. Muud sinu võrgus asuvad seadmed saavad sõnumid talle edastada."
 }
