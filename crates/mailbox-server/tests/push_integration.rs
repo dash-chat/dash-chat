@@ -98,7 +98,7 @@ async fn mailbox_store_triggers_push_notification() {
     let http = reqwest::Client::new();
 
     let resp = http
-        .post(format!("{push_url}/register-fcm-token"))
+        .post(format!("{push_url}/fcm-tokens/register"))
         .json(&RegisterFcmTokenRequest {
             public_key: public_key.clone(),
             fcm_token,
@@ -202,7 +202,7 @@ async fn mailbox_store_duplicate_blob_no_second_push() {
 
     let http = reqwest::Client::new();
 
-    http.post(format!("{push_url}/register-fcm-token"))
+    http.post(format!("{push_url}/fcm-tokens/register"))
         .json(&RegisterFcmTokenRequest {
             public_key: public_key.clone(),
             fcm_token,
