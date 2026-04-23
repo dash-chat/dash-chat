@@ -2,7 +2,7 @@ import { goto } from '$app/navigation';
 import { invoke } from '@tauri-apps/api/core';
 import type { Options } from '@tauri-apps/plugin-notification';
 import { onAction } from '@tauri-apps/plugin-notification';
-import type { ChatsStore, ContactsStore } from 'dash-chat-stores';
+import { toPromise, type ChatsStore, type ContactsStore } from 'dash-chat-stores';
 
 async function navigateToChat(
 	chatsStore: ChatsStore,
@@ -15,7 +15,7 @@ async function navigateToChat(
 	// Check if this is an inbox topic (contact request)
 	const inboxTopics = await contactsStore.client.activeInboxTopics();
 	if (inboxTopics.includes(topicId)) {
-		const contactRequests = await contactsStore.contactRequests();
+		const contactRequests = await toPromise(contactsStore.contactRequests);
 		const match = contactRequests.find(cr => cr.topicId === topicId);
 		if (match) {
 			goto(`/direct-chats/${match.code.agent_id}`);
@@ -23,7 +23,7 @@ async function navigateToChat(
 		return;
 	}
 
-	const chatIds = await chatsStore.allChatsIds();
+	const chatIds = await toPromise(chatsStore.allChatsIds);
 	for (const agentId of chatIds) {
 		const directChatId = await chatsStore
 			.directChats(agentId)
