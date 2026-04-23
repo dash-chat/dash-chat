@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 
 use axum::{Json, extract::State, http::StatusCode};
-use futures::future::join_all;
+use futures::StreamExt;
 
 use push_notifications_client::requests::NotifyTopicsRequest;
 use push_notifications_client::types::{
@@ -10,6 +10,9 @@ use push_notifications_client::types::{
 };
 
 use crate::{AppState, error::AppError, fcm_client::SendResult};
+
+/// Maximum number of concurrent FCM send requests per incoming notify call.
+const MAX_CONCURRENT_SENDS: usize = 50;
 
 pub(crate) async fn notify_topics(
     State(state): State<AppState>,
@@ -33,18 +36,13 @@ pub(crate) async fn notify_topics(
 
     let fcm_tokens = state.db.get_fcm_tokens(&all_subscribers).await?;
 
-    let mut tasks = Vec::new();
-
-    for (topic_id, op_ids) in &req.topics_to_notify {
-        let subscribers = topic_subscribers.get(topic_id);
-        tasks.extend(notify_topic(
-            &state,
-            topic_id,
-            op_ids,
-            subscribers,
-            &fcm_tokens,
-        ));
-    }
+    let tasks: Vec<_> = req
+        .topics_to_notify
+        .iter()
+        .flat_map(|(topic_id, op_ids)| {
+            notify_topic(&state, topic_id, op_ids, topic_subscribers.get(topic_id), &fcm_tokens)
+        })
+        .collect();
 
     if tasks.is_empty() {
         return Ok(StatusCode::NO_CONTENT);
@@ -56,7 +54,10 @@ pub(crate) async fn notify_topics(
         "notifying topic subscribers"
     );
 
-    join_all(tasks).await;
+    futures::stream::iter(tasks)
+        .buffer_unordered(MAX_CONCURRENT_SENDS)
+        .collect::<Vec<()>>()
+        .await;
 
     Ok(StatusCode::NO_CONTENT)
 }
