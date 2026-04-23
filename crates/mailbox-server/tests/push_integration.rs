@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use axum_test::{TestServer, TestServerConfig, Transport};
 use mailbox_server::test_utils::create_test_db;
 use push_notifications_client::client::PushNotificationsClient;
-use push_notifications_client::requests::{RegisterFcmTokenRequest, AddTopicSubscriptionsRequest};
+use push_notifications_client::requests::{AddTopicSubscriptionsRequest, RegisterFcmTokenRequest};
 use push_notifications_client::types::{FcmToken, PublicKey, TopicId};
 use push_notifications_server::driver::mem::MemDb;
 use push_notifications_server::fcm_client::{MockFcm, SendResult};

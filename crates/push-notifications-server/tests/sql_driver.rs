@@ -240,7 +240,9 @@ async fn set_subscriptions_empty_clears_all() {
         .await
         .unwrap();
 
-    db.update_topic_subscriptions(&alice, &HashSet::new()).await.unwrap();
+    db.update_topic_subscriptions(&alice, &HashSet::new())
+        .await
+        .unwrap();
 
     let subs = db
         .get_subscribers_for_topics(&[t1.clone(), t2.clone()].into())

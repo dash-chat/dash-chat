@@ -40,7 +40,13 @@ pub(crate) async fn notify_topics(
         .topics_to_notify
         .iter()
         .flat_map(|(topic_id, op_ids)| {
-            notify_topic(&state, topic_id, op_ids, topic_subscribers.get(topic_id), &fcm_tokens)
+            notify_topic(
+                &state,
+                topic_id,
+                op_ids,
+                topic_subscribers.get(topic_id),
+                &fcm_tokens,
+            )
         })
         .collect();
 
