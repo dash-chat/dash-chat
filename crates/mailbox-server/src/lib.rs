@@ -59,10 +59,13 @@ pub async fn spawn_server(
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
 
-    let push_client = push_notifications_url.map(|url| {
-        tracing::info!("Push notifications integration enabled: {url}");
-        Arc::new(PushNotificationsClient::new(url))
-    });
+    let push_client = match push_notifications_url {
+        Some(url) => {
+            tracing::info!("Push notifications integration enabled: {url}");
+            Some(Arc::new(PushNotificationsClient::new(url)?))
+        }
+        None => None,
+    };
 
     let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
     let app = create_app(db_arc, push_client, Arc::clone(&push_tasks));

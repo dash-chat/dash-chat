@@ -41,12 +41,12 @@ fn push_notifications_url() -> String {
 pub fn setup_push_notifications(
     handle: AppHandle,
     topic_subscribed_rx: tokio::sync::mpsc::Receiver<dashchat_node::topic::TopicId>,
-) {
+) -> anyhow::Result<()> {
     // Clear any temporary nodes that were created by push notifications before
     // the app fully started. The authoritative Node is now managed by Tauri.
     tauri::async_runtime::spawn(node_cache::clear());
 
-    handle.manage(PushNotificationsClient::new(push_notifications_url()));
+    handle.manage(PushNotificationsClient::new(push_notifications_url())?);
 
     let h = handle.clone();
 
@@ -120,6 +120,8 @@ pub fn setup_push_notifications(
 
     // Listen for new topic subscriptions and register them with the server
     spawn_topic_subscription_loop(handle, topic_subscribed_rx, sync_notify);
+
+    Ok(())
 }
 
 async fn register_fcm_token_with_retries(handle: AppHandle, token: String) -> anyhow::Result<()> {

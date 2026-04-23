@@ -11,11 +11,12 @@ pub struct PushNotificationsClient {
 }
 
 impl PushNotificationsClient {
-    pub fn new(base_url: String) -> Self {
-        Self {
-            base_url,
-            http: reqwest::Client::new(),
-        }
+    pub fn new(base_url: String) -> Result<Self, reqwest::Error> {
+        let http = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()?;
+        Ok(Self { base_url, http })
     }
 
     pub async fn register_fcm_token(

@@ -81,7 +81,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         crate::push_notifications::setup_push_notifications(
             app_handle.clone(),
             topic_subscribed_rx,
-        );
+        )?;
     }
 
     crate::mailbox::spawn_local_mailbox_mdns_discovery(&app_handle, node)?;

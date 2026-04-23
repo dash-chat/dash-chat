@@ -2,7 +2,11 @@ import { goto } from '$app/navigation';
 import { invoke } from '@tauri-apps/api/core';
 import type { Options } from '@tauri-apps/plugin-notification';
 import { onAction } from '@tauri-apps/plugin-notification';
-import { toPromise, type ChatsStore, type ContactsStore } from 'dash-chat-stores';
+import {
+	type ChatsStore,
+	type ContactsStore,
+	toPromise,
+} from 'dash-chat-stores';
 
 async function navigateToChat(
 	chatsStore: ChatsStore,

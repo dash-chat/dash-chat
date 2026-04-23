@@ -38,7 +38,7 @@ fn start_mailbox_server(
     Arc<tokio::sync::Mutex<tokio::task::JoinSet<()>>>,
 ) {
     let (db, temp_file) = create_test_db();
-    let push_client = PushNotificationsClient::new(push_url);
+    let push_client = PushNotificationsClient::new(push_url).unwrap();
     let push_tasks = Arc::new(tokio::sync::Mutex::new(tokio::task::JoinSet::new()));
     let app = mailbox_server::create_app(
         Arc::new(db),

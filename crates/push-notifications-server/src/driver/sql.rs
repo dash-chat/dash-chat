@@ -50,7 +50,10 @@ impl SqlDriver {
 
 /// Build a batch INSERT query: `INSERT INTO topic_subscribers (topic_id, public_key) VALUES ($1, $2), ($3, $4), ... ON CONFLICT DO NOTHING`
 /// Returns the query string and a flat list of bind values (topic_id, public_key pairs).
-fn build_batch_insert(public_key: &PublicKey, topic_ids: &HashSet<TopicId>) -> (String, Vec<String>) {
+fn build_batch_insert(
+    public_key: &PublicKey,
+    topic_ids: &HashSet<TopicId>,
+) -> (String, Vec<String>) {
     let mut placeholders = Vec::with_capacity(topic_ids.len());
     let mut binds = Vec::with_capacity(topic_ids.len() * 2);
     for (i, topic_id) in topic_ids.iter().enumerate() {
