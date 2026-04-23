@@ -1,13 +1,16 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use dashchat_node::{AsBody, Node, Notification, Payload, Topic};
+use dashchat_node::{topic::TopicId, AsBody, Node, Notification, Payload, Topic};
 use push_notifications_client::client::PushNotificationsClient;
 use push_notifications_client::types::{FcmToken, PublicKey, PushNotification, TopicId};
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
 mod node_cache;
+mod notification_navigation;
+
+pub use notification_navigation::{handle_launching_notification, listen_for_notification_taps};
 
 #[cfg(target_os = "android")]
 mod android;

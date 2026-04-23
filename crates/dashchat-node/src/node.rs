@@ -460,6 +460,10 @@ impl Node {
         self.local_store.lookup_contact(device_id)
     }
 
+    pub fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
+        self.local_store.all_contact_agent_ids()
+    }
+
     pub fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
         self.local_store.subscribed_topics()
     }
