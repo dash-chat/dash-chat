@@ -90,7 +90,9 @@ pub fn receive_push_notification(
         // 3. Last resort: build a new node and cache it
         let node = if let Some(handle) = crate::APP_HANDLE.get() {
             use tauri::Manager;
-            handle.try_state::<dashchat_node::Node>().map(|s| s.inner().clone())
+            handle
+                .try_state::<dashchat_node::Node>()
+                .map(|s| s.inner().clone())
         } else {
             None
         };

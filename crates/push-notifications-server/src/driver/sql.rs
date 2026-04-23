@@ -63,7 +63,10 @@ impl Driver for SqlDriver {
         Ok(())
     }
 
-    async fn get_fcm_tokens(&self, public_keys: &[PublicKey]) -> Result<HashMap<PublicKey, FcmToken>> {
+    async fn get_fcm_tokens(
+        &self,
+        public_keys: &[PublicKey],
+    ) -> Result<HashMap<PublicKey, FcmToken>> {
         if public_keys.is_empty() {
             return Ok(HashMap::new());
         }

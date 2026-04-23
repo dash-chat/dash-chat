@@ -5,7 +5,9 @@ use axum::{Json, extract::State, http::StatusCode};
 use futures::future::join_all;
 
 use push_notifications_client::requests::NotifyTopicsRequest;
-use push_notifications_client::types::{FcmToken, OperationId, PublicKey, PushNotification, TopicId};
+use push_notifications_client::types::{
+    FcmToken, OperationId, PublicKey, PushNotification, TopicId,
+};
 
 use crate::{AppState, error::AppError, fcm_client::SendResult};
 
@@ -47,7 +49,13 @@ pub(crate) async fn notify_topics(
 
     for (topic_id, op_ids) in &req.topics_to_notify {
         let subscribers = topic_subscribers.get(topic_id);
-        tasks.extend(notify_topic(&state, topic_id, op_ids, subscribers, &fcm_tokens));
+        tasks.extend(notify_topic(
+            &state,
+            topic_id,
+            op_ids,
+            subscribers,
+            &fcm_tokens,
+        ));
     }
 
     if tasks.is_empty() {

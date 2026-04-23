@@ -95,12 +95,9 @@ async fn subscribe_and_get_subscribers() {
     let t1 = TopicId::from("t1".to_string());
     let t2 = TopicId::from("t2".to_string());
 
-    db.subscribe_to_topics(
-        &alice,
-        &[t1.clone(), t2.clone()].into_iter().collect(),
-    )
-    .await
-    .unwrap();
+    db.subscribe_to_topics(&alice, &[t1.clone(), t2.clone()].into_iter().collect())
+        .await
+        .unwrap();
 
     let subs = db
         .get_subscribers_for_topics(&[t1.clone(), t2.clone()].into())
@@ -149,10 +146,7 @@ async fn multiple_subscribers_same_topic() {
     db.subscribe_to_topics(&bob, &t1).await.unwrap();
 
     let subs = db.get_subscribers_for_topics(&t1).await.unwrap();
-    let mut topic_subs = subs
-        .get(&TopicId::from("t1".to_string()))
-        .unwrap()
-        .clone();
+    let mut topic_subs = subs.get(&TopicId::from("t1".to_string())).unwrap().clone();
     topic_subs.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
     assert_eq!(topic_subs, vec![alice, bob]);
 }
@@ -166,12 +160,9 @@ async fn unsubscribe_removes_subscription() {
     let t1 = TopicId::from("t1".to_string());
     let t2 = TopicId::from("t2".to_string());
 
-    db.subscribe_to_topics(
-        &alice,
-        &[t1.clone(), t2.clone()].into_iter().collect(),
-    )
-    .await
-    .unwrap();
+    db.subscribe_to_topics(&alice, &[t1.clone(), t2.clone()].into_iter().collect())
+        .await
+        .unwrap();
 
     db.unsubscribe_from_topics(&alice, &[t1.clone()].into())
         .await
@@ -217,24 +208,17 @@ async fn set_subscriptions_replaces_all() {
 
     db.subscribe_to_topics(
         &alice,
-        &[t1.clone(), t2.clone(), t3.clone()]
-            .into_iter()
-            .collect(),
+        &[t1.clone(), t2.clone(), t3.clone()].into_iter().collect(),
     )
     .await
     .unwrap();
 
-    db.set_subscriptions(
-        &alice,
-        &[t2.clone(), t4.clone()].into_iter().collect(),
-    )
-    .await
-    .unwrap();
+    db.set_subscriptions(&alice, &[t2.clone(), t4.clone()].into_iter().collect())
+        .await
+        .unwrap();
 
     let subs = db
-        .get_subscribers_for_topics(
-            &[t1.clone(), t2.clone(), t3.clone(), t4.clone()].into(),
-        )
+        .get_subscribers_for_topics(&[t1.clone(), t2.clone(), t3.clone(), t4.clone()].into())
         .await
         .unwrap();
     assert!(subs.get(&t1).unwrap_or(&vec![]).is_empty());
@@ -250,12 +234,9 @@ async fn set_subscriptions_empty_clears_all() {
     let t1 = TopicId::from("t1".to_string());
     let t2 = TopicId::from("t2".to_string());
 
-    db.subscribe_to_topics(
-        &alice,
-        &[t1.clone(), t2.clone()].into_iter().collect(),
-    )
-    .await
-    .unwrap();
+    db.subscribe_to_topics(&alice, &[t1.clone(), t2.clone()].into_iter().collect())
+        .await
+        .unwrap();
 
     db.set_subscriptions(&alice, &HashSet::new()).await.unwrap();
 
@@ -301,12 +282,9 @@ async fn set_subscriptions_from_empty() {
     let t1 = TopicId::from("t1".to_string());
     let t2 = TopicId::from("t2".to_string());
 
-    db.set_subscriptions(
-        &alice,
-        &[t1.clone(), t2.clone()].into_iter().collect(),
-    )
-    .await
-    .unwrap();
+    db.set_subscriptions(&alice, &[t1.clone(), t2.clone()].into_iter().collect())
+        .await
+        .unwrap();
 
     let subs = db
         .get_subscribers_for_topics(&[t1.clone(), t2.clone()].into())

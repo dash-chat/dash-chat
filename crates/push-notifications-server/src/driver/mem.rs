@@ -30,7 +30,10 @@ impl Driver for MemDb {
         Ok(())
     }
 
-    async fn get_fcm_tokens(&self, public_keys: &[PublicKey]) -> Result<HashMap<PublicKey, FcmToken>> {
+    async fn get_fcm_tokens(
+        &self,
+        public_keys: &[PublicKey],
+    ) -> Result<HashMap<PublicKey, FcmToken>> {
         let tokens = self.tokens.lock().await;
         Ok(public_keys
             .iter()
