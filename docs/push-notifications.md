@@ -35,11 +35,11 @@ just push server
 ## How the pieces connect
 
 ```
-Mobile app                    Desktop app
-    |                              |
-    |  register FCM token          |  register FCM token
-    |  subscribe to topics         |  subscribe to topics
-    v                              v
+Mobile app (Android/iOS only)
+    |
+    |  register FCM token
+    |  subscribe to topics
+    v
 Push Notifications Server (port 3001)
     ^
     |  notify-topic (when new blobs arrive)
