@@ -49,7 +49,7 @@ export function setupNotificationNavigation(
 	onAction(async notificationWithAction => {
 		const notification: Options = (notificationWithAction as any).notification;
 		if (notification) {
-			navigateToChat(chatsStore, contactsStore, notification);
+			await navigateToChat(chatsStore, contactsStore, notification);
 		}
 	});
 

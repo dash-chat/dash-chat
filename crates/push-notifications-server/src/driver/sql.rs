@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use sqlx::any::AnyPoolOptions;
 use sqlx::{AnyPool, Row};
 
 use std::collections::{HashMap, HashSet};
@@ -12,9 +13,19 @@ pub struct SqlDriver {
 
 impl SqlDriver {
     pub async fn new(database_url: &str) -> Result<Self> {
-        let pool = AnyPool::connect(database_url)
+        // SQLite only supports one writer at a time; a single connection
+        // avoids SQLITE_BUSY errors under concurrent requests.
+        let pool = AnyPoolOptions::new()
+            .max_connections(1)
+            .connect(database_url)
             .await
             .context("failed to connect to database")?;
+
+        // Enable WAL mode for better concurrent read performance.
+        sqlx::query("PRAGMA journal_mode=WAL")
+            .execute(&pool)
+            .await
+            .context("failed to enable WAL mode")?;
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS fcm_tokens (
