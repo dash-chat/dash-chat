@@ -149,7 +149,13 @@ pub fn receive_push_notification(
         match payload {
             Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
                 // Resolve the sender's agent ID and profile name via the contacts table
-                let sender_agent_id = node.lookup_contact(sender_device_id).ok().flatten();
+                let sender_agent_id = match node.lookup_contact(sender_device_id) {
+                    Ok(agent_id) => agent_id,
+                    Err(err) => {
+                        log::error!("Failed to lookup contact for sender {sender_device_id}: {err:?}");
+                        None
+                    }
+                };
 
                 let sender_name = if let Some(agent_id) = sender_agent_id {
                     node.get_profile_for_agent(agent_id)
