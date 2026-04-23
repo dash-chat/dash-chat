@@ -135,7 +135,6 @@ impl Node {
                     let node = node.clone();
                     let mut streams = SelectAll::new();
 
-
                     loop {
                         tokio::select! {
                             Some(topic) = subscription_rx.recv() => {
@@ -176,6 +175,7 @@ impl Node {
             );
 
             rt.block_on(local);
+            tracing::info!("stream processing loop finished");
         });
 
         handle

@@ -1,6 +1,6 @@
 use p2panda_auth::{Access, group::GroupCrdtState, processor::GroupsOperation};
 use p2panda_core::{Hash, Operation, PublicKey};
-use p2panda_store::{SqliteStore, groups::GroupsStore};
+use p2panda_store::{SqliteStore, Transaction, groups::GroupsStore};
 
 use crate::{topic::TopicId, *};
 
@@ -36,6 +36,8 @@ impl GroupStore {
     }
 
     async fn auth_state(&self) -> anyhow::Result<GroupState> {
+        // TODO: use transactions properly!
+        let _txn = self.db.begin().await?;
         Ok(self
             .db
             .get_state(&GROUPS_CONTEXT)

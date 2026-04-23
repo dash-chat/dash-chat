@@ -333,13 +333,13 @@ where
                 let Some(lowest) = seqs.iter().min() else {
                     continue;
                 };
-                tracing::error!(author = ?author.renamed(), topic = ?topic.renamed(), lowest = ?lowest, "fetching log for missing operations");
                 let Some(log) = self
                     .store
                     .get_log(&author, &topic, *lowest)
                     .await
                     .map_err(|err| anyhow::anyhow!("failed to get log for {topic:?}: {err}"))?
                 else {
+                    tracing::error!(author = ?author.renamed(), topic = ?topic.renamed(), lowest = ?lowest, "no log found");
                     continue;
                 };
 

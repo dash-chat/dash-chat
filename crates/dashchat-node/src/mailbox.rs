@@ -123,7 +123,15 @@ mod tests {
         alice.register_topic(chat).await.unwrap();
         alice.send_message(chat, "Hello".into()).await.unwrap();
 
-        dbg!(&mb.log_heights().await);
+        let alice_logs = crate::stores::queries::dump_logs(&alice.op_store.store)
+            .await
+            .unwrap();
+        let bobbi_logs = crate::stores::queries::dump_logs(&bobbi.op_store.store)
+            .await
+            .unwrap();
+
+        dbg!(alice_logs.renamed());
+        dbg!(bobbi_logs.renamed());
 
         println!("=== adding mailboxes ===");
         bobbi.add_mailbox_client(mb.client()).await;

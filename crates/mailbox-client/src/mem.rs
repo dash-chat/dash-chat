@@ -5,7 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use mailbox_server::TopicId;
 use tokio::sync::RwLock;
 
 /// A client for the in-memory mailbox server.

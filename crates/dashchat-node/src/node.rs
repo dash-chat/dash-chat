@@ -4,7 +4,7 @@ mod stream_processing;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use p2panda_auth::Access;
@@ -19,7 +19,7 @@ use named_id::Rename;
 use named_id::*;
 use p2panda_core::{Hash, PublicKey, Timestamp};
 use p2panda_spaces::ActorId;
-use p2panda_store::SqliteStore;
+use p2panda_store::{SqliteStore, Transaction};
 use tokio::sync::mpsc;
 
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
@@ -113,8 +113,10 @@ pub struct Node {
     /// Add new subscription streams
     subscription_tx: mpsc::Sender<TopicId>,
 
-    /// Abort handle for the stream processing background task
+    /// Abort trigger for the stream processing background task
     stream_cancel: Option<mpsc::Sender<()>>,
+    /// Join handle for the stream processing background task
+    stream_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 
     local_store: LocalStore,
     group_store: GroupStore,
@@ -132,7 +134,17 @@ impl Node {
         let filesystem = Filesystem::new(data_path);
         let local_store = LocalStore::new(filesystem.local_store_path()).await?;
         let node_keys = local_store.node_keys()?;
+        Self::init(filesystem, local_store, node_keys, config, notification_tx).await
+    }
 
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?node_keys.device_id().renamed())))]
+    pub async fn init(
+        filesystem: Filesystem,
+        local_store: LocalStore,
+        node_keys: NodeKeys,
+        config: NodeConfig,
+        notification_tx: Option<mpsc::Sender<Notification>>,
+    ) -> Result<Self> {
         let sqlite = new_sqlite(filesystem.op_store_path()).await?;
         let op_store = OpStore::new(sqlite.clone());
         let group_store = GroupStore::new(sqlite.clone());
@@ -152,11 +164,13 @@ impl Node {
             notification_tx,
             subscription_tx,
             stream_cancel: None,
+            stream_handle: Arc::new(Mutex::new(None)),
         };
 
         let (cancel_tx, cancel_rx) = mpsc::channel(1);
-        node.spawn_stream_process_loop(subscription_rx, cancel_rx);
+        let handle = node.spawn_stream_process_loop(subscription_rx, cancel_rx);
         node.stream_cancel = Some(cancel_tx);
+        node.stream_handle.lock().unwrap().replace(handle);
 
         node.initialize_stored_topics().await?;
 
@@ -544,6 +558,12 @@ impl Node {
                     "failed to send cancel signal to stream processing task: {}",
                     err
                 );
+            }
+        }
+        tracing::info!("joining stream processing task");
+        if let Some(handle) = self.stream_handle.lock().unwrap().take() {
+            if let Err(err) = handle.join() {
+                tracing::warn!("failed to join stream processing task: {:?}", err);
             }
         }
     }

@@ -1,4 +1,4 @@
-mod queries;
+pub mod queries;
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -262,9 +262,10 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         topic: &TopicId,
         from: u64,
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
+        let from = if from == 0 { None } else { Some(from - 1) };
         let log = self
             .store
-            .get_log_entries(author, topic, Some(from), None)
+            .get_log_entries(author, topic, from, None)
             .await
             .map_err(|err| anyhow::anyhow!("failed to get log for {author:?}: {topic:?}: {err}"))?;
 
