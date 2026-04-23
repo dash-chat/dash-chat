@@ -78,6 +78,13 @@ pub fn setup_push_notifications(
                 log::error!("Error registering for push notifications: {:?}.", err);
             }
         }
+    } else {
+        let h = h.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(err) = unregister_push_notifications(&h).await {
+                log::error!("Error unregistering FCM token: {:?}", err);
+            }
+        });
     }
 
     // React to whenever the token changes
