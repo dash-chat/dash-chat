@@ -54,8 +54,12 @@ pub async fn get_or_build_node(data_path: PathBuf) -> anyhow::Result<Node> {
     // App is not running — create a node without channels and cache it
     let node = build_node(data_path.clone(), None, None).await?;
 
+    // Re-check after the await: another push notification may have raced us
     let mut guard = NODES.lock().expect("NODES mutex poisoned");
     let map = guard.get_or_insert_with(HashMap::new);
+    if let Some(existing) = map.get(&data_path) {
+        return Ok(existing.clone());
+    }
     map.insert(data_path, node.clone());
 
     Ok(node)
