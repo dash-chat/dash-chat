@@ -5,8 +5,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use p2panda_core::{Hash, PublicKey, SeqNum};
-use p2panda_store::{SqliteStore, logs::LogStore, topics::TopicStore};
+use p2panda_core::{Hash, SeqNum};
+use p2panda_store::{SqliteStore, logs::LogStore};
 
 use tokio::sync::Mutex;
 

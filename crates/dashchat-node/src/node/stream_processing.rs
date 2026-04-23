@@ -3,7 +3,6 @@ use std::pin::Pin;
 use futures::Stream;
 use futures::StreamExt;
 use futures::stream::SelectAll;
-use p2panda_store::topics::TopicStore;
 use p2panda_stream::StreamLayerExt;
 use p2panda_stream::ingest::Ingest;
 use p2panda_stream::ingest::IngestArgs;

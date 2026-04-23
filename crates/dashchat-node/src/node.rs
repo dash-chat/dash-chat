@@ -3,7 +3,6 @@ mod stream_processing;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -14,12 +13,11 @@ use p2panda_auth::group::{GroupAction, GroupMember};
 use crate::error::{AddContactError, Error};
 use crate::filesystem::Filesystem;
 use chrono::{Duration, Utc};
-use futures::Stream;
 use named_id::Rename;
 use named_id::*;
 use p2panda_core::{Hash, PublicKey, Timestamp};
 use p2panda_spaces::ActorId;
-use p2panda_store::{SqliteStore, Transaction};
+use p2panda_store::SqliteStore;
 use tokio::sync::mpsc;
 
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
@@ -77,12 +75,14 @@ pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
 pub type NodeOpStore = OpStore<SqliteStore>;
 // pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
 
+#[allow(unused)]
 #[derive(Clone)]
 pub(crate) struct CancelAndWait<R> {
     handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<R>>>>,
     token: tokio_util::sync::CancellationToken,
 }
 
+#[allow(unused)]
 impl<R> CancelAndWait<R> {
     pub fn new(
         handle: tokio::task::JoinHandle<R>,
