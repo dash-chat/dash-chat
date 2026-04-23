@@ -140,7 +140,7 @@ pub fn receive_push_notification(
             Ok(p) => p,
             Err(err) => {
                 log::error!("Failed to decode payload: {err:?}");
-                return Some(generic_notification());
+                return None;
             }
         };
 
