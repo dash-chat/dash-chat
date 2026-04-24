@@ -69,6 +69,12 @@ fn navigate_to(app_handle: &AppHandle, route: &str) {
     }
 }
 
+/// Sets up the UI navigation for notification clicks
+pub async fn setup_notification_navigation(app_handle: &AppHandle) {
+    handle_launching_notification(app_handle).await;
+    listen_for_notification_taps(app_handle);
+}
+
 /// If the app was launched by tapping a push notification, navigate the
 /// webview directly to the appropriate chat route.
 pub async fn handle_launching_notification(app_handle: &AppHandle) {

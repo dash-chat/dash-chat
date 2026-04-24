@@ -155,6 +155,7 @@
 			<List
 				strongIos
 				nested={theme !== 'ios'}
+				class={theme === 'ios' ? 'mb-0' : ''}
 				inset={isWideScreen.value || theme === 'ios'}
 			>
 				<ListItem
