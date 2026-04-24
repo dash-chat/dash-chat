@@ -6,6 +6,7 @@
 	import NewMessagePanel from './NewMessagePanel.svelte';
 	import EmptyState from './EmptyState.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
+	import TestBanner from './TestBanner.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
@@ -43,6 +44,7 @@
 		{/if}
 	</div>
 	<div class="desktop-content" class:desktop-content-settings={isSettings}>
+		<TestBanner text="Early access test" />
 		{#if isSidebarRoute}
 			<EmptyState />
 			{#if isHome}
