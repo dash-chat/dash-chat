@@ -3,7 +3,7 @@
 </script>
 
 <div class="test-banner z-50 px-4 py-1 text-center text-md font-medium">
-	{text}
+	<span class="test-banner-inner">{text}</span>
 </div>
 
 <style>
@@ -22,10 +22,16 @@
 		font-weight: bold;
 		letter-spacing: 0.15em;
 		word-spacing: 0.3em;
+		margin-bottom: calc(20px - env(safe-area-inset-bottom, 0px));
 	}
 	:global(.dark) .test-banner {
 		--banner-stripe-yellow: #b08100;
 		--banner-stripe-dark: #666666;
 		color: #fff;
+	}
+
+	.test-banner-inner {
+		display: block;
+		padding-top: env(safe-area-inset-top, 0px);
 	}
 </style>

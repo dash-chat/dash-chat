@@ -14,6 +14,7 @@
 	import { goto } from '$app/navigation';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import TestBanner from '$lib/components/layout/TestBanner.svelte';
 	const theme = $derived(useTheme());
 
 	let getStartedVisible = $state(true);
@@ -25,6 +26,8 @@
 </script>
 
 <Page>
+	<TestBanner text="Early access test" />
+
 	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
