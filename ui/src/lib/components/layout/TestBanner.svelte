@@ -2,7 +2,10 @@
 	let { text }: { text: string } = $props();
 </script>
 
-<div class="test-banner px-4 py-1 text-center text-md font-medium">
+<div
+	class="test-banner px-4 py-1 text-center text-md font-bold"
+	data-testid="test-banner"
+>
 	<span class="test-banner-inner">{text}</span>
 </div>
 
@@ -19,7 +22,6 @@
 		border-bottom-width: 2px;
 		text-transform: uppercase;
 		color: #111;
-		font-weight: bold;
 		letter-spacing: 0.15em;
 		word-spacing: 0.3em;
 		margin-bottom: calc(0px - env(safe-area-inset-top, 0px));
