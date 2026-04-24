@@ -1,12 +1,12 @@
 <script lang="ts">
-	let { text }: { text: string } = $props();
+	import { m } from '$lib/paraglide/messages';
 </script>
 
 <div
 	class="test-banner px-4 py-1 text-center text-md font-bold"
 	data-testid="test-banner"
 >
-	<span class="test-banner-inner">{text}</span>
+	<span class="test-banner-inner">{m.testBanner()}</span>
 </div>
 
 <style>

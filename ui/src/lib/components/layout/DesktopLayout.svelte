@@ -44,7 +44,7 @@
 		{/if}
 	</div>
 	<div class="desktop-content" class:desktop-content-settings={isSettings}>
-		<TestBanner text="Early access test" />
+		<TestBanner />
 		{#if isSidebarRoute}
 			<EmptyState />
 			{#if isHome}

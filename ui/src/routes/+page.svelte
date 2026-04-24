@@ -26,7 +26,7 @@
 </script>
 
 <Page>
-	<TestBanner text="Early access test" />
+	<TestBanner />
 
 	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
