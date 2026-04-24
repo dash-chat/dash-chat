@@ -188,12 +188,20 @@ jobs:
 
       - name: Install and Build 🔧
         run: |
-          nix develop --accept-flake-config .#androidDev --command bash -c "pnpm install && pnpm tauri android build"
+          nix develop --accept-flake-config .#androidDev --command bash -c "pnpm install && pnpm tauri android build --aab --apk"
 
       - name: Upload AAB to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
+          release_id: ${{ needs.release-tauri-app.outputs.releaseId }}
+          draft: true
+
+      - name: Upload AAB to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
           release_id: ${{ needs.release-tauri-app.outputs.releaseId }}
           draft: true
