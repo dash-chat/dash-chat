@@ -209,5 +209,6 @@
 	"updateTapToUpdate": "Tap to update Dash Chat.",
 	"updateTapToRestart": "Tap to restart and apply update.",
 	"updateTapToRetry": "Tap to retry.",
-	"testBanner": "Early access test"
+	"testBanner": "Early access test",
+	"feedback": "Feedback"
 }
