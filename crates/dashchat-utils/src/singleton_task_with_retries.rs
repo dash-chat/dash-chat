@@ -16,6 +16,7 @@ use tokio::sync::Notify;
 ///   state (e.g. a settings file) to decide what to do.
 ///
 /// [`trigger`]: SingletonTaskWithRetries::trigger
+#[derive(Clone)]
 pub struct SingletonTaskWithRetries {
     inner: Arc<Inner>,
 }

@@ -153,7 +153,7 @@ pub fn receive_push_notification(
                     Ok(agent_id) => agent_id,
                     Err(err) => {
                         log::error!(
-                            "Failed to lookup contact for sender {sender_device_id}: {err:?}"
+                            "Failed to lookup contact for sender {sender_device_id:?}: {err:?}"
                         );
                         None
                     }

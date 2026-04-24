@@ -15,7 +15,7 @@ use tauri_plugin_notification::*;
 mod node_cache;
 mod notification_navigation;
 
-pub use notification_navigation::{handle_launching_notification, listen_for_notification_taps};
+pub use notification_navigation::setup_notification_navigation;
 
 #[cfg(target_os = "android")]
 mod android;
@@ -56,20 +56,28 @@ pub fn setup_push_notifications(
 
     handle.manage(PushNotificationsClient::new(push_notifications_url())?);
 
+    let h = handle.clone();
     let push_notifications_registration_task = SingletonTaskWithRetries::new(
         "push_notifications_registration",
         None,
         Duration::from_secs(1),
         Duration::from_secs(60),
-        || update_push_notifications_registration(&handle),
+        move || {
+            let h = h.clone();
+            update_push_notifications_registration(h)
+        },
     );
 
+    let h = handle.clone();
     let sync_topic_subscriptions_task = SingletonTaskWithRetries::new(
         "sync_topic_subscriptions",
         None,
         Duration::from_secs(1),
         Duration::from_secs(60),
-        || sync_subscriptions(&handle),
+        move || {
+            let h = h.clone();
+            sync_subscriptions(h)
+        },
     );
 
     // Re-register every time the app starts
@@ -79,15 +87,19 @@ pub fn setup_push_notifications(
     // Sync all subscribed topics at startup
     sync_topic_subscriptions_task.trigger();
 
-    handle.listen("settings://updated-notifications_enabled", move |event| {
-        push_notifications_registration_task.trigger();
-        sync_topic_subscriptions_task.trigger();
+    let push_task = push_notifications_registration_task.clone();
+    let sync_task = sync_topic_subscriptions_task.clone();
+    handle.listen("settings://updated-notifications_enabled", move |_event| {
+        push_task.trigger();
+        sync_task.trigger();
     });
 
+    let push_task = push_notifications_registration_task.clone();
+    let sync_task = sync_topic_subscriptions_task.clone();
     // React to whenever the token changes
     handle.listen("notification://new-fcm-token", move |_event| {
-        push_notifications_registration_task.trigger();
-        sync_topic_subscriptions_task.trigger();
+        push_task.trigger();
+        sync_task.trigger();
     });
 
     // Listen for new topic subscriptions and register them with the server
@@ -96,19 +108,22 @@ pub fn setup_push_notifications(
     Ok(())
 }
 
-/// If notifications are currently enabled, get the FCM token and register it with the server
-/// If they're not, unregister the FCM token from the server
-async fn update_push_notifications_registration(handle: &AppHandle) -> anyhow::Result<()> {
-    let node = handle.state::<Node>();
-    let public_key = PublicKey::from(node.device_id().to_string());
-    let client = handle.state::<PushNotificationsClient>();
-
-    if crate::settings::load_settings(handle).notifications_enabled
+fn are_notifications_enabled(handle: &AppHandle) -> bool {
+    crate::settings::load_settings(handle).notifications_enabled
         && matches!(
             handle.notification().permission_state(),
             Ok(PermissionState::Granted)
         )
-    {
+}
+
+/// If notifications are currently enabled, get the FCM token and register it with the server
+/// If they're not, unregister the FCM token from the server
+async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Result<()> {
+    let node = handle.state::<Node>();
+    let public_key = PublicKey::from(node.device_id().to_string());
+    let client = handle.state::<PushNotificationsClient>();
+
+    if are_notifications_enabled(&handle) {
         let token = handle
             .notification()
             .register_for_push_notifications()
@@ -130,7 +145,7 @@ async fn update_push_notifications_registration(handle: &AppHandle) -> anyhow::R
 ///
 /// Called at startup to ensure the server has the full, up-to-date list of
 /// topics this device is subscribed to (replacing any stale state).
-async fn sync_subscriptions(app_handle: &AppHandle) -> anyhow::Result<()> {
+async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     let node = app_handle.state::<Node>();
     let public_key = PublicKey::from(node.device_id().to_string());
 
