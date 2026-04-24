@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 use crate::settings;
 
