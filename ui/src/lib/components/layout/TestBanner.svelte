@@ -1,8 +1,8 @@
 <script lang="ts">
-	export let text: string;
+	let { text }: { text: string } = $props();
 </script>
 
-<div class="test-banner z-50 px-4 py-1 text-center text-md font-medium">
+<div class="test-banner px-4 py-1 text-center text-md font-medium">
 	<span class="test-banner-inner">{text}</span>
 </div>
 
@@ -22,7 +22,7 @@
 		font-weight: bold;
 		letter-spacing: 0.15em;
 		word-spacing: 0.3em;
-		margin-bottom: calc(20px - env(safe-area-inset-bottom, 0px));
+		margin-bottom: calc(0px - env(safe-area-inset-top, 0px));
 	}
 	:global(.dark) .test-banner {
 		--banner-stripe-yellow: #b08100;
