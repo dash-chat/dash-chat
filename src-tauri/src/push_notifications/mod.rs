@@ -2,12 +2,10 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::Context;
-use dashchat_node::{AsBody, Node, Notification, Payload, Topic};
+use dashchat_node::Node;
 use dashchat_utils::SingletonTaskWithRetries;
 use push_notifications_client::client::PushNotificationsClient;
-use push_notifications_client::types::{
-    FcmToken, PublicKey, PushNotification, TopicId as PushTopicId,
-};
+use push_notifications_client::types::{FcmToken, PublicKey, TopicId as PushTopicId};
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
