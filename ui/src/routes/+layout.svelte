@@ -32,6 +32,7 @@
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
 	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
+	import TestBanner from '$lib/components/layout/TestBanner.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useSignal } from '$lib/stores/use-signal';
@@ -150,6 +151,7 @@
 
 <KonstaProvider {theme} dark={effectiveDark}>
 	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
+		<TestBanner text="Early access test" />
 		<SplashscreenPrompt>
 			{#if isWideScreen.value}
 				<DesktopLayout>
