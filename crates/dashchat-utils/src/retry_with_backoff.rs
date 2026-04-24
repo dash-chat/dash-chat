@@ -37,11 +37,11 @@ where
                 }
 
                 match max_attempts {
-                    Some(max) => tracing::warn!(
+                    Some(max) => log::warn!(
                         "{label} failed (attempt {attempt}/{max}): {e}. Retrying in {}s.",
                         delay.as_secs()
                     ),
-                    None => tracing::warn!(
+                    None => log::warn!(
                         "{label} failed (attempt {attempt}): {e}. Retrying in {}s.",
                         delay.as_secs()
                     ),

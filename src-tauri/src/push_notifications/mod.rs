@@ -90,6 +90,7 @@ pub fn setup_push_notifications(
     let push_task = push_notifications_registration_task.clone();
     let sync_task = sync_topic_subscriptions_task.clone();
     handle.listen("settings://updated-notifications_enabled", move |_event| {
+        log::info!("Notifications settings were updated: synchronizing status with the push notifications server.");
         push_task.trigger();
         sync_task.trigger();
     });
@@ -98,6 +99,7 @@ pub fn setup_push_notifications(
     let sync_task = sync_topic_subscriptions_task.clone();
     // React to whenever the token changes
     handle.listen("notification://new-fcm-token", move |_event| {
+        log::info!("New FCM token: synchronizing status with the push notifications server.");
         push_task.trigger();
         sync_task.trigger();
     });
@@ -124,6 +126,7 @@ async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Re
     let client = handle.state::<PushNotificationsClient>();
 
     if are_notifications_enabled(&handle) {
+        log::info!("Notifications are enabled: registering FCM token.");
         let token = handle
             .notification()
             .register_for_push_notifications()
@@ -132,28 +135,34 @@ async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Re
             .register_fcm_token(public_key.clone(), FcmToken::from(token.clone()))
             .await
             .context("register_fcm_token failed")?;
+        log::info!("Successfully registered FCM token.");
     } else {
+        log::info!("Notifications are disabled: unregistering FCM token.");
         client
             .unregister_fcm_token(public_key.clone())
             .await
             .context("unregister_fcm_token failed")?;
+        log::info!("Successfully unregistered FCM token.");
     }
     Ok(())
 }
 
-/// Sync all subscribed topics with the push notifications server.
-///
-/// Called at startup to ensure the server has the full, up-to-date list of
-/// topics this device is subscribed to (replacing any stale state).
+/// If notifications are enabled, sync all subscribed topics with the push notifications server.
+/// If they're not, remove all topic subscriptions from it.
 async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     let node = app_handle.state::<Node>();
     let public_key = PublicKey::from(node.device_id().to_string());
 
-    let topic_ids: HashSet<PushTopicId> = node
-        .subscribed_topics()?
-        .into_iter()
-        .map(|t| PushTopicId::from(hex::encode(&*t)))
-        .collect();
+    let topic_ids = if are_notifications_enabled(&app_handle) {
+        let topic_ids: HashSet<PushTopicId> = node
+            .subscribed_topics()?
+            .into_iter()
+            .map(|t| PushTopicId::from(hex::encode(&*t)))
+            .collect();
+        topic_ids
+    } else {
+        HashSet::new()
+    };
 
     log::info!(
         "Syncing {} topic subscriptions with push notifications server.",

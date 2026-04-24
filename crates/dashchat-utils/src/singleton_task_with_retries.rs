@@ -1,6 +1,5 @@
 use std::fmt::Display;
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,7 +10,8 @@ use tokio::sync::Notify;
 /// immediately on construction.
 ///
 /// - Calling [`trigger`] while the task is idle starts a new retry cycle.
-/// - Calling [`trigger`] while a cycle is already running is a no-op.
+/// - Calling [`trigger`] while a cycle is already running cancels the
+///   current cycle and restarts from scratch (resetting attempts and delays).
 /// - The closure is called fresh on every attempt, so it can read external
 ///   state (e.g. a settings file) to decide what to do.
 ///
@@ -23,7 +23,6 @@ pub struct SingletonTaskWithRetries {
 
 struct Inner {
     notify: Notify,
-    running: AtomicBool,
 }
 
 impl SingletonTaskWithRetries {
@@ -42,7 +41,6 @@ impl SingletonTaskWithRetries {
     {
         let inner = Arc::new(Inner {
             notify: Notify::new(),
-            running: AtomicBool::new(false),
         });
 
         let state = inner.clone();
@@ -51,60 +49,76 @@ impl SingletonTaskWithRetries {
         tokio::spawn(async move {
             loop {
                 state.notify.notified().await;
-                state.running.store(true, Ordering::SeqCst);
 
                 let mut delay = initial_delay;
                 let mut attempt: u32 = 0;
+                let mut cancelled = false;
 
                 loop {
                     attempt = attempt.saturating_add(1);
 
-                    match task().await {
+                    let notified = state.notify.notified();
+                    tokio::pin!(notified);
+
+                    let result = tokio::select! {
+                        biased;
+                        _ = &mut notified => { cancelled = true; break; }
+                        result = task() => result,
+                    };
+
+                    match result {
                         Ok(_) => {
-                            tracing::info!("Successfully completed task: {label}.");
+                            log::info!("Successfully completed task: {label}.");
                             break;
                         }
                         Err(e) => {
                             let exhausted = max_attempts.is_some_and(|max| attempt >= max);
 
                             if exhausted {
-                                tracing::warn!(
+                                log::warn!(
                                     "{label} failed after {attempt} attempts, giving up: {e}",
                                 );
                                 break;
                             }
 
                             match max_attempts {
-                                Some(max) => tracing::warn!(
+                                Some(max) => log::warn!(
                                     "{label} failed (attempt {attempt}/{max}): {e}. \
                                      Retrying in {}s.",
                                     delay.as_secs(),
                                 ),
-                                None => tracing::warn!(
+                                None => log::warn!(
                                     "{label} failed (attempt {attempt}): {e}. \
                                      Retrying in {}s.",
                                     delay.as_secs(),
                                 ),
                             }
 
-                            tokio::time::sleep(delay).await;
+                            tokio::select! {
+                                biased;
+                                _ = notified => { cancelled = true; break; }
+                                _ = tokio::time::sleep(delay) => {}
+                            }
                             delay = (delay * 2).min(max_delay);
                         }
                     }
                 }
 
-                state.running.store(false, Ordering::SeqCst);
+                if cancelled {
+                    log::info!("{label} cancelled by new trigger, restarting.");
+                    // Re-queue so the outer notified().await returns immediately
+                    state.notify.notify_one();
+                }
             }
         });
 
         Self { inner }
     }
 
-    /// Signal the task to run. If it is already running, this is a no-op.
+    /// Signal the task to run. If it is already running, the current cycle
+    /// is cancelled and the task restarts from scratch.
     pub fn trigger(&self) {
-        if !self.inner.running.load(Ordering::SeqCst) {
-            self.inner.notify.notify_one();
-        }
+        self.inner.notify.notify_one();
     }
 }
 
@@ -112,7 +126,7 @@ impl SingletonTaskWithRetries {
 mod tests {
     use super::*;
 
-    use std::sync::atomic::AtomicU32;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     #[tokio::test]
     async fn succeeds_on_first_attempt() {
@@ -187,20 +201,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn trigger_during_run_is_noop() {
+    async fn trigger_during_backoff_cancels_and_restarts() {
         let call_count = Arc::new(AtomicU32::new(0));
         let cc = call_count.clone();
 
         let task = SingletonTaskWithRetries::new(
             "test",
             None,
-            Duration::from_millis(50),
-            Duration::from_millis(50),
+            Duration::from_millis(500),
+            Duration::from_millis(500),
             move || {
                 let attempt = cc.fetch_add(1, Ordering::SeqCst) + 1;
                 async move {
-                    if attempt < 2 {
-                        Err("not yet")
+                    if attempt == 1 {
+                        Err("fail first time")
                     } else {
                         Ok(())
                     }
@@ -209,12 +223,15 @@ mod tests {
         );
 
         task.trigger();
-        // Trigger again while it's in the backoff sleep — should be ignored
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        // Wait for first attempt to fail and enter backoff sleep (500ms)
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        // Re-trigger during backoff — should cancel and restart from scratch
         task.trigger();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // Only 2 calls: the initial failure + the retry success. No extra run.
+        // Attempt 1: fail (original trigger)
+        // Cancelled during backoff, restarted immediately
+        // Attempt 2: succeed (new cycle)
         assert_eq!(call_count.load(Ordering::SeqCst), 2);
     }
 

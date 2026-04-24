@@ -31,7 +31,7 @@ export class SettingsClient implements ISettingsClient {
 	}
 
 	setNotificationsEnabled(enabled: boolean): Promise<void> {
-		return this.setSetting('notifications_enabled', true);
+		return this.setSetting('notifications_enabled', enabled);
 	}
 
 	onSettingsUpdated(

@@ -61,7 +61,6 @@ mdns-sd = "0.17"
 nanoid = "0"
 image = "0.25"
 
-
 opener = { version = "0.7", features = ["reveal"] }
 log = "0.4"
 url2 = "0.0.6"
