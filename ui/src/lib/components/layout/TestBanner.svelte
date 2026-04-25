@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { Button } from 'konsta/svelte';
+
+	const isContactUsPage = $derived(
+		page.url.pathname === '/settings/help/contact-us',
+	);
 </script>
 
 <div
@@ -13,7 +18,10 @@
 		style="padding-top: env(safe-area-inset-top, 0px)">{m.testBanner()}</span
 	>
 	<Button
-		onClick={() => goto('/settings/help/contact-us')}
+		onClick={() => {
+			if (!isContactUsPage) goto('/settings/help/contact-us');
+		}}
+		disabled={isContactUsPage}
 		small
 		inline
 		class="ml-2 normal-case"

@@ -33,35 +33,45 @@
 	);
 </script>
 
-<div class="desktop-layout">
-	<div class="desktop-sidebar">
-		{#if isSettings}
-			<SettingsPanel />
-		{:else if isNewMessage}
-			<NewMessagePanel />
-		{:else}
-			<ChatListPanel />
-		{/if}
-	</div>
-	<div class="desktop-content" class:desktop-content-settings={isSettings}>
-		<TestBanner />
-		{#if isSidebarRoute}
-			<EmptyState />
-			{#if isHome}
-				<div class="absolute bottom-3 left-0 right-0 z-10">
-					<GetStarted />
-				</div>
+<div class="desktop-shell">
+	<TestBanner />
+	<div class="desktop-layout">
+		<div class="desktop-sidebar">
+			{#if isSettings}
+				<SettingsPanel />
+			{:else if isNewMessage}
+				<NewMessagePanel />
+			{:else}
+				<ChatListPanel />
 			{/if}
-		{:else}
-			{@render children()}
-		{/if}
+		</div>
+		<div class="desktop-content" class:desktop-content-settings={isSettings}>
+			{#if isSidebarRoute}
+				<EmptyState />
+				{#if isHome}
+					<div class="absolute bottom-3 left-0 right-0 z-10">
+						<GetStarted />
+					</div>
+				{/if}
+			{:else}
+				{@render children()}
+			{/if}
+		</div>
 	</div>
 </div>
 
 <style>
+	.desktop-shell {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		width: 100%;
+	}
+
 	.desktop-layout {
 		display: flex;
-		height: 100vh;
+		flex: 1;
+		min-height: 0;
 		width: 100%;
 	}
 
