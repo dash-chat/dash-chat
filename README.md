@@ -34,7 +34,6 @@ Please contact the Dash Chat team at hello [at] dashchat [dot] org if you're int
 
 If you use nix, just use `nix develop` to enter the development shell and run `pnpm install` to install the `pnpm` dependencies.
 
-
 ### Running the app
 
 To run the app, run this command:
