@@ -7,6 +7,7 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-parts.url = "github:hercules-ci/flake-parts";
     crane.url = "github:ipetkov/crane";
+
     garnix-lib = {
       url = "github:garnix-io/garnix-lib";
       inputs.nixpkgs.follows = "nixpkgs";

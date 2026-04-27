@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.11.0"
+version = "0.12.2"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -60,7 +60,6 @@ hex = "0.4.3"
 mdns-sd = "0.17"
 nanoid = "0"
 image = "0.25"
-
 
 opener = { version = "0.7", features = ["reveal"] }
 log = "0.4"

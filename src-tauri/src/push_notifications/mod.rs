@@ -1,18 +1,18 @@
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::time::Duration;
 
-use dashchat_node::{AsBody, Node, Notification, Payload, Topic};
+use anyhow::Context;
+use dashchat_node::Node;
+use dashchat_utils::SingletonTaskWithRetries;
 use push_notifications_client::client::PushNotificationsClient;
-use push_notifications_client::types::{
-    FcmToken, PublicKey, PushNotification, TopicId as PushTopicId,
-};
+use push_notifications_client::types::{FcmToken, PublicKey, TopicId as PushTopicId};
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
 mod node_cache;
 mod notification_navigation;
 
-pub use notification_navigation::{handle_launching_notification, listen_for_notification_taps};
+pub use notification_navigation::setup_notification_navigation;
 
 #[cfg(target_os = "android")]
 mod android;
@@ -54,164 +54,112 @@ pub fn setup_push_notifications(
     handle.manage(PushNotificationsClient::new(push_notifications_url())?);
 
     let h = handle.clone();
+    let push_notifications_registration_task = SingletonTaskWithRetries::new(
+        "push_notifications_registration",
+        None,
+        Duration::from_secs(1),
+        Duration::from_secs(60),
+        move || {
+            let h = h.clone();
+            update_push_notifications_registration(h)
+        },
+    );
+
+    let h = handle.clone();
+    let sync_topic_subscriptions_task = SingletonTaskWithRetries::new(
+        "sync_topic_subscriptions",
+        None,
+        Duration::from_secs(1),
+        Duration::from_secs(60),
+        move || {
+            let h = h.clone();
+            sync_subscriptions(h)
+        },
+    );
 
     // Re-register every time the app starts
     // This makes it so that a loss of data in the push notifications server will be recovered from
-    if crate::settings::load_settings(&h).notifications_enabled
-        && matches!(
-            h.notification().permission_state(),
-            Ok(PermissionState::Granted)
-        )
-    {
-        match h.notification().register_for_push_notifications() {
-            Ok(token) => {
-                let h = h.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(err) = register_fcm_token_with_retries(h, token.clone()).await {
-                        log::error!("Error registering FCM token: {:?}", err);
-                    } else {
-                        log::info!("Successfully registered FCM token.");
-                    }
-                });
-            }
-            Err(err) => {
-                log::error!("Error registering for push notifications: {:?}.", err);
-            }
-        }
-    } else {
-        let h = h.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Err(err) = unregister_push_notifications(&h).await {
-                log::error!("Error unregistering FCM token: {:?}", err);
-            }
-        });
-    }
-
-    // React to whenever the token changes
-    handle.listen("notification://new-fcm-token", move |event| {
-        if let Ok(token) = serde_json::from_str::<String>(event.payload()) {
-            // Skip if notifications are disabled in settings or the user
-            // hasn't granted OS-level notification permission.
-            if !crate::settings::load_settings(&h).notifications_enabled {
-                log::info!("Ignoring new FCM token — notifications disabled in settings.");
-                return;
-            }
-            match h.notification().permission_state() {
-                Ok(PermissionState::Granted) => {}
-                state => {
-                    log::info!(
-                        "Ignoring new FCM token — notification permission is {state:?}, not Granted."
-                    );
-                    return;
-                }
-            }
-
-            log::info!("New FCM token received. Registering it with the push notifications server.");
-            let h = h.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(err) = register_fcm_token_with_retries(h, token.clone()).await {
-                    log::error!("Error registering FCM token: {:?}", err);
-                } else {
-                    log::info!("Successfully registered FCM token.");
-                }
-            });
-        }
-    });
-
-    // Watcher that retries sync_subscriptions when notified of a failure.
-    // Uses exponential backoff until the server is reachable, then goes
-    // back to sleep until the next failure notification.
-    let sync_notify = Arc::new(tokio::sync::Notify::new());
+    push_notifications_registration_task.trigger();
 
     // Sync all subscribed topics at startup
-    let h = handle.clone();
-    let notify = sync_notify.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(err) = sync_subscriptions(&h).await {
-            log::error!("Failed to sync subscriptions at startup: {err:?}");
-            notify.notify_one();
-        }
+    sync_topic_subscriptions_task.trigger();
+
+    let push_task = push_notifications_registration_task.clone();
+    let sync_task = sync_topic_subscriptions_task.clone();
+    handle.listen("settings://updated-notifications_enabled", move |_event| {
+        log::info!("Notifications settings were updated: synchronizing status with the push notifications server.");
+        push_task.trigger();
+        sync_task.trigger();
     });
 
-    // Background watcher: retries full sync on failure with exponential backoff
-    let h = handle.clone();
-    spawn_subscription_sync_watcher(h, sync_notify.clone());
+    let push_task = push_notifications_registration_task.clone();
+    let sync_task = sync_topic_subscriptions_task.clone();
+    // React to whenever the token changes
+    handle.listen("notification://new-fcm-token", move |_event| {
+        log::info!("New FCM token: synchronizing status with the push notifications server.");
+        push_task.trigger();
+        sync_task.trigger();
+    });
 
     // Listen for new topic subscriptions and register them with the server
-    spawn_topic_subscription_loop(handle, topic_subscribed_rx, sync_notify);
+    spawn_topic_subscription_loop(handle, topic_subscribed_rx, sync_topic_subscriptions_task);
 
     Ok(())
 }
 
-async fn register_fcm_token_with_retries(handle: AppHandle, token: String) -> anyhow::Result<()> {
-    let node = handle.state::<Node>();
-    let public_key = PublicKey::from(node.device_id().to_string());
-
-    let client = handle.state::<PushNotificationsClient>();
-
-    dashchat_utils::retry_with_backoff(
-        None,
-        std::time::Duration::from_secs(1),
-        std::time::Duration::from_secs(60),
-        "register_fcm_token",
-        || client.register_fcm_token(public_key.clone(), FcmToken::from(token.clone())),
-    )
-    .await
+fn are_notifications_enabled(handle: &AppHandle) -> bool {
+    crate::settings::load_settings(handle).notifications_enabled
+        && matches!(
+            handle.notification().permission_state(),
+            Ok(PermissionState::Granted)
+        )
 }
 
-/// Register for push notifications and sync subscriptions with the server.
-///
-/// Called when the user re-enables notifications from settings so the FCM
-/// token and topic subscriptions are sent to the push notifications server.
-pub async fn register_push_notifications(handle: &AppHandle) -> anyhow::Result<()> {
-    let token = handle.notification().register_for_push_notifications()?;
+/// If notifications are currently enabled, get the FCM token and register it with the server
+/// If they're not, unregister the FCM token from the server
+async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Result<()> {
+    let node = handle.state::<Node>();
+    let public_key = PublicKey::from(node.device_id().to_string());
+    let client = handle.state::<PushNotificationsClient>();
 
-    register_fcm_token_with_retries(handle.clone(), token).await?;
-    log::info!("Successfully registered FCM token.");
-
-    dashchat_utils::retry_with_backoff::<(), anyhow::Error, _, _>(
-        None,
-        std::time::Duration::from_secs(5),
-        std::time::Duration::from_secs(60),
-        "sync_subscriptions",
-        || sync_subscriptions(handle),
-    )
-    .await?;
-
+    if are_notifications_enabled(&handle) {
+        log::info!("Notifications are enabled: registering FCM token.");
+        let token = handle
+            .notification()
+            .register_for_push_notifications()
+            .context("register_for_push_notifications failed")?;
+        client
+            .register_fcm_token(public_key.clone(), FcmToken::from(token.clone()))
+            .await
+            .context("register_fcm_token failed")?;
+        log::info!("Successfully registered FCM token.");
+    } else {
+        log::info!("Notifications are disabled: unregistering FCM token.");
+        client
+            .unregister_fcm_token(public_key.clone())
+            .await
+            .context("unregister_fcm_token failed")?;
+        log::info!("Successfully unregistered FCM token.");
+    }
     Ok(())
 }
 
-/// Unregister the FCM token from the push notifications server.
-///
-/// Called when the user disables notifications from settings.
-pub async fn unregister_push_notifications(handle: &AppHandle) -> anyhow::Result<()> {
-    let node = handle.state::<Node>();
-    let public_key = PublicKey::from(node.device_id().to_string());
-    let client = handle.state::<PushNotificationsClient>();
-
-    dashchat_utils::retry_with_backoff(
-        None,
-        std::time::Duration::from_secs(1),
-        std::time::Duration::from_secs(60),
-        "unregister_fcm_token",
-        || client.unregister_fcm_token(public_key.clone()),
-    )
-    .await
-}
-
-/// Sync all subscribed topics with the push notifications server.
-///
-/// Called at startup to ensure the server has the full, up-to-date list of
-/// topics this device is subscribed to (replacing any stale state).
-async fn sync_subscriptions(app_handle: &AppHandle) -> anyhow::Result<()> {
+/// If notifications are enabled, sync all subscribed topics with the push notifications server.
+/// If they're not, remove all topic subscriptions from it.
+async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     let node = app_handle.state::<Node>();
     let public_key = PublicKey::from(node.device_id().to_string());
 
-    let topic_ids: HashSet<PushTopicId> = node
-        .subscribed_topics()?
-        .into_iter()
-        .map(|t| PushTopicId::from(hex::encode(&*t)))
-        .collect();
+    let topic_ids = if are_notifications_enabled(&app_handle) {
+        let topic_ids: HashSet<PushTopicId> = node
+            .subscribed_topics()?
+            .into_iter()
+            .map(|t| PushTopicId::from(hex::encode(&*t)))
+            .collect();
+        topic_ids
+    } else {
+        HashSet::new()
+    };
 
     log::info!(
         "Syncing {} topic subscriptions with push notifications server.",
@@ -252,48 +200,19 @@ async fn subscribe_to_topics(
     Ok(())
 }
 
-/// Background watcher that retries a full subscription sync when notified.
-///
-/// When any subscription operation fails (likely due to no connectivity),
-/// the caller notifies this watcher via `sync_notify`. The watcher then
-/// retries `sync_subscriptions` with exponential backoff until it succeeds.
-/// Since `sync_subscriptions` does a full replace of all topics, it covers
-/// both the initial sync and any topics that failed to subscribe individually.
-fn spawn_subscription_sync_watcher(app_handle: AppHandle, sync_notify: Arc<tokio::sync::Notify>) {
-    tauri::async_runtime::spawn(async move {
-        loop {
-            sync_notify.notified().await;
-
-            log::info!("Subscription sync watcher triggered, will retry with backoff.");
-
-            if let Ok(_) = dashchat_utils::retry_with_backoff::<(), anyhow::Error, _, _>(
-                None,
-                std::time::Duration::from_secs(5),
-                std::time::Duration::from_secs(60),
-                "sync_subscriptions",
-                || sync_subscriptions(&app_handle),
-            )
-            .await
-            {
-                log::info!("Successfully synced subscriptions after retry.");
-            }
-        }
-    });
-}
-
 /// Listens for new topic subscriptions and registers them with the push notifications server.
-/// On failure, notifies the sync watcher to retry a full sync when connectivity is restored.
+/// On failure, notifies the sync topic subscriptions task trigger a full sync when connectivity is restored.
 fn spawn_topic_subscription_loop(
     app_handle: AppHandle,
     mut topic_subscribed_rx: tokio::sync::mpsc::Receiver<dashchat_node::topic::TopicId>,
-    sync_notify: Arc<tokio::sync::Notify>,
+    sync_topic_subscriptions_task: SingletonTaskWithRetries,
 ) {
     tauri::async_runtime::spawn(async move {
         while let Some(topic_id) = topic_subscribed_rx.recv().await {
             let hex_topic = PushTopicId::from(hex::encode(&*topic_id));
             if let Err(err) = subscribe_to_topics(&app_handle, [hex_topic].into()).await {
                 log::error!("Failed to subscribe to topic: {err:?}");
-                sync_notify.notify_one();
+                sync_topic_subscriptions_task.trigger();
             }
         }
     });

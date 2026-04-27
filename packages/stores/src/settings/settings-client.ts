@@ -31,15 +31,17 @@ export class SettingsClient implements ISettingsClient {
 	}
 
 	setNotificationsEnabled(enabled: boolean): Promise<void> {
-		return invoke('set_notifications_enabled', { enabled });
+		return this.setSetting('notifications_enabled', enabled);
 	}
 
-	onSettingsUpdated(handler: (settings: Settings) => void): UnsubscribeFunction {
+	onSettingsUpdated(
+		handler: (settings: Settings) => void,
+	): UnsubscribeFunction {
 		let unsubs: (() => void) | undefined;
 		let cancelled = false;
-		listen('settings://updated', (e) => {
+		listen('settings://updated', e => {
 			handler(e.payload as Settings);
-		}).then((u) => {
+		}).then(u => {
 			if (cancelled) u();
 			else unsubs = u;
 		});
