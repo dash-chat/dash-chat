@@ -86,9 +86,14 @@ echo "  Updated Cargo.lock"
 
 # 6. Commit, tag, and push
 git -C "$ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$SITE_INDEX" "$IOS_PLIST" "$ROOT/Cargo.lock"
-git -C "$ROOT" commit -m "Release $TAG"
+if git -C "$ROOT" diff --cached --quiet; then
+  echo "  No changes to commit (version files already up to date)"
+else
+  git -C "$ROOT" commit -m "Release $TAG"
+  echo "  Created commit"
+fi
 git -C "$ROOT" tag "$TAG"
-echo "  Created commit and tag $TAG"
+echo "  Created tag $TAG"
 
 git -C "$ROOT" push
 git -C "$ROOT" push origin "$TAG"
