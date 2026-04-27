@@ -128,8 +128,8 @@ importers:
         specifier: ^6.1.0
         version: 6.1.0
       signalium:
-        specifier: ^2.0.7
-        version: 2.0.7
+        specifier: ^2.4.0
+        version: 2.4.0
       webbuf:
         specifier: ^3.0.28
         version: 3.0.28
@@ -210,8 +210,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       signalium:
-        specifier: ^2.1.5
-        version: 2.1.6
+        specifier: ^2.4.0
+        version: 2.4.0
       tailwindcss:
         specifier: ^4.1.18
         version: 4.1.18
@@ -3858,16 +3858,8 @@ packages:
   signal-polyfill@0.1.2:
     resolution: {integrity: sha512-HT9d+L9NMiTzMxb/tU2Baym6129ROyRETSjvchvSkQa7wN0+SrG/IUlsaBLqKn2c+4mlze6CgQBEvgBjxOpiaQ==}
 
-  signalium@2.0.7:
-    resolution: {integrity: sha512-3puBZ49JrJjbjO2fk92L3PAjh6G4rsoL6ht3wqbKIDbYrmkHuOFOs1s48VLVbCFWlehUDSQxYOMeD5i/hfZ5cg==}
-    peerDependencies:
-      react: '>=18.3.1'
-    peerDependenciesMeta:
-      react:
-        optional: true
-
-  signalium@2.1.6:
-    resolution: {integrity: sha512-Vh/0Jwyc1FBols25+Ai99WI81jz6m0CjKDZwLMx0qh+y3CUMjpHOC1xtqeFGV1s6q7PyCC9SZowGgRrPcR4nVA==}
+  signalium@2.4.0:
+    resolution: {integrity: sha512-z7t+IyQAjrGC1vSZxdDVJmTEClVN3fpH0bpxTAOZzMFv40CfP+KR/+wHo90RzCN7oxHyxOZUaG3XuTHQo3xDZw==}
     peerDependencies:
       react: '>=18.3.1'
     peerDependenciesMeta:
@@ -8189,9 +8181,7 @@ snapshots:
 
   signal-polyfill@0.1.2: {}
 
-  signalium@2.0.7: {}
-
-  signalium@2.1.6: {}
+  signalium@2.4.0: {}
 
   sirv@3.0.2:
     dependencies:
