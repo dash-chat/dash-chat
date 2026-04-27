@@ -1,4 +1,4 @@
-use dashchat_node::Node;
+use dashchat_node::{node::ShutdownError, Node};
 #[cfg(not(mobile))]
 use tauri::Manager;
 use tauri::{AppHandle, State};
@@ -6,21 +6,31 @@ use tauri::{AppHandle, State};
 #[tauri::command]
 pub async fn delete_account(app: AppHandle, node: State<'_, Node>) -> Result<(), String> {
     log::info!("Deleting account...");
-    node.delete_account().await.map_err(|e| {
+
+    // If we fail to shutdown, we still continue to delete all data and restart the app
+    match node.shutdown().await {
+        Ok(()) => {}
+        Err(ShutdownError::WaitOnDatabaseHandlesError(err)) => {
+            log::error!(
+                "Failed to wait on database handles closing, continuing to delete account: {err}"
+            );
+        }
+    }
+
+    std::fs::remove_dir_all(node.data_path()).map_err(|e| {
         log::error!("Failed to delete account: {e}");
-        e.to_string()
+        String::from("Failed to delete account.")
     })?;
     log::info!("Account deleted successfully, restarting app");
 
     #[cfg(mobile)]
     {
         app.exit(0);
+        return Ok(());
     }
 
     #[cfg(not(mobile))]
     {
         tauri::process::restart(&app.env());
     }
-
-    Ok(())
 }

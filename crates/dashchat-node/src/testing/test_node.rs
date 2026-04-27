@@ -101,9 +101,9 @@ impl TestNode {
 
     /// Shut down the node's background tasks and return the store directory.
     /// The store directory can be passed to `new_at_path` to restart the node.
-    pub async fn shutdown(self) -> Arc<TempDir> {
+    pub async fn shutdown(mut self) -> Arc<TempDir> {
         let dir = self._store_dir.clone();
-        self.node.shutdown().await;
+        self.node.shutdown().await.unwrap();
         dir
     }
 

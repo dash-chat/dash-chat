@@ -10,6 +10,7 @@ use anyhow::Result;
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
+use tokio::task::JoinError;
 
 use crate::error::{AddContactError, Error};
 use crate::filesystem::Filesystem;
@@ -98,18 +99,15 @@ impl<R> CancelAndWait<R> {
         }
     }
 
-    pub async fn cancel_and_wait(self) -> Option<Result<R, tokio::task::JoinError>> {
+    pub async fn cancel_and_wait(&self) -> Option<Result<R, tokio::task::JoinError>> {
         self.token.cancel();
         Some(self.handle.lock().await.take()?.await)
     }
+}
 
-    /// Cancel the task and wait for it to finish, without consuming self.
-    pub async fn cancel(&self) {
-        self.token.cancel();
-        if let Some(handle) = self.handle.lock().await.take() {
-            let _ = handle.await;
-        }
-    }
+#[derive(Debug)]
+pub enum ShutdownError {
+    WaitOnDatabaseHandlesError(JoinError),
 }
 
 #[derive(Clone)]
@@ -172,6 +170,10 @@ impl Node {
         node.initialize_stored_topics().await?;
 
         Ok(node)
+    }
+
+    pub fn data_path(&self) -> &PathBuf {
+        self.filesystem.data_path()
     }
 
     pub async fn get_interleaved_logs(
@@ -460,16 +462,6 @@ impl Node {
         Ok(())
     }
 
-    /// Stop background tasks and delete all account data.
-    pub async fn delete_account(&self) -> anyhow::Result<()> {
-        if let Some(ref task) = self.stream_task {
-            task.cancel().await;
-        }
-        self.mailboxes.clear().await;
-        std::fs::remove_dir_all(self.filesystem.data_path())?;
-        Ok(())
-    }
-
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
         self.get_profile_for_agent(self.agent_id()).await
     }
@@ -588,10 +580,15 @@ impl Node {
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.
-    pub async fn shutdown(mut self) {
-        if let Some(cancel_and_wait) = self.stream_task.take() {
-            cancel_and_wait.cancel_and_wait().await;
+    pub async fn shutdown(&self) -> Result<(), ShutdownError> {
+        self.mailboxes.clear().await;
+        if let Some(ref cancel_and_wait) = self.stream_task {
+            if let Some(Err(join_err)) = cancel_and_wait.cancel_and_wait().await {
+                return Err(ShutdownError::WaitOnDatabaseHandlesError(join_err));
+            }
         }
+
+        Ok(())
     }
 
     /// Store someone as a contact, and:
