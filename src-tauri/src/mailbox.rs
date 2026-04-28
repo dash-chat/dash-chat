@@ -2,7 +2,7 @@ use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
 
 const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
-const PRODUCTION_MAILBOX_URL: &str =
+pub(crate) const PRODUCTION_MAILBOX_URL: &str =
     "https://mailbox-server.production.dash-chat.dash-chat.garnix.me";
 
 #[cfg(not(mobile))]
