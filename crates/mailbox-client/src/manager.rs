@@ -22,12 +22,12 @@ pub struct MailboxesConfig {
 impl Default for MailboxesConfig {
     fn default() -> Self {
         Self {
-            active_interval: Duration::from_secs(3),
-            degraded_interval: Duration::from_secs(15),
-            stopped_interval: Duration::from_secs(180),
+            active_interval: Duration::from_secs(2),
+            degraded_interval: Duration::from_secs(5),
+            stopped_interval: Duration::from_secs(10),
             between_polls_delay: Duration::from_millis(500),
-            degraded_threshold: 2,
-            stopped_threshold: 3,
+            degraded_threshold: 5,
+            stopped_threshold: 10,
         }
     }
 }
