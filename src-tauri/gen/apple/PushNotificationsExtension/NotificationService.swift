@@ -83,8 +83,14 @@ class NotificationService: UNNotificationServiceExtension {
         notification_destroy(n)
         log.info("decoded title=\(title ?? "<nil>", privacy: .public) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .public) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
         if (title == nil || title!.isEmpty) && (body == nil || body!.isEmpty) {
-            log.info("both title and body empty/nil — suppressing with empty UNNotificationContent")
-            self.deliver(UNNotificationContent())
+            // Without the com.apple.developer.usernotifications.filtering
+            // entitlement, iOS won't honor an empty UNNotificationContent and
+            // would fall back to the raw APNS payload (topic_id / author:seq).
+            // Show a generic readable fallback instead.
+            log.info("both title and body empty/nil — delivering generic 'New message' fallback")
+            bestAttemptContent.title = "New message"
+            bestAttemptContent.body = ""
+            self.deliver(bestAttemptContent)
             return
         }
         if let title { bestAttemptContent.title = title }
