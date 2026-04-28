@@ -61,6 +61,7 @@
 			onSend?.();
 			textarea.style.height = 'auto';
 			height = `${div.scrollHeight}px`;
+			textarea.focus(); // Refocus the textarea in case user wants to send another message
 		}
 	}
 
