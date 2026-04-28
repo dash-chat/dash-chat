@@ -11,6 +11,7 @@ use tauri_plugin_notification::*;
 
 mod node_cache;
 mod notification_navigation;
+mod receive_push_notification;
 
 pub use notification_navigation::setup_notification_navigation;
 
