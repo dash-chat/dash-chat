@@ -35,8 +35,8 @@ use crate::AgentId;
 use named_id::*;
 
 use p2panda_spaces::ActorId;
-use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
 
 pub trait TopicKind:
     Default
