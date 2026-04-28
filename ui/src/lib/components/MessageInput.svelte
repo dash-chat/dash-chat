@@ -12,7 +12,6 @@
 		placeholder?: string;
 		height: string;
 		onSend?: () => void;
-		onInput?: () => void;
 		onFocus?: () => { onResize: () => void } | void;
 		onEmojiClick?: () => void;
 	}
@@ -22,7 +21,6 @@
 		height = $bindable(''),
 		placeholder = m.typeMessage(),
 		onSend,
-		onInput,
 		onFocus,
 		onEmojiClick,
 	}: Props = $props();
@@ -43,7 +41,6 @@
 	function handleInput() {
 		value = textarea.value;
 		autoResize();
-		onInput?.();
 	}
 
 	function autoResize() {
