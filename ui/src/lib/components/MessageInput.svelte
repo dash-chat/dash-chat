@@ -13,6 +13,7 @@
 		height: string;
 		onSend?: () => void;
 		onInput?: () => void;
+		onFocus?: () => { onResize: () => void } | void;
 		onEmojiClick?: () => void;
 	}
 
@@ -22,6 +23,7 @@
 		placeholder = m.typeMessage(),
 		onSend,
 		onInput,
+		onFocus,
 		onEmojiClick,
 	}: Props = $props();
 	let div: HTMLDivElement;
@@ -64,6 +66,23 @@
 		}
 	}
 
+	function handleFocus() {
+		const result = onFocus?.();
+		if (!result) return;
+		const vv = window.visualViewport;
+		if (!vv) return;
+		let cleanup: ReturnType<typeof setTimeout>;
+		const onResize = () => {
+			result.onResize();
+			clearTimeout(cleanup);
+			cleanup = setTimeout(
+				() => vv.removeEventListener('resize', onResize),
+				300,
+			);
+		};
+		vv.addEventListener('resize', onResize);
+	}
+
 	onMount(() => {
 		height = `${div.scrollHeight}px`;
 	});
@@ -102,6 +121,7 @@
 				rows="1"
 				onkeydown={handleKeydown}
 				oninput={handleInput}
+				onfocus={handleFocus}
 			></textarea>
 		</div>
 
