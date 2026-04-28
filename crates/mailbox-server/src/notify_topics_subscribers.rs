@@ -1,16 +1,16 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 
 use push_notifications_client::client::PushNotificationsClient;
-use push_notifications_client::types::{OperationId, TopicId as PushTopicId};
+use push_notifications_client::types::{OperationId, PublicKey, TopicId as PushTopicId};
 
-use crate::{AppState, TopicId};
+use crate::{AppState, Author, TopicId};
 
 /// Notify push notification subscribers for topics that received new data (non-blocking).
 pub async fn notify_topics_subscribers(
     state: &AppState,
-    topics_with_new_blobs: BTreeMap<TopicId, BTreeSet<String>>,
+    topics_with_new_blobs: BTreeMap<TopicId, BTreeMap<String, Author>>,
 ) {
     if topics_with_new_blobs.is_empty() {
         return;
@@ -27,16 +27,20 @@ pub async fn notify_topics_subscribers(
 
 async fn send_push_notifications(
     push_client: Arc<PushNotificationsClient>,
-    topics_with_new_blobs: BTreeMap<TopicId, BTreeSet<String>>,
+    topics_with_new_blobs: BTreeMap<TopicId, BTreeMap<String, Author>>,
 ) {
-    let topics_to_notify: HashMap<PushTopicId, HashSet<OperationId>> = topics_with_new_blobs
-        .into_iter()
-        .map(|(topic, ops)| {
-            let topic = PushTopicId::from(topic);
-            let ops = ops.into_iter().map(OperationId::from).collect();
-            (topic, ops)
-        })
-        .collect();
+    let topics_to_notify: HashMap<PushTopicId, HashMap<OperationId, PublicKey>> =
+        topics_with_new_blobs
+            .into_iter()
+            .map(|(topic, ops)| {
+                let topic = PushTopicId::from(topic);
+                let ops = ops
+                    .into_iter()
+                    .map(|(op_id, author)| (OperationId::from(op_id), PublicKey::from(author)))
+                    .collect();
+                (topic, ops)
+            })
+            .collect();
 
     if let Err(e) = dashchat_utils::retry_with_backoff(
         Some(5),

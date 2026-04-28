@@ -56,13 +56,70 @@ async fn notify_topic_sends_to_subscribers() {
     response.assert_status(StatusCode::NO_CONTENT);
 
     // 3. Notify topic — should send push to the subscriber
+    let author = PublicKey::from("cc".repeat(32));
     let response = server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(topic_id, [op_id].into())].into(),
+            topics_to_notify: [(topic_id, [(op_id, author)].into())].into(),
         })
         .await;
     response.assert_status(StatusCode::NO_CONTENT);
+}
+
+/// A subscriber whose public key matches the operation's author should be
+/// filtered out — devices don't receive pushes for messages they wrote.
+#[tokio::test]
+async fn notify_topic_skips_author() {
+    let author_key = PublicKey::from("aa".repeat(32));
+    let other_key = PublicKey::from("bb".repeat(32));
+    let topic_id = TopicId::from("cc".repeat(32));
+    let op_id = OperationId::from("test-op".to_string());
+
+    let mut mock_fcm = MockFcm::new();
+    mock_fcm.expect_validate().once().returning(|| Ok(()));
+    // Only `other_key` should receive the push; `author_key` is filtered out.
+    mock_fcm
+        .expect_send_push_notification()
+        .once()
+        .withf(|token, _| token == "other-token")
+        .returning(|_, _| SendResult::Ok);
+
+    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
+        .await
+        .unwrap();
+    let server = TestServer::new(app).unwrap();
+
+    // Both devices register tokens and subscribe to the topic.
+    for (pk, token) in [
+        (&author_key, "author-token"),
+        (&other_key, "other-token"),
+    ] {
+        server
+            .post("/fcm-tokens/register")
+            .json(&RegisterFcmTokenRequest {
+                public_key: pk.clone(),
+                fcm_token: FcmToken::from(token.to_string()),
+            })
+            .await
+            .assert_status(StatusCode::NO_CONTENT);
+        server
+            .post("/topic-subscriptions/add")
+            .json(&AddTopicSubscriptionsRequest {
+                public_key: pk.clone(),
+                topic_ids: [topic_id.clone()].into(),
+            })
+            .await
+            .assert_status(StatusCode::NO_CONTENT);
+    }
+
+    // The op was authored by `author_key`, so only `other_key` should be notified.
+    server
+        .post("/notify-topic")
+        .json(&NotifyTopicsRequest {
+            topics_to_notify: [(topic_id, [(op_id, author_key)].into())].into(),
+        })
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
 }
 
 #[tokio::test]
@@ -92,11 +149,15 @@ async fn notify_topic_skips_unsubscribed() {
     response.assert_status(StatusCode::NO_CONTENT);
 
     // 2. Notify topic — no subscribers, should not send
+    let author = PublicKey::from("cc".repeat(32));
     let response = server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(topic_id, [OperationId::from("test-op".to_string())].into())]
-                .into(),
+            topics_to_notify: [(
+                topic_id,
+                [(OperationId::from("test-op".to_string()), author)].into(),
+            )]
+            .into(),
         })
         .await;
     response.assert_status(StatusCode::NO_CONTENT);
@@ -149,10 +210,15 @@ async fn unsubscribe_prevents_notification() {
         .assert_status(StatusCode::NO_CONTENT);
 
     // Notify — should NOT send (unsubscribed)
+    let author = PublicKey::from("cc".repeat(32));
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(topic_id, [OperationId::from("op-1".to_string())].into())].into(),
+            topics_to_notify: [(
+                topic_id,
+                [(OperationId::from("op-1".to_string()), author)].into(),
+            )]
+            .into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -212,10 +278,15 @@ async fn update_subscriptions_replaces_and_notifies_correctly() {
         .assert_status(StatusCode::NO_CONTENT);
 
     // Notify topic-a — should NOT send (replaced away)
+    let author = PublicKey::from("ee".repeat(32));
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(topic_a, [OperationId::from("op-1".to_string())].into())].into(),
+            topics_to_notify: [(
+                topic_a,
+                [(OperationId::from("op-1".to_string()), author.clone())].into(),
+            )]
+            .into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -224,7 +295,11 @@ async fn update_subscriptions_replaces_and_notifies_correctly() {
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(topic_b, [OperationId::from("op-2".to_string())].into())].into(),
+            topics_to_notify: [(
+                topic_b,
+                [(OperationId::from("op-2".to_string()), author)].into(),
+            )]
+            .into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -269,10 +344,15 @@ async fn fcm_transient_failure_does_not_remove_token() {
         .assert_status(StatusCode::NO_CONTENT);
 
     // Notify — FCM fails but the endpoint should still return 204
+    let author = PublicKey::from("cc".repeat(32));
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(topic_id, [OperationId::from("op-1".to_string())].into())].into(),
+            topics_to_notify: [(
+                topic_id,
+                [(OperationId::from("op-1".to_string()), author)].into(),
+            )]
+            .into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -302,10 +382,15 @@ async fn notify_subscriber_without_token_does_not_fail() {
     let server = TestServer::new(app).unwrap();
 
     // Notify — should gracefully skip the subscriber with no token
+    let author = PublicKey::from("cc".repeat(32));
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(topic_id, [OperationId::from("op-1".to_string())].into())].into(),
+            topics_to_notify: [(
+                topic_id,
+                [(OperationId::from("op-1".to_string()), author)].into(),
+            )]
+            .into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -336,10 +421,15 @@ async fn invalid_token_is_removed() {
     let server = TestServer::new(app).unwrap();
 
     // Notify — FCM reports token invalid, should remove it
+    let author = PublicKey::from("cc".repeat(32));
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(topic_id, [OperationId::from("op-1".to_string())].into())].into(),
+            topics_to_notify: [(
+                topic_id,
+                [(OperationId::from("op-1".to_string()), author)].into(),
+            )]
+            .into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -398,10 +488,15 @@ async fn unregister_fcm_token_prevents_notification() {
     assert_eq!(tokens.get(&public_key), None);
 
     // Notify — should NOT send (no token)
+    let author = PublicKey::from("cc".repeat(32));
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(topic_id, [OperationId::from("op-1".to_string())].into())].into(),
+            topics_to_notify: [(
+                topic_id,
+                [(OperationId::from("op-1".to_string()), author)].into(),
+            )]
+            .into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);

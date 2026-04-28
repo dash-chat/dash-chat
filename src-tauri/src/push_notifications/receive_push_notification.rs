@@ -55,8 +55,15 @@ pub fn receive_push_notification(
                     );
                 } else {
                     log::info!(
-                    "Successfully processed push notification, no actual notification needs to be shown.",
-                );
+                        "Successfully processed push notification, no actual notification needs to be shown.",
+                    );
+                    // On iOS, alert notifications must be shown. If we return None here,
+                    // iOS will display a notification with title = topic_id, and body = author:seq_num
+                    // Show a generic notification instead
+                    // TODO: apply for the exception to Apple that allows apps to not need to show a notification
+                    // https://developer.apple.com/contact/request/notification-service
+                    #[cfg(target_os = "ios")]
+                    return Some(synced_generic_notification());
                 }
                 result
             }
@@ -131,7 +138,7 @@ async fn handle_push_notification(
         log::warn!(
             "Operation {op_id} in topic {topic_hex} not found after polling, showing generic notification"
         );
-        return Ok(Some(generic_notification()));
+        return Ok(Some(new_message_generic_notification()));
     }
 
     // Get the operation
@@ -223,9 +230,18 @@ async fn handle_push_notification(
     }
 }
 
-fn generic_notification() -> NotificationData {
+fn new_message_generic_notification() -> NotificationData {
     NotificationData {
         title: Some(sonix_i18n::t!("newMessage")),
+        body: None,
+        icon: Some("ic_stat_icon".to_string()),
+        ..Default::default()
+    }
+}
+
+fn synced_generic_notification() -> NotificationData {
+    NotificationData {
+        title: Some(sonix_i18n::t!("syncedWithServer")),
         body: None,
         icon: Some("ic_stat_icon".to_string()),
         ..Default::default()

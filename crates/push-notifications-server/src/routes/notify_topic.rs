@@ -39,11 +39,11 @@ pub(crate) async fn notify_topics(
     let tasks: Vec<_> = req
         .topics_to_notify
         .iter()
-        .flat_map(|(topic_id, op_ids)| {
+        .flat_map(|(topic_id, ops)| {
             notify_topic(
                 &state,
                 topic_id,
-                op_ids,
+                ops,
                 topic_subscribers.get(topic_id),
                 &fcm_tokens,
             )
@@ -71,7 +71,7 @@ pub(crate) async fn notify_topics(
 fn notify_topic(
     state: &AppState,
     topic_id: &TopicId,
-    op_ids: &HashSet<OperationId>,
+    ops: &HashMap<OperationId, PublicKey>,
     subscribers: Option<&Vec<PublicKey>>,
     fcm_tokens: &HashMap<PublicKey, FcmToken>,
 ) -> Vec<impl Future<Output = ()>> {
@@ -84,13 +84,17 @@ fn notify_topic(
     // One push per operation: iOS Notification Service Extensions can only
     // transform a single incoming notification, so each operation needs its own push
     // for the client to resolve it into a user-facing message.
-    for op_id in op_ids {
+    for (op_id, author) in ops {
         let notification = PushNotification {
             title: topic_id.to_string(),
             body: op_id.to_string(),
         };
 
         for public_key in subscribers {
+            // Don't notify the author of their own operation.
+            if public_key == author {
+                continue;
+            }
             if let Some(fcm_token) = fcm_tokens.get(public_key) {
                 tasks.push(send_notification(
                     state.clone(),

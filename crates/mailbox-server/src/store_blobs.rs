@@ -44,17 +44,19 @@ pub async fn store_blobs(
     Ok(StatusCode::CREATED)
 }
 
-/// Returns a map of topic_id → set of operation IDs (author:seq) for newly inserted blobs.
+/// Returns a map of topic_id → map of op_id (author:seq) → author for newly inserted blobs.
+/// The author is preserved separately so the push-notifications-server can filter the
+/// author out of the subscriber list (devices don't get pushes for their own messages).
 fn store_blobs_inner(
     db: &Database,
     request: &StoreBlobsRequest,
-) -> Result<BTreeMap<TopicId, BTreeSet<String>>, String> {
+) -> Result<BTreeMap<TopicId, BTreeMap<String, Author>>, String> {
     let write_txn = db
         .begin_write()
         .map_err(|e| format!("Failed to begin transaction: {}", e))?;
 
     let mut blob_count = 0;
-    let mut topics_with_new_blobs: BTreeMap<TopicId, BTreeSet<String>> = BTreeMap::new();
+    let mut topics_with_new_blobs: BTreeMap<TopicId, BTreeMap<String, Author>> = BTreeMap::new();
 
     {
         let mut blobs_table = write_txn
@@ -112,10 +114,10 @@ fn store_blobs_inner(
                             current_watermark,
                             wm
                         );
-                        topics_with_new_blobs
-                            .entry(topic_id.clone())
-                            .or_default()
-                            .extend(stored_seqs.iter().map(|seq| format!("{}:{}", author, seq)));
+                        let topic_entry = topics_with_new_blobs.entry(topic_id.clone()).or_default();
+                        for seq in &stored_seqs {
+                            topic_entry.insert(format!("{}:{}", author, seq), author.clone());
+                        }
                     }
                 }
             }
