@@ -38,9 +38,8 @@ const MIGRATIONS: &[&str] = &[
         topic_id BLOB PRIMARY KEY
     )",
     "CREATE TABLE IF NOT EXISTS active_inboxes (
-        expires_at_nanos INTEGER NOT NULL,
-        topic_id BLOB NOT NULL,
-        PRIMARY KEY (expires_at_nanos, topic_id)
+        topic_id BLOB NOT NULL PRIMARY KEY,
+        expires_at_nanos INTEGER NOT NULL
     )",
 ];
 
@@ -128,9 +127,6 @@ pub struct LocalStore {
 impl LocalStore {
     pub async fn new(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref().to_path_buf();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
         let opts = SqliteConnectOptions::new()
             .filename(&path)
             .create_if_missing(true)
@@ -184,32 +180,17 @@ impl LocalStore {
     }
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
-        let rows: Vec<(Vec<u8>,)> = sqlx::query_as("SELECT topic_id FROM subscribed_topics")
+        let rows: Vec<(TopicId,)> = sqlx::query_as("SELECT topic_id FROM subscribed_topics")
             .fetch_all(&self.pool)
             .await?;
-        rows.into_iter()
-            .map(|(bytes,)| {
-                let arr: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("subscribed_topics.topic_id is not 32 bytes"))?;
-                Ok(TopicId::from(arr))
-            })
-            .collect()
+        Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        let rows: Vec<(Vec<u8>,)> = sqlx::query_as("SELECT agent_id FROM contacts")
+        let rows: Vec<(AgentId,)> = sqlx::query_as("SELECT agent_id FROM contacts")
             .fetch_all(&self.pool)
             .await?;
-        let mut agent_ids: Vec<AgentId> = rows
-            .into_iter()
-            .map(|(bytes,)| {
-                let arr: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("contacts.agent_id is not 32 bytes"))?;
-                AgentId::from_bytes(&arr)
-            })
-            .collect::<anyhow::Result<_>>()?;
+        let mut agent_ids: Vec<AgentId> = rows.into_iter().map(|(id,)| id).collect();
         // Deduplicate since multiple devices can map to the same agent
         agent_ids.sort();
         agent_ids.dedup();
@@ -217,20 +198,12 @@ impl LocalStore {
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        let row: Option<(Vec<u8>,)> =
+        let row: Option<(AgentId,)> =
             sqlx::query_as("SELECT agent_id FROM contacts WHERE device_id = ?")
-                .bind(device_id.as_bytes().to_vec())
+                .bind(device_id)
                 .fetch_optional(&self.pool)
                 .await?;
-        match row {
-            Some((bytes,)) => {
-                let arr: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("contacts.agent_id is not 32 bytes"))?;
-                Ok(Some(AgentId::from_bytes(&arr)?))
-            }
-            None => Ok(None),
-        }
+        Ok(row.map(|(id,)| id))
     }
 
     /// Look up multiple contacts in a single query.
@@ -251,33 +224,17 @@ impl LocalStore {
             .join(", ");
         let sql =
             format!("SELECT device_id, agent_id FROM contacts WHERE device_id IN ({placeholders})");
-        let mut q = sqlx::query_as::<_, (Vec<u8>, Vec<u8>)>(&sql);
+        let mut q = sqlx::query_as::<_, (DeviceId, AgentId)>(&sql);
         for id in device_ids {
-            q = q.bind(id.as_bytes().to_vec());
+            q = q.bind(*id);
         }
-        let rows = q.fetch_all(&self.pool).await?;
-        rows.into_iter()
-            .map(|(device_bytes, agent_bytes)| {
-                let device_arr: [u8; 32] = device_bytes
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("contacts.device_id is not 32 bytes"))?;
-                let device_id = DeviceId::from(
-                    PublicKey::from_bytes(&device_arr)
-                        .map_err(|e| anyhow::anyhow!("invalid device_id pubkey: {e}"))?,
-                );
-                let agent_arr: [u8; 32] = agent_bytes
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("contacts.agent_id is not 32 bytes"))?;
-                let agent_id = AgentId::from_bytes(&agent_arr)?;
-                Ok((device_id, agent_id))
-            })
-            .collect()
+        Ok(q.fetch_all(&self.pool).await?.into_iter().collect())
     }
 
     pub async fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
         sqlx::query("INSERT OR REPLACE INTO contacts (device_id, agent_id) VALUES (?, ?)")
-            .bind(contact.device_pubkey.as_bytes().to_vec())
-            .bind(contact.agent_id.as_bytes().to_vec())
+            .bind(contact.device_pubkey)
+            .bind(contact.agent_id)
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -287,9 +244,8 @@ impl LocalStore {
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        let topic_bytes: [u8; 32] = **topic;
         sqlx::query("INSERT OR IGNORE INTO subscribed_topics (topic_id) VALUES (?)")
-            .bind(topic_bytes.to_vec())
+            .bind(*topic)
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -299,9 +255,8 @@ impl LocalStore {
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        let topic_bytes: [u8; 32] = **topic;
         sqlx::query("DELETE FROM subscribed_topics WHERE topic_id = ?")
-            .bind(topic_bytes.to_vec())
+            .bind(*topic)
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -336,31 +291,26 @@ impl LocalStore {
     }
 
     pub async fn get_active_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
-        let rows: Vec<(i64, Vec<u8>)> =
-            sqlx::query_as("SELECT expires_at_nanos, topic_id FROM active_inboxes")
+        let rows: Vec<(TopicId, i64)> =
+            sqlx::query_as("SELECT topic_id, expires_at_nanos FROM active_inboxes")
                 .fetch_all(&self.pool)
                 .await?;
-        rows.into_iter()
-            .map(|(nanos, topic_bytes)| {
-                let arr: [u8; 32] = topic_bytes
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("active_inboxes.topic_id is not 32 bytes"))?;
-                Ok(InboxTopic {
-                    expires_at: DateTime::from_timestamp_nanos(nanos),
-                    topic: Topic::new(arr),
-                })
+        Ok(rows
+            .into_iter()
+            .map(|(topic_id, nanos)| InboxTopic {
+                expires_at: DateTime::from_timestamp_nanos(nanos),
+                topic: Topic::new(*topic_id),
             })
-            .collect()
+            .collect())
     }
 
     pub async fn add_active_inbox_topic(&self, topic: InboxTopic) -> anyhow::Result<()> {
         let nanos = topic.expires_at.timestamp_nanos_opt().unwrap_or(0).max(0);
-        let topic_bytes: [u8; 32] = **topic.topic;
         sqlx::query(
-            "INSERT OR IGNORE INTO active_inboxes (expires_at_nanos, topic_id) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos) VALUES (?, ?)",
         )
+        .bind(*topic.topic)
         .bind(nanos)
-        .bind(topic_bytes.to_vec())
         .execute(&self.pool)
         .await?;
         Ok(())
