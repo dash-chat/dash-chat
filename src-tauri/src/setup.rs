@@ -23,8 +23,10 @@ pub(crate) async fn build_node(
     let node = Node::new(data_path, config, notification_tx, topic_subscribed_tx).await?;
 
     let mailbox_url = crate::mailbox::default_mailbox_url();
-    let mailbox_client =
-        mailbox_client::toy::ToyMailboxClient::new(crate::mailbox::PRODUCTION_MAILBOX_ID.to_string(), mailbox_url);
+    let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
+        crate::mailbox::PRODUCTION_MAILBOX_ID.to_string(),
+        mailbox_url,
+    );
     node.mailboxes.register(mailbox_client).await;
 
     Ok(node)
