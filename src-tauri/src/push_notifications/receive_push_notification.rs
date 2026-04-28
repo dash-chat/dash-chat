@@ -69,6 +69,12 @@ pub fn receive_push_notification(
             }
             Err(err) => {
                 log::error!("Failed to handle push notification: {err:?}");
+                // On iOS, returning None here would let iOS fall back to the
+                // raw APNS payload (topic_id as title, author:seq as body).
+                // Show a generic fallback so the user sees something readable.
+                #[cfg(target_os = "ios")]
+                return Some(may_have_new_messages_generic_notification());
+                #[cfg(not(target_os = "ios"))]
                 None
             }
         }
@@ -232,7 +238,7 @@ async fn handle_push_notification(
 
 fn new_message_generic_notification() -> NotificationData {
     NotificationData {
-        title: Some(sonix_i18n::t!("newMessage")),
+        title: Some(sonix_i18n::t!("youHaveANewMessage")),
         body: None,
         icon: Some("ic_stat_icon".to_string()),
         ..Default::default()
@@ -242,6 +248,15 @@ fn new_message_generic_notification() -> NotificationData {
 fn synced_generic_notification() -> NotificationData {
     NotificationData {
         title: Some(sonix_i18n::t!("syncedWithServer")),
+        body: None,
+        icon: Some("ic_stat_icon".to_string()),
+        ..Default::default()
+    }
+}
+
+fn may_have_new_messages_generic_notification() -> NotificationData {
+    NotificationData {
+        title: Some(sonix_i18n::t!("mayHaveNewMessages")),
         body: None,
         icon: Some("ic_stat_icon".to_string()),
         ..Default::default()

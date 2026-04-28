@@ -39,6 +39,9 @@ struct Notification: Codable {
 
 class NotificationService: UNNotificationServiceExtension {
 
+    private var pendingContentHandler: ((UNNotificationContent) -> Void)?
+    private var pendingBestAttemptContent: UNMutableNotificationContent?
+
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
         log.info("didReceive fired")
         guard let bestAttemptContent = request.content.mutableCopy() as? UNMutableNotificationContent else {
@@ -46,6 +49,10 @@ class NotificationService: UNNotificationServiceExtension {
             contentHandler(request.content)
             return
         }
+        // Hold onto these so serviceExtensionTimeWillExpire can deliver a
+        // sensible fallback if the Rust call exceeds iOS's ~30s budget.
+        self.pendingContentHandler = contentHandler
+        self.pendingBestAttemptContent = bestAttemptContent
         let s = "{ \"title\": \"\(bestAttemptContent.title)\", \"body\": \"\(bestAttemptContent.body)\" }"
         let cstr = makeCString(from: s)
         defer { cstr.deallocate() }
@@ -57,7 +64,7 @@ class NotificationService: UNNotificationServiceExtension {
             forSecurityApplicationGroupIdentifier: "group.studio.darksoil.dashchat"
         ) else {
             log.error("missing App Group container — passing through original")
-            contentHandler(bestAttemptContent)
+            self.deliver(bestAttemptContent)
             return
         }
         let dataDir = containerURL.path
@@ -65,10 +72,10 @@ class NotificationService: UNNotificationServiceExtension {
         defer { dataDirCstr.deallocate() }
         let dataDirSlice = RustByteSlice(bytes: dataDirCstr, len: dataDir.utf8.count)
 
-        log.info("calling receive_notification payload=\(s, privacy: .public) dataDir=\(dataDir, privacy: .public)")
+        log.info("calling receive_notification payload=\(s, privacy: .auto) dataDir=\(dataDir, privacy: .public)")
         guard let n = receive_notification(slice, dataDirSlice) else {
             log.info("receive_notification returned NULL pointer — suppressing")
-            contentHandler(UNNotificationContent())
+            self.deliver(UNNotificationContent())
             return
         }
         let title = notification_title(n).asString()
@@ -77,21 +84,40 @@ class NotificationService: UNNotificationServiceExtension {
         log.info("decoded title=\(title ?? "<nil>", privacy: .public) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .public) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
         if (title == nil || title!.isEmpty) && (body == nil || body!.isEmpty) {
             log.info("both title and body empty/nil — suppressing with empty UNNotificationContent")
-            contentHandler(UNNotificationContent())
+            self.deliver(UNNotificationContent())
             return
         }
         if let title { bestAttemptContent.title = title }
         if let body { bestAttemptContent.body = body }
         log.info("delivering modified content title=\(bestAttemptContent.title, privacy: .public) body=\(bestAttemptContent.body, privacy: .public)")
-        contentHandler(bestAttemptContent)
+        self.deliver(bestAttemptContent)
     }
-    
+
+    /// Called by iOS just before the extension's ~30s budget expires. Without
+    /// this, iOS falls back to the raw APNS payload (topic_id as title,
+    /// author:seq as body — totally cryptic to the user). Replace it with a
+    /// generic "New message" so the user at least sees something readable.
     override func serviceExtensionTimeWillExpire() {
-        // Called just before the extension will be terminated by the system.
-        // Use this as an opportunity to deliver your "best attempt" at modified content, otherwise the original push payload will be used.
-       // if let contentHandler = contentHandler, let bestAttemptContent =  bestAttemptContent {
-       //     contentHandler(bestAttemptContent)
-       // }
+        log.error("serviceExtensionTimeWillExpire — Rust call exceeded budget, delivering generic fallback")
+        guard let bestAttemptContent = self.pendingBestAttemptContent else {
+            return
+        }
+        bestAttemptContent.title = "New message"
+        bestAttemptContent.body = ""
+        self.deliver(bestAttemptContent)
+    }
+
+    /// Wraps `contentHandler(content)` so the pending references are cleared
+    /// after delivery — once we've called the handler, iOS's expiration timer
+    /// is moot and we don't want serviceExtensionTimeWillExpire to fire a
+    /// second delivery.
+    private func deliver(_ content: UNNotificationContent) {
+        guard let handler = self.pendingContentHandler else {
+            return
+        }
+        self.pendingContentHandler = nil
+        self.pendingBestAttemptContent = nil
+        handler(content)
     }
 
 }
