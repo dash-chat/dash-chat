@@ -74,8 +74,8 @@ class NotificationService: UNNotificationServiceExtension {
 
         log.info("calling receive_notification payload=\(s, privacy: .auto) dataDir=\(dataDir, privacy: .public)")
         guard let n = receive_notification(slice, dataDirSlice) else {
-            log.info("receive_notification returned NULL pointer — suppressing")
-            self.deliver(UNNotificationContent())
+            log.error("receive_notification returned NULL pointer — delivering generic 'New message' fallback")
+            self.deliverGenericFallback()
             return
         }
         let title = notification_title(n).asString()
@@ -83,14 +83,8 @@ class NotificationService: UNNotificationServiceExtension {
         notification_destroy(n)
         log.info("decoded title=\(title ?? "<nil>", privacy: .public) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .public) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
         if (title == nil || title!.isEmpty) && (body == nil || body!.isEmpty) {
-            // Without the com.apple.developer.usernotifications.filtering
-            // entitlement, iOS won't honor an empty UNNotificationContent and
-            // would fall back to the raw APNS payload (topic_id / author:seq).
-            // Show a generic readable fallback instead.
             log.info("both title and body empty/nil — delivering generic 'New message' fallback")
-            bestAttemptContent.title = "New message"
-            bestAttemptContent.body = ""
-            self.deliver(bestAttemptContent)
+            self.deliverGenericFallback()
             return
         }
         if let title { bestAttemptContent.title = title }
@@ -101,10 +95,19 @@ class NotificationService: UNNotificationServiceExtension {
 
     /// Called by iOS just before the extension's ~30s budget expires. Without
     /// this, iOS falls back to the raw APNS payload (topic_id as title,
-    /// author:seq as body — totally cryptic to the user). Replace it with a
-    /// generic "New message" so the user at least sees something readable.
+    /// author:seq as body — totally cryptic to the user).
     override func serviceExtensionTimeWillExpire() {
         log.error("serviceExtensionTimeWillExpire — Rust call exceeded budget, delivering generic fallback")
+        self.deliverGenericFallback()
+    }
+
+    /// Replaces the pending best-attempt content with a generic readable
+    /// "New message" notification and delivers it. Used by every path that
+    /// can't produce real content but must still deliver something — without
+    /// the `com.apple.developer.usernotifications.filtering` entitlement, iOS
+    /// won't honor empty content and would otherwise leak the raw APNS
+    /// payload (topic_id / author:seq) to the user.
+    private func deliverGenericFallback() {
         guard let bestAttemptContent = self.pendingBestAttemptContent else {
             return
         }
