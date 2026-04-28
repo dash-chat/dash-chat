@@ -3,12 +3,16 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
 
 use chrono::{DateTime, Utc};
 use p2panda_auth::Access;
 use p2panda_core::{Hash, Operation, PublicKey};
-use sqlx::SqlitePool;
+use sqlx::{
+    SqlitePool,
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
+};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -127,8 +131,12 @@ impl LocalStore {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let url = format!("sqlite://{}?mode=rwc", path.to_string_lossy());
-        let pool = SqlitePool::connect(&url).await?;
+        let opts = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(Duration::from_secs(30));
+        let pool = SqlitePoolOptions::new().connect_with(opts).await?;
         for sql in MIGRATIONS {
             sqlx::query(sql).execute(&pool).await?;
         }
