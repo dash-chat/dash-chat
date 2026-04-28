@@ -147,7 +147,7 @@ async fn handle_push_notification(
     match payload {
         Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
             // Resolve the sender's agent ID and profile name via the contacts table
-            let sender_agent_id = match node.lookup_contact(sender_device_id) {
+            let sender_agent_id = match node.lookup_contact(sender_device_id).await {
                 Ok(agent_id) => agent_id,
                 Err(err) => {
                     log::error!(

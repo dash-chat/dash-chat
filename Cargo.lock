@@ -1973,7 +1973,6 @@ dependencies = [
  "p2panda-sync",
  "pretty_assertions",
  "rand 0.9.4",
- "redb",
  "serde",
  "serde_json",
  "sqlx",

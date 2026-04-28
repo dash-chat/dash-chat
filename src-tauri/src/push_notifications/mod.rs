@@ -153,7 +153,8 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let topic_ids = if are_notifications_enabled(&app_handle) {
         let topic_ids: HashSet<PushTopicId> = node
-            .subscribed_topics()?
+            .subscribed_topics()
+            .await?
             .into_iter()
             .map(|t| PushTopicId::from(hex::encode(&*t)))
             .collect();
