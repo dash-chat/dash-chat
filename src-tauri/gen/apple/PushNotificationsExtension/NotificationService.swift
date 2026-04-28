@@ -6,6 +6,12 @@
 //
 
 import UserNotifications
+import os
+
+private let log = Logger(
+    subsystem: "studio.darksoil.dashchat.PushNotificationsExtension",
+    category: "service"
+)
 
 func makeCString(from str: String) -> UnsafeMutablePointer<UInt8> {
     var utf8 = Array(str.utf8)
@@ -34,8 +40,9 @@ struct Notification: Codable {
 class NotificationService: UNNotificationServiceExtension {
 
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
-        NSLog("PushNotificationsExtension: didReceive fired")
+        log.info("didReceive fired")
         guard let bestAttemptContent = request.content.mutableCopy() as? UNMutableNotificationContent else {
+            log.error("could not get mutableCopy of request.content — passing through original")
             contentHandler(request.content)
             return
         }
@@ -49,7 +56,7 @@ class NotificationService: UNNotificationServiceExtension {
         guard let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.studio.darksoil.dashchat"
         ) else {
-            NSLog("PushNotificationsExtension: missing App Group container")
+            log.error("missing App Group container — passing through original")
             contentHandler(bestAttemptContent)
             return
         }
@@ -58,13 +65,24 @@ class NotificationService: UNNotificationServiceExtension {
         defer { dataDirCstr.deallocate() }
         let dataDirSlice = RustByteSlice(bytes: dataDirCstr, len: dataDir.utf8.count)
 
+        log.info("calling receive_notification payload=\(s, privacy: .public) dataDir=\(dataDir, privacy: .public)")
         guard let n = receive_notification(slice, dataDirSlice) else {
-            contentHandler(bestAttemptContent)
+            log.info("receive_notification returned NULL pointer — suppressing")
+            contentHandler(UNNotificationContent())
             return
         }
-        if let title = notification_title(n).asString() { bestAttemptContent.title = title }
-        if let body = notification_body(n).asString() { bestAttemptContent.body = body }
+        let title = notification_title(n).asString()
+        let body = notification_body(n).asString()
         notification_destroy(n)
+        log.info("decoded title=\(title ?? "<nil>", privacy: .public) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .public) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
+        if (title == nil || title!.isEmpty) && (body == nil || body!.isEmpty) {
+            log.info("both title and body empty/nil — suppressing with empty UNNotificationContent")
+            contentHandler(UNNotificationContent())
+            return
+        }
+        if let title { bestAttemptContent.title = title }
+        if let body { bestAttemptContent.body = body }
+        log.info("delivering modified content title=\(bestAttemptContent.title, privacy: .public) body=\(bestAttemptContent.body, privacy: .public)")
         contentHandler(bestAttemptContent)
     }
     

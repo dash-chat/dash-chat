@@ -47,7 +47,19 @@ pub fn receive_push_notification(
 
     tauri::async_runtime::block_on(async move {
         match handle_push_notification(notification, data_path).await {
-            Ok(result) => result,
+            Ok(result) => {
+                if let Some(data) = &result {
+                    log::info!(
+                        "Successfully processed push notification, showing notification: {:?}.",
+                        data
+                    );
+                } else {
+                    log::info!(
+                    "Successfully processed push notification, no actual notification needs to be shown.",
+                );
+                }
+                result
+            }
             Err(err) => {
                 log::error!("Failed to handle push notification: {err:?}");
                 None
