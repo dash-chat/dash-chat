@@ -90,10 +90,7 @@ async fn notify_topic_skips_author() {
     let server = TestServer::new(app).unwrap();
 
     // Both devices register tokens and subscribe to the topic.
-    for (pk, token) in [
-        (&author_key, "author-token"),
-        (&other_key, "other-token"),
-    ] {
+    for (pk, token) in [(&author_key, "author-token"), (&other_key, "other-token")] {
         server
             .post("/fcm-tokens/register")
             .json(&RegisterFcmTokenRequest {

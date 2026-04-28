@@ -114,7 +114,8 @@ fn store_blobs_inner(
                             current_watermark,
                             wm
                         );
-                        let topic_entry = topics_with_new_blobs.entry(topic_id.clone()).or_default();
+                        let topic_entry =
+                            topics_with_new_blobs.entry(topic_id.clone()).or_default();
                         for seq in &stored_seqs {
                             topic_entry.insert(format!("{}:{}", author, seq), author.clone());
                         }

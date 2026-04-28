@@ -249,9 +249,8 @@ impl LocalStore {
             .take(device_ids.len())
             .collect::<Vec<_>>()
             .join(", ");
-        let sql = format!(
-            "SELECT device_id, agent_id FROM contacts WHERE device_id IN ({placeholders})"
-        );
+        let sql =
+            format!("SELECT device_id, agent_id FROM contacts WHERE device_id IN ({placeholders})");
         let mut q = sqlx::query_as::<_, (Vec<u8>, Vec<u8>)>(&sql);
         for id in device_ids {
             q = q.bind(id.as_bytes().to_vec());
@@ -309,11 +308,10 @@ impl LocalStore {
     }
 
     pub async fn private_key(&self) -> anyhow::Result<PrivateKey> {
-        let row: Option<(Vec<u8>,)> =
-            sqlx::query_as("SELECT value FROM identity WHERE key = ?")
-                .bind(PRIVATE_KEY_KEY)
-                .fetch_optional(&self.pool)
-                .await?;
+        let row: Option<(Vec<u8>,)> = sqlx::query_as("SELECT value FROM identity WHERE key = ?")
+            .bind(PRIVATE_KEY_KEY)
+            .fetch_optional(&self.pool)
+            .await?;
         let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Private key field not found"))?;
         let arr: [u8; 32] = bytes
             .try_into()
@@ -326,11 +324,10 @@ impl LocalStore {
     }
 
     pub async fn agent_id(&self) -> anyhow::Result<AgentId> {
-        let row: Option<(Vec<u8>,)> =
-            sqlx::query_as("SELECT value FROM identity WHERE key = ?")
-                .bind(AGENT_ID_KEY)
-                .fetch_optional(&self.pool)
-                .await?;
+        let row: Option<(Vec<u8>,)> = sqlx::query_as("SELECT value FROM identity WHERE key = ?")
+            .bind(AGENT_ID_KEY)
+            .fetch_optional(&self.pool)
+            .await?;
         let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Agent ID field not found"))?;
         let arr: [u8; 32] = bytes
             .try_into()
@@ -359,11 +356,13 @@ impl LocalStore {
     pub async fn add_active_inbox_topic(&self, topic: InboxTopic) -> anyhow::Result<()> {
         let nanos = topic.expires_at.timestamp_nanos_opt().unwrap_or(0).max(0);
         let topic_bytes: [u8; 32] = **topic.topic;
-        sqlx::query("INSERT OR IGNORE INTO active_inboxes (expires_at_nanos, topic_id) VALUES (?, ?)")
-            .bind(nanos)
-            .bind(topic_bytes.to_vec())
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "INSERT OR IGNORE INTO active_inboxes (expires_at_nanos, topic_id) VALUES (?, ?)",
+        )
+        .bind(nanos)
+        .bind(topic_bytes.to_vec())
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
