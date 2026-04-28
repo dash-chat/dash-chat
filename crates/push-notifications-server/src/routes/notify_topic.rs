@@ -21,6 +21,10 @@ pub(crate) async fn notify_topics(
     req.validate()?;
 
     let topic_ids: HashSet<_> = req.topics_to_notify.keys().cloned().collect();
+    tracing::info!(
+        "[notify_topics] Notifying subscribers for {} topics.",
+        topic_ids.len()
+    );
 
     // Batch-fetch subscribers for all topics in a single query
     let topic_subscribers = state.db.get_subscribers_for_topics(&topic_ids).await?;
@@ -34,7 +38,19 @@ pub(crate) async fn notify_topics(
         .into_iter()
         .collect();
 
+    if all_subscribers.is_empty() {
+        tracing::info!("[notify_topics] No subscribers for this topic: nothing to do.");
+        return Ok(StatusCode::NO_CONTENT);
+    }
+
     let fcm_tokens = state.db.get_fcm_tokens(&all_subscribers).await?;
+
+    if fcm_tokens.is_empty() {
+        tracing::info!(
+            "[notify_topics] No subscriber has registered their FCM tokens yet: nothing to do."
+        );
+        return Ok(StatusCode::NO_CONTENT);
+    }
 
     let tasks: Vec<_> = req
         .topics_to_notify
