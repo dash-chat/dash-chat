@@ -110,6 +110,7 @@ pub fn listen_for_notification_taps(app_handle: &AppHandle) {
         };
 
         let Some(topic_id) = parse_topic_id(&payload.notification) else {
+            log::error!("Failed to parse topic ID from the notification.");
             return;
         };
 

@@ -38,8 +38,3 @@ p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "das
 # p2panda-stream = { path = "/home/michael/gitfork/p2panda/p2panda-stream" }
 # p2panda-sync = { path = "/home/michael/gitfork/p2panda/p2panda-sync" }
 # p2panda-spaces = { path = "/home/michael/gitfork/p2panda/p2panda-spaces" }
-
-[patch."https://github.com/guillemcordoba/plugins-workspace"]
-tauri-plugin-notification = { path = "../plugins-workspace/plugins/notification" }
-tauri-plugin-notification-macros = { path = "../plugins-workspace/plugins/notification-macros" }
-tauri-plugin-notification-models = { path = "../plugins-workspace/plugins/notification-models" }

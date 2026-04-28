@@ -113,6 +113,14 @@ impl Fcm for RealFcmClient {
         let mut aps_data = Map::new();
         aps_data.insert("alert".to_string(), Value::Object(alert_data));
         aps_data.insert("mutable-content".to_string(), Value::Number(1.into()));
+        // `thread-id` becomes UNNotificationContent.threadIdentifier on iOS, which the
+        // notification plugin surfaces as `group` on tap — the client uses that to
+        // navigate to the correct chat. Title carries the topic id by convention
+        // (see notify_topic.rs).
+        aps_data.insert(
+            "thread-id".to_string(),
+            Value::String(notification.title.clone()),
+        );
         let mut apns_data = HashMap::new();
         apns_data.insert("aps".to_string(), Value::Object(aps_data));
         apns_config.payload = Some(apns_data);
