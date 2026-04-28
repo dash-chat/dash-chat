@@ -39,10 +39,13 @@ importers:
         version: 3.6.2
       prettier-plugin-svelte:
         specifier: ^3.5.1
-        version: 3.5.1(prettier@3.6.2)(svelte@4.2.20)
+        version: 3.5.1(prettier@3.6.2)(svelte@5.49.2)
       rust-just:
         specifier: ^1.46.0
         version: 1.46.0
+      svelte:
+        specifier: ^5.49.2
+        version: 5.49.2
       svelte-language-server:
         specifier: ^0.17.25
         version: 0.17.25(picomatch@4.0.3)
@@ -7852,10 +7855,10 @@ snapshots:
       prettier: 3.3.3
       svelte: 4.2.20
 
-  prettier-plugin-svelte@3.5.1(prettier@3.6.2)(svelte@4.2.20):
+  prettier-plugin-svelte@3.5.1(prettier@3.6.2)(svelte@5.49.2):
     dependencies:
       prettier: 3.6.2
-      svelte: 4.2.20
+      svelte: 5.49.2
 
   prettier@3.3.3: {}
 
