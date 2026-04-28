@@ -16,7 +16,7 @@
 				<a href="#" class="nav-brand">Dash Chat</a>
 				<div class="nav-links">
 					<a
-						href="https://github.com/darksoil-studio/dash-chat"
+						href="https://github.com/dash-chat/dash-chat"
 						target="_blank"
 						rel="noopener noreferrer"
 						class="gh-link"
@@ -40,7 +40,12 @@
 					Secure messaging that keeps working when the internet doesn't.
 				</p>
 				<div
-					style="display: flex; flex-direction: column; align-items: center; justify-content: center"
+					style="
+						display: flex;
+						flex-direction: column;
+						align-items: center;
+						justify-content: center;
+					"
 				>
 					<download-installer-button
 						style="width: 100%; max-width: 500px"
@@ -68,8 +73,26 @@
 		</footer>
 
 		<script type="module">
-			import { redirectToAppStoreIfMobile } from './src/redirect-mobile.ts';
+			const ANDROID_STORE_URL =
+				'https://play.google.com/store/apps/details?id=studio.darksoil.dashchat&pcampaignid=web_share';
+			const IOS_STORE_URL =
+				'https://apps.apple.com/app/dash-chat-messenger/id6759798505';
 
+			function redirectToAppStoreIfMobile() {
+				const ua = navigator.userAgent;
+
+				if (/android/i.test(ua)) {
+					window.location.replace(ANDROID_STORE_URL);
+					// iPadOS spoofs a macOS user agent, but reports maxTouchPoints > 1 (real Macs report 0)
+				} else if (
+					/iPad|iPhone|iPod/.test(ua) ||
+					('maxTouchPoints' in navigator &&
+						navigator.maxTouchPoints > 1 &&
+						/Macintosh/.test(ua))
+				) {
+					window.location.replace(IOS_STORE_URL);
+				}
+			}
 			redirectToAppStoreIfMobile();
 		</script>
 		<script type="module">
