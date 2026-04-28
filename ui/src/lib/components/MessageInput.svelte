@@ -68,16 +68,13 @@
 		if (!result) return;
 		const vv = window.visualViewport;
 		if (!vv) return;
-		let cleanup: ReturnType<typeof setTimeout>;
-		const onResize = () => {
-			result.onResize();
-			clearTimeout(cleanup);
-			cleanup = setTimeout(
-				() => vv.removeEventListener('resize', onResize),
-				300,
-			);
-		};
+		const onResize = () => result.onResize();
 		vv.addEventListener('resize', onResize);
+		textarea.addEventListener(
+			'blur',
+			() => vv.removeEventListener('resize', onResize),
+			{ once: true },
+		);
 	}
 
 	onMount(() => {
