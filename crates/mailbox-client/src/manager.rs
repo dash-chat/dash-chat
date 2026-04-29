@@ -1,3 +1,4 @@
+use crate::blob_fetch_set::BlobFetchSet;
 use crate::blob_queue::{BlobPublishEntry, BlobPublishQueue};
 use crate::store::LocalMailboxStore;
 use tokio::time::Instant;
@@ -121,6 +122,7 @@ where
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Arc<Store>,
     blob_queue: Arc<BlobQueue>,
+    blob_fetch_set: BlobFetchSet,
     config: MailboxesConfig,
     trigger: mpsc::Sender<Option<MailboxId>>,
     /// Handles to background tasks, aborted on shutdown.
@@ -145,6 +147,7 @@ where
             topics: Arc::new(Mutex::new(Default::default())),
             store: store.into(),
             blob_queue,
+            blob_fetch_set: BlobFetchSet::new(),
             config,
             trigger,
             task_handles: Arc::new(Mutex::new(Vec::new())),
@@ -444,6 +447,83 @@ where
                 }
             }
         }
+        drop(mm);
+
+        self.retry_pending_blob_fetches().await;
+    }
+
+    /// Retry any blob hashes that could not be fetched during a previous sync round.
+    ///
+    /// For each pending hash, the preferred (original) mailbox is tried first, then every
+    /// other currently registered mailbox. Successfully fetched blobs are removed from the
+    /// set; hashes that remain will be retried on the next call.
+    async fn retry_pending_blob_fetches(&self) {
+        if self.blob_fetch_set.is_empty().await {
+            return;
+        }
+
+        let pending = self.blob_fetch_set.pending().await;
+
+        // Snapshot all registered blob stores once to avoid holding the lock during I/O.
+        let all_stores: Vec<(MailboxId, Arc<dyn RemoteBlobStore>)> = self
+            .mailboxes
+            .lock()
+            .await
+            .iter()
+            .map(|(id, t)| (id.clone(), t.blob_store.clone()))
+            .collect();
+
+        tracing::debug!(count = pending.len(), "retrying pending blob fetches");
+
+        for (blob_hash, preferred_id) in pending {
+            // Preferred mailbox first, then the rest in registration order.
+            let mut stores: Vec<Arc<dyn RemoteBlobStore>> = Vec::with_capacity(all_stores.len());
+            if let Some((_, s)) = all_stores.iter().find(|(id, _)| *id == preferred_id) {
+                stores.push(s.clone());
+            }
+            for (id, s) in &all_stores {
+                if *id != preferred_id {
+                    stores.push(s.clone());
+                }
+            }
+
+            let mut fetched = false;
+            'stores: for store in stores {
+                match store.fetch_blob(blob_hash).await {
+                    Ok(Some(blob)) => {
+                        match self.store.store_mailbox_opaq(blob).await {
+                            Ok(()) => {
+                                self.blob_fetch_set.remove(&blob_hash).await;
+                                fetched = true;
+                            }
+                            Err(err) => {
+                                tracing::warn!(
+                                    ?err,
+                                    ?blob_hash,
+                                    "failed to store retried blob locally"
+                                );
+                            }
+                        }
+                        break 'stores;
+                    }
+                    Ok(None) => {} // not on this mailbox, try next
+                    Err(err) => {
+                        tracing::debug!(
+                            ?err,
+                            ?blob_hash,
+                            "blob retry fetch failed, trying next mailbox"
+                        );
+                    }
+                }
+            }
+
+            if !fetched {
+                tracing::debug!(
+                    ?blob_hash,
+                    "blob not found on any mailbox, will retry on next poll"
+                );
+            }
+        }
     }
 
     /// Immediately sync the given topics with the given mailbox:
@@ -492,8 +572,8 @@ where
             // TODO: implement different policies for fetching, e.g. fetch in background
             for item in &items {
                 for blob_hash in item.blob_refs() {
-                    if synced_blobs.insert(blob_hash.clone()) {
-                        match blob_store.fetch_blob(blob_hash.clone()).await {
+                    if synced_blobs.insert(blob_hash) {
+                        match blob_store.fetch_blob(blob_hash).await {
                             Ok(Some(blob)) => {
                                 if let Err(err) = self.store.store_mailbox_opaq(blob).await {
                                     tracing::warn!(
@@ -501,17 +581,29 @@ where
                                         ?blob_hash,
                                         "failed to store fetched blob locally"
                                     );
+                                    self.blob_fetch_set
+                                        .insert(blob_hash, mailbox_id.clone())
+                                        .await;
                                 }
                             }
                             Ok(None) => {
-                                tracing::debug!(?blob_hash, "blob not found on remote");
+                                tracing::debug!(
+                                    ?blob_hash,
+                                    "blob not found on remote, queuing for retry"
+                                );
+                                self.blob_fetch_set
+                                    .insert(blob_hash, mailbox_id.clone())
+                                    .await;
                             }
                             Err(err) => {
                                 tracing::warn!(
                                     ?err,
                                     ?blob_hash,
-                                    "failed to fetch blob from remote"
+                                    "failed to fetch blob from remote, queuing for retry"
                                 );
+                                self.blob_fetch_set
+                                    .insert(blob_hash, mailbox_id.clone())
+                                    .await;
                             }
                         }
                     }
@@ -591,6 +683,7 @@ where
             topics: self.topics.clone(),
             store: self.store.clone(),
             blob_queue: self.blob_queue.clone(),
+            blob_fetch_set: self.blob_fetch_set.clone(),
             config: self.config.clone(),
             trigger: self.trigger.clone(),
             task_handles: self.task_handles.clone(),
