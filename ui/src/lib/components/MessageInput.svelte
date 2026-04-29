@@ -71,7 +71,6 @@
 			{ once: true },
 		);
 	}
-
 </script>
 
 <div
