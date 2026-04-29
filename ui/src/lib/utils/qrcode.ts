@@ -1,15 +1,17 @@
 import { isTauriEnv } from '$lib/utils/environment';
+import {
+	Format,
+	checkPermissions,
+	requestPermissions,
+	scan,
+} from '@tauri-apps/plugin-barcode-scanner';
 import jsQR from 'jsqr';
 
 export async function scanQrCode(): Promise<string> {
 	if (!isTauriEnv()) {
 		throw new Error('QR code scanning requires the Tauri desktop/mobile app');
 	}
-	const { Format, checkPermissions, requestPermissions, scan } = await import(
-		'@tauri-apps/plugin-barcode-scanner'
-	);
-
-	await ensureCameraPermission(checkPermissions, requestPermissions);
+	await ensureCameraPermission();
 
 	const result = await scan({ windowed: true, formats: [Format.QRCode] });
 	return result.content;
@@ -24,10 +26,7 @@ export async function scanQrCode(): Promise<string> {
  * If not granted, race `requestPermissions()` against a polling loop that
  * calls `checkPermissions()` until the permission is granted.
  */
-async function ensureCameraPermission(
-	checkPermissions: () => Promise<string>,
-	requestPermissions: () => Promise<string>,
-): Promise<void> {
+async function ensureCameraPermission(): Promise<void> {
 	const state = await checkPermissions();
 	if (state === 'granted') return;
 
@@ -38,7 +37,7 @@ async function ensureCameraPermission(
 	// even if the plugin callback never fires.
 	const granted = await Promise.race([
 		requestPromise.then(state => state === 'granted'),
-		pollUntilGranted(checkPermissions),
+		pollUntilGranted(),
 	]);
 
 	if (!granted) {
@@ -46,9 +45,7 @@ async function ensureCameraPermission(
 	}
 }
 
-async function pollUntilGranted(
-	checkPermissions: () => Promise<string>,
-): Promise<boolean> {
+async function pollUntilGranted(): Promise<boolean> {
 	const maxWaitMs = 30_000;
 	const intervalMs = 500;
 	const start = Date.now();
