@@ -10,7 +10,6 @@
 		value?: string;
 		placeholder?: string;
 		onSend?: () => void;
-		onFocus?: () => { onResize: () => void } | void;
 		onEmojiClick?: () => void;
 	}
 
@@ -18,7 +17,6 @@
 		value = $bindable(''),
 		placeholder = m.typeMessage(),
 		onSend,
-		onFocus,
 		onEmojiClick,
 	}: Props = $props();
 
@@ -58,19 +56,6 @@
 		}
 	}
 
-	function handleFocus() {
-		const result = onFocus?.();
-		if (!result) return;
-		const vv = window.visualViewport;
-		if (!vv) return;
-		const onResize = () => result.onResize();
-		vv.addEventListener('resize', onResize);
-		textarea.addEventListener(
-			'blur',
-			() => vv.removeEventListener('resize', onResize),
-			{ once: true },
-		);
-	}
 </script>
 
 <div
@@ -105,7 +90,6 @@
 				rows="1"
 				onkeydown={handleKeydown}
 				oninput={handleInput}
-				onfocus={handleFocus}
 			></textarea>
 		</div>
 

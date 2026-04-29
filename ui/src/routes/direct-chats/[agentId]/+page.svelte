@@ -165,22 +165,19 @@
 	// Column-reverse on the scroll container inverts the scroll axis so that
 	// scrollTop=0 means "at the bottom of the content". The browser then keeps
 	// us pinned to the bottom automatically when content is added or the
-	// viewport changes (keyboard show/hide), and only scrolls up when the user
-	// drags. Threshold accounts for roughly 2-3 message heights for the
-	// floating "scroll to bottom" button visibility logic.
+	// viewport changes (keyboard show/hide).
 	const SCROLL_BOTTOM_THRESHOLD = 200;
 
 	const scrollIsAtBottom = () => {
 		if (!messagesPageEl) return true;
-		// In a column-reverse scroll container, scrollTop=0 is the bottom.
-		// Browsers differ on whether scrollTop becomes positive or negative
-		// when the user scrolls up (older WebKit used negative; modern Safari
-		// and Chrome use positive). Use abs() so the check works either way.
+		// In column-reverse scrollTop=0 is the bottom. WebKit uses
+		// negative values when scrolled up; abs() normalises this.
 		return Math.abs(messagesPageEl.scrollTop) < SCROLL_BOTTOM_THRESHOLD;
 	};
 
 	const scrollToBottom = (animate = true) => {
 		if (!messagesPageEl) return;
+		// In column-reverse, scrollTop=0 is the visual bottom.
 		messagesPageEl.scrollTo({
 			top: 0,
 			behavior: animate ? 'smooth' : 'auto',
@@ -217,18 +214,17 @@
 	let messagesPageEl: HTMLDivElement | null = $state(null);
 
 	onMount(() => {
-		// Scroll happens inside `.messages-scroll-area` (column-reverse), not on
-		// the Konsta Page itself.
-		messagesPageEl = document.querySelector(
-			'.messages-scroll-area',
-		) as HTMLDivElement;
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
+	});
 
-		// In a column-reverse scroll container, new content appended to the
-		// list naturally appears at the visual bottom and the browser keeps
-		// the scroll pinned to it (scrollTop=0). No manual scroll needed.
+	// Set up scroll/intersection observers once the scroll area is in the
+	// DOM. The element lives inside {#await} blocks, so it may not exist
+	// at onMount time. Using $effect with bind:this ensures we react when
+	// the element appears.
+	$effect(() => {
+		if (!messagesPageEl) return;
 
 		observer = new IntersectionObserver(
 			entries => {
@@ -238,7 +234,6 @@
 						visibleMessages.add(hash);
 					}
 				}
-				// Debounce the mark-as-read call
 				clearTimeout(markReadTimeout);
 				markReadTimeout = setTimeout(() => {
 					if (visibleMessages.size > 0) {
@@ -247,17 +242,60 @@
 					}
 				}, 500);
 			},
-			{ threshold: 0.5 },
+			{ threshold: 0.5, root: messagesPageEl },
 		);
 
-		// Track scroll position to show/hide scroll-to-bottom button
+		// Konsta's transparent navbar sets bg opacity via inline style
+		// based on scroll events from the Page element. Since the Page
+		// has overflow:hidden, Konsta always sees scrollTop=0 and keeps
+		// the bg invisible. We override the inline style directly.
+		let navbarBgEl: HTMLElement | null = null;
+
+		const updateNavbar = () => {
+			if (!navbarBgEl) {
+				// Scope to this page's navbar — there may be multiple
+				// .k-navbar elements on screen (e.g. sidebar panel).
+				const page = messagesPageEl!.closest('.k-page');
+				navbarBgEl = page?.querySelector(
+					'.k-navbar > div.absolute',
+				) ?? null;
+			}
+			if (!navbarBgEl) return;
+			const maxScroll =
+				messagesPageEl!.scrollHeight - messagesPageEl!.clientHeight;
+			if (maxScroll < 1) {
+				// No overflow — profile is visible, keep navbar transparent.
+				navbarBgEl.style.opacity = '0';
+			} else {
+				// In column-reverse, scrollTop=0 is the visual bottom.
+				// WebKit uses negative scrollTop when scrolling up; abs()
+				// normalises across browsers. distFromTop=0 means the
+				// profile card is visible (navbar should be transparent).
+				const distFromTop =
+					maxScroll - Math.abs(messagesPageEl!.scrollTop);
+				navbarBgEl.style.opacity = distFromTop > 10 ? '1' : '0';
+			}
+		};
+
 		const handleScroll = () => {
 			showScrollToBottom = !scrollIsAtBottom();
+			updateNavbar();
 		};
-		messagesPageEl?.addEventListener('scroll', handleScroll);
+		messagesPageEl.addEventListener('scroll', handleScroll);
+
+		// Detect content changes (messages rendering) to update navbar.
+		const mutationObserver = new MutationObserver(updateNavbar);
+		mutationObserver.observe(messagesPageEl, {
+			childList: true,
+			subtree: true,
+		});
+
+		// Set initial navbar state.
+		updateNavbar();
 
 		return () => {
 			observer?.disconnect();
+			mutationObserver.disconnect();
 			clearTimeout(markReadTimeout);
 			messagesPageEl?.removeEventListener('scroll', handleScroll);
 		};
@@ -521,7 +559,7 @@
 						</Navbar>
 					{/if}
 
-					<div class="messages-scroll-area">
+					<div class="messages-scroll-area" bind:this={messagesPageEl}>
 						{#await $readMessageHashes then readHashes}
 							{#await $messagesSets then messagesSetsInDays}
 								{@const unreadDivider = getUnreadDividerInfo(
@@ -1097,12 +1135,6 @@
 						<MessageInput
 							bind:value={messageText}
 							onSend={sendMessage}
-							onFocus={() => {
-								if (scrollIsAtBottom()) {
-									scrollToBottom();
-									return { onResize: () => scrollToBottom(false) };
-								}
-							}}
 							onEmojiClick={() => (showFullPicker = true)}
 						/>
 					</div>
@@ -1113,28 +1145,35 @@
 </div>
 
 <style>
-	/* Konsta's `<Page>` root is forced into a flex column with hidden overflow
-	   so the inner `.messages-scroll-area` becomes the actual scrollable area
-	   (otherwise the Page would scroll too and the column-reverse trick
-	   wouldn't apply to the right element). `:global` is required because the
-	   `.k-page` class is added by Konsta on its own root, outside Svelte's
-	   component scope. */
+	/* Force the Konsta Page into a non-scrolling flex column so the inner
+	   .messages-scroll-area becomes the sole scrollable element. Without
+	   this the Page would scroll too and column-reverse wouldn't apply to
+	   the right container. :global is needed because .k-page is added by
+	   Konsta outside Svelte's component scope. */
 	:global(.k-page.messages-page) {
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
 	}
 
-	/* `flex-direction: column-reverse` inverts the scroll axis so `scrollTop=0`
-	   means "at the bottom of the conversation". The browser keeps the bottom
-	   pinned automatically as new messages append and as the viewport changes
-	   (iOS keyboard show/hide), with no manual scrollTo bookkeeping. The
-	   single chronological message-list child stacks normally inside it. */
+	/* column-reverse makes scrollTop=0 the visual bottom (newest messages).
+	   The browser automatically keeps the bottom pinned when content is
+	   added or the viewport resizes (iOS keyboard), with no manual
+	   scrollTo bookkeeping. */
 	.messages-scroll-area {
 		flex: 1;
 		min-height: 0;
 		overflow-y: auto;
 		display: flex;
 		flex-direction: column-reverse;
+	}
+
+	/* Make the content child stretch to fill the scroll area so the
+	   profile card sits at the visual top when there are few/no messages.
+	   In column-reverse the growth direction is upward, so a short child
+	   extends toward the visual top. Once content exceeds the container
+	   there is no remaining space and it stays at its natural height. */
+	.messages-scroll-area > :first-child {
+		flex: 1 0 auto;
 	}
 </style>
