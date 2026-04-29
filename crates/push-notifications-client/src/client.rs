@@ -92,7 +92,7 @@ impl PushNotificationsClient {
 
     pub async fn notify_topics(
         &self,
-        topics_to_notify: HashMap<TopicId, HashSet<OperationId>>,
+        topics_to_notify: HashMap<TopicId, HashMap<OperationId, PublicKey>>,
     ) -> anyhow::Result<()> {
         let resp = self
             .http

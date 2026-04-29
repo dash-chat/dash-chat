@@ -1,14 +1,18 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     io::Write,
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
 
 use chrono::{DateTime, Utc};
 use p2panda_auth::Access;
 use p2panda_core::{Hash, Operation, PublicKey};
-use redb::*;
+use sqlx::{
+    SqlitePool,
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
+};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -18,17 +22,26 @@ use crate::{
     *,
 };
 
-mod impls;
-
-const IDENTITY_TABLE: TableDefinition<&'static str, [u8; 32]> = TableDefinition::new("identity");
-const CONTACTS_TABLE: TableDefinition<[u8; 32], [u8; 32]> = TableDefinition::new("contacts");
-const SUBSCRIBED_TOPICS_TABLE: TableDefinition<[u8; 32], ()> =
-    TableDefinition::new("subscribed_topics");
-const ACTIVE_INBOXES_TABLE: TableDefinition<InboxTopic, ()> =
-    TableDefinition::new("active_inboxes");
-
 const PRIVATE_KEY_KEY: &str = "private_key";
 const AGENT_ID_KEY: &str = "agent_id";
+
+const MIGRATIONS: &[&str] = &[
+    "CREATE TABLE IF NOT EXISTS identity (
+        key TEXT PRIMARY KEY,
+        value BLOB NOT NULL
+    )",
+    "CREATE TABLE IF NOT EXISTS contacts (
+        device_id BLOB PRIMARY KEY,
+        agent_id BLOB NOT NULL
+    )",
+    "CREATE TABLE IF NOT EXISTS subscribed_topics (
+        topic_id BLOB PRIMARY KEY
+    )",
+    "CREATE TABLE IF NOT EXISTS active_inboxes (
+        topic_id BLOB NOT NULL PRIMARY KEY,
+        expires_at_nanos INTEGER NOT NULL
+    )",
+];
 
 #[derive(Clone, Debug)]
 pub struct NodeData {
@@ -107,185 +120,211 @@ impl HackyGroupStore {
 
 #[derive(Clone)]
 pub struct LocalStore {
-    db: Arc<Database>,
+    pool: SqlitePool,
     pub(crate) groups: HackyGroupStore,
 }
 
 impl LocalStore {
     pub async fn new(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref().to_path_buf();
-        let database = Database::create(&path)?;
+        let opts = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(Duration::from_secs(30));
+        let pool = SqlitePoolOptions::new().connect_with(opts).await?;
+        for sql in MIGRATIONS {
+            sqlx::query(sql).execute(&pool).await?;
+        }
+
         let groups_path = path.with_file_name("groups.cbor");
         let store = Self {
-            db: Arc::new(database),
+            pool,
             groups: HackyGroupStore::new(groups_path).await?,
         };
-        store.ensure_initialized()?;
-
+        store.ensure_initialized().await?;
         Ok(store)
     }
 
     /// If the database is not initialized, initialize with random keys
-    fn ensure_initialized(&self) -> anyhow::Result<()> {
-        let private_key = PrivateKey::new();
-        let agent_id = AgentId::from(ActorId::from(PrivateKey::new().public_key()));
-        let txn = self.db.begin_write()?;
-        {
-            let mut identity = txn.open_table(IDENTITY_TABLE)?;
-            let _ = txn.open_table(CONTACTS_TABLE)?;
-            let _ = txn.open_table(ACTIVE_INBOXES_TABLE)?;
-            let _ = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
-
-            let uninitialized =
-                identity.get(PRIVATE_KEY_KEY)?.is_none() && identity.get(AGENT_ID_KEY)?.is_none();
-            if uninitialized {
-                identity.insert(PRIVATE_KEY_KEY, private_key.as_bytes())?;
-                identity.insert(AGENT_ID_KEY, agent_id.as_bytes())?;
-            }
+    async fn ensure_initialized(&self) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let existing: Option<(Vec<u8>,)> =
+            sqlx::query_as("SELECT value FROM identity WHERE key = ?")
+                .bind(PRIVATE_KEY_KEY)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if existing.is_none() {
+            let private_key = PrivateKey::new();
+            let agent_id = AgentId::from(ActorId::from(PrivateKey::new().public_key()));
+            sqlx::query("INSERT INTO identity (key, value) VALUES (?, ?)")
+                .bind(PRIVATE_KEY_KEY)
+                .bind(private_key.as_bytes().to_vec())
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("INSERT INTO identity (key, value) VALUES (?, ?)")
+                .bind(AGENT_ID_KEY)
+                .bind(agent_id.as_bytes().to_vec())
+                .execute(&mut *tx)
+                .await?;
         }
-
-        txn.commit()?;
-
+        tx.commit().await?;
         Ok(())
     }
 
-    pub fn node_data(&self) -> anyhow::Result<NodeData> {
+    pub async fn node_data(&self) -> anyhow::Result<NodeData> {
         Ok(NodeData {
-            private_key: self.private_key()?,
-            agent_id: self.agent_id()?,
+            private_key: self.private_key().await?,
+            agent_id: self.agent_id().await?,
         })
     }
 
-    pub fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
-        let topics = table
-            .iter()?
-            .map(|entry| Ok(entry.map(|(topic, _)| TopicId::from(topic.value()))?))
-            .collect::<anyhow::Result<BTreeSet<TopicId>>>()?;
-        Ok(topics)
+    pub async fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
+        let rows: Vec<(TopicId,)> = sqlx::query_as("SELECT topic_id FROM subscribed_topics")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
-    pub fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(CONTACTS_TABLE)?;
-        let mut agent_ids = Vec::new();
-        for entry in table.iter()? {
-            let (_, value) = entry?;
-            agent_ids.push(AgentId::from_bytes(&value.value())?);
-        }
+    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
+        let rows: Vec<(AgentId,)> = sqlx::query_as("SELECT agent_id FROM contacts")
+            .fetch_all(&self.pool)
+            .await?;
+        let mut agent_ids: Vec<AgentId> = rows.into_iter().map(|(id,)| id).collect();
         // Deduplicate since multiple devices can map to the same agent
         agent_ids.sort();
         agent_ids.dedup();
         Ok(agent_ids)
     }
 
-    pub fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(CONTACTS_TABLE)?;
-        let Some(entry) = table.get(device_id.as_bytes())? else {
-            return Ok(None);
-        };
-        Ok(Some(AgentId::from_bytes(&entry.value())?))
+    pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
+        let row: Option<(AgentId,)> =
+            sqlx::query_as("SELECT agent_id FROM contacts WHERE device_id = ?")
+                .bind(device_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.map(|(id,)| id))
     }
 
-    pub fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
-        let txn = self.db.begin_write()?;
-        {
-            let mut table = txn.open_table(CONTACTS_TABLE)?;
-            table.insert(
-                contact.device_pubkey.as_bytes(),
-                contact.agent_id.as_bytes(),
-            )?;
+    /// Look up multiple contacts in a single query.
+    ///
+    /// Returns a map from `DeviceId` to its `AgentId`. Devices that have no
+    /// contact entry are simply absent from the map — the caller can compare
+    /// against the input slice to find which lookups missed.
+    pub async fn lookup_contacts(
+        &self,
+        device_ids: &[DeviceId],
+    ) -> anyhow::Result<HashMap<DeviceId, AgentId>> {
+        if device_ids.is_empty() {
+            return Ok(HashMap::new());
         }
-        txn.commit()?;
+        let placeholders = std::iter::repeat("?")
+            .take(device_ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql =
+            format!("SELECT device_id, agent_id FROM contacts WHERE device_id IN ({placeholders})");
+        let mut q = sqlx::query_as::<_, (DeviceId, AgentId)>(&sql);
+        for id in device_ids {
+            q = q.bind(*id);
+        }
+        Ok(q.fetch_all(&self.pool).await?.into_iter().collect())
+    }
+
+    pub async fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
+        sqlx::query("INSERT OR REPLACE INTO contacts (device_id, agent_id) VALUES (?, ?)")
+            .bind(contact.device_pubkey)
+            .bind(contact.agent_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    pub fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
+    pub async fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        let txn = self.db.begin_write()?;
-        {
-            let mut table = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
-            table.insert(**topic, ())?;
-        }
-        txn.commit()?;
+        sqlx::query("INSERT OR IGNORE INTO subscribed_topics (topic_id) VALUES (?)")
+            .bind(*topic)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    pub fn register_topic_as_unsubscribed<K: AutoRegisteredTopic>(
+    pub async fn register_topic_as_unsubscribed<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        let txn = self.db.begin_write()?;
-        {
-            let mut table = txn.open_table(SUBSCRIBED_TOPICS_TABLE)?;
-            table.remove(**topic)?;
-        }
-        txn.commit()?;
+        sqlx::query("DELETE FROM subscribed_topics WHERE topic_id = ?")
+            .bind(*topic)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    pub fn private_key(&self) -> anyhow::Result<PrivateKey> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(IDENTITY_TABLE)?;
-        let private_key = table
-            .get(PRIVATE_KEY_KEY)?
-            .ok_or(anyhow::anyhow!("Private key field not found"))?;
-        Ok(PrivateKey::from_bytes(&private_key.value()))
+    pub async fn private_key(&self) -> anyhow::Result<PrivateKey> {
+        let row: Option<(Vec<u8>,)> = sqlx::query_as("SELECT value FROM identity WHERE key = ?")
+            .bind(PRIVATE_KEY_KEY)
+            .fetch_optional(&self.pool)
+            .await?;
+        let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Private key field not found"))?;
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("identity.private_key is not 32 bytes"))?;
+        Ok(PrivateKey::from_bytes(&arr))
     }
 
-    pub fn device_id(&self) -> anyhow::Result<DeviceId> {
-        Ok(DeviceId::from(self.private_key()?.public_key()))
+    pub async fn device_id(&self) -> anyhow::Result<DeviceId> {
+        Ok(DeviceId::from(self.private_key().await?.public_key()))
     }
 
-    pub fn agent_id(&self) -> anyhow::Result<AgentId> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(IDENTITY_TABLE)?;
-        let agent_id = table
-            .get(AGENT_ID_KEY)?
-            .ok_or(anyhow::anyhow!("Agent ID field not found"))?;
-        Ok(AgentId::from(crate::ActorId::from_bytes(
-            &agent_id.value(),
-        )?))
+    pub async fn agent_id(&self) -> anyhow::Result<AgentId> {
+        let row: Option<(Vec<u8>,)> = sqlx::query_as("SELECT value FROM identity WHERE key = ?")
+            .bind(AGENT_ID_KEY)
+            .fetch_optional(&self.pool)
+            .await?;
+        let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Agent ID field not found"))?;
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("identity.agent_id is not 32 bytes"))?;
+        Ok(AgentId::from(crate::ActorId::from_bytes(&arr)?))
     }
 
-    pub fn get_active_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(ACTIVE_INBOXES_TABLE)?;
-        let active_inboxes = table
-            .iter()?
-            .map(|entry| Ok(entry.map(|(topic, _)| topic.value())?))
-            .collect::<anyhow::Result<BTreeSet<InboxTopic>>>()?;
-        Ok(active_inboxes)
+    pub async fn get_active_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
+        let rows: Vec<(TopicId, i64)> =
+            sqlx::query_as("SELECT topic_id, expires_at_nanos FROM active_inboxes")
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(topic_id, nanos)| InboxTopic {
+                expires_at: DateTime::from_timestamp_nanos(nanos),
+                topic: Topic::new(*topic_id),
+            })
+            .collect())
     }
 
-    pub fn add_active_inbox_topic(&self, topic: InboxTopic) -> anyhow::Result<()> {
-        let txn = self.db.begin_write()?;
-        {
-            let mut table = txn.open_table(ACTIVE_INBOXES_TABLE)?;
-            table.insert(topic, ())?;
-        }
-        txn.commit()?;
+    pub async fn add_active_inbox_topic(&self, topic: InboxTopic) -> anyhow::Result<()> {
+        let nanos = topic.expires_at.timestamp_nanos_opt().unwrap_or(0).max(0);
+        sqlx::query(
+            "INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos) VALUES (?, ?)",
+        )
+        .bind(*topic.topic)
+        .bind(nanos)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    pub fn prune_expired_active_inbox_topics(
+    pub async fn prune_expired_active_inbox_topics(
         &self,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let txn = self.db.begin_write()?;
-        {
-            let mut table = txn.open_table(ACTIVE_INBOXES_TABLE)?;
-            let limit = InboxTopic {
-                expires_at,
-                topic: Topic::new([0; 32]),
-            };
-            table.retain_in(..limit, |_, _| false)?;
-        }
-        txn.commit()?;
+        let nanos = expires_at.timestamp_nanos_opt().unwrap_or(0).max(0);
+        sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ?")
+            .bind(nanos)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 }
@@ -303,23 +342,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test_initialize_random.db");
         let store = LocalStore::new(&path).await.unwrap();
-        let private_key = store.private_key().unwrap();
-        let agent_id = store.agent_id().unwrap();
-        store.ensure_initialized().unwrap();
+        let private_key = store.private_key().await.unwrap();
+        let agent_id = store.agent_id().await.unwrap();
+        store.ensure_initialized().await.unwrap();
         assert_eq!(
-            store.private_key().unwrap().as_bytes(),
+            store.private_key().await.unwrap().as_bytes(),
             private_key.as_bytes()
         );
-        assert_eq!(store.agent_id().unwrap(), agent_id);
+        assert_eq!(store.agent_id().await.unwrap(), agent_id);
 
         drop(store);
 
         let store = LocalStore::new(path).await.unwrap();
         assert_eq!(
-            store.private_key().unwrap().as_bytes(),
+            store.private_key().await.unwrap().as_bytes(),
             private_key.as_bytes()
         );
-        assert_eq!(store.agent_id().unwrap(), agent_id);
+        assert_eq!(store.agent_id().await.unwrap(), agent_id);
     }
 
     #[tokio::test]
@@ -328,7 +367,6 @@ mod tests {
         let path = dir.path().join("test_prune_inbox_topics.db");
         let store = LocalStore::new(&path).await.unwrap();
 
-        // Generate inbox topics with various expiration times
         let now = Utc::now();
         let expired = now - Duration::days(1);
         let valid = now + Duration::days(1);
@@ -349,35 +387,26 @@ mod tests {
             },
         ];
 
-        // Insert all topics
-        {
-            let txn = store.db.begin_write().unwrap();
-            {
-                let mut table = txn.open_table(super::ACTIVE_INBOXES_TABLE).unwrap();
-                for t in &topics {
-                    table.insert(t, ()).unwrap();
-                }
-            }
-            txn.commit().unwrap();
+        for t in &topics {
+            store.add_active_inbox_topic(t.clone()).await.unwrap();
         }
 
-        // Check all topics are present
-        let loaded_topics = store.get_active_inbox_topics().unwrap();
+        let loaded_topics = store.get_active_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
 
-        // Prune topics expired before 'now'
-        store.prune_expired_active_inbox_topics(now).unwrap();
+        store.prune_expired_active_inbox_topics(now).await.unwrap();
         topics.pop_first().unwrap();
 
-        // Only the expired one should be gone
-        let loaded_topics = store.get_active_inbox_topics().unwrap();
+        let loaded_topics = store.get_active_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
 
-        // Prune all topics before 'more_valid' (should leave only the last one)
-        store.prune_expired_active_inbox_topics(more_valid).unwrap();
+        store
+            .prune_expired_active_inbox_topics(more_valid)
+            .await
+            .unwrap();
         topics.pop_first().unwrap();
 
-        let loaded_topics = store.get_active_inbox_topics().unwrap();
+        let loaded_topics = store.get_active_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
     }
 }

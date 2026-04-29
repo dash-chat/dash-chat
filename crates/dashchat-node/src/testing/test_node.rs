@@ -38,8 +38,8 @@ impl TestNode {
             .await
             .unwrap();
         if config.use_named_id {
-            local_store.device_id().unwrap().with_name(name);
-            local_store.agent_id().unwrap().with_name(name);
+            local_store.device_id().await.unwrap().with_name(name);
+            local_store.agent_id().await.unwrap().with_name(name);
         }
         drop(local_store);
 
@@ -84,8 +84,8 @@ impl TestNode {
         let local_store = LocalStore::new(filesystem.local_store_path())
             .await
             .unwrap();
-        local_store.device_id().unwrap().with_name(name);
-        local_store.agent_id().unwrap().with_name(name);
+        local_store.device_id().await.unwrap().with_name(name);
+        local_store.agent_id().await.unwrap().with_name(name);
         drop(local_store);
 
         let node = Node::new(store_dir.path().into(), config, Some(notification_tx), None)

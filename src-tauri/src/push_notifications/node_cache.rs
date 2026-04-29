@@ -22,6 +22,7 @@ pub async fn get_node(data_path: PathBuf) -> anyhow::Result<Node> {
         if let Some(node) = handle.try_state::<Node>().map(|s| s.inner().clone()) {
             // The app is fully running — clear any stale cached nodes
             clear().await;
+            log::info!("The app is opened: reuse the currently running node.");
             return Ok(node);
         }
     }
@@ -33,6 +34,8 @@ pub async fn get_node(data_path: PathBuf) -> anyhow::Result<Node> {
     if let Some(node) = map.get(&data_path) {
         return Ok(node.clone());
     }
+
+    log::info!("No nodes in the cache, building node from scratch.");
 
     let node = crate::setup::build_node(data_path.clone(), None, None).await?;
     map.insert(data_path, node.clone());
