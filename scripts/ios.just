@@ -1,5 +1,10 @@
 set working-directory := '..'
 
+# Pin the iOS deployment target so cargo-built object files match the Xcode
+# project (14.0). Setting this globally in .cargo/config.toml [env] breaks
+# macOS builds because apple-sys/bindgen picks it up and targets iPhone.
+export IPHONEOS_DEPLOYMENT_TARGET := "14.0"
+
 # run the app in development mode
 dev:
     cargo build --target aarch64-apple-ios

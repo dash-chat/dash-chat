@@ -1,8 +1,0 @@
-# Pin the iOS deployment target for cargo-built Rust object files to match the
-# Xcode project's IPHONEOS_DEPLOYMENT_TARGET. Without this, cargo inherits the
-# host SDK's default (e.g. iOS 26.4 on Xcode 26), producing "object file was
-# built for newer iOS version than being linked" warnings against the Xcode
-# targets pinned at 14.0. The variable is consulted only by Apple's linker for
-# iOS targets and is ignored for macOS / Linux / Android / Windows builds.
-[env]
-IPHONEOS_DEPLOYMENT_TARGET = "14.0"
