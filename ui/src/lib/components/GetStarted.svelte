@@ -74,7 +74,7 @@
 			id: 'chat-color',
 			label: () => m.chatColor(),
 			icon: mdiPalette,
-			href: '/settings/appearance',
+			href: '/settings/appearance?setup=true',
 			tone: 'warm',
 		},
 		{
