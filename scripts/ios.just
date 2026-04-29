@@ -11,6 +11,11 @@ dev:
     pnpm tauri ios dev --host
 
 build:
+    cargo build --target aarch64-apple-ios --release
+    pnpm tauri ios build
+
+build-xcode:    
+    cargo build --target aarch64-apple-ios --release
     pnpm tauri ios build -o
 
 # build and install the app on a USB-connected iPhone in production mode
