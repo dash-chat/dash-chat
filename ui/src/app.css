@@ -287,3 +287,31 @@ emoji-picker {
 	width: auto;
 }
 
+/* Konsta's iOS-themed centered navbar title uses `top: 50%; left: 50%; translate: -50%
+   -50%` to center. Because the text width is non-integer at 17px semibold (e.g. "Chats"
+   is 46.625px), the -50% translate lands on a subpixel offset and WebKit composites the
+   element bitmap at fractional pixels with bilinear filtering — the text is visibly
+   blurry. The high pixel density of real iOS devices hides this; on the wide-layout
+   desktop where the iOS theme runs at standard density it is obvious. Replace the
+   width-dependent translate centering with a flex container that spans the full
+   width/height of the navbar inner: the title ends up at integer x/y/w/h and the text
+   inside is centered by flex without transforms, so the rasterizer paints sharp glyphs
+   on the parent layer. Scoped to wide-layout + iOS theme so real-iOS behavior is left
+   untouched. */
+.wide-layout .k-ios .k-navbar .transform-gpu.top-1\/2.left-1\/2 {
+	position: absolute;
+	inset-inline: 0;
+	top: 0;
+	bottom: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transform: none;
+	translate: none;
+	/* The title now spans the full navbar inner width, so without this it would
+	   overlay (and swallow clicks meant for) the back / new-message buttons that
+	   sit at the row's edges. Title is non-interactive text — let pointer events
+	   pass through to the buttons underneath. */
+	pointer-events: none;
+}
+
