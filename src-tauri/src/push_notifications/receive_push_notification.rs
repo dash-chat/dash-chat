@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
 use dashchat_node::{AsBody, Payload, Topic};
+#[cfg(target_os = "android")]
 use jni::objects::JClass;
+#[cfg(target_os = "android")]
 use jni::JNIEnv;
 use p2panda_store::LogStore;
 use tauri_plugin_notification::*;
