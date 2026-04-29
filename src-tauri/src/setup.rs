@@ -38,7 +38,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     // Manage the mDNS service daemon
     app_handle.manage(mdns_sd::ServiceDaemon::new()?);
 
-    let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle).local_data_dir()?;
+    let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle)?.app_data_dir().clone();
     log::info!("Using local data path: {local_data_path:?}");
 
     #[cfg(not(mobile))]

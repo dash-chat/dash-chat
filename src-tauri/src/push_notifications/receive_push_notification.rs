@@ -2,8 +2,12 @@ use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
 use dashchat_node::{AsBody, Payload, Topic};
+use jni::objects::JClass;
+use jni::JNIEnv;
 use p2panda_store::LogStore;
 use tauri_plugin_notification::*;
+
+use crate::filesystem::FileSystem;
 
 #[cfg(target_os = "android")]
 use super::android::setup_android_logs;
@@ -38,15 +42,8 @@ pub fn receive_push_notification(
 
     log::info!("Received push notification: {notification:?}");
 
-    let data_path = context.data_dir.join("studio.darksoil.dashchat");
-
-    log::info!(
-        "Using data path to get or build the dash chat node: {:?}.",
-        data_path
-    );
-
     tauri::async_runtime::block_on(async move {
-        match handle_push_notification(notification, data_path).await {
+        match handle_push_notification(notification, context.data_dir).await {
             Ok(result) => {
                 if let Some(data) = &result {
                     log::info!(
@@ -83,7 +80,7 @@ pub fn receive_push_notification(
 
 async fn handle_push_notification(
     notification: NotificationData,
-    data_path: PathBuf,
+    app_data_root: PathBuf,
 ) -> anyhow::Result<Option<NotificationData>> {
     // Title = topic ID (hex), Body = operation ID ("author_hex:seq_num")
     let topic_hex = notification
@@ -113,7 +110,15 @@ async fn handle_push_notification(
         .map_err(|_| anyhow!("topic bytes are not 32 bytes long"))?;
     let topic_id = dashchat_node::topic::TopicId::from(topic_bytes);
 
-    let node = super::node_cache::get_node(data_path)
+    let filesystem = FileSystem::from_app_root_dir(app_data_root)?;
+    let app_data_dir = filesystem.app_data_dir();
+
+    log::info!(
+        "Using data path to get or build the dash chat node: {:?}.",
+        app_data_dir
+    );
+
+    let node = super::node_cache::get_node(app_data_dir)
         .await
         .context("failed to get node")?;
 
