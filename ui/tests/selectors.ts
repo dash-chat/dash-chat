@@ -136,6 +136,7 @@ export const S = {
 	help: {
 		back: tid('help-back'),
 		contactUsLink: tid('help-contact-us'),
+		versionItem: tid('help-version'),
 	},
 	contactUs: {
 		back: tid('contact-us-back'),
