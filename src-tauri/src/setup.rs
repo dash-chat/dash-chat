@@ -1,17 +1,44 @@
+use std::path::PathBuf;
+
+use dashchat_node::Node;
 use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::AppHandle;
 use tauri::{Emitter, Manager};
 
-use mailbox_client::toy::ToyMailboxClient;
-
-use crate::DASHCHAT_MAILBOX_ID;
 use crate::{commands::logs::simplify, filesystem::FileSystem};
 
+pub(crate) async fn build_node(
+    data_path: PathBuf,
+    notification_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::Notification>>,
+    topic_subscribed_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::topic::TopicId>>,
+) -> anyhow::Result<Node> {
+    let config = if cfg!(feature = "e2e-tests") {
+        let mut config = dashchat_node::NodeConfig::default();
+        config.mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
+        config.mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
+        config
+    } else {
+        dashchat_node::NodeConfig::default()
+    };
+    let node = Node::new(data_path, config, notification_tx, topic_subscribed_tx).await?;
+
+    let mailbox_url = crate::mailbox::default_mailbox_url();
+    let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
+        crate::mailbox::PRODUCTION_MAILBOX_ID.to_string(),
+        mailbox_url,
+    );
+    node.mailboxes.register(mailbox_client).await;
+
+    Ok(node)
+}
+
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
+    let _ = crate::APP_HANDLE.set(app_handle.clone());
+
     // Manage the mDNS service daemon
     app_handle.manage(mdns_sd::ServiceDaemon::new()?);
 
-    let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle).local_data_dir()?;
+    let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle)?.app_data_dir().clone();
     log::info!("Using local data path: {local_data_path:?}");
 
     #[cfg(not(mobile))]
@@ -32,26 +59,43 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         }
     }
 
-    let config = if cfg!(feature = "e2e-tests") {
-        let mut config = dashchat_node::NodeConfig::default();
-        config.mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
-        config.mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
-        config
-    } else {
-        dashchat_node::NodeConfig::default()
-    };
-    let (notification_tx, mut notification_rx) = tokio::sync::mpsc::channel(100);
-    let node = dashchat_node::Node::new(local_data_path, config, Some(notification_tx)).await?;
+    let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
 
-    let mailbox_url = crate::mailbox::default_mailbox_url();
+    #[cfg(mobile)]
+    let (topic_subscribed_tx, topic_subscribed_rx) = tokio::sync::mpsc::channel(100);
 
-    let mailbox_client = ToyMailboxClient::new(DASHCHAT_MAILBOX_ID.to_string(), mailbox_url);
-    node.mailboxes.register(mailbox_client).await;
+    let node = build_node(
+        local_data_path,
+        Some(notification_tx),
+        #[cfg(mobile)]
+        Some(topic_subscribed_tx),
+        #[cfg(not(mobile))]
+        None,
+    )
+    .await?;
 
     app_handle.manage(node.clone());
 
+    #[cfg(mobile)]
+    {
+        crate::push_notifications::setup_push_notifications(
+            app_handle.clone(),
+            topic_subscribed_rx,
+        )?;
+        crate::push_notifications::setup_notification_navigation(&app_handle).await;
+    }
+
     crate::mailbox::spawn_local_mailbox_mdns_discovery(&app_handle, node)?;
 
+    spawn_notification_loop(app_handle.clone(), notification_rx);
+
+    Ok(())
+}
+
+fn spawn_notification_loop(
+    app_handle: AppHandle,
+    mut notification_rx: tokio::sync::mpsc::Receiver<dashchat_node::Notification>,
+) {
     tauri::async_runtime::spawn(async move {
         while let Some(notification) = notification_rx.recv().await {
             log::info!("Received notification: {:?}", notification);
@@ -86,6 +130,4 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
             }
         }
     });
-
-    Ok(())
 }

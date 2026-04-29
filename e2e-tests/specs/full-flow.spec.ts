@@ -56,9 +56,7 @@ describe('Full messaging flow', () => {
 		await agent1.execute(() => window.location.reload());
 		await waitForTestUtils(agent1);
 		await agent1.waitUntil(
-			async () => agent1.execute(() =>
-				!!document.querySelector('[data-testid="all-chats-list"], [data-testid="all-chats-empty"]'),
-			),
+			async () => agent1.execute(() => window.__test.homeLoaded() !== null),
 			{ timeout: 10_000, timeoutMsg: 'Home page not loaded after reload' },
 		);
 
@@ -95,5 +93,20 @@ describe('Full messaging flow', () => {
 		await waitForMessage(agent2, 'Hello from Bob!', 30_000);
 
 		await waitForMessage(agent1, 'Hello from Bob!');
+	});
+
+	it('displays the app version on the help page', async () => {
+		const agent1 = browser.getInstance('agent1');
+
+		await agent1.execute(() => window.__test.goto('/settings/help'));
+		await agent1.waitUntil(
+			async () => agent1.execute(() => window.__test.versionItem() !== null),
+			{ timeout: 10_000, timeoutMsg: 'Version item not visible on help page' },
+		);
+
+		const versionText = await agent1.execute(
+			() => (window.__test.versionItem() as HTMLElement)?.textContent ?? '',
+		);
+		expect(versionText).toMatch(/\d+\.\d+\.\d+/);
 	});
 });

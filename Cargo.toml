@@ -11,6 +11,26 @@ resolver = "2"
 
 [workspace.dependencies]
 
+p2panda-auth = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor", features = [
+  "processor",
+] }
+p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor" }
+p2panda-encryption = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor" }
+p2panda-discovery = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor" }
+p2panda-net = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor" }
+p2panda-store = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor", features = [
+  "sqlite",
+] }
+p2panda-stream = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor" }
+p2panda-sync = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor" }
+p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-auth-processor", features = [
+  "test_utils",
+] }
+
+# just needed to pin this version for now
+ed25519-dalek = "2.2.0"
+
+
 # [patch."https://github.com/maackle/p2panda.git"]
 # p2panda-auth = { path = "/home/michael/gitfork/p2panda/p2panda-auth" }
 # p2panda-core = { path = "/home/michael/gitfork/p2panda/p2panda-core" }

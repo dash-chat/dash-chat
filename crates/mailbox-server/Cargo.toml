@@ -15,7 +15,7 @@ name = "dump-db"
 path = "bin/dump-db.rs"
 
 [dependencies]
-axum = "0.7"
+axum = { version = "0.8", features = ["json"] }
 futures = "0.3"
 tokio = { version = "1", features = ["full"] }
 redb = "3.1"
@@ -29,6 +29,8 @@ serde_json = "1.0"
 base64 = "0.22"
 uuid = { version = "1.0", features = ["v7"] }
 clap = { version = "4.5", features = ["derive"] }
+push-notifications-client = { path = "../push-notifications-client" }
+dashchat-utils = { path = "../dashchat-utils" }
 
 mailbox-api = { path = "../mailbox-api", features = ["redb"] }
 
@@ -36,7 +38,7 @@ mailbox-api = { path = "../mailbox-api", features = ["redb"] }
 test_utils = ["dep:axum-test", "dep:tempfile"]
 
 [dependencies.axum-test]
-version = "16.4"
+version = "18"
 optional = true
 
 [dependencies.tempfile]
@@ -45,5 +47,9 @@ optional = true
 
 [dev-dependencies]
 mailbox-server = { path = ".", features = ["test_utils"] }
+push-notifications-client = { path = "../push-notifications-client" }
+push-notifications-server = { path = "../push-notifications-server", features = ["test-utils"] }
 futures = "0.3"
 serial_test = "3"
+base64 = "0.22"
+reqwest = { version = "0.12", features = ["json"] }

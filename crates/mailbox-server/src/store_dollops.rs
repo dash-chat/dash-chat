@@ -1,10 +1,11 @@
 use axum::{extract::State, http::StatusCode, Json};
 use mailbox_api::*;
 use redb::{Database, ReadableTable};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AppState, DollopsKey, DollopsKeyPrefix, WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE,
+    notify_topics_subscribers::notify_topics_subscribers, AppState, DollopsKey, DollopsKeyPrefix,
+    WatermarksKey, DOLLOPS_TABLE, WATERMARKS_TABLE,
 };
 
 pub async fn store_dollops(
@@ -15,25 +16,34 @@ pub async fn store_dollops(
     // Use spawn_blocking because redb's begin_write() is a blocking call that waits
     // for exclusive write access. Running this directly in async context would block
     // tokio worker threads and cause deadlocks under concurrent load.
-    tokio::task::spawn_blocking(move || store_dollops_inner(&db, &payload))
-        .await
-        .map_err(|e| {
-            tracing::error!("Task join error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-        })?
-        .map_err(|e| {
-            tracing::error!("{}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, e)
-        })?;
+    let topics_with_new_dollops =
+        tokio::task::spawn_blocking(move || store_dollops_inner(&db, &payload))
+            .await
+            .map_err(|e| {
+                tracing::error!("Task join error: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            })?
+            .map_err(|e| {
+                tracing::error!("{}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, e)
+            })?;
+
+    notify_topics_subscribers(&state, topics_with_new_dollops).await;
+
     Ok(StatusCode::CREATED)
 }
 
-fn store_dollops_inner(db: &Database, request: &StoreDollopsRequest) -> Result<(), String> {
+fn store_dollops_inner(
+    db: &Database,
+    request: &StoreDollopsRequest,
+) -> Result<BTreeMap<TopicId, BTreeMap<String, Author>>, String> {
     let write_txn = db
         .begin_write()
         .map_err(|e| format!("Failed to begin transaction: {}", e))?;
 
     let mut dollop_count = 0;
+
+    let mut topics_with_new_dollops: BTreeMap<TopicId, BTreeMap<String, Author>> = BTreeMap::new();
 
     {
         let mut dollops_table = write_txn
@@ -91,6 +101,11 @@ fn store_dollops_inner(db: &Database, request: &StoreDollopsRequest) -> Result<(
                             current_watermark,
                             wm
                         );
+                        let topic_entry =
+                            topics_with_new_dollops.entry(topic_id.clone()).or_default();
+                        for seq in &stored_seqs {
+                            topic_entry.insert(format!("{}:{}", author, seq), author.clone());
+                        }
                     }
                 }
             }
@@ -102,7 +117,7 @@ fn store_dollops_inner(db: &Database, request: &StoreDollopsRequest) -> Result<(
         .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
     tracing::debug!("Stored {} dollops", dollop_count);
-    Ok(())
+    Ok(topics_with_new_dollops)
 }
 
 /// Computes the new watermark after storing dollops.

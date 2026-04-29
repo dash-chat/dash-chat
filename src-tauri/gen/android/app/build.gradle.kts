@@ -84,6 +84,13 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")
+    // Add the bundled ML Kit barcode model alongside the plugin's unbundled dependency.
+    // The unbundled variant (play-services-mlkit-barcode-scanning) provides the API classes
+    // (BarcodeScannerOptions, BarcodeScanning) but downloads the scanning model at runtime
+    // via Google Play Services — which fails on first launch or without GMS (see issue #210).
+    // The bundled variant ships the model in the APK (~3MB), so scanning works immediately.
+    // Both coexist: API classes from unbundled, model from bundled.
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
 }
 
 apply(from = "tauri.build.gradle.kts")

@@ -2,7 +2,8 @@ use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
 
 const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
-const PRODUCTION_MAILBOX_URL: &str =
+pub(crate) const PRODUCTION_MAILBOX_ID: &str = "dashchat-mailbox";
+pub(crate) const PRODUCTION_MAILBOX_URL: &str =
     "https://mailbox-server.production.dash-chat.dash-chat.garnix.me";
 
 #[cfg(not(mobile))]
@@ -12,7 +13,7 @@ pub mod server;
 ///
 /// Resolution order:
 /// 1. `MAILBOX_URL` runtime env var (E2E tests)
-/// 2. `MAILBOX_URL` compile-time env var (dev builds via mprocs / start-dev.sh)
+/// 2. `MAILBOX_URL` compile-time env var (set by build.rs in debug builds)
 /// 3. Production URL
 pub fn default_mailbox_url() -> String {
     if let Ok(url) = std::env::var("MAILBOX_URL") {

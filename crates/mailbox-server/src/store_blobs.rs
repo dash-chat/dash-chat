@@ -1,8 +1,12 @@
+use std::collections::BTreeMap;
+
 use axum::{extract::State, http::StatusCode, Json};
 use mailbox_api::*;
 use redb::Database;
 
-use crate::{blobs_table::BLOBS_TABLE, AppState};
+use crate::{
+    blobs_table::BLOBS_TABLE, notify_topics_subscribers::notify_topics_subscribers, AppState,
+};
 
 pub async fn store_blobs(
     State(state): State<AppState>,
@@ -16,15 +20,25 @@ pub async fn store_blobs(
         .await
         .map_err(|e| {
             tracing::error!("Task join error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            )
         })?
         .map_err(|e| {
             tracing::error!("{}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, e)
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            )
         })?;
+
     Ok(StatusCode::CREATED)
 }
 
+/// Returns a map of topic_id → map of op_id (author:seq) → author for newly inserted blobs.
+/// The author is preserved separately so the push-notifications-server can filter the
+/// author out of the subscriber list (devices don't get pushes for their own messages).
 fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), String> {
     let write_txn = db
         .begin_write()

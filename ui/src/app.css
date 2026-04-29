@@ -19,12 +19,6 @@ body {
 	background-color: transparent !important;
 }
 
-body.mobile-frame {
-	max-width: 390px;
-	margin: 0 auto;
-	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 4px 24px rgba(0, 0, 0, 0.15);
-}
-
 .column {
 	display: flex;
 	flex-direction: column;
@@ -161,7 +155,7 @@ li.plain span {
 
 .sticky-day-tag {
 	position: sticky;
-	top: calc(64px + env(safe-area-inset-top, 0px) + 8px);
+	top: calc(var(--navbar-height, 56px) + 16px);
 	align-self: center;
 	z-index: 30;
 	background-color: var(--k-color-md-light-surface);

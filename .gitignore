@@ -37,9 +37,11 @@ storybook-static
 target
 
 .direnv/
-.hc*
+.envrc
 result*
+src-tauri/gen/apple/build/
 **/*/google-services.json
+**/*/GoogleService-Info.plist
 service-account-key.json
 
 # Development environment database files
@@ -47,3 +49,6 @@ service-account-key.json
 .dbs
 .e2e-binaries
 signal-reference
+
+# Development environment log files
+*.log

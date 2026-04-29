@@ -34,16 +34,23 @@ impl TestNode {
         let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
 
         let filesystem = Filesystem::new(dir.path().to_path_buf());
-        let local_store = LocalStore::new(filesystem.local_store_path()).unwrap();
+        let local_store = LocalStore::new(filesystem.local_store_path())
+            .await
+            .unwrap();
         if config.use_named_id {
-            local_store.device_id().unwrap().with_name(name);
-            local_store.agent_id().unwrap().with_name(name);
+            local_store.device_id().await.unwrap().with_name(name);
+            local_store.agent_id().await.unwrap().with_name(name);
         }
         drop(local_store);
 
-        let node = Node::new(dir.path().into(), config.node_config, Some(notification_tx))
-            .await
-            .unwrap();
+        let node = Node::new(
+            dir.path().into(),
+            config.node_config,
+            Some(notification_tx),
+            None,
+        )
+        .await
+        .unwrap();
         if config.create_profile {
             node.set_profile(Profile {
                 name: name.to_string(),
@@ -74,12 +81,14 @@ impl TestNode {
         let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
 
         let filesystem = Filesystem::new(store_dir.path().to_path_buf());
-        let local_store = LocalStore::new(filesystem.local_store_path()).unwrap();
-        local_store.device_id().unwrap().with_name(name);
-        local_store.agent_id().unwrap().with_name(name);
+        let local_store = LocalStore::new(filesystem.local_store_path())
+            .await
+            .unwrap();
+        local_store.device_id().await.unwrap().with_name(name);
+        local_store.agent_id().await.unwrap().with_name(name);
         drop(local_store);
 
-        let node = Node::new(store_dir.path().into(), config, Some(notification_tx))
+        let node = Node::new(store_dir.path().into(), config, Some(notification_tx), None)
             .await
             .unwrap();
 
@@ -225,11 +234,7 @@ impl<const N: usize> TestCluster<N> {
     }
 
     pub async fn introduce_all(&self) {
-        #[cfg(feature = "p2p")]
-        {
-            let nodes = self.iter().map(|node| &node.network).collect::<Vec<_>>();
-            introduce(nodes).await;
-        }
+        unimplemented!("re-implement when p2p sync is available")
     }
 
     pub async fn nodes(&self) -> [TestNode; N] {

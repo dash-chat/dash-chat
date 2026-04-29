@@ -5,6 +5,7 @@ export const S = {
 		settingsLink: tid('home-settings-link'),
 		newMessageLink: tid('home-new-message-link'),
 		newMessageFab: tid('home-new-message-fab'),
+		firstChatTooltip: tid('first-chat-tooltip'),
 		chatList: tid('all-chats-list'),
 		emptyState: tid('all-chats-empty'),
 	},
@@ -61,6 +62,7 @@ export const S = {
 		appearanceLink: tid('settings-appearance-link'),
 		accountLink: tid('settings-account-link'),
 		helpLink: tid('settings-help-link'),
+		notificationsLink: tid('settings-notifications-link'),
 		offlineLink: tid('settings-offline-link'),
 	},
 	profile: {
@@ -111,6 +113,10 @@ export const S = {
 		back: tid('group-chat-back'),
 		infoLink: tid('group-chat-info-link'),
 	},
+	notifications: {
+		back: tid('notifications-back'),
+		toggle: tid('notifications-toggle'),
+	},
 	offline: {
 		back: tid('offline-back'),
 		localMailboxToggle: tid('offline-local-mailbox-toggle'),
@@ -130,6 +136,7 @@ export const S = {
 	help: {
 		back: tid('help-back'),
 		contactUsLink: tid('help-contact-us'),
+		versionItem: tid('help-version'),
 	},
 	contactUs: {
 		back: tid('contact-us-back'),

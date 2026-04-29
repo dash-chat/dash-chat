@@ -102,8 +102,9 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
         assert_eq!(watermark, 5, "Watermark should be preserved after cleanup");
     }
 
-    // Step 6: Test get_dollops - verify missing response is correct
-    let app = mailbox_server::create_app_with_arc(db.clone(), 2);
+    // Step 6: Test get_blobs - verify missing response is correct
+    let push_tasks = std::sync::Arc::new(tokio::sync::Mutex::new(tokio::task::JoinSet::new()));
+    let app = mailbox_server::create_app(db.clone(), 2, None, push_tasks);
     let config = axum_test::TestServerConfig {
         transport: Some(axum_test::Transport::HttpRandomPort),
         ..Default::default()

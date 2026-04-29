@@ -1,0 +1,2 @@
+- [X] ~~*get it working with sqlite op store*~~ [2026-03-03]
+- [ ] persistence for group state (write restart test)

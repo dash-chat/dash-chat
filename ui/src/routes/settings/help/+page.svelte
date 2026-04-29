@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { getVersion } from '@tauri-apps/api/app';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
@@ -13,13 +14,18 @@
 	} from 'konsta/svelte';
 
 	const theme = $derived(useTheme());
+
+	const versionPromise = getVersion();
 </script>
 
 <Page>
 	<Navbar title={m.help()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#if !isWideScreen.value}
-				<NavbarBackLink onClick={() => goto('/settings')} data-testid="help-back" />
+				<NavbarBackLink
+					onClick={() => goto('/settings')}
+					data-testid="help-back"
+				/>
 			{/if}
 		{/snippet}
 	</Navbar>
@@ -35,6 +41,13 @@
 					title={m.contactUs()}
 					data-testid="help-contact-us"
 				/>
+				{#await versionPromise then version}
+					<ListItem
+						title={m.version()}
+						after={version}
+						data-testid="help-version"
+					/>
+				{/await}
 			</List>
 		</div>
 	</div>

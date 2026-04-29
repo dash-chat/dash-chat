@@ -1,13 +1,17 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { isIos } from '$lib/utils/environment';
 	import { type SettingsStore, type ColorScheme } from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
 	import {
+		Button,
 		BlockTitle,
+		Link,
 		List,
 		ListItem,
 		Navbar,
@@ -19,6 +23,7 @@
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
 	const colorScheme = useReactivePromise(settingsStore.colorScheme);
+	const setup = $derived(page.url.searchParams.get('setup') === 'true');
 
 	async function select(scheme: ColorScheme) {
 		try {
@@ -33,7 +38,18 @@
 	<Navbar title={m.appearance()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#if !isWideScreen.value}
-				<NavbarBackLink onClick={() => goto('/settings')} data-testid="appearance-back" />
+				<NavbarBackLink
+					onClick={() => goto('/settings')}
+					data-testid="appearance-back"
+				/>
+			{/if}
+		{/snippet}
+
+		{#snippet right()}
+			{#if setup && isIos}
+				<Link onClick={() => goto('/')} data-testid="appearance-done-link">
+					{m.done()}
+				</Link>
 			{/if}
 		{/snippet}
 	</Navbar>
@@ -85,5 +101,16 @@
 				</List>
 			</div>
 		</div>
+
+		{#if setup && !isIos}
+			<Button
+				onClick={() => goto('/')}
+				class="fixed-action-btn"
+				rounded
+				data-testid="appearance-done-btn"
+			>
+				{m.done()}
+			</Button>
+		{/if}
 	{/await}
 </Page>

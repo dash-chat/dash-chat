@@ -27,12 +27,12 @@ pub struct MailboxesConfig {
 impl Default for MailboxesConfig {
     fn default() -> Self {
         Self {
-            active_interval: Duration::from_secs(3),
-            degraded_interval: Duration::from_secs(15),
-            stopped_interval: Duration::from_secs(180),
+            active_interval: Duration::from_secs(2),
+            degraded_interval: Duration::from_secs(5),
+            stopped_interval: Duration::from_secs(10),
             between_polls_delay: Duration::from_millis(500),
-            degraded_threshold: 2,
-            stopped_threshold: 3,
+            degraded_threshold: 5,
+            stopped_threshold: 10,
             blob_drain_interval: Duration::from_secs(2),
             blob_drain_batch_size: 10,
         }
@@ -122,7 +122,7 @@ where
     store: Arc<Store>,
     blob_queue: Arc<BlobQueue>,
     config: MailboxesConfig,
-    trigger: mpsc::Sender<()>,
+    trigger: mpsc::Sender<Option<MailboxId>>,
     /// Handles to background tasks, aborted on shutdown.
     task_handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 }
@@ -135,15 +135,15 @@ where
     Item::Topic: OptionalItemTraits,
 {
     fn new(
-        store: Arc<Store>,
+        store: Store,
         blob_queue: Arc<BlobQueue>,
         config: MailboxesConfig,
-        trigger: mpsc::Sender<()>,
+        trigger: mpsc::Sender<Option<MailboxId>>,
     ) -> Self {
         Self {
             mailboxes: Arc::new(Mutex::new(Default::default())),
             topics: Arc::new(Mutex::new(Default::default())),
-            store,
+            store: store.into(),
             blob_queue,
             config,
             trigger,
@@ -179,7 +179,12 @@ where
     }
 
     pub fn trigger_sync(&self) {
-        _ = self.trigger.try_send(());
+        _ = self.trigger.try_send(None);
+    }
+
+    /// Immediately activate and sync a specific mailbox, resetting any backoff.
+    pub fn wakeup(&self, id: MailboxId) {
+        _ = self.trigger.try_send(Some(id));
     }
 
     pub async fn subscribe(
@@ -226,7 +231,12 @@ where
                         None => {
                             // No mailboxes registered, wait for a trigger
                             match trigger_rx.recv().await {
-                                Some(()) => continue,
+                                Some(msg) => {
+                                    if let Some(id) = msg {
+                                        manager.wakeup_mailbox(&id).await;
+                                    }
+                                    continue;
+                                }
                                 None => break,
                             }
                         }
@@ -235,8 +245,11 @@ where
                                 // Sleep until the next mailbox is due, or a trigger wakes us
                                 match tokio::time::timeout(wait, trigger_rx.recv()).await {
                                     Ok(None) => break, // channel closed
-                                    Ok(Some(())) => {} // triggered early, re-evaluate
-                                    Err(_) => {}       // timeout elapsed
+                                    Ok(Some(Some(triggered_id))) => {
+                                        manager.wakeup_mailbox(&triggered_id).await;
+                                    }
+                                    Ok(Some(None)) => {} // general wakeup, re-evaluate
+                                    Err(_) => {}         // timeout elapsed
                                 }
                                 // Re-evaluate which mailbox is actually due now
                                 continue;
@@ -377,6 +390,15 @@ where
         };
 
         Some((id.clone(), wait))
+    }
+
+    async fn wakeup_mailbox(&self, id: &MailboxId) {
+        let mut mm = self.mailboxes.lock().await;
+        if let Some(tracked) = mm.get_mut(id) {
+            tracked.tracker.status = SyncStatus::Active;
+            tracked.tracker.consecutive_errors = 0;
+            tracked.tracker.next_poll = Instant::now();
+        }
     }
 
     async fn poll_mailbox(&self, id: &MailboxId) {
@@ -976,6 +998,96 @@ mod tests {
 
         mgr.clear().await;
         assert!(mgr.find_next_due().await.is_none());
+    }
+
+    // -- wakeup tests --
+
+    #[tokio::test(start_paused = true)]
+    async fn wakeup_mailbox_resets_status_and_schedule() {
+        let config = test_config();
+        let mgr = test_mailboxes(config.clone());
+
+        let mb = MemMailbox::<Msg>::new();
+        let client = mb.client();
+        let id = client.id();
+        mgr.register(client).await;
+
+        // Put mailbox in Stopped state
+        {
+            let mut mm = mgr.mailboxes.lock().await;
+            let t = &mut mm.get_mut(&id).unwrap().tracker;
+            t.record_error(&config);
+            t.record_error(&config);
+            t.record_error(&config);
+            assert_eq!(t.status, SyncStatus::Stopped);
+        }
+
+        let (_, wait) = mgr.find_next_due().await.unwrap();
+        assert!(wait > Duration::ZERO);
+
+        mgr.wakeup_mailbox(&id).await;
+
+        let (found_id, wait) = mgr.find_next_due().await.unwrap();
+        assert_eq!(found_id, id);
+        assert_eq!(wait, Duration::ZERO);
+        let mm = mgr.mailboxes.lock().await;
+        assert_eq!(mm.get(&id).unwrap().tracker.status, SyncStatus::Active);
+        assert_eq!(mm.get(&id).unwrap().tracker.consecutive_errors, 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wakeup_polls_stopped_mailbox_immediately() {
+        let config = MailboxesConfig {
+            active_interval: Duration::from_secs(100),
+            stopped_interval: Duration::from_secs(600),
+            between_polls_delay: Duration::from_millis(0),
+            ..test_config()
+        };
+
+        let mgr = Mailboxes::<Msg, DummyStore, MemBlobPublishQueue>::spawn(
+            DummyStore,
+            MemBlobPublishQueue::new().into(),
+            config.clone(),
+        )
+        .await
+        .unwrap();
+
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        let (client, poll_count) = TrackingClient::new(false);
+        let id = client.id.clone();
+        mgr.register(client).await;
+
+        // Let the initial poll (triggered by register's wakeup) complete
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(poll_count.load(Ordering::Relaxed), 1);
+
+        // Force the mailbox into Stopped with a far-future next_poll
+        {
+            let mut mm = mgr.mailboxes.lock().await;
+            let t = &mut mm.get_mut(&id).unwrap().tracker;
+            t.status = SyncStatus::Stopped;
+            t.consecutive_errors = 100;
+            t.next_poll = Instant::now() + Duration::from_secs(600);
+        }
+
+        // Without wakeup, no poll should happen (time is paused)
+        for _ in 0..5 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(poll_count.load(Ordering::Relaxed), 1);
+
+        mgr.wakeup(id.clone());
+
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(poll_count.load(Ordering::Relaxed), 2);
+        let mm = mgr.mailboxes.lock().await;
+        assert_eq!(mm.get(&id).unwrap().tracker.status, SyncStatus::Active);
     }
 
     // -- Fairness test with full spawn loop --

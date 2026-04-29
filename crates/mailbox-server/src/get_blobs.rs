@@ -16,12 +16,18 @@ pub async fn get_blobs(
         .await
         .map_err(|e| {
             tracing::error!("Task join error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            )
         })?
         .map(Json)
         .map_err(|e| {
             tracing::error!("{}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, e)
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            )
         })
 }
 

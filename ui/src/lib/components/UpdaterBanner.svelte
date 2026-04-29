@@ -17,7 +17,8 @@
 	let update: Update | null = $state(null);
 
 	// Set to a state name to preview the banner in dev mode
-	const mockUpdate: false | 'available' | 'downloading' | 'ready' | 'error' = false;
+	const mockUpdate: false | 'available' | 'downloading' | 'ready' | 'error' =
+		false;
 
 	onMount(() => {
 		if (!isTauriEnv() || isMobile || import.meta.env.DEV) {
@@ -44,7 +45,9 @@
 			);
 	});
 
-	async function simulateMockUpdate(mode: 'available' | 'downloading' | 'ready' | 'error') {
+	async function simulateMockUpdate(
+		mode: 'available' | 'downloading' | 'ready' | 'error',
+	) {
 		version = '1.2.0';
 		if (mode === 'error') {
 			bannerState = 'error';
@@ -66,17 +69,17 @@
 	}
 
 	async function checkForUpdate() {
-			try {
-				const { check } = await import('@tauri-apps/plugin-updater');
-				update = await check();
-				if (!update) return;
-			} catch (err) {
-				console.warn('Update check failed:', err);
-				return;
-			}
+		try {
+			const { check } = await import('@tauri-apps/plugin-updater');
+			update = await check();
+			if (!update) return;
+		} catch (err) {
+			console.warn('Update check failed:', err);
+			return;
+		}
 
-			version = update.version;
-			bannerState = 'available';
+		version = update.version;
+		bannerState = 'available';
 	}
 
 	async function downloadAndInstall() {
@@ -143,12 +146,22 @@
 
 		<div class="flex-1 min-w-0">
 			{#if bannerState === 'available'}
-				<div class="text-sm font-semibold" data-testid="updater-banner-title">{m.updateAvailable()}</div>
+				<div class="text-sm font-semibold" data-testid="updater-banner-title">
+					{m.updateAvailable()}
+				</div>
 				<div class="text-xs opacity-80">{m.updateTapToUpdate()}</div>
 			{:else if bannerState === 'downloading'}
 				<div class="text-sm font-semibold">{m.updateDownloading()}</div>
 				<div class="mt-1">
-					<Progressbar progress={progressFraction()} colors={{ trackBgIos: 'bg-white/30', trackBgMaterial: 'bg-white/30', activeBgIos: 'bg-white', activeBgMaterial: 'bg-white' }} />
+					<Progressbar
+						progress={progressFraction()}
+						colors={{
+							trackBgIos: 'bg-white/30',
+							trackBgMaterial: 'bg-white/30',
+							activeBgIos: 'bg-white',
+							activeBgMaterial: 'bg-white',
+						}}
+					/>
 				</div>
 			{:else if bannerState === 'ready'}
 				<div class="text-sm font-semibold">{m.updateReady()}</div>
@@ -161,11 +174,17 @@
 
 		<button
 			class="shrink-0 p-1 rounded-full hover:bg-white/20"
-			onclick={(e) => { e.stopPropagation(); dismiss(); }}
+			onclick={e => {
+				e.stopPropagation();
+				dismiss();
+			}}
 			data-testid="updater-dismiss-btn"
 			aria-label="Dismiss"
 		>
-			<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 20px; color: white;"></wa-icon>
+			<wa-icon
+				src={wrapPathInSvg(mdiClose)}
+				style="font-size: 20px; color: white;"
+			></wa-icon>
 		</button>
 	</div>
 {/if}

@@ -35,8 +35,8 @@ use crate::AgentId;
 use named_id::*;
 
 use p2panda_spaces::ActorId;
-use p2panda_sync::TopicQuery;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
 
 pub trait TopicKind:
     Default
@@ -135,9 +135,30 @@ pub mod kind {
 pub struct TopicId([u8; 32]);
 
 impl p2panda_spaces::traits::SpaceId for TopicId {}
-impl TopicQuery for TopicId {}
 
 pub type DashChatTopicId = TopicId;
+
+// -- SQLite encoding for TopicId --
+
+impl sqlx::Type<Sqlite> for TopicId {
+    fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {
+        <Vec<u8> as sqlx::Type<Sqlite>>::type_info()
+    }
+}
+
+impl sqlx::Encode<'_, Sqlite> for TopicId {
+    fn encode_by_ref(&self, buf: &mut Vec<SqliteArgumentValue<'_>>) -> Result<IsNull, BoxDynError> {
+        <Vec<u8> as sqlx::Encode<Sqlite>>::encode(self.0.to_vec(), buf)
+    }
+}
+
+impl sqlx::Decode<'_, Sqlite> for TopicId {
+    fn decode(value: <Sqlite as sqlx::Database>::ValueRef<'_>) -> Result<Self, BoxDynError> {
+        let bytes = <Vec<u8> as sqlx::Decode<Sqlite>>::decode(value)?;
+        let arr: [u8; 32] = bytes.try_into().map_err(|_| "TopicId is not 32 bytes")?;
+        Ok(TopicId(arr))
+    }
+}
 
 impl Nameable for TopicId {
     fn shortener(&self) -> Option<Shortener> {
@@ -171,7 +192,6 @@ pub struct Topic<K: TopicKind = kind::Untyped> {
 }
 
 impl<K: TopicKind> p2panda_spaces::traits::SpaceId for Topic<K> {}
-impl<K: TopicKind> TopicQuery for Topic<K> {}
 
 impl<K: TopicKind> Topic<K> {
     pub(crate) fn new(id: [u8; 32]) -> Self {
@@ -200,7 +220,8 @@ impl Topic<kind::Announcements> {
 
 impl Topic<kind::Chat> {
     pub fn random() -> Self {
-        Self::new(rand::random())
+        let pk = p2panda_core::PrivateKey::new().public_key();
+        Self::new(*pk.as_bytes())
     }
 
     pub fn direct_chat(mut pks: [AgentId; 2]) -> Self {
@@ -209,6 +230,14 @@ impl Topic<kind::Chat> {
         hasher.update(pks[0].as_bytes());
         hasher.update(pks[1].as_bytes());
         Self::new(hasher.finalize().into())
+    }
+
+    pub fn from_group_pubkey(pubkey: p2panda_core::PublicKey) -> Self {
+        Self::new(*pubkey.as_bytes())
+    }
+
+    pub fn to_group_pubkey(self) -> anyhow::Result<p2panda_core::PublicKey> {
+        Ok(p2panda_core::PublicKey::from_bytes(&self.id.0)?)
     }
 }
 
@@ -236,21 +265,9 @@ impl Topic<kind::Untyped> {
     }
 }
 
-impl p2panda_net::TopicId for TopicId {
-    fn id(&self) -> [u8; 32] {
-        self.0
-    }
-}
-
 impl<K: TopicKind> From<Topic<K>> for TopicId {
     fn from(topic: Topic<K>) -> Self {
         Self(topic.id.0)
-    }
-}
-
-impl<K: TopicKind> p2panda_net::TopicId for Topic<K> {
-    fn id(&self) -> [u8; 32] {
-        self.id.0
     }
 }
 

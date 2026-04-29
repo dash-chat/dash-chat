@@ -1,12 +1,15 @@
 pub(crate) mod author_operation;
 mod stream_processing;
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::Result;
+use p2panda_auth::Access;
+use p2panda_auth::group::resolver::StrongRemove;
+use p2panda_auth::group::{GroupAction, GroupMember};
 
 use crate::error::{AddContactError, Error};
 use crate::filesystem::Filesystem;
@@ -14,8 +17,7 @@ use chrono::{Duration, Utc};
 use futures::Stream;
 use named_id::Rename;
 use named_id::*;
-use p2panda_core::Body;
-use p2panda_net::ResyncConfiguration;
+use p2panda_core::{Body, Hash, PublicKey};
 use p2panda_spaces::ActorId;
 use p2panda_store::{LogStore, SqliteStore};
 use p2panda_stream::IngestExt;
@@ -34,7 +36,7 @@ use crate::payload::{
 use crate::stores::OpStore;
 use crate::topic::{Topic, TopicId};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
+    AgentId, AsBody, ChatId, ChatReaction, DashAction, DeviceGroupId, DeviceGroupPayload, DeviceId,
     DirectChatId, Header, Operation,
 };
 
@@ -43,7 +45,6 @@ pub use stream_processing::Notification;
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
-    pub resync: ResyncConfiguration,
     pub contact_code_expiry: Duration,
     pub mailboxes_config: MailboxesConfig,
 }
@@ -57,7 +58,6 @@ impl NodeConfig {
         mailboxes_config.stopped_interval = std::time::Duration::from_millis(5000);
         mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
         Self {
-            resync: ResyncConfiguration::new().interval(3).poll_interval(1),
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
         }
@@ -66,19 +66,20 @@ impl NodeConfig {
 
 impl Default for NodeConfig {
     fn default() -> Self {
-        let resync = ResyncConfiguration::new().interval(3).poll_interval(1);
         Self {
-            resync,
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
         }
     }
 }
 
+pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
+
 pub type Orderer<S> =
     PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
 
 pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
+// pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
 
 #[derive(Clone)]
 pub(crate) struct CancelAndWait<R> {
@@ -115,6 +116,7 @@ pub struct Node {
     // groups: p2panda_auth::group::Groups,
     config: NodeConfig,
     notification_tx: Option<mpsc::Sender<Notification>>,
+    topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
 
     /// Add new subscription streams
     stream_tx: mpsc::Sender<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
@@ -134,18 +136,19 @@ impl Node {
         data_path: PathBuf,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
+        topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
-        let local_store = LocalStore::new(filesystem.local_store_path())?;
-        let node_data = local_store.node_data()?;
+        let local_store = LocalStore::new(filesystem.local_store_path()).await?;
+        let node_data = local_store.node_data().await?;
 
-        // let op_store = OpStore::new_memory();
         let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
+        // let op_store = OpStore::new_memory();
 
         let (stream_tx, stream_rx) = mpsc::channel(100);
 
-        let blob_queue = Arc::new(mailbox_client::blob_queue::RedbBlobPublishQueue::from_db(
-            local_store.db(),
+        let blob_queue = Arc::new(mailbox_client::blob_queue::RedbBlobPublishQueue::new(
+            filesystem.extraneous_redb_path(),
         )?);
 
         let mailboxes = Arc::new(
@@ -165,6 +168,7 @@ impl Node {
             local_store: local_store.clone(),
             node_data,
             notification_tx,
+            topic_subscribed_tx,
             stream_tx,
             stream_task: None,
         };
@@ -226,9 +230,10 @@ impl Node {
         Ok(authors)
     }
 
-    pub fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
+    pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
         self.local_store
             .get_active_inbox_topics()
+            .await
             .map_err(|err| Error::GetActiveInboxes(format!("{err}")))
     }
 
@@ -249,6 +254,7 @@ impl Node {
                 .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
             self.local_store
                 .add_active_inbox_topic(inbox_topic.clone())
+                .await
                 .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
             Some(inbox_topic)
         } else {
@@ -312,6 +318,138 @@ impl Node {
         Ok(())
     }
 
+    pub async fn create_group(
+        &self,
+        mut initial_members: BTreeMap<PublicKey, p2panda_auth::Access>,
+    ) -> anyhow::Result<ChatId> {
+        let chat_id = Topic::random();
+
+        let device_ids: Vec<DeviceId> = initial_members
+            .keys()
+            .map(|public_key| DeviceId::from(*public_key))
+            .collect();
+        let contacts = self.local_store.lookup_contacts(&device_ids).await?;
+        let agents: Vec<AgentId> = device_ids
+            .iter()
+            .filter_map(|did| match contacts.get(did) {
+                Some(agent) => Some(*agent),
+                None => {
+                    tracing::warn!("Contact not found: {}", did.renamed());
+                    None
+                }
+            })
+            .collect();
+
+        // The creator must always have Manage access
+        initial_members.insert(*self.device_id(), p2panda_auth::Access::manage());
+
+        let initial_members: Vec<_> = initial_members
+            .into_iter()
+            .map(|(public_key, access)| (GroupMember::Individual(public_key), access))
+            .collect();
+
+        self.author_operation(
+            chat_id,
+            DashAction::group_action(chat_id, GroupAction::Create { initial_members })?,
+            Some(&format!("create_group({})", chat_id.renamed())),
+        )
+        .await?;
+
+        self.register_topic(chat_id).await?;
+
+        for agent in agents {
+            self.invite_to_group(chat_id, agent).await?;
+        }
+        Ok(chat_id)
+    }
+
+    async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
+        let payload = Payload::Chat(ChatPayload::JoinGroup(chat_id));
+        tracing::info!(
+            "{} is inviting {} to group {}",
+            self.device_id().renamed(),
+            person.renamed(),
+            chat_id.renamed(),
+        );
+        self.author_operation(
+            self.direct_chat_topic(person),
+            payload,
+            Some(&format!(
+                "invite_to_group({}, {})",
+                chat_id.renamed(),
+                person.renamed()
+            )),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn add_group_member(
+        &self,
+        chat_id: ChatId,
+        member: PublicKey,
+        access: p2panda_auth::Access,
+    ) -> anyhow::Result<()> {
+        self.author_operation(
+            chat_id,
+            DashAction::group_action(
+                chat_id,
+                GroupAction::Add {
+                    member: GroupMember::Individual(member),
+                    access,
+                },
+            )?,
+            Some(&format!("add_group_member({})", chat_id.renamed())),
+        )
+        .await?;
+
+        let agent_id = self
+            .local_store
+            .lookup_contact(DeviceId::from(member))
+            .await?;
+        if let Some(agent_id) = agent_id {
+            self.invite_to_group(chat_id, agent_id).await?;
+        } else {
+            tracing::warn!("Contact not found: {}", DeviceId::from(member).renamed());
+        }
+
+        Ok(())
+    }
+
+    pub async fn remove_group_member(
+        &self,
+        chat_id: ChatId,
+        member: PublicKey,
+    ) -> anyhow::Result<()> {
+        self.author_operation(
+            chat_id,
+            DashAction::group_action(
+                chat_id,
+                GroupAction::Remove {
+                    member: GroupMember::Individual(member),
+                },
+            )?,
+            Some(&format!("remove_group_member({})", chat_id.renamed())),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_group_members(
+        &self,
+        chat_id: ChatId,
+    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        let members = self
+            .local_store
+            .groups
+            .members(chat_id)
+            .await?
+            .into_iter()
+            .map(|(m, a)| (DeviceId::from(m), a))
+            .collect();
+        Ok(members)
+    }
+
     /// "Joining" a chat means subscribing to messages for that chat.
     /// This needs to be accompanied by being added as a member of the chat Space by an existing member
     /// -- you're not fully a member until someone adds you.
@@ -334,7 +472,26 @@ impl Node {
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        let topic_id: TopicId = Topic::announcements(self.agent_id()).into();
+        self.get_profile_for_agent(self.agent_id()).await
+    }
+
+    pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
+        self.local_store.lookup_contact(device_id).await
+    }
+
+    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
+        self.local_store.all_contact_agent_ids().await
+    }
+
+    pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
+        self.local_store.subscribed_topics().await
+    }
+
+    pub async fn get_profile_for_agent(
+        &self,
+        agent_id: AgentId,
+    ) -> anyhow::Result<Option<Profile>> {
+        let topic_id: TopicId = Topic::announcements(agent_id).into();
         let authors = self.get_authors(topic_id.clone()).await?;
         let ops = self
             .get_interleaved_logs(topic_id, authors.into_iter().collect())
@@ -447,6 +604,11 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
     pub async fn add_contact(&self, contact: QrCode) -> Result<AgentId, AddContactError> {
         tracing::debug!("adding contact: {:?}", contact);
+
+        self.local_store
+            .save_contact(contact.clone())
+            .await
+            .map_err(|e| AddContactError::StoreContact(e.to_string()))?;
 
         // SPACES: Register the member in the spaces manager
 
@@ -603,7 +765,7 @@ impl Node {
         )
         .await?;
 
-        for topic in self.local_store.get_active_inbox_topics()?.iter() {
+        for topic in self.local_store.get_active_inbox_topics().await?.iter() {
             self.initialize_topic(
                 *topic
                     .topic
@@ -613,7 +775,7 @@ impl Node {
             .await?;
         }
 
-        for topic in self.local_store.subscribed_topics()?.iter() {
+        for topic in self.local_store.subscribed_topics().await?.iter() {
             self.initialize_topic(*topic).await?;
         }
 

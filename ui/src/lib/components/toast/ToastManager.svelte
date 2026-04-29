@@ -1,6 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Button, Checkbox, Dialog, DialogButton, List, ListItem, Toast } from 'konsta/svelte';
+	import {
+		Button,
+		Checkbox,
+		Dialog,
+		DialogButton,
+		List,
+		ListItem,
+		Toast,
+	} from 'konsta/svelte';
 	import { mdiClose } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { sendMailto } from '$lib/utils/mailto';
@@ -85,7 +93,9 @@
 <Toast
 	style={toastVariant === 'unexpected' ? '' : 'pointer-events: none'}
 	position="center"
-	class={toastVariant === 'error' || toastVariant === 'unexpected' ? 'k-color-brand-red' : ''}
+	class={toastVariant === 'error' || toastVariant === 'unexpected'
+		? 'k-color-brand-red'
+		: ''}
 	opened={toastOpen}
 >
 	{toastMessage}
@@ -95,7 +105,8 @@
 				{m.sendErrorReport()}
 			</Button>
 			<button class="ml-1 opacity-70 active:opacity-100" onclick={dismissToast}>
-				<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 18px"></wa-icon>
+				<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 18px"
+				></wa-icon>
 			</button>
 		{/if}
 	{/snippet}
@@ -104,10 +115,8 @@
 <Dialog
 	opened={errorReportDialogOpen}
 	onBackdropClick={() => (errorReportDialogOpen = false)}
+	title={m.sendErrorReport()}
 >
-	{#snippet title()}
-		{m.sendErrorReport()}
-	{/snippet}
 	<p class="px-4 text-sm opacity-60">{m.errorReportExplanation()}</p>
 	<List nested class="!my-0">
 		<ListItem

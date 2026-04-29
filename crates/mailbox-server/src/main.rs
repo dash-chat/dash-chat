@@ -22,6 +22,10 @@ struct Args {
     /// Maximum age data before cleanup
     #[arg(long, default_value = "7")]
     data_max_age_days: u64,
+
+    /// URL of the push notifications server (enables push notification integration)
+    #[arg(long)]
+    push_notifications_url: Option<String>,
 }
 
 #[tokio::main]
@@ -29,20 +33,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "mailbox_server=debug,tower_http=info".into()),
+                .unwrap_or_else(|_| "mailbox_server=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     let args = Args::parse();
 
-    let signal =
-        tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for server stop event"));
+    let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
     spawn_server(
         args.db_path.into(),
         args.addr,
         args.payload_max_size_mb as usize,
         args.data_max_age_days,
+        args.push_notifications_url,
         signal,
     )
     .await?;

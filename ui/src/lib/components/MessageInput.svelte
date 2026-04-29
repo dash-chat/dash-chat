@@ -12,7 +12,7 @@
 		placeholder?: string;
 		height: string;
 		onSend?: () => void;
-		onInput?: () => void;
+		onFocus?: () => { onResize: () => void } | void;
 		onEmojiClick?: () => void;
 	}
 
@@ -21,7 +21,7 @@
 		height = $bindable(''),
 		placeholder = m.typeMessage(),
 		onSend,
-		onInput,
+		onFocus,
 		onEmojiClick,
 	}: Props = $props();
 	let div: HTMLDivElement;
@@ -41,7 +41,6 @@
 	function handleInput() {
 		value = textarea.value;
 		autoResize();
-		onInput?.();
 	}
 
 	function autoResize() {
@@ -61,7 +60,22 @@
 			onSend?.();
 			textarea.style.height = 'auto';
 			height = `${div.scrollHeight}px`;
+			textarea.focus(); // Refocus the textarea in case user wants to send another message
 		}
+	}
+
+	function handleFocus() {
+		const result = onFocus?.();
+		if (!result) return;
+		const vv = window.visualViewport;
+		if (!vv) return;
+		const onResize = () => result.onResize();
+		vv.addEventListener('resize', onResize);
+		textarea.addEventListener(
+			'blur',
+			() => vv.removeEventListener('resize', onResize),
+			{ once: true },
+		);
 	}
 
 	onMount(() => {
@@ -75,10 +89,7 @@
 	class:bg-md-light-surface={theme === 'material'}
 	class:dark:bg-md-dark-surface={theme === 'material'}
 >
-	<div
-		class="row gap-2"
-		style="align-items: flex-end; margin: 0 auto"
-	>
+	<div class="row gap-2" style="align-items: flex-end; margin: 0 auto">
 		<div
 			class={theme === 'ios'
 				? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
@@ -105,6 +116,7 @@
 				rows="1"
 				onkeydown={handleKeydown}
 				oninput={handleInput}
+				onfocus={handleFocus}
 			></textarea>
 		</div>
 

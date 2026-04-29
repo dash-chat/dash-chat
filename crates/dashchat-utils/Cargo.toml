@@ -1,0 +1,11 @@
+[package]
+name = "dashchat-utils"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["time", "sync", "rt"] }
+log = "0.4"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["time", "sync", "macros", "rt-multi-thread"] }

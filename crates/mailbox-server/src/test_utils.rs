@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use axum_test::{TestServer, TestServerConfig, Transport};
 use redb::Database;
 use tempfile::NamedTempFile;
+use tokio::task::JoinSet;
 
 use crate::{create_app, BLOBS_TABLE, DOLLOPS_TABLE, WATERMARKS_TABLE};
 
@@ -22,7 +25,8 @@ pub fn create_test_db() -> (Database, NamedTempFile) {
 /// Creates a test server with HTTP transport so server_address() works
 pub fn create_test_server() -> (TestServer, NamedTempFile) {
     let (db, temp_file) = create_test_db();
-    let app = create_app(db, 2);
+    let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
+    let app = create_app(Arc::new(db), 2, None, push_tasks);
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),
         ..TestServerConfig::default()

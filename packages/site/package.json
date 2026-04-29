@@ -7,7 +7,6 @@
 		"build": "vite build && cp -r privacy dist"
 	},
 	"dependencies": {
-		"@rocket/components": "^0.2.0",
 		"@shoelace-style/shoelace": "^2.11.0",
 		"@darksoil-studio/holochain-elements": "^0.500.0-rc",
 		"@mdi/js": "^7.2.0",

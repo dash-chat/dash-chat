@@ -9,14 +9,16 @@
 		"tauri": "tauri"
 	},
 	"devDependencies": {
-		"concurrently": "^9.2.1",
 		"@eslint/js": "^9.36.0",
 		"@tauri-apps/cli": "^2.8.4",
 		"@trivago/prettier-plugin-sort-imports": "^4.3.0",
+		"concurrently": "^9.2.1",
 		"eslint": "^9.36.0",
 		"eslint-config-prettier": "^9.1.2",
 		"mprocs": "^0.8.3",
 		"prettier": "^3.6.2",
+		"prettier-plugin-svelte": "^3.5.1",
+		"svelte": "^5.49.2",
 		"rust-just": "^1.46.0",
 		"svelte-language-server": "^0.17.25",
 		"typescript": "^5.9.3",

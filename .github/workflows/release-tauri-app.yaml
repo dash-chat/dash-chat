@@ -36,9 +36,10 @@ jobs:
           node-version: 20.12.2
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3 # docs https://pnpm.io/continuous-integration#github-actions
+        uses: pnpm/action-setup@v6
         with:
-            version: 10.15.0  # Optional: specify a pnpm version
+          version: 10.33.0
+          cache: true 
 
       - name: Install and prepare
         run: |
@@ -125,6 +126,12 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           nix_path: nixpkgs=channel:nixos-25.11
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+          cache: true 
+
       - uses: cachix/cachix-action@v15
         with:
           name: holochain-ci
@@ -181,12 +188,20 @@ jobs:
 
       - name: Install and Build 🔧
         run: |
-          nix develop --accept-flake-config .#androidDev --command bash -c "pnpm install && pnpm tauri android build"
+          nix develop --accept-flake-config .#androidDev --command bash -c "pnpm install && pnpm tauri android build --aab --apk"
 
       - name: Upload AAB to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
+          release_id: ${{ needs.release-tauri-app.outputs.releaseId }}
+          draft: true
+
+      - name: Upload AAB to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
           release_id: ${{ needs.release-tauri-app.outputs.releaseId }}
           draft: true

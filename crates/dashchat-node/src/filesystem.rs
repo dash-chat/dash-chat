@@ -14,11 +14,14 @@ impl Filesystem {
     }
 
     pub fn local_store_path(&self) -> PathBuf {
-        self.0.join("localdata.redb")
+        self.0.join("localdata.db")
     }
 
     pub fn op_store_path(&self) -> PathBuf {
         self.0.join("opstore.db")
     }
 
+    pub fn extraneous_redb_path(&self) -> PathBuf {
+        self.0.join("maackle.redb")
+    }
 }

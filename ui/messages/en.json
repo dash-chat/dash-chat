@@ -97,9 +97,14 @@
 	"chats": "Chats",
 	"noChatsYet": "No chats yet.",
 	"noChatsYetSubtitle": "Get started by messaging a friend.",
+	"startFirstChatHere": "Start your first chat here.",
 	"getStarted": "Get started",
 
 	"newMessage": "New message",
+	"youHaveANewMessage": "You have a new message",
+	"syncedWithServer": "Synchronized with the server.",
+	"mayHaveNewMessages": "You may have new messages.",
+	"newContactRequest": "New contact request",
 	"typeMessage": "Type a message...",
 
 	"groupName": "Group name",
@@ -135,6 +140,9 @@
 	"lightMode": "Light",
 	"darkMode": "Dark",
 	"systemDefault": "System (default)",
+	"notifications": "Notifications",
+	"enableNotifications": "Enable notifications",
+	"messages": "Messages",
 	"account": "Account",
 	"deleteAccount": "Delete account",
 	"deleteAccountWarning": "This will permanently delete your account and all your data. This action cannot be undone.",
@@ -182,6 +190,7 @@
 
 	"help": "Help",
 	"contactUs": "Contact us",
+	"version": "Version",
 	"tellUsWhatsGoingOn": "Tell us what's going on",
 	"tellUsWhyReachingOut": "Tell us why you're reaching out.",
 	"pleaseSelectAnOption": "Please select an option",
@@ -203,5 +212,7 @@
 	"updateError": "Update failed. Please try again later.",
 	"updateTapToUpdate": "Tap to update Dash Chat.",
 	"updateTapToRestart": "Tap to restart and apply update.",
-	"updateTapToRetry": "Tap to retry."
+	"updateTapToRetry": "Tap to retry.",
+	"testBanner": "Early access test",
+	"feedback": "Feedback"
 }

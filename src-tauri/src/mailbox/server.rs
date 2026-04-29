@@ -22,7 +22,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
 
     let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel();
     let stop_signal_rx = stop_signal_rx.map(|f| f.expect("failed to listen for event"));
-    let path = FileSystem::new(handle).local_mailbox_db_path()?;
+    let path = FileSystem::new(handle)?.local_mailbox_db_path();
 
     let mut last_err = None;
     let mut port = 0;
@@ -55,8 +55,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
 
     let addr = format!("0.0.0.0:{port}");
     let server = tokio::spawn(async move {
-        // TODO: configurable params
-        match mailbox_server::spawn_server(path, addr, 2, 7, stop_signal_rx).await {
+        match mailbox_server::spawn_server(path, addr, 2, 7, None, stop_signal_rx).await {
             Ok(_) => (),
             Err(e) => log::error!("Failed to start local mailbox: {e:?}"),
         }

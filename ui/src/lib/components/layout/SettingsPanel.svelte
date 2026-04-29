@@ -1,12 +1,12 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { fullName, type ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import {
 		mdiAccountCircleOutline,
+		mdiBellOutline,
 		mdiQrcode,
 		mdiPaletteOutline,
 		mdiHelpCircleOutline,
@@ -26,8 +26,9 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import type { Action } from 'svelte/action';
+	import Avatar from '../profiles/Avatar.svelte';
 
-	const stopPropagation: Action = (node) => {
+	const stopPropagation: Action = node => {
 		const stop = (e: Event) => {
 			e.stopPropagation();
 			e.preventDefault();
@@ -79,14 +80,13 @@
 				titleFontSizeMaterial="text-xl"
 			>
 				{#snippet media()}
-					<wa-avatar
+					<Avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
 						style={isWideScreen.value || theme === 'ios'
 							? '--size: 64px'
 							: '--size: 64px; margin-left: 16px'}
-					>
-					</wa-avatar>
+					/>
 				{/snippet}
 				{#snippet after()}
 					<a
@@ -96,7 +96,8 @@
 						use:stopPropagation
 						style={isWideScreen.value || theme === 'ios' ? '' : 'margin: 16px'}
 					>
-						<wa-icon src={wrapPathInSvg(mdiQrcode)} style="font-size: 18px"></wa-icon>
+						<wa-icon src={wrapPathInSvg(mdiQrcode)} style="font-size: 18px"
+						></wa-icon>
 					</a>
 				{/snippet}
 			</ListItem>
@@ -133,10 +134,30 @@
 					></wa-icon>
 				{/snippet}
 			</ListItem>
+			{#if isMobile}
+				<ListItem
+					link
+					class={isActive('/settings/notifications') ? 'active' : ''}
+					linkProps={{ href: '/settings/notifications' }}
+					data-testid="settings-notifications-link"
+					title={m.notifications()}
+					chevron={false}
+				>
+					{#snippet media()}
+						<wa-icon src={wrapPathInSvg(mdiBellOutline)} style="font-size: 28px"
+						></wa-icon>
+					{/snippet}
+				</ListItem>
+			{/if}
 		</List>
 
 		{#if !isMobile}
-			<List strongIos nested inset={isWideScreen.value || theme === 'ios'}>
+			<List
+				strongIos
+				nested={theme !== 'ios'}
+				class={theme === 'ios' ? 'mb-0' : ''}
+				inset={isWideScreen.value || theme === 'ios'}
+			>
 				<ListItem
 					link
 					class={isActive('/settings/offline') ? 'active' : ''}
@@ -155,7 +176,11 @@
 			</List>
 		{/if}
 
-		<List strongIos nested={theme !== 'ios'} inset={isWideScreen.value || theme === 'ios'}>
+		<List
+			strongIos
+			nested={theme !== 'ios'}
+			inset={isWideScreen.value || theme === 'ios'}
+		>
 			<ListItem
 				link
 				class={isActive('/settings/help') ? 'active' : ''}

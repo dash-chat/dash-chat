@@ -3,16 +3,19 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use push_notifications_client::client::PushNotificationsClient;
 use redb::Database;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::{future::Future, path::PathBuf};
+use tokio::task::JoinSet;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod cleanup;
 mod dollops_table;
 pub mod dump;
 mod get_dollops;
+mod notify_topics_subscribers;
 mod store_dollops;
 mod watermark;
 mod watermarks_table;
@@ -40,6 +43,8 @@ pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<Database>,
+    pub push_client: Option<Arc<PushNotificationsClient>>,
+    pub push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -52,6 +57,7 @@ pub async fn spawn_server(
     addr: String,
     payload_max_size_mb: usize,
     data_max_age_days: u64,
+    push_notifications_url: Option<String>,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = init_db(db_path)?;
@@ -61,7 +67,21 @@ pub async fn spawn_server(
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc), data_max_age_days);
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
 
-    let app = create_app_with_arc(db_arc, payload_max_size_mb);
+    let push_client = match push_notifications_url {
+        Some(url) => {
+            tracing::info!("Push notifications integration enabled: {url}");
+            Some(Arc::new(PushNotificationsClient::new(url)?))
+        }
+        None => None,
+    };
+
+    let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
+    let app = create_app(
+        db_arc,
+        payload_max_size_mb,
+        push_client,
+        Arc::clone(&push_tasks),
+    );
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let addr = listener.local_addr()?;
@@ -70,8 +90,14 @@ pub async fn spawn_server(
 
     let server = axum::serve(listener, app);
     server.with_graceful_shutdown(signal).await?;
+
     // TODO: cleanup task needs to be cleaned up even if the server is aborted.
     //      the database stays open as long as this task holds a reference to the db arc.
+
+    // Drain pending push notification tasks before shutting down
+    let mut tasks = push_tasks.lock().await;
+    while tasks.join_next().await.is_some() {}
+
     cleanup_task.abort();
     tracing::info!("Mailbox server gracefully shut down");
 
@@ -109,12 +135,17 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
     Ok(db)
 }
 
-pub fn create_app(db: Database, payload_max_size_mb: usize) -> Router {
-    create_app_with_arc(Arc::new(db), payload_max_size_mb)
-}
-
-pub fn create_app_with_arc(db: Arc<Database>, payload_max_size_mb: usize) -> Router {
-    let state = AppState { db };
+pub fn create_app(
+    db: Arc<Database>,
+    payload_max_size_mb: usize,
+    push_client: Option<Arc<PushNotificationsClient>>,
+    push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
+) -> Router {
+    let state = AppState {
+        db,
+        push_client,
+        push_tasks,
+    };
 
     Router::new()
         .route("/health", get(health_check))

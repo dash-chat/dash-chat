@@ -7,6 +7,7 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-parts.url = "github:hercules-ci/flake-parts";
     crane.url = "github:ipetkov/crane";
+
     garnix-lib = {
       url = "github:garnix-io/garnix-lib";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -39,6 +40,7 @@
         ./nix/servers.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix
+        ./crates/push-notifications-server/default.nix
       ];
 
       systems =
@@ -48,8 +50,6 @@
         let
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
-
-          rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
           tauriLibraries = with pkgs; [
             webkitgtk_4_1
@@ -62,17 +62,29 @@
             librsvg
             libsoup_3
             libayatana-appindicator
+            pango
+          ];
+          packages = [
+            pkgs.mprocs
+            pkgs.just
+            pkgs.pnpm
+            pkgs.cargo-nextest
+            inputs'.tauri-driver.packages.tauri-driver
           ];
         in rec {
-
-          devShells.default = pkgs.mkShell {
+          devShells.default = let
+            rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          in pkgs.mkShell {
+            packages = [ rust ] ++ packages;
             inputsFrom =
               [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-            packages = [ pkgs.mprocs pkgs.pnpm rust inputs'.tauri-driver.packages.tauri-driver ];
             shellHook = lib.optionalString pkgs.stdenv.isLinux ''
-              export LD_LIBRARY_PATH=${
+              export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
                 lib.makeLibraryPath tauriLibraries
-              }:$LD_LIBRARY_PATH
+              }"
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
+                lib.makeLibraryPath tauriLibraries
+              }"
             '';
           };
 
@@ -80,16 +92,14 @@
             rust = pkgs.rust-bin.fromRustupToolchainFile
               ./rust-toolchain.android.toml;
           in pkgs.mkShell {
-            inputsFrom = [
-              devShells.default
-              inputs'.tauri-plugin-holochain.devShells.holochainTauriAndroidDev
-            ];
             packages = [ rust ];
+            inputsFrom =
+              [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
           };
 
           devShells.iosDev = let
-            rust = pkgs.rust-bin.fromRustupToolchainFile
-              ./rust-toolchain.ios.toml;
+            rust =
+              pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.ios.toml;
           in pkgs.mkShell {
             inputsFrom = [ devShells.default ];
             packages = [ rust ]

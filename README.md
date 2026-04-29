@@ -26,13 +26,13 @@ Please contact the Dash Chat team at hello [at] dashchat [dot] org if you're int
 
 1. Install [Rust](https://rust-lang.org/tools/install/).
 2. Install [pnpm](https://pnpm.io/).
-3. Install the [Tauri pre-requisits](https://tauri.app/start/prerequisites/) for your platform.
-4. Run `pnpm install`.
+3. Install [just](https://just.systems/man/en/).
+4. Install the [Tauri pre-requisits](https://tauri.app/start/prerequisites/) for your platform.
+5. Run `pnpm install`.
 
   OR
 
 If you use nix, just use `nix develop` to enter the development shell and run `pnpm install` to install the `pnpm` dependencies.
-
 
 ### Running the app
 
@@ -45,5 +45,5 @@ just dev
 This will spawn two instances of the tauri, forming a network of 2 nodes connected to a single mailbox server running locally. All data will be persisted to the .dbs/dev folder in the current folder. If you want to clean up the development databases, run:
 
 ```bash
-just clean-dev
+just dev clean
 ```
