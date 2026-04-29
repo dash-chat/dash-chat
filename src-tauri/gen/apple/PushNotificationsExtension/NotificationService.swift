@@ -53,7 +53,16 @@ class NotificationService: UNNotificationServiceExtension {
         // sensible fallback if the Rust call exceeds iOS's ~30s budget.
         self.pendingContentHandler = contentHandler
         self.pendingBestAttemptContent = bestAttemptContent
-        let s = "{ \"title\": \"\(bestAttemptContent.title)\", \"body\": \"\(bestAttemptContent.body)\" }"
+        let notification = Notification(title: bestAttemptContent.title, body: bestAttemptContent.body)
+        let s: String
+        do {
+            let data = try JSONEncoder().encode(notification)
+            s = String(data: data, encoding: .utf8)!
+        } catch {
+            log.error("failed to encode notification JSON: \(error, privacy: .public)")
+            self.deliverGenericFallback()
+            return
+        }
         let cstr = makeCString(from: s)
         defer { cstr.deallocate() }
         let slice = RustByteSlice(bytes: cstr, len: s.utf8.count)
@@ -81,7 +90,7 @@ class NotificationService: UNNotificationServiceExtension {
         let title = notification_title(n).asString()
         let body = notification_body(n).asString()
         notification_destroy(n)
-        log.info("decoded title=\(title ?? "<nil>", privacy: .public) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .public) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
+        log.info("decoded title=\(title ?? "<nil>", privacy: .private) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .private) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
         if (title == nil || title!.isEmpty) && (body == nil || body!.isEmpty) {
             log.info("both title and body empty/nil — delivering generic 'New message' fallback")
             self.deliverGenericFallback()
@@ -89,7 +98,7 @@ class NotificationService: UNNotificationServiceExtension {
         }
         if let title { bestAttemptContent.title = title }
         if let body { bestAttemptContent.body = body }
-        log.info("delivering modified content title=\(bestAttemptContent.title, privacy: .public) body=\(bestAttemptContent.body, privacy: .public)")
+        log.info("delivering modified content title=\(bestAttemptContent.title, privacy: .private) body=\(bestAttemptContent.body, privacy: .private)")
         self.deliver(bestAttemptContent)
     }
 
