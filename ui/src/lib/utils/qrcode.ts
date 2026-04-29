@@ -54,7 +54,7 @@ async function pollUntilGranted(
 	const start = Date.now();
 
 	while (Date.now() - start < maxWaitMs) {
-		await new Promise((r) => setTimeout(r, intervalMs));
+		await new Promise(r => setTimeout(r, intervalMs));
 		const state = await checkPermissions();
 		if (state === 'granted') return true;
 	}
