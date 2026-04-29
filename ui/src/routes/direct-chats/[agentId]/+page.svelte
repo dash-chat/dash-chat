@@ -162,76 +162,30 @@
 		node.focus();
 	};
 
-	// Pixel threshold for considering the scroll position "at the bottom".
-	// Accounts for roughly 2-3 message heights so new messages auto-scroll
-	// even when the user is near but not exactly at the bottom.
+	// Column-reverse on the scroll container inverts the scroll axis so that
+	// scrollTop=0 means "at the bottom of the content". The browser then keeps
+	// us pinned to the bottom automatically when content is added or the
+	// viewport changes (keyboard show/hide), and only scrolls up when the user
+	// drags. Threshold accounts for roughly 2-3 message heights for the
+	// floating "scroll to bottom" button visibility logic.
 	const SCROLL_BOTTOM_THRESHOLD = 200;
 
 	const scrollIsAtBottom = () => {
-		if (!messagesPageEl) return false;
-		return (
-			messagesPageEl.scrollTop + SCROLL_BOTTOM_THRESHOLD >=
-			messagesPageEl.scrollHeight - messagesPageEl.offsetHeight
-		);
+		if (!messagesPageEl) return true;
+		// In a column-reverse scroll container, scrollTop=0 is the bottom.
+		// Browsers differ on whether scrollTop becomes positive or negative
+		// when the user scrolls up (older WebKit used negative; modern Safari
+		// and Chrome use positive). Use abs() so the check works either way.
+		return Math.abs(messagesPageEl.scrollTop) < SCROLL_BOTTOM_THRESHOLD;
 	};
 
 	const scrollToBottom = (animate = true) => {
 		if (!messagesPageEl) return;
 		messagesPageEl.scrollTo({
-			top: messagesPageEl.scrollHeight - messagesPageEl.offsetHeight,
+			top: 0,
 			behavior: animate ? 'smooth' : 'auto',
 		});
 	};
-
-	const scrolltobottom: Action = () => {
-		tick().then(() => {
-			scrollToBottom(false);
-		});
-	};
-
-	// Keep the bottom of the message list pinned to the visible area as the
-	// layout changes — most notably during the iOS keyboard hide animation.
-	//
-	// On iOS WKWebView the chat container's `offsetHeight` doesn't update on
-	// every frame of the animation (Konsta's `<Page>` is `100vh`-based, which
-	// resolves once at start), so a single `snap()` from `visualViewport.resize`
-	// reads stale dimensions and looks like nothing happens until the final
-	// settle. To make the scroll *slide* down with the keyboard, kick off an
-	// rAF loop on each viewport resize that re-snaps every frame for the
-	// duration of a typical keyboard animation (~400ms). Each frame the
-	// container's measured `offsetHeight` is more current, so the snap target
-	// progresses smoothly.
-	$effect(() => {
-		if (!messagesPageEl) return;
-		const snap = () => {
-			if (scrollIsAtBottom()) scrollToBottom(false);
-		};
-		const ro = new ResizeObserver(snap);
-		ro.observe(messagesPageEl);
-
-		const vv = window.visualViewport;
-		let rafId: number | undefined;
-		let rafDeadline = 0;
-		const tick = () => {
-			snap();
-			if (performance.now() < rafDeadline) {
-				rafId = requestAnimationFrame(tick);
-			} else {
-				rafId = undefined;
-			}
-		};
-		const onVV = () => {
-			rafDeadline = performance.now() + 400;
-			if (rafId === undefined) rafId = requestAnimationFrame(tick);
-		};
-		vv?.addEventListener('resize', onVV);
-
-		return () => {
-			ro.disconnect();
-			vv?.removeEventListener('resize', onVV);
-			if (rafId !== undefined) cancelAnimationFrame(rafId);
-		};
-	});
 
 	async function sendMessage() {
 		const message = messageText;
@@ -244,17 +198,10 @@
 			// Hide the unread messages divider after sending, and allow it to reappear for future messages
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
-			// Wait for the message to get rendered in the UI
-			setTimeout(() => {
-				scrollToBottom();
-			});
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
-	let t: ReturnType<typeof setTimeout> | undefined;
-	let bottom = false;
-	let unsubNewMessage: (() => void) | undefined;
 
 	const messageClass = (messageSetLength: number, index: number) => {
 		if (messageSetLength <= 1) return '';
@@ -270,21 +217,18 @@
 	let messagesPageEl: HTMLDivElement | null = $state(null);
 
 	onMount(() => {
-		messagesPageEl = document.querySelector('.messages-page') as HTMLDivElement;
+		// Scroll happens inside `.messages-scroll-area` (column-reverse), not on
+		// the Konsta Page itself.
+		messagesPageEl = document.querySelector(
+			'.messages-scroll-area',
+		) as HTMLDivElement;
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
 
-		unsubNewMessage = store.onNewMessage(async () => {
-			if (scrollIsAtBottom()) bottom = true;
-			if (scrollIsAtBottom() || bottom) {
-				clearTimeout(t);
-				t = setTimeout(() => {
-					bottom = false;
-					scrollToBottom();
-				});
-			}
-		});
+		// In a column-reverse scroll container, new content appended to the
+		// list naturally appears at the visual bottom and the browser keeps
+		// the scroll pinned to it (scrollTop=0). No manual scroll needed.
 
 		observer = new IntersectionObserver(
 			entries => {
@@ -313,7 +257,6 @@
 		messagesPageEl?.addEventListener('scroll', handleScroll);
 
 		return () => {
-			unsubNewMessage?.();
 			observer?.disconnect();
 			clearTimeout(markReadTimeout);
 			messagesPageEl?.removeEventListener('scroll', handleScroll);
@@ -578,7 +521,7 @@
 						</Navbar>
 					{/if}
 
-					<div class="column">
+					<div class="messages-scroll-area">
 						{#await $readMessageHashes then readHashes}
 							{#await $messagesSets then messagesSetsInDays}
 								{@const unreadDivider = getUnreadDividerInfo(
@@ -587,7 +530,6 @@
 									myDeviceId,
 								)}
 								<div
-									use:scrolltobottom
 									class="column"
 									style={`padding-bottom: ${messageInputHeight}`}
 								>
@@ -1169,3 +1111,30 @@
 		{/await}
 	{/await}
 </div>
+
+<style>
+	/* Konsta's `<Page>` root is forced into a flex column with hidden overflow
+	   so the inner `.messages-scroll-area` becomes the actual scrollable area
+	   (otherwise the Page would scroll too and the column-reverse trick
+	   wouldn't apply to the right element). `:global` is required because the
+	   `.k-page` class is added by Konsta on its own root, outside Svelte's
+	   component scope. */
+	:global(.k-page.messages-page) {
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+
+	/* `flex-direction: column-reverse` inverts the scroll axis so `scrollTop=0`
+	   means "at the bottom of the conversation". The browser keeps the bottom
+	   pinned automatically as new messages append and as the viewport changes
+	   (iOS keyboard show/hide), with no manual scrollTo bookkeeping. The
+	   single chronological message-list child stacks normally inside it. */
+	.messages-scroll-area {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		display: flex;
+		flex-direction: column-reverse;
+	}
+</style>
