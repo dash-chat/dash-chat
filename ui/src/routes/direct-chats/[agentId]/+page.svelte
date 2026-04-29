@@ -136,7 +136,14 @@
 	let showAcceptDialog = $state(false);
 	let showRejectDialog = $state(false);
 	let profileNamesSheetOpen = $state(false);
-	let messageInputHeight: string = $state('');
+	// `inputBarHeight` is bound (via `bind:clientHeight`) to whichever bottom-bar
+	// wrapper is currently rendered (regular input, search bar, or contact-
+	// request banner). Single source of truth for the message-list's reserved
+	// bottom padding — keeps it in sync with the actual visual height of the
+	// bar even after sending a message clears the textarea (the wrapper resizes,
+	// Svelte re-reports it through bind:clientHeight, padding follows).
+	let inputBarHeight: number = $state(60);
+	let messageInputHeight = $derived(`${inputBarHeight}px`);
 	let showScrollToBottom = $state(false);
 
 	// Unread divider state — hash captured once on load so position stays fixed,
@@ -182,6 +189,50 @@
 		});
 	};
 
+	// Keep the bottom of the message list pinned to the visible area as the
+	// layout changes — most notably during the iOS keyboard hide animation.
+	//
+	// On iOS WKWebView the chat container's `offsetHeight` doesn't update on
+	// every frame of the animation (Konsta's `<Page>` is `100vh`-based, which
+	// resolves once at start), so a single `snap()` from `visualViewport.resize`
+	// reads stale dimensions and looks like nothing happens until the final
+	// settle. To make the scroll *slide* down with the keyboard, kick off an
+	// rAF loop on each viewport resize that re-snaps every frame for the
+	// duration of a typical keyboard animation (~400ms). Each frame the
+	// container's measured `offsetHeight` is more current, so the snap target
+	// progresses smoothly.
+	$effect(() => {
+		if (!messagesPageEl) return;
+		const snap = () => {
+			if (scrollIsAtBottom()) scrollToBottom(false);
+		};
+		const ro = new ResizeObserver(snap);
+		ro.observe(messagesPageEl);
+
+		const vv = window.visualViewport;
+		let rafId: number | undefined;
+		let rafDeadline = 0;
+		const tick = () => {
+			snap();
+			if (performance.now() < rafDeadline) {
+				rafId = requestAnimationFrame(tick);
+			} else {
+				rafId = undefined;
+			}
+		};
+		const onVV = () => {
+			rafDeadline = performance.now() + 400;
+			if (rafId === undefined) rafId = requestAnimationFrame(tick);
+		};
+		vv?.addEventListener('resize', onVV);
+
+		return () => {
+			ro.disconnect();
+			vv?.removeEventListener('resize', onVV);
+			if (rafId !== undefined) cancelAnimationFrame(rafId);
+		};
+	});
+
 	async function sendMessage() {
 		const message = messageText;
 
@@ -216,7 +267,7 @@
 	let observer: IntersectionObserver | undefined;
 	const visibleMessages: Set<Hash> = new Set();
 	let markReadTimeout: ReturnType<typeof setTimeout>;
-	let messagesPageEl: HTMLDivElement | null = null;
+	let messagesPageEl: HTMLDivElement | null = $state(null);
 
 	onMount(() => {
 		messagesPageEl = document.querySelector('.messages-page') as HTMLDivElement;
@@ -371,9 +422,6 @@
 		closest?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	}
 
-	$effect(() => {
-		if (searchMode) messageInputHeight = '60px';
-	});
 	function showQuickReactionBar(e: MouseEvent | TouchEvent, message: Message) {
 		const el = e.target as HTMLElement;
 		const target =
@@ -541,7 +589,7 @@
 								<div
 									use:scrolltobottom
 									class="column"
-									style={`padding-bottom: calc(${messageInputHeight} + 12px)`}
+									style={`padding-bottom: ${messageInputHeight}`}
 								>
 									{#if profile}
 										<div class="column" style="align-items: center">
@@ -983,7 +1031,7 @@
 					{#await $unreadCount then count}
 						<button
 							class="pointer-events-auto absolute right-4 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
-							style={`bottom: calc(${messageInputHeight || '60px'} + 1.4rem)`}
+							style={`bottom: calc(${messageInputHeight} + 1.4rem)`}
 							onclick={() => scrollToBottom()}
 							aria-label="Scroll to bottom"
 							data-testid="direct-chat-scroll-bottom"
@@ -1003,6 +1051,7 @@
 
 				{#if searchMode}
 					<div
+						bind:clientHeight={inputBarHeight}
 						class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
 					>
 						<div
@@ -1053,6 +1102,7 @@
 					</div>
 				{:else if contactRequest}
 					<div
+						bind:clientHeight={inputBarHeight}
 						class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
 					>
 						<div
@@ -1097,13 +1147,13 @@
 					</div>
 				{:else}
 					<div
+						bind:clientHeight={inputBarHeight}
 						class="pointer-events-auto absolute bottom-0 left-0 right-0"
 						class:bg-md-light-surface={theme === 'material'}
 						class:dark:bg-md-dark-surface={theme === 'material'}
 					>
 						<MessageInput
 							bind:value={messageText}
-							bind:height={messageInputHeight}
 							onSend={sendMessage}
 							onFocus={() => {
 								if (scrollIsAtBottom()) {
