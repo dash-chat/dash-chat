@@ -16,7 +16,7 @@ static NODES: Mutex<Option<HashMap<PathBuf, Node>>> = Mutex::const_new(None);
 ///    When found, the cache is cleared since it's no longer needed.
 /// 2. A previously cached Node for this data path.
 /// 3. Build a new Node without channels and cache it.
-pub async fn get_node(data_path: PathBuf) -> anyhow::Result<Node> {
+pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
     // Try the app's managed state first
     if let Some(handle) = crate::APP_HANDLE.get() {
         if let Some(node) = handle.try_state::<Node>().map(|s| s.inner().clone()) {
@@ -31,14 +31,14 @@ pub async fn get_node(data_path: PathBuf) -> anyhow::Result<Node> {
     let mut guard = NODES.lock().await;
     let map = guard.get_or_insert_with(HashMap::new);
 
-    if let Some(node) = map.get(&data_path) {
+    if let Some(node) = map.get(data_path) {
         return Ok(node.clone());
     }
 
     log::info!("No nodes in the cache, building node from scratch.");
 
     let node = crate::setup::build_node(data_path.clone(), None, None).await?;
-    map.insert(data_path, node.clone());
+    map.insert(data_path.clone(), node.clone());
 
     Ok(node)
 }

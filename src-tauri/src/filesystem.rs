@@ -2,6 +2,8 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Manager, Runtime};
 
+const DATABASE_VERSION: &str = "0.1";
+
 /// Hold the lock file handle for the lifetime of the process so the exclusive
 /// lock is never released while the app is running.
 static DATA_DIR_LOCK: OnceLock<std::fs::File> = OnceLock::new();
@@ -49,41 +51,57 @@ pub fn init_data_dir() {
     }
 }
 
-pub struct FileSystem<R: Runtime>(AppHandle<R>);
-
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const LOCAL_MAILBOX_DB_FILE_NAME: &str = "local-mailbox.redb";
 const DASHCHAT_DATA_FOLDER: &str = "studio.darksoil.dashchat";
 
-impl<R: Runtime> FileSystem<R> {
-    pub fn new(handle: &AppHandle<R>) -> Self {
-        FileSystem(handle.clone())
-    }
+/// Manages paths within the versioned Dash Chat data directory.
+pub struct FileSystem(PathBuf);
 
-    // When DATA_DIR is set, use it directly as the data directory.
-    // This is used by mprocs (dev), E2E tests, and any scenario where
-    // multiple instances need separate data dirs.
-    // Otherwise fall back to the OS local data dir.
-    pub fn local_data_dir(&self) -> anyhow::Result<PathBuf> {
-        let local_data_path = if let Ok(data_dir) = std::env::var("DATA_DIR") {
+impl FileSystem {
+    /// Create from a Tauri `AppHandle`, resolving the base data directory
+    /// from `DATA_DIR` env var or the OS local data dir.
+    pub fn new<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<Self> {
+        let app_root_dir = if let Ok(data_dir) = std::env::var("DATA_DIR") {
             PathBuf::from(data_dir)
         } else {
-            self.0.path().local_data_dir()?
+            // Linux: local_data_dir() = ".local/share"
+            // Mobile: local_data_dir() = private app data
+            let local_data_dir = handle.path().local_data_dir()?;
+
+            // In desktop, store all app data in ".local/share/studio.darksoil.dashchat"
+            // In mobile, no need to add the app folder because local_data_dir is not shared with any other app
+            #[cfg(desktop)]
+            let local_data_dir = local_data_dir.join(DASHCHAT_DATA_FOLDER);
+
+            local_data_dir
         };
-        let dashchat_data_path = local_data_path.join(DASHCHAT_DATA_FOLDER);
-        if !dashchat_data_path.exists() {
-            std::fs::create_dir_all(&dashchat_data_path)?;
+        Self::from_app_root_dir(app_root_dir)
+    }
+
+    /// Create from a raw data directory path (e.g. from a push notification context).
+    pub fn from_app_root_dir(app_root_dir: PathBuf) -> anyhow::Result<Self> {
+        let app_data_path = app_root_dir
+            // We don't support backwards compatibility yet
+            // Store all files in a separate folder for each version of the database
+            // to force a reset from scratch in the state of app on app updates
+            .join(DATABASE_VERSION);
+        if !app_data_path.exists() {
+            std::fs::create_dir_all(&app_data_path)?;
         }
-        Ok(dashchat_data_path)
+        Ok(FileSystem(app_data_path))
     }
 
-    pub fn settings_path(&self) -> anyhow::Result<PathBuf> {
-        let local_data_dir = self.local_data_dir()?;
-        Ok(local_data_dir.join(SETTINGS_FILE_NAME))
+    // The folder where all the files for the app should be stored
+    pub fn app_data_dir(&self) -> &PathBuf {
+        &self.0
     }
 
-    pub fn local_mailbox_db_path(&self) -> anyhow::Result<PathBuf> {
-        let local_data_dir = self.local_data_dir()?;
-        Ok(local_data_dir.join(LOCAL_MAILBOX_DB_FILE_NAME))
+    pub fn settings_path(&self) -> PathBuf {
+        self.0.join(SETTINGS_FILE_NAME)
+    }
+
+    pub fn local_mailbox_db_path(&self) -> PathBuf {
+        self.0.join(LOCAL_MAILBOX_DB_FILE_NAME)
     }
 }

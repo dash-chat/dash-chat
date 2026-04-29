@@ -15,8 +15,8 @@ pub(crate) struct Settings {
 }
 
 pub(crate) fn load_settings<R: Runtime>(handle: &AppHandle<R>) -> Settings {
-    let path = match FileSystem::new(handle).settings_path() {
-        Ok(path) => path,
+    let path = match FileSystem::new(handle) {
+        Ok(fs) => fs.settings_path(),
         Err(err) => {
             log::error!("Failed to resolve settings path: {err:?}");
             return Settings::default();
@@ -71,8 +71,8 @@ pub(crate) fn set_setting<R: Runtime>(
 }
 
 pub(crate) fn save_settings<R: Runtime>(handle: &AppHandle<R>, settings: &Settings) {
-    let path = match FileSystem::new(handle).settings_path() {
-        Ok(path) => path,
+    let path = match FileSystem::new(handle) {
+        Ok(fs) => fs.settings_path(),
         Err(err) => {
             log::error!("Failed to resolve settings path: {err:?}");
             return;

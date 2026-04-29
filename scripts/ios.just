@@ -2,7 +2,8 @@ set working-directory := '..'
 
 # run the app in development mode
 dev:
-    pnpm tauri ios dev
+    cargo build --target aarch64-apple-ios
+    pnpm tauri ios dev --host
 
 build:
     pnpm tauri ios build -o
