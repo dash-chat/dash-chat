@@ -101,6 +101,9 @@
 	"getStarted": "Get started",
 
 	"newMessage": "New message",
+	"youHaveANewMessage": "You have a new message",
+	"syncedWithServer": "Synchronized with the server.",
+	"mayHaveNewMessages": "You may have new messages.",
 	"newContactRequest": "New contact request",
 	"typeMessage": "Type a message...",
 
