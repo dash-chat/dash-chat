@@ -164,9 +164,17 @@ li.plain span {
 	font-size: 0.75rem;
 }
 
+/* iOS theme has a shorter navbar, so the day tag can sit closer to the top
+   on mobile. Wrapped in :where so the specificity matches the bare selector
+   above and the desktop media-query override below — source order then
+   resolves the cascade (desktop wins at >=768px regardless of theme). */
+:where(.k-ios) .sticky-day-tag {
+	top: calc(20px + env(safe-area-inset-top, 0px));
+}
+
 @media (min-width: 768px) {
 	.sticky-day-tag {
-		top: calc(64px + env(safe-area-inset-top, 0px) + 8px);
+		top: calc(56px + env(safe-area-inset-top, 0px) + 8px);
 	}
 }
 
