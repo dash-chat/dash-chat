@@ -220,6 +220,20 @@
 
 	onMount(() => {
 		messagesPageEl = document.querySelector('.messages-page') as HTMLDivElement;
+
+		// Track navbar height so sticky day-tags can use top: var(--navbar-height).
+		const navbar = messagesPageEl.querySelector('.k-navbar');
+		let navbarObserver: ResizeObserver | undefined;
+		if (navbar) {
+			navbarObserver = new ResizeObserver(([entry]) => {
+				messagesPageEl!.style.setProperty(
+					'--navbar-height',
+					`${entry.borderBoxSize[0].blockSize}px`,
+				);
+			});
+			navbarObserver.observe(navbar);
+		}
+
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
@@ -262,6 +276,7 @@
 		messagesPageEl?.addEventListener('scroll', handleScroll);
 
 		return () => {
+			navbarObserver?.disconnect();
 			unsubNewMessage?.();
 			observer?.disconnect();
 			clearTimeout(markReadTimeout);
@@ -978,7 +993,7 @@
 	<!-- Overlay for bottom UI elements -->
 	{#await $myDeviceId then myDeviceId}
 		{#await $contactRequest then contactRequest}
-			<div class="absolute inset-0 pointer-events-none">
+			<div class="absolute inset-0 pointer-events-none z-40">
 				{#if showScrollToBottom && !searchMode}
 					{#await $unreadCount then count}
 						<button
