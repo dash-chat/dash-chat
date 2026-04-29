@@ -74,16 +74,16 @@ export class DownloadInstallerButton extends LitElement {
 		return html`<div
 			style="display:flex; flex-direction: column; gap: 24px; min-width: 12em"
 		>
-			<div style="display:flex; flex-direction: row;">
+			<div class="button-row" style="display:flex; flex-direction: row;">
 				<sl-button
 					href="${this.getUrlFor(browser)}"
 					variant="primary"
 					size="large"
 					class="no-border-radius-right"
-					style="flex: 1"
 				>
 					<sl-icon slot="prefix" .src=${wrapPathInSvg(mdiDownload)}></sl-icon>
-					Download installer for ${browser}</sl-button
+					<span class="full-label">Download for ${browser}</span>
+					<span class="short-label">Download</span></sl-button
 				>
 				<sl-dropdown
 					><sl-button
@@ -132,6 +132,9 @@ export class DownloadInstallerButton extends LitElement {
 	}
 
 	static styles = css`
+		sl-button.no-border-radius-right {
+			flex: 1;
+		}
 		sl-button.no-border-radius-right::part(base) {
 			border-top-right-radius: 0;
 			border-bottom-right-radius: 0;
@@ -139,6 +142,23 @@ export class DownloadInstallerButton extends LitElement {
 		sl-button.no-border-radius-left::part(base) {
 			border-top-left-radius: 0;
 			border-bottom-left-radius: 0;
+		}
+		.short-label {
+			display: none;
+		}
+		@media (max-width: 400px) {
+			.full-label {
+				display: none;
+			}
+			.short-label {
+				display: inline;
+			}
+			.button-row {
+				justify-content: center;
+			}
+			sl-button.no-border-radius-right {
+				flex: 0 1 auto;
+			}
 		}
 		sl-input::part(input) {
 			pointer-events: none;

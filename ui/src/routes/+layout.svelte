@@ -33,6 +33,7 @@
 	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
+	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
@@ -156,7 +157,9 @@
 					{@render children()}
 				</DesktopLayout>
 			{:else}
-				{@render children()}
+				<MobileLayout>
+					{@render children()}
+				</MobileLayout>
 			{/if}
 		</SplashscreenPrompt>
 		<ToastManager />

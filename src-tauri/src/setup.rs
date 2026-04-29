@@ -7,8 +7,6 @@ use tauri::{Emitter, Manager};
 
 use crate::{commands::logs::simplify, filesystem::FileSystem};
 
-const DASHCHAT_MAILBOX_ID: &str = "dashchat-mailbox";
-
 pub(crate) async fn build_node(
     data_path: PathBuf,
     notification_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::Notification>>,
@@ -25,8 +23,10 @@ pub(crate) async fn build_node(
     let node = Node::new(data_path, config, notification_tx, topic_subscribed_tx).await?;
 
     let mailbox_url = crate::mailbox::default_mailbox_url();
-    let mailbox_client =
-        mailbox_client::toy::ToyMailboxClient::new(DASHCHAT_MAILBOX_ID.to_string(), mailbox_url);
+    let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
+        crate::mailbox::PRODUCTION_MAILBOX_ID.to_string(),
+        mailbox_url,
+    );
     node.mailboxes.register(mailbox_client).await;
 
     Ok(node)
@@ -38,7 +38,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     // Manage the mDNS service daemon
     app_handle.manage(mdns_sd::ServiceDaemon::new()?);
 
-    let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle).local_data_dir()?;
+    let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle)?.app_data_dir().clone();
     log::info!("Using local data path: {local_data_path:?}");
 
     #[cfg(not(mobile))]

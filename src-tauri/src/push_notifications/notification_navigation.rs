@@ -9,7 +9,7 @@ use tauri_plugin_notification::NotificationActionPerformedPayload;
 /// - Fallback → `/group-chat/{topic_hex}`
 async fn resolve_route_for_topic(node: &Node, topic_id: &TopicId) -> String {
     // Check if this is an inbox topic (contact request)
-    if let Ok(inbox_topics) = node.get_active_inbox_topics() {
+    if let Ok(inbox_topics) = node.get_active_inbox_topics().await {
         for inbox_topic in &inbox_topics {
             if *inbox_topic.topic == *topic_id {
                 if let Some(agent_id) = get_contact_request_agent(node, topic_id).await {
@@ -20,7 +20,7 @@ async fn resolve_route_for_topic(node: &Node, topic_id: &TopicId) -> String {
     }
 
     // Check if it matches a direct chat with a known contact
-    if let Ok(contacts) = node.all_contact_agent_ids() {
+    if let Ok(contacts) = node.all_contact_agent_ids().await {
         for agent_id in contacts {
             let direct_topic = Topic::direct_chat([node.agent_id(), agent_id]);
             if *direct_topic == *topic_id {
@@ -110,6 +110,7 @@ pub fn listen_for_notification_taps(app_handle: &AppHandle) {
         };
 
         let Some(topic_id) = parse_topic_id(&payload.notification) else {
+            log::error!("Failed to parse topic ID from the notification.");
             return;
         };
 

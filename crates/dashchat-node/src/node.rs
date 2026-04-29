@@ -137,7 +137,7 @@ impl Node {
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
         let local_store = LocalStore::new(filesystem.local_store_path()).await?;
-        let node_data = local_store.node_data()?;
+        let node_data = local_store.node_data().await?;
 
         let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
         // let op_store = OpStore::new_memory();
@@ -216,9 +216,10 @@ impl Node {
         Ok(authors)
     }
 
-    pub fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
+    pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
         self.local_store
             .get_active_inbox_topics()
+            .await
             .map_err(|err| Error::GetActiveInboxes(format!("{err}")))
     }
 
@@ -239,6 +240,7 @@ impl Node {
                 .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
             self.local_store
                 .add_active_inbox_topic(inbox_topic.clone())
+                .await
                 .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
             Some(inbox_topic)
         } else {
@@ -308,21 +310,21 @@ impl Node {
     ) -> anyhow::Result<ChatId> {
         let chat_id = Topic::random();
 
-        let agents = initial_members
+        let device_ids: Vec<DeviceId> = initial_members
+            .keys()
+            .map(|public_key| DeviceId::from(*public_key))
+            .collect();
+        let contacts = self.local_store.lookup_contacts(&device_ids).await?;
+        let agents: Vec<AgentId> = device_ids
             .iter()
-            .map(|(public_key, _)| self.local_store.lookup_contact(DeviceId::from(*public_key)))
-            .filter_map(|m| match m {
-                Ok(None) => {
-                    tracing::warn!("Contact not found");
+            .filter_map(|did| match contacts.get(did) {
+                Some(agent) => Some(*agent),
+                None => {
+                    tracing::warn!("Contact not found: {}", did.renamed());
                     None
                 }
-                Ok(Some(agent)) => Some(Ok(agent)),
-                Err(e) => {
-                    tracing::error!("Error looking up contact: {}", e);
-                    Some(Err(e))
-                }
             })
-            .collect::<anyhow::Result<Vec<AgentId>>>()?;
+            .collect();
 
         // The creator must always have Manage access
         initial_members.insert(*self.device_id(), p2panda_auth::Access::manage());
@@ -387,7 +389,10 @@ impl Node {
         )
         .await?;
 
-        let agent_id = self.local_store.lookup_contact(DeviceId::from(member))?;
+        let agent_id = self
+            .local_store
+            .lookup_contact(DeviceId::from(member))
+            .await?;
         if let Some(agent_id) = agent_id {
             self.invite_to_group(chat_id, agent_id).await?;
         } else {
@@ -456,16 +461,16 @@ impl Node {
         self.get_profile_for_agent(self.agent_id()).await
     }
 
-    pub fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        self.local_store.lookup_contact(device_id)
+    pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
+        self.local_store.lookup_contact(device_id).await
     }
 
-    pub fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        self.local_store.all_contact_agent_ids()
+    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
+        self.local_store.all_contact_agent_ids().await
     }
 
-    pub fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
-        self.local_store.subscribed_topics()
+    pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
+        self.local_store.subscribed_topics().await
     }
 
     pub async fn get_profile_for_agent(
@@ -587,6 +592,7 @@ impl Node {
 
         self.local_store
             .save_contact(contact.clone())
+            .await
             .map_err(|e| AddContactError::StoreContact(e.to_string()))?;
 
         // SPACES: Register the member in the spaces manager
@@ -744,7 +750,7 @@ impl Node {
         )
         .await?;
 
-        for topic in self.local_store.get_active_inbox_topics()?.iter() {
+        for topic in self.local_store.get_active_inbox_topics().await?.iter() {
             self.initialize_topic(
                 *topic
                     .topic
@@ -754,7 +760,7 @@ impl Node {
             .await?;
         }
 
-        for topic in self.local_store.subscribed_topics()?.iter() {
+        for topic in self.local_store.subscribed_topics().await?.iter() {
             self.initialize_topic(*topic).await?;
         }
 

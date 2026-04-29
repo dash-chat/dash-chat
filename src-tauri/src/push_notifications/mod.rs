@@ -11,6 +11,7 @@ use tauri_plugin_notification::*;
 
 mod node_cache;
 mod notification_navigation;
+mod receive_push_notification;
 
 pub use notification_navigation::setup_notification_navigation;
 
@@ -152,7 +153,8 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let topic_ids = if are_notifications_enabled(&app_handle) {
         let topic_ids: HashSet<PushTopicId> = node
-            .subscribed_topics()?
+            .subscribed_topics()
+            .await?
             .into_iter()
             .map(|t| PushTopicId::from(hex::encode(&*t)))
             .collect();

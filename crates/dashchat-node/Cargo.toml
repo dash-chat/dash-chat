@@ -27,7 +27,6 @@ thiserror = "2.0"
 async-trait = "0.1.85"
 derive_more = { version = "1.0.0", features = ["full"] }
 futures = "0.3"
-redb = "3.1"
 tokio = { version = "1.43.0", features = ["fs"] }
 named-id = { git = "https://github.com/maackle/named-id.git" }
 base64 = "0.22"

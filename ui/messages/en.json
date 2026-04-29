@@ -101,6 +101,9 @@
 	"getStarted": "Get started",
 
 	"newMessage": "New message",
+	"youHaveANewMessage": "You have a new message",
+	"syncedWithServer": "Synchronized with the server.",
+	"mayHaveNewMessages": "You may have new messages.",
 	"newContactRequest": "New contact request",
 	"typeMessage": "Type a message...",
 
@@ -208,5 +211,7 @@
 	"updateError": "Update failed. Please try again later.",
 	"updateTapToUpdate": "Tap to update Dash Chat.",
 	"updateTapToRestart": "Tap to restart and apply update.",
-	"updateTapToRetry": "Tap to retry."
+	"updateTapToRetry": "Tap to retry.",
+	"testBanner": "Early access test",
+	"feedback": "Feedback"
 }

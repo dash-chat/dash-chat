@@ -1105,10 +1105,10 @@
 							bind:value={messageText}
 							bind:height={messageInputHeight}
 							onSend={sendMessage}
-							onInput={async () => {
+							onFocus={() => {
 								if (scrollIsAtBottom()) {
-									await tick();
 									scrollToBottom();
+									return { onResize: () => scrollToBottom(false) };
 								}
 							}}
 							onEmojiClick={() => (showFullPicker = true)}
