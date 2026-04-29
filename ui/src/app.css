@@ -155,13 +155,19 @@ li.plain span {
 
 .sticky-day-tag {
 	position: sticky;
-	top: calc(64px + env(safe-area-inset-top, 0px) + 8px);
+	top: calc(32px + env(safe-area-inset-top, 0px));
 	align-self: center;
 	z-index: 30;
 	background-color: var(--k-color-md-light-surface);
 	padding: 4px 12px;
 	border-radius: 12px;
 	font-size: 0.75rem;
+}
+
+@media (min-width: 768px) {
+	.sticky-day-tag {
+		top: calc(64px + env(safe-area-inset-top, 0px) + 8px);
+	}
 }
 
 :where(.dark) .sticky-day-tag {
