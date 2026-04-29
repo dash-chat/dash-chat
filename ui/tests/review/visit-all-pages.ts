@@ -4,7 +4,7 @@
  *
  * Split into three small functions to stay within MCP bridge's ~20s timeout:
  *   visitProfilePages  — home → settings → profile → sub-pages → home (~7 pages)
- *   visitOtherPages    — home → settings → offline/appearance/account → home + new-message (~5 pages)
+ *   visitOtherPages    — home → settings → offline/appearance/help/contact-us/account → home + new-message (~7 pages)
  *   visitChatPages     — home → direct-chat → chat-settings → home (~2 pages)
  *
  * visitAllPages combines all three (for E2E tests with longer timeouts).
@@ -202,6 +202,19 @@ export async function visitOtherPages(options?: VisitOptions): Promise<VisitResu
 	progress('other:notifications');
 	await nav('/settings/notifications', S.notifications.toggle);
 	pages.push(runCheck('notifications', co));
+	await breathe();
+
+	// Help — navigate directly (help-back hidden on desktop)
+	progress('other:help');
+	await nav('/settings/help', S.help.contactUsLink);
+	pages.push(runCheck('help', co));
+	await breathe();
+
+	// Contact Us — click from help page
+	progress('other:contactUs');
+	click(S.help.contactUsLink);
+	await waitFor(S.contactUs.messageInput, NAV_TIMEOUT);
+	pages.push(runCheck('contact-us', co));
 	await breathe();
 
 	// Account — navigate directly (account-back hidden on desktop)
