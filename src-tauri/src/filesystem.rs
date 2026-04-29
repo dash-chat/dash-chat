@@ -2,6 +2,8 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Manager, Runtime};
 
+const DATABASE_VERSION: &str = "0.1";
+
 /// Hold the lock file handle for the lifetime of the process so the exclusive
 /// lock is never released while the app is running.
 static DATA_DIR_LOCK: OnceLock<std::fs::File> = OnceLock::new();
@@ -70,7 +72,12 @@ impl<R: Runtime> FileSystem<R> {
         } else {
             self.0.path().local_data_dir()?
         };
-        let dashchat_data_path = local_data_path.join(DASHCHAT_DATA_FOLDER);
+        let dashchat_data_path = local_data_path
+            .join(DASHCHAT_DATA_FOLDER)
+            // We don't support backwards compatibility yet
+            // Store all files in a separate folder for each version of the database
+            // to force a reset from scratch in the state of app on app updates
+            .join(DATABASE_VERSION);
         if !dashchat_data_path.exists() {
             std::fs::create_dir_all(&dashchat_data_path)?;
         }
