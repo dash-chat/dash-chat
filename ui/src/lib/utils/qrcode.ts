@@ -37,7 +37,7 @@ async function ensureCameraPermission(
 	// Poll checkPermissions as a fallback — the OS grants the permission
 	// even if the plugin callback never fires.
 	const granted = await Promise.race([
-		requestPromise.then(() => true),
+		requestPromise.then(state => state === 'granted'),
 		pollUntilGranted(checkPermissions),
 	]);
 
