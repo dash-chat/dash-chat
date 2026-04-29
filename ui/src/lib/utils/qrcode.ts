@@ -31,7 +31,7 @@ async function ensureCameraPermission(): Promise<void> {
 	if (state === 'granted') return;
 
 	// Start the permission request (may hang due to plugin bug)
-	const requestPromise = requestPermissions().catch(() => {});
+	const requestPromise = requestPermissions().catch(() => 'denied' as string);
 
 	// Poll checkPermissions as a fallback — the OS grants the permission
 	// even if the plugin callback never fires.
