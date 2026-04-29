@@ -5,11 +5,13 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { isIos } from '$lib/utils/environment';
 	import { type SettingsStore, type ColorScheme } from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
 	import {
 		Button,
 		BlockTitle,
+		Link,
 		List,
 		ListItem,
 		Navbar,
@@ -40,6 +42,14 @@
 					onClick={() => goto('/settings')}
 					data-testid="appearance-back"
 				/>
+			{/if}
+		{/snippet}
+
+		{#snippet right()}
+			{#if setup && isIos}
+				<Link onClick={() => goto('/')} data-testid="appearance-done-link">
+					{m.done()}
+				</Link>
 			{/if}
 		{/snippet}
 	</Navbar>
@@ -92,12 +102,12 @@
 			</div>
 		</div>
 
-		{#if setup}
+		{#if setup && !isIos}
 			<Button
 				onClick={() => goto('/')}
 				class="fixed-action-btn"
 				rounded
-				data-testid="appearance-done"
+				data-testid="appearance-done-btn"
 			>
 				{m.done()}
 			</Button>
