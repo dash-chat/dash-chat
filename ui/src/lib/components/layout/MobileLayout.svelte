@@ -5,7 +5,7 @@
 	let { children }: { children: Snippet } = $props();
 </script>
 
-<div class="mobile-shell">
+<div class="mobile-shell no-safe-areas-top">
 	<TestBanner />
 	<div class="mobile-content">
 		{@render children()}

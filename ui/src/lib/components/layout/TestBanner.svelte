@@ -13,10 +13,7 @@
 	class="test-banner relative z-30 px-4 py-1 text-center text-md font-bold"
 	data-testid="test-banner"
 >
-	<span
-		class="test-banner-text block pb-1"
-		style="padding-top: env(safe-area-inset-top, 0px)">{m.testBanner()}</span
-	>
+	<span class="test-banner-text block">{m.testBanner()}</span>
 	<Button
 		onClick={() => {
 			if (!isContactUsPage) goto('/settings/help/contact-us');
@@ -50,7 +47,7 @@
 		color: #333333;
 		letter-spacing: 0.05em;
 		word-spacing: 0.15em;
-		margin-bottom: calc(0px - env(safe-area-inset-top, 0px));
+		padding-top: env(safe-area-inset-top, 0px);
 
 		display: flex;
 		flex-direction: row;
