@@ -63,7 +63,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="fixed inset-0 z-50 bg-black/30"
-		onpointerup={onClose}
+		onclick={onClose}
 		oncontextmenu={e => {
 			e.preventDefault();
 			onClose();
@@ -73,7 +73,7 @@
 		<div
 			class="fixed z-50 flex items-center gap-1 rounded-full bg-white px-2 py-1.5 shadow-lg dark:bg-gray-800"
 			style={barStyle}
-			onpointerup={e => e.stopPropagation()}
+			onclick={e => e.stopPropagation()}
 		>
 			{#each QUICK_EMOJIS as emoji}
 				<button
