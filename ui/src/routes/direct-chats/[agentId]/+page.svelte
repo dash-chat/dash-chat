@@ -509,7 +509,11 @@
 						</Navbar>
 					{/if}
 
-					<div use:chatScroll bind:this={messagesPageEl}>
+					<div
+						use:chatScroll
+						bind:this={messagesPageEl}
+						data-testid="direct-chat-scroll"
+					>
 						{#await $readMessageHashes then readHashes}
 							{#await $messagesSets then messagesSetsInDays}
 								{@const unreadDivider = getUnreadDividerInfo(

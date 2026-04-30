@@ -116,6 +116,34 @@ export async function dismissGetStartedCard(agent: WebdriverIO.Browser, cardId: 
 	await agent.execute((id: string) => window.__test.dismissGetStartedCard(id), cardId);
 }
 
+/** True if the chat scroll container is pinned to the bottom. */
+export async function isScrollAtBottom(agent: WebdriverIO.Browser): Promise<boolean> {
+	return (await agent.execute(() => window.__test.isScrollAtBottom())) as boolean;
+}
+
+/** Scroll the chat away from the bottom. Throws if there's nothing to scroll. */
+export async function scrollChatUp(agent: WebdriverIO.Browser): Promise<void> {
+	const err = await agent.execute(() => {
+		try {
+			window.__test.scrollChatUp();
+			return null;
+		} catch (e) {
+			return String(e);
+		}
+	});
+	if (err) throw new Error(`scrollChatUp failed: ${err}`);
+}
+
+/** True if the scroll-to-bottom button is rendered. */
+export async function scrollBottomButtonVisible(agent: WebdriverIO.Browser): Promise<boolean> {
+	return (await agent.execute(() => window.__test.scrollBottomButtonVisible())) as boolean;
+}
+
+/** Text of the unread badge on the scroll-to-bottom button, or null. */
+export async function unreadBadgeText(agent: WebdriverIO.Browser): Promise<string | null> {
+	return (await agent.execute(() => window.__test.unreadBadgeText())) as string | null;
+}
+
 /** Open a direct chat by contact name. Throws if it fails. */
 export async function openDirectChat(
 	agent: WebdriverIO.Browser,

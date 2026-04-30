@@ -81,3 +81,43 @@ export function sendButton() {
 export function messagesContainer() {
 	return document.querySelector(selectors.messages);
 }
+
+const SCROLL_BOTTOM_THRESHOLD = 200;
+
+/** True if the chat scroll container is pinned to the bottom (column-reverse). */
+export function isScrollAtBottom(): boolean {
+	const el = document.querySelector(selectors.scroll) as HTMLElement | null;
+	if (!el) return true;
+	return Math.abs(el.scrollTop) < SCROLL_BOTTOM_THRESHOLD;
+}
+
+/** Programmatically scroll the chat away from the bottom. Throws if it can't. */
+export function scrollChatUp(): void {
+	const el = document.querySelector(selectors.scroll) as HTMLElement | null;
+	if (!el) throw new Error('scrollChatUp: scroll container not found');
+	const max = el.scrollHeight - el.clientHeight;
+	if (max <= SCROLL_BOTTOM_THRESHOLD) {
+		throw new Error(
+			`scrollChatUp: not enough overflow (max=${max}); send more messages first`,
+		);
+	}
+	const target = Math.min(max, 600);
+	// WebKit uses negative scrollTop in column-reverse; Chromium uses positive.
+	el.scrollTop = -target;
+	if (Math.abs(el.scrollTop) < SCROLL_BOTTOM_THRESHOLD) {
+		el.scrollTop = target;
+	}
+	el.dispatchEvent(new Event('scroll'));
+}
+
+/** True if the scroll-to-bottom button is currently rendered. */
+export function scrollBottomButtonVisible(): boolean {
+	return !!document.querySelector(selectors.scrollBottom);
+}
+
+/** Text of the unread badge on the scroll-to-bottom button, or null. */
+export function unreadBadgeText(): string | null {
+	return (
+		document.querySelector(selectors.unreadBadge)?.textContent?.trim() ?? null
+	);
+}

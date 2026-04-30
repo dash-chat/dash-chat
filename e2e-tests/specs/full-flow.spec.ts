@@ -14,6 +14,10 @@ import {
 	exchangeContacts,
 	sendMessage,
 	waitForMessage,
+	isScrollAtBottom,
+	scrollChatUp,
+	scrollBottomButtonVisible,
+	unreadBadgeText,
 } from '../helpers/setup-agents';
 
 describe('Full messaging flow', () => {
@@ -93,6 +97,63 @@ describe('Full messaging flow', () => {
 		await waitForMessage(agent2, 'Hello from Bob!', 30_000);
 
 		await waitForMessage(agent1, 'Hello from Bob!');
+	});
+
+	describe('chat scroll behavior', () => {
+		// Enough messages to overflow the viewport regardless of screen size.
+		const FILLER_COUNT = 25;
+
+		it(`fills the chat with ${FILLER_COUNT} messages so it overflows`, async () => {
+			const agent1 = browser.getInstance('agent1');
+			for (let i = 0; i < FILLER_COUNT; i++) {
+				await sendMessage(agent1, `filler ${i}`);
+			}
+			await waitForMessage(agent1, `filler ${FILLER_COUNT - 1}`, 30_000);
+			await agent1.waitUntil(async () => isScrollAtBottom(agent1), {
+				timeout: 5_000,
+				timeoutMsg: 'Sender did not settle at bottom after filling',
+			});
+		});
+
+		it('returns to bottom when the user sends while scrolled up', async () => {
+			const agent1 = browser.getInstance('agent1');
+			await scrollChatUp(agent1);
+			expect(await isScrollAtBottom(agent1)).toBe(false);
+
+			await sendMessage(agent1, 'self-send after scroll up');
+			await waitForMessage(agent1, 'self-send after scroll up', 30_000);
+
+			await agent1.waitUntil(async () => isScrollAtBottom(agent1), {
+				timeout: 5_000,
+				timeoutMsg: 'Did not return to bottom after self-send',
+			});
+		});
+
+		it('stays pinned to bottom when a peer message arrives at bottom', async () => {
+			const agent1 = browser.getInstance('agent1');
+			const agent2 = browser.getInstance('agent2');
+			expect(await isScrollAtBottom(agent1)).toBe(true);
+
+			await sendMessage(agent2, 'peer at bottom');
+			await waitForMessage(agent1, 'peer at bottom');
+
+			expect(await isScrollAtBottom(agent1)).toBe(true);
+		});
+
+		it('does not auto-scroll when a peer message arrives while scrolled up', async () => {
+			const agent1 = browser.getInstance('agent1');
+			const agent2 = browser.getInstance('agent2');
+
+			await scrollChatUp(agent1);
+			expect(await isScrollAtBottom(agent1)).toBe(false);
+
+			await sendMessage(agent2, 'peer while scrolled up');
+			await waitForMessage(agent1, 'peer while scrolled up');
+
+			expect(await isScrollAtBottom(agent1)).toBe(false);
+			expect(await scrollBottomButtonVisible(agent1)).toBe(true);
+			expect(await unreadBadgeText(agent1)).toBeTruthy();
+		});
 	});
 
 	it('displays the app version on the help page', async () => {
