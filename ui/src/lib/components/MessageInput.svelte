@@ -61,7 +61,6 @@
 			textarea.focus(); // Refocus the textarea in case user wants to send another message
 		}
 	}
-
 </script>
 
 <div
