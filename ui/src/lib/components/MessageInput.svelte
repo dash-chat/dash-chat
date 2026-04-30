@@ -4,25 +4,21 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiSend, mdiEmoticonHappyOutline } from '@mdi/js';
 	import { useTheme } from 'konsta/svelte';
-	import { onMount } from 'svelte';
 	import { isIos } from '$lib/utils/environment';
 
 	interface Props {
 		value?: string;
 		placeholder?: string;
-		height: string;
 		onSend?: () => void;
 		onEmojiClick?: () => void;
 	}
 
 	let {
 		value = $bindable(''),
-		height = $bindable(''),
 		placeholder = m.typeMessage(),
 		onSend,
 		onEmojiClick,
 	}: Props = $props();
-	let div: HTMLDivElement;
 
 	const theme = $derived(useTheme());
 
@@ -44,9 +40,7 @@
 	function autoResize() {
 		if (textarea.scrollHeight > 100) return;
 		textarea.style.height = 'auto';
-		const textareaHeight = textarea.scrollHeight + 'px';
-		textarea.style.height = textareaHeight;
-		height = `${div.scrollHeight}px`;
+		textarea.style.height = textarea.scrollHeight + 'px';
 	}
 
 	function handleSendClick() {
@@ -57,14 +51,12 @@
 		if (hasText) {
 			onSend?.();
 			textarea.style.height = 'auto';
-			height = `${div.scrollHeight}px`;
-			textarea.focus(); // Refocus the textarea in case user wants to send another message
+			textarea.focus();
 		}
 	}
 </script>
 
 <div
-	bind:this={div}
 	class="message-input-bar m-2 pb-safe"
 	class:bg-md-light-surface={theme === 'material'}
 	class:dark:bg-md-dark-surface={theme === 'material'}
