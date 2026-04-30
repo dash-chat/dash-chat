@@ -216,7 +216,8 @@
 	// at onMount time. Using $effect with bind:this ensures we react when
 	// the element appears.
 	$effect(() => {
-		if (!messagesPageEl) return;
+		const el = messagesPageEl;
+		if (!el) return;
 
 		observer = new IntersectionObserver(
 			entries => {
@@ -234,18 +235,18 @@
 					}
 				}, 500);
 			},
-			{ threshold: 0.5, root: messagesPageEl },
+			{ threshold: 0.5, root: el },
 		);
 
 		const handleScroll = () => {
 			showScrollToBottom = !scrollIsAtBottom();
 		};
-		messagesPageEl.addEventListener('scroll', handleScroll);
+		el.addEventListener('scroll', handleScroll);
 
 		return () => {
 			observer?.disconnect();
 			clearTimeout(markReadTimeout);
-			messagesPageEl?.removeEventListener('scroll', handleScroll);
+			el.removeEventListener('scroll', handleScroll);
 		};
 	});
 
