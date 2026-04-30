@@ -2,20 +2,9 @@
 	import { ListItem } from 'konsta/svelte';
 	import type { Snippet } from 'svelte';
 
-	interface Props {
-		title?: string;
-		link?: boolean;
-		class?: string;
-		chevron?: boolean;
-		chevronIos?: boolean;
-		chevronMaterial?: boolean;
-		label?: boolean;
-		dividers?: boolean;
-		strongTitle?: boolean | 'auto';
-		titleFontSizeIos?: string;
-		titleFontSizeMaterial?: string;
-		linkProps?: Record<string, string | boolean | undefined>;
-		onClick?: (e: MouseEvent) => void;
+	type ListItemProps = InstanceType<typeof ListItem>['$$prop_def'];
+
+	interface Props extends ListItemProps {
 		'data-testid'?: string;
 		titleWrapClass?: string;
 		media?: Snippet;
