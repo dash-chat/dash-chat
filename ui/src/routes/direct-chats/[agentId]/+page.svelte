@@ -556,7 +556,7 @@
 									style={`padding-bottom: calc(${messageInputHeight} + 12px)`}
 								>
 									{#if profile}
-										<div class="column" style="align-items: center">
+										<div class="column mx-4" style="align-items: center">
 											<Link
 												class="column my-6 gap-2 items-center"
 												onclick={() => (showPeerProfile = true)}
