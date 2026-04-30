@@ -33,7 +33,10 @@ export const chatScroll: Action<HTMLElement> = node => {
 	node.style.flexDirection = 'column-reverse';
 
 	// Override the parent Konsta Page to be a non-scrolling flex column.
+	// Snapshot the original inline cssText so destroy() restores anything
+	// other code may have set on .k-page rather than blanking those props.
 	const pageEl = node.closest('.k-page') as HTMLElement | null;
+	const pageElOriginalCssText = pageEl?.style.cssText ?? '';
 	if (pageEl) {
 		pageEl.style.display = 'flex';
 		pageEl.style.flexDirection = 'column';
@@ -127,9 +130,7 @@ export const chatScroll: Action<HTMLElement> = node => {
 			pageObserver?.disconnect();
 			node.removeEventListener('scroll', onScroll);
 			if (pageEl) {
-				pageEl.style.display = '';
-				pageEl.style.flexDirection = '';
-				pageEl.style.overflow = '';
+				pageEl.style.cssText = pageElOriginalCssText;
 			}
 		},
 	};

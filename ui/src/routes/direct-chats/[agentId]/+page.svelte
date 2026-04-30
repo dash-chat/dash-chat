@@ -136,7 +136,7 @@
 	let showAcceptDialog = $state(false);
 	let showRejectDialog = $state(false);
 	let profileNamesSheetOpen = $state(false);
-	let bottomBarHeight: number = $state(60);
+	let bottomBarHeight: number = $state(0);
 	let showScrollToBottom = $state(false);
 
 	// Unread divider state — hash captured once on load so position stays fixed,
@@ -220,9 +220,12 @@
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
-		// Wait for the initial render to flush before allowing auto-scroll —
-		// otherwise every existing own-message bubble would trigger a scroll
-		// as it mounts.
+		// Wait for the message sets to resolve and the bubbles to render
+		// before allowing auto-scroll — otherwise every existing own-message
+		// bubble would trigger a scroll as it mounts. `await tick()` alone
+		// isn't enough because $messagesSets can resolve after the first
+		// flush, mounting historical bubbles with canAutoScroll already true.
+		await toPromise(store.messageSets);
 		await tick();
 		canAutoScroll = true;
 	});
@@ -658,7 +661,7 @@
 
 											{#each messageSetInDay.eventsSets as messageSet}
 												<div class="column" style="gap: 1px">
-													{#each messageSet as [hash, message], i}
+													{#each messageSet as [hash, message], i (hash)}
 														{#if unreadDivider.hash === hash}
 															<div
 																class="unread-divider"

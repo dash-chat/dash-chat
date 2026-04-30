@@ -3,6 +3,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiChevronDown } from '@mdi/js';
 	import { Badge } from 'konsta/svelte';
+	import { m } from '$lib/paraglide/messages.js';
 
 	interface Props {
 		unreadCount?: number;
@@ -15,7 +16,7 @@
 <button
 	class="relative flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
 	onclick={onClick}
-	aria-label="Scroll to bottom"
+	aria-label={m.scrollToBottom()}
 	data-testid="direct-chat-scroll-bottom"
 >
 	{#if unreadCount > 0}

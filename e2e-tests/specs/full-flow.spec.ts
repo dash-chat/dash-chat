@@ -15,6 +15,7 @@ import {
 	sendMessage,
 	waitForMessage,
 	isScrollAtBottom,
+	chatOverflow,
 	scrollChatUp,
 	scrollBottomButtonVisible,
 	unreadBadgeText,
@@ -100,15 +101,26 @@ describe('Full messaging flow', () => {
 	});
 
 	describe('chat scroll behavior', () => {
-		// Enough messages to overflow the viewport regardless of screen size.
-		const FILLER_COUNT = 25;
+		// Need enough overflow that scrollChatUp can move past the bottom
+		// threshold (200px) — leave headroom so timing/layout jitter doesn't
+		// drop us below.
+		const REQUIRED_OVERFLOW = 400;
+		// Hard cap so a misconfigured viewport can't loop forever.
+		const MAX_FILLER = 200;
 
-		it(`fills the chat with ${FILLER_COUNT} messages so it overflows`, async () => {
+		it('fills the chat until it overflows enough to scroll', async () => {
 			const agent1 = browser.getInstance('agent1');
-			for (let i = 0; i < FILLER_COUNT; i++) {
+			let i = 0;
+			let overflow = await chatOverflow(agent1);
+			while (overflow < REQUIRED_OVERFLOW && i < MAX_FILLER) {
 				await sendMessage(agent1, `filler ${i}`);
+				// Wait for the message to render before measuring — DOM updates
+				// are async after the click.
+				await waitForMessage(agent1, `filler ${i}`, 10_000);
+				overflow = await chatOverflow(agent1);
+				i++;
 			}
-			await waitForMessage(agent1, `filler ${FILLER_COUNT - 1}`, 30_000);
+			expect(overflow).toBeGreaterThanOrEqual(REQUIRED_OVERFLOW);
 			await agent1.waitUntil(async () => isScrollAtBottom(agent1), {
 				timeout: 5_000,
 				timeoutMsg: 'Sender did not settle at bottom after filling',
@@ -156,18 +168,24 @@ describe('Full messaging flow', () => {
 		});
 	});
 
-	it('displays the app version on the help page', async () => {
-		const agent1 = browser.getInstance('agent1');
+	// Wrapped in its own describe so Mocha runs it after the `chat scroll
+	// behavior` block — Mocha runs all parent-level `it`s before nested
+	// `describe`s, so a bare `it` here would execute before chat scroll
+	// tests and leave agent1 stuck on /settings/help.
+	describe('help page', () => {
+		it('displays the app version', async () => {
+			const agent1 = browser.getInstance('agent1');
 
-		await agent1.execute(() => window.__test.goto('/settings/help'));
-		await agent1.waitUntil(
-			async () => agent1.execute(() => window.__test.versionItem() !== null),
-			{ timeout: 10_000, timeoutMsg: 'Version item not visible on help page' },
-		);
+			await agent1.execute(() => window.__test.goto('/settings/help'));
+			await agent1.waitUntil(
+				async () => agent1.execute(() => window.__test.versionItem() !== null),
+				{ timeout: 10_000, timeoutMsg: 'Version item not visible on help page' },
+			);
 
-		const versionText = await agent1.execute(
-			() => (window.__test.versionItem() as HTMLElement)?.textContent ?? '',
-		);
-		expect(versionText).toMatch(/\d+\.\d+\.\d+/);
+			const versionText = await agent1.execute(
+				() => (window.__test.versionItem() as HTMLElement)?.textContent ?? '',
+			);
+			expect(versionText).toMatch(/\d+\.\d+\.\d+/);
+		});
 	});
 });

@@ -90,6 +90,13 @@ export function isScrollAtBottom(): boolean {
 	return Math.abs(el.scrollTop) < SCROLL_BOTTOM_THRESHOLD;
 }
 
+/** Vertical overflow of the chat scroll container in px (scrollHeight - clientHeight). */
+export function chatOverflow(): number {
+	const el = document.querySelector(selectors.scroll) as HTMLElement | null;
+	if (!el) return 0;
+	return el.scrollHeight - el.clientHeight;
+}
+
 /** Programmatically scroll the chat away from the bottom. Throws if it can't. */
 export function scrollChatUp(): void {
 	const el = document.querySelector(selectors.scroll) as HTMLElement | null;

@@ -121,6 +121,11 @@ export async function isScrollAtBottom(agent: WebdriverIO.Browser): Promise<bool
 	return (await agent.execute(() => window.__test.isScrollAtBottom())) as boolean;
 }
 
+/** Vertical overflow of the chat scroll container in px. */
+export async function chatOverflow(agent: WebdriverIO.Browser): Promise<number> {
+	return (await agent.execute(() => window.__test.chatOverflow())) as number;
+}
+
 /** Scroll the chat away from the bottom. Throws if there's nothing to scroll. */
 export async function scrollChatUp(agent: WebdriverIO.Browser): Promise<void> {
 	const err = await agent.execute(() => {
