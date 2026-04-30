@@ -19,6 +19,7 @@ import { openDirectChat } from './flows/open-chat';
 import { visibleCards as getStartedCards, dismissCard as dismissGetStartedCard } from './pages/get-started';
 import { homeLoaded, firstChatTooltip } from './pages/home';
 import { messageInput, sendButton, messagesContainer } from './pages/direct-chat';
+import { versionItem } from './pages/help';
 import { updaterBanner, updaterBannerTitle, updaterDismissBtn } from './pages/updater-banner';
 import { checkOverflow, checkDarkMode, checkRTL, checkPage } from './review/checks';
 import {
@@ -54,6 +55,7 @@ export const testUtils = {
 	messageInput,
 	sendButton,
 	messagesContainer,
+	versionItem,
 	updaterBanner,
 	updaterBannerTitle,
 	updaterDismissBtn,

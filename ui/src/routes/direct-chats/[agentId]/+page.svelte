@@ -136,14 +136,7 @@
 	let showAcceptDialog = $state(false);
 	let showRejectDialog = $state(false);
 	let profileNamesSheetOpen = $state(false);
-	// `inputBarHeight` is bound (via `bind:clientHeight`) to whichever bottom-bar
-	// wrapper is currently rendered (regular input, search bar, or contact-
-	// request banner). Single source of truth for the message-list's reserved
-	// bottom padding — keeps it in sync with the actual visual height of the
-	// bar even after sending a message clears the textarea (the wrapper resizes,
-	// Svelte re-reports it through bind:clientHeight, padding follows).
-	let inputBarHeight: number = $state(60);
-	let messageInputHeight = $derived(`${inputBarHeight}px`);
+	let messageInputHeight: string = $state('');
 	let showScrollToBottom = $state(false);
 
 	// Unread divider state — hash captured once on load so position stays fixed,
@@ -211,12 +204,31 @@
 	let observer: IntersectionObserver | undefined;
 	const visibleMessages: Set<Hash> = new Set();
 	let markReadTimeout: ReturnType<typeof setTimeout>;
-	let messagesPageEl: HTMLDivElement | null = $state(null);
+	let messagesPageEl: HTMLDivElement | null = null;
 
 	onMount(() => {
+		messagesPageEl = document.querySelector('.messages-page') as HTMLDivElement;
+
+		// Track navbar height so sticky day-tags can use top: var(--navbar-height).
+		const navbar = messagesPageEl.querySelector('.k-navbar');
+		let navbarObserver: ResizeObserver | undefined;
+		if (navbar) {
+			navbarObserver = new ResizeObserver(([entry]) => {
+				messagesPageEl!.style.setProperty(
+					'--navbar-height',
+					`${entry.borderBoxSize[0].blockSize}px`,
+				);
+			});
+			navbarObserver.observe(navbar);
+		}
+
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
+
+		return () => {
+			navbarObserver?.disconnect();
+		};
 	});
 
 	// Set up scroll/intersection observers once the scroll area is in the
@@ -256,9 +268,7 @@
 				// Scope to this page's navbar — there may be multiple
 				// .k-navbar elements on screen (e.g. sidebar panel).
 				const page = messagesPageEl!.closest('.k-page');
-				navbarBgEl = page?.querySelector(
-					'.k-navbar > div.absolute',
-				) ?? null;
+				navbarBgEl = page?.querySelector('.k-navbar > div.absolute') ?? null;
 			}
 			if (!navbarBgEl) return;
 			const maxScroll =
@@ -271,8 +281,7 @@
 				// WebKit uses negative scrollTop when scrolling up; abs()
 				// normalises across browsers. distFromTop=0 means the
 				// profile card is visible (navbar should be transparent).
-				const distFromTop =
-					maxScroll - Math.abs(messagesPageEl!.scrollTop);
+				const distFromTop = maxScroll - Math.abs(messagesPageEl!.scrollTop);
 				navbarBgEl.style.opacity = distFromTop > 10 ? '1' : '0';
 			}
 		};
@@ -403,6 +412,9 @@
 		closest?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	}
 
+	$effect(() => {
+		if (searchMode) messageInputHeight = '60px';
+	});
 	function showQuickReactionBar(e: MouseEvent | TouchEvent, message: Message) {
 		const el = e.target as HTMLElement;
 		const target =
@@ -569,7 +581,7 @@
 								)}
 								<div
 									class="column"
-									style={`padding-bottom: ${messageInputHeight}`}
+									style={`padding-bottom: calc(${messageInputHeight} + 12px)`}
 								>
 									{#if profile}
 										<div class="column" style="align-items: center">
@@ -1006,12 +1018,12 @@
 	<!-- Overlay for bottom UI elements -->
 	{#await $myDeviceId then myDeviceId}
 		{#await $contactRequest then contactRequest}
-			<div class="absolute inset-0 pointer-events-none">
+			<div class="absolute inset-0 pointer-events-none z-40">
 				{#if showScrollToBottom && !searchMode}
 					{#await $unreadCount then count}
 						<button
 							class="pointer-events-auto absolute right-4 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
-							style={`bottom: calc(${messageInputHeight} + 1.4rem)`}
+							style={`bottom: calc(${messageInputHeight || '60px'} + 1.4rem)`}
 							onclick={() => scrollToBottom()}
 							aria-label="Scroll to bottom"
 							data-testid="direct-chat-scroll-bottom"
@@ -1031,7 +1043,6 @@
 
 				{#if searchMode}
 					<div
-						bind:clientHeight={inputBarHeight}
 						class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
 					>
 						<div
@@ -1082,7 +1093,6 @@
 					</div>
 				{:else if contactRequest}
 					<div
-						bind:clientHeight={inputBarHeight}
 						class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
 					>
 						<div
@@ -1127,13 +1137,13 @@
 					</div>
 				{:else}
 					<div
-						bind:clientHeight={inputBarHeight}
 						class="pointer-events-auto absolute bottom-0 left-0 right-0"
 						class:bg-md-light-surface={theme === 'material'}
 						class:dark:bg-md-dark-surface={theme === 'material'}
 					>
 						<MessageInput
 							bind:value={messageText}
+							bind:height={messageInputHeight}
 							onSend={sendMessage}
 							onEmojiClick={() => (showFullPicker = true)}
 						/>
