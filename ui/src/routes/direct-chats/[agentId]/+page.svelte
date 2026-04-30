@@ -47,7 +47,6 @@
 		NavbarBackLink,
 		Button,
 		Card,
-		Badge,
 		Sheet,
 		Dialog,
 		DialogButton,
@@ -66,6 +65,7 @@
 	import { condenseReactions } from '$lib/utils/emojis';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
+	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { longpress } from '$lib/actions/longpress';
 	import { chatScroll } from '$lib/actions/chat-scroll';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -958,23 +958,15 @@
 			<div class="absolute inset-0 pointer-events-none z-40">
 				{#if showScrollToBottom && !searchMode}
 					{#await $unreadCount then count}
-						<button
-							class="pointer-events-auto absolute right-4 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
+						<div
+							class="pointer-events-auto absolute right-4"
 							style={`bottom: ${bottomBarHeight + 8}px`}
-							onclick={() => scrollToBottom()}
-							aria-label="Scroll to bottom"
-							data-testid="direct-chat-scroll-bottom"
 						>
-							{#if count && count > 0}
-								<Badge
-									class="absolute -top-1 -right-1"
-									data-testid="direct-chat-unread-badge"
-								>
-									{count > 99 ? '99+' : count}
-								</Badge>
-							{/if}
-							<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
-						</button>
+							<ScrollToBottomButton
+								unreadCount={count ?? 0}
+								onClick={() => scrollToBottom()}
+							/>
+						</div>
 					{/await}
 				{/if}
 
