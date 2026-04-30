@@ -970,116 +970,112 @@
 					{/await}
 				{/if}
 
-				{#if searchMode}
-					<div
-						bind:clientHeight={bottomBarHeight}
-						class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
-					>
-						<div
-							class="mx-4 border-t border-gray-300 dark:border-gray-600"
-							style="margin: 0 auto"
-						></div>
-						<div
-							class="row items-center gap-2 px-4 py-3"
-							style="margin: 0 auto"
-						>
-							<button onclick={() => dateInput?.click()}>
-								<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
-								></wa-icon>
-							</button>
-							<input
-								type="date"
-								class="absolute opacity-0 h-0 w-0"
-								bind:this={dateInput}
-								onchange={e => jumpToDate(e.currentTarget.value)}
-							/>
-							<span class="flex-1 text-center text-sm quiet">
-								{#if !searchQuery}
-									<!-- empty -->
-								{:else if matchingHashes.length === 0}
-									{m.noResults()}
-								{:else}
-									{m.searchResultsCount({
-										current: String(currentMatchIndex + 1),
-										total: String(matchingHashes.length),
-									})}
-								{/if}
-							</span>
-							<button
-								disabled={!matchingHashes.length}
-								onclick={goToPreviousMatch}
-								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+				<div
+					bind:clientHeight={bottomBarHeight}
+					class="pointer-events-auto absolute bottom-0 left-0 right-0"
+					class:bg-md-light-surface={theme === 'material'}
+					class:dark:bg-md-dark-surface={theme === 'material'}
+				>
+					{#if searchMode}
+						<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
+							<div
+								class="mx-4 border-t border-gray-300 dark:border-gray-600"
+								style="margin: 0 auto"
+							></div>
+							<div
+								class="row items-center gap-2 px-4 py-3"
+								style="margin: 0 auto"
 							>
-								<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
-							</button>
-							<button
-								disabled={!matchingHashes.length}
-								onclick={goToNextMatch}
-								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-							>
-								<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
-							</button>
-						</div>
-					</div>
-				{:else if contactRequest}
-					<div
-						bind:clientHeight={bottomBarHeight}
-						class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
-					>
-						<div
-							class="mx-4 border-t border-gray-300 dark:border-gray-600"
-							style="margin: 0 auto"
-						></div>
-						<div
-							class="flex flex-col items-center gap-3 px-6 py-3"
-							style="margin: 0 auto"
-						>
-							<p class="text-center text-sm text-gray-600 dark:text-gray-400">
-								{@html m
-									.contactRequestBanner({
-										name: contactRequest.profile.name
-											.replace(/&/g, '&amp;')
-											.replace(/</g, '&lt;')
-											.replace(/>/g, '&gt;')
-											.replace(/"/g, '&quot;'),
-									})
-									.replace(
-										/\*\*(.*?)\*\*/g,
-										'<strong class="text-black dark:text-white">$1</strong>',
-									)}
-							</p>
-							<div class="flex w-full gap-2">
-								<Button
-									class="neutral-tonal-button text-red-500 flex-1"
-									rounded
-									tonal
-									data-testid="direct-chat-reject-btn"
-									onClick={() => (showRejectDialog = true)}>{m.reject()}</Button
+								<button onclick={() => dateInput?.click()}>
+									<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
+									></wa-icon>
+								</button>
+								<input
+									type="date"
+									class="absolute opacity-0 h-0 w-0"
+									bind:this={dateInput}
+									onchange={e => jumpToDate(e.currentTarget.value)}
+								/>
+								<span class="flex-1 text-center text-sm quiet">
+									{#if !searchQuery}
+										<!-- empty -->
+									{:else if matchingHashes.length === 0}
+										{m.noResults()}
+									{:else}
+										{m.searchResultsCount({
+											current: String(currentMatchIndex + 1),
+											total: String(matchingHashes.length),
+										})}
+									{/if}
+								</span>
+								<button
+									disabled={!matchingHashes.length}
+									onclick={goToPreviousMatch}
+									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
 								>
-								<Button
-									class="neutral-tonal-button flex-1"
-									rounded
-									tonal
-									data-testid="direct-chat-accept-btn"
-									onClick={() => (showAcceptDialog = true)}>{m.accept()}</Button
+									<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
+								</button>
+								<button
+									disabled={!matchingHashes.length}
+									onclick={goToNextMatch}
+									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
 								>
+									<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
+								</button>
 							</div>
 						</div>
-					</div>
-				{:else}
-					<div
-						bind:clientHeight={bottomBarHeight}
-						class="pointer-events-auto absolute bottom-0 left-0 right-0"
-						class:bg-md-light-surface={theme === 'material'}
-						class:dark:bg-md-dark-surface={theme === 'material'}
-					>
+					{:else if contactRequest}
+						<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
+							<div
+								class="mx-4 border-t border-gray-300 dark:border-gray-600"
+								style="margin: 0 auto"
+							></div>
+							<div
+								class="flex flex-col items-center gap-3 px-6 py-3"
+								style="margin: 0 auto"
+							>
+								<p class="text-center text-sm text-gray-600 dark:text-gray-400">
+									{@html m
+										.contactRequestBanner({
+											name: contactRequest.profile.name
+												.replace(/&/g, '&amp;')
+												.replace(/</g, '&lt;')
+												.replace(/>/g, '&gt;')
+												.replace(/"/g, '&quot;'),
+										})
+										.replace(
+											/\*\*(.*?)\*\*/g,
+											'<strong class="text-black dark:text-white">$1</strong>',
+										)}
+								</p>
+								<div class="flex w-full gap-2">
+									<Button
+										class="neutral-tonal-button text-red-500 flex-1"
+										rounded
+										tonal
+										data-testid="direct-chat-reject-btn"
+										onClick={() => (showRejectDialog = true)}
+										>{m.reject()}</Button
+									>
+									<Button
+										class="neutral-tonal-button flex-1"
+										rounded
+										tonal
+										data-testid="direct-chat-accept-btn"
+										onClick={() => (showAcceptDialog = true)}
+										>{m.accept()}</Button
+									>
+								</div>
+							</div>
+						</div>
+					{:else}
 						<MessageInput
 							bind:value={messageText}
 							onSend={sendMessage}
 							onEmojiClick={() => (showFullPicker = true)}
 						/>
-					</div>
-				{/if}
+					{/if}
+				</div>
 			</div>
 		{/await}
 	{/await}
