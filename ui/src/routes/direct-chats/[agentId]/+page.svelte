@@ -993,7 +993,7 @@
 	<!-- Overlay for bottom UI elements -->
 	{#await $myDeviceId then myDeviceId}
 		{#await $contactRequest then contactRequest}
-			<div class="absolute inset-0 pointer-events-none z-40">
+			<div class="absolute inset-0 pointer-events-none z-[35]">
 				{#if showScrollToBottom && !searchMode}
 					{#await $unreadCount then count}
 						<button
