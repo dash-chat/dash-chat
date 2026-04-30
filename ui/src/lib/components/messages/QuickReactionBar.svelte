@@ -4,7 +4,6 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import type { Message, DeviceId } from 'dash-chat-stores';
-	import { onMount } from 'svelte';
 
 	interface Props {
 		message: Message;
@@ -55,19 +54,6 @@
 		barStyle = computeBarStyle();
 	});
 
-	// Close the bar on scroll (matches Signal behavior)
-	onMount(() => {
-		const pageEl = document.querySelector('.messages-page');
-		if (!pageEl) return;
-
-		const handleScroll = () => {
-			if (opened) onClose();
-		};
-
-		pageEl.addEventListener('scroll', handleScroll, { passive: true });
-		return () => pageEl.removeEventListener('scroll', handleScroll);
-	});
-
 	function hasReacted(emoji: string): boolean {
 		return message.reactions[myDeviceId] === emoji;
 	}
@@ -77,7 +63,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="fixed inset-0 z-50 bg-black/30"
-		onclick={onClose}
+		onpointerdown={onClose}
 		oncontextmenu={e => {
 			e.preventDefault();
 			onClose();
@@ -87,7 +73,7 @@
 		<div
 			class="fixed z-50 flex items-center gap-1 rounded-full bg-white px-2 py-1.5 shadow-lg dark:bg-gray-800"
 			style={barStyle}
-			onclick={e => e.stopPropagation()}
+			onpointerdown={e => e.stopPropagation()}
 		>
 			{#each QUICK_EMOJIS as emoji}
 				<button
