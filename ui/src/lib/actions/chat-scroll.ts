@@ -43,7 +43,9 @@ export const chatScroll: Action<HTMLElement> = node => {
 	let navbarBgEl: HTMLElement | null = null;
 
 	const updateNavbar = () => {
-		if (!navbarBgEl) {
+		// Re-query if the cached element was removed (e.g. the Navbar got
+		// swapped via {#if}{:else}, like toggling search mode in/out).
+		if (!navbarBgEl || !navbarBgEl.isConnected) {
 			navbarBgEl = pageEl?.querySelector('.k-navbar > div.absolute') ?? null;
 		}
 		if (!navbarBgEl) return;
@@ -61,14 +63,21 @@ export const chatScroll: Action<HTMLElement> = node => {
 
 	node.addEventListener('scroll', updateNavbar);
 
-	const mutationObserver = new MutationObserver(updateNavbar);
-	mutationObserver.observe(node, { childList: true, subtree: true });
+	const contentObserver = new MutationObserver(updateNavbar);
+	contentObserver.observe(node, { childList: true, subtree: true });
+
+	// Watch the page for direct-child swaps (e.g. the Navbar element being
+	// replaced when search mode toggles) so we can re-apply opacity to the
+	// new navbar's bg.
+	const pageObserver = pageEl ? new MutationObserver(updateNavbar) : null;
+	pageObserver?.observe(pageEl!, { childList: true });
 
 	updateNavbar();
 
 	return {
 		destroy() {
-			mutationObserver.disconnect();
+			contentObserver.disconnect();
+			pageObserver?.disconnect();
 			node.removeEventListener('scroll', updateNavbar);
 		},
 	};
