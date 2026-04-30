@@ -154,22 +154,23 @@
 		node.focus();
 	};
 
-	// Column-reverse on the scroll container inverts the scroll axis so that
-	// scrollTop=0 means "at the bottom of the content". The browser then keeps
-	// us pinned to the bottom automatically when content is added or the
-	// viewport changes (keyboard show/hide).
+	// Distance from the bottom (in px) below which we consider the user
+	// "at the bottom" — controls when the scroll-to-bottom button hides.
 	const SCROLL_BOTTOM_THRESHOLD = 200;
+
+	// The scroll container uses column-reverse, which inverts the scroll axis
+	// so that scrollTop=0 means "at the bottom of the content". The browser
+	// then keeps us pinned to the bottom automatically when content is added
+	// or the viewport changes (keyboard show/hide). WebKit uses negative
+	// scrollTop when scrolled up; Math.abs normalises across engines.
 
 	const scrollIsAtBottom = () => {
 		if (!messagesPageEl) return true;
-		// In column-reverse scrollTop=0 is the bottom. WebKit uses
-		// negative values when scrolled up; abs() normalises this.
 		return Math.abs(messagesPageEl.scrollTop) < SCROLL_BOTTOM_THRESHOLD;
 	};
 
 	const scrollToBottom = (animate = true) => {
 		if (!messagesPageEl) return;
-		// In column-reverse, scrollTop=0 is the visual bottom.
 		messagesPageEl.scrollTo({
 			top: 0,
 			behavior: animate ? 'smooth' : 'auto',
