@@ -78,7 +78,35 @@ export const chatScroll: Action<HTMLElement> = node => {
 		});
 	};
 
-	node.addEventListener('scroll', updateNavbar);
+	// Keep the user's scroll position anchored to the visible bottom across
+	// viewport resizes (e.g. keyboard show/hide). With column-reverse, the
+	// browser already does this when scrollTop=0 (bottom-pinned), but in
+	// WKWebView when the user is scrolled up, frame resize can leave the
+	// content's bottom edge clipped behind the keyboard. We track the
+	// last user-driven scrollTop and restore it on resize.
+	let savedScrollTop = 0;
+	let prevClientHeight = node.clientHeight;
+
+	const onScroll = () => {
+		// Ignore scroll events caused by a resize — clientHeight will differ
+		// from the pre-resize value until the ResizeObserver catches up.
+		if (node.clientHeight === prevClientHeight) {
+			savedScrollTop = node.scrollTop;
+		}
+		updateNavbar();
+	};
+	node.addEventListener('scroll', onScroll);
+
+	const sizeObserver = new ResizeObserver(() => {
+		if (
+			node.clientHeight !== prevClientHeight &&
+			savedScrollTop !== 0
+		) {
+			node.scrollTop = savedScrollTop;
+		}
+		prevClientHeight = node.clientHeight;
+	});
+	sizeObserver.observe(node);
 
 	const contentObserver = new MutationObserver(scheduleUpdate);
 	contentObserver.observe(node, { childList: true, subtree: true });
@@ -95,8 +123,9 @@ export const chatScroll: Action<HTMLElement> = node => {
 		destroy() {
 			if (frame) cancelAnimationFrame(frame);
 			contentObserver.disconnect();
+			sizeObserver.disconnect();
 			pageObserver?.disconnect();
-			node.removeEventListener('scroll', updateNavbar);
+			node.removeEventListener('scroll', onScroll);
 			if (pageEl) {
 				pageEl.style.display = '';
 				pageEl.style.flexDirection = '';
