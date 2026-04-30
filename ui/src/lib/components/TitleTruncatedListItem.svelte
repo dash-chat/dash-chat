@@ -28,7 +28,7 @@
 </script>
 
 <ListItem
-	titleWrapClass={[titleWrapClass]
+	titleWrapClass={['title-truncated-wrap', titleWrapClass]
 		.filter(Boolean)
 		.join(' ')}
 	{...rest}
