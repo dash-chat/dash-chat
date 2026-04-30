@@ -155,7 +155,7 @@ li.plain span {
 
 .sticky-day-tag {
 	position: sticky;
-	top: calc(var(--navbar-height, 56px) + 16px);
+	top: 8px;
 	align-self: center;
 	z-index: 30;
 	background-color: var(--k-color-md-light-surface);

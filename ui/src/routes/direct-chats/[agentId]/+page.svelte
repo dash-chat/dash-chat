@@ -204,31 +204,12 @@
 	let observer: IntersectionObserver | undefined;
 	const visibleMessages: Set<Hash> = new Set();
 	let markReadTimeout: ReturnType<typeof setTimeout>;
-	let messagesPageEl: HTMLDivElement | null = null;
+	let messagesPageEl: HTMLDivElement | null = $state(null);
 
 	onMount(() => {
-		messagesPageEl = document.querySelector('.messages-page') as HTMLDivElement;
-
-		// Track navbar height so sticky day-tags can use top: var(--navbar-height).
-		const navbar = messagesPageEl.querySelector('.k-navbar');
-		let navbarObserver: ResizeObserver | undefined;
-		if (navbar) {
-			navbarObserver = new ResizeObserver(([entry]) => {
-				messagesPageEl!.style.setProperty(
-					'--navbar-height',
-					`${entry.borderBoxSize[0].blockSize}px`,
-				);
-			});
-			navbarObserver.observe(navbar);
-		}
-
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
-
-		return () => {
-			navbarObserver?.disconnect();
-		};
 	});
 
 	// Set up scroll/intersection observers once the scroll area is in the
