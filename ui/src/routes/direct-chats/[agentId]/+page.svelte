@@ -30,7 +30,6 @@
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
-		mdiSend,
 		mdiAlert,
 		mdiAccountQuestion,
 		mdiAccountGroup,

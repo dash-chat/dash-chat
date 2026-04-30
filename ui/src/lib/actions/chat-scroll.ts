@@ -61,24 +61,42 @@ export const chatScroll: Action<HTMLElement> = node => {
 		}
 	};
 
+	// Coalesce mutation-driven updates to one per frame — the subtree
+	// observer fires on every DOM change (new messages, reactions, etc.),
+	// and we only need the latest layout state per paint.
+	let frame = 0;
+	const scheduleUpdate = () => {
+		if (frame) return;
+		frame = requestAnimationFrame(() => {
+			frame = 0;
+			updateNavbar();
+		});
+	};
+
 	node.addEventListener('scroll', updateNavbar);
 
-	const contentObserver = new MutationObserver(updateNavbar);
+	const contentObserver = new MutationObserver(scheduleUpdate);
 	contentObserver.observe(node, { childList: true, subtree: true });
 
 	// Watch the page for direct-child swaps (e.g. the Navbar element being
 	// replaced when search mode toggles) so we can re-apply opacity to the
 	// new navbar's bg.
-	const pageObserver = pageEl ? new MutationObserver(updateNavbar) : null;
+	const pageObserver = pageEl ? new MutationObserver(scheduleUpdate) : null;
 	pageObserver?.observe(pageEl!, { childList: true });
 
 	updateNavbar();
 
 	return {
 		destroy() {
+			if (frame) cancelAnimationFrame(frame);
 			contentObserver.disconnect();
 			pageObserver?.disconnect();
 			node.removeEventListener('scroll', updateNavbar);
+			if (pageEl) {
+				pageEl.style.display = '';
+				pageEl.style.flexDirection = '';
+				pageEl.style.overflow = '';
+			}
 		},
 	};
 };
