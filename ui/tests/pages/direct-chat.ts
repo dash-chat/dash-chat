@@ -113,6 +113,9 @@ export function scrollChatUp(): void {
 	if (Math.abs(el.scrollTop) < SCROLL_BOTTOM_THRESHOLD) {
 		el.scrollTop = target;
 	}
+	// WebKitGTK is inconsistent about firing a scroll event for programmatic
+	// scrollTop changes; fire one manually so chatScroll's onScroll handler
+	// updates savedScrollTop and the navbar opacity synchronously.
 	el.dispatchEvent(new Event('scroll'));
 }
 
@@ -126,4 +129,42 @@ export function unreadBadgeText(): string | null {
 	return (
 		document.querySelector(selectors.unreadBadge)?.textContent?.trim() ?? null
 	);
+}
+
+/** Click the scroll-to-bottom button. */
+export function clickScrollBottomButton(): void {
+	const btn = document.querySelector(
+		selectors.scrollBottom,
+	) as HTMLElement | null;
+	if (!btn) throw new Error('clickScrollBottomButton: button not found');
+	btn.click();
+}
+
+/** Scroll the chat back to the bottom (column-reverse: scrollTop=0). */
+export function scrollChatToBottom(): void {
+	const el = document.querySelector(selectors.scroll) as HTMLElement | null;
+	if (!el) throw new Error('scrollChatToBottom: scroll container not found');
+	el.scrollTop = 0;
+	// See scrollChatUp — fire a synthetic scroll event for WebKitGTK.
+	el.dispatchEvent(new Event('scroll'));
+}
+
+/** Scroll all the way to the top of the chat content (oldest / welcome). */
+export function scrollChatToTop(): void {
+	const el = document.querySelector(selectors.scroll) as HTMLElement | null;
+	if (!el) throw new Error('scrollChatToTop: scroll container not found');
+	const max = el.scrollHeight - el.clientHeight;
+	// WebKit uses negative scrollTop in column-reverse; Chromium uses positive.
+	el.scrollTop = -max;
+	if (Math.abs(el.scrollTop) < max - 1) el.scrollTop = max;
+	el.dispatchEvent(new Event('scroll'));
+}
+
+/** Read the inline opacity of the transparent navbar's bg element, or null.
+ *  iOS theme renders an extra `.absolute` blur layer before the bg div, so
+ *  match Konsta's bgElRef by picking the LAST `.absolute` child. */
+export function navbarBgOpacity(): string | null {
+	const candidates = document.querySelectorAll('.k-navbar > div.absolute');
+	const el = candidates[candidates.length - 1] as HTMLElement | undefined;
+	return el?.style.opacity ?? null;
 }

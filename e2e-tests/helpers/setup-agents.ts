@@ -149,6 +149,50 @@ export async function unreadBadgeText(agent: WebdriverIO.Browser): Promise<strin
 	return (await agent.execute(() => window.__test.unreadBadgeText())) as string | null;
 }
 
+/** Click the scroll-to-bottom button. */
+export async function clickScrollBottomButton(agent: WebdriverIO.Browser): Promise<void> {
+	const err = await agent.execute(() => {
+		try {
+			window.__test.clickScrollBottomButton();
+			return null;
+		} catch (e) {
+			return String(e);
+		}
+	});
+	if (err) throw new Error(`clickScrollBottomButton failed: ${err}`);
+}
+
+/** Scroll the chat back to the bottom programmatically. */
+export async function scrollChatToBottom(agent: WebdriverIO.Browser): Promise<void> {
+	const err = await agent.execute(() => {
+		try {
+			window.__test.scrollChatToBottom();
+			return null;
+		} catch (e) {
+			return String(e);
+		}
+	});
+	if (err) throw new Error(`scrollChatToBottom failed: ${err}`);
+}
+
+/** Scroll the chat all the way to the top of content (welcome / oldest). */
+export async function scrollChatToTop(agent: WebdriverIO.Browser): Promise<void> {
+	const err = await agent.execute(() => {
+		try {
+			window.__test.scrollChatToTop();
+			return null;
+		} catch (e) {
+			return String(e);
+		}
+	});
+	if (err) throw new Error(`scrollChatToTop failed: ${err}`);
+}
+
+/** Inline opacity of the transparent navbar's background element, or null. */
+export async function navbarBgOpacity(agent: WebdriverIO.Browser): Promise<string | null> {
+	return (await agent.execute(() => window.__test.navbarBgOpacity())) as string | null;
+}
+
 /** Open a direct chat by contact name. Throws if it fails. */
 export async function openDirectChat(
 	agent: WebdriverIO.Browser,

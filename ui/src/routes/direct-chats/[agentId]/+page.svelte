@@ -185,23 +185,17 @@
 			// Hide the unread messages divider after sending, and allow it to reappear for future messages
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
+			// Snap to the bottom only on user-initiated send. (We can't use a
+			// `use:scrollOnMount` action on each own-message bubble: Svelte
+			// fires the action on every reconciliation tick when the messages
+			// array reference changes, which would also auto-scroll on peer
+			// messages and break "scrolled up" UX.)
+			await tick();
+			scrollToBottom();
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
-
-	// Set to true after the initial bulk render of historical messages so the
-	// scrollOnMount action below only fires for messages that arrive AFTER
-	// the chat is already on screen.
-	let canAutoScroll = $state(false);
-
-	// Applied to the wrapper of each of our own messages. When a fresh
-	// own-message bubble enters the DOM (i.e. we just sent one), snap to the
-	// bottom — peer messages don't get this action, and column-reverse keeps
-	// the user pinned automatically when they're already at the bottom.
-	const scrollOnMount: Action<HTMLElement> = () => {
-		if (canAutoScroll) scrollToBottom();
-	};
 
 	const messageClass = (messageSetLength: number, index: number) => {
 		if (messageSetLength <= 1) return '';
@@ -220,14 +214,6 @@
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
-		// Wait for the message sets to resolve and the bubbles to render
-		// before allowing auto-scroll — otherwise every existing own-message
-		// bubble would trigger a scroll as it mounts. `await tick()` alone
-		// isn't enough because $messagesSets can resolve after the first
-		// flush, mounting historical bubbles with canAutoScroll already true.
-		await toPromise(store.messageSets);
-		await tick();
-		canAutoScroll = true;
 	});
 
 	// Set up scroll/intersection observers once the scroll area is in the
@@ -257,6 +243,15 @@
 			{ threshold: 0.5, root: el },
 		);
 
+		// Children using `use:observeMessage` may have mounted in the same
+		// flush before this effect ran (the scroll container and its bubbles
+		// emerge together when {#await $myDeviceId} → {#await $peerProfile}
+		// → {#await $contactRequest} all resolve), and their observe() calls
+		// were no-ops against an undefined observer. Pick those up now.
+		el.querySelectorAll('[data-message-hash]').forEach(n =>
+			observer!.observe(n),
+		);
+
 		const handleScroll = () => {
 			showScrollToBottom = !scrollIsAtBottom();
 		};
@@ -269,10 +264,11 @@
 		};
 	});
 
-	// Svelte action to observe message elements for read tracking
+	// Svelte action to observe message elements for read tracking. The
+	// data-message-hash attribute is set declaratively in the template; the
+	// observer reads it from the DOM during IntersectionObserver callbacks.
 	const observeMessage: Action<HTMLElement, Hash | null> = (node, hash) => {
 		if (hash === null) return;
-		node.setAttribute('data-message-hash', hash);
 		observer?.observe(node);
 		return {
 			destroy() {
@@ -679,7 +675,6 @@
 																	onLongPress: e =>
 																		showQuickReactionBar(e, message),
 																}}
-																use:scrollOnMount
 															>
 																<Card
 																	raised

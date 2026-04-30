@@ -19,6 +19,11 @@ import {
 	scrollChatUp,
 	scrollBottomButtonVisible,
 	unreadBadgeText,
+	clickScrollBottomButton,
+	scrollChatToBottom,
+	scrollChatToTop,
+	navbarBgOpacity,
+	openDirectChat,
 } from '../helpers/setup-agents';
 
 describe('Full messaging flow', () => {
@@ -108,6 +113,14 @@ describe('Full messaging flow', () => {
 		// Hard cap so a misconfigured viewport can't loop forever.
 		const MAX_FILLER = 200;
 
+		// Land agent1 on the direct chat with Bob regardless of where prior
+		// tests left it. Makes this suite independent of test ordering.
+		before(async () => {
+			const agent1 = browser.getInstance('agent1');
+			await agent1.execute(() => window.__test.goto('/'));
+			await openDirectChat(agent1, 'Bob');
+		});
+
 		it('fills the chat until it overflows enough to scroll', async () => {
 			const agent1 = browser.getInstance('agent1');
 			let i = 0;
@@ -166,26 +179,94 @@ describe('Full messaging flow', () => {
 			expect(await scrollBottomButtonVisible(agent1)).toBe(true);
 			expect(await unreadBadgeText(agent1)).toBeTruthy();
 		});
-	});
 
-	// Wrapped in its own describe so Mocha runs it after the `chat scroll
-	// behavior` block — Mocha runs all parent-level `it`s before nested
-	// `describe`s, so a bare `it` here would execute before chat scroll
-	// tests and leave agent1 stuck on /settings/help.
-	describe('help page', () => {
-		it('displays the app version', async () => {
+		// Continues from the previous test: agent1 is scrolled up with the
+		// scroll-to-bottom button + unread badge visible.
+		it('clicking scroll-to-bottom returns to bottom and clears unread badge', async () => {
+			const agent1 = browser.getInstance('agent1');
+			expect(await scrollBottomButtonVisible(agent1)).toBe(true);
+			expect(await unreadBadgeText(agent1)).toBeTruthy();
+
+			await clickScrollBottomButton(agent1);
+
+			await agent1.waitUntil(async () => isScrollAtBottom(agent1), {
+				timeout: 5_000,
+				timeoutMsg: 'Did not return to bottom after clicking the button',
+			});
+			await agent1.waitUntil(
+				async () => (await unreadBadgeText(agent1)) === null,
+				{
+					timeout: 5_000,
+					timeoutMsg: 'Unread badge did not clear after returning to bottom',
+				},
+			);
+		});
+
+		it('hides the scroll-to-bottom button once the user scrolls back down', async () => {
 			const agent1 = browser.getInstance('agent1');
 
-			await agent1.execute(() => window.__test.goto('/settings/help'));
+			await scrollChatUp(agent1);
+			expect(await scrollBottomButtonVisible(agent1)).toBe(true);
+
+			await scrollChatToBottom(agent1);
 			await agent1.waitUntil(
-				async () => agent1.execute(() => window.__test.versionItem() !== null),
-				{ timeout: 10_000, timeoutMsg: 'Version item not visible on help page' },
+				async () => !(await scrollBottomButtonVisible(agent1)),
+				{
+					timeout: 5_000,
+					timeoutMsg: 'Scroll-to-bottom button still visible at bottom',
+				},
+			);
+		});
+
+		// Guards against silent regressions in the Konsta selector inside
+		// chat-scroll.ts. The transparent navbar's bg should be opaque
+		// (opacity '1') at the bottom — where the latest message sits right
+		// under the navbar — and fade out ('0') only once the user scrolls
+		// all the way to the welcome / avatar surface at the top of the chat.
+		it('toggles transparent navbar opacity on scroll', async () => {
+			const agent1 = browser.getInstance('agent1');
+			expect(await isScrollAtBottom(agent1)).toBe(true);
+			await agent1.waitUntil(
+				async () => (await navbarBgOpacity(agent1)) === '1',
+				{
+					timeout: 5_000,
+					timeoutMsg: 'Navbar opacity not 1 at bottom',
+				},
 			);
 
-			const versionText = await agent1.execute(
-				() => (window.__test.versionItem() as HTMLElement)?.textContent ?? '',
+			await scrollChatToTop(agent1);
+			await agent1.waitUntil(
+				async () => (await navbarBgOpacity(agent1)) === '0',
+				{
+					timeout: 5_000,
+					timeoutMsg:
+						'Navbar opacity did not flip to 0 at the top of the chat',
+				},
 			);
-			expect(versionText).toMatch(/\d+\.\d+\.\d+/);
+
+			await scrollChatToBottom(agent1);
+			await agent1.waitUntil(
+				async () => (await navbarBgOpacity(agent1)) === '1',
+				{
+					timeout: 5_000,
+					timeoutMsg: 'Navbar opacity did not flip back to 1 at bottom',
+				},
+			);
 		});
+	});
+
+	it('displays the app version on the help page', async () => {
+		const agent1 = browser.getInstance('agent1');
+
+		await agent1.execute(() => window.__test.goto('/settings/help'));
+		await agent1.waitUntil(
+			async () => agent1.execute(() => window.__test.versionItem() !== null),
+			{ timeout: 10_000, timeoutMsg: 'Version item not visible on help page' },
+		);
+
+		const versionText = await agent1.execute(
+			() => (window.__test.versionItem() as HTMLElement)?.textContent ?? '',
+		);
+		expect(versionText).toMatch(/\d+\.\d+\.\d+/);
 	});
 });

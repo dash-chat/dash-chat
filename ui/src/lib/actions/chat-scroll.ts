@@ -31,12 +31,14 @@ export const chatScroll: Action<HTMLElement> = node => {
 	node.style.overflowY = 'auto';
 	node.style.display = 'flex';
 	node.style.flexDirection = 'column-reverse';
+	// Disable browser scroll anchoring — WebKit otherwise re-pins the scroll
+	// position to the visual bottom whenever new content is appended in a
+	// column-reverse container, even when the user has scrolled up to read
+	// older messages.
+	node.style.overflowAnchor = 'none';
 
 	// Override the parent Konsta Page to be a non-scrolling flex column.
-	// Snapshot the original inline cssText so destroy() restores anything
-	// other code may have set on .k-page rather than blanking those props.
 	const pageEl = node.closest('.k-page') as HTMLElement | null;
-	const pageElOriginalCssText = pageEl?.style.cssText ?? '';
 	if (pageEl) {
 		pageEl.style.display = 'flex';
 		pageEl.style.flexDirection = 'column';
@@ -54,16 +56,26 @@ export const chatScroll: Action<HTMLElement> = node => {
 		// swapped via {#if}{:else}, like toggling search mode in/out).
 		if (!navbarBgEl || !navbarBgEl.isConnected) {
 			// TODO: tightly coupled to Konsta v5 internals — re-verify on upgrade.
-			navbarBgEl = pageEl?.querySelector('.k-navbar > div.absolute') ?? null;
+			// In iOS theme there are two `.k-navbar > div.absolute` children (a
+			// blur layer and the background); Konsta's bgElRef is the LAST one,
+			// so pick that to stay in sync with Konsta's own opacity writes.
+			const candidates = pageEl?.querySelectorAll('.k-navbar > div.absolute');
+			navbarBgEl =
+				(candidates?.[candidates.length - 1] as HTMLElement | undefined) ??
+				null;
 		}
 		if (!navbarBgEl) return;
 
+		// In column-reverse, scrollTop=0 is the visual bottom — the latest
+		// message sits right under the navbar, so the bg should be opaque to
+		// keep them visually separated. As the user scrolls up toward the top
+		// of the content (welcome card / avatar area), the bg fades out so the
+		// navbar blends with the welcome surface.
+		// WebKit uses negative scrollTop in column-reverse; abs() normalises.
 		const maxScroll = node.scrollHeight - node.clientHeight;
 		if (maxScroll < 1) {
 			navbarBgEl.style.opacity = '0';
 		} else {
-			// In column-reverse, scrollTop=0 is the visual bottom.
-			// WebKit uses negative scrollTop; abs() normalises.
 			const distFromTop = maxScroll - Math.abs(node.scrollTop);
 			navbarBgEl.style.opacity = distFromTop > 10 ? '1' : '0';
 		}
@@ -115,7 +127,7 @@ export const chatScroll: Action<HTMLElement> = node => {
 	// replaced when search mode toggles) so we can re-apply opacity to the
 	// new navbar's bg.
 	const pageObserver = pageEl ? new MutationObserver(scheduleUpdate) : null;
-	pageObserver?.observe(pageEl!, { childList: true });
+	pageObserver?.observe(pageEl!, { childList: true, subtree: true });
 
 	updateNavbar();
 
@@ -127,7 +139,9 @@ export const chatScroll: Action<HTMLElement> = node => {
 			pageObserver?.disconnect();
 			node.removeEventListener('scroll', onScroll);
 			if (pageEl) {
-				pageEl.style.cssText = pageElOriginalCssText;
+				pageEl.style.removeProperty('display');
+				pageEl.style.removeProperty('flex-direction');
+				pageEl.style.removeProperty('overflow');
 			}
 		},
 	};

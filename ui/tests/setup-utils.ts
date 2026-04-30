@@ -27,6 +27,10 @@ import {
 	scrollChatUp,
 	scrollBottomButtonVisible,
 	unreadBadgeText,
+	clickScrollBottomButton,
+	scrollChatToBottom,
+	scrollChatToTop,
+	navbarBgOpacity,
 } from './pages/direct-chat';
 import { versionItem } from './pages/help';
 import { updaterBanner, updaterBannerTitle, updaterDismissBtn } from './pages/updater-banner';
@@ -69,6 +73,10 @@ export const testUtils = {
 	scrollChatUp,
 	scrollBottomButtonVisible,
 	unreadBadgeText,
+	clickScrollBottomButton,
+	scrollChatToBottom,
+	scrollChatToTop,
+	navbarBgOpacity,
 	versionItem,
 	updaterBanner,
 	updaterBannerTitle,
