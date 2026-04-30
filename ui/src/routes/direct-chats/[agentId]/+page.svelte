@@ -667,6 +667,7 @@
 														{#if myDeviceId == message.author}
 															<div
 																class="self-end max-w-[85%]"
+																data-message-hash={hash}
 																use:longpress={{
 																	onLongPress: e =>
 																		showQuickReactionBar(e, message),
@@ -675,7 +676,6 @@
 																<Card
 																	raised
 																	class={`${messageClass(messageSet.length, i)} message my-message`}
-																	data-message-hash={hash}
 																>
 																	<div
 																		class="row gap-2 mx-1"
