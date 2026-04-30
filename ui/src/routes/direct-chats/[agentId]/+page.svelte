@@ -162,13 +162,13 @@
 	// scrollTop when scrolled up; Math.abs normalises across engines.
 
 	const scrollIsAtBottom = () => {
-		if (!messagesPageEl) return true;
-		return Math.abs(messagesPageEl.scrollTop) < SCROLL_BOTTOM_THRESHOLD;
+		if (!messagesScrollEl) return true;
+		return Math.abs(messagesScrollEl.scrollTop) < SCROLL_BOTTOM_THRESHOLD;
 	};
 
 	const scrollToBottom = (animate = true) => {
-		if (!messagesPageEl) return;
-		messagesPageEl.scrollTo({
+		if (!messagesScrollEl) return;
+		messagesScrollEl.scrollTo({
 			top: 0,
 			behavior: animate ? 'smooth' : 'auto',
 		});
@@ -208,7 +208,7 @@
 	let observer: IntersectionObserver | undefined;
 	const visibleMessages: Set<Hash> = new Set();
 	let markReadTimeout: ReturnType<typeof setTimeout>;
-	let messagesPageEl: HTMLDivElement | null = null;
+	let messagesScrollEl: HTMLDivElement | null = null;
 
 	onMount(async () => {
 		if (page.url.searchParams.has('search')) {
@@ -221,7 +221,7 @@
 	// actions run, so they can call observer.observe() against a defined
 	// observer with no race.
 	const initReadObserver: Action<HTMLDivElement> = node => {
-		messagesPageEl = node;
+		messagesScrollEl = node;
 		observer = new IntersectionObserver(
 			entries => {
 				for (const entry of entries) {
@@ -252,7 +252,7 @@
 				observer = undefined;
 				clearTimeout(markReadTimeout);
 				node.removeEventListener('scroll', handleScroll);
-				messagesPageEl = null;
+				messagesScrollEl = null;
 			},
 		};
 	};
