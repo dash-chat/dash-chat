@@ -54,6 +54,17 @@
 		barStyle = computeBarStyle();
 	});
 
+	$effect(() => {
+		if (!opened) return;
+		const onScroll = () => onClose();
+		window.addEventListener('scroll', onScroll, {
+			capture: true,
+			passive: true,
+		});
+		return () =>
+			window.removeEventListener('scroll', onScroll, { capture: true });
+	});
+
 	function hasReacted(emoji: string): boolean {
 		return message.reactions[myDeviceId] === emoji;
 	}
