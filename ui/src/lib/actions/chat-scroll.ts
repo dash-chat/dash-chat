@@ -1,5 +1,7 @@
 import type { Action } from 'svelte/action';
 
+import { findNavbarBg } from '../utils/konsta';
+
 /**
  * Svelte action that turns an element into a column-reverse chat scroll
  * container and manages the parent Konsta Page's transparent navbar opacity.
@@ -55,14 +57,7 @@ export const chatScroll: Action<HTMLElement> = node => {
 		// Re-query if the cached element was removed (e.g. the Navbar got
 		// swapped via {#if}{:else}, like toggling search mode in/out).
 		if (!navbarBgEl || !navbarBgEl.isConnected) {
-			// TODO: tightly coupled to Konsta v5 internals — re-verify on upgrade.
-			// In iOS theme there are two `.k-navbar > div.absolute` children (a
-			// blur layer and the background); Konsta's bgElRef is the LAST one,
-			// so pick that to stay in sync with Konsta's own opacity writes.
-			const candidates = pageEl?.querySelectorAll('.k-navbar > div.absolute');
-			navbarBgEl =
-				(candidates?.[candidates.length - 1] as HTMLElement | undefined) ??
-				null;
+			navbarBgEl = pageEl ? findNavbarBg(pageEl) : null;
 		}
 		if (!navbarBgEl) return;
 
@@ -81,9 +76,8 @@ export const chatScroll: Action<HTMLElement> = node => {
 		}
 	};
 
-	// Coalesce mutation-driven updates to one per frame — the subtree
-	// observer fires on every DOM change (new messages, reactions, etc.),
-	// and we only need the latest layout state per paint.
+	// Coalesce observer-driven updates to one per frame — multiple resizes
+	// or mutations in the same tick should only trigger one navbar recompute.
 	let frame = 0;
 	const scheduleUpdate = () => {
 		if (frame) return;
@@ -112,16 +106,34 @@ export const chatScroll: Action<HTMLElement> = node => {
 	};
 	node.addEventListener('scroll', onScroll);
 
+	// Observes both the scroll container (clientHeight) and the inner content
+	// wrapper (scrollHeight). updateNavbar reads `scrollHeight - clientHeight`,
+	// so we need to fire on either side changing.
 	const sizeObserver = new ResizeObserver(() => {
 		if (node.clientHeight !== prevClientHeight && savedScrollTop !== 0) {
 			node.scrollTop = savedScrollTop;
 		}
 		prevClientHeight = node.clientHeight;
+		scheduleUpdate();
 	});
 	sizeObserver.observe(node);
 
-	const contentObserver = new MutationObserver(scheduleUpdate);
-	contentObserver.observe(node, { childList: true, subtree: true });
+	// Bind the same observer to the inner content wrapper — its height
+	// tracks scrollHeight, and ResizeObserver catches reflows from new
+	// messages, reactions, image loads, etc. without observing every leaf
+	// mutation. Re-bind if Svelte swaps the wrapper (e.g. an `{#await}` block
+	// re-enters the pending state).
+	let contentEl: Element | null = null;
+	const bindContent = () => {
+		const next = node.firstElementChild;
+		if (next === contentEl) return;
+		if (contentEl) sizeObserver.unobserve(contentEl);
+		contentEl = next;
+		if (contentEl) sizeObserver.observe(contentEl);
+	};
+	bindContent();
+	const contentObserver = new MutationObserver(bindContent);
+	contentObserver.observe(node, { childList: true, subtree: false });
 
 	// Watch the page for direct-child swaps (e.g. the Navbar element being
 	// replaced when search mode toggles) so we can re-apply opacity to the
