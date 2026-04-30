@@ -188,6 +188,20 @@ li.plain span {
 	background-color: rgba(0, 0, 0, 0.07);
 }
 
+/* Filler drawn over the scrollbar gutter by the chatScroll/scrollbarInset
+   action: extends the bar's background across the gutter visually, but
+   with pointer-events: none so the scrollbar handle stays clickable. */
+[data-scrollbar-inset]::after {
+	content: '';
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	inset-inline-end: calc(var(--scrollbar-inset-width, 0px) * -1);
+	width: var(--scrollbar-inset-width, 0px);
+	background: inherit;
+	pointer-events: none;
+}
+
 :where(.dark) .neutral-tonal-button.k-button {
 	background-color: rgba(255, 255, 255, 0.1);
 }

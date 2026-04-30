@@ -3,9 +3,15 @@ import type { Action } from 'svelte/action';
 const OVERLAY_SCROLLBAR_WIDTH = 12;
 
 /**
- * Sets the element's `right` to the width of the scroll container's
- * scrollbar so the scrollbar handle stays uncovered. Apply to absolutely
- * positioned overlays that sit above a scroll area.
+ * Insets the element by the scroll container's scrollbar width on the
+ * inline-end side so its content (and click target) stays clear of the
+ * scrollbar handle. The `[data-scrollbar-inset]::after` rule in app.css
+ * draws a `pointer-events: none` filler over the gutter so the bar's
+ * background appears continuous while the scrollbar stays clickable.
+ *
+ * Apply to absolutely positioned overlays (e.g. message input bars) that
+ * sit above a scroll area. Logical properties so it works in both LTR
+ * (gutter on the right) and RTL (gutter on the left).
  *
  * Handles two scrollbar modes:
  *   - Reserved gutter (Windows/Linux/macOS "Always show"): uses the
@@ -18,6 +24,8 @@ export const scrollbarInset: Action<HTMLElement, HTMLElement | null> = (
 	node,
 	scrollContainer,
 ) => {
+	node.dataset.scrollbarInset = '';
+
 	let ro: ResizeObserver | null = null;
 	let mo: MutationObserver | null = null;
 	let current: HTMLElement | null = null;
@@ -34,18 +42,17 @@ export const scrollbarInset: Action<HTMLElement, HTMLElement | null> = (
 	};
 
 	const update = () => {
-		node.style.right = `${compute()}px`;
+		const w = compute();
+		node.style.insetInlineEnd = `${w}px`;
+		node.style.setProperty('--scrollbar-inset-width', `${w}px`);
 	};
 
 	const attach = (el: HTMLElement | null) => {
 		ro?.disconnect();
 		mo?.disconnect();
 		current = el;
-		if (!el) {
-			node.style.right = '0px';
-			return;
-		}
 		update();
+		if (!el) return;
 		ro = new ResizeObserver(update);
 		ro.observe(el);
 		mo = new MutationObserver(update);
@@ -61,7 +68,9 @@ export const scrollbarInset: Action<HTMLElement, HTMLElement | null> = (
 		destroy() {
 			ro?.disconnect();
 			mo?.disconnect();
-			node.style.right = '';
+			delete node.dataset.scrollbarInset;
+			node.style.insetInlineEnd = '';
+			node.style.removeProperty('--scrollbar-inset-width');
 		},
 	};
 };
