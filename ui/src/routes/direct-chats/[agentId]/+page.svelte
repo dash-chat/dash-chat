@@ -185,12 +185,23 @@
 			// Hide the unread messages divider after sending, and allow it to reappear for future messages
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
-			await tick();
-			scrollToBottom();
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
+
+	// Set to true after the initial bulk render of historical messages so the
+	// scrollOnMount action below only fires for messages that arrive AFTER
+	// the chat is already on screen.
+	let canAutoScroll = $state(false);
+
+	// Applied to the wrapper of each of our own messages. When a fresh
+	// own-message bubble enters the DOM (i.e. we just sent one), snap to the
+	// bottom — peer messages don't get this action, and column-reverse keeps
+	// the user pinned automatically when they're already at the bottom.
+	const scrollOnMount: Action<HTMLElement> = () => {
+		if (canAutoScroll) scrollToBottom();
+	};
 
 	const messageClass = (messageSetLength: number, index: number) => {
 		if (messageSetLength <= 1) return '';
@@ -205,10 +216,15 @@
 	let markReadTimeout: ReturnType<typeof setTimeout>;
 	let messagesPageEl: HTMLDivElement | null = $state(null);
 
-	onMount(() => {
+	onMount(async () => {
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
+		// Wait for the initial render to flush before allowing auto-scroll —
+		// otherwise every existing own-message bubble would trigger a scroll
+		// as it mounts.
+		await tick();
+		canAutoScroll = true;
 	});
 
 	// Set up scroll/intersection observers once the scroll area is in the
@@ -660,6 +676,7 @@
 																	onLongPress: e =>
 																		showQuickReactionBar(e, message),
 																}}
+																use:scrollOnMount
 															>
 																<Card
 																	raised
