@@ -180,12 +180,24 @@ describe('Full messaging flow', () => {
 			expect(await unreadBadgeText(agent1)).toBeTruthy();
 		});
 
-		// Continues from the previous test: agent1 is scrolled up with the
-		// scroll-to-bottom button + unread badge visible.
 		it('clicking scroll-to-bottom returns to bottom and clears unread badge', async () => {
 			const agent1 = browser.getInstance('agent1');
+			const agent2 = browser.getInstance('agent2');
+
+			// Establish the precondition (scrolled up + unread badge visible)
+			// from scratch rather than depending on the previous test, so this
+			// test survives Mocha bail/retry and reordering.
+			await scrollChatUp(agent1);
+			await sendMessage(agent2, 'unread badge precondition');
+			await waitForMessage(agent1, 'unread badge precondition');
+			await agent1.waitUntil(
+				async () => (await unreadBadgeText(agent1)) !== null,
+				{
+					timeout: 5_000,
+					timeoutMsg: 'Unread badge did not appear after peer message',
+				},
+			);
 			expect(await scrollBottomButtonVisible(agent1)).toBe(true);
-			expect(await unreadBadgeText(agent1)).toBeTruthy();
 
 			await clickScrollBottomButton(agent1);
 

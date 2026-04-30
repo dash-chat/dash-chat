@@ -125,9 +125,10 @@ export const chatScroll: Action<HTMLElement> = node => {
 
 	// Watch the page for direct-child swaps (e.g. the Navbar element being
 	// replaced when search mode toggles) so we can re-apply opacity to the
-	// new navbar's bg.
+	// new navbar's bg. The .k-navbar is a direct child of .k-page, so
+	// subtree: false is enough — avoids firing on every nested mutation.
 	const pageObserver = pageEl ? new MutationObserver(scheduleUpdate) : null;
-	pageObserver?.observe(pageEl!, { childList: true, subtree: true });
+	pageObserver?.observe(pageEl!, { childList: true, subtree: false });
 
 	updateNavbar();
 

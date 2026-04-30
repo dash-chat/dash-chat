@@ -208,7 +208,7 @@
 	let observer: IntersectionObserver | undefined;
 	const visibleMessages: Set<Hash> = new Set();
 	let markReadTimeout: ReturnType<typeof setTimeout>;
-	let messagesPageEl: HTMLDivElement | null = $state(null);
+	let messagesPageEl: HTMLDivElement | null = null;
 
 	onMount(async () => {
 		if (page.url.searchParams.has('search')) {
@@ -216,14 +216,12 @@
 		}
 	});
 
-	// Set up scroll/intersection observers once the scroll area is in the
-	// DOM. The element lives inside {#await} blocks, so it may not exist
-	// at onMount time. Using $effect with bind:this ensures we react when
-	// the element appears.
-	$effect(() => {
-		const el = messagesPageEl;
-		if (!el) return;
-
+	// Set up the IntersectionObserver synchronously when the scroll
+	// container mounts — before child bubbles' `use:observeMessage`
+	// actions run, so they can call observer.observe() against a defined
+	// observer with no race.
+	const initReadObserver: Action<HTMLDivElement> = node => {
+		messagesPageEl = node;
 		observer = new IntersectionObserver(
 			entries => {
 				for (const entry of entries) {
@@ -240,29 +238,24 @@
 					}
 				}, 500);
 			},
-			{ threshold: 0.5, root: el },
-		);
-
-		// Children using `use:observeMessage` may have mounted in the same
-		// flush before this effect ran (the scroll container and its bubbles
-		// emerge together when {#await $myDeviceId} → {#await $peerProfile}
-		// → {#await $contactRequest} all resolve), and their observe() calls
-		// were no-ops against an undefined observer. Pick those up now.
-		el.querySelectorAll('[data-message-hash]').forEach(n =>
-			observer!.observe(n),
+			{ threshold: 0.5, root: node },
 		);
 
 		const handleScroll = () => {
 			showScrollToBottom = !scrollIsAtBottom();
 		};
-		el.addEventListener('scroll', handleScroll);
+		node.addEventListener('scroll', handleScroll);
 
-		return () => {
-			observer?.disconnect();
-			clearTimeout(markReadTimeout);
-			el.removeEventListener('scroll', handleScroll);
+		return {
+			destroy() {
+				observer?.disconnect();
+				observer = undefined;
+				clearTimeout(markReadTimeout);
+				node.removeEventListener('scroll', handleScroll);
+				messagesPageEl = null;
+			},
 		};
-	});
+	};
 
 	// Svelte action to observe message elements for read tracking. The
 	// data-message-hash attribute is set declaratively in the template; the
@@ -525,7 +518,7 @@
 
 					<div
 						use:chatScroll
-						bind:this={messagesPageEl}
+						use:initReadObserver
 						data-testid="direct-chat-scroll"
 					>
 						{#await $readMessageHashes then readHashes}
