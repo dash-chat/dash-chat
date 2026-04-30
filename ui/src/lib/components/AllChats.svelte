@@ -52,6 +52,7 @@
 						class={isActive(summary) ? 'active' : ''}
 						linkProps={{ href: chatHref(summary) }}
 						chevron={false}
+						titleWrapClass="title-with-ellipsis"
 					>
 						{#snippet media()}
 							<Avatar
@@ -114,3 +115,15 @@
 		{/if}
 	{/await}
 </div>
+
+<style>
+	div :global(.title-with-ellipsis > div:first-child) {
+		overflow: hidden;
+		white-space: nowrap;
+		word-break: break-word;
+		text-overflow: ellipsis;
+		width: 0;
+		flex-shrink: 1;
+		flex-grow: 1;
+	}
+</style>
