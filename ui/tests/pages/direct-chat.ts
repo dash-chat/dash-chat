@@ -1,4 +1,5 @@
 import { S } from '../selectors';
+import { SCROLL_BOTTOM_THRESHOLD } from '../../src/lib/utils/chat';
 
 export const selectors = S.directChat;
 export const messageInputSelectors = S.messageInput;
@@ -81,8 +82,6 @@ export function sendButton() {
 export function messagesContainer() {
 	return document.querySelector(selectors.messages);
 }
-
-const SCROLL_BOTTOM_THRESHOLD = 200;
 
 /** True if the chat scroll container is pinned to the bottom (column-reverse). */
 export function isScrollAtBottom(): boolean {

@@ -69,6 +69,7 @@
 	import { chatScroll } from '$lib/actions/chat-scroll';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import { SCROLL_BOTTOM_THRESHOLD } from '$lib/utils/chat';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -154,10 +155,6 @@
 		node.focus();
 	};
 
-	// Distance from the bottom (in px) below which we consider the user
-	// "at the bottom" — controls when the scroll-to-bottom button hides.
-	const SCROLL_BOTTOM_THRESHOLD = 200;
-
 	// The scroll container uses column-reverse, which inverts the scroll axis
 	// so that scrollTop=0 means "at the bottom of the content". The browser
 	// then keeps us pinned to the bottom automatically when content is added
@@ -188,7 +185,8 @@
 			// Hide the unread messages divider after sending, and allow it to reappear for future messages
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
-			requestAnimationFrame(() => scrollToBottom());
+			await tick();
+			scrollToBottom();
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
