@@ -136,7 +136,10 @@
 	let showAcceptDialog = $state(false);
 	let showRejectDialog = $state(false);
 	let profileNamesSheetOpen = $state(false);
-	let bottomBarHeight: number = $state(0);
+	// Initial value reserves space for the bottom bar before bind:clientHeight
+	// has measured it, so the latest message doesn't flash under the input on
+	// first paint. Re-measured after mount.
+	let bottomBarHeight: number = $state(60);
 	let showScrollToBottom = $state(false);
 
 	// Unread divider state — hash captured once on load so position stays fixed,
