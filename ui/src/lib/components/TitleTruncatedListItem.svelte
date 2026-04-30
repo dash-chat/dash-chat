@@ -16,11 +16,11 @@
 	}
 
 	let {
-		media: _media,
-		after: _after,
-		subtitle: _subtitle,
-		inner: _inner,
-		content: _content,
+		media,
+		after,
+		subtitle,
+		inner,
+		content,
 		children,
 		titleWrapClass = '',
 		...rest
@@ -31,13 +31,13 @@
 	titleWrapClass={['title-truncated-wrap', titleWrapClass]
 		.filter(Boolean)
 		.join(' ')}
+	{media}
+	{after}
+	{subtitle}
+	{inner}
+	{content}
 	{...rest}
 >
-	{#snippet media()}{#if _media}{@render _media()}{/if}{/snippet}
-	{#snippet after()}{#if _after}{@render _after()}{/if}{/snippet}
-	{#snippet subtitle()}{#if _subtitle}{@render _subtitle()}{/if}{/snippet}
-	{#snippet inner()}{#if _inner}{@render _inner()}{/if}{/snippet}
-	{#snippet content()}{#if _content}{@render _content()}{/if}{/snippet}
 	{#if children}{@render children()}{/if}
 </ListItem>
 
