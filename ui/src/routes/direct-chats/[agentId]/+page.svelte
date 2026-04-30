@@ -68,6 +68,7 @@
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { longpress } from '$lib/actions/longpress';
 	import { chatScroll } from '$lib/actions/chat-scroll';
+	import { scrollbarInset } from '$lib/actions/scrollbar-inset';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	let agentId = page.params.agentId!;
@@ -973,7 +974,8 @@
 				{#if searchMode}
 					<div
 						bind:clientHeight={bottomBarHeight}
-						class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
+						class="pointer-events-auto absolute bottom-0 left-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
+						use:scrollbarInset={messagesPageEl}
 					>
 						<div
 							class="mx-4 border-t border-gray-300 dark:border-gray-600"
@@ -1024,7 +1026,8 @@
 				{:else if contactRequest}
 					<div
 						bind:clientHeight={bottomBarHeight}
-						class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
+						class="pointer-events-auto absolute bottom-0 left-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
+						use:scrollbarInset={messagesPageEl}
 					>
 						<div
 							class="mx-4 border-t border-gray-300 dark:border-gray-600"
@@ -1069,9 +1072,10 @@
 				{:else}
 					<div
 						bind:clientHeight={bottomBarHeight}
-						class="pointer-events-auto absolute bottom-0 left-0 right-0"
+						class="pointer-events-auto absolute bottom-0 left-0"
 						class:bg-md-light-surface={theme === 'material'}
 						class:dark:bg-md-dark-surface={theme === 'material'}
+						use:scrollbarInset={messagesPageEl}
 					>
 						<MessageInput
 							bind:value={messageText}
