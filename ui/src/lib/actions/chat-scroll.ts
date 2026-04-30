@@ -101,10 +101,7 @@ export const chatScroll: Action<HTMLElement> = node => {
 	node.addEventListener('scroll', onScroll);
 
 	const sizeObserver = new ResizeObserver(() => {
-		if (
-			node.clientHeight !== prevClientHeight &&
-			savedScrollTop !== 0
-		) {
+		if (node.clientHeight !== prevClientHeight && savedScrollTop !== 0) {
 			node.scrollTop = savedScrollTop;
 		}
 		prevClientHeight = node.clientHeight;
