@@ -56,7 +56,6 @@
 	:global(.title-truncated-wrap > div:first-child) {
 		overflow: hidden;
 		white-space: nowrap;
-		word-break: break-word;
 		text-overflow: ellipsis;
 		width: 0;
 		flex-shrink: 1;
