@@ -53,7 +53,11 @@
 	<div
 		class="column"
 		style="align-items: center; height: {size + 4}px"
+		role="button"
+		tabindex="0"
 		onclick={() => avatarFilePicker.click()}
+		onkeydown={e =>
+			(e.key === 'Enter' || e.key === ' ') && avatarFilePicker.click()}
 	>
 		<Avatar
 			id="avatar"
@@ -67,7 +71,11 @@
 	<div
 		class="column"
 		style="align-items: center; height: {size + 4}px"
+		role="button"
+		tabindex="0"
 		onclick={() => avatarFilePicker.click()}
+		onkeydown={e =>
+			(e.key === 'Enter' || e.key === ' ') && avatarFilePicker.click()}
 	>
 		<Avatar
 			id="avatar"

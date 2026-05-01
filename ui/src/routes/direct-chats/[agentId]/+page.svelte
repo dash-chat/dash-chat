@@ -605,6 +605,11 @@
 													<div
 														class="flex items-center justify-center gap-2"
 														onclick={() => (profileNamesSheetOpen = true)}
+														role="button"
+														tabindex="0"
+														onkeydown={e =>
+															(e.key === 'Enter' || e.key === ' ') &&
+															(profileNamesSheetOpen = true)}
 													>
 														<wa-icon
 															class="small-icon"

@@ -73,6 +73,8 @@
 					<div
 						class="flex cursor-pointer items-center gap-1"
 						onclick={() => (showPeerProfile = true)}
+						onkeydown={e =>
+							(e.key === 'Enter' || e.key === ' ') && (showPeerProfile = true)}
 						role="button"
 						tabindex="0"
 					>
