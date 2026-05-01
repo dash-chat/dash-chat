@@ -156,11 +156,19 @@
 		const contentObserver = new MutationObserver(scheduleUpdate);
 		contentObserver.observe(node, { childList: true, subtree: true });
 
+		// Re-evaluate when the viewport shrinks/grows (e.g. the iOS keyboard
+		// opening resizes the WKWebView frame) — clientHeight changes shift
+		// maxScroll, so the opacity formula needs to re-run even when scrollTop
+		// itself didn't move.
+		const resizeObserver = new ResizeObserver(scheduleUpdate);
+		resizeObserver.observe(node);
+
 		updateNavbar();
 
 		return () => {
 			if (frame) cancelAnimationFrame(frame);
 			contentObserver.disconnect();
+			resizeObserver.disconnect();
 			node.removeEventListener('scroll', onScroll);
 			if (pageEl) {
 				pageEl.style.removeProperty('overflow');
