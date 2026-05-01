@@ -4,6 +4,7 @@
  * Verifies that contacts with very long names don't cause horizontal overflow
  * in the chat list or the direct-chat navbar.
  */
+import { S } from '../../ui/tests/selectors';
 import {
 	createProfile,
 	exchangeContacts,
@@ -39,11 +40,12 @@ describe('Long name truncation', () => {
 		await agent2.waitUntil(
 			async () =>
 				agent2.execute(
-					(name: string) =>
+					(name: string, chatListSelector: string) =>
 						!!document
-							.querySelector('[data-testid="all-chats-list"]')
+							.querySelector(chatListSelector)
 							?.textContent?.includes(name),
 					LONG_NAME,
+					S.home.chatList,
 				),
 			{
 				timeout: 30_000,

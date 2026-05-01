@@ -25,8 +25,7 @@ export interface PageResult extends CheckResult {
 	page: string;
 }
 
-/** Returns true for elements that are intentionally clipping/truncating their content. */
-function isIntentionallyClipped(el: Element): boolean {
+export function isIntentionallyClipped(el: Element): boolean {
 	const style = window.getComputedStyle(el as HTMLElement);
 	return (
 		style.overflowX === 'hidden' ||

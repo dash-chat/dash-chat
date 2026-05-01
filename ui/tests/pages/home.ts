@@ -1,3 +1,4 @@
+import { isIntentionallyClipped } from '../review/checks';
 import { S } from '../selectors';
 
 export const selectors = S.home;
@@ -41,21 +42,6 @@ export function checkChatListOverflow(): string[] {
 		issues.push('Chat list not found');
 		return issues;
 	}
-
-	const isIntentionallyClipped = (el: Element): boolean => {
-		const style = window.getComputedStyle(el as HTMLElement);
-		const overflowX = style.overflowX;
-		const overflow = style.overflow;
-		const textOverflow = style.textOverflow;
-
-		return (
-			overflowX === 'hidden' ||
-			overflowX === 'clip' ||
-			overflow === 'hidden' ||
-			overflow === 'clip' ||
-			textOverflow === 'ellipsis'
-		);
-	};
 
 	if (list.scrollWidth > list.clientWidth + 2) {
 		issues.push('Chat list container has horizontal overflow');
