@@ -2,26 +2,35 @@
 	A Konsta `<Page>` with a built-in column-reverse chat scroll container.
 
 	Usage:
-	  <ReverseScrollPage bind:el={scrollEl} data-testid="...">
-	    <Navbar transparent />
+	  <ReverseScrollPage data-testid="...">
+	    {#snippet navbar()}
+	      <Navbar transparent />
+	    {/snippet}
 	    ...messages and overlays...
 	  </ReverseScrollPage>
 
-	Children render inside the scroll wrapper. Place a Konsta `<Navbar>` first
-	— its built-in `position: sticky; top: 0` keeps it pinned at the viewport
-	top while content scrolls underneath in column-reverse order (latest
-	message at the bottom, welcome card at the top).
+	The `navbar` snippet renders as a sibling of the scroll element inside
+	`.k-page`, NOT inside the scroll wrapper. This matters: WebKit has a bug
+	where a `position: sticky` element nested inside a scrollable container
+	whose ancestor WKWebView frame just resized (e.g. iOS keyboard dismiss)
+	leaves the navbar's compositing layer stale — it occupies layout but
+	renders nothing until a real touch event forces re-layout. Putting the
+	navbar in `.k-page` (which has `overflow: hidden`, so its sticky context
+	degenerates to fixed top placement) sidesteps the bug.
 
 	What it does:
-	1. Suppresses scroll on `.k-page` (`overflow: hidden`) via a scoped class
-	   so the page itself doesn't scroll.
+	1. Suppresses scroll on `.k-page` (`overflow: hidden`) so the page itself
+	   doesn't scroll.
 	2. Positions the scroll element as `absolute; inset: 0` inside `.k-page` so
-	   the viewport extends from top to bottom.
+	   the viewport extends from top to bottom — content scrolls *under* the
+	   navbar's translucent layers, preserving Konsta's iOS gradient/blur
+	   fade-into-background effect.
 	3. Makes the scroll element a column-reverse container (scrollTop=0 = bottom).
-	4. An inner `flex: 1 0 auto` wrapper ensures children fill the viewport even
-	   when content is short — without this the sticky navbar would sit at the
-	   wrapper's natural top, which in column-reverse with under-viewport content
-	   is somewhere in the middle of the screen.
+	4. Tracks the navbar's measured height and exposes it on the scroll element
+	   as `--chat-navbar-height`. The inner growth wrapper uses it as
+	   `padding-top` so the welcome card / oldest content isn't permanently
+	   hidden behind the navbar at max scroll-up. Descendants (e.g. a sticky
+	   day-tag) can read it the same way.
 	5. Manages the Material navbar bg opacity: opaque at the latest-message end,
 	   transparent over the welcome card. iOS isn't touched — Konsta's gradient +
 	   blur layers do the fading visually on their own.
@@ -32,8 +41,7 @@
 
 	Props mirror Konsta's `<Page>` (Konsta-specific options forwarded to the
 	underlying Page). Plain HTML attributes (id, class, style, data-*, aria-*…)
-	land on the inner scroll element — that's the element the consumer
-	interacts with via `bind:el`.
+	land on the inner scroll element.
 -->
 <script lang="ts">
 	import { Page } from 'konsta/svelte';
@@ -53,6 +61,7 @@
 		ios?: boolean;
 		material?: boolean;
 		isAtBottom?: boolean;
+		navbar?: Snippet;
 		children?: Snippet;
 	}
 
@@ -62,6 +71,7 @@
 		ios,
 		material,
 		isAtBottom = $bindable(true),
+		navbar,
 		children,
 		...scrollProps
 	}: Props = $props();
@@ -87,7 +97,35 @@
 		const inner = innerEl;
 		if (!inner) return;
 
+		const pageEl = node.parentElement;
+		if (!pageEl) return;
+
 		let navbarBgEl: HTMLElement | null = null;
+		let observedNavbar: HTMLElement | null = null;
+		const navbarResizeObserver = new ResizeObserver(() => {
+			if (observedNavbar) {
+				node.style.setProperty(
+					'--chat-navbar-height',
+					`${observedNavbar.offsetHeight}px`,
+				);
+			}
+		});
+
+		const syncNavbar = () => {
+			const navEl = pageEl.querySelector('.k-navbar') as HTMLElement | null;
+			if (navEl !== observedNavbar) {
+				if (observedNavbar) navbarResizeObserver.unobserve(observedNavbar);
+				observedNavbar = navEl;
+				if (navEl) {
+					navbarResizeObserver.observe(navEl);
+					node.style.setProperty(
+						'--chat-navbar-height',
+						`${navEl.offsetHeight}px`,
+					);
+				}
+			}
+			navbarBgEl = null;
+		};
 
 		const updateNavbar = () => {
 			// iOS theme: leave the navbar untouched. The gradient + blur fade
@@ -97,7 +135,7 @@
 			// Re-query if the cached element was removed (e.g. the Navbar got
 			// swapped via {#if}{:else}, like toggling search mode in/out).
 			if (!navbarBgEl || !navbarBgEl.isConnected) {
-				navbarBgEl = findNavbarBg(node);
+				navbarBgEl = findNavbarBg(pageEl);
 			}
 			if (!navbarBgEl) return;
 
@@ -122,6 +160,7 @@
 			if (frame) return;
 			frame = requestAnimationFrame(() => {
 				frame = 0;
+				syncNavbar();
 				updateNavbar();
 			});
 		};
@@ -139,13 +178,11 @@
 
 		updateIsAtBottom();
 
-		// Watch the inner flex wrapper for child swaps (e.g. the Navbar being
-		// replaced when search mode toggles) so we can re-resolve the navbar bg
-		// on the next frame. subtree: false because the navbar is a direct
-		// child of this wrapper — narrower than the full scroll subtree, which
-		// would wake on every message bubble add, reaction toggle, etc.
-		const contentObserver = new MutationObserver(scheduleUpdate);
-		contentObserver.observe(inner, { childList: true, subtree: false });
+		// Watch the page for navbar swaps (e.g. when search mode toggles in/out
+		// the active <Navbar> element is replaced) so we can re-resolve the
+		// navbar element and re-measure its height.
+		const pageObserver = new MutationObserver(scheduleUpdate);
+		pageObserver.observe(pageEl, { childList: true, subtree: true });
 
 		// Re-evaluate when the viewport shrinks/grows (e.g. the iOS keyboard
 		// opening resizes the WKWebView frame) — clientHeight changes shift
@@ -154,11 +191,13 @@
 		const resizeObserver = new ResizeObserver(scheduleUpdate);
 		resizeObserver.observe(node);
 
+		syncNavbar();
 		updateNavbar();
 
 		return () => {
 			if (frame) cancelAnimationFrame(frame);
-			contentObserver.disconnect();
+			pageObserver.disconnect();
+			navbarResizeObserver.disconnect();
 			resizeObserver.disconnect();
 			node.removeEventListener('scroll', onScroll);
 		};
@@ -166,6 +205,7 @@
 </script>
 
 <Page {...pageProps} class="reverse-scroll-host">
+	{@render navbar?.()}
 	<!--
 		overflow-anchor: none — disables browser scroll anchoring. WebKit
 		otherwise re-pins the scroll position to the visual bottom whenever new
@@ -178,7 +218,10 @@
 		style="overflow-anchor: none"
 		{...scrollProps}
 	>
-		<div bind:this={innerEl} style="flex: 1 0 auto;">
+		<div
+			bind:this={innerEl}
+			style="flex: 1 0 auto; padding-top: var(--chat-navbar-height, 0px);"
+		>
 			{@render children?.()}
 		</div>
 	</div>
@@ -187,8 +230,8 @@
 <style>
 	/*
 		Konsta's `.k-page` is `absolute overflow-auto` by default. We use it
-		as a positioning context for our absolute scroll element + overlay,
-		but we don't want it to scroll itself.
+		as a positioning context for our absolute scroll element + sibling
+		navbar, but we don't want it to scroll itself.
 	*/
 	:global(.reverse-scroll-host) {
 		overflow: hidden;

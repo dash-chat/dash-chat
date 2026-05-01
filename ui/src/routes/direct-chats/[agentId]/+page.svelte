@@ -434,59 +434,61 @@
 					bind:isAtBottom
 					data-testid="direct-chat-scroll"
 				>
-					{#if searchMode}
-						<Navbar
-							transparent={true}
-							titleClass="opacity1 w-full min-w-0"
-							centerTitle={false}
-						>
-							{#snippet left()}
-								<NavbarBackLink onClick={closeSearch} />
-							{/snippet}
-							{#snippet title()}
-								<div class="flex items-center gap-2">
-									<wa-icon class="quiet" src={wrapPathInSvg(mdiMagnify)}
-									></wa-icon>
-									<input
-										type="text"
-										class="w-full border-none bg-transparent text-base outline-none"
-										placeholder={m.searchMessages()}
-										bind:value={searchQuery}
-										use:focusOnMount
-									/>
-								</div>
-							{/snippet}
-						</Navbar>
-					{:else}
-						<Navbar
-							transparent={true}
-							titleClass="opacity1 w-full min-w-0"
-							centerTitle={false}
-						>
-							{#snippet left()}
-								{#if !isWideScreen.value}
-									<NavbarBackLink
-										onClick={() => goto('/')}
-										data-testid="direct-chat-back"
-									/>
-								{/if}
-							{/snippet}
-							{#snippet title()}
-								{#if profile}
-									<Link
-										class="flex w-full min-w-0 items-center justify-start"
-										href={`/direct-chats/${agentId}/chat-settings`}
-										data-testid="direct-chat-settings-link"
-									>
-										<AvatarWithName
-											{profile}
-											nameTestId="direct-chat-peer-name"
+					{#snippet navbar()}
+						{#if searchMode}
+							<Navbar
+								transparent={true}
+								titleClass="opacity1 w-full min-w-0"
+								centerTitle={false}
+							>
+								{#snippet left()}
+									<NavbarBackLink onClick={closeSearch} />
+								{/snippet}
+								{#snippet title()}
+									<div class="flex items-center gap-2">
+										<wa-icon class="quiet" src={wrapPathInSvg(mdiMagnify)}
+										></wa-icon>
+										<input
+											type="text"
+											class="w-full border-none bg-transparent text-base outline-none"
+											placeholder={m.searchMessages()}
+											bind:value={searchQuery}
+											use:focusOnMount
 										/>
-									</Link>
-								{/if}
-							{/snippet}
-						</Navbar>
-					{/if}
+									</div>
+								{/snippet}
+							</Navbar>
+						{:else}
+							<Navbar
+								transparent={true}
+								titleClass="opacity1 w-full min-w-0"
+								centerTitle={false}
+							>
+								{#snippet left()}
+									{#if !isWideScreen.value}
+										<NavbarBackLink
+											onClick={() => goto('/')}
+											data-testid="direct-chat-back"
+										/>
+									{/if}
+								{/snippet}
+								{#snippet title()}
+									{#if profile}
+										<Link
+											class="flex w-full min-w-0 items-center justify-start"
+											href={`/direct-chats/${agentId}/chat-settings`}
+											data-testid="direct-chat-settings-link"
+										>
+											<AvatarWithName
+												{profile}
+												nameTestId="direct-chat-peer-name"
+											/>
+										</Link>
+									{/if}
+								{/snippet}
+							</Navbar>
+						{/if}
+					{/snippet}
 
 					{#await $readMessageHashes then readHashes}
 						{#await $messagesSets then messagesSetsInDays}
