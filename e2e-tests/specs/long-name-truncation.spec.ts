@@ -4,12 +4,11 @@
  * Verifies that contacts with very long names don't cause horizontal overflow
  * in the chat list or the direct-chat navbar.
  */
-
 import {
-	waitForBothAgents,
 	createProfile,
 	exchangeContacts,
 	openDirectChat,
+	waitForBothAgents,
 } from '../helpers/setup-agents';
 
 const LONG_NAME = 'Bartholomew';
@@ -41,15 +40,21 @@ describe('Long name truncation', () => {
 			async () =>
 				agent2.execute(
 					(name: string) =>
-						!!document.querySelector('[data-testid="all-chats-list"]')?.textContent?.includes(name),
+						!!document
+							.querySelector('[data-testid="all-chats-list"]')
+							?.textContent?.includes(name),
 					LONG_NAME,
 				),
-			{ timeout: 30_000, interval: 1_000, timeoutMsg: 'Long-name contact not in chat list' },
+			{
+				timeout: 30_000,
+				interval: 1_000,
+				timeoutMsg: 'Long-name contact not in chat list',
+			},
 		);
 
-		const overflowIssues = await agent2.execute(() =>
+		const overflowIssues = (await agent2.execute(() =>
 			window.__test.checkChatListOverflow(),
-		) as string[];
+		)) as string[];
 
 		expect(overflowIssues).toEqual([]);
 	});
@@ -59,11 +64,15 @@ describe('Long name truncation', () => {
 		await openDirectChat(agent2, LONG_NAME);
 
 		// Peer name element should be present
-		const peerNamePresent = await agent2.execute(() => window.__test.isPeerNamePresent());
+		const peerNamePresent = await agent2.execute(() =>
+			window.__test.isPeerNamePresent(),
+		);
 		expect(peerNamePresent).toBe(true);
 
 		// Navbar should not overflow
-		const navbarOverflow = await agent2.execute(() => window.__test.checkNavbarOverflow()) as string[];
+		const navbarOverflow = (await agent2.execute(() =>
+			window.__test.checkNavbarOverflow(),
+		)) as string[];
 
 		expect(navbarOverflow).toEqual([]);
 	});

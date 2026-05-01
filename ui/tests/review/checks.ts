@@ -25,18 +25,35 @@ export interface PageResult extends CheckResult {
 	page: string;
 }
 
+/** Returns true for elements that are intentionally clipping/truncating their content. */
+function isIntentionallyClipped(el: Element): boolean {
+	const style = window.getComputedStyle(el as HTMLElement);
+	return (
+		style.overflowX === 'hidden' ||
+		style.overflowX === 'clip' ||
+		style.overflow === 'hidden' ||
+		style.overflow === 'clip' ||
+		style.textOverflow === 'ellipsis'
+	);
+}
+
 /** Scan all elements for horizontal overflow. */
 export function checkOverflow(): string[] {
 	const issues: string[] = [];
-	if (document.documentElement.scrollWidth > document.documentElement.clientWidth) {
+	if (
+		document.documentElement.scrollWidth > document.documentElement.clientWidth
+	) {
 		issues.push('Page has horizontal overflow');
 	}
-	document.querySelectorAll('*').forEach((el) => {
+	document.querySelectorAll('*').forEach(el => {
 		if (el.id === 'svelte-announcer') return;
+		if (isIntentionallyClipped(el)) return;
 		if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
 			const text = el.textContent?.substring(0, 50);
 			if (text?.trim()) {
-				issues.push(`Overflow in <${el.tagName.toLowerCase()}>: "${text.trim()}"`);
+				issues.push(
+					`Overflow in <${el.tagName.toLowerCase()}>: "${text.trim()}"`,
+				);
 			}
 		}
 	});
@@ -50,11 +67,17 @@ export function checkDarkMode(): DarkModeResult {
 	if (!isDark) {
 		issues.push('Dark mode class not active');
 	}
-	document.querySelectorAll('*').forEach((el) => {
+	document.querySelectorAll('*').forEach(el => {
 		const htmlEl = el as HTMLElement;
 		const bg = getComputedStyle(htmlEl).backgroundColor;
-		if (bg === 'rgb(255, 255, 255)' && htmlEl.offsetWidth > 0 && htmlEl.offsetHeight > 0) {
-			if (!htmlEl.closest('wa-icon, wa-avatar, wa-qr-code, .qr-card, .k-toggle')) {
+		if (
+			bg === 'rgb(255, 255, 255)' &&
+			htmlEl.offsetWidth > 0 &&
+			htmlEl.offsetHeight > 0
+		) {
+			if (
+				!htmlEl.closest('wa-icon, wa-avatar, wa-qr-code, .qr-card, .k-toggle')
+			) {
 				const tag = htmlEl.tagName.toLowerCase();
 				const id =
 					htmlEl.getAttribute('data-testid') ||
@@ -81,7 +104,7 @@ export function checkPage(options?: {
 	checkRTL?: boolean;
 }): CheckResult {
 	const testIds = Array.from(document.querySelectorAll('[data-testid]'))
-		.map((el) => el.getAttribute('data-testid')!)
+		.map(el => el.getAttribute('data-testid')!)
 		.filter(Boolean);
 
 	const navbar = document.querySelector('.k-navbar');
