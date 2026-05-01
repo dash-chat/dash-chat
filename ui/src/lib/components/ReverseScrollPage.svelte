@@ -39,11 +39,14 @@
 	import { Page } from 'konsta/svelte';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
+	import { SCROLL_BOTTOM_THRESHOLD } from '$lib/utils/chat';
 
 	interface PageColors {
 		bgIos?: string;
 		bgMaterial?: string;
 	}
+
+	type ScrollToBottom = (animate?: boolean) => void;
 
 	interface Props extends HTMLAttributes<HTMLDivElement> {
 		component?: string;
@@ -51,6 +54,8 @@
 		ios?: boolean;
 		material?: boolean;
 		el?: HTMLDivElement | null;
+		isAtBottom?: boolean;
+		scrollToBottom?: ScrollToBottom;
 		children?: Snippet;
 	}
 
@@ -60,9 +65,16 @@
 		ios,
 		material,
 		el = $bindable(null),
+		isAtBottom = $bindable(true),
+		scrollToBottom = $bindable<ScrollToBottom>(() => {}),
 		children,
 		...scrollProps
 	}: Props = $props();
+
+	scrollToBottom = (animate = true) => {
+		if (!el) return;
+		el.scrollTo({ top: 0, behavior: animate ? 'smooth' : 'auto' });
+	};
 
 	const pageProps: Record<string, unknown> = $derived({
 		component,
@@ -139,10 +151,18 @@
 			});
 		};
 
+		const updateIsAtBottom = () => {
+			// WebKit uses negative scrollTop in column-reverse; abs() normalises.
+			isAtBottom = Math.abs(node.scrollTop) < SCROLL_BOTTOM_THRESHOLD;
+		};
+
 		const onScroll = () => {
+			updateIsAtBottom();
 			updateNavbar();
 		};
 		node.addEventListener('scroll', onScroll);
+
+		updateIsAtBottom();
 
 		// Watch the scroll subtree for child swaps (e.g. the Navbar being replaced
 		// when search mode toggles) so we can re-resolve the navbar bg on the next

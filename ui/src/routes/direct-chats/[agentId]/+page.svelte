@@ -62,7 +62,6 @@
 	import { longpress } from '$lib/actions/longpress';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
-	import { SCROLL_BOTTOM_THRESHOLD } from '$lib/utils/chat';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -133,7 +132,7 @@
 	// has measured it, so the latest message doesn't flash under the input on
 	// first paint. Re-measured after mount.
 	let bottomBarHeight: number = $state(60);
-	let showScrollToBottom = $state(false);
+	let isAtBottom = $state(true);
 
 	// Unread divider state — hash captured once on load so position stays fixed,
 	// count always recomputed so it updates as new messages arrive
@@ -151,24 +150,7 @@
 		node.focus();
 	};
 
-	// The scroll container uses column-reverse, which inverts the scroll axis
-	// so that scrollTop=0 means "at the bottom of the content". The browser
-	// then keeps us pinned to the bottom automatically when content is added
-	// or the viewport changes (keyboard show/hide). WebKit uses negative
-	// scrollTop when scrolled up; Math.abs normalises across engines.
-
-	const scrollIsAtBottom = () => {
-		if (!messagesScrollEl) return true;
-		return Math.abs(messagesScrollEl.scrollTop) < SCROLL_BOTTOM_THRESHOLD;
-	};
-
-	const scrollToBottom = (animate = true) => {
-		if (!messagesScrollEl) return;
-		messagesScrollEl.scrollTo({
-			top: 0,
-			behavior: animate ? 'smooth' : 'auto',
-		});
-	};
+	let scrollToBottom: (animate?: boolean) => void = $state(() => {});
 
 	async function sendMessage() {
 		const message = messageText;
@@ -204,20 +186,12 @@
 	let observer: IntersectionObserver | undefined;
 	const visibleMessages: Set<Hash> = new Set();
 	let markReadTimeout: ReturnType<typeof setTimeout>;
-	let messagesScrollEl: HTMLDivElement | null = null;
 
-	onMount(async () => {
+	onMount(() => {
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
-	});
 
-	// Set up the IntersectionObserver synchronously when the scroll
-	// container mounts — before child bubbles' `use:observeMessage`
-	// actions run, so they can call observer.observe() against a defined
-	// observer with no race.
-	const initReadObserver: Action<HTMLDivElement> = node => {
-		messagesScrollEl = node;
 		observer = new IntersectionObserver(
 			entries => {
 				for (const entry of entries) {
@@ -226,6 +200,7 @@
 						visibleMessages.add(hash);
 					}
 				}
+				// Debounce the mark-as-read call
 				clearTimeout(markReadTimeout);
 				markReadTimeout = setTimeout(() => {
 					if (visibleMessages.size > 0) {
@@ -234,30 +209,19 @@
 					}
 				}, 500);
 			},
-			{ threshold: 0.5, root: node },
+			{ threshold: 0.5 },
 		);
 
-		const handleScroll = () => {
-			showScrollToBottom = !scrollIsAtBottom();
+		return () => {
+			observer?.disconnect();
+			clearTimeout(markReadTimeout);
 		};
-		node.addEventListener('scroll', handleScroll);
+	});
 
-		return {
-			destroy() {
-				observer?.disconnect();
-				observer = undefined;
-				clearTimeout(markReadTimeout);
-				node.removeEventListener('scroll', handleScroll);
-				messagesScrollEl = null;
-			},
-		};
-	};
-
-	// Svelte action to observe message elements for read tracking. The
-	// data-message-hash attribute is set declaratively in the template; the
-	// observer reads it from the DOM during IntersectionObserver callbacks.
+	// Svelte action to observe message elements for read tracking
 	const observeMessage: Action<HTMLElement, Hash | null> = (node, hash) => {
 		if (hash === null) return;
+		node.setAttribute('data-message-hash', hash);
 		observer?.observe(node);
 		return {
 			destroy() {
@@ -454,7 +418,8 @@
 		{#await $peerProfile then profile}
 			{#await $contactRequest then contactRequest}
 				<ReverseScrollPage
-					bind:el={messagesPageEl}
+					bind:isAtBottom
+					bind:scrollToBottom
 					data-testid="direct-chat-scroll"
 				>
 					{#if searchMode}
@@ -935,7 +900,7 @@
 	{#await $myDeviceId then myDeviceId}
 		{#await $contactRequest then contactRequest}
 			<div class="absolute inset-0 pointer-events-none z-[35]">
-				{#if showScrollToBottom && !searchMode}
+				{#if !isAtBottom && !searchMode}
 					{#await $unreadCount then count}
 						<div
 							class="pointer-events-auto absolute right-4"
