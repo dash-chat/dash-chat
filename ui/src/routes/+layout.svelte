@@ -143,6 +143,13 @@
 		return () =>
 			window.removeEventListener('set-dark-mode', handler as EventListener);
 	});
+
+	$effect(() => {
+		document.documentElement.classList.toggle(
+			'wide-layout',
+			isWideScreen.value,
+		);
+	});
 </script>
 
 {#if showToolbar}

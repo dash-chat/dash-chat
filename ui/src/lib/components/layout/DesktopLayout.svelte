@@ -78,7 +78,7 @@
 	.desktop-sidebar {
 		width: 280px;
 		min-width: 280px;
-		border-right: 1px solid var(--k-hairline-color);
+		border-inline-end: 1px solid var(--k-hairline-color);
 		overflow-y: auto;
 		overflow-x: hidden;
 		background-color: var(--color-md-light-surface-2);
