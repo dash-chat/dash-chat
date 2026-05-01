@@ -47,7 +47,7 @@
 		Block,
 	} from 'konsta/svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
-	import StickyDayTag from '$lib/components/StickyDayTag.svelte';
+	import DayTag from '$lib/components/DayTag.svelte';
 	import SafetyTipsSheet from '$lib/components/SafetyTipsSheet.svelte';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
 	import ProfileNamesSheet from '$lib/components/ProfileNamesSheet.svelte';
@@ -583,7 +583,7 @@
 									data-testid="direct-chat-messages"
 								>
 									{#each messagesSetsInDays as messageSetInDay}
-										<StickyDayTag class="quiet" day={messageSetInDay.day} />
+										<DayTag class="quiet" day={messageSetInDay.day} />
 
 										{#each messageSetInDay.eventsSets as messageSet}
 											<div class="column" style="gap: 1px">
