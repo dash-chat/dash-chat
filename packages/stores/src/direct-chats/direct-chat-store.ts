@@ -19,6 +19,10 @@ export interface Message {
 	reactions: Record<DeviceId, string>;
 }
 
+export type MessageSetsInDays = ReturnType<
+	typeof orderInEventSets<Message>
+>;
+
 // Store tied to a specific direct chat
 export class DirectChatStore {
 	constructor(
