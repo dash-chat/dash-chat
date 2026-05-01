@@ -29,4 +29,4 @@ jobs:
         run: pnpm --recursive build
 
       - name: Check Svelte types and formatting
-        run: pnpm -F ui check
+        run: pnpm -F ui check --fail-on-warnings
