@@ -87,7 +87,7 @@ export function messagesContainer() {
 /** True if the chat scroll container is pinned to the bottom (column-reverse). */
 export function isScrollAtBottom(): boolean {
 	const el = document.querySelector(selectors.scroll) as HTMLElement | null;
-	if (!el) return true;
+	if (!el) throw new Error('isScrollAtBottom: scroll container not found');
 	return Math.abs(el.scrollTop) < SCROLL_BOTTOM_THRESHOLD;
 }
 

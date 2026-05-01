@@ -13,8 +13,8 @@
 	message at the bottom, welcome card at the top).
 
 	What it does:
-	1. Suppresses scroll on `.k-page` (`overflow: hidden`) so the page itself
-	   doesn't scroll. Reverted on unmount.
+	1. Suppresses scroll on `.k-page` (`overflow: hidden`) via a scoped class
+	   so the page itself doesn't scroll.
 	2. Positions the scroll element as `absolute; inset: 0` inside `.k-page` so
 	   the viewport extends from top to bottom.
 	3. Makes the scroll element a column-reverse container (scrollTop=0 = bottom).
@@ -72,6 +72,8 @@
 		...scrollProps
 	}: Props = $props();
 
+	let innerEl: HTMLDivElement | null = $state(null);
+
 	scrollToBottom = (animate = true) => {
 		if (!el) return;
 		el.scrollTo({ top: 0, behavior: animate ? 'smooth' : 'auto' });
@@ -87,14 +89,8 @@
 	$effect(() => {
 		const node = el;
 		if (!node) return;
-
-		const pageEl = node.closest('.k-page') as HTMLElement | null;
-		if (pageEl) {
-			// Konsta's .k-page is `absolute overflow-auto` by default. We need
-			// it as a positioning context for our absolute overlay, but we don't
-			// want it to scroll itself.
-			pageEl.style.overflow = 'hidden';
-		}
+		const inner = innerEl;
+		if (!inner) return;
 
 		let navbarBgEl: HTMLElement | null = null;
 
@@ -125,9 +121,7 @@
 						: '0';
 		};
 
-		// Coalesce mutation-driven updates to one per frame — the subtree
-		// observer fires on every DOM change (new messages, reactions, etc.),
-		// and we only need the latest layout state per paint.
+		// Coalesce mutation-driven updates to one per frame.
 		let frame = 0;
 		const scheduleUpdate = () => {
 			if (frame) return;
@@ -150,11 +144,13 @@
 
 		updateIsAtBottom();
 
-		// Watch the scroll subtree for child swaps (e.g. the Navbar being replaced
-		// when search mode toggles) so we can re-resolve the navbar bg on the next
-		// frame.
+		// Watch the inner flex wrapper for child swaps (e.g. the Navbar being
+		// replaced when search mode toggles) so we can re-resolve the navbar bg
+		// on the next frame. subtree: false because the navbar is a direct
+		// child of this wrapper — narrower than the full scroll subtree, which
+		// would wake on every message bubble add, reaction toggle, etc.
 		const contentObserver = new MutationObserver(scheduleUpdate);
-		contentObserver.observe(node, { childList: true, subtree: true });
+		contentObserver.observe(inner, { childList: true, subtree: false });
 
 		// Re-evaluate when the viewport shrinks/grows (e.g. the iOS keyboard
 		// opening resizes the WKWebView frame) — clientHeight changes shift
@@ -170,14 +166,11 @@
 			contentObserver.disconnect();
 			resizeObserver.disconnect();
 			node.removeEventListener('scroll', onScroll);
-			if (pageEl) {
-				pageEl.style.removeProperty('overflow');
-			}
 		};
 	});
 </script>
 
-<Page {...pageProps}>
+<Page {...pageProps} class="reverse-scroll-host">
 	<!--
 		overflow-anchor: none — disables browser scroll anchoring. WebKit
 		otherwise re-pins the scroll position to the visual bottom whenever new
@@ -190,8 +183,19 @@
 		style="overflow-anchor: none"
 		{...scrollProps}
 	>
-		<div style="flex: 1 0 auto;">
+		<div bind:this={innerEl} style="flex: 1 0 auto;">
 			{@render children?.()}
 		</div>
 	</div>
 </Page>
+
+<style>
+	/*
+		Konsta's `.k-page` is `absolute overflow-auto` by default. We use it
+		as a positioning context for our absolute scroll element + overlay,
+		but we don't want it to scroll itself.
+	*/
+	:global(.reverse-scroll-host) {
+		overflow: hidden;
+	}
+</style>
