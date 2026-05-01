@@ -87,17 +87,6 @@
 		const node = el;
 		if (!node) return;
 
-		node.style.position = 'absolute';
-		node.style.inset = '0';
-		node.style.overflowY = 'auto';
-		node.style.display = 'flex';
-		node.style.flexDirection = 'column-reverse';
-		// Disable browser scroll anchoring — WebKit otherwise re-pins the scroll
-		// position to the visual bottom whenever new content is appended in a
-		// column-reverse container, even when the user has scrolled up to read
-		// older messages.
-		node.style.overflowAnchor = 'none';
-
 		const pageEl = node.closest('.k-page') as HTMLElement | null;
 		if (pageEl) {
 			// Konsta's .k-page is `absolute overflow-auto` by default. We need
@@ -184,7 +173,18 @@
 </script>
 
 <Page {...pageProps}>
-	<div bind:this={el} {...scrollProps}>
+	<!--
+		overflow-anchor: none — disables browser scroll anchoring. WebKit
+		otherwise re-pins the scroll position to the visual bottom whenever new
+		content is appended in a column-reverse container, even when the user has
+		scrolled up to read older messages.
+	-->
+	<div
+		bind:this={el}
+		class="absolute inset-0 flex flex-col-reverse overflow-y-auto"
+		style="overflow-anchor: none"
+		{...scrollProps}
+	>
 		<div style="flex: 1 0 auto;">
 			{@render children?.()}
 		</div>
