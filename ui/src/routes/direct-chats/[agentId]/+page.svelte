@@ -506,43 +506,11 @@
 												<span class="text-xl font-semibold"
 													>{fullName(profile!)}</span
 												>
-												<div
-													class="flex items-center justify-center gap-2"
-													onclick={() => (profileNamesSheetOpen = true)}
-													role="button"
-													tabindex="0"
-													onkeydown={onActivate(
-														() => (profileNamesSheetOpen = true),
-													)}
-												>
-													<wa-icon
-														class="small-icon"
-														src={wrapPathInSvg(mdiAccountQuestion)}
-													></wa-icon>
-													<span
-														><u>{m.profileNames()}</u>{m.areNotVerified()}</span
-													>
-												</div>
-												<div class="flex items-center justify-center gap-2">
-													<wa-icon
-														class="small-icon"
-														src={wrapPathInSvg(mdiAccountGroup)}
-													></wa-icon>
-													<span>{m.noGroupsInCommon()}</span>
-												</div>
+												<wa-icon
+													class="small-icon quiet"
+													src={wrapPathInSvg(mdiChevronRight)}
+												></wa-icon>
 											</div>
-											{#if contactRequest}
-												<div class="row pt-1 justify-center">
-													<Button
-														rounded
-														tonal
-														small
-														onClick={() => (showSecurityTips = true)}
-													>
-														{m.securityTips()}
-													</Button>
-												</div>
-											{/if}
 										</Link>
 									</div>
 								{/if}
