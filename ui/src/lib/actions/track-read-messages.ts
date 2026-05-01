@@ -1,22 +1,14 @@
-import type { Hash } from '../p2panda/types.js';
+import type { Hash, ReadMessagesStore } from 'dash-chat-stores';
+import type { Action } from 'svelte/action';
 
-export interface ReadMessagesStore {
-	readMessages(messageHashes: Hash[]): Promise<void>;
-}
-
-export interface TrackReadMessagesOptions {
+interface TrackReadMessagesOptions {
 	debounceMs?: number;
 	threshold?: number;
 }
 
-type ObserveAction = (
-	node: HTMLElement,
-	id: Hash | null,
-) => { destroy: () => void } | void;
-
 export interface ReadMessagesTracker {
-	observe: ObserveAction;
-	destroy: () => void;
+	observe: Action<HTMLElement, Hash | null>;
+	destroy(): void;
 }
 
 export function createReadMessagesTracker(
@@ -38,14 +30,14 @@ export function createReadMessagesTracker(
 			clearTimeout(timer);
 			timer = setTimeout(() => {
 				if (visible.size === 0) return;
-				store.readMessages(Array.from(visible));
+				store.markAsRead(Array.from(visible));
 				visible.clear();
 			}, debounceMs);
 		},
 		{ threshold },
 	);
 
-	const observe: ObserveAction = (node, id) => {
+	const observe: Action<HTMLElement, Hash | null> = (node, id) => {
 		if (id === null) return;
 		ids.set(node, id);
 		observer.observe(node);

@@ -17,7 +17,6 @@
 	import { getContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
-		createReadMessagesTracker,
 		fullName,
 		toPromise,
 		type ChatsStore,
@@ -28,6 +27,7 @@
 		type Hash,
 		type Message,
 	} from 'dash-chat-stores';
+	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
@@ -79,9 +79,7 @@
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
 
-	const readTracker = createReadMessagesTracker({
-		readMessages: hashes => store.markAsRead(hashes),
-	});
+	const readTracker = createReadMessagesTracker(store);
 	const observeMessage = readTracker.observe;
 
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
