@@ -40,6 +40,7 @@
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { SCROLL_BOTTOM_THRESHOLD } from '$lib/utils/chat';
+	import { findNavbarBg } from '$lib/utils/konsta';
 
 	interface PageColors {
 		bgIos?: string;
@@ -105,11 +106,7 @@
 			// Re-query if the cached element was removed (e.g. the Navbar got
 			// swapped via {#if}{:else}, like toggling search mode in/out).
 			if (!navbarBgEl || !navbarBgEl.isConnected) {
-				// On Material there's a single `.k-navbar > div.absolute` (the bg).
-				navbarBgEl =
-					(node.querySelector(
-						'.k-navbar > div.absolute',
-					) as HTMLElement | null) ?? null;
+				navbarBgEl = findNavbarBg(node);
 			}
 			if (!navbarBgEl) return;
 
