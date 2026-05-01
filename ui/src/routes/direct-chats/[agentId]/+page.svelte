@@ -570,7 +570,11 @@
 												<div
 													class="flex items-center justify-center gap-2"
 													role="button"
+													tabindex="0"
 													onclick={() => (profileNamesSheetOpen = true)}
+													onkeydown={onActivate(
+														() => (profileNamesSheetOpen = true),
+													)}
 												>
 													<wa-icon
 														class="small-icon"
