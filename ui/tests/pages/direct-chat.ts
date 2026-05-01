@@ -102,8 +102,8 @@ export function chatOverflow(): number {
  *  the bottom. WebKit uses negative scrollTop; Chromium uses positive — try
  *  negative first, fall back if it didn't take. Always dispatches a synthetic
  *  scroll event because WebKitGTK is inconsistent about firing one for
- *  programmatic scrollTop changes, and our chatScroll action's onScroll
- *  handler needs to run for the navbar opacity / savedScrollTop to update.
+ *  programmatic scrollTop changes, and ReverseScrollPage's onScroll handler
+ *  needs to run for the navbar opacity / isAtBottom to update.
  */
 function setReverseScroll(el: HTMLElement, distance: number): void {
 	el.scrollTop = -distance;

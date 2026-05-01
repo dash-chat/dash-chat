@@ -153,6 +153,7 @@
 	};
 
 	let scrollToBottom: (animate?: boolean) => void = $state(() => {});
+	let parentDivEl: HTMLDivElement | null = $state(null);
 
 	async function sendMessage() {
 		const message = messageText;
@@ -259,7 +260,7 @@
 				return;
 			}
 			const lowerQ = q.toLowerCase();
-			const els = document.querySelectorAll('[data-message-hash]');
+			const els = parentDivEl?.querySelectorAll('[data-message-hash]') ?? [];
 			const matches: Hash[] = [];
 			els.forEach(el => {
 				const hash = el.getAttribute('data-message-hash') as Hash;
@@ -275,12 +276,12 @@
 	function scrollToMatch() {
 		if (!matchingHashes.length) return;
 		const hash = matchingHashes[currentMatchIndex];
-		const el = document.querySelector(`[data-message-hash="${hash}"]`);
+		const el = parentDivEl?.querySelector(`[data-message-hash="${hash}"]`);
 		if (!el) return;
 		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 		// Remove flash from any previously flashing message
-		document
-			.querySelectorAll('.search-flash')
+		parentDivEl
+			?.querySelectorAll('.search-flash')
 			.forEach(e => e.classList.remove('search-flash'));
 		// Flash the current match's message card
 		const card = el.closest('.message') ?? el.querySelector('.message') ?? el;
@@ -310,7 +311,9 @@
 
 	function jumpToDate(dateStr: string) {
 		const target = new Date(dateStr).getTime();
-		const dayTags = Array.from(document.querySelectorAll('[data-day]'));
+		const dayTags = Array.from(
+			parentDivEl?.querySelectorAll('[data-day]') ?? [],
+		);
 		let closest: Element | null = null;
 		let closestDiff = Infinity;
 		for (const el of dayTags) {
@@ -417,7 +420,11 @@
 	}
 </script>
 
-<div class="absolute inset-0" data-testid="direct-chat-page">
+<div
+	bind:this={parentDivEl}
+	class="absolute inset-0"
+	data-testid="direct-chat-page"
+>
 	{#await $myDeviceId then myDeviceId}
 		{#await $peerProfile then profile}
 			{#await $contactRequest then contactRequest}
