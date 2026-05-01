@@ -3,6 +3,7 @@
 	"yesterday": "Yesterday",
 	"today": "Today",
 	"cancel": "Cancel",
+	"close": "Close",
 	"save": "Save",
 	"send": "Send",
 	"link": "Link",
@@ -169,6 +170,9 @@
 	"searchMessages": "Search messages...",
 	"noResults": "No results",
 	"searchResultsCount": "{{current}} of {{total}}",
+	"jumpToDate": "Jump to date",
+	"previousResult": "Previous result",
+	"nextResult": "Next result",
 
 	"unreadMessages_one": "{{count}} unread message",
 	"unreadMessages_other": "{{count}} unread messages",

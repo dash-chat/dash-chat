@@ -1028,7 +1028,10 @@
 							class="row items-center gap-2 px-4 py-3"
 							style="margin: 0 auto"
 						>
-							<button onclick={() => dateInput?.click()}>
+							<button
+								onclick={() => dateInput?.click()}
+								aria-label={m.jumpToDate()}
+							>
 								<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
 								></wa-icon>
 							</button>
@@ -1054,6 +1057,7 @@
 								disabled={!matchingHashes.length}
 								onclick={goToPreviousMatch}
 								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+								aria-label={m.previousResult()}
 							>
 								<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
 							</button>
@@ -1061,6 +1065,7 @@
 								disabled={!matchingHashes.length}
 								onclick={goToNextMatch}
 								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+								aria-label={m.nextResult()}
 							>
 								<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
 							</button>
