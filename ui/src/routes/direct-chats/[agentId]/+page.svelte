@@ -29,6 +29,7 @@
 	} from 'dash-chat-stores';
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { onActivate } from '$lib/utils/keyboard';
 	import {
 		mdiSend,
 		mdiAlert,
@@ -607,9 +608,9 @@
 														onclick={() => (profileNamesSheetOpen = true)}
 														role="button"
 														tabindex="0"
-														onkeydown={e =>
-															(e.key === 'Enter' || e.key === ' ') &&
-															(profileNamesSheetOpen = true)}
+														onkeydown={onActivate(
+															() => (profileNamesSheetOpen = true),
+														)}
 													>
 														<wa-icon
 															class="small-icon"

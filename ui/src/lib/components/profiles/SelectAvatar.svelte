@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resizeAndExport } from '$lib/utils/image';
+	import { onActivate } from '$lib/utils/keyboard';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccount } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
@@ -52,8 +53,7 @@
 		role="button"
 		tabindex="0"
 		onclick={() => avatarFilePicker.click()}
-		onkeydown={e =>
-			(e.key === 'Enter' || e.key === ' ') && avatarFilePicker.click()}
+		onkeydown={onActivate(() => avatarFilePicker.click())}
 	>
 		<Avatar
 			id="avatar"
@@ -70,8 +70,7 @@
 		role="button"
 		tabindex="0"
 		onclick={() => avatarFilePicker.click()}
-		onkeydown={e =>
-			(e.key === 'Enter' || e.key === ' ') && avatarFilePicker.click()}
+		onkeydown={onActivate(() => avatarFilePicker.click())}
 	>
 		<Avatar
 			id="avatar"

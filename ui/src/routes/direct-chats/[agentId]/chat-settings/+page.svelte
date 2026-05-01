@@ -12,6 +12,7 @@
 		mdiChevronRight,
 	} from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { onActivate } from '$lib/utils/keyboard';
 	import { showToast } from '$lib/utils/toasts';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
 	import { m } from '$lib/paraglide/messages.js';
@@ -73,8 +74,7 @@
 					<div
 						class="flex cursor-pointer items-center gap-1"
 						onclick={() => (showPeerProfile = true)}
-						onkeydown={e =>
-							(e.key === 'Enter' || e.key === ' ') && (showPeerProfile = true)}
+						onkeydown={onActivate(() => (showPeerProfile = true))}
 						role="button"
 						tabindex="0"
 					>
