@@ -77,9 +77,10 @@
 {#if opened}
 	<div
 		class="fixed inset-0 z-50 bg-black/30"
-		role="button"
+		role="dialog"
+		aria-modal="true"
 		tabindex="-1"
-		aria-label={m.close()}
+		aria-label={m.quickReactions()}
 		onclick={e => e.target === e.currentTarget && onClose()}
 		onkeydown={e => e.key === 'Escape' && onClose()}
 		oncontextmenu={e => {
