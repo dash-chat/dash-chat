@@ -234,15 +234,13 @@
 			node.scrollTop = desiredScrollTop;
 		};
 
-		// Watch the page for navbar swaps (e.g. when search mode toggles in/out
-		// the active <Navbar> element is replaced) so we can re-resolve the
-		// navbar element and re-measure its height. Also runs the synchronous
-		// scroll-compensation logic above before the upcoming render phase.
-		const pageObserver = new MutationObserver(() => {
-			compensateScroll();
-			scheduleUpdate();
-		});
-		pageObserver.observe(pageEl, { childList: true, subtree: true });
+		// Run scroll compensation off mutations inside the scroll content only.
+		// Scoping subtree:true to the inner div avoids forcing layout (via
+		// getBoundingClientRect inside compensateScroll) on every unrelated
+		// mutation under .k-page — search-input keystrokes, sheet/dialog
+		// open-close, navbar text updates, etc.
+		const innerObserver = new MutationObserver(compensateScroll);
+		innerObserver.observe(inner, { childList: true, subtree: true });
 
 		// Backup: a ResizeObserver on the inner div catches any size change the
 		// MutationObserver missed (e.g. async-loaded web component content like
@@ -253,6 +251,13 @@
 		// no-op.
 		const innerResizeObserver = new ResizeObserver(compensateScroll);
 		innerResizeObserver.observe(inner);
+
+		// Watch only the direct children of the page for navbar swaps (e.g.
+		// when search mode toggles in/out the active <Navbar> element is
+		// replaced). subtree:false means typing in the navbar's search input
+		// or any other deep mutation doesn't wake this observer up.
+		const pageObserver = new MutationObserver(scheduleUpdate);
+		pageObserver.observe(pageEl, { childList: true, subtree: false });
 
 		// Re-evaluate when the viewport shrinks/grows (e.g. the iOS keyboard
 		// opening resizes the WKWebView frame) — clientHeight changes shift
@@ -266,6 +271,7 @@
 
 		return () => {
 			if (frame) cancelAnimationFrame(frame);
+			innerObserver.disconnect();
 			pageObserver.disconnect();
 			navbarResizeObserver.disconnect();
 			resizeObserver.disconnect();
