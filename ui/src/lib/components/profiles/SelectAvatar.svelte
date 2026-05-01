@@ -7,8 +7,8 @@
 	import Avatar from './Avatar.svelte';
 
 	let {
-		value = $bindable(),
 		defaultValue,
+		value = $bindable(defaultValue),
 		size = 46,
 	}: {
 		value?: string | undefined;
@@ -17,10 +17,6 @@
 	} = $props();
 	let uploading = $state(false);
 	let avatarFilePicker: HTMLInputElement;
-
-	if (!value) {
-		value = defaultValue;
-	}
 
 	function onAvatarUploaded() {
 		uploading = true;
