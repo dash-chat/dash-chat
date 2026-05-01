@@ -25,23 +25,37 @@ export function createReadMessagesTracker(
 			for (const entry of entries) {
 				if (!entry.isIntersecting) continue;
 				const id = ids.get(entry.target);
-				if (id) visible.add(id);
+				if (id != null) visible.add(id);
 			}
 			clearTimeout(timer);
 			timer = setTimeout(() => {
 				if (visible.size === 0) return;
-				store.markAsRead(Array.from(visible));
+				const batch = Array.from(visible);
 				visible.clear();
+				store.markAsRead(batch).catch(err => {
+					console.error('markAsRead failed, re-queuing hashes', err);
+					for (const hash of batch) visible.add(hash);
+				});
 			}, debounceMs);
 		},
 		{ threshold },
 	);
 
 	const observe: Action<HTMLElement, Hash | null> = (node, id) => {
-		if (id === null) return;
-		ids.set(node, id);
-		observer.observe(node);
+		if (id !== null) {
+			ids.set(node, id);
+			observer.observe(node);
+		}
 		return {
+			update(newId: Hash | null) {
+				if (newId === null) {
+					observer.unobserve(node);
+					ids.delete(node);
+				} else {
+					ids.set(node, newId);
+					observer.observe(node);
+				}
+			},
 			destroy() {
 				observer.unobserve(node);
 				ids.delete(node);
