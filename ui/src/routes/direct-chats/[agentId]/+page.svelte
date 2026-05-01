@@ -908,7 +908,7 @@
 					/>
 				</ReverseScrollPage>
 
-				{#if !isAtBottom && !searchMode}
+				{#if !isAtBottom}
 					{#await $unreadCount then count}
 						<div
 							class="absolute right-4"
