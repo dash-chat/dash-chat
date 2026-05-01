@@ -163,13 +163,15 @@
 			// Hide the unread messages divider after sending, and allow it to reappear for future messages
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
-			// Snap to the bottom only on user-initiated send. (We can't use a
-			// `use:scrollOnMount` action on each own-message bubble: Svelte
-			// fires the action on every reconciliation tick when the messages
-			// array reference changes, which would also auto-scroll on peer
-			// messages and break "scrolled up" UX.)
-			await tick();
-			scrollToBottom();
+			// Defer the scroll one macrotask: store.sendMessage resolves once
+			// the operation is confirmed in the local log, but signalium still
+			// needs a turn for its subscriber chain to push the new message
+			// through messagesSets and Svelte to render the bubble. tick() only
+			// flushes pending Svelte updates synchronously, so it isn't enough
+			// here. Without this, scrollToBottom fires against the old layout
+			// and `overflow-anchor: none` leaves the just-rendered bubble
+			// hidden behind the input bar.
+			setTimeout(() => scrollToBottom());
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
