@@ -22,13 +22,12 @@
 			disabled={isContactUsPage}
 			small
 			inline
-			class="ml-2 normal-case"
+			class="ml-2 normal-case feedback-btn"
 			colors={{
-				fillBgIos:
-					'bg-white dark:bg-black active:bg-gray-100 dark:active:bg-gray-900',
-				fillBgMaterial: 'bg-white dark:bg-black',
-				fillTextIos: 'text-black dark:text-white',
-				fillTextMaterial: 'text-black dark:text-white',
+				fillBgIos: 'bg-white active:bg-gray-100',
+				fillBgMaterial: 'bg-white',
+				fillTextIos: 'text-black',
+				fillTextMaterial: 'text-black',
 			}}>{m.feedback()}</Button
 		>
 	</div>
@@ -63,5 +62,14 @@
 		--banner-stripe-light: #333333;
 		--banner-stripe-dark: #222222;
 		color: #cccccc;
+	}
+
+	:global(.dark .feedback-btn) {
+		background-color: black !important;
+		color: white !important;
+	}
+
+	:global(.dark .feedback-btn:active) {
+		background-color: #111827 !important; /* gray-900 */
 	}
 </style>

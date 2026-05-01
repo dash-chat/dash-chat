@@ -1,6 +1,6 @@
-import { S } from '../selectors';
 import { SCROLL_BOTTOM_THRESHOLD } from '../../src/lib/utils/chat';
 import { findNavbarBg } from '../../src/lib/utils/konsta';
+import { S } from '../selectors';
 
 export const selectors = S.directChat;
 export const messageInputSelectors = S.messageInput;
@@ -162,4 +162,29 @@ export function scrollChatToTop(): void {
 /** Read the inline opacity of the transparent navbar's bg element, or null. */
 export function navbarBgOpacity(): string | null {
 	return findNavbarBg(document)?.style.opacity ?? null;
+}
+
+/** Return true if the peer name element is present in the DOM */
+export function isPeerNamePresent() {
+	return !!document.querySelector(selectors.peerName);
+}
+
+/** Check for horizontal overflow in the direct-chat navbar. Returns an array of issue strings (empty = no overflow). */
+export function checkNavbarOverflow() {
+	const navbar = document.querySelector('.k-navbar');
+	if (!navbar) return ['Navbar element not found'];
+	const issues: string[] = [];
+	if (navbar.scrollWidth > navbar.clientWidth + 2) {
+		issues.push('Navbar has horizontal overflow');
+	}
+	navbar.querySelectorAll('*').forEach(el => {
+		if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
+			const text = el.textContent?.substring(0, 60).trim();
+			if (text)
+				issues.push(
+					`Overflow in navbar <${el.tagName.toLowerCase()}>: "${text}"`,
+				);
+		}
+	});
+	return issues.slice(0, 10);
 }

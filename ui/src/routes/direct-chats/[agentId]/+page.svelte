@@ -22,6 +22,7 @@
 	} from 'dash-chat-stores';
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { onActivate } from '$lib/utils/keyboard';
 	import {
 		mdiAlert,
 		mdiAccountQuestion,
@@ -62,6 +63,7 @@
 	import { longpress } from '$lib/actions/longpress';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -427,7 +429,7 @@
 					{#if searchMode}
 						<Navbar
 							transparent={true}
-							titleClass="opacity1 w-full"
+							titleClass="opacity1 w-full min-w-0"
 							centerTitle={false}
 						>
 							{#snippet left()}
@@ -450,7 +452,7 @@
 					{:else}
 						<Navbar
 							transparent={true}
-							titleClass="opacity1 w-full"
+							titleClass="opacity1 w-full min-w-0"
 							centerTitle={false}
 						>
 							{#snippet left()}
@@ -464,18 +466,14 @@
 							{#snippet title()}
 								{#if profile}
 									<Link
-										class="flex items-center justify-start gap-2"
+										class="flex w-full min-w-0 items-center justify-start"
 										href={`/direct-chats/${agentId}/chat-settings`}
 										data-testid="direct-chat-settings-link"
 									>
-										<Avatar
-											image={profile!.avatar}
-											initials={profile!.name.slice(0, 2)}
-											style="--size: 2.5rem"
+										<AvatarWithName
+											{profile}
+											nameTestId="direct-chat-peer-name"
 										/>
-										<span data-testid="direct-chat-peer-name"
-											>{fullName(profile!)}</span
-										>
 									</Link>
 								{/if}
 							{/snippet}
@@ -508,11 +506,43 @@
 												<span class="text-xl font-semibold"
 													>{fullName(profile!)}</span
 												>
-												<wa-icon
-													class="small-icon quiet"
-													src={wrapPathInSvg(mdiChevronRight)}
-												></wa-icon>
+												<div
+													class="flex items-center justify-center gap-2"
+													onclick={() => (profileNamesSheetOpen = true)}
+													role="button"
+													tabindex="0"
+													onkeydown={onActivate(
+														() => (profileNamesSheetOpen = true),
+													)}
+												>
+													<wa-icon
+														class="small-icon"
+														src={wrapPathInSvg(mdiAccountQuestion)}
+													></wa-icon>
+													<span
+														><u>{m.profileNames()}</u>{m.areNotVerified()}</span
+													>
+												</div>
+												<div class="flex items-center justify-center gap-2">
+													<wa-icon
+														class="small-icon"
+														src={wrapPathInSvg(mdiAccountGroup)}
+													></wa-icon>
+													<span>{m.noGroupsInCommon()}</span>
+												</div>
 											</div>
+											{#if contactRequest}
+												<div class="row pt-1 justify-center">
+													<Button
+														rounded
+														tonal
+														small
+														onClick={() => (showSecurityTips = true)}
+													>
+														{m.securityTips()}
+													</Button>
+												</div>
+											{/if}
 										</Link>
 									</div>
 								{/if}
@@ -539,6 +569,7 @@
 											>
 												<div
 													class="flex items-center justify-center gap-2"
+													role="button"
 													onclick={() => (profileNamesSheetOpen = true)}
 												>
 													<wa-icon
@@ -910,7 +941,10 @@
 									class="row items-center gap-2 px-4 py-3"
 									style="margin: 0 auto"
 								>
-									<button onclick={() => dateInput?.click()}>
+									<button
+										onclick={() => dateInput?.click()}
+										aria-label={m.jumpToDate()}
+									>
 										<wa-icon
 											class="quiet"
 											src={wrapPathInSvg(mdiCalendarSearch)}
@@ -938,6 +972,7 @@
 										disabled={!matchingHashes.length}
 										onclick={goToPreviousMatch}
 										class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+										aria-label={m.previousResult()}
 									>
 										<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
 									</button>
@@ -945,6 +980,7 @@
 										disabled={!matchingHashes.length}
 										onclick={goToNextMatch}
 										class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+										aria-label={m.nextResult()}
 									>
 										<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
 									</button>

@@ -104,7 +104,11 @@
 			<Button inline clear onClick={handleSendErrorReport}>
 				{m.sendErrorReport()}
 			</Button>
-			<button class="ml-1 opacity-70 active:opacity-100" onclick={dismissToast}>
+			<button
+				class="ml-1 opacity-70 active:opacity-100"
+				onclick={dismissToast}
+				aria-label={m.close()}
+			>
 				<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 18px"
 				></wa-icon>
 			</button>

@@ -8,7 +8,8 @@
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Badge, List, ListItem } from 'konsta/svelte';
+	import { Badge, List } from 'konsta/svelte';
+	import TitleTruncatedListItem from './TitleTruncatedListItem.svelte';
 	import {
 		moreThanAnHourAgo,
 		lessThanAMinuteAgo,
@@ -46,7 +47,7 @@
 				data-testid="all-chats-list"
 			>
 				{#each summaries as summary}
-					<ListItem
+					<TitleTruncatedListItem
 						title={summary.name}
 						link
 						class={isActive(summary) ? 'active' : ''}
@@ -100,7 +101,7 @@
 								{/if}
 							</div>
 						{/snippet}
-					</ListItem>
+					</TitleTruncatedListItem>
 				{/each}
 			</List>
 		{:else}

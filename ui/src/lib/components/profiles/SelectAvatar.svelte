@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resizeAndExport } from '$lib/utils/image';
+	import { onActivate } from '$lib/utils/keyboard';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccount } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
@@ -7,8 +8,8 @@
 	import Avatar from './Avatar.svelte';
 
 	let {
-		value = $bindable(),
 		defaultValue,
+		value = $bindable(defaultValue),
 		size = 46,
 	}: {
 		value?: string | undefined;
@@ -17,10 +18,6 @@
 	} = $props();
 	let uploading = $state(false);
 	let avatarFilePicker: HTMLInputElement;
-
-	if (!value) {
-		value = defaultValue;
-	}
 
 	function onAvatarUploaded() {
 		uploading = true;
@@ -53,7 +50,10 @@
 	<div
 		class="column"
 		style="align-items: center; height: {size + 4}px"
+		role="button"
+		tabindex="0"
 		onclick={() => avatarFilePicker.click()}
+		onkeydown={onActivate(() => avatarFilePicker.click())}
 	>
 		<Avatar
 			id="avatar"
@@ -67,7 +67,10 @@
 	<div
 		class="column"
 		style="align-items: center; height: {size + 4}px"
+		role="button"
+		tabindex="0"
 		onclick={() => avatarFilePicker.click()}
+		onkeydown={onActivate(() => avatarFilePicker.click())}
 	>
 		<Avatar
 			id="avatar"

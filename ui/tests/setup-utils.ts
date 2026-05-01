@@ -10,42 +10,67 @@
  *   window.__test.sendMessage('Hello!')
  *   await window.__test.waitForMessage('Hello!')
  */
-
-import { waitFor, waitForText, typeInto, click, nextTick } from './helpers';
-import { createProfile } from './flows/profile-creation';
-import { navigateToAddContact, getContactCode, addContact } from './flows/contact-exchange';
-import { sendMessage, waitForMessage } from './flows/send-message';
-import { openDirectChat } from './flows/open-chat';
-import { visibleCards as getStartedCards, dismissCard as dismissGetStartedCard } from './pages/get-started';
-import { homeLoaded, firstChatTooltip } from './pages/home';
 import {
-	messageInput,
-	sendButton,
-	messagesContainer,
-	isScrollAtBottom,
+	addContact,
+	getContactCode,
+	navigateToAddContact,
+} from './flows/contact-exchange';
+import { openDirectChat } from './flows/open-chat';
+import { createProfile } from './flows/profile-creation';
+import { sendMessage, waitForMessage } from './flows/send-message';
+import { click, nextTick, typeInto, waitFor, waitForText } from './helpers';
+import {
 	chatOverflow,
-	scrollChatUp,
-	scrollBottomButtonVisible,
-	unreadBadgeText,
+	checkNavbarOverflow,
 	clickScrollBottomButton,
+	isPeerNamePresent,
+	isScrollAtBottom,
+	messageInput,
+	messagesContainer,
+	navbarBgOpacity,
+	scrollBottomButtonVisible,
 	scrollChatToBottom,
 	scrollChatToTop,
-	navbarBgOpacity,
+	scrollChatUp,
+	sendButton,
+	unreadBadgeText,
 } from './pages/direct-chat';
+import {
+	dismissCard as dismissGetStartedCard,
+	visibleCards as getStartedCards,
+} from './pages/get-started';
 import { versionItem } from './pages/help';
-import { updaterBanner, updaterBannerTitle, updaterDismissBtn } from './pages/updater-banner';
-import { checkOverflow, checkDarkMode, checkRTL, checkPage } from './review/checks';
+import {
+	checkChatListOverflow,
+	firstChatTooltip,
+	homeLoaded,
+} from './pages/home';
+import {
+	updaterBanner,
+	updaterBannerTitle,
+	updaterDismissBtn,
+} from './pages/updater-banner';
+import {
+	checkDarkMode,
+	checkOverflow,
+	checkPage,
+	checkRTL,
+} from './review/checks';
 import {
 	visitAllPages,
-	visitSettingsPages,
-	visitProfilePages,
-	visitOtherPages,
 	visitChatPages,
+	visitOtherPages,
+	visitProfilePages,
+	visitSettingsPages,
 } from './review/visit-all-pages';
 
 /** Trigger UpdaterBanner into a specific state via custom event. */
-function simulateUpdate(state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden') {
-	window.dispatchEvent(new CustomEvent('test-simulate-update', { detail: state }));
+function simulateUpdate(
+	state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden',
+) {
+	window.dispatchEvent(
+		new CustomEvent('test-simulate-update', { detail: state }),
+	);
 }
 
 export const testUtils = {
@@ -65,6 +90,7 @@ export const testUtils = {
 	dismissGetStartedCard,
 	homeLoaded,
 	firstChatTooltip,
+	checkChatListOverflow,
 	messageInput,
 	sendButton,
 	messagesContainer,
@@ -77,6 +103,8 @@ export const testUtils = {
 	scrollChatToBottom,
 	scrollChatToTop,
 	navbarBgOpacity,
+	isPeerNamePresent,
+	checkNavbarOverflow,
 	versionItem,
 	updaterBanner,
 	updaterBannerTitle,

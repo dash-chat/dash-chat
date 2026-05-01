@@ -1,3 +1,4 @@
+import { isIntentionallyClipped } from '../review/checks';
 import { S } from '../selectors';
 
 export const selectors = S.home;
@@ -28,4 +29,31 @@ export function homeLoaded() {
 /** Return the first-chat tooltip element if present */
 export function firstChatTooltip() {
 	return document.querySelector(selectors.firstChatTooltip);
+}
+
+/**
+ * Check whether any chat-list item overflows its container.
+ * Returns an array of overflow descriptions (empty = no overflow).
+ */
+export function checkChatListOverflow(): string[] {
+	const issues: string[] = [];
+	const list = document.querySelector(selectors.chatList);
+	if (!list) {
+		issues.push('Chat list not found');
+		return issues;
+	}
+
+	if (list.scrollWidth > list.clientWidth + 2) {
+		issues.push('Chat list container has horizontal overflow');
+	}
+	list.querySelectorAll('*').forEach(el => {
+		if (isIntentionallyClipped(el)) return;
+
+		if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
+			const text = el.textContent?.substring(0, 60).trim();
+			if (text)
+				issues.push(`Overflow in <${el.tagName.toLowerCase()}>: "${text}"`);
+		}
+	});
+	return issues.slice(0, 10);
 }
