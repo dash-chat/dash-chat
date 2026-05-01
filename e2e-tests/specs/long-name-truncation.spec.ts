@@ -59,27 +59,11 @@ describe('Long name truncation', () => {
 		await openDirectChat(agent2, LONG_NAME);
 
 		// Peer name element should be present
-		const peerNamePresent = await agent2.execute(() =>
-			!!document.querySelector('[data-testid="direct-chat-peer-name"]'),
-		);
+		const peerNamePresent = await agent2.execute(() => window.__test.isPeerNamePresent());
 		expect(peerNamePresent).toBe(true);
 
 		// Navbar should not overflow
-		const navbarOverflow = await agent2.execute(() => {
-			const navbar = document.querySelector('.k-navbar');
-			if (!navbar) return ['Navbar element not found'];
-			const issues: string[] = [];
-			if (navbar.scrollWidth > navbar.clientWidth + 2) {
-				issues.push('Navbar has horizontal overflow');
-			}
-			navbar.querySelectorAll('*').forEach((el) => {
-				if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
-					const text = el.textContent?.substring(0, 60).trim();
-					if (text) issues.push(`Overflow in navbar <${el.tagName.toLowerCase()}>: "${text}"`);
-				}
-			});
-			return issues.slice(0, 10);
-		}) as string[];
+		const navbarOverflow = await agent2.execute(() => window.__test.checkNavbarOverflow()) as string[];
 
 		expect(navbarOverflow).toEqual([]);
 	});

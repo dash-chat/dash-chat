@@ -41,13 +41,32 @@ export function checkChatListOverflow(): string[] {
 		issues.push('Chat list not found');
 		return issues;
 	}
+
+	const isIntentionallyClipped = (el: Element): boolean => {
+		const style = window.getComputedStyle(el as HTMLElement);
+		const overflowX = style.overflowX;
+		const overflow = style.overflow;
+		const textOverflow = style.textOverflow;
+
+		return (
+			overflowX === 'hidden' ||
+			overflowX === 'clip' ||
+			overflow === 'hidden' ||
+			overflow === 'clip' ||
+			textOverflow === 'ellipsis'
+		);
+	};
+
 	if (list.scrollWidth > list.clientWidth + 2) {
 		issues.push('Chat list container has horizontal overflow');
 	}
-	list.querySelectorAll('*').forEach((el) => {
+	list.querySelectorAll('*').forEach(el => {
+		if (isIntentionallyClipped(el)) return;
+
 		if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
 			const text = el.textContent?.substring(0, 60).trim();
-			if (text) issues.push(`Overflow in <${el.tagName.toLowerCase()}>: "${text}"`);
+			if (text)
+				issues.push(`Overflow in <${el.tagName.toLowerCase()}>: "${text}"`);
 		}
 	});
 	return issues.slice(0, 10);

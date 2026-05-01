@@ -18,7 +18,7 @@ import { sendMessage, waitForMessage } from './flows/send-message';
 import { openDirectChat } from './flows/open-chat';
 import { visibleCards as getStartedCards, dismissCard as dismissGetStartedCard } from './pages/get-started';
 import { homeLoaded, firstChatTooltip, checkChatListOverflow } from './pages/home';
-import { messageInput, sendButton, messagesContainer } from './pages/direct-chat';
+import { messageInput, sendButton, messagesContainer, isPeerNamePresent, checkNavbarOverflow } from './pages/direct-chat';
 import { versionItem } from './pages/help';
 import { updaterBanner, updaterBannerTitle, updaterDismissBtn } from './pages/updater-banner';
 import { checkOverflow, checkDarkMode, checkRTL, checkPage } from './review/checks';
@@ -56,6 +56,8 @@ export const testUtils = {
 	messageInput,
 	sendButton,
 	messagesContainer,
+	isPeerNamePresent,
+	checkNavbarOverflow,
 	versionItem,
 	updaterBanner,
 	updaterBannerTitle,
