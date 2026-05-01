@@ -71,6 +71,7 @@
 	import { longpress } from '$lib/actions/longpress';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -491,7 +492,7 @@
 					{#if searchMode}
 						<Navbar
 							transparent={true}
-							titleClass="opacity1 w-full"
+							titleClass="opacity1 w-full min-w-0"
 							centerTitle={false}
 						>
 							{#snippet left()}
@@ -514,7 +515,7 @@
 					{:else}
 						<Navbar
 							transparent={true}
-							titleClass="opacity1 w-full"
+							titleClass="opacity1 w-full min-w-0"
 							centerTitle={false}
 						>
 							{#snippet left()}
@@ -528,18 +529,14 @@
 							{#snippet title()}
 								{#if profile}
 									<Link
-										class="flex items-center justify-start gap-2"
+										class="flex w-full min-w-0 items-center justify-start"
 										href={`/direct-chats/${agentId}/chat-settings`}
 										data-testid="direct-chat-settings-link"
 									>
-										<Avatar
-											image={profile!.avatar}
-											initials={profile!.name.slice(0, 2)}
-											style="--size: 2.5rem"
+										<AvatarWithName
+											{profile}
+											nameTestId="direct-chat-peer-name"
 										/>
-										<span data-testid="direct-chat-peer-name"
-											>{fullName(profile!)}</span
-										>
 									</Link>
 								{/if}
 							{/snippet}
@@ -560,7 +557,7 @@
 									style={`padding-bottom: calc(${messageInputHeight} + 12px)`}
 								>
 									{#if profile}
-										<div class="column" style="align-items: center">
+										<div class="column mx-4" style="align-items: center">
 											<Link
 												class="column my-6 gap-2 items-center"
 												onclick={() => (showPeerProfile = true)}
