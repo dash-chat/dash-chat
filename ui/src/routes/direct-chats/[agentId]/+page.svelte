@@ -152,7 +152,8 @@
 		node.focus();
 	};
 
-	let scrollToBottom: (animate?: boolean) => void = $state(() => {});
+	let reverseScrollPage: ReturnType<typeof ReverseScrollPage> | undefined =
+		$state();
 	let parentDivEl: HTMLDivElement | null = $state(null);
 
 	async function sendMessage() {
@@ -174,7 +175,7 @@
 			// here. Without this, scrollToBottom fires against the old layout
 			// and `overflow-anchor: none` leaves the just-rendered bubble
 			// hidden behind the input bar.
-			setTimeout(() => scrollToBottom());
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
@@ -429,8 +430,8 @@
 		{#await $peerProfile then profile}
 			{#await $contactRequest then contactRequest}
 				<ReverseScrollPage
+					bind:this={reverseScrollPage}
 					bind:isAtBottom
-					bind:scrollToBottom
 					data-testid="direct-chat-scroll"
 				>
 					{#if searchMode}
@@ -913,7 +914,7 @@
 						>
 							<ScrollToBottomButton
 								unreadCount={count ?? 0}
-								onClick={() => scrollToBottom()}
+								onClick={() => reverseScrollPage?.scrollToBottom()}
 							/>
 						</div>
 					{/await}

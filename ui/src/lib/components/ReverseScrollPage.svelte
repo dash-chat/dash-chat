@@ -47,16 +47,12 @@
 		bgMaterial?: string;
 	}
 
-	type ScrollToBottom = (animate?: boolean) => void;
-
 	interface Props extends HTMLAttributes<HTMLDivElement> {
 		component?: string;
 		colors?: PageColors;
 		ios?: boolean;
 		material?: boolean;
-		el?: HTMLDivElement | null;
 		isAtBottom?: boolean;
-		scrollToBottom?: ScrollToBottom;
 		children?: Snippet;
 	}
 
@@ -65,19 +61,18 @@
 		colors,
 		ios,
 		material,
-		el = $bindable(null),
 		isAtBottom = $bindable(true),
-		scrollToBottom = $bindable<ScrollToBottom>(() => {}),
 		children,
 		...scrollProps
 	}: Props = $props();
 
+	let el: HTMLDivElement | null = $state(null);
 	let innerEl: HTMLDivElement | null = $state(null);
 
-	scrollToBottom = (animate = true) => {
+	export function scrollToBottom(animate = true) {
 		if (!el) return;
 		el.scrollTo({ top: 0, behavior: animate ? 'smooth' : 'auto' });
-	};
+	}
 
 	const pageProps: Record<string, unknown> = $derived({
 		component,
