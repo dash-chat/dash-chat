@@ -95,6 +95,7 @@
 						data-testid="settings-qr-link"
 						use:stopPropagation
 						style={isWideScreen.value || theme === 'ios' ? '' : 'margin: 16px'}
+						aria-label={m.addContact()}
 					>
 						<wa-icon src={wrapPathInSvg(mdiQrcode)} style="font-size: 18px"
 						></wa-icon>

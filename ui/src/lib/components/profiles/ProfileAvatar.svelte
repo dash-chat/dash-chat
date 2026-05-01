@@ -9,7 +9,9 @@
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
-	const profile = useReactivePromise(contactsStore.profiles, chatActorId);
+	const profile = $derived(
+		useReactivePromise(contactsStore.profiles, chatActorId),
+	);
 </script>
 
 {#await $profile}
