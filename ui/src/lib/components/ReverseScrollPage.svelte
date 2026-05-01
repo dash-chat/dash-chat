@@ -178,6 +178,35 @@
 
 		updateIsAtBottom();
 
+		// When the user is scrolled up reading older messages and a new message
+		// arrives, the inner content grows at its DOM end (visual bottom in
+		// column-reverse). The inner div's bottom is anchored to the container,
+		// so its top extends upward — every existing message shifts up in
+		// absolute terms while scrollTop stays fixed (overflow-anchor: none
+		// disables compensation). The result: the messages the user was reading
+		// scroll up out of view as newer content slides in from below.
+		// Counter this by anchoring to the top of the content: when the inner
+		// div grows while the user isn't at the bottom, shift scrollTop by the
+		// growth amount so the same messages stay in view.
+		//
+		// We also call updateNavbar() right after adjusting scrollTop so the
+		// Material navbar bg opacity sees the corrected scrollTop in the same
+		// frame. Without this, the rAF scheduled by the pageObserver runs
+		// before this callback in the render phase with the new scrollHeight
+		// and the old scrollTop, briefly flipping the bg to opaque (grey
+		// flash) when the user is at the top of content.
+		let prevInnerHeight = inner.offsetHeight;
+		const innerResizeObserver = new ResizeObserver(() => {
+			const newInnerHeight = inner.offsetHeight;
+			const delta = newInnerHeight - prevInnerHeight;
+			prevInnerHeight = newInnerHeight;
+			if (delta <= 0) return;
+			if (Math.abs(node.scrollTop) < SCROLL_BOTTOM_THRESHOLD) return;
+			node.scrollTop -= delta;
+			updateNavbar();
+		});
+		innerResizeObserver.observe(inner);
+
 		// Watch the page for navbar swaps (e.g. when search mode toggles in/out
 		// the active <Navbar> element is replaced) so we can re-resolve the
 		// navbar element and re-measure its height.
@@ -199,6 +228,7 @@
 			pageObserver.disconnect();
 			navbarResizeObserver.disconnect();
 			resizeObserver.disconnect();
+			innerResizeObserver.disconnect();
 			node.removeEventListener('scroll', onScroll);
 		};
 	});
