@@ -78,9 +78,14 @@
 
 	let el: HTMLDivElement | null = $state(null);
 	let innerEl: HTMLDivElement | null = $state(null);
+	let suppressCompensateUntil = 0;
 
 	export function scrollToBottom(animate = true) {
 		if (!el) return;
+		// Suppress scroll compensation for the duration of this scroll: the
+		// caller wants the view to land at the bottom, not stay anchored to
+		// older messages while the smooth animation runs.
+		suppressCompensateUntil = performance.now() + 1000;
 		el.scrollTo({ top: 0, behavior: animate ? 'smooth' : 'auto' });
 	}
 
@@ -170,7 +175,21 @@
 			isAtBottom = Math.abs(node.scrollTop) < SCROLL_BOTTOM_THRESHOLD;
 		};
 
+		// Float shadow of node.scrollTop so successive compensations don't
+		// accumulate the browser's per-set rounding error (WKWebView snaps
+		// scrollTop to an integer; over N rapid incoming messages each loses
+		// up to ~0.5px and the user sees a 1px-ish drift). We do the math in
+		// floats and only the final write to node.scrollTop is rounded by the
+		// browser; the next compensation builds on the precise float, not the
+		// rounded readback.
+		let desiredScrollTop = node.scrollTop;
+
 		const onScroll = () => {
+			// If the actual scrollTop diverged from our tracked float by more
+			// than the rounding margin, treat it as a user scroll and re-sync.
+			if (Math.abs(node.scrollTop - desiredScrollTop) > 1) {
+				desiredScrollTop = node.scrollTop;
+			}
 			updateIsAtBottom();
 			updateNavbar();
 		};
@@ -189,29 +208,51 @@
 		// div grows while the user isn't at the bottom, shift scrollTop by the
 		// growth amount so the same messages stay in view.
 		//
-		// We also call updateNavbar() right after adjusting scrollTop so the
-		// Material navbar bg opacity sees the corrected scrollTop in the same
-		// frame. Without this, the rAF scheduled by the pageObserver runs
-		// before this callback in the render phase with the new scrollHeight
-		// and the old scrollTop, briefly flipping the bg to opaque (grey
-		// flash) when the user is at the top of content.
-		let prevInnerHeight = inner.offsetHeight;
-		const innerResizeObserver = new ResizeObserver(() => {
-			const newInnerHeight = inner.offsetHeight;
+		// Run the correction synchronously in the MutationObserver microtask
+		// (not in a ResizeObserver) so it lands before the render phase. A
+		// render-phase fix would mean the rAF scheduled here reads the new
+		// scrollHeight with the old scrollTop and paints once with the
+		// uncompensated layout — visible as a small scroll flicker before the
+		// view resets. Forcing layout via inner.offsetHeight inside the MO
+		// gives us the post-mutation height while the rAF and any paint are
+		// still pending.
+		// getBoundingClientRect().height returns a fractional value reflecting
+		// the actual subpixel layout, while offsetHeight returns a rounded
+		// integer. With offsetHeight, a real height delta of 30.4px reads as
+		// 30, leaving a 0.4px residual visible as a one-pixel up/down jitter
+		// after compensation; using the rect's float height keeps the
+		// correction in lock-step with the layout.
+		let prevInnerHeight = inner.getBoundingClientRect().height;
+		const compensateScroll = () => {
+			const newInnerHeight = inner.getBoundingClientRect().height;
 			const delta = newInnerHeight - prevInnerHeight;
 			prevInnerHeight = newInnerHeight;
 			if (delta <= 0) return;
-			if (Math.abs(node.scrollTop) < SCROLL_BOTTOM_THRESHOLD) return;
-			node.scrollTop -= delta;
-			updateNavbar();
-		});
-		innerResizeObserver.observe(inner);
+			if (performance.now() < suppressCompensateUntil) return;
+			if (Math.abs(desiredScrollTop) < SCROLL_BOTTOM_THRESHOLD) return;
+			desiredScrollTop -= delta;
+			node.scrollTop = desiredScrollTop;
+		};
 
 		// Watch the page for navbar swaps (e.g. when search mode toggles in/out
 		// the active <Navbar> element is replaced) so we can re-resolve the
-		// navbar element and re-measure its height.
-		const pageObserver = new MutationObserver(scheduleUpdate);
+		// navbar element and re-measure its height. Also runs the synchronous
+		// scroll-compensation logic above before the upcoming render phase.
+		const pageObserver = new MutationObserver(() => {
+			compensateScroll();
+			scheduleUpdate();
+		});
 		pageObserver.observe(pageEl, { childList: true, subtree: true });
+
+		// Backup: a ResizeObserver on the inner div catches any size change the
+		// MutationObserver missed (e.g. async-loaded web component content like
+		// <wa-relative-time> resolving its rendered text after the initial
+		// bubble paint). RO fires in the same render phase, before paint, so
+		// it still pre-empts the visible flicker. If the MO already
+		// compensated, prevInnerHeight is up to date and this RO call is a
+		// no-op.
+		const innerResizeObserver = new ResizeObserver(compensateScroll);
+		innerResizeObserver.observe(inner);
 
 		// Re-evaluate when the viewport shrinks/grows (e.g. the iOS keyboard
 		// opening resizes the WKWebView frame) — clientHeight changes shift
