@@ -80,7 +80,7 @@
 	const store = chatsStore.directChats(agentId);
 
 	const readTracker = createReadMessagesTracker(store);
-	const observeMessage = readTracker.observe;
+	const readMessageOnObserve = readTracker.observe;
 
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 	const peerProfile = useReactivePromise(store.peerProfile);
@@ -743,7 +743,7 @@
 															<div
 																class="self-start max-w-[85%]"
 																data-message-hash={hash}
-																use:observeMessage={readHashes?.has(hash)
+																use:readMessageOnObserve={readHashes?.has(hash)
 																	? null
 																	: hash}
 																use:longpress={{
