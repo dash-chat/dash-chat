@@ -16,27 +16,41 @@ export function createReadMessagesTracker(
 	options: TrackReadMessagesOptions = {},
 ): ReadMessagesTracker {
 	const { debounceMs = 500, threshold = 0.5 } = options;
+	const maxRetryDelayMs = 30_000;
 	const visible = new Set<Hash>();
 	const ids = new WeakMap<Element, Hash>();
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	let retryDelay = debounceMs;
+	let destroyed = false;
+
+	const flush = () => {
+		if (destroyed || visible.size === 0) return;
+		const batch = Array.from(visible);
+		visible.clear();
+		store
+			.markAsRead(batch)
+			.then(() => {
+				retryDelay = debounceMs;
+			})
+			.catch(err => {
+				if (destroyed) return;
+				console.error('markAsRead failed, re-queuing hashes', err);
+				for (const hash of batch) visible.add(hash);
+				retryDelay = Math.min(retryDelay * 2, maxRetryDelayMs);
+				clearTimeout(timer);
+				timer = setTimeout(flush, retryDelay);
+			});
+	};
 
 	const observer = new IntersectionObserver(
 		entries => {
 			for (const entry of entries) {
 				if (!entry.isIntersecting) continue;
 				const id = ids.get(entry.target);
-				if (id != null) visible.add(id);
+				if (id !== undefined) visible.add(id);
 			}
 			clearTimeout(timer);
-			timer = setTimeout(() => {
-				if (visible.size === 0) return;
-				const batch = Array.from(visible);
-				visible.clear();
-				store.markAsRead(batch).catch(err => {
-					console.error('markAsRead failed, re-queuing hashes', err);
-					for (const hash of batch) visible.add(hash);
-				});
-			}, debounceMs);
+			timer = setTimeout(flush, debounceMs);
 		},
 		{ threshold },
 	);
@@ -51,7 +65,7 @@ export function createReadMessagesTracker(
 				if (newId === null) {
 					observer.unobserve(node);
 					ids.delete(node);
-				} else {
+				} else if (ids.get(node) !== newId) {
 					ids.set(node, newId);
 					observer.observe(node);
 				}
@@ -68,6 +82,8 @@ export function createReadMessagesTracker(
 		destroy() {
 			clearTimeout(timer);
 			observer.disconnect();
+			flush();
+			destroyed = true;
 		},
 	};
 }
