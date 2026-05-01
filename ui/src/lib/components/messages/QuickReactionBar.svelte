@@ -108,7 +108,7 @@
 			<button
 				class="flex h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
 				onclick={onExpand}
-				aria-label="More reactions"
+				aria-label={m.moreReactions()}
 			>
 				<wa-icon
 					src={wrapPathInSvg(mdiDotsHorizontal)}
