@@ -51,23 +51,30 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
         ],
     )?;
 
-    // The Edit submenu wires standard clipboard shortcuts (Cmd/Ctrl+C, X, V, A,
-    // Z, Shift+Z) to the webview. On macOS WKWebView only handles these
-    // shortcuts when they are bound through the application menu.
-    let edit_submenu = Submenu::with_items(
+    // The Edit submenu wires standard clipboard shortcuts (Cmd/Ctrl+C, X, V, A)
+    // to the webview. On macOS WKWebView only handles these shortcuts when they
+    // are bound through the application menu. Undo/Redo are macOS-only because
+    // muda's predefined undo/redo items are inert on Linux/Windows (Ctrl+Z
+    // still works natively inside text inputs there).
+    let edit_submenu = Submenu::new(app_handle, t!("menuEdit"), true)?;
+    #[cfg(target_os = "macos")]
+    edit_submenu.append_items(&[
+        &PredefinedMenuItem::undo(app_handle, Some(&t!("menuUndo")))?,
+        &PredefinedMenuItem::redo(app_handle, Some(&t!("menuRedo")))?,
+        &PredefinedMenuItem::separator(app_handle)?,
+    ])?;
+    edit_submenu.append_items(&[
+        &PredefinedMenuItem::cut(app_handle, Some(&t!("menuCut")))?,
+        &PredefinedMenuItem::copy(app_handle, Some(&t!("menuCopy")))?,
+        &PredefinedMenuItem::paste(app_handle, Some(&t!("menuPaste")))?,
+    ])?;
+    // mac Edit menu convention separates clipboard actions from Select All.
+    #[cfg(target_os = "macos")]
+    edit_submenu.append(&PredefinedMenuItem::separator(app_handle)?)?;
+    edit_submenu.append(&PredefinedMenuItem::select_all(
         app_handle,
-        t!("menuEdit"),
-        true,
-        &[
-            &PredefinedMenuItem::undo(app_handle, None)?,
-            &PredefinedMenuItem::redo(app_handle, None)?,
-            &PredefinedMenuItem::separator(app_handle)?,
-            &PredefinedMenuItem::cut(app_handle, None)?,
-            &PredefinedMenuItem::copy(app_handle, None)?,
-            &PredefinedMenuItem::paste(app_handle, None)?,
-            &PredefinedMenuItem::select_all(app_handle, None)?,
-        ],
-    )?;
+        Some(&t!("menuSelectAll")),
+    )?)?;
 
     Menu::with_items(app_handle, &[&file_submenu, &edit_submenu])
 }
