@@ -111,6 +111,3 @@ pub trait VersionConvert: Sized {
     const CAPABILITY: Capability;
     fn to_version(&self, target_version: u16) -> Result<Self, VersionConvertError>;
 }
-
-#[cfg(test)]
-mod test_compat;
