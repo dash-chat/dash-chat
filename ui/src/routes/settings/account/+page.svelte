@@ -23,7 +23,7 @@
 	async function handleDeleteAccount() {
 		loading = true;
 		try {
-			// On success the app restarts (desktop) or exits (mobile) immediately,
+			// On success the app exits immediately,
 			// so no code after this line executes on the happy path.
 			await invoke('delete_account');
 		} catch (e) {
