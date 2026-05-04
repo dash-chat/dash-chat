@@ -105,9 +105,10 @@ impl<R> CancelAndWait<R> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ShutdownError {
-    WaitOnDatabaseHandlesError(JoinError),
+    #[error("Stream processing task failed to join: {0}")]
+    StreamTaskJoin(#[from] JoinError),
 }
 
 #[derive(Clone)]
@@ -594,7 +595,7 @@ impl Node {
         // it could be mid-query when we close the pools below.
         if let Some(ref cancel_and_wait) = self.stream_task {
             if let Some(Err(join_err)) = cancel_and_wait.cancel_and_wait().await {
-                return Err(ShutdownError::WaitOnDatabaseHandlesError(join_err));
+                return Err(ShutdownError::StreamTaskJoin(join_err));
             }
         }
 
