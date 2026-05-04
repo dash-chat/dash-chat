@@ -51,30 +51,31 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
         ],
     )?;
 
-    // The Edit submenu wires standard clipboard shortcuts (Cmd/Ctrl+C, X, V, A)
-    // to the webview. On macOS WKWebView only handles these shortcuts when they
-    // are bound through the application menu. Undo/Redo are macOS-only because
-    // muda's predefined undo/redo items are inert on Linux/Windows (Ctrl+Z
-    // still works natively inside text inputs there).
-    let edit_submenu = Submenu::new(app_handle, t!("menuEdit"), true)?;
+    // The Edit submenu is macOS-only: WKWebView only routes Cmd+A / Cmd+C / etc.
+    // into focused inputs when those shortcuts are bound through the
+    // application menu. On Linux/Windows the webview already handles these
+    // accelerators natively, and muda's predefined items don't dispatch a
+    // click into the webview — so a menu entry there would be inert when
+    // clicked.
     #[cfg(target_os = "macos")]
-    edit_submenu.append_items(&[
-        &PredefinedMenuItem::undo(app_handle, Some(&t!("menuUndo")))?,
-        &PredefinedMenuItem::redo(app_handle, Some(&t!("menuRedo")))?,
-        &PredefinedMenuItem::separator(app_handle)?,
-    ])?;
-    edit_submenu.append_items(&[
-        &PredefinedMenuItem::cut(app_handle, Some(&t!("menuCut")))?,
-        &PredefinedMenuItem::copy(app_handle, Some(&t!("menuCopy")))?,
-        &PredefinedMenuItem::paste(app_handle, Some(&t!("menuPaste")))?,
-    ])?;
-    // mac Edit menu convention separates clipboard actions from Select All.
-    #[cfg(target_os = "macos")]
-    edit_submenu.append(&PredefinedMenuItem::separator(app_handle)?)?;
-    edit_submenu.append(&PredefinedMenuItem::select_all(
+    let edit_submenu = Submenu::with_items(
         app_handle,
-        Some(&t!("menuSelectAll")),
-    )?)?;
+        t!("menuEdit"),
+        true,
+        &[
+            &PredefinedMenuItem::undo(app_handle, Some(&t!("menuUndo")))?,
+            &PredefinedMenuItem::redo(app_handle, Some(&t!("menuRedo")))?,
+            &PredefinedMenuItem::separator(app_handle)?,
+            &PredefinedMenuItem::cut(app_handle, Some(&t!("menuCut")))?,
+            &PredefinedMenuItem::copy(app_handle, Some(&t!("menuCopy")))?,
+            &PredefinedMenuItem::paste(app_handle, Some(&t!("menuPaste")))?,
+            &PredefinedMenuItem::separator(app_handle)?,
+            &PredefinedMenuItem::select_all(app_handle, Some(&t!("menuSelectAll")))?,
+        ],
+    )?;
 
-    Menu::with_items(app_handle, &[&file_submenu, &edit_submenu])
+    #[cfg(target_os = "macos")]
+    return Menu::with_items(app_handle, &[&file_submenu, &edit_submenu]);
+    #[cfg(not(target_os = "macos"))]
+    Menu::with_items(app_handle, &[&file_submenu])
 }
