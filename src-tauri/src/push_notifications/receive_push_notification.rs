@@ -225,12 +225,13 @@ async fn handle_push_notification(
                 ..Default::default()
             }))
         }
-        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { profile, .. }) => {
+        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { code, profile }) => {
             Ok(Some(NotificationData {
                 title: Some(sonix_i18n::t!("newContactRequest")),
                 body: Some(profile.name),
                 icon: Some("ic_stat_icon".to_string()),
                 group: Some(topic_hex.to_string()),
+                route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
                 ..Default::default()
             }))
         }
