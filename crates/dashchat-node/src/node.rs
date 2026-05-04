@@ -130,7 +130,7 @@ impl Node {
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
         let local_store = LocalStore::new(filesystem.local_store_path()).await?;
-        let node_keys = local_store.node_keys()?;
+        let node_keys = local_store.node_keys().await?;
 
         Self::init(
             filesystem,

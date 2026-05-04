@@ -72,7 +72,6 @@ impl LocalStore {
             sqlx::query(sql).execute(&pool).await?;
         }
 
-        let groups_path = path.with_file_name("groups.cbor");
         let store = Self { pool };
         store.ensure_initialized().await?;
         Ok(store)
@@ -104,10 +103,10 @@ impl LocalStore {
         Ok(())
     }
 
-    pub fn node_keys(&self) -> anyhow::Result<NodeKeys> {
+    pub async fn node_keys(&self) -> anyhow::Result<NodeKeys> {
         Ok(NodeKeys {
-            private_key: self.private_key()?,
-            agent_id: self.agent_id()?,
+            private_key: self.private_key().await?,
+            agent_id: self.agent_id().await?,
         })
     }
 

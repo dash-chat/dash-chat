@@ -1889,7 +1889,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.11.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "app_dirs2",
@@ -1913,6 +1913,7 @@ dependencies = [
  "ndk-sys",
  "opener",
  "openssl-sys",
+ "oslog",
  "p2panda-auth",
  "p2panda-core",
  "p2panda-discovery",
@@ -1983,7 +1984,6 @@ dependencies = [
  "p2panda-sync",
  "pretty_assertions",
  "rand 0.9.4",
- "redb",
  "serde",
  "serde_json",
  "sqlx",
@@ -2000,8 +2000,21 @@ dependencies = [
 name = "dashchat-utils"
 version = "0.1.0"
 dependencies = [
+ "log",
  "tokio",
- "tracing",
+]
+
+[[package]]
+name = "dashmap"
+version = "5.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
 ]
 
 [[package]]
@@ -6566,6 +6579,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "oslog"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80d2043d1f61d77cb2f4b1f7b7b2295f40507f5f8e9d1c8bf10a1ca5f97a3969"
+dependencies = [
+ "cc",
+ "dashmap 5.5.3",
+ "log",
+]
+
+[[package]]
 name = "p256"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7705,7 +7729,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a64ac8ba2e8d71b25c55ab7acafc481ae4c9175f3ee8f7c36b66c4cad369bb5"
 dependencies = [
  "bon",
- "dashmap",
+ "dashmap 6.1.0",
  "futures",
  "js-sys",
  "once_cell",
