@@ -3,6 +3,9 @@
 	"yesterday": "Yesterday",
 	"today": "Today",
 	"cancel": "Cancel",
+	"close": "Close",
+	"quickReactions": "Quick reactions",
+	"moreReactions": "More reactions",
 	"save": "Save",
 	"send": "Send",
 	"link": "Link",
@@ -101,6 +104,9 @@
 	"getStarted": "Get started",
 
 	"newMessage": "New message",
+	"youHaveANewMessage": "You have a new message",
+	"syncedWithServer": "Synchronized with the server.",
+	"mayHaveNewMessages": "You may have new messages.",
 	"newContactRequest": "New contact request",
 	"typeMessage": "Type a message...",
 
@@ -166,6 +172,9 @@
 	"searchMessages": "Search messages...",
 	"noResults": "No results",
 	"searchResultsCount": "{{current}} of {{total}}",
+	"jumpToDate": "Jump to date",
+	"previousResult": "Previous result",
+	"nextResult": "Next result",
 
 	"unreadMessages_one": "{{count}} unread message",
 	"unreadMessages_other": "{{count}} unread messages",
@@ -187,6 +196,7 @@
 
 	"help": "Help",
 	"contactUs": "Contact us",
+	"version": "Version",
 	"tellUsWhatsGoingOn": "Tell us what's going on",
 	"tellUsWhyReachingOut": "Tell us why you're reaching out.",
 	"pleaseSelectAnOption": "Please select an option",
@@ -208,5 +218,7 @@
 	"updateError": "Update failed. Please try again later.",
 	"updateTapToUpdate": "Tap to update Dash Chat.",
 	"updateTapToRestart": "Tap to restart and apply update.",
-	"updateTapToRetry": "Tap to retry."
+	"updateTapToRetry": "Tap to retry.",
+	"testBanner": "Early access test",
+	"feedback": "Feedback"
 }

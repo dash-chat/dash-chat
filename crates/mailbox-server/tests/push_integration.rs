@@ -132,7 +132,7 @@ async fn mailbox_store_triggers_push_notification() {
         .json(&json!({
             "blobs": {
                 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
-                    "author-1": {
+                    "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
                         "0": blob_data
                     }
                 }
@@ -164,7 +164,7 @@ async fn mailbox_store_no_subscribers_no_push() {
         .json(&json!({
             "blobs": {
                 "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd": {
-                    "author-1": {
+                    "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
                         "0": blob_data
                     }
                 }
@@ -230,7 +230,7 @@ async fn mailbox_store_duplicate_blob_no_second_push() {
     let store_body = json!({
         "blobs": {
             "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": {
-                "author-1": {
+                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
                     "0": blob_data
                 }
             }

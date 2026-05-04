@@ -94,4 +94,19 @@ describe('Full messaging flow', () => {
 
 		await waitForMessage(agent1, 'Hello from Bob!');
 	});
+
+	it('displays the app version on the help page', async () => {
+		const agent1 = browser.getInstance('agent1');
+
+		await agent1.execute(() => window.__test.goto('/settings/help'));
+		await agent1.waitUntil(
+			async () => agent1.execute(() => window.__test.versionItem() !== null),
+			{ timeout: 10_000, timeoutMsg: 'Version item not visible on help page' },
+		);
+
+		const versionText = await agent1.execute(
+			() => (window.__test.versionItem() as HTMLElement)?.textContent ?? '',
+		);
+		expect(versionText).toMatch(/\d+\.\d+\.\d+/);
+	});
 });

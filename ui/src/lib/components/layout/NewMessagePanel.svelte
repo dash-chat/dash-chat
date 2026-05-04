@@ -22,6 +22,7 @@
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '../profiles/Avatar.svelte';
+	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
@@ -121,7 +122,7 @@
 						profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
 					)}
 					{#each filteredContacts as [actorId, profile]}
-						<ListItem
+						<TitleTruncatedListItem
 							link
 							linkProps={{ href: `/direct-chats/${actorId}` }}
 							title={profile.name}
@@ -133,7 +134,7 @@
 									initials={profile.name.slice(0, 2)}
 								/>
 							{/snippet}
-						</ListItem>
+						</TitleTruncatedListItem>
 					{:else}
 						<ListItem title={m.noContactsMatchFilter()} />
 					{/each}

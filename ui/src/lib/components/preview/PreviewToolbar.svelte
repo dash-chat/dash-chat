@@ -7,6 +7,7 @@
 	let mobile = $state(false);
 	let open = $state(false);
 	let updater = $state(false);
+	let rtl = $state(false);
 
 	function toggleTheme() {
 		theme = theme === 'ios' ? 'material' : 'ios';
@@ -36,6 +37,11 @@
 		);
 	}
 
+	function toggleRtl() {
+		rtl = !rtl;
+		document.documentElement.dir = rtl ? 'rtl' : 'ltr';
+	}
+
 	function resetData() {
 		localStorage.clear();
 		window.location.reload();
@@ -62,6 +68,9 @@
 			</button>
 			<button class="preview-btn" onclick={toggleLayout}>
 				{mobile ? 'Mobile' : 'Desktop'}
+			</button>
+			<button class="preview-btn" onclick={toggleRtl}>
+				{rtl ? 'RTL' : 'LTR'}
 			</button>
 			<button class="preview-btn" onclick={toggleUpdater}>
 				{updater ? 'Hide Update' : 'Show Update'}

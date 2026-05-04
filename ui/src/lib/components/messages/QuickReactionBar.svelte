@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { QUICK_EMOJIS } from '$lib/utils/emojis';
+	import { m } from '$lib/paraglide/messages.js';
 	import { mdiDotsHorizontal } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -74,20 +75,23 @@
 </script>
 
 {#if opened}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="fixed inset-0 z-50 bg-black/30"
-		onclick={onClose}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+		aria-label={m.quickReactions()}
+		onclick={e => e.target === e.currentTarget && onClose()}
+		onkeydown={e => e.key === 'Escape' && onClose()}
 		oncontextmenu={e => {
 			e.preventDefault();
 			onClose();
 		}}
 	>
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div
 			class="fixed z-50 flex items-center gap-1 rounded-full bg-white px-2 py-1.5 shadow-lg dark:bg-gray-800"
+			role="group"
 			style={barStyle}
-			onclick={e => e.stopPropagation()}
 		>
 			{#each QUICK_EMOJIS as emoji}
 				<button
@@ -104,7 +108,7 @@
 			<button
 				class="flex h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
 				onclick={onExpand}
-				aria-label="More reactions"
+				aria-label={m.moreReactions()}
 			>
 				<wa-icon
 					src={wrapPathInSvg(mdiDotsHorizontal)}

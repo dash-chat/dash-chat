@@ -2,6 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { goto } from '$app/navigation';
 	import {
 		mdiAccountMultiplePlus,
 		mdiAccountPlus,
@@ -74,7 +75,7 @@
 			id: 'chat-color',
 			label: () => m.chatColor(),
 			icon: mdiPalette,
-			href: '/settings/appearance',
+			href: '/settings/appearance?setup=true',
 			tone: 'warm',
 		},
 		{
@@ -121,12 +122,20 @@
 	});
 
 	function dismiss(id: string) {
+		if (dismissed.includes(id)) return;
 		dismissed = [...dismissed, id];
 		try {
 			localStorage.setItem(DISMISSED_KEY, JSON.stringify(dismissed));
 		} catch (e) {
 			console.error('Failed to persist dismissed cards:', e);
 		}
+	}
+
+	function onCardClick(id: string, href: string) {
+		if (id === 'chat-color') {
+			dismiss(id);
+		}
+		goto(href);
 	}
 </script>
 
@@ -144,6 +153,10 @@
 					>
 						<a
 							href={card.href}
+							onclick={e => {
+								e.preventDefault();
+								onCardClick(card.id, card.href);
+							}}
 							class="flex flex-col items-center px-5 pb-5 pt-7"
 						>
 							<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 28px">
@@ -156,6 +169,7 @@
 							class="absolute right-2 top-2 z-10 p-1 text-black/40 dark:text-white/40"
 							data-testid="get-started-dismiss-{card.id}"
 							onclick={() => dismiss(card.id)}
+							aria-label={m.close()}
 						>
 							<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 20px"
 							></wa-icon>

@@ -155,7 +155,11 @@ impl UpdateTopicSubscriptionsRequest {
 
 #[derive(Serialize, Deserialize)]
 pub struct NotifyTopicsRequest {
-    pub topics_to_notify: HashMap<TopicId, HashSet<OperationId>>,
+    /// For each topic, the set of new operations and the public key of the
+    /// device that authored each one. Subscribers whose registered public key
+    /// matches an operation's author are filtered out — devices don't get
+    /// pushes for messages they wrote themselves.
+    pub topics_to_notify: HashMap<TopicId, HashMap<OperationId, PublicKey>>,
 }
 
 impl NotifyTopicsRequest {
@@ -166,16 +170,17 @@ impl NotifyTopicsRequest {
                 self.topics_to_notify.len()
             )));
         }
-        for (topic_id, op_ids) in &self.topics_to_notify {
+        for (topic_id, ops) in &self.topics_to_notify {
             validate_topic_id(topic_id)?;
-            if op_ids.len() > MAX_OPS_PER_TOPIC {
+            if ops.len() > MAX_OPS_PER_TOPIC {
                 return Err(ValidationError(format!(
                     "too many operation IDs for topic: {} exceeds max of {MAX_OPS_PER_TOPIC}",
-                    op_ids.len()
+                    ops.len()
                 )));
             }
-            for op_id in op_ids {
+            for (op_id, author) in ops {
                 validate_operation_id(op_id)?;
+                validate_public_key(author)?;
             }
         }
         Ok(())
