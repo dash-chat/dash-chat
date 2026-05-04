@@ -79,14 +79,34 @@
 	let el: HTMLDivElement | null = $state(null);
 	let innerEl: HTMLDivElement | null = $state(null);
 	let suppressCompensateUntil = 0;
+	let releaseSuppress: (() => void) | null = null;
 
 	export function scrollToBottom(animate = true) {
 		if (!el) return;
+		const node = el;
 		// Suppress scroll compensation for the duration of this scroll: the
 		// caller wants the view to land at the bottom, not stay anchored to
-		// older messages while the smooth animation runs.
+		// older messages while the smooth animation runs. Release the gate as
+		// soon as `scrollend` fires so a peer message arriving right after the
+		// animation completes doesn't slide visibly within the 1s window. The
+		// timeout is a fallback for cases where `scrollend` never fires (e.g.
+		// already at the bottom so scrollTo is a no-op, or older WebKit).
+		releaseSuppress?.();
 		suppressCompensateUntil = performance.now() + 1000;
-		el.scrollTo({ top: 0, behavior: animate ? 'smooth' : 'auto' });
+
+		let timeoutId: ReturnType<typeof setTimeout>;
+		const release = () => {
+			if (releaseSuppress !== release) return;
+			releaseSuppress = null;
+			clearTimeout(timeoutId);
+			node.removeEventListener('scrollend', release);
+			suppressCompensateUntil = 0;
+		};
+		releaseSuppress = release;
+		node.addEventListener('scrollend', release, { once: true });
+		timeoutId = setTimeout(release, 1000);
+
+		node.scrollTo({ top: 0, behavior: animate ? 'smooth' : 'auto' });
 	}
 
 	const pageProps: Record<string, unknown> = $derived({
