@@ -1,83 +1,119 @@
-<html class="sl-theme-dark">
+<!DOCTYPE html>
+<html lang="en">
 	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Dash Chat</title>
 		<link
-			href="https://fonts.googleapis.com/css?family=Rubik"
+			href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap"
 			rel="stylesheet"
 		/>
 		<link rel="stylesheet" href="style.css" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
 	</head>
 	<body>
-		<div class="parallax">
-			<div
-				class="parallax__layer parallax__layer--back darksoil-background"
-			></div>
-			<div class="parallax__layer parallax__layer--base">
-				<rocket-content-area>
-					<h2 class="area-headline">dash chat<br /></h2>
-
-					<rocket-columns style="align-items: center">
-						<rocket-card style="flex: 1">
-							<p>dash chat is an offline-first peer-to-peer chat app</p>
-						</rocket-card>
-						<div class="column" style="margin-bottom: 64px; flex: 1">
-							<div
-								style="
-									flex: 1;
-									justify-content: center;
-									display: flex;
-									flex-direction: row;
-								"
-							>
-								<div style="display: flex; flex-direction: column; gap: 16px">
-									<download-installer-button
-										windows-url="https://github.com/darksoil-studio/dash-chat/releases/download/v0.11.0/Dash.Chat_0.11.0_x64_en-US.msi"
-										nix-command="nix run github:darksoil-studio/dash-chat/v0.11.0"
-										macos-intel-url="https://github.com/darksoil-studio/dash-chat/releases/download/v0.11.0/Dash.Chat_0.11.0_x64.dmg"
-										macos-silicon-url="https://github.com/darksoil-studio/dash-chat/releases/download/v0.11.0/Dash.Chat_0.11.0_aarch64.dmg"
-										linux-url="https://github.com/darksoil-studio/dash-chat/releases/download/v0.11.0/Dash.Chat_0.11.0_amd64.AppImage"
-									>
-									</download-installer-button>
-								</div>
-							</div>
-						</div>
-					</rocket-columns>
-
-					<div>
-						<h2 id="darksoil" link-text="darksoil.studio">
-							a darksoil studio project
-						</h2>
-						<p>
-							dash chat is a darksoil studio project.
-							<br />
-							<br />
-							Learn more about darksoil at
-							<a href="https://darksoil.studio">darksoil.studio</a>.
-						</p>
-					</div>
-				</rocket-content-area>
+		<nav>
+			<div class="nav-inner">
+				<a href="#" class="nav-brand">Dash Chat</a>
+				<div class="nav-links">
+					<a
+						href="https://github.com/dash-chat/dash-chat"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="gh-link"
+						title="GitHub"
+					>
+						<svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+							<path
+								d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"
+							/>
+						</svg>
+					</a>
+				</div>
 			</div>
-		</div>
+		</nav>
+
+		<!-- HERO -->
+		<section class="hero">
+			<div class="container">
+				<h1>Download Dash Chat.</h1>
+				<p class="subtitle">
+					Secure messaging that keeps working when the internet doesn't.
+				</p>
+				<div
+					style="
+						display: flex;
+						flex-direction: column;
+						align-items: center;
+						justify-content: center;
+					"
+				>
+					<download-installer-button
+						style="width: 100%; max-width: 500px"
+						windows-url="https://github.com/darksoil-studio/dash-chat/releases/download/v0.13.0/Dash.Chat_0.13.0_x64_en-US.msi"
+						macos-intel-url="https://github.com/darksoil-studio/dash-chat/releases/download/v0.13.0/Dash.Chat_0.13.0_x64.dmg"
+						macos-silicon-url="https://github.com/darksoil-studio/dash-chat/releases/download/v0.13.0/Dash.Chat_0.13.0_aarch64.dmg"
+						linux-url="https://github.com/darksoil-studio/dash-chat/releases/download/v0.13.0/Dash.Chat_0.13.0_amd64.AppImage"
+					>
+					</download-installer-button>
+				</div>
+			</div>
+		</section>
+
+		<!-- FOOTER -->
+		<footer>
+			<a href="https://darksoil.studio">darksoil studio</a> &middot; Open source
+			under the
+			<a
+				href="https://github.com/darksoil-studio/dash-chat/blob/main/LICENSE"
+				target="_blank"
+				rel="noopener noreferrer"
+				>AGPL-3.0</a
+			>
+			license.
+		</footer>
+
+		<script type="module">
+			const ANDROID_STORE_URL =
+				'https://play.google.com/store/apps/details?id=studio.darksoil.dashchat&pcampaignid=web_share';
+			const IOS_STORE_URL =
+				'https://apps.apple.com/app/dash-chat-messenger/id6759798505';
+
+			function redirectToAppStoreIfMobile() {
+				const ua = navigator.userAgent;
+
+				if (/android/i.test(ua)) {
+					window.location.replace(ANDROID_STORE_URL);
+					// iPadOS spoofs a macOS user agent, but reports maxTouchPoints > 1 (real Macs report 0)
+				} else if (
+					/iPad|iPhone|iPod/.test(ua) ||
+					('maxTouchPoints' in navigator &&
+						navigator.maxTouchPoints > 1 &&
+						/Macintosh/.test(ua))
+				) {
+					window.location.replace(IOS_STORE_URL);
+				}
+			}
+			redirectToAppStoreIfMobile();
+		</script>
 		<script type="module">
 			import './src/download-installer-button.ts';
 		</script>
 		<script type="module">
-			export async function registerCustomElements() {
-				// server-only components
-				// prettier-ignore
-				customElements.define('rocket-content-area', await import('@rocket/components/content-area.js').then(m => m.RocketContentArea));
-				// prettier-ignore
-				customElements.define('rocket-header-scroll-menu', await import('@rocket/components/header-scroll-menu.js').then(m => m.RocketHeaderScrollMenu));
-				// prettier-ignore
-				customElements.define('rocket-card', await import('@rocket/components/card.js').then(m => m.RocketCard));
-				// prettier-ignore
-				customElements.define('rocket-columns', await import('@rocket/components/columns.js').then(m => m.RocketColumns));
-			}
-
-			registerCustomElements();
-		</script>
-		<script type="module">
 			import '@shoelace-style/shoelace/dist/themes/dark.css';
+			import '@shoelace-style/shoelace/dist/themes/light.css';
+
+			// Apply correct Shoelace theme based on system preference
+			function applyTheme() {
+				const isDark = window.matchMedia(
+					'(prefers-color-scheme: dark)',
+				).matches;
+				document.documentElement.classList.toggle('sl-theme-dark', isDark);
+				document.documentElement.classList.toggle('sl-theme-light', !isDark);
+			}
+			applyTheme();
+			window
+				.matchMedia('(prefers-color-scheme: dark)')
+				.addEventListener('change', applyTheme);
 		</script>
 	</body>
 </html>

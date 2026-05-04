@@ -29,6 +29,7 @@
 	} from 'dash-chat-stores';
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { onActivate } from '$lib/utils/keyboard';
 	import {
 		mdiSend,
 		mdiAlert,
@@ -70,6 +71,7 @@
 	import { longpress } from '$lib/actions/longpress';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -220,6 +222,20 @@
 
 	onMount(() => {
 		messagesPageEl = document.querySelector('.messages-page') as HTMLDivElement;
+
+		// Track navbar height so sticky day-tags can use top: var(--navbar-height).
+		const navbar = messagesPageEl.querySelector('.k-navbar');
+		let navbarObserver: ResizeObserver | undefined;
+		if (navbar) {
+			navbarObserver = new ResizeObserver(([entry]) => {
+				messagesPageEl!.style.setProperty(
+					'--navbar-height',
+					`${entry.borderBoxSize[0].blockSize}px`,
+				);
+			});
+			navbarObserver.observe(navbar);
+		}
+
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
@@ -262,6 +278,7 @@
 		messagesPageEl?.addEventListener('scroll', handleScroll);
 
 		return () => {
+			navbarObserver?.disconnect();
 			unsubNewMessage?.();
 			observer?.disconnect();
 			clearTimeout(markReadTimeout);
@@ -475,7 +492,7 @@
 					{#if searchMode}
 						<Navbar
 							transparent={true}
-							titleClass="opacity1 w-full"
+							titleClass="opacity1 w-full min-w-0"
 							centerTitle={false}
 						>
 							{#snippet left()}
@@ -498,7 +515,7 @@
 					{:else}
 						<Navbar
 							transparent={true}
-							titleClass="opacity1 w-full"
+							titleClass="opacity1 w-full min-w-0"
 							centerTitle={false}
 						>
 							{#snippet left()}
@@ -512,18 +529,14 @@
 							{#snippet title()}
 								{#if profile}
 									<Link
-										class="flex items-center justify-start gap-2"
+										class="flex w-full min-w-0 items-center justify-start"
 										href={`/direct-chats/${agentId}/chat-settings`}
 										data-testid="direct-chat-settings-link"
 									>
-										<Avatar
-											image={profile!.avatar}
-											initials={profile!.name.slice(0, 2)}
-											style="--size: 2.5rem"
+										<AvatarWithName
+											{profile}
+											nameTestId="direct-chat-peer-name"
 										/>
-										<span data-testid="direct-chat-peer-name"
-											>{fullName(profile!)}</span
-										>
 									</Link>
 								{/if}
 							{/snippet}
@@ -544,7 +557,7 @@
 									style={`padding-bottom: calc(${messageInputHeight} + 12px)`}
 								>
 									{#if profile}
-										<div class="column" style="align-items: center">
+										<div class="column mx-4" style="align-items: center">
 											<Link
 												class="column my-6 gap-2 items-center"
 												onclick={() => (showPeerProfile = true)}
@@ -590,6 +603,11 @@
 													<div
 														class="flex items-center justify-center gap-2"
 														onclick={() => (profileNamesSheetOpen = true)}
+														role="button"
+														tabindex="0"
+														onkeydown={onActivate(
+															() => (profileNamesSheetOpen = true),
+														)}
 													>
 														<wa-icon
 															class="small-icon"
@@ -978,7 +996,7 @@
 	<!-- Overlay for bottom UI elements -->
 	{#await $myDeviceId then myDeviceId}
 		{#await $contactRequest then contactRequest}
-			<div class="absolute inset-0 pointer-events-none">
+			<div class="absolute inset-0 pointer-events-none z-[35]">
 				{#if showScrollToBottom && !searchMode}
 					{#await $unreadCount then count}
 						<button
@@ -1013,7 +1031,10 @@
 							class="row items-center gap-2 px-4 py-3"
 							style="margin: 0 auto"
 						>
-							<button onclick={() => dateInput?.click()}>
+							<button
+								onclick={() => dateInput?.click()}
+								aria-label={m.jumpToDate()}
+							>
 								<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
 								></wa-icon>
 							</button>
@@ -1039,6 +1060,7 @@
 								disabled={!matchingHashes.length}
 								onclick={goToPreviousMatch}
 								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+								aria-label={m.previousResult()}
 							>
 								<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
 							</button>
@@ -1046,6 +1068,7 @@
 								disabled={!matchingHashes.length}
 								onclick={goToNextMatch}
 								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+								aria-label={m.nextResult()}
 							>
 								<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
 							</button>
@@ -1105,10 +1128,10 @@
 							bind:value={messageText}
 							bind:height={messageInputHeight}
 							onSend={sendMessage}
-							onInput={async () => {
+							onFocus={() => {
 								if (scrollIsAtBottom()) {
-									await tick();
 									scrollToBottom();
+									return { onResize: () => scrollToBottom(false) };
 								}
 							}}
 							onEmojiClick={() => (showFullPicker = true)}

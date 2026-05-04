@@ -50,7 +50,7 @@ impl Node {
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        self.local_store.register_topic_as_subscribed(topic)?;
+        self.local_store.register_topic_as_subscribed(topic).await?;
         self.initialize_topic(*topic).await?;
 
         Ok(())
@@ -297,7 +297,7 @@ impl Node {
             }
 
             Payload::Inbox(invitation) => {
-                let active_topics = self.local_store.get_active_inbox_topics()?;
+                let active_topics = self.local_store.get_active_inbox_topics().await?;
                 if !active_topics.iter().any(|it| **it.topic == *topic) {
                     // not for me, ignore
                     return Ok(());

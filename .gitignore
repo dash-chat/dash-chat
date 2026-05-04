@@ -22,22 +22,19 @@ dist/
 storybook-static
 *.tsbuildinfo
 
-# holochain
-*.happ
-*.webhapp
-*.zip
-*.dna
-*-dna_hashes
-.hc*
-.hc
-
 # cargo
 /target/
 target
 
+# nix
 .direnv/
 .envrc
 result*
+
+# tauri
+src-tauri/gen/schemas/
+
+# push notifications
 src-tauri/gen/apple/build/
 **/*/google-services.json
 **/*/GoogleService-Info.plist

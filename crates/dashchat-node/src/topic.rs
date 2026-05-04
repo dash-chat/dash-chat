@@ -36,6 +36,7 @@ use named_id::*;
 
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
 
 pub trait TopicKind:
     Default
@@ -144,6 +145,28 @@ pub type LogId = TopicId;
 impl p2panda_spaces::traits::SpaceId for TopicId {}
 
 pub type DashChatTopicId = TopicId;
+
+// -- SQLite encoding for TopicId --
+
+impl sqlx::Type<Sqlite> for TopicId {
+    fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {
+        <Vec<u8> as sqlx::Type<Sqlite>>::type_info()
+    }
+}
+
+impl sqlx::Encode<'_, Sqlite> for TopicId {
+    fn encode_by_ref(&self, buf: &mut Vec<SqliteArgumentValue<'_>>) -> Result<IsNull, BoxDynError> {
+        <Vec<u8> as sqlx::Encode<Sqlite>>::encode(self.0.to_vec(), buf)
+    }
+}
+
+impl sqlx::Decode<'_, Sqlite> for TopicId {
+    fn decode(value: <Sqlite as sqlx::Database>::ValueRef<'_>) -> Result<Self, BoxDynError> {
+        let bytes = <Vec<u8> as sqlx::Decode<Sqlite>>::decode(value)?;
+        let arr: [u8; 32] = bytes.try_into().map_err(|_| "TopicId is not 32 bytes")?;
+        Ok(TopicId(arr))
+    }
+}
 
 impl Nameable for TopicId {
     fn shortener(&self) -> Option<Shortener> {

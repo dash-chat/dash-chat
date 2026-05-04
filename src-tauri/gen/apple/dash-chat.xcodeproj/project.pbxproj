@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -17,10 +17,35 @@
 		8AD067333F71898D09A74F8C /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EFA6F408E0B94A4467A98671 /* WebKit.framework */; };
 		ADB09C5318968EBA6AEFE842 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0B233AF045E16F15B53BDF18 /* main.mm */; };
 		BBCF0C01ED9E2B789638FB39 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 4E934CB66A6EFDED8A7140E1 /* LaunchScreen.storyboard */; };
+		BD1216382F9FA61B00B762AE /* PushNotificationsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BD1216312F9FA61B00B762AE /* PushNotificationsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		BD219C622F98C52C00B97E83 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = BD219C612F98C52C00B97E83 /* GoogleService-Info.plist */; };
 		BF5CA451C3C87851B08BEDF2 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4B55E5851C4FCBB5648AAAE4 /* CoreGraphics.framework */; };
 		F9015C731EA3878F23601595 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 259BA298A3F6E74B3EFE04CB /* Metal.framework */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		BD1216362F9FA61B00B762AE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8089D74A27E9E9925A015C3B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BD1216302F9FA61B00B762AE;
+			remoteInfo = PushNotificationsExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		BD1216392F9FA61B00B762AE /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				BD1216382F9FA61B00B762AE /* PushNotificationsExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		0447FA6925BAAFC10F4DBA13 /* contacts.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = contacts.rs; sourceTree = "<group>"; };
@@ -47,6 +72,8 @@
 		AB1CCBF888A60C43A95C87F3 /* push_notifications.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = push_notifications.rs; sourceTree = "<group>"; };
 		AF3E0E9FD52F5C966036D166 /* dash-chat_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "dash-chat_iOS.entitlements"; sourceTree = "<group>"; };
 		BD00B5012F98C6C700487840 /* dash-chat_iOSrelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "dash-chat_iOSrelease.entitlements"; sourceTree = "<group>"; };
+		BD1216312F9FA61B00B762AE /* PushNotificationsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PushNotificationsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		BD12163E2F9FA67000B762AE /* libtauri_app_lib.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libtauri_app_lib.a; path = "../../../target/aarch64-apple-ios/debug/libtauri_app_lib.a"; sourceTree = "<group>"; };
 		BD219C612F98C52C00B97E83 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		C19CBD4A53D241FD81F7D90D /* tray.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = tray.rs; sourceTree = "<group>"; };
 		C34F863351A4699075675361 /* Dash Chat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Dash Chat.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -66,6 +93,20 @@
 		F89358BBE357B19AE7BF3DC5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		BD12163C2F9FA61B00B762AE /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = BD1216302F9FA61B00B762AE /* PushNotificationsExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		BD1216322F9FA61B00B762AE /* PushNotificationsExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (BD12163C2F9FA61B00B762AE /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = PushNotificationsExtension; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		AB3C8759DF258BE9A005EF44 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
@@ -82,6 +123,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BD12162E2F9FA61B00B762AE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -95,6 +143,7 @@
 				14B9867636FBA2C2552F98C9 /* Externals */,
 				E83379195823E5955C1C39DE /* Sources */,
 				C73FA6D28D53DD096CB4F09C /* src */,
+				BD1216322F9FA61B00B762AE /* PushNotificationsExtension */,
 				74CD414C9FEAC42C08214928 /* Frameworks */,
 				BF2B00AC8D8033D52EE5878F /* Products */,
 			);
@@ -121,6 +170,7 @@
 		74CD414C9FEAC42C08214928 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				BD12163E2F9FA67000B762AE /* libtauri_app_lib.a */,
 				4B55E5851C4FCBB5648AAAE4 /* CoreGraphics.framework */,
 				1B5923DA7F6F96396E562A7A /* libapp.a */,
 				259BA298A3F6E74B3EFE04CB /* Metal.framework */,
@@ -170,6 +220,7 @@
 			isa = PBXGroup;
 			children = (
 				C34F863351A4699075675361 /* Dash Chat.app */,
+				BD1216312F9FA61B00B762AE /* PushNotificationsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -224,6 +275,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		BD1216302F9FA61B00B762AE /* PushNotificationsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BD12163D2F9FA61B00B762AE /* Build configuration list for PBXNativeTarget "PushNotificationsExtension" */;
+			buildPhases = (
+				BD12162D2F9FA61B00B762AE /* Sources */,
+				BD12162E2F9FA61B00B762AE /* Frameworks */,
+				BD12162F2F9FA61B00B762AE /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				BD1216322F9FA61B00B762AE /* PushNotificationsExtension */,
+			);
+			name = PushNotificationsExtension;
+			packageProductDependencies = (
+			);
+			productName = PushNotificationsExtension;
+			productReference = BD1216312F9FA61B00B762AE /* PushNotificationsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		C1722EF9C228AED41A28302A /* dash-chat_iOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C93A9FF1E636F1015FE3E514 /* Build configuration list for PBXNativeTarget "dash-chat_iOS" */;
@@ -233,10 +306,12 @@
 				5842340EFDFF6D2C22E22851 /* Sources */,
 				5C1662138B6DDF78C1BA8683 /* Resources */,
 				AB3C8759DF258BE9A005EF44 /* Frameworks */,
+				BD1216392F9FA61B00B762AE /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				BD1216372F9FA61B00B762AE /* PBXTargetDependency */,
 			);
 			name = "dash-chat_iOS";
 			packageProductDependencies = (
@@ -252,7 +327,13 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1430;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2640;
+				TargetAttributes = {
+					BD1216302F9FA61B00B762AE = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
+				};
 			};
 			buildConfigurationList = 833D57EE8274ED7EECB45353 /* Build configuration list for PBXProject "dash-chat" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -268,6 +349,7 @@
 			projectRoot = "";
 			targets = (
 				C1722EF9C228AED41A28302A /* dash-chat_iOS */,
+				BD1216302F9FA61B00B762AE /* PushNotificationsExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -281,6 +363,13 @@
 				BD219C622F98C52C00B97E83 /* GoogleService-Info.plist in Resources */,
 				BBCF0C01ED9E2B789638FB39 /* LaunchScreen.storyboard in Resources */,
 				643555E9417C7AAF39BC7DA4 /* assets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BD12162F2F9FA61B00B762AE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -340,7 +429,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BD12162D2F9FA61B00B762AE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		BD1216372F9FA61B00B762AE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BD1216302F9FA61B00B762AE /* PushNotificationsExtension */;
+			targetProxy = BD1216362F9FA61B00B762AE /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		44ABFC92AF58D3478391E84E /* debug */ = {
@@ -378,6 +482,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 4XN3VLHC68;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -400,6 +505,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -441,6 +547,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 4XN3VLHC68;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -456,6 +563,7 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
@@ -465,12 +573,9 @@
 		762DFDF4C6E2516B70E7060C /* release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "dash-chat_iOS/dash-chat_iOSrelease.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 4XN3VLHC68;
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -496,7 +601,11 @@
 					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
 					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
 				);
-				OTHER_LDFLAGS = "$(inherited) -force_load \"$(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a\"";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"\"$(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a\"",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat;
 				PRODUCT_NAME = "Dash Chat";
 				SDKROOT = iphoneos;
@@ -505,15 +614,187 @@
 			};
 			name = release;
 		};
+		BD12163A2F9FA61B00B762AE /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 0.13.0;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				CODE_SIGN_ENTITLEMENTS = PushNotificationsExtension/PushNotificationsExtension.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PushNotificationsExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PushNotificationsExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../../../target/aarch64-apple-ios/$(CONFIGURATION)/libtauri_app_lib.a",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat.PushNotificationsExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "PushNotificationsExtension/PushNotifications-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = debug;
+		};
+		BD12163B2F9FA61B00B762AE /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 0.13.0;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				CODE_SIGN_ENTITLEMENTS = PushNotificationsExtension/PushNotificationsExtension.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PushNotificationsExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PushNotificationsExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../../../target/aarch64-apple-ios/$(CONFIGURATION)/libtauri_app_lib.a",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat.PushNotificationsExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "PushNotificationsExtension/PushNotifications-Bridging-Header.h";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = release;
+		};
 		E05A056B6562644711F2631A /* debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "dash-chat_iOS/dash-chat_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 4XN3VLHC68;
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -539,7 +820,11 @@
 					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
 					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
 				);
-				OTHER_LDFLAGS = "$(inherited) -force_load \"$(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a\"";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"\"$(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a\"",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat;
 				PRODUCT_NAME = "Dash Chat";
 				SDKROOT = iphoneos;
@@ -556,6 +841,15 @@
 			buildConfigurations = (
 				44ABFC92AF58D3478391E84E /* debug */,
 				5BC8566CEA0B761E63F61517 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		BD12163D2F9FA61B00B762AE /* Build configuration list for PBXNativeTarget "PushNotificationsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BD12163A2F9FA61B00B762AE /* debug */,
+				BD12163B2F9FA61B00B762AE /* release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = debug;

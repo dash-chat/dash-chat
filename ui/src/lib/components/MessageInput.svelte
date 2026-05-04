@@ -12,7 +12,7 @@
 		placeholder?: string;
 		height: string;
 		onSend?: () => void;
-		onInput?: () => void;
+		onFocus?: () => { onResize: () => void } | void;
 		onEmojiClick?: () => void;
 	}
 
@@ -21,7 +21,7 @@
 		height = $bindable(''),
 		placeholder = m.typeMessage(),
 		onSend,
-		onInput,
+		onFocus,
 		onEmojiClick,
 	}: Props = $props();
 	let div: HTMLDivElement;
@@ -41,7 +41,6 @@
 	function handleInput() {
 		value = textarea.value;
 		autoResize();
-		onInput?.();
 	}
 
 	function autoResize() {
@@ -61,7 +60,22 @@
 			onSend?.();
 			textarea.style.height = 'auto';
 			height = `${div.scrollHeight}px`;
+			textarea.focus(); // Refocus the textarea in case user wants to send another message
 		}
+	}
+
+	function handleFocus() {
+		const result = onFocus?.();
+		if (!result) return;
+		const vv = window.visualViewport;
+		if (!vv) return;
+		const onResize = () => result.onResize();
+		vv.addEventListener('resize', onResize);
+		textarea.addEventListener(
+			'blur',
+			() => vv.removeEventListener('resize', onResize),
+			{ once: true },
+		);
 	}
 
 	onMount(() => {
@@ -102,6 +116,7 @@
 				rows="1"
 				onkeydown={handleKeydown}
 				oninput={handleInput}
+				onfocus={handleFocus}
 			></textarea>
 		</div>
 

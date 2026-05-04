@@ -6,6 +6,7 @@
 	import NewMessagePanel from './NewMessagePanel.svelte';
 	import EmptyState from './EmptyState.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
+	import TestBanner from './TestBanner.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
@@ -32,41 +33,52 @@
 	);
 </script>
 
-<div class="desktop-layout">
-	<div class="desktop-sidebar">
-		{#if isSettings}
-			<SettingsPanel />
-		{:else if isNewMessage}
-			<NewMessagePanel />
-		{:else}
-			<ChatListPanel />
-		{/if}
-	</div>
-	<div class="desktop-content" class:desktop-content-settings={isSettings}>
-		{#if isSidebarRoute}
-			<EmptyState />
-			{#if isHome}
-				<div class="absolute bottom-3 left-0 right-0 z-10">
-					<GetStarted />
-				</div>
+<div class="desktop-shell">
+	<TestBanner />
+	<div class="desktop-layout">
+		<div class="desktop-sidebar">
+			{#if isSettings}
+				<SettingsPanel />
+			{:else if isNewMessage}
+				<NewMessagePanel />
+			{:else}
+				<ChatListPanel />
 			{/if}
-		{:else}
-			{@render children()}
-		{/if}
+		</div>
+		<div class="desktop-content" class:desktop-content-settings={isSettings}>
+			{#if isSidebarRoute}
+				<EmptyState />
+				{#if isHome}
+					<div class="absolute bottom-3 left-0 right-0 z-10">
+						<GetStarted />
+					</div>
+				{/if}
+			{:else}
+				{@render children()}
+			{/if}
+		</div>
 	</div>
 </div>
 
 <style>
+	.desktop-shell {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		width: 100%;
+	}
+
 	.desktop-layout {
 		display: flex;
-		height: 100vh;
+		flex: 1;
+		min-height: 0;
 		width: 100%;
 	}
 
 	.desktop-sidebar {
 		width: 280px;
 		min-width: 280px;
-		border-right: 1px solid var(--k-hairline-color);
+		border-inline-end: 1px solid var(--k-hairline-color);
 		overflow-y: auto;
 		overflow-x: hidden;
 		background-color: var(--color-md-light-surface-2);

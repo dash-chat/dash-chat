@@ -4,9 +4,18 @@ set working-directory := '..'
 dev:
     nix develop git+file:.#androidDev --command pnpm tauri android dev
 
-# build and install the android app via adb
+# install the android app via adb
 install:
+    nix develop git+file:.#androidDev --command bash -c "adb install src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"
+
+
+# build and install the android app via adb
+build-and-install:
     nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build --apk && adb install src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"
+
+# build the android app
+build:
+    nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build"
 
 # uninstall the android app via adb
 uninstall:

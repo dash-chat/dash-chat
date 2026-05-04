@@ -43,6 +43,9 @@ importers:
       rust-just:
         specifier: ^1.46.0
         version: 1.46.0
+      svelte:
+        specifier: ^5.49.2
+        version: 5.49.2
       svelte-language-server:
         specifier: ^0.17.25
         version: 0.17.25(picomatch@4.0.3)
@@ -85,9 +88,6 @@ importers:
       '@mdi/js':
         specifier: ^7.2.0
         version: 7.4.47
-      '@rocket/components':
-        specifier: ^0.2.0
-        version: 0.2.0
       '@shoelace-style/shoelace':
         specifier: ^2.11.0
         version: 2.19.0(@floating-ui/utils@0.2.10)(@types/react@18.3.15)
@@ -128,8 +128,8 @@ importers:
         specifier: ^6.1.0
         version: 6.1.0
       signalium:
-        specifier: ^2.0.7
-        version: 2.0.7
+        specifier: ^2.4.0
+        version: 2.4.0
       webbuf:
         specifier: ^3.0.28
         version: 3.0.28
@@ -210,8 +210,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       signalium:
-        specifier: ^2.1.5
-        version: 2.1.6
+        specifier: ^2.4.0
+        version: 2.4.0
       tailwindcss:
         specifier: ^4.1.18
         version: 4.1.18
@@ -1251,9 +1251,6 @@ packages:
     peerDependencies:
       '@types/react': 17 || 18 || 19
 
-  '@lit/reactive-element@1.6.3':
-    resolution: {integrity: sha512-QuTgnG52Poic7uM1AN5yJ09QMe0O28e10XzSvWDz02TJiiKee4stsiownEIadWm8nYzyDAyT+gKzUoZmiWQtsQ==}
-
   '@lit/reactive-element@2.1.1':
     resolution: {integrity: sha512-N+dm5PAYdQ8e6UlywyyrgI2t++wFGXfHx+dSJ1oBrg6FAxUj40jId++EaRm80MKX5JnlH1sBsyZ5h0bcZKemCg==}
 
@@ -1304,9 +1301,6 @@ packages:
     resolution: {integrity: sha512-46BZJYJjc/WwmKjsvDFykHtXrtomsCIrwYQPOP7VfMJoZY2bsDF9oROBABR3paDjDcmkUye1Pb1BqdcdiipaWA==}
     engines: {node: '>=18'}
     hasBin: true
-
-  '@rocket/components@0.2.0':
-    resolution: {integrity: sha512-N15uUVrpNPJNp/vNtsWsyDaGxblrmC7+uRmY/GloUS+6PyByQPGDVV9GIgUcnrmU2GvM9MtMQyo16q7M4zNndA==}
 
   '@rollup/rollup-android-arm-eabi@4.52.3':
     resolution: {integrity: sha512-h6cqHGZ6VdnwliFG1NXvMPTy/9PS3h8oLh7ImwR+kl+oYnQizgjxsONmmPSb2C66RksfkfIxEVtDSEcJiO0tqw==}
@@ -1941,9 +1935,6 @@ packages:
   '@webbuf/webbuf@3.0.28':
     resolution: {integrity: sha512-ugDgyhDMb/2U+rrHT4bL0PSMZva9eA/ATeLxHIoaVmvQ6hk7hBNAgc60nzuCmrwjYL+9L0cQe6xrGjostN2OPQ==}
     engines: {node: '>=20.8.0'}
-
-  '@webcomponents/template-shadowroot@0.1.0':
-    resolution: {integrity: sha512-ry84Vft6xtRBbd4M/ptRodbOLodV5AD15TYhyRghCRgIcJJKmYmJ2v2BaaWxygENwh6Uq3zTfGPmlckKT/GXsQ==}
 
   '@zip.js/zip.js@2.8.21':
     resolution: {integrity: sha512-fkyzXISE3IMrstDO1AgPkJCx14MYHP/suIGiAovEYEuBjq3mffsuL6aMV7ohOSjW4rXtuACuUfpA3GtITgdtYg==}
@@ -2733,9 +2724,6 @@ packages:
       debug:
         optional: true
 
-  fontawesome-free@1.0.4:
-    resolution: {integrity: sha512-7sX6Lbg2oQiClFFFFitJlKg20h3YTBON6rdmq3uGjNwDo8G6EjF2bfj2OjjcCUmf4OvZCgyHaXfW2JseqissLw==}
-
   foreground-child@3.3.1:
     resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
     engines: {node: '>=14'}
@@ -3227,23 +3215,14 @@ packages:
     resolution: {integrity: sha512-wM1+Z03eypVAVUCE7QdSqpVIvelbOakn1M0bPDoA4SGWPx3sNDVUiMo3L6To6WWGClB7VyXnhQ4Sn7gxiJbE6A==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
-  lit-element@3.3.3:
-    resolution: {integrity: sha512-XbeRxmTHubXENkV4h8RIPyr8lXc+Ff28rkcQzw3G6up2xg5E8Zu1IgOWIwBLEQsu3cOVFqdYwiVi0hv0SlpqUA==}
-
   lit-element@4.2.1:
     resolution: {integrity: sha512-WGAWRGzirAgyphK2urmYOV72tlvnxw7YfyLDgQ+OZnM9vQQBQnumQ7jUJe6unEzwGU3ahFOjuz1iz1jjrpCPuw==}
-
-  lit-html@2.8.0:
-    resolution: {integrity: sha512-o9t+MQM3P4y7M7yNzqAyjp7z+mQGa4NS4CxiyLqFPyFWyc4O+nodLrkrxSaCTrla6M5YOLaT3RpbbqjszB5g3Q==}
 
   lit-html@3.3.1:
     resolution: {integrity: sha512-S9hbyDu/vs1qNrithiNyeyv64c9yqiW9l+DBgI18fL+MTvOtWoFR0FWiyq1TxaYef5wNlpEmzlXoBlZEO+WjoA==}
 
   lit-signal-watcher@0.1.1:
     resolution: {integrity: sha512-OUAEqcKI7NY6/1md4Hy3RqoQOpiv+GiYO6ISDt8JTeXKW3YditiAACYsfEZ8mwGxfCLcRSfWLdKgNFntiYqm+Q==}
-
-  lit@2.8.0:
-    resolution: {integrity: sha512-4Sc3OFX9QHOJaHbmTMk28SYgVxLN3ePDjg7hofEft2zWlehFL3LiAuapWc4U/kYwMYJSh2hTCPZ6/LIC7ii0MA==}
 
   lit@3.3.1:
     resolution: {integrity: sha512-Ksr/8L3PTapbdXJCk+EJVB78jDodUMaP54gD24W186zGRARvwrsPfS60wae/SSCTCNZVPd1chXqio1qHQmu4NA==}
@@ -3858,16 +3837,8 @@ packages:
   signal-polyfill@0.1.2:
     resolution: {integrity: sha512-HT9d+L9NMiTzMxb/tU2Baym6129ROyRETSjvchvSkQa7wN0+SrG/IUlsaBLqKn2c+4mlze6CgQBEvgBjxOpiaQ==}
 
-  signalium@2.0.7:
-    resolution: {integrity: sha512-3puBZ49JrJjbjO2fk92L3PAjh6G4rsoL6ht3wqbKIDbYrmkHuOFOs1s48VLVbCFWlehUDSQxYOMeD5i/hfZ5cg==}
-    peerDependencies:
-      react: '>=18.3.1'
-    peerDependenciesMeta:
-      react:
-        optional: true
-
-  signalium@2.1.6:
-    resolution: {integrity: sha512-Vh/0Jwyc1FBols25+Ai99WI81jz6m0CjKDZwLMx0qh+y3CUMjpHOC1xtqeFGV1s6q7PyCC9SZowGgRrPcR4nVA==}
+  signalium@2.4.0:
+    resolution: {integrity: sha512-z7t+IyQAjrGC1vSZxdDVJmTEClVN3fpH0bpxTAOZzMFv40CfP+KR/+wHo90RzCN7oxHyxOZUaG3XuTHQo3xDZw==}
     peerDependencies:
       react: '>=18.3.1'
     peerDependenciesMeta:
@@ -5432,10 +5403,6 @@ snapshots:
     dependencies:
       '@types/react': 18.3.15
 
-  '@lit/reactive-element@1.6.3':
-    dependencies:
-      '@lit-labs/ssr-dom-shim': 1.4.0
-
   '@lit/reactive-element@2.1.1':
     dependencies:
       '@lit-labs/ssr-dom-shim': 1.4.0
@@ -5498,12 +5465,6 @@ snapshots:
       - bare-buffer
       - react-native-b4a
       - supports-color
-
-  '@rocket/components@0.2.0':
-    dependencies:
-      '@webcomponents/template-shadowroot': 0.1.0
-      fontawesome-free: 1.0.4
-      lit: 2.8.0
 
   '@rollup/rollup-android-arm-eabi@4.52.3':
     optional: true
@@ -6208,8 +6169,6 @@ snapshots:
       '@webbuf/webbuf': 3.0.28
 
   '@webbuf/webbuf@3.0.28': {}
-
-  '@webcomponents/template-shadowroot@0.1.0': {}
 
   '@zip.js/zip.js@2.8.21': {}
 
@@ -7081,8 +7040,6 @@ snapshots:
 
   follow-redirects@1.15.9: {}
 
-  fontawesome-free@1.0.4: {}
-
   foreground-child@3.3.1:
     dependencies:
       cross-spawn: 7.0.6
@@ -7555,21 +7512,11 @@ snapshots:
 
   lines-and-columns@2.0.4: {}
 
-  lit-element@3.3.3:
-    dependencies:
-      '@lit-labs/ssr-dom-shim': 1.4.0
-      '@lit/reactive-element': 1.6.3
-      lit-html: 2.8.0
-
   lit-element@4.2.1:
     dependencies:
       '@lit-labs/ssr-dom-shim': 1.4.0
       '@lit/reactive-element': 2.1.1
       lit-html: 3.3.1
-
-  lit-html@2.8.0:
-    dependencies:
-      '@types/trusted-types': 2.0.7
 
   lit-html@3.3.1:
     dependencies:
@@ -7579,12 +7526,6 @@ snapshots:
     dependencies:
       lit: 3.3.1
       signal-polyfill: 0.1.2
-
-  lit@2.8.0:
-    dependencies:
-      '@lit/reactive-element': 1.6.3
-      lit-element: 3.3.3
-      lit-html: 2.8.0
 
   lit@3.3.1:
     dependencies:
@@ -8189,9 +8130,7 @@ snapshots:
 
   signal-polyfill@0.1.2: {}
 
-  signalium@2.0.7: {}
-
-  signalium@2.1.6: {}
+  signalium@2.4.0: {}
 
   sirv@3.0.2:
     dependencies:

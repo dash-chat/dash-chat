@@ -3,4 +3,7 @@ servers:
     deployment:
       type: on-branch
       branch: production
-
+  - configuration: push-notifications-server
+    deployment:
+      type: on-branch
+      branch: production
