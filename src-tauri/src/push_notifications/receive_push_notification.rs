@@ -211,7 +211,11 @@ async fn handle_push_notification(
                 .map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()))
                 .unwrap_or_else(|| format!("/group-chat/{}", hex::encode(&*topic_id)));
 
-            // Don't show notification if the user is already viewing this chat
+            // Don't show notification if the user is already viewing this chat.
+            // On iOS this check happens later in the main-app willPresent delegate
+            // (the NSE process can't see APP_HANDLE), so we just stash chat_route
+            // on the notification and let the plugin do the matching.
+            #[cfg(not(target_os = "ios"))]
             if is_viewing_chat(&chat_route) {
                 log::info!("Suppressing push notification: user is viewing the active chat");
                 return Ok(None);
@@ -228,6 +232,7 @@ async fn handle_push_notification(
                 body: Some(body_text),
                 icon: Some("ic_stat_icon".to_string()),
                 group: Some(hex::encode(&*topic_id)),
+                route: Some(chat_route),
                 ..Default::default()
             }))
         }
@@ -272,6 +277,7 @@ fn may_have_new_messages_generic_notification() -> NotificationData {
 }
 
 /// Checks whether the main window's current URL path matches the given chat route.
+#[cfg(not(target_os = "ios"))]
 fn is_viewing_chat(chat_route: &str) -> bool {
     let handle = match crate::APP_HANDLE.get() {
         Some(h) => h,
