@@ -10,9 +10,7 @@ use anyhow::Result;
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
-use tokio::task::JoinError;
-
-use crate::error::{AddContactError, Error};
+use crate::error::{AddContactError, Error, ShutdownError};
 use crate::filesystem::Filesystem;
 use chrono::{Duration, Utc};
 use futures::Stream;
@@ -103,12 +101,6 @@ impl<R> CancelAndWait<R> {
         self.token.cancel();
         Some(self.handle.lock().await.take()?.await)
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ShutdownError {
-    #[error("Stream processing task failed to join: {0}")]
-    StreamTaskJoin(#[from] JoinError),
 }
 
 #[derive(Clone)]
