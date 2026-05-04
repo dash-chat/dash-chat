@@ -313,6 +313,7 @@ impl Node {
             .map(|(public_key, access)| (GroupMember::Individual(public_key), access))
             .collect();
 
+        // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads().await?;
         self.author_operation(
             chat_id,
@@ -356,6 +357,7 @@ impl Node {
         member: PublicKey,
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
+        // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads().await?;
 
         self.author_operation(
@@ -390,6 +392,7 @@ impl Node {
         chat_id: ChatId,
         member: PublicKey,
     ) -> anyhow::Result<()> {
+        // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads().await?;
         self.author_operation(
             chat_id,
