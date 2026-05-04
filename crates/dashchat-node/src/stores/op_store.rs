@@ -25,15 +25,42 @@ pub struct OpStore<S = SqliteStore> {
     pub(crate) store: S,
     pub processed_ops: Arc<RwLock<HashMap<TopicId, HashSet<Hash>>>>,
     write_mutex: Arc<Mutex<()>>,
+    /// Handle to the SQLite pool,
+    /// so `close()` can release the database file handles on shutdown.
+    sqlite_pool: sqlx::SqlitePool,
 }
 
 impl OpStore {
-    pub fn new(store: SqliteStore) -> Self {
-        Self {
+    pub async fn new_sqlite(
+        database_file_path: impl AsRef<std::path::Path>,
+    ) -> anyhow::Result<Self> {
+        let path = database_file_path.as_ref().to_path_buf();
+        let url = format!("sqlite://{}", path.to_string_lossy());
+        p2panda_store::sqlite::create_database(&url).await?;
+
+        let pool = sqlx::SqlitePool::connect(&url)
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to connect to sqlite at '{path:?}': {e}"))?;
+
+        if p2panda_store::sqlite::run_pending_migrations(&pool)
+            .await
+            .is_err()
+        {
+            pool.close().await;
+            panic!("Database migration failed");
+        }
+        let store = SqliteStore::from_pool(pool.clone());
+        Ok(Self {
             store,
             write_mutex: Arc::new(Mutex::new(())),
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
-        }
+            sqlite_pool: pool,
+        })
+    }
+
+    /// Gracefully close the underlying SQLite pool (no-op for the in-memory variant).
+    pub async fn close(&self) {
+        self.sqlite_pool.close().await;
     }
 
     pub async fn get_log(

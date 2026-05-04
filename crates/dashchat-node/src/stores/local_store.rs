@@ -1,19 +1,14 @@
 use std::{
     collections::{BTreeSet, HashMap},
-    io::Write,
-    path::{Path, PathBuf},
-    sync::Arc,
+    path::Path,
     time::Duration,
 };
 
 use chrono::{DateTime, Utc};
-use p2panda_auth::Access;
-use p2panda_core::{Hash, Operation, PublicKey};
 use sqlx::{
     SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
-use tokio::sync::Mutex;
 
 use crate::{
     contact::InboxTopic,
@@ -75,6 +70,11 @@ impl LocalStore {
         let store = Self { pool };
         store.ensure_initialized().await?;
         Ok(store)
+    }
+
+    /// Gracefully close all SQLite connections so the database file handles are released.
+    pub async fn close(&self) {
+        self.pool.close().await;
     }
 
     /// If the database is not initialized, initialize with random keys

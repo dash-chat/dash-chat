@@ -5,16 +5,15 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use anyhow::Result;
-use p2panda_auth::Access;
-use p2panda_auth::group::resolver::StrongRemove;
-use p2panda_auth::group::{GroupAction, GroupMember};
-
-use crate::error::{AddContactError, Error};
+use crate::error::{AddContactError, Error, ShutdownError};
 use crate::filesystem::Filesystem;
+use anyhow::Result;
 use chrono::{Duration, Utc};
 use named_id::Rename;
 use named_id::*;
+use p2panda_auth::Access;
+use p2panda_auth::group::resolver::StrongRemove;
+use p2panda_auth::group::{GroupAction, GroupMember};
 use p2panda_core::{Hash, PublicKey, Timestamp};
 use p2panda_spaces::ActorId;
 use p2panda_store::SqliteStore;
@@ -28,7 +27,7 @@ use crate::mailbox::MailboxOperation;
 use crate::payload::{
     AnnouncementsPayload, ChatPayload, Extensions, InboxPayload, Payload, Profile,
 };
-use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore, new_sqlite};
+use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DashAction, DeviceGroupId, DeviceGroupPayload, DeviceId,
@@ -89,7 +88,7 @@ impl<R> CancelAndWait<R> {
         }
     }
 
-    pub async fn cancel_and_wait(self) -> Option<Result<R, tokio::task::JoinError>> {
+    pub async fn cancel_and_wait(&self) -> Option<Result<R, tokio::task::JoinError>> {
         self.token.cancel();
         Some(self.handle.lock().await.take()?.await)
     }
@@ -118,7 +117,7 @@ pub struct Node {
     group_store: GroupStore,
     node_keys: NodeKeys,
 
-    _filesystem: Filesystem,
+    filesystem: Filesystem,
 }
 
 impl Node {
@@ -152,9 +151,8 @@ impl Node {
         notification_tx: Option<mpsc::Sender<Notification>>,
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
-        let sqlite = new_sqlite(filesystem.op_store_path()).await?;
-        let op_store = OpStore::new(sqlite.clone());
-        let group_store = GroupStore::new(sqlite.clone());
+        let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
+        let group_store = GroupStore::new(op_store.store.clone());
 
         let (subscription_tx, subscription_rx) = mpsc::channel(100);
 
@@ -164,8 +162,8 @@ impl Node {
             op_store,
             mailboxes,
             config,
-            _filesystem: filesystem,
-            local_store,
+            filesystem,
+            local_store: local_store.clone(),
             group_store,
             node_keys,
             notification_tx,
@@ -183,6 +181,10 @@ impl Node {
         node.initialize_stored_topics().await?;
 
         Ok(node)
+    }
+
+    pub fn data_path(&self) -> &PathBuf {
+        self.filesystem.data_path()
     }
 
     pub async fn get_interleaved_logs(
@@ -583,21 +585,33 @@ impl Node {
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.
-    pub async fn shutdown(mut self) {
-        if let Some(cancel) = self.stream_cancel.take() {
+    pub async fn shutdown(&self) -> Result<(), ShutdownError> {
+        // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
+        self.mailboxes.clear().await;
+
+        if let Some(cancel) = self.stream_cancel.as_ref() {
             if let Err(err) = cancel.send(()).await {
                 tracing::warn!(
                     "failed to send cancel signal to stream processing task: {}",
                     err
                 );
+                return Err(ShutdownError::StreamTaskJoin(Box::new(err)));
             }
         }
         tracing::info!("joining stream processing task");
         if let Some(handle) = self.stream_handle.lock().unwrap().take() {
             if let Err(err) = handle.join() {
                 tracing::warn!("failed to join stream processing task: {:?}", err);
+                return Err(ShutdownError::StreamTaskJoin(err));
             }
         }
+
+        // Close pools last. SqlitePool clones share underlying state, so closing
+        // here drains every connection across the app.
+        self.local_store.close().await;
+        self.op_store.close().await;
+
+        Ok(())
     }
 
     /// Store someone as a contact, and:
