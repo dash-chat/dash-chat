@@ -25,7 +25,12 @@
 </script>
 
 <Page>
-	<Navbar title={m.chats()} titleClass="opacity1" rightClass="relative" transparent={true}>
+	<Navbar
+		title={m.chats()}
+		titleClass="opacity1"
+		rightClass="relative"
+		transparent={true}
+	>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
 				<Link iconOnly href="/settings" data-testid="home-settings-link">
