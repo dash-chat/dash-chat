@@ -584,14 +584,24 @@ impl Node {
         Ok(header)
     }
 
-    /// Abort the stream processing background task, allowing database handles to be released.
+    /// Stop background tasks and close database connections so the data
+    /// directory can be safely deleted (Windows holds locks on open SQLite files).
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
+        // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
+
+        // Cancel the stream processing task and wait for it to finish, otherwise
+        // it could be mid-query when we close the pools below.
         if let Some(ref cancel_and_wait) = self.stream_task {
             if let Some(Err(join_err)) = cancel_and_wait.cancel_and_wait().await {
                 return Err(ShutdownError::WaitOnDatabaseHandlesError(join_err));
             }
         }
+
+        // Close pools last. SqlitePool clones share underlying state, so closing
+        // here drains every connection across the app.
+        self.local_store.close().await;
+        self.op_store.close().await;
 
         Ok(())
     }

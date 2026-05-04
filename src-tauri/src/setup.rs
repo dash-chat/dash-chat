@@ -41,8 +41,6 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle)?.app_data_dir().clone();
     log::info!("Using local data path: {local_data_path:?}");
 
-    crate::commands::account::delete_account_if_pending(&local_data_path);
-
     #[cfg(not(mobile))]
     {
         app_handle.set_menu(crate::menu::build_menu(&app_handle)?)?;

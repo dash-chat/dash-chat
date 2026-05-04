@@ -29,6 +29,9 @@ where
     pub orderer: Arc<tokio::sync::RwLock<Orderer<S>>>,
     pub processed_ops: Arc<RwLock<HashMap<TopicId, HashSet<Hash>>>>,
     write_mutex: Arc<Mutex<()>>,
+    /// Optional handle to the SQLite pool. Set when constructed via `new_sqlite`,
+    /// so `close()` can release the database file handles on shutdown.
+    sqlite_pool: Option<sqlx::SqlitePool>,
 }
 
 impl OpStore<MemoryStore<TopicId, Extensions>> {
@@ -54,9 +57,11 @@ impl OpStore<SqliteStore<TopicId, Extensions>> {
             pool.close().await;
             panic!("Database migration failed");
         }
-        let store = SqliteStore::new(pool);
+        let store = SqliteStore::new(pool.clone());
 
-        Ok(Self::new(store))
+        let mut op_store = Self::new(store);
+        op_store.sqlite_pool = Some(pool);
+        Ok(op_store)
     }
 }
 
@@ -76,6 +81,14 @@ where
             orderer,
             write_mutex: Arc::new(Mutex::new(())),
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
+            sqlite_pool: None,
+        }
+    }
+
+    /// Gracefully close the underlying SQLite pool (no-op for the in-memory variant).
+    pub async fn close(&self) {
+        if let Some(pool) = &self.sqlite_pool {
+            pool.close().await;
         }
     }
 
