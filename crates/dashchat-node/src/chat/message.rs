@@ -1,3 +1,4 @@
+use derive_more::derive::Deref;
 use named_id::RenameNone;
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
@@ -13,11 +14,30 @@ use serde::{Deserialize, Serialize};
     derive_more::Deref,
     RenameNone,
 )]
-pub struct ChatMessageContent(String);
+pub struct ChatMessageContentV0(String);
+
+/// Placeholder for future message versions.
+pub type ChatMessageContentVersions = ();
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone, Deref)]
+pub struct ChatMessageContent(comcap::Compat<ChatMessageContentV0, ChatMessageContentVersions>);
 
 impl From<&str> for ChatMessageContent {
     fn from(value: &str) -> Self {
-        Self(value.to_string())
+        Self(comcap::Compat::Unversioned(ChatMessageContentV0(
+            value.to_string(),
+        )))
+    }
+}
+
+impl PartialOrd for ChatMessageContent {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (&self.0, &other.0) {
+            (comcap::Compat::Unversioned(v0), comcap::Compat::Unversioned(other_v0)) => {
+                Some(v0.cmp(other_v0))
+            }
+            _ => None,
+        }
     }
 }
 
@@ -69,18 +89,9 @@ pub mod testing {
             Some(
                 self.timestamp
                     .cmp(&other.timestamp)
-                    .then(self.content.cmp(&other.content))
-                    .then(self.author.cmp(&other.author)),
+                    .then(self.author.cmp(&other.author))
+                    .then(self.content.partial_cmp(&other.content)?),
             )
-        }
-    }
-
-    impl Ord for ChatMessage {
-        fn cmp(&self, other: &Self) -> Ordering {
-            self.timestamp
-                .cmp(&other.timestamp)
-                .then(self.content.cmp(&other.content))
-                .then(self.author.cmp(&other.author))
         }
     }
 }

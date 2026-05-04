@@ -1932,6 +1932,7 @@ dependencies = [
  "blake3",
  "bytes",
  "chrono",
+ "comcap",
  "dashchat-node",
  "derive_more 1.0.0",
  "futures",
