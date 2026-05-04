@@ -250,7 +250,15 @@
 			if (delta <= 0) return;
 			if (performance.now() < suppressCompensateUntil) return;
 			if (Math.abs(desiredScrollTop) < SCROLL_BOTTOM_THRESHOLD) return;
-			desiredScrollTop -= delta;
+			// In a column-reverse container, WebKit reports scrollTop as
+			// negative when the user has scrolled up from the visual bottom,
+			// while Chromium reports it as positive. abs(scrollTop) is the
+			// distance from the bottom in either engine. To keep the same
+			// messages on screen as the inner div grows, we grow that
+			// distance by `delta` in whichever sign convention applies — the
+			// threshold check above guarantees scrollTop is non-zero here, so
+			// Math.sign returns ±1.
+			desiredScrollTop += Math.sign(desiredScrollTop) * delta;
 			node.scrollTop = desiredScrollTop;
 		};
 
