@@ -25,7 +25,7 @@
 </script>
 
 <Page>
-	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
+	<Navbar title={m.chats()} titleClass="opacity1" rightClass="relative" transparent={true}>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
 				<Link iconOnly href="/settings" data-testid="home-settings-link">
@@ -43,6 +43,15 @@
 				<Link iconOnly href="/new-message" data-testid="home-new-message-link">
 					<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
 				</Link>
+				{#if !isWideScreen.value}
+					{#await $chatSummaries then chats}
+						{#if chats.length === 0}
+							<div class="absolute end-0 top-full mt-2 z-30">
+								<FirstChatTooltip />
+							</div>
+						{/if}
+					{/await}
+				{/if}
 			{/if}
 		{/snippet}
 	</Navbar>
@@ -50,16 +59,6 @@
 	<UpdaterBanner />
 
 	<div class={theme === 'ios' ? 'mt-4' : ''}></div>
-
-	{#if theme === 'ios' && !isWideScreen.value}
-		{#await $chatSummaries then chats}
-			{#if chats.length === 0}
-				<div class="fixed end-4 top-[6.5rem] z-30">
-					<FirstChatTooltip />
-				</div>
-			{/if}
-		{/await}
-	{/if}
 
 	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
 
