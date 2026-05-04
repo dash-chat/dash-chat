@@ -300,15 +300,8 @@ pub async fn consistency(
         }
     })
     .await
-    .map_err(|diffs| {
-        for n in nodes {
-            println!(
-                ">>> {:?}\n{}\n",
-                n.device_id(),
-                n.op_store.report(topics.clone())
-            );
-        }
-        println!("consistency report: {:#?}", diffs);
+    .map_err(|_diffs| {
+        // TODO: print a report here
         anyhow::anyhow!("consistency check failed")
     })
 }

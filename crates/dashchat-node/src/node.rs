@@ -67,38 +67,12 @@ impl Default for NodeConfig {
 }
 
 pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
-pub type NodeOpStore = OpStore<SqliteStore>;
-
-#[allow(unused)]
-#[derive(Clone)]
-pub(crate) struct CancelAndWait<R> {
-    handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<R>>>>,
-    token: tokio_util::sync::CancellationToken,
-}
-
-#[allow(unused)]
-impl<R> CancelAndWait<R> {
-    pub fn new(
-        handle: tokio::task::JoinHandle<R>,
-        token: tokio_util::sync::CancellationToken,
-    ) -> Self {
-        Self {
-            handle: Arc::new(tokio::sync::Mutex::new(Some(handle))),
-            token,
-        }
-    }
-
-    pub async fn cancel_and_wait(&self) -> Option<Result<R, tokio::task::JoinError>> {
-        self.token.cancel();
-        Some(self.handle.lock().await.take()?.await)
-    }
-}
 
 #[derive(Clone)]
 pub struct Node {
-    pub op_store: NodeOpStore,
+    pub op_store: OpStore,
 
-    pub mailboxes: Mailboxes<MailboxOperation, NodeOpStore>,
+    pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
 
     // groups: p2panda_auth::group::Groups,
     config: NodeConfig,
@@ -151,7 +125,7 @@ impl Node {
         notification_tx: Option<mpsc::Sender<Notification>>,
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
-        let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
+        let op_store = OpStore::new(filesystem.op_store_path()).await?;
         let group_store = GroupStore::new(op_store.store.clone());
 
         let (subscription_tx, subscription_rx) = mpsc::channel(100);
@@ -533,18 +507,6 @@ impl Node {
                 messages.push(crate::chat::testing::ChatMessage::new(message, &header));
             }
         }
-
-        // for (events, author, timestamp) in events {
-        //     for event in events {
-        //         use crate::Cbor;
-        //         match event {
-        //             Event::Application { space_id, data } => {
-        //                 messages.push(ChatMessage::from_bytes(&data)?)
-        //             }
-        //             _ => {}
-        //         }
-        //     }
-        // }
 
         Ok(messages)
     }

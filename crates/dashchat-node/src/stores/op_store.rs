@@ -19,21 +19,16 @@ use crate::{
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::DerefMut)]
-pub struct OpStore<S = SqliteStore> {
+pub struct OpStore {
     #[deref]
     #[deref_mut]
-    pub(crate) store: S,
+    pub(crate) store: SqliteStore,
     pub processed_ops: Arc<RwLock<HashMap<TopicId, HashSet<Hash>>>>,
     write_mutex: Arc<Mutex<()>>,
-    /// Handle to the SQLite pool,
-    /// so `close()` can release the database file handles on shutdown.
-    sqlite_pool: sqlx::SqlitePool,
 }
 
 impl OpStore {
-    pub async fn new_sqlite(
-        database_file_path: impl AsRef<std::path::Path>,
-    ) -> anyhow::Result<Self> {
+    pub async fn new(database_file_path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
         let path = database_file_path.as_ref().to_path_buf();
         let url = format!("sqlite://{}", path.to_string_lossy());
         p2panda_store::sqlite::create_database(&url).await?;
@@ -49,18 +44,30 @@ impl OpStore {
             pool.close().await;
             panic!("Database migration failed");
         }
-        let store = SqliteStore::from_pool(pool.clone());
+        let store = SqliteStore::from_pool(pool);
         Ok(Self {
             store,
             write_mutex: Arc::new(Mutex::new(())),
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
-            sqlite_pool: pool,
         })
+    }
+
+    pub async fn from_sqlite(store: SqliteStore) -> anyhow::Result<Self> {
+        Ok(Self {
+            store,
+            write_mutex: Arc::new(Mutex::new(())),
+            processed_ops: Arc::new(RwLock::new(HashMap::new())),
+        })
+    }
+
+    pub async fn temporary_sqlite() -> anyhow::Result<Self> {
+        let store = SqliteStore::temporary().await;
+        Ok(Self::from_sqlite(store).await?)
     }
 
     /// Gracefully close the underlying SQLite pool (no-op for the in-memory variant).
     pub async fn close(&self) {
-        self.sqlite_pool.close().await;
+        self.store.pool().close().await;
     }
 
     pub async fn get_log(
@@ -190,13 +197,6 @@ impl OpStore {
             .get(topic)
             .map(|s| s.contains(hash))
             .unwrap_or(false)
-    }
-}
-
-impl OpStore<SqliteStore> {
-    pub fn report<'a>(&self, _topics: impl IntoIterator<Item = &'a TopicId>) -> String {
-        tracing::warn!("report() not implemented for SqliteStore");
-        format!("report() not implemented for SqliteStore")
     }
 }
 

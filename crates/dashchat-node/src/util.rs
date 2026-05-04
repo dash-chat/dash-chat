@@ -32,3 +32,26 @@ pub fn first<T, U>(pair: (T, U)) -> T {
 pub fn second<T, U>(pair: (T, U)) -> U {
     pair.1
 }
+
+#[derive(Clone)]
+pub(crate) struct CancelAndWait<R> {
+    handle: std::sync::Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<R>>>>,
+    token: tokio_util::sync::CancellationToken,
+}
+
+impl<R> CancelAndWait<R> {
+    pub fn new(
+        handle: tokio::task::JoinHandle<R>,
+        token: tokio_util::sync::CancellationToken,
+    ) -> Self {
+        Self {
+            handle: std::sync::Arc::new(tokio::sync::Mutex::new(Some(handle))),
+            token,
+        }
+    }
+
+    pub async fn cancel_and_wait(&self) -> Option<Result<R, tokio::task::JoinError>> {
+        self.token.cancel();
+        Some(self.handle.lock().await.take()?.await)
+    }
+}
