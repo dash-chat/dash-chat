@@ -59,9 +59,7 @@ impl OpStore<SqliteStore<TopicId, Extensions>> {
         }
         let store = SqliteStore::new(pool.clone());
 
-        let mut op_store = Self::new(store);
-        op_store.sqlite_pool = Some(pool);
-        Ok(op_store)
+        Ok(Self::with_sqlite_pool(store, Some(pool)))
     }
 }
 
@@ -71,6 +69,10 @@ where
     S: Send + Sync,
 {
     pub fn new(store: S) -> Self {
+        Self::with_sqlite_pool(store, None)
+    }
+
+    fn with_sqlite_pool(store: S, sqlite_pool: Option<sqlx::SqlitePool>) -> Self {
         let orderer = Arc::new(tokio::sync::RwLock::new(Orderer::new(
             store.clone(),
             Default::default(),
@@ -81,7 +83,7 @@ where
             orderer,
             write_mutex: Arc::new(Mutex::new(())),
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
-            sqlite_pool: None,
+            sqlite_pool,
         }
     }
 
