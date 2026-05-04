@@ -41,16 +41,33 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
         },
     );
 
-    Menu::with_items(
+    let file_submenu = Submenu::with_items(
         app_handle,
-        &[&Submenu::with_items(
-            app_handle,
-            t!("menuFile"),
-            true,
-            &[
-                &mailbox_toggle,
-                &PredefinedMenuItem::close_window(app_handle, None)?,
-            ],
-        )?],
-    )
+        t!("menuFile"),
+        true,
+        &[
+            &mailbox_toggle,
+            &PredefinedMenuItem::close_window(app_handle, None)?,
+        ],
+    )?;
+
+    // The Edit submenu wires standard clipboard shortcuts (Cmd/Ctrl+C, X, V, A,
+    // Z, Shift+Z) to the webview. On macOS WKWebView only handles these
+    // shortcuts when they are bound through the application menu.
+    let edit_submenu = Submenu::with_items(
+        app_handle,
+        t!("menuEdit"),
+        true,
+        &[
+            &PredefinedMenuItem::undo(app_handle, None)?,
+            &PredefinedMenuItem::redo(app_handle, None)?,
+            &PredefinedMenuItem::separator(app_handle)?,
+            &PredefinedMenuItem::cut(app_handle, None)?,
+            &PredefinedMenuItem::copy(app_handle, None)?,
+            &PredefinedMenuItem::paste(app_handle, None)?,
+            &PredefinedMenuItem::select_all(app_handle, None)?,
+        ],
+    )?;
+
+    Menu::with_items(app_handle, &[&file_submenu, &edit_submenu])
 }
