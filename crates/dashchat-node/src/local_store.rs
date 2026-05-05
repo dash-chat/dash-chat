@@ -146,6 +146,11 @@ impl LocalStore {
         Ok(store)
     }
 
+    /// Gracefully close all SQLite connections so the database file handles are released.
+    pub async fn close(&self) {
+        self.pool.close().await;
+    }
+
     /// If the database is not initialized, initialize with random keys
     async fn ensure_initialized(&self) -> anyhow::Result<()> {
         let mut tx = self.pool.begin().await?;
