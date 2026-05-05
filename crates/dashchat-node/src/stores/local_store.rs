@@ -11,6 +11,7 @@ use sqlx::{
 };
 
 use crate::{
+    compat::Capabilities,
     contact::InboxTopic,
     topic::{AutoRegisteredTopic, TopicId},
     *,
@@ -27,6 +28,10 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS contacts (
         device_id BLOB PRIMARY KEY,
         agent_id BLOB NOT NULL
+    )",
+    "CREATE TABLE IF NOT EXISTS capability_versions (
+        device_id BLOB PRIMARY KEY,
+        messaging INTEGER NOT NULL
     )",
     "CREATE TABLE IF NOT EXISTS subscribed_topics (
         topic_id BLOB PRIMARY KEY
@@ -256,6 +261,35 @@ impl LocalStore {
             .bind(nanos)
             .execute(&self.pool)
             .await?;
+        Ok(())
+    }
+
+    pub async fn get_device_capabilities(
+        &self,
+        device_id: DeviceId,
+    ) -> anyhow::Result<Capabilities> {
+        let row: Option<(u16,)> =
+            sqlx::query_as("SELECT messaging FROM capability_versions WHERE device_id = ?")
+                .bind(device_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        let (messaging,) = row.unwrap_or((0,));
+
+        Ok(Capabilities { messaging })
+    }
+
+    pub async fn set_device_capabilities(
+        &self,
+        device_id: DeviceId,
+        capabilities: Capabilities,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT OR REPLACE INTO capability_versions (device_id, messaging) VALUES (?, ?)",
+        )
+        .bind(device_id)
+        .bind(capabilities.messaging)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 }

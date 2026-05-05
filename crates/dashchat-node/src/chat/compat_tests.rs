@@ -1,10 +1,18 @@
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use comcap::{VersionConvert, VersionConvertError};
 
+    use mailbox_client::mem::MemMailbox;
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
 
-    use crate::{chat::*, compat::Capabilities};
+    use crate::{
+        ShareIntent,
+        chat::*,
+        compat::Capabilities,
+        testing::{ClusterConfig, TestNode, TestNodeConfig, consistency},
+    };
 
     #[test]
     fn chat_message_v0_roundtrip() {
@@ -62,5 +70,87 @@ mod tests {
         let v0 = ChatMessageContent::unversioned("hello");
         let result = v0.to_version(&Capabilities { messaging: 99 });
         assert_eq!(result, Err(VersionConvertError::UnknownVersion));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn messaging_v0_to_v1() {
+        dashchat_node::testing::setup_tracing(&["dashchat=warn"], true);
+
+        let mut alice_config = TestNodeConfig::default();
+        let bobbi_config = TestNodeConfig::default();
+        alice_config.node_config.capabilities = Capabilities::zero();
+
+        let mailbox = MemMailbox::new();
+        let alice = TestNode::new(alice_config, "alice")
+            .await
+            .add_mailbox_client(mailbox.client())
+            .await;
+        let bobbi = TestNode::new(bobbi_config, "bobbi")
+            .await
+            .add_mailbox_client(mailbox.client())
+            .await;
+
+        println!("alice: {:?}", alice.device_id().to_hex());
+        println!("bobbi: {:?}", bobbi.device_id().to_hex());
+
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+            .await
+            .unwrap();
+
+        let topic = alice.direct_chat_topic(bobbi.agent_id());
+
+        consistency([&alice, &bobbi], &[topic.into()], &ClusterConfig::default())
+            .await
+            .unwrap();
+
+        let alice_bobbi_caps = alice
+            .local_store
+            .get_device_capabilities(bobbi.device_id())
+            .await
+            .unwrap();
+        let bobbi_alice_caps = bobbi
+            .local_store
+            .get_device_capabilities(alice.device_id())
+            .await
+            .unwrap();
+
+        assert_eq!(alice_bobbi_caps, Capabilities::default());
+        assert_eq!(bobbi_alice_caps, Capabilities::zero());
+
+        let alice_caps = alice
+            .local_store
+            .get_group_peer_capabilities(topic)
+            .await
+            .unwrap();
+        let bobbi_caps = bobbi
+            .local_store
+            .get_group_peer_capabilities(topic)
+            .await
+            .unwrap();
+
+        assert_eq!(alice_caps, Capabilities::default());
+        assert_eq!(bobbi_caps, Capabilities::zero());
+
+        let chat = alice.direct_chat_topic(bobbi.agent_id());
+        alice.send_message(chat, "Hello".into()).await.unwrap();
+        bobbi.send_message(chat, "Hello back".into()).await.unwrap();
+
+        crate::testing::wait_for(
+            Duration::from_millis(100),
+            Duration::from_secs(5),
+            || async {
+                if (alice.get_messages(chat).await.unwrap().len() == 2
+                    && bobbi.get_messages(chat).await.unwrap().len() == 2)
+                {
+                    Ok(())
+                } else {
+                    Err("messages not received")
+                }
+            },
+        )
+        .await
+        .unwrap();
     }
 }

@@ -93,7 +93,7 @@ pub struct Node {
     /// Join handle for the stream processing background task
     stream_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 
-    local_store: LocalStore,
+    pub(crate) local_store: LocalStore,
     group_store: GroupStore,
     node_keys: NodeKeys,
 
