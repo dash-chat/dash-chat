@@ -5,16 +5,21 @@ mod dev 'scripts/dev.just'
 mod android 'scripts/android.just'
 
 # running tests
-mod test 'scripts/tests.just'
-
-# building and running the tauri app
-mod binary 'scripts/binary.just'
+mod test 'scripts/test.just'
 
 # push notifications
 mod push 'scripts/push.just'
 
 # ios development 
 mod ios 'scripts/ios.just'
+
+# build dash chat as a binary
+build:
+    pnpm tauri build --no-bundle
+
+# build dash chat as an installer (AppImage on linux)
+bundle:
+    pnpm tauri build
 
 # cut a new release (e.g. just release 0.11.0)
 release version:
