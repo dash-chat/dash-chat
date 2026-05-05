@@ -216,7 +216,7 @@ jobs:
           release_id: ${{ needs.create-release-draft.outputs.releaseId }}
           draft: true
 
-      - name: Upload AAB to release
+      - name: Upload APK to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
