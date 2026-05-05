@@ -210,13 +210,6 @@ async fn handle_push_notification(
                 })
                 .map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()))
                 .unwrap_or_else(|| format!("/group-chat/{}", hex::encode(&*topic_id)));
-
-            // Don't show notification if the user is already viewing this chat
-            if is_viewing_chat(&chat_route) {
-                log::info!("Suppressing push notification: user is viewing the active chat");
-                return Ok(None);
-            }
-
             let message_text: &str = &content;
             let body_text = match message_text.char_indices().nth(200) {
                 Some((idx, _)) => format!("{}...", &message_text[..idx]),
@@ -228,15 +221,17 @@ async fn handle_push_notification(
                 body: Some(body_text),
                 icon: Some("ic_stat_icon".to_string()),
                 group: Some(hex::encode(&*topic_id)),
+                route: Some(chat_route),
                 ..Default::default()
             }))
         }
-        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { profile, .. }) => {
+        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { code, profile }) => {
             Ok(Some(NotificationData {
                 title: Some(sonix_i18n::t!("newContactRequest")),
                 body: Some(profile.name),
                 icon: Some("ic_stat_icon".to_string()),
                 group: Some(topic_hex.to_string()),
+                route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
                 ..Default::default()
             }))
         }
@@ -269,25 +264,4 @@ fn may_have_new_messages_generic_notification() -> NotificationData {
         icon: Some("ic_stat_icon".to_string()),
         ..Default::default()
     }
-}
-
-/// Checks whether the main window's current URL path matches the given chat route.
-fn is_viewing_chat(chat_route: &str) -> bool {
-    let handle = match crate::APP_HANDLE.get() {
-        Some(h) => h,
-        None => return false,
-    };
-
-    use tauri::Manager;
-    let window = match handle.get_webview_window("main") {
-        Some(w) => w,
-        None => return false,
-    };
-
-    let url = match window.url() {
-        Ok(u) => u,
-        Err(_) => return false,
-    };
-
-    url.path() == chat_route
 }
