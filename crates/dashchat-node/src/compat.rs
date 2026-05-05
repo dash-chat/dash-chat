@@ -4,3 +4,9 @@ use serde::{Deserialize, Serialize};
 pub enum Capability {
     Messaging,
 }
+
+pub type Capabilities = comcap::Capabilities<Capability>;
+
+pub fn capabilities() -> Capabilities {
+    Capabilities::zero().with_capability(Capability::Messaging, 1)
+}

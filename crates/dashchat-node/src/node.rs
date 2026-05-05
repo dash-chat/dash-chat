@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, ShutdownError};
 use crate::filesystem::Filesystem;
 use anyhow::Result;
@@ -40,11 +41,14 @@ pub use stream_processing::Notification;
 pub struct NodeConfig {
     pub contact_code_expiry: Duration,
     pub mailboxes_config: MailboxesConfig,
+    pub capabilities: Capabilities,
 }
 
 impl NodeConfig {
     #[cfg(feature = "testing")]
     pub fn testing() -> Self {
+        use crate::compat::capabilities;
+
         let mut mailboxes_config = MailboxesConfig::default();
         mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
         mailboxes_config.degraded_interval = std::time::Duration::from_millis(2000);
@@ -53,6 +57,7 @@ impl NodeConfig {
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
+            capabilities: capabilities(),
         }
     }
 }
@@ -62,6 +67,7 @@ impl Default for NodeConfig {
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
+            capabilities: crate::compat::capabilities(),
         }
     }
 }
