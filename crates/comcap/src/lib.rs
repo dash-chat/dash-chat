@@ -1,25 +1,23 @@
-use derive_more::derive::{Deref, From};
-use named_id::{AnyNameable, Rename, RenameNone};
+use named_id::RenameAll;
 use serde::de::Deserializer;
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fmt;
 
 #[cfg(test)]
 mod util;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, RenameAll)]
 pub enum Compat<Bare, Tagged> {
     Unversioned(Bare),
     Versioned(Tagged),
 }
 
-impl<Bare: fmt::Debug, Tagged: fmt::Debug> Rename for Compat<Bare, Tagged> {
-    fn nameables(&self) -> Vec<AnyNameable<'_>> {
-        Vec::new()
-    }
-}
+// impl<Bare: fmt::Debug, Tagged: fmt::Debug> Rename for Compat<Bare, Tagged> {
+//     fn nameables(&self) -> Vec<AnyNameable<'_>> {
+//         Vec::new()
+//     }
+// }
 
 impl<Bare, Tagged> Serialize for Compat<Bare, Tagged>
 where
@@ -53,37 +51,60 @@ where
     }
 }
 
+pub type CapabilityVersion = u16;
+
 pub trait Capability: Ord + Clone + Copy + std::fmt::Debug + Send + Sync + 'static {}
 impl<C> Capability for C where C: Ord + Clone + Copy + std::fmt::Debug + Send + Sync + 'static {}
 
-#[derive(Clone, Debug, PartialEq, Eq, Deref, From, Serialize, Deserialize, RenameNone)]
-pub struct Capabilities<C: Capability>(BTreeMap<C, u16>);
-
-impl<C: Capability> Capabilities<C> {
-    pub fn with_capability(mut self, cap: C, version: u16) -> Self {
-        self.0.insert(cap, version);
-        self
-    }
-
-    pub fn infimum(&self, other: &Self) -> Self {
-        Self(
-            self.0
-                .iter()
-                .map(|(k, &v)| (k.clone(), v.min(other.0.get(k).copied().unwrap_or(0))))
-                .collect(),
-        )
-    }
-
-    pub fn infimum_opt(&self, other: Option<Self>) -> Self {
-        match other {
-            Some(other) => self.infimum(&other),
-            None => self.clone(),
+/// Generates a capabilities struct with typed fields and infimum negotiation.
+///
+/// The default value for each field is the version number given in the macro.
+/// `infimum` takes the min of each paired field, treating a missing peer capability as 0.
+/// `infimum_opt` is the same but treats `None` as "no constraint" (returns self).
+#[macro_export]
+macro_rules! capabilities {
+    (
+        $(#[$attr:meta])*
+        $vis:vis struct $name:ident {
+            $($field:ident: $version:expr),* $(,)?
         }
-    }
+    ) => {
+        $(#[$attr])*
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        $vis struct $name {
+            $(pub $field: $crate::CapabilityVersion,)*
+        }
 
-    pub fn zero() -> Self {
-        Self(Default::default())
-    }
+        #[allow(unused)]
+        impl $name {
+            pub fn zero() -> Self {
+                Self {
+                    $($field: 0,)*
+                }
+            }
+
+            pub fn infimum(&self, other: &Self) -> Self {
+                Self {
+                    $($field: self.$field.min(other.$field),)*
+                }
+            }
+
+            pub fn infimum_opt(&self, other: Option<Self>) -> Self {
+                match other {
+                    Some(other) => self.infimum(&other),
+                    None => self.clone(),
+                }
+            }
+        }
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self {
+                    $($field: $version,)*
+                }
+            }
+        }
+    };
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,11 +125,9 @@ impl fmt::Display for VersionConvertError {
 impl std::error::Error for VersionConvertError {}
 
 pub trait VersionConvert: Sized {
-    type Capability;
+    type Capabilities;
 
-    const CAPABILITY: Self::Capability;
-
-    fn to_version(&self, target_version: u16) -> Result<Self, VersionConvertError>;
+    fn to_version(&self, capabilities: &Self::Capabilities) -> Result<Self, VersionConvertError>;
 }
 
 #[cfg(test)]
@@ -117,12 +136,6 @@ mod tests {
 
     use super::*;
     use serde::{Deserialize, Serialize};
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-    pub enum TestCap {
-        Messaging,
-        SomethingElse,
-    }
 
     #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
     struct BareString(String);
@@ -142,17 +155,62 @@ mod tests {
 
     type TestCompat = Compat<BareString, TestVersions>;
 
+    capabilities! {
+        struct TestCapSet {
+            messaging: 3,
+            gossip_protocol: 1,
+        }
+    }
+
+    #[test]
+    fn capabilities_macro_default() {
+        let caps = TestCapSet::default();
+        assert_eq!(caps.messaging, 3);
+        assert_eq!(caps.gossip_protocol, 1);
+    }
+
+    #[test]
+    fn capabilities_macro_infimum() {
+        let a = TestCapSet {
+            messaging: 3,
+            gossip_protocol: 1,
+        };
+        let b = TestCapSet {
+            messaging: 2,
+            gossip_protocol: 1,
+        };
+        let inf = a.infimum(&b);
+        assert_eq!(inf.messaging, 2);
+        assert_eq!(inf.gossip_protocol, 1);
+        // commutative
+        assert_eq!(b.infimum(&a), inf);
+    }
+
+    #[test]
+    fn capabilities_macro_infimum_opt() {
+        let a = TestCapSet::default();
+        let b = TestCapSet {
+            messaging: 1,
+            gossip_protocol: 1,
+        };
+        assert_eq!(a.infimum_opt(None), a);
+        assert_eq!(a.infimum_opt(Some(b.clone())), a.infimum(&b));
+    }
+
     #[test]
     fn capabilities_infimum() {
-        let caps1 = Capabilities::zero()
-            .with_capability(TestCap::Messaging, 1)
-            .with_capability(TestCap::SomethingElse, 3);
-        let caps2 = Capabilities::zero()
-            .with_capability(TestCap::Messaging, 2)
-            .with_capability(TestCap::SomethingElse, 4);
-        let expected = Capabilities::zero()
-            .with_capability(TestCap::Messaging, 1)
-            .with_capability(TestCap::SomethingElse, 3);
+        let caps1 = TestCapSet {
+            messaging: 1,
+            gossip_protocol: 4,
+        };
+        let caps2 = TestCapSet {
+            messaging: 2,
+            gossip_protocol: 3,
+        };
+        let expected = TestCapSet {
+            messaging: 1,
+            gossip_protocol: 3,
+        };
         assert_eq!(caps1.infimum(&caps2), expected);
         assert_eq!(caps2.infimum(&caps1), expected);
     }

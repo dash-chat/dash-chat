@@ -134,7 +134,11 @@ mod tests {
             Duration::from_millis(100),
             Duration::from_secs(5),
             || async {
-                (bobbi.get_messages(chat).await.unwrap().len() == 1).ok_or("message not received")
+                if bobbi.get_messages(chat).await.unwrap().len() == 1 {
+                    Ok(())
+                } else {
+                    Err("message not received")
+                }
             },
         )
         .await

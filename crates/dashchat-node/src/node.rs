@@ -47,7 +47,7 @@ pub struct NodeConfig {
 impl NodeConfig {
     #[cfg(feature = "testing")]
     pub fn testing() -> Self {
-        use crate::compat::capabilities;
+        use crate::compat::Capabilities;
 
         let mut mailboxes_config = MailboxesConfig::default();
         mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
@@ -57,7 +57,7 @@ impl NodeConfig {
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
-            capabilities: capabilities(),
+            capabilities: Capabilities::default(),
         }
     }
 }
@@ -67,7 +67,7 @@ impl Default for NodeConfig {
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
-            capabilities: crate::compat::capabilities(),
+            capabilities: Capabilities::default(),
         }
     }
 }

@@ -4,7 +4,7 @@ mod tests {
 
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
 
-    use crate::chat::*;
+    use crate::{chat::*, compat::Capabilities};
 
     #[test]
     fn chat_message_v0_roundtrip() {
@@ -37,14 +37,15 @@ mod tests {
     #[test]
     fn version_convert_v1_to_v0() {
         let v1 = ChatMessageContent::text_only("hello");
-        let v0 = v1.to_version(0).unwrap();
+        let v0 = v1.to_version(&Capabilities::zero()).unwrap();
         assert_eq!(v0, ChatMessageContent::unversioned("hello"));
     }
 
     #[test]
     fn version_convert_v0_to_v1() {
         let v0 = ChatMessageContent::unversioned("hello");
-        let v1 = v0.to_version(1).unwrap();
+        let c = Capabilities { messaging: 1 };
+        let v1 = v0.to_version(&c).unwrap();
         assert_eq!(v1.message(), "hello");
         assert!(v1.media().is_none());
     }
@@ -52,14 +53,14 @@ mod tests {
     #[test]
     fn version_convert_empty_message_is_lossy() {
         let v1_empty = ChatMessageContent::new("", ());
-        let result = v1_empty.to_version(0);
+        let result = v1_empty.to_version(&Capabilities::zero());
         assert_eq!(result, Err(VersionConvertError::Lossy));
     }
 
     #[test]
     fn version_convert_unknown_version() {
         let v0 = ChatMessageContent::unversioned("hello");
-        let result = v0.to_version(99);
+        let result = v0.to_version(&Capabilities { messaging: 99 });
         assert_eq!(result, Err(VersionConvertError::UnknownVersion));
     }
 }

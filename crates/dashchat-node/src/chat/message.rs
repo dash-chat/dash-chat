@@ -4,7 +4,7 @@ use named_id::RenameNone;
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 
-use crate::compat::Capability;
+use crate::compat::Capabilities;
 
 #[derive(
     Clone,
@@ -98,13 +98,11 @@ impl PartialOrd for ChatMessageContent {
 }
 
 impl VersionConvert for ChatMessageContent {
-    type Capability = Capability;
-
-    const CAPABILITY: Capability = Capability::Messaging;
+    type Capabilities = Capabilities;
 
     // TODO: just take Capabilities?
-    fn to_version(&self, target: u16) -> Result<Self, VersionConvertError> {
-        match (&**self, target) {
+    fn to_version(&self, target: &Capabilities) -> Result<Self, VersionConvertError> {
+        match (&**self, target.messaging) {
             (Compat::Unversioned(_), 0) => Ok(self.clone()),
 
             (Compat::Versioned(ChatMessageContentV::V1(v1)), 0) => {

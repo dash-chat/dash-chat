@@ -1,5 +1,3 @@
-#![feature(bool_to_result)]
-
 mod chat;
 mod contact;
 mod error;
