@@ -53,17 +53,14 @@ where
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum Capability {
-    Messaging,
-    SomethingElse,
-}
+pub trait Capability: Ord + Clone + Copy + std::fmt::Debug + Send + Sync + 'static {}
+impl<C> Capability for C where C: Ord + Clone + Copy + std::fmt::Debug + Send + Sync + 'static {}
 
 #[derive(Clone, Debug, PartialEq, Eq, Deref, From, Serialize, Deserialize, RenameNone)]
-pub struct Capabilities(BTreeMap<Capability, u16>);
+pub struct Capabilities<C: Capability>(BTreeMap<C, u16>);
 
-impl Capabilities {
-    pub fn with_capability(mut self, cap: Capability, version: u16) -> Self {
+impl<C: Capability> Capabilities<C> {
+    pub fn with_capability(mut self, cap: C, version: u16) -> Self {
         self.0.insert(cap, version);
         self
     }
@@ -82,10 +79,6 @@ impl Capabilities {
             Some(other) => self.infimum(&other),
             None => self.clone(),
         }
-    }
-
-    pub fn current() -> Self {
-        Self::zero().with_capability(Capability::Messaging, 1)
     }
 
     pub fn zero() -> Self {
@@ -111,7 +104,10 @@ impl fmt::Display for VersionConvertError {
 impl std::error::Error for VersionConvertError {}
 
 pub trait VersionConvert: Sized {
-    const CAPABILITY: Capability;
+    type Capability;
+
+    const CAPABILITY: Self::Capability;
+
     fn to_version(&self, target_version: u16) -> Result<Self, VersionConvertError>;
 }
 
@@ -121,6 +117,12 @@ mod tests {
 
     use super::*;
     use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+    pub enum TestCap {
+        Messaging,
+        SomethingElse,
+    }
 
     #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
     struct BareString(String);
@@ -143,14 +145,14 @@ mod tests {
     #[test]
     fn capabilities_infimum() {
         let caps1 = Capabilities::zero()
-            .with_capability(Capability::Messaging, 1)
-            .with_capability(Capability::SomethingElse, 3);
+            .with_capability(TestCap::Messaging, 1)
+            .with_capability(TestCap::SomethingElse, 3);
         let caps2 = Capabilities::zero()
-            .with_capability(Capability::Messaging, 2)
-            .with_capability(Capability::SomethingElse, 4);
+            .with_capability(TestCap::Messaging, 2)
+            .with_capability(TestCap::SomethingElse, 4);
         let expected = Capabilities::zero()
-            .with_capability(Capability::Messaging, 1)
-            .with_capability(Capability::SomethingElse, 3);
+            .with_capability(TestCap::Messaging, 1)
+            .with_capability(TestCap::SomethingElse, 3);
         assert_eq!(caps1.infimum(&caps2), expected);
         assert_eq!(caps2.infimum(&caps1), expected);
     }
