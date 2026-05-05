@@ -3971,7 +3971,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -4083,7 +4083,7 @@ dependencies = [
  "tokio",
  "tower-service",
  "tracing",
- "windows-registry 0.6.1",
+ "windows-registry 0.5.3",
 ]
 
 [[package]]
@@ -6565,7 +6565,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -9185,16 +9185,6 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
-dependencies = [
- "libc",
- "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "socket2"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
@@ -9989,8 +9979,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-barcode-scanner"
 version = "2.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "485cbcf227f04117e930be748ea71d835900466dcd1d455d5ec284d36107a305"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=fix/barcode-scanner-ios#eecf086dd9d7117b44e5247410d4ece00f1858f6"
 dependencies = [
  "log",
  "serde",
@@ -10159,7 +10148,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification"
 version = "2.3.3"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#4151cd8097deb02d363d36c673a27b7a9b99c79b"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#c5b484e324b1cfa307477317ad3b6fc791fdb9a7"
 dependencies = [
  "log",
  "notify-rust",
@@ -10180,7 +10169,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-macros"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#4151cd8097deb02d363d36c673a27b7a9b99c79b"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#c5b484e324b1cfa307477317ad3b6fc791fdb9a7"
 dependencies = [
  "jni 0.21.1",
  "libc",
@@ -10194,7 +10183,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-models"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#4151cd8097deb02d363d36c673a27b7a9b99c79b"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#c5b484e324b1cfa307477317ad3b6fc791fdb9a7"
 dependencies = [
  "rand 0.8.6",
  "serde",
@@ -10300,7 +10289,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-virtual-keyboard-padding"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding?branch=main#f89f98447e68d752293ae06f541438ff17279953"
+source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding?branch=main#cb4a4c5950d32bc82f4b93e78160be6201391f2d"
 dependencies = [
  "serde",
  "tauri",
@@ -11820,7 +11809,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

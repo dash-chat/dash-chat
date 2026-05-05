@@ -89,6 +89,7 @@ class NotificationService: UNNotificationServiceExtension {
         }
         let title = notification_title(n).asString()
         let body = notification_body(n).asString()
+        let route = notification_route(n).asString()
         notification_destroy(n)
         log.info("decoded title=\(title ?? "<nil>", privacy: .private) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .private) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
         if (title == nil || title!.isEmpty) && (body == nil || body!.isEmpty) {
@@ -98,6 +99,11 @@ class NotificationService: UNNotificationServiceExtension {
         }
         if let title { bestAttemptContent.title = title }
         if let body { bestAttemptContent.body = body }
+        if let route, !route.isEmpty {
+            var userInfo = bestAttemptContent.userInfo
+            userInfo["__notification_route__"] = route
+            bestAttemptContent.userInfo = userInfo
+        }
         log.info("delivering modified content title=\(bestAttemptContent.title, privacy: .private) body=\(bestAttemptContent.body, privacy: .private)")
         self.deliver(bestAttemptContent)
     }

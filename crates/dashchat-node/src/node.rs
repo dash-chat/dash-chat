@@ -6,17 +6,16 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use anyhow::Result;
-use p2panda_auth::Access;
-use p2panda_auth::group::resolver::StrongRemove;
-use p2panda_auth::group::{GroupAction, GroupMember};
-
-use crate::error::{AddContactError, Error};
+use crate::error::{AddContactError, Error, ShutdownError};
 use crate::filesystem::Filesystem;
+use anyhow::Result;
 use chrono::{Duration, Utc};
 use futures::Stream;
 use named_id::Rename;
 use named_id::*;
+use p2panda_auth::Access;
+use p2panda_auth::group::resolver::StrongRemove;
+use p2panda_auth::group::{GroupAction, GroupMember};
 use p2panda_core::{Body, Hash, PublicKey};
 use p2panda_spaces::ActorId;
 use p2panda_store::{LogStore, SqliteStore};
@@ -98,7 +97,7 @@ impl<R> CancelAndWait<R> {
         }
     }
 
-    pub async fn cancel_and_wait(self) -> Option<Result<R, tokio::task::JoinError>> {
+    pub async fn cancel_and_wait(&self) -> Option<Result<R, tokio::task::JoinError>> {
         self.token.cancel();
         Some(self.handle.lock().await.take()?.await)
     }
@@ -124,7 +123,7 @@ pub struct Node {
     local_store: LocalStore,
     node_data: NodeData,
 
-    _filesystem: Filesystem,
+    filesystem: Filesystem,
 }
 
 impl Node {
@@ -150,7 +149,7 @@ impl Node {
             op_store: op_store.clone(),
             mailboxes,
             config,
-            _filesystem: filesystem,
+            filesystem,
             local_store: local_store.clone(),
             node_data,
             notification_tx,
@@ -164,6 +163,10 @@ impl Node {
         node.initialize_stored_topics().await?;
 
         Ok(node)
+    }
+
+    pub fn data_path(&self) -> &PathBuf {
+        self.filesystem.data_path()
     }
 
     pub async fn get_interleaved_logs(
@@ -574,11 +577,26 @@ impl Node {
         Ok(header)
     }
 
-    /// Abort the stream processing background task, allowing database handles to be released.
-    pub async fn shutdown(mut self) {
-        if let Some(cancel_and_wait) = self.stream_task.take() {
-            cancel_and_wait.cancel_and_wait().await;
+    /// Stop background tasks and close database connections so the data
+    /// directory can be safely deleted (Windows holds locks on open SQLite files).
+    pub async fn shutdown(&self) -> Result<(), ShutdownError> {
+        // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
+        self.mailboxes.clear().await;
+
+        // Cancel the stream processing task and wait for it to finish, otherwise
+        // it could be mid-query when we close the pools below.
+        if let Some(ref cancel_and_wait) = self.stream_task {
+            if let Some(Err(join_err)) = cancel_and_wait.cancel_and_wait().await {
+                return Err(ShutdownError::StreamTaskJoin(join_err));
+            }
         }
+
+        // Close pools last. SqlitePool clones share underlying state, so closing
+        // here drains every connection across the app.
+        self.local_store.close().await;
+        self.op_store.close().await;
+
+        Ok(())
     }
 
     /// Store someone as a contact, and:

@@ -1,5 +1,6 @@
 use serde::Serialize;
 use thiserror::Error;
+use tokio::task::JoinError;
 
 #[derive(Debug, Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
@@ -35,4 +36,10 @@ pub enum AddContactError {
     #[error(transparent)]
     #[serde(untagged)]
     Common(#[from] Error),
+}
+
+#[derive(Debug, Error)]
+pub enum ShutdownError {
+    #[error("Stream processing task failed to join: {0}")]
+    StreamTaskJoin(#[from] JoinError),
 }
