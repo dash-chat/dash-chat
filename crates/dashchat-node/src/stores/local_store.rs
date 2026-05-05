@@ -6,7 +6,7 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use sqlx::{
-    SqlitePool,
+    QueryBuilder, Row, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 
@@ -133,10 +133,25 @@ impl LocalStore {
         Ok(agent_ids)
     }
 
-    pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
+    pub async fn lookup_contact_by_device_id(
+        &self,
+        device_id: DeviceId,
+    ) -> anyhow::Result<Option<AgentId>> {
         let row: Option<(AgentId,)> =
             sqlx::query_as("SELECT agent_id FROM contacts WHERE device_id = ?")
                 .bind(device_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.map(|(id,)| id))
+    }
+
+    pub async fn lookup_contact_by_agent_id(
+        &self,
+        agent_id: AgentId,
+    ) -> anyhow::Result<Option<DeviceId>> {
+        let row: Option<(DeviceId,)> =
+            sqlx::query_as("SELECT device_id FROM contacts WHERE agent_id = ?")
+                .bind(agent_id)
                 .fetch_optional(&self.pool)
                 .await?;
         Ok(row.map(|(id,)| id))
@@ -172,6 +187,9 @@ impl LocalStore {
             .bind(contact.device_pubkey)
             .bind(contact.agent_id)
             .execute(&self.pool)
+            .await?;
+
+        self.set_device_capabilities(contact.device_pubkey, contact.capabilities)
             .await?;
         Ok(())
     }
@@ -266,16 +284,23 @@ impl LocalStore {
 
     pub async fn get_device_capabilities(
         &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<Capabilities> {
-        let row: Option<(u16,)> =
-            sqlx::query_as("SELECT messaging FROM capability_versions WHERE device_id = ?")
-                .bind(device_id)
-                .fetch_optional(&self.pool)
-                .await?;
-        let (messaging,) = row.unwrap_or((0,));
-
-        Ok(Capabilities { messaging })
+        device_ids: impl IntoIterator<Item = DeviceId>,
+    ) -> anyhow::Result<Option<Capabilities>> {
+        Ok(
+            QueryBuilder::new("SELECT (messaging) FROM capability_versions WHERE device_id IN ")
+                .push_tuples(device_ids, |mut qb, device_id| {
+                    qb.push_bind(device_id);
+                })
+                .push(" LIMIT 1000")
+                .build()
+                .fetch_all(&self.pool)
+                .await?
+                .into_iter()
+                .map(|row| Capabilities {
+                    messaging: row.get("messaging"),
+                })
+                .reduce(|acc, cap| acc.infimum(&cap)),
+        )
     }
 
     pub async fn set_device_capabilities(

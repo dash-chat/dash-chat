@@ -73,6 +73,40 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn get_set_capabilities() {
+        dashchat_node::testing::setup_tracing(&["dashchat=warn"], true);
+
+        let mut alice_config = TestNodeConfig::default();
+        let bobbi_config = TestNodeConfig::default();
+        alice_config.node_config.capabilities = Capabilities::zero();
+
+        let mailbox = MemMailbox::new();
+        let alice = TestNode::new(alice_config, "alice")
+            .await
+            .add_mailbox_client(mailbox.client())
+            .await;
+        let bobbi = TestNode::new(bobbi_config, "bobbi")
+            .await
+            .add_mailbox_client(mailbox.client())
+            .await;
+
+        let ac = alice
+            .local_store
+            .get_device_capabilities([alice.device_id()])
+            .await
+            .unwrap()
+            .unwrap();
+        let bc = bobbi
+            .local_store
+            .get_device_capabilities([bobbi.device_id()])
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(ac, Capabilities::zero());
+        assert_eq!(bc, Capabilities::current());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn messaging_v0_to_v1() {
         dashchat_node::testing::setup_tracing(&["dashchat=warn"], true);
 
@@ -105,32 +139,26 @@ mod tests {
             .await
             .unwrap();
 
+        // Both nodes see each others' capabilities
         let alice_bobbi_caps = alice
             .local_store
-            .get_device_capabilities(bobbi.device_id())
+            .get_device_capabilities([bobbi.device_id()])
             .await
+            .unwrap()
             .unwrap();
         let bobbi_alice_caps = bobbi
             .local_store
-            .get_device_capabilities(alice.device_id())
+            .get_device_capabilities([alice.device_id()])
             .await
+            .unwrap()
             .unwrap();
-
-        assert_eq!(alice_bobbi_caps, Capabilities::default());
+        assert_eq!(alice_bobbi_caps, Capabilities::current());
         assert_eq!(bobbi_alice_caps, Capabilities::zero());
 
-        let alice_caps = alice
-            .local_store
-            .get_group_peer_capabilities(topic)
-            .await
-            .unwrap();
-        let bobbi_caps = bobbi
-            .local_store
-            .get_group_peer_capabilities(topic)
-            .await
-            .unwrap();
-
-        assert_eq!(alice_caps, Capabilities::default());
+        // Both nodes return zero capabilities because alice is the limiting factor.
+        let alice_caps = alice.get_group_capabilities(topic).await.unwrap().unwrap();
+        let bobbi_caps = bobbi.get_group_capabilities(topic).await.unwrap().unwrap();
+        assert_eq!(alice_caps, Capabilities::zero());
         assert_eq!(bobbi_caps, Capabilities::zero());
 
         let chat = alice.direct_chat_topic(bobbi.agent_id());
@@ -141,8 +169,8 @@ mod tests {
             Duration::from_millis(100),
             Duration::from_secs(5),
             || async {
-                if (alice.get_messages(chat).await.unwrap().len() == 2
-                    && bobbi.get_messages(chat).await.unwrap().len() == 2)
+                if alice.get_messages(chat).await.unwrap().len() == 2
+                    && bobbi.get_messages(chat).await.unwrap().len() == 2
                 {
                     Ok(())
                 } else {

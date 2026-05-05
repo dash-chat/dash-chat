@@ -57,7 +57,7 @@ impl NodeConfig {
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
-            capabilities: Capabilities::default(),
+            capabilities: Capabilities::current(),
         }
     }
 }
@@ -67,7 +67,7 @@ impl Default for NodeConfig {
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
-            capabilities: Capabilities::default(),
+            capabilities: Capabilities::current(),
         }
     }
 }
@@ -158,6 +158,10 @@ impl Node {
         node.stream_cancel = Some(cancel_tx);
         node.stream_handle.lock().unwrap().replace(handle);
 
+        node.local_store
+            .set_device_capabilities(node.device_id(), node.config.capabilities)
+            .await?;
+
         node.initialize_stored_topics().await?;
 
         Ok(node)
@@ -237,6 +241,7 @@ impl Node {
             inbox_topic,
             agent_id: self.node_keys.agent_id,
             share_intent,
+            capabilities: self.config.capabilities,
         })
     }
 
@@ -276,6 +281,25 @@ impl Node {
 
         let my_actor = self.agent_id();
         self.register_topic(topic).await?;
+
+        let other_device_id = self
+            .local_store
+            .lookup_contact_by_agent_id(other)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
+
+        // TODO: this should use a transaction, but the race is not a big deal here
+        let deps = self.group_store.heads().await?;
+        let initial_members = vec![
+            (GroupMember::Individual(*self.device_id()), Access::write()),
+            (GroupMember::Individual(*other_device_id), Access::write()),
+        ];
+        self.author_operation(
+            topic,
+            DashAction::group_action(topic, GroupAction::Create { initial_members }, deps)?,
+            Some(&format!("create_direct_chat_space({})", topic.renamed())),
+        )
+        .await?;
 
         tracing::info!(
             my_actor = ?my_actor.renamed(),
@@ -382,7 +406,7 @@ impl Node {
 
         let agent_id = self
             .local_store
-            .lookup_contact(DeviceId::from(member))
+            .lookup_contact_by_device_id(DeviceId::from(member))
             .await?;
         if let Some(agent_id) = agent_id {
             self.invite_to_group(chat_id, agent_id).await?;
@@ -455,7 +479,9 @@ impl Node {
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        self.local_store.lookup_contact(device_id).await
+        self.local_store
+            .lookup_contact_by_device_id(device_id)
+            .await
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
@@ -769,5 +795,22 @@ impl Node {
         }
 
         Ok(())
+    }
+
+    /// Find the infimum of the capabilities of all other members of the group with read access or above.
+    ///
+    /// This is dependent on eventual consistency, and as other members join, the capabilities may change.
+    pub(super) async fn get_group_capabilities(
+        &self,
+        topic: ChatId,
+    ) -> anyhow::Result<Option<Capabilities>> {
+        let members = self.group_store.members(topic).await?;
+        let devices = members.iter().filter_map(|(member, access)| {
+            // Only include members with read access or above
+            // TODO: make sure this pubkey corresponds to a DeviceId and not an AgentId,
+            //       once device groups are implemented
+            (*access >= Access::read()).then_some(DeviceId::from(*member))
+        });
+        Ok(self.local_store.get_device_capabilities(devices).await?)
     }
 }
