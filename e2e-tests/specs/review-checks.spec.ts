@@ -134,13 +134,23 @@ async function runVisit(
 
 /** Trigger a full page reload and wait for the app to be ready.
  *  Clears window.__test before reloading so waitForTestUtils correctly
- *  waits for re-registration instead of finding the stale reference. */
+ *  waits for re-registration instead of finding the stale reference.
+ *  Disables CSS transitions/animations after reload so static layout checks
+ *  (dark-mode bg, overflow) don't race against in-flight color transitions. */
 async function reloadToHome(agent: WebdriverIO.Browser): Promise<void> {
 	await agent.execute(() => {
 		delete (window as any).__test;
 		window.location.href = '/';
 	});
 	await waitForTestUtils(agent);
+	await agent.execute(() => {
+		const id = '__e2e-no-transitions';
+		if (document.getElementById(id)) return;
+		const style = document.createElement('style');
+		style.id = id;
+		style.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }';
+		document.head.appendChild(style);
+	});
 	await agent.waitUntil(
 		async () => agent.execute(
 			() => window.__test.homeLoaded() !== null,

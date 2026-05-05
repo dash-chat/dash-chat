@@ -103,6 +103,9 @@ export async function visitProfilePages(options?: VisitOptions): Promise<VisitRe
 	// Home
 	progress('profile:home');
 	await waitFor(HOME, NAV_TIMEOUT);
+	// Settle pending paints/transitions before the first check — switchCombo's
+	// dark-mode + theme changes can still be propagating when we land here.
+	await breathe();
 	pages.push(runCheck('home', co));
 	await breathe();
 
