@@ -133,39 +133,26 @@ async fn handle_push_notification(
     // Poll for the operation to arrive (up to 15 seconds)
     // PERF: consider adding the ability for the op store to notify when an op is stored,
     //     instead of polling
-    let mut found = false;
+    let mut entry = None;
     for _ in 0..75 {
         let log = node
             .op_store
             .get_log(&public_key, &topic_id, Some(seq_num))
-            .await;
-        if let Ok(Some(entries)) = &log {
-            if !entries.is_empty() {
-                found = true;
-                break;
-            }
+            .await
+            .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
+        if let Some(first) = log.and_then(|entries| entries.into_iter().next()) {
+            entry = Some(first);
+            break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
-    if !found {
+    let Some((header, body)) = entry else {
         log::warn!(
             "Operation {op_id} in topic {topic_hex} not found after polling, showing generic notification"
         );
         return Ok(Some(new_message_generic_notification()));
-    }
-
-    // Get the operation
-    let entries = node
-        .op_store
-        .get_log(&public_key, &topic_id, Some(seq_num))
-        .await
-        .map_err(|err| anyhow!("failed to read op log: {err:?}"))?
-        .context("op log unexpectedly empty")?;
-    let (header, body) = entries
-        .into_iter()
-        .next()
-        .context("op log has no entries")?;
+    };
 
     // Don't show notifications for our own messages
     let sender_device_id = dashchat_node::DeviceId::from(header.public_key);
