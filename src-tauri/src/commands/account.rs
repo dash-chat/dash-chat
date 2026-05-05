@@ -23,7 +23,7 @@ pub async fn delete_account(app: AppHandle, node: State<'_, Node>) -> Result<(),
     let data_path = node.data_path();
     if let Err(e) = std::fs::remove_dir_all(&data_path) {
         log::error!("Failed to delete account data dir, retrying once: {e}");
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         if let Err(e) = std::fs::remove_dir_all(&data_path) {
             log::error!("Failed to delete account data dir after retry: {e}");
         } else {
