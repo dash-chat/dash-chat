@@ -15,6 +15,7 @@ pub mod polestar;
 mod id;
 pub mod mailbox;
 
+pub mod compat;
 #[cfg(feature = "testing")]
 pub mod testing;
 
