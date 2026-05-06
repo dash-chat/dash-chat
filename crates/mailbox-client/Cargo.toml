@@ -8,6 +8,7 @@ anyhow = "1"
 async-trait = "0.1.85"
 blake3 = { version = "1.8.3", features = ["serde"] }
 bytes = { version = "1.11.0", features = ["serde"] }
+ciborium = "0.2.2"
 derive_more = { version = "1.0.0", features = ["full"] }
 hex = "0.4.3"
 nanoid = "0.4.0"
@@ -24,8 +25,6 @@ redb = { version = "3.1", optional = true }
 
 mailbox-api = { path = "../mailbox-api" }
 
-# NOTE: only used for cbor encoding/decoding
-p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
