@@ -1,23 +1,17 @@
 use std::{
     collections::{BTreeSet, HashMap},
-    io::Write,
-    path::{Path, PathBuf},
-    sync::Arc,
+    path::Path,
     time::Duration,
 };
 
 use chrono::{DateTime, Utc};
-use p2panda_auth::Access;
-use p2panda_core::{Hash, Operation, PublicKey};
 use sqlx::{
     SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
-use tokio::sync::Mutex;
 
 use crate::{
     contact::InboxTopic,
-    node::DashResolver,
     topic::{AutoRegisteredTopic, TopicId},
     *,
 };
@@ -44,84 +38,20 @@ const MIGRATIONS: &[&str] = &[
 ];
 
 #[derive(Clone, Debug)]
-pub struct NodeData {
+pub struct NodeKeys {
     pub private_key: PrivateKey,
     pub agent_id: AgentId,
 }
 
-impl NodeData {
+impl NodeKeys {
     pub fn device_id(&self) -> DeviceId {
         DeviceId::from(self.private_key.public_key())
-    }
-}
-
-type MemStore = p2panda_auth::processor::Store<Operation<Extensions>>;
-
-/// Until we have a persisted solution to group state, we store group state in-memory and dump
-/// to a file whenever it changes.
-/// XXX: this must be replaced ASAP!
-#[derive(Clone)]
-pub struct HackyGroupStore {
-    groups: MemStore,
-    file_path: PathBuf,
-    file_write_mutex: Arc<Mutex<()>>,
-}
-
-impl HackyGroupStore {
-    pub async fn new(file_path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let mut this = Self {
-            groups: MemStore::default(),
-            file_path: file_path.as_ref().to_path_buf(),
-            file_write_mutex: Arc::new(Mutex::new(())),
-        };
-        this.load_from_file().await?;
-        Ok(this)
-    }
-
-    pub async fn heads(&self) -> anyhow::Result<Vec<Hash>> {
-        Ok(self.groups.get_state().await?.crdt.heads())
-    }
-
-    pub async fn process(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
-        let _lock = self.file_write_mutex.lock().await;
-        p2panda_auth::processor::process::<_, _, DashResolver>(&self.groups, operation).await?;
-        self.save_to_file().await?;
-        Ok(())
-    }
-
-    async fn save_to_file(&self) -> anyhow::Result<()> {
-        let groups = self.groups.get_state().await?;
-        let temp = self.file_path.with_file_name("groups.cbor.tmp");
-        let mut file = std::fs::File::create(&temp)?;
-        let bytes = p2panda_core::cbor::encode_cbor(&groups)?;
-        file.write_all(&bytes)?;
-        std::fs::rename(&temp, &self.file_path)?;
-        Ok(())
-    }
-
-    async fn load_from_file(&mut self) -> anyhow::Result<()> {
-        let Ok(file) = std::fs::File::open(&self.file_path) else {
-            tracing::warn!(
-                "Unable to open groups state file at {}. If it is supposed to exist, this is a bug.",
-                self.file_path.display()
-            );
-            return Ok(());
-        };
-        let state = p2panda_core::cbor::decode_cbor(&file)?;
-        self.groups.set_state(state).await?;
-        Ok(())
-    }
-
-    pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(PublicKey, Access)>> {
-        let group_id = topic.to_group_pubkey()?;
-        Ok(self.groups.get_state().await?.crdt.inner.members(group_id))
     }
 }
 
 #[derive(Clone)]
 pub struct LocalStore {
     pool: SqlitePool,
-    pub(crate) groups: HackyGroupStore,
 }
 
 impl LocalStore {
@@ -137,11 +67,7 @@ impl LocalStore {
             sqlx::query(sql).execute(&pool).await?;
         }
 
-        let groups_path = path.with_file_name("groups.cbor");
-        let store = Self {
-            pool,
-            groups: HackyGroupStore::new(groups_path).await?,
-        };
+        let store = Self { pool };
         store.ensure_initialized().await?;
         Ok(store)
     }
@@ -177,8 +103,8 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn node_data(&self) -> anyhow::Result<NodeData> {
-        Ok(NodeData {
+    pub async fn node_keys(&self) -> anyhow::Result<NodeKeys> {
+        Ok(NodeKeys {
             private_key: self.private_key().await?,
             agent_id: self.agent_id().await?,
         })

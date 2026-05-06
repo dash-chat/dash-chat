@@ -43,12 +43,13 @@ pub struct SimplifiedHeader {
 
 impl From<Header> for SimplifiedHeader {
     fn from(header: Header) -> SimplifiedHeader {
+        let previous = header.extensions.dependencies();
         SimplifiedHeader {
             public_key: header.public_key,
-            timestamp: header.timestamp,
+            timestamp: header.timestamp.as_micros(),
             seq_num: header.seq_num,
             backlink: header.backlink,
-            previous: header.previous,
+            previous,
             topic_id: Topic::untyped(*header.extensions.topic),
         }
     }
@@ -140,13 +141,14 @@ pub async fn get_log(
     node: State<'_, Node>,
 ) -> Result<Vec<SimplifiedOperation>, String> {
     let log = node
-        .get_log(TopicId::from(topic_id), author)
+        .op_store
+        .get_log(&author, &TopicId::from(topic_id), None)
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
 
     let simplified_log = log
         .into_iter()
-        .map(|(header, body)| simplify(header.hash(), header, body))
+        .map(|op| simplify(op.hash, op.header, op.body))
         .collect::<anyhow::Result<Vec<SimplifiedOperation>>>()
         .map_err(|err| format!("{err:?}"))?;
 
