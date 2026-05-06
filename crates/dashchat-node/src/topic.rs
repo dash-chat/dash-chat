@@ -237,7 +237,8 @@ impl Topic<kind::Chat> {
         let mut hasher = blake3::Hasher::new();
         hasher.update(pks[0].as_bytes());
         hasher.update(pks[1].as_bytes());
-        Self::new(hasher.finalize().into())
+        let pk = crate::util::clamp_to_ed25519_pubkey(hasher.finalize().into());
+        Self::new(pk.as_bytes().clone())
     }
 
     pub fn from_group_pubkey(pubkey: p2panda_core::PublicKey) -> Self {
