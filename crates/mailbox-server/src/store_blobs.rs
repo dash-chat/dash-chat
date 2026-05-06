@@ -1,12 +1,8 @@
-use std::collections::BTreeMap;
-
 use axum::{extract::State, http::StatusCode, Json};
 use mailbox_api::*;
 use redb::Database;
 
-use crate::{
-    blobs_table::BLOBS_TABLE, notify_topics_subscribers::notify_topics_subscribers, AppState,
-};
+use crate::{blobs_table::BLOBS_TABLE, AppState};
 
 pub async fn store_blobs(
     State(state): State<AppState>,

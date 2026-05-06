@@ -234,11 +234,26 @@ where
     }
 
     fn serialize_operation(item: &Item) -> Result<Opaq, anyhow::Error> {
-        let bytes = p2panda_core::cbor::encode_cbor(item)?;
+        let bytes = encode_cbor(item)?;
         Ok(Opaq::new(bytes))
     }
 
     fn deserialize_operation(blob: &Opaq) -> Result<Item, anyhow::Error> {
-        Ok(p2panda_core::cbor::decode_cbor(blob.as_ref())?)
+        Ok(decode_cbor(blob.as_ref())?)
     }
+}
+
+/// Serializes a value into CBOR format.
+pub fn encode_cbor<T: Serialize>(value: &T) -> Result<Vec<u8>, anyhow::Error> {
+    let mut bytes = Vec::new();
+    ciborium::ser::into_writer(value, &mut bytes)?;
+    Ok(bytes)
+}
+
+/// Deserializes a value which was formatted in CBOR.
+pub fn decode_cbor<T: for<'a> Deserialize<'a>, R: std::io::Read>(
+    reader: R,
+) -> Result<T, anyhow::Error> {
+    let value = ciborium::from_reader::<T, R>(reader)?;
+    Ok(value)
 }
