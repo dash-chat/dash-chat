@@ -20,12 +20,16 @@ use crate::compat::Capabilities;
 pub struct ChatMessageContentV0(String);
 
 /// Placeholder for future message versions.
+//
+// TODO: macro to ensure proper tagging
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
+#[serde(tag = "v")]
 pub enum ChatMessageContentV {
+    #[serde(rename = "1")]
     V1(ChatMessageContentV1),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, RenameNone)]
 pub struct ChatMessageContentV1 {
     pub message: String,
     pub media: Option<Media>,
@@ -88,12 +92,7 @@ impl From<&str> for ChatMessageContent {
 
 impl PartialOrd for ChatMessageContent {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match (&self.0, &other.0) {
-            (comcap::Compat::Unversioned(v0), comcap::Compat::Unversioned(other_v0)) => {
-                Some(v0.cmp(other_v0))
-            }
-            _ => None,
-        }
+        (self.message(), self.media()).partial_cmp(&(other.message(), other.media()))
     }
 }
 
@@ -106,7 +105,7 @@ impl VersionConvert for ChatMessageContent {
             (Compat::Unversioned(_), 0) => Ok(self.clone()),
 
             (Compat::Versioned(ChatMessageContentV::V1(v1)), 0) => {
-                if v1.message.is_empty() {
+                if v1.media.is_some() {
                     Err(VersionConvertError::Lossy)
                 } else {
                     Ok(Compat::Unversioned(ChatMessageContentV0(v1.message.clone())).into())
