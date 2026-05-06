@@ -162,16 +162,22 @@ mod tests {
         assert_eq!(bobbi_caps, Capabilities::zero());
 
         let chat = alice.direct_chat_topic(bobbi.agent_id());
-        alice.send_message(chat, "Hello".into()).await.unwrap();
-        bobbi.send_message(chat, "Hello back".into()).await.unwrap();
+        alice
+            .send_message(chat, ChatMessageContent::unversioned("Hello"))
+            .await
+            .unwrap();
+        bobbi
+            .send_message(chat, ChatMessageContent::text_only("Hello back"))
+            .await
+            .unwrap();
 
         crate::testing::wait_for(
             Duration::from_millis(100),
             Duration::from_secs(5),
             || async {
-                if alice.get_messages(chat).await.unwrap().len() == 2
-                    && bobbi.get_messages(chat).await.unwrap().len() == 2
-                {
+                let ma = alice.get_messages(chat).await.unwrap();
+                let mb = bobbi.get_messages(chat).await.unwrap();
+                if ma.len() == 2 && mb.len() == 2 {
                     Ok(())
                 } else {
                     Err("messages not received")
@@ -180,5 +186,20 @@ mod tests {
         )
         .await
         .unwrap();
+
+        // All messages should be at version 0 because of alice's zero capability.
+        let messages_alice = alice.get_messages(chat).await.unwrap();
+        let messages_bobbi = bobbi.get_messages(chat).await.unwrap();
+        assert_eq!(messages_alice, messages_bobbi);
+        assert_eq!(
+            messages_alice
+                .into_iter()
+                .map(|m| m.content)
+                .collect::<Vec<_>>(),
+            vec![
+                ChatMessageContent::unversioned("Hello"),
+                ChatMessageContent::unversioned("Hello back"),
+            ]
+        );
     }
 }

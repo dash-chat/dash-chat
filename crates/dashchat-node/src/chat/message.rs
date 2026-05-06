@@ -84,9 +84,7 @@ impl ChatMessageContent {
 
 impl From<&str> for ChatMessageContent {
     fn from(value: &str) -> Self {
-        Self(comcap::Compat::Unversioned(ChatMessageContentV0(
-            value.to_string(),
-        )))
+        ChatMessageContent::text_only(value)
     }
 }
 

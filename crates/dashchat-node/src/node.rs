@@ -10,6 +10,7 @@ use crate::error::{AddContactError, Error, ShutdownError};
 use crate::filesystem::Filesystem;
 use anyhow::Result;
 use chrono::{Duration, Utc};
+use comcap::VersionConvert;
 use named_id::Rename;
 use named_id::*;
 use p2panda_auth::Access;
@@ -554,7 +555,14 @@ impl Node {
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
 
-        let message = ChatMessageContent::from(message);
+        let capabilities = self
+            .get_group_capabilities(topic)
+            .await?
+            .ok_or(anyhow::anyhow!(
+                "no capabilities found for chat: {}",
+                topic.renamed()
+            ))?;
+        let message = ChatMessageContent::from(message).to_version(&capabilities)?;
 
         let header = self
             .author_operation(
