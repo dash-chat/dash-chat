@@ -36,7 +36,6 @@
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useSignal } from '$lib/stores/use-signal';
-	import { createSignalCache } from '$lib/stores/signal-cache.svelte';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMac, isMobile, isTauriEnv } from '$lib/utils/environment';

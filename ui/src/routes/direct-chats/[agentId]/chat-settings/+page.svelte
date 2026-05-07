@@ -32,9 +32,9 @@
 	let agentId = page.params.agentId!;
 
 	const theme = $derived(useTheme());
-
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
+
 	const peerProfile = useReactivePromise(store.peerProfile);
 
 	let showPeerProfile = $state(false);

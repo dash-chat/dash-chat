@@ -11,7 +11,9 @@
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
+		toPromise,
 		type ChatsStore,
+		type ContactCode,
 		type ContactRequest,
 		type ContactsStore,
 		type DeviceId,
@@ -67,8 +69,13 @@
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
+	const myAgentId = useReactivePromise(contactsStore.myAgentId);
+
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
+
+	const readTracker = createReadMessagesTracker(store);
+	const readMessageOnObserve = readTracker.observe;
 
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 	const peerProfile = useReactivePromise(store.peerProfile);
@@ -76,9 +83,6 @@
 	const messagesSets = useReactivePromise(store.messageSets);
 	const readMessageHashes = useReactivePromise(store.readMessageHashes);
 	const unreadCount = useReactivePromise(store.unreadCount);
-
-	const readTracker = createReadMessagesTracker(store);
-	const readMessageOnObserve = readTracker.observe;
 
 	async function acceptContactRequest(contactRequest: ContactRequest) {
 		try {
