@@ -59,21 +59,6 @@
 
 	<div class="column" style="flex: 1">
 		<div class="column center-in-desktop">
-			<BlockTitle>{m.contactUs()}</BlockTitle>
-			<List
-				strongIos
-				inset={isWideScreen.value || theme === 'ios'}
-				class="!mb-0"
-			>
-				<ListInput
-					type="textarea"
-					placeholder={m.tellUsWhatsGoingOn()}
-					bind:value={message}
-					inputClass="!h-32 resize-none"
-					data-testid="contact-us-message-input"
-				/>
-			</List>
-
 			<BlockTitle>{m.tellUsWhyReachingOut()}</BlockTitle>
 			<List
 				strongIos
@@ -96,6 +81,21 @@
 						</select>
 					{/snippet}
 				</ListInput>
+			</List>
+
+			<BlockTitle>{m.contactUs()}</BlockTitle>
+			<List
+				strongIos
+				inset={isWideScreen.value || theme === 'ios'}
+				class="!mb-0"
+			>
+				<ListInput
+					type="textarea"
+					placeholder={m.tellUsWhatsGoingOn()}
+					bind:value={message}
+					inputClass="!h-32 resize-none"
+					data-testid="contact-us-message-input"
+				/>
 			</List>
 
 			<List
