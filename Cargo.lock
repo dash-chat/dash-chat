@@ -1380,17 +1380,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "comcap"
-version = "0.1.0"
-dependencies = [
- "ciborium",
- "derive_more 2.1.1",
- "named-id",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1923,6 +1912,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashchat-compat"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+ "derive_more 2.1.1",
+ "named-id",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dashchat-node"
 version = "0.1.0"
 dependencies = [
@@ -1932,7 +1932,7 @@ dependencies = [
  "blake3",
  "bytes",
  "chrono",
- "comcap",
+ "dashchat-compat",
  "dashchat-node",
  "derive_more 1.0.0",
  "futures",

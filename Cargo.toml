@@ -17,7 +17,7 @@ named-id = { git = "https://github.com/maackle/named-id.git" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-comcap = { path = "crates/comcap" }
+dashchat-compat = { path = "crates/dashchat-compat" }
 mailbox-client = { path = "crates/mailbox-client", features = ["named-id"] }
 mailbox-server = { path = "crates/mailbox-server" }
 

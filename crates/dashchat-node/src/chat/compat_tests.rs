@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use comcap::{VersionConvert, VersionConvertError};
+    use dashchat_compat::{VersionConvert, VersionConvertError};
 
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
 
