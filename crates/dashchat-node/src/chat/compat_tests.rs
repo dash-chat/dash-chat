@@ -2,7 +2,7 @@
 mod tests {
     use std::time::Duration;
 
-    use comcap::{VersionConvert, VersionConvertError};
+    use dashchat_compat::{VersionConvert, VersionConvertError};
 
     use mailbox_client::mem::MemMailbox;
     use p2panda_core::cbor::{decode_cbor, encode_cbor};

@@ -10,7 +10,7 @@ use crate::error::{AddContactError, Error, ShutdownError};
 use crate::filesystem::Filesystem;
 use anyhow::Result;
 use chrono::{Duration, Utc};
-use comcap::VersionConvert;
+use dashchat_compat::VersionConvert;
 use named_id::Rename;
 use named_id::*;
 use p2panda_auth::Access;
@@ -562,7 +562,7 @@ impl Node {
                 "no capabilities found for chat: {}",
                 topic.renamed()
             ))?;
-        let message = ChatMessageContent::from(message).to_version(&capabilities)?;
+        let message = message.to_version(&capabilities)?;
 
         let header = self
             .author_operation(

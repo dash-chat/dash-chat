@@ -1,4 +1,4 @@
-use comcap::{Compat, VersionConvert, VersionConvertError};
+use dashchat_compat::{Compat, VersionConvert, VersionConvertError};
 use derive_more::derive::{Deref, From};
 use named_id::RenameNone;
 use p2panda_core::Hash;
@@ -39,11 +39,11 @@ pub struct ChatMessageContentV1 {
 pub type Media = ();
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone, Deref, From)]
-pub struct ChatMessageContent(comcap::Compat<ChatMessageContentV0, ChatMessageContentV>);
+pub struct ChatMessageContent(dashchat_compat::Compat<ChatMessageContentV0, ChatMessageContentV>);
 
 impl ChatMessageContent {
     pub fn new(message: impl Into<String>, media: Media) -> Self {
-        Self(comcap::Compat::Versioned(ChatMessageContentV::V1(
+        Self(dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(
             ChatMessageContentV1 {
                 message: message.into(),
                 media: Some(media),
@@ -52,7 +52,7 @@ impl ChatMessageContent {
     }
 
     pub fn text_only(message: impl Into<String>) -> Self {
-        Self(comcap::Compat::Versioned(ChatMessageContentV::V1(
+        Self(dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(
             ChatMessageContentV1 {
                 message: message.into(),
                 media: None,
@@ -62,21 +62,21 @@ impl ChatMessageContent {
 
     pub fn message(&self) -> &str {
         match &self.0 {
-            comcap::Compat::Unversioned(v0) => &v0.0,
-            comcap::Compat::Versioned(ChatMessageContentV::V1(v1)) => &v1.message,
+            dashchat_compat::Compat::Unversioned(v0) => &v0.0,
+            dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => &v1.message,
         }
     }
 
     pub fn media(&self) -> Option<&Media> {
         match &self.0 {
-            comcap::Compat::Unversioned(_) => None,
-            comcap::Compat::Versioned(ChatMessageContentV::V1(v1)) => v1.media.as_ref(),
+            dashchat_compat::Compat::Unversioned(_) => None,
+            dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => v1.media.as_ref(),
         }
     }
 
     #[cfg(test)]
     pub fn unversioned(message: impl Into<String>) -> Self {
-        Self(comcap::Compat::Unversioned(ChatMessageContentV0(
+        Self(dashchat_compat::Compat::Unversioned(ChatMessageContentV0(
             message.into(),
         )))
     }
