@@ -164,8 +164,8 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            #[cfg(not(desktop))]
-            let _ = (window, event); // unused off-desktop; used in the cfg(desktop) block below
+            #[cfg(mobile)]
+            let _ = (window, event); // unused on mobile; used in the cfg(desktop) block below
             #[cfg(desktop)]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 use tauri::Manager;
