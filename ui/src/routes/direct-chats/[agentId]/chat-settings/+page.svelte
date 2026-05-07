@@ -1,9 +1,9 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { fullName, type Profile } from 'dash-chat-stores';
+	import { fullName, type ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import type { Readable } from 'svelte/store';
 	import { goto } from '$app/navigation';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import {
 		mdiBellOutline,
 		mdiMagnify,
@@ -33,9 +33,9 @@
 
 	const theme = $derived(useTheme());
 
-	const { peerProfile } = getContext('direct-chat') as {
-		peerProfile: Readable<Promise<Profile | undefined>>;
-	};
+	const chatsStore: ChatsStore = getContext('chats-store');
+	const store = chatsStore.directChats(agentId);
+	const peerProfile = useReactivePromise(store.peerProfile);
 
 	let showPeerProfile = $state(false);
 

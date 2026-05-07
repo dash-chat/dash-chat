@@ -1,6 +1,8 @@
 import { type ReactiveFn, ReactivePromise, watcher } from 'signalium';
 import { type Readable } from 'svelte/store';
 
+import { getSignalCache } from './signal-cache.svelte';
+
 export function useSignal<T, Args extends unknown[]>(
 	v: ReactiveFn<T, Args>,
 	...args: Args
@@ -36,6 +38,11 @@ export function useReactivePromise<T, Args extends unknown[]>(
 	v: (...args: Args) => ReactivePromise<T>,
 	...args: Args
 ): Readable<Promise<T>> {
+	// Register with the nearest SignalCache (if any) so the signalium cache for
+	// this (fn, args) is kept alive for the lifetime of the surrounding
+	// route group — not just this consumer's subscription.
+	getSignalCache()?.keepAlive(v, args);
+
 	const w = watcher(
 		() => {
 			const rp = v(...args);

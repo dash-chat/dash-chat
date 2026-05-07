@@ -5,22 +5,18 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import 'emoji-picker-element';
 
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { lessThanAMinuteAgo, moreThanAnHourAgo } from '$lib/utils/time';
 	import { getContext, onMount, tick } from 'svelte';
-	import type { Readable } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
-		toPromise,
-		type ContactCode,
+		type ChatsStore,
 		type ContactRequest,
 		type ContactsStore,
 		type DeviceId,
-		type DirectChatStore,
 		type Hash,
 		type Message,
-		type MessageSetsInDays,
-		type Profile,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
@@ -71,24 +67,15 @@
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
+	const chatsStore: ChatsStore = getContext('chats-store');
+	const store = chatsStore.directChats(agentId);
 
-	const myDeviceId = getContext('my-device-id') as Readable<Promise<DeviceId>>;
-
-	const {
-		store,
-		peerProfile,
-		contactRequest,
-		messagesSets,
-		readMessageHashes,
-		unreadCount,
-	} = getContext('direct-chat') as {
-		store: DirectChatStore;
-		peerProfile: Readable<Promise<Profile | undefined>>;
-		contactRequest: Readable<Promise<ContactRequest | undefined>>;
-		messagesSets: Readable<Promise<MessageSetsInDays>>;
-		readMessageHashes: Readable<Promise<Set<Hash>>>;
-		unreadCount: Readable<Promise<number>>;
-	};
+	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
+	const peerProfile = useReactivePromise(store.peerProfile);
+	const contactRequest = useReactivePromise(store.contactRequest);
+	const messagesSets = useReactivePromise(store.messageSets);
+	const readMessageHashes = useReactivePromise(store.readMessageHashes);
+	const unreadCount = useReactivePromise(store.unreadCount);
 
 	const readTracker = createReadMessagesTracker(store);
 	const readMessageOnObserve = readTracker.observe;
