@@ -1,5 +1,5 @@
 use dashchat_node::Node;
-#[cfg(not(mobile))]
+#[cfg(desktop)]
 use tauri::Manager;
 use tauri::{AppHandle, State};
 
@@ -17,7 +17,7 @@ pub async fn delete_account(app: AppHandle, node: State<'_, Node>) -> Result<(),
     // even if data-dir deletion partially fails. Any leftover files are surfaced
     // via logs only.
 
-    #[cfg(not(mobile))]
+    #[cfg(desktop)]
     if let Err(e) = crate::mailbox::server::stop_local_mailbox(&app).await {
         log::error!("Failed to stop local mailbox while trying to delete account: {e:?}");
     }
@@ -41,7 +41,7 @@ pub async fn delete_account(app: AppHandle, node: State<'_, Node>) -> Result<(),
         Ok(())
     }
 
-    #[cfg(not(mobile))]
+    #[cfg(desktop)]
     {
         tauri::process::restart(&app.env());
     }
