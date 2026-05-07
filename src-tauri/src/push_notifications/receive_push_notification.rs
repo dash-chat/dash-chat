@@ -29,6 +29,8 @@ pub fn receive_push_notification(
     notification: NotificationData,
     context: ReceivePushNotificationContext,
 ) -> Option<NotificationData> {
+    crate::utils::install_crypto_provider();
+
     #[cfg(target_os = "android")]
     ANDROID_LOGS_ONCE.call_once(|| unsafe {
         setup_android_logs();

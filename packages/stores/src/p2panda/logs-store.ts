@@ -18,7 +18,10 @@ import type { PublicKey, TopicId } from './types';
 const POLL_INTERVAL_MS = 1_000;
 const POLLING_ENABLED =
 	typeof navigator !== 'undefined' &&
-	/iPhone|iPad|iPod/i.test(navigator.userAgent);
+	(/iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+		// iPadOS 13+ reports a Mac user agent in WKWebView; fall back to the
+		// touch-points heuristic so iPad users still get the polling safety net.
+		(/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
 
 export class LogsStore<PAYLOAD> {
 	constructor(public logsClient: LogsClient<PAYLOAD>) {}
