@@ -158,16 +158,16 @@ jobs:
         with:
           name: darksoil-studio
 
-      - name: Cache Rust build artifacts
-        uses: actions/cache@v4
+      - name: Load nix dev shell environment
+        uses: nicknovitski/nix-develop@v1
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: android-rust-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            android-rust-
+          arguments: --accept-flake-config .#androidDev
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          shared-key: android-release
 
       - name: setup Android signing
         run: |
@@ -205,8 +205,7 @@ jobs:
           echo "Generated tauri.properties with version $VERSION and versionCode $VERSION_CODE"
 
       - name: Install and Build 🔧
-        run: |
-          nix develop --accept-flake-config .#androidDev --command bash -c "pnpm install && pnpm tauri android build --aab --apk"
+        run: pnpm install && pnpm tauri android build --aab --apk
 
       - name: Upload AAB to release
         uses: svenstaro/upload-release-action@v2

@@ -1,0 +1,46 @@
+name: "android build"
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  android-build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nix
+        uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          nix_path: nixpkgs=channel:nixos-25.11
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+          cache: true
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: holochain-ci
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: darksoil-studio
+
+      - name: Load nix dev shell environment
+        uses: nicknovitski/nix-develop@v1
+        with:
+          arguments: --accept-flake-config .#androidDev
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          shared-key: android
+
+      - name: Install and build (debug, no bundle)
+        run: pnpm install && pnpm tauri android build --debug --apk --target aarch64

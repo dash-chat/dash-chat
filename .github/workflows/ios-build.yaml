@@ -1,0 +1,59 @@
+name: "ios build"
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  ios-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+          cache: true
+
+      - name: Install xcodegen and just
+        run: brew install xcodegen just
+
+      - name: Use iOS rust toolchain
+        run: cp rust-toolchain.ios.toml rust-toolchain.toml
+
+      - name: Install Rust (with iOS targets)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+          cache-shared-key: ios
+
+      - name: Install pnpm dependencies
+        run: pnpm install
+
+      - name: Stub GoogleService-Info.plist for compile check
+        run: |
+          mkdir -p src-tauri/gen/apple/dash-chat_iOS
+          cat > src-tauri/gen/apple/dash-chat_iOS/GoogleService-Info.plist <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>BUNDLE_ID</key><string>studio.darksoil.dashchat</string>
+            <key>GOOGLE_APP_ID</key><string>1:0:ios:0</string>
+            <key>GCM_SENDER_ID</key><string>0</string>
+            <key>API_KEY</key><string>STUB</string>
+            <key>PROJECT_ID</key><string>stub</string>
+          </dict></plist>
+          EOF
+
+      - name: Build iOS app for simulator (compile check)
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+        run: |
+          pnpm tauri ios build --debug --target aarch64-sim
