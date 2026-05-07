@@ -264,17 +264,15 @@ impl Node {
                 };
                 // Subscribe to announcements topics for any group members whose agent_id we know.
                 let member_device_ids: Vec<DeviceId> = match &auth.action {
-                    p2panda_auth::group::GroupAction::Create { initial_members } => {
-                        initial_members
-                            .iter()
-                            .filter_map(|(m, _)| match m {
-                                p2panda_auth::group::GroupMember::Individual(pk) => {
-                                    Some(DeviceId::from(*pk))
-                                }
-                                _ => None,
-                            })
-                            .collect()
-                    }
+                    p2panda_auth::group::GroupAction::Create { initial_members } => initial_members
+                        .iter()
+                        .filter_map(|(m, _)| match m {
+                            p2panda_auth::group::GroupMember::Individual(pk) => {
+                                Some(DeviceId::from(*pk))
+                            }
+                            _ => None,
+                        })
+                        .collect(),
                     p2panda_auth::group::GroupAction::Add { member, .. } => match member {
                         p2panda_auth::group::GroupMember::Individual(pk) => {
                             vec![DeviceId::from(*pk)]
@@ -290,7 +288,10 @@ impl Node {
                 for agent_id in known.into_values() {
                     let topic = Topic::announcements(agent_id);
                     if let Err(err) = self.initialize_topic(*topic).await {
-                        tracing::warn!(?err, "failed to subscribe to announcements topic for group member");
+                        tracing::warn!(
+                            ?err,
+                            "failed to subscribe to announcements topic for group member"
+                        );
                     }
                 }
             }
@@ -323,15 +324,8 @@ impl Node {
         let topic = header.extensions.topic;
         // TODO: maybe have different loops for the different kinds of topics and the different payloads in each
         match &payload {
-            Payload::Chat(ChatPayload::JoinGroup { member_agent_ids, .. }) => {
-                // Subscribe to announcements topics for all group members so we can
-                // receive their SetCapabilities and learn their device_id->agent_id mappings.
-                for &agent_id in member_agent_ids {
-                    let topic = Topic::announcements(agent_id);
-                    if let Err(err) = self.initialize_topic(*topic).await {
-                        tracing::warn!(?err, "failed to subscribe to member announcements topic");
-                    }
-                }
+            Payload::Chat(ChatPayload::JoinGroup { .. }) => {
+                // Nothing to do.
             }
 
             Payload::Inbox(invitation) => {
@@ -360,9 +354,14 @@ impl Node {
                 // The announcements topic id IS the agent_id bytes, and the header public key is the device_id.
                 // Save the device_id -> agent_id mapping so group members can look each other up.
                 let device_id = DeviceId::from(header.public_key);
-                let agent_id = AgentId::from(crate::ActorId::from_bytes(&*topic)
-                    .map_err(|e| anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}"))?);
-                if let Err(err) = self.local_store.save_agent_mapping(device_id, agent_id).await {
+                let agent_id = AgentId::from(crate::ActorId::from_bytes(&*topic).map_err(|e| {
+                    anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
+                })?);
+                if let Err(err) = self
+                    .local_store
+                    .save_agent_mapping(device_id, agent_id)
+                    .await
+                {
                     tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
                 }
             }

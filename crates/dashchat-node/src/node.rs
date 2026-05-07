@@ -326,24 +326,7 @@ impl Node {
     }
 
     async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
-        let member_device_ids: Vec<DeviceId> = self
-            .group_store
-            .members(chat_id)
-            .await?
-            .into_iter()
-            .map(|(pk, _)| DeviceId::from(pk))
-            .collect();
-        let member_agent_ids: Vec<AgentId> = self
-            .local_store
-            .lookup_contacts(member_device_ids.iter())
-            .await?
-            .into_values()
-            .chain(Some(self.agent_id()))
-            .collect();
-        let payload = Payload::Chat(ChatPayload::JoinGroup {
-            chat_id,
-            member_agent_ids,
-        });
+        let payload = Payload::Chat(ChatPayload::JoinGroup { chat_id });
         tracing::info!(
             "{} is inviting {} to group {}",
             self.device_id().renamed(),
