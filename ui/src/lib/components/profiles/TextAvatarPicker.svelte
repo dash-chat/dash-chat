@@ -34,10 +34,12 @@
 		existingAvatar,
 		onSelect,
 		onClose,
+		focusInput = $bindable(),
 	}: {
 		existingAvatar?: string | undefined;
 		onSelect?: (avatar: string | undefined) => void;
 		onClose?: () => void;
+		focusInput?: () => void;
 	} = $props();
 
 	const initializeTextAvatar = (avatar?: string) =>
@@ -52,6 +54,7 @@
 
 	let activeTab = $state<'text' | 'color'>('text');
 	let hiddenInput: HTMLInputElement;
+	focusInput = () => hiddenInput?.focus();
 
 	function generateTextAvatar() {
 		const serializedAvatar = currentTextAvatar.serialize();
@@ -66,24 +69,16 @@
 		);
 	}
 
-	function focusTextInput() {
-		if (activeTab === 'text') {
-			hiddenInput?.focus();
-		} else {
-			activeTab = 'text';
-			setTimeout(() => hiddenInput?.focus(), 100);
-		}
+	function selectTextTab() {
+		// Must focus synchronously inside the click handler — iOS only opens
+		// the soft keyboard while still in the user-gesture context.
+		hiddenInput?.focus();
+		activeTab = 'text';
 	}
 
 	function handleColorSelect(color: string) {
 		currentTextAvatar = new TextAvatarData(color, currentTextAvatar.text);
 	}
-
-	$effect(() => {
-		if (activeTab === 'text') {
-			setTimeout(() => hiddenInput?.focus(), 100);
-		}
-	});
 </script>
 
 <input
@@ -93,6 +88,8 @@
 	value={currentTextAvatar.text}
 	oninput={handleTextInput}
 	maxlength="3"
+	aria-hidden="true"
+	tabindex="-1"
 	onblur={() =>
 		activeTab === 'text' && setTimeout(() => hiddenInput?.focus(), 0)}
 />
@@ -119,10 +116,7 @@
 
 <div style="padding: 0 16px 16px;">
 	<Segmented strong>
-		<SegmentedButton
-			active={activeTab === 'text'}
-			onClick={() => (activeTab = 'text')}
-		>
+		<SegmentedButton active={activeTab === 'text'} onClick={selectTextTab}>
 			{m.text()}
 		</SegmentedButton>
 		<SegmentedButton
@@ -139,7 +133,7 @@
 	<button
 		class="w-[180px] h-[180px] rounded-full flex items-center justify-center border-none cursor-pointer"
 		style="background-color: {currentTextAvatar.sanitizedHexColor()};"
-		onclick={focusTextInput}
+		onclick={selectTextTab}
 		type="button"
 	>
 		{#if activeTab === 'text'}
