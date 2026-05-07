@@ -22,7 +22,12 @@ export class LogsStore<PAYLOAD> {
 			const fetchAuthors = async () => {
 				const authors = await this.logsClient.getAuthorsForTopic(topicId);
 				const current = state.value;
-				if (current && current.length === authors.length && authors.every(a => current.includes(a))) return;
+				if (
+					current &&
+					current.length === authors.length &&
+					authors.every(a => current.includes(a))
+				)
+					return;
 				state.value = authors;
 			};
 			fetchAuthors();
@@ -63,7 +68,12 @@ export class LogsStore<PAYLOAD> {
 					if (author !== operation.header.public_key) return;
 
 					// We already have this operation
-					if (state.value?.find(op => op.header.seq_num === operation.header.seq_num)) return;
+					if (
+						state.value?.find(
+							op => op.header.seq_num === operation.header.seq_num,
+						)
+					)
+						return;
 
 					state.value = [...(state.value || []), operation];
 				},
@@ -82,7 +92,8 @@ export class LogsStore<PAYLOAD> {
 			authorsForTopic.map(author => this.logs(topicId, author)),
 		);
 
-		const logsForAllAuthors: Record<PublicKey, SimplifiedOperation<PAYLOAD>[]> = {};
+		const logsForAllAuthors: Record<PublicKey, SimplifiedOperation<PAYLOAD>[]> =
+			{};
 		for (let i = 0; i < authorsForTopic.length; i++) {
 			logsForAllAuthors[authorsForTopic[i]] = logs[i];
 		}
