@@ -32,6 +32,12 @@ pub(crate) static QUIT_DIALOG_OPEN: std::sync::atomic::AtomicBool =
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // `reqwest 0.13` (pulled in by `iroh-relay`) requires a rustls
+    // `CryptoProvider` to be installed before the first TLS handshake, or
+    // it panics with "No provider set". Manifests on Android, where no
+    // earlier code happens to install one.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     filesystem::init_data_dir();
 
     i18n::init_i18n();
