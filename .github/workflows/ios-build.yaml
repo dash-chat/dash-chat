@@ -41,5 +41,4 @@ jobs:
         env:
           IPHONEOS_DEPLOYMENT_TARGET: "14.0"
         run: |
-          cargo build --target aarch64-apple-ios-sim
           pnpm tauri ios build --debug --target aarch64-sim
