@@ -167,7 +167,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-          shared-key: android
+          shared-key: android-release
 
       - name: setup Android signing
         run: |
