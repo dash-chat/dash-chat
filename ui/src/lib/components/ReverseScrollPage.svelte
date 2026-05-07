@@ -262,12 +262,23 @@
 			node.scrollTop = desiredScrollTop;
 		};
 
+		// Inner growth doesn't just need scroll compensation — when content
+		// grows past the viewport for the first time, maxScroll jumps from 0
+		// to >0 and the Material navbar bg should switch from transparent
+		// (welcome card) to opaque. Without this, the navbar stays
+		// transparent until the next user-driven scroll event re-runs
+		// updateNavbar.
+		const onInnerChange = () => {
+			compensateScroll();
+			updateNavbar();
+		};
+
 		// Run scroll compensation off mutations inside the scroll content only.
 		// Scoping subtree:true to the inner div avoids forcing layout (via
 		// getBoundingClientRect inside compensateScroll) on every unrelated
 		// mutation under .k-page — search-input keystrokes, sheet/dialog
 		// open-close, navbar text updates, etc.
-		const innerObserver = new MutationObserver(compensateScroll);
+		const innerObserver = new MutationObserver(onInnerChange);
 		innerObserver.observe(inner, { childList: true, subtree: true });
 
 		// Backup: a ResizeObserver on the inner div catches any size change the
@@ -277,7 +288,7 @@
 		// it still pre-empts the visible flicker. If the MO already
 		// compensated, prevInnerHeight is up to date and this RO call is a
 		// no-op.
-		const innerResizeObserver = new ResizeObserver(compensateScroll);
+		const innerResizeObserver = new ResizeObserver(onInnerChange);
 		innerResizeObserver.observe(inner);
 
 		// Watch only the direct children of the page for navbar swaps (e.g.
