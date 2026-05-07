@@ -351,9 +351,10 @@ impl Node {
             }
 
             Payload::Announcements(AnnouncementsPayload::SetCapabilities { .. }) => {
-                // The announcements topic id IS the agent_id bytes, and the header public key is the device_id.
                 // Save the device_id -> agent_id mapping so group members can look each other up.
+
                 let device_id = DeviceId::from(header.public_key);
+                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
                 let agent_id = AgentId::from(crate::ActorId::from_bytes(&*topic).map_err(|e| {
                     anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
                 })?);
