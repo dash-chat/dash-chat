@@ -13,6 +13,10 @@ impl Filesystem {
         Self(data_path)
     }
 
+    pub fn data_path(&self) -> &PathBuf {
+        &self.0
+    }
+
     pub fn local_store_path(&self) -> PathBuf {
         self.0.join("localdata.db")
     }

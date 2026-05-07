@@ -3,44 +3,37 @@ mod stream_processing;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
-use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use crate::error::{AddContactError, Error, ShutdownError};
+use crate::filesystem::Filesystem;
 use anyhow::Result;
+use chrono::{Duration, Utc};
+use named_id::Rename;
+use named_id::*;
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
-
-use crate::error::{AddContactError, Error};
-use crate::filesystem::Filesystem;
-use chrono::{Duration, Utc};
-use futures::Stream;
-use named_id::Rename;
-use named_id::*;
-use p2panda_core::{Body, Hash, PublicKey};
+use p2panda_core::{Hash, PublicKey, Timestamp};
 use p2panda_spaces::ActorId;
-use p2panda_store::{LogStore, SqliteStore};
-use p2panda_stream::IngestExt;
-use p2panda_stream::partial::operations::PartialOrder;
+use p2panda_store::SqliteStore;
 use tokio::sync::mpsc;
 
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 
 use crate::chat::ChatMessageContent;
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
-use crate::local_store::NodeData;
 use crate::mailbox::MailboxOperation;
 use crate::payload::{
     AnnouncementsPayload, ChatPayload, Extensions, InboxPayload, Payload, Profile,
 };
-use crate::stores::OpStore;
+use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DashAction, DeviceGroupId, DeviceGroupPayload, DeviceId,
     DirectChatId, Header, Operation,
 };
 
-pub use crate::local_store::LocalStore;
 pub use stream_processing::Notification;
 
 #[derive(Clone, Debug)]
@@ -75,40 +68,11 @@ impl Default for NodeConfig {
 
 pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
 
-pub type Orderer<S> =
-    PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
-
-pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
-// pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
-
-#[derive(Clone)]
-pub(crate) struct CancelAndWait<R> {
-    handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<R>>>>,
-    token: tokio_util::sync::CancellationToken,
-}
-
-impl<R> CancelAndWait<R> {
-    pub fn new(
-        handle: tokio::task::JoinHandle<R>,
-        token: tokio_util::sync::CancellationToken,
-    ) -> Self {
-        Self {
-            handle: Arc::new(tokio::sync::Mutex::new(Some(handle))),
-            token,
-        }
-    }
-
-    pub async fn cancel_and_wait(self) -> Option<Result<R, tokio::task::JoinError>> {
-        self.token.cancel();
-        Some(self.handle.lock().await.take()?.await)
-    }
-}
-
 #[derive(Clone)]
 pub struct Node {
-    pub op_store: NodeOpStore,
+    pub op_store: OpStore,
 
-    pub mailboxes: Mailboxes<MailboxOperation, NodeOpStore>,
+    pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
 
     // groups: p2panda_auth::group::Groups,
     config: NodeConfig,
@@ -116,19 +80,21 @@ pub struct Node {
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
 
     /// Add new subscription streams
-    stream_tx: mpsc::Sender<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
+    subscription_tx: mpsc::Sender<TopicId>,
 
-    /// Abort handle for the stream processing background task
-    stream_task: Option<CancelAndWait<()>>,
+    /// Abort trigger for the stream processing background task
+    stream_cancel: Option<mpsc::Sender<()>>,
+    /// Join handle for the stream processing background task
+    stream_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 
     local_store: LocalStore,
-    node_data: NodeData,
+    group_store: GroupStore,
+    node_keys: NodeKeys,
 
-    _filesystem: Filesystem,
+    filesystem: Filesystem,
 }
 
 impl Node {
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all))]
     pub async fn new(
         data_path: PathBuf,
         config: NodeConfig,
@@ -137,33 +103,62 @@ impl Node {
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
         let local_store = LocalStore::new(filesystem.local_store_path()).await?;
-        let node_data = local_store.node_data().await?;
+        let node_keys = local_store.node_keys().await?;
 
-        let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
-        // let op_store = OpStore::new_memory();
+        Self::init(
+            filesystem,
+            local_store,
+            node_keys,
+            config,
+            notification_tx,
+            topic_subscribed_tx,
+        )
+        .await
+    }
 
-        let (stream_tx, stream_rx) = mpsc::channel(100);
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?node_keys.device_id().renamed())))]
+    pub async fn init(
+        filesystem: Filesystem,
+        local_store: LocalStore,
+        node_keys: NodeKeys,
+        config: NodeConfig,
+        notification_tx: Option<mpsc::Sender<Notification>>,
+        topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
+    ) -> Result<Self> {
+        let op_store = OpStore::new(filesystem.op_store_path()).await?;
+        let group_store = GroupStore::new(op_store.store.clone());
+
+        let (subscription_tx, subscription_rx) = mpsc::channel(100);
 
         let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
 
         let mut node = Self {
-            op_store: op_store.clone(),
+            op_store,
             mailboxes,
             config,
-            _filesystem: filesystem,
+            filesystem,
             local_store: local_store.clone(),
-            node_data,
+            group_store,
+            node_keys,
             notification_tx,
+            subscription_tx,
             topic_subscribed_tx,
-            stream_tx,
-            stream_task: None,
+            stream_cancel: None,
+            stream_handle: Arc::new(Mutex::new(None)),
         };
 
-        node.stream_task = Some(node.spawn_stream_process_loop(stream_rx));
+        let (cancel_tx, cancel_rx) = mpsc::channel(1);
+        let handle = node.spawn_stream_process_loop(subscription_rx, cancel_rx);
+        node.stream_cancel = Some(cancel_tx);
+        node.stream_handle.lock().unwrap().replace(handle);
 
         node.initialize_stored_topics().await?;
 
         Ok(node)
+    }
+
+    pub fn data_path(&self) -> &PathBuf {
+        self.filesystem.data_path()
     }
 
     pub async fn get_interleaved_logs(
@@ -173,15 +168,15 @@ impl Node {
     ) -> anyhow::Result<Vec<(Header, Option<Payload>)>> {
         let mut logs = Vec::new();
         for author in authors {
-            for (h, b) in self.get_log(topic_id, author).await? {
-                if let Some(body) = b {
+            for op in self.op_store.get_log(&author, &topic_id, None).await? {
+                if let Some(body) = op.body {
                     if let Ok(payload) = Payload::try_from_body(&body) {
-                        logs.push((h, Some(payload)));
+                        logs.push((op.header, Some(payload)));
                     } else {
                         tracing::error!("Failed to decode payload: {body:?}");
                     }
                 } else {
-                    logs.push((h, None));
+                    logs.push((op.header, None));
                 }
             }
         }
@@ -189,29 +184,13 @@ impl Node {
         Ok(logs)
     }
 
-    pub async fn get_log(
-        &self,
-        topic: TopicId,
-        author: DeviceId,
-    ) -> anyhow::Result<Vec<(Header, Option<Body>)>> {
-        let _heights = self.op_store.get_log_heights(&topic).await?;
-        match self.op_store.get_log(&author, &topic, None).await? {
-            Some(log) => Ok(log),
-            None => {
-                let author = *author;
-                tracing::warn!("No log found for topic {topic:?} and author {author:?}");
-                Ok(vec![])
-            }
-        }
-    }
-
     pub async fn get_authors(&self, topic_id: TopicId) -> anyhow::Result<HashSet<DeviceId>> {
         let authors = self
             .op_store
             .get_log_heights(&topic_id)
             .await?
-            .into_iter()
-            .map(|(pk, _)| DeviceId::from(pk))
+            .keys()
+            .cloned()
             .collect::<HashSet<_>>();
         Ok(authors)
     }
@@ -250,17 +229,17 @@ impl Node {
         Ok(QrCode {
             device_pubkey: self.device_id(),
             inbox_topic,
-            agent_id: self.node_data.agent_id,
+            agent_id: self.node_keys.agent_id,
             share_intent,
         })
     }
 
     pub fn agent_id(&self) -> AgentId {
-        self.node_data.agent_id
+        self.node_keys.agent_id
     }
 
     pub fn device_id(&self) -> DeviceId {
-        self.node_data.device_id()
+        self.node_keys.device_id()
     }
 
     pub fn device_group_topic(&self) -> DeviceGroupId {
@@ -334,9 +313,11 @@ impl Node {
             .map(|(public_key, access)| (GroupMember::Individual(public_key), access))
             .collect();
 
+        // TODO: this should use a transaction, but the race is not a big deal here
+        let deps = self.group_store.heads().await?;
         self.author_operation(
             chat_id,
-            DashAction::group_action(chat_id, GroupAction::Create { initial_members })?,
+            DashAction::group_action(chat_id, GroupAction::Create { initial_members }, deps)?,
             Some(&format!("create_group({})", chat_id.renamed())),
         )
         .await?;
@@ -376,6 +357,9 @@ impl Node {
         member: PublicKey,
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
+        // TODO: this should use a transaction, but the race is not a big deal here
+        let deps = self.group_store.heads().await?;
+
         self.author_operation(
             chat_id,
             DashAction::group_action(
@@ -384,6 +368,7 @@ impl Node {
                     member: GroupMember::Individual(member),
                     access,
                 },
+                deps,
             )?,
             Some(&format!("add_group_member({})", chat_id.renamed())),
         )
@@ -407,6 +392,8 @@ impl Node {
         chat_id: ChatId,
         member: PublicKey,
     ) -> anyhow::Result<()> {
+        // TODO: this should use a transaction, but the race is not a big deal here
+        let deps = self.group_store.heads().await?;
         self.author_operation(
             chat_id,
             DashAction::group_action(
@@ -414,6 +401,7 @@ impl Node {
                 GroupAction::Remove {
                     member: GroupMember::Individual(member),
                 },
+                deps,
             )?,
             Some(&format!("remove_group_member({})", chat_id.renamed())),
         )
@@ -426,8 +414,7 @@ impl Node {
         chat_id: ChatId,
     ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
         let members = self
-            .local_store
-            .groups
+            .group_store
             .members(chat_id)
             .await?
             .into_iter()
@@ -483,7 +470,7 @@ impl Node {
             .get_interleaved_logs(topic_id, authors.into_iter().collect())
             .await?;
 
-        let mut set_profile_ops: Vec<(u64, Profile)> = ops
+        let mut set_profile_ops: Vec<(Timestamp, Profile)> = ops
             .into_iter()
             .filter_map(|(header, payload)| match payload {
                 Some(Payload::Announcements(AnnouncementsPayload::SetProfile(profile))) => {
@@ -524,18 +511,6 @@ impl Node {
             }
         }
 
-        // for (events, author, timestamp) in events {
-        //     for event in events {
-        //         use crate::Cbor;
-        //         match event {
-        //             Event::Application { space_id, data } => {
-        //                 messages.push(ChatMessage::from_bytes(&data)?)
-        //             }
-        //             _ => {}
-        //         }
-        //     }
-        // }
-
         Ok(messages)
     }
 
@@ -575,10 +550,33 @@ impl Node {
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.
-    pub async fn shutdown(mut self) {
-        if let Some(cancel_and_wait) = self.stream_task.take() {
-            cancel_and_wait.cancel_and_wait().await;
+    pub async fn shutdown(&self) -> Result<(), ShutdownError> {
+        // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
+        self.mailboxes.clear().await;
+
+        if let Some(cancel) = self.stream_cancel.as_ref() {
+            if let Err(err) = cancel.send(()).await {
+                tracing::warn!(
+                    "failed to send cancel signal to stream processing task: {}",
+                    err
+                );
+                return Err(ShutdownError::StreamTaskJoin(Box::new(err)));
+            }
         }
+        tracing::info!("joining stream processing task");
+        if let Some(handle) = self.stream_handle.lock().unwrap().take() {
+            if let Err(err) = handle.join() {
+                tracing::warn!("failed to join stream processing task: {:?}", err);
+                return Err(ShutdownError::StreamTaskJoin(err));
+            }
+        }
+
+        // Close pools last. SqlitePool clones share underlying state, so closing
+        // here drains every connection across the app.
+        self.local_store.close().await;
+        self.op_store.close().await;
+
+        Ok(())
     }
 
     /// Store someone as a contact, and:
@@ -657,7 +655,7 @@ impl Node {
         self.author_operation(
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact.clone())),
-            Some(&format!("add_contact/invitation({})", agent.renamed())),
+            Some(&format!("add_contact/add_contact({})", agent.renamed())),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
@@ -680,7 +678,7 @@ impl Node {
             self.author_operation(
                 inbox_topic.topic,
                 Payload::Inbox(InboxPayload::ContactRequest { code, profile }),
-                Some(&format!("add_contact/invitation({})", agent.renamed())),
+                Some(&format!("add_contact/contact_request({})", agent.renamed())),
             )
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?;

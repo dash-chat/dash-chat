@@ -59,7 +59,12 @@
 </script>
 
 <Page style={theme === 'material' ? 'height: calc(100vh - 57px)' : ''}>
-	<Navbar transparent={true} titleClass="opacity1 w-full" centerTitle={false}>
+	<Navbar
+		transparent={true}
+		titleClass="opacity1 w-full"
+		leftClass="shrink-0"
+		centerTitle={false}
+	>
 		{#snippet left()}
 			{#if !isWideScreen.value}
 				<NavbarBackLink

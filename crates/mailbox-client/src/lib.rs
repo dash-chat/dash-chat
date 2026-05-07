@@ -3,6 +3,9 @@ pub mod mem;
 pub mod store;
 pub mod toy;
 
+#[cfg(feature = "named-id")]
+pub use named_id::Rename;
+
 #[cfg(test)]
 pub mod testing;
 
@@ -74,7 +77,16 @@ pub type MailboxId = String;
 pub type SeqNum = u64;
 
 pub trait ItemTraits:
-    Copy + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync
+    Copy
+    + Eq
+    + Ord
+    + std::hash::Hash
+    + std::fmt::Debug
+    + Serialize
+    + DeserializeOwned
+    + Send
+    + Sync
+    + Rename
 {
 }
 
@@ -88,10 +100,13 @@ impl<T> ItemTraits for T where
         + DeserializeOwned
         + Send
         + Sync
+        + Rename
 {
 }
 
-pub trait MailboxItem: Clone + Serialize + DeserializeOwned + Send + Sync + 'static {
+pub trait MailboxItem:
+    Clone + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync + 'static
+{
     type Hash: ItemTraits;
     type Author: ItemTraits;
     type Topic: ItemTraits;
