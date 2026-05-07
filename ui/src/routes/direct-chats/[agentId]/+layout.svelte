@@ -2,11 +2,11 @@
 	import { page } from '$app/state';
 	import { getContext, setContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import type { ChatsStore, ContactsStore } from 'dash-chat-stores';
+	import { keepAlive } from '$lib/stores/keep-alive.svelte';
+	import type { ChatsStore } from 'dash-chat-stores';
 
 	let { children } = $props();
 
-	const contactsStore: ContactsStore = getContext('contacts-store');
 	const chatsStore: ChatsStore = getContext('chats-store');
 
 	let agentId = $derived(page.params.agentId!);
@@ -17,7 +17,6 @@
 	// watchers active. Without an active watcher, signalium drops the
 	// cached value and the page flashes blank on remount while it
 	// re-resolves.
-	let myDeviceId = $derived(useReactivePromise(contactsStore.myDeviceId));
 	let peerProfile = $derived(useReactivePromise(store.peerProfile));
 	let contactRequest = $derived(useReactivePromise(store.contactRequest));
 	let messagesSets = $derived(useReactivePromise(store.messageSets));
@@ -27,9 +26,6 @@
 	setContext('direct-chat', {
 		get store() {
 			return store;
-		},
-		get myDeviceId() {
-			return myDeviceId;
 		},
 		get peerProfile() {
 			return peerProfile;
@@ -48,18 +44,13 @@
 		},
 	});
 
-	$effect(() => {
-		const noop = () => {};
-		const unsubs = [
-			myDeviceId.subscribe(noop),
-			peerProfile.subscribe(noop),
-			contactRequest.subscribe(noop),
-			messagesSets.subscribe(noop),
-			readMessageHashes.subscribe(noop),
-			unreadCount.subscribe(noop),
-		];
-		return () => unsubs.forEach(u => u());
-	});
+	keepAlive(() => [
+		peerProfile,
+		contactRequest,
+		messagesSets,
+		readMessageHashes,
+		unreadCount,
+	]);
 </script>
 
 {#key agentId}

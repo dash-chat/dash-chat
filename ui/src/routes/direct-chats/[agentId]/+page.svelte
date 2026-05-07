@@ -79,9 +79,10 @@
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
+	const myDeviceId = getContext('my-device-id') as Readable<Promise<DeviceId>>;
+
 	const {
 		store,
-		myDeviceId,
 		peerProfile,
 		contactRequest,
 		messagesSets,
@@ -89,7 +90,6 @@
 		unreadCount,
 	} = getContext('direct-chat') as {
 		store: DirectChatStore;
-		myDeviceId: Readable<Promise<DeviceId>>;
 		peerProfile: Readable<Promise<Profile | undefined>>;
 		contactRequest: Readable<Promise<ContactRequest | undefined>>;
 		messagesSets: Readable<Promise<MessageSetsInDays>>;

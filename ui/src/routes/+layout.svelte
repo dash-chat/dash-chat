@@ -35,7 +35,8 @@
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useSignal } from '$lib/stores/use-signal';
+	import { useSignal, useReactivePromise } from '$lib/stores/use-signal';
+	import { keepAlive } from '$lib/stores/keep-alive.svelte';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMac, isMobile, isTauriEnv } from '$lib/utils/environment';
@@ -113,6 +114,13 @@
 	setContext('devices-store', devicesStore);
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
+
+	// Keep myDeviceId warm for the lifetime of the app so any consumer
+	// resolves it instantly from cache instead of flashing while it
+	// re-fetches on remount.
+	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
+	setContext('my-device-id', myDeviceId);
+	keepAlive(() => [myDeviceId]);
 
 	const isDark = useSignal(settingsStore.isDark);
 
