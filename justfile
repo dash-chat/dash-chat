@@ -24,3 +24,8 @@ bundle:
 # cut a new release (e.g. just release 0.11.0)
 release version:
     ./scripts/release.sh {{version}}
+
+# format both UI and rust files
+format:
+    cargo fmt
+    cd ui && pnpm format
