@@ -17,6 +17,7 @@ mod tray;
 /// When set to `true`, the run-loop's `ExitRequested` handler will no longer
 /// call `api.prevent_exit()`, allowing the app to shut down gracefully
 /// (running all destructors) even when local-mailbox mode is active.
+#[cfg(not(mobile))]
 pub(crate) static FORCE_QUIT: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 

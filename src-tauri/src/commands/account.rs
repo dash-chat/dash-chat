@@ -1,4 +1,6 @@
 use dashchat_node::Node;
+#[cfg(not(mobile))]
+use tauri::Manager;
 use tauri::{AppHandle, State};
 
 #[tauri::command]

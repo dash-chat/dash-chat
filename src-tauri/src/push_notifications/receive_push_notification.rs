@@ -237,6 +237,7 @@ fn new_message_generic_notification() -> NotificationData {
     }
 }
 
+#[cfg(target_os = "ios")]
 fn synced_generic_notification() -> NotificationData {
     NotificationData {
         title: Some(sonix_i18n::t!("syncedWithServer")),
@@ -246,6 +247,7 @@ fn synced_generic_notification() -> NotificationData {
     }
 }
 
+#[cfg(target_os = "ios")]
 fn may_have_new_messages_generic_notification() -> NotificationData {
     NotificationData {
         title: Some(sonix_i18n::t!("mayHaveNewMessages")),

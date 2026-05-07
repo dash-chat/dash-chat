@@ -104,10 +104,12 @@ pub(crate) fn save_settings<R: Runtime>(handle: &AppHandle<R>, settings: &Settin
     }
 }
 
+#[cfg(not(mobile))]
 pub fn load_mailbox_enabled<R: Runtime>(handle: &AppHandle<R>) -> bool {
     load_settings(handle).local_mailbox_enabled
 }
 
+#[cfg(not(mobile))]
 pub fn save_mailbox_enabled<R: Runtime>(handle: &AppHandle<R>, enabled: bool) {
     let mut settings = load_settings(handle);
     settings.local_mailbox_enabled = enabled;
