@@ -62,7 +62,7 @@ export class DirectChatStore implements ReadMessagesStore {
 							hash: operation.hash,
 							content: body.payload.payload,
 							author,
-							timestamp: operation.header.timestamp * 1000,
+							timestamp: operation.header.timestamp,
 							reactions: {},
 						};
 					}
