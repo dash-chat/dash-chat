@@ -461,6 +461,7 @@
 						<Navbar
 							transparent={true}
 							titleClass="opacity1 w-full min-w-0"
+							leftClass="shrink-0"
 							centerTitle={false}
 						>
 							{#snippet left()}
@@ -484,6 +485,7 @@
 						<Navbar
 							transparent={true}
 							titleClass="opacity1 w-full min-w-0"
+							leftClass="shrink-0"
 							centerTitle={false}
 						>
 							{#snippet left()}
