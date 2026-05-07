@@ -9,9 +9,9 @@ mod utils;
 #[cfg(mobile)]
 mod push_notifications;
 
-#[cfg(not(mobile))]
+#[cfg(desktop)]
 mod menu;
-#[cfg(not(mobile))]
+#[cfg(desktop)]
 mod tray;
 
 /// When set to `true`, the run-loop's `ExitRequested` handler will no longer
@@ -32,6 +32,8 @@ pub(crate) static QUIT_DIALOG_OPEN: std::sync::atomic::AtomicBool =
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crate::utils::install_crypto_provider();
+
     filesystem::init_data_dir();
 
     i18n::init_i18n();
@@ -159,8 +161,8 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             #[cfg(mobile)]
-            let _ = (window, event); // unused on mobile; used in the cfg(not(mobile)) block below
-            #[cfg(not(mobile))]
+            let _ = (window, event); // unused on mobile; used in the cfg(desktop) block below
+            #[cfg(desktop)]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 use tauri::Manager;
                 // When the local mailbox is running, hide the window instead of closing
@@ -177,7 +179,7 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             #[cfg(mobile)]
-            let _ = (app_handle, event); // unused on mobile; used in the cfg(not(mobile)) block below
+            let _ = (app_handle, event); // unused on mobile; used in the cfg(desktop) block below
             #[cfg(desktop)]
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 // When the local mailbox is running and quit is requested (Cmd+Q, dock Quit),
