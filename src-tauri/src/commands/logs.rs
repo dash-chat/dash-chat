@@ -1,7 +1,20 @@
 use dashchat_node::{topic::TopicId, DeviceId, Header, Node, Payload, Topic};
-use p2panda_core::{cbor::decode_cbor, Body, Hash, PublicKey};
-use serde::{Deserialize, Serialize};
+use p2panda_core::{cbor::decode_cbor, Body, Hash, PublicKey, Timestamp};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tauri::State;
+
+/// Serialize a `Timestamp` (microseconds) as milliseconds since the UNIX epoch
+/// so JS can pass it straight to `new Date(ms)`.
+fn serialize_timestamp_as_millis<S: Serializer>(ts: &Timestamp, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_u64(ts.as_micros() / 1_000)
+}
+
+fn deserialize_timestamp_from_millis<'de, D: Deserializer<'de>>(
+    d: D,
+) -> Result<Timestamp, D::Error> {
+    let millis = u64::deserialize(d)?;
+    Ok(Timestamp::new(millis * 1_000))
+}
 
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct SimplifiedOperation {
@@ -22,8 +35,12 @@ pub struct SimplifiedHeader {
     /// Author of this operation.
     public_key: PublicKey,
 
-    /// Time in microseconds since the Unix epoch.
-    timestamp: u64,
+    /// Milliseconds since the UNIX epoch when the operation was created.
+    #[serde(
+        serialize_with = "serialize_timestamp_as_millis",
+        deserialize_with = "deserialize_timestamp_from_millis"
+    )]
+    timestamp: Timestamp,
 
     /// Number of operations this author has published to this log, begins with 0 and is always
     /// incremented by 1 with each new operation by the same author.
@@ -46,7 +63,7 @@ impl From<Header> for SimplifiedHeader {
         let previous = header.extensions.dependencies();
         SimplifiedHeader {
             public_key: header.public_key,
-            timestamp: header.timestamp.as_micros(),
+            timestamp: header.timestamp,
             seq_num: header.seq_num,
             backlink: header.backlink,
             previous,
