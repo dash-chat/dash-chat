@@ -12,10 +12,7 @@
 <script lang="ts" module>
 	/** Distance from the bottom (in px) below which we consider the user
 	 * "at the bottom" of the chat — controls when the scroll-to-bottom
-	 * button hides and when self-sends snap back to the bottom.
-	 *
-	 * Shared with E2E test helpers so both stay in sync if the value is
-	 * tuned. */
+	 * button hides and when self-sends snap back to the bottom. */
 	export const SCROLL_BOTTOM_THRESHOLD = 200;
 </script>
 
