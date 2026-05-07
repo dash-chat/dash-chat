@@ -10,7 +10,7 @@ export interface SimplifiedHeader {
 	/// Author of this operation.
 	public_key: PublicKey;
 
-	/// Time in microseconds since the Unix epoch.
+	/// Milliseconds since the Unix epoch (suitable for `new Date(ms)`).
 	timestamp: number;
 
 	/// Number of operations this author has published to this log, begins with 0 and is always
