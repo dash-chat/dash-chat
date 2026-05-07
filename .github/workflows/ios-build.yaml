@@ -37,9 +37,23 @@ jobs:
       - name: Install pnpm dependencies
         run: pnpm install
 
+      - name: Stub GoogleService-Info.plist for compile check
+        run: |
+          mkdir -p src-tauri/gen/apple/dash-chat_iOS
+          cat > src-tauri/gen/apple/dash-chat_iOS/GoogleService-Info.plist <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>BUNDLE_ID</key><string>studio.darksoil.dashchat</string>
+            <key>GOOGLE_APP_ID</key><string>1:0:ios:0</string>
+            <key>GCM_SENDER_ID</key><string>0</string>
+            <key>API_KEY</key><string>STUB</string>
+            <key>PROJECT_ID</key><string>stub</string>
+          </dict></plist>
+          EOF
+
       - name: Build iOS app for simulator (compile check)
         env:
           IPHONEOS_DEPLOYMENT_TARGET: "14.0"
         run: |
-          cargo build --target aarch64-apple-ios-sim
           pnpm tauri ios build --debug --target aarch64-sim

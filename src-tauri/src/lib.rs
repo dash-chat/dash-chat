@@ -9,9 +9,9 @@ mod utils;
 #[cfg(mobile)]
 mod push_notifications;
 
-#[cfg(not(mobile))]
+#[cfg(desktop)]
 mod menu;
-#[cfg(not(mobile))]
+#[cfg(desktop)]
 mod tray;
 
 /// When set to `true`, the run-loop's `ExitRequested` handler will no longer
@@ -32,6 +32,12 @@ pub(crate) static QUIT_DIALOG_OPEN: std::sync::atomic::AtomicBool =
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // `reqwest 0.13` (pulled in by `iroh-relay`) requires a rustls
+    // `CryptoProvider` to be installed before the first TLS handshake, or
+    // it panics with "No provider set". Manifests on Android, where no
+    // earlier code happens to install one.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     filesystem::init_data_dir();
 
     i18n::init_i18n();
@@ -159,8 +165,8 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             #[cfg(mobile)]
-            let _ = (window, event); // unused on mobile; used in the cfg(not(mobile)) block below
-            #[cfg(not(mobile))]
+            let _ = (window, event); // unused on mobile; used in the cfg(desktop) block below
+            #[cfg(desktop)]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 use tauri::Manager;
                 // When the local mailbox is running, hide the window instead of closing
