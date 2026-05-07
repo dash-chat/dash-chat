@@ -19,5 +19,6 @@
 		"ui/.svelte-kit": true,
 		"ui/build": true,
 		"*.log": true
-	}
+	},
+	"tailwindCSS.lint.suggestCanonicalClasses": "ignore"
 }
