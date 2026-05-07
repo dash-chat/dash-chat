@@ -17,6 +17,7 @@ mod tray;
 /// When set to `true`, the run-loop's `ExitRequested` handler will no longer
 /// call `api.prevent_exit()`, allowing the app to shut down gracefully
 /// (running all destructors) even when local-mailbox mode is active.
+#[cfg(desktop)]
 pub(crate) static FORCE_QUIT: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
@@ -25,7 +26,7 @@ pub(crate) static FORCE_QUIT: std::sync::atomic::AtomicBool =
 pub(crate) static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 
 /// Prevents multiple quit-confirmation dialogs from stacking up.
-#[cfg(not(mobile))]
+#[cfg(desktop)]
 pub(crate) static QUIT_DIALOG_OPEN: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
@@ -157,6 +158,8 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            #[cfg(mobile)]
+            let _ = (window, event); // unused on mobile; used in the cfg(not(mobile)) block below
             #[cfg(not(mobile))]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 use tauri::Manager;
@@ -173,7 +176,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            #[cfg(not(mobile))]
+            #[cfg(mobile)]
+            let _ = (app_handle, event); // unused on mobile; used in the cfg(not(mobile)) block below
+            #[cfg(desktop)]
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 // When the local mailbox is running and quit is requested (Cmd+Q, dock Quit),
                 // prevent exit and show a confirmation dialog.

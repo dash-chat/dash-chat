@@ -52,7 +52,9 @@ pub fn init_data_dir() {
 }
 
 const SETTINGS_FILE_NAME: &str = "settings.json";
+#[cfg(desktop)]
 const LOCAL_MAILBOX_DB_FILE_NAME: &str = "local-mailbox.redb";
+#[cfg(desktop)]
 const DASHCHAT_DATA_FOLDER: &str = "studio.darksoil.dashchat";
 
 /// Manages paths within the versioned Dash Chat data directory.
@@ -101,6 +103,7 @@ impl FileSystem {
         self.0.join(SETTINGS_FILE_NAME)
     }
 
+    #[cfg(desktop)]
     pub fn local_mailbox_db_path(&self) -> PathBuf {
         self.0.join(LOCAL_MAILBOX_DB_FILE_NAME)
     }
