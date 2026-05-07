@@ -76,7 +76,7 @@ export class ContactsStore {
 					op.body?.payload?.type === 'AddContact' &&
 					op.body.payload.payload.agent_id === agentId
 				) {
-					return op.header.timestamp * 1000;
+					return op.header.timestamp;
 				}
 			}
 		}
@@ -98,9 +98,9 @@ export class ContactsStore {
 				// Keep the latest rejection timestamp
 				if (
 					!existingTimestamp ||
-					op.header.timestamp * 1000 > existingTimestamp
+					op.header.timestamp > existingTimestamp
 				) {
-					rejected[agentId] = op.header.timestamp * 1000;
+					rejected[agentId] = op.header.timestamp;
 				}
 			}
 		}
@@ -136,14 +136,14 @@ export class ContactsStore {
 					const rejectionTimestamp = rejectedMap[agentId];
 					if (
 						rejectionTimestamp &&
-						operation.header.timestamp * 1000 < rejectionTimestamp
+						operation.header.timestamp < rejectionTimestamp
 					)
 						continue;
 
 					contactRequests.push({
 						...operation.body.payload.payload,
 						topicId,
-						timestamp: operation.header.timestamp * 1000,
+						timestamp: operation.header.timestamp,
 					});
 				}
 			}
@@ -170,7 +170,7 @@ export class ContactsStore {
 					if (operation.body?.type !== 'Inbox') continue;
 					if (operation.body.payload.payload.code.agent_id !== agentId)
 						continue;
-					const ts = operation.header.timestamp * 1000;
+					const ts = operation.header.timestamp;
 					if (!latest || ts > latest.timestamp) {
 						latest = {
 							timestamp: ts,
