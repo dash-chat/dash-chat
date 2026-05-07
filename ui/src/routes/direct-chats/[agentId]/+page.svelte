@@ -29,8 +29,10 @@
 		type MessageSetsInDays,
 		type Profile,
 	} from 'dash-chat-stores';
+	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { onActivate } from '$lib/utils/keyboard';
 	import {
 		mdiSend,
 		mdiAlert,
@@ -72,6 +74,7 @@
 	import { longpress } from '$lib/actions/longpress';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -93,6 +96,9 @@
 		readMessageHashes: Readable<Promise<Set<Hash>>>;
 		unreadCount: Readable<Promise<number>>;
 	};
+
+	const readTracker = createReadMessagesTracker(store);
+	const readMessageOnObserve = readTracker.observe;
 
 	async function acceptContactRequest(contactRequest: ContactRequest) {
 		try {
@@ -221,10 +227,6 @@
 		return 'middle-message';
 	};
 
-	// Track visible messages to mark as read
-	let observer: IntersectionObserver | undefined;
-	const visibleMessages: Set<Hash> = new Set();
-	let markReadTimeout: ReturnType<typeof setTimeout>;
 	let messagesPageEl: HTMLDivElement | null = null;
 
 	onMount(() => {
@@ -258,26 +260,6 @@
 			}
 		});
 
-		observer = new IntersectionObserver(
-			entries => {
-				for (const entry of entries) {
-					const hash = entry.target.getAttribute('data-message-hash');
-					if (hash && entry.isIntersecting) {
-						visibleMessages.add(hash);
-					}
-				}
-				// Debounce the mark-as-read call
-				clearTimeout(markReadTimeout);
-				markReadTimeout = setTimeout(() => {
-					if (visibleMessages.size > 0) {
-						store.markAsRead(Array.from(visibleMessages));
-						visibleMessages.clear();
-					}
-				}, 500);
-			},
-			{ threshold: 0.5 },
-		);
-
 		// Track scroll position to show/hide scroll-to-bottom button
 		const handleScroll = () => {
 			showScrollToBottom = !scrollIsAtBottom();
@@ -287,23 +269,11 @@
 		return () => {
 			navbarObserver?.disconnect();
 			unsubNewMessage?.();
-			observer?.disconnect();
-			clearTimeout(markReadTimeout);
+			readTracker.destroy();
 			messagesPageEl?.removeEventListener('scroll', handleScroll);
 		};
 	});
 
-	// Svelte action to observe message elements for read tracking
-	const observeMessage: Action<HTMLElement, Hash | null> = (node, hash) => {
-		if (hash === null) return;
-		node.setAttribute('data-message-hash', hash);
-		observer?.observe(node);
-		return {
-			destroy() {
-				observer?.unobserve(node);
-			},
-		};
-	};
 	// Search helpers
 	function escapeHtml(text: string): string {
 		return text
@@ -499,7 +469,8 @@
 					{#if searchMode}
 						<Navbar
 							transparent={true}
-							titleClass="opacity1 w-full"
+							titleClass="opacity1 w-full min-w-0"
+							leftClass="shrink-0"
 							centerTitle={false}
 						>
 							{#snippet left()}
@@ -522,7 +493,8 @@
 					{:else}
 						<Navbar
 							transparent={true}
-							titleClass="opacity1 w-full"
+							titleClass="opacity1 w-full min-w-0"
+							leftClass="shrink-0"
 							centerTitle={false}
 						>
 							{#snippet left()}
@@ -536,18 +508,14 @@
 							{#snippet title()}
 								{#if profile}
 									<Link
-										class="flex items-center justify-start gap-2"
+										class="flex w-full min-w-0 items-center justify-start"
 										href={`/direct-chats/${agentId}/chat-settings`}
 										data-testid="direct-chat-settings-link"
 									>
-										<Avatar
-											image={profile!.avatar}
-											initials={profile!.name.slice(0, 2)}
-											style="--size: 2.5rem"
+										<AvatarWithName
+											{profile}
+											nameTestId="direct-chat-peer-name"
 										/>
-										<span data-testid="direct-chat-peer-name"
-											>{fullName(profile!)}</span
-										>
 									</Link>
 								{/if}
 							{/snippet}
@@ -568,7 +536,7 @@
 									style={`padding-bottom: calc(${messageInputHeight} + 12px)`}
 								>
 									{#if profile}
-										<div class="column" style="align-items: center">
+										<div class="column mx-4" style="align-items: center">
 											<Link
 												class="column my-6 gap-2 items-center"
 												onclick={() => (showPeerProfile = true)}
@@ -614,6 +582,11 @@
 													<div
 														class="flex items-center justify-center gap-2"
 														onclick={() => (profileNamesSheetOpen = true)}
+														role="button"
+														tabindex="0"
+														onkeydown={onActivate(
+															() => (profileNamesSheetOpen = true),
+														)}
 													>
 														<wa-icon
 															class="small-icon"
@@ -784,7 +757,7 @@
 															<div
 																class="self-start max-w-[85%]"
 																data-message-hash={hash}
-																use:observeMessage={readHashes?.has(hash)
+																use:readMessageOnObserve={readHashes?.has(hash)
 																	? null
 																	: hash}
 																use:longpress={{
@@ -1037,7 +1010,10 @@
 							class="row items-center gap-2 px-4 py-3"
 							style="margin: 0 auto"
 						>
-							<button onclick={() => dateInput?.click()}>
+							<button
+								onclick={() => dateInput?.click()}
+								aria-label={m.jumpToDate()}
+							>
 								<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
 								></wa-icon>
 							</button>
@@ -1063,6 +1039,7 @@
 								disabled={!matchingHashes.length}
 								onclick={goToPreviousMatch}
 								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+								aria-label={m.previousResult()}
 							>
 								<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
 							</button>
@@ -1070,6 +1047,7 @@
 								disabled={!matchingHashes.length}
 								onclick={goToNextMatch}
 								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+								aria-label={m.nextResult()}
 							>
 								<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
 							</button>

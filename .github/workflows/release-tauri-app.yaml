@@ -1,11 +1,34 @@
 name: "release-tauri-app"
 on:
-  push: 
+  push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
 jobs:
+  create-release-draft:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      releaseId: ${{ steps.create.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read app version
+        id: version
+        run: echo "value=$(jq -r .version src-tauri/tauri.conf.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        id: create
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: true
+          name: Dash Chat v${{ steps.version.outputs.value }}
+          body: See the assets to download this version and install.
+
   release-tauri-app:
+    needs: create-release-draft
     strategy:
       fail-fast: false
       matrix:
@@ -23,8 +46,6 @@ jobs:
     permissions: write-all
 
     runs-on: ${{ matrix.platform }}
-    outputs:
-      releaseId: ${{ steps.tauri-build.outputs.releaseId }}
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       # Checks out a copy of your repository on the ubuntu-latest machine
@@ -39,7 +60,7 @@ jobs:
         uses: pnpm/action-setup@v6
         with:
           version: 10.33.0
-          cache: true 
+          cache: true
 
       - name: Install and prepare
         run: |
@@ -77,7 +98,6 @@ jobs:
             webkit2gtk-4.1
 
       - name: build the app
-        id: tauri-build
         uses: tauri-apps/tauri-action@v0
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -90,17 +110,15 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
-          releaseName: 'Dash Chat v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
+          # Upload to the draft release created by the create-release-draft job.
+          # When releaseId is set, tagName and releaseName are ignored.
+          releaseId: ${{ needs.create-release-draft.outputs.releaseId }}
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
-          prerelease: true
           args: ${{ matrix.args }}
 
   release-tauri-android-app:
-    needs: release-tauri-app
+    needs: create-release-draft
     permissions: write-all
 
     runs-on: ubuntu-22.04
@@ -130,7 +148,7 @@ jobs:
         uses: pnpm/action-setup@v6
         with:
           version: 10.33.0
-          cache: true 
+          cache: true
 
       - uses: cachix/cachix-action@v15
         with:
@@ -195,13 +213,13 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
-          release_id: ${{ needs.release-tauri-app.outputs.releaseId }}
+          release_id: ${{ needs.create-release-draft.outputs.releaseId }}
           draft: true
 
-      - name: Upload AAB to release
+      - name: Upload APK to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
-          release_id: ${{ needs.release-tauri-app.outputs.releaseId }}
+          release_id: ${{ needs.create-release-draft.outputs.releaseId }}
           draft: true

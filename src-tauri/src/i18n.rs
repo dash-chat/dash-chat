@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -10,6 +12,7 @@ const FA_MESSAGES: &str = include_str!("../../ui/messages/fa-ir.json");
 ///
 /// Missing keys in non-English locales are backfilled from English so that
 /// `sonix_i18n::init` (which requires identical key sets) doesn't fail.
+
 pub fn init_i18n() {
     let en: Value = serde_json::from_str(EN_MESSAGES).expect("Failed to parse en.json");
     let es: Value = serde_json::from_str(ES_MESSAGES).expect("Failed to parse es.json");

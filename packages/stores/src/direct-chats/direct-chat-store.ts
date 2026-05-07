@@ -6,7 +6,13 @@ import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
-import { ChatReaction, ChatSummary, MessageContent, Payload } from '../types';
+import {
+	ChatReaction,
+	ChatSummary,
+	MessageContent,
+	Payload,
+	ReadMessagesStore,
+} from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { toPromise } from '../utils/to-promise';
 import { type IDirectChatClient } from './direct-chat-client';
@@ -24,7 +30,7 @@ export type MessageSetsInDays = ReturnType<
 >;
 
 // Store tied to a specific direct chat
-export class DirectChatStore {
+export class DirectChatStore implements ReadMessagesStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
@@ -60,7 +66,7 @@ export class DirectChatStore {
 							hash: operation.hash,
 							content: body.payload.payload,
 							author,
-							timestamp: operation.header.timestamp * 1000,
+							timestamp: operation.header.timestamp,
 							reactions: {},
 						};
 					}

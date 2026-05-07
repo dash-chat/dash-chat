@@ -31,7 +31,7 @@
 				></div>
 			{/if}
 			<div
-				class="tooltip-bg rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+				class="tooltip-bg whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-lg"
 			>
 				{m.startFirstChatHere()}
 			</div>

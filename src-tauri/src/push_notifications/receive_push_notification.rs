@@ -133,39 +133,26 @@ async fn handle_push_notification(
     // Poll for the operation to arrive (up to 15 seconds)
     // PERF: consider adding the ability for the op store to notify when an op is stored,
     //     instead of polling
-    let mut found = false;
+    let mut entry = None;
     for _ in 0..75 {
         let log = node
             .op_store
             .get_log(&public_key, &topic_id, Some(seq_num))
-            .await;
-        if let Ok(Some(entries)) = &log {
-            if !entries.is_empty() {
-                found = true;
-                break;
-            }
+            .await
+            .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
+        if let Some(first) = log.and_then(|entries| entries.into_iter().next()) {
+            entry = Some(first);
+            break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
-    if !found {
+    let Some((header, body)) = entry else {
         log::warn!(
             "Operation {op_id} in topic {topic_hex} not found after polling, showing generic notification"
         );
         return Ok(Some(new_message_generic_notification()));
-    }
-
-    // Get the operation
-    let entries = node
-        .op_store
-        .get_log(&public_key, &topic_id, Some(seq_num))
-        .await
-        .map_err(|err| anyhow!("failed to read op log: {err:?}"))?
-        .context("op log unexpectedly empty")?;
-    let (header, body) = entries
-        .into_iter()
-        .next()
-        .context("op log has no entries")?;
+    };
 
     // Don't show notifications for our own messages
     let sender_device_id = dashchat_node::DeviceId::from(header.public_key);
@@ -210,13 +197,6 @@ async fn handle_push_notification(
                 })
                 .map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()))
                 .unwrap_or_else(|| format!("/group-chat/{}", hex::encode(&*topic_id)));
-
-            // Don't show notification if the user is already viewing this chat
-            if is_viewing_chat(&chat_route) {
-                log::info!("Suppressing push notification: user is viewing the active chat");
-                return Ok(None);
-            }
-
             let message_text: &str = &content;
             let body_text = match message_text.char_indices().nth(200) {
                 Some((idx, _)) => format!("{}...", &message_text[..idx]),
@@ -228,15 +208,17 @@ async fn handle_push_notification(
                 body: Some(body_text),
                 icon: Some("ic_stat_icon".to_string()),
                 group: Some(hex::encode(&*topic_id)),
+                route: Some(chat_route),
                 ..Default::default()
             }))
         }
-        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { profile, .. }) => {
+        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { code, profile }) => {
             Ok(Some(NotificationData {
                 title: Some(sonix_i18n::t!("newContactRequest")),
                 body: Some(profile.name),
                 icon: Some("ic_stat_icon".to_string()),
                 group: Some(topic_hex.to_string()),
+                route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
                 ..Default::default()
             }))
         }
@@ -269,25 +251,4 @@ fn may_have_new_messages_generic_notification() -> NotificationData {
         icon: Some("ic_stat_icon".to_string()),
         ..Default::default()
     }
-}
-
-/// Checks whether the main window's current URL path matches the given chat route.
-fn is_viewing_chat(chat_route: &str) -> bool {
-    let handle = match crate::APP_HANDLE.get() {
-        Some(h) => h,
-        None => return false,
-    };
-
-    use tauri::Manager;
-    let window = match handle.get_webview_window("main") {
-        Some(w) => w,
-        None => return false,
-    };
-
-    let url = match window.url() {
-        Ok(u) => u,
-        Err(_) => return false,
-    };
-
-    url.path() == chat_route
 }

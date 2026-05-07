@@ -4,6 +4,16 @@ import type { LogsClient } from './logs-client';
 import type { SimplifiedOperation } from './simplified-types';
 import type { PublicKey, TopicId } from './types';
 
+/// Stopgap: re-fetch each subscribed log on this interval as a safety net for
+/// `p2panda://new-operation` events that don't reach this process. Concretely,
+/// when an iOS push notification arrives in foreground, the NSE writes
+/// operations to the shared `op_store` but the main app's notification channel
+/// never fires for them — UI would otherwise stay stale until a manual reload.
+/// Polling guarantees eventual consistency at the cost of one Tauri call per
+/// active log per interval. Replace with cross-process change detection on
+/// `op_store` (SQLite WAL + `PRAGMA data_version`) when that lands.
+const POLL_INTERVAL_MS = 1_000;
+
 export class LogsStore<PAYLOAD> {
 	constructor(public logsClient: LogsClient<PAYLOAD>) {}
 
@@ -11,9 +21,17 @@ export class LogsStore<PAYLOAD> {
 		relay<PublicKey[]>(state => {
 			const fetchAuthors = async () => {
 				const authors = await this.logsClient.getAuthorsForTopic(topicId);
+				const current = state.value;
+				if (
+					current &&
+					current.length === authors.length &&
+					authors.every(a => current.includes(a))
+				)
+					return;
 				state.value = authors;
 			};
 			fetchAuthors();
+			const interval = setInterval(fetchAuthors, POLL_INTERVAL_MS);
 
 			const unsubs = this.logsClient.onNewOperation(
 				(operationTopicId, operation) => {
@@ -25,7 +43,10 @@ export class LogsStore<PAYLOAD> {
 				},
 			);
 
-			return unsubs;
+			return () => {
+				clearInterval(interval);
+				unsubs();
+			};
 		}),
 	);
 
@@ -33,9 +54,13 @@ export class LogsStore<PAYLOAD> {
 		relay<SimplifiedOperation<PAYLOAD>[]>(state => {
 			const fetchLog = async () => {
 				const log = await this.logsClient.getLog(topicId, author);
+				const current = state.value;
+				// Logs are append-only per author; same length means same content.
+				if (current && current.length === log.length) return;
 				state.value = log;
 			};
 			fetchLog();
+			const interval = setInterval(fetchLog, POLL_INTERVAL_MS);
 
 			const unsubs = this.logsClient.onNewOperation(
 				(operationTopicId, operation) => {
@@ -43,12 +68,18 @@ export class LogsStore<PAYLOAD> {
 					if (author !== operation.header.public_key) return;
 
 					// We already have this operation
-					if (state.value?.find(op => op.header.seq_num === operation.header.seq_num)) return;
+					if (
+						state.value?.find(
+							op => op.header.seq_num === operation.header.seq_num,
+						)
+					)
+						return;
 
 					state.value = [...(state.value || []), operation];
 				},
 			);
 			return () => {
+				clearInterval(interval);
 				unsubs();
 			};
 		}),
@@ -61,7 +92,8 @@ export class LogsStore<PAYLOAD> {
 			authorsForTopic.map(author => this.logs(topicId, author)),
 		);
 
-		const logsForAllAuthors: Record<PublicKey, SimplifiedOperation<PAYLOAD>[]> = {};
+		const logsForAllAuthors: Record<PublicKey, SimplifiedOperation<PAYLOAD>[]> =
+			{};
 		for (let i = 0; i < authorsForTopic.length; i++) {
 			logsForAllAuthors[authorsForTopic[i]] = logs[i];
 		}

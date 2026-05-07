@@ -9,18 +9,18 @@ edition = "2024"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-mailbox-server = { path = "../mailbox-server" }
-mailbox-client = { path = "../mailbox-client" }
+mailbox-client = { workspace = true }
+mailbox-server = { workspace = true }
 
-p2panda-auth = { workspace = true, features = ["processor"] }
+p2panda-auth = { workspace = true }
 p2panda-core = { workspace = true }
 p2panda-encryption = { workspace = true }
 p2panda-discovery = { workspace = true }
 p2panda-net = { workspace = true }
-p2panda-store = { workspace = true, features = ["sqlite"] }
+p2panda-store = { workspace = true }
 p2panda-stream = { workspace = true }
 p2panda-sync = { workspace = true }
-p2panda-spaces = { workspace = true, features = ["test_utils"] }
+p2panda-spaces = { workspace = true }
 
 anyhow = "1.0.95"
 thiserror = "2.0"
@@ -50,9 +50,10 @@ mailbox-server = { path = "../mailbox-server", features = ["test_utils"] }
 itertools = "0.14.0"
 maplit = "1.0"
 pretty_assertions = "1.4.1"
+p2panda-store = { workspace = true, features = ["test_utils"] }
 
 [features]
 default = ["testing", "instrument"]
 instrument = []
-testing = ["tempfile", "nanoid"]
+testing = ["tempfile", "nanoid", "p2panda-store/test_utils"]
 p2p = []

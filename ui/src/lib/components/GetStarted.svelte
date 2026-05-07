@@ -169,6 +169,7 @@
 							class="absolute right-2 top-2 z-10 p-1 text-black/40 dark:text-white/40"
 							data-testid="get-started-dismiss-{card.id}"
 							onclick={() => dismiss(card.id)}
+							aria-label={m.close()}
 						>
 							<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 20px"
 							></wa-icon>
