@@ -8,7 +8,7 @@ use dashchat_node::{AsBody, Payload, Topic};
 use jni::objects::JClass;
 use jni::JNIEnv;
 use log::Level;
-use p2panda_store::LogStore;
+use p2panda_store::logs::LogStore;
 use tauri_plugin_notification::*;
 
 pub fn android_log(level: Level, tag: &CStr, msg: &CStr) {

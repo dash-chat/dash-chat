@@ -6,7 +6,7 @@ use dashchat_node::{AsBody, Payload, Topic};
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
-use p2panda_store::LogStore;
+use p2panda_store::logs::LogStore;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
@@ -133,26 +133,29 @@ async fn handle_push_notification(
     // Poll for the operation to arrive (up to 15 seconds)
     // PERF: consider adding the ability for the op store to notify when an op is stored,
     //     instead of polling
+    let device_id = dashchat_node::DeviceId::from(public_key);
     let mut entry = None;
     for _ in 0..75 {
         let log = node
             .op_store
-            .get_log(&public_key, &topic_id, Some(seq_num))
+            .get_log(&device_id, &topic_id, Some(seq_num))
             .await
             .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
-        if let Some(first) = log.and_then(|entries| entries.into_iter().next()) {
+        if let Some(first) = log.into_iter().next() {
             entry = Some(first);
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
-    let Some((header, body)) = entry else {
+    let Some(operation) = entry else {
         log::warn!(
             "Operation {op_id} in topic {topic_hex} not found after polling, showing generic notification"
         );
         return Ok(Some(new_message_generic_notification()));
     };
+    let header = operation.header;
+    let body = operation.body;
 
     // Don't show notifications for our own messages
     let sender_device_id = dashchat_node::DeviceId::from(header.public_key);
