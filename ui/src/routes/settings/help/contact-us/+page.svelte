@@ -21,10 +21,7 @@
 
 	let message = $state('');
 	let reason = $state('');
-	let feeling = $state<string | null>(null);
 	let includeDebugLog = $state(true);
-
-	const feelings = ['😀', '🙂', '😐', '🙁', '😡'];
 
 	const reasonLabels: Record<string, () => string> = {
 		bug: () => m.reasonBugReport(),
@@ -36,7 +33,6 @@
 	async function handleSubmit() {
 		const subjectParts: string[] = [];
 		if (reason) subjectParts.push(reasonLabels[reason]());
-		if (feeling) subjectParts.push(feeling);
 		const subject =
 			subjectParts.length > 0
 				? `Dash Chat: ${subjectParts.join(' - ')}`
@@ -100,22 +96,6 @@
 					{/snippet}
 				</ListInput>
 			</List>
-
-			<BlockTitle>{m.howDoYouFeel()}</BlockTitle>
-			<div class="flex gap-2 px-4 mt-6">
-				{#each feelings as emoji}
-					<button
-						class="flex items-center justify-center w-12 h-12 rounded-full border-none cursor-pointer [-webkit-tap-highlight-color:transparent] active:opacity-70 {feeling ===
-						emoji
-							? 'bg-[var(--k-color-brand-primary,#007aff)]'
-							: 'bg-[var(--k-color-bg-300,rgba(128,128,128,0.15))]'}"
-						onclick={() => (feeling = feeling === emoji ? null : emoji)}
-						data-testid="contact-us-feeling-{emoji}"
-					>
-						<span class="text-3xl">{emoji}</span>
-					</button>
-				{/each}
-			</div>
 
 			<List
 				strongIos

@@ -212,7 +212,6 @@
 	"reasonFeatureRequest": "Feature request",
 	"reasonQuestion": "Question",
 	"reasonOther": "Other",
-	"howDoYouFeel": "How do you feel? (Optional)",
 	"includeDebugLog": "Include debug log.",
 	"whatsThis": "What's this?",
 	"debugLogExplanation": "Debug logs help us diagnose issues. They may contain metadata about your app usage but no message content.",
