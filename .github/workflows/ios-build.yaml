@@ -22,8 +22,8 @@ jobs:
           version: 10.33.0
           cache: true
 
-      - name: Install xcodegen
-        run: brew install xcodegen
+      - name: Install xcodegen and just
+        run: brew install xcodegen just
 
       - name: Use iOS rust toolchain
         run: cp rust-toolchain.ios.toml rust-toolchain.toml
@@ -37,4 +37,8 @@ jobs:
         run: pnpm install
 
       - name: Build iOS app (debug, no bundle)
-        run: pnpm tauri ios build --debug
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+        run: |
+          cargo build --target aarch64-apple-ios --release
+          pnpm tauri ios build -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
