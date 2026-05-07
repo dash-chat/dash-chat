@@ -37,9 +37,9 @@ jobs:
       - name: Install pnpm dependencies
         run: pnpm install
 
-      - name: Build iOS app (debug, no bundle)
+      - name: Build iOS app for simulator (compile check)
         env:
           IPHONEOS_DEPLOYMENT_TARGET: "14.0"
         run: |
-          cargo build --target aarch64-apple-ios
-          pnpm tauri ios build --debug -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          cargo build --target aarch64-apple-ios-sim
+          pnpm tauri ios build --debug --target aarch64-sim
