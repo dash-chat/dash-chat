@@ -172,6 +172,7 @@
 	"searchMessages": "Search messages...",
 	"noResults": "No results",
 	"searchResultsCount": "{{current}} of {{total}}",
+	"scrollToBottom": "Scroll to bottom",
 	"jumpToDate": "Jump to date",
 	"previousResult": "Previous result",
 	"nextResult": "Next result",
