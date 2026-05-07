@@ -62,6 +62,7 @@
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { longpress } from '$lib/actions/longpress';
+	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
@@ -559,7 +560,9 @@
 									data-testid="direct-chat-messages"
 								>
 									{#each messagesSetsInDays as messageSetInDay}
-										<DayTag class="quiet" day={messageSetInDay.day} />
+										<div use:navbarSticky class="self-center z-10">
+											<DayTag class="quiet" day={messageSetInDay.day} />
+										</div>
 
 										{#each messageSetInDay.eventsSets as messageSet}
 											<div class="column" style="gap: 1px">
