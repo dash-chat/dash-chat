@@ -25,12 +25,7 @@
 </script>
 
 <Page>
-	<Navbar
-		title={m.chats()}
-		titleClass="opacity1"
-		rightClass="relative"
-		transparent={true}
-	>
+	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
 				<Link iconOnly href="/settings" data-testid="home-settings-link">
@@ -51,6 +46,8 @@
 				{#if !isWideScreen.value}
 					{#await $chatSummaries then chats}
 						{#if chats.length === 0}
+							<!-- Absolute so it anchors to the navbar's inner row (already relative)
+								and sits below the new-message icon without affecting layout. -->
 							<div class="absolute end-0 top-full mt-2 z-30">
 								<FirstChatTooltip />
 							</div>
