@@ -91,6 +91,7 @@
 							<option value="bug">{m.reasonBugReport()}</option>
 							<option value="feature">{m.reasonFeatureRequest()}</option>
 							<option value="question">{m.reasonQuestion()}</option>
+							<option value="feedback">{m.reasonGeneralFeedback()}</option>
 							<option value="other">{m.reasonOther()}</option>
 						</select>
 					{/snippet}

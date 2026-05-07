@@ -211,6 +211,7 @@
 	"reasonBugReport": "Bug report",
 	"reasonFeatureRequest": "Feature request",
 	"reasonQuestion": "Question",
+	"reasonGeneralFeedback": "General feedback",
 	"reasonOther": "Other",
 	"includeDebugLog": "Include debug log.",
 	"whatsThis": "What's this?",
