@@ -140,6 +140,10 @@ impl LocalStore {
         Ok(row.map(|(id,)| id))
     }
 
+    /// Look up the device ID for a given agent ID.
+    ///
+    /// This is temporary, and will not be needed once device gropus are
+    /// implemented and [ChatMember] becomes [AgentId].
     pub async fn lookup_contact_by_agent_id(
         &self,
         agent_id: AgentId,

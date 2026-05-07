@@ -25,12 +25,7 @@
       "mcp__tauri__manage_window",
       "mcp__tauri__ipc_execute_command",
       "mcp__tauri__ipc_monitor",
-      "mcp__tauri__ipc_get_captured",
-      "Bash(cargo test *)",
-      "Bash(grep -n \"ActorId.*from_bytes\\\\|fn from_bytes\" ~/.cargo/git/checkouts/p2panda-*/*/p2panda-spaces/src/*.rs 2>/dev/null | head -10)",
-      "Read(//home/michael/.cargo/git/checkouts/**)",
-      "Bash(find ~/.cargo/git -name \"*.rs\" -path \"*/p2panda-auth*\" | xargs grep -l \"GroupsProcessor\\\\|process\" 2>/dev/null | grep -v target | head -5)",
-      "Read(//home/michael/.cargo/git/**)"
+      "mcp__tauri__ipc_get_captured"
     ]
   },
   "enabledPlugins": {
