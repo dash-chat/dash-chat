@@ -5,6 +5,7 @@ use p2panda_core::{Body, Extension, Hash, PruneFlag, PublicKey};
 use serde::{Deserialize, Serialize};
 
 use crate::chat::ChatId;
+use crate::compat::Capabilities;
 use crate::contact::QrCode;
 use crate::topic::TopicId;
 use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, Topic};
@@ -47,6 +48,18 @@ pub struct Profile {
 #[serde(tag = "type", content = "payload")]
 pub enum AnnouncementsPayload {
     SetProfile(Profile),
+
+    /// Sets the capabilities for all devices in the agent's device group.
+    ///
+    /// The agent is responsible for ensuring that the announced capability set
+    /// is the infimum of the capabilities of all devices in the agent's device group.
+    /// Only when the agent updates all of their devices to a higher capability set,
+    /// should they advertise the new capability set.
+    #[named_id(skip)]
+    SetCapabilities {
+        /// The new capabilities.
+        capabilities: Capabilities,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]

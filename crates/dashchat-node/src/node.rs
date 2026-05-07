@@ -1,7 +1,7 @@
 pub(crate) mod author_operation;
 mod stream_processing;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -159,51 +159,16 @@ impl Node {
         node.stream_cancel = Some(cancel_tx);
         node.stream_handle.lock().unwrap().replace(handle);
 
-        node.local_store
-            .set_device_capabilities(node.device_id(), node.config.capabilities)
-            .await?;
-
         node.initialize_stored_topics().await?;
+
+        node.set_device_capabilities(node.config.capabilities)
+            .await?;
 
         Ok(node)
     }
 
     pub fn data_path(&self) -> &PathBuf {
         self.filesystem.data_path()
-    }
-
-    pub async fn get_interleaved_logs(
-        &self,
-        topic_id: TopicId,
-        authors: Vec<DeviceId>,
-    ) -> anyhow::Result<Vec<(Header, Option<Payload>)>> {
-        let mut logs = Vec::new();
-        for author in authors {
-            for op in self.op_store.get_log(&author, &topic_id, None).await? {
-                if let Some(body) = op.body {
-                    if let Ok(payload) = Payload::try_from_body(&body) {
-                        logs.push((op.header, Some(payload)));
-                    } else {
-                        tracing::error!("Failed to decode payload: {body:?}");
-                    }
-                } else {
-                    logs.push((op.header, None));
-                }
-            }
-        }
-        logs.sort_by_key(|(h, _)| h.timestamp);
-        Ok(logs)
-    }
-
-    pub async fn get_authors(&self, topic_id: TopicId) -> anyhow::Result<HashSet<DeviceId>> {
-        let authors = self
-            .op_store
-            .get_log_heights(&topic_id)
-            .await?
-            .keys()
-            .cloned()
-            .collect::<HashSet<_>>();
-        Ok(authors)
     }
 
     pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
@@ -242,7 +207,6 @@ impl Node {
             inbox_topic,
             agent_id: self.node_keys.agent_id,
             share_intent,
-            capabilities: self.config.capabilities,
         })
     }
 
@@ -498,8 +462,9 @@ impl Node {
         agent_id: AgentId,
     ) -> anyhow::Result<Option<Profile>> {
         let topic_id: TopicId = Topic::announcements(agent_id).into();
-        let authors = self.get_authors(topic_id.clone()).await?;
+        let authors = self.op_store.get_authors(topic_id.clone()).await?;
         let ops = self
+            .op_store
             .get_interleaved_logs(topic_id, authors.into_iter().collect())
             .await?;
 
@@ -533,9 +498,10 @@ impl Node {
         let chat_id = topic.into();
         let mut messages = vec![];
 
-        let authors = self.get_authors(chat_id.into()).await?;
+        let authors = self.op_store.get_authors(chat_id.into()).await?;
 
         for (header, payload) in self
+            .op_store
             .get_interleaved_logs(chat_id.into(), authors.into_iter().collect())
             .await?
         {
@@ -555,13 +521,19 @@ impl Node {
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
 
-        let capabilities = self
-            .get_group_capabilities(topic)
-            .await?
-            .ok_or(anyhow::anyhow!(
-                "no capabilities found for chat: {}",
-                topic.renamed()
-            ))?;
+        let (capabilities, num_agents) = self.get_group_capabilities(topic).await?;
+        let capabilities = capabilities.ok_or(anyhow::anyhow!(
+            "no capabilities found for chat: {}",
+            topic.renamed()
+        ))?;
+
+        // NOTE: we may need logic for an agent to re-send a downgraded message if they later discover
+        //       intended recipients who don't have the proper capabilities for receiving this message
+        if num_agents == 1 {
+            tracing::warn!(
+                "sending message to group without knowing any other members' capabilities",
+            );
+        }
         let message = message.to_version(&capabilities)?;
 
         let header = self
@@ -805,20 +777,102 @@ impl Node {
         Ok(())
     }
 
+    /// Get the latest announced capabilities for the given agent across all of their devices.
+    ///
+    /// Computes the infimum of the capabilities across all devices.
+    pub async fn get_agent_capabilities(
+        &self,
+        agent_id: AgentId,
+    ) -> anyhow::Result<Option<Capabilities>> {
+        let announcements = Topic::announcements(agent_id).into();
+        let authors = self.op_store.get_authors(announcements).await?;
+        let ops = self
+            .op_store
+            .get_interleaved_logs(announcements, authors.into_iter().collect())
+            .await?;
+        let mut latest = HashMap::<DeviceId, Capabilities>::new();
+        ops.into_iter().for_each(|(header, payload)| match payload {
+            Some(Payload::Announcements(AnnouncementsPayload::SetCapabilities {
+                capabilities,
+            })) => {
+                latest.insert(DeviceId::from(header.public_key), capabilities);
+            }
+            _ => {}
+        });
+        Ok(latest.into_values().reduce(|a, b| a.infimum(&b)))
+    }
+
+    pub async fn set_device_capabilities(&self, capabilities: Capabilities) -> anyhow::Result<()> {
+        let announcements = Topic::announcements(self.agent_id());
+        let latest_capability = self
+            .op_store
+            .get_interleaved_logs(announcements.clone().into(), vec![self.device_id()])
+            .await?
+            .into_iter()
+            .rev()
+            .find_map(|(_, payload)| match payload {
+                Some(Payload::Announcements(AnnouncementsPayload::SetCapabilities {
+                    capabilities,
+                })) => Some(capabilities),
+                _ => None,
+            });
+
+        // If the capability is unset or different from the current one, set it now.
+        if latest_capability != Some(capabilities) {
+            self.author_operation(
+                announcements,
+                Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }),
+                Some(&format!(
+                    "set_device_capabilities({})",
+                    self.device_id().renamed()
+                )),
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
     /// Find the infimum of the capabilities of all other members of the group with read access or above.
     ///
     /// This is dependent on eventual consistency, and as other members join, the capabilities may change.
     pub(super) async fn get_group_capabilities(
         &self,
         topic: ChatId,
-    ) -> anyhow::Result<Option<Capabilities>> {
+    ) -> anyhow::Result<(Option<Capabilities>, usize)> {
         let members = self.group_store.members(topic).await?;
         let devices = members.iter().filter_map(|(member, access)| {
             // Only include members with read access or above
             // TODO: make sure this pubkey corresponds to a DeviceId and not an AgentId,
             //       once device groups are implemented
-            (*access >= Access::read()).then_some(DeviceId::from(*member))
+            (*access >= Access::read()).then_some(member)
         });
-        Ok(self.local_store.get_device_capabilities(devices).await?)
+        // Get all agents for all devices
+        // TODO: this mapping goes away once ChatMember becomes AgentId.
+        let agents: HashSet<AgentId> = self
+            .local_store
+            .lookup_contacts(devices)
+            .await?
+            .into_values()
+            // I am always part of any groups, though I'm not in my own lookup table.
+            .chain(Some(self.agent_id()))
+            .collect();
+
+        let num_agents = agents.len();
+
+        // Collect capabilities for all agents
+        let caps = futures::future::join_all(
+            agents
+                .into_iter()
+                .map(|agent| self.get_agent_capabilities(agent)),
+        )
+        .await
+        .into_iter()
+        .collect::<Result<Vec<Option<Capabilities>>>>()?;
+
+        Ok((
+            caps.into_iter().flatten().reduce(|a, b| a.infimum(&b)),
+            num_agents,
+        ))
     }
 }

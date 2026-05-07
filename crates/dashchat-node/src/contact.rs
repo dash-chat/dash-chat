@@ -4,7 +4,7 @@ use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-use crate::{AgentId, DeviceId, Topic, compat::Capabilities, topic::kind};
+use crate::{AgentId, DeviceId, Topic, topic::kind};
 
 /// The content for a QR code or deep link.
 ///
@@ -36,14 +36,6 @@ pub struct QrCode {
     pub inbox_topic: Option<InboxTopic>,
     /// The intent of the QR code: whether to add this node as a contact or a device.
     pub share_intent: ShareIntent,
-
-    /// Capabilities supported by this node, for version negotiation.
-    #[serde(default = "default_capabilities")]
-    pub capabilities: Capabilities,
-}
-
-fn default_capabilities() -> Capabilities {
-    Capabilities::zero()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
@@ -68,7 +60,6 @@ impl std::fmt::Display for QrCode {
             &self.inbox_topic,
             &self.agent_id,
             &self.share_intent,
-            &self.capabilities,
         ))
         .map_err(|_| std::fmt::Error)?;
         write!(f, "{}", hex::encode(bytes))
@@ -79,14 +70,12 @@ impl FromStr for QrCode {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = hex::decode(s)?;
-        let (device_pubkey, inbox_topic, agent_id, share_intent, capabilities) =
-            decode_cbor(bytes.as_slice())?;
+        let (device_pubkey, inbox_topic, agent_id, share_intent) = decode_cbor(bytes.as_slice())?;
         Ok(QrCode {
             device_pubkey,
             inbox_topic,
             agent_id,
             share_intent,
-            capabilities,
         })
     }
 }
@@ -124,7 +113,6 @@ mod tests {
             }),
             agent_id,
             share_intent: ShareIntent::AddDevice,
-            capabilities: Capabilities::current(),
         };
         let encoded = contact.to_string();
         let decoded = QrCode::from_str(&encoded).unwrap();

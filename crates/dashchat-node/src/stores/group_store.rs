@@ -30,9 +30,16 @@ impl GroupStore {
         Ok(())
     }
 
-    pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(PublicKey, Access)>> {
+    pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(ChatMember, Access)>> {
         let group_id = topic.to_group_pubkey()?;
-        Ok(self.auth_state().await?.inner.members(group_id))
+        Ok(self
+            .auth_state()
+            .await?
+            .inner
+            .members(group_id)
+            .into_iter()
+            .map(|(m, a)| (ChatMember::from(m), a))
+            .collect())
     }
 
     async fn auth_state(&self) -> anyhow::Result<GroupState> {

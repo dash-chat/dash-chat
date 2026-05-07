@@ -6,12 +6,11 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use sqlx::{
-    QueryBuilder, Row, SqlitePool,
+    SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 
 use crate::{
-    compat::Capabilities,
     contact::InboxTopic,
     topic::{AutoRegisteredTopic, TopicId},
     *,
@@ -28,10 +27,6 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS contacts (
         device_id BLOB PRIMARY KEY,
         agent_id BLOB NOT NULL
-    )",
-    "CREATE TABLE IF NOT EXISTS capability_versions (
-        device_id BLOB PRIMARY KEY,
-        messaging INTEGER NOT NULL
     )",
     "CREATE TABLE IF NOT EXISTS subscribed_topics (
         topic_id BLOB PRIMARY KEY
@@ -164,8 +159,9 @@ impl LocalStore {
     /// against the input slice to find which lookups missed.
     pub async fn lookup_contacts(
         &self,
-        device_ids: &[DeviceId],
+        device_ids: impl IntoIterator<Item = &DeviceId>,
     ) -> anyhow::Result<HashMap<DeviceId, AgentId>> {
+        let device_ids = device_ids.into_iter().collect::<Vec<_>>();
         if device_ids.is_empty() {
             return Ok(HashMap::new());
         }
@@ -189,8 +185,6 @@ impl LocalStore {
             .execute(&self.pool)
             .await?;
 
-        self.set_device_capabilities(contact.device_pubkey, contact.capabilities)
-            .await?;
         Ok(())
     }
 
@@ -279,42 +273,6 @@ impl LocalStore {
             .bind(nanos)
             .execute(&self.pool)
             .await?;
-        Ok(())
-    }
-
-    pub async fn get_device_capabilities(
-        &self,
-        device_ids: impl IntoIterator<Item = DeviceId>,
-    ) -> anyhow::Result<Option<Capabilities>> {
-        Ok(
-            QueryBuilder::new("SELECT (messaging) FROM capability_versions WHERE device_id IN ")
-                .push_tuples(device_ids, |mut qb, device_id| {
-                    qb.push_bind(device_id);
-                })
-                .push(" LIMIT 1000")
-                .build()
-                .fetch_all(&self.pool)
-                .await?
-                .into_iter()
-                .map(|row| Capabilities {
-                    messaging: row.get("messaging"),
-                })
-                .reduce(|acc, cap| acc.infimum(&cap)),
-        )
-    }
-
-    pub async fn set_device_capabilities(
-        &self,
-        device_id: DeviceId,
-        capabilities: Capabilities,
-    ) -> anyhow::Result<()> {
-        sqlx::query(
-            "INSERT OR REPLACE INTO capability_versions (device_id, messaging) VALUES (?, ?)",
-        )
-        .bind(device_id)
-        .bind(capabilities.messaging)
-        .execute(&self.pool)
-        .await?;
         Ok(())
     }
 }

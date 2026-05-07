@@ -91,14 +91,12 @@ mod tests {
             .await;
 
         let ac = alice
-            .local_store
-            .get_device_capabilities([alice.device_id()])
+            .get_agent_capabilities(alice.agent_id())
             .await
             .unwrap()
             .unwrap();
         let bc = bobbi
-            .local_store
-            .get_device_capabilities([bobbi.device_id()])
+            .get_agent_capabilities(bobbi.agent_id())
             .await
             .unwrap()
             .unwrap();
@@ -141,14 +139,12 @@ mod tests {
 
         // Both nodes see each others' capabilities
         let alice_bobbi_caps = alice
-            .local_store
-            .get_device_capabilities([bobbi.device_id()])
+            .get_agent_capabilities(bobbi.agent_id())
             .await
             .unwrap()
             .unwrap();
         let bobbi_alice_caps = bobbi
-            .local_store
-            .get_device_capabilities([alice.device_id()])
+            .get_agent_capabilities(alice.agent_id())
             .await
             .unwrap()
             .unwrap();
@@ -156,8 +152,18 @@ mod tests {
         assert_eq!(bobbi_alice_caps, Capabilities::zero());
 
         // Both nodes return zero capabilities because alice is the limiting factor.
-        let alice_caps = alice.get_group_capabilities(topic).await.unwrap().unwrap();
-        let bobbi_caps = bobbi.get_group_capabilities(topic).await.unwrap().unwrap();
+        let alice_caps = alice
+            .get_group_capabilities(topic)
+            .await
+            .unwrap()
+            .0
+            .unwrap();
+        let bobbi_caps = bobbi
+            .get_group_capabilities(topic)
+            .await
+            .unwrap()
+            .0
+            .unwrap();
         assert_eq!(alice_caps, Capabilities::zero());
         assert_eq!(bobbi_caps, Capabilities::zero());
 

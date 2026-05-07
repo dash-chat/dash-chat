@@ -5428,7 +5428,7 @@ dependencies = [
 [[package]]
 name = "named-id"
 version = "0.1.0"
-source = "git+https://github.com/maackle/named-id.git#6550193ad9a1bc0901e69e47db147f59a1121119"
+source = "git+https://github.com/maackle/named-id.git#424294a3fff3ffb65cc37ffbd1c3b764ab3f4a54"
 dependencies = [
  "named-id-derive",
  "regex",
@@ -5439,7 +5439,7 @@ dependencies = [
 [[package]]
 name = "named-id-derive"
 version = "0.1.0"
-source = "git+https://github.com/maackle/named-id.git#6550193ad9a1bc0901e69e47db147f59a1121119"
+source = "git+https://github.com/maackle/named-id.git#424294a3fff3ffb65cc37ffbd1c3b764ab3f4a54"
 dependencies = [
  "proc-macro2",
  "quote",
