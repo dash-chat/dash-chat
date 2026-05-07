@@ -1,5 +1,5 @@
 use dashchat_node::Node;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 #[tauri::command]
 pub async fn delete_account(app: AppHandle, node: State<'_, Node>) -> Result<(), String> {

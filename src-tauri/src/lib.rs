@@ -157,6 +157,8 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            #[cfg(mobile)]
+            let _ = (window, event); // unused on mobile; used in the cfg(not(mobile)) block below
             #[cfg(not(mobile))]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 use tauri::Manager;
@@ -173,6 +175,8 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            #[cfg(mobile)]
+            let _ = (app_handle, event); // unused on mobile; used in the cfg(not(mobile)) block below
             #[cfg(not(mobile))]
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 // When the local mailbox is running and quit is requested (Cmd+Q, dock Quit),
