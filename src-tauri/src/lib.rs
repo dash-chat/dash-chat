@@ -9,9 +9,9 @@ mod utils;
 #[cfg(mobile)]
 mod push_notifications;
 
-#[cfg(not(mobile))]
+#[cfg(desktop)]
 mod menu;
-#[cfg(not(mobile))]
+#[cfg(desktop)]
 mod tray;
 
 /// When set to `true`, the run-loop's `ExitRequested` handler will no longer
@@ -164,9 +164,9 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            #[cfg(mobile)]
-            let _ = (window, event); // unused on mobile; used in the cfg(not(mobile)) block below
-            #[cfg(not(mobile))]
+            #[cfg(not(desktop))]
+            let _ = (window, event); // unused off-desktop; used in the cfg(desktop) block below
+            #[cfg(desktop)]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 use tauri::Manager;
                 // When the local mailbox is running, hide the window instead of closing

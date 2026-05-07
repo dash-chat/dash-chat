@@ -1883,6 +1883,7 @@ dependencies = [
  "p2panda-sync",
  "push-notifications-client",
  "regex",
+ "rustls 0.23.40",
  "serde",
  "serde_json",
  "sonix-i18n",
