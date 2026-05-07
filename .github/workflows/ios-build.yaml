@@ -1,0 +1,45 @@
+name: "ios build"
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  ios-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+          cache: true
+
+      - name: Install xcodegen and just
+        run: brew install xcodegen just
+
+      - name: Use iOS rust toolchain
+        run: cp rust-toolchain.ios.toml rust-toolchain.toml
+
+      - name: Install Rust (with iOS targets)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+          cache-shared-key: ios
+
+      - name: Install pnpm dependencies
+        run: pnpm install
+
+      - name: Build iOS app (debug, no bundle)
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+        run: |
+          cargo build --target aarch64-apple-ios
+          pnpm tauri ios build --debug -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
