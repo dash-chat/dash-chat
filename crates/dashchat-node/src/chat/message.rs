@@ -40,6 +40,7 @@ pub mod testing {
     use std::cmp::Ordering;
 
     use named_id::RenameAll;
+    use p2panda_core::Timestamp;
 
     use crate::{Cbor, DeviceId, Header};
 
@@ -48,7 +49,7 @@ pub mod testing {
     pub struct ChatMessage {
         pub content: ChatMessageContent,
         pub author: DeviceId,
-        pub timestamp: u64,
+        pub timestamp: Timestamp,
     }
 
     impl ChatMessage {

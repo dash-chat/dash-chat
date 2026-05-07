@@ -85,6 +85,10 @@ export type MessageId = string;
 // 	timestamp: number;
 // }
 
+export interface ReadMessagesStore {
+	markAsRead(messageHashes: Hash[]): Promise<void>;
+}
+
 export interface ChatSummary {
 	type: 'GroupChat' | 'DirectChat' | 'ContactRequest';
 	chatId: TopicId;
