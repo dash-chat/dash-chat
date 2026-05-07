@@ -391,8 +391,6 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a",
-				"$(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
