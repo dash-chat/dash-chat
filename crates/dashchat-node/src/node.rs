@@ -836,7 +836,7 @@ impl Node {
     /// Find the infimum of the capabilities of all other members of the group with read access or above.
     ///
     /// This is dependent on eventual consistency, and as other members join, the capabilities may change.
-    pub(super) async fn get_group_capabilities(
+    pub async fn get_group_capabilities(
         &self,
         topic: ChatId,
     ) -> anyhow::Result<(Option<Capabilities>, usize)> {
