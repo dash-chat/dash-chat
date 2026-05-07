@@ -43,7 +43,7 @@ jobs:
           name: darksoil-studio
 
       - name: Load nix dev shell environment
-        uses: nicknovitski/nix-develop@v9
+        uses: nicknovitski/nix-develop@v1
         with:
           arguments: --accept-flake-config .#androidDev
 
