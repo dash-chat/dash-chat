@@ -1,4 +1,4 @@
-import { SCROLL_BOTTOM_THRESHOLD } from '../../src/lib/utils/chat';
+import { SCROLL_BOTTOM_THRESHOLD } from '../../src/lib/components/ReverseScrollPage.svelte';
 import { findNavbarBg } from '../../src/lib/utils/konsta';
 import { S } from '../selectors';
 

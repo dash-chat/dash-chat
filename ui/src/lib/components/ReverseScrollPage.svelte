@@ -8,46 +8,21 @@
 	    {/snippet}
 	    ...messages and overlays...
 	  </ReverseScrollPage>
-
-	The `navbar` snippet renders as a sibling of the scroll element inside
-	`.k-page`, NOT inside the scroll wrapper. This matters: WebKit has a bug
-	where a `position: sticky` element nested inside a scrollable container
-	whose ancestor WKWebView frame just resized (e.g. iOS keyboard dismiss)
-	leaves the navbar's compositing layer stale — it occupies layout but
-	renders nothing until a real touch event forces re-layout. Putting the
-	navbar in `.k-page` (which has `overflow: hidden`, so its sticky context
-	degenerates to fixed top placement) sidesteps the bug.
-
-	What it does:
-	1. Suppresses scroll on `.k-page` (`overflow: hidden`) so the page itself
-	   doesn't scroll.
-	2. Positions the scroll element as `absolute; inset: 0` inside `.k-page` so
-	   the viewport extends from top to bottom — content scrolls *under* the
-	   navbar's translucent layers, preserving Konsta's iOS gradient/blur
-	   fade-into-background effect.
-	3. Makes the scroll element a column-reverse container (scrollTop=0 = bottom).
-	4. Tracks the navbar's measured height and exposes it on the scroll element
-	   as `--chat-navbar-height`. The inner growth wrapper uses it as
-	   `padding-top` so the welcome card / oldest content isn't permanently
-	   hidden behind the navbar at max scroll-up. Descendants (e.g. a sticky
-	   day-tag) can read it the same way.
-	5. Manages the Material navbar bg opacity: opaque at the latest-message end,
-	   transparent over the welcome card. iOS isn't touched — Konsta's gradient +
-	   blur layers do the fading visually on their own.
-
-	Why not Konsta's `scrollEl` prop: Konsta's progress formula clamps
-	`scrollTop ≥ 0`, but WebKit reports negative scrollTop in column-reverse, so
-	it would always compute progress=0 and never fade.
-
-	Props mirror Konsta's `<Page>` (Konsta-specific options forwarded to the
-	underlying Page). Plain HTML attributes (id, class, style, data-*, aria-*…)
-	land on the inner scroll element.
 -->
+<script lang="ts" module>
+	/** Distance from the bottom (in px) below which we consider the user
+	 * "at the bottom" of the chat — controls when the scroll-to-bottom
+	 * button hides and when self-sends snap back to the bottom.
+	 *
+	 * Shared with E2E test helpers so both stay in sync if the value is
+	 * tuned. */
+	export const SCROLL_BOTTOM_THRESHOLD = 200;
+</script>
+
 <script lang="ts">
 	import { Page } from 'konsta/svelte';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import { SCROLL_BOTTOM_THRESHOLD } from '$lib/utils/chat';
 	import { findNavbarBg } from '$lib/utils/konsta';
 
 	interface PageColors {
