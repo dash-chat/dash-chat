@@ -32,11 +32,7 @@ pub(crate) static QUIT_DIALOG_OPEN: std::sync::atomic::AtomicBool =
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // `reqwest 0.13` (pulled in by `iroh-relay`) requires a rustls
-    // `CryptoProvider` to be installed before the first TLS handshake, or
-    // it panics with "No provider set". Manifests on Android, where no
-    // earlier code happens to install one.
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    crate::utils::install_crypto_provider();
 
     filesystem::init_data_dir();
 
@@ -183,7 +179,7 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             #[cfg(mobile)]
-            let _ = (app_handle, event); // unused on mobile; used in the cfg(not(mobile)) block below
+            let _ = (app_handle, event); // unused on mobile; used in the cfg(desktop) block below
             #[cfg(desktop)]
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 // When the local mailbox is running and quit is requested (Cmd+Q, dock Quit),
