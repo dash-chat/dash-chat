@@ -279,6 +279,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = BD12163D2F9FA61B00B762AE /* Build configuration list for PBXNativeTarget "PushNotificationsExtension" */;
 			buildPhases = (
+				BD1216C02F9FA61B00B762AE /* Build Rust Code */,
 				BD12162D2F9FA61B00B762AE /* Sources */,
 				BD12162E2F9FA61B00B762AE /* Frameworks */,
 				BD12162F2F9FA61B00B762AE /* Resources */,
@@ -417,6 +418,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "set -eu\nLIBAPP=\"$SRCROOT/Externals/$ARCHS/$CONFIGURATION/libapp.a\"\nOUTDIR=\"$DERIVED_FILE_DIR/firebase-categories\"\nOUTLIB=\"$OUTDIR/libfb-categories.a\"\nrm -rf \"$OUTDIR\"\nmkdir -p \"$OUTDIR\"\ncd \"$OUTDIR\"\nCATEGORY_OBJS=$(ar -t \"$LIBAPP\" 2>/dev/null | grep -E '\\+.*\\.m\\.o$' | sort -u || true)\nif [ -n \"$CATEGORY_OBJS\" ]; then\n  ar -x \"$LIBAPP\" $CATEGORY_OBJS 2>/dev/null || true\nfi\nif ls *.o >/dev/null 2>&1; then\n  ar -rcs \"$OUTLIB\" *.o\n  echo \"Generated $OUTLIB with $(ls *.o | wc -l | tr -d ' ') category objects\"\nelse\n  printf 'static int _keep;\\n' > keep.c\n  xcrun clang -c -target \"$ARCHS-apple-ios\" keep.c -o keep.o\n  ar -rcs \"$OUTLIB\" keep.o\n  echo \"Warning: no category objects found in $LIBAPP\"\nfi\n";
+		};
+		BD1216C02F9FA61B00B762AE /* Build Rust Code */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Code";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a",
+				"$(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "pnpm tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -687,7 +709,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/../../../target/aarch64-apple-ios/$(CONFIGURATION)/libtauri_app_lib.a",
+					"$(SRCROOT)/Externals/$(ARCHS)/$(CONFIGURATION)/libapp.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat.PushNotificationsExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -771,7 +793,7 @@
 				MTL_FAST_MATH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/../../../target/aarch64-apple-ios/$(CONFIGURATION)/libtauri_app_lib.a",
+					"$(SRCROOT)/Externals/$(ARCHS)/$(CONFIGURATION)/libapp.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat.PushNotificationsExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
