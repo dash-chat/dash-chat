@@ -85,7 +85,12 @@ pub enum ChatPayload {
     /// OPTIMIZATION: include a message in the group chat
     /// which instructs anyone who is a contact of this person to send them
     /// this JoinGroup message 1:1, to increase their ability to receive it.
-    JoinGroup(ChatId),
+    JoinGroup {
+        chat_id: ChatId,
+        /// Agent IDs of all current group members, so the recipient can subscribe
+        /// to their announcements topics and learn their device_id->agent_id mappings.
+        member_agent_ids: Vec<AgentId>,
+    },
 
     Message(ChatMessageContent),
 

@@ -254,7 +254,7 @@ impl Node {
             .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
 
         // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads().await?;
+        let deps = self.group_store.heads(*topic).await?;
         let initial_members = vec![
             (GroupMember::Individual(*self.device_id()), Access::write()),
             (GroupMember::Individual(*other_device_id), Access::write()),
@@ -309,7 +309,7 @@ impl Node {
             .collect();
 
         // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads().await?;
+        let deps = self.group_store.heads(*chat_id).await?;
         self.author_operation(
             chat_id,
             DashAction::group_action(chat_id, GroupAction::Create { initial_members }, deps)?,
@@ -326,7 +326,24 @@ impl Node {
     }
 
     async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
-        let payload = Payload::Chat(ChatPayload::JoinGroup(chat_id));
+        let member_device_ids: Vec<DeviceId> = self
+            .group_store
+            .members(chat_id)
+            .await?
+            .into_iter()
+            .map(|(pk, _)| DeviceId::from(pk))
+            .collect();
+        let member_agent_ids: Vec<AgentId> = self
+            .local_store
+            .lookup_contacts(member_device_ids.iter())
+            .await?
+            .into_values()
+            .chain(Some(self.agent_id()))
+            .collect();
+        let payload = Payload::Chat(ChatPayload::JoinGroup {
+            chat_id,
+            member_agent_ids,
+        });
         tracing::info!(
             "{} is inviting {} to group {}",
             self.device_id().renamed(),
@@ -353,7 +370,7 @@ impl Node {
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
         // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads().await?;
+        let deps = self.group_store.heads(*chat_id).await?;
 
         self.author_operation(
             chat_id,
@@ -388,7 +405,7 @@ impl Node {
         member: PublicKey,
     ) -> anyhow::Result<()> {
         // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads().await?;
+        let deps = self.group_store.heads(*chat_id).await?;
         self.author_operation(
             chat_id,
             DashAction::group_action(

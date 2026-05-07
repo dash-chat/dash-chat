@@ -179,9 +179,18 @@ impl LocalStore {
     }
 
     pub async fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
+        self.save_agent_mapping(contact.device_pubkey, contact.agent_id)
+            .await
+    }
+
+    pub async fn save_agent_mapping(
+        &self,
+        device_id: DeviceId,
+        agent_id: AgentId,
+    ) -> anyhow::Result<()> {
         sqlx::query("INSERT OR REPLACE INTO contacts (device_id, agent_id) VALUES (?, ?)")
-            .bind(contact.device_pubkey)
-            .bind(contact.agent_id)
+            .bind(device_id)
+            .bind(agent_id)
             .execute(&self.pool)
             .await?;
 
