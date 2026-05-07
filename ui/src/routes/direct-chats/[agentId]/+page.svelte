@@ -27,6 +27,7 @@
 		type Hash,
 		type Message,
 	} from 'dash-chat-stores';
+	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { onActivate } from '$lib/utils/keyboard';
@@ -79,6 +80,9 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
+
+	const readTracker = createReadMessagesTracker(store);
+	const readMessageOnObserve = readTracker.observe;
 
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 	const peerProfile = useReactivePromise(store.peerProfile);
@@ -214,10 +218,6 @@
 		return 'middle-message';
 	};
 
-	// Track visible messages to mark as read
-	let observer: IntersectionObserver | undefined;
-	const visibleMessages: Set<Hash> = new Set();
-	let markReadTimeout: ReturnType<typeof setTimeout>;
 	let messagesPageEl: HTMLDivElement | null = null;
 
 	onMount(() => {
@@ -251,26 +251,6 @@
 			}
 		});
 
-		observer = new IntersectionObserver(
-			entries => {
-				for (const entry of entries) {
-					const hash = entry.target.getAttribute('data-message-hash');
-					if (hash && entry.isIntersecting) {
-						visibleMessages.add(hash);
-					}
-				}
-				// Debounce the mark-as-read call
-				clearTimeout(markReadTimeout);
-				markReadTimeout = setTimeout(() => {
-					if (visibleMessages.size > 0) {
-						store.markAsRead(Array.from(visibleMessages));
-						visibleMessages.clear();
-					}
-				}, 500);
-			},
-			{ threshold: 0.5 },
-		);
-
 		// Track scroll position to show/hide scroll-to-bottom button
 		const handleScroll = () => {
 			showScrollToBottom = !scrollIsAtBottom();
@@ -280,23 +260,11 @@
 		return () => {
 			navbarObserver?.disconnect();
 			unsubNewMessage?.();
-			observer?.disconnect();
-			clearTimeout(markReadTimeout);
+			readTracker.destroy();
 			messagesPageEl?.removeEventListener('scroll', handleScroll);
 		};
 	});
 
-	// Svelte action to observe message elements for read tracking
-	const observeMessage: Action<HTMLElement, Hash | null> = (node, hash) => {
-		if (hash === null) return;
-		node.setAttribute('data-message-hash', hash);
-		observer?.observe(node);
-		return {
-			destroy() {
-				observer?.unobserve(node);
-			},
-		};
-	};
 	// Search helpers
 	function escapeHtml(text: string): string {
 		return text
@@ -778,7 +746,7 @@
 															<div
 																class="self-start max-w-[85%]"
 																data-message-hash={hash}
-																use:observeMessage={readHashes?.has(hash)
+																use:readMessageOnObserve={readHashes?.has(hash)
 																	? null
 																	: hash}
 																use:longpress={{
