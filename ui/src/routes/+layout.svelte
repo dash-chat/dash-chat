@@ -35,6 +35,7 @@
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
@@ -113,6 +114,10 @@
 	setContext('devices-store', devicesStore);
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
+
+	// Pin the chat-summary reactive for the app's lifetime so the home
+	// chat list doesn't recompute every time the user navigates to another page.
+	useKeepAlive(chatsStore.allChatsSummaries);
 
 	const isDark = useSignal(settingsStore.isDark);
 
