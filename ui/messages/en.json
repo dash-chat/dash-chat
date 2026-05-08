@@ -31,6 +31,8 @@
 	"photo": "Photo",
 	"camera": "Camera",
 	"text": "Text",
+	"avatarText": "Avatar text",
+	"editAvatarText": "Edit avatar text",
 	"removePhoto": "Remove photo",
 	"preview": "Preview",
 	"color": "Color",
