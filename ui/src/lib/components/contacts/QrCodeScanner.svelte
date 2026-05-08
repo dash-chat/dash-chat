@@ -4,20 +4,32 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiImageSearchOutline } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { scanQrCode } from '$lib/utils/qrcode';
+	import { scanQrCode, scanQrFromImage } from '$lib/utils/qrcode';
 	import { showToast } from '$lib/utils/toasts';
 	import { isTauriEnv } from '$lib/utils/environment';
 
 	type SelectImageHandler = (code: string) => void | Promise<void>;
-	type RequestPickFileHandler = () => void | Promise<void>;
 
 	let {
 		onSelectImage,
-		onRequestPickFile,
 	}: {
 		onSelectImage: SelectImageHandler;
-		onRequestPickFile: RequestPickFileHandler;
 	} = $props();
+
+	let imageFilePicker: HTMLInputElement;
+
+	async function onImageSelected() {
+		if (!imageFilePicker.files || !imageFilePicker.files[0]) return;
+		try {
+			const code = await scanQrFromImage(imageFilePicker.files[0]);
+			await onSelectImage(code);
+		} catch (e) {
+			console.error(e);
+			showToast(m.errorNoQrCodeInImage(), 'error');
+		} finally {
+			imageFilePicker.value = '';
+		}
+	}
 
 	let cancelled = false;
 
@@ -71,7 +83,7 @@
 	>
 		<button
 			class="w-14 h-14 rounded-full bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.3)] transition-transform duration-200 hover:scale-105 active:scale-95"
-			onclick={onRequestPickFile}
+			onclick={() => imageFilePicker.click()}
 			aria-label={m.photo()}
 			data-testid="add-contact-select-image-btn"
 		>
@@ -82,6 +94,14 @@
 		</button>
 	</div>
 </div>
+
+<input
+	type="file"
+	accept="image/*"
+	bind:this={imageFilePicker}
+	style="display: none"
+	onchange={onImageSelected}
+/>
 
 <style>
 	.square {

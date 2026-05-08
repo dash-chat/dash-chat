@@ -14,7 +14,6 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { isMobile } from '$lib/utils/environment';
-	import { scanQrFromImage } from '$lib/utils/qrcode';
 	import {
 		Page,
 		Navbar,
@@ -35,8 +34,9 @@
 	import MyQrCodeCard from '$lib/components/contacts/MyQrCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
 	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
+	import QrCodeUploader from '../contacts/QrCodeUploader.svelte';
 
-	type TabName = 'code' | 'scan';
+	type TabName = 'code' | 'scan' | 'upload';
 
 	let { showBack = true }: { showBack?: boolean } = $props();
 
@@ -132,8 +132,6 @@
 		}
 	}
 
-	let imageFilePicker: HTMLInputElement;
-
 	async function switchTab(nextTab: TabName) {
 		if (nextTab === tab) return;
 
@@ -143,32 +141,7 @@
 
 		tab = nextTab;
 	}
-
-	async function onImageSelected() {
-		if (!imageFilePicker.files || !imageFilePicker.files[0]) return;
-		try {
-			const code = await scanQrFromImage(imageFilePicker.files[0]);
-			await receiveCode(code);
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorNoQrCodeInImage(), 'error');
-		} finally {
-			imageFilePicker.value = '';
-		}
-	}
-
-	function onScannerRequestPickFile() {
-		imageFilePicker.click();
-	}
 </script>
-
-<input
-	type="file"
-	accept="image/*"
-	bind:this={imageFilePicker}
-	style="display: none"
-	onchange={onImageSelected}
-/>
 
 {#if colorPickerOpen}
 	{#await myCode then code}
@@ -210,7 +183,7 @@
 							style="align-items: center; justify-content: center"
 						>
 							<Button
-								class="w-24"
+								class="w-22"
 								small
 								rounded
 								tonal={tab !== 'code'}
@@ -220,13 +193,23 @@
 							</Button>
 
 							<Button
-								class="w-24"
+								class="w-22"
 								small
 								rounded
 								tonal={tab !== 'scan'}
 								onClick={() => void switchTab('scan')}
 								data-testid="add-contact-scan-tab"
 								>{m.scan()}
+							</Button>
+
+							<Button
+								class="w-22"
+								small
+								rounded
+								tonal={tab !== 'upload'}
+								onClick={() => void switchTab('upload')}
+								data-testid="add-contact-upload-tab"
+								>{m.upload()}
 							</Button>
 						</div>
 					{:else}
@@ -307,12 +290,10 @@
 					</div>
 				{/await}
 			{/await}
-		{:else}
-			<QrCodeScanner
-				bind:this={scannerRef}
-				onSelectImage={receiveCode}
-				onRequestPickFile={onScannerRequestPickFile}
-			/>
+		{:else if tab === 'scan'}
+			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveCode} />
+		{:else if tab === 'upload'}
+			<!-- <QrCodeUploader onRequestPickFile={onScannerRequestPickFile} /> -->
 		{/if}
 	</Page>
 {/if}
