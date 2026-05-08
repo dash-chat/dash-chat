@@ -80,12 +80,14 @@ async fn direct_chat_capability_upgrade() {
         Duration::from_secs(10),
         || async {
             let caps = bobbi
-                .get_agent_capabilities(bobbi.agent_id())
+                .local_store
+                .get_capabilities(bobbi.device_id())
                 .await
                 .unwrap();
             // Also verify alice still sees bobbi as zero
             let alice_sees_bobbi = alice
-                .get_agent_capabilities(bobbi.agent_id())
+                .local_store
+                .get_capabilities(bobbi.device_id())
                 .await
                 .unwrap();
             if caps.is_some() && alice_sees_bobbi == Some(Capabilities::zero()) {
@@ -157,7 +159,8 @@ async fn direct_chat_capability_upgrade() {
         Duration::from_secs(10),
         || async {
             let caps = alice
-                .get_agent_capabilities(bobbi.agent_id())
+                .local_store
+                .get_capabilities(bobbi.device_id())
                 .await
                 .unwrap();
             if caps == Some(Capabilities::current()) {
@@ -358,11 +361,13 @@ async fn group_chat_capability_upgrade() {
         Duration::from_secs(10),
         || async {
             let bobbi_sees_alice = bobbi
-                .get_agent_capabilities(alice.agent_id())
+                .local_store
+                .get_capabilities(alice.device_id())
                 .await
                 .unwrap();
             let cammy_sees_bobbi = cammy
-                .get_agent_capabilities(bobbi.agent_id())
+                .local_store
+                .get_capabilities(bobbi.device_id())
                 .await
                 .unwrap();
             if bobbi_sees_alice == Some(Capabilities::current())
@@ -436,7 +441,8 @@ async fn group_chat_capability_upgrade() {
         Duration::from_secs(10),
         || async {
             let bobbi_sees_cammy = bobbi
-                .get_agent_capabilities(cammy.agent_id())
+                .local_store
+                .get_capabilities(cammy.device_id())
                 .await
                 .unwrap();
             if bobbi_sees_cammy == Some(Capabilities::current()) {
@@ -515,7 +521,8 @@ async fn group_chat_capability_upgrade() {
         Duration::from_secs(10),
         || async {
             let bobbi_sees_danae = bobbi
-                .get_agent_capabilities(danae.agent_id())
+                .local_store
+                .get_capabilities(danae.device_id())
                 .await
                 .unwrap();
             if bobbi_sees_danae == Some(Capabilities::zero()) {

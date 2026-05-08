@@ -1,7 +1,7 @@
 pub(crate) mod author_operation;
 mod stream_processing;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -94,7 +94,7 @@ pub struct Node {
     /// Join handle for the stream processing background task
     stream_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 
-    pub(crate) local_store: LocalStore,
+    pub local_store: LocalStore,
     group_store: GroupStore,
     node_keys: NodeKeys,
 
@@ -161,7 +161,7 @@ impl Node {
 
         node.initialize_stored_topics().await?;
 
-        node.set_device_capabilities(node.config.capabilities)
+        node.announce_device_capabilities(node.config.capabilities)
             .await?;
 
         Ok(node)
@@ -777,45 +777,12 @@ impl Node {
         Ok(())
     }
 
-    /// Get the latest announced capabilities for the given agent across all of their devices.
-    ///
-    /// Computes the infimum of the capabilities across all devices.
-    pub async fn get_agent_capabilities(
+    pub async fn announce_device_capabilities(
         &self,
-        agent_id: AgentId,
-    ) -> anyhow::Result<Option<Capabilities>> {
-        let announcements = Topic::announcements(agent_id).into();
-        let authors = self.op_store.get_authors(announcements).await?;
-        let ops = self
-            .op_store
-            .get_interleaved_logs(announcements, authors.into_iter().collect())
-            .await?;
-        let mut latest = HashMap::<DeviceId, Capabilities>::new();
-        ops.into_iter().for_each(|(header, payload)| match payload {
-            Some(Payload::Announcements(AnnouncementsPayload::SetCapabilities {
-                capabilities,
-            })) => {
-                latest.insert(DeviceId::from(header.public_key), capabilities);
-            }
-            _ => {}
-        });
-        Ok(latest.into_values().reduce(|a, b| a.infimum(&b)))
-    }
-
-    pub async fn set_device_capabilities(&self, capabilities: Capabilities) -> anyhow::Result<()> {
+        capabilities: Capabilities,
+    ) -> anyhow::Result<()> {
         let announcements = Topic::announcements(self.agent_id());
-        let latest_capability = self
-            .op_store
-            .get_interleaved_logs(announcements.clone().into(), vec![self.device_id()])
-            .await?
-            .into_iter()
-            .rev()
-            .find_map(|(_, payload)| match payload {
-                Some(Payload::Announcements(AnnouncementsPayload::SetCapabilities {
-                    capabilities,
-                })) => Some(capabilities),
-                _ => None,
-            });
+        let latest_capability = self.local_store.get_capabilities(self.device_id()).await?;
 
         // If the capability is unset or different from the current one, set it now.
         if latest_capability != Some(capabilities) {
@@ -847,32 +814,21 @@ impl Node {
             //       once device groups are implemented
             (*access >= Access::read()).then_some(member)
         });
-        // Get all agents for all devices
-        // TODO: this mapping goes away once ChatMember becomes AgentId.
-        let agents: HashSet<AgentId> = self
-            .local_store
-            .lookup_contacts(devices)
-            .await?
-            .into_values()
-            // I am always part of any groups, though I'm not in my own lookup table.
-            .chain(Some(self.agent_id()))
-            .collect();
-
-        let num_agents = agents.len();
 
         // Collect capabilities for all agents
         let caps = futures::future::join_all(
-            agents
-                .into_iter()
-                .map(|agent| self.get_agent_capabilities(agent)),
+            devices
+                .copied()
+                .chain(std::iter::once(self.device_id()))
+                .map(|device| self.local_store.get_capabilities(device)),
         )
         .await
         .into_iter()
         .collect::<Result<Vec<Option<Capabilities>>>>()?;
 
-        Ok((
-            caps.into_iter().flatten().reduce(|a, b| a.infimum(&b)),
-            num_agents,
-        ))
+        let caps = caps.into_iter().flatten().collect::<Vec<_>>();
+        let num = caps.len();
+
+        Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 }

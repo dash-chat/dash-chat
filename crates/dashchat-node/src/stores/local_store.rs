@@ -11,6 +11,7 @@ use sqlx::{
 };
 
 use crate::{
+    compat::Capabilities,
     contact::InboxTopic,
     topic::{AutoRegisteredTopic, TopicId},
     *,
@@ -26,7 +27,8 @@ const MIGRATIONS: &[&str] = &[
     )",
     "CREATE TABLE IF NOT EXISTS contacts (
         device_id BLOB PRIMARY KEY,
-        agent_id BLOB NOT NULL
+        agent_id BLOB NOT NULL,
+        capabilities BLOB NULL
     )",
     "CREATE TABLE IF NOT EXISTS subscribed_topics (
         topic_id BLOB PRIMARY KEY
@@ -199,6 +201,31 @@ impl LocalStore {
             .await?;
 
         Ok(())
+    }
+
+    pub async fn save_capabilities(
+        &self,
+        device_id: DeviceId,
+        capabilities: Capabilities,
+    ) -> anyhow::Result<()> {
+        sqlx::query("UPDATE contacts SET capabilities = ? WHERE device_id = ?")
+            .bind(capabilities)
+            .bind(device_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_capabilities(
+        &self,
+        device_id: DeviceId,
+    ) -> anyhow::Result<Option<Capabilities>> {
+        let row: Option<(Option<Capabilities>,)> =
+            sqlx::query_as("SELECT capabilities FROM contacts WHERE device_id = ?")
+                .bind(device_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.and_then(|(capabilities,)| capabilities))
     }
 
     pub async fn register_topic_as_subscribed<K: AutoRegisteredTopic>(

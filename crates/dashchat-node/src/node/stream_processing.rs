@@ -350,7 +350,7 @@ impl Node {
                 // Nothing to do.
             }
 
-            Payload::Announcements(AnnouncementsPayload::SetCapabilities { .. }) => {
+            Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
                 // Save the device_id -> agent_id mapping so group members can look each other up.
 
                 let device_id = DeviceId::from(header.public_key);
@@ -364,6 +364,14 @@ impl Node {
                     .await
                 {
                     tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
+                }
+
+                if let Err(err) = self
+                    .local_store
+                    .save_capabilities(device_id, capabilities.clone())
+                    .await
+                {
+                    tracing::warn!(?err, "failed to save capabilities from SetCapabilities");
                 }
             }
 
