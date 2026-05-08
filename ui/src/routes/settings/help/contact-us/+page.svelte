@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import { sendMailto } from '$lib/utils/mailto';
 	import { showToast } from '$lib/utils/toasts';
 	import {
@@ -22,6 +23,12 @@
 	let message = $state('');
 	let reason = $state('');
 	let includeDebugLog = $state(true);
+	let screenshot = $state<File | null>(null);
+	let screenshotFilePicker: HTMLInputElement;
+
+	function onScreenshotSelected() {
+		screenshot = screenshotFilePicker.files?.[0] ?? null;
+	}
 
 	const reasonLabels: Record<string, () => string> = {
 		bug: () => m.reasonBugReport(),
@@ -39,15 +46,28 @@
 				: 'Dash Chat';
 
 		try {
-			await sendMailto({ subject, body: message, includeDebugLog });
+			await sendMailto({
+				subject,
+				body: message,
+				includeDebugLog,
+				attachments: screenshot ? [screenshot] : undefined,
+			});
 			goto('/settings/help');
 		} catch (e) {
+			console.error('Error sending contact email', e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
 </script>
 
 <Page>
+	<input
+		type="file"
+		accept="image/*"
+		bind:this={screenshotFilePicker}
+		class="hidden"
+		onchange={onScreenshotSelected}
+	/>
 	<Navbar title={m.contactUs()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			<NavbarBackLink
@@ -96,6 +116,38 @@
 					inputClass="!h-32 resize-none"
 					data-testid="contact-us-message-input"
 				/>
+			</List>
+
+			<BlockTitle>{m.attachScreenshot()}</BlockTitle>
+			<List
+				strongIos
+				inset={isWideScreen.value || theme === 'ios'}
+				class="!mb-0"
+			>
+				{#if screenshot}
+					<ListItem
+						title={screenshot.name}
+						data-testid="contact-us-screenshot-item"
+						link
+						onClick={() => {
+							screenshot = null;
+							screenshotFilePicker.value = '';
+						}}
+					>
+						{#snippet after()}
+							<span class="text-red-500">{m.removeScreenshot()}</span>
+						{/snippet}
+					</ListItem>
+				{:else}
+					<ListItem
+						title={isMobile
+							? m.tapToAttachScreenshot()
+							: m.chooseFileToAttach()}
+						link
+						data-testid="contact-us-screenshot-picker"
+						onClick={() => screenshotFilePicker.click()}
+					/>
+				{/if}
 			</List>
 
 			<List
