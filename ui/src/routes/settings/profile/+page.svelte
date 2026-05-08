@@ -20,6 +20,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import TitleTruncatedListItem from '$lib/components/TitleTruncatedListItem.svelte';
 
 	const theme = $derived(useTheme());
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -67,7 +68,7 @@
 				</div>
 
 				<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
-					<ListItem
+					<TitleTruncatedListItem
 						title={fullName(myProfile!)}
 						link
 						linkProps={{ href: '/settings/profile/edit-name' }}
@@ -77,7 +78,7 @@
 						{#snippet media()}
 							<wa-icon src={wrapPathInSvg(mdiAccount)}></wa-icon>
 						{/snippet}
-					</ListItem>
+					</TitleTruncatedListItem>
 					<ListItem
 						title={m.about()}
 						link
