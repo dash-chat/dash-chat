@@ -1,4 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
+import { appCacheDir, join } from '@tauri-apps/api/path';
+import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
 
 interface MailtoRequest {
 	subject: string;
@@ -9,9 +11,15 @@ interface MailtoRequest {
 
 export async function sendMailto(request: MailtoRequest): Promise<void> {
 	let attachments: string[] | undefined;
+	let body = request.body;
 	if (request.includeDebugLog) {
-		const redactedPath = await invoke<string>('get_redacted_log');
-		attachments = [redactedPath];
+		try {
+			const redactedPath = await invoke<string>('get_redacted_log');
+			attachments = [redactedPath];
+		} catch (e) {
+			console.error('Failed to get redacted log for mailto:', e);
+			body = `${body}\n\n---\nFailed to attach debug log: ${e}`;
+		}
 	}
 
 	if (request.attachments?.length) {
@@ -23,16 +31,13 @@ export async function sendMailto(request: MailtoRequest): Promise<void> {
 		request: {
 			email: 'support@dashchat.org',
 			subject: request.subject,
-			body: request.body,
+			body,
 			attachments,
 		},
 	});
 }
 
 async function saveFileToCache(file: File): Promise<string> {
-	const { appCacheDir, join } = await import('@tauri-apps/api/path');
-	const { mkdir, writeFile } = await import('@tauri-apps/plugin-fs');
-
 	const bytes = new Uint8Array(await file.arrayBuffer());
 	const cacheDir = await appCacheDir();
 	const shareDir = await join(cacheDir, 'share');
