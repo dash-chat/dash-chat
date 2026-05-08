@@ -88,7 +88,7 @@
 	value={currentTextAvatar.text}
 	oninput={handleTextInput}
 	maxlength="3"
-	aria-hidden="true"
+	aria-labelledby="text-avatar-preview"
 	tabindex="-1"
 	onblur={() =>
 		activeTab === 'text' && setTimeout(() => hiddenInput?.focus(), 0)}
@@ -131,16 +131,21 @@
 <!-- Text avatar preview -->
 <div class="column" style="align-items: center; padding: 24px 0;">
 	<button
+		id="text-avatar-preview"
 		class="w-[180px] h-[180px] rounded-full flex items-center justify-center border-none cursor-pointer"
 		style="background-color: {currentTextAvatar.sanitizedHexColor()};"
 		onclick={selectTextTab}
 		type="button"
+		role="textbox"
+		aria-label={m.avatarText()}
+		aria-live="polite"
 	>
 		{#if activeTab === 'text'}
 			<span
 				class="text-[56px] font-medium"
 				style="color: {TEXT_AVATAR_TEXT_COLOR}"
 				>{currentTextAvatar.text}<span
+					aria-hidden="true"
 					class="text-[56px] font-light animate-[blink_1s_infinite] -ml-0.5"
 					style="color: {TEXT_AVATAR_TEXT_COLOR}">|</span
 				></span
