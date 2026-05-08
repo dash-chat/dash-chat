@@ -437,18 +437,29 @@
 									{/if}
 								{/snippet}
 								{#snippet title()}
-									{#if profile}
-										<Link
-											class="flex w-full min-w-0 items-center justify-start"
-											href={`/direct-chats/${agentId}/chat-settings`}
-											data-testid="direct-chat-settings-link"
-										>
+									<Link
+										class="flex w-full min-w-0 items-center justify-start"
+										href={`/direct-chats/${agentId}/chat-settings`}
+										data-testid="direct-chat-settings-link"
+									>
+										{#if profile}
 											<AvatarWithName
 												{profile}
 												nameTestId="direct-chat-peer-name"
 											/>
-										</Link>
-									{/if}
+										{:else}
+											<span
+												class="flex w-full min-w-0 flex-row items-center gap-2"
+											>
+												<span class="shrink-0">
+													<Avatar image={undefined} style="--size: 2.5rem" />
+												</span>
+												<span class="quiet flex-1 min-w-0 truncate">
+													{m.waitingForProfile()}
+												</span>
+											</span>
+										{/if}
+									</Link>
 								{/snippet}
 							</Navbar>
 						{/if}
@@ -465,8 +476,8 @@
 								class="column"
 								style={`padding-bottom: ${bottomBarHeight}px`}
 							>
-								{#if profile}
-									<div class="column" style="align-items: center">
+								<div class="column" style="align-items: center">
+									{#if profile}
 										<Link
 											class="column my-6 gap-2 items-center"
 											onclick={() => (showPeerProfile = true)}
@@ -486,8 +497,15 @@
 												></wa-icon>
 											</div>
 										</Link>
-									</div>
-								{/if}
+									{:else}
+										<div class="column my-6 gap-2 items-center">
+											<Avatar image={undefined} style="--size: 80px;" />
+											<span class="quiet text-xl">
+												{m.waitingForProfile()}
+											</span>
+										</div>
+									{/if}
+								</div>
 								<div class="row justify-center mb-4">
 									<div
 										class="rounded-xl border-2 border-gray-300 dark:border-gray-600"
