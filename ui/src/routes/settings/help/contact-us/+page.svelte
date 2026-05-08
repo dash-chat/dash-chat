@@ -29,6 +29,7 @@
 		bug: () => m.reasonBugReport(),
 		feature: () => m.reasonFeatureRequest(),
 		question: () => m.reasonQuestion(),
+		feedback: () => m.reasonGeneralFeedback(),
 		other: () => m.reasonOther(),
 	};
 
