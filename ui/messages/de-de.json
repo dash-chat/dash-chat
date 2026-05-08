@@ -1,7 +1,7 @@
 {
     "createProfile": "Profil erstellen",
     "now": "jetzt",
-    "yesterday": "gestern",
+    "yesterday": "Gestern",
     "cancel": "Abbrechen",
     "save": "Speichern",
     "next": "Weiter",
@@ -81,5 +81,23 @@
     "errorAddContactProfileRequired": "Bitte erstelle erst dein Profil, bevor du Kontakte hinzufügst.",
     "errorSetProfile": "Fehler beim speichern des Profils. Bitte versuche es erneut.",
     "errorScanningQrCode": "Der QR Code konnte nicht gescannt werden. Bitte versuche es erneut.",
-    "errorUnexpected": "Ein unerwarteter Fehler ist aufgetreten."
+    "errorUnexpected": "Ein unerwarteter Fehler ist aufgetreten.",
+    "today": "Heute",
+    "close": "Schließen",
+    "quickReactions": "Schnelle Reaktionen",
+    "moreReactions": "Weitere Reaktionen",
+    "send": "Bitte",
+    "link": "Link",
+    "share": "Anteil",
+    "surname": "Familienname",
+    "yourName": "Ihr Name",
+    "setProfile": "Profil anzeigen",
+    "setProfileExplanation": "Profile sind sichtbar für Ihre Kontakte, Gruppen und alle, die Ihren Kontaktcode haben.",
+    "nameRequired": "Name (erforderlich)",
+    "surnameOptional": "Familienname (optional)",
+    "camera": "Kamera",
+    "text": "Text",
+    "avatarText": "Avatartext",
+    "editAvatarText": "Avatar Text bearbeiten",
+    "removePhoto": "Foto entfernen"
 }
