@@ -3,14 +3,17 @@
 	import { hashValue } from 'signalium/utils';
 	import { setContext, type Snippet } from 'svelte';
 
-	import { SIGNAL_CACHE_KEY, type SignalCache } from './signal-cache.svelte';
+	import {
+		KEEP_ALIVE_SCOPE_KEY,
+		type KeepAliveScope,
+	} from './keep-alive-scope.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
 	type Entry = { unsub: () => void };
 	const cache = new Map<Function, Map<number, Entry>>();
 
-	const scope: SignalCache = {
+	const scope: KeepAliveScope = {
 		keepAlive(fn, args) {
 			let inner = cache.get(fn);
 			if (!inner) {
@@ -29,7 +32,7 @@
 		},
 	};
 
-	setContext(SIGNAL_CACHE_KEY, scope);
+	setContext(KEEP_ALIVE_SCOPE_KEY, scope);
 
 	$effect(() => () => {
 		for (const inner of cache.values()) {
