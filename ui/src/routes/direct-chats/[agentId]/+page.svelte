@@ -892,7 +892,7 @@
 
 				<div
 					bind:clientHeight={bottomBarHeight}
-					class="absolute bottom-0 left-0 right-0"
+					class="absolute bottom-0 left-0 right-0 z-20"
 					class:bg-md-light-surface={theme === 'material'}
 					class:dark:bg-md-dark-surface={theme === 'material'}
 				>
