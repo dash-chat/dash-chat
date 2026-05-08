@@ -6,7 +6,8 @@
 	import {
 		KEEP_ALIVE_SCOPE_KEY,
 		type KeepAliveScope,
-	} from './keep-alive-scope.svelte';
+		trackRpVersion,
+	} from './keep-alive.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
@@ -24,8 +25,7 @@
 			if (inner.has(argsKey)) return;
 
 			const w = watcher(() => {
-				const rp = fn(...args);
-				(rp as any)['_version']?.['value'];
+				trackRpVersion(fn(...args));
 				return undefined;
 			});
 			inner.set(argsKey, { unsub: w.addListener(() => {}) });

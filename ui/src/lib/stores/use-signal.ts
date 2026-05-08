@@ -1,7 +1,7 @@
 import { type ReactiveFn, ReactivePromise, watcher } from 'signalium';
 import { type Readable } from 'svelte/store';
 
-import { getKeepAliveScope } from './keep-alive-scope.svelte';
+import { getKeepAliveScope, trackRpVersion } from './keep-alive.svelte';
 
 export function useSignal<T, Args extends unknown[]>(
 	v: ReactiveFn<T, Args>,
@@ -10,13 +10,8 @@ export function useSignal<T, Args extends unknown[]>(
 	const w = watcher(() => {
 		const value = v(...args);
 
-		// For async reactives (returning ReactivePromise), track the RP's
-		// _version signal to ensure the watcher is dirtied through signalium's
-		// normal dependency graph when the RP's state changes. Without this,
-		// async re-runs don't increment updatedCount on the reactive signal,
-		// so the watcher wouldn't re-evaluate.
 		if (value instanceof ReactivePromise) {
-			(value as any)['_version']?.['value'];
+			trackRpVersion(value);
 			if (value.value !== undefined) return value.value;
 		}
 		return value;
@@ -46,13 +41,7 @@ export function useReactivePromise<T, Args extends unknown[]>(
 	const w = watcher(
 		() => {
 			const rp = v(...args);
-			// Track the RP's _version signal to ensure the watcher is dirtied
-			// through signalium's normal dependency graph on ANY RP state change.
-			// Without this, async re-runs call _setPromise on the existing RP
-			// without incrementing updatedCount, so the watcher's edge check
-			// sees no change and skips re-evaluation. The _version signal is
-			// incremented on every _setFlags call (pending, resolved, etc.).
-			(rp as any)['_version']?.['value'];
+			trackRpVersion(rp);
 			// Return a snapshot so equals() can compare actual state, not identity.
 			return { isReady: rp.isReady, value: rp.value };
 		},
