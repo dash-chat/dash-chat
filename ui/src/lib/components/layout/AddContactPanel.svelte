@@ -34,7 +34,7 @@
 	import MyQrCodeCard from '$lib/components/contacts/MyQrCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
 	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
-	import QrCodeUploader from '../contacts/QrCodeUploader.svelte';
+	import QrCodeUploader from '$lib/components/contacts/QrCodeUploader.svelte';
 
 	type TabName = 'code' | 'scan' | 'upload';
 
@@ -293,7 +293,7 @@
 		{:else if tab === 'scan'}
 			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveCode} />
 		{:else if tab === 'upload'}
-			<!-- <QrCodeUploader onRequestPickFile={onScannerRequestPickFile} /> -->
+			<QrCodeUploader onSelectImage={receiveCode} />
 		{/if}
 	</Page>
 {/if}
