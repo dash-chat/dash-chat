@@ -58,7 +58,10 @@ const LOCAL_MAILBOX_DB_FILE_NAME: &str = "local-mailbox.redb";
 const DASHCHAT_DATA_FOLDER: &str = "studio.darksoil.dashchat";
 
 /// Manages paths within the versioned Dash Chat data directory.
-pub struct FileSystem(PathBuf);
+pub struct FileSystem {
+    app_root_dir: PathBuf,
+    app_data_dir: PathBuf,
+}
 
 impl FileSystem {
     /// Create from a Tauri `AppHandle`, resolving the base data directory
@@ -83,28 +86,36 @@ impl FileSystem {
 
     /// Create from a raw data directory path (e.g. from a push notification context).
     pub fn from_app_root_dir(app_root_dir: PathBuf) -> anyhow::Result<Self> {
-        let app_data_path = app_root_dir
-            // We don't support backwards compatibility yet
-            // Store all files in a separate folder for each version of the database
-            // to force a reset from scratch in the state of app on app updates
-            .join(DATABASE_VERSION);
-        if !app_data_path.exists() {
-            std::fs::create_dir_all(&app_data_path)?;
+        // We don't support backwards compatibility yet
+        // Store all files in a separate folder for each version of the database
+        // to force a reset from scratch in the state of app on app updates
+        let app_data_dir = app_root_dir.join(DATABASE_VERSION);
+        if !app_data_dir.exists() {
+            std::fs::create_dir_all(&app_data_dir)?;
         }
-        Ok(FileSystem(app_data_path))
+        Ok(FileSystem {
+            app_root_dir,
+            app_data_dir,
+        })
     }
 
-    // The folder where all the files for the app should be stored
+    // The folder where all the data files for the app should be stored
     pub fn app_data_dir(&self) -> &PathBuf {
-        &self.0
+        &self.app_data_dir
+    }
+
+    /// The folder where logs should be stored
+    /// Sibling of `app_data_dir` (NOT versioned)
+    pub fn logs_dir(&self) -> PathBuf {
+        self.app_root_dir.join("logs")
     }
 
     pub fn settings_path(&self) -> PathBuf {
-        self.0.join(SETTINGS_FILE_NAME)
+        self.app_data_dir.join(SETTINGS_FILE_NAME)
     }
 
     #[cfg(desktop)]
     pub fn local_mailbox_db_path(&self) -> PathBuf {
-        self.0.join(LOCAL_MAILBOX_DB_FILE_NAME)
+        self.app_data_dir.join(LOCAL_MAILBOX_DB_FILE_NAME)
     }
 }

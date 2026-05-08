@@ -104,45 +104,6 @@ pub fn run() {
             // commands::group_chat::send_message,
             // commands::group_chat::get_messages,
         ])
-        .plugin({
-            let mut log_builder = tauri_plugin_log::Builder::default()
-                .level(log::LevelFilter::Warn)
-                .level_for("dashchat_node", log::LevelFilter::Debug)
-                .level_for("mailbox_client", log::LevelFilter::Debug)
-                .level_for("mailbox_server", log::LevelFilter::Debug)
-                .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
-                // This is the default formatter for desktop, also use it in mobile platforms to record time
-                // in the log file, as the logcat timestamp does not get included there
-                .format(move |out, message, record| {
-                    let format = time::macros::format_description!(
-                        "[[[year]-[month]-[day]][[[hour]:[minute]:[second]]"
-                    );
-                    out.finish(format_args!(
-                        "{}[{}][{}] {}",
-                        tauri_plugin_log::TimezoneStrategy::UseUtc
-                            .get_now()
-                            .format(&format)
-                            .unwrap(),
-                        record.target(),
-                        record.level(),
-                        message
-                    ))
-                });
-
-            // When DATA_DIR is set, write logs into DATA_DIR/logs instead of the
-            // OS-specific log directory so each dev/test instance gets its own logs.
-            if let Ok(data_dir) = std::env::var("DATA_DIR") {
-                log_builder = log_builder.clear_targets().targets([
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
-                        path: std::path::PathBuf::from(data_dir).join("logs"),
-                        file_name: None,
-                    }),
-                ]);
-            }
-
-            log_builder.build()
-        })
         // .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
@@ -153,6 +114,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .setup(move |app| {
             let handle = app.handle().clone();
+
             let result: anyhow::Result<()> =
                 tauri::async_runtime::block_on(async move { setup::async_setup(handle).await });
 

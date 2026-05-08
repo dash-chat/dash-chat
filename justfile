@@ -1,7 +1,7 @@
 # start two dash chat instances connected to a local mailbox server
 mod dev 'scripts/dev.just'
 
-# android development 
+# android development
 mod android 'scripts/android.just'
 
 # running tests
@@ -10,7 +10,7 @@ mod test 'scripts/test.just'
 # push notifications
 mod push 'scripts/push.just'
 
-# ios development 
+# ios development
 mod ios 'scripts/ios.just'
 
 # build dash chat as a binary
@@ -29,3 +29,7 @@ release version:
 format:
     cargo fmt
     cd ui && pnpm format
+
+# regenerate paraglide message exports from source translation files
+paraglide:
+    pnpm --filter ui exec paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide
