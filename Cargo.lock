@@ -5320,7 +5320,7 @@ dependencies = [
 [[package]]
 name = "named-id"
 version = "0.1.0"
-source = "git+https://github.com/maackle/named-id.git#6550193ad9a1bc0901e69e47db147f59a1121119"
+source = "git+https://github.com/maackle/named-id.git#424294a3fff3ffb65cc37ffbd1c3b764ab3f4a54"
 dependencies = [
  "named-id-derive",
  "regex",
@@ -5331,7 +5331,7 @@ dependencies = [
 [[package]]
 name = "named-id-derive"
 version = "0.1.0"
-source = "git+https://github.com/maackle/named-id.git#6550193ad9a1bc0901e69e47db147f59a1121119"
+source = "git+https://github.com/maackle/named-id.git#424294a3fff3ffb65cc37ffbd1c3b764ab3f4a54"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9771,7 +9771,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-virtual-keyboard-padding"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding?branch=main#cb4a4c5950d32bc82f4b93e78160be6201391f2d"
+source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding?branch=main#efbf0a80c705c9f3753e38b87579f002fe995da1"
 dependencies = [
  "serde",
  "tauri",
