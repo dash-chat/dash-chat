@@ -226,13 +226,13 @@
 									data-testid="add-contact-code-tab"
 								/>
 								<TabbarLink
-									active={tab !== 'code'}
+									active={tab === 'scan'}
 									onclick={() => void switchTab('scan')}
 									label={m.scan()}
 									data-testid="add-contact-scan-tab"
 								/>
 								<TabbarLink
-									active={tab !== 'code'}
+									active={tab === 'upload'}
 									onclick={() => void switchTab('upload')}
 									label={m.upload()}
 									data-testid="add-contact-upload-tab"
