@@ -7,6 +7,27 @@ import {
 } from '@tauri-apps/plugin-barcode-scanner';
 import jsQR from 'jsqr';
 
+export type ScanQrFromImageErrorKind =
+	| 'NoQrCodeFound'
+	| 'LoadImageFailed'
+	| 'ReadFileFailed';
+
+export class ScanQrFromImageError extends Error {
+	constructor(
+		public readonly kind: ScanQrFromImageErrorKind,
+		public readonly cause?: unknown,
+	) {
+		super(kind);
+		this.name = 'ScanQrFromImageError';
+	}
+}
+
+export function isScanQrFromImageError(
+	error: unknown,
+): error is ScanQrFromImageError {
+	return error instanceof ScanQrFromImageError;
+}
+
 export async function scanQrCode(): Promise<string> {
 	if (!isTauriEnv()) {
 		throw new Error('QR code scanning requires the Tauri desktop/mobile app');
@@ -81,13 +102,15 @@ export function scanQrFromImage(file: File): Promise<string> {
 				if (code) {
 					resolve(code.data);
 				} else {
-					reject(new Error('No QR code found in image'));
+					reject(new ScanQrFromImageError('NoQrCodeFound'));
 				}
 			};
-			img.onerror = () => reject(new Error('Failed to load image'));
+			img.onerror = event =>
+				reject(new ScanQrFromImageError('LoadImageFailed', event));
 			img.src = e.target?.result as string;
 		};
-		reader.onerror = () => reject(new Error('Failed to read file'));
+		reader.onerror = event =>
+			reject(new ScanQrFromImageError('ReadFileFailed', event));
 		reader.readAsDataURL(file);
 	});
 }

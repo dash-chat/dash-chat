@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { scanQrFromImage } from '$lib/utils/qrcode';
+	import { isScanQrFromImageError, scanQrFromImage } from '$lib/utils/qrcode';
 	import { showToast } from '$lib/utils/toasts';
 
 	type SelectImageHandler = (code: string) => void | Promise<void>;
@@ -22,8 +22,12 @@
 			const code = await scanQrFromImage(imageFilePicker.files[0]);
 			await onSelectImage(code);
 		} catch (e) {
-			console.error(e);
-			showToast(m.errorNoQrCodeInImage(), 'error');
+			if (isScanQrFromImageError(e) && e.kind === 'NoQrCodeFound') {
+				showToast(m.errorNoQrCodeInImage(), 'error');
+			} else {
+				console.error(e);
+				showToast(m.errorUnexpected(), 'unexpected', e);
+			}
 		} finally {
 			imageFilePicker.value = '';
 		}
