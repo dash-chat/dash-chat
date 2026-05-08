@@ -33,6 +33,8 @@ pub(crate) async fn build_node(
 }
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
+    install_logger(&app_handle)?;
+
     let _ = crate::APP_HANDLE.set(app_handle.clone());
 
     // Manage the mDNS service daemon
@@ -82,13 +84,52 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
             app_handle.clone(),
             topic_subscribed_rx,
         )?;
-        crate::push_notifications::setup_notification_navigation(&app_handle).await;
     }
 
     crate::mailbox::spawn_local_mailbox_mdns_discovery(&app_handle, node)?;
 
     spawn_notification_loop(app_handle.clone(), notification_rx);
 
+    Ok(())
+}
+
+/// Build & register `tauri-plugin-log` once we have an `AppHandle` to log in the correct path
+fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
+    let fs = FileSystem::new(handle)?;
+    handle.plugin(
+        tauri_plugin_log::Builder::default()
+            .level(log::LevelFilter::Warn)
+            .level_for("dashchat_node", log::LevelFilter::Debug)
+            .level_for("mailbox_client", log::LevelFilter::Debug)
+            .level_for("mailbox_server", log::LevelFilter::Debug)
+            .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
+            // This is the default formatter for desktop, also use it in mobile platforms to record time
+            // in the log file, as the logcat timestamp does not get included there
+            .format(move |out, message, record| {
+                let format = time::macros::format_description!(
+                    "[[[year]-[month]-[day]][[[hour]:[minute]:[second]]"
+                );
+                out.finish(format_args!(
+                    "{}[{}][{}] {}",
+                    tauri_plugin_log::TimezoneStrategy::UseUtc
+                        .get_now()
+                        .format(&format)
+                        .unwrap(),
+                    record.target(),
+                    record.level(),
+                    message
+                ))
+            })
+            .clear_targets()
+            .targets([
+                tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
+                    path: fs.logs_dir(),
+                    file_name: None,
+                }),
+            ])
+            .build(),
+    )?;
     Ok(())
 }
 

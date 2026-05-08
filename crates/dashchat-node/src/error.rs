@@ -36,3 +36,9 @@ pub enum AddContactError {
     #[serde(untagged)]
     Common(#[from] Error),
 }
+
+#[derive(Debug, Error)]
+pub enum ShutdownError {
+    #[error("Stream processing task failed to join: {0:?}")]
+    StreamTaskJoin(Box<dyn std::any::Any + Send + 'static>),
+}

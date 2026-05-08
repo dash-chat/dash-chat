@@ -37,6 +37,7 @@
 			const code = await scanQrCode();
 			await onSelectImage(code);
 		} catch (e) {
+			if (cancelled) return;
 			console.error(e);
 			showToast(m.errorScanningQrCode(), 'error');
 		}

@@ -153,21 +153,6 @@ li.plain span {
 	padding-left: 1px;
 }
 
-.sticky-day-tag {
-	position: sticky;
-	top: calc(64px + env(safe-area-inset-top, 0px) + 8px);
-	align-self: center;
-	z-index: 30;
-	background-color: var(--k-color-md-light-surface);
-	padding: 4px 12px;
-	border-radius: 12px;
-	font-size: 0.75rem;
-}
-
-:where(.dark) .sticky-day-tag {
-	background-color: var(--k-color-md-dark-surface);
-}
-
 .small-icon {
 	font-size: 16px;
 }
@@ -287,3 +272,37 @@ emoji-picker {
 	width: auto;
 }
 
+/* Konsta's iOS-themed centered navbar title uses `top: 50%; left: 50%; translate: -50%
+   -50%` to center. Because the text width is non-integer at 17px semibold (e.g. "Chats"
+   is 46.625px), the -50% translate lands on a subpixel offset and WebKit composites the
+   element bitmap at fractional pixels with bilinear filtering — the text is visibly
+   blurry. The high pixel density of real iOS devices hides this; on the wide-layout
+   desktop where the iOS theme runs at standard density it is obvious. Replace the
+   width-dependent translate centering with a flex container that spans the full
+   width/height of the navbar inner: the title ends up at integer x/y/w/h and the text
+   inside is centered by flex without transforms, so the rasterizer paints sharp glyphs
+   on the parent layer. Scoped to wide-layout + iOS theme so real-iOS behavior is left
+   untouched. */
+.wide-layout .k-ios .k-navbar .transform-gpu.top-1\/2.left-1\/2 {
+	position: absolute;
+	inset-inline: 0;
+	top: 0;
+	bottom: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transform: none;
+	/* Override Tailwind's translate CSS custom properties (-translate-x-1/2 -translate-y-1/2).
+	   Can't use 'translate: none' because LightningCSS merges it with 'transform: none'
+	   into a single 'transform' shorthand, dropping the 'translate' property reset. The
+	   Tailwind utility's 'translate: var(--tw-translate-x) var(--tw-translate-y)' then
+	   still applies -50% shifts. In RTL the leftward shift causes scrollWidth > clientWidth
+	   overflow. Setting the vars to 0 resolves the translate to '0 0' regardless. */
+	--tw-translate-x: 0;
+	--tw-translate-y: 0;
+	/* The title now spans the full navbar inner width, so without this it would
+	   overlay (and swallow clicks meant for) the back / new-message buttons that
+	   sit at the row's edges. Title is non-interactive text — let pointer events
+	   pass through to the buttons underneath. */
+	pointer-events: none;
+}

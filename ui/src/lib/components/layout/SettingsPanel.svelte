@@ -23,6 +23,7 @@
 		Preloader,
 		useTheme,
 	} from 'konsta/svelte';
+	import TitleTruncatedListItem from '$lib/components/TitleTruncatedListItem.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import type { Action } from 'svelte/action';
@@ -69,7 +70,7 @@
 			nested={theme === 'material'}
 			inset={isWideScreen.value || theme === 'ios'}
 		>
-			<ListItem
+			<TitleTruncatedListItem
 				link
 				class={isActive('/settings/profile') ? 'active' : ''}
 				chevron={false}
@@ -95,12 +96,13 @@
 						data-testid="settings-qr-link"
 						use:stopPropagation
 						style={isWideScreen.value || theme === 'ios' ? '' : 'margin: 16px'}
+						aria-label={m.addContact()}
 					>
 						<wa-icon src={wrapPathInSvg(mdiQrcode)} style="font-size: 18px"
 						></wa-icon>
 					</a>
 				{/snippet}
-			</ListItem>
+			</TitleTruncatedListItem>
 		</List>
 
 		<List strongIos nested inset={isWideScreen.value || theme === 'ios'}>

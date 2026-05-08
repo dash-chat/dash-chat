@@ -2,18 +2,11 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
-	import { m, yesterday } from '$lib/paraglide/messages.js';
+	import { m } from '$lib/paraglide/messages.js';
 	import 'emoji-picker-element';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import {
-		beforeYesterday,
-		inYesterday,
-		lessThanAMinuteAgo,
-		moreThanAnHourAgo,
-		moreThanAWeekAgo,
-		moreThanAYearAgo,
-	} from '$lib/utils/time';
+	import { lessThanAMinuteAgo, moreThanAnHourAgo } from '$lib/utils/time';
 	import { getContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -27,10 +20,11 @@
 		type Hash,
 		type Message,
 	} from 'dash-chat-stores';
+	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { onActivate } from '$lib/utils/keyboard';
 	import {
-		mdiSend,
 		mdiAlert,
 		mdiAccountQuestion,
 		mdiAccountGroup,
@@ -42,12 +36,10 @@
 		mdiCalendarSearch,
 	} from '@mdi/js';
 	import {
-		Page,
 		Navbar,
 		NavbarBackLink,
 		Button,
 		Card,
-		Badge,
 		Sheet,
 		Dialog,
 		DialogButton,
@@ -56,20 +48,24 @@
 		Chip,
 		Block,
 	} from 'konsta/svelte';
+	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
+	import DayTag from '$lib/components/DayTag.svelte';
 	import SafetyTipsSheet from '$lib/components/SafetyTipsSheet.svelte';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
 	import ProfileNamesSheet from '$lib/components/ProfileNamesSheet.svelte';
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
-	import { watcher } from 'signalium';
 	import MessageInput from '$lib/components/MessageInput.svelte';
 	import { condenseReactions } from '$lib/utils/emojis';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
+	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { longpress } from '$lib/actions/longpress';
+	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -77,6 +73,9 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
+
+	const readTracker = createReadMessagesTracker(store);
+	const readMessageOnObserve = readTracker.observe;
 
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 	const peerProfile = useReactivePromise(store.peerProfile);
@@ -136,8 +135,11 @@
 	let showAcceptDialog = $state(false);
 	let showRejectDialog = $state(false);
 	let profileNamesSheetOpen = $state(false);
-	let messageInputHeight: string = $state('');
-	let showScrollToBottom = $state(false);
+	// Initial value reserves space for the bottom bar before bind:clientHeight
+	// has measured it, so the latest message doesn't flash under the input on
+	// first paint. Re-measured after mount.
+	let bottomBarHeight: number = $state(60);
+	let isAtBottom = $state(true);
 
 	// Unread divider state — hash captured once on load so position stays fixed,
 	// count always recomputed so it updates as new messages arrive
@@ -155,32 +157,9 @@
 		node.focus();
 	};
 
-	// Pixel threshold for considering the scroll position "at the bottom".
-	// Accounts for roughly 2-3 message heights so new messages auto-scroll
-	// even when the user is near but not exactly at the bottom.
-	const SCROLL_BOTTOM_THRESHOLD = 200;
-
-	const scrollIsAtBottom = () => {
-		if (!messagesPageEl) return false;
-		return (
-			messagesPageEl.scrollTop + SCROLL_BOTTOM_THRESHOLD >=
-			messagesPageEl.scrollHeight - messagesPageEl.offsetHeight
-		);
-	};
-
-	const scrollToBottom = (animate = true) => {
-		if (!messagesPageEl) return;
-		messagesPageEl.scrollTo({
-			top: messagesPageEl.scrollHeight - messagesPageEl.offsetHeight,
-			behavior: animate ? 'smooth' : 'auto',
-		});
-	};
-
-	const scrolltobottom: Action = () => {
-		tick().then(() => {
-			scrollToBottom(false);
-		});
-	};
+	let reverseScrollPage: ReturnType<typeof ReverseScrollPage> | undefined =
+		$state();
+	let parentDivEl: HTMLDivElement | null = $state(null);
 
 	async function sendMessage() {
 		const message = messageText;
@@ -193,17 +172,19 @@
 			// Hide the unread messages divider after sending, and allow it to reappear for future messages
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
-			// Wait for the message to get rendered in the UI
-			setTimeout(() => {
-				scrollToBottom();
-			});
+			// Defer the scroll one macrotask: store.sendMessage resolves once
+			// the operation is confirmed in the local log, but signalium still
+			// needs a turn for its subscriber chain to push the new message
+			// through messagesSets and Svelte to render the bubble. tick() only
+			// flushes pending Svelte updates synchronously, so it isn't enough
+			// here. Without this, scrollToBottom fires against the old layout
+			// and `overflow-anchor: none` leaves the just-rendered bubble
+			// hidden behind the input bar.
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
-	let t: ReturnType<typeof setTimeout> | undefined;
-	let bottom = false;
-	let unsubNewMessage: (() => void) | undefined;
 
 	const messageClass = (messageSetLength: number, index: number) => {
 		if (messageSetLength <= 1) return '';
@@ -212,74 +193,12 @@
 		return 'middle-message';
 	};
 
-	// Track visible messages to mark as read
-	let observer: IntersectionObserver | undefined;
-	const visibleMessages: Set<Hash> = new Set();
-	let markReadTimeout: ReturnType<typeof setTimeout>;
-	let messagesPageEl: HTMLDivElement | null = null;
-
 	onMount(() => {
-		messagesPageEl = document.querySelector('.messages-page') as HTMLDivElement;
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
-
-		unsubNewMessage = store.onNewMessage(async () => {
-			if (scrollIsAtBottom()) bottom = true;
-			if (scrollIsAtBottom() || bottom) {
-				clearTimeout(t);
-				t = setTimeout(() => {
-					bottom = false;
-					scrollToBottom();
-				});
-			}
-		});
-
-		observer = new IntersectionObserver(
-			entries => {
-				for (const entry of entries) {
-					const hash = entry.target.getAttribute('data-message-hash');
-					if (hash && entry.isIntersecting) {
-						visibleMessages.add(hash);
-					}
-				}
-				// Debounce the mark-as-read call
-				clearTimeout(markReadTimeout);
-				markReadTimeout = setTimeout(() => {
-					if (visibleMessages.size > 0) {
-						store.markAsRead(Array.from(visibleMessages));
-						visibleMessages.clear();
-					}
-				}, 500);
-			},
-			{ threshold: 0.5 },
-		);
-
-		// Track scroll position to show/hide scroll-to-bottom button
-		const handleScroll = () => {
-			showScrollToBottom = !scrollIsAtBottom();
-		};
-		messagesPageEl?.addEventListener('scroll', handleScroll);
-
-		return () => {
-			unsubNewMessage?.();
-			observer?.disconnect();
-			clearTimeout(markReadTimeout);
-			messagesPageEl?.removeEventListener('scroll', handleScroll);
-		};
 	});
 
-	// Svelte action to observe message elements for read tracking
-	const observeMessage: Action<HTMLElement, Hash | null> = (node, hash) => {
-		if (hash === null) return;
-		node.setAttribute('data-message-hash', hash);
-		observer?.observe(node);
-		return {
-			destroy() {
-				observer?.unobserve(node);
-			},
-		};
-	};
 	// Search helpers
 	function escapeHtml(text: string): string {
 		return text
@@ -306,7 +225,7 @@
 				return;
 			}
 			const lowerQ = q.toLowerCase();
-			const els = document.querySelectorAll('[data-message-hash]');
+			const els = parentDivEl?.querySelectorAll('[data-message-hash]') ?? [];
 			const matches: Hash[] = [];
 			els.forEach(el => {
 				const hash = el.getAttribute('data-message-hash') as Hash;
@@ -322,12 +241,12 @@
 	function scrollToMatch() {
 		if (!matchingHashes.length) return;
 		const hash = matchingHashes[currentMatchIndex];
-		const el = document.querySelector(`[data-message-hash="${hash}"]`);
+		const el = parentDivEl?.querySelector(`[data-message-hash="${hash}"]`);
 		if (!el) return;
 		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 		// Remove flash from any previously flashing message
-		document
-			.querySelectorAll('.search-flash')
+		parentDivEl
+			?.querySelectorAll('.search-flash')
 			.forEach(e => e.classList.remove('search-flash'));
 		// Flash the current match's message card
 		const card = el.closest('.message') ?? el.querySelector('.message') ?? el;
@@ -357,7 +276,9 @@
 
 	function jumpToDate(dateStr: string) {
 		const target = new Date(dateStr).getTime();
-		const dayTags = Array.from(document.querySelectorAll('[data-day]'));
+		const dayTags = Array.from(
+			parentDivEl?.querySelectorAll('[data-day]') ?? [],
+		);
 		let closest: Element | null = null;
 		let closestDiff = Infinity;
 		for (const el of dayTags) {
@@ -371,9 +292,6 @@
 		closest?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	}
 
-	$effect(() => {
-		if (searchMode) messageInputHeight = '60px';
-	});
 	function showQuickReactionBar(e: MouseEvent | TouchEvent, message: Message) {
 		const el = e.target as HTMLElement;
 		const target =
@@ -467,394 +385,382 @@
 	}
 </script>
 
-<div class="absolute inset-0" data-testid="direct-chat-page">
-	<Page class="messages-page">
-		{#await $myDeviceId then myDeviceId}
-			{#await $peerProfile then profile}
-				{#await $contactRequest then contactRequest}
-					{#if searchMode}
-						<Navbar
-							transparent={true}
-							titleClass="opacity1 w-full"
-							centerTitle={false}
-						>
-							{#snippet left()}
-								<NavbarBackLink onClick={closeSearch} />
-							{/snippet}
-							{#snippet title()}
-								<div class="flex items-center gap-2">
-									<wa-icon class="quiet" src={wrapPathInSvg(mdiMagnify)}
-									></wa-icon>
-									<input
-										type="text"
-										class="w-full border-none bg-transparent text-base outline-none"
-										placeholder={m.searchMessages()}
-										bind:value={searchQuery}
-										use:focusOnMount
-									/>
-								</div>
-							{/snippet}
-						</Navbar>
-					{:else}
-						<Navbar
-							transparent={true}
-							titleClass="opacity1 w-full"
-							centerTitle={false}
-						>
-							{#snippet left()}
-								{#if !isWideScreen.value}
-									<NavbarBackLink
-										onClick={() => goto('/')}
-										data-testid="direct-chat-back"
-									/>
-								{/if}
-							{/snippet}
-							{#snippet title()}
-								{#if profile}
-									<Link
-										class="flex items-center justify-start gap-2"
-										href={`/direct-chats/${agentId}/chat-settings`}
-										data-testid="direct-chat-settings-link"
-									>
-										<Avatar
-											image={profile!.avatar}
-											initials={profile!.name.slice(0, 2)}
-											style="--size: 2.5rem"
+<div
+	bind:this={parentDivEl}
+	class="absolute inset-0"
+	data-testid="direct-chat-page"
+>
+	{#await $myDeviceId then myDeviceId}
+		{#await $peerProfile then profile}
+			{#await $contactRequest then contactRequest}
+				<ReverseScrollPage
+					bind:this={reverseScrollPage}
+					bind:isAtBottom
+					data-testid="direct-chat-scroll"
+				>
+					{#snippet navbar()}
+						{#if searchMode}
+							<Navbar
+								transparent={true}
+								titleClass="opacity1 w-full min-w-0"
+								leftClass="shrink-0"
+								centerTitle={false}
+							>
+								{#snippet left()}
+									<NavbarBackLink onClick={closeSearch} />
+								{/snippet}
+								{#snippet title()}
+									<div class="flex items-center gap-2">
+										<wa-icon class="quiet" src={wrapPathInSvg(mdiMagnify)}
+										></wa-icon>
+										<input
+											type="text"
+											class="w-full border-none bg-transparent text-base outline-none"
+											placeholder={m.searchMessages()}
+											bind:value={searchQuery}
+											use:focusOnMount
 										/>
-										<span data-testid="direct-chat-peer-name"
-											>{fullName(profile!)}</span
-										>
-									</Link>
-								{/if}
-							{/snippet}
-						</Navbar>
-					{/if}
-
-					<div class="column">
-						{#await $readMessageHashes then readHashes}
-							{#await $messagesSets then messagesSetsInDays}
-								{@const unreadDivider = getUnreadDividerInfo(
-									messagesSetsInDays,
-									readHashes,
-									myDeviceId,
-								)}
-								<div
-									use:scrolltobottom
-									class="column"
-									style={`padding-bottom: calc(${messageInputHeight} + 12px)`}
-								>
-									{#if profile}
-										<div class="column" style="align-items: center">
-											<Link
-												class="column my-6 gap-2 items-center"
-												onclick={() => (showPeerProfile = true)}
-											>
-												<Avatar
-													image={profile.avatar}
-													initials={profile.name.slice(0, 2)}
-													style="--size: 80px;"
-												/>
-												<div class="flex items-center gap-1">
-													<span class="text-xl font-semibold"
-														>{fullName(profile!)}</span
-													>
-													<wa-icon
-														class="small-icon quiet"
-														src={wrapPathInSvg(mdiChevronRight)}
-													></wa-icon>
-												</div>
-											</Link>
-										</div>
-									{/if}
-									<div class="row justify-center mb-4">
-										<div
-											class="rounded-xl border-2 border-gray-300 dark:border-gray-600"
-										>
-											<div
-												class="flex flex-col gap-1 items-center p-3 text-center"
-											>
-												{#if contactRequest}
-													<div class="flex items-center gap-2 text-amber-600">
-														<wa-icon
-															class="small-icon"
-															src={wrapPathInSvg(mdiAlert)}
-														></wa-icon>
-														<span class="font-semibold"
-															>{m.reviewCarefully()}</span
-														>
-													</div>
-												{/if}
-												<div
-													class="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300"
-												>
-													<div
-														class="flex items-center justify-center gap-2"
-														onclick={() => (profileNamesSheetOpen = true)}
-													>
-														<wa-icon
-															class="small-icon"
-															src={wrapPathInSvg(mdiAccountQuestion)}
-														></wa-icon>
-														<span
-															><u>{m.profileNames()}</u
-															>{m.areNotVerified()}</span
-														>
-													</div>
-													<div class="flex items-center justify-center gap-2">
-														<wa-icon
-															class="small-icon"
-															src={wrapPathInSvg(mdiAccountGroup)}
-														></wa-icon>
-														<span>{m.noGroupsInCommon()}</span>
-													</div>
-												</div>
-												{#if contactRequest}
-													<div class="row pt-1 justify-center">
-														<Button
-															rounded
-															tonal
-															small
-															onClick={() => (showSecurityTips = true)}
-														>
-															{m.securityTips()}
-														</Button>
-													</div>
-												{/if}
-											</div>
-										</div>
 									</div>
+								{/snippet}
+							</Navbar>
+						{:else}
+							<Navbar
+								transparent={true}
+								titleClass="opacity1 w-full min-w-0"
+								leftClass="shrink-0"
+								centerTitle={false}
+							>
+								{#snippet left()}
+									{#if !isWideScreen.value}
+										<NavbarBackLink
+											onClick={() => goto('/')}
+											data-testid="direct-chat-back"
+										/>
+									{/if}
+								{/snippet}
+								{#snippet title()}
+									{#if profile}
+										<Link
+											class="flex w-full min-w-0 items-center justify-start"
+											href={`/direct-chats/${agentId}/chat-settings`}
+											data-testid="direct-chat-settings-link"
+										>
+											<AvatarWithName
+												{profile}
+												nameTestId="direct-chat-peer-name"
+											/>
+										</Link>
+									{/if}
+								{/snippet}
+							</Navbar>
+						{/if}
+					{/snippet}
 
-									<ProfileNamesSheet
-										opened={profileNamesSheetOpen}
-										onClose={() => (profileNamesSheetOpen = false)}
-									/>
-
-									<div
-										class="column m-2 gap-1"
-										data-testid="direct-chat-messages"
-									>
-										{#each messagesSetsInDays as messageSetInDay}
-											<div
-												class="sticky-day-tag quiet"
-												data-day={messageSetInDay.day.toISOString()}
-											>
-												{#if moreThanAYearAgo(messageSetInDay.day.valueOf())}
-													<wa-format-date
-														month="numeric"
-														year="numeric"
-														day="numeric"
-														date={messageSetInDay.day}
-													></wa-format-date>
-												{:else if beforeYesterday(messageSetInDay.day.valueOf())}
-													<wa-format-date
-														month="short"
-														day="numeric"
-														weekday="narrow"
-														date={messageSetInDay.day}
-													></wa-format-date>
-												{:else if inYesterday(messageSetInDay.day.valueOf())}
-													{m.yesterday()}
-												{:else}
-													{m.today()}
-												{/if}
+					{#await $readMessageHashes then readHashes}
+						{#await $messagesSets then messagesSetsInDays}
+							{@const unreadDivider = getUnreadDividerInfo(
+								messagesSetsInDays,
+								readHashes,
+								myDeviceId,
+							)}
+							<div
+								class="column"
+								style={`padding-bottom: ${bottomBarHeight}px`}
+							>
+								{#if profile}
+									<div class="column" style="align-items: center">
+										<Link
+											class="column my-6 gap-2 items-center"
+											onclick={() => (showPeerProfile = true)}
+										>
+											<Avatar
+												image={profile.avatar}
+												initials={profile.name.slice(0, 2)}
+												style="--size: 80px;"
+											/>
+											<div class="flex items-center gap-1">
+												<span class="text-xl font-semibold"
+													>{fullName(profile!)}</span
+												>
+												<wa-icon
+													class="small-icon quiet"
+													src={wrapPathInSvg(mdiChevronRight)}
+												></wa-icon>
 											</div>
-
-											{#each messageSetInDay.eventsSets as messageSet}
-												<div class="column" style="gap: 1px">
-													{#each messageSet as [hash, message], i}
-														{#if unreadDivider.hash === hash}
-															<div
-																class="unread-divider"
-																data-testid="direct-chat-unread-divider"
-															>
-																{m.unreadMessages({
-																	count: unreadDivider.count,
-																})}
-															</div>
-														{/if}
-														{#if myDeviceId == message.author}
-															<div
-																class="self-end max-w-[85%]"
-																use:longpress={{
-																	onLongPress: e =>
-																		showQuickReactionBar(e, message),
-																}}
-															>
-																<Card
-																	raised
-																	class={`${messageClass(messageSet.length, i)} message my-message`}
-																	data-message-hash={hash}
-																>
-																	<div
-																		class="row gap-2 mx-1"
-																		style="align-items: end"
-																	>
-																		<span class="flex-1">
-																			{#if searchMode && searchQuery}
-																				{@html highlightMatch(
-																					message.content,
-																					searchQuery,
-																				)}
-																			{:else}
-																				{message.content}
-																			{/if}
-																		</span>
-
-																		{#if i === messageSet.length - 1}
-																			<div class="dark-quiet text-xs">
-																				{#if lessThanAMinuteAgo(message.timestamp)}
-																					<span>{m.now()}</span>
-																				{:else if moreThanAnHourAgo(message.timestamp)}
-																					<wa-format-date
-																						hour="numeric"
-																						minute="numeric"
-																						hour-format="24"
-																						date={new Date(message.timestamp)}
-																					></wa-format-date>
-																				{:else}
-																					<wa-relative-time
-																						sync
-																						format="narrow"
-																						date={new Date(message.timestamp)}
-																					>
-																					</wa-relative-time>
-																				{/if}
-																			</div>
-																		{/if}
-																	</div>
-																</Card>
-																{#if Object.values(message.reactions).length}
-																	<div class="flex -mt-1.5 mb-0.5 gap-0.5 px-1">
-																		{#each condenseReactions(message.reactions, myDeviceId) as reaction}
-																			<Chip
-																				class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
-																				colors={reaction.own
-																					? {
-																							fillBgIos:
-																								'bg-gray-300 dark:bg-gray-500',
-																							fillBgMaterial:
-																								'bg-gray-300 dark:bg-gray-500',
-																						}
-																					: {
-																							fillBgIos:
-																								'bg-gray-200 dark:bg-gray-700',
-																							fillBgMaterial:
-																								'bg-gray-200 dark:bg-gray-700',
-																						}}
-																				onclick={e => {
-																					e.stopPropagation();
-																					toggleReaction(
-																						message,
-																						reaction.emoji,
-																						myDeviceId,
-																					);
-																				}}
-																			>
-																				{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
-																			</Chip>
-																		{/each}
-																	</div>
-																{/if}
-															</div>
-														{:else}
-															<div
-																class="self-start max-w-[85%]"
-																data-message-hash={hash}
-																use:observeMessage={readHashes?.has(hash)
-																	? null
-																	: hash}
-																use:longpress={{
-																	onLongPress: e =>
-																		showQuickReactionBar(e, message),
-																}}
-															>
-																<Card
-																	raised
-																	class={`${messageClass(messageSet.length, i)} message others-message`}
-																>
-																	<div
-																		class="row gap-2 mx-1"
-																		style="align-items: end"
-																	>
-																		<span class="flex-1">
-																			{#if searchMode && searchQuery}
-																				{@html highlightMatch(
-																					message.content,
-																					searchQuery,
-																				)}
-																			{:else}
-																				{message.content}
-																			{/if}
-																		</span>
-
-																		{#if i === messageSet.length - 1}
-																			<div class="quiet text-xs">
-																				{#if lessThanAMinuteAgo(message.timestamp)}
-																					<span>{m.now()}</span>
-																				{:else if moreThanAnHourAgo(message.timestamp)}
-																					<wa-format-date
-																						hour="numeric"
-																						minute="numeric"
-																						hour-format="24"
-																						date={new Date(message.timestamp)}
-																					></wa-format-date>
-																				{:else}
-																					<wa-relative-time
-																						sync
-																						format="narrow"
-																						date={new Date(message.timestamp)}
-																					>
-																					</wa-relative-time>
-																				{/if}
-																			</div>
-																		{/if}
-																	</div>
-																</Card>
-																{#if Object.values(message.reactions).length}
-																	<div
-																		class="flex justify-end -mt-1.5 mb-0.5 gap-0.5 px-1"
-																	>
-																		{#each condenseReactions(message.reactions, myDeviceId!) as reaction}
-																			<Chip
-																				class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
-																				colors={reaction.own
-																					? {
-																							fillBgIos:
-																								'bg-gray-300 dark:bg-gray-500',
-																							fillBgMaterial:
-																								'bg-gray-300 dark:bg-gray-500',
-																						}
-																					: {
-																							fillBgIos:
-																								'bg-gray-200 dark:bg-gray-700',
-																							fillBgMaterial:
-																								'bg-gray-200 dark:bg-gray-700',
-																						}}
-																				onclick={e => {
-																					e.stopPropagation();
-																					toggleReaction(
-																						message,
-																						reaction.emoji,
-																						myDeviceId!,
-																					);
-																				}}
-																			>
-																				{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
-																			</Chip>
-																		{/each}
-																	</div>
-																{/if}
-															</div>
-														{/if}
-													{/each}
+										</Link>
+									</div>
+								{/if}
+								<div class="row justify-center mb-4">
+									<div
+										class="rounded-xl border-2 border-gray-300 dark:border-gray-600"
+									>
+										<div
+											class="flex flex-col gap-1 items-center p-3 text-center"
+										>
+											{#if contactRequest}
+												<div class="flex items-center gap-2 text-amber-600">
+													<wa-icon
+														class="small-icon"
+														src={wrapPathInSvg(mdiAlert)}
+													></wa-icon>
+													<span class="font-semibold"
+														>{m.reviewCarefully()}</span
+													>
 												</div>
-											{/each}
-										{/each}
+											{/if}
+											<div
+												class="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300"
+											>
+												<div
+													class="flex items-center justify-center gap-2"
+													role="button"
+													tabindex="0"
+													onclick={() => (profileNamesSheetOpen = true)}
+													onkeydown={onActivate(
+														() => (profileNamesSheetOpen = true),
+													)}
+												>
+													<wa-icon
+														class="small-icon"
+														src={wrapPathInSvg(mdiAccountQuestion)}
+													></wa-icon>
+													<span
+														><u>{m.profileNames()}</u>{m.areNotVerified()}</span
+													>
+												</div>
+												<div class="flex items-center justify-center gap-2">
+													<wa-icon
+														class="small-icon"
+														src={wrapPathInSvg(mdiAccountGroup)}
+													></wa-icon>
+													<span>{m.noGroupsInCommon()}</span>
+												</div>
+											</div>
+											{#if contactRequest}
+												<div class="row pt-1 justify-center">
+													<Button
+														rounded
+														tonal
+														small
+														onClick={() => (showSecurityTips = true)}
+													>
+														{m.securityTips()}
+													</Button>
+												</div>
+											{/if}
+										</div>
 									</div>
 								</div>
-							{/await}
+
+								<ProfileNamesSheet
+									opened={profileNamesSheetOpen}
+									onClose={() => (profileNamesSheetOpen = false)}
+								/>
+
+								<div
+									class="column m-2 gap-1"
+									data-testid="direct-chat-messages"
+								>
+									{#each messagesSetsInDays as messageSetInDay}
+										<div use:navbarSticky class="self-center z-10">
+											<DayTag class="quiet" day={messageSetInDay.day} />
+										</div>
+
+										{#each messageSetInDay.eventsSets as messageSet}
+											<div class="column" style="gap: 1px">
+												{#each messageSet as [hash, message], i (hash)}
+													{#if unreadDivider.hash === hash}
+														<div
+															class="unread-divider"
+															data-testid="direct-chat-unread-divider"
+														>
+															{m.unreadMessages({
+																count: unreadDivider.count,
+															})}
+														</div>
+													{/if}
+													{#if myDeviceId == message.author}
+														<div
+															class="self-end max-w-[85%]"
+															data-message-hash={hash}
+															use:longpress={{
+																onLongPress: e =>
+																	showQuickReactionBar(e, message),
+															}}
+														>
+															<Card
+																raised
+																class={`${messageClass(messageSet.length, i)} message my-message`}
+															>
+																<div
+																	class="row gap-2 mx-1"
+																	style="align-items: end"
+																>
+																	<span class="flex-1">
+																		{#if searchMode && searchQuery}
+																			{@html highlightMatch(
+																				message.content,
+																				searchQuery,
+																			)}
+																		{:else}
+																			{message.content}
+																		{/if}
+																	</span>
+
+																	{#if i === messageSet.length - 1}
+																		<div class="dark-quiet text-xs">
+																			{#if lessThanAMinuteAgo(message.timestamp)}
+																				<span>{m.now()}</span>
+																			{:else if moreThanAnHourAgo(message.timestamp)}
+																				<wa-format-date
+																					hour="numeric"
+																					minute="numeric"
+																					hour-format="24"
+																					date={new Date(message.timestamp)}
+																				></wa-format-date>
+																			{:else}
+																				<wa-relative-time
+																					sync
+																					format="narrow"
+																					date={new Date(message.timestamp)}
+																				>
+																				</wa-relative-time>
+																			{/if}
+																		</div>
+																	{/if}
+																</div>
+															</Card>
+															{#if Object.values(message.reactions).length}
+																<div class="flex -mt-1.5 mb-0.5 gap-0.5 px-1">
+																	{#each condenseReactions(message.reactions, myDeviceId) as reaction}
+																		<Chip
+																			class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
+																			colors={reaction.own
+																				? {
+																						fillBgIos:
+																							'bg-gray-300 dark:bg-gray-500',
+																						fillBgMaterial:
+																							'bg-gray-300 dark:bg-gray-500',
+																					}
+																				: {
+																						fillBgIos:
+																							'bg-gray-200 dark:bg-gray-700',
+																						fillBgMaterial:
+																							'bg-gray-200 dark:bg-gray-700',
+																					}}
+																			onclick={e => {
+																				e.stopPropagation();
+																				toggleReaction(
+																					message,
+																					reaction.emoji,
+																					myDeviceId,
+																				);
+																			}}
+																		>
+																			{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
+																		</Chip>
+																	{/each}
+																</div>
+															{/if}
+														</div>
+													{:else}
+														<div
+															class="self-start max-w-[85%]"
+															data-message-hash={hash}
+															use:readMessageOnObserve={readHashes?.has(hash)
+																? null
+																: hash}
+															use:longpress={{
+																onLongPress: e =>
+																	showQuickReactionBar(e, message),
+															}}
+														>
+															<Card
+																raised
+																class={`${messageClass(messageSet.length, i)} message others-message`}
+															>
+																<div
+																	class="row gap-2 mx-1"
+																	style="align-items: end"
+																>
+																	<span class="flex-1">
+																		{#if searchMode && searchQuery}
+																			{@html highlightMatch(
+																				message.content,
+																				searchQuery,
+																			)}
+																		{:else}
+																			{message.content}
+																		{/if}
+																	</span>
+
+																	{#if i === messageSet.length - 1}
+																		<div class="quiet text-xs">
+																			{#if lessThanAMinuteAgo(message.timestamp)}
+																				<span>{m.now()}</span>
+																			{:else if moreThanAnHourAgo(message.timestamp)}
+																				<wa-format-date
+																					hour="numeric"
+																					minute="numeric"
+																					hour-format="24"
+																					date={new Date(message.timestamp)}
+																				></wa-format-date>
+																			{:else}
+																				<wa-relative-time
+																					sync
+																					format="narrow"
+																					date={new Date(message.timestamp)}
+																				>
+																				</wa-relative-time>
+																			{/if}
+																		</div>
+																	{/if}
+																</div>
+															</Card>
+															{#if Object.values(message.reactions).length}
+																<div
+																	class="flex justify-end -mt-1.5 mb-0.5 gap-0.5 px-1"
+																>
+																	{#each condenseReactions(message.reactions, myDeviceId!) as reaction}
+																		<Chip
+																			class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
+																			colors={reaction.own
+																				? {
+																						fillBgIos:
+																							'bg-gray-300 dark:bg-gray-500',
+																						fillBgMaterial:
+																							'bg-gray-300 dark:bg-gray-500',
+																					}
+																				: {
+																						fillBgIos:
+																							'bg-gray-200 dark:bg-gray-700',
+																						fillBgMaterial:
+																							'bg-gray-200 dark:bg-gray-700',
+																					}}
+																			onclick={e => {
+																				e.stopPropagation();
+																				toggleReaction(
+																					message,
+																					reaction.emoji,
+																					myDeviceId!,
+																				);
+																			}}
+																		>
+																			{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
+																		</Chip>
+																	{/each}
+																</div>
+															{/if}
+														</div>
+													{/if}
+												{/each}
+											</div>
+										{/each}
+									{/each}
+								</div>
+							</div>
 						{/await}
-					</div>
+					{/await}
 					{#if contactRequest}
 						<Dialog
 							opened={showAcceptDialog}
@@ -957,165 +863,145 @@
 							</Block>
 						{/if}
 					</Sheet>
-				{/await}
-			{/await}
-		{/await}
 
-		<SafetyTipsSheet
-			opened={showSecurityTips}
-			onClose={() => (showSecurityTips = false)}
-		/>
+					<SafetyTipsSheet
+						opened={showSecurityTips}
+						onClose={() => (showSecurityTips = false)}
+					/>
 
-		{#await $peerProfile then profile}
-			<PeerProfileSheet
-				opened={showPeerProfile}
-				onClose={() => (showPeerProfile = false)}
-				{profile}
-			/>
-		{/await}
-	</Page>
+					<PeerProfileSheet
+						opened={showPeerProfile}
+						onClose={() => (showPeerProfile = false)}
+						{profile}
+					/>
+				</ReverseScrollPage>
 
-	<!-- Overlay for bottom UI elements -->
-	{#await $myDeviceId then myDeviceId}
-		{#await $contactRequest then contactRequest}
-			<div class="absolute inset-0 pointer-events-none">
-				{#if showScrollToBottom && !searchMode}
+				{#if !isAtBottom}
 					{#await $unreadCount then count}
-						<button
-							class="pointer-events-auto absolute right-4 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
-							style={`bottom: calc(${messageInputHeight || '60px'} + 1.4rem)`}
-							onclick={() => scrollToBottom()}
-							aria-label="Scroll to bottom"
-							data-testid="direct-chat-scroll-bottom"
+						<div
+							class="absolute right-4"
+							style={`bottom: ${bottomBarHeight + 8}px`}
 						>
-							{#if count && count > 0}
-								<Badge
-									class="absolute -top-1 -right-1"
-									data-testid="direct-chat-unread-badge"
-								>
-									{count > 99 ? '99+' : count}
-								</Badge>
-							{/if}
-							<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
-						</button>
+							<ScrollToBottomButton
+								unreadCount={count ?? 0}
+								onClick={() => reverseScrollPage?.scrollToBottom()}
+							/>
+						</div>
 					{/await}
 				{/if}
 
-				{#if searchMode}
-					<div
-						class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
-					>
-						<div
-							class="mx-4 border-t border-gray-300 dark:border-gray-600"
-							style="margin: 0 auto"
-						></div>
-						<div
-							class="row items-center gap-2 px-4 py-3"
-							style="margin: 0 auto"
-						>
-							<button onclick={() => dateInput?.click()}>
-								<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
-								></wa-icon>
-							</button>
-							<input
-								type="date"
-								class="absolute opacity-0 h-0 w-0"
-								bind:this={dateInput}
-								onchange={e => jumpToDate(e.currentTarget.value)}
-							/>
-							<span class="flex-1 text-center text-sm quiet">
-								{#if !searchQuery}
-									<!-- empty -->
-								{:else if matchingHashes.length === 0}
-									{m.noResults()}
-								{:else}
-									{m.searchResultsCount({
-										current: String(currentMatchIndex + 1),
-										total: String(matchingHashes.length),
-									})}
-								{/if}
-							</span>
-							<button
-								disabled={!matchingHashes.length}
-								onclick={goToPreviousMatch}
-								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+				<div
+					bind:clientHeight={bottomBarHeight}
+					class="absolute bottom-0 left-0 right-0 z-20"
+					class:bg-md-light-surface={theme === 'material'}
+					class:dark:bg-md-dark-surface={theme === 'material'}
+				>
+					{#if searchMode}
+						<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
+							<div
+								class="mx-4 border-t border-gray-300 dark:border-gray-600"
+								style="margin: 0 auto"
+							></div>
+							<div
+								class="row items-center gap-2 px-4 py-3"
+								style="margin: 0 auto"
 							>
-								<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
-							</button>
-							<button
-								disabled={!matchingHashes.length}
-								onclick={goToNextMatch}
-								class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-							>
-								<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
-							</button>
-						</div>
-					</div>
-				{:else if contactRequest}
-					<div
-						class="pointer-events-auto absolute bottom-0 left-0 right-0 pb-safe bg-md-light-surface dark:bg-md-dark-surface"
-					>
-						<div
-							class="mx-4 border-t border-gray-300 dark:border-gray-600"
-							style="margin: 0 auto"
-						></div>
-						<div
-							class="flex flex-col items-center gap-3 px-6 py-3"
-							style="margin: 0 auto"
-						>
-							<p class="text-center text-sm text-gray-600 dark:text-gray-400">
-								{@html m
-									.contactRequestBanner({
-										name: contactRequest.profile.name
-											.replace(/&/g, '&amp;')
-											.replace(/</g, '&lt;')
-											.replace(/>/g, '&gt;')
-											.replace(/"/g, '&quot;'),
-									})
-									.replace(
-										/\*\*(.*?)\*\*/g,
-										'<strong class="text-black dark:text-white">$1</strong>',
-									)}
-							</p>
-							<div class="flex w-full gap-2">
-								<Button
-									class="neutral-tonal-button text-red-500 flex-1"
-									rounded
-									tonal
-									data-testid="direct-chat-reject-btn"
-									onClick={() => (showRejectDialog = true)}>{m.reject()}</Button
+								<button
+									onclick={() => dateInput?.click()}
+									aria-label={m.jumpToDate()}
 								>
-								<Button
-									class="neutral-tonal-button flex-1"
-									rounded
-									tonal
-									data-testid="direct-chat-accept-btn"
-									onClick={() => (showAcceptDialog = true)}>{m.accept()}</Button
+									<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
+									></wa-icon>
+								</button>
+								<input
+									type="date"
+									class="absolute opacity-0 h-0 w-0"
+									bind:this={dateInput}
+									onchange={e => jumpToDate(e.currentTarget.value)}
+								/>
+								<span class="flex-1 text-center text-sm quiet">
+									{#if !searchQuery}
+										<!-- empty -->
+									{:else if matchingHashes.length === 0}
+										{m.noResults()}
+									{:else}
+										{m.searchResultsCount({
+											current: String(currentMatchIndex + 1),
+											total: String(matchingHashes.length),
+										})}
+									{/if}
+								</span>
+								<button
+									disabled={!matchingHashes.length}
+									onclick={goToPreviousMatch}
+									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+									aria-label={m.previousResult()}
 								>
+									<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
+								</button>
+								<button
+									disabled={!matchingHashes.length}
+									onclick={goToNextMatch}
+									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+									aria-label={m.nextResult()}
+								>
+									<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
+								</button>
 							</div>
 						</div>
-					</div>
-				{:else}
-					<div
-						class="pointer-events-auto absolute bottom-0 left-0 right-0"
-						class:bg-md-light-surface={theme === 'material'}
-						class:dark:bg-md-dark-surface={theme === 'material'}
-					>
+					{:else if contactRequest}
+						<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
+							<div
+								class="mx-4 border-t border-gray-300 dark:border-gray-600"
+								style="margin: 0 auto"
+							></div>
+							<div
+								class="flex flex-col items-center gap-3 px-6 py-3"
+								style="margin: 0 auto"
+							>
+								<p class="text-center text-sm text-gray-600 dark:text-gray-400">
+									{@html m
+										.contactRequestBanner({
+											name: contactRequest.profile.name
+												.replace(/&/g, '&amp;')
+												.replace(/</g, '&lt;')
+												.replace(/>/g, '&gt;')
+												.replace(/"/g, '&quot;'),
+										})
+										.replace(
+											/\*\*(.*?)\*\*/g,
+											'<strong class="text-black dark:text-white">$1</strong>',
+										)}
+								</p>
+								<div class="flex w-full gap-2">
+									<Button
+										class="neutral-tonal-button text-red-500 flex-1"
+										rounded
+										tonal
+										data-testid="direct-chat-reject-btn"
+										onClick={() => (showRejectDialog = true)}
+										>{m.reject()}</Button
+									>
+									<Button
+										class="neutral-tonal-button flex-1"
+										rounded
+										tonal
+										data-testid="direct-chat-accept-btn"
+										onClick={() => (showAcceptDialog = true)}
+										>{m.accept()}</Button
+									>
+								</div>
+							</div>
+						</div>
+					{:else}
 						<MessageInput
 							bind:value={messageText}
-							bind:height={messageInputHeight}
 							onSend={sendMessage}
-							onFocus={() => {
-								if (scrollIsAtBottom()) {
-									scrollToBottom();
-									return { onResize: () => scrollToBottom(false) };
-								}
-							}}
 							onEmojiClick={() => (showFullPicker = true)}
 						/>
-					</div>
-				{/if}
-			</div>
+					{/if}
+				</div>
+			{/await}
 		{/await}
 	{/await}
 </div>

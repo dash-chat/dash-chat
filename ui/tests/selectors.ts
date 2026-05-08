@@ -37,6 +37,7 @@ export const S = {
 		settingsLink: tid('direct-chat-settings-link'),
 		peerName: tid('direct-chat-peer-name'),
 		scrollBottom: tid('direct-chat-scroll-bottom'),
+		scroll: tid('direct-chat-scroll'),
 		unreadBadge: tid('direct-chat-unread-badge'),
 		acceptButton: tid('direct-chat-accept-btn'),
 		rejectButton: tid('direct-chat-reject-btn'),
@@ -136,6 +137,7 @@ export const S = {
 	help: {
 		back: tid('help-back'),
 		contactUsLink: tid('help-contact-us'),
+		versionItem: tid('help-version'),
 	},
 	contactUs: {
 		back: tid('contact-us-back'),
