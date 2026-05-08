@@ -99,14 +99,13 @@ impl FileSystem {
         })
     }
 
-    // The folder where all the files for the app should be stored
+    // The folder where all the data files for the app should be stored
     pub fn app_data_dir(&self) -> &PathBuf {
         &self.app_data_dir
     }
 
-    /// Sibling of `app_data_dir` (NOT versioned) — `tauri-plugin-log` is
-    /// configured with this same path in `lib.rs`, and on iOS `main.mm`
-    /// points `DATA_DIR` at the App Group container so the NSE shares it.
+    /// The folder where logs should be stored
+    /// Sibling of `app_data_dir` (NOT versioned)
     pub fn logs_dir(&self) -> PathBuf {
         self.app_root_dir.join("logs")
     }
