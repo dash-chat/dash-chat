@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { flushSync } from 'svelte';
 	import TextAvatarPicker from './TextAvatarPicker.svelte';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -94,8 +95,17 @@
 		onSelect?.();
 	}
 
+	let focusTextAvatarInput: (() => void) | undefined = $state();
+
 	function openTextEditor() {
-		view = 'text';
+		// flushSync mounts TextAvatarPicker synchronously inside this click
+		// handler, so iOS still considers us in user-gesture context when we
+		// call focus — that's the only way the soft keyboard opens on a
+		// programmatic focus on iOS WKWebView.
+		flushSync(() => {
+			view = 'text';
+		});
+		focusTextAvatarInput?.();
 	}
 </script>
 
@@ -202,6 +212,7 @@
 {:else}
 	<TextAvatarPicker
 		existingAvatar={avatar}
+		bind:focusInput={focusTextAvatarInput}
 		onSelect={nextAvatar => {
 			avatar = nextAvatar;
 			view = 'picker';
