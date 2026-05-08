@@ -7,8 +7,10 @@
 	type SelectImageHandler = (code: string) => void | Promise<void>;
 
 	let {
+		autoOpen = true,
 		onSelectImage,
 	}: {
+		autoOpen?: boolean;
 		onSelectImage: SelectImageHandler;
 	} = $props();
 
@@ -27,8 +29,13 @@
 		}
 	}
 
-	onMount(() => {
+	export function trigger() {
 		imageFilePicker.click();
+	}
+
+	onMount(() => {
+		if (!autoOpen) return;
+		trigger();
 	});
 </script>
 
