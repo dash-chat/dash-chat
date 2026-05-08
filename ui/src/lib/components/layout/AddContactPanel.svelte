@@ -293,7 +293,10 @@
 		{:else if tab === 'scan'}
 			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveCode} />
 		{:else if tab === 'upload'}
-			<QrCodeUploader onSelectImage={receiveCode} />
+			<QrCodeUploader
+				onSelectImage={receiveCode}
+				onError={() => void switchTab('code')}
+			/>
 		{/if}
 	</Page>
 {/if}

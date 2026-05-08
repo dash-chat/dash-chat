@@ -5,12 +5,15 @@
 	import { showToast } from '$lib/utils/toasts';
 
 	type SelectImageHandler = (code: string) => void | Promise<void>;
+	type ErrorHandler = (error: unknown) => void | Promise<void>;
 
 	let {
 		autoOpen = true,
+		onError,
 		onSelectImage,
 	}: {
 		autoOpen?: boolean;
+		onError?: ErrorHandler;
 		onSelectImage: SelectImageHandler;
 	} = $props();
 
@@ -28,6 +31,8 @@
 				console.error(e);
 				showToast(m.errorUnexpected(), 'unexpected', e);
 			}
+
+			await onError?.(e);
 		} finally {
 			imageFilePicker.value = '';
 		}
