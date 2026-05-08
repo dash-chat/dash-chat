@@ -231,6 +231,12 @@
 									label={m.scan()}
 									data-testid="add-contact-scan-tab"
 								/>
+								<TabbarLink
+									active={tab !== 'code'}
+									onclick={() => void switchTab('upload')}
+									label={m.upload()}
+									data-testid="add-contact-upload-tab"
+								/>
 							</ToolbarPane>
 						</Tabbar>
 					{/if}
