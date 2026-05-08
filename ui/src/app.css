@@ -153,21 +153,6 @@ li.plain span {
 	padding-left: 1px;
 }
 
-.sticky-day-tag {
-	position: sticky;
-	top: calc(var(--navbar-height, 56px) + 16px);
-	align-self: center;
-	z-index: 30;
-	background-color: var(--k-color-md-light-surface);
-	padding: 4px 12px;
-	border-radius: 12px;
-	font-size: 0.75rem;
-}
-
-:where(.dark) .sticky-day-tag {
-	background-color: var(--k-color-md-dark-surface);
-}
-
 .small-icon {
 	font-size: 16px;
 }
@@ -321,4 +306,3 @@ emoji-picker {
 	   pass through to the buttons underneath. */
 	pointer-events: none;
 }
-

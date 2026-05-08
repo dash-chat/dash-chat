@@ -1,6 +1,9 @@
 use crate::store::MailboxStore;
 use tokio::time::Instant;
 
+#[cfg(feature = "named-id")]
+use named_id::Rename;
+
 use super::*;
 
 #[derive(Clone, Debug)]
@@ -362,6 +365,7 @@ where
                     .await
                     .map_err(|err| anyhow::anyhow!("failed to get log for {topic:?}: {err}"))?
                 else {
+                    tracing::error!(author = ?author.renamed(), topic = ?topic.renamed(), lowest = ?lowest, "no log found");
                     continue;
                 };
 

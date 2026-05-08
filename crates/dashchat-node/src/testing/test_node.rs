@@ -11,9 +11,9 @@ use tokio::sync::{Mutex, mpsc::Receiver};
 use mailbox_client::{MailboxClient, mem::MemMailbox};
 
 use crate::{
-    AgentId, DeviceGroupPayload, LocalStore, NodeConfig, Notification, Payload, Profile,
-    filesystem::Filesystem, mailbox::MailboxOperation, node::Node, testing::behavior::Behavior,
-    topic::TopicId,
+    AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
+    filesystem::Filesystem, mailbox::MailboxOperation, node::Node, stores::LocalStore,
+    testing::behavior::Behavior, topic::TopicId,
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::Debug)]
@@ -31,6 +31,7 @@ impl TestNode {
     pub async fn new(config: impl Into<TestNodeConfig>, name: &str) -> Self {
         let config = config.into();
         let dir = tempfile::tempdir().unwrap();
+        tracing::info!("temp storage dir: {}", dir.path().display());
         let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
 
         let filesystem = Filesystem::new(dir.path().to_path_buf());
@@ -299,15 +300,8 @@ pub async fn consistency(
         }
     })
     .await
-    .map_err(|diffs| {
-        for n in nodes {
-            println!(
-                ">>> {:?}\n{}\n",
-                n.device_id(),
-                n.op_store.report(topics.clone())
-            );
-        }
-        println!("consistency report: {:#?}", diffs);
+    .map_err(|_diffs| {
+        // TODO: print a report here
         anyhow::anyhow!("consistency check failed")
     })
 }

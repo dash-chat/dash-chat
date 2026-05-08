@@ -12,7 +12,16 @@ import type { PublicKey, TopicId } from './types';
 /// Polling guarantees eventual consistency at the cost of one Tauri call per
 /// active log per interval. Replace with cross-process change detection on
 /// `op_store` (SQLite WAL + `PRAGMA data_version`) when that lands.
+///
+/// Only iOS is affected; on other platforms the channel events arrive
+/// reliably, so we skip the polling there.
 const POLL_INTERVAL_MS = 1_000;
+const POLLING_ENABLED =
+	typeof navigator !== 'undefined' &&
+	(/iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+		// iPadOS 13+ reports a Mac user agent in WKWebView; fall back to the
+		// touch-points heuristic so iPad users still get the polling safety net.
+		(/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
 
 export class LogsStore<PAYLOAD> {
 	constructor(public logsClient: LogsClient<PAYLOAD>) {}
@@ -22,11 +31,18 @@ export class LogsStore<PAYLOAD> {
 			const fetchAuthors = async () => {
 				const authors = await this.logsClient.getAuthorsForTopic(topicId);
 				const current = state.value;
-				if (current && current.length === authors.length && authors.every(a => current.includes(a))) return;
+				if (
+					current &&
+					current.length === authors.length &&
+					authors.every(a => current.includes(a))
+				)
+					return;
 				state.value = authors;
 			};
 			fetchAuthors();
-			const interval = setInterval(fetchAuthors, POLL_INTERVAL_MS);
+			const interval = POLLING_ENABLED
+				? setInterval(fetchAuthors, POLL_INTERVAL_MS)
+				: undefined;
 
 			const unsubs = this.logsClient.onNewOperation(
 				(operationTopicId, operation) => {
@@ -39,7 +55,7 @@ export class LogsStore<PAYLOAD> {
 			);
 
 			return () => {
-				clearInterval(interval);
+				if (interval !== undefined) clearInterval(interval);
 				unsubs();
 			};
 		}),
@@ -55,7 +71,9 @@ export class LogsStore<PAYLOAD> {
 				state.value = log;
 			};
 			fetchLog();
-			const interval = setInterval(fetchLog, POLL_INTERVAL_MS);
+			const interval = POLLING_ENABLED
+				? setInterval(fetchLog, POLL_INTERVAL_MS)
+				: undefined;
 
 			const unsubs = this.logsClient.onNewOperation(
 				(operationTopicId, operation) => {
@@ -63,13 +81,18 @@ export class LogsStore<PAYLOAD> {
 					if (author !== operation.header.public_key) return;
 
 					// We already have this operation
-					if (state.value?.find(op => op.header.seq_num === operation.header.seq_num)) return;
+					if (
+						state.value?.find(
+							op => op.header.seq_num === operation.header.seq_num,
+						)
+					)
+						return;
 
 					state.value = [...(state.value || []), operation];
 				},
 			);
 			return () => {
-				clearInterval(interval);
+				if (interval !== undefined) clearInterval(interval);
 				unsubs();
 			};
 		}),
@@ -82,7 +105,8 @@ export class LogsStore<PAYLOAD> {
 			authorsForTopic.map(author => this.logs(topicId, author)),
 		);
 
-		const logsForAllAuthors: Record<PublicKey, SimplifiedOperation<PAYLOAD>[]> = {};
+		const logsForAllAuthors: Record<PublicKey, SimplifiedOperation<PAYLOAD>[]> =
+			{};
 		for (let i = 0; i < authorsForTopic.length; i++) {
 			logsForAllAuthors[authorsForTopic[i]] = logs[i];
 		}

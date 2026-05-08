@@ -25,7 +25,7 @@ named-id = { git = "https://github.com/maackle/named-id.git", optional = true }
 mailbox-server = { path = "../mailbox-server" }
 
 # NOTE: only used for cbor encoding/decoding
-p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
+p2panda-core = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

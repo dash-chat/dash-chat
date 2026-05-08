@@ -36,7 +36,7 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
 ] }
 
 dashchat-node = { path = "../crates/dashchat-node" }
-mailbox-client = { path = "../crates/mailbox-client" }
+mailbox-client = { workspace = true }
 push-notifications-client = { path = "../crates/push-notifications-client" }
 dashchat-utils = { path = "../crates/dashchat-utils" }
 
@@ -81,6 +81,11 @@ env_logger = "0.11"
 
 # Build openssl from source to cross-compile to each platform as needed
 openssl-sys = { version = "0.9", features = ["vendored"] }
+
+# `iroh-relay` (via `reqwest 0.13` + `rustls 0.23`) panics on first TLS
+# handshake unless a CryptoProvider has been installed. Pull rustls in
+# directly so we can install the `ring` provider at startup.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "fix/barcode-scanner-ios" }
