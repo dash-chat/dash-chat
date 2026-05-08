@@ -16,7 +16,7 @@ use named_id::*;
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
-use p2panda_core::{Hash, PublicKey, Timestamp};
+use p2panda_core::{Hash, PublicKey};
 use p2panda_spaces::ActorId;
 use p2panda_store::SqliteStore;
 use tokio::sync::mpsc;
@@ -440,7 +440,7 @@ impl Node {
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        self.get_profile_for_agent(self.agent_id()).await
+        self.local_store.get_profile(self.agent_id()).await
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
@@ -455,35 +455,6 @@ impl Node {
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
         self.local_store.subscribed_topics().await
-    }
-
-    pub async fn get_profile_for_agent(
-        &self,
-        agent_id: AgentId,
-    ) -> anyhow::Result<Option<Profile>> {
-        let topic_id: TopicId = Topic::announcements(agent_id).into();
-        let authors = self.op_store.get_authors(topic_id.clone()).await?;
-        let ops = self
-            .op_store
-            .get_interleaved_logs(topic_id, authors.into_iter().collect())
-            .await?;
-
-        let mut set_profile_ops: Vec<(Timestamp, Profile)> = ops
-            .into_iter()
-            .filter_map(|(header, payload)| match payload {
-                Some(Payload::Announcements(AnnouncementsPayload::SetProfile(profile))) => {
-                    Some((header.timestamp, profile))
-                }
-                _ => None,
-            })
-            .collect();
-
-        set_profile_ops.sort_by_key(|(timestamp, _)| *timestamp);
-
-        let Some((_, profile)) = set_profile_ops.last() else {
-            return Ok(None);
-        };
-        Ok(Some(profile.clone()))
     }
 
     /// Get all messages for a chat from the logs.

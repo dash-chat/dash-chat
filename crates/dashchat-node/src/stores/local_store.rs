@@ -25,10 +25,14 @@ const MIGRATIONS: &[&str] = &[
         key TEXT PRIMARY KEY,
         value BLOB NOT NULL
     )",
-    "CREATE TABLE IF NOT EXISTS contacts (
+    "CREATE TABLE IF NOT EXISTS devices (
         device_id BLOB PRIMARY KEY,
         agent_id BLOB NOT NULL,
         capabilities BLOB NULL
+    )",
+    "CREATE TABLE IF NOT EXISTS agents (
+        agent_id BLOB PRIMARY KEY,
+        profile BLOB NULL
     )",
     "CREATE TABLE IF NOT EXISTS subscribed_topics (
         topic_id BLOB PRIMARY KEY
@@ -120,7 +124,7 @@ impl LocalStore {
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        let rows: Vec<(AgentId,)> = sqlx::query_as("SELECT agent_id FROM contacts")
+        let rows: Vec<(AgentId,)> = sqlx::query_as("SELECT agent_id FROM devices")
             .fetch_all(&self.pool)
             .await?;
         let mut agent_ids: Vec<AgentId> = rows.into_iter().map(|(id,)| id).collect();
@@ -135,7 +139,7 @@ impl LocalStore {
         device_id: DeviceId,
     ) -> anyhow::Result<Option<AgentId>> {
         let row: Option<(AgentId,)> =
-            sqlx::query_as("SELECT agent_id FROM contacts WHERE device_id = ?")
+            sqlx::query_as("SELECT agent_id FROM devices WHERE device_id = ?")
                 .bind(device_id)
                 .fetch_optional(&self.pool)
                 .await?;
@@ -151,7 +155,7 @@ impl LocalStore {
         agent_id: AgentId,
     ) -> anyhow::Result<Option<DeviceId>> {
         let row: Option<(DeviceId,)> =
-            sqlx::query_as("SELECT device_id FROM contacts WHERE agent_id = ?")
+            sqlx::query_as("SELECT device_id FROM devices WHERE agent_id = ?")
                 .bind(agent_id)
                 .fetch_optional(&self.pool)
                 .await?;
@@ -176,7 +180,7 @@ impl LocalStore {
             .collect::<Vec<_>>()
             .join(", ");
         let sql =
-            format!("SELECT device_id, agent_id FROM contacts WHERE device_id IN ({placeholders})");
+            format!("SELECT device_id, agent_id FROM devices WHERE device_id IN ({placeholders})");
         let mut q = sqlx::query_as::<_, (DeviceId, AgentId)>(&sql);
         for id in device_ids {
             q = q.bind(*id);
@@ -194,12 +198,16 @@ impl LocalStore {
         device_id: DeviceId,
         agent_id: AgentId,
     ) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR REPLACE INTO contacts (device_id, agent_id) VALUES (?, ?)")
+        sqlx::query("INSERT OR IGNORE INTO devices (device_id, agent_id) VALUES (?, ?)")
             .bind(device_id)
             .bind(agent_id)
             .execute(&self.pool)
             .await?;
 
+        sqlx::query("INSERT OR IGNORE INTO agents (agent_id) VALUES (?)")
+            .bind(agent_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -208,9 +216,18 @@ impl LocalStore {
         device_id: DeviceId,
         capabilities: Capabilities,
     ) -> anyhow::Result<()> {
-        sqlx::query("UPDATE contacts SET capabilities = ? WHERE device_id = ?")
+        sqlx::query("UPDATE devices SET capabilities = ? WHERE device_id = ?")
             .bind(capabilities)
             .bind(device_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn save_profile(&self, agent_id: AgentId, profile: Profile) -> anyhow::Result<()> {
+        sqlx::query("INSERT OR REPLACE INTO agents (agent_id, profile) VALUES (?, ?)")
+            .bind(agent_id)
+            .bind(profile)
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -221,11 +238,20 @@ impl LocalStore {
         device_id: DeviceId,
     ) -> anyhow::Result<Option<Capabilities>> {
         let row: Option<(Option<Capabilities>,)> =
-            sqlx::query_as("SELECT capabilities FROM contacts WHERE device_id = ?")
+            sqlx::query_as("SELECT capabilities FROM devices WHERE device_id = ?")
                 .bind(device_id)
                 .fetch_optional(&self.pool)
                 .await?;
         Ok(row.and_then(|(capabilities,)| capabilities))
+    }
+
+    pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
+        let row: Option<(Option<Profile>,)> =
+            sqlx::query_as("SELECT profile FROM agents WHERE agent_id = ?")
+                .bind(agent_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.and_then(|(profile,)| profile))
     }
 
     pub async fn register_topic_as_subscribed<K: AutoRegisteredTopic>(

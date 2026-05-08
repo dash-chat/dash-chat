@@ -316,13 +316,12 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().renamed())))]
     pub async fn process_payload(
         &self,
-        // topic: Topic<K>,
         header: &Header,
         payload: &Payload,
         _is_author: bool,
     ) -> anyhow::Result<()> {
         let topic = header.extensions.topic;
-        // TODO: maybe have different loops for the different kinds of topics and the different payloads in each
+
         match &payload {
             Payload::Chat(ChatPayload::JoinGroup { .. }) => {
                 // Nothing to do.
@@ -350,6 +349,21 @@ impl Node {
                 // Nothing to do.
             }
 
+            Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
+                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
+                let agent_id = AgentId::from(crate::ActorId::from_bytes(&*topic).map_err(|e| {
+                    anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
+                })?);
+
+                if let Err(err) = self
+                    .local_store
+                    .save_profile(agent_id, profile.clone())
+                    .await
+                {
+                    tracing::warn!(?err, "failed to save profile from SetProfile");
+                }
+            }
+
             Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
                 // Save the device_id -> agent_id mapping so group members can look each other up.
 
@@ -373,10 +387,6 @@ impl Node {
                 {
                     tracing::warn!(?err, "failed to save capabilities from SetCapabilities");
                 }
-            }
-
-            Payload::Announcements(_) => {
-                // Nothing to do.
             }
 
             Payload::DeviceGroup(_) => {

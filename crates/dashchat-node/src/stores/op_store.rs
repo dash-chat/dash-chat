@@ -181,6 +181,10 @@ impl OpStore {
         Ok(operation)
     }
 
+    /// Get the interleaved logs for a topic and a list of authors.
+    ///
+    /// This is only used for testing and should stay that way.
+    #[cfg(any(test, feature = "testing"))]
     pub async fn get_interleaved_logs(
         &self,
         topic_id: TopicId,

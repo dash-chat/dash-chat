@@ -186,3 +186,34 @@ pub fn encode_gossip_message(header: &Header, body: Option<&Body>) -> Result<Vec
 pub fn decode_gossip_message(bytes: &[u8]) -> Result<(Vec<u8>, Option<Vec<u8>>), DecodeError> {
     decode_cbor(bytes)
 }
+
+mod sqlx_impls {
+
+    use super::Profile;
+    use p2panda_core::cbor::{decode_cbor, encode_cbor};
+    use sqlx::*;
+    use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
+
+    impl sqlx::Type<Sqlite> for Profile {
+        fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {
+            <Vec<u8> as sqlx::Type<Sqlite>>::type_info()
+        }
+    }
+
+    impl sqlx::Encode<'_, Sqlite> for Profile {
+        fn encode_by_ref(
+            &self,
+            buf: &mut Vec<SqliteArgumentValue<'_>>,
+        ) -> Result<IsNull, BoxDynError> {
+            let bytes = encode_cbor(self)?;
+            <Vec<u8> as sqlx::Encode<Sqlite>>::encode(bytes, buf)
+        }
+    }
+
+    impl sqlx::Decode<'_, Sqlite> for Profile {
+        fn decode(value: <Sqlite as sqlx::Database>::ValueRef<'_>) -> Result<Self, BoxDynError> {
+            let bytes = <Vec<u8> as sqlx::Decode<Sqlite>>::decode(value)?;
+            Ok(decode_cbor(bytes.as_slice())?)
+        }
+    }
+}

@@ -178,7 +178,8 @@ async fn handle_push_notification(
             };
 
             let sender_name = if let Some(agent_id) = sender_agent_id {
-                node.get_profile_for_agent(agent_id)
+                node.local_store
+                    .get_profile(agent_id)
                     .await
                     .ok()
                     .flatten()
