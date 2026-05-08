@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Manager, Runtime};
 
-const DATABASE_VERSION: &str = "0.1";
+const DATABASE_VERSION: &str = "0.2";
 
 /// Hold the lock file handle for the lifetime of the process so the exclusive
 /// lock is never released while the app is running.
