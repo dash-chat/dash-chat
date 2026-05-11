@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import type { Options } from '@wdio/types';
 import { allocateDriverPorts } from '../helpers/allocate-port';
@@ -34,6 +35,21 @@ const ALL_PORTS = [port1, nativePort1, port2, nativePort2];
 
 let tauriDriver1: ChildProcess;
 let tauriDriver2: ChildProcess;
+let agent1Logger: ChildProcess | null = null;
+let agent2Logger: ChildProcess | null = null;
+
+function startAgentLogger(agent: string, logFile: string): ChildProcess {
+	mkdirSync(path.dirname(logFile), { recursive: true });
+	writeFileSync(logFile, '');
+	const proc = spawn('tail', ['-n', '0', '-F', logFile], {
+		stdio: ['ignore', 'pipe', 'ignore'],
+	});
+	const rl = createInterface({ input: proc.stdout! });
+	rl.on('line', (line: string) => {
+		console.log(`[${agent}] ${line}`);
+	});
+	return proc;
+}
 
 export const config: Options.Testrunner = {
 	runner: 'local',
@@ -94,6 +110,17 @@ export const config: Options.Testrunner = {
 			}
 		}
 
+		// Tail each agent's stdout/stderr (written by launch-agent.sh) and
+		// echo lines to the test runner's stdout with an agent-specific prefix.
+		agent1Logger = startAgentLogger(
+			'agent-1',
+			path.join(ROOT, '.dbs', 'compat', 'agent-1', 'agent.log'),
+		);
+		agent2Logger = startAgentLogger(
+			'agent-2',
+			path.join(ROOT, '.dbs', 'compat', 'agent-2', 'agent.log'),
+		);
+
 		tauriDriver1 = spawn(
 			'tauri-driver',
 			['--port', String(port1), '--native-port', String(nativePort1)],
@@ -125,6 +152,10 @@ export const config: Options.Testrunner = {
 		// Kill orphaned dash-chat instances and anything holding our ports.
 		killAllE2EProcesses();
 		killPortHolders(ALL_PORTS);
+		agent1Logger?.kill();
+		agent2Logger?.kill();
+		agent1Logger = null;
+		agent2Logger = null;
 		// Do NOT clean up .dbs/compat/ — data must persist between setup and verify phases
 	},
 };
