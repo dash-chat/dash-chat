@@ -89,12 +89,3 @@ export async function exchangeContacts(agent1: Agent, agent2: Agent): Promise<vo
 	await agent2.addContact(code1);
 }
 
-/** Send a message from `sender` and wait for it to appear on `receiver`. */
-export async function sendAndReceiveMessage(
-	sender: Agent,
-	receiver: Agent,
-	text: string,
-): Promise<void> {
-	await sender.sendMessage(text);
-	await receiver.waitForMessage(text);
-}

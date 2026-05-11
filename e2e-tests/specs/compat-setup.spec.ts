@@ -12,7 +12,6 @@ import { fileURLToPath } from 'node:url';
 import {
 	type Agent,
 	exchangeContacts,
-	sendAndReceiveMessage,
 	setupAgent,
 } from '../helpers/setup-agents';
 
@@ -48,11 +47,13 @@ describe('Compat setup — create data with old version', () => {
 	});
 
 	it('sends a message from Alice to Bob', async () => {
-		await sendAndReceiveMessage(agent1, agent2, MSG_ALICE);
+		await agent1.sendMessage(MSG_ALICE);
+		await agent2.waitForMessage(MSG_ALICE);
 	});
 
 	it('sends a reply from Bob to Alice', async () => {
-		await sendAndReceiveMessage(agent2, agent1, MSG_BOB);
+		await agent2.sendMessage(MSG_BOB);
+		await agent1.waitForMessage(MSG_BOB);
 	});
 
 	it('saves test state for verify phase', () => {
