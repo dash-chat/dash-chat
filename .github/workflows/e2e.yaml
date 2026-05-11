@@ -48,6 +48,10 @@ jobs:
       - name: Install pnpm dependencies
         run: pnpm install
 
+      - name: Type-check E2E tests
+        run: pnpm check
+        working-directory: e2e-tests
+
       - name: Build UI packages
         run: pnpm -F ./packages/stores build
 

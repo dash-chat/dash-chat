@@ -43,10 +43,12 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
 	import { goto } from '$app/navigation';
-	window.__setLocale = setLocale;
 
 	import('../../tests/setup-utils').then(({ registerTestUtils }) =>
-		registerTestUtils(goto),
+		// Paraglide types setLocale with a string-literal union; we widen to
+		// plain `string` at the test boundary since invalid locales fail at
+		// runtime anyway.
+		registerTestUtils(goto, setLocale as (locale: string) => void),
 	);
 
 	let { children } = $props();

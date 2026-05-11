@@ -89,3 +89,19 @@ export async function exchangeContacts(agent1: Agent, agent2: Agent): Promise<vo
 	await agent2.addContact(code1);
 }
 
+/**
+ * Switch the agent's UI locale. setLocale triggers a full page reload at the
+ * locale-prefixed URL, which wipes and re-registers `window.__test`. We
+ * atomically delete the existing `__test` inside the same execute() block so
+ * that waitForTestUtils blocks until the new page has re-registered, rather
+ * than returning immediately against the stale (old-page) registry.
+ */
+export async function setLocale(agent: Agent, locale: string): Promise<void> {
+	await agent.execute((loc: string) => {
+		const setLocaleFn = window.__test.setLocale;
+		delete (window as unknown as { __test?: unknown }).__test;
+		setLocaleFn(loc);
+	}, locale);
+	await waitForTestUtils(agent);
+}
+

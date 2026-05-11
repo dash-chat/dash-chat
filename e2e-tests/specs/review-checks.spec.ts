@@ -14,6 +14,7 @@
 import {
 	type Agent,
 	exchangeContacts,
+	setLocale,
 	setupAgent,
 	waitForTestUtils,
 } from '../helpers/setup-agents';
@@ -292,12 +293,7 @@ describe('Review checks', function () {
 			// Navigate to home first: setLocale reloads at the current URL
 			// (locale-prefixed), so we must be on '/' before changing locale.
 			await reloadToHome(agent1);
-			// setLocale triggers a full page reload with the new locale prefix.
-			await agent1.execute(() => {
-				delete (window as any).__test;
-				window.__setLocale('de-de');
-			});
-			await waitForTestUtils(agent1);
+			await setLocale(agent1, 'de-de');
 			await agent1.waitUntil(async () => !!(await agent1.homeLoaded()), {
 				timeout: 30_000, interval: 500, timeoutMsg: 'German locale: HOME not found after setLocale',
 			});
@@ -329,12 +325,7 @@ describe('Review checks', function () {
 			this.timeout(60_000);
 			// Navigate to home first: setLocale reloads at current URL.
 			await reloadToHome(agent1);
-			// setLocale triggers a full page reload with the new locale prefix.
-			await agent1.execute(() => {
-				delete (window as any).__test;
-				window.__setLocale('fa-ir');
-			});
-			await waitForTestUtils(agent1);
+			await setLocale(agent1, 'fa-ir');
 			await agent1.waitUntil(async () => !!(await agent1.homeLoaded()), {
 				timeout: 30_000, interval: 500, timeoutMsg: 'Farsi locale: HOME not found after setLocale',
 			});
