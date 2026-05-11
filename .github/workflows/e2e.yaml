@@ -60,8 +60,6 @@ jobs:
       - name: Run E2E tests
         run: set -o pipefail && xvfb-run pnpm test 2>&1 | tee e2e-output.log
         working-directory: e2e-tests
-        env:
-          SKIP_BUILD: '1'
 
       - name: Upload test logs on failure
         if: failure()

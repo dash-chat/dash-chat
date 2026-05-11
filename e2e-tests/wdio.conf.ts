@@ -94,14 +94,6 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		killLeftoverMailboxServers();
 		killPortHolders(ALL_PORTS);
 
-		if (!process.env.SKIP_BUILD) {
-			console.log('Building Tauri app (debug, no-bundle)...');
-			execSync('pnpm tauri build --debug --no-bundle --features e2e-tests', {
-				cwd: ROOT,
-				stdio: 'inherit',
-			});
-		}
-
 		// Start a local mailbox server so e2e tests don't hit the internet.
 		const mailboxPort = allocatePort();
 		const mailboxUrl = `http://localhost:${mailboxPort}`;
