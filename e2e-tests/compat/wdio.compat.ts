@@ -3,7 +3,6 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import type { Options } from '@wdio/types';
 import { allocateDriverPorts } from '../helpers/allocate-port';
 import {
 	killAndWait,
@@ -51,9 +50,8 @@ function startAgentLogger(agent: string, logFile: string): ChildProcess {
 	return proc;
 }
 
-export const config: Options.Testrunner = {
+export const config: WebdriverIO.MultiremoteConfig = {
 	runner: 'local',
-	tsNodeOpts: { esm: true, project: path.join(E2E_DIR, 'tsconfig.json') },
 
 	specs: [specFile],
 	maxInstances: 1,

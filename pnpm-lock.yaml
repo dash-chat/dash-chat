@@ -61,9 +61,15 @@ importers:
 
   e2e-tests:
     devDependencies:
+      '@types/node':
+        specifier: ^24.10.0
+        version: 24.10.0
       '@wdio/cli':
         specifier: ^9.12.1
         version: 9.24.0(@types/node@24.10.0)(expect-webdriverio@5.6.4)
+      '@wdio/globals':
+        specifier: ^9.12.1
+        version: 9.23.0(expect-webdriverio@5.6.4)(webdriverio@9.24.0)
       '@wdio/local-runner':
         specifier: ^9.12.1
         version: 9.24.0(@wdio/globals@9.23.0)(webdriverio@9.24.0)
@@ -71,6 +77,9 @@ importers:
         specifier: ^9.12.1
         version: 9.24.0
       '@wdio/spec-reporter':
+        specifier: ^9.12.1
+        version: 9.24.0
+      '@wdio/types':
         specifier: ^9.12.1
         version: 9.24.0
       ts-node:

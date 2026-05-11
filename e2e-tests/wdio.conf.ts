@@ -1,4 +1,3 @@
-import type { Options } from '@wdio/types';
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -41,9 +40,8 @@ function startAgentLogger(agent: string, logFile: string): ChildProcess {
 	return proc;
 }
 
-export const config: Options.Testrunner = {
+export const config: WebdriverIO.MultiremoteConfig = {
 	runner: 'local',
-	tsNodeOpts: { esm: true, project: path.join(__dirname, 'tsconfig.json') },
 
 	specs: ['./specs/**/*.spec.ts'],
 	exclude: ['./specs/compat-*.spec.ts'],

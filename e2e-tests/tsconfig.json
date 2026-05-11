@@ -4,9 +4,16 @@
 		"module": "ES2020",
 		"moduleResolution": "node",
 		"esModuleInterop": true,
+		"skipLibCheck": true,
 		"strict": true,
-		"types": ["@wdio/mocha-framework", "node"],
+		"types": ["@wdio/globals/types", "@wdio/mocha-framework", "node"],
 		"outDir": "dist"
 	},
-	"include": ["specs/**/*.ts", "helpers/**/*.ts", "wdio.conf.ts", "compat/wdio.compat.ts"]
+	"include": [
+		"specs/**/*.ts",
+		"helpers/**/*.ts",
+		"wdio.conf.ts",
+		"compat/wdio.compat.ts",
+		"globals.d.ts"
+	]
 }
