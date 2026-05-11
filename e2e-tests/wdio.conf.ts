@@ -107,6 +107,10 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		mkdirSync(path.dirname(mailboxDb), { recursive: true });
 
 		console.log(`Starting local mailbox server on ${mailboxUrl}...`);
+		// `detached: true` puts the mailbox (cargo + its mailbox-server child) in
+		// its OWN process group. Without this, the mailbox sits in the wdio
+		// launcher's process group; when a worker crashes mid-spec and wdio kills
+		// its worker group on retry, mailbox can get reaped as collateral damage.
 		mailboxServer = spawn(
 			'cargo',
 			[
@@ -119,10 +123,19 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				'--addr',
 				`0.0.0.0:${mailboxPort}`,
 			],
-			{ cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'] },
+			{ cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'], detached: true },
 		);
+		console.log(`[mailbox-server] spawned (cargo pid=${mailboxServer.pid})`);
 		mailboxServer.stderr?.on('data', (data: Buffer) => {
 			console.error(`[mailbox-server] ${data.toString().trim()}`);
+		});
+		mailboxServer.on('exit', (code, signal) => {
+			console.error(
+				`[mailbox-server] EXITED code=${code} signal=${signal} at ${new Date().toISOString()}`,
+			);
+		});
+		mailboxServer.on('error', err => {
+			console.error(`[mailbox-server] ERROR ${err.message}`);
 		});
 
 		// Wait for the mailbox server to be ready.
@@ -216,7 +229,15 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	},
 
 	onComplete() {
-		if (mailboxServer) mailboxServer.kill();
+		if (mailboxServer?.pid) {
+			// Negative PID = signal the entire process group, so we reach the
+			// mailbox-server child that `cargo run` spawned underneath.
+			try {
+				process.kill(-mailboxServer.pid, 'SIGTERM');
+			} catch {
+				/* already gone */
+			}
+		}
 		killAllE2EProcesses();
 		killPortHolders(ALL_PORTS);
 		agent1Logger?.kill();
