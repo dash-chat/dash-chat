@@ -1,9 +1,66 @@
 /**
  * Shared helpers for E2E test setup.
  *
- * Wraps the executeAsync/execute dance needed to call window.__test functions
- * from WebdriverIO, with proper error handling. All helpers throw on failure.
+ * `makeAgent(browser.getInstance('agent1'))` wraps a WDIO browser so that
+ * `window.__test` methods are accessible directly on it as awaited calls
+ * (`agent.createProfile('A', 'B')`). Browser methods like `agent.execute`,
+ * `agent.waitUntil` keep working. Errors surface as `<method> failed: <error>`.
+ *
+ * Methods returning DOM elements (homeLoaded, versionItem, …) don't serialize
+ * cleanly across the bridge — call those via `agent.execute(...)` directly so
+ * the element stays in the browser context.
  */
+
+type TestUtils = Window['__test'];
+
+type Asyncified<T> = {
+	[K in keyof T]: T[K] extends (...args: infer A) => infer R
+		? (...args: A) => Promise<Awaited<R>>
+		: never;
+};
+
+export type Agent = WebdriverIO.Browser & Asyncified<TestUtils>;
+
+type Result = { ok: true; value: unknown } | { ok: false; error: string };
+
+async function callTestUtil(b: WebdriverIO.Browser, method: string, args: unknown[]): Promise<unknown> {
+	const result = await b.execute(
+		async (m: string, a: unknown[]): Promise<Result> => {
+			const fn = (window.__test as unknown as Record<string, (...a: unknown[]) => unknown>)[m];
+			if (typeof fn !== 'function') {
+				return { ok: false, error: `window.__test.${m} is not a function` };
+			}
+			try {
+				const value = await Promise.resolve(fn(...a));
+				return { ok: true, value };
+			} catch (e) {
+				return { ok: false, error: String(e) };
+			}
+		},
+		method,
+		args,
+	) as Result;
+	if (!result.ok) throw new Error(`${method} failed: ${result.error}`);
+	return result.value;
+}
+
+// Promise-protocol keys: if the proxy returns a function for these, the JS
+// engine treats the agent as a thenable and tries to await it (e.g. when
+// mocha returns it from a hook).
+const PROMISE_KEYS = new Set(['then', 'catch', 'finally']);
+
+export function makeAgent(b: WebdriverIO.Browser): Agent {
+	return new Proxy(b, {
+		get(target, prop) {
+			const value = (target as unknown as Record<string | symbol, unknown>)[prop];
+			if (value !== undefined) {
+				return typeof value === 'function' ? value.bind(target) : value;
+			}
+			if (typeof prop !== 'string' || PROMISE_KEYS.has(prop)) return undefined;
+			return (...args: unknown[]) => callTestUtil(target, prop, args);
+		},
+	}) as Agent;
+}
 
 /** Wait for window.__test to be registered on a single agent. */
 export async function waitForTestUtils(agent: WebdriverIO.Browser): Promise<void> {
@@ -13,196 +70,31 @@ export async function waitForTestUtils(agent: WebdriverIO.Browser): Promise<void
 	);
 }
 
-/** Wait for window.__test to be registered on both agents. */
-export async function waitForBothAgents(): Promise<void> {
-	const agent1 = browser.getInstance('agent1');
-	const agent2 = browser.getInstance('agent2');
-	await Promise.all([waitForTestUtils(agent1), waitForTestUtils(agent2)]);
-}
-
-/** Create a profile on an agent. Throws if creation fails. */
-export async function createProfile(
-	agent: WebdriverIO.Browser,
-	name: string,
-	surname: string,
-): Promise<void> {
-	const err = await agent.executeAsync(
-		(n: string, s: string, done: (r: string | null) => void) => {
-			window.__test.createProfile(n, s).then(() => done(null), (e) => done(String(e)));
-		},
-		name,
-		surname,
-	);
-	if (err) throw new Error(`Profile creation failed: ${err}`);
-}
-
-/** Navigate to add-contact page and return the contact code. */
-export async function getContactCode(agent: WebdriverIO.Browser): Promise<string> {
-	const navErr = await agent.executeAsync((done: (r: string | null) => void) => {
-		window.__test.navigateToAddContact().then(() => done(null), (e) => done(String(e)));
-	});
-	if (navErr) throw new Error(`Navigate to add-contact failed: ${navErr}`);
-
-	const code = await agent.execute(() => window.__test.getContactCode());
-	if (!code) throw new Error('Failed to get contact code');
-	return code as string;
-}
-
-/** Add a contact by code. Throws if it fails. */
-export async function addContact(agent: WebdriverIO.Browser, code: string): Promise<void> {
-	const err = await agent.executeAsync(
-		(c: string, done: (r: string | null) => void) => {
-			window.__test.addContact(c).then(() => done(null), (e) => done(String(e)));
-		},
-		code,
-	);
-	if (err) throw new Error(`Add contact failed: ${err}`);
+/** Build an agent by capability name and wait for window.__test to be ready. */
+export async function setupAgent(agentName: string): Promise<Agent> {
+	const agent = makeAgent(browser.getInstance(agentName));
+	await waitForTestUtils(agent);
+	return agent;
 }
 
 /** Exchange contact codes between two agents. */
-export async function exchangeContacts(
-	agent1: WebdriverIO.Browser,
-	agent2: WebdriverIO.Browser,
-): Promise<void> {
-	const code1 = await getContactCode(agent1);
-	const code2 = await getContactCode(agent2);
-	await addContact(agent1, code2);
-	await addContact(agent2, code1);
+export async function exchangeContacts(agent1: Agent, agent2: Agent): Promise<void> {
+	await agent1.navigateToAddContact();
+	await agent2.navigateToAddContact();
+	const code1 = await agent1.getContactCode();
+	const code2 = await agent2.getContactCode();
+	if (!code1) throw new Error('agent1 contact code missing');
+	if (!code2) throw new Error('agent2 contact code missing');
+	await agent1.addContact(code2);
+	await agent2.addContact(code1);
 }
 
-/** Send a message from an agent. Throws if it fails. */
-export async function sendMessage(agent: WebdriverIO.Browser, text: string): Promise<void> {
-	const err = await agent.executeAsync(
-		(t: string, done: (r: string | null) => void) => {
-			window.__test.sendMessage(t).then(() => done(null), (e) => done(String(e)));
-		},
-		text,
-	);
-	if (err) throw new Error(`Send message failed: ${err}`);
-}
-
-/**
- * Wait for a message to appear on an agent.
- * Uses WDIO waitUntil with sync execute polling — avoids executeAsync with
- * long-running scripts which can hang in tauri-driver.
- */
-export async function waitForMessage(agent: WebdriverIO.Browser, text: string, timeout = 90_000): Promise<void> {
-	await agent.waitUntil(
-		async () => agent.execute(
-			(t: string) => !!document.querySelector('[data-testid="direct-chat-messages"]')?.textContent?.includes(t),
-			text,
-		),
-		{ timeout, interval: 1_000, timeoutMsg: `Message "${text}" not received within ${timeout}ms` },
-	);
-}
-
-/** Send a message and wait for it to be received by another agent. */
+/** Send a message from `sender` and wait for it to appear on `receiver`. */
 export async function sendAndReceiveMessage(
-	sender: WebdriverIO.Browser,
-	receiver: WebdriverIO.Browser,
+	sender: Agent,
+	receiver: Agent,
 	text: string,
 ): Promise<void> {
-	await sendMessage(sender, text);
-	await waitForMessage(receiver, text);
-}
-
-/** Get IDs of currently visible Get Started cards. */
-export async function getStartedCards(agent: WebdriverIO.Browser): Promise<string[]> {
-	return await agent.execute(() => window.__test.getStartedCards()) as string[];
-}
-
-/** Dismiss a Get Started card by id. */
-export async function dismissGetStartedCard(agent: WebdriverIO.Browser, cardId: string): Promise<void> {
-	await agent.execute((id: string) => window.__test.dismissGetStartedCard(id), cardId);
-}
-
-/** True if the chat scroll container is pinned to the bottom. */
-export async function isScrollAtBottom(agent: WebdriverIO.Browser): Promise<boolean> {
-	return (await agent.execute(() => window.__test.isScrollAtBottom())) as boolean;
-}
-
-/** Vertical overflow of the chat scroll container in px. */
-export async function chatOverflow(agent: WebdriverIO.Browser): Promise<number> {
-	return (await agent.execute(() => window.__test.chatOverflow())) as number;
-}
-
-/** Scroll the chat away from the bottom. Throws if there's nothing to scroll. */
-export async function scrollChatUp(agent: WebdriverIO.Browser): Promise<void> {
-	const err = await agent.execute(() => {
-		try {
-			window.__test.scrollChatUp();
-			return null;
-		} catch (e) {
-			return String(e);
-		}
-	});
-	if (err) throw new Error(`scrollChatUp failed: ${err}`);
-}
-
-/** True if the scroll-to-bottom button is rendered. */
-export async function scrollBottomButtonVisible(agent: WebdriverIO.Browser): Promise<boolean> {
-	return (await agent.execute(() => window.__test.scrollBottomButtonVisible())) as boolean;
-}
-
-/** Text of the unread badge on the scroll-to-bottom button, or null. */
-export async function unreadBadgeText(agent: WebdriverIO.Browser): Promise<string | null> {
-	return (await agent.execute(() => window.__test.unreadBadgeText())) as string | null;
-}
-
-/** Click the scroll-to-bottom button. */
-export async function clickScrollBottomButton(agent: WebdriverIO.Browser): Promise<void> {
-	const err = await agent.execute(() => {
-		try {
-			window.__test.clickScrollBottomButton();
-			return null;
-		} catch (e) {
-			return String(e);
-		}
-	});
-	if (err) throw new Error(`clickScrollBottomButton failed: ${err}`);
-}
-
-/** Scroll the chat back to the bottom programmatically. */
-export async function scrollChatToBottom(agent: WebdriverIO.Browser): Promise<void> {
-	const err = await agent.execute(() => {
-		try {
-			window.__test.scrollChatToBottom();
-			return null;
-		} catch (e) {
-			return String(e);
-		}
-	});
-	if (err) throw new Error(`scrollChatToBottom failed: ${err}`);
-}
-
-/** Scroll the chat all the way to the top of content (welcome / oldest). */
-export async function scrollChatToTop(agent: WebdriverIO.Browser): Promise<void> {
-	const err = await agent.execute(() => {
-		try {
-			window.__test.scrollChatToTop();
-			return null;
-		} catch (e) {
-			return String(e);
-		}
-	});
-	if (err) throw new Error(`scrollChatToTop failed: ${err}`);
-}
-
-/** Inline opacity of the transparent navbar's background element, or null. */
-export async function navbarBgOpacity(agent: WebdriverIO.Browser): Promise<string | null> {
-	return (await agent.execute(() => window.__test.navbarBgOpacity())) as string | null;
-}
-
-/** Open a direct chat by contact name. Throws if it fails. */
-export async function openDirectChat(
-	agent: WebdriverIO.Browser,
-	contactName: string,
-): Promise<void> {
-	const err = await agent.executeAsync(
-		(name: string, done: (r: string | null) => void) => {
-			window.__test.openDirectChat(name).then(() => done(null), (e) => done(String(e)));
-		},
-		contactName,
-	);
-	if (err) throw new Error(`Open direct chat failed: ${err}`);
+	await sender.sendMessage(text);
+	await receiver.waitForMessage(text);
 }

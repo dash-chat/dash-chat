@@ -67,9 +67,6 @@ importers:
       '@wdio/cli':
         specifier: ^9.12.1
         version: 9.24.0(@types/node@24.10.0)(expect-webdriverio@5.6.4)
-      '@wdio/globals':
-        specifier: ^9.12.1
-        version: 9.23.0(expect-webdriverio@5.6.4)(webdriverio@9.24.0)
       '@wdio/local-runner':
         specifier: ^9.12.1
         version: 9.24.0(@wdio/globals@9.23.0)(webdriverio@9.24.0)
@@ -82,12 +79,18 @@ importers:
       '@wdio/types':
         specifier: ^9.12.1
         version: 9.24.0
+      expect-webdriverio:
+        specifier: ^5.6.4
+        version: 5.6.4(@wdio/globals@9.23.0)(@wdio/logger@9.18.0)(webdriverio@9.24.0)
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@24.10.0)(typescript@5.9.3)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      webdriverio:
+        specifier: ^9.12.1
+        version: 9.24.0
 
   packages/site:
     dependencies:

@@ -10,10 +10,10 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-	waitForBothAgents,
-	createProfile,
+	type Agent,
 	exchangeContacts,
 	sendAndReceiveMessage,
+	setupAgent,
 } from '../helpers/setup-agents';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -28,32 +28,30 @@ const MSG_ALICE = 'Hello from old Alice!';
 const MSG_BOB = 'Hello from old Bob!';
 
 describe('Compat setup — create data with old version', () => {
+	let agent1: Agent;
+	let agent2: Agent;
+
 	before(async () => {
-		await waitForBothAgents();
+		[agent1, agent2] = await Promise.all([
+			setupAgent('agent1'),
+			setupAgent('agent2'),
+		]);
 	});
 
 	it('creates profiles on both agents', async () => {
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
-		await createProfile(agent1, ALICE_NAME, ALICE_SURNAME);
-		await createProfile(agent2, BOB_NAME, BOB_SURNAME);
+		await agent1.createProfile(ALICE_NAME, ALICE_SURNAME);
+		await agent2.createProfile(BOB_NAME, BOB_SURNAME);
 	});
 
 	it('exchanges contact codes between agents', async () => {
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
 		await exchangeContacts(agent1, agent2);
 	});
 
 	it('sends a message from Alice to Bob', async () => {
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
 		await sendAndReceiveMessage(agent1, agent2, MSG_ALICE);
 	});
 
 	it('sends a reply from Bob to Alice', async () => {
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
 		await sendAndReceiveMessage(agent2, agent1, MSG_BOB);
 	});
 

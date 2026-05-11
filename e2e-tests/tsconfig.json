@@ -6,7 +6,12 @@
 		"esModuleInterop": true,
 		"skipLibCheck": true,
 		"strict": true,
-		"types": ["@wdio/globals/types", "@wdio/mocha-framework", "node"],
+		"types": [
+			"@wdio/mocha-framework",
+			"node",
+			"webdriverio",
+			"expect-webdriverio"
+		],
 		"outDir": "dist"
 	},
 	"include": [

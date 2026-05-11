@@ -10,20 +10,9 @@
  */
 
 import {
-	chatOverflow,
-	clickScrollBottomButton,
-	createProfile,
+	type Agent,
 	exchangeContacts,
-	isScrollAtBottom,
-	navbarBgOpacity,
-	scrollBottomButtonVisible,
-	scrollChatToBottom,
-	scrollChatToTop,
-	scrollChatUp,
-	sendMessage,
-	unreadBadgeText,
-	waitForBothAgents,
-	waitForMessage,
+	setupAgent,
 } from '../helpers/setup-agents';
 
 describe('Chat scroll behavior', () => {
@@ -34,104 +23,98 @@ describe('Chat scroll behavior', () => {
 	// Hard cap so a misconfigured viewport can't loop forever.
 	const MAX_FILLER = 200;
 
+	let agent1: Agent;
+	let agent2: Agent;
+
 	before(async function () {
 		this.timeout(120_000);
-		await waitForBothAgents();
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
-		await createProfile(agent1, 'Alice', 'Test');
-		await createProfile(agent2, 'Bob', 'Test');
+		[agent1, agent2] = await Promise.all([
+			setupAgent('agent1'),
+			setupAgent('agent2'),
+		]);
+		await agent1.createProfile('Alice', 'Test');
+		await agent2.createProfile('Bob', 'Test');
 		// addContact (inside exchangeContacts) lands agent1 on the direct chat
 		// with Bob, which is exactly where the scroll tests need to start.
 		await exchangeContacts(agent1, agent2);
 	});
 
 	it('fills the chat until it overflows enough to scroll', async () => {
-		const agent1 = browser.getInstance('agent1');
 		let i = 0;
-		let overflow = await chatOverflow(agent1);
+		let overflow = await agent1.chatOverflow();
 		while (overflow < REQUIRED_OVERFLOW && i < MAX_FILLER) {
-			await sendMessage(agent1, `filler ${i}`);
+			await agent1.sendMessage(`filler ${i}`);
 			// Wait for the message to render before measuring — DOM updates
 			// are async after the click.
-			await waitForMessage(agent1, `filler ${i}`, 10_000);
-			overflow = await chatOverflow(agent1);
+			await agent1.waitForMessage(`filler ${i}`, 10_000);
+			overflow = await agent1.chatOverflow();
 			i++;
 		}
 		expect(overflow).toBeGreaterThanOrEqual(REQUIRED_OVERFLOW);
-		await agent1.waitUntil(async () => isScrollAtBottom(agent1), {
+		await agent1.waitUntil(async () => agent1.isScrollAtBottom(), {
 			timeout: 5_000,
 			timeoutMsg: 'Sender did not settle at bottom after filling',
 		});
 	});
 
 	it('returns to bottom when the user sends while scrolled up', async () => {
-		const agent1 = browser.getInstance('agent1');
-		await scrollChatUp(agent1);
-		expect(await isScrollAtBottom(agent1)).toBe(false);
+		await agent1.scrollChatUp();
+		expect(await agent1.isScrollAtBottom()).toBe(false);
 
-		await sendMessage(agent1, 'self-send after scroll up');
-		await waitForMessage(agent1, 'self-send after scroll up', 30_000);
+		await agent1.sendMessage('self-send after scroll up');
+		await agent1.waitForMessage('self-send after scroll up');
 
-		await agent1.waitUntil(async () => isScrollAtBottom(agent1), {
+		await agent1.waitUntil(async () => agent1.isScrollAtBottom(), {
 			timeout: 5_000,
 			timeoutMsg: 'Did not return to bottom after self-send',
 		});
 	});
 
 	it('stays pinned to bottom when a peer message arrives at bottom', async () => {
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
-		expect(await isScrollAtBottom(agent1)).toBe(true);
+		expect(await agent1.isScrollAtBottom()).toBe(true);
 
-		await sendMessage(agent2, 'peer at bottom');
-		await waitForMessage(agent1, 'peer at bottom');
+		await agent2.sendMessage('peer at bottom');
+		await agent1.waitForMessage('peer at bottom');
 
-		expect(await isScrollAtBottom(agent1)).toBe(true);
+		expect(await agent1.isScrollAtBottom()).toBe(true);
 	});
 
 	it('does not auto-scroll when a peer message arrives while scrolled up', async () => {
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
+		await agent1.scrollChatUp();
+		expect(await agent1.isScrollAtBottom()).toBe(false);
 
-		await scrollChatUp(agent1);
-		expect(await isScrollAtBottom(agent1)).toBe(false);
+		await agent2.sendMessage('peer while scrolled up');
+		await agent1.waitForMessage('peer while scrolled up');
 
-		await sendMessage(agent2, 'peer while scrolled up');
-		await waitForMessage(agent1, 'peer while scrolled up');
-
-		expect(await isScrollAtBottom(agent1)).toBe(false);
-		expect(await scrollBottomButtonVisible(agent1)).toBe(true);
-		expect(await unreadBadgeText(agent1)).toBeTruthy();
+		expect(await agent1.isScrollAtBottom()).toBe(false);
+		expect(await agent1.scrollBottomButtonVisible()).toBe(true);
+		expect(await agent1.unreadBadgeText()).toBeTruthy();
 	});
 
 	it('clicking scroll-to-bottom returns to bottom and clears unread badge', async () => {
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
-
 		// Establish the precondition (scrolled up + unread badge visible)
 		// from scratch rather than depending on the previous test, so this
 		// test survives Mocha bail/retry and reordering.
-		await scrollChatUp(agent1);
-		await sendMessage(agent2, 'unread badge precondition');
-		await waitForMessage(agent1, 'unread badge precondition');
+		await agent1.scrollChatUp();
+		await agent2.sendMessage('unread badge precondition');
+		await agent1.waitForMessage('unread badge precondition');
 		await agent1.waitUntil(
-			async () => (await unreadBadgeText(agent1)) !== null,
+			async () => (await agent1.unreadBadgeText()) !== null,
 			{
 				timeout: 5_000,
 				timeoutMsg: 'Unread badge did not appear after peer message',
 			},
 		);
-		expect(await scrollBottomButtonVisible(agent1)).toBe(true);
+		expect(await agent1.scrollBottomButtonVisible()).toBe(true);
 
-		await clickScrollBottomButton(agent1);
+		await agent1.clickScrollBottomButton();
 
-		await agent1.waitUntil(async () => isScrollAtBottom(agent1), {
+		await agent1.waitUntil(async () => agent1.isScrollAtBottom(), {
 			timeout: 5_000,
 			timeoutMsg: 'Did not return to bottom after clicking the button',
 		});
 		await agent1.waitUntil(
-			async () => (await unreadBadgeText(agent1)) === null,
+			async () => (await agent1.unreadBadgeText()) === null,
 			{
 				timeout: 5_000,
 				timeoutMsg: 'Unread badge did not clear after returning to bottom',
@@ -140,14 +123,12 @@ describe('Chat scroll behavior', () => {
 	});
 
 	it('hides the scroll-to-bottom button once the user scrolls back down', async () => {
-		const agent1 = browser.getInstance('agent1');
+		await agent1.scrollChatUp();
+		expect(await agent1.scrollBottomButtonVisible()).toBe(true);
 
-		await scrollChatUp(agent1);
-		expect(await scrollBottomButtonVisible(agent1)).toBe(true);
-
-		await scrollChatToBottom(agent1);
+		await agent1.scrollChatToBottom();
 		await agent1.waitUntil(
-			async () => !(await scrollBottomButtonVisible(agent1)),
+			async () => !(await agent1.scrollBottomButtonVisible()),
 			{
 				timeout: 5_000,
 				timeoutMsg: 'Scroll-to-bottom button still visible at bottom',
@@ -161,19 +142,18 @@ describe('Chat scroll behavior', () => {
 	// under the navbar — and fade out ('0') only once the user scrolls
 	// all the way to the welcome / avatar surface at the top of the chat.
 	it('toggles transparent navbar opacity on scroll', async () => {
-		const agent1 = browser.getInstance('agent1');
-		expect(await isScrollAtBottom(agent1)).toBe(true);
+		expect(await agent1.isScrollAtBottom()).toBe(true);
 		await agent1.waitUntil(
-			async () => (await navbarBgOpacity(agent1)) === '1',
+			async () => (await agent1.navbarBgOpacity()) === '1',
 			{
 				timeout: 5_000,
 				timeoutMsg: 'Navbar opacity not 1 at bottom',
 			},
 		);
 
-		await scrollChatToTop(agent1);
+		await agent1.scrollChatToTop();
 		await agent1.waitUntil(
-			async () => (await navbarBgOpacity(agent1)) === '0',
+			async () => (await agent1.navbarBgOpacity()) === '0',
 			{
 				timeout: 5_000,
 				timeoutMsg:
@@ -181,9 +161,9 @@ describe('Chat scroll behavior', () => {
 			},
 		);
 
-		await scrollChatToBottom(agent1);
+		await agent1.scrollChatToBottom();
 		await agent1.waitUntil(
-			async () => (await navbarBgOpacity(agent1)) === '1',
+			async () => (await agent1.navbarBgOpacity()) === '1',
 			{
 				timeout: 5_000,
 				timeoutMsg: 'Navbar opacity did not flip back to 1 at bottom',

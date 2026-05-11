@@ -47,10 +47,13 @@ export function typeInto(selector: string, value: string): void {
 	el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-export function click(selector: string): void {
-	const el =
-		document.querySelector(selector + ' a') || document.querySelector(selector);
-	if (!el) throw new Error(`click: element not found for "${selector}"`);
+export function click(target: Element | string): void {
+	if (target instanceof Element) {
+		(target as HTMLElement).click();
+		return;
+	}
+	const el = document.querySelector(target + ' a') ?? document.querySelector(target);
+	if (!el) throw new Error(`click: element not found for "${target}"`);
 	(el as HTMLElement).click();
 }
 

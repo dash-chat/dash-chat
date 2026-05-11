@@ -43,6 +43,7 @@ import { versionItem } from './pages/help';
 import {
 	checkChatListOverflow,
 	firstChatTooltip,
+	getChatListItem,
 	homeLoaded,
 } from './pages/home';
 import {
@@ -90,6 +91,7 @@ export const testUtils = {
 	dismissGetStartedCard,
 	homeLoaded,
 	firstChatTooltip,
+	getChatListItem,
 	checkChatListOverflow,
 	messageInput,
 	sendButton,

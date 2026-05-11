@@ -12,10 +12,10 @@
  */
 
 import {
-	waitForTestUtils,
-	waitForBothAgents,
-	createProfile,
+	type Agent,
 	exchangeContacts,
+	setupAgent,
+	waitForTestUtils,
 } from '../helpers/setup-agents';
 
 type PageResult = { page: string; overflow?: string[]; darkMode?: { issues?: string[] } };
@@ -48,7 +48,7 @@ function assertNoIssues(res: VisitResult): void {
  *  Uses sync execute to start the async function in the browser, then polls
  *  for completion via waitUntil — avoiding executeAsync's 30s hard timeout. */
 async function runVisit(
-	agent: WebdriverIO.Browser,
+	agent: Agent,
 	options: {
 		/** Include direct-chat and chat-settings pages (requires prior contact exchange + messaging). */
 		hasChat?: boolean;
@@ -58,12 +58,11 @@ async function runVisit(
 ): Promise<VisitResult> {
 	// Wait for HOME elements before starting (switchCombo layout changes can
 	// cause {#await} blocks to re-enter pending state temporarily).
-	await agent.waitUntil(
-		async () => agent.execute(
-			() => window.__test.homeLoaded() !== null,
-		),
-		{ timeout: 30_000, interval: 500, timeoutMsg: 'runVisit: HOME elements not found before starting visitAllPages' },
-	);
+	await agent.waitUntil(async () => !!(await agent.homeLoaded()), {
+		timeout: 30_000,
+		interval: 500,
+		timeoutMsg: 'runVisit: HOME elements not found before starting visitAllPages',
+	});
 
 	// Start visitAllPages in the browser context (fire-and-forget via sync execute).
 	await agent.execute(
@@ -137,7 +136,7 @@ async function runVisit(
  *  waits for re-registration instead of finding the stale reference.
  *  Disables CSS transitions/animations after reload so static layout checks
  *  (dark-mode bg, overflow) don't race against in-flight color transitions. */
-async function reloadToHome(agent: WebdriverIO.Browser): Promise<void> {
+async function reloadToHome(agent: Agent): Promise<void> {
 	await agent.execute(() => {
 		delete (window as any).__test;
 		window.location.href = '/';
@@ -151,12 +150,11 @@ async function reloadToHome(agent: WebdriverIO.Browser): Promise<void> {
 		style.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }';
 		document.head.appendChild(style);
 	});
-	await agent.waitUntil(
-		async () => agent.execute(
-			() => window.__test.homeLoaded() !== null,
-		),
-		{ timeout: 30_000, interval: 500, timeoutMsg: 'reloadToHome: HOME elements not found after reload' },
-	);
+	await agent.waitUntil(async () => !!(await agent.homeLoaded()), {
+		timeout: 30_000,
+		interval: 500,
+		timeoutMsg: 'reloadToHome: HOME elements not found after reload',
+	});
 }
 
 /** Helper: switch theme + layout on an agent.
@@ -164,7 +162,7 @@ async function reloadToHome(agent: WebdriverIO.Browser): Promise<void> {
  *  This avoids cumulative issues from multiple layout switches where
  *  Signalium watchers may not fire after repeated component remounts. */
 async function switchCombo(
-	agent: WebdriverIO.Browser,
+	agent: Agent,
 	theme: 'material' | 'ios',
 	wideScreen: boolean,
 	dark?: boolean,
@@ -187,12 +185,11 @@ async function switchCombo(
 
 	// Wait for HOME elements to re-appear after layout change (switching to
 	// desktop causes DesktopLayout to mount fresh, re-rendering AllChats).
-	await agent.waitUntil(
-		async () => agent.execute(
-			() => window.__test.homeLoaded() !== null,
-		),
-		{ timeout: 30_000, interval: 500, timeoutMsg: 'switchCombo: HOME not found after theme/layout apply' },
-	);
+	await agent.waitUntil(async () => !!(await agent.homeLoaded()), {
+		timeout: 30_000,
+		interval: 500,
+		timeoutMsg: 'switchCombo: HOME not found after theme/layout apply',
+	});
 }
 
 describe('Review checks', function () {
@@ -201,73 +198,37 @@ describe('Review checks', function () {
 	// Must be larger than runVisit's 120s poll timeout.
 	this.timeout(180_000);
 
+	let agent1: Agent;
+	let agent2: Agent;
+
 	before(async function () {
 		this.timeout(180_000);
 
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
+		[agent1, agent2] = await Promise.all([
+			setupAgent('agent1'),
+			setupAgent('agent2'),
+		]);
 
-		await waitForBothAgents();
-
-		await createProfile(agent1, 'Alice', 'Test');
-		await createProfile(agent2, 'Bob', 'Tester');
+		await agent1.createProfile('Alice', 'Test');
+		await agent2.createProfile('Bob', 'Tester');
 
 		await exchangeContacts(agent1, agent2);
 
 		// Wait for both agents' chat pages to load after contact exchange.
 		await Promise.all([
-			agent1.waitUntil(
-				async () => agent1.execute(() => window.__test.messageInput() !== null),
-				{ timeout: 30_000, interval: 500, timeoutMsg: 'Agent1 message input not found after contact exchange' },
-			),
-			agent2.waitUntil(
-				async () => agent2.execute(() => window.__test.messageInput() !== null),
-				{ timeout: 30_000, interval: 500, timeoutMsg: 'Agent2 message input not found after contact exchange' },
-			),
+			agent1.waitUntil(async () => !!(await agent1.messageInput()), {
+				timeout: 30_000, interval: 500, timeoutMsg: 'Agent1 message input not found after contact exchange',
+			}),
+			agent2.waitUntil(async () => !!(await agent2.messageInput()), {
+				timeout: 30_000, interval: 500, timeoutMsg: 'Agent2 message input not found after contact exchange',
+			}),
 		]);
 
-		// Send messages using sync execute calls to avoid executeAsync hangs.
-		await agent1.execute((t: string) => {
-			const el = window.__test.messageInput() as HTMLTextAreaElement;
-			if (!el) throw new Error('message-input-textarea not found');
-			const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
-			setter.call(el, t);
-			el.dispatchEvent(new Event('input', { bubbles: true }));
-			el.dispatchEvent(new Event('change', { bubbles: true }));
-			const btn = window.__test.sendButton() as HTMLElement;
-			if (!btn) throw new Error('message-input-send not found');
-			btn.click();
-		}, 'Hello from Alice!');
+		await agent1.sendMessage('Hello from Alice!');
+		await agent2.waitForMessage('Hello from Alice!');
 
-		// Wait for agent2 to receive the message.
-		await agent2.waitUntil(
-			async () => agent2.execute(
-				(t: string) => !!window.__test.messagesContainer()?.textContent?.includes(t),
-				'Hello from Alice!',
-			),
-			{ timeout: 60_000, interval: 1_000, timeoutMsg: 'Agent2 did not receive message from Alice' },
-		);
-
-		// Agent2 replies.
-		await agent2.execute((t: string) => {
-			const el = window.__test.messageInput() as HTMLTextAreaElement;
-			if (!el) throw new Error('message-input-textarea not found');
-			const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
-			setter.call(el, t);
-			el.dispatchEvent(new Event('input', { bubbles: true }));
-			el.dispatchEvent(new Event('change', { bubbles: true }));
-			const btn = window.__test.sendButton() as HTMLElement;
-			if (!btn) throw new Error('message-input-send not found');
-			btn.click();
-		}, 'Hello from Bob!');
-
-		await agent1.waitUntil(
-			async () => agent1.execute(
-				(t: string) => !!window.__test.messagesContainer()?.textContent?.includes(t),
-				'Hello from Bob!',
-			),
-			{ timeout: 60_000, interval: 1_000, timeoutMsg: 'Agent1 did not receive message from Bob' },
-		);
+		await agent2.sendMessage('Hello from Bob!');
+		await agent1.waitForMessage('Hello from Bob!');
 
 		await reloadToHome(agent1);
 	});
@@ -276,36 +237,28 @@ describe('Review checks', function () {
 	// failed mid-navigation, the app could be on any page.
 	beforeEach(async function () {
 		this.timeout(120_000);
-		const agent1 = browser.getInstance('agent1');
-		const isHome = await agent1.execute(
-			() => window.__test.homeLoaded() !== null,
-		);
-		if (!isHome) {
+		if (!(await agent1.homeLoaded())) {
 			await reloadToHome(agent1);
 		}
 	});
 
 	describe('English - Light', function () {
 		it('Material Desktop', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', true);
 			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 
 		it('Material Mobile', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', false);
 			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 
 		it('iOS Desktop', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', true);
 			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 
 		it('iOS Mobile', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', false);
 			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
@@ -313,25 +266,21 @@ describe('Review checks', function () {
 
 	describe('English - Dark', function () {
 		it('Material Desktop', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', true, true);
 			assertNoIssues(await runVisit(agent1, { hasChat: true, checkDarkMode: true }));
 		});
 
 		it('Material Mobile', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', false, true);
 			assertNoIssues(await runVisit(agent1, { hasChat: true, checkDarkMode: true }));
 		});
 
 		it('iOS Desktop', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', true, true);
 			assertNoIssues(await runVisit(agent1, { hasChat: true, checkDarkMode: true }));
 		});
 
 		it('iOS Mobile', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', false, true);
 			assertNoIssues(await runVisit(agent1, { hasChat: true, checkDarkMode: true }));
 		});
@@ -340,7 +289,6 @@ describe('Review checks', function () {
 	describe('German (de-de)', function () {
 		before(async function () {
 			this.timeout(60_000);
-			const agent1 = browser.getInstance('agent1');
 			// Navigate to home first: setLocale reloads at the current URL
 			// (locale-prefixed), so we must be on '/' before changing locale.
 			await reloadToHome(agent1);
@@ -350,34 +298,27 @@ describe('Review checks', function () {
 				window.__setLocale('de-de');
 			});
 			await waitForTestUtils(agent1);
-			await agent1.waitUntil(
-				async () => agent1.execute(
-					() => window.__test.homeLoaded() !== null,
-				),
-				{ timeout: 30_000, interval: 500, timeoutMsg: 'German locale: HOME not found after setLocale' },
-			);
+			await agent1.waitUntil(async () => !!(await agent1.homeLoaded()), {
+				timeout: 30_000, interval: 500, timeoutMsg: 'German locale: HOME not found after setLocale',
+			});
 		});
 
 		it('Material Desktop', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', true);
 			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 
 		it('Material Mobile', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', false);
 			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 
 		it('iOS Desktop', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', true);
 			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
 
 		it('iOS Mobile', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', false);
 			assertNoIssues(await runVisit(agent1, { hasChat: true }));
 		});
@@ -386,7 +327,6 @@ describe('Review checks', function () {
 	describe('Farsi RTL (fa-ir)', function () {
 		before(async function () {
 			this.timeout(60_000);
-			const agent1 = browser.getInstance('agent1');
 			// Navigate to home first: setLocale reloads at current URL.
 			await reloadToHome(agent1);
 			// setLocale triggers a full page reload with the new locale prefix.
@@ -395,38 +335,31 @@ describe('Review checks', function () {
 				window.__setLocale('fa-ir');
 			});
 			await waitForTestUtils(agent1);
-			await agent1.waitUntil(
-				async () => agent1.execute(
-					() => window.__test.homeLoaded() !== null,
-				),
-				{ timeout: 30_000, interval: 500, timeoutMsg: 'Farsi locale: HOME not found after setLocale' },
-			);
+			await agent1.waitUntil(async () => !!(await agent1.homeLoaded()), {
+				timeout: 30_000, interval: 500, timeoutMsg: 'Farsi locale: HOME not found after setLocale',
+			});
 			await agent1.execute(() => { document.documentElement.dir = 'rtl'; });
 		});
 
 		it('Material Desktop', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', true);
 			await agent1.execute(() => { document.documentElement.dir = 'rtl'; });
 			assertNoIssues(await runVisit(agent1, { hasChat: true, checkRTL: true }));
 		});
 
 		it('Material Mobile', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'material', false);
 			await agent1.execute(() => { document.documentElement.dir = 'rtl'; });
 			assertNoIssues(await runVisit(agent1, { hasChat: true, checkRTL: true }));
 		});
 
 		it('iOS Desktop', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', true);
 			await agent1.execute(() => { document.documentElement.dir = 'rtl'; });
 			assertNoIssues(await runVisit(agent1, { hasChat: true, checkRTL: true }));
 		});
 
 		it('iOS Mobile', async function () {
-			const agent1 = browser.getInstance('agent1');
 			await switchCombo(agent1, 'ios', false);
 			await agent1.execute(() => { document.documentElement.dir = 'rtl'; });
 			assertNoIssues(await runVisit(agent1, { hasChat: true, checkRTL: true }));
