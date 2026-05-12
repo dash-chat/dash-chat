@@ -32,4 +32,4 @@ format:
 
 # regenerate paraglide message exports from source translation files
 paraglide:
-    pnpm --filter ui exec paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide
+    pnpm --filter ui paraglide
