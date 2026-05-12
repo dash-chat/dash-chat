@@ -47,6 +47,9 @@ impl AgentId {
     }
 }
 
+// TODO: when device groups are implemented, this switches to AgentId.
+pub type ChatMember = DeviceId;
+
 // -- SQLite encoding for DeviceId --
 
 impl sqlx::Type<Sqlite> for DeviceId {

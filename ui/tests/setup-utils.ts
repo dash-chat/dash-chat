@@ -43,6 +43,7 @@ import { versionItem } from './pages/help';
 import {
 	checkChatListOverflow,
 	firstChatTooltip,
+	getChatListItem,
 	homeLoaded,
 } from './pages/home';
 import {
@@ -90,6 +91,7 @@ export const testUtils = {
 	dismissGetStartedCard,
 	homeLoaded,
 	firstChatTooltip,
+	getChatListItem,
 	checkChatListOverflow,
 	messageInput,
 	sendButton,
@@ -119,6 +121,8 @@ export const testUtils = {
 	visitProfilePages,
 	visitOtherPages,
 	visitChatPages,
+	/** Paraglide setLocale — set by registerTestUtils from +layout.svelte. */
+	setLocale: (_locale: string) => {},
 	/** SvelteKit goto — set by registerTestUtils from +layout.svelte. */
 	goto: (_path: string) => Promise.resolve() as Promise<void>,
 };
@@ -129,9 +133,15 @@ declare global {
 	}
 }
 
-export function registerTestUtils(goto?: (path: string) => Promise<void>) {
+export function registerTestUtils(
+	goto?: (path: string) => Promise<void>,
+	setLocale?: (locale: string) => void,
+) {
 	window.__test = testUtils;
 	if (goto) {
 		testUtils.goto = goto;
+	}
+	if (setLocale) {
+		testUtils.setLocale = setLocale;
 	}
 }

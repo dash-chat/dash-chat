@@ -48,8 +48,7 @@ export function typeInto(selector: string, value: string): void {
 }
 
 export function click(selector: string): void {
-	const el =
-		document.querySelector(selector + ' a') || document.querySelector(selector);
+	const el = document.querySelector(selector + ' a') ?? document.querySelector(selector);
 	if (!el) throw new Error(`click: element not found for "${selector}"`);
 	(el as HTMLElement).click();
 }

@@ -5,6 +5,7 @@ use p2panda_core::{Body, Extension, Hash, PruneFlag, PublicKey};
 use serde::{Deserialize, Serialize};
 
 use crate::chat::ChatId;
+use crate::compat::Capabilities;
 use crate::contact::QrCode;
 use crate::topic::TopicId;
 use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, Topic};
@@ -47,6 +48,18 @@ pub struct Profile {
 #[serde(tag = "type", content = "payload")]
 pub enum AnnouncementsPayload {
     SetProfile(Profile),
+
+    /// Sets the capabilities for all devices in the agent's device group.
+    ///
+    /// The agent is responsible for ensuring that the announced capability set
+    /// is the infimum of the capabilities of all devices in the agent's device group.
+    /// Only when the agent updates all of their devices to a higher capability set,
+    /// should they advertise the new capability set.
+    #[named_id(skip)]
+    SetCapabilities {
+        /// The new capabilities.
+        capabilities: Capabilities,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
@@ -72,7 +85,9 @@ pub enum ChatPayload {
     /// OPTIMIZATION: include a message in the group chat
     /// which instructs anyone who is a contact of this person to send them
     /// this JoinGroup message 1:1, to increase their ability to receive it.
-    JoinGroup(ChatId),
+    JoinGroup {
+        chat_id: ChatId,
+    },
 
     Message(ChatMessageContent),
 
@@ -170,4 +185,35 @@ pub fn encode_gossip_message(header: &Header, body: Option<&Body>) -> Result<Vec
 
 pub fn decode_gossip_message(bytes: &[u8]) -> Result<(Vec<u8>, Option<Vec<u8>>), DecodeError> {
     decode_cbor(bytes)
+}
+
+mod sqlx_impls {
+
+    use super::Profile;
+    use p2panda_core::cbor::{decode_cbor, encode_cbor};
+    use sqlx::*;
+    use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
+
+    impl sqlx::Type<Sqlite> for Profile {
+        fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {
+            <Vec<u8> as sqlx::Type<Sqlite>>::type_info()
+        }
+    }
+
+    impl sqlx::Encode<'_, Sqlite> for Profile {
+        fn encode_by_ref(
+            &self,
+            buf: &mut Vec<SqliteArgumentValue<'_>>,
+        ) -> Result<IsNull, BoxDynError> {
+            let bytes = encode_cbor(self)?;
+            <Vec<u8> as sqlx::Encode<Sqlite>>::encode(bytes, buf)
+        }
+    }
+
+    impl sqlx::Decode<'_, Sqlite> for Profile {
+        fn decode(value: <Sqlite as sqlx::Database>::ValueRef<'_>) -> Result<Self, BoxDynError> {
+            let bytes = <Vec<u8> as sqlx::Decode<Sqlite>>::decode(value)?;
+            Ok(decode_cbor(bytes.as_slice())?)
+        }
+    }
 }

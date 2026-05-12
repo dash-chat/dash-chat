@@ -6,36 +6,35 @@
  */
 import { S } from '../../ui/tests/selectors';
 import {
-	createProfile,
+	type Agent,
 	exchangeContacts,
-	openDirectChat,
-	waitForBothAgents,
+	setupAgent,
 } from '../helpers/setup-agents';
 
 const LONG_NAME = 'Bartholomew';
 const LONG_SURNAME = 'Wolfeschlegelsteinhausenbergerdorff';
 
 describe('Long name truncation', () => {
+	let agent1: Agent;
+	let agent2: Agent;
+
 	before(async () => {
-		await waitForBothAgents();
+		[agent1, agent2] = await Promise.all([
+			setupAgent('agent1'),
+			setupAgent('agent2'),
+		]);
 	});
 
 	it('creates profiles — agent1 with a very long name', async () => {
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
-		await createProfile(agent1, LONG_NAME, LONG_SURNAME);
-		await createProfile(agent2, 'Bob', 'Test');
+		await agent1.createProfile(LONG_NAME, LONG_SURNAME);
+		await agent2.createProfile('Bob', 'Test');
 	});
 
 	it('exchanges contacts', async () => {
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
 		await exchangeContacts(agent1, agent2);
 	});
 
 	it('chat list shows long name without horizontal overflow', async () => {
-		const agent2 = browser.getInstance('agent2');
-
 		// Wait for the chat entry to appear in agent2's chat list
 		await agent2.waitUntil(
 			async () =>
@@ -54,28 +53,18 @@ describe('Long name truncation', () => {
 			},
 		);
 
-		const overflowIssues = (await agent2.execute(() =>
-			window.__test.checkChatListOverflow(),
-		)) as string[];
-
+		const overflowIssues = await agent2.checkChatListOverflow();
 		expect(overflowIssues).toEqual([]);
 	});
 
 	it('direct-chat navbar shows long name without horizontal overflow', async () => {
-		const agent2 = browser.getInstance('agent2');
-		await openDirectChat(agent2, LONG_NAME);
+		await agent2.openDirectChat(LONG_NAME);
 
 		// Peer name element should be present
-		const peerNamePresent = await agent2.execute(() =>
-			window.__test.isPeerNamePresent(),
-		);
-		expect(peerNamePresent).toBe(true);
+		expect(await agent2.isPeerNamePresent()).toBe(true);
 
 		// Navbar should not overflow
-		const navbarOverflow = (await agent2.execute(() =>
-			window.__test.checkNavbarOverflow(),
-		)) as string[];
-
+		const navbarOverflow = await agent2.checkNavbarOverflow();
 		expect(navbarOverflow).toEqual([]);
 	});
 });

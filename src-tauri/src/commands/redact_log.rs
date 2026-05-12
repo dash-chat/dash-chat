@@ -23,8 +23,15 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
         // Debug format: name/surname/about fields with quoted values
         r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
-        // Debug format: ChatMessageContent("...")
+        // Debug format: ChatMessageContent("...") — legacy bare form, kept
+        // in case rotating log buffers still contain entries from older builds.
         r#"ChatMessageContent\("[^"]*"\)"#,
+        // Debug format: V0 unversioned content — ChatMessageContentV0("hello")
+        r#"ChatMessageContentV0\("[^"]*"\)"#,
+        // Debug format: V1 versioned content — `message: "hello"` inside
+        // ChatMessageContentV1 { message: "...", media: ... }. Use \b so we
+        // don't match substrings inside identifiers.
+        r#"\bmessage:\s*"[^"]*""#,
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
         // JSON format: "name":"...", "surname":"...", "about":"..."
@@ -211,6 +218,28 @@ mod tests {
         assert!(
             !result.contains("secret message"),
             "message not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_chat_message_debug_v0_wrapped() {
+        // Compat<…V0, …V> Debug for the V0 branch:
+        let input = r#"ChatMessageContent(Unversioned(ChatMessageContentV0("secret v0 body")))"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("secret v0 body"),
+            "v0 message not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_chat_message_debug_v1_wrapped() {
+        // Compat<…V0, …V> Debug for the V1 branch:
+        let input = r#"ChatMessageContent(Versioned(V1(ChatMessageContentV1 { message: "secret v1 body", media: None })))"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("secret v1 body"),
+            "v1 message not redacted: {result}"
         );
     }
 

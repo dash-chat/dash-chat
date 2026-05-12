@@ -4,13 +4,14 @@ set working-directory := '..'
 dashchat-node:
     cd crates/dashchat-node && cargo nextest run
 
-# run e2e tests
-e2e:
-    pnpm -F ./e2e-tests test
+# build the Tauri binary used by the e2e tests
+e2e-build:
+    pnpm tauri build --debug --no-bundle --features e2e-tests
 
-# run a single e2e test (e.g. just test e2e-one messaging)
-e2e-one NAME:
-    cd e2e-tests && SKIP_BUILD=1 pnpm wdio run wdio.conf.ts --spec specs/{{NAME}}.spec.ts
+# run e2e tests (rebuilds the binary first). Pass a spec name to run only that
+# one (e.g. `just test e2e full-flow`); omit it to run the whole suite.
+e2e NAME='': e2e-build
+    cd e2e-tests && pnpm wdio run wdio.conf.ts {{ if NAME == '' { '' } else { '--spec specs/' + NAME + '.spec.ts' } }}
 
 # run backwards compatibility tests against version tags (e.g. just test compat v0.10.0 v0.10.1)
 compat *TAGS:
