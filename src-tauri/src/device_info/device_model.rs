@@ -85,5 +85,12 @@ fn device_model() -> String {
 
 #[cfg(desktop)]
 fn device_model() -> String {
-    format!("Desktop ({})", tauri_plugin_os::platform())
+    let mut system = sysinfo::System::new();
+    system.refresh_cpu_specifics(sysinfo::CpuRefreshKind::nothing());
+    system
+        .cpus()
+        .first()
+        .map(|cpu| cpu.brand().trim().to_string())
+        .filter(|brand| !brand.is_empty())
+        .unwrap_or_else(|| "Unknown desktop CPU".to_string())
 }

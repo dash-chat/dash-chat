@@ -57,7 +57,10 @@ fn capture_git_commit() {
             return;
         }
     };
-    gitcl.at_path(std::path::PathBuf::from(".."));
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("CARGO_MANIFEST_DIR has no parent");
+    gitcl.at_path(workspace_root.to_path_buf());
     if let Err(err) = vergen_gitcl::Emitter::default()
         .add_instructions(&gitcl)
         .and_then(|e| e.emit())
