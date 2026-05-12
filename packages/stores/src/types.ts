@@ -23,7 +23,23 @@ export interface ChatReaction {
 	target: Hash;
 }
 
-export type MessageContent = string;
+/**
+ * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
+ * `crates/dashchat-node/src/chat/message.rs`. Sent messages are always V1.
+ * Stored payloads may also appear as a bare string (V0/Unversioned); see
+ * `getMessageText` for reading either form.
+ */
+export type MessageContentV1 = {
+	v: '1';
+	message: string;
+	media: null;
+};
+export type MessageContent = MessageContentV1;
+
+export function getMessageText(content: MessageContent | string): string {
+	return typeof content === 'string' ? content : content.message;
+}
+
 export type AnnouncementPayload = { type: 'SetProfile'; payload: Profile };
 export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
