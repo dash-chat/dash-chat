@@ -7,35 +7,53 @@ use crate::filesystem::FileSystem;
 
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 
-static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+static REDACTION_REGEXES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     [
         // FCM tokens — alphanumeric with colons, hyphens, underscores (100+ chars)
-        r"[A-Za-z0-9_:\-]{100,}",
+        (r"[A-Za-z0-9_:\-]{100,}", "[REDACTED]"),
         // Hex strings (40+ chars) — public keys, hashes, signatures
-        r"[0-9a-fA-F]{40,}",
+        (r"[0-9a-fA-F]{40,}", "[REDACTED]"),
         // Base64 blobs (40+ chars)
-        r"[A-Za-z0-9+/]{40,}={0,2}",
+        (r"[A-Za-z0-9+/]{40,}={0,2}", "[REDACTED]"),
         // DeviceId and AgentId wrappers (must precede bare PublicKey/Hash patterns)
-        r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
+        (r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)", "[REDACTED]"),
         // Debug-formatted byte arrays: PublicKey([1, 2, ...]), Hash([...]), Signature([...])
-        r"(PublicKey|Hash|Signature)\(\[[\d, ]+\]\)",
+        (
+            r"(PublicKey|Hash|Signature)\(\[[\d, ]+\]\)",
+            "[REDACTED]",
+        ),
         // Timestamps (seconds or microseconds since epoch, 10+ digits)
-        r#""?timestamp"?\s*:?\s*\d{10,}"#,
+        (r#""?timestamp"?\s*:?\s*\d{10,}"#, "[REDACTED]"),
         // Debug format: name/surname/about fields with quoted values
-        r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
+        (
+            r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
+            "[REDACTED]",
+        ),
         // Debug format: ChatMessageContent("...")
-        r#"ChatMessageContent\("[^"]*"\)"#,
+        (r#"ChatMessageContent\("[^"]*"\)"#, "[REDACTED]"),
         // Debug format: emoji: Some("...")
-        r#"emoji:\s*Some\("[^"]*"\)"#,
+        (r#"emoji:\s*Some\("[^"]*"\)"#, "[REDACTED]"),
         // JSON format: "name":"...", "surname":"...", "about":"..."
-        r#""(name|surname|about)"\s*:\s*"[^"]*""#,
+        (r#""(name|surname|about)"\s*:\s*"[^"]*""#, "[REDACTED]"),
         // JSON format: "content":"..."
-        r#""content"\s*:\s*"[^"]*""#,
+        (r#""content"\s*:\s*"[^"]*""#, "[REDACTED]"),
         // JSON format: "emoji":"..."
-        r#""emoji"\s*:\s*"[^"]*""#,
+        (r#""emoji"\s*:\s*"[^"]*""#, "[REDACTED]"),
+        // OS username inside filesystem paths. Replace just the username
+        // component so the rest of the path stays readable for debugging:
+        //   /home/alice/.local/share        → /home/REDACTED/.local/share
+        //   /Users/alice/Library/...        → /Users/REDACTED/Library/...
+        //   C:\Users\alice\AppData\...      → C:\Users\REDACTED\AppData\...
+        (r"/home/[^/\s]+", "/home/REDACTED"),
+        (r"/Users/[^/\s]+", "/Users/REDACTED"),
+        (r"\\Users\\[^\\\s]+", r"\Users\REDACTED"),
+        // Hostname value (e.g. "Alices-MacBook-Pro.local" on macOS). The
+        // whole value is identifying and there's no reliable structure to
+        // preserve, so swap it for REDACTED but keep the label.
+        (r"Hostname:\s*[^\n\r]*", "Hostname: REDACTED"),
     ]
     .iter()
-    .map(|p| Regex::new(p).expect("invalid redaction pattern"))
+    .map(|(p, r)| (Regex::new(p).expect("invalid redaction pattern"), *r))
     .collect()
 });
 
@@ -58,8 +76,8 @@ fn read_tail(path: &std::path::Path, max_bytes: u64) -> std::io::Result<String> 
 
 pub fn redact(content: &str) -> String {
     let mut redacted = content.to_owned();
-    for re in REDACTION_REGEXES.iter() {
-        redacted = re.replace_all(&redacted, "[REDACTED]").into_owned();
+    for (re, replacement) in REDACTION_REGEXES.iter() {
+        redacted = re.replace_all(&redacted, *replacement).into_owned();
     }
     redacted
 }
@@ -234,6 +252,63 @@ mod tests {
     fn redacts_reaction_json() {
         let input = r#""emoji":"👍""#;
         assert_eq!(redact(input), "[REDACTED]");
+    }
+
+    #[test]
+    fn redacts_hostname_value_keeps_label() {
+        let input = "Hostname: Alices-MacBook-Pro.local";
+        let result = redact(input);
+        assert!(!result.contains("Alices"), "hostname not redacted: {result}");
+        assert!(
+            !result.contains("MacBook-Pro"),
+            "hostname not redacted: {result}"
+        );
+        assert_eq!(result, "Hostname: REDACTED");
+    }
+
+    #[test]
+    fn redacts_username_in_linux_path_keeps_rest() {
+        let input = "App data dir: /home/alice/.local/share/dash-chat";
+        let result = redact(input);
+        assert!(!result.contains("alice"), "username not redacted: {result}");
+        assert_eq!(
+            result,
+            "App data dir: /home/REDACTED/.local/share/dash-chat",
+        );
+    }
+
+    #[test]
+    fn redacts_username_in_macos_path_keeps_rest() {
+        let input = "App root dir: /Users/alice/Library/Application Support/dash-chat";
+        let result = redact(input);
+        assert!(!result.contains("alice"), "username not redacted: {result}");
+        assert_eq!(
+            result,
+            "App root dir: /Users/REDACTED/Library/Application Support/dash-chat",
+        );
+    }
+
+    #[test]
+    fn redacts_username_in_windows_path_keeps_rest() {
+        let input = "Logs dir: C:\\Users\\alice\\AppData\\Roaming\\dash-chat\\logs";
+        let result = redact(input);
+        assert!(!result.contains("alice"), "username not redacted: {result}");
+        assert_eq!(
+            result,
+            "Logs dir: C:\\Users\\REDACTED\\AppData\\Roaming\\dash-chat\\logs",
+        );
+    }
+
+    #[test]
+    fn redacts_username_anywhere_paths_appear() {
+        // Paths leak through many log lines, not just the device-info labels.
+        let input = "Redacting log file: /home/alice/.local/share/dash-chat/logs/dash-chat.log";
+        let result = redact(input);
+        assert!(!result.contains("alice"), "username not redacted: {result}");
+        assert!(
+            result.contains("/home/REDACTED/.local/share/dash-chat/logs/dash-chat.log"),
+            "path tail should be preserved: {result}"
+        );
     }
 
     #[test]
