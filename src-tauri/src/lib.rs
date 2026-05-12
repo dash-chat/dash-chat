@@ -80,7 +80,7 @@ pub fn run() {
 
     builder
         .invoke_handler(tauri::generate_handler![
-            device_info::log_webview_info,
+            device_info::display::log_webview_info,
             commands::logs::get_log,
             commands::logs::get_authors,
             commands::redact_log::get_redacted_log,
