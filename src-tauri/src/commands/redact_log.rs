@@ -295,10 +295,7 @@ mod tests {
         let input = "App data dir: /home/alice/.local/share/dash-chat";
         let result = redact(input);
         assert!(!result.contains("alice"), "username not redacted: {result}");
-        assert_eq!(
-            result,
-            "App data dir: [REDACTED]/.local/share/dash-chat",
-        );
+        assert_eq!(result, "App data dir: [REDACTED]/.local/share/dash-chat",);
     }
 
     #[test]
