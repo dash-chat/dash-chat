@@ -105,7 +105,8 @@ export class GroupChatStore {
 		return this.client.addMember(this.chatId, member);
 	}
 
-	sendMessage(content: MessageContent) {
+	sendMessage(text: string) {
+		const content: MessageContent = { v: '1', message: text, media: null };
 		return this.client.sendMessage(this.chatId, content);
 	}
 }

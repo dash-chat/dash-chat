@@ -124,6 +124,7 @@ impl TestNode {
     pub async fn get_contacts(&self) -> anyhow::Result<Vec<AgentId>> {
         // FIXME: use all local device IDs
         let ids = self
+            .op_store
             .get_interleaved_logs(self.device_group_topic().into(), vec![self.device_id()])
             .await?
             .into_iter()
@@ -137,6 +138,7 @@ impl TestNode {
 
     pub async fn get_rejected_contact_requests(&self) -> anyhow::Result<Vec<AgentId>> {
         let ids = self
+            .op_store
             .get_interleaved_logs(self.device_group_topic().into(), vec![self.device_id()])
             .await?
             .into_iter()

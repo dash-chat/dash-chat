@@ -23,6 +23,8 @@ p2panda-sync = { workspace = true }
 p2panda-spaces = { workspace = true }
 
 anyhow = "1.0.95"
+dashchat-compat = { workspace = true }
+ed25519-dalek = { workspace = true }
 thiserror = "2.0"
 async-trait = "0.1.85"
 derive_more = { version = "1.0.0", features = ["full"] }
