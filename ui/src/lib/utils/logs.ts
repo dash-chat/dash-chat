@@ -19,17 +19,17 @@ export function forwardConsoleToTauriLog(): void {
 			debug: console.debug,
 		};
 
-		const fmt = (args: unknown[]) =>
-			args
-				.map(a => {
-					if (typeof a === 'string') return a;
-					try {
-						return JSON.stringify(a);
-					} catch {
-						return String(a);
-					}
-				})
-				.join(' ');
+		const fmtOne = (a: unknown): string => {
+			if (typeof a === 'string') return a;
+			if (a instanceof Error) return a.stack ?? `${a.name}: ${a.message}`;
+			try {
+				return JSON.stringify(a);
+			} catch {
+				return String(a);
+			}
+		};
+
+		const fmt = (args: unknown[]) => args.map(fmtOne).join(' ');
 
 		console.log = (...args) => {
 			orig.log(...args);
