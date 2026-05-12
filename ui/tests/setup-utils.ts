@@ -10,7 +10,7 @@
  *   window.__test.sendMessage('Hello!')
  *   await window.__test.waitForMessage('Hello!')
  */
-import type { m } from '$lib/paraglide/messages.js';
+import type { m } from '../src/lib/paraglide/messages.js';
 import {
 	addContact,
 	getContactCode,
@@ -18,7 +18,7 @@ import {
 } from './flows/contact-exchange';
 
 type Messages = typeof m;
-type MessageKey = keyof Messages;
+type MessageKey = Extract<keyof Messages, string>;
 type MessageParams<K extends MessageKey> = Parameters<Messages[K]>[0];
 import { openDirectChat } from './flows/open-chat';
 import { createProfile } from './flows/profile-creation';
