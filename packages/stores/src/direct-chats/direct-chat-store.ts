@@ -15,7 +15,6 @@ import {
 	getMessageText,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
-import { toPromise } from '../utils/to-promise';
 import { type IDirectChatClient } from './direct-chat-client';
 
 export interface Message {
@@ -132,7 +131,7 @@ export class DirectChatStore implements ReadMessagesStore {
 		handler: (operation: SimplifiedOperation<Payload>, message: string) => void,
 	) {
 		return this.logsStore.logsClient.onNewOperation(async (topicId, op) => {
-			const chatId = await toPromise(this.chatId);
+			const chatId = await this.chatId();
 			if (topicId !== chatId) return;
 			if (op.body?.payload.type !== 'Message') return;
 			handler(op, getMessageText(op.body.payload.payload));
@@ -140,8 +139,8 @@ export class DirectChatStore implements ReadMessagesStore {
 	}
 
 	async sendMessage(text: string) {
-		const chatId = await toPromise(this.chatId);
-		const myDeviceId = await toPromise(this.contactsStore.myDeviceId);
+		const chatId = await this.chatId();
+		const myDeviceId = await this.contactsStore.myDeviceId();
 		const content: MessageContent = { v: '1', message: text, media: null };
 		await Promise.all([
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
@@ -221,12 +220,12 @@ export class DirectChatStore implements ReadMessagesStore {
 	});
 
 	async markAsRead(messageHashes: Hash[]): Promise<void> {
-		const chatId = await toPromise(this.chatId);
+		const chatId = await this.chatId();
 		await this.client.markMessagesRead(chatId, messageHashes);
 	}
 
 	async sendReaction(reaction: ChatReaction) {
-		const chatId = await toPromise(this.chatId);
+		const chatId = await this.chatId();
 		await this.client.sendReaction(chatId, reaction);
 	}
 }

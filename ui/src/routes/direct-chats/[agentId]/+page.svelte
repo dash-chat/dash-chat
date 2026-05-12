@@ -11,7 +11,6 @@
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
-		toPromise,
 		type ChatsStore,
 		type ContactCode,
 		type ContactRequest,
