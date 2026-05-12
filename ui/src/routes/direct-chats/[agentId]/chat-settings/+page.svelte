@@ -65,31 +65,38 @@
 		<div class="column" style="flex: 1">
 			<div class="column center-in-desktop">
 				<div class="column m-6 gap-2" style="align-items: center">
-					<Avatar
-						image={profile?.avatar}
-						initials={profile?.name.slice(0, 2)}
-						style="--size: 80px;"
-					/>
+					{#if profile}
+						<Avatar
+							image={profile.avatar}
+							initials={profile.name.slice(0, 2)}
+							style="--size: 80px;"
+						/>
 
-					<div
-						class="flex cursor-pointer items-center gap-1"
-						onclick={() => (showPeerProfile = true)}
-						onkeydown={onActivate(() => (showPeerProfile = true))}
-						role="button"
-						tabindex="0"
-					>
-						<span
-							class="text-xl font-semibold"
-							data-testid="chat-settings-peer-name">{fullName(profile!)}</span
+						<div
+							class="flex cursor-pointer items-center gap-1"
+							onclick={() => (showPeerProfile = true)}
+							onkeydown={onActivate(() => (showPeerProfile = true))}
+							role="button"
+							tabindex="0"
 						>
-						<wa-icon
-							class="small-icon quiet"
-							src={wrapPathInSvg(mdiChevronRight)}
-						></wa-icon>
-					</div>
+							<span
+								class="text-xl font-semibold"
+								data-testid="chat-settings-peer-name">{fullName(profile)}</span
+							>
+							<wa-icon
+								class="small-icon quiet"
+								src={wrapPathInSvg(mdiChevronRight)}
+							></wa-icon>
+						</div>
 
-					{#if profile?.about}
-						<span class="quiet text-center">{profile.about}</span>
+						{#if profile.about}
+							<span class="quiet text-center">{profile.about}</span>
+						{/if}
+					{:else}
+						<Avatar image={undefined} style="--size: 80px;" />
+						<span class="quiet text-xl">
+							{m.waitingForProfile()}
+						</span>
 					{/if}
 				</div>
 
