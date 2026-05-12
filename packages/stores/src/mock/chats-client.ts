@@ -13,5 +13,8 @@ export class MockChatsClient implements IChatsClient {
 		return this.groupChats;
 	}
 
-	async markMessagesRead(_chatId: ChatId, _messageHashes: Hash[]): Promise<void> {}
+	async markMessagesRead(
+		_chatId: ChatId,
+		_messageHashes: Hash[],
+	): Promise<void> {}
 }

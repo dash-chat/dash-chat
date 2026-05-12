@@ -28,7 +28,7 @@ release version:
 # format both UI and rust files
 format:
     cargo fmt
-    cd ui && pnpm format
+    pnpm -r --if-present format
 
 # regenerate paraglide message exports from source translation files
 paraglide:
