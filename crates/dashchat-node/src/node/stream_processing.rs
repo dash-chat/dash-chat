@@ -262,6 +262,38 @@ impl Node {
                 if let Err(err) = self.group_store.process(operation).await {
                     tracing::error!(?err, "error processing auth extensions");
                 };
+                // Subscribe to announcements topics for any group members whose agent_id we know.
+                let member_device_ids: Vec<DeviceId> = match &auth.action {
+                    p2panda_auth::group::GroupAction::Create { initial_members } => initial_members
+                        .iter()
+                        .filter_map(|(m, _)| match m {
+                            p2panda_auth::group::GroupMember::Individual(pk) => {
+                                Some(DeviceId::from(*pk))
+                            }
+                            _ => None,
+                        })
+                        .collect(),
+                    p2panda_auth::group::GroupAction::Add { member, .. } => match member {
+                        p2panda_auth::group::GroupMember::Individual(pk) => {
+                            vec![DeviceId::from(*pk)]
+                        }
+                        _ => vec![],
+                    },
+                    _ => vec![],
+                };
+                let known = self
+                    .local_store
+                    .lookup_contacts(member_device_ids.iter())
+                    .await?;
+                for agent_id in known.into_values() {
+                    let topic = Topic::announcements(agent_id);
+                    if let Err(err) = self.initialize_topic(*topic).await {
+                        tracing::warn!(
+                            ?err,
+                            "failed to subscribe to announcements topic for group member"
+                        );
+                    }
+                }
             }
             None => {}
         }
@@ -284,16 +316,15 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().renamed())))]
     pub async fn process_payload(
         &self,
-        // topic: Topic<K>,
         header: &Header,
         payload: &Payload,
         _is_author: bool,
     ) -> anyhow::Result<()> {
         let topic = header.extensions.topic;
-        // TODO: maybe have different loops for the different kinds of topics and the different payloads in each
+
         match &payload {
-            Payload::Chat(ChatPayload::JoinGroup(_chat_id)) => {
-                // TODO: maybe close down the chat tasks if we are kicked out?
+            Payload::Chat(ChatPayload::JoinGroup { .. }) => {
+                // Nothing to do.
             }
 
             Payload::Inbox(invitation) => {
@@ -318,8 +349,44 @@ impl Node {
                 // Nothing to do.
             }
 
-            Payload::Announcements(_) => {
-                // Nothing to do.
+            Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
+                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
+                let agent_id = AgentId::from(crate::ActorId::from_bytes(&*topic).map_err(|e| {
+                    anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
+                })?);
+
+                if let Err(err) = self
+                    .local_store
+                    .save_profile(agent_id, profile.clone())
+                    .await
+                {
+                    tracing::warn!(?err, "failed to save profile from SetProfile");
+                }
+            }
+
+            Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
+                // Save the device_id -> agent_id mapping so group members can look each other up.
+
+                let device_id = DeviceId::from(header.public_key);
+                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
+                let agent_id = AgentId::from(crate::ActorId::from_bytes(&*topic).map_err(|e| {
+                    anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
+                })?);
+                if let Err(err) = self
+                    .local_store
+                    .save_agent_mapping(device_id, agent_id)
+                    .await
+                {
+                    tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
+                }
+
+                if let Err(err) = self
+                    .local_store
+                    .save_capabilities(device_id, capabilities.clone())
+                    .await
+                {
+                    tracing::warn!(?err, "failed to save capabilities from SetCapabilities");
+                }
             }
 
             Payload::DeviceGroup(_) => {

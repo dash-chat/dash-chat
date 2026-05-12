@@ -1,6 +1,8 @@
-import { SCROLL_BOTTOM_THRESHOLD } from '../../src/lib/components/ReverseScrollPage.svelte';
 import { findNavbarBg } from '../../src/lib/utils/konsta';
 import { S } from '../selectors';
+
+// Keep in sync with SCROLL_BOTTOM_THRESHOLD in ReverseScrollPage.svelte.
+const SCROLL_BOTTOM_THRESHOLD = 200;
 
 export const selectors = S.directChat;
 export const messageInputSelectors = S.messageInput;

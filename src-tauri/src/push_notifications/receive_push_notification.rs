@@ -135,11 +135,14 @@ async fn handle_push_notification(
     // PERF: consider adding the ability for the op store to notify when an op is stored,
     //     instead of polling
     let device_id = dashchat_node::DeviceId::from(public_key);
+    // `get_log`'s `from` is exclusive (maps to p2panda's `after`), so subtract 1
+    // to include seq_num itself. seq_num == 0 → None means "from the start".
+    let from = seq_num.checked_sub(1);
     let mut entry = None;
     for _ in 0..75 {
         let log = node
             .op_store
-            .get_log(&device_id, &topic_id, Some(seq_num))
+            .get_log(&device_id, &topic_id, from)
             .await
             .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
         if let Some(first) = log.into_iter().next() {
@@ -182,7 +185,8 @@ async fn handle_push_notification(
             };
 
             let sender_name = if let Some(agent_id) = sender_agent_id {
-                node.get_profile_for_agent(agent_id)
+                node.local_store
+                    .get_profile(agent_id)
                     .await
                     .ok()
                     .flatten()
@@ -201,7 +205,7 @@ async fn handle_push_notification(
                 })
                 .map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()))
                 .unwrap_or_else(|| format!("/group-chat/{}", hex::encode(&*topic_id)));
-            let message_text: &str = &content;
+            let message_text: &str = content.message();
             let body_text = match message_text.char_indices().nth(200) {
                 Some((idx, _)) => format!("{}...", &message_text[..idx]),
                 None => message_text.to_string(),

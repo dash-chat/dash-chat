@@ -1,20 +1,22 @@
 pub(crate) mod author_operation;
 mod stream_processing;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, ShutdownError};
 use crate::filesystem::Filesystem;
 use anyhow::Result;
 use chrono::{Duration, Utc};
+use dashchat_compat::VersionConvert;
 use named_id::Rename;
 use named_id::*;
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
-use p2panda_core::{Hash, PublicKey, Timestamp};
+use p2panda_core::{Hash, PublicKey};
 use p2panda_spaces::ActorId;
 use p2panda_store::SqliteStore;
 use tokio::sync::mpsc;
@@ -40,11 +42,14 @@ pub use stream_processing::Notification;
 pub struct NodeConfig {
     pub contact_code_expiry: Duration,
     pub mailboxes_config: MailboxesConfig,
+    pub capabilities: Capabilities,
 }
 
 impl NodeConfig {
     #[cfg(feature = "testing")]
     pub fn testing() -> Self {
+        use crate::compat::Capabilities;
+
         let mut mailboxes_config = MailboxesConfig::default();
         mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
         mailboxes_config.degraded_interval = std::time::Duration::from_millis(2000);
@@ -53,6 +58,7 @@ impl NodeConfig {
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
+            capabilities: Capabilities::current(),
         }
     }
 }
@@ -62,6 +68,7 @@ impl Default for NodeConfig {
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
+            capabilities: Capabilities::current(),
         }
     }
 }
@@ -87,7 +94,7 @@ pub struct Node {
     /// Join handle for the stream processing background task
     stream_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 
-    local_store: LocalStore,
+    pub local_store: LocalStore,
     group_store: GroupStore,
     node_keys: NodeKeys,
 
@@ -154,45 +161,14 @@ impl Node {
 
         node.initialize_stored_topics().await?;
 
+        node.announce_device_capabilities(node.config.capabilities)
+            .await?;
+
         Ok(node)
     }
 
     pub fn data_path(&self) -> &PathBuf {
         self.filesystem.data_path()
-    }
-
-    pub async fn get_interleaved_logs(
-        &self,
-        topic_id: TopicId,
-        authors: Vec<DeviceId>,
-    ) -> anyhow::Result<Vec<(Header, Option<Payload>)>> {
-        let mut logs = Vec::new();
-        for author in authors {
-            for op in self.op_store.get_log(&author, &topic_id, None).await? {
-                if let Some(body) = op.body {
-                    if let Ok(payload) = Payload::try_from_body(&body) {
-                        logs.push((op.header, Some(payload)));
-                    } else {
-                        tracing::error!("Failed to decode payload: {body:?}");
-                    }
-                } else {
-                    logs.push((op.header, None));
-                }
-            }
-        }
-        logs.sort_by_key(|(h, _)| h.timestamp);
-        Ok(logs)
-    }
-
-    pub async fn get_authors(&self, topic_id: TopicId) -> anyhow::Result<HashSet<DeviceId>> {
-        let authors = self
-            .op_store
-            .get_log_heights(&topic_id)
-            .await?
-            .keys()
-            .cloned()
-            .collect::<HashSet<_>>();
-        Ok(authors)
     }
 
     pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
@@ -271,6 +247,25 @@ impl Node {
         let my_actor = self.agent_id();
         self.register_topic(topic).await?;
 
+        let other_device_id = self
+            .local_store
+            .lookup_contact_by_agent_id(other)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
+
+        // TODO: this should use a transaction, but the race is not a big deal here
+        let deps = self.group_store.heads(*topic).await?;
+        let initial_members = vec![
+            (GroupMember::Individual(*self.device_id()), Access::write()),
+            (GroupMember::Individual(*other_device_id), Access::write()),
+        ];
+        self.author_operation(
+            topic,
+            DashAction::group_action(topic, GroupAction::Create { initial_members }, deps)?,
+            Some(&format!("create_direct_chat_space({})", topic.renamed())),
+        )
+        .await?;
+
         tracing::info!(
             my_actor = ?my_actor.renamed(),
             other = ?other.renamed(),
@@ -314,7 +309,7 @@ impl Node {
             .collect();
 
         // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads().await?;
+        let deps = self.group_store.heads(*chat_id).await?;
         self.author_operation(
             chat_id,
             DashAction::group_action(chat_id, GroupAction::Create { initial_members }, deps)?,
@@ -331,7 +326,7 @@ impl Node {
     }
 
     async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
-        let payload = Payload::Chat(ChatPayload::JoinGroup(chat_id));
+        let payload = Payload::Chat(ChatPayload::JoinGroup { chat_id });
         tracing::info!(
             "{} is inviting {} to group {}",
             self.device_id().renamed(),
@@ -358,7 +353,7 @@ impl Node {
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
         // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads().await?;
+        let deps = self.group_store.heads(*chat_id).await?;
 
         self.author_operation(
             chat_id,
@@ -376,7 +371,7 @@ impl Node {
 
         let agent_id = self
             .local_store
-            .lookup_contact(DeviceId::from(member))
+            .lookup_contact_by_device_id(DeviceId::from(member))
             .await?;
         if let Some(agent_id) = agent_id {
             self.invite_to_group(chat_id, agent_id).await?;
@@ -393,7 +388,7 @@ impl Node {
         member: PublicKey,
     ) -> anyhow::Result<()> {
         // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads().await?;
+        let deps = self.group_store.heads(*chat_id).await?;
         self.author_operation(
             chat_id,
             DashAction::group_action(
@@ -445,11 +440,13 @@ impl Node {
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        self.get_profile_for_agent(self.agent_id()).await
+        self.local_store.get_profile(self.agent_id()).await
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        self.local_store.lookup_contact(device_id).await
+        self.local_store
+            .lookup_contact_by_device_id(device_id)
+            .await
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
@@ -458,34 +455,6 @@ impl Node {
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
         self.local_store.subscribed_topics().await
-    }
-
-    pub async fn get_profile_for_agent(
-        &self,
-        agent_id: AgentId,
-    ) -> anyhow::Result<Option<Profile>> {
-        let topic_id: TopicId = Topic::announcements(agent_id).into();
-        let authors = self.get_authors(topic_id.clone()).await?;
-        let ops = self
-            .get_interleaved_logs(topic_id, authors.into_iter().collect())
-            .await?;
-
-        let mut set_profile_ops: Vec<(Timestamp, Profile)> = ops
-            .into_iter()
-            .filter_map(|(header, payload)| match payload {
-                Some(Payload::Announcements(AnnouncementsPayload::SetProfile(profile))) => {
-                    Some((header.timestamp, profile))
-                }
-                _ => None,
-            })
-            .collect();
-
-        set_profile_ops.sort_by_key(|(timestamp, _)| *timestamp);
-
-        let Some((_, profile)) = set_profile_ops.last() else {
-            return Ok(None);
-        };
-        Ok(Some(profile.clone()))
     }
 
     /// Get all messages for a chat from the logs.
@@ -500,9 +469,10 @@ impl Node {
         let chat_id = topic.into();
         let mut messages = vec![];
 
-        let authors = self.get_authors(chat_id.into()).await?;
+        let authors = self.op_store.get_authors(chat_id.into()).await?;
 
         for (header, payload) in self
+            .op_store
             .get_interleaved_logs(chat_id.into(), authors.into_iter().collect())
             .await?
         {
@@ -522,7 +492,20 @@ impl Node {
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
 
-        let message = ChatMessageContent::from(message);
+        let (capabilities, num_agents) = self.get_group_capabilities(topic).await?;
+        let capabilities = capabilities.ok_or(anyhow::anyhow!(
+            "no capabilities found for chat: {}",
+            topic.renamed()
+        ))?;
+
+        // NOTE: we may need logic for an agent to re-send a downgraded message if they later discover
+        //       intended recipients who don't have the proper capabilities for receiving this message
+        if num_agents == 1 {
+            tracing::warn!(
+                "sending message to group without knowing any other members' capabilities",
+            );
+        }
+        let message = message.to_version(&capabilities)?;
 
         let header = self
             .author_operation(
@@ -763,5 +746,63 @@ impl Node {
         }
 
         Ok(())
+    }
+
+    pub async fn announce_device_capabilities(
+        &self,
+        capabilities: Capabilities,
+    ) -> anyhow::Result<()> {
+        let announcements = Topic::announcements(self.agent_id());
+        let latest_capability = self.local_store.get_capabilities(self.device_id()).await?;
+
+        // If the capability is unset or different from the current one, set it now.
+        if latest_capability != Some(capabilities) {
+            self.author_operation(
+                announcements,
+                Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }),
+                Some(&format!(
+                    "set_device_capabilities({})",
+                    self.device_id().renamed()
+                )),
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Find the infimum of the capabilities of all other members of the group with read access or above.
+    ///
+    /// This is dependent on eventual consistency, and as other members join, the capabilities may change.
+    pub async fn get_group_capabilities(
+        &self,
+        topic: ChatId,
+    ) -> anyhow::Result<(Option<Capabilities>, usize)> {
+        let members = self.group_store.members(topic).await?;
+        let mut devices = members
+            .iter()
+            .filter_map(|(member, access)| {
+                // Only include members with read access or above
+                // TODO: make sure this pubkey corresponds to a DeviceId and not an AgentId,
+                //       once device groups are implemented
+                (*access >= Access::read()).then_some(*member)
+            })
+            .collect::<BTreeSet<_>>();
+        devices.insert(self.device_id());
+
+        // Collect capabilities for all agents
+        let caps = futures::future::join_all(
+            devices
+                .into_iter()
+                .map(|device| self.local_store.get_capabilities(device)),
+        )
+        .await
+        .into_iter()
+        .collect::<Result<Vec<Option<Capabilities>>>>()?;
+
+        let caps = caps.into_iter().flatten().collect::<Vec<_>>();
+        let num = caps.len();
+
+        Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 }
