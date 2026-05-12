@@ -12,6 +12,7 @@ import {
 	MessageContent,
 	Payload,
 	ReadMessagesStore,
+	getMessageText,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { toPromise } from '../utils/to-promise';
@@ -19,7 +20,7 @@ import { type IDirectChatClient } from './direct-chat-client';
 
 export interface Message {
 	hash: string;
-	content: MessageContent;
+	content: string;
 	timestamp: number;
 	author: DeviceId;
 	reactions: Record<DeviceId, string>;
@@ -60,7 +61,7 @@ export class DirectChatStore implements ReadMessagesStore {
 					if (body.payload.type === 'Message') {
 						messages[operation.hash] = {
 							hash: operation.hash,
-							content: body.payload.payload,
+							content: getMessageText(body.payload.payload),
 							author,
 							timestamp: operation.header.timestamp,
 							reactions: {},
@@ -128,28 +129,26 @@ export class DirectChatStore implements ReadMessagesStore {
 	});
 
 	onNewMessage(
-		handler: (
-			operation: SimplifiedOperation<Payload>,
-			message: MessageContent,
-		) => void,
+		handler: (operation: SimplifiedOperation<Payload>, message: string) => void,
 	) {
 		return this.logsStore.logsClient.onNewOperation(async (topicId, op) => {
 			const chatId = await toPromise(this.chatId);
 			if (topicId !== chatId) return;
 			if (op.body?.payload.type !== 'Message') return;
-			handler(op, op.body.payload.payload);
+			handler(op, getMessageText(op.body.payload.payload));
 		});
 	}
 
-	async sendMessage(content: MessageContent) {
+	async sendMessage(text: string) {
 		const chatId = await toPromise(this.chatId);
 		const myDeviceId = await toPromise(this.contactsStore.myDeviceId);
+		const content: MessageContent = { v: '1', message: text, media: null };
 		await Promise.all([
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
 				if (op.header.public_key !== myDeviceId) return false;
-				if (op.body.payload.payload !== content) return false;
+				if (getMessageText(op.body.payload.payload) !== text) return false;
 				return true;
 			}),
 			this.client.sendMessage(chatId, content),

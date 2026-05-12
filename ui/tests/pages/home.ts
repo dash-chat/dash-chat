@@ -31,6 +31,22 @@ export function firstChatTooltip() {
 	return document.querySelector(selectors.firstChatTooltip);
 }
 
+/** Return the chat-list entry whose text includes `contactName`, or null. */
+export function getChatListItem(contactName: string): Element | null {
+	const list = document.querySelector(selectors.chatList);
+	if (!list) return null;
+	return (
+		Array.from(list.querySelectorAll('a')).find(link =>
+			link.textContent?.includes(contactName),
+		) ?? null
+	);
+}
+
+/** True if the chat list contains an entry whose text includes `contactName`. */
+export function hasChatListItem(contactName: string): boolean {
+	return !!getChatListItem(contactName);
+}
+
 /**
  * Check whether any chat-list item overflows its container.
  * Returns an array of overflow descriptions (empty = no overflow).

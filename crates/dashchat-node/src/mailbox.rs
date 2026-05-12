@@ -121,6 +121,7 @@ mod tests {
 
         let chat = alice.direct_chat_topic(bobbi.agent_id());
         alice.register_topic(chat).await.unwrap();
+
         alice.send_message(chat, "Hello".into()).await.unwrap();
 
         println!("=== adding mailboxes ===");
@@ -134,7 +135,11 @@ mod tests {
             Duration::from_millis(100),
             Duration::from_secs(5),
             || async {
-                (bobbi.get_messages(chat).await.unwrap().len() == 1).ok_or("message not received")
+                if bobbi.get_messages(chat).await.unwrap().len() == 1 {
+                    Ok(())
+                } else {
+                    Err("message not received")
+                }
             },
         )
         .await

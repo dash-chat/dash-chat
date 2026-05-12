@@ -48,11 +48,13 @@
 			>
 				{#each summaries as summary}
 					<TitleTruncatedListItem
-						title={summary.name}
+						title={summary.name || m.waitingForProfile()}
+						titleWrapClass={summary.name ? '' : 'quiet'}
 						link
 						class={isActive(summary) ? 'active' : ''}
 						linkProps={{ href: chatHref(summary) }}
 						chevron={false}
+						data-testid="all-chats-row"
 					>
 						{#snippet media()}
 							<Avatar

@@ -1,3 +1,4 @@
+mod compat_tests;
 mod message;
 pub use message::*;
 

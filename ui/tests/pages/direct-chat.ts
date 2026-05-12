@@ -1,6 +1,8 @@
-import { SCROLL_BOTTOM_THRESHOLD } from '../../src/lib/components/ReverseScrollPage.svelte';
 import { findNavbarBg } from '../../src/lib/utils/konsta';
 import { S } from '../selectors';
+
+// Keep in sync with SCROLL_BOTTOM_THRESHOLD in ReverseScrollPage.svelte.
+const SCROLL_BOTTOM_THRESHOLD = 200;
 
 export const selectors = S.directChat;
 export const messageInputSelectors = S.messageInput;
@@ -167,6 +169,11 @@ export function navbarBgOpacity(): string | null {
 /** Return true if the peer name element is present in the DOM */
 export function isPeerNamePresent() {
 	return !!document.querySelector(selectors.peerName);
+}
+
+/** True if the contact-request banner is visible (its accept button is rendered). */
+export function isContactRequestBannerVisible(): boolean {
+	return !!document.querySelector(selectors.acceptButton);
 }
 
 /** Check for horizontal overflow in the direct-chat navbar. Returns an array of issue strings (empty = no overflow). */

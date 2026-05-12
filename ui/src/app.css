@@ -19,6 +19,10 @@ body {
 	background-color: transparent !important;
 }
 
+:where(.dark) body {
+	--background-color: var(--color-md-dark-surface);
+}
+
 .column {
 	display: flex;
 	flex-direction: column;

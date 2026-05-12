@@ -178,6 +178,7 @@ pub async fn get_authors(
     node: State<'_, Node>,
 ) -> Result<std::collections::HashSet<DeviceId>, String> {
     let authors = node
+        .op_store
         .get_authors(TopicId::from(topic_id))
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;

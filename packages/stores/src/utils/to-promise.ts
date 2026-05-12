@@ -1,5 +1,4 @@
-import { ReactiveFn, ReactivePromise, watcher } from "signalium";
-
+import { ReactiveFn, ReactivePromise, watcher } from 'signalium';
 
 export function toPromise<T, Args extends unknown[]>(
 	promise: ReactiveFn<ReactivePromise<T>, Args>,

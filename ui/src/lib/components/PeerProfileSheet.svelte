@@ -19,23 +19,28 @@
 
 {#snippet profileContent()}
 	{#if profile}
-		<Avatar
-			image={profile.avatar}
-			initials={profile.name.slice(0, 2)}
-			style="--size: 200px;"
-		/>
+		<div class="shrink-0">
+			<Avatar
+				image={profile.avatar}
+				initials={profile.name.slice(0, 2)}
+				style="--size: 200px;"
+			/>
+		</div>
 
-		<div class="flex w-full flex-col gap-3 px-2">
+		<div class="flex w-full min-w-0 flex-col gap-3 px-2">
 			<span class="text-2xl">{m.about()}</span>
 
-			<div class="flex items-center gap-3">
-				<wa-icon class="quiet" src={wrapPathInSvg(mdiAccount)}></wa-icon>
-				<span class="text-base">{fullName(profile)}</span>
+			<div class="flex items-center gap-3 min-w-0">
+				<wa-icon class="quiet shrink-0" src={wrapPathInSvg(mdiAccount)}
+				></wa-icon>
+				<span class="text-base break-words min-w-0">{fullName(profile)}</span>
 			</div>
 
-			<div class="flex items-center gap-3">
-				<wa-icon class="quiet" src={wrapPathInSvg(mdiAccountGroup)}></wa-icon>
-				<span class="text-base">{m.noGroupsInCommon()}</span>
+			<div class="flex items-center gap-3 min-w-0">
+				<wa-icon class="quiet shrink-0" src={wrapPathInSvg(mdiAccountGroup)}
+				></wa-icon>
+				<span class="text-base break-words min-w-0">{m.noGroupsInCommon()}</span
+				>
 			</div>
 		</div>
 	{/if}
@@ -43,14 +48,20 @@
 
 {#if isWideScreen.value}
 	<Dialog {opened} onBackdropClick={onClose}>
-		<div class="flex flex-col items-center gap-4">
+		<div
+			class="flex flex-col items-center gap-4 max-h-[80vh] overflow-y-auto"
+			data-testid="peer-profile-sheet"
+		>
 			{@render profileContent()}
 		</div>
 	</Dialog>
 {:else}
 	<Sheet class="pb-safe" {opened} onBackdropClick={onClose}>
-		<div class="flex flex-col items-center px-6 pb-6 gap-4">
-			<div class="sheet-handle"></div>
+		<div
+			class="flex flex-col items-center px-6 pb-6 gap-4 max-h-[85vh] overflow-y-auto"
+			data-testid="peer-profile-sheet"
+		>
+			<div class="sheet-handle shrink-0"></div>
 			{@render profileContent()}
 		</div>
 	</Sheet>
