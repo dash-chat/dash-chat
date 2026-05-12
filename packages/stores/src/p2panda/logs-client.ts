@@ -21,7 +21,10 @@ export interface LogsClient<PAYLOAD> {
 
 export async function waitForOperation<PAYLOAD>(
 	client: LogsClient<PAYLOAD>,
-	filter: (operation: SimplifiedOperation<PAYLOAD>, topicId: TopicId) => boolean,
+	filter: (
+		operation: SimplifiedOperation<PAYLOAD>,
+		topicId: TopicId,
+	) => boolean,
 	timeout = 30_000,
 ): Promise<SimplifiedOperation<PAYLOAD>> {
 	return new Promise((resolve, reject) => {

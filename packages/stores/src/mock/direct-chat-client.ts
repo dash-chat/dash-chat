@@ -1,7 +1,7 @@
 import type { IDirectChatClient } from '../direct-chats/direct-chat-client';
 import type { AgentId, Hash } from '../p2panda/types';
 import type { ChatId, ChatReaction, MessageContent } from '../types';
-import { hash, type LocalStorageLogsClient } from './client';
+import { type LocalStorageLogsClient, hash } from './client';
 
 export class MockDirectChatClient implements IDirectChatClient {
 	constructor(
@@ -20,7 +20,10 @@ export class MockDirectChatClient implements IDirectChatClient {
 		});
 	}
 
-	async markMessagesRead(_chatId: ChatId, _messageHashes: Hash[]): Promise<void> {}
+	async markMessagesRead(
+		_chatId: ChatId,
+		_messageHashes: Hash[],
+	): Promise<void> {}
 
 	async sendReaction(chatId: ChatId, content: ChatReaction): Promise<void> {
 		await this.logsClient.create(chatId, {
