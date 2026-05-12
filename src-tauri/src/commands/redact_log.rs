@@ -3,6 +3,8 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::LazyLock;
 use tauri::{AppHandle, Manager};
 
+use crate::filesystem::FileSystem;
+
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 
 static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
@@ -64,14 +66,26 @@ pub fn redact(content: &str) -> String {
 
 #[tauri::command]
 pub fn get_redacted_log(app_handle: AppHandle) -> Result<String, String> {
-    let log_dir = app_handle
-        .path()
-        .app_log_dir()
-        .map_err(|e| format!("Failed to resolve log dir: {e:?}"))?;
-    let log_file = log_dir.join("Dash Chat.log");
+    let log_dir = FileSystem::new(&app_handle)
+        .map_err(|e| format!("Failed to resolve log dir: {e:?}"))?
+        .logs_dir();
+    // tauri-plugin-log writes to `<log_dir>/<package_name>.log`, but the
+    // package name source has shifted between Tauri versions, and the
+    // KeepOne rotation can leave a date-stamped older file alongside the
+    // live one. Scan for any `*.log` and pick the most recently modified —
+    // that's the active log regardless of how it's named.
+    let log_file = std::fs::read_dir(&log_dir)
+        .map_err(|e| format!("Failed to list log dir {}: {e:?}", log_dir.display()))?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("log"))
+        .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+        .map(|e| e.path())
+        .ok_or_else(|| format!("No *.log file in {}", log_dir.display()))?;
 
-    let content =
-        read_tail(&log_file, MAX_LOG_BYTES).map_err(|e| format!("Failed to read log: {e:?}"))?;
+    log::info!("Redacting log file: {}", log_file.display());
+
+    let content = read_tail(&log_file, MAX_LOG_BYTES)
+        .map_err(|e| format!("Failed to read log {}: {e:?}", log_file.display()))?;
 
     let redacted = redact(&content);
 

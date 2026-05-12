@@ -5,7 +5,6 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import type { Message, DeviceId } from 'dash-chat-stores';
-	import { onMount } from 'svelte';
 
 	interface Props {
 		message: Message;
@@ -56,17 +55,15 @@
 		barStyle = computeBarStyle();
 	});
 
-	// Close the bar on scroll (matches Signal behavior)
-	onMount(() => {
-		const pageEl = document.querySelector('.messages-page');
-		if (!pageEl) return;
-
-		const handleScroll = () => {
-			if (opened) onClose();
-		};
-
-		pageEl.addEventListener('scroll', handleScroll, { passive: true });
-		return () => pageEl.removeEventListener('scroll', handleScroll);
+	$effect(() => {
+		if (!opened) return;
+		const onScroll = () => onClose();
+		window.addEventListener('scroll', onScroll, {
+			capture: true,
+			passive: true,
+		});
+		return () =>
+			window.removeEventListener('scroll', onScroll, { capture: true });
 	});
 
 	function hasReacted(emoji: string): boolean {

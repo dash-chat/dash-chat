@@ -175,7 +175,7 @@
 						type="text"
 						value={name ?? ''}
 						onInput={e => (name = e.target.value)}
-						placeholder={m.nameMandatory()}
+						placeholder={m.nameRequired()}
 						data-testid="create-profile-name"
 					></ListInput>
 					<ListInput
