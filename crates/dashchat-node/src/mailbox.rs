@@ -121,6 +121,7 @@ mod tests {
 
         let chat = alice.direct_chat_topic(bobbi.agent_id());
         alice.register_topic(chat).await.unwrap();
+
         alice.send_message(chat, "Hello".into()).await.unwrap();
 
         println!("=== adding mailboxes ===");

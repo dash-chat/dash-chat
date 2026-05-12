@@ -70,7 +70,6 @@ macro_rules! capabilities {
         }
     ) => {
         $(#[$attr])*
-        #[derive(Clone, Debug, PartialEq, Eq)]
         $vis struct $name {
             $(pub $field: $crate::CapabilityVersion,)*
         }
@@ -83,24 +82,15 @@ macro_rules! capabilities {
                 }
             }
 
+            pub fn current() -> Self {
+                Self {
+                    $($field: $version,)*
+                }
+            }
+
             pub fn infimum(&self, other: &Self) -> Self {
                 Self {
                     $($field: self.$field.min(other.$field),)*
-                }
-            }
-
-            pub fn infimum_opt(&self, other: Option<Self>) -> Self {
-                match other {
-                    Some(other) => self.infimum(&other),
-                    None => self.clone(),
-                }
-            }
-        }
-
-        impl Default for $name {
-            fn default() -> Self {
-                Self {
-                    $($field: $version,)*
                 }
             }
         }
@@ -156,6 +146,7 @@ mod tests {
     type TestCompat = Compat<BareString, TestVersions>;
 
     capabilities! {
+        #[derive(Clone, Debug, PartialEq, Eq)]
         struct TestCapSet {
             messaging: 3,
             gossip_protocol: 1,
@@ -163,8 +154,8 @@ mod tests {
     }
 
     #[test]
-    fn capabilities_macro_default() {
-        let caps = TestCapSet::default();
+    fn capabilities_macro_current() {
+        let caps = TestCapSet::current();
         assert_eq!(caps.messaging, 3);
         assert_eq!(caps.gossip_protocol, 1);
     }
@@ -184,17 +175,6 @@ mod tests {
         assert_eq!(inf.gossip_protocol, 1);
         // commutative
         assert_eq!(b.infimum(&a), inf);
-    }
-
-    #[test]
-    fn capabilities_macro_infimum_opt() {
-        let a = TestCapSet::default();
-        let b = TestCapSet {
-            messaging: 1,
-            gossip_protocol: 1,
-        };
-        assert_eq!(a.infimum_opt(None), a);
-        assert_eq!(a.infimum_opt(Some(b.clone())), a.infimum(&b));
     }
 
     #[test]

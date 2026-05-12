@@ -12,6 +12,7 @@ resolver = "2"
 [workspace.dependencies]
 
 ciborium = "0.2.2"
+ed25519-dalek = "2.2"
 derive_more = { version = "2.1.1", features = ["full"] }
 named-id = { git = "https://github.com/maackle/named-id.git" }
 serde = { version = "1", features = ["derive"] }

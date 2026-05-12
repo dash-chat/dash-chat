@@ -74,7 +74,7 @@ impl ChatMessageContent {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     pub fn unversioned(message: impl Into<String>) -> Self {
         Self(dashchat_compat::Compat::Unversioned(ChatMessageContentV0(
             message.into(),
@@ -84,9 +84,7 @@ impl ChatMessageContent {
 
 impl From<&str> for ChatMessageContent {
     fn from(value: &str) -> Self {
-        Self(dashchat_compat::Compat::Unversioned(ChatMessageContentV0(
-            value.to_string(),
-        )))
+        ChatMessageContent::text_only(value)
     }
 }
 
