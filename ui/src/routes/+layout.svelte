@@ -39,6 +39,7 @@
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMac, isMobile, isTauriEnv } from '$lib/utils/environment';
+	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
@@ -50,6 +51,9 @@
 		// runtime anyway.
 		registerTestUtils(goto, setLocale as (locale: string) => void),
 	);
+
+	// Forward console.log/info/warn/error from the WebView to the tauri logs
+	forwardConsoleToTauriLog();
 
 	let { children } = $props();
 

@@ -103,6 +103,7 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
             .level_for("mailbox_client", log::LevelFilter::Debug)
             .level_for("mailbox_server", log::LevelFilter::Debug)
             .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
+            .level_for("webview", log::LevelFilter::Debug) // [#202] JS console.* forwarded via @tauri-apps/plugin-log
             // This is the default formatter for desktop, also use it in mobile platforms to record time
             // in the log file, as the logcat timestamp does not get included there
             .format(move |out, message, record| {
