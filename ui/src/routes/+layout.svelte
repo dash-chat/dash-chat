@@ -48,11 +48,7 @@
 		// Paraglide types setLocale with a string-literal union; we widen to
 		// plain `string` at the test boundary since invalid locales fail at
 		// runtime anyway.
-		registerTestUtils(
-			goto,
-			setLocale as (locale: string) => void,
-			m as unknown as Record<string, (...args: unknown[]) => string>,
-		),
+		registerTestUtils(goto, setLocale as (locale: string) => void, m),
 	);
 
 	let { children } = $props();
