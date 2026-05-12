@@ -53,12 +53,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     });
 
     // Register immediately on the first tick and then periodically re-announce so
-    // peers that come online later still discover us. mdns_sd's daemon only sends
-    // two unsolicited announcements at startup (RFC 6762 §8.3) and otherwise
-    // relies on responding to queries — if a late-joining client's query response
-    // is lost, we'd be invisible until the next query, which can be minutes out
-    // under exponential backoff. Using the periodic loop for the initial register
-    // also gives us a free retry on transient failures.
+    // peers that come online later still discover us.
     let reannounce = tokio::spawn(async move {
         let mut tick = tokio::time::interval(MDNS_REANNOUNCE_INTERVAL);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
