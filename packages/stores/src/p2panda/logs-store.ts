@@ -26,9 +26,8 @@ const POLLING_ENABLED =
 export class LogsStore<PAYLOAD> {
 	constructor(public logsClient: LogsClient<PAYLOAD>) {}
 
-	authorsForTopic: (topicId: TopicId) => ReactivePromise<PublicKey[]> = reactive(
-		(topicId: TopicId) =>
-			relay<PublicKey[]>(state => {
+	authorsForTopic = reactive((topicId: TopicId): ReactivePromise<PublicKey[]> =>
+		relay<PublicKey[]>(state => {
 			const fetchAuthors = async () => {
 				const authors = await this.logsClient.getAuthorsForTopic(topicId);
 				const current = state.value;
@@ -62,11 +61,11 @@ export class LogsStore<PAYLOAD> {
 		}),
 	);
 
-	logs: (
-		topicId: TopicId,
-		author: PublicKey,
-	) => ReactivePromise<SimplifiedOperation<PAYLOAD>[]> = reactive(
-		(topicId: TopicId, author: PublicKey) =>
+	logs = reactive(
+		(
+			topicId: TopicId,
+			author: PublicKey,
+		): ReactivePromise<SimplifiedOperation<PAYLOAD>[]> =>
 			relay<SimplifiedOperation<PAYLOAD>[]>(state => {
 			const fetchLog = async () => {
 				const log = await this.logsClient.getLog(topicId, author);
