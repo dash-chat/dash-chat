@@ -37,7 +37,7 @@ impl Behavior {
     pub async fn accept_next_contact(&self) -> anyhow::Result<QrCode> {
         let mut watcher = self.watcher.lock().await;
         let qr = watcher
-            .watch_mapped(Duration::from_secs(5), |n: &Notification| {
+            .watch_mapped(Duration::from_secs(30), |n: &Notification| {
                 tracing::debug!(
                     hash = ?n.header.hash().renamed(),
                     "checking for contact invitation"
