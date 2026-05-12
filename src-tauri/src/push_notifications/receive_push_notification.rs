@@ -6,7 +6,6 @@ use dashchat_node::{AsBody, Payload, Topic};
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
-use p2panda_store::LogStore;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
@@ -30,6 +29,8 @@ pub fn receive_push_notification(
     notification: NotificationData,
     context: ReceivePushNotificationContext,
 ) -> Option<NotificationData> {
+    crate::utils::install_crypto_provider();
+
     #[cfg(target_os = "android")]
     ANDROID_LOGS_ONCE.call_once(|| unsafe {
         setup_android_logs();
@@ -133,26 +134,32 @@ async fn handle_push_notification(
     // Poll for the operation to arrive (up to 15 seconds)
     // PERF: consider adding the ability for the op store to notify when an op is stored,
     //     instead of polling
+    let device_id = dashchat_node::DeviceId::from(public_key);
+    // `get_log`'s `from` is exclusive (maps to p2panda's `after`), so subtract 1
+    // to include seq_num itself. seq_num == 0 → None means "from the start".
+    let from = seq_num.checked_sub(1);
     let mut entry = None;
     for _ in 0..75 {
         let log = node
             .op_store
-            .get_log(&public_key, &topic_id, Some(seq_num))
+            .get_log(&device_id, &topic_id, from)
             .await
             .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
-        if let Some(first) = log.and_then(|entries| entries.into_iter().next()) {
+        if let Some(first) = log.into_iter().next() {
             entry = Some(first);
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
-    let Some((header, body)) = entry else {
+    let Some(operation) = entry else {
         log::warn!(
             "Operation {op_id} in topic {topic_hex} not found after polling, showing generic notification"
         );
         return Ok(Some(new_message_generic_notification()));
     };
+    let header = operation.header;
+    let body = operation.body;
 
     // Don't show notifications for our own messages
     let sender_device_id = dashchat_node::DeviceId::from(header.public_key);
@@ -235,6 +242,7 @@ fn new_message_generic_notification() -> NotificationData {
     }
 }
 
+#[cfg(target_os = "ios")]
 fn synced_generic_notification() -> NotificationData {
     NotificationData {
         title: Some(sonix_i18n::t!("syncedWithServer")),
@@ -244,6 +252,7 @@ fn synced_generic_notification() -> NotificationData {
     }
 }
 
+#[cfg(target_os = "ios")]
 fn may_have_new_messages_generic_notification() -> NotificationData {
     NotificationData {
         title: Some(sonix_i18n::t!("mayHaveNewMessages")),

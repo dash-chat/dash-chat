@@ -17,4 +17,6 @@ export GTK_A11Y=none
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 mkdir -p "$DATA_DIR"
-exec "$ROOT/target/debug/dash-chat"
+# Redirect output to a log file the test runner tails and prints with an
+# agent-specific prefix. Using `>` truncates per launch so retries start fresh.
+exec "$ROOT/target/debug/dash-chat" > "$DATA_DIR/agent.log" 2>&1

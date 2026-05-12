@@ -10,29 +10,68 @@
  *   window.__test.sendMessage('Hello!')
  *   await window.__test.waitForMessage('Hello!')
  */
-
-import { waitFor, waitForText, typeInto, click, nextTick } from './helpers';
-import { createProfile } from './flows/profile-creation';
-import { navigateToAddContact, getContactCode, addContact } from './flows/contact-exchange';
-import { sendMessage, waitForMessage } from './flows/send-message';
+import {
+	addContact,
+	getContactCode,
+	navigateToAddContact,
+} from './flows/contact-exchange';
 import { openDirectChat } from './flows/open-chat';
-import { visibleCards as getStartedCards, dismissCard as dismissGetStartedCard } from './pages/get-started';
-import { homeLoaded, firstChatTooltip, checkChatListOverflow } from './pages/home';
-import { messageInput, sendButton, messagesContainer, isPeerNamePresent, checkNavbarOverflow } from './pages/direct-chat';
+import { createProfile } from './flows/profile-creation';
+import { sendMessage, waitForMessage } from './flows/send-message';
+import { click, nextTick, typeInto, waitFor, waitForText } from './helpers';
+import {
+	chatOverflow,
+	checkNavbarOverflow,
+	clickScrollBottomButton,
+	isPeerNamePresent,
+	isScrollAtBottom,
+	messageInput,
+	messagesContainer,
+	navbarBgOpacity,
+	scrollBottomButtonVisible,
+	scrollChatToBottom,
+	scrollChatToTop,
+	scrollChatUp,
+	sendButton,
+	unreadBadgeText,
+} from './pages/direct-chat';
+import {
+	dismissCard as dismissGetStartedCard,
+	visibleCards as getStartedCards,
+} from './pages/get-started';
 import { versionItem } from './pages/help';
-import { updaterBanner, updaterBannerTitle, updaterDismissBtn } from './pages/updater-banner';
-import { checkOverflow, checkDarkMode, checkRTL, checkPage } from './review/checks';
+import {
+	checkChatListOverflow,
+	firstChatTooltip,
+	getChatListItem,
+	homeLoaded,
+} from './pages/home';
+import {
+	updaterBanner,
+	updaterBannerTitle,
+	updaterDismissBtn,
+} from './pages/updater-banner';
+import {
+	checkDarkMode,
+	checkOverflow,
+	checkPage,
+	checkRTL,
+} from './review/checks';
 import {
 	visitAllPages,
-	visitSettingsPages,
-	visitProfilePages,
-	visitOtherPages,
 	visitChatPages,
+	visitOtherPages,
+	visitProfilePages,
+	visitSettingsPages,
 } from './review/visit-all-pages';
 
 /** Trigger UpdaterBanner into a specific state via custom event. */
-function simulateUpdate(state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden') {
-	window.dispatchEvent(new CustomEvent('test-simulate-update', { detail: state }));
+function simulateUpdate(
+	state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden',
+) {
+	window.dispatchEvent(
+		new CustomEvent('test-simulate-update', { detail: state }),
+	);
 }
 
 export const testUtils = {
@@ -52,10 +91,20 @@ export const testUtils = {
 	dismissGetStartedCard,
 	homeLoaded,
 	firstChatTooltip,
+	getChatListItem,
 	checkChatListOverflow,
 	messageInput,
 	sendButton,
 	messagesContainer,
+	isScrollAtBottom,
+	chatOverflow,
+	scrollChatUp,
+	scrollBottomButtonVisible,
+	unreadBadgeText,
+	clickScrollBottomButton,
+	scrollChatToBottom,
+	scrollChatToTop,
+	navbarBgOpacity,
 	isPeerNamePresent,
 	checkNavbarOverflow,
 	versionItem,
@@ -72,6 +121,8 @@ export const testUtils = {
 	visitProfilePages,
 	visitOtherPages,
 	visitChatPages,
+	/** Paraglide setLocale — set by registerTestUtils from +layout.svelte. */
+	setLocale: (_locale: string) => {},
 	/** SvelteKit goto — set by registerTestUtils from +layout.svelte. */
 	goto: (_path: string) => Promise.resolve() as Promise<void>,
 };
@@ -82,9 +133,15 @@ declare global {
 	}
 }
 
-export function registerTestUtils(goto?: (path: string) => Promise<void>) {
+export function registerTestUtils(
+	goto?: (path: string) => Promise<void>,
+	setLocale?: (locale: string) => void,
+) {
 	window.__test = testUtils;
 	if (goto) {
 		testUtils.goto = goto;
+	}
+	if (setLocale) {
+		testUtils.setLocale = setLocale;
 	}
 }

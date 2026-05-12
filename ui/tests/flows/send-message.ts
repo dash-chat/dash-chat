@@ -38,7 +38,13 @@ export async function sendMessage(text: string): Promise<void> {
 	click(steps.sendButton);
 }
 
-/** Wait until a message with the given text appears. */
-export async function waitForMessage(text: string): Promise<true> {
-	return waitForText(steps.messagesContainer, text);
+/**
+ * Wait until a message with the given text appears.
+ *
+ * Runs JS-side polling inside one execute call. Cap the timeout under the
+ * tauri-driver script timeout (~30s) — for longer cross-agent waits the
+ * caller should poll from the WDIO side (e.g. with `agent.waitUntil`).
+ */
+export async function waitForMessage(text: string, timeout = 25_000): Promise<true> {
+	return waitForText(steps.messagesContainer, text, timeout);
 }
