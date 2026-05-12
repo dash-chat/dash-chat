@@ -10,7 +10,7 @@ use crate::filesystem::FileSystem;
 
 /// How often to re-announce the mDNS service so peers that join the network
 /// (or open the app) after the desktop's initial announcement still discover it.
-const MDNS_REANNOUNCE_INTERVAL: Duration = Duration::from_secs(10);
+const MDNS_REANNOUNCE_INTERVAL: Duration = Duration::from_secs(30);
 
 pub(crate) struct LocalMailboxState {
     stop_signal: tokio::sync::oneshot::Sender<()>,
@@ -42,7 +42,6 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         service.get_fullname(),
         service.get_type()
     );
-    daemon.register(service.clone())?;
 
     let mdns_fullname = service.get_fullname().to_string();
     let addr = format!("0.0.0.0:{}", service.get_port());
@@ -53,20 +52,21 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         }
     });
 
-    // Periodically re-announce so peers that come online later still discover us.
-    // mdns_sd's daemon only sends two unsolicited announcements at startup
-    // (RFC 6762 §8.3) and otherwise relies on responding to queries — if a
-    // late-joining client's query response is lost, we'd be invisible until
-    // the next query, which can be minutes out under exponential backoff.
+    // Register immediately on the first tick and then periodically re-announce so
+    // peers that come online later still discover us. mdns_sd's daemon only sends
+    // two unsolicited announcements at startup (RFC 6762 §8.3) and otherwise
+    // relies on responding to queries — if a late-joining client's query response
+    // is lost, we'd be invisible until the next query, which can be minutes out
+    // under exponential backoff. Using the periodic loop for the initial register
+    // also gives us a free retry on transient failures.
     let reannounce = tokio::spawn(async move {
         let mut tick = tokio::time::interval(MDNS_REANNOUNCE_INTERVAL);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        tick.tick().await; // first tick fires immediately; skip it.
         loop {
             tick.tick().await;
             match daemon.register(service.clone()) {
-                Ok(()) => log::debug!("Re-announced local mailbox via mdns"),
-                Err(e) => log::warn!("Failed to re-announce local mailbox via mdns: {e:?}"),
+                Ok(()) => log::debug!("Announced local mailbox via mdns"),
+                Err(e) => log::warn!("Failed to announce local mailbox via mdns: {e:?}"),
             }
         }
     });
