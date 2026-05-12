@@ -99,6 +99,10 @@ impl FileSystem {
         })
     }
 
+    pub fn app_root_dir(&self) -> &PathBuf {
+        &self.app_root_dir
+    }
+
     // The folder where all the data files for the app should be stored
     pub fn app_data_dir(&self) -> &PathBuf {
         &self.app_data_dir
@@ -118,4 +122,5 @@ impl FileSystem {
     pub fn local_mailbox_db_path(&self) -> PathBuf {
         self.app_data_dir.join(LOCAL_MAILBOX_DB_FILE_NAME)
     }
+
 }

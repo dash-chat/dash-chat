@@ -4,6 +4,7 @@
 
 	import '../app.css';
 	import { setContext } from 'svelte';
+	import { invoke } from '@tauri-apps/api/core';
 
 	import {
 		ChatsClient,
@@ -109,6 +110,10 @@
 
 		const chatsClient = new ChatsClient();
 		chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
+
+		invoke('log_webview_info', { userAgent: navigator.userAgent }).catch(
+			() => {},
+		);
 	}
 
 	setContext('settings-store', settingsStore);

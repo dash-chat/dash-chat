@@ -34,14 +34,15 @@ pub(crate) async fn build_node(
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     install_logger(&app_handle)?;
+    crate::device_info::log_device_info(&app_handle);
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
 
     // Manage the mDNS service daemon
     app_handle.manage(mdns_sd::ServiceDaemon::new()?);
 
-    let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle)?.app_data_dir().clone();
-    log::info!("Using local data path: {local_data_path:?}");
+    let fs = FileSystem::new(&app_handle)?;
+    let local_data_path = fs.app_data_dir().clone();
 
     #[cfg(not(mobile))]
     {

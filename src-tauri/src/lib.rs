@@ -1,4 +1,5 @@
 mod commands;
+mod device_info;
 mod filesystem;
 mod i18n;
 mod mailbox;
@@ -79,6 +80,7 @@ pub fn run() {
 
     builder
         .invoke_handler(tauri::generate_handler![
+            device_info::log_webview_info,
             commands::logs::get_log,
             commands::logs::get_authors,
             commands::redact_log::get_redacted_log,
@@ -112,6 +114,7 @@ pub fn run() {
         .plugin(tauri_plugin_sharekit::init())
         .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_os::init())
         .setup(move |app| {
             let handle = app.handle().clone();
 
