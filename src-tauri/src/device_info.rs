@@ -216,12 +216,12 @@ fn log_device_model(handle: &AppHandle) {
         return;
     };
     let scheduled = window.with_webview(|pw| {
-        pw.jni_handle().exec(|env, _activity, _webview| {
-            match read_android_device_model(env) {
+        pw.jni_handle().exec(
+            |env, _activity, _webview| match read_android_device_model(env) {
                 Ok(model) => log::info!("Device model: {model}"),
                 Err(err) => log::warn!("Failed to read Android device model: {err:?}"),
-            }
-        });
+            },
+        );
     });
     if let Err(err) = scheduled {
         log::warn!("Failed to schedule Android device model read: {err:?}");

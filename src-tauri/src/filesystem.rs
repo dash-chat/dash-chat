@@ -122,5 +122,4 @@ impl FileSystem {
     pub fn local_mailbox_db_path(&self) -> PathBuf {
         self.app_data_dir.join(LOCAL_MAILBOX_DB_FILE_NAME)
     }
-
 }
