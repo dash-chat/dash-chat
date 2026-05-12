@@ -10,6 +10,10 @@ export function useSignal<T, Args extends unknown[]>(
 	const w = watcher(() => {
 		const value = v(...args);
 		if (value instanceof ReactivePromise) {
+			// Track _version so async reactive re-runs (which reuse the RP via
+			// _setPromise without bumping the signal's updatedCount) still
+			// dirty the watcher. Mirrors the tracking in useReactivePromise.
+			(value as unknown as { _version: { value: unknown } })._version.value;
 			if (value.value !== undefined) return value.value;
 		}
 		return value;
@@ -39,6 +43,14 @@ export function useReactivePromise<T, Args extends unknown[]>(
 	const w = watcher(
 		() => {
 			const rp = v(...args);
+			// Track the RP's _version signal so the watcher is dirtied on every
+			// RP state transition. Async reactives reuse the same RP across
+			// re-runs (via _setPromise) without incrementing the signal's
+			// updatedCount, so the signal-level edge check sees no change.
+			// _version is bumped on every _setFlags call (pending, resolved,
+			// new value), which propagates dirty-ness through signalium's
+			// normal dependency graph.
+			(rp as unknown as { _version: { value: unknown } })._version.value;
 			return { isReady: rp.isReady, value: rp.value, rp };
 		},
 		{
