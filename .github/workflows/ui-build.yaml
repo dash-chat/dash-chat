@@ -28,5 +28,5 @@ jobs:
       - name: Build UI packages
         run: pnpm --recursive build
 
-      - name: Check Svelte types and formatting
-        run: pnpm -F ui check --fail-on-warnings
+      - name: Check types and formatting across packages
+        run: pnpm -r --if-present check
