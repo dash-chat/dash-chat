@@ -112,6 +112,8 @@ export const testUtils = {
 	updaterBannerTitle,
 	updaterDismissBtn,
 	simulateUpdate,
+	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
+	tr: (_key: string): string => '',
 	checkOverflow,
 	checkDarkMode,
 	checkRTL,
@@ -136,6 +138,7 @@ declare global {
 export function registerTestUtils(
 	goto?: (path: string) => Promise<void>,
 	setLocale?: (locale: string) => void,
+	messages?: Record<string, (...args: unknown[]) => string>,
 ) {
 	window.__test = testUtils;
 	if (goto) {
@@ -143,5 +146,8 @@ export function registerTestUtils(
 	}
 	if (setLocale) {
 		testUtils.setLocale = setLocale;
+	}
+	if (messages) {
+		testUtils.tr = (key: string) => messages[key]?.() ?? '';
 	}
 }

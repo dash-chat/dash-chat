@@ -478,7 +478,11 @@
 								class="column"
 								style={`padding-bottom: ${bottomBarHeight}px`}
 							>
-								<div class="column" style="align-items: center">
+								<div
+									class="column"
+									style="align-items: center"
+									data-testid="direct-chat-peer-header"
+								>
 									{#if profile}
 										<Link
 											class="column my-6 gap-2 items-center"

@@ -64,7 +64,11 @@
 
 		<div class="column" style="flex: 1">
 			<div class="column center-in-desktop">
-				<div class="column m-6 gap-2" style="align-items: center">
+				<div
+					class="column m-6 gap-2"
+					style="align-items: center"
+					data-testid="chat-settings-peer-header"
+				>
 					{#if profile}
 						<Avatar
 							image={profile.avatar}

@@ -54,6 +54,7 @@
 						class={isActive(summary) ? 'active' : ''}
 						linkProps={{ href: chatHref(summary) }}
 						chevron={false}
+						data-testid="all-chats-row"
 					>
 						{#snippet media()}
 							<Avatar
