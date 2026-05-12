@@ -56,6 +56,9 @@ export const S = {
 		peerName: tid('chat-settings-peer-name'),
 		searchButton: tid('chat-settings-search-btn'),
 	},
+	peerProfileSheet: {
+		root: tid('peer-profile-sheet'),
+	},
 	settings: {
 		back: tid('settings-back'),
 		profileLink: tid('settings-profile-link'),

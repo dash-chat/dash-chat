@@ -63,8 +63,11 @@
 		</Navbar>
 
 		<div class="column" style="flex: 1">
-			<div class="column center-in-desktop">
-				<div class="column m-6 gap-2" style="align-items: center">
+			<div class="column center-in-desktop min-w-0">
+				<div
+					class="column m-6 gap-2 max-w-full px-4"
+					style="align-items: center"
+				>
 					<Avatar
 						image={profile?.avatar}
 						initials={profile?.name.slice(0, 2)}
@@ -72,24 +75,26 @@
 					/>
 
 					<div
-						class="flex cursor-pointer items-center gap-1"
+						class="flex cursor-pointer items-center gap-1 max-w-full"
 						onclick={() => (showPeerProfile = true)}
 						onkeydown={onActivate(() => (showPeerProfile = true))}
 						role="button"
 						tabindex="0"
 					>
 						<span
-							class="text-xl font-semibold"
+							class="text-xl font-semibold break-words text-center min-w-0"
 							data-testid="chat-settings-peer-name">{fullName(profile!)}</span
 						>
 						<wa-icon
-							class="small-icon quiet"
+							class="small-icon quiet shrink-0"
 							src={wrapPathInSvg(mdiChevronRight)}
 						></wa-icon>
 					</div>
 
 					{#if profile?.about}
-						<span class="quiet text-center">{profile.about}</span>
+						<span class="quiet text-center break-words max-w-full"
+							>{profile.about}</span
+						>
 					{/if}
 				</div>
 
