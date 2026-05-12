@@ -16,6 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.4.0", default-features = false, features = [] }
+vergen-gitcl = "9"
 
 [dependencies]
 tauri = { version = "2.9", features = ["devtools", "tray-icon"] }
@@ -27,6 +28,7 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-sharekit = "0.3"
 tauri-plugin-fs = "2"
+tauri-plugin-os = "2"
 tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
 
 tauri-plugin-virtual-keyboard-padding = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding", branch = "main" }
@@ -63,6 +65,10 @@ image = "0.25"
 
 opener = { version = "0.7", features = ["reveal"] }
 log = "0.4"
+netdev = "0.43"
+if-watch = { version = "3", features = ["tokio"] }
+iana-time-zone = "0.1"
+sysinfo = "0.38"
 url2 = "0.0.6"
 app_dirs2 = "2.5.5"
 uuid = "1"
@@ -93,7 +99,6 @@ tauri-plugin-system-bars-styles = { git = "https://github.com/dash-chat/tauri-pl
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
-ndk-context = "0.1"
 ndk-sys = "0.6"
 
 [target.'cfg(target_os = "ios")'.dependencies]

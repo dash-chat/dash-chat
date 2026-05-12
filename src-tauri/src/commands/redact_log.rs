@@ -40,6 +40,16 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""content"\s*:\s*"[^"]*""#,
         // JSON format: "emoji":"..."
         r#""emoji"\s*:\s*"[^"]*""#,
+        // OS username inside filesystem paths. The whole `/home/<user>` (or
+        // `/Users/<user>` / `\Users\<user>`) prefix is collapsed to [REDACTED];
+        // the rest of the path is preserved so logs stay readable.
+        r"/home/[^/\s]+",
+        r"/Users/[^/\s]+",
+        r"\\Users\\[^\\\s]+",
+        // Hostname value (e.g. "Alices-MacBook-Pro.local" on macOS) — match
+        // the whole `Hostname: <value>` line; both label and value are
+        // identifying enough that we just drop the lot.
+        r"Hostname:\s*[^\n\r]*",
     ]
     .iter()
     .map(|p| Regex::new(p).expect("invalid redaction pattern"))
@@ -263,6 +273,63 @@ mod tests {
     fn redacts_reaction_json() {
         let input = r#""emoji":"👍""#;
         assert_eq!(redact(input), "[REDACTED]");
+    }
+
+    #[test]
+    fn redacts_hostname_line() {
+        let input = "Hostname: Alices-MacBook-Pro.local";
+        let result = redact(input);
+        assert!(
+            !result.contains("Alices"),
+            "hostname not redacted: {result}"
+        );
+        assert!(
+            !result.contains("MacBook-Pro"),
+            "hostname not redacted: {result}"
+        );
+        assert_eq!(result, "[REDACTED]");
+    }
+
+    #[test]
+    fn redacts_username_in_linux_path_keeps_rest() {
+        let input = "App data dir: /home/alice/.local/share/dash-chat";
+        let result = redact(input);
+        assert!(!result.contains("alice"), "username not redacted: {result}");
+        assert_eq!(result, "App data dir: [REDACTED]/.local/share/dash-chat",);
+    }
+
+    #[test]
+    fn redacts_username_in_macos_path_keeps_rest() {
+        let input = "App root dir: /Users/alice/Library/Application Support/dash-chat";
+        let result = redact(input);
+        assert!(!result.contains("alice"), "username not redacted: {result}");
+        assert_eq!(
+            result,
+            "App root dir: [REDACTED]/Library/Application Support/dash-chat",
+        );
+    }
+
+    #[test]
+    fn redacts_username_in_windows_path_keeps_rest() {
+        let input = "Logs dir: C:\\Users\\alice\\AppData\\Roaming\\dash-chat\\logs";
+        let result = redact(input);
+        assert!(!result.contains("alice"), "username not redacted: {result}");
+        assert_eq!(
+            result,
+            "Logs dir: C:[REDACTED]\\AppData\\Roaming\\dash-chat\\logs",
+        );
+    }
+
+    #[test]
+    fn redacts_username_anywhere_paths_appear() {
+        // Paths leak through many log lines, not just the device-info labels.
+        let input = "Redacting log file: /home/alice/.local/share/dash-chat/logs/dash-chat.log";
+        let result = redact(input);
+        assert!(!result.contains("alice"), "username not redacted: {result}");
+        assert!(
+            result.contains("[REDACTED]/.local/share/dash-chat/logs/dash-chat.log"),
+            "path tail should be preserved: {result}"
+        );
     }
 
     #[test]
