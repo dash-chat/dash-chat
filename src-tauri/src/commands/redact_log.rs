@@ -7,57 +7,52 @@ use crate::filesystem::FileSystem;
 
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 
-static REDACTION_REGEXES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
+static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     [
         // FCM tokens — alphanumeric with colons, hyphens, underscores (100+ chars)
-        (r"[A-Za-z0-9_:\-]{100,}", "[REDACTED]"),
+        r"[A-Za-z0-9_:\-]{100,}",
         // Hex strings (40+ chars) — public keys, hashes, signatures
-        (r"[0-9a-fA-F]{40,}", "[REDACTED]"),
+        r"[0-9a-fA-F]{40,}",
         // Base64 blobs (40+ chars)
-        (r"[A-Za-z0-9+/]{40,}={0,2}", "[REDACTED]"),
+        r"[A-Za-z0-9+/]{40,}={0,2}",
         // DeviceId and AgentId wrappers (must precede bare PublicKey/Hash patterns)
-        (r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)", "[REDACTED]"),
+        r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
         // Debug-formatted byte arrays: PublicKey([1, 2, ...]), Hash([...]), Signature([...])
-        (r"(PublicKey|Hash|Signature)\(\[[\d, ]+\]\)", "[REDACTED]"),
+        r"(PublicKey|Hash|Signature)\(\[[\d, ]+\]\)",
         // Timestamps (seconds or microseconds since epoch, 10+ digits)
-        (r#""?timestamp"?\s*:?\s*\d{10,}"#, "[REDACTED]"),
+        r#""?timestamp"?\s*:?\s*\d{10,}"#,
         // Debug format: name/surname/about fields with quoted values
-        (
-            r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
-            "[REDACTED]",
-        ),
+        r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
         // Debug format: ChatMessageContent("...") — legacy bare form, kept
         // in case rotating log buffers still contain entries from older builds.
-        (r#"ChatMessageContent\("[^"]*"\)"#, "[REDACTED]"),
+        r#"ChatMessageContent\("[^"]*"\)"#,
         // Debug format: V0 unversioned content — ChatMessageContentV0("hello")
-        (r#"ChatMessageContentV0\("[^"]*"\)"#, "[REDACTED]"),
+        r#"ChatMessageContentV0\("[^"]*"\)"#,
         // Debug format: V1 versioned content — `message: "hello"` inside
         // ChatMessageContentV1 { message: "...", media: ... }. Use \b so we
         // don't match substrings inside identifiers.
-        (r#"\bmessage:\s*"[^"]*""#, "[REDACTED]"),
+        r#"\bmessage:\s*"[^"]*""#,
         // Debug format: emoji: Some("...")
-        (r#"emoji:\s*Some\("[^"]*"\)"#, "[REDACTED]"),
+        r#"emoji:\s*Some\("[^"]*"\)"#,
         // JSON format: "name":"...", "surname":"...", "about":"..."
-        (r#""(name|surname|about)"\s*:\s*"[^"]*""#, "[REDACTED]"),
+        r#""(name|surname|about)"\s*:\s*"[^"]*""#,
         // JSON format: "content":"..."
-        (r#""content"\s*:\s*"[^"]*""#, "[REDACTED]"),
+        r#""content"\s*:\s*"[^"]*""#,
         // JSON format: "emoji":"..."
-        (r#""emoji"\s*:\s*"[^"]*""#, "[REDACTED]"),
-        // OS username inside filesystem paths. Replace just the username
-        // component so the rest of the path stays readable for debugging:
-        //   /home/alice/.local/share        → /home/REDACTED/.local/share
-        //   /Users/alice/Library/...        → /Users/REDACTED/Library/...
-        //   C:\Users\alice\AppData\...      → C:\Users\REDACTED\AppData\...
-        (r"/home/[^/\s]+", "/home/REDACTED"),
-        (r"/Users/[^/\s]+", "/Users/REDACTED"),
-        (r"\\Users\\[^\\\s]+", r"\Users\REDACTED"),
-        // Hostname value (e.g. "Alices-MacBook-Pro.local" on macOS). The
-        // whole value is identifying and there's no reliable structure to
-        // preserve, so swap it for REDACTED but keep the label.
-        (r"Hostname:\s*[^\n\r]*", "Hostname: REDACTED"),
+        r#""emoji"\s*:\s*"[^"]*""#,
+        // OS username inside filesystem paths. The whole `/home/<user>` (or
+        // `/Users/<user>` / `\Users\<user>`) prefix is collapsed to [REDACTED];
+        // the rest of the path is preserved so logs stay readable.
+        r"/home/[^/\s]+",
+        r"/Users/[^/\s]+",
+        r"\\Users\\[^\\\s]+",
+        // Hostname value (e.g. "Alices-MacBook-Pro.local" on macOS) — match
+        // the whole `Hostname: <value>` line; both label and value are
+        // identifying enough that we just drop the lot.
+        r"Hostname:\s*[^\n\r]*",
     ]
     .iter()
-    .map(|(p, r)| (Regex::new(p).expect("invalid redaction pattern"), *r))
+    .map(|p| Regex::new(p).expect("invalid redaction pattern"))
     .collect()
 });
 
@@ -80,8 +75,8 @@ fn read_tail(path: &std::path::Path, max_bytes: u64) -> std::io::Result<String> 
 
 pub fn redact(content: &str) -> String {
     let mut redacted = content.to_owned();
-    for (re, replacement) in REDACTION_REGEXES.iter() {
-        redacted = re.replace_all(&redacted, *replacement).into_owned();
+    for re in REDACTION_REGEXES.iter() {
+        redacted = re.replace_all(&redacted, "[REDACTED]").into_owned();
     }
     redacted
 }
@@ -281,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn redacts_hostname_value_keeps_label() {
+    fn redacts_hostname_line() {
         let input = "Hostname: Alices-MacBook-Pro.local";
         let result = redact(input);
         assert!(
@@ -292,7 +287,7 @@ mod tests {
             !result.contains("MacBook-Pro"),
             "hostname not redacted: {result}"
         );
-        assert_eq!(result, "Hostname: REDACTED");
+        assert_eq!(result, "[REDACTED]");
     }
 
     #[test]
@@ -302,7 +297,7 @@ mod tests {
         assert!(!result.contains("alice"), "username not redacted: {result}");
         assert_eq!(
             result,
-            "App data dir: /home/REDACTED/.local/share/dash-chat",
+            "App data dir: [REDACTED]/.local/share/dash-chat",
         );
     }
 
@@ -313,7 +308,7 @@ mod tests {
         assert!(!result.contains("alice"), "username not redacted: {result}");
         assert_eq!(
             result,
-            "App root dir: /Users/REDACTED/Library/Application Support/dash-chat",
+            "App root dir: [REDACTED]/Library/Application Support/dash-chat",
         );
     }
 
@@ -324,7 +319,7 @@ mod tests {
         assert!(!result.contains("alice"), "username not redacted: {result}");
         assert_eq!(
             result,
-            "Logs dir: C:\\Users\\REDACTED\\AppData\\Roaming\\dash-chat\\logs",
+            "Logs dir: C:[REDACTED]\\AppData\\Roaming\\dash-chat\\logs",
         );
     }
 
@@ -335,7 +330,7 @@ mod tests {
         let result = redact(input);
         assert!(!result.contains("alice"), "username not redacted: {result}");
         assert!(
-            result.contains("/home/REDACTED/.local/share/dash-chat/logs/dash-chat.log"),
+            result.contains("[REDACTED]/.local/share/dash-chat/logs/dash-chat.log"),
             "path tail should be preserved: {result}"
         );
     }
