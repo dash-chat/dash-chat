@@ -18,7 +18,7 @@
 		id,
 		children,
 	}: {
-		image: string | undefined;
+		image?: string | undefined;
 		initials?: string | undefined;
 		alt?: string | undefined;
 		style?: string | undefined;

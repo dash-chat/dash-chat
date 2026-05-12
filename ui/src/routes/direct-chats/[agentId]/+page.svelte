@@ -454,7 +454,7 @@
 												class="flex w-full min-w-0 flex-row items-center gap-2"
 											>
 												<span class="shrink-0">
-													<Avatar image={undefined} style="--size: 2.5rem" />
+													<Avatar style="--size: 2.5rem" />
 												</span>
 												<span class="quiet flex-1 min-w-0 truncate">
 													{m.waitingForProfile()}
@@ -506,7 +506,7 @@
 										</Link>
 									{:else}
 										<div class="column my-6 gap-2 items-center">
-											<Avatar image={undefined} style="--size: 80px;" />
+											<Avatar style="--size: 80px;" />
 											<span class="quiet text-xl">
 												{m.waitingForProfile()}
 											</span>
