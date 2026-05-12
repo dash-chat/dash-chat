@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"check": "tsc --noEmit -p tsconfig.json",
+		"check": "pnpm -F ui paraglide && tsc --noEmit -p tsconfig.json",
 		"test": "wdio run wdio.conf.ts"
 	},
 	"devDependencies": {

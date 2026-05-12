@@ -10,19 +10,26 @@
  *   window.__test.sendMessage('Hello!')
  *   await window.__test.waitForMessage('Hello!')
  */
+import type { m } from '../src/lib/paraglide/messages.js';
 import {
 	addContact,
 	getContactCode,
 	navigateToAddContact,
 } from './flows/contact-exchange';
+
+type Messages = typeof m;
+type MessageKey = Extract<keyof Messages, string>;
+type MessageParams<K extends MessageKey> = Parameters<Messages[K]>[0];
 import { openDirectChat } from './flows/open-chat';
 import { createProfile } from './flows/profile-creation';
 import { sendMessage, waitForMessage } from './flows/send-message';
 import { click, nextTick, typeInto, waitFor, waitForText } from './helpers';
+import { chatSettingsLoaded } from './pages/chat-settings';
 import {
 	chatOverflow,
 	checkNavbarOverflow,
 	clickScrollBottomButton,
+	isContactRequestBannerVisible,
 	isPeerNamePresent,
 	isScrollAtBottom,
 	messageInput,
@@ -44,8 +51,11 @@ import {
 	checkChatListOverflow,
 	firstChatTooltip,
 	getChatListItem,
+	hasChatListItem,
 	homeLoaded,
 } from './pages/home';
+import { isPeerProfileSheetOpen } from './pages/peer-profile-sheet';
+import { profileNameListItemContains } from './pages/profile-settings';
 import {
 	updaterBanner,
 	updaterBannerTitle,
@@ -92,6 +102,7 @@ export const testUtils = {
 	homeLoaded,
 	firstChatTooltip,
 	getChatListItem,
+	hasChatListItem,
 	checkChatListOverflow,
 	messageInput,
 	sendButton,
@@ -106,12 +117,22 @@ export const testUtils = {
 	scrollChatToTop,
 	navbarBgOpacity,
 	isPeerNamePresent,
+	isContactRequestBannerVisible,
 	checkNavbarOverflow,
+	chatSettingsLoaded,
+	isPeerProfileSheetOpen,
+	profileNameListItemContains,
 	versionItem,
 	updaterBanner,
 	updaterBannerTitle,
 	updaterDismissBtn,
 	simulateUpdate,
+	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
+	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
+		throw new Error(
+			`tr(${JSON.stringify(key)}) called before registerTestUtils provided messages`,
+		);
+	},
 	checkOverflow,
 	checkDarkMode,
 	checkRTL,
@@ -136,6 +157,7 @@ declare global {
 export function registerTestUtils(
 	goto?: (path: string) => Promise<void>,
 	setLocale?: (locale: string) => void,
+	messages?: Messages,
 ) {
 	window.__test = testUtils;
 	if (goto) {
@@ -143,5 +165,23 @@ export function registerTestUtils(
 	}
 	if (setLocale) {
 		testUtils.setLocale = setLocale;
+	}
+	if (messages) {
+		testUtils.tr = <K extends MessageKey>(
+			key: K,
+			params?: MessageParams<K>,
+		): string => {
+			const message = messages[key] as
+				| ((inputs: MessageParams<K>) => string)
+				| undefined;
+			if (!message) {
+				throw new Error(`tr: missing paraglide message for key "${key}"`);
+			}
+			const value = message((params ?? {}) as MessageParams<K>);
+			if (!value) {
+				throw new Error(`tr: paraglide message for key "${key}" is empty`);
+			}
+			return value;
+		};
 	}
 }

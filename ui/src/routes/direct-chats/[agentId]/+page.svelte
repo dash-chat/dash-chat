@@ -438,18 +438,29 @@
 									{/if}
 								{/snippet}
 								{#snippet title()}
-									{#if profile}
-										<Link
-											class="flex w-full min-w-0 items-center justify-start"
-											href={`/direct-chats/${agentId}/chat-settings`}
-											data-testid="direct-chat-settings-link"
-										>
+									<Link
+										class="flex w-full min-w-0 items-center justify-start"
+										href={`/direct-chats/${agentId}/chat-settings`}
+										data-testid="direct-chat-settings-link"
+									>
+										{#if profile}
 											<AvatarWithName
 												{profile}
 												nameTestId="direct-chat-peer-name"
 											/>
-										</Link>
-									{/if}
+										{:else}
+											<span
+												class="flex w-full min-w-0 flex-row items-center gap-2"
+											>
+												<span class="shrink-0">
+													<Avatar style="--size: 2.5rem" />
+												</span>
+												<span class="quiet flex-1 min-w-0 truncate">
+													{m.waitingForProfile()}
+												</span>
+											</span>
+										{/if}
+									</Link>
 								{/snippet}
 							</Navbar>
 						{/if}
@@ -466,10 +477,14 @@
 								class="column"
 								style={`padding-bottom: ${bottomBarHeight}px`}
 							>
-								{#if profile}
-									<div class="column" style="align-items: center">
+								<div
+									class="column min-w-0"
+									style="align-items: center"
+									data-testid="direct-chat-peer-header"
+								>
+									{#if profile}
 										<Link
-											class="column my-6 gap-2 items-center"
+											class="column my-6 gap-2 items-center max-w-full px-4"
 											onclick={() => (showPeerProfile = true)}
 										>
 											<Avatar
@@ -477,18 +492,26 @@
 												initials={profile.name.slice(0, 2)}
 												style="--size: 80px;"
 											/>
-											<div class="flex items-center gap-1">
-												<span class="text-xl font-semibold"
-													>{fullName(profile!)}</span
+											<div class="flex items-center gap-1 max-w-full">
+												<span
+													class="text-xl font-semibold break-words text-center min-w-0"
+													>{fullName(profile)}</span
 												>
 												<wa-icon
-													class="small-icon quiet"
+													class="small-icon quiet shrink-0"
 													src={wrapPathInSvg(mdiChevronRight)}
 												></wa-icon>
 											</div>
 										</Link>
-									</div>
-								{/if}
+									{:else}
+										<div class="column my-6 gap-2 items-center">
+											<Avatar style="--size: 80px;" />
+											<span class="quiet text-xl">
+												{m.waitingForProfile()}
+											</span>
+										</div>
+									{/if}
+								</div>
 								<div class="row justify-center mb-4">
 									<div
 										class="rounded-xl border-2 border-gray-300 dark:border-gray-600"
@@ -958,7 +981,9 @@
 								class="flex flex-col items-center gap-3 px-6 py-3"
 								style="margin: 0 auto"
 							>
-								<p class="text-center text-sm text-gray-600 dark:text-gray-400">
+								<p
+									class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
+								>
 									{@html m
 										.contactRequestBanner({
 											name: contactRequest.profile.name

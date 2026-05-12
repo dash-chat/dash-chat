@@ -49,7 +49,7 @@
 		// Paraglide types setLocale with a string-literal union; we widen to
 		// plain `string` at the test boundary since invalid locales fail at
 		// runtime anyway.
-		registerTestUtils(goto, setLocale as (locale: string) => void),
+		registerTestUtils(goto, setLocale as (locale: string) => void, m),
 	);
 
 	// Forward console.log/info/warn/error from the WebView to the tauri logs
