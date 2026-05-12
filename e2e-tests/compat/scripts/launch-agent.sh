@@ -22,4 +22,6 @@ export GTK_A11Y=none
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 mkdir -p "$DATA_DIR"
-exec "${COMPAT_BINARY:?COMPAT_BINARY env var required}"
+# Redirect output to a log file the test runner tails and prints with an
+# agent-specific prefix. Using `>` truncates per launch so retries start fresh.
+exec "${COMPAT_BINARY:?COMPAT_BINARY env var required}" > "$DATA_DIR/agent.log" 2>&1

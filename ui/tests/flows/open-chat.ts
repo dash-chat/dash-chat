@@ -1,5 +1,6 @@
-import { S } from '../selectors';
 import { waitFor } from '../helpers';
+import { getChatListItem } from '../pages/home';
+import { S } from '../selectors';
 
 /**
  * Open a direct chat from the home chat list by contact name.
@@ -10,14 +11,11 @@ import { waitFor } from '../helpers';
  * then waits for the messages container to appear.
  */
 export async function openDirectChat(contactName: string): Promise<void> {
-	const list = await waitFor(S.home.chatList);
-	const links = Array.from(list.querySelectorAll('a'));
-	for (const link of links) {
-		if (link.textContent?.includes(contactName)) {
-			(link as HTMLElement).click();
-			await waitFor(S.directChat.messages);
-			return;
-		}
+	await waitFor(S.home.chatList);
+	const item = getChatListItem(contactName);
+	if (!item) {
+		throw new Error(`openDirectChat: no chat with "${contactName}" in chat list`);
 	}
-	throw new Error(`openDirectChat: no chat with "${contactName}" in chat list`);
+	(item as HTMLElement).click();
+	await waitFor(S.directChat.messages);
 }
