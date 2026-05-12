@@ -478,14 +478,12 @@
 								class="column"
 								style={`padding-bottom: ${bottomBarHeight}px`}
 							>
-								<div
-									class="column"
-									style="align-items: center"
+								{#if profile}
+									<div class="column min-w-0" style="align-items: center"
 									data-testid="direct-chat-peer-header"
-								>
-									{#if profile}
+										>
 										<Link
-											class="column my-6 gap-2 items-center"
+											class="column my-6 gap-2 items-center max-w-full px-4"
 											onclick={() => (showPeerProfile = true)}
 										>
 											<Avatar
@@ -493,12 +491,13 @@
 												initials={profile.name.slice(0, 2)}
 												style="--size: 80px;"
 											/>
-											<div class="flex items-center gap-1">
-												<span class="text-xl font-semibold"
+											<div class="flex items-center gap-1 max-w-full">
+												<span
+													class="text-xl font-semibold break-words text-center min-w-0"
 													>{fullName(profile!)}</span
 												>
 												<wa-icon
-													class="small-icon quiet"
+													class="small-icon quiet shrink-0"
 													src={wrapPathInSvg(mdiChevronRight)}
 												></wa-icon>
 											</div>
@@ -981,7 +980,9 @@
 								class="flex flex-col items-center gap-3 px-6 py-3"
 								style="margin: 0 auto"
 							>
-								<p class="text-center text-sm text-gray-600 dark:text-gray-400">
+								<p
+									class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
+								>
 									{@html m
 										.contactRequestBanner({
 											name: contactRequest.profile.name

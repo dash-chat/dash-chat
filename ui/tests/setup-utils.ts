@@ -19,10 +19,12 @@ import { openDirectChat } from './flows/open-chat';
 import { createProfile } from './flows/profile-creation';
 import { sendMessage, waitForMessage } from './flows/send-message';
 import { click, nextTick, typeInto, waitFor, waitForText } from './helpers';
+import { chatSettingsLoaded } from './pages/chat-settings';
 import {
 	chatOverflow,
 	checkNavbarOverflow,
 	clickScrollBottomButton,
+	isContactRequestBannerVisible,
 	isPeerNamePresent,
 	isScrollAtBottom,
 	messageInput,
@@ -44,8 +46,11 @@ import {
 	checkChatListOverflow,
 	firstChatTooltip,
 	getChatListItem,
+	hasChatListItem,
 	homeLoaded,
 } from './pages/home';
+import { isPeerProfileSheetOpen } from './pages/peer-profile-sheet';
+import { profileNameListItemContains } from './pages/profile-settings';
 import {
 	updaterBanner,
 	updaterBannerTitle,
@@ -92,6 +97,7 @@ export const testUtils = {
 	homeLoaded,
 	firstChatTooltip,
 	getChatListItem,
+	hasChatListItem,
 	checkChatListOverflow,
 	messageInput,
 	sendButton,
@@ -106,7 +112,11 @@ export const testUtils = {
 	scrollChatToTop,
 	navbarBgOpacity,
 	isPeerNamePresent,
+	isContactRequestBannerVisible,
 	checkNavbarOverflow,
+	chatSettingsLoaded,
+	isPeerProfileSheetOpen,
+	profileNameListItemContains,
 	versionItem,
 	updaterBanner,
 	updaterBannerTitle,

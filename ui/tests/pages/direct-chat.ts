@@ -171,6 +171,11 @@ export function isPeerNamePresent() {
 	return !!document.querySelector(selectors.peerName);
 }
 
+/** True if the contact-request banner is visible (its accept button is rendered). */
+export function isContactRequestBannerVisible(): boolean {
+	return !!document.querySelector(selectors.acceptButton);
+}
+
 /** Check for horizontal overflow in the direct-chat navbar. Returns an array of issue strings (empty = no overflow). */
 export function checkNavbarOverflow() {
 	const navbar = document.querySelector('.k-navbar');
