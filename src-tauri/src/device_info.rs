@@ -152,8 +152,8 @@ fn spawn_sysinfo_logger() {
             };
             let cpu = system.global_cpu_usage();
 
-            let mem_crossed_threshold = last_logged_mem_pct
-                .map_or(true, |last| (mem_pct - last).abs() > MEM_DELTA_PP);
+            let mem_crossed_threshold =
+                last_logged_mem_pct.map_or(true, |last| (mem_pct - last).abs() > MEM_DELTA_PP);
             let cpu_high = cpu > CPU_THRESHOLD_PCT;
             if !mem_crossed_threshold && !cpu_high {
                 continue;
