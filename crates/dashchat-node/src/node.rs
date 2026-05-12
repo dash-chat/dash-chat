@@ -779,18 +779,21 @@ impl Node {
         topic: ChatId,
     ) -> anyhow::Result<(Option<Capabilities>, usize)> {
         let members = self.group_store.members(topic).await?;
-        let devices = members.iter().filter_map(|(member, access)| {
-            // Only include members with read access or above
-            // TODO: make sure this pubkey corresponds to a DeviceId and not an AgentId,
-            //       once device groups are implemented
-            (*access >= Access::read()).then_some(member)
-        });
+        let mut devices = members
+            .iter()
+            .filter_map(|(member, access)| {
+                // Only include members with read access or above
+                // TODO: make sure this pubkey corresponds to a DeviceId and not an AgentId,
+                //       once device groups are implemented
+                (*access >= Access::read()).then_some(*member)
+            })
+            .collect::<BTreeSet<_>>();
+        devices.insert(self.device_id());
 
         // Collect capabilities for all agents
         let caps = futures::future::join_all(
             devices
-                .copied()
-                .chain(std::iter::once(self.device_id()))
+                .into_iter()
                 .map(|device| self.local_store.get_capabilities(device)),
         )
         .await
