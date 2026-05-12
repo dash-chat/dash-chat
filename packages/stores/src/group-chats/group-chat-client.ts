@@ -40,8 +40,7 @@ export class GroupChatClient implements IGroupChatClient {
 		member: AgentId,
 	): Promise<void> {}
 
-	async leaveGroup(): Promise<void> {
-	}
+	async leaveGroup(): Promise<void> {}
 
 	async deleteGroup(): Promise<void> {}
 }

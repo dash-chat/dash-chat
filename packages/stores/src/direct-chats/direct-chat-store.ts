@@ -9,10 +9,10 @@ import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import {
 	ChatReaction,
 	ChatSummary,
-	getMessageText,
 	MessageContent,
 	Payload,
 	ReadMessagesStore,
+	getMessageText,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { toPromise } from '../utils/to-promise';
@@ -129,10 +129,7 @@ export class DirectChatStore implements ReadMessagesStore {
 	});
 
 	onNewMessage(
-		handler: (
-			operation: SimplifiedOperation<Payload>,
-			message: string,
-		) => void,
+		handler: (operation: SimplifiedOperation<Payload>, message: string) => void,
 	) {
 		return this.logsStore.logsClient.onNewOperation(async (topicId, op) => {
 			const chatId = await toPromise(this.chatId);

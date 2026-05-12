@@ -38,5 +38,4 @@ export class TauriLogsClient<PAYLOAD> implements LogsClient<PAYLOAD> {
 			if (unsubs) unsubs();
 		};
 	}
-
 }

@@ -3,7 +3,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { type TopicId } from '../p2panda/types';
 
 export interface IDevicesClient {
-
 	myDeviceGroupTopicId(): Promise<TopicId>;
 }
 

@@ -1,7 +1,7 @@
 import type { IContactsClient, Profile } from '../contacts/contacts-client';
 import type { AgentId, DeviceId, TopicId } from '../p2panda/types';
-import type { ContactCode, InboxTopic } from '../types';
 import { personalTopicFor } from '../topics';
+import type { ContactCode, InboxTopic } from '../types';
 import type { LocalStorageLogsClient } from './client';
 
 export class MockContactsClient implements IContactsClient {
