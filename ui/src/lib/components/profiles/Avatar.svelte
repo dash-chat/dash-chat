@@ -18,7 +18,7 @@
 		id,
 		children,
 	}: {
-		image: string | undefined;
+		image?: string | undefined;
 		initials?: string | undefined;
 		alt?: string | undefined;
 		style?: string | undefined;
@@ -30,7 +30,9 @@
 	const avatarImage = $derived(
 		image?.startsWith('data:image') ? image : undefined,
 	);
-	const avatarInitials = $derived(textAvatarData?.text || initials || undefined);
+	const avatarInitials = $derived(
+		textAvatarData?.text || initials || undefined,
+	);
 	const avatarStyle = $derived.by(() => {
 		if (!textAvatarData) {
 			return style;

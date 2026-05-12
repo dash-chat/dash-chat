@@ -7,6 +7,7 @@ export const S = {
 		newMessageFab: tid('home-new-message-fab'),
 		firstChatTooltip: tid('first-chat-tooltip'),
 		chatList: tid('all-chats-list'),
+		chatRow: tid('all-chats-row'),
 		emptyState: tid('all-chats-empty'),
 	},
 	getStarted: {
@@ -36,6 +37,7 @@ export const S = {
 		searchBack: tid('direct-chat-search-back'),
 		settingsLink: tid('direct-chat-settings-link'),
 		peerName: tid('direct-chat-peer-name'),
+		peerHeader: tid('direct-chat-peer-header'),
 		scrollBottom: tid('direct-chat-scroll-bottom'),
 		scroll: tid('direct-chat-scroll'),
 		unreadBadge: tid('direct-chat-unread-badge'),
@@ -54,7 +56,11 @@ export const S = {
 	chatSettings: {
 		back: tid('chat-settings-back'),
 		peerName: tid('chat-settings-peer-name'),
+		peerHeader: tid('chat-settings-peer-header'),
 		searchButton: tid('chat-settings-search-btn'),
+	},
+	peerProfileSheet: {
+		root: tid('peer-profile-sheet'),
 	},
 	settings: {
 		back: tid('settings-back'),

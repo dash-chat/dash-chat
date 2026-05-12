@@ -96,17 +96,14 @@ export class ContactsStore {
 				const existingTimestamp = rejected[agentId];
 
 				// Keep the latest rejection timestamp
-				if (
-					!existingTimestamp ||
-					op.header.timestamp > existingTimestamp
-				) {
+				if (!existingTimestamp || op.header.timestamp > existingTimestamp) {
 					rejected[agentId] = op.header.timestamp;
 				}
 			}
 		}
 
 		return rejected;
-		});
+	});
 
 	contactRequests = reactive(async () => {
 		const activeInboxTopics = await this.activeInboxTopics();
@@ -225,7 +222,10 @@ export class ContactsStore {
 		);
 
 		const profilesWithContacts: Array<[AgentId, Profile]> = contacts
-			.map((contact, i) => [contact, profiles[i]] as [AgentId, Profile | undefined])
+			.map(
+				(contact, i) =>
+					[contact, profiles[i]] as [AgentId, Profile | undefined],
+			)
 			.filter((pair): pair is [AgentId, Profile] => !!pair[1]);
 
 		return profilesWithContacts;
