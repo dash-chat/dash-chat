@@ -30,7 +30,7 @@
 	const avatarImage = $derived(
 		image?.startsWith('data:image') ? image : undefined,
 	);
-	const avatarInitials = $derived(textAvatarData?.text ?? initials);
+	const avatarInitials = $derived(textAvatarData?.text || initials || undefined);
 	const avatarStyle = $derived.by(() => {
 		if (!textAvatarData) {
 			return style;
