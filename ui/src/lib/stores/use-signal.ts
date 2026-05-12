@@ -51,7 +51,7 @@ export function useReactivePromise<T, Args extends unknown[]>(
 			// new value), which propagates dirty-ness through signalium's
 			// normal dependency graph.
 			(rp as unknown as { _version: { value: unknown } })._version.value;
-			return { isReady: rp.isReady, value: rp.value, rp };
+			return { isReady: rp.isReady, value: rp.value };
 		},
 		{
 			equals: (prev, next) =>
@@ -61,40 +61,22 @@ export function useReactivePromise<T, Args extends unknown[]>(
 
 	return {
 		subscribe: set => {
-			// On first-load pending we expose the RP directly — Svelte's `{#await}`
-			// awaits it via `rp.then()`. Once resolved we switch to value-keyed
-			// `Promise.resolve(value)` references so Svelte re-renders only when
-			// the value actually changes (refreshes with the same value are no-ops).
-			let cachedPromise: Promise<T> | undefined;
-			let lastValue: unknown;
-
+			let lastEmittedReady = false;
 			const emit = () => {
-				const { isReady, value, rp } = w.value;
-
+				const { isReady, value } = w.value;
 				if (isReady) {
-					if (cachedPromise === (rp as unknown as Promise<T>)) {
-						// The RP we exposed during pending just resolved — Svelte
-						// already gets the value via `rp.then()`. Convert our
-						// tracking promise to a value-keyed one for future
-						// comparisons, but don't re-set (avoids a redundant
-						// `:pending` flicker).
-						lastValue = value;
-						cachedPromise = Promise.resolve(value as T);
-						return;
-					}
-					if (cachedPromise && Object.is(value, lastValue)) return;
-					lastValue = value;
-					cachedPromise = Promise.resolve(value as T);
-					set(cachedPromise);
-				} else if (cachedPromise) {
-					// Refreshing with cached value — keep showing it.
-					return;
-				} else {
-					cachedPromise = rp as unknown as Promise<T>;
-					set(cachedPromise);
+					// Always hand Svelte a freshly-resolved Promise so `{#await}`
+					// transitions to the :then branch with the new value.
+					set(Promise.resolve(value as T));
+					lastEmittedReady = true;
+				} else if (!lastEmittedReady) {
+					// First-load pending — emit a never-resolving placeholder so
+					// {#await} stays in :pending until the first resolution.
+					set(new Promise<T>(() => {}));
 				}
+				// Else: a downstream recompute is in flight; keep showing the
+				// previous value rather than flashing back to :pending.
 			};
-
 			const unsubs = w.addListener(emit);
 			emit();
 			return () => {
