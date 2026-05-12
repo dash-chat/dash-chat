@@ -18,10 +18,7 @@ static REDACTION_REGEXES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|
         // DeviceId and AgentId wrappers (must precede bare PublicKey/Hash patterns)
         (r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)", "[REDACTED]"),
         // Debug-formatted byte arrays: PublicKey([1, 2, ...]), Hash([...]), Signature([...])
-        (
-            r"(PublicKey|Hash|Signature)\(\[[\d, ]+\]\)",
-            "[REDACTED]",
-        ),
+        (r"(PublicKey|Hash|Signature)\(\[[\d, ]+\]\)", "[REDACTED]"),
         // Timestamps (seconds or microseconds since epoch, 10+ digits)
         (r#""?timestamp"?\s*:?\s*\d{10,}"#, "[REDACTED]"),
         // Debug format: name/surname/about fields with quoted values
@@ -258,7 +255,10 @@ mod tests {
     fn redacts_hostname_value_keeps_label() {
         let input = "Hostname: Alices-MacBook-Pro.local";
         let result = redact(input);
-        assert!(!result.contains("Alices"), "hostname not redacted: {result}");
+        assert!(
+            !result.contains("Alices"),
+            "hostname not redacted: {result}"
+        );
         assert!(
             !result.contains("MacBook-Pro"),
             "hostname not redacted: {result}"
