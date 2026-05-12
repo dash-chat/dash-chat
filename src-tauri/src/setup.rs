@@ -49,10 +49,6 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         app_handle.manage(crate::mailbox::server::LocalMailboxMutex::default());
         crate::tray::setup_tray(&app_handle)?;
 
-        if crate::settings::load_mailbox_enabled(&app_handle) {
-            crate::mailbox::server::set_local_mailbox_server_enabled(&app_handle, true).await?;
-        }
-
         // Hide the main window when launched with --minimized (autostart)
         if std::env::args().any(|a| a == "--minimized") {
             if let Some(w) = app_handle.get_webview_window("main") {
@@ -87,6 +83,13 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     }
 
     crate::mailbox::spawn_local_mailbox_mdns_discovery(&app_handle, node)?;
+
+    // Start the local mailbox server after the node is managed so it can
+    // derive a stable mDNS instance name from the device id.
+    #[cfg(not(mobile))]
+    if crate::settings::load_mailbox_enabled(&app_handle) {
+        crate::mailbox::server::set_local_mailbox_server_enabled(&app_handle, true).await?;
+    }
 
     spawn_notification_loop(app_handle.clone(), notification_rx);
 
