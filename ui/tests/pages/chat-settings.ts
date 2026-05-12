@@ -16,3 +16,8 @@ export function getPeerName() {
 export function clickSearch() {
 	return { action: 'click' as const, selector: selectors.searchButton };
 }
+
+/** True if the chat-settings page has rendered (peer-name element is present). */
+export function chatSettingsLoaded(): boolean {
+	return !!document.querySelector(selectors.peerName);
+}

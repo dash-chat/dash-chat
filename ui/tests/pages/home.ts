@@ -42,6 +42,11 @@ export function getChatListItem(contactName: string): Element | null {
 	);
 }
 
+/** True if the chat list contains an entry whose text includes `contactName`. */
+export function hasChatListItem(contactName: string): boolean {
+	return !!getChatListItem(contactName);
+}
+
 /**
  * Check whether any chat-list item overflows its container.
  * Returns an array of overflow descriptions (empty = no overflow).

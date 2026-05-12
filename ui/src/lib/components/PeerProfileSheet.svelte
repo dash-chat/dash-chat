@@ -48,7 +48,10 @@
 
 {#if isWideScreen.value}
 	<Dialog {opened} onBackdropClick={onClose}>
-		<div class="flex flex-col items-center gap-4 max-h-[80vh] overflow-y-auto">
+		<div
+			class="flex flex-col items-center gap-4 max-h-[80vh] overflow-y-auto"
+			data-testid="peer-profile-sheet"
+		>
 			{@render profileContent()}
 		</div>
 	</Dialog>
@@ -56,6 +59,7 @@
 	<Sheet class="pb-safe" {opened} onBackdropClick={onClose}>
 		<div
 			class="flex flex-col items-center px-6 pb-6 gap-4 max-h-[85vh] overflow-y-auto"
+			data-testid="peer-profile-sheet"
 		>
 			<div class="sheet-handle shrink-0"></div>
 			{@render profileContent()}
