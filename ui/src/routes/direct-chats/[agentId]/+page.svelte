@@ -478,10 +478,12 @@
 								class="column"
 								style={`padding-bottom: ${bottomBarHeight}px`}
 							>
-								{#if profile}
-									<div class="column min-w-0" style="align-items: center"
+								<div
+									class="column min-w-0"
+									style="align-items: center"
 									data-testid="direct-chat-peer-header"
-										>
+								>
+									{#if profile}
 										<Link
 											class="column my-6 gap-2 items-center max-w-full px-4"
 											onclick={() => (showPeerProfile = true)}
