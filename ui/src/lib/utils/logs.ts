@@ -1,4 +1,5 @@
 import { debug, error, info, warn } from '@tauri-apps/plugin-log';
+
 import { isTauriEnv } from './environment';
 
 let installed = false;
