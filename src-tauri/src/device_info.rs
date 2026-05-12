@@ -15,7 +15,10 @@ pub fn log_device_info(handle: &AppHandle) {
         features.join(",")
     };
 
-    let dirty_suffix = if env!("VERGEN_GIT_DIRTY") == "true" {
+    // option_env! so that builds without git context (release source tarballs,
+    // shallow CI clones, Nix sandboxes, vendored builds) still compile and just
+    // log "unknown" for the missing fields.
+    let dirty_suffix = if option_env!("VERGEN_GIT_DIRTY") == Some("true") {
         "-dirty"
     } else {
         ""
@@ -23,9 +26,9 @@ pub fn log_device_info(handle: &AppHandle) {
     log::info!(
         "Dash Chat version: {} (commit {}{}, branch {}, {}, arch {}, features {})",
         pkg.version,
-        env!("VERGEN_GIT_SHA"),
+        option_env!("VERGEN_GIT_SHA").unwrap_or("unknown"),
         dirty_suffix,
-        env!("VERGEN_GIT_BRANCH"),
+        option_env!("VERGEN_GIT_BRANCH").unwrap_or("unknown"),
         build_profile,
         tauri_plugin_os::arch(),
         features_str,
