@@ -68,7 +68,7 @@ log = "0.4"
 netdev = "0.43"
 if-watch = { version = "3", features = ["tokio"] }
 iana-time-zone = "0.1"
-sysinfo = "0.30"
+sysinfo = "0.38"
 url2 = "0.0.6"
 app_dirs2 = "2.5.5"
 uuid = "1"

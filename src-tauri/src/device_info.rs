@@ -120,12 +120,17 @@ pub fn log_webview_info(user_agent: String) {
 fn spawn_sysinfo_logger() {
     tauri::async_runtime::spawn(async move {
         let mut system = sysinfo::System::new();
+        // Prime the CPU sampler: sysinfo needs two refreshes separated by at
+        // least MINIMUM_CPU_UPDATE_INTERVAL (~200ms) to compute a usage delta,
+        // otherwise the first reading is always 0.0%.
+        system.refresh_cpu_all();
+        tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await;
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
             system.refresh_memory();
-            system.refresh_cpu();
+            system.refresh_cpu_all();
             const MB: u64 = 1024 * 1024;
             log::info!(
                 "SysInfo: mem {}/{} MB, swap {}/{} MB, cpu {:.1}%",
@@ -133,7 +138,7 @@ fn spawn_sysinfo_logger() {
                 system.total_memory() / MB,
                 system.used_swap() / MB,
                 system.total_swap() / MB,
-                system.global_cpu_info().cpu_usage(),
+                system.global_cpu_usage(),
             );
         }
     });
