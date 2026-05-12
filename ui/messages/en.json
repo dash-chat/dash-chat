@@ -105,6 +105,8 @@
 	"startFirstChatHere": "Start your first chat here.",
 	"getStarted": "Get started",
 
+	"waitingForProfile": "Waiting for profile…",
+
 	"newMessage": "New message",
 	"youHaveANewMessage": "You have a new message",
 	"syncedWithServer": "Synchronized with the server.",

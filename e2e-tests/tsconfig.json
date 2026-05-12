@@ -6,6 +6,7 @@
 		"esModuleInterop": true,
 		"skipLibCheck": true,
 		"strict": true,
+		"allowJs": true,
 		"types": [
 			"@wdio/mocha-framework",
 			"node",
