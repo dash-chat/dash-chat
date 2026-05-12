@@ -26,39 +26,40 @@ const POLLING_ENABLED =
 export class LogsStore<PAYLOAD> {
 	constructor(public logsClient: LogsClient<PAYLOAD>) {}
 
-	authorsForTopic = reactive((topicId: TopicId): ReactivePromise<PublicKey[]> =>
-		relay<PublicKey[]>(state => {
-			const fetchAuthors = async () => {
-				const authors = await this.logsClient.getAuthorsForTopic(topicId);
-				const current = state.value;
-				if (
-					current &&
-					current.length === authors.length &&
-					authors.every(a => current.includes(a))
-				)
-					return;
-				state.value = authors;
-			};
-			fetchAuthors();
-			const interval = POLLING_ENABLED
-				? setInterval(fetchAuthors, POLL_INTERVAL_MS)
-				: undefined;
+	authorsForTopic = reactive(
+		(topicId: TopicId): ReactivePromise<PublicKey[]> =>
+			relay<PublicKey[]>(state => {
+				const fetchAuthors = async () => {
+					const authors = await this.logsClient.getAuthorsForTopic(topicId);
+					const current = state.value;
+					if (
+						current &&
+						current.length === authors.length &&
+						authors.every(a => current.includes(a))
+					)
+						return;
+					state.value = authors;
+				};
+				fetchAuthors();
+				const interval = POLLING_ENABLED
+					? setInterval(fetchAuthors, POLL_INTERVAL_MS)
+					: undefined;
 
-			const unsubs = this.logsClient.onNewOperation(
-				(operationTopicId, operation) => {
-					if (topicId !== operationTopicId) return;
-					const authors = state.value || [];
-					const author = operation.header.public_key;
-					if (authors.includes(author)) return;
-					state.value = [...(state.value || []), author];
-				},
-			);
+				const unsubs = this.logsClient.onNewOperation(
+					(operationTopicId, operation) => {
+						if (topicId !== operationTopicId) return;
+						const authors = state.value || [];
+						const author = operation.header.public_key;
+						if (authors.includes(author)) return;
+						state.value = [...(state.value || []), author];
+					},
+				);
 
-			return () => {
-				if (interval !== undefined) clearInterval(interval);
-				unsubs();
-			};
-		}),
+				return () => {
+					if (interval !== undefined) clearInterval(interval);
+					unsubs();
+				};
+			}),
 	);
 
 	logs = reactive(
@@ -67,39 +68,39 @@ export class LogsStore<PAYLOAD> {
 			author: PublicKey,
 		): ReactivePromise<SimplifiedOperation<PAYLOAD>[]> =>
 			relay<SimplifiedOperation<PAYLOAD>[]>(state => {
-			const fetchLog = async () => {
-				const log = await this.logsClient.getLog(topicId, author);
-				const current = state.value;
-				// Logs are append-only per author; same length means same content.
-				if (current && current.length === log.length) return;
-				state.value = log;
-			};
-			fetchLog();
-			const interval = POLLING_ENABLED
-				? setInterval(fetchLog, POLL_INTERVAL_MS)
-				: undefined;
+				const fetchLog = async () => {
+					const log = await this.logsClient.getLog(topicId, author);
+					const current = state.value;
+					// Logs are append-only per author; same length means same content.
+					if (current && current.length === log.length) return;
+					state.value = log;
+				};
+				fetchLog();
+				const interval = POLLING_ENABLED
+					? setInterval(fetchLog, POLL_INTERVAL_MS)
+					: undefined;
 
-			const unsubs = this.logsClient.onNewOperation(
-				(operationTopicId, operation) => {
-					if (topicId !== operationTopicId) return;
-					if (author !== operation.header.public_key) return;
+				const unsubs = this.logsClient.onNewOperation(
+					(operationTopicId, operation) => {
+						if (topicId !== operationTopicId) return;
+						if (author !== operation.header.public_key) return;
 
-					// We already have this operation
-					if (
-						state.value?.find(
-							op => op.header.seq_num === operation.header.seq_num,
+						// We already have this operation
+						if (
+							state.value?.find(
+								op => op.header.seq_num === operation.header.seq_num,
+							)
 						)
-					)
-						return;
+							return;
 
-					state.value = [...(state.value || []), operation];
-				},
-			);
-			return () => {
-				if (interval !== undefined) clearInterval(interval);
-				unsubs();
-			};
-		}),
+						state.value = [...(state.value || []), operation];
+					},
+				);
+				return () => {
+					if (interval !== undefined) clearInterval(interval);
+					unsubs();
+				};
+			}),
 	);
 
 	logsForAllAuthors = reactive(async (topicId: TopicId) => {
