@@ -123,7 +123,11 @@ export const testUtils = {
 	updaterDismissBtn,
 	simulateUpdate,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
-	tr: (_key: string): string => '',
+	tr: (key: string): string => {
+		throw new Error(
+			`tr(${JSON.stringify(key)}) called before registerTestUtils provided messages`,
+		);
+	},
 	checkOverflow,
 	checkDarkMode,
 	checkRTL,
@@ -158,6 +162,16 @@ export function registerTestUtils(
 		testUtils.setLocale = setLocale;
 	}
 	if (messages) {
-		testUtils.tr = (key: string) => messages[key]?.() ?? '';
+		testUtils.tr = (key: string) => {
+			const message = messages[key];
+			if (!message) {
+				throw new Error(`tr: missing paraglide message for key "${key}"`);
+			}
+			const value = message();
+			if (!value) {
+				throw new Error(`tr: paraglide message for key "${key}" is empty`);
+			}
+			return value;
+		};
 	}
 }

@@ -69,33 +69,38 @@
 					style="align-items: center"
 					data-testid="chat-settings-peer-header"
 				>
-					<Avatar
-						image={profile?.avatar}
-						initials={profile?.name.slice(0, 2)}
-						style="--size: 80px;"
-					/>
+					{#if profile}
+						<Avatar
+							image={profile.avatar}
+							initials={profile.name.slice(0, 2)}
+							style="--size: 80px;"
+						/>
 
-					<div
-						class="flex cursor-pointer items-center gap-1 max-w-full"
-						onclick={() => (showPeerProfile = true)}
-						onkeydown={onActivate(() => (showPeerProfile = true))}
-						role="button"
-						tabindex="0"
-					>
-						<span
-							class="text-xl font-semibold break-words text-center min-w-0"
-							data-testid="chat-settings-peer-name">{fullName(profile!)}</span
+						<div
+							class="flex cursor-pointer items-center gap-1 max-w-full"
+							onclick={() => (showPeerProfile = true)}
+							onkeydown={onActivate(() => (showPeerProfile = true))}
+							role="button"
+							tabindex="0"
 						>
-						<wa-icon
-							class="small-icon quiet shrink-0"
-							src={wrapPathInSvg(mdiChevronRight)}
-						></wa-icon>
-					</div>
+							<span
+								class="text-xl font-semibold break-words text-center min-w-0"
+								data-testid="chat-settings-peer-name">{fullName(profile)}</span
+							>
+							<wa-icon
+								class="small-icon quiet shrink-0"
+								src={wrapPathInSvg(mdiChevronRight)}
+							></wa-icon>
+						</div>
 
-					{#if profile?.about}
-						<span class="quiet text-center break-words max-w-full"
-							>{profile.about}</span
-						>
+						{#if profile.about}
+							<span class="quiet text-center break-words max-w-full"
+								>{profile.about}</span
+							>
+						{/if}
+					{:else}
+						<Avatar image={undefined} style="--size: 80px;" />
+						<span class="quiet text-xl">{m.waitingForProfile()}</span>
 					{/if}
 				</div>
 
@@ -171,10 +176,12 @@
 			</div>
 		</div>
 
-		<PeerProfileSheet
-			opened={showPeerProfile}
-			onClose={() => (showPeerProfile = false)}
-			{profile}
-		/>
+		{#if profile}
+			<PeerProfileSheet
+				opened={showPeerProfile}
+				onClose={() => (showPeerProfile = false)}
+				{profile}
+			/>
+		{/if}
 	{/await}
 </Page>
