@@ -496,7 +496,7 @@
 											<div class="flex items-center gap-1 max-w-full">
 												<span
 													class="text-xl font-semibold break-words text-center min-w-0"
-													>{fullName(profile!)}</span
+													>{fullName(profile)}</span
 												>
 												<wa-icon
 													class="small-icon quiet shrink-0"
