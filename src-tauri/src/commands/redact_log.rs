@@ -3,6 +3,8 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::LazyLock;
 use tauri::{AppHandle, Manager};
 
+use crate::filesystem::FileSystem;
+
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 
 static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
@@ -21,8 +23,15 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
         // Debug format: name/surname/about fields with quoted values
         r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
-        // Debug format: ChatMessageContent("...")
+        // Debug format: ChatMessageContent("...") — legacy bare form, kept
+        // in case rotating log buffers still contain entries from older builds.
         r#"ChatMessageContent\("[^"]*"\)"#,
+        // Debug format: V0 unversioned content — ChatMessageContentV0("hello")
+        r#"ChatMessageContentV0\("[^"]*"\)"#,
+        // Debug format: V1 versioned content — `message: "hello"` inside
+        // ChatMessageContentV1 { message: "...", media: ... }. Use \b so we
+        // don't match substrings inside identifiers.
+        r#"\bmessage:\s*"[^"]*""#,
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
         // JSON format: "name":"...", "surname":"...", "about":"..."
@@ -64,14 +73,26 @@ pub fn redact(content: &str) -> String {
 
 #[tauri::command]
 pub fn get_redacted_log(app_handle: AppHandle) -> Result<String, String> {
-    let log_dir = app_handle
-        .path()
-        .app_log_dir()
-        .map_err(|e| format!("Failed to resolve log dir: {e:?}"))?;
-    let log_file = log_dir.join("Dash Chat.log");
+    let log_dir = FileSystem::new(&app_handle)
+        .map_err(|e| format!("Failed to resolve log dir: {e:?}"))?
+        .logs_dir();
+    // tauri-plugin-log writes to `<log_dir>/<package_name>.log`, but the
+    // package name source has shifted between Tauri versions, and the
+    // KeepOne rotation can leave a date-stamped older file alongside the
+    // live one. Scan for any `*.log` and pick the most recently modified —
+    // that's the active log regardless of how it's named.
+    let log_file = std::fs::read_dir(&log_dir)
+        .map_err(|e| format!("Failed to list log dir {}: {e:?}", log_dir.display()))?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("log"))
+        .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+        .map(|e| e.path())
+        .ok_or_else(|| format!("No *.log file in {}", log_dir.display()))?;
 
-    let content =
-        read_tail(&log_file, MAX_LOG_BYTES).map_err(|e| format!("Failed to read log: {e:?}"))?;
+    log::info!("Redacting log file: {}", log_file.display());
+
+    let content = read_tail(&log_file, MAX_LOG_BYTES)
+        .map_err(|e| format!("Failed to read log {}: {e:?}", log_file.display()))?;
 
     let redacted = redact(&content);
 
@@ -197,6 +218,28 @@ mod tests {
         assert!(
             !result.contains("secret message"),
             "message not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_chat_message_debug_v0_wrapped() {
+        // Compat<…V0, …V> Debug for the V0 branch:
+        let input = r#"ChatMessageContent(Unversioned(ChatMessageContentV0("secret v0 body")))"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("secret v0 body"),
+            "v0 message not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_chat_message_debug_v1_wrapped() {
+        // Compat<…V0, …V> Debug for the V1 branch:
+        let input = r#"ChatMessageContent(Versioned(V1(ChatMessageContentV1 { message: "secret v1 body", media: None })))"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("secret v1 body"),
+            "v1 message not redacted: {result}"
         );
     }
 

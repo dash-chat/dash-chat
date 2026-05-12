@@ -1,5 +1,3 @@
-#![feature(bool_to_result)]
-
 use std::time::Duration;
 
 use dashchat_node::{testing::*, *};

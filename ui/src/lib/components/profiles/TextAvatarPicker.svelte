@@ -76,6 +76,12 @@
 		activeTab = 'text';
 	}
 
+	function selectColorTab() {
+		activeTab = 'color';
+		// Explicit blur so iOS reliably dismisses the keyboard.
+		hiddenInput?.blur();
+	}
+
 	function handleColorSelect(color: string) {
 		currentTextAvatar = new TextAvatarData(color, currentTextAvatar.text);
 	}
@@ -91,7 +97,7 @@
 	aria-label={m.avatarText()}
 	tabindex="-1"
 	onblur={() =>
-		activeTab === 'text' && setTimeout(() => hiddenInput?.focus(), 0)}
+		setTimeout(() => activeTab === 'text' && hiddenInput?.focus(), 0)}
 />
 
 <!-- Text avatar editor -->
@@ -119,10 +125,7 @@
 		<SegmentedButton active={activeTab === 'text'} onClick={selectTextTab}>
 			{m.text()}
 		</SegmentedButton>
-		<SegmentedButton
-			active={activeTab === 'color'}
-			onClick={() => (activeTab = 'color')}
-		>
+		<SegmentedButton active={activeTab === 'color'} onClick={selectColorTab}>
 			{m.color()}
 		</SegmentedButton>
 	</Segmented>
