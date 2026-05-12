@@ -417,14 +417,14 @@ Use `pnpm start` to run two instances locally that can communicate with each oth
 The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO + `tauri-driver`. Tests launch two built Tauri instances and exercise the full messaging flow (profile creation, contact exchange, messaging).
 
 ```bash
-# Build the app first (debug, no-bundle)
-pnpm tauri build --debug --no-bundle
+# Build the Tauri binary and run the e2e suite (recommended)
+just test e2e
 
-# Run E2E tests (builds automatically unless SKIP_BUILD=1)
-cd e2e-tests && pnpm test
+# Build the binary only
+just test e2e-build
 
-# Skip the build step (useful when binary is already built)
-cd e2e-tests && SKIP_BUILD=1 pnpm test
+# Build and run a single spec
+just test e2e full-flow
 ```
 
 **Key details:**

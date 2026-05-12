@@ -185,7 +185,8 @@ async fn handle_push_notification(
             };
 
             let sender_name = if let Some(agent_id) = sender_agent_id {
-                node.get_profile_for_agent(agent_id)
+                node.local_store
+                    .get_profile(agent_id)
                     .await
                     .ok()
                     .flatten()
@@ -204,7 +205,7 @@ async fn handle_push_notification(
                 })
                 .map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()))
                 .unwrap_or_else(|| format!("/group-chat/{}", hex::encode(&*topic_id)));
-            let message_text: &str = &content;
+            let message_text: &str = content.message();
             let body_text = match message_text.char_indices().nth(200) {
                 Some((idx, _)) => format!("{}...", &message_text[..idx]),
                 None => message_text.to_string(),

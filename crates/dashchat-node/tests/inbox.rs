@@ -1,5 +1,3 @@
-#![feature(bool_to_result)]
-
 use dashchat_node::{testing::*, *};
 use mailbox_client::mem::MemMailbox;
 use named_id::*;
