@@ -33,14 +33,17 @@ export class LogsStore<PAYLOAD> {
 					const authors = await this.logsClient.getAuthorsForTopic(topicId);
 					const current = state.value;
 					if (
-						current &&
-						current.length === authors.length &&
-						authors.every(a => current.includes(a))
-					)
-						return;
-					state.value = authors;
+						!(
+							current &&
+							current.length === authors.length &&
+							authors.every(a => current.includes(a))
+						)
+					) {
+						state.value = authors;
+					}
+					return authors;
 				};
-				fetchAuthors();
+				state.setPromise(fetchAuthors());
 				const interval = POLLING_ENABLED
 					? setInterval(fetchAuthors, POLL_INTERVAL_MS)
 					: undefined;
@@ -72,10 +75,12 @@ export class LogsStore<PAYLOAD> {
 					const log = await this.logsClient.getLog(topicId, author);
 					const current = state.value;
 					// Logs are append-only per author; same length means same content.
-					if (current && current.length === log.length) return;
-					state.value = log;
+					if (!(current && current.length === log.length)) {
+						state.value = log;
+					}
+					return log;
 				};
-				fetchLog();
+				state.setPromise(fetchLog());
 				const interval = POLLING_ENABLED
 					? setInterval(fetchLog, POLL_INTERVAL_MS)
 					: undefined;
