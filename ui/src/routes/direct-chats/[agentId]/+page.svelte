@@ -853,7 +853,7 @@
 								<Block>
 									{#each condenseReactions(emojiTargetedMessage.reactions, myDeviceId) as reaction}
 										<button
-											class="mr-2 text-lg"
+											class="me-2 text-lg"
 											onclick={() =>
 												toggleReaction(
 													emojiTargetedMessage!,
@@ -901,7 +901,7 @@
 				{#if !isAtBottom}
 					{#await $unreadCount then count}
 						<div
-							class="absolute right-4"
+							class="absolute end-4"
 							style={`bottom: ${bottomBarHeight + 8}px`}
 						>
 							<ScrollToBottomButton
@@ -914,7 +914,7 @@
 
 				<div
 					bind:clientHeight={bottomBarHeight}
-					class="absolute bottom-0 left-0 right-0 z-20"
+					class="absolute bottom-0 inset-x-0 z-20"
 					class:bg-md-light-surface={theme === 'material'}
 					class:dark:bg-md-dark-surface={theme === 'material'}
 				>

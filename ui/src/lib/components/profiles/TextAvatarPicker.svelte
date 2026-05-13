@@ -146,7 +146,7 @@
 				style="color: {TEXT_AVATAR_TEXT_COLOR}"
 				>{currentTextAvatar.text}<span
 					aria-hidden="true"
-					class="text-[56px] font-light animate-[blink_1s_infinite] -ml-0.5"
+					class="text-[56px] font-light animate-[blink_1s_infinite] -ms-0.5"
 					style="color: {TEXT_AVATAR_TEXT_COLOR}">|</span
 				></span
 			>

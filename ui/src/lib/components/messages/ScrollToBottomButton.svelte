@@ -46,7 +46,7 @@
 >
 	{#if unreadCount > 0}
 		<Badge
-			class="absolute -top-1 -right-1"
+			class="absolute -top-1 -end-1"
 			data-testid="direct-chat-unread-badge"
 		>
 			{unreadCount > 99 ? '99+' : unreadCount}

@@ -91,7 +91,7 @@
 	.preview-float {
 		position: fixed;
 		bottom: 16px;
-		left: 16px;
+		inset-inline-start: 16px;
 		z-index: 99999;
 		display: flex;
 		flex-direction: row;

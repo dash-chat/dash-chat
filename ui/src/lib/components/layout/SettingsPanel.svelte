@@ -86,7 +86,7 @@
 						initials={myProfile?.name.slice(0, 2)}
 						style={isWideScreen.value || theme === 'ios'
 							? '--size: 64px'
-							: '--size: 64px; margin-left: 16px'}
+							: '--size: 64px; margin-inline-start: 16px'}
 					/>
 				{/snippet}
 				{#snippet after()}
