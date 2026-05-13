@@ -99,12 +99,16 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		// Wait for ports to be fully released after SIGKILL.
 		await Promise.all(ALL_PORTS.map(p => waitForPortFree(p)));
 
-		// Clean agent app data for a fresh start on setup retries.
+		// Clean agent app data for a fresh start on setup retries. The Tauri
+		// agent stores its DB under $DATA_DIR/<version>/ and WebKitGTK puts
+		// localStorage/IndexedDB under XDG dirs inside $DATA_DIR
+		// (.local/share/, .config/, .cache/), so we must wipe the whole dir,
+		// not just an `studio.darksoil.dashchat` subpath that doesn't exist.
 		// Skip for verify phase — it needs data from the setup phase.
 		if (phase === 'setup') {
 			for (const agent of ['agent-1', 'agent-2']) {
-				const appData = path.join(ROOT, '.dbs', 'compat', agent, 'studio.darksoil.dashchat');
-				try { rmSync(appData, { recursive: true, force: true }); } catch { /* ignore */ }
+				const agentDir = path.join(ROOT, '.dbs', 'compat', agent);
+				try { rmSync(agentDir, { recursive: true, force: true }); } catch { /* ignore */ }
 			}
 		}
 

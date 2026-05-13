@@ -27,5 +27,4 @@ export * from './chats/chats-client.js';
 export * from './settings/settings-client.js';
 export * from './settings/settings-store.js';
 
-export * from './utils/to-promise.js';
 export * from './utils/memo.js';
