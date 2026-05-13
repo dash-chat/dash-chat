@@ -9,6 +9,7 @@
 		Navbar,
 		Segmented,
 		SegmentedButton,
+		useTheme,
 	} from 'konsta/svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { TextAvatarData } from './text-avatar-data-url';
@@ -85,6 +86,8 @@
 	function handleColorSelect(color: string) {
 		currentTextAvatar = new TextAvatarData(color, currentTextAvatar.text);
 	}
+
+	const theme = $derived(useTheme());
 </script>
 
 <input
@@ -120,17 +123,6 @@
 	{/snippet}
 </Navbar>
 
-<div style="padding: 0 16px 16px;">
-	<Segmented strong>
-		<SegmentedButton active={activeTab === 'text'} onClick={selectTextTab}>
-			{m.text()}
-		</SegmentedButton>
-		<SegmentedButton active={activeTab === 'color'} onClick={selectColorTab}>
-			{m.color()}
-		</SegmentedButton>
-	</Segmented>
-</div>
-
 <!-- Text avatar preview -->
 <div class="column" style="align-items: center; padding: 24px 0;">
 	<button
@@ -157,6 +149,17 @@
 			>
 		{/if}
 	</button>
+</div>
+
+<div style="padding: 0 16px 16px;">
+	<Segmented strong rounded={theme === 'ios'}>
+		<SegmentedButton active={activeTab === 'text'} onClick={selectTextTab}>
+			{m.text()}
+		</SegmentedButton>
+		<SegmentedButton active={activeTab === 'color'} onClick={selectColorTab}>
+			{m.color()}
+		</SegmentedButton>
+	</Segmented>
 </div>
 
 {#if activeTab === 'color'}
