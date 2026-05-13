@@ -60,7 +60,11 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     if let Some(e) = last_err {
         return Err(e.into());
     }
-    let service = registered_service.expect("retry loop succeeded without capturing service");
+    let Some(service) = registered_service else {
+        return Err(anyhow::anyhow!(
+            "failed to register local mailbox service via mdns after 3 attempts"
+        ));
+    };
 
     let addr = format!("0.0.0.0:{port}");
     let server = tokio::spawn(async move {
