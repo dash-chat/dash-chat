@@ -51,25 +51,39 @@ export function useReactivePromise<T, Args extends unknown[]>(
 			// new value), which propagates dirty-ness through signalium's
 			// normal dependency graph.
 			(rp as unknown as { _version: { value: unknown } })._version.value;
-			return { isReady: rp.isReady, value: rp.value };
+			return {
+				isReady: rp.isReady,
+				isRejected: rp.isRejected,
+				value: rp.value,
+				error: rp.error,
+			};
 		},
 		{
 			equals: (prev, next) =>
-				prev.isReady === next.isReady && Object.is(prev.value, next.value),
+				prev.isReady === next.isReady &&
+				prev.isRejected === next.isRejected &&
+				Object.is(prev.value, next.value) &&
+				Object.is(prev.error, next.error),
 		},
 	);
 
 	return {
 		subscribe: set => {
-			let lastEmittedReady = false;
+			let lastEmittedSettled = false;
 			const emit = () => {
-				const { isReady, value } = w.value;
-				if (isReady) {
+				const { isReady, isRejected, value, error } = w.value;
+				if (isRejected) {
+					// Surface the error so `{#await}` transitions to :catch.
+					// Rejection takes precedence over a sticky `isReady` flag
+					// from a prior successful resolution.
+					set(Promise.reject(error));
+					lastEmittedSettled = true;
+				} else if (isReady) {
 					// Always hand Svelte a freshly-resolved Promise so `{#await}`
 					// transitions to the :then branch with the new value.
 					set(Promise.resolve(value as T));
-					lastEmittedReady = true;
-				} else if (!lastEmittedReady) {
+					lastEmittedSettled = true;
+				} else if (!lastEmittedSettled) {
 					// First-load pending — emit a never-resolving placeholder so
 					// {#await} stays in :pending until the first resolution.
 					set(new Promise<T>(() => {}));
