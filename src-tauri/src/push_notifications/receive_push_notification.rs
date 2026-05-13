@@ -197,9 +197,8 @@ async fn handle_push_notification(
 
             let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
 
-            let direct_chat_agent_id = sender_agent_id.filter(|&agent_id| {
-                *Topic::direct_chat([node.agent_id(), agent_id]) == topic_id
-            });
+            let direct_chat_agent_id = sender_agent_id
+                .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic_id);
             let chat_route = match direct_chat_agent_id {
                 Some(agent_id) => format!("/direct-chats/{}", agent_id.to_hex()),
                 None => format!("/group-chat/{}", hex::encode(&*topic_id)),
