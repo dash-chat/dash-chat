@@ -35,24 +35,27 @@ export function forwardConsoleToTauriLog(): void {
 
 	const fmt = (args: unknown[]) => args.map(fmtOne).join(' ');
 
+	// Swallow IPC rejections from the log plugin. Otherwise a failed call from
+	// console.error → error() would unhandle-reject back into console.error
+	// and recurse.
 	console.log = (...args) => {
 		orig.log(...args);
-		info(fmt(args));
+		info(fmt(args)).catch(() => {});
 	};
 	console.info = (...args) => {
 		orig.info(...args);
-		info(fmt(args));
+		info(fmt(args)).catch(() => {});
 	};
 	console.warn = (...args) => {
 		orig.warn(...args);
-		warn(fmt(args));
+		warn(fmt(args)).catch(() => {});
 	};
 	console.error = (...args) => {
 		orig.error(...args);
-		error(fmt(args));
+		error(fmt(args)).catch(() => {});
 	};
 	console.debug = (...args) => {
 		orig.debug(...args);
-		debug(fmt(args));
+		debug(fmt(args)).catch(() => {});
 	};
 }
