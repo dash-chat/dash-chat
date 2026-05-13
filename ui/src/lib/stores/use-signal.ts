@@ -31,10 +31,11 @@ export function useSignal<T, Args extends unknown[]>(
 	};
 }
 
-export function useReactivePromise<T, Args extends unknown[]>(
-	v: (...args: Args) => ReactivePromise<T>,
-	...args: Args
-): Readable<Promise<T>> {
+export function useReactivePromise<
+	RP extends ReactivePromise<unknown>,
+	Args extends unknown[],
+>(v: (...args: Args) => RP, ...args: Args): Readable<Promise<Awaited<RP>>> {
+	type T = Awaited<RP>;
 	// Register with the nearest KeepAliveScope (if any) so the signalium cache
 	// for this (fn, args) is kept alive for the lifetime of the surrounding
 	// route group — not just this consumer's subscription.
