@@ -32,18 +32,24 @@ export class LogsStore<PAYLOAD> {
 				const fetchAuthors = async () => {
 					const authors = await this.logsClient.getAuthorsForTopic(topicId);
 					const current = state.value;
+
+					let allAuthorsAreKnown = true;
+					for (const author of authors) {
+						if (!current?.includes(author)) {
+							allAuthorsAreKnown = false;
+						}
+					}
+
 					if (
-						!(
-							current &&
-							current.length === authors.length &&
-							authors.every(a => current.includes(a))
-						)
+						!current ||
+						current.length !== authors.length ||
+						!allAuthorsAreKnown
 					) {
 						state.value = authors;
 					}
 					return authors;
 				};
-				state.setPromise(fetchAuthors());
+				fetchAuthors();
 				const interval = POLLING_ENABLED
 					? setInterval(fetchAuthors, POLL_INTERVAL_MS)
 					: undefined;
@@ -80,7 +86,7 @@ export class LogsStore<PAYLOAD> {
 					}
 					return log;
 				};
-				state.setPromise(fetchLog());
+				fetchLog();
 				const interval = POLLING_ENABLED
 					? setInterval(fetchLog, POLL_INTERVAL_MS)
 					: undefined;
