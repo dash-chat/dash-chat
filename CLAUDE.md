@@ -50,6 +50,16 @@ Please read this coding style carefully and take it into account when planning o
 - Try to reuse types and functions across the project rather than reimplement them.
 - Don't use `any` or `unknown` typescript types. Instead, try to understand the actual typescript types and use them to infer the appropriate data structures and algorithms to use.
 - Prefer Tailwind CSS utility classes over custom CSS styles whenever possible. Use inline `class` attributes with Tailwind classes instead of adding styles to `<style>` blocks.
+- **Write very few comments.** Default to none. The only two acceptable reasons to add a comment are:
+  1. Documenting what a function does (a doc-comment on the function signature). Skip these for self-explanatory helpers whose name and signature already say everything.
+  2. Explaining *why* a non-obvious piece of code is there — a hidden constraint, a workaround for a specific bug, a subtle invariant that would surprise a reader. Keep these to one or two lines, no more.
+  Do NOT comment on what code does when the code itself already says it (well-named identifiers are documentation). Do NOT leave behind narrative comments about the change you just made ("added X to support Y", "renamed for clarity", "moved from foo.ts"). Do NOT keep TODO comments around for things that should be in the issue tracker. When in doubt, delete the comment.
+- **Avoid deep nesting.** If a function is going to exceed two levels of nesting (e.g. an `if` inside a `for` inside another block, or three nested callbacks), extract the inner work into clearly named utility functions that each do one specific task and call them from the higher-level function. Flat code with named helpers is easier to read, test, and re-arrange than a single deeply nested function.
+- **STRICT: Use logical `start`/`end` CSS properties, not directional `left`/`right`.** The app is fully RTL-aware (Farsi is a supported locale) and directional left/right properties break in RTL.
+  - Tailwind: use `ms-`, `me-`, `ps-`, `pe-`, `start-`, `end-`, `rounded-s-`, `rounded-e-`, `rounded-ss-`, `rounded-se-`, `rounded-es-`, `rounded-ee-`, `text-start`, `text-end`, `border-s`, `border-e`. Do NOT use `ml-`, `mr-`, `pl-`, `pr-`, `left-`, `right-`, `rounded-l-`, `rounded-r-`, `rounded-tl-`/`tr-`/`bl-`/`br-`, `text-left`, `text-right`, `border-l`, `border-r`.
+  - Raw CSS: use `margin-inline-start/end`, `padding-inline-start/end`, `inset-inline-start/end`, `border-inline-start/end`, `border-start-start-radius`/`border-start-end-radius`/`border-end-start-radius`/`border-end-end-radius`, `text-align: start/end`. Do NOT use `margin-left/right`, `padding-left/right`, `left:`/`right:`, `border-left/right`, `border-*-left/right-radius`, `text-align: left/right`.
+  - The ONLY acceptable uses of `left`/`right` are cases where RTL genuinely does not apply: viewport-pixel coordinates computed from `getBoundingClientRect()`, symmetric positioning where both sides are set to the same value (prefer `inset-inline: X` or `inset-x-X` instead), or rotation transforms. In every other case use logical properties.
+  - **When reviewing code, flag any new `left`/`right` CSS property or directional Tailwind class as a defect and ask the author to convert it to the logical equivalent (or justify why RTL doesn't apply).**
 
 ## Development Environment
 
@@ -117,59 +127,35 @@ pnpm tauri ios dev --device
 This is a pnpm workspace with multiple packages:
 - **ui/**: Svelte 5 + TypeScript frontend (SvelteKit application)
 - **packages/stores/**: Shared TypeScript stores for state management
+- **packages/site/**: Marketing/download site
 - **e2e-tests/**: WebdriverIO E2E test suite
 - **crates/dashchat-node/**: Core p2p backend logic (Rust)
 - **crates/mailbox-server/**: HTTP server for offline message storage
 - **src-tauri/**: Tauri application wrapper and integration layer
-- **site/**: Marketing/download site
 
 ### Backend Architecture (Rust)
 
-**Main Components:**
+The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tauri`) and several library/binary crates under `crates/`. All p2panda dependencies come from a custom fork at `https://github.com/maackle/p2panda.git` (branch `dashchat`).
 
-1. **dashchat-node** (`crates/dashchat-node/`):
-   - Core p2p networking logic built on p2panda
-   - Key modules:
-     - `node.rs`: Main Node implementation with p2panda integration
-     - `chat.rs` & `contact.rs`: Chat and contact management
-     - `spaces.rs` & `topic.rs`: Space and topic abstractions
-     - `stores/`: Data persistence layer
-     - `polestar/`: Additional p2panda functionality
-   - Uses p2panda libraries from custom fork: `https://github.com/maackle/p2panda.git` (branch: dashchat)
+**dashchat-node** is the p2p core. It owns the `Node`, which manages p2panda topics and spaces — the distributed structures that organize conversations, device groups, contact lists, and profile announcements — and runs p2panda's discovery, networking, sync, encryption, and group-auth layers on top of a local SQLite operation store. Each topic is an append-only log; CRDT semantics resolve concurrent writes. The Node exposes a subscription/notification interface that the host layer consumes for real-time UI updates, and integrates the mailbox client so messages keep flowing when peers are offline.
 
-2. **src-tauri** (Tauri app layer):
-   - `lib.rs`: Application setup, plugin initialization, and node lifecycle
-   - `commands/`: Tauri command handlers that bridge frontend to backend:
-     - `logs.rs`: Operation log queries
-     - `profile.rs`: User profile management
-     - `contacts.rs`: Contact management
-     - `devices.rs`: Device management
-     - `chats.rs` & `group_chat.rs`: Chat functionality
-   - `push_notifications.rs`: Mobile push notification handling
-   - `menu.rs`: Desktop menu configuration
-   - `utils.rs`: Shared utilities
+**src-tauri** is the host for the Svelte UI on desktop and mobile and the glue between the frontend and the Node. It registers a domain-organized library of Tauri commands (profile, contacts, devices, direct/group chats, settings, logs, push notifications) that the frontend invokes, and bridges Node notifications back to the webview as Tauri events. It also wires up the platform-specific story: push notifications, barcode scanner, system bars, virtual-keyboard padding, desktop menus, i18n, log redaction for error reports, and lifecycle management. On desktop it can spawn an in-process mailbox-server advertised via mDNS so peers on the same LAN can sync without any cloud service.
 
-3. **mailbox-server** (`crates/mailbox-server/`):
-   - Standalone HTTP server for storing/retrieving encrypted message blobs
-   - Built with Axum web framework and redb embedded database
-   - Key modules:
-     - `lib.rs`: App initialization, routing, and database setup
-     - `store_blobs.rs`: POST `/blobs/store` endpoint for storing blobs
-     - `get_blobs.rs`: POST `/blobs/get` endpoint for retrieving blobs with sync support
-     - `cleanup.rs`: Background task that deletes messages older than 7 days
-     - `blob.rs`: Base64-encoded binary data wrapper
-   - Data model:
-     - Key format: `topic_id:log_id:sequence_number:uuid_v7`
-     - Blobs organized by topic → log → sequence number hierarchy
-     - UUID v7 suffix enables time-based cleanup
-   - Features bidirectional sync: returns missing blobs to client AND requests blobs the server is missing
-   - Run with: `cargo run --bin mailbox-server -- --db-path <path> --addr <addr>`
+**mailbox-server** is the stateful HTTP relay that holds serialized p2panda operations (blobs) on behalf of offline peers until they reconnect. It supports bidirectional sync — clients pull blobs they are missing and push blobs the server is missing in the same exchange — runs a background cleanup task that drops blobs older than 7 days, and optionally forwards arrival notifications to a push-notifications-server so devices wake up to fetch new traffic. Deployable either as a standalone cloud service or spawned in-process by the Tauri app for LAN-only operation.
 
-**Key Backend Patterns:**
-- Node managed as Tauri state (accessed via `app.state::<Node>()`)
-- Async notification channel from Node to frontend via Tauri events
-- All backend commands are async and return `Result<T, String>`
-- Uses p2panda's operation-based data model with CBOR encoding
+**mailbox-client** is the async client the Node uses to talk to a mailbox-server (cloud or local), with a single API regardless of how the server is reached.
+
+**push-notifications-server** registers FCM device tokens per topic and dispatches notifications when the mailbox-server tells it new blobs have arrived for a topic a device is subscribed to. **push-notifications-client** is the small HTTP client both the mailbox-server (for forwarding arrivals) and the Tauri app (for registering tokens) use to reach it.
+
+**dashchat-compat** provides serialization helpers that version on-the-wire and on-disk data structures so old clients keep reading data written by newer ones where the schema is compatible — see also `e2e-tests/compat/`.
+
+**dashchat-utils** is a small cross-crate grab bag (retry helpers, singleton-task management, etc.).
+
+**Key backend patterns:**
+- Node held as Tauri-managed state, accessed via `app.state::<Node>()`.
+- Async notification channel from Node → frontend over Tauri events.
+- All Tauri commands are async and return `Result<T, String>` (stringified errors at the JS boundary).
+- Wire format and on-disk operations are CBOR-encoded.
 
 ### Frontend Architecture (Svelte 5 + TypeScript)
 
@@ -481,21 +467,13 @@ cd e2e-tests && bash compat/run.sh v0.10.0 v0.10.1
   - Android-specific: barcode scanner, push notifications
   - iOS-specific: barcode scanner, push notifications, safe area insets
 
-### iOS Virtual Keyboard Handling
+### Mobile Virtual Keyboard Handling
 
-The `tauri-plugin-virtual-keyboard-padding` plugin handles iOS keyboard behavior in WKWebView. Without it, iOS shows a scrollable white gap behind the keyboard.
+The `tauri-plugin-virtual-keyboard-padding` plugin is registered under `#[cfg(mobile)]` in `src-tauri/src/lib.rs` to fix native-vs-webview keyboard behavior that Tauri does not handle out of the box ([tauri-apps/tauri#10631](https://github.com/tauri-apps/tauri/issues/10631)). On **iOS** WKWebView leaves a scrollable gap behind the keyboard and shows a "Done" input-accessory toolbar; on **Android** the WebView is obscured by the IME instead of being pushed above it. The plugin makes focused inputs remain visible on both platforms and gives the webview a stable, non-scrolling viewport while the keyboard is open.
 
-**How the plugin works:**
-1. Removes WKWebView's built-in keyboard notification observers (prevents auto contentInset/contentOffset adjustments)
-2. Clamps `scrollView.contentOffset` to `.zero` via `UIScrollViewDelegate`
-3. Resizes WKWebView frame by keyboard height so focused inputs remain visible
-4. Injects CSS to override `.min-h-screen`/`.h-screen` with pixel values (100vh doesn't update on frame resize)
-5. Auto-detects background color from rendered `.k-page` element via JavaScript and applies to native view hierarchy (prevents color flash during animation)
-6. Removes the "Done" toolbar by swizzling `WKContentView.inputAccessoryView`
+**Plugin source:** `tauri-plugin-virtual-keyboard-padding`. `Cargo.toml` uses git URL `https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding`. The plugin's own README still claims iOS is unsupported — that is outdated; the Swift implementation exists and is registered alongside Android.
 
-**Plugin source:** `tauri-plugin-virtual-keyboard-padding` (sibling repo). `Cargo.toml` uses git URL; for local dev change to `path = "../../tauri-plugin-virtual-keyboard-padding"`.
-
-**CSS requirement:** `html` and `body` must have `background-color: transparent !important` (set in `app.css`) so the native background color shows through during keyboard animation.
+**CSS requirement (iOS):** `html` and `body` must have `background-color: transparent !important` (set in `app.css`) so the native background color the plugin applies to the view hierarchy shows through during the keyboard animation.
 
 ### iOS Simulator Testing
 
@@ -533,15 +511,6 @@ Testing keyboard behavior and UI interactions in the iOS simulator has inherent 
 - **Nightly features**: dashchat-node uses `#![feature(bool_to_result)]`
 - **Mobile vs Desktop**: Code paths differ for mobile/desktop (check `#[cfg(mobile)]` and `#[cfg(not(mobile))]`)
 - **Internationalization**: UI supports multiple languages via Weblate integration
-
-## Releasing
-
-Use `scripts/release.sh` to cut a new release:
-```bash
-./scripts/release.sh 0.11.0
-```
-
-This updates the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the download links in `packages/site/index.html`, then commits, tags (`vX.Y.Z`), and pushes.
 
 ## Build Configuration
 

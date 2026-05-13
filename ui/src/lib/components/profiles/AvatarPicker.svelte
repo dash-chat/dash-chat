@@ -144,7 +144,7 @@
 			<Avatar style="--size: 140px" image={avatar} />
 			{#if avatar}
 				<button
-					class="absolute top-2 right-2 w-10 h-10 rounded-[10px] bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center transition-colors duration-200 hover:bg-gray-100 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
+					class="absolute top-2 end-2 w-10 h-10 rounded-[10px] bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center transition-colors duration-200 hover:bg-gray-100 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
 					onclick={removeAvatar}
 					aria-label={m.removePhoto()}
 				>
