@@ -104,7 +104,7 @@ fn spawn_mdns_reannounce_loop(
     service: ServiceInfo,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_secs(30));
+        let mut tick = tokio::time::interval(Duration::from_secs(10));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         tick.tick().await;
         loop {
