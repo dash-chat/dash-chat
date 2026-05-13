@@ -9,14 +9,11 @@ export function useSignal<T, Args extends unknown[]>(
 ): Readable<T> {
 	const w = watcher(() => {
 		const value = v(...args);
-
-		// For async reactives (returning ReactivePromise), track the RP's
-		// _version signal to ensure the watcher is dirtied through signalium's
-		// normal dependency graph when the RP's state changes. Without this,
-		// async re-runs don't increment updatedCount on the reactive signal,
-		// so the watcher wouldn't re-evaluate.
 		if (value instanceof ReactivePromise) {
-			(value as any)['_version']?.['value'];
+			// Track _version so async reactive re-runs (which reuse the RP via
+			// _setPromise without bumping the signal's updatedCount) still
+			// dirty the watcher. Mirrors the tracking in useReactivePromise.
+			(value as unknown as { _version: { value: unknown } })._version.value;
 			if (value.value !== undefined) return value.value;
 		}
 		return value;
@@ -34,94 +31,69 @@ export function useSignal<T, Args extends unknown[]>(
 	};
 }
 
-export function useReactivePromise<T, Args extends unknown[]>(
-	v: (...args: Args) => ReactivePromise<T>,
-	...args: Args
-): Readable<Promise<T>> {
-	// Register with the nearest KeepAliveScope (if any) so the signalium cache for
-	// this (fn, args) is kept alive for the lifetime of the surrounding
+export function useReactivePromise<
+	RP extends ReactivePromise<unknown>,
+	Args extends unknown[],
+>(v: (...args: Args) => RP, ...args: Args): Readable<Promise<Awaited<RP>>> {
+	type T = Awaited<RP>;
+	// Register with the nearest KeepAliveScope (if any) so the signalium cache
+	// for this (fn, args) is kept alive for the lifetime of the surrounding
 	// route group — not just this consumer's subscription.
 	getKeepAliveScope()?.keepAlive(v, args);
 
 	const w = watcher(
 		() => {
 			const rp = v(...args);
-			// Track the RP's _version signal to ensure the watcher is dirtied
-			// through signalium's normal dependency graph on ANY RP state change.
-			// Without this, async re-runs call _setPromise on the existing RP
-			// without incrementing updatedCount, so the watcher's edge check
-			// sees no change and skips re-evaluation. The _version signal is
-			// incremented on every _setFlags call (pending, resolved, etc.).
-			(rp as any)['_version']?.['value'];
-			// Return a snapshot so equals() can compare actual state, not identity.
-			return { isReady: rp.isReady, value: rp.value };
+			// Track the RP's _version signal so the watcher is dirtied on every
+			// RP state transition. Async reactives reuse the same RP across
+			// re-runs (via _setPromise) without incrementing the signal's
+			// updatedCount, so the signal-level edge check sees no change.
+			// _version is bumped on every _setFlags call (pending, resolved,
+			// new value), which propagates dirty-ness through signalium's
+			// normal dependency graph.
+			(rp as unknown as { _version: { value: unknown } })._version.value;
+			return {
+				isReady: rp.isReady,
+				isRejected: rp.isRejected,
+				value: rp.value,
+				error: rp.error,
+			};
 		},
 		{
-			// Only fire the listener when the RP's observable state actually changes
-			// (ready flag or resolved value), not on every watcher re-evaluation.
 			equals: (prev, next) =>
-				prev.isReady === next.isReady && Object.is(prev.value, next.value),
+				prev.isReady === next.isReady &&
+				prev.isRejected === next.isRejected &&
+				Object.is(prev.value, next.value) &&
+				Object.is(prev.error, next.error),
 		},
 	);
 
 	return {
 		subscribe: set => {
-			// Emit stable native Promise references so Svelte's {#await} works
-			// correctly with signalium's ReactivePromise (RP).
-			//
-			// Problem: RP.then() queues callbacks when the Pending flag is set,
-			// even during refresh when cached data is available (Pending | Ready).
-			// This causes {#await} to re-enter the pending state. Additionally,
-			// rapid re-evaluations can supersede pending promises via _setPromise,
-			// leaving queued .then() callbacks permanently unresolved.
-			//
-			// Fix: never expose the raw RP to Svelte. Instead:
-			// - When ready: emit Promise.resolve(value), cached by identity.
-			// - When refreshing with cache: skip (keep current promise).
-			// - When truly pending: emit a deferred Promise that we resolve
-			//   ourselves when the watcher fires with ready data, bypassing
-			//   RP.then() entirely.
-			let cachedPromise: Promise<T> | undefined;
-			let lastValue: unknown;
-			let pendingResolve: ((value: T) => void) | undefined;
-
+			let lastEmittedSettled = false;
 			const emit = () => {
-				const { isReady, value: rpValue } = w.value;
-
-				if (isReady) {
-					const value = rpValue as T;
-
-					if (pendingResolve) {
-						// Resolve the deferred — Svelte's {#await} transitions to :then
-						// without us calling set(), so Promise.all wrappers aren't
-						// re-evaluated.
-						pendingResolve(value);
-						pendingResolve = undefined;
-						lastValue = value;
-						return;
-					}
-
-					if (cachedPromise && Object.is(value, lastValue)) {
-						return; // same value, same promise — skip set()
-					}
-					lastValue = value;
-					cachedPromise = Promise.resolve(value);
-					set(cachedPromise);
-				} else if (cachedPromise) {
-					// RP is refreshing but we have cached data — keep showing it.
-					return;
-				} else if (!pendingResolve) {
-					// Truly pending (first load) — create a deferred Promise that
-					// we resolve via the watcher, avoiding RP.then() entirely.
-					cachedPromise = new Promise<T>(resolve => {
-						pendingResolve = resolve;
-					});
-					set(cachedPromise);
+				const { isReady, isRejected, value, error } = w.value;
+				if (isRejected) {
+					// Surface the error so `{#await}` transitions to :catch.
+					// Rejection takes precedence over a sticky `isReady` flag
+					// from a prior successful resolution.
+					set(Promise.reject(error));
+					lastEmittedSettled = true;
+				} else if (isReady) {
+					// Always hand Svelte a freshly-resolved Promise so `{#await}`
+					// transitions to the :then branch with the new value.
+					set(Promise.resolve(value as T));
+					lastEmittedSettled = true;
+				} else if (!lastEmittedSettled) {
+					// First-load pending — emit a never-resolving placeholder so
+					// {#await} stays in :pending until the first resolution.
+					set(new Promise<T>(() => {}));
 				}
+				// Else: a downstream recompute is in flight; keep showing the
+				// previous value rather than flashing back to :pending.
 			};
-
 			const unsubs = w.addListener(emit);
-			emit(); // synchronous initial value
+			emit();
 			return () => {
 				unsubs();
 			};

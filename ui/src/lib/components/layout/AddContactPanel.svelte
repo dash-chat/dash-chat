@@ -5,7 +5,6 @@
 		decodeContactCode,
 		encodeContactCode,
 		fullName,
-		toPromise,
 		type ContactsStore,
 		type SettingsStore,
 	} from 'dash-chat-stores';
@@ -67,7 +66,7 @@
 			// Uncommenting this would mean that if the contact rejected your contact request
 			// there is no way to resend the contact request
 			//
-			// const contacts = await toPromise(contactsStore.contactsAgentIds);
+			// const contacts = await contactsStore.contactsAgentIds();
 			//
 			// if (contacts.includes(contactCode.agent_id)) {
 			// 	showToast(m.contactAlreadyExists());
@@ -103,14 +102,14 @@
 	let colorForPicker = $state('#007aff');
 
 	async function getMyName(): Promise<string> {
-		const profile = await toPromise(contactsStore.myProfile);
+		const profile = await contactsStore.myProfile();
 		return profile ? fullName(profile) : '';
 	}
 
 	async function shareCode(code: string) {
 		try {
 			const name = await getMyName();
-			const color = await toPromise(settingsStore.qrColor);
+			const color = await settingsStore.qrColor();
 			await shareQrCode(code, color, name);
 		} catch (e) {
 			console.error(e);
@@ -119,7 +118,7 @@
 	}
 
 	async function openColorPicker() {
-		colorForPicker = await toPromise(settingsStore.qrColor);
+		colorForPicker = await settingsStore.qrColor();
 		colorPickerOpen = true;
 	}
 

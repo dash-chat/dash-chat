@@ -164,7 +164,7 @@
 					<Card
 						class="icon-only-card"
 						raised
-						style="position: absolute; pointer-events: none; bottom: 0px; right: -6px; z-index: 10;"
+						style="position: absolute; pointer-events: none; bottom: 0px; inset-inline-end: -6px; z-index: 10;"
 					>
 						<wa-icon src={wrapPathInSvg(mdiCamera)}></wa-icon>
 					</Card>

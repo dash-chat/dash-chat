@@ -82,7 +82,7 @@
 							{:else}
 								<wa-relative-time
 									sync
-									style="text-align: right"
+									style="text-align: end"
 									format="narrow"
 									date={new Date(summary.lastEvent.timestamp)}
 								>

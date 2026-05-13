@@ -32,15 +32,10 @@
 		if (!opened || !targetElement) return '';
 		const rect = targetElement.getBoundingClientRect();
 		const barWidth = 320;
-		let left: number;
+		const isRtl = document.dir === 'rtl';
+		const anchorRight = isOwnMessage !== isRtl;
+		let left = anchorRight ? rect.right - barWidth : rect.left;
 
-		if (isOwnMessage) {
-			left = rect.right - barWidth;
-		} else {
-			left = rect.left;
-		}
-
-		// Clamp to viewport
 		left = Math.max(8, Math.min(left, window.innerWidth - barWidth - 8));
 
 		const top = rect.top - 52;

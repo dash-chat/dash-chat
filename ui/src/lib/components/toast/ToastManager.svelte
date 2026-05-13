@@ -105,7 +105,7 @@
 				{m.sendErrorReport()}
 			</Button>
 			<button
-				class="ml-1 opacity-70 active:opacity-100"
+				class="ms-1 opacity-70 active:opacity-100"
 				onclick={dismissToast}
 				aria-label={m.close()}
 			>

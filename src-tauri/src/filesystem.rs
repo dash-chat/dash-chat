@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Manager, Runtime};
 
-const DATABASE_VERSION: &str = "0.2";
+const DATABASE_VERSION: &str = "0.3";
 
 /// Hold the lock file handle for the lifetime of the process so the exclusive
 /// lock is never released while the app is running.
@@ -97,6 +97,10 @@ impl FileSystem {
             app_root_dir,
             app_data_dir,
         })
+    }
+
+    pub fn app_root_dir(&self) -> &PathBuf {
+        &self.app_root_dir
     }
 
     // The folder where all the data files for the app should be stored

@@ -34,14 +34,15 @@ pub(crate) async fn build_node(
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     install_logger(&app_handle)?;
+    crate::device_info::log_device_info(&app_handle);
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
 
     // Manage the mDNS service daemon
     app_handle.manage(mdns_sd::ServiceDaemon::new()?);
 
-    let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle)?.app_data_dir().clone();
-    log::info!("Using local data path: {local_data_path:?}");
+    let fs = FileSystem::new(&app_handle)?;
+    let local_data_path = fs.app_data_dir().clone();
 
     #[cfg(not(mobile))]
     {
@@ -106,6 +107,7 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
             .level_for("mailbox_client", log::LevelFilter::Debug)
             .level_for("mailbox_server", log::LevelFilter::Debug)
             .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
+            .level_for("webview", log::LevelFilter::Debug) // JS console.* forwarded via @tauri-apps/plugin-log
             // This is the default formatter for desktop, also use it in mobile platforms to record time
             // in the log file, as the logcat timestamp does not get included there
             .format(move |out, message, record| {
@@ -124,6 +126,7 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
                 ))
             })
             .clear_targets()
+            .max_file_size(5 * 1024 * 1024)
             .targets([
                 tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                 tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {

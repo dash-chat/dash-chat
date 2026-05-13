@@ -217,6 +217,6 @@
 	}
 
 	.send-button :global(wa-icon) {
-		margin-left: 2px; /* Optical centering for send arrow */
+		margin-inline-start: 2px; /* Optical centering for send arrow */
 	}
 </style>

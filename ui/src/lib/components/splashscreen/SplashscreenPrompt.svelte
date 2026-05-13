@@ -13,7 +13,7 @@
 {#await $myProfile}
 	<div
 		class="column"
-		style="flex: 1; align-items: center; justify-content: center"
+		style="height: 100vh; width: 100vw; align-items: center; justify-content: center"
 	>
 		<Preloader></Preloader>
 	</div>
