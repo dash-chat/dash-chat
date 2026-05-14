@@ -222,6 +222,7 @@ async fn handle_push_notification(
             // Android-only: reusing a stable id replaces notifications on iOS.
             #[cfg(target_os = "android")]
             if direct_chat_agent_id.is_some() {
+                // TODO: XOR with a node specific secret to avoid mining of topic IDs to cause collisions
                 notification_data.id =
                     i32::from_le_bytes([topic_id[0], topic_id[1], topic_id[2], topic_id[3]]);
                 notification_data.group = Some("dashchat.chats".to_string());
