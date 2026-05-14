@@ -65,17 +65,17 @@
 	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
 
 	{#if !isWideScreen.value}
-		<div class="flex flex-col fixed bottom-4 inset-x-0 z-10 pb-safe">
+		<div class="flex flex-col fixed bottom-4 inset-x-0 z-10 pb-safe pointer-events-none">
 			{#if theme == 'material'}
 				{#await $chatSummaries then chats}
 					{#if chats.length === 0}
-						<div class="self-end me-4 mb-2 z-30">
+						<div class="self-end me-4 mb-2 z-30 pointer-events-auto">
 							<FirstChatTooltip />
 						</div>
 					{/if}
 				{/await}
 				<Fab
-					class="z-20 me-4"
+					class="z-20 me-4 pointer-events-auto"
 					style="align-self: end;"
 					onClick={() => goto('/new-message')}
 					data-testid="home-new-message-fab"
