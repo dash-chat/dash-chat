@@ -71,17 +71,30 @@ export function useReactivePromise<
 	return {
 		subscribe: set => {
 			let lastEmittedSettled = false;
+			const sentinel = Symbol('uninit');
+			let lastEmittedValue: unknown = sentinel;
+			let lastEmittedError: unknown = sentinel;
 			const emit = () => {
 				const { isReady, isRejected, value, error } = w.value;
 				if (isRejected) {
 					// Surface the error so `{#await}` transitions to :catch.
 					// Rejection takes precedence over a sticky `isReady` flag
 					// from a prior successful resolution.
+					if (Object.is(lastEmittedError, error) && lastEmittedSettled) return;
+					lastEmittedError = error;
+					lastEmittedValue = sentinel;
 					set(Promise.reject(error));
 					lastEmittedSettled = true;
 				} else if (isReady) {
-					// Always hand Svelte a freshly-resolved Promise so `{#await}`
-					// transitions to the :then branch with the new value.
+					// signalium fires the watcher listener once on first attach
+					// after the synchronous `w.value` read has already bumped
+					// `updatedCount` past `listeners.updatedAt`, producing a
+					// redundant fire with the same value. Dedupe by reference
+					// so we don't hand Svelte a fresh Promise — that would
+					// reset `{#await}` to :pending and unmount the :then branch.
+					if (Object.is(lastEmittedValue, value) && lastEmittedSettled) return;
+					lastEmittedValue = value;
+					lastEmittedError = sentinel;
 					set(Promise.resolve(value as T));
 					lastEmittedSettled = true;
 				} else if (!lastEmittedSettled) {
