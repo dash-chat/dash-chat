@@ -35,7 +35,9 @@ export function getMessageText(content: MessageContent | string): string {
 	return typeof content === 'string' ? content : content.message;
 }
 
-export type AnnouncementPayload = { type: 'SetProfile'; payload: Profile };
+export type AnnouncementPayload =
+	| { type: 'SetProfile'; payload: Profile }
+	| { type: 'SetCapabilities'; payload: unknown };
 export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
 	| { type: 'Reaction'; payload: ChatReaction };

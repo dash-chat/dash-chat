@@ -1,4 +1,4 @@
-import { ReactivePromise, reactive } from 'signalium';
+import { reactive } from 'signalium';
 
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
@@ -13,7 +13,7 @@ import {
 } from '../group-chats/group-chat-client';
 import { GroupChatStore } from '../group-chats/group-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
-import { AgentId, PublicKey, TopicId } from '../p2panda/types';
+import { AgentId, PublicKey } from '../p2panda/types';
 import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
 import { type IChatsClient } from './chats-client';

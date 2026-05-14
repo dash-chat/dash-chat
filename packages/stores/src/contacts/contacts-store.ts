@@ -5,7 +5,7 @@ import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
-import { AnnouncementPayload, ChatId, ContactCode, Payload } from '../types';
+import { AnnouncementPayload, ContactCode, Payload } from '../types';
 import { IContactsClient, Profile } from './contacts-client';
 
 export interface ContactRequest {
@@ -124,7 +124,10 @@ export class ContactsStore {
 			for (const operations of Object.values(log)) {
 				for (const operation of operations) {
 					if (operation.body?.type !== 'Inbox') continue;
-					const agentId = operation.body.payload.payload.code.agent_id;
+					if (operation.body.payload.type !== 'ContactRequest') continue;
+					const { code, profile } = operation.body.payload.payload;
+					if (!code?.agent_id) continue;
+					const agentId = code.agent_id;
 
 					// We have already accepted this contact request
 					if (contacts.includes(agentId)) continue;
@@ -138,7 +141,8 @@ export class ContactsStore {
 						continue;
 
 					contactRequests.push({
-						...operation.body.payload.payload,
+						code,
+						profile,
 						topicId,
 						timestamp: operation.header.timestamp,
 					});
@@ -165,14 +169,12 @@ export class ContactsStore {
 			for (const operations of Object.values(log)) {
 				for (const operation of operations) {
 					if (operation.body?.type !== 'Inbox') continue;
-					if (operation.body.payload.payload.code.agent_id !== agentId)
-						continue;
+					if (operation.body.payload.type !== 'ContactRequest') continue;
+					const { code, profile } = operation.body.payload.payload;
+					if (code?.agent_id !== agentId) continue;
 					const ts = operation.header.timestamp;
 					if (!latest || ts > latest.timestamp) {
-						latest = {
-							timestamp: ts,
-							profile: operation.body.payload.payload.profile,
-						};
+						latest = { timestamp: ts, profile };
 					}
 				}
 			}
@@ -197,7 +199,7 @@ export class ContactsStore {
 			)
 			.map(l => [
 				l.header.timestamp,
-				(l.body!.payload as AnnouncementPayload).payload,
+				(l.body!.payload as AnnouncementPayload).payload as Profile,
 			]);
 
 		const descendantSortedOperations = setProfiles.sort(
