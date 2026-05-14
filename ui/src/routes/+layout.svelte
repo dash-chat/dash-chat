@@ -36,7 +36,7 @@
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useSignal } from '$lib/stores/use-signal';
+	import { useReactivePromise, useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMac, isMobile, isTauriEnv } from '$lib/utils/environment';
@@ -45,6 +45,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
 	import { goto } from '$app/navigation';
+	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
 
 	import('../../tests/setup-utils').then(({ registerTestUtils }) =>
 		// Paraglide types setLocale with a string-literal union; we widen to
@@ -124,6 +125,10 @@
 	setContext('devices-store', devicesStore);
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
+
+	// Keep the chats summaries signal warm so it's always fully loaded
+	// when navigating back home from any page
+	useKeepAlive(chatsStore.allChatsSummaries);
 
 	const isDark = useSignal(settingsStore.isDark);
 
