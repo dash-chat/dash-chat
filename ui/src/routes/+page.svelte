@@ -65,7 +65,9 @@
 	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
 
 	{#if !isWideScreen.value}
-		<div class="flex flex-col fixed bottom-4 inset-x-0 z-10 pb-safe pointer-events-none">
+		<div
+			class="flex flex-col fixed bottom-4 inset-x-0 z-10 pb-safe pointer-events-none"
+		>
 			{#if theme == 'material'}
 				{#await $chatSummaries then chats}
 					{#if chats.length === 0}
