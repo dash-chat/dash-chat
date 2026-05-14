@@ -8,6 +8,9 @@ patchedDependencies:
   konsta@5.0.6:
     hash: e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f
     path: patches/konsta@5.0.6.patch
+  signalium@3.0.1:
+    hash: 9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106
+    path: patches/signalium@3.0.1.patch
 
 importers:
 
@@ -141,7 +144,7 @@ importers:
         version: 6.1.0
       signalium:
         specifier: ^3.0.1
-        version: 3.0.1
+        version: 3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106)
       webbuf:
         specifier: ^3.0.28
         version: 3.0.28
@@ -226,7 +229,7 @@ importers:
         version: 1.0.0
       signalium:
         specifier: ^3.0.1
-        version: 3.0.1
+        version: 3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106)
       tailwindcss:
         specifier: ^4.1.18
         version: 4.1.18
@@ -8152,7 +8155,7 @@ snapshots:
 
   signal-polyfill@0.1.2: {}
 
-  signalium@3.0.1: {}
+  signalium@3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106): {}
 
   sirv@3.0.2:
     dependencies:

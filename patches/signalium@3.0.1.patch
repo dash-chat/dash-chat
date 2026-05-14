@@ -1,0 +1,149 @@
+diff --git a/dist/cjs/development/debug-C46WDxhL.js b/dist/cjs/development/debug-C46WDxhL.js
+index 59b724fc95d38bae5ee00cddcbd19bbd706dc409..445aa245f8a270156e9f053a9ed72188e674e9cf 100644
+--- a/dist/cjs/development/debug-C46WDxhL.js
++++ b/dist/cjs/development/debug-C46WDxhL.js
+@@ -769,24 +769,13 @@ function createCallback(fn, scope, deps) {
+   return new Callback(fn, scope, deps);
+ }
+ function callback(fn, idx, deps) {
+-  let callbacks;
+-  if (CURRENT_CALLBACK !== void 0) {
+-    callbacks = CURRENT_CALLBACK.callbacks;
+-  } else {
+-    const currentConsumer = getCurrentConsumer();
+-    if (currentConsumer === void 0) {
+-      throw new Error("callback must be used within a reactive function, component, or nested callback");
+-    }
+-    callbacks = currentConsumer.callbacks ?? (currentConsumer.callbacks = []);
+-  }
+-  let callback2 = callbacks[idx];
+-  if (callback2 === void 0) {
+-    callback2 = callbacks[idx] = createCallback(fn, getCurrentScope(), deps);
+-  } else if (deps && callback2.deps?.findIndex((dep, i) => dep !== deps[i]) !== -1) {
+-    callback2.setFn(fn);
+-    callback2.deps = deps;
++  // PATCH (dash-chat): bypass per-consumer callbacks[idx] caching to avoid
++  // cross-reactive slot collisions observed in 3.0.1. See the development
++  // ESM bundle for the full explanation.
++  if (CURRENT_CALLBACK === void 0 && getCurrentConsumer() === void 0) {
++    throw new Error("callback must be used within a reactive function, component, or nested callback");
+   }
+-  return callback2.fn;
++  return createCallback(fn, getCurrentScope(), deps).fn;
+ }
+ const arrayFrom = Array.from;
+ function isThenable(v) {
+diff --git a/dist/cjs/production/contexts-CM3QLfV8.js b/dist/cjs/production/contexts-CM3QLfV8.js
+index fc90dde43b4d9bdf76d497238448a5cbb0d80a69..c4b4da4149b2bf7e61202f68a31d9c036db8074e 100644
+--- a/dist/cjs/production/contexts-CM3QLfV8.js
++++ b/dist/cjs/production/contexts-CM3QLfV8.js
+@@ -427,24 +427,13 @@ function createCallback(fn, scope, deps) {
+   return new Callback(fn, scope, deps);
+ }
+ function callback(fn, idx, deps) {
+-  let callbacks;
+-  if (CURRENT_CALLBACK !== void 0) {
+-    callbacks = CURRENT_CALLBACK.callbacks;
+-  } else {
+-    const currentConsumer = getCurrentConsumer();
+-    if (currentConsumer === void 0) {
+-      throw new Error("callback must be used within a reactive function, component, or nested callback");
+-    }
+-    callbacks = currentConsumer.callbacks ?? (currentConsumer.callbacks = []);
+-  }
+-  let callback2 = callbacks[idx];
+-  if (callback2 === void 0) {
+-    callback2 = callbacks[idx] = createCallback(fn, getCurrentScope(), deps);
+-  } else if (deps && callback2.deps?.findIndex((dep, i) => dep !== deps[i]) !== -1) {
+-    callback2.setFn(fn);
+-    callback2.deps = deps;
++  // PATCH (dash-chat): bypass per-consumer callbacks[idx] caching to avoid
++  // cross-reactive slot collisions observed in 3.0.1. See the development
++  // ESM bundle for the full explanation.
++  if (CURRENT_CALLBACK === void 0 && getCurrentConsumer() === void 0) {
++    throw new Error("callback must be used within a reactive function, component, or nested callback");
+   }
+-  return callback2.fn;
++  return createCallback(fn, getCurrentScope(), deps).fn;
+ }
+ const arrayFrom = Array.from;
+ function isThenable(v) {
+diff --git a/dist/esm/development/debug-BTLbgTPK.js b/dist/esm/development/debug-BTLbgTPK.js
+index 59cf1668a2213dae6a6a90a635238d67a33fc96b..6beea34e6d600969775e4ba5d4cf40a7cf56dcc3 100644
+--- a/dist/esm/development/debug-BTLbgTPK.js
++++ b/dist/esm/development/debug-BTLbgTPK.js
+@@ -768,24 +768,21 @@ function createCallback(fn, scope, deps) {
+   return new Callback(fn, scope, deps);
+ }
+ function callback(fn, idx, deps) {
+-  let callbacks;
+-  if (CURRENT_CALLBACK !== void 0) {
+-    callbacks = CURRENT_CALLBACK.callbacks;
+-  } else {
+-    const currentConsumer = getCurrentConsumer();
+-    if (currentConsumer === void 0) {
+-      throw new Error("callback must be used within a reactive function, component, or nested callback");
+-    }
+-    callbacks = currentConsumer.callbacks ?? (currentConsumer.callbacks = []);
+-  }
+-  let callback2 = callbacks[idx];
+-  if (callback2 === void 0) {
+-    callback2 = callbacks[idx] = createCallback(fn, getCurrentScope(), deps);
+-  } else if (deps && callback2.deps?.findIndex((dep, i) => dep !== deps[i]) !== -1) {
+-    callback2.setFn(fn);
+-    callback2.deps = deps;
+-  }
+-  return callback2.fn;
++  // PATCH (dash-chat): the original implementation indexes a per-consumer
++  // `callbacks[idx]` array and reuses cached Callback wrappers across
++  // reactive re-runs for closure identity stability. In practice that slot
++  // table has shown cross-reactive collisions in 3.0.1 (one reactive's
++  // callbacks[0] is returned for a different reactive's _callback call,
++  // so Array.sort runs the wrong inner fn). We bypass the cache and
++  // always create a fresh Callback. The wrapping itself — scope tracking
++  // and generator-result-to-Promise conversion — is preserved by
++  // createCallback, so nested async transforms still work. Trade-off:
++  // we lose useCallback-style stable identity across re-runs (irrelevant
++  // for callbacks passed to Array methods).
++  if (CURRENT_CALLBACK === void 0 && getCurrentConsumer() === void 0) {
++    throw new Error("callback must be used within a reactive function, component, or nested callback");
++  }
++  return createCallback(fn, getCurrentScope(), deps).fn;
+ }
+ const arrayFrom = Array.from;
+ function isThenable(v) {
+diff --git a/dist/esm/production/contexts-FxCndlvf.js b/dist/esm/production/contexts-FxCndlvf.js
+index d578ce64f32f9970e55d028e4d727d9c76a62697..8006be93feb607d17912f030c706949c4be41edf 100644
+--- a/dist/esm/production/contexts-FxCndlvf.js
++++ b/dist/esm/production/contexts-FxCndlvf.js
+@@ -426,24 +426,13 @@ function createCallback(fn, scope, deps) {
+   return new Callback(fn, scope, deps);
+ }
+ function callback(fn, idx, deps) {
+-  let callbacks;
+-  if (CURRENT_CALLBACK !== void 0) {
+-    callbacks = CURRENT_CALLBACK.callbacks;
+-  } else {
+-    const currentConsumer = getCurrentConsumer();
+-    if (currentConsumer === void 0) {
+-      throw new Error("callback must be used within a reactive function, component, or nested callback");
+-    }
+-    callbacks = currentConsumer.callbacks ?? (currentConsumer.callbacks = []);
+-  }
+-  let callback2 = callbacks[idx];
+-  if (callback2 === void 0) {
+-    callback2 = callbacks[idx] = createCallback(fn, getCurrentScope(), deps);
+-  } else if (deps && callback2.deps?.findIndex((dep, i) => dep !== deps[i]) !== -1) {
+-    callback2.setFn(fn);
+-    callback2.deps = deps;
++  // PATCH (dash-chat): bypass per-consumer callbacks[idx] caching to avoid
++  // cross-reactive slot collisions observed in 3.0.1. See the development
++  // bundle for the full explanation.
++  if (CURRENT_CALLBACK === void 0 && getCurrentConsumer() === void 0) {
++    throw new Error("callback must be used within a reactive function, component, or nested callback");
+   }
+-  return callback2.fn;
++  return createCallback(fn, getCurrentScope(), deps).fn;
+ }
+ const arrayFrom = Array.from;
+ function isThenable(v) {

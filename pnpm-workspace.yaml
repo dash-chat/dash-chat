@@ -10,3 +10,4 @@ allowBuilds:
 
 patchedDependencies:
   konsta@5.0.6: patches/konsta@5.0.6.patch
+  signalium@3.0.1: patches/signalium@3.0.1.patch
