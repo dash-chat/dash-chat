@@ -35,6 +35,16 @@ export function forwardConsoleToTauriLog(): void {
 
 	const fmt = (args: unknown[]) => args.map(fmtOne).join(' ');
 
+	const ignoredWarnings = [
+		// emoji-picker-element fires this on every load because the Tauri
+		// asset protocol doesn't set an ETag. Caching still works via
+		// IndexedDB; the warning is purely a freshness-check hint.
+		'emoji-picker-element is more efficient if the dataSource server exposes an ETag header.',
+	];
+	const isIgnoredWarning = (args: unknown[]) =>
+		typeof args[0] === 'string' &&
+		ignoredWarnings.some(w => (args[0] as string).includes(w));
+
 	// Swallow IPC rejections from the log plugin. Otherwise a failed call from
 	// console.error → error() would unhandle-reject back into console.error
 	// and recurse.
@@ -47,6 +57,7 @@ export function forwardConsoleToTauriLog(): void {
 		info(fmt(args)).catch(() => {});
 	};
 	console.warn = (...args) => {
+		if (isIgnoredWarning(args)) return;
 		orig.warn(...args);
 		warn(fmt(args)).catch(() => {});
 	};
