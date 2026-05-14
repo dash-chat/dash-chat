@@ -20,6 +20,7 @@
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from './profiles/Avatar.svelte';
+	import ErrorPlaceholder from './ErrorPlaceholder.svelte';
 
 	let { class: className = '' }: { class?: string } = $props();
 
@@ -115,5 +116,7 @@
 				<p>{m.noChatsYetSubtitle()}</p>
 			</div>
 		{/if}
+	{:catch error}
+		<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 	{/await}
 </div>
