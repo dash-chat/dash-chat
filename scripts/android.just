@@ -8,13 +8,12 @@ dev:
 install:
     nix develop git+file:.#androidDev --command bash -c "adb install src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"
 
-
 # build the android app in an APK format
-build-apk:
-    nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build --apk"
+build TARGETS='aarch64 armv7 i686 x86_64':
+    nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build --apk -t {{TARGETS}}"
 
 # build the android app in AAB format
-build-aab:
+bundle:
     nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build"
 
 # uninstall the android app via adb
