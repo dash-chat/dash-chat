@@ -197,28 +197,39 @@ async fn handle_push_notification(
 
             let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
 
-            // Determine the chat route for notification tap navigation
-            let chat_route = sender_agent_id
-                .filter(|&agent_id| {
-                    let direct_topic = Topic::direct_chat([node.agent_id(), agent_id]);
-                    *direct_topic == topic_id
-                })
-                .map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()))
-                .unwrap_or_else(|| format!("/group-chat/{}", hex::encode(&*topic_id)));
+            let direct_chat_agent_id = sender_agent_id
+                .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic_id);
+            let chat_route = match direct_chat_agent_id {
+                Some(agent_id) => format!("/direct-chats/{}", agent_id.to_hex()),
+                None => format!("/group-chat/{}", hex::encode(&*topic_id)),
+            };
             let message_text: &str = content.message();
             let body_text = match message_text.char_indices().nth(200) {
                 Some((idx, _)) => format!("{}...", &message_text[..idx]),
                 None => message_text.to_string(),
             };
 
-            Ok(Some(NotificationData {
+            #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
+            let mut notification_data = NotificationData {
                 title: Some(title),
                 body: Some(body_text),
                 icon: Some("ic_stat_icon".to_string()),
                 group: Some(hex::encode(&*topic_id)),
                 route: Some(chat_route),
                 ..Default::default()
-            }))
+            };
+
+            // Android-only: reusing a stable id replaces notifications on iOS.
+            #[cfg(target_os = "android")]
+            if direct_chat_agent_id.is_some() {
+                // TODO: XOR with a node specific secret to avoid mining of topic IDs to cause collisions
+                notification_data.id =
+                    i32::from_le_bytes([topic_id[0], topic_id[1], topic_id[2], topic_id[3]]);
+                notification_data.group = Some("dashchat.chats".to_string());
+                notification_data.messaging_style = true;
+            }
+
+            Ok(Some(notification_data))
         }
         Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { code, profile }) => {
             Ok(Some(NotificationData {
