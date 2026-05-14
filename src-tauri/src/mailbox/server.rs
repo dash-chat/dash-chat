@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use dashchat_node::{DeviceId, Node};
 use futures::FutureExt;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use tauri::{AppHandle, Manager, Runtime};
@@ -8,6 +11,7 @@ use crate::filesystem::FileSystem;
 pub(crate) struct LocalMailboxState {
     stop_signal: tokio::sync::oneshot::Sender<()>,
     server: tokio::task::JoinHandle<()>,
+    reannounce: tokio::task::JoinHandle<()>,
     mdns_fullname: String,
 }
 
@@ -20,6 +24,8 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         return Ok(());
     }
 
+    let device_id = handle.state::<Node>().device_id();
+
     let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel();
     let stop_signal_rx = stop_signal_rx.map(|f| f.expect("failed to listen for event"));
     let path = FileSystem::new(handle)?.local_mailbox_db_path();
@@ -27,9 +33,10 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     let mut last_err = None;
     let mut port = 0;
     let mut mdns_fullname = String::new();
+    let mut registered_service = None;
     for attempt in 1..=3 {
         port = free_port()?;
-        let service = mdns_service_info(port, handle)?;
+        let service = mdns_service_info(port, &device_id)?;
         let fullname = service.get_fullname().to_string();
         log::info!(
             "Registering local mailbox service via mdns: {} ({})",
@@ -37,9 +44,10 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
             service.get_type()
         );
 
-        match handle.state::<ServiceDaemon>().register(service) {
+        match handle.state::<ServiceDaemon>().register(service.clone()) {
             Ok(()) => {
                 mdns_fullname = fullname;
+                registered_service = Some(service);
                 last_err = None;
                 break;
             }
@@ -52,6 +60,11 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     if let Some(e) = last_err {
         return Err(e.into());
     }
+    let Some(service) = registered_service else {
+        return Err(anyhow::anyhow!(
+            "failed to register local mailbox service via mdns after 3 attempts"
+        ));
+    };
 
     let addr = format!("0.0.0.0:{port}");
     let server = tokio::spawn(async move {
@@ -61,15 +74,51 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         }
     });
 
+    let daemon = handle.state::<ServiceDaemon>().inner().clone();
+    let reannounce = spawn_mdns_reannounce_loop(daemon, service);
+
     *guard = Some(LocalMailboxState {
         server,
         stop_signal,
+        reannounce,
         mdns_fullname,
     });
 
     log::info!("Started local mailbox");
 
     Ok(())
+}
+
+/// Periodically re-announce the local mailbox over mDNS.
+///
+/// Workaround for iOS clients without the `com.apple.developer.networking.multicast`
+/// entitlement: they cannot reliably receive mDNS broadcasts, so peers that
+/// missed the initial announcement never discover this service. Re-announcing
+/// on a timer gives them another chance whenever they do receive multicast
+/// traffic.
+///
+/// We've already applied to Apple for the entitlement. Once it ships in a
+/// signed build, iOS clients will pick up the initial announcement reliably
+/// and this loop becomes dead weight.
+///
+/// TODO: delete `spawn_mdns_reannounce_loop` (and the `reannounce` field on
+/// `LocalMailboxState`) once the multicast networking entitlement is granted.
+fn spawn_mdns_reannounce_loop(
+    daemon: ServiceDaemon,
+    service: ServiceInfo,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(10));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            match daemon.register(service.clone()) {
+                Ok(()) => log::debug!("Re-announced local mailbox via mdns"),
+                Err(e) => log::warn!("Failed to re-announce local mailbox via mdns: {e:?}"),
+            }
+        }
+    })
 }
 
 pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
@@ -80,6 +129,7 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
         return Ok(());
     };
     log::info!("Sending stop signal to local mailbox...");
+    state.reannounce.abort();
     let _ = state.stop_signal.send(());
     state.server.await?;
     if let Err(e) = handle
@@ -169,8 +219,13 @@ fn free_port() -> anyhow::Result<u16> {
     Ok(listener.local_addr()?.port())
 }
 
-fn mdns_service_info<R: Runtime>(port: u16, _handle: &AppHandle<R>) -> anyhow::Result<ServiceInfo> {
-    let instance_name = nanoid::nanoid!(7);
+fn mdns_service_info(port: u16, device_id: &DeviceId) -> anyhow::Result<ServiceInfo> {
+    // Derive a stable instance name from the device id so peers can keep using
+    // the same MailboxId across restarts. The instance name lives in a single
+    // DNS label (63-byte limit); 32 hex chars (16 bytes of public key) is plenty
+    // for collision resistance on a local network.
+    let mut instance_name = device_id.to_string();
+    instance_name.truncate(32);
 
     let host_name = "0.0.0.0.local.";
 
