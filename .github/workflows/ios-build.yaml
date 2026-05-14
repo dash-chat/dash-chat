@@ -34,6 +34,13 @@ jobs:
           rustflags: ''
           cache-shared-key: ios
 
+      # Workaround for actions/runner-images#14097: on macos-15-arm64/20260511.0048+
+      # /opt/homebrew/bin/cargo is a broken rustup-init shim that rejects standard
+      # subcommands like `metadata`. Re-prepend ~/.cargo/bin so cargo resolves to
+      # the rustup proxy installed by setup-rust-toolchain.
+      - name: Ensure rustup cargo is first in PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - name: Install pnpm dependencies
         run: pnpm install
 
