@@ -123,6 +123,7 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
                 ))
             })
             .clear_targets()
+            .max_file_size(5 * 1024 * 1024)
             .targets([
                 tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                 tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
