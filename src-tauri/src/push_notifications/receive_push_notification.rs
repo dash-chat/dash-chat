@@ -167,7 +167,11 @@ async fn handle_push_notification(
         return Ok(None);
     }
 
-    let body = body.context("operation has no body")?;
+    let Some(body) = body else {
+        return Ok(Some(
+            auth_control_op_notification(&node, sender_device_id, op_id, topic_hex).await,
+        ));
+    };
     let payload = Payload::try_from_body(&body)
         .map_err(|err| anyhow!("failed to decode payload: {err:?}"))?;
 
@@ -242,6 +246,57 @@ async fn handle_push_notification(
             }))
         }
         _ => Ok(None),
+    }
+}
+
+/// Build the user-facing notification for a body-less p2panda auth/control op
+/// (GroupControl: Create/Add/Remove). These carry their data in the header's
+/// auth extension and have no body to decode.
+///
+/// Today this fires for *every* body-less op the NSE sees, and we surface them
+/// all as "contact request accepted" — the most common case (the auth Create
+/// the acceptor authors on a new direct chat space). It will misrepresent
+/// future group `Add`/`Remove` operations.
+///
+/// TODO: once Apple grants the
+/// `com.apple.developer.usernotifications.filtering` entitlement
+/// (https://developer.apple.com/contact/request/notification-service), delete
+/// this helper. The caller should return `Ok(None)` for body-less ops, the NSE
+/// should call `contentHandler(UNMutableNotificationContent())`, and any cases
+/// that DO warrant a notification (real contact-request acceptance, group
+/// member changes) should be implemented by inspecting the auth extension —
+/// distinguishing Create from Add/Remove — instead of this catch-all.
+async fn auth_control_op_notification(
+    node: &dashchat_node::Node,
+    sender_device_id: dashchat_node::DeviceId,
+    op_id: &str,
+    topic_hex: &str,
+) -> NotificationData {
+    let sender_agent_id = node.lookup_contact(sender_device_id).await.ok().flatten();
+    let sender_name = match sender_agent_id {
+        Some(agent_id) => node
+            .local_store
+            .get_profile(agent_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|profile| profile.name),
+        None => None,
+    };
+    let title = match &sender_name {
+        Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
+        None => sonix_i18n::t!("contactRequestAcceptedNoName"),
+    };
+    let route = sender_agent_id.map(|aid| format!("/direct-chats/{}", aid.to_hex()));
+    log::info!(
+        "op {op_id} on topic {topic_hex} has no body (auth control op), delivering contact-request-accepted notification"
+    );
+    NotificationData {
+        title: Some(title),
+        body: None,
+        icon: Some("ic_stat_icon".to_string()),
+        route,
+        ..Default::default()
     }
 }
 

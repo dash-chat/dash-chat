@@ -112,6 +112,8 @@
 	"syncedWithServer": "Synchronized with the server.",
 	"mayHaveNewMessages": "You may have new messages.",
 	"newContactRequest": "New contact request",
+	"contactRequestAccepted": "{{name}} has accepted your contact request",
+	"contactRequestAcceptedNoName": "Your contact request was accepted",
 	"typeMessage": "Type a message...",
 
 	"groupName": "Group name",
