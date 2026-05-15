@@ -1,16 +1,16 @@
 use std::path::PathBuf;
 
-use tauri::Manager;
 use anyhow::{anyhow, Context};
 use dashchat_node::{AsBody, Payload};
 #[cfg(target_os = "android")]
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
+use tauri::Manager;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
-use crate::notifications as build_notification;
+use crate::notifications;
 
 #[cfg(target_os = "android")]
 use super::android::setup_android_logs;
@@ -36,11 +36,12 @@ pub fn receive_push_notification(
     //
     // iOS doesn't hit this branch because the NSE runs in a separate process where `APP_HANDLE` is never set.
     #[cfg(target_os = "android")]
-    if let Some(app_handle) = crate::APP_HANDLE.get() {
-        if let Some(node) = app_handle.try_state::<dashchat_node::Node>() {
-            node.mailboxes
-                .wakeup(crate::mailbox::PRODUCTION_MAILBOX_ID.to_string());
-        }
+    if let Some(node) = crate::APP_HANDLE
+        .get()
+        .and_then(|h| h.try_state::<dashchat_node::Node>())
+    {
+        node.mailboxes
+            .wakeup(crate::mailbox::PRODUCTION_MAILBOX_ID.to_string());
         log::info!("Push arrived while main app is alive; deferring to sync pipeline");
         return None;
     }
@@ -79,7 +80,7 @@ pub fn receive_push_notification(
                     // TODO: apply for the exception to Apple that allows apps to not need to show a notification
                     // https://developer.apple.com/contact/request/notification-service
                     #[cfg(target_os = "ios")]
-                    return Some(build_notification::synced_generic_notification());
+                    return Some(notifications::synced_generic_notification());
                 }
                 result
             }
@@ -89,7 +90,7 @@ pub fn receive_push_notification(
                 // raw APNS payload (topic_id as title, author:seq as body).
                 // Show a generic fallback so the user sees something readable.
                 #[cfg(target_os = "ios")]
-                return Some(build_notification::may_have_new_messages_generic_notification());
+                return Some(notifications::may_have_new_messages_generic_notification());
                 #[cfg(not(target_os = "ios"))]
                 None
             }
@@ -172,7 +173,7 @@ async fn handle_push_notification(
         log::warn!(
             "Operation {op_id} in topic {topic_hex} not found after polling, showing generic notification"
         );
-        return Ok(Some(build_notification::new_message_generic_notification()));
+        return Ok(Some(notifications::new_message_generic_notification()));
     };
 
     let notified_operations_store = crate::notifications::NotifiedOperationsStore::open(
@@ -202,11 +203,13 @@ async fn handle_push_notification(
         None => None,
     };
 
-    Ok(build_notification::build_notification_data(
-        &node,
-        topic_id,
-        &operation.header,
-        payload.as_ref(),
+    Ok(
+        notifications::build_notification_data(
+            &node,
+            topic_id,
+            &operation.header,
+            payload.as_ref(),
+        )
+        .await,
     )
-    .await)
 }
