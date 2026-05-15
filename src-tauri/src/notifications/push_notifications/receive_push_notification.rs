@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+#[cfg(target_os = "android")]
 use tauri::Manager;
 use anyhow::{anyhow, Context};
 use dashchat_node::{AsBody, Payload};
@@ -185,8 +186,18 @@ async fn handle_push_notification(
         .await
     {
         Ok(false) => {
-            log::info!("Skipping push notification for op {op_id}: already notified");
-            return Ok(None);
+            // On iOS the NSE must return some content; the main app's
+            // local notification has the same stable id, so iOS will
+            // collapse them into a single banner and the plugin's
+            // `willPresent` callback suppresses it when the user is on
+            // the notification's route.
+            #[cfg(not(target_os = "ios"))]
+            {
+                log::info!("Skipping push notification for op {op_id}: already notified");
+                return Ok(None);
+            }
+            #[cfg(target_os = "ios")]
+            log::info!("op {op_id} was already notified by the main app; building the same notification so iOS dedups by id");
         }
         Ok(true) => {}
         Err(err) => {
