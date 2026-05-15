@@ -122,25 +122,41 @@ mod tests {
         assert!(!store.record_notified_operation(hash).await.unwrap());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn concurrent_records_for_same_op_produce_exactly_one_true() {
         // Models the push-vs-sync race: both paths call record_notified_operation
         // for the same op at roughly the same time; the contract is that exactly
         // one of them sees `true` (and gets to show the banner).
-        let (_dir, store) = temp_store().await;
-        let hash = hash_from_byte(0xC0);
+        //
+        // Requires multi-thread flavour: the default current-thread runtime
+        // interleaves spawned tasks cooperatively on one OS thread, which would
+        // pass even with strictly-serial execution. We also loop so any single
+        // iteration that fails to overlap doesn't mask a broken implementation.
+        const RACES: usize = 50;
 
-        let store_a = store.clone();
-        let store_b = store.clone();
-        let (a, b) = tokio::join!(
-            tokio::spawn(async move { store_a.record_notified_operation(hash).await.unwrap() }),
-            tokio::spawn(async move { store_b.record_notified_operation(hash).await.unwrap() }),
-        );
-        let a = a.unwrap();
-        let b = b.unwrap();
-        assert!(
-            a ^ b,
-            "expected exactly one of the racing callers to see true, got a={a} b={b}"
-        );
+        let (_dir, store) = temp_store().await;
+
+        for i in 0..RACES {
+            let hash = p2panda_core::Hash::from_bytes([i as u8; 32]);
+            let store_a = store.clone();
+            let store_b = store.clone();
+            let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+            let barrier_a = barrier.clone();
+            let barrier_b = barrier.clone();
+            let a = tokio::spawn(async move {
+                barrier_a.wait().await;
+                store_a.record_notified_operation(hash).await.unwrap()
+            });
+            let b = tokio::spawn(async move {
+                barrier_b.wait().await;
+                store_b.record_notified_operation(hash).await.unwrap()
+            });
+            let a = a.await.unwrap();
+            let b = b.await.unwrap();
+            assert!(
+                a ^ b,
+                "race {i}: expected exactly one of the racing callers to see true, got a={a} b={b}"
+            );
+        }
     }
 }
