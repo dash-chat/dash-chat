@@ -1905,6 +1905,7 @@ dependencies = [
  "tauri-plugin-system-bars-styles",
  "tauri-plugin-updater",
  "tauri-plugin-virtual-keyboard-padding",
+ "tempfile",
  "time",
  "tokio",
  "url2",

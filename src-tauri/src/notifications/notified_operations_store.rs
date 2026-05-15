@@ -63,3 +63,84 @@ impl NotifiedOperationsStore {
         Ok(row.is_some())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hash_from_byte(b: u8) -> p2panda_core::Hash {
+        p2panda_core::Hash::from_bytes([b; 32])
+    }
+
+    async fn temp_store() -> (tempfile::TempDir, NotifiedOperationsStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = NotifiedOperationsStore::open(&dir.path().join("notified_operations.db"))
+            .await
+            .unwrap();
+        (dir, store)
+    }
+
+    #[tokio::test]
+    async fn record_returns_true_then_false_for_same_op() {
+        let (_dir, store) = temp_store().await;
+        let hash = hash_from_byte(0xAB);
+        assert!(store.record_notified_operation(hash).await.unwrap());
+        assert!(!store.record_notified_operation(hash).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn record_distinct_ops_independently() {
+        let (_dir, store) = temp_store().await;
+        let a = hash_from_byte(0x01);
+        let b = hash_from_byte(0x02);
+        assert!(store.record_notified_operation(a).await.unwrap());
+        assert!(store.record_notified_operation(b).await.unwrap());
+        assert!(!store.record_notified_operation(a).await.unwrap());
+        assert!(!store.record_notified_operation(b).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn has_notified_reflects_record_outcome() {
+        let (_dir, store) = temp_store().await;
+        let hash = hash_from_byte(0x5A);
+        assert!(!store.has_notified_operation(hash).await.unwrap());
+        store.record_notified_operation(hash).await.unwrap();
+        assert!(store.has_notified_operation(hash).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn record_survives_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("notified_operations.db");
+        let hash = hash_from_byte(0x77);
+
+        let store = NotifiedOperationsStore::open(&path).await.unwrap();
+        assert!(store.record_notified_operation(hash).await.unwrap());
+        drop(store);
+
+        let store = NotifiedOperationsStore::open(&path).await.unwrap();
+        assert!(!store.record_notified_operation(hash).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn concurrent_records_for_same_op_produce_exactly_one_true() {
+        // Models the push-vs-sync race: both paths call record_notified_operation
+        // for the same op at roughly the same time; the contract is that exactly
+        // one of them sees `true` (and gets to show the banner).
+        let (_dir, store) = temp_store().await;
+        let hash = hash_from_byte(0xC0);
+
+        let store_a = store.clone();
+        let store_b = store.clone();
+        let (a, b) = tokio::join!(
+            tokio::spawn(async move { store_a.record_notified_operation(hash).await.unwrap() }),
+            tokio::spawn(async move { store_b.record_notified_operation(hash).await.unwrap() }),
+        );
+        let a = a.unwrap();
+        let b = b.unwrap();
+        assert!(
+            a ^ b,
+            "expected exactly one of the racing callers to see true, got a={a} b={b}"
+        );
+    }
+}

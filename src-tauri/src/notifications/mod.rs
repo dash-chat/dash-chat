@@ -4,6 +4,7 @@ pub mod push_notifications;
 
 pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
+use anyhow::Context;
 use dashchat_node::{topic::TopicId, DeviceId, Header, Node, Payload, Topic};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionState};
@@ -104,7 +105,13 @@ pub async fn build_notification_data(
         return None;
     }
 
-    let id = stable_notification_id(header.hash().as_bytes());
+    let id = match stable_notification_id(header.hash().as_bytes()) {
+        Ok(id) => id,
+        Err(err) => {
+            log::error!("Failed to derive stable notification id: {err:?}");
+            return None;
+        }
+    };
 
     let Some(payload) = payload else {
         return Some(auth_control_op_notification(node, sender_device_id, id).await);
@@ -183,9 +190,20 @@ async fn chat_message_notification(
     // Android-only: collapse direct-chat messages into one MessagingStyle thread.
     // The id must be stable per conversation so MessagingStyle accumulates the
     // messages onto the same notification instead of stacking new ones.
+    //
+    // TODO: XOR the truncated topic id with a node-specific secret before
+    // using it as the notification id. As-is, the first 4 bytes of the topic
+    // id are public-derivable, so an adversary could mine a contact whose
+    // topic id shares a 4-byte LE prefix with an existing conversation and
+    // get their messages collapsed into the wrong MessagingStyle thread.
     #[cfg(target_os = "android")]
     if direct_chat_agent_id.is_some() {
-        notification_data.id = stable_notification_id(&*topic_id);
+        match stable_notification_id(&*topic_id) {
+            Ok(id) => notification_data.id = id,
+            Err(err) => log::error!(
+                "Failed to derive Android MessagingStyle id from topic, falling back to random: {err:?}"
+            ),
+        }
         notification_data.group = Some("dashchat.chats".to_string());
         notification_data.messaging_style = true;
     }
@@ -276,6 +294,38 @@ pub fn may_have_new_messages_generic_notification() -> NotificationData {
 /// Android) or a topic id (Android MessagingStyle, so successive messages
 /// accumulate into the same conversation thread). The first four bytes are
 /// interpreted as a little-endian i32.
-fn stable_notification_id(id_bytes: &[u8]) -> i32 {
-    i32::from_le_bytes([id_bytes[0], id_bytes[1], id_bytes[2], id_bytes[3]])
+fn stable_notification_id(id_bytes: &[u8]) -> anyhow::Result<i32> {
+    let bytes: [u8; 4] = id_bytes
+        .get(..4)
+        .context("id_bytes is shorter than 4 bytes")?
+        .try_into()?;
+    Ok(i32::from_le_bytes(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stable_notification_id_uses_first_four_bytes_little_endian() {
+        let bytes = [0x01, 0x02, 0x03, 0x04, 0xff, 0xff, 0xff, 0xff];
+        assert_eq!(
+            stable_notification_id(&bytes).unwrap(),
+            i32::from_le_bytes([0x01, 0x02, 0x03, 0x04])
+        );
+    }
+
+    #[test]
+    fn stable_notification_id_is_stable_across_calls() {
+        let bytes = [0xAB; 32];
+        let a = stable_notification_id(&bytes).unwrap();
+        let b = stable_notification_id(&bytes).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn stable_notification_id_errors_on_short_input() {
+        assert!(stable_notification_id(&[]).is_err());
+        assert!(stable_notification_id(&[0x01, 0x02, 0x03]).is_err());
+    }
 }
