@@ -138,6 +138,9 @@ mod tests {
         );
         let a = a.unwrap();
         let b = b.unwrap();
-        assert!(a ^ b, "expected exactly one of the racing callers to see true, got a={a} b={b}");
+        assert!(
+            a ^ b,
+            "expected exactly one of the racing callers to see true, got a={a} b={b}"
+        );
     }
 }
