@@ -8,7 +8,6 @@ use jni::objects::JClass;
 use jni::JNIEnv;
 #[cfg(target_os = "android")]
 use tauri::Manager;
-use tauri::Manager;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
