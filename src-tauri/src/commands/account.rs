@@ -1,11 +1,13 @@
 use dashchat_node::Node;
-#[cfg(desktop)]
 use tauri::Manager;
 use tauri::{AppHandle, State};
 
 #[tauri::command]
 pub async fn delete_account(app: AppHandle, node: State<'_, Node>) -> Result<(), String> {
     log::info!("Deleting account...");
+
+    #[cfg(mobile)]
+    unregister_fcm_token(&app, &node).await;
 
     node.shutdown().await.map_err(|e| {
         log::error!("Failed to shutdown node while trying to delete account: {e:?}");
@@ -44,5 +46,18 @@ pub async fn delete_account(app: AppHandle, node: State<'_, Node>) -> Result<(),
     #[cfg(desktop)]
     {
         tauri::process::restart(&app.env());
+    }
+}
+
+#[cfg(mobile)]
+async fn unregister_fcm_token(app: &AppHandle, node: &Node) {
+    use push_notifications_client::client::PushNotificationsClient;
+    use push_notifications_client::types::PublicKey;
+
+    let client = app.state::<PushNotificationsClient>();
+    let public_key = PublicKey::from(node.device_id().to_string());
+    match client.unregister_fcm_token(public_key).await {
+        Ok(()) => log::info!("Unregistered FCM token from push notifications server."),
+        Err(e) => log::error!("Failed to unregister FCM token: {e:?}"),
     }
 }
