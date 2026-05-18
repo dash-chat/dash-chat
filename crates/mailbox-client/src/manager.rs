@@ -130,9 +130,9 @@ pub type MailboxSyncState<T, A> = BTreeMap<(T, A), u64>;
 pub struct TrackedMailbox<Item: MailboxItem> {
     id: MailboxId,
     client: Arc<dyn MailboxClient<Item>>,
-    connection_tx: watch::Sender<MailboxConnectionState>,
-    sync_tx: watch::Sender<MailboxSyncState<Item::Topic, Item::Author>>,
-    sync_state_store: Arc<MailboxTrackerStore>,
+    connection_state_tx: watch::Sender<MailboxConnectionState>,
+    sync_state_tx: watch::Sender<MailboxSyncState<Item::Topic, Item::Author>>,
+    tracker_store: Arc<MailboxTrackerStore>,
 }
 
 impl<Item: MailboxItem> TrackedMailbox<Item> {
@@ -140,16 +140,16 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         id: MailboxId,
         client: Arc<dyn MailboxClient<Item>>,
         initial_sync: MailboxSyncState<Item::Topic, Item::Author>,
-        sync_state_store: Arc<MailboxTrackerStore>,
+        tracker_store: Arc<MailboxTrackerStore>,
     ) -> Self {
-        let (connection_tx, _) = watch::channel(MailboxConnectionState::new());
-        let (sync_tx, _) = watch::channel(initial_sync);
+        let (connection_state_tx, _) = watch::channel(MailboxConnectionState::new());
+        let (sync_state_tx, _) = watch::channel(initial_sync);
         Self {
             id,
             client,
-            connection_tx,
-            sync_tx,
-            sync_state_store,
+            connection_state_tx,
+            sync_state_tx,
+            tracker_store,
         }
     }
 
@@ -158,40 +158,42 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     }
 
     pub fn connection_state(&self) -> watch::Receiver<MailboxConnectionState> {
-        self.connection_tx.subscribe()
+        self.connection_state_tx.subscribe()
     }
 
     pub fn sync_state(&self) -> watch::Receiver<MailboxSyncState<Item::Topic, Item::Author>> {
-        self.sync_tx.subscribe()
+        self.sync_state_tx.subscribe()
     }
 
     fn next_poll(&self) -> Instant {
-        self.connection_tx.borrow().next_poll
+        self.connection_state_tx.borrow().next_poll
     }
 
     fn status(&self) -> SyncStatus {
-        self.connection_tx.borrow().status
+        self.connection_state_tx.borrow().status
     }
 
     fn consecutive_errors(&self) -> u32 {
-        self.connection_tx.borrow().consecutive_errors
+        self.connection_state_tx.borrow().consecutive_errors
     }
 
     fn record_success(&self, config: &MailboxesConfig) {
-        self.connection_tx.send_modify(|s| s.record_success(config));
+        self.connection_state_tx
+            .send_modify(|s| s.record_success(config));
     }
 
     fn record_error(&self, config: &MailboxesConfig, err: String) {
-        self.connection_tx
+        self.connection_state_tx
             .send_modify(|s| s.record_error(config, err));
     }
 
     fn reschedule(&self, config: &MailboxesConfig) {
-        self.connection_tx.send_modify(|s| s.reschedule(config));
+        self.connection_state_tx
+            .send_modify(|s| s.reschedule(config));
     }
 
     fn wakeup(&self) {
-        self.connection_tx.send_modify(|s| s.wakeup());
+        self.connection_state_tx.send_modify(|s| s.wakeup());
     }
 
     async fn record_synced(
@@ -200,10 +202,10 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         author: Item::Author,
         seq: u64,
     ) -> anyhow::Result<()> {
-        self.sync_state_store
+        self.tracker_store
             .record_synced(&self.id, &topic, &author, seq)
             .await?;
-        self.sync_tx.send_modify(|m| {
+        self.sync_state_tx.send_modify(|m| {
             let entry = m.entry((topic, author)).or_insert(0);
             if seq > *entry {
                 *entry = seq;
@@ -634,21 +636,18 @@ mod tests {
         }
     }
 
-    fn test_sync_state_store() -> Arc<MailboxTrackerStore> {
-        // tokio::test(start_paused = true) auto-advances mock time, which
-        // makes sqlx's acquire_timeout fire instantly. Use the in-memory
-        // variant for these unit tests.
+    fn test_tracker_store() -> Arc<MailboxTrackerStore> {
         Arc::new(MailboxTrackerStore::in_memory())
     }
 
     /// Create a Mailboxes instance without spawning the background loop
     fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
         let (trigger_tx, _trigger_rx) = mpsc::channel(1);
-        Mailboxes::new(DummyStore, test_sync_state_store(), config, trigger_tx)
+        Mailboxes::new(DummyStore, test_tracker_store(), config, trigger_tx)
     }
 
     async fn spawn_test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
-        Mailboxes::<Msg, DummyStore>::spawn(DummyStore, test_sync_state_store(), config)
+        Mailboxes::<Msg, DummyStore>::spawn(DummyStore, test_tracker_store(), config)
             .await
             .unwrap()
     }
@@ -739,7 +738,7 @@ mod tests {
 
     // -- find_next_due tests --
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn find_next_due_empty() {
         let mgr = test_mailboxes(test_config());
         assert!(mgr.find_next_due().await.is_none());
@@ -975,7 +974,7 @@ mod tests {
         {
             let mm = mgr.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
-            t.connection_tx.send_modify(|s| {
+            t.connection_state_tx.send_modify(|s| {
                 s.status = SyncStatus::Stopped;
                 s.consecutive_errors = 100;
                 s.next_poll = Instant::now() + Duration::from_secs(600);
@@ -1091,14 +1090,14 @@ mod tests {
             let mm = mgr.mailboxes.lock().await;
             for id in &degraded_ids {
                 let t = mm.get(id).unwrap();
-                t.connection_tx.send_modify(|s| {
+                t.connection_state_tx.send_modify(|s| {
                     s.status = SyncStatus::Degraded;
                     s.consecutive_errors = 1;
                 });
             }
             for id in &stopped_ids {
                 let t = mm.get(id).unwrap();
-                t.connection_tx.send_modify(|s| {
+                t.connection_state_tx.send_modify(|s| {
                     s.status = SyncStatus::Stopped;
                     s.consecutive_errors = 1000;
                 });
