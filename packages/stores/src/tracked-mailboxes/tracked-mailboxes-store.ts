@@ -1,14 +1,13 @@
-import { reactive, relay, type ReactivePromise } from 'signalium';
+import { type ReactivePromise, reactive, relay } from 'signalium';
 
 import type { DeviceId, TopicId } from '../p2panda/types';
-
 import type { TrackedMailboxesClient } from './tracked-mailboxes-client';
 import {
-	syncKey,
 	type MailboxConnectionState,
 	type MailboxId,
 	type MailboxSyncState,
 	type SyncStateEntry,
+	syncKey,
 } from './types';
 
 export class TrackedMailboxesStore {

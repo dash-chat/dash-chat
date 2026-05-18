@@ -260,7 +260,7 @@ where
         // TODO: check for existing mailbox with different ID but same "URL" (which is currently abstracted away and inaccessible here, darn)
         // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.
         let id = mailbox.id();
-        let tracked = Arc::new(
+        let tracked_mailbox = Arc::new(
             TrackedMailbox::init(
                 id.clone(),
                 Arc::new(mailbox),
@@ -268,7 +268,11 @@ where
             )
             .await,
         );
-        let existing = self.mailboxes.lock().await.insert(id.clone(), tracked);
+        let existing = self
+            .mailboxes
+            .lock()
+            .await
+            .insert(id.clone(), tracked_mailbox);
         if existing.is_some() {
             // TODO: potentially track multiple clients for a single mailbox ID, e.g. multiple mDNS discovered addresses for the same node
             // TODO: at least, make sure the URL being replaced is "better" than the previous one, i.e. ipv4 instead of ipv6
@@ -411,7 +415,7 @@ where
     }
 
     async fn poll_mailbox(&self, id: &MailboxId) {
-        let tracked = {
+        let tracked_mailbox = {
             let mm = self.mailboxes.lock().await;
             match mm.get(id) {
                 Some(t) => t.clone(),
@@ -422,21 +426,19 @@ where
         let topics = self.subscribed_topics().await;
         if topics.is_empty() {
             tracing::trace!("no topics subscribed, skipping poll for {id}");
-            tracked.reschedule(&self.config);
+            tracked_mailbox.reschedule(&self.config);
             return;
         }
 
         tracing::info!("polling mailbox {id}");
-        let result = self
-            .sync_topics_with_tracked(topics.into_iter(), &tracked)
-            .await;
+        let result = self.sync_topics(topics.into_iter(), &tracked_mailbox).await;
 
         match result {
-            Ok(()) => tracked.record_success(&self.config),
+            Ok(()) => tracked_mailbox.record_success(&self.config),
             Err(err) => {
                 tracing::error!(?err, mailbox = %id, "mailbox sync error");
-                tracked.record_error(&self.config, format!("{err:?}"));
-                let state = tracked.connection_state();
+                tracked_mailbox.record_error(&self.config, format!("{err:?}"));
+                let state = tracked_mailbox.connection_state();
                 let state = state.borrow();
                 tracing::info!(
                     mailbox = %id,
@@ -451,26 +453,10 @@ where
     /// Immediately sync the given topics with the given mailbox:
     /// - Ensure all items held by the mailbox are fetched
     /// - Publish any items that the mailbox is missing to the mailbox
-    pub async fn sync_topics(
+    async fn sync_topics(
         &self,
         topics: impl Iterator<Item = Item::Topic>,
-        mailbox: Arc<dyn MailboxClient<Item>>,
-    ) -> anyhow::Result<()> {
-        let id = mailbox.id();
-        let tracked = self
-            .mailboxes
-            .lock()
-            .await
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("mailbox {id} not registered"))?;
-        self.sync_topics_with_tracked(topics, &tracked).await
-    }
-
-    async fn sync_topics_with_tracked(
-        &self,
-        topics: impl Iterator<Item = Item::Topic>,
-        tracked: &TrackedMailbox<Item>,
+        tracked_mailbox: &TrackedMailbox<Item>,
     ) -> anyhow::Result<()> {
         let mut request = BTreeMap::new();
         let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, u64>> = BTreeMap::new();
@@ -481,7 +467,7 @@ where
             request.insert(topic, heights);
         }
 
-        let FetchResponse(response) = tracked.client.fetch(FetchRequest(request)).await?;
+        let FetchResponse(response) = tracked_mailbox.client.fetch(FetchRequest(request)).await?;
 
         let mut ops_to_publish: Vec<Item> = vec![];
         let mut acks: Vec<(Item::Topic, Item::Author, u64)> = vec![];
@@ -556,11 +542,11 @@ where
             .map(|op| (op.topic(), op.author(), op.seq_num()))
             .collect();
 
-        tracked.client.publish(ops_to_publish).await?;
+        tracked_mailbox.client.publish(ops_to_publish).await?;
 
         for (t, a, s) in acks.into_iter().chain(publish_acks) {
-            if let Err(err) = tracked.record_synced(t, a, s).await {
-                tracing::error!(?err, mailbox = %tracked.id, "failed to record sync watermark");
+            if let Err(err) = tracked_mailbox.record_synced(t, a, s).await {
+                tracing::error!(?err, mailbox = %tracked_mailbox.id, "failed to record sync watermark");
             }
         }
 
