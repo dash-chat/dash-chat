@@ -143,15 +143,15 @@ impl OpStore {
         let topic = header.extensions.topic;
         let hash = header.hash();
 
-        if let Some(alias) = alias {
-            header.hash().with_name(alias);
-        } else {
-            header.hash().with_serial();
-        }
+        // if let Some(alias) = alias {
+        //     header.hash().with_name(alias);
+        // } else {
+        //     header.hash().with_serial();
+        // }
 
         tracing::info!(
             topic = ?topic.renamed(),
-            hash = ?hash.renamed(),
+            hash = ?hash,
             seq_num = header.seq_num,
             "PUB: authoring operation"
         );

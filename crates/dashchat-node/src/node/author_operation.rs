@@ -22,8 +22,6 @@ impl Node {
             )
             .await?;
 
-        op.hash.with_serial();
-
         self.mailboxes.trigger_sync();
 
         self.process_authored_ingested_operation(op).await
@@ -34,7 +32,6 @@ impl Node {
         op: Operation,
     ) -> Result<Header, anyhow::Error> {
         let topic = op.header.extensions.topic;
-        op.hash.with_serial();
         self.process_operation(op.clone(), true, false).await?;
         let Operation {
             header,
@@ -43,7 +40,7 @@ impl Node {
         } = op;
 
         // self.notify_payload(&header, &payload).await?;
-        tracing::debug!(?topic, hash = ?hash.renamed(), "authored operation");
+        tracing::debug!(?topic, hash = ?hash, "authored operation");
 
         #[cfg(feature = "p2p")]
         match self.initialized_topics.read().await.get(&topic) {

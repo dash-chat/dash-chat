@@ -81,7 +81,7 @@ impl Node {
 
         let stream = ReceiverStream::new(mailbox_rx)
             .map(|op| {
-                tracing::info!(topic = ?op.header.extensions.topic.renamed(), op = ?op.header.hash().renamed(), "received new operation from mailbox");
+                tracing::info!(topic = ?op.header.extensions.topic.renamed(), op = ?op.header.hash(), "received new operation from mailbox");
                 let op = Operation::from(op);
                 Event {
                     args: IngestArgs {
@@ -153,7 +153,7 @@ impl Node {
                             }
 
                             Some(op) = streams.next() => {
-                                tracing::info!(op = ?op.hash.renamed(), topic = ?op.header.extensions.topic.renamed(), "processing stream item");
+                                tracing::info!(op = ?op.hash, topic = ?op.header.extensions.topic.renamed(), "processing stream item");
                                 if let Err(err) = node.process_stream_item(op).await {
                                     tracing::error!(?err, "process stream item error");
                                 }
@@ -193,7 +193,7 @@ impl Node {
                 Err(err) => {
                     tracing::error!(
                         ?topic,
-                        hash = ?hash.renamed(),
+                        hash = ?hash,
                         ?err,
                         "process operation error"
                     )
@@ -222,7 +222,7 @@ impl Node {
         // author_store.add_author(topic, header.verifying_key).await;
         tracing::debug!(?topic, "adding author");
 
-        tracing::debug!(topic = ?topic.renamed(), hash = ?hash.renamed(), "PROC: processing operation");
+        tracing::debug!(topic = ?topic.renamed(), hash = ?hash, "PROC: processing operation");
 
         let payload = body.map(|body| Payload::try_from_body(&body)).transpose()?;
 
@@ -232,7 +232,7 @@ impl Node {
         if let Some(payload) = payload.as_ref() {
             if let Err(err) = self.process_payload(&header, payload, is_author).await {
                 tracing::error!(
-                    hash = ?header.hash().renamed(),
+                    hash = ?header.hash(),
                     ?payload,
                     ?err,
                     "process operation error"
@@ -241,7 +241,7 @@ impl Node {
             }
         }
 
-        tracing::debug!(hash = ?hash.renamed(), "processed operation");
+        tracing::debug!(hash = ?hash, "processed operation");
 
         if let Some(payload) = payload.as_ref() {
             self.notify_payload(&header, payload).await?;
@@ -258,7 +258,7 @@ impl Node {
     async fn process_extensions(&self, operation: &Operation) -> anyhow::Result<()> {
         match &operation.header.extensions.auth {
             Some(auth) => {
-                tracing::info!(?auth, "processing auth extensions");
+                tracing::info!(auth = ?auth, "processing auth extensions");
                 if let Err(err) = self.group_store.process(operation).await {
                     tracing::error!(?err, "error processing auth extensions");
                 };
@@ -334,8 +334,8 @@ impl Node {
                     return Ok(());
                 }
                 tracing::info!(
-                    ?invitation,
-                    from = ?header.verifying_key.renamed(),
+                    invitation = ?invitation.renamed_ref(),
+                    from = ?header.verifying_key,
                     "received invitation message"
                 );
                 match invitation {

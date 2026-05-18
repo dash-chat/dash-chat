@@ -177,7 +177,7 @@ where
         topic: Item::Topic,
     ) -> Result<Option<mpsc::Receiver<Item>>, anyhow::Error> {
         #[cfg(feature = "named-id")]
-        tracing::info!(topic = ?topic.renamed(), "subscribing to topic");
+        tracing::info!(topic = ?topic, "subscribing to topic");
 
         let mut tt = self.topics.lock().await;
         if tt.contains_key(&topic) {
@@ -190,7 +190,7 @@ where
 
     pub async fn unsubscribe(&self, topic: Item::Topic) -> Result<(), anyhow::Error> {
         #[cfg(feature = "named-id")]
-        tracing::info!(topic = ?topic.renamed(), "unsubscribing from topic");
+        tracing::info!(topic = ?topic, "unsubscribing from topic");
         self.topics.lock().await.remove(&topic);
         Ok(())
     }
@@ -347,7 +347,7 @@ where
 
             let Some(sender) = self.topics.lock().await.get(&topic).cloned() else {
                 #[cfg(feature = "named-id")]
-                tracing::warn!(topic = ?topic.renamed(), "no sender for topic");
+                tracing::warn!(topic = ?topic, "no sender for topic");
                 continue;
             };
 
@@ -365,7 +365,7 @@ where
                     .await
                     .map_err(|err| anyhow::anyhow!("failed to get log for {topic:?}: {err}"))?
                 else {
-                    tracing::error!(author = ?author.renamed(), topic = ?topic.renamed(), lowest = ?lowest, "no log found");
+                    tracing::error!(author = ?author, topic = ?topic, lowest = ?lowest, "no log found");
                     continue;
                 };
 

@@ -25,9 +25,6 @@ impl GroupStore {
     }
 
     pub async fn process(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
-        // TODO: when device groups come online, this needs to be update to use the singleton
-        //       GROUPS_STATE_ID, with filtered heads.
-
         let groups = GroupsProcessor::new(self.db.clone());
         let topic = operation.header.extensions.topic;
         groups.process(&GROUPS_STATE_ID, &topic, operation).await?;

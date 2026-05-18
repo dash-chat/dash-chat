@@ -77,16 +77,7 @@ pub type MailboxId = String;
 pub type SeqNum = u64;
 
 pub trait ItemTraits:
-    Copy
-    + Eq
-    + Ord
-    + std::hash::Hash
-    + std::fmt::Debug
-    + Serialize
-    + DeserializeOwned
-    + Send
-    + Sync
-    + Rename
+    Copy + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync
 {
 }
 
@@ -100,7 +91,6 @@ impl<T> ItemTraits for T where
         + DeserializeOwned
         + Send
         + Sync
-        + Rename
 {
 }
 
@@ -117,14 +107,14 @@ pub trait MailboxItem:
     fn topic(&self) -> Self::Topic;
 }
 
-/// Extra traits for ItemTraits which are feature-dependent.
-#[cfg(feature = "named-id")]
-pub trait OptionalItemTraits: named_id::Rename {}
-#[cfg(feature = "named-id")]
-impl<T> OptionalItemTraits for T where T: named_id::Rename {}
+// /// Extra traits for ItemTraits which are feature-dependent.
+// #[cfg(feature = "named-id")]
+// pub trait OptionalItemTraits: named_id::Rename {}
+// #[cfg(feature = "named-id")]
+// impl<T> OptionalItemTraits for T where T: named_id::Rename {}
 
 /// Extra traits for ItemTraits which are feature-dependent.
-#[cfg(not(feature = "named-id"))]
+// #[cfg(not(feature = "named-id"))]
 pub trait OptionalItemTraits {}
-#[cfg(not(feature = "named-id"))]
+// #[cfg(not(feature = "named-id"))]
 impl<T> OptionalItemTraits for T {}

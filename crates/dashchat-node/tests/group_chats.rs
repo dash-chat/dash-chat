@@ -139,7 +139,10 @@ async fn test_group_chat() {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
-        .unwrap();
+        .unwrap()
+        .with_name("groupchat");
+
+    dbg!(&chat_id);
 
     alice.send_message(chat_id, "Hello".into()).await.unwrap();
 
@@ -215,7 +218,7 @@ async fn test_group_chat() {
     .await;
 
     if let Err(members) = result {
-        panic!("memberships are not consistent: {:#?}", members.renamed());
+        panic!("memberships are not consistent: {:#?}", members);
     }
 
     let alice_messages = alice.get_messages(chat_id).await.unwrap();
@@ -226,12 +229,12 @@ async fn test_group_chat() {
     let bobbi_members = bobbi.get_group_members(chat_id).await.unwrap();
     let cammy_members = cammy.get_group_members(chat_id).await.unwrap();
 
-    assert_eq!(alice_members.renamed_ref(), expected_members.renamed_ref());
-    assert_eq!(bobbi_members.renamed_ref(), expected_members.renamed_ref());
-    assert_eq!(cammy_members.renamed_ref(), expected_members.renamed_ref());
+    assert_eq!(alice_members, expected_members);
+    assert_eq!(bobbi_members, expected_members);
+    assert_eq!(cammy_members, expected_members);
 
-    assert_eq!(alice_messages.renamed_ref(), bobbi_messages.renamed_ref());
-    assert_eq!(alice_messages.renamed_ref(), cammy_messages.renamed_ref());
+    assert_eq!(alice_messages, bobbi_messages);
+    assert_eq!(alice_messages, cammy_messages);
     assert_eq!(
         bobbi_messages.first().map(|m| m.content.clone()),
         Some("Hello".into())

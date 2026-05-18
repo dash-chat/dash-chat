@@ -1,4 +1,4 @@
-use derive_more::{Deref, From};
+use derive_more::{Deref, From, derive::Display};
 use named_id::RenameAll;
 use p2panda_core::VerifyingKey;
 use p2panda_spaces::ActorId;
@@ -10,6 +10,7 @@ use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentVal
     Clone,
     Copy,
     Debug,
+    Display,
     PartialEq,
     Eq,
     PartialOrd,
@@ -19,15 +20,24 @@ use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentVal
     Deserialize,
     From,
     Deref,
-    RenameAll,
 )]
 pub struct DeviceId(VerifyingKey);
+
+impl named_id::Nameable for DeviceId {
+    fn shortener(&self) -> Option<named_id::Shortener> {
+        Some(named_id::Shortener {
+            length: 4,
+            prefix: "D",
+        })
+    }
+}
 
 /// The ID for an "agent" which may control multiple devices.
 #[derive(
     Clone,
     Copy,
     Debug,
+    Display,
     PartialEq,
     Eq,
     PartialOrd,
@@ -37,9 +47,17 @@ pub struct DeviceId(VerifyingKey);
     Deserialize,
     From,
     Deref,
-    RenameAll,
 )]
 pub struct AgentId(ActorId);
+
+impl named_id::Nameable for AgentId {
+    fn shortener(&self) -> Option<named_id::Shortener> {
+        Some(named_id::Shortener {
+            length: 4,
+            prefix: "A",
+        })
+    }
+}
 
 impl AgentId {
     pub fn from_bytes(bytes: &[u8; 32]) -> anyhow::Result<Self> {

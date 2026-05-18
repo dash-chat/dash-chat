@@ -39,7 +39,7 @@ impl Behavior {
         let qr = watcher
             .watch_mapped(Duration::from_secs(30), |n: &Notification| {
                 tracing::debug!(
-                    hash = ?n.header.hash().renamed(),
+                    hash = ?n.header.hash(),
                     "checking for contact invitation"
                 );
                 let Payload::Inbox(InboxPayload::ContactRequest { code, .. }) = &n.payload else {
@@ -87,7 +87,7 @@ impl Behavior {
             .await
             .watch_mapped(Duration::from_secs(5), |n: &Notification| {
                 tracing::debug!(
-                    hash = ?n.header.hash().renamed(),
+                    hash = ?n.header.hash(),
                     "checking for group invitation"
                 );
                 let Payload::Chat(ChatPayload::JoinGroup { chat_id, .. }) = &n.payload else {

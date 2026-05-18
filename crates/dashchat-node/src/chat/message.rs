@@ -153,6 +153,7 @@ pub mod testing {
     pub struct ChatMessage {
         pub content: ChatMessageContent,
         pub author: DeviceId,
+        #[named_id(skip)]
         pub timestamp: Timestamp,
     }
 

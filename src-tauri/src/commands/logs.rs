@@ -6,7 +6,7 @@ use tauri::State;
 /// Serialize a `Timestamp` (microseconds) as milliseconds since the UNIX epoch
 /// so JS can pass it straight to `new Date(ms)`.
 fn serialize_timestamp_as_millis<S: Serializer>(ts: &Timestamp, s: S) -> Result<S::Ok, S::Error> {
-    s.serialize_u64(ts.as_micros() / 1_000)
+    s.serialize_u64(u64::from(*ts) / 1_000)
 }
 
 fn deserialize_timestamp_from_millis<'de, D: Deserializer<'de>>(
