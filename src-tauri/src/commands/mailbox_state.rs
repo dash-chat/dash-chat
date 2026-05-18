@@ -1,9 +1,6 @@
 use std::collections::BTreeSet;
 
-use dashchat_node::{
-    topic::TopicId,
-    DeviceId, Node,
-};
+use dashchat_node::{topic::TopicId, DeviceId, Node};
 use mailbox_client::{
     manager::{MailboxConnectionState, MailboxSyncState},
     MailboxId,

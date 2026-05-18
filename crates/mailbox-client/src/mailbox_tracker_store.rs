@@ -299,8 +299,14 @@ mod tests {
 
     async fn multi_mailbox_impl(b: Backend) {
         let (_dir, store) = open(b).await;
-        store.record_synced(&"mb1".into(), &7u8, &'a', 1).await.unwrap();
-        store.record_synced(&"mb2".into(), &7u8, &'a', 5).await.unwrap();
+        store
+            .record_synced(&"mb1".into(), &7u8, &'a', 1)
+            .await
+            .unwrap();
+        store
+            .record_synced(&"mb2".into(), &7u8, &'a', 5)
+            .await
+            .unwrap();
         let for_log = store.get_synced_for_log(&7u8, &'a').await.unwrap();
         assert_eq!(for_log.get("mb1"), Some(&1));
         assert_eq!(for_log.get("mb2"), Some(&5));
@@ -318,10 +324,22 @@ mod tests {
 
     async fn get_all_for_mailbox_impl(b: Backend) {
         let (_dir, store) = open(b).await;
-        store.record_synced(&"mb1".into(), &7u8, &'a', 1).await.unwrap();
-        store.record_synced(&"mb1".into(), &7u8, &'b', 2).await.unwrap();
-        store.record_synced(&"mb1".into(), &8u8, &'a', 3).await.unwrap();
-        store.record_synced(&"mb2".into(), &7u8, &'a', 99).await.unwrap();
+        store
+            .record_synced(&"mb1".into(), &7u8, &'a', 1)
+            .await
+            .unwrap();
+        store
+            .record_synced(&"mb1".into(), &7u8, &'b', 2)
+            .await
+            .unwrap();
+        store
+            .record_synced(&"mb1".into(), &8u8, &'a', 3)
+            .await
+            .unwrap();
+        store
+            .record_synced(&"mb2".into(), &7u8, &'a', 99)
+            .await
+            .unwrap();
         let all: BTreeMap<(u8, char), u64> =
             store.get_all_for_mailbox(&"mb1".into()).await.unwrap();
         assert_eq!(all.len(), 3);
@@ -342,11 +360,23 @@ mod tests {
 
     async fn drop_mailbox_impl(b: Backend) {
         let (_dir, store) = open(b).await;
-        store.record_synced(&"mb1".into(), &7u8, &'a', 1).await.unwrap();
-        store.record_synced(&"mb2".into(), &7u8, &'a', 2).await.unwrap();
+        store
+            .record_synced(&"mb1".into(), &7u8, &'a', 1)
+            .await
+            .unwrap();
+        store
+            .record_synced(&"mb2".into(), &7u8, &'a', 2)
+            .await
+            .unwrap();
         store.drop_mailbox(&"mb1".into()).await.unwrap();
-        assert_eq!(store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(), None);
-        assert_eq!(store.get_synced(&"mb2".into(), &7u8, &'a').await.unwrap(), Some(2));
+        assert_eq!(
+            store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_synced(&"mb2".into(), &7u8, &'a').await.unwrap(),
+            Some(2)
+        );
     }
 
     #[tokio::test]
@@ -366,9 +396,18 @@ mod tests {
 
         {
             let store = MailboxTrackerStore::open(&path).await.unwrap();
-            store.record_synced(&"mb1".into(), &7u8, &'a', 3).await.unwrap();
-            store.record_synced(&"mb1".into(), &7u8, &'b', 4).await.unwrap();
-            store.record_synced(&"mb2".into(), &8u8, &'c', 5).await.unwrap();
+            store
+                .record_synced(&"mb1".into(), &7u8, &'a', 3)
+                .await
+                .unwrap();
+            store
+                .record_synced(&"mb1".into(), &7u8, &'b', 4)
+                .await
+                .unwrap();
+            store
+                .record_synced(&"mb2".into(), &8u8, &'c', 5)
+                .await
+                .unwrap();
             store.close().await;
         }
 
@@ -392,12 +431,18 @@ mod tests {
         assert_eq!(all.get(&(7u8, 'a')), Some(&3));
         assert_eq!(all.get(&(7u8, 'b')), Some(&4));
 
-        store.record_synced(&"mb1".into(), &7u8, &'a', 2).await.unwrap();
+        store
+            .record_synced(&"mb1".into(), &7u8, &'a', 2)
+            .await
+            .unwrap();
         assert_eq!(
             store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
             Some(3),
         );
-        store.record_synced(&"mb1".into(), &7u8, &'a', 10).await.unwrap();
+        store
+            .record_synced(&"mb1".into(), &7u8, &'a', 10)
+            .await
+            .unwrap();
         assert_eq!(
             store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
             Some(10),

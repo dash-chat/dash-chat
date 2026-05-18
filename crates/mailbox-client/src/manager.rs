@@ -1,5 +1,5 @@
-use crate::store::MailboxStore;
 use crate::mailbox_tracker_store::MailboxTrackerStore;
+use crate::store::MailboxStore;
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Serializer};
 use tokio::sync::watch;
@@ -178,8 +178,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     }
 
     fn record_success(&self, config: &MailboxesConfig) {
-        self.connection_tx
-            .send_modify(|s| s.record_success(config));
+        self.connection_tx.send_modify(|s| s.record_success(config));
     }
 
     fn record_error(&self, config: &MailboxesConfig, err: String) {
