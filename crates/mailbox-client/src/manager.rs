@@ -1185,14 +1185,20 @@ mod tests {
         eprintln!("degraded polls: {degraded_polls:?}  (avg {avg_degraded:.1})");
         eprintln!("stopped polls:  {stopped_polls:?}  (avg {avg_stopped:.1})");
 
+        // Sanity: everyone got polled
         assert!(active_polls.iter().all(|&c| c > 0), "all active polled");
         assert!(degraded_polls.iter().all(|&c| c > 0), "all degraded polled");
         assert!(stopped_polls.iter().all(|&c| c > 0), "all stopped polled");
 
+        // Within-group fairness: clients with the same status should not
+        // deviate by more than 1 poll from each other.
         assert_within_group("active", &active_polls, 1);
         assert_within_group("degraded", &degraded_polls, 1);
         assert_within_group("stopped", &stopped_polls, 1);
 
+        // Cross-group ratios should match the inverse of effective intervals.
+        //   effective_interval = status_interval + between_polls_delay
+        //   ratio(a/b) = effective_b / effective_a
         let expected_active_stopped = 2.2 / 1.2; // ≈ 1.83
         let expected_active_degraded = 1.7 / 1.2; // ≈ 1.42
 
