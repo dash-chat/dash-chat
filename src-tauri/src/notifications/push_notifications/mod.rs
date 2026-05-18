@@ -9,6 +9,8 @@ use push_notifications_client::types::{FcmToken, PublicKey, TopicId as PushTopic
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
+use crate::notifications::are_notifications_enabled;
+
 mod node_cache;
 mod receive_push_notification;
 
@@ -104,8 +106,6 @@ pub fn setup_push_notifications(
 
     Ok(())
 }
-
-use crate::notifications::are_notifications_enabled;
 
 /// If notifications are currently enabled, get the FCM token and register it with the server
 /// If they're not, unregister the FCM token from the server
