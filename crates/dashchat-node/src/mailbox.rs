@@ -91,7 +91,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::{testing::*, *};
-    use mailbox_client::mem::MemMailbox;
+    use mailbox_client::{MailboxClient, mem::MemMailbox};
 
     /// Very simple test which circumvents the contact adding system:
     /// - alice sends a message to a direct chat topic
@@ -139,6 +139,85 @@ mod tests {
                     Ok(())
                 } else {
                     Err("message not received")
+                }
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    /// After a successful sync round, both nodes should record a sync
+    /// watermark indicating the mailbox holds at least the sent operation.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn sync_state_records_watermarks() {
+        dashchat_node::testing::setup_tracing(
+            &["dashchat=info", "mailbox_client=info", "p2panda_stream=warn"],
+            true,
+        );
+
+        let mb = MemMailbox::new();
+        let config = NodeConfig::testing();
+
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let bobbi = TestNode::new(config.clone(), "bobbi").await;
+
+        let chat = alice.direct_chat_topic(bobbi.agent_id());
+        alice.register_topic(chat).await.unwrap();
+
+        alice.add_mailbox_client(mb.client()).await;
+        bobbi.add_mailbox_client(mb.client()).await;
+        bobbi.register_topic(chat).await.unwrap();
+
+        alice.send_message(chat, "Hello".into()).await.unwrap();
+
+        wait_for(
+            Duration::from_millis(100),
+            Duration::from_secs(5),
+            || async {
+                if bobbi.get_messages(chat).await.unwrap().len() == 1 {
+                    Ok(())
+                } else {
+                    Err("message not received")
+                }
+            },
+        )
+        .await
+        .unwrap();
+
+        let mailbox_id = mb.client().id();
+        let alice_device: crate::DeviceId = alice.device_id();
+        let chat_id: crate::topic::TopicId = chat.into();
+
+        // The mailbox should have recorded alice's seq 0 from both sides.
+        let alice_tracked = alice
+            .mailboxes
+            .tracked(&mailbox_id)
+            .await
+            .expect("alice tracked mailbox missing");
+        let bobbi_tracked = bobbi
+            .mailboxes
+            .tracked(&mailbox_id)
+            .await
+            .expect("bobbi tracked mailbox missing");
+
+        wait_for(
+            Duration::from_millis(100),
+            Duration::from_secs(5),
+            || async {
+                let alice_seq = alice_tracked
+                    .sync_state()
+                    .borrow()
+                    .get(&(chat_id, alice_device))
+                    .copied();
+                let bobbi_seq = bobbi_tracked
+                    .sync_state()
+                    .borrow()
+                    .get(&(chat_id, alice_device))
+                    .copied();
+                if alice_seq == Some(0) && bobbi_seq == Some(0) {
+                    Ok(())
+                } else {
+                    Err("watermark not recorded")
                 }
             },
         )

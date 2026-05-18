@@ -27,4 +27,8 @@ export * from './chats/chats-client.js';
 export * from './settings/settings-client.js';
 export * from './settings/settings-store.js';
 
+export * from './tracked-mailboxes/tracked-mailboxes-client.js';
+export * from './tracked-mailboxes/tracked-mailboxes-store.js';
+export * from './tracked-mailboxes/types.js';
+
 export * from './utils/memo.js';
