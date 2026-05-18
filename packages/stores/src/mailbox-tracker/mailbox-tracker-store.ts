@@ -73,14 +73,14 @@ export class MailboxTrackerStore {
 		async (
 			topicId: TopicId,
 			author: DeviceId,
-		): Promise<Map<MailboxId, number>> => {
+		): Promise<Record<MailboxId, number>> => {
 			const ids = await this.allMailboxIds();
-			const out = new Map<MailboxId, number>();
+			const out: Record<MailboxId, number> = {};
 			for (const id of ids) {
 				const sync = await this.syncState(id);
 				const seq = sync[topicId]?.[author];
 				if (seq !== undefined) {
-					out.set(id, seq);
+					out[id] = seq;
 				}
 			}
 			return out;
@@ -95,11 +95,9 @@ export class MailboxTrackerStore {
 			seq: number,
 		): Promise<MailboxId[]> => {
 			const map = await this.syncStateForLog(topicId, author);
-			const out: MailboxId[] = [];
-			map.forEach((mailboxSeq, mailboxId) => {
-				if (mailboxSeq >= seq) out.push(mailboxId);
-			});
-			return out;
+			return Object.entries(map)
+				.filter(([, mailboxSeq]) => mailboxSeq >= seq)
+				.map(([mailboxId]) => mailboxId);
 		},
 	);
 }
