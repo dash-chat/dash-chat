@@ -137,16 +137,16 @@ impl Node {
 
         let (subscription_tx, subscription_rx) = mpsc::channel(100);
 
-        let sync_state_store = std::sync::Arc::new(
+        let tracker_store = std::sync::Arc::new(
             mailbox_client::mailbox_tracker_store::MailboxTrackerStore::open(
-                filesystem.mailbox_sync_state_path(),
+                filesystem.mailbox_tracker_store_path(),
             )
             .await?,
         );
 
         let mailboxes = Mailboxes::spawn(
             op_store.clone(),
-            sync_state_store,
+            tracker_store,
             config.mailboxes_config.clone(),
         )
         .await?;
