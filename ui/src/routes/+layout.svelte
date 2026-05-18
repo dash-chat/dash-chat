@@ -19,8 +19,8 @@
 		DevicesStore,
 		SettingsClient,
 		SettingsStore,
-		TauriTrackedMailboxesClient,
-		TrackedMailboxesStore,
+		TauriMailboxTrackerClient,
+		MailboxTrackerStore,
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
@@ -70,7 +70,7 @@
 	let devicesStore: DevicesStore;
 	let contactsStore: ContactsStore;
 	let chatsStore: ChatsStore;
-	let trackedMailboxesStore: TrackedMailboxesStore | undefined;
+	let mailboxTrackerStore: MailboxTrackerStore | undefined;
 
 	if (isPreview) {
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
@@ -119,8 +119,8 @@
 		const chatsClient = new ChatsClient();
 		chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
 
-		trackedMailboxesStore = new TrackedMailboxesStore(
-			new TauriTrackedMailboxesClient(),
+		mailboxTrackerStore = new MailboxTrackerStore(
+			new TauriMailboxTrackerClient(),
 		);
 
 		invoke('log_webview_info', { userAgent: navigator.userAgent }).catch(
@@ -132,8 +132,8 @@
 	setContext('devices-store', devicesStore);
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
-	if (trackedMailboxesStore) {
-		setContext('tracked-mailboxes-store', trackedMailboxesStore);
+	if (mailboxTrackerStore) {
+		setContext('mailbox-tracker-store', mailboxTrackerStore);
 	}
 
 	// Keep the chats summaries signal warm so it's always fully loaded

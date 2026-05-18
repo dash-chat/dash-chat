@@ -1,12 +1,13 @@
 use std::collections::{BTreeSet, HashMap};
 
-use dashchat_node::{topic::TopicId, DeviceId, Node};
+use dashchat_node::{DeviceId, Node, topic::TopicId};
 use mailbox_client::{
-    manager::{MailboxConnectionState, MailboxSyncState},
     MailboxId,
+    manager::MailboxTracker,
+    sync_tracker::MailboxSyncState,
 };
 use serde::Serialize;
-use tauri::{ipc::Channel, State};
+use tauri::{State, ipc::Channel};
 use tokio::sync::watch;
 
 /// Convert to the JSON-compatible shape: topic/author keys hex-encoded
@@ -46,18 +47,39 @@ where
     Ok(())
 }
 
-#[tauri::command]
-pub async fn mailbox_subscribe_ids(
-    on_event: Channel<BTreeSet<MailboxId>>,
-    node: State<'_, Node>,
-) -> Result<(), String> {
-    forward(node.mailboxes.mailbox_ids(), on_event, |s| s.clone()).await
+fn clone_ids(s: &BTreeSet<MailboxId>) -> BTreeSet<MailboxId> {
+    s.clone()
+}
+
+fn clone_tracker(s: &MailboxTracker) -> MailboxTracker {
+    s.clone()
 }
 
 #[tauri::command]
-pub async fn mailbox_subscribe_connection_state(
+pub async fn mailbox_subscribe_active_ids(
+    on_event: Channel<BTreeSet<MailboxId>>,
+    node: State<'_, Node>,
+) -> Result<(), String> {
+    forward(node.mailboxes.active_mailbox_ids(), on_event, clone_ids).await
+}
+
+#[tauri::command]
+pub async fn mailbox_subscribe_all_ids(
+    on_event: Channel<BTreeSet<MailboxId>>,
+    node: State<'_, Node>,
+) -> Result<(), String> {
+    forward(
+        node.mailboxes.sync_tracker().all_mailbox_ids(),
+        on_event,
+        clone_ids,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn mailbox_subscribe_tracker(
     mailbox_id: MailboxId,
-    on_event: Channel<MailboxConnectionState>,
+    on_event: Channel<MailboxTracker>,
     node: State<'_, Node>,
 ) -> Result<(), String> {
     let tracked = node
@@ -65,7 +87,7 @@ pub async fn mailbox_subscribe_connection_state(
         .tracked_mailbox(&mailbox_id)
         .await
         .ok_or_else(|| format!("unknown mailbox {mailbox_id}"))?;
-    forward(tracked.connection_state(), on_event, |s| s.clone()).await
+    forward(tracked.tracker(), on_event, clone_tracker).await
 }
 
 #[tauri::command]
@@ -74,10 +96,11 @@ pub async fn mailbox_subscribe_sync_state(
     on_event: Channel<MailboxSyncState<String, String>>,
     node: State<'_, Node>,
 ) -> Result<(), String> {
-    let tracked = node
+    let rx = node
         .mailboxes
-        .tracked_mailbox(&mailbox_id)
+        .sync_tracker()
+        .sync_state(&mailbox_id)
         .await
-        .ok_or_else(|| format!("unknown mailbox {mailbox_id}"))?;
-    forward(tracked.sync_state(), on_event, to_wire).await
+        .map_err(|e| e.to_string())?;
+    forward(rx, on_event, to_wire).await
 }

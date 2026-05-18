@@ -1,5 +1,5 @@
-use crate::mailbox_tracker_store::MailboxTrackerStore;
 use crate::store::MailboxStore;
+use crate::sync_tracker::MailboxSyncTracker;
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Serializer};
 use tokio::sync::watch;
@@ -63,7 +63,7 @@ pub struct LastError {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct MailboxConnectionState {
+pub struct MailboxTracker {
     pub status: SyncStatus,
     pub consecutive_errors: u32,
     #[serde(rename = "next_poll_in_ms", serialize_with = "ser_next_poll_in_ms")]
@@ -82,7 +82,7 @@ fn ser_next_poll_in_ms<S: Serializer>(next: &Instant, s: S) -> Result<S::Ok, S::
     s.serialize_i64(ms)
 }
 
-impl MailboxConnectionState {
+impl MailboxTracker {
     fn new() -> Self {
         Self {
             status: SyncStatus::Active,
@@ -128,91 +128,37 @@ impl MailboxConnectionState {
     }
 }
 
-pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, u64>>;
-
-/// Per-mailbox handle owning the client, its connection state, and its sync watermarks.
-/// Held inside `Mailboxes` as `Arc<TrackedMailbox<...>>` so cheap clones can be handed out
-/// to subscribers.
+/// Per-mailbox handle owning the client and its tracker. Held inside `Mailboxes`
+/// as `Arc<TrackedMailbox<...>>` so cheap clones can be handed out to subscribers.
 pub struct TrackedMailbox<Item: MailboxItem> {
-    id: MailboxId,
-    client: Arc<dyn MailboxClient<Item>>,
-    connection_state_tx: watch::Sender<MailboxConnectionState>,
-    sync_state_tx: watch::Sender<MailboxSyncState<Item::Topic, Item::Author>>,
-    tracker_store: Arc<MailboxTrackerStore>,
+    pub(crate) client: Arc<dyn MailboxClient<Item>>,
+    pub(crate) tracker: watch::Sender<MailboxTracker>,
 }
 
 impl<Item: MailboxItem> TrackedMailbox<Item> {
-    async fn init(
-        id: MailboxId,
-        client: Arc<dyn MailboxClient<Item>>,
-        tracker_store: Arc<MailboxTrackerStore>,
-    ) -> Self {
-        let initial_sync = tracker_store
-            .get_all_for_mailbox::<Item::Topic, Item::Author>(&id)
-            .await
-            .unwrap_or_else(|err| {
-                tracing::error!(?err, mailbox = %id, "failed to load initial sync state");
-                HashMap::new()
-            });
-        let (connection_state_tx, _) = watch::channel(MailboxConnectionState::new());
-        let (sync_state_tx, _) = watch::channel(initial_sync);
-        Self {
-            id,
-            client,
-            connection_state_tx,
-            sync_state_tx,
-            tracker_store,
-        }
+    fn new(client: Arc<dyn MailboxClient<Item>>) -> Self {
+        let (tracker, _) = watch::channel(MailboxTracker::new());
+        Self { client, tracker }
     }
 
-    pub fn id(&self) -> &MailboxId {
-        &self.id
-    }
-
-    pub fn connection_state(&self) -> watch::Receiver<MailboxConnectionState> {
-        self.connection_state_tx.subscribe()
-    }
-
-    pub fn sync_state(&self) -> watch::Receiver<MailboxSyncState<Item::Topic, Item::Author>> {
-        self.sync_state_tx.subscribe()
+    pub fn tracker(&self) -> watch::Receiver<MailboxTracker> {
+        self.tracker.subscribe()
     }
 
     fn record_success(&self, config: &MailboxesConfig) {
-        self.connection_state_tx
-            .send_modify(|s| s.record_success(config));
+        self.tracker.send_modify(|t| t.record_success(config));
     }
 
     fn record_error(&self, config: &MailboxesConfig, err: String) {
-        self.connection_state_tx
-            .send_modify(|s| s.record_error(config, err));
+        self.tracker.send_modify(|t| t.record_error(config, err));
     }
 
     fn reschedule(&self, config: &MailboxesConfig) {
-        self.connection_state_tx
-            .send_modify(|s| s.reschedule(config));
+        self.tracker.send_modify(|t| t.reschedule(config));
     }
 
     fn wakeup(&self) {
-        self.connection_state_tx.send_modify(|s| s.wakeup());
-    }
-
-    async fn record_synced(
-        &self,
-        entries: Vec<(Item::Topic, Item::Author, u64)>,
-    ) -> anyhow::Result<()> {
-        if entries.is_empty() {
-            return Ok(());
-        }
-        self.tracker_store.record_synced(&self.id, &entries).await?;
-        self.sync_state_tx.send_modify(|m| {
-            for (topic, author, seq) in entries {
-                let entry = m.entry(topic).or_default().entry(author).or_insert(0);
-                if seq > *entry {
-                    *entry = seq;
-                }
-            }
-        });
-        Ok(())
+        self.tracker.send_modify(|t| t.wakeup());
     }
 }
 
@@ -223,10 +169,10 @@ where
     Store: MailboxStore<Item>,
 {
     mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<TrackedMailbox<Item>>>>>,
-    mailbox_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
+    active_mailbox_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Store,
-    mailbox_tracker_store: Arc<MailboxTrackerStore>,
+    sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
     config: MailboxesConfig,
     trigger: mpsc::Sender<Option<MailboxId>>,
 }
@@ -239,24 +185,30 @@ where
 {
     fn new(
         store: Store,
-        mailbox_tracker_store: Arc<MailboxTrackerStore>,
+        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
         trigger: mpsc::Sender<Option<MailboxId>>,
     ) -> Self {
-        let (mailbox_ids_tx, _) = watch::channel(BTreeSet::new());
+        let (active_ids_tx, _) = watch::channel(BTreeSet::new());
         Self {
             mailboxes: Arc::new(Mutex::new(Default::default())),
-            mailbox_ids_tx,
+            active_mailbox_ids_tx: active_ids_tx,
             topics: Arc::new(Mutex::new(Default::default())),
             store,
-            mailbox_tracker_store,
+            sync_tracker,
             config,
             trigger,
         }
     }
 
-    pub fn mailbox_ids(&self) -> watch::Receiver<BTreeSet<MailboxId>> {
-        self.mailbox_ids_tx.subscribe()
+    /// Subscribe to the set of currently-registered mailbox ids.
+    pub fn active_mailbox_ids(&self) -> watch::Receiver<BTreeSet<MailboxId>> {
+        self.active_mailbox_ids_tx.subscribe()
+    }
+
+    /// Persistent, watch-based view over every mailbox we've ever recorded sync state for.
+    pub fn sync_tracker(&self) -> &Arc<MailboxSyncTracker<Item::Topic, Item::Author>> {
+        &self.sync_tracker
     }
 
     pub async fn tracked_mailbox(&self, id: &MailboxId) -> Option<Arc<TrackedMailbox<Item>>> {
@@ -267,14 +219,7 @@ where
         // TODO: check for existing mailbox with different ID but same "URL" (which is currently abstracted away and inaccessible here, darn)
         // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.
         let id = mailbox.id();
-        let tracked_mailbox = Arc::new(
-            TrackedMailbox::init(
-                id.clone(),
-                Arc::new(mailbox),
-                self.mailbox_tracker_store.clone(),
-            )
-            .await,
-        );
+        let tracked_mailbox = Arc::new(TrackedMailbox::new(Arc::new(mailbox)));
         let existing = self
             .mailboxes
             .lock()
@@ -285,18 +230,18 @@ where
             // TODO: at least, make sure the URL being replaced is "better" than the previous one, i.e. ipv4 instead of ipv6
             tracing::warn!("overwriting existing mailbox for {id}");
         }
-        self.publish_ids().await;
+        self.publish_active_ids().await;
         self.trigger_sync();
     }
 
     pub async fn clear(&self) {
         self.mailboxes.lock().await.clear();
-        self.publish_ids().await;
+        self.publish_active_ids().await;
     }
 
-    async fn publish_ids(&self) {
+    async fn publish_active_ids(&self) {
         let ids: BTreeSet<MailboxId> = self.mailboxes.lock().await.keys().cloned().collect();
-        let _ = self.mailbox_ids_tx.send(ids);
+        let _ = self.active_mailbox_ids_tx.send(ids);
     }
 
     pub async fn subscribed_topics(&self) -> BTreeSet<Item::Topic> {
@@ -337,11 +282,11 @@ where
 
     pub async fn spawn(
         store: Store,
-        mailbox_tracker_store: Arc<MailboxTrackerStore>,
+        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
     ) -> Result<Self, anyhow::Error> {
         let (trigger_tx, mut trigger_rx) = mpsc::channel::<Option<MailboxId>>(1);
-        let manager = Self::new(store, mailbox_tracker_store, config, trigger_tx);
+        let manager = Self::new(store, sync_tracker, config, trigger_tx);
         let r = manager.clone();
         tokio::spawn(
             async move {
@@ -401,10 +346,10 @@ where
         let now = Instant::now();
         let (id, tracked) = mm
             .iter()
-            .min_by_key(|(_, t)| t.connection_state().borrow().next_poll)
+            .min_by_key(|(_, t)| t.tracker().borrow().next_poll)
             .unwrap();
 
-        let next = tracked.connection_state().borrow().next_poll;
+        let next = tracked.tracker().borrow().next_poll;
         let wait = if next <= now {
             Duration::ZERO
         } else {
@@ -438,19 +383,21 @@ where
         }
 
         tracing::info!("polling mailbox {id}");
-        let result = self.sync_topics(topics.into_iter(), &tracked_mailbox).await;
+        let result = self
+            .sync_topics(topics.into_iter(), id, &tracked_mailbox.client)
+            .await;
 
         match result {
             Ok(()) => tracked_mailbox.record_success(&self.config),
             Err(err) => {
                 tracing::error!(?err, mailbox = %id, "mailbox sync error");
                 tracked_mailbox.record_error(&self.config, format!("{err:?}"));
-                let connection_state = tracked_mailbox.connection_state();
-                let connection_state = connection_state.borrow();
+                let tracker = tracked_mailbox.tracker();
+                let tracker = tracker.borrow();
                 tracing::info!(
                     mailbox = %id,
-                    status = ?connection_state.status,
-                    errors = connection_state.consecutive_errors,
+                    status = ?tracker.status,
+                    errors = tracker.consecutive_errors,
                     "mailbox status updated"
                 );
             }
@@ -463,7 +410,8 @@ where
     async fn sync_topics(
         &self,
         topics: impl Iterator<Item = Item::Topic>,
-        tracked_mailbox: &TrackedMailbox<Item>,
+        mailbox_id: &MailboxId,
+        mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<()> {
         let mut request = BTreeMap::new();
         let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, u64>> = BTreeMap::new();
@@ -474,7 +422,7 @@ where
             request.insert(topic, heights);
         }
 
-        let FetchResponse(response) = tracked_mailbox.client.fetch(FetchRequest(request)).await?;
+        let FetchResponse(response) = mailbox.fetch(FetchRequest(request)).await?;
 
         let mut ops_to_publish: Vec<Item> = vec![];
         let mut acks: Vec<(Item::Topic, Item::Author, u64)> = vec![];
@@ -549,11 +497,11 @@ where
             .map(|op| (op.topic(), op.author(), op.seq_num()))
             .collect();
 
-        tracked_mailbox.client.publish(ops_to_publish).await?;
+        mailbox.publish(ops_to_publish).await?;
 
         acks.extend(publish_acks);
-        if let Err(err) = tracked_mailbox.record_synced(acks).await {
-            tracing::error!(?err, mailbox = %tracked_mailbox.id, "failed to record sync watermarks");
+        if let Err(err) = self.sync_tracker.record_synced(mailbox_id, &acks).await {
+            tracing::error!(?err, mailbox = %mailbox_id, "failed to record sync watermarks");
         }
 
         Ok(())
@@ -621,112 +569,112 @@ mod tests {
         }
     }
 
-    fn test_tracker_store() -> Arc<MailboxTrackerStore> {
-        Arc::new(MailboxTrackerStore::in_memory())
+    fn test_sync_tracker() -> Arc<MailboxSyncTracker<u8, char>> {
+        Arc::new(MailboxSyncTracker::in_memory())
     }
 
     /// Create a Mailboxes instance without spawning the background loop
     fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
         let (trigger_tx, _trigger_rx) = mpsc::channel(1);
-        Mailboxes::new(DummyStore, test_tracker_store(), config, trigger_tx)
+        Mailboxes::new(DummyStore, test_sync_tracker(), config, trigger_tx)
     }
 
     async fn spawn_test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
-        Mailboxes::<Msg, DummyStore>::spawn(DummyStore, test_tracker_store(), config)
+        Mailboxes::<Msg, DummyStore>::spawn(DummyStore, test_sync_tracker(), config)
             .await
             .unwrap()
     }
 
-    // -- MailboxConnectionState unit tests --
+    // -- MailboxTracker unit tests --
 
     #[tokio::test(start_paused = true)]
-    async fn connection_state_starts_active() {
-        let connection_state = MailboxConnectionState::new();
-        assert_eq!(connection_state.status, SyncStatus::Active);
-        assert_eq!(connection_state.consecutive_errors, 0);
+    async fn tracker_starts_active() {
+        let tracker = MailboxTracker::new();
+        assert_eq!(tracker.status, SyncStatus::Active);
+        assert_eq!(tracker.consecutive_errors, 0);
     }
 
     #[tokio::test(start_paused = true)]
-    async fn connection_state_success_resets_to_active() {
+    async fn tracker_success_resets_to_active() {
         let config = test_config();
-        let mut connection_state = MailboxConnectionState::new();
+        let mut tracker = MailboxTracker::new();
 
         // Accumulate some errors first
-        connection_state.record_error(&config, "x".into());
-        connection_state.record_error(&config, "x".into());
-        assert_eq!(connection_state.status, SyncStatus::Degraded);
+        tracker.record_error(&config, "x".into());
+        tracker.record_error(&config, "x".into());
+        assert_eq!(tracker.status, SyncStatus::Degraded);
 
         // Success resets everything
-        connection_state.record_success(&config);
-        assert_eq!(connection_state.status, SyncStatus::Active);
-        assert_eq!(connection_state.consecutive_errors, 0);
-        assert!(connection_state.last_success_at.is_some());
-        assert!(connection_state.last_error.is_none());
+        tracker.record_success(&config);
+        assert_eq!(tracker.status, SyncStatus::Active);
+        assert_eq!(tracker.consecutive_errors, 0);
+        assert!(tracker.last_success_at.is_some());
+        assert!(tracker.last_error.is_none());
     }
 
     #[tokio::test(start_paused = true)]
-    async fn connection_state_error_transitions() {
+    async fn tracker_error_transitions() {
         let config = test_config();
-        let mut connection_state = MailboxConnectionState::new();
+        let mut tracker = MailboxTracker::new();
 
         // 1 error: still Active
-        connection_state.record_error(&config, "x".into());
-        assert_eq!(connection_state.status, SyncStatus::Active);
-        assert_eq!(connection_state.consecutive_errors, 1);
+        tracker.record_error(&config, "x".into());
+        assert_eq!(tracker.status, SyncStatus::Active);
+        assert_eq!(tracker.consecutive_errors, 1);
 
         // 2 errors: Degraded
-        connection_state.record_error(&config, "x".into());
-        assert_eq!(connection_state.status, SyncStatus::Degraded);
-        assert_eq!(connection_state.consecutive_errors, 2);
+        tracker.record_error(&config, "x".into());
+        assert_eq!(tracker.status, SyncStatus::Degraded);
+        assert_eq!(tracker.consecutive_errors, 2);
 
         // 3 errors: Stopped
-        connection_state.record_error(&config, "x".into());
-        assert_eq!(connection_state.status, SyncStatus::Stopped);
-        assert_eq!(connection_state.consecutive_errors, 3);
+        tracker.record_error(&config, "x".into());
+        assert_eq!(tracker.status, SyncStatus::Stopped);
+        assert_eq!(tracker.consecutive_errors, 3);
 
         // More errors: stays Stopped
-        connection_state.record_error(&config, "x".into());
-        assert_eq!(connection_state.status, SyncStatus::Stopped);
-        assert_eq!(connection_state.consecutive_errors, 4);
-        assert!(connection_state.last_error.is_some());
+        tracker.record_error(&config, "x".into());
+        assert_eq!(tracker.status, SyncStatus::Stopped);
+        assert_eq!(tracker.consecutive_errors, 4);
+        assert!(tracker.last_error.is_some());
     }
 
     #[tokio::test(start_paused = true)]
-    async fn connection_state_next_poll_after_success() {
+    async fn tracker_next_poll_after_success() {
         let config = test_config();
-        let mut connection_state = MailboxConnectionState::new();
+        let mut tracker = MailboxTracker::new();
 
         let before = Instant::now();
-        connection_state.record_success(&config);
+        tracker.record_success(&config);
         let expected = before + config.active_interval + config.between_polls_delay;
 
-        assert_eq!(connection_state.next_poll, expected);
+        assert_eq!(tracker.next_poll, expected);
     }
 
     #[tokio::test(start_paused = true)]
-    async fn connection_state_next_poll_after_errors() {
+    async fn tracker_next_poll_after_errors() {
         let config = test_config();
-        let mut connection_state = MailboxConnectionState::new();
+        let mut tracker = MailboxTracker::new();
         let delay = config.between_polls_delay;
 
         // First error: still Active interval
-        connection_state.record_error(&config, "x".into());
+        tracker.record_error(&config, "x".into());
         let expected = Instant::now() + config.active_interval + delay;
-        assert_eq!(connection_state.next_poll, expected);
+        assert_eq!(tracker.next_poll, expected);
 
         tokio::time::advance(Duration::from_secs(1)).await;
 
         // Second error: Degraded interval
-        connection_state.record_error(&config, "x".into());
+        tracker.record_error(&config, "x".into());
         let expected = Instant::now() + config.degraded_interval + delay;
-        assert_eq!(connection_state.next_poll, expected);
+        assert_eq!(tracker.next_poll, expected);
 
         tokio::time::advance(Duration::from_secs(1)).await;
 
         // Third error: Stopped interval
-        connection_state.record_error(&config, "x".into());
+        tracker.record_error(&config, "x".into());
         let expected = Instant::now() + config.stopped_interval + delay;
-        assert_eq!(connection_state.next_poll, expected);
+        assert_eq!(tracker.next_poll, expected);
     }
 
     // -- find_next_due tests --
@@ -856,7 +804,7 @@ mod tests {
             t.record_error(&config, "x".into());
             t.record_error(&config, "x".into());
             t.record_error(&config, "x".into());
-            assert_eq!(t.connection_state().borrow().status, SyncStatus::Stopped);
+            assert_eq!(t.tracker().borrow().status, SyncStatus::Stopped);
         }
 
         let (_found_id, wait) = mgr.find_next_due().await.unwrap();
@@ -951,12 +899,12 @@ mod tests {
         assert!(mgr.find_next_due().await.is_none());
     }
 
-    // -- mailbox_ids tests --
+    // -- active_mailbox_ids tests --
 
     #[tokio::test(start_paused = true)]
-    async fn mailbox_ids_updates_on_register_and_clear() {
+    async fn active_mailbox_ids_updates_on_register_and_clear() {
         let mgr = test_mailboxes(test_config());
-        let mut rx = mgr.mailbox_ids();
+        let mut rx = mgr.active_mailbox_ids();
         assert!(rx.borrow().is_empty());
 
         let mb = MemMailbox::<Msg>::new();
@@ -990,7 +938,7 @@ mod tests {
             t.record_error(&config, "x".into());
             t.record_error(&config, "x".into());
             t.record_error(&config, "x".into());
-            assert_eq!(t.connection_state().borrow().status, SyncStatus::Stopped);
+            assert_eq!(t.tracker().borrow().status, SyncStatus::Stopped);
         }
 
         let (_, wait) = mgr.find_next_due().await.unwrap();
@@ -1002,10 +950,10 @@ mod tests {
         assert_eq!(found_id, id);
         assert_eq!(wait, Duration::ZERO);
         let mm = mgr.mailboxes.lock().await;
-        let connection_state = mm.get(&id).unwrap().connection_state();
-        let connection_state = connection_state.borrow();
-        assert_eq!(connection_state.status, SyncStatus::Active);
-        assert_eq!(connection_state.consecutive_errors, 0);
+        let tracker = mm.get(&id).unwrap().tracker();
+        let tracker = tracker.borrow();
+        assert_eq!(tracker.status, SyncStatus::Active);
+        assert_eq!(tracker.consecutive_errors, 0);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1035,7 +983,7 @@ mod tests {
         {
             let mm = mgr.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
-            t.connection_state_tx.send_modify(|s| {
+            t.tracker.send_modify(|s| {
                 s.status = SyncStatus::Stopped;
                 s.consecutive_errors = 100;
                 s.next_poll = Instant::now() + Duration::from_secs(600);
@@ -1057,7 +1005,7 @@ mod tests {
         assert_eq!(poll_count.load(Ordering::Relaxed), 2);
         let mm = mgr.mailboxes.lock().await;
         assert_eq!(
-            mm.get(&id).unwrap().connection_state().borrow().status,
+            mm.get(&id).unwrap().tracker().borrow().status,
             SyncStatus::Active
         );
     }
@@ -1198,14 +1146,14 @@ mod tests {
             let mm = mgr.mailboxes.lock().await;
             for id in &degraded_ids {
                 let t = mm.get(id).unwrap();
-                t.connection_state_tx.send_modify(|s| {
+                t.tracker.send_modify(|s| {
                     s.status = SyncStatus::Degraded;
                     s.consecutive_errors = 1; // at degraded_threshold
                 });
             }
             for id in &stopped_ids {
                 let t = mm.get(id).unwrap();
-                t.connection_state_tx.send_modify(|s| {
+                t.tracker.send_modify(|s| {
                     s.status = SyncStatus::Stopped;
                     s.consecutive_errors = 1000; // at stopped_threshold
                 });

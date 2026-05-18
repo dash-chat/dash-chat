@@ -1,20 +1,18 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 
 import { unregisterChannel } from '../utils/tauri-channel';
+import type { MailboxId, MailboxSyncState, MailboxTracker } from './types';
 
-import type {
-	MailboxConnectionState,
-	MailboxId,
-	MailboxSyncState,
-} from './types';
-
-export interface TrackedMailboxesClient {
-	subscribeTrackedMailboxIds(
+export interface MailboxTrackerClient {
+	subscribeActiveMailboxIds(
 		handler: (ids: MailboxId[]) => void,
 	): Promise<UnsubscribeFn>;
-	subscribeConnectionState(
+	subscribeAllMailboxIds(
+		handler: (ids: MailboxId[]) => void,
+	): Promise<UnsubscribeFn>;
+	subscribeTracker(
 		mailboxId: MailboxId,
-		handler: (state: MailboxConnectionState) => void,
+		handler: (state: MailboxTracker) => void,
 	): Promise<UnsubscribeFn>;
 	subscribeSyncState(
 		mailboxId: MailboxId,
@@ -24,23 +22,32 @@ export interface TrackedMailboxesClient {
 
 export type UnsubscribeFn = () => void;
 
-export class TauriTrackedMailboxesClient implements TrackedMailboxesClient {
-	async subscribeTrackedMailboxIds(
+export class TauriMailboxTrackerClient implements MailboxTrackerClient {
+	async subscribeActiveMailboxIds(
 		handler: (ids: MailboxId[]) => void,
 	): Promise<UnsubscribeFn> {
 		const channel = new Channel<MailboxId[]>();
 		channel.onmessage = handler;
-		await invoke('mailbox_subscribe_ids', { onEvent: channel });
+		await invoke('mailbox_subscribe_active_ids', { onEvent: channel });
 		return () => unregisterChannel(channel);
 	}
 
-	async subscribeConnectionState(
-		mailboxId: MailboxId,
-		handler: (state: MailboxConnectionState) => void,
+	async subscribeAllMailboxIds(
+		handler: (ids: MailboxId[]) => void,
 	): Promise<UnsubscribeFn> {
-		const channel = new Channel<MailboxConnectionState>();
+		const channel = new Channel<MailboxId[]>();
 		channel.onmessage = handler;
-		await invoke('mailbox_subscribe_connection_state', {
+		await invoke('mailbox_subscribe_all_ids', { onEvent: channel });
+		return () => unregisterChannel(channel);
+	}
+
+	async subscribeTracker(
+		mailboxId: MailboxId,
+		handler: (state: MailboxTracker) => void,
+	): Promise<UnsubscribeFn> {
+		const channel = new Channel<MailboxTracker>();
+		channel.onmessage = handler;
+		await invoke('mailbox_subscribe_tracker', {
 			mailboxId,
 			onEvent: channel,
 		});

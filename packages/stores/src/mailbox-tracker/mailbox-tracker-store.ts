@@ -2,14 +2,10 @@ import { type ReactivePromise, reactive, relay } from 'signalium';
 
 import type { DeviceId, TopicId } from '../p2panda/types';
 import type {
-	TrackedMailboxesClient,
+	MailboxTrackerClient,
 	UnsubscribeFn,
-} from './tracked-mailboxes-client';
-import type {
-	MailboxConnectionState,
-	MailboxId,
-	MailboxSyncState,
-} from './types';
+} from './mailbox-tracker-client';
+import type { MailboxId, MailboxSyncState, MailboxTracker } from './types';
 
 function bridgeUnsub(pending: Promise<UnsubscribeFn>): UnsubscribeFn {
 	let unsub: UnsubscribeFn | undefined;
@@ -24,25 +20,36 @@ function bridgeUnsub(pending: Promise<UnsubscribeFn>): UnsubscribeFn {
 	};
 }
 
-export class TrackedMailboxesStore {
-	constructor(public client: TrackedMailboxesClient) {}
+export class MailboxTrackerStore {
+	constructor(public client: MailboxTrackerClient) {}
 
-	mailboxIds = reactive(
+	activeMailboxIds = reactive(
 		(): ReactivePromise<MailboxId[]> =>
 			relay<MailboxId[]>(state =>
 				bridgeUnsub(
-					this.client.subscribeTrackedMailboxIds(ids => {
+					this.client.subscribeActiveMailboxIds(ids => {
 						state.value = ids;
 					}),
 				),
 			),
 	);
 
-	connectionState = reactive(
-		(mailboxId: MailboxId): ReactivePromise<MailboxConnectionState> =>
-			relay<MailboxConnectionState>(state =>
+	allMailboxIds = reactive(
+		(): ReactivePromise<MailboxId[]> =>
+			relay<MailboxId[]>(state =>
 				bridgeUnsub(
-					this.client.subscribeConnectionState(mailboxId, s => {
+					this.client.subscribeAllMailboxIds(ids => {
+						state.value = ids;
+					}),
+				),
+			),
+	);
+
+	tracker = reactive(
+		(mailboxId: MailboxId): ReactivePromise<MailboxTracker> =>
+			relay<MailboxTracker>(state =>
+				bridgeUnsub(
+					this.client.subscribeTracker(mailboxId, s => {
 						state.value = s;
 					}),
 				),
@@ -60,14 +67,14 @@ export class TrackedMailboxesStore {
 			),
 	);
 
-	/// Per-(topic, author) view across all known mailboxes. Recomputes when
-	/// `mailboxIds` or any per-mailbox `syncState` changes.
+	/// Per-(topic, author) view across every mailbox we've ever synced with.
+	/// Recomputes when `allMailboxIds` or any per-mailbox `syncState` changes.
 	syncStateForLog = reactive(
 		async (
 			topicId: TopicId,
 			author: DeviceId,
 		): Promise<Map<MailboxId, number>> => {
-			const ids = await this.mailboxIds();
+			const ids = await this.allMailboxIds();
 			const out = new Map<MailboxId, number>();
 			for (const id of ids) {
 				const sync = await this.syncState(id);

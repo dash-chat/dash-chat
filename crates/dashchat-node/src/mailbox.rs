@@ -193,29 +193,29 @@ mod tests {
         let chat_id: crate::topic::TopicId = chat.into();
 
         // The mailbox should have recorded alice's seq 0 from both sides.
-        let alice_tracked = alice
+        let alice_sync = alice
             .mailboxes
-            .tracked_mailbox(&mailbox_id)
+            .sync_tracker()
+            .sync_state(&mailbox_id)
             .await
-            .expect("alice tracked mailbox missing");
-        let bobbi_tracked = bobbi
+            .expect("alice sync state missing");
+        let bobbi_sync = bobbi
             .mailboxes
-            .tracked_mailbox(&mailbox_id)
+            .sync_tracker()
+            .sync_state(&mailbox_id)
             .await
-            .expect("bobbi tracked mailbox missing");
+            .expect("bobbi sync state missing");
 
         wait_for(
             Duration::from_millis(100),
             Duration::from_secs(5),
             || async {
-                let alice_seq = alice_tracked
-                    .sync_state()
+                let alice_seq = alice_sync
                     .borrow()
                     .get(&chat_id)
                     .and_then(|m| m.get(&alice_device))
                     .copied();
-                let bobbi_seq = bobbi_tracked
-                    .sync_state()
+                let bobbi_seq = bobbi_sync
                     .borrow()
                     .get(&chat_id)
                     .and_then(|m| m.get(&alice_device))

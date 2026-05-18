@@ -4,7 +4,7 @@ export type MailboxId = string;
 
 export type SyncStatus = 'Active' | 'Degraded' | 'Stopped';
 
-export interface MailboxConnectionState {
+export interface MailboxTracker {
 	status: SyncStatus;
 	consecutive_errors: number;
 	/// Milliseconds from now until the next scheduled poll; negative if overdue.
