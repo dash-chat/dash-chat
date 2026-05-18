@@ -77,7 +77,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     #[cfg(mobile)]
     {
-        crate::push_notifications::setup_push_notifications(
+        crate::notifications::push_notifications::setup_push_notifications(
             app_handle.clone(),
             topic_subscribed_rx,
         )?;
