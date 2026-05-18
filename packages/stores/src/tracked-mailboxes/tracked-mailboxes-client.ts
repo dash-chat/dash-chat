@@ -1,84 +1,62 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 
+import { unregisterChannel } from '../utils/tauri-channel';
+
 import type {
 	MailboxConnectionState,
 	MailboxId,
-	SyncStateEntry,
+	MailboxSyncState,
 } from './types';
 
 export interface TrackedMailboxesClient {
-	subscribeTrackedMailboxIds(handler: (ids: MailboxId[]) => void): UnsubscribeFn;
+	subscribeTrackedMailboxIds(
+		handler: (ids: MailboxId[]) => void,
+	): Promise<UnsubscribeFn>;
 	subscribeConnectionState(
 		mailboxId: MailboxId,
 		handler: (state: MailboxConnectionState) => void,
-	): UnsubscribeFn;
+	): Promise<UnsubscribeFn>;
 	subscribeSyncState(
 		mailboxId: MailboxId,
-		handler: (entries: SyncStateEntry[]) => void,
-	): UnsubscribeFn;
+		handler: (state: MailboxSyncState) => void,
+	): Promise<UnsubscribeFn>;
 }
 
 export type UnsubscribeFn = () => void;
 
-interface TauriChannelInternals {
-	id: number;
-}
-
-interface TauriInternals {
-	unregisterCallback?(id: number): void;
-}
-
-declare global {
-	interface Window {
-		__TAURI_INTERNALS__?: TauriInternals;
-	}
-}
-
-function unregister(channelId: number): void {
-	if (typeof window === 'undefined') return;
-	window.__TAURI_INTERNALS__?.unregisterCallback?.(channelId);
-}
-
 export class TauriTrackedMailboxesClient implements TrackedMailboxesClient {
-	subscribeTrackedMailboxIds(handler: (ids: MailboxId[]) => void): UnsubscribeFn {
+	async subscribeTrackedMailboxIds(
+		handler: (ids: MailboxId[]) => void,
+	): Promise<UnsubscribeFn> {
 		const channel = new Channel<MailboxId[]>();
 		channel.onmessage = handler;
-		invoke('mailbox_subscribe_ids', { onEvent: channel }).catch(err =>
-			console.error('mailbox_subscribe_ids failed', err),
-		);
-		return () => unregister((channel as unknown as TauriChannelInternals).id);
+		await invoke('mailbox_subscribe_ids', { onEvent: channel });
+		return () => unregisterChannel(channel);
 	}
 
-	subscribeConnectionState(
+	async subscribeConnectionState(
 		mailboxId: MailboxId,
 		handler: (state: MailboxConnectionState) => void,
-	): UnsubscribeFn {
+	): Promise<UnsubscribeFn> {
 		const channel = new Channel<MailboxConnectionState>();
 		channel.onmessage = handler;
-		invoke('mailbox_subscribe_connection_state', {
+		await invoke('mailbox_subscribe_connection_state', {
 			mailboxId,
 			onEvent: channel,
-		}).catch(err =>
-			console.error(
-				`mailbox_subscribe_connection_state(${mailboxId}) failed`,
-				err,
-			),
-		);
-		return () => unregister((channel as unknown as TauriChannelInternals).id);
+		});
+		return () => unregisterChannel(channel);
 	}
 
-	subscribeSyncState(
+	async subscribeSyncState(
 		mailboxId: MailboxId,
-		handler: (entries: SyncStateEntry[]) => void,
-	): UnsubscribeFn {
-		const channel = new Channel<SyncStateEntry[]>();
+		handler: (state: MailboxSyncState) => void,
+	): Promise<UnsubscribeFn> {
+		const channel = new Channel<MailboxSyncState>();
 		channel.onmessage = handler;
-		invoke('mailbox_subscribe_sync_state', {
+		await invoke('mailbox_subscribe_sync_state', {
 			mailboxId,
 			onEvent: channel,
-		}).catch(err =>
-			console.error(`mailbox_subscribe_sync_state(${mailboxId}) failed`, err),
-		);
-		return () => unregister((channel as unknown as TauriChannelInternals).id);
+		});
+		return () => unregisterChannel(channel);
 	}
 }

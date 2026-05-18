@@ -211,12 +211,14 @@ mod tests {
                 let alice_seq = alice_tracked
                     .sync_state()
                     .borrow()
-                    .get(&(chat_id, alice_device))
+                    .get(&chat_id)
+                    .and_then(|m| m.get(&alice_device))
                     .copied();
                 let bobbi_seq = bobbi_tracked
                     .sync_state()
                     .borrow()
-                    .get(&(chat_id, alice_device))
+                    .get(&chat_id)
+                    .and_then(|m| m.get(&alice_device))
                     .copied();
                 if alice_seq == Some(0) && bobbi_seq == Some(0) {
                     Ok(())

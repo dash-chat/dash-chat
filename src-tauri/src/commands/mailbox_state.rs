@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use dashchat_node::{topic::TopicId, DeviceId, Node};
 use mailbox_client::{
@@ -9,24 +9,17 @@ use serde::Serialize;
 use tauri::{ipc::Channel, State};
 use tokio::sync::watch;
 
-/// Wire shape for a single sync-state entry; topic/author are hex-encoded so the
-/// payload survives JSON serialization (BTreeMap keys must be strings in JSON).
-#[derive(Clone, Debug, Serialize)]
-pub struct SyncStateEntry {
-    pub topic_id: String,
-    pub author: String,
-    pub seq_num: u64,
-}
-
-fn to_entries(state: &MailboxSyncState<TopicId, DeviceId>) -> Vec<SyncStateEntry> {
-    state
-        .iter()
-        .map(|((t, a), s)| SyncStateEntry {
-            topic_id: hex::encode(&**t),
-            author: hex::encode(a.as_bytes()),
-            seq_num: *s,
-        })
-        .collect()
+/// Convert to the JSON-compatible shape: topic/author keys hex-encoded
+/// (JSON object keys must be strings).
+fn to_wire(state: &MailboxSyncState<TopicId, DeviceId>) -> MailboxSyncState<String, String> {
+    let mut out: MailboxSyncState<String, String> = HashMap::new();
+    for (t, authors) in state.iter() {
+        let inner = out.entry(hex::encode(&**t)).or_default();
+        for (a, s) in authors {
+            inner.insert(hex::encode(a.as_bytes()), *s);
+        }
+    }
+    out
 }
 
 async fn forward<T, U, F>(
@@ -78,7 +71,7 @@ pub async fn mailbox_subscribe_connection_state(
 #[tauri::command]
 pub async fn mailbox_subscribe_sync_state(
     mailbox_id: MailboxId,
-    on_event: Channel<Vec<SyncStateEntry>>,
+    on_event: Channel<MailboxSyncState<String, String>>,
     node: State<'_, Node>,
 ) -> Result<(), String> {
     let tracked = node
@@ -86,5 +79,5 @@ pub async fn mailbox_subscribe_sync_state(
         .tracked_mailbox(&mailbox_id)
         .await
         .ok_or_else(|| format!("unknown mailbox {mailbox_id}"))?;
-    forward(tracked.sync_state(), on_event, to_entries).await
+    forward(tracked.sync_state(), on_event, to_wire).await
 }

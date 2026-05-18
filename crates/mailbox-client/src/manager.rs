@@ -128,7 +128,7 @@ impl MailboxConnectionState {
     }
 }
 
-pub type MailboxSyncState<T, A> = BTreeMap<(T, A), u64>;
+pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, u64>>;
 
 /// Per-mailbox handle owning the client, its connection state, and its sync watermarks.
 /// Held inside `Mailboxes` as `Arc<TrackedMailbox<...>>` so cheap clones can be handed out
@@ -152,7 +152,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
             .await
             .unwrap_or_else(|err| {
                 tracing::error!(?err, mailbox = %id, "failed to load initial sync state");
-                BTreeMap::new()
+                HashMap::new()
             });
         let (connection_state_tx, _) = watch::channel(MailboxConnectionState::new());
         let (sync_state_tx, _) = watch::channel(initial_sync);
@@ -206,7 +206,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         self.tracker_store.record_synced(&self.id, &entries).await?;
         self.sync_state_tx.send_modify(|m| {
             for (topic, author, seq) in entries {
-                let entry = m.entry((topic, author)).or_insert(0);
+                let entry = m.entry(topic).or_default().entry(author).or_insert(0);
                 if seq > *entry {
                     *entry = seq;
                 }

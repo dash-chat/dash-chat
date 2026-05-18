@@ -1,46 +1,63 @@
 import { type ReactivePromise, reactive, relay } from 'signalium';
 
 import type { DeviceId, TopicId } from '../p2panda/types';
-import type { TrackedMailboxesClient } from './tracked-mailboxes-client';
-import {
-	type MailboxConnectionState,
-	type MailboxId,
-	type MailboxSyncState,
-	type SyncStateEntry,
-	syncKey,
+import type {
+	TrackedMailboxesClient,
+	UnsubscribeFn,
+} from './tracked-mailboxes-client';
+import type {
+	MailboxConnectionState,
+	MailboxId,
+	MailboxSyncState,
 } from './types';
+
+function bridgeUnsub(pending: Promise<UnsubscribeFn>): UnsubscribeFn {
+	let unsub: UnsubscribeFn | undefined;
+	let cancelled = false;
+	void pending.then(u => {
+		if (cancelled) u();
+		else unsub = u;
+	});
+	return () => {
+		cancelled = true;
+		unsub?.();
+	};
+}
 
 export class TrackedMailboxesStore {
 	constructor(public client: TrackedMailboxesClient) {}
 
 	mailboxIds = reactive(
 		(): ReactivePromise<MailboxId[]> =>
-			relay<MailboxId[]>(state => {
-				const unsub = this.client.subscribeTrackedMailboxIds(ids => {
-					state.value = ids;
-				});
-				return unsub;
-			}),
+			relay<MailboxId[]>(state =>
+				bridgeUnsub(
+					this.client.subscribeTrackedMailboxIds(ids => {
+						state.value = ids;
+					}),
+				),
+			),
 	);
 
 	connectionState = reactive(
 		(mailboxId: MailboxId): ReactivePromise<MailboxConnectionState> =>
-			relay<MailboxConnectionState>(state => {
-				const unsub = this.client.subscribeConnectionState(mailboxId, s => {
-					state.value = s;
-				});
-				return unsub;
-			}),
+			relay<MailboxConnectionState>(state =>
+				bridgeUnsub(
+					this.client.subscribeConnectionState(mailboxId, s => {
+						state.value = s;
+					}),
+				),
+			),
 	);
 
 	syncState = reactive(
 		(mailboxId: MailboxId): ReactivePromise<MailboxSyncState> =>
-			relay<MailboxSyncState>(state => {
-				const unsub = this.client.subscribeSyncState(mailboxId, entries => {
-					state.value = entriesToMap(entries);
-				});
-				return unsub;
-			}),
+			relay<MailboxSyncState>(state =>
+				bridgeUnsub(
+					this.client.subscribeSyncState(mailboxId, s => {
+						state.value = s;
+					}),
+				),
+			),
 	);
 
 	/// Per-(topic, author) view across all known mailboxes. Recomputes when
@@ -52,10 +69,9 @@ export class TrackedMailboxesStore {
 		): Promise<Map<MailboxId, number>> => {
 			const ids = await this.mailboxIds();
 			const out = new Map<MailboxId, number>();
-			const key = syncKey(topicId, author);
 			for (const id of ids) {
 				const sync = await this.syncState(id);
-				const seq = sync.get(key);
+				const seq = sync[topicId]?.[author];
 				if (seq !== undefined) {
 					out.set(id, seq);
 				}
@@ -79,12 +95,4 @@ export class TrackedMailboxesStore {
 			return out;
 		},
 	);
-}
-
-function entriesToMap(entries: SyncStateEntry[]): MailboxSyncState {
-	const map: MailboxSyncState = new Map();
-	for (const e of entries) {
-		map.set(syncKey(e.topic_id, e.author), e.seq_num);
-	}
-	return map;
 }

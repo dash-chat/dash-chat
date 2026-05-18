@@ -18,15 +18,5 @@ export interface LastError {
 	message: string;
 }
 
-export interface SyncStateEntry {
-	topic_id: TopicId;
-	author: DeviceId;
-	seq_num: number;
-}
-
-/// Map keyed by `${topic_id}:${author}` for cheap reactive lookups.
-export type MailboxSyncState = Map<string, number>;
-
-export function syncKey(topicId: TopicId, author: DeviceId): string {
-	return `${topicId}:${author}`;
-}
+/// Synced-up-to sequence number per (topic, author), shaped as `topic → author → seq`.
+export type MailboxSyncState = Record<TopicId, Record<DeviceId, number>>;

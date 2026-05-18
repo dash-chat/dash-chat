@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::Path,
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::Context;
 use serde::{Serialize, de::DeserializeOwned};
@@ -187,14 +192,14 @@ impl MailboxTrackerStore {
         }
     }
 
-    /// All `((topic, author), seq)` entries for the given mailbox.
+    /// All `topic -> author -> seq` entries for the given mailbox.
     pub async fn get_all_for_mailbox<T, A>(
         &self,
         mailbox: &MailboxId,
-    ) -> anyhow::Result<BTreeMap<(T, A), u64>>
+    ) -> anyhow::Result<HashMap<T, HashMap<A, u64>>>
     where
-        T: DeserializeOwned + Ord,
-        A: DeserializeOwned + Ord,
+        T: DeserializeOwned + Eq + std::hash::Hash,
+        A: DeserializeOwned + Eq + std::hash::Hash,
     {
         match &self.inner {
             MailboxTrackerStoreInner::Sqlite(pool) => {
@@ -205,22 +210,22 @@ impl MailboxTrackerStore {
                 .bind(mailbox)
                 .fetch_all(pool)
                 .await?;
-                let mut out = BTreeMap::new();
+                let mut out: HashMap<T, HashMap<A, u64>> = HashMap::new();
                 for (t_bytes, a_bytes, s) in rows {
                     let topic: T = decode(&t_bytes).context("decoding topic")?;
                     let author: A = decode(&a_bytes).context("decoding author")?;
-                    out.insert((topic, author), s as u64);
+                    out.entry(topic).or_default().insert(author, s as u64);
                 }
                 Ok(out)
             }
             MailboxTrackerStoreInner::Mem(rows) => {
                 let rows = rows.lock().await;
-                let mut out = BTreeMap::new();
+                let mut out: HashMap<T, HashMap<A, u64>> = HashMap::new();
                 for ((m, t_bytes, a_bytes), s) in rows.rows.iter() {
                     if m == mailbox {
                         let topic: T = decode(t_bytes).context("decoding topic")?;
                         let author: A = decode(a_bytes).context("decoding author")?;
-                        out.insert((topic, author), *s);
+                        out.entry(topic).or_default().insert(author, *s);
                     }
                 }
                 Ok(out)
@@ -361,12 +366,12 @@ mod tests {
             .record_synced(&"mb2".into(), &[(7u8, 'a', 99)])
             .await
             .unwrap();
-        let all: BTreeMap<(u8, char), u64> =
+        let all: HashMap<u8, HashMap<char, u64>> =
             store.get_all_for_mailbox(&"mb1".into()).await.unwrap();
-        assert_eq!(all.len(), 3);
-        assert_eq!(all.get(&(7u8, 'a')), Some(&1));
-        assert_eq!(all.get(&(7u8, 'b')), Some(&2));
-        assert_eq!(all.get(&(8u8, 'a')), Some(&3));
+        assert_eq!(all.values().map(|m| m.len()).sum::<usize>(), 3);
+        assert_eq!(all.get(&7u8).and_then(|m| m.get(&'a')), Some(&1));
+        assert_eq!(all.get(&7u8).and_then(|m| m.get(&'b')), Some(&2));
+        assert_eq!(all.get(&8u8).and_then(|m| m.get(&'a')), Some(&3));
     }
 
     #[tokio::test]
@@ -446,11 +451,11 @@ mod tests {
             Some(5),
         );
 
-        let all: BTreeMap<(u8, char), u64> =
+        let all: HashMap<u8, HashMap<char, u64>> =
             store.get_all_for_mailbox(&"mb1".into()).await.unwrap();
-        assert_eq!(all.len(), 2);
-        assert_eq!(all.get(&(7u8, 'a')), Some(&3));
-        assert_eq!(all.get(&(7u8, 'b')), Some(&4));
+        assert_eq!(all.values().map(|m| m.len()).sum::<usize>(), 2);
+        assert_eq!(all.get(&7u8).and_then(|m| m.get(&'a')), Some(&3));
+        assert_eq!(all.get(&7u8).and_then(|m| m.get(&'b')), Some(&4));
 
         store
             .record_synced(&"mb1".into(), &[(7u8, 'a', 2)])
