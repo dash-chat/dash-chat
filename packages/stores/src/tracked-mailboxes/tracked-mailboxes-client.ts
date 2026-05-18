@@ -7,7 +7,7 @@ import type {
 } from './types';
 
 export interface TrackedMailboxesClient {
-	subscribeIds(handler: (ids: MailboxId[]) => void): UnsubscribeFn;
+	subscribeTrackedMailboxIds(handler: (ids: MailboxId[]) => void): UnsubscribeFn;
 	subscribeConnectionState(
 		mailboxId: MailboxId,
 		handler: (state: MailboxConnectionState) => void,
@@ -40,7 +40,7 @@ function unregister(channelId: number): void {
 }
 
 export class TauriTrackedMailboxesClient implements TrackedMailboxesClient {
-	subscribeIds(handler: (ids: MailboxId[]) => void): UnsubscribeFn {
+	subscribeTrackedMailboxIds(handler: (ids: MailboxId[]) => void): UnsubscribeFn {
 		const channel = new Channel<MailboxId[]>();
 		channel.onmessage = handler;
 		invoke('mailbox_subscribe_ids', { onEvent: channel }).catch(err =>

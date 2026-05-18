@@ -16,7 +16,7 @@ export class TrackedMailboxesStore {
 	mailboxIds = reactive(
 		(): ReactivePromise<MailboxId[]> =>
 			relay<MailboxId[]>(state => {
-				const unsub = this.client.subscribeIds(ids => {
+				const unsub = this.client.subscribeTrackedMailboxIds(ids => {
 					state.value = ids;
 				});
 				return unsub;

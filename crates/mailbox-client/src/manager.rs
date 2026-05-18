@@ -651,10 +651,12 @@ mod tests {
         let config = test_config();
         let mut connection_state = MailboxConnectionState::new();
 
+        // Accumulate some errors first
         connection_state.record_error(&config, "x".into());
         connection_state.record_error(&config, "x".into());
         assert_eq!(connection_state.status, SyncStatus::Degraded);
 
+        // Success resets everything
         connection_state.record_success(&config);
         assert_eq!(connection_state.status, SyncStatus::Active);
         assert_eq!(connection_state.consecutive_errors, 0);
@@ -667,18 +669,22 @@ mod tests {
         let config = test_config();
         let mut connection_state = MailboxConnectionState::new();
 
+        // 1 error: still Active
         connection_state.record_error(&config, "x".into());
         assert_eq!(connection_state.status, SyncStatus::Active);
         assert_eq!(connection_state.consecutive_errors, 1);
 
+        // 2 errors: Degraded
         connection_state.record_error(&config, "x".into());
         assert_eq!(connection_state.status, SyncStatus::Degraded);
         assert_eq!(connection_state.consecutive_errors, 2);
 
+        // 3 errors: Stopped
         connection_state.record_error(&config, "x".into());
         assert_eq!(connection_state.status, SyncStatus::Stopped);
         assert_eq!(connection_state.consecutive_errors, 3);
 
+        // More errors: stays Stopped
         connection_state.record_error(&config, "x".into());
         assert_eq!(connection_state.status, SyncStatus::Stopped);
         assert_eq!(connection_state.consecutive_errors, 4);
@@ -703,18 +709,21 @@ mod tests {
         let mut connection_state = MailboxConnectionState::new();
         let delay = config.between_polls_delay;
 
+        // First error: still Active interval
         connection_state.record_error(&config, "x".into());
         let expected = Instant::now() + config.active_interval + delay;
         assert_eq!(connection_state.next_poll, expected);
 
         tokio::time::advance(Duration::from_secs(1)).await;
 
+        // Second error: Degraded interval
         connection_state.record_error(&config, "x".into());
         let expected = Instant::now() + config.degraded_interval + delay;
         assert_eq!(connection_state.next_poll, expected);
 
         tokio::time::advance(Duration::from_secs(1)).await;
 
+        // Third error: Stopped interval
         connection_state.record_error(&config, "x".into());
         let expected = Instant::now() + config.stopped_interval + delay;
         assert_eq!(connection_state.next_poll, expected);
@@ -722,7 +731,7 @@ mod tests {
 
     // -- find_next_due tests --
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn find_next_due_empty() {
         let mgr = test_mailboxes(test_config());
         assert!(mgr.find_next_due().await.is_none());
@@ -736,6 +745,7 @@ mod tests {
         let id = client.id();
         mgr.register(client).await;
 
+        // Newly registered mailbox should be due immediately
         let (found_id, wait) = mgr.find_next_due().await.unwrap();
         assert_eq!(found_id, id);
         assert_eq!(wait, Duration::ZERO);
@@ -746,23 +756,28 @@ mod tests {
         let config = test_config();
         let mgr = test_mailboxes(config.clone());
 
+        // Register first mailbox
         let mb1 = MemMailbox::<Msg>::new();
         let c1 = mb1.client();
         let id1 = c1.id();
         mgr.register(c1).await;
 
+        // Simulate a successful poll so it gets scheduled into the future
         {
             let mm = mgr.mailboxes.lock().await;
             mm.get(&id1).unwrap().record_success(&config);
         }
 
+        // Advance time a bit
         tokio::time::advance(Duration::from_secs(2)).await;
 
+        // Register second mailbox (will be due immediately)
         let mb2 = MemMailbox::<Msg>::new();
         let c2 = mb2.client();
         let id2 = c2.id();
         mgr.register(c2).await;
 
+        // Second mailbox should be picked (it's due now)
         let (found_id, wait) = mgr.find_next_due().await.unwrap();
         assert_eq!(found_id, id2);
         assert_eq!(wait, Duration::ZERO);
@@ -779,15 +794,18 @@ mod tests {
         let id = client.id();
         mgr.register(client).await;
 
+        // Simulate a successful poll
         {
             let mm = mgr.mailboxes.lock().await;
             mm.get(&id).unwrap().record_success(&config);
         }
 
+        // Should need to wait active_interval + delay
         let (found_id, wait) = mgr.find_next_due().await.unwrap();
         assert_eq!(found_id, id);
         assert_eq!(wait, config.active_interval + delay);
 
+        // Advance partway (3s into 5.5s total)
         tokio::time::advance(Duration::from_secs(3)).await;
 
         let (_found_id, wait) = mgr.find_next_due().await.unwrap();
@@ -808,11 +826,12 @@ mod tests {
         let id = client.id();
         mgr.register(client).await;
 
+        // Simulate reaching Degraded status
         {
             let mm = mgr.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
-            t.record_error(&config, "x".into());
-            t.record_error(&config, "x".into());
+            t.record_error(&config, "x".into()); // 1 error: Active
+            t.record_error(&config, "x".into()); // 2 errors: Degraded
         }
 
         let (_found_id, wait) = mgr.find_next_due().await.unwrap();
@@ -830,6 +849,7 @@ mod tests {
         let id = client.id();
         mgr.register(client).await;
 
+        // Simulate reaching Stopped status
         {
             let mm = mgr.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
@@ -853,17 +873,69 @@ mod tests {
         let id = client.id();
         mgr.register(client).await;
 
+        // Schedule into the future
         {
             let mm = mgr.mailboxes.lock().await;
             mm.get(&id).unwrap().record_success(&config);
         }
 
+        // Advance past interval + delay
         tokio::time::advance(
             config.active_interval + config.between_polls_delay + Duration::from_secs(1),
         )
         .await;
 
         let (_found_id, wait) = mgr.find_next_due().await.unwrap();
+        assert_eq!(wait, Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn find_next_due_multiple_different_statuses() {
+        let config = test_config();
+        let delay = config.between_polls_delay;
+        let mgr = test_mailboxes(config.clone());
+
+        // Register three mailboxes
+        let mb_a = MemMailbox::<Msg>::new();
+        let ca = mb_a.client();
+        let id_a = ca.id();
+        mgr.register(ca).await;
+
+        let mb_b = MemMailbox::<Msg>::new();
+        let cb = mb_b.client();
+        let id_b = cb.id();
+        mgr.register(cb).await;
+
+        let mb_c = MemMailbox::<Msg>::new();
+        let cc = mb_c.client();
+        let id_c = cc.id();
+        mgr.register(cc).await;
+
+        // Set different statuses:
+        // A: Active (success), B: Degraded, C: Stopped
+        {
+            let mm = mgr.mailboxes.lock().await;
+            mm.get(&id_a).unwrap().record_success(&config);
+            let b = mm.get(&id_b).unwrap();
+            b.record_error(&config, "x".into());
+            b.record_error(&config, "x".into());
+            let c = mm.get(&id_c).unwrap();
+            c.record_error(&config, "x".into());
+            c.record_error(&config, "x".into());
+            c.record_error(&config, "x".into());
+        }
+
+        // A has shortest effective interval, should be picked first
+        let (found_id, wait) = mgr.find_next_due().await.unwrap();
+        assert_eq!(found_id, id_a);
+        assert_eq!(wait, config.active_interval + delay);
+
+        // Advance past active effective interval but not degraded
+        tokio::time::advance(config.active_interval + delay + Duration::from_secs(1)).await;
+
+        // A is now overdue
+        let (found_id, wait) = mgr.find_next_due().await.unwrap();
+        assert_eq!(found_id, id_a);
         assert_eq!(wait, Duration::ZERO);
     }
 
@@ -911,6 +983,7 @@ mod tests {
         let id = client.id();
         mgr.register(client).await;
 
+        // Put mailbox in Stopped state
         {
             let mm = mgr.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
@@ -952,11 +1025,13 @@ mod tests {
         let id = client.id.clone();
         mgr.register(client).await;
 
+        // Let the initial poll (triggered by register's wakeup) complete
         for _ in 0..10 {
             tokio::task::yield_now().await;
         }
         assert_eq!(poll_count.load(Ordering::Relaxed), 1);
 
+        // Force the mailbox into Stopped with a far-future next_poll
         {
             let mm = mgr.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
@@ -967,6 +1042,7 @@ mod tests {
             });
         }
 
+        // Without wakeup, no poll should happen (time is paused)
         for _ in 0..5 {
             tokio::task::yield_now().await;
         }
@@ -1022,6 +1098,7 @@ mod tests {
         }
     }
 
+    /// Assert all values in the slice deviate by at most `max_diff` from each other.
     fn assert_within_group(label: &str, polls: &[u32], max_diff: u32) {
         let min = *polls.iter().min().unwrap();
         let max = *polls.iter().max().unwrap();
@@ -1035,29 +1112,67 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn polling_fairness() {
+        // 10 mailboxes: 5 active, 3 degraded, 2 stopped.
+        //
+        // The effective interval is `status_interval + between_polls_delay`.
+        //   active:   1.0 + 0.2 = 1.2s
+        //   degraded: 1.5 + 0.2 = 1.7s
+        //   stopped:  2.0 + 0.2 = 2.2s
+        //
+        // The per-mailbox polling rate is proportional to 1/effective_interval,
+        // so the expected ratios are:
+        //   active/stopped  = 2.2 / 1.2 ≈ 1.83
+        //   active/degraded = 1.7 / 1.2 ≈ 1.42
         let config = MailboxesConfig {
             active_interval: Duration::from_secs(1),
             degraded_interval: Duration::from_millis(1500),
             stopped_interval: Duration::from_secs(2),
             between_polls_delay: Duration::from_millis(200),
+            // One error → Degraded. Stopped threshold set very high so
+            // degraded clients never naturally transition to Stopped
+            // during the test; stopped clients are forced manually.
             degraded_threshold: 1,
             stopped_threshold: 1000,
         };
 
         let mgr = spawn_test_mailboxes(config).await;
 
+        // Subscribe to a topic so poll_mailbox actually calls sync_topics
         let _rx = mgr.subscribe(0u8).await.unwrap();
 
         let mut active_counts = vec![];
         let mut degraded_counts = vec![];
         let mut stopped_counts = vec![];
 
+        // 5 active (always succeed)
         for _ in 0..5 {
             let (client, count) = TrackingClient::new(false);
             mgr.register(client).await;
             active_counts.push(count);
         }
 
+        // 3 degraded: fail once → degraded_threshold=1 puts them into Degraded.
+        // To get exactly Degraded (not Stopped), we register failing clients
+        // and then after 1 error manually cap them at Degraded by swapping to
+        // a succeeding client. Instead, simpler: use FailingClient (always fails),
+        // but set thresholds so 1 error = Degraded and 2 errors = Stopped.
+        // After the first poll they'll be Degraded. After the second they'll be
+        // Stopped — which we don't want.
+        //
+        // Solution: use TrackingClient(should_fail=true) but after the initial
+        // poll transitions them to Degraded, subsequent polls keep adding errors
+        // and they'll become Stopped after 2 errors. So we need stopped_threshold
+        // high enough that they stay Degraded throughout the test.
+        //
+        // Actually, let's use a different approach: separate configs won't work
+        // since config is shared. Instead, we'll use FailingClient for both
+        // degraded and stopped, but set thresholds so that after 1 error = Degraded
+        // and after many errors (say 100) = Stopped. Then the "stopped" group
+        // uses a client that we manually force into Stopped status.
+        //
+        // Simplest: just manually set tracker status after registration.
+
+        // 3 degraded + 2 stopped: all use FailingClient, we manually set status
         let mut degraded_ids = vec![];
         for _ in 0..3 {
             let (client, count) = FailingClient::new();
@@ -1075,24 +1190,29 @@ mod tests {
             stopped_ids.push(id);
         }
 
+        // Force degraded and stopped status on the failing clients so the
+        // scheduler uses the right intervals from the start.
+        // We also set consecutive_errors high enough that record_error()
+        // won't change their status (they're already at or past threshold).
         {
             let mm = mgr.mailboxes.lock().await;
             for id in &degraded_ids {
                 let t = mm.get(id).unwrap();
                 t.connection_state_tx.send_modify(|s| {
                     s.status = SyncStatus::Degraded;
-                    s.consecutive_errors = 1;
+                    s.consecutive_errors = 1; // at degraded_threshold
                 });
             }
             for id in &stopped_ids {
                 let t = mm.get(id).unwrap();
                 t.connection_state_tx.send_modify(|s| {
                     s.status = SyncStatus::Stopped;
-                    s.consecutive_errors = 1000;
+                    s.consecutive_errors = 1000; // at stopped_threshold
                 });
             }
         }
 
+        // Let the loop run for 60 simulated seconds.
         tokio::time::sleep(Duration::from_secs(60)).await;
         tokio::task::yield_now().await;
 
