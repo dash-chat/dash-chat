@@ -69,7 +69,7 @@ pub async fn mailbox_subscribe_connection_state(
 ) -> Result<(), String> {
     let tracked = node
         .mailboxes
-        .tracked(&mailbox_id)
+        .tracked_mailbox(&mailbox_id)
         .await
         .ok_or_else(|| format!("unknown mailbox {mailbox_id}"))?;
     forward(tracked.connection_state(), on_event, |s| s.clone()).await
@@ -83,7 +83,7 @@ pub async fn mailbox_subscribe_sync_state(
 ) -> Result<(), String> {
     let tracked = node
         .mailboxes
-        .tracked(&mailbox_id)
+        .tracked_mailbox(&mailbox_id)
         .await
         .ok_or_else(|| format!("unknown mailbox {mailbox_id}"))?;
     forward(tracked.sync_state(), on_event, to_entries).await

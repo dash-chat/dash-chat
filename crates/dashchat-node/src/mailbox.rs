@@ -195,12 +195,12 @@ mod tests {
         // The mailbox should have recorded alice's seq 0 from both sides.
         let alice_tracked = alice
             .mailboxes
-            .tracked(&mailbox_id)
+            .tracked_mailbox(&mailbox_id)
             .await
             .expect("alice tracked mailbox missing");
         let bobbi_tracked = bobbi
             .mailboxes
-            .tracked(&mailbox_id)
+            .tracked_mailbox(&mailbox_id)
             .await
             .expect("bobbi tracked mailbox missing");
 

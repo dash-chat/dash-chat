@@ -252,7 +252,7 @@ where
         self.mailbox_ids_tx.subscribe()
     }
 
-    pub async fn tracked(&self, id: &MailboxId) -> Option<Arc<TrackedMailbox<Item>>> {
+    pub async fn tracked_mailbox(&self, id: &MailboxId) -> Option<Arc<TrackedMailbox<Item>>> {
         self.mailboxes.lock().await.get(id).cloned()
     }
 
@@ -409,8 +409,8 @@ where
 
     async fn wakeup_mailbox(&self, id: &MailboxId) {
         let mm = self.mailboxes.lock().await;
-        if let Some(tracked) = mm.get(id) {
-            tracked.wakeup();
+        if let Some(tracked_mailbox) = mm.get(id) {
+            tracked_mailbox.wakeup();
         }
     }
 
