@@ -640,14 +640,14 @@ mod tests {
     // -- MailboxConnectionState unit tests --
 
     #[tokio::test(start_paused = true)]
-    async fn state_starts_active() {
+    async fn connection_state_starts_active() {
         let connection_state = MailboxConnectionState::new();
         assert_eq!(connection_state.status, SyncStatus::Active);
         assert_eq!(connection_state.consecutive_errors, 0);
     }
 
     #[tokio::test(start_paused = true)]
-    async fn state_success_resets_to_active() {
+    async fn connection_state_success_resets_to_active() {
         let config = test_config();
         let mut connection_state = MailboxConnectionState::new();
 
@@ -663,7 +663,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn state_error_transitions() {
+    async fn connection_state_error_transitions() {
         let config = test_config();
         let mut connection_state = MailboxConnectionState::new();
 
@@ -686,7 +686,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn state_next_poll_after_success() {
+    async fn connection_state_next_poll_after_success() {
         let config = test_config();
         let mut connection_state = MailboxConnectionState::new();
 
@@ -698,7 +698,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn state_next_poll_after_errors() {
+    async fn connection_state_next_poll_after_errors() {
         let config = test_config();
         let mut connection_state = MailboxConnectionState::new();
         let delay = config.between_polls_delay;
