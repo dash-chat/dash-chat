@@ -1,9 +1,9 @@
 use std::collections::BTreeSet;
 
-use dashchat_node::{DeviceId, Node, topic::TopicId};
-use mailbox_client::{MailboxId, manager::MailboxTracker, sync_tracker::MailboxSyncState};
+use dashchat_node::{topic::TopicId, DeviceId, Node};
+use mailbox_client::{manager::MailboxTracker, sync_tracker::MailboxSyncState, MailboxId};
 use serde::Serialize;
-use tauri::{State, ipc::Channel};
+use tauri::{ipc::Channel, State};
 use tokio::sync::watch;
 
 async fn forward<T>(mut rx: watch::Receiver<T>, on_event: Channel<T>) -> Result<(), String>

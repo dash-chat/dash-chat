@@ -308,18 +308,16 @@ where
                 rows.rows.retain(|(m, _, _), _| m != mailbox);
             }
         }
-        self.all_ids_tx
-            .send_if_modified(|ids| ids.remove(mailbox));
+        self.all_ids_tx.send_if_modified(|ids| ids.remove(mailbox));
         self.per_mailbox.lock().await.remove(mailbox);
         Ok(())
     }
 }
 
 async fn load_all_ids_sqlite(pool: &SqlitePool) -> anyhow::Result<BTreeSet<MailboxId>> {
-    let rows: Vec<(String,)> =
-        sqlx::query_as("SELECT DISTINCT mailbox_id FROM mailbox_sync_state")
-            .fetch_all(pool)
-            .await?;
+    let rows: Vec<(String,)> = sqlx::query_as("SELECT DISTINCT mailbox_id FROM mailbox_sync_state")
+        .fetch_all(pool)
+        .await?;
     Ok(rows.into_iter().map(|(m,)| m).collect())
 }
 
@@ -343,9 +341,7 @@ mod tests {
         Mem,
     }
 
-    async fn open(
-        backend: Backend,
-    ) -> (Option<tempfile::TempDir>, MailboxSyncTracker<u8, char>) {
+    async fn open(backend: Backend) -> (Option<tempfile::TempDir>, MailboxSyncTracker<u8, char>) {
         match backend {
             Backend::Sqlite => {
                 let dir = tempfile::tempdir().unwrap();
@@ -512,8 +508,7 @@ mod tests {
             store.close().await;
         }
 
-        let store: MailboxSyncTracker<u8, char> =
-            MailboxSyncTracker::open(&path).await.unwrap();
+        let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::open(&path).await.unwrap();
         assert_eq!(
             store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
             Some(3),
