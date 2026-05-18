@@ -280,7 +280,10 @@ mod tests {
     async fn round_trip_impl(b: Backend) {
         let (_dir, store) = open(b).await;
         let mailbox = "mb1".to_string();
-        store.record_synced(&mailbox, &[(7u8, 'a', 3)]).await.unwrap();
+        store
+            .record_synced(&mailbox, &[(7u8, 'a', 3)])
+            .await
+            .unwrap();
         let got = store.get_synced(&mailbox, &7u8, &'a').await.unwrap();
         assert_eq!(got, Some(3));
     }

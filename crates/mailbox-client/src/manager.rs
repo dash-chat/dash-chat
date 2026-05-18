@@ -926,8 +926,8 @@ mod tests {
         let mm = mgr.mailboxes.lock().await;
         let connection_state = mm.get(&id).unwrap().connection_state();
         let connection_state = connection_state.borrow();
-        assert_eq!(state.status, SyncStatus::Active);
-        assert_eq!(state.consecutive_errors, 0);
+        assert_eq!(connection_state.status, SyncStatus::Active);
+        assert_eq!(connection_state.consecutive_errors, 0);
     }
 
     #[tokio::test(start_paused = true)]
