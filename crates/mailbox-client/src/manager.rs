@@ -192,17 +192,18 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
 
     async fn record_synced(
         &self,
-        topic: Item::Topic,
-        author: Item::Author,
-        seq: u64,
+        entries: Vec<(Item::Topic, Item::Author, u64)>,
     ) -> anyhow::Result<()> {
-        self.tracker_store
-            .record_synced(&self.id, &topic, &author, seq)
-            .await?;
+        if entries.is_empty() {
+            return Ok(());
+        }
+        self.tracker_store.record_synced(&self.id, &entries).await?;
         self.sync_state_tx.send_modify(|m| {
-            let entry = m.entry((topic, author)).or_insert(0);
-            if seq > *entry {
-                *entry = seq;
+            for (topic, author, seq) in entries {
+                let entry = m.entry((topic, author)).or_insert(0);
+                if seq > *entry {
+                    *entry = seq;
+                }
             }
         });
         Ok(())
@@ -438,12 +439,12 @@ where
             Err(err) => {
                 tracing::error!(?err, mailbox = %id, "mailbox sync error");
                 tracked_mailbox.record_error(&self.config, format!("{err:?}"));
-                let state = tracked_mailbox.connection_state();
-                let state = state.borrow();
+                let connection_state = tracked_mailbox.connection_state();
+                let connection_state = connection_state.borrow();
                 tracing::info!(
                     mailbox = %id,
-                    status = ?state.status,
-                    errors = state.consecutive_errors,
+                    status = ?connection_state.status,
+                    errors = connection_state.consecutive_errors,
                     "mailbox status updated"
                 );
             }
@@ -544,10 +545,9 @@ where
 
         tracked_mailbox.client.publish(ops_to_publish).await?;
 
-        for (t, a, s) in acks.into_iter().chain(publish_acks) {
-            if let Err(err) = tracked_mailbox.record_synced(t, a, s).await {
-                tracing::error!(?err, mailbox = %tracked_mailbox.id, "failed to record sync watermark");
-            }
+        acks.extend(publish_acks);
+        if let Err(err) = tracked_mailbox.record_synced(acks).await {
+            tracing::error!(?err, mailbox = %tracked_mailbox.id, "failed to record sync watermarks");
         }
 
         Ok(())
@@ -635,84 +635,84 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn state_starts_active() {
-        let state = MailboxConnectionState::new();
-        assert_eq!(state.status, SyncStatus::Active);
-        assert_eq!(state.consecutive_errors, 0);
+        let connection_state = MailboxConnectionState::new();
+        assert_eq!(connection_state.status, SyncStatus::Active);
+        assert_eq!(connection_state.consecutive_errors, 0);
     }
 
     #[tokio::test(start_paused = true)]
     async fn state_success_resets_to_active() {
         let config = test_config();
-        let mut state = MailboxConnectionState::new();
+        let mut connection_state = MailboxConnectionState::new();
 
-        state.record_error(&config, "x".into());
-        state.record_error(&config, "x".into());
-        assert_eq!(state.status, SyncStatus::Degraded);
+        connection_state.record_error(&config, "x".into());
+        connection_state.record_error(&config, "x".into());
+        assert_eq!(connection_state.status, SyncStatus::Degraded);
 
-        state.record_success(&config);
-        assert_eq!(state.status, SyncStatus::Active);
-        assert_eq!(state.consecutive_errors, 0);
-        assert!(state.last_success_at.is_some());
-        assert!(state.last_error.is_none());
+        connection_state.record_success(&config);
+        assert_eq!(connection_state.status, SyncStatus::Active);
+        assert_eq!(connection_state.consecutive_errors, 0);
+        assert!(connection_state.last_success_at.is_some());
+        assert!(connection_state.last_error.is_none());
     }
 
     #[tokio::test(start_paused = true)]
     async fn state_error_transitions() {
         let config = test_config();
-        let mut state = MailboxConnectionState::new();
+        let mut connection_state = MailboxConnectionState::new();
 
-        state.record_error(&config, "x".into());
-        assert_eq!(state.status, SyncStatus::Active);
-        assert_eq!(state.consecutive_errors, 1);
+        connection_state.record_error(&config, "x".into());
+        assert_eq!(connection_state.status, SyncStatus::Active);
+        assert_eq!(connection_state.consecutive_errors, 1);
 
-        state.record_error(&config, "x".into());
-        assert_eq!(state.status, SyncStatus::Degraded);
-        assert_eq!(state.consecutive_errors, 2);
+        connection_state.record_error(&config, "x".into());
+        assert_eq!(connection_state.status, SyncStatus::Degraded);
+        assert_eq!(connection_state.consecutive_errors, 2);
 
-        state.record_error(&config, "x".into());
-        assert_eq!(state.status, SyncStatus::Stopped);
-        assert_eq!(state.consecutive_errors, 3);
+        connection_state.record_error(&config, "x".into());
+        assert_eq!(connection_state.status, SyncStatus::Stopped);
+        assert_eq!(connection_state.consecutive_errors, 3);
 
-        state.record_error(&config, "x".into());
-        assert_eq!(state.status, SyncStatus::Stopped);
-        assert_eq!(state.consecutive_errors, 4);
-        assert!(state.last_error_at.is_some());
-        assert!(state.last_error.is_some());
+        connection_state.record_error(&config, "x".into());
+        assert_eq!(connection_state.status, SyncStatus::Stopped);
+        assert_eq!(connection_state.consecutive_errors, 4);
+        assert!(connection_state.last_error_at.is_some());
+        assert!(connection_state.last_error.is_some());
     }
 
     #[tokio::test(start_paused = true)]
     async fn state_next_poll_after_success() {
         let config = test_config();
-        let mut state = MailboxConnectionState::new();
+        let mut connection_state = MailboxConnectionState::new();
 
         let before = Instant::now();
-        state.record_success(&config);
+        connection_state.record_success(&config);
         let expected = before + config.active_interval + config.between_polls_delay;
 
-        assert_eq!(state.next_poll, expected);
+        assert_eq!(connection_state.next_poll, expected);
     }
 
     #[tokio::test(start_paused = true)]
     async fn state_next_poll_after_errors() {
         let config = test_config();
-        let mut state = MailboxConnectionState::new();
+        let mut connection_state = MailboxConnectionState::new();
         let delay = config.between_polls_delay;
 
-        state.record_error(&config, "x".into());
+        connection_state.record_error(&config, "x".into());
         let expected = Instant::now() + config.active_interval + delay;
-        assert_eq!(state.next_poll, expected);
+        assert_eq!(connection_state.next_poll, expected);
 
         tokio::time::advance(Duration::from_secs(1)).await;
 
-        state.record_error(&config, "x".into());
+        connection_state.record_error(&config, "x".into());
         let expected = Instant::now() + config.degraded_interval + delay;
-        assert_eq!(state.next_poll, expected);
+        assert_eq!(connection_state.next_poll, expected);
 
         tokio::time::advance(Duration::from_secs(1)).await;
 
-        state.record_error(&config, "x".into());
+        connection_state.record_error(&config, "x".into());
         let expected = Instant::now() + config.stopped_interval + delay;
-        assert_eq!(state.next_poll, expected);
+        assert_eq!(connection_state.next_poll, expected);
     }
 
     // -- find_next_due tests --
@@ -924,8 +924,8 @@ mod tests {
         assert_eq!(found_id, id);
         assert_eq!(wait, Duration::ZERO);
         let mm = mgr.mailboxes.lock().await;
-        let state = mm.get(&id).unwrap().connection_state();
-        let state = state.borrow();
+        let connection_state = mm.get(&id).unwrap().connection_state();
+        let connection_state = connection_state.borrow();
         assert_eq!(state.status, SyncStatus::Active);
         assert_eq!(state.consecutive_errors, 0);
     }
