@@ -105,13 +105,7 @@ pub fn setup_push_notifications(
     Ok(())
 }
 
-fn are_notifications_enabled(handle: &AppHandle) -> bool {
-    crate::settings::load_settings(handle).notifications_enabled
-        && matches!(
-            handle.notification().permission_state(),
-            Ok(PermissionState::Granted)
-        )
-}
+use crate::notifications::are_notifications_enabled;
 
 /// If notifications are currently enabled, get the FCM token and register it with the server
 /// If they're not, unregister the FCM token from the server
