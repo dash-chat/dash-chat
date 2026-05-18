@@ -10,8 +10,12 @@ export interface MailboxConnectionState {
 	/// Milliseconds from now until the next scheduled poll; negative if overdue.
 	next_poll_in_ms: number;
 	last_success_at: string | null;
-	last_error_at: string | null;
-	last_error: string | null;
+	last_error: LastError | null;
+}
+
+export interface LastError {
+	at: string;
+	message: string;
 }
 
 export interface SyncStateEntry {

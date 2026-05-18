@@ -57,14 +57,19 @@ impl SyncStatus {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct LastError {
+    pub at: DateTime<Utc>,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct MailboxConnectionState {
     pub status: SyncStatus,
     pub consecutive_errors: u32,
     #[serde(rename = "next_poll_in_ms", serialize_with = "ser_next_poll_in_ms")]
     pub next_poll: Instant,
     pub last_success_at: Option<DateTime<Utc>>,
-    pub last_error_at: Option<DateTime<Utc>>,
-    pub last_error: Option<String>,
+    pub last_error: Option<LastError>,
 }
 
 fn ser_next_poll_in_ms<S: Serializer>(next: &Instant, s: S) -> Result<S::Ok, S::Error> {
@@ -84,7 +89,6 @@ impl MailboxConnectionState {
             consecutive_errors: 0,
             next_poll: Instant::now(),
             last_success_at: None,
-            last_error_at: None,
             last_error: None,
         }
     }
@@ -107,8 +111,10 @@ impl MailboxConnectionState {
             self.status
         };
         self.next_poll = Instant::now() + self.status.interval(config) + config.between_polls_delay;
-        self.last_error_at = Some(Utc::now());
-        self.last_error = Some(err);
+        self.last_error = Some(LastError {
+            at: Utc::now(),
+            message: err,
+        });
     }
 
     fn reschedule(&mut self, config: &MailboxesConfig) {
@@ -676,7 +682,6 @@ mod tests {
         connection_state.record_error(&config, "x".into());
         assert_eq!(connection_state.status, SyncStatus::Stopped);
         assert_eq!(connection_state.consecutive_errors, 4);
-        assert!(connection_state.last_error_at.is_some());
         assert!(connection_state.last_error.is_some());
     }
 
