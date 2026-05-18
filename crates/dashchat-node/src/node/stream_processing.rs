@@ -219,7 +219,7 @@ impl Node {
         let topic = header.extensions.topic;
 
         // XXX: this eventually needs to be more selective than just adding any old author
-        // author_store.add_author(topic, header.public_key).await;
+        // author_store.add_author(topic, header.verifying_key).await;
         tracing::debug!(?topic, "adding author");
 
         tracing::debug!(topic = ?topic.renamed(), hash = ?hash.renamed(), "PROC: processing operation");
@@ -335,7 +335,7 @@ impl Node {
                 }
                 tracing::info!(
                     ?invitation,
-                    from = ?header.public_key.renamed(),
+                    from = ?header.verifying_key.renamed(),
                     "received invitation message"
                 );
                 match invitation {
@@ -367,7 +367,7 @@ impl Node {
             Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
                 // Save the device_id -> agent_id mapping so group members can look each other up.
 
-                let device_id = DeviceId::from(header.public_key);
+                let device_id = DeviceId::from(header.verifying_key);
                 // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
                 let agent_id = AgentId::from(crate::ActorId::from_bytes(&*topic).map_err(|e| {
                     anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")

@@ -1,6 +1,6 @@
 use derive_more::{Deref, From};
 use named_id::RenameAll;
-use p2panda_core::PublicKey;
+use p2panda_core::VerifyingKey;
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize};
 use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
@@ -21,7 +21,7 @@ use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentVal
     Deref,
     RenameAll,
 )]
-pub struct DeviceId(PublicKey);
+pub struct DeviceId(VerifyingKey);
 
 /// The ID for an "agent" which may control multiple devices.
 #[derive(
@@ -68,7 +68,7 @@ impl sqlx::Decode<'_, Sqlite> for DeviceId {
     fn decode(value: <Sqlite as sqlx::Database>::ValueRef<'_>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as sqlx::Decode<Sqlite>>::decode(value)?;
         let arr: [u8; 32] = bytes.try_into().map_err(|_| "DeviceId is not 32 bytes")?;
-        Ok(DeviceId::from(PublicKey::from_bytes(&arr)?))
+        Ok(DeviceId::from(VerifyingKey::from_bytes(&arr)?))
     }
 }
 

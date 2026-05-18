@@ -2,7 +2,7 @@ import { type ReactivePromise, reactive, relay } from 'signalium';
 
 import type { LogsClient } from './logs-client';
 import type { SimplifiedOperation } from './simplified-types';
-import type { PublicKey, TopicId } from './types';
+import type { VerifyingKey, TopicId } from './types';
 
 /// Stopgap: re-fetch each subscribed log on this interval as a safety net for
 /// `p2panda://new-operation` events that don't reach this process. Concretely,
@@ -27,8 +27,8 @@ export class LogsStore<PAYLOAD> {
 	constructor(public logsClient: LogsClient<PAYLOAD>) {}
 
 	authorsForTopic = reactive(
-		(topicId: TopicId): ReactivePromise<PublicKey[]> =>
-			relay<PublicKey[]>(state => {
+		(topicId: TopicId): ReactivePromise<VerifyingKey[]> =>
+			relay<VerifyingKey[]>(state => {
 				const fetchAuthors = async () => {
 					const authors = await this.logsClient.getAuthorsForTopic(topicId);
 					const current = state.value;
@@ -58,7 +58,7 @@ export class LogsStore<PAYLOAD> {
 					(operationTopicId, operation) => {
 						if (topicId !== operationTopicId) return;
 						const authors = state.value || [];
-						const author = operation.header.public_key;
+						const author = operation.header.verifying_key;
 						if (authors.includes(author)) return;
 						state.value = [...(state.value || []), author];
 					},
@@ -74,7 +74,7 @@ export class LogsStore<PAYLOAD> {
 	logs = reactive(
 		(
 			topicId: TopicId,
-			author: PublicKey,
+			author: VerifyingKey,
 		): ReactivePromise<SimplifiedOperation<PAYLOAD>[]> =>
 			relay<SimplifiedOperation<PAYLOAD>[]>(state => {
 				const fetchLog = async () => {
@@ -94,7 +94,7 @@ export class LogsStore<PAYLOAD> {
 				const unsubs = this.logsClient.onNewOperation(
 					(operationTopicId, operation) => {
 						if (topicId !== operationTopicId) return;
-						if (author !== operation.header.public_key) return;
+						if (author !== operation.header.verifying_key) return;
 
 						// We already have this operation
 						if (
@@ -121,7 +121,7 @@ export class LogsStore<PAYLOAD> {
 			authorsForTopic.map(author => this.logs(topicId, author)),
 		);
 
-		const logsForAllAuthors: Record<PublicKey, SimplifiedOperation<PAYLOAD>[]> =
+		const logsForAllAuthors: Record<VerifyingKey, SimplifiedOperation<PAYLOAD>[]> =
 			{};
 		for (let i = 0; i < authorsForTopic.length; i++) {
 			logsForAllAuthors[authorsForTopic[i]] = logs[i];

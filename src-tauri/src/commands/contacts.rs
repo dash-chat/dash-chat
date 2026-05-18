@@ -43,16 +43,16 @@ pub async fn reject_contact_request(agent_id: AgentId, node: State<'_, Node>) ->
 
 // #[tauri::command]
 // pub async fn remove_contact(
-//     contact_id: PublicKey,
+//     contact_id: VerifyingKey,
 //     node: State<'_, Node>,
-// ) -> Result<PublicKey, String> {
+// ) -> Result<VerifyingKey, String> {
 //     node.remove_contact(contact_id.into())
 //         .await
 //         .map_err(|e| format!("Failed to remove contact: {e:?}"))
 // }
 
 // #[tauri::command]
-// pub async fn get_contacts(node: State<'_, Node>) -> Result<Vec<PublicKey>, String> {
+// pub async fn get_contacts(node: State<'_, Node>) -> Result<Vec<VerifyingKey>, String> {
 //     let pks = node
 //         .get_contacts()
 //         .await

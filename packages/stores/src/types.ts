@@ -94,7 +94,7 @@ export type MessageId = string;
 // export interface Message {
 // 	id: MessageId;
 // 	content: MessageContent;
-// 	author: PublicKey;
+// 	author: VerifyingKey;
 // 	timestamp: number;
 // }
 

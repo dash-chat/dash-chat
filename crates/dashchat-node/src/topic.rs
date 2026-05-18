@@ -228,7 +228,7 @@ impl Topic<kind::Announcements> {
 
 impl Topic<kind::Chat> {
     pub fn random() -> Self {
-        let pk = p2panda_core::PrivateKey::new().public_key();
+        let pk = p2panda_core::SigningKey::generate().verifying_key();
         Self::new(*pk.as_bytes())
     }
 
@@ -241,12 +241,12 @@ impl Topic<kind::Chat> {
         Self::new(*pk.as_bytes())
     }
 
-    pub fn from_group_pubkey(pubkey: p2panda_core::PublicKey) -> Self {
+    pub fn from_group_pubkey(pubkey: p2panda_core::VerifyingKey) -> Self {
         Self::new(*pubkey.as_bytes())
     }
 
-    pub fn to_group_pubkey(self) -> anyhow::Result<p2panda_core::PublicKey> {
-        Ok(p2panda_core::PublicKey::from_bytes(&self.id.0)?)
+    pub fn to_group_pubkey(self) -> anyhow::Result<p2panda_core::VerifyingKey> {
+        Ok(p2panda_core::VerifyingKey::from_bytes(&self.id.0)?)
     }
 }
 

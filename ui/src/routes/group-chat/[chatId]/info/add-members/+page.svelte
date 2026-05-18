@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiAccountMultiplePlus, mdiAccountPlus } from '@mdi/js';
-	import type { ContactsStore, PublicKey } from 'dash-chat-stores';
+	import type { ContactsStore, VerifyingKey } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -25,7 +25,7 @@
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	let selectedContacts = $state<PublicKey[]>([]);
+	let selectedContacts = $state<VerifyingKey[]>([]);
 
 	const contacts = useReactivePromise(contactsStore.profilesForAllContacts);
 

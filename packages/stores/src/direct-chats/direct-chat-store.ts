@@ -146,7 +146,7 @@ export class DirectChatStore implements ReadMessagesStore {
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
-				if (op.header.public_key !== myDeviceId) return false;
+				if (op.header.verifying_key !== myDeviceId) return false;
 				if (getMessageText(op.body.payload.payload) !== text) return false;
 				return true;
 			}),

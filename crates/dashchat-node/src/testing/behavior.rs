@@ -65,7 +65,7 @@ impl Behavior {
         let mut watcher = self.watcher.lock().await;
         watcher
             .watch_mapped(Duration::from_secs(5), |n: &Notification| {
-                if n.header.public_key != *device_id {
+                if n.header.verifying_key != *device_id {
                     return None;
                 }
                 match n.payload {

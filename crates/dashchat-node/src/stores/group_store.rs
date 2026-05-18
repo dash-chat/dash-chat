@@ -1,14 +1,13 @@
 use p2panda_auth::{Access, group::GroupCrdtState, processor::GroupsOperation};
-use p2panda_core::{Hash, Operation, PublicKey};
+use p2panda_core::{Hash, Operation, VerifyingKey};
 use p2panda_store::{SqliteStore, Transaction, groups::GroupsStore};
 
 use crate::{topic::TopicId, *};
 
-type GroupState = GroupCrdtState<PublicKey, Hash, GroupsOperation, ()>;
-type GroupsProcessor = p2panda_auth::processor::GroupsProcessor<Extensions, TopicId>;
+type GroupState = GroupCrdtState<VerifyingKey, Hash, GroupsOperation, ()>;
+type GroupsProcessor = p2panda_auth::processor::GroupsProcessor<TopicId, Extensions, LogId>;
 
-// /// Singleton context for group state (only one needed globally)
-// const GROUPS_CONTEXT: TopicId = TopicId::new([0; 32]);
+const GROUPS_STATE_ID: u32 = 0;
 
 #[derive(Clone)]
 pub struct GroupStore {
@@ -27,9 +26,11 @@ impl GroupStore {
 
     pub async fn process(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
         // TODO: when device groups come online, this needs to be update to use the singleton
-        //       GROUPS_CONTEXT, with filtered heads.
-        let context = operation.header.extensions.topic;
-        GroupsProcessor::process(&context, &self.db, operation).await?;
+        //       GROUPS_STATE_ID, with filtered heads.
+
+        let groups = GroupsProcessor::new(self.db.clone());
+        let topic = operation.header.extensions.topic;
+        groups.process(&GROUPS_STATE_ID, &topic, operation).await?;
         Ok(())
     }
 
@@ -48,6 +49,6 @@ impl GroupStore {
     async fn auth_state(&self, topic: TopicId) -> anyhow::Result<GroupState> {
         // TODO: use transactions properly!
         let _txn = self.db.begin().await?;
-        Ok(self.db.get_state(&topic).await?.unwrap_or_default())
+        Ok(self.db.get_groups_state(&topic).await?.unwrap_or_default())
     }
 }

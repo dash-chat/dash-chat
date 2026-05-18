@@ -1,5 +1,5 @@
 use dashchat_node::{topic::TopicId, DeviceId, Header, Node, Payload, Topic};
-use p2panda_core::{cbor::decode_cbor, Body, Hash, PublicKey, Timestamp};
+use p2panda_core::{cbor::decode_cbor, Body, Hash, Timestamp, VerifyingKey};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tauri::State;
 
@@ -33,7 +33,7 @@ pub struct SimplifiedOperation {
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct SimplifiedHeader {
     /// Author of this operation.
-    public_key: PublicKey,
+    verifying_key: VerifyingKey,
 
     /// Milliseconds since the UNIX epoch when the operation was created.
     #[serde(
@@ -62,7 +62,7 @@ impl From<Header> for SimplifiedHeader {
     fn from(header: Header) -> SimplifiedHeader {
         let previous = header.extensions.dependencies();
         SimplifiedHeader {
-            public_key: header.public_key,
+            verifying_key: header.verifying_key,
             timestamp: header.timestamp,
             seq_num: header.seq_num,
             backlink: header.backlink,

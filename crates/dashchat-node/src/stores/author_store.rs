@@ -1,45 +1,45 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use p2panda_core::PublicKey;
+use p2panda_core::VerifyingKey;
 use tokio::sync::RwLock;
 
 #[derive(Clone, Debug)]
-pub struct AuthorStore<T>(pub(crate) Arc<RwLock<HashMap<T, HashSet<PublicKey>>>>);
+pub struct AuthorStore<T>(pub(crate) Arc<RwLock<HashMap<T, HashSet<VerifyingKey>>>>);
 
 impl<T: Eq + std::hash::Hash + std::fmt::Debug + Clone> AuthorStore<T> {
     pub fn new() -> Self {
         Self(Arc::new(RwLock::new(HashMap::new())))
     }
 
-    pub async fn add_author(&self, topic: T, public_key: impl Into<PublicKey>) {
+    pub async fn add_author(&self, topic: T, verifying_key: impl Into<VerifyingKey>) {
         let mut authors = self.0.write().await;
-        let public_key = public_key.into();
-        let pk = PublicKey::from(public_key);
+        let verifying_key = verifying_key.into();
+        let pk = VerifyingKey::from(verifying_key);
 
         authors
             .entry(topic.clone())
-            .and_modify(|public_keys| {
-                if public_keys.insert(public_key) {
+            .and_modify(|verifying_keys| {
+                if verifying_keys.insert(verifying_key) {
                     tracing::debug!(?topic, ?pk, "added author");
                 }
             })
             .or_insert({
                 tracing::debug!(?topic, ?pk, "added author (first in topic)");
-                let mut public_keys = HashSet::new();
-                public_keys.insert(public_key);
-                public_keys
+                let mut verifying_keys = HashSet::new();
+                verifying_keys.insert(verifying_key);
+                verifying_keys
             });
     }
 
-    pub async fn authors(&self, topic: &T) -> Option<HashSet<PublicKey>> {
+    pub async fn authors(&self, topic: &T) -> Option<HashSet<VerifyingKey>> {
         let authors = self.0.read().await;
         Some(
             authors
                 .get(topic)
                 .cloned()?
                 .into_iter()
-                .map(PublicKey::from)
+                .map(VerifyingKey::from)
                 .collect(),
         )
     }
@@ -50,7 +50,7 @@ impl<T: Eq + std::hash::Hash + std::fmt::Debug + Clone> AuthorStore<T> {
 //     /// During sync other peers are interested in all our append-only logs for a certain topic.
 //     /// This method tells the sync protocol which logs we have available from which author for that
 //     /// given topic.
-//     async fn get(&self, topic: &Topic) -> Option<HashMap<PublicKey, Vec<Topic>>> {
+//     async fn get(&self, topic: &Topic) -> Option<HashMap<VerifyingKey, Vec<Topic>>> {
 //         let authors = self.authors(topic).await;
 //         let map = match authors {
 //             Some(authors) => {

@@ -1,7 +1,7 @@
 import { blake3Hash } from '@webbuf/blake3';
 import { WebBuf } from 'webbuf';
 
-import { AgentId, PublicKey, TopicId } from './p2panda/types';
+import { AgentId, VerifyingKey, TopicId } from './p2panda/types';
 
 const fromHexString = (hexString: string) =>
 	Uint8Array.from(hexString.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));

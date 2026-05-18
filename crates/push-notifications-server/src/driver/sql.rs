@@ -5,7 +5,7 @@ use sqlx::{AnyPool, Row};
 use std::collections::{HashMap, HashSet};
 
 use crate::driver::Driver;
-use push_notifications_client::types::{FcmToken, PublicKey, TopicId};
+use push_notifications_client::types::{FcmToken, VerifyingKey, TopicId};
 
 pub struct SqlDriver {
     pool: AnyPool,
@@ -29,7 +29,7 @@ impl SqlDriver {
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS fcm_tokens (
-                public_key TEXT PRIMARY KEY,
+                verifying_key TEXT PRIMARY KEY,
                 fcm_token TEXT NOT NULL
             )",
         )
@@ -40,8 +40,8 @@ impl SqlDriver {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS topic_subscribers (
                 topic_id TEXT NOT NULL,
-                public_key TEXT NOT NULL,
-                PRIMARY KEY (topic_id, public_key)
+                verifying_key TEXT NOT NULL,
+                PRIMARY KEY (topic_id, verifying_key)
             )",
         )
         .execute(&pool)
@@ -49,20 +49,20 @@ impl SqlDriver {
         .context("failed to create topic_subscribers table")?;
 
         sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_topic_subscribers_pubkey ON topic_subscribers (public_key)",
+            "CREATE INDEX IF NOT EXISTS idx_topic_subscribers_pubkey ON topic_subscribers (verifying_key)",
         )
         .execute(&pool)
         .await
-        .context("failed to create public_key index on topic_subscribers")?;
+        .context("failed to create verifying_key index on topic_subscribers")?;
 
         Ok(Self { pool })
     }
 }
 
-/// Build a batch INSERT query: `INSERT INTO topic_subscribers (topic_id, public_key) VALUES ($1, $2), ($3, $4), ... ON CONFLICT DO NOTHING`
-/// Returns the query string and a flat list of bind values (topic_id, public_key pairs).
+/// Build a batch INSERT query: `INSERT INTO topic_subscribers (topic_id, verifying_key) VALUES ($1, $2), ($3, $4), ... ON CONFLICT DO NOTHING`
+/// Returns the query string and a flat list of bind values (topic_id, verifying_key pairs).
 fn build_batch_insert(
-    public_key: &PublicKey,
+    verifying_key: &VerifyingKey,
     topic_ids: &HashSet<TopicId>,
 ) -> (String, Vec<String>) {
     let mut placeholders = Vec::with_capacity(topic_ids.len());
@@ -71,10 +71,10 @@ fn build_batch_insert(
         let p = i * 2;
         placeholders.push(format!("(${}, ${})", p + 1, p + 2));
         binds.push(topic_id.to_string());
-        binds.push(public_key.to_string());
+        binds.push(verifying_key.to_string());
     }
     let query = format!(
-        "INSERT INTO topic_subscribers (topic_id, public_key) VALUES {} ON CONFLICT DO NOTHING",
+        "INSERT INTO topic_subscribers (topic_id, verifying_key) VALUES {} ON CONFLICT DO NOTHING",
         placeholders.join(", ")
     );
     (query, binds)
@@ -82,12 +82,12 @@ fn build_batch_insert(
 
 #[async_trait::async_trait]
 impl Driver for SqlDriver {
-    async fn store_fcm_token(&self, public_key: &PublicKey, fcm_token: &FcmToken) -> Result<()> {
+    async fn store_fcm_token(&self, verifying_key: &VerifyingKey, fcm_token: &FcmToken) -> Result<()> {
         sqlx::query(
-            "INSERT INTO fcm_tokens (public_key, fcm_token) VALUES ($1, $2)
-             ON CONFLICT (public_key) DO UPDATE SET fcm_token = $2",
+            "INSERT INTO fcm_tokens (verifying_key, fcm_token) VALUES ($1, $2)
+             ON CONFLICT (verifying_key) DO UPDATE SET fcm_token = $2",
         )
-        .bind(public_key.as_str())
+        .bind(verifying_key.as_str())
         .bind(fcm_token.as_str())
         .execute(&self.pool)
         .await
@@ -97,23 +97,23 @@ impl Driver for SqlDriver {
 
     async fn get_fcm_tokens(
         &self,
-        public_keys: &[PublicKey],
-    ) -> Result<HashMap<PublicKey, FcmToken>> {
-        if public_keys.is_empty() {
+        verifying_keys: &[VerifyingKey],
+    ) -> Result<HashMap<VerifyingKey, FcmToken>> {
+        if verifying_keys.is_empty() {
             return Ok(HashMap::new());
         }
 
-        let placeholders: Vec<String> = public_keys
+        let placeholders: Vec<String> = verifying_keys
             .iter()
             .enumerate()
             .map(|(i, _)| format!("${}", i + 1))
             .collect();
         let query = format!(
-            "SELECT public_key, fcm_token FROM fcm_tokens WHERE public_key IN ({})",
+            "SELECT verifying_key, fcm_token FROM fcm_tokens WHERE verifying_key IN ({})",
             placeholders.join(", ")
         );
         let mut q = sqlx::query(&query);
-        for pk in public_keys {
+        for pk in verifying_keys {
             q = q.bind(pk.as_str());
         }
         let rows = q
@@ -125,16 +125,16 @@ impl Driver for SqlDriver {
             .into_iter()
             .map(|r| {
                 (
-                    PublicKey::from(r.get::<String, _>("public_key")),
+                    VerifyingKey::from(r.get::<String, _>("verifying_key")),
                     FcmToken::from(r.get::<String, _>("fcm_token")),
                 )
             })
             .collect())
     }
 
-    async fn remove_fcm_token(&self, public_key: &PublicKey) -> Result<()> {
-        sqlx::query("DELETE FROM fcm_tokens WHERE public_key = $1")
-            .bind(public_key.as_str())
+    async fn remove_fcm_token(&self, verifying_key: &VerifyingKey) -> Result<()> {
+        sqlx::query("DELETE FROM fcm_tokens WHERE verifying_key = $1")
+            .bind(verifying_key.as_str())
             .execute(&self.pool)
             .await
             .context("failed to remove FCM token")?;
@@ -143,13 +143,13 @@ impl Driver for SqlDriver {
 
     async fn add_topic_subscriptions(
         &self,
-        public_key: &PublicKey,
+        verifying_key: &VerifyingKey,
         topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
         if topic_ids.is_empty() {
             return Ok(());
         }
-        let (query, binds) = build_batch_insert(public_key, topic_ids);
+        let (query, binds) = build_batch_insert(verifying_key, topic_ids);
         let mut q = sqlx::query(&query);
         for val in &binds {
             q = q.bind(val);
@@ -162,7 +162,7 @@ impl Driver for SqlDriver {
 
     async fn remove_topic_subscriptions(
         &self,
-        public_key: &PublicKey,
+        verifying_key: &VerifyingKey,
         topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
         if topic_ids.is_empty() {
@@ -174,10 +174,10 @@ impl Driver for SqlDriver {
             .map(|(i, _)| format!("${}", i + 2))
             .collect();
         let query = format!(
-            "DELETE FROM topic_subscribers WHERE public_key = $1 AND topic_id IN ({})",
+            "DELETE FROM topic_subscribers WHERE verifying_key = $1 AND topic_id IN ({})",
             placeholders.join(", ")
         );
-        let mut q = sqlx::query(&query).bind(public_key.as_str());
+        let mut q = sqlx::query(&query).bind(verifying_key.as_str());
         for tid in topic_ids {
             q = q.bind(tid.as_str());
         }
@@ -190,7 +190,7 @@ impl Driver for SqlDriver {
     async fn get_subscribers_for_topics(
         &self,
         topic_ids: &HashSet<TopicId>,
-    ) -> Result<HashMap<TopicId, Vec<PublicKey>>> {
+    ) -> Result<HashMap<TopicId, Vec<VerifyingKey>>> {
         if topic_ids.is_empty() {
             return Ok(HashMap::new());
         }
@@ -201,7 +201,7 @@ impl Driver for SqlDriver {
             .map(|(i, _)| format!("${}", i + 1))
             .collect();
         let query = format!(
-            "SELECT topic_id, public_key FROM topic_subscribers WHERE topic_id IN ({})",
+            "SELECT topic_id, verifying_key FROM topic_subscribers WHERE topic_id IN ({})",
             placeholders.join(", ")
         );
         let mut q = sqlx::query(&query);
@@ -213,10 +213,10 @@ impl Driver for SqlDriver {
             .await
             .context("failed to get subscribers")?;
 
-        let mut result: HashMap<TopicId, Vec<PublicKey>> = HashMap::new();
+        let mut result: HashMap<TopicId, Vec<VerifyingKey>> = HashMap::new();
         for row in rows {
             let tid = TopicId::from(row.get::<String, _>("topic_id"));
-            let pk = PublicKey::from(row.get::<String, _>("public_key"));
+            let pk = VerifyingKey::from(row.get::<String, _>("verifying_key"));
             result.entry(tid).or_default().push(pk);
         }
         Ok(result)
@@ -224,7 +224,7 @@ impl Driver for SqlDriver {
 
     async fn update_topic_subscriptions(
         &self,
-        public_key: &PublicKey,
+        verifying_key: &VerifyingKey,
         topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
         let mut tx = self
@@ -234,15 +234,15 @@ impl Driver for SqlDriver {
             .context("failed to begin transaction")?;
 
         // Remove all existing subscriptions for this key
-        sqlx::query("DELETE FROM topic_subscribers WHERE public_key = $1")
-            .bind(public_key.as_str())
+        sqlx::query("DELETE FROM topic_subscribers WHERE verifying_key = $1")
+            .bind(verifying_key.as_str())
             .execute(&mut *tx)
             .await
             .context("failed to clear subscriptions")?;
 
         // Batch insert the new set
         if !topic_ids.is_empty() {
-            let (insert_query, binds) = build_batch_insert(public_key, topic_ids);
+            let (insert_query, binds) = build_batch_insert(verifying_key, topic_ids);
             let mut q = sqlx::query(&insert_query);
             for val in &binds {
                 q = q.bind(val);

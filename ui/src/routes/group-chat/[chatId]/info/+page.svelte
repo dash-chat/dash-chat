@@ -5,7 +5,7 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { ContactsStore, ChatsStore, PublicKey } from 'dash-chat-stores';
+	import type { ContactsStore, ChatsStore, VerifyingKey } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
 		mdiAccountGroup,

@@ -45,13 +45,13 @@ const MIGRATIONS: &[&str] = &[
 
 #[derive(Clone, Debug)]
 pub struct NodeKeys {
-    pub private_key: PrivateKey,
+    pub private_key: SigningKey,
     pub agent_id: AgentId,
 }
 
 impl NodeKeys {
     pub fn device_id(&self) -> DeviceId {
-        DeviceId::from(self.private_key.public_key())
+        DeviceId::from(self.private_key.verifying_key())
     }
 }
 
@@ -92,8 +92,8 @@ impl LocalStore {
                 .fetch_optional(&mut *tx)
                 .await?;
         if existing.is_none() {
-            let private_key = PrivateKey::new();
-            let agent_id = AgentId::from(ActorId::from(PrivateKey::new().public_key()));
+            let private_key = SigningKey::generate();
+            let agent_id = AgentId::from(ActorId::from(SigningKey::generate().verifying_key()));
             sqlx::query("INSERT INTO identity (key, value) VALUES (?, ?)")
                 .bind(PRIVATE_KEY_KEY)
                 .bind(private_key.as_bytes().to_vec())
@@ -276,7 +276,7 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn private_key(&self) -> anyhow::Result<PrivateKey> {
+    pub async fn private_key(&self) -> anyhow::Result<SigningKey> {
         let row: Option<(Vec<u8>,)> = sqlx::query_as("SELECT value FROM identity WHERE key = ?")
             .bind(PRIVATE_KEY_KEY)
             .fetch_optional(&self.pool)
@@ -285,11 +285,11 @@ impl LocalStore {
         let arr: [u8; 32] = bytes
             .try_into()
             .map_err(|_| anyhow::anyhow!("identity.private_key is not 32 bytes"))?;
-        Ok(PrivateKey::from_bytes(&arr))
+        Ok(SigningKey::from_bytes(&arr))
     }
 
     pub async fn device_id(&self) -> anyhow::Result<DeviceId> {
-        Ok(DeviceId::from(self.private_key().await?.public_key()))
+        Ok(DeviceId::from(self.private_key().await?.verifying_key()))
     }
 
     pub async fn agent_id(&self) -> anyhow::Result<AgentId> {

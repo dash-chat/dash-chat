@@ -160,7 +160,7 @@ pub mod testing {
         pub fn new(content: ChatMessageContent, header: &Header) -> Self {
             Self {
                 content,
-                author: header.public_key.into(),
+                author: header.verifying_key.into(),
                 timestamp: header.timestamp,
             }
         }

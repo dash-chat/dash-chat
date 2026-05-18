@@ -1,7 +1,7 @@
 use anyhow::Context;
 
 use crate::requests::*;
-use crate::types::{FcmToken, OperationId, PublicKey, TopicId};
+use crate::types::{FcmToken, OperationId, TopicId, VerifyingKey};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug)]
@@ -31,14 +31,14 @@ impl PushNotificationsClient {
 
     pub async fn register_fcm_token(
         &self,
-        public_key: PublicKey,
+        verifying_key: VerifyingKey,
         fcm_token: FcmToken,
     ) -> anyhow::Result<()> {
         let resp = self
             .http
             .post(format!("{}/fcm-tokens/register", self.base_url))
             .json(&RegisterFcmTokenRequest {
-                public_key,
+                verifying_key,
                 fcm_token,
             })
             .send()
@@ -46,11 +46,11 @@ impl PushNotificationsClient {
         check_response(resp).await
     }
 
-    pub async fn unregister_fcm_token(&self, public_key: PublicKey) -> anyhow::Result<()> {
+    pub async fn unregister_fcm_token(&self, verifying_key: VerifyingKey) -> anyhow::Result<()> {
         let resp = self
             .http
             .post(format!("{}/fcm-tokens/unregister", self.base_url))
-            .json(&UnregisterFcmTokenRequest { public_key })
+            .json(&UnregisterFcmTokenRequest { verifying_key })
             .send()
             .await?;
         check_response(resp).await
@@ -58,14 +58,14 @@ impl PushNotificationsClient {
 
     pub async fn add_topic_subscriptions(
         &self,
-        public_key: PublicKey,
+        verifying_key: VerifyingKey,
         topic_ids: HashSet<TopicId>,
     ) -> anyhow::Result<()> {
         let resp = self
             .http
             .post(format!("{}/topic-subscriptions/add", self.base_url))
             .json(&AddTopicSubscriptionsRequest {
-                public_key,
+                verifying_key,
                 topic_ids,
             })
             .send()
@@ -75,14 +75,14 @@ impl PushNotificationsClient {
 
     pub async fn remove_topic_subscriptions(
         &self,
-        public_key: PublicKey,
+        verifying_key: VerifyingKey,
         topic_ids: HashSet<TopicId>,
     ) -> anyhow::Result<()> {
         let resp = self
             .http
             .post(format!("{}/topic-subscriptions/remove", self.base_url))
             .json(&RemoveTopicSubscriptionsRequest {
-                public_key,
+                verifying_key,
                 topic_ids,
             })
             .send()
@@ -92,7 +92,7 @@ impl PushNotificationsClient {
 
     pub async fn notify_topics(
         &self,
-        topics_to_notify: HashMap<TopicId, HashMap<OperationId, PublicKey>>,
+        topics_to_notify: HashMap<TopicId, HashMap<OperationId, VerifyingKey>>,
     ) -> anyhow::Result<()> {
         let resp = self
             .http
@@ -105,14 +105,14 @@ impl PushNotificationsClient {
 
     pub async fn update_topic_subscriptions(
         &self,
-        public_key: PublicKey,
+        verifying_key: VerifyingKey,
         topic_ids: HashSet<TopicId>,
     ) -> anyhow::Result<()> {
         let resp = self
             .http
             .post(format!("{}/topic-subscriptions/update", self.base_url))
             .json(&UpdateTopicSubscriptionsRequest {
-                public_key,
+                verifying_key,
                 topic_ids,
             })
             .send()

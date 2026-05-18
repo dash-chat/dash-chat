@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DeviceId, Header, Operation, topic::TopicId};
 use mailbox_client::MailboxItem;
-use p2panda_core::{Body, PublicKey};
+use p2panda_core::{Body, VerifyingKey};
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MailboxOperation {
@@ -20,7 +20,7 @@ impl MailboxItem for MailboxOperation {
     }
 
     fn author(&self) -> DeviceId {
-        self.header.public_key.into()
+        self.header.verifying_key.into()
     }
 
     fn seq_num(&self) -> u64 {
@@ -48,7 +48,7 @@ impl mailbox_client::toy::ToyItemTraits for TopicId {
 
 impl mailbox_client::toy::ToyItemTraits for DeviceId {
     fn as_bytes(&self) -> &[u8] {
-        PublicKey::as_bytes(&*self)
+        VerifyingKey::as_bytes(&*self)
     }
 
     fn from_str(s: &str) -> Result<Self, anyhow::Error> {
@@ -56,7 +56,7 @@ impl mailbox_client::toy::ToyItemTraits for DeviceId {
             .try_into()
             .map_err(|e| anyhow::anyhow!("Invalid DeviceId: {e:?}"))?;
 
-        Ok(DeviceId::from(PublicKey::from_bytes(&bytes)?))
+        Ok(DeviceId::from(VerifyingKey::from_bytes(&bytes)?))
     }
 }
 

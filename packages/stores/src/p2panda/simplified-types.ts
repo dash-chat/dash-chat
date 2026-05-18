@@ -1,4 +1,4 @@
-import type { Hash, PublicKey } from './types';
+import type { Hash, VerifyingKey } from './types';
 
 export interface SimplifiedOperation<B> {
 	hash: Hash;
@@ -8,7 +8,7 @@ export interface SimplifiedOperation<B> {
 
 export interface SimplifiedHeader {
 	/// Author of this operation.
-	public_key: PublicKey;
+	verifying_key: VerifyingKey;
 
 	/// Milliseconds since the Unix epoch (suitable for `new Date(ms)`).
 	timestamp: number;

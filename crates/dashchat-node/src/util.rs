@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use p2panda_core::PublicKey;
+use p2panda_core::VerifyingKey;
 use p2panda_spaces::ActorId;
 
 pub trait ResultExt<T, E> {
@@ -52,11 +52,11 @@ impl<R> CancelAndWait<R> {
 }
 
 /// Clamp a hash to a valid ed25519 public key.
-pub fn clamp_to_ed25519_pubkey(mut hash: [u8; 32]) -> PublicKey {
+pub fn clamp_to_ed25519_pubkey(mut hash: [u8; 32]) -> VerifyingKey {
     hash[0] &= 248;
     hash[31] &= 127;
     hash[31] |= 64;
     let signing_key = ed25519_dalek::SigningKey::from_bytes(&hash);
     let pubkey = signing_key.verifying_key();
-    PublicKey::from_bytes(pubkey.as_bytes()).unwrap()
+    VerifyingKey::from_bytes(pubkey.as_bytes()).unwrap()
 }

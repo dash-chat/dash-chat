@@ -16,7 +16,7 @@ use named_id::*;
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
-use p2panda_core::{Hash, PublicKey};
+use p2panda_core::{Hash, VerifyingKey};
 use p2panda_spaces::ActorId;
 use p2panda_store::SqliteStore;
 use tokio::sync::mpsc;
@@ -73,7 +73,7 @@ impl Default for NodeConfig {
     }
 }
 
-pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
+pub type DashResolver = StrongRemove<VerifyingKey, Hash, Operation, ()>;
 
 #[derive(Clone)]
 pub struct Node {
@@ -280,13 +280,13 @@ impl Node {
 
     pub async fn create_group(
         &self,
-        mut initial_members: BTreeMap<PublicKey, p2panda_auth::Access>,
+        mut initial_members: BTreeMap<VerifyingKey, p2panda_auth::Access>,
     ) -> anyhow::Result<ChatId> {
         let chat_id = Topic::random();
 
         let device_ids: Vec<DeviceId> = initial_members
             .keys()
-            .map(|public_key| DeviceId::from(*public_key))
+            .map(|verifying_key| DeviceId::from(*verifying_key))
             .collect();
         let contacts = self.local_store.lookup_contacts(&device_ids).await?;
         let agents: Vec<AgentId> = device_ids
@@ -305,7 +305,7 @@ impl Node {
 
         let initial_members: Vec<_> = initial_members
             .into_iter()
-            .map(|(public_key, access)| (GroupMember::Individual(public_key), access))
+            .map(|(verifying_key, access)| (GroupMember::Individual(verifying_key), access))
             .collect();
 
         // TODO: this should use a transaction, but the race is not a big deal here
@@ -349,7 +349,7 @@ impl Node {
     pub async fn add_group_member(
         &self,
         chat_id: ChatId,
-        member: PublicKey,
+        member: VerifyingKey,
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
         // TODO: this should use a transaction, but the race is not a big deal here
@@ -385,7 +385,7 @@ impl Node {
     pub async fn remove_group_member(
         &self,
         chat_id: ChatId,
-        member: PublicKey,
+        member: VerifyingKey,
     ) -> anyhow::Result<()> {
         // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads(*chat_id).await?;
@@ -789,6 +789,7 @@ impl Node {
             })
             .collect::<BTreeSet<_>>();
         devices.insert(self.device_id());
+        dbg!(&devices.renamed_ref());
 
         // Collect capabilities for all agents
         let caps = futures::future::join_all(
@@ -799,6 +800,7 @@ impl Node {
         .await
         .into_iter()
         .collect::<Result<Vec<Option<Capabilities>>>>()?;
+        dbg!(&caps);
 
         let caps = caps.into_iter().flatten().collect::<Vec<_>>();
         let num = caps.len();

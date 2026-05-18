@@ -100,6 +100,21 @@ async fn direct_chat_capability_upgrade() {
     .await
     .unwrap();
 
+    wait_for(
+        Duration::from_millis(100),
+        Duration::from_secs(10),
+        || async {
+            let members = alice.get_group_members(chat).await.unwrap();
+            if members.contains(&(bobbi.device_id(), p2panda_auth::Access::write())) {
+                Ok(())
+            } else {
+                Err("waiting for bobbi to be added to alice's group")
+            }
+        },
+    )
+    .await
+    .unwrap();
+
     let (group_caps, _) = alice.get_group_capabilities(chat).await.unwrap();
     assert_eq!(
         group_caps.unwrap(),

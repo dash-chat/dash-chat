@@ -4,7 +4,7 @@ import { Profile } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
-import { AgentId, PublicKey } from '../p2panda/types';
+import { AgentId, VerifyingKey } from '../p2panda/types';
 import { ChatId, MessageContent, Payload } from '../types';
 import { type IGroupChatClient } from './group-chat-client';
 
@@ -101,7 +101,7 @@ export class GroupChatStore {
 
 	/// Actions
 
-	addMember(member: PublicKey) {
+	addMember(member: VerifyingKey) {
 		return this.client.addMember(this.chatId, member);
 	}
 

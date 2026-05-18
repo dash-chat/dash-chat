@@ -96,14 +96,14 @@ impl TryFrom<String> for QrCode {
 #[cfg(test)]
 mod tests {
 
-    use p2panda_core::PublicKey;
+    use p2panda_core::VerifyingKey;
     use p2panda_spaces::ActorId;
 
     use super::*;
 
     #[test]
     fn test_contact_roundtrip() {
-        let pubkey = PublicKey::from_bytes(&[11; 32]).unwrap();
+        let pubkey = VerifyingKey::from_bytes(&[11; 32]).unwrap();
         let agent_id = AgentId::from(ActorId::from_bytes(&[22; 32]).unwrap());
         let contact = QrCode {
             device_pubkey: DeviceId::from(pubkey),

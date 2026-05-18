@@ -1,7 +1,7 @@
 use named_id::{RenameAll, RenameNone};
 use p2panda_auth::{group::GroupAction, processor::GroupsArgs};
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
-use p2panda_core::{Body, Extension, Hash, PruneFlag, PublicKey};
+use p2panda_core::{Body, Extension, Hash, PruneFlag, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
 use crate::chat::ChatId;
@@ -150,7 +150,7 @@ impl DashAction {
 
     pub fn group_action(
         group_id: ChatId,
-        action: GroupAction<PublicKey, ()>,
+        action: GroupAction<VerifyingKey, ()>,
         dependencies: Vec<Hash>,
     ) -> anyhow::Result<Self> {
         Ok(DashAction::GroupControl(GroupsArgs {

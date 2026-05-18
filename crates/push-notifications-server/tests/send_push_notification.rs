@@ -8,7 +8,7 @@ use push_notifications_client::requests::{
     AddTopicSubscriptionsRequest, NotifyTopicsRequest, RegisterFcmTokenRequest,
     RemoveTopicSubscriptionsRequest, UnregisterFcmTokenRequest, UpdateTopicSubscriptionsRequest,
 };
-use push_notifications_client::types::{FcmToken, OperationId, PublicKey, TopicId};
+use push_notifications_client::types::{FcmToken, OperationId, VerifyingKey, TopicId};
 use push_notifications_server::build;
 use push_notifications_server::driver::Driver;
 use push_notifications_server::driver::mem::MemDb;
@@ -16,7 +16,7 @@ use push_notifications_server::fcm_client::{MockFcm, SendResult};
 
 #[tokio::test]
 async fn notify_topic_sends_to_subscribers() {
-    let public_key = PublicKey::from("aa".repeat(32));
+    let verifying_key = VerifyingKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("test-fcm-token".to_string());
     let topic_id = TopicId::from("bb".repeat(32));
     let op_id = OperationId::from("test-op".to_string());
@@ -39,7 +39,7 @@ async fn notify_topic_sends_to_subscribers() {
     let response = server
         .post("/fcm-tokens/register")
         .json(&RegisterFcmTokenRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             fcm_token: fcm_token.clone(),
         })
         .await;
@@ -49,14 +49,14 @@ async fn notify_topic_sends_to_subscribers() {
     let response = server
         .post("/topic-subscriptions/add")
         .json(&AddTopicSubscriptionsRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             topic_ids: [topic_id.clone()].into(),
         })
         .await;
     response.assert_status(StatusCode::NO_CONTENT);
 
     // 3. Notify topic — should send push to the subscriber
-    let author = PublicKey::from("cc".repeat(32));
+    let author = VerifyingKey::from("cc".repeat(32));
     let response = server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
@@ -70,8 +70,8 @@ async fn notify_topic_sends_to_subscribers() {
 /// filtered out — devices don't receive pushes for messages they wrote.
 #[tokio::test]
 async fn notify_topic_skips_author() {
-    let author_key = PublicKey::from("aa".repeat(32));
-    let other_key = PublicKey::from("bb".repeat(32));
+    let author_key = VerifyingKey::from("aa".repeat(32));
+    let other_key = VerifyingKey::from("bb".repeat(32));
     let topic_id = TopicId::from("cc".repeat(32));
     let op_id = OperationId::from("test-op".to_string());
 
@@ -94,7 +94,7 @@ async fn notify_topic_skips_author() {
         server
             .post("/fcm-tokens/register")
             .json(&RegisterFcmTokenRequest {
-                public_key: pk.clone(),
+                verifying_key: pk.clone(),
                 fcm_token: FcmToken::from(token.to_string()),
             })
             .await
@@ -102,7 +102,7 @@ async fn notify_topic_skips_author() {
         server
             .post("/topic-subscriptions/add")
             .json(&AddTopicSubscriptionsRequest {
-                public_key: pk.clone(),
+                verifying_key: pk.clone(),
                 topic_ids: [topic_id.clone()].into(),
             })
             .await
@@ -121,7 +121,7 @@ async fn notify_topic_skips_author() {
 
 #[tokio::test]
 async fn notify_topic_skips_unsubscribed() {
-    let public_key = PublicKey::from("aa".repeat(32));
+    let verifying_key = VerifyingKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("test-fcm-token".to_string());
     let topic_id = TopicId::from("bb".repeat(32));
 
@@ -139,14 +139,14 @@ async fn notify_topic_skips_unsubscribed() {
     let response = server
         .post("/fcm-tokens/register")
         .json(&RegisterFcmTokenRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             fcm_token: fcm_token.clone(),
         })
         .await;
     response.assert_status(StatusCode::NO_CONTENT);
 
     // 2. Notify topic — no subscribers, should not send
-    let author = PublicKey::from("cc".repeat(32));
+    let author = VerifyingKey::from("cc".repeat(32));
     let response = server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
@@ -164,7 +164,7 @@ async fn notify_topic_skips_unsubscribed() {
 
 #[tokio::test]
 async fn unsubscribe_prevents_notification() {
-    let public_key = PublicKey::from("aa".repeat(32));
+    let verifying_key = VerifyingKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("test-fcm-token".to_string());
     let topic_id = TopicId::from("bb".repeat(32));
 
@@ -181,7 +181,7 @@ async fn unsubscribe_prevents_notification() {
     server
         .post("/fcm-tokens/register")
         .json(&RegisterFcmTokenRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             fcm_token,
         })
         .await
@@ -190,7 +190,7 @@ async fn unsubscribe_prevents_notification() {
     server
         .post("/topic-subscriptions/add")
         .json(&AddTopicSubscriptionsRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             topic_ids: [topic_id.clone()].into(),
         })
         .await
@@ -200,14 +200,14 @@ async fn unsubscribe_prevents_notification() {
     server
         .post("/topic-subscriptions/remove")
         .json(&RemoveTopicSubscriptionsRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             topic_ids: [topic_id.clone()].into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
 
     // Notify — should NOT send (unsubscribed)
-    let author = PublicKey::from("cc".repeat(32));
+    let author = VerifyingKey::from("cc".repeat(32));
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
@@ -225,7 +225,7 @@ async fn unsubscribe_prevents_notification() {
 
 #[tokio::test]
 async fn update_subscriptions_replaces_and_notifies_correctly() {
-    let public_key = PublicKey::from("aa".repeat(32));
+    let verifying_key = VerifyingKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("test-fcm-token".to_string());
     let topic_a = TopicId::from("cc".repeat(32));
     let topic_b = TopicId::from("dd".repeat(32));
@@ -248,7 +248,7 @@ async fn update_subscriptions_replaces_and_notifies_correctly() {
     server
         .post("/fcm-tokens/register")
         .json(&RegisterFcmTokenRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             fcm_token,
         })
         .await
@@ -258,7 +258,7 @@ async fn update_subscriptions_replaces_and_notifies_correctly() {
     server
         .post("/topic-subscriptions/add")
         .json(&AddTopicSubscriptionsRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             topic_ids: [topic_a.clone()].into(),
         })
         .await
@@ -268,14 +268,14 @@ async fn update_subscriptions_replaces_and_notifies_correctly() {
     server
         .post("/topic-subscriptions/update")
         .json(&UpdateTopicSubscriptionsRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             topic_ids: [topic_b.clone()].into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
 
     // Notify topic-a — should NOT send (replaced away)
-    let author = PublicKey::from("ee".repeat(32));
+    let author = VerifyingKey::from("ee".repeat(32));
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
@@ -306,7 +306,7 @@ async fn update_subscriptions_replaces_and_notifies_correctly() {
 
 #[tokio::test]
 async fn fcm_transient_failure_does_not_remove_token() {
-    let public_key = PublicKey::from("aa".repeat(32));
+    let verifying_key = VerifyingKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("test-fcm-token".to_string());
     let topic_id = TopicId::from("bb".repeat(32));
 
@@ -325,7 +325,7 @@ async fn fcm_transient_failure_does_not_remove_token() {
     server
         .post("/fcm-tokens/register")
         .json(&RegisterFcmTokenRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             fcm_token: fcm_token.clone(),
         })
         .await
@@ -334,14 +334,14 @@ async fn fcm_transient_failure_does_not_remove_token() {
     server
         .post("/topic-subscriptions/add")
         .json(&AddTopicSubscriptionsRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             topic_ids: [topic_id.clone()].into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
 
     // Notify — FCM fails but the endpoint should still return 204
-    let author = PublicKey::from("cc".repeat(32));
+    let author = VerifyingKey::from("cc".repeat(32));
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
@@ -355,13 +355,13 @@ async fn fcm_transient_failure_does_not_remove_token() {
         .assert_status(StatusCode::NO_CONTENT);
 
     // Token should be preserved (transient error, not invalid token)
-    let tokens = db.get_fcm_tokens(&[public_key.clone()]).await.unwrap();
-    assert_eq!(tokens.get(&public_key), Some(&fcm_token));
+    let tokens = db.get_fcm_tokens(&[verifying_key.clone()]).await.unwrap();
+    assert_eq!(tokens.get(&verifying_key), Some(&fcm_token));
 }
 
 #[tokio::test]
 async fn notify_subscriber_without_token_does_not_fail() {
-    let public_key = PublicKey::from("ee".repeat(32));
+    let verifying_key = VerifyingKey::from("ee".repeat(32));
     let topic_id = TopicId::from("bb".repeat(32));
 
     let mut mock_fcm = MockFcm::new();
@@ -371,7 +371,7 @@ async fn notify_subscriber_without_token_does_not_fail() {
     let db = Arc::new(MemDb::new());
 
     // Subscribe directly via the driver (no token registered)
-    db.add_topic_subscriptions(&public_key, &[topic_id.clone()].into())
+    db.add_topic_subscriptions(&verifying_key, &[topic_id.clone()].into())
         .await
         .unwrap();
 
@@ -379,7 +379,7 @@ async fn notify_subscriber_without_token_does_not_fail() {
     let server = TestServer::new(app).unwrap();
 
     // Notify — should gracefully skip the subscriber with no token
-    let author = PublicKey::from("cc".repeat(32));
+    let author = VerifyingKey::from("cc".repeat(32));
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
@@ -395,7 +395,7 @@ async fn notify_subscriber_without_token_does_not_fail() {
 
 #[tokio::test]
 async fn invalid_token_is_removed() {
-    let public_key = PublicKey::from("aa".repeat(32));
+    let verifying_key = VerifyingKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("expired-token".to_string());
     let topic_id = TopicId::from("bb".repeat(32));
 
@@ -409,8 +409,8 @@ async fn invalid_token_is_removed() {
 
     let db = Arc::new(MemDb::new());
 
-    db.store_fcm_token(&public_key, &fcm_token).await.unwrap();
-    db.add_topic_subscriptions(&public_key, &[topic_id.clone()].into())
+    db.store_fcm_token(&verifying_key, &fcm_token).await.unwrap();
+    db.add_topic_subscriptions(&verifying_key, &[topic_id.clone()].into())
         .await
         .unwrap();
 
@@ -418,7 +418,7 @@ async fn invalid_token_is_removed() {
     let server = TestServer::new(app).unwrap();
 
     // Notify — FCM reports token invalid, should remove it
-    let author = PublicKey::from("cc".repeat(32));
+    let author = VerifyingKey::from("cc".repeat(32));
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
@@ -432,15 +432,15 @@ async fn invalid_token_is_removed() {
         .assert_status(StatusCode::NO_CONTENT);
 
     // Token should have been removed from the database
-    let tokens = db.get_fcm_tokens(&[public_key.clone()]).await.unwrap();
-    assert_eq!(tokens.get(&public_key), None);
+    let tokens = db.get_fcm_tokens(&[verifying_key.clone()]).await.unwrap();
+    assert_eq!(tokens.get(&verifying_key), None);
 }
 
 // --- unregister FCM token ---
 
 #[tokio::test]
 async fn unregister_fcm_token_prevents_notification() {
-    let public_key = PublicKey::from("aa".repeat(32));
+    let verifying_key = VerifyingKey::from("aa".repeat(32));
     let fcm_token = FcmToken::from("test-fcm-token".to_string());
     let topic_id = TopicId::from("bb".repeat(32));
 
@@ -456,7 +456,7 @@ async fn unregister_fcm_token_prevents_notification() {
     server
         .post("/fcm-tokens/register")
         .json(&RegisterFcmTokenRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             fcm_token: fcm_token.clone(),
         })
         .await
@@ -465,7 +465,7 @@ async fn unregister_fcm_token_prevents_notification() {
     server
         .post("/topic-subscriptions/add")
         .json(&AddTopicSubscriptionsRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             topic_ids: [topic_id.clone()].into(),
         })
         .await
@@ -475,17 +475,17 @@ async fn unregister_fcm_token_prevents_notification() {
     server
         .post("/fcm-tokens/unregister")
         .json(&UnregisterFcmTokenRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
 
     // Token should be gone
-    let tokens = db.get_fcm_tokens(&[public_key.clone()]).await.unwrap();
-    assert_eq!(tokens.get(&public_key), None);
+    let tokens = db.get_fcm_tokens(&[verifying_key.clone()]).await.unwrap();
+    assert_eq!(tokens.get(&verifying_key), None);
 
     // Notify — should NOT send (no token)
-    let author = PublicKey::from("cc".repeat(32));
+    let author = VerifyingKey::from("cc".repeat(32));
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
@@ -501,7 +501,7 @@ async fn unregister_fcm_token_prevents_notification() {
 
 #[tokio::test]
 async fn unregister_fcm_token_is_idempotent() {
-    let public_key = PublicKey::from("aa".repeat(32));
+    let verifying_key = VerifyingKey::from("aa".repeat(32));
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));
@@ -515,7 +515,7 @@ async fn unregister_fcm_token_is_idempotent() {
     server
         .post("/fcm-tokens/unregister")
         .json(&UnregisterFcmTokenRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);

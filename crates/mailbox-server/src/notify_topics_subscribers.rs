@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use push_notifications_client::client::PushNotificationsClient;
-use push_notifications_client::types::{OperationId, PublicKey, TopicId as PushTopicId};
+use push_notifications_client::types::{OperationId, VerifyingKey, TopicId as PushTopicId};
 
 use crate::{AppState, Author, TopicId};
 
@@ -29,14 +29,14 @@ async fn send_push_notifications(
     push_client: Arc<PushNotificationsClient>,
     topics_with_new_blobs: BTreeMap<TopicId, BTreeMap<String, Author>>,
 ) {
-    let topics_to_notify: HashMap<PushTopicId, HashMap<OperationId, PublicKey>> =
+    let topics_to_notify: HashMap<PushTopicId, HashMap<OperationId, VerifyingKey>> =
         topics_with_new_blobs
             .into_iter()
             .map(|(topic, ops)| {
                 let topic = PushTopicId::from(topic);
                 let ops = ops
                     .into_iter()
-                    .map(|(op_id, author)| (OperationId::from(op_id), PublicKey::from(author)))
+                    .map(|(op_id, author)| (OperationId::from(op_id), VerifyingKey::from(author)))
                     .collect();
                 (topic, ops)
             })

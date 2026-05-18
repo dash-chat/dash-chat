@@ -11,7 +11,7 @@ import type {
 	Header,
 	LogId,
 	Operation,
-	PublicKey,
+	VerifyingKey,
 	TopicId,
 } from './../p2panda/types';
 
@@ -22,7 +22,7 @@ export function hash<T>(obj: T): Hash {
 export class LocalStorageLogsClient implements LogsClient<any> {
 	emitter = new Emittery();
 
-	constructor(protected _myPubKey: PublicKey) {}
+	constructor(protected _myPubKey: VerifyingKey) {}
 
 	async myPubKey() {
 		return this._myPubKey;
@@ -35,7 +35,7 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 
 	async getLog(
 		topicId: TopicId,
-		author: PublicKey,
+		author: VerifyingKey,
 	): Promise<SimplifiedOperation<any>[]> {
 		const logKey = `${topicId}/${author}`;
 		const items = this.getItems();
@@ -47,7 +47,7 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 		return operations.map(([k, v]) => JSON.parse(v));
 	}
 
-	async getAuthorsForTopic(topicId: TopicId): Promise<PublicKey[]> {
+	async getAuthorsForTopic(topicId: TopicId): Promise<VerifyingKey[]> {
 		const logKey = `${topicId}/authors`;
 		const items = this.getItems();
 
@@ -77,7 +77,7 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 		const header: SimplifiedHeader = {
 			backlink: lastOperation?.hash,
 			previous: [],
-			public_key: this._myPubKey,
+			verifying_key: this._myPubKey,
 			seq_num: lastOperation ? lastOperation.header.seq_num + 1 : 0,
 			timestamp: timestamp ?? Math.floor(Date.now() / 1000),
 			topic_id: topicId,

@@ -100,12 +100,12 @@ impl OpStore {
 
     pub async fn author_operation<K: TopicKind>(
         &self,
-        private_key: &PrivateKey,
+        private_key: &SigningKey,
         topic: Topic<K>,
         payload: DashAction,
         alias: Option<&str>,
     ) -> Result<Operation, anyhow::Error> {
-        let device_id = DeviceId::from(private_key.public_key());
+        let device_id = DeviceId::from(private_key.verifying_key());
         let topic = topic.clone();
 
         let body = payload.try_into_body()?;
@@ -128,7 +128,7 @@ impl OpStore {
 
         let mut header = Header {
             version: 1,
-            public_key: *device_id,
+            verifying_key: *device_id,
             signature: None,
             payload_size: body.as_ref().map_or(0, |body| body.size()),
             payload_hash: body.as_ref().map(|body| body.hash()),

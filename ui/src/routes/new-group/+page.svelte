@@ -4,7 +4,7 @@
 
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { ContactsStore, ChatsStore, PublicKey } from 'dash-chat-stores';
+	import type { ContactsStore, ChatsStore, VerifyingKey } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccountMultiplePlus } from '@mdi/js';
 
@@ -36,7 +36,7 @@
 	const contacts = useReactivePromise(contactsStore.profilesForAllContacts);
 
 	let currentPage: 'members' | 'group-info' = $state('members');
-	let selectedContacts = $state<PublicKey[]>([]);
+	let selectedContacts = $state<VerifyingKey[]>([]);
 	let groupName = $state('');
 	let groupAvatar = $state<string | undefined>(undefined);
 	const theme = $derived(useTheme());

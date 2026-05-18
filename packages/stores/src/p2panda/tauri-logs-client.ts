@@ -4,21 +4,21 @@ import { type UnsubscribeFunction } from 'emittery';
 
 import type { LogsClient } from './logs-client';
 import type { SimplifiedOperation } from './simplified-types';
-import type { PublicKey, TopicId } from './types';
+import type { VerifyingKey, TopicId } from './types';
 
 export class TauriLogsClient<PAYLOAD> implements LogsClient<PAYLOAD> {
-	// myPubKey(): Promise<PublicKey> {
+	// myPubKey(): Promise<VerifyingKey> {
 	// 	return invoke('my_pub_key');
 	// }
 
 	async getLog(
 		topicId: TopicId,
-		author: PublicKey,
+		author: VerifyingKey,
 	): Promise<SimplifiedOperation<PAYLOAD>[]> {
 		return invoke('get_log', { topicId, author });
 	}
 
-	async getAuthorsForTopic(topicId: TopicId): Promise<PublicKey[]> {
+	async getAuthorsForTopic(topicId: TopicId): Promise<VerifyingKey[]> {
 		return invoke('get_authors', { topicId });
 	}
 
