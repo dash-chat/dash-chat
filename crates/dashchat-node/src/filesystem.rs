@@ -26,6 +26,6 @@ impl Filesystem {
     }
 
     pub fn mailbox_tracker_store_path(&self) -> PathBuf {
-        self.0.join("mailbox_sync_state.db")
+        self.0.join("mailbox_tracker.db")
     }
 }
