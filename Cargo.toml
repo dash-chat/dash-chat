@@ -38,19 +38,19 @@ mailbox-server = { path = "crates/mailbox-server" }
 #   "test_utils",
 # ] }
 
-p2panda-auth = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-0.6", features = [
+p2panda-auth = { git = "https://github.com/maackle/p2panda.git", branch = "main", features = [
   "processor",
 ] }
-p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-0.6" }
-p2panda-encryption = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-0.6" }
-p2panda-discovery = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-0.6" }
-p2panda-net = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-0.6" }
-p2panda-store = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-0.6", features = [
+p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "main" }
+p2panda-encryption = { git = "https://github.com/maackle/p2panda.git", branch = "main" }
+p2panda-discovery = { git = "https://github.com/maackle/p2panda.git", branch = "main" }
+p2panda-net = { git = "https://github.com/maackle/p2panda.git", branch = "main" }
+p2panda-store = { git = "https://github.com/maackle/p2panda.git", branch = "main", features = [
   "sqlite",
 ] }
-p2panda-stream = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-0.6" }
-p2panda-sync = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-0.6" }
-p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat-0.6", features = [
+p2panda-stream = { git = "https://github.com/maackle/p2panda.git", branch = "main" }
+p2panda-sync = { git = "https://github.com/maackle/p2panda.git", branch = "main" }
+p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "main", features = [
   "test_utils",
 ] }
 
