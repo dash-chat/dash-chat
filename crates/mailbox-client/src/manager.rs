@@ -137,10 +137,10 @@ pub struct TrackedMailbox<Item: MailboxItem> {
 
 impl<Item: MailboxItem> TrackedMailbox<Item> {
     fn new(client: Arc<dyn MailboxClient<Item>>) -> Self {
-        let (tracker, _) = watch::channel(MailboxConnectionState::new());
+        let (connection_state, _) = watch::channel(MailboxConnectionState::new());
         Self {
             client,
-            connection_state: tracker,
+            connection_state,
         }
     }
 
