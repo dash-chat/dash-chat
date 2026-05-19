@@ -14,6 +14,7 @@
 	titleWrapClass={['title-truncated-wrap', titleWrapClass]
 		.filter(Boolean)
 		.join(' ')}
+	innerClass="min-w-0"
 	{...rest}
 >
 	{#if children}{@render children()}{/if}
