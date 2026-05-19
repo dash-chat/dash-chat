@@ -17,7 +17,7 @@
 		onSelectImage: SelectImageHandler;
 	} = $props();
 
-	let uploaderRef: QrCodeUploader | null = null;
+	let uploaderRef: QrCodeUploader | null = $state(null);
 
 	let cancelled = false;
 
