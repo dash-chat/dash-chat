@@ -46,3 +46,19 @@
 		<Reactions reactions={message.reactions} {myDeviceId} {onToggleReaction} />
 	</div>
 {/if}
+
+<style>
+	:global(.others-message) {
+		align-self: start;
+	}
+	:global(.others-message.first-message) {
+		border-end-start-radius: 4px;
+	}
+	:global(.others-message.middle-message) {
+		border-start-start-radius: 4px;
+		border-end-start-radius: 4px;
+	}
+	:global(.others-message.last-message) {
+		border-start-start-radius: 4px;
+	}
+</style>
