@@ -25,7 +25,7 @@
 <Card
 	raised
 	contentWrapPadding="p-2"
-	class={`m-0 min-w-0 [overflow-wrap:anywhere] message others-message ${position}-message`}
+	class={`message others-message ${position}-message`}
 >
 	<div class="row gap-2 mx-1" style="align-items: end">
 		<span class="flex-1">
@@ -50,6 +50,9 @@
 <style>
 	:global(.others-message) {
 		align-self: start;
+		margin: 0;
+		min-width: 0;
+		overflow-wrap: anywhere;
 	}
 	:global(.others-message.first-message) {
 		border-end-start-radius: 4px;

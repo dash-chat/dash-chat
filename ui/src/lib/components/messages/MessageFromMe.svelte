@@ -25,7 +25,7 @@
 <Card
 	raised
 	contentWrapPadding="p-2"
-	class={`m-0 min-w-0 [overflow-wrap:anywhere] message my-message ${position}-message`}
+	class={`message my-message ${position}-message`}
 >
 	<div class="row gap-2 mx-1" style="align-items: end">
 		<span class="flex-1">
@@ -52,7 +52,11 @@
 		align-self: end;
 		background-color: var(--color-brand-primary);
 		color: white;
+		margin: 0;
+		min-width: 0;
+		overflow-wrap: anywhere;
 	}
+
 	:global(.my-message.first-message) {
 		border-end-end-radius: 4px;
 	}
