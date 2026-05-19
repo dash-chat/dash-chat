@@ -1,22 +1,13 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isScanQrFromImageError, scanQrFromImage } from '$lib/utils/qrcode';
 	import { showToast } from '$lib/utils/toasts';
 
 	type SelectImageHandler = (code: string) => void | Promise<void>;
-	type ErrorHandler = (error: unknown) => void | Promise<void>;
-	type CancelHandler = () => void | Promise<void>;
 
 	let {
-		autoOpen = true,
-		onError,
-		onCancel,
 		onSelectImage,
 	}: {
-		autoOpen?: boolean;
-		onError?: ErrorHandler;
-		onCancel?: CancelHandler;
 		onSelectImage: SelectImageHandler;
 	} = $props();
 
@@ -34,8 +25,6 @@
 				console.error(e);
 				showToast(m.errorUnexpected(), 'unexpected', e);
 			}
-
-			await onError?.(e);
 		} finally {
 			if (imageFilePicker) imageFilePicker.value = '';
 		}
@@ -44,11 +33,6 @@
 	export function trigger() {
 		imageFilePicker.click();
 	}
-
-	onMount(() => {
-		if (!autoOpen) return;
-		trigger();
-	});
 </script>
 
 <input
@@ -57,5 +41,4 @@
 	bind:this={imageFilePicker}
 	style="display: none"
 	onchange={onImageSelected}
-	oncancel={() => onCancel?.()}
 />

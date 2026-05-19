@@ -82,7 +82,7 @@
 		</button>
 	</div>
 
-	<QrCodeUploader autoOpen={false} {onSelectImage} bind:this={uploaderRef} />
+	<QrCodeUploader {onSelectImage} bind:this={uploaderRef} />
 </div>
 
 <style>

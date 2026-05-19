@@ -49,7 +49,7 @@
 
 	let tab = $state<TabName>('code');
 	let scannerRef: QrCodeScanner | null = $state(null);
-	let uploadOpen = $state(false);
+	let uploaderRef: QrCodeUploader | null = $state(null);
 
 	async function receiveCode(code: string) {
 		try {
@@ -249,9 +249,7 @@
 								{isMobile}
 								onShare={() => shareCode(code)}
 								onSave={() => saveCode(code, color)}
-								onUpload={() => {
-									uploadOpen = true;
-								}}
+								onUpload={() => uploaderRef?.trigger()}
 								onOpenColorPicker={openColorPicker}
 							/>
 
@@ -288,19 +286,6 @@
 			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveCode} />
 		{/if}
 
-		{#if uploadOpen}
-			<QrCodeUploader
-				onSelectImage={async code => {
-					uploadOpen = false;
-					await receiveCode(code);
-				}}
-				onCancel={() => {
-					uploadOpen = false;
-				}}
-				onError={() => {
-					uploadOpen = false;
-				}}
-			/>
-		{/if}
+		<QrCodeUploader bind:this={uploaderRef} onSelectImage={receiveCode} />
 	</Page>
 {/if}
