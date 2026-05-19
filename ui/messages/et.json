@@ -234,5 +234,8 @@
     "selectImage": "Vali pilt",
     "reasonGeneralFeedback": "Üldine tagasiside",
     "testBanner": "Varane ligipääs testimiseks",
-    "feedback": "Tagasiside"
+    "feedback": "Tagasiside",
+    "waitingForProfile": "Ootan profiili laadimist…",
+    "contactRequestAccepted": "{{name}} on sinu kontaktipäringuga nõustunud",
+    "contactRequestAcceptedNoName": "Sinu kontaktipäring on vastu võetud"
 }
