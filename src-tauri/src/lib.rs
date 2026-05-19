@@ -103,7 +103,7 @@ pub fn run() {
             commands::settings::set_local_mailbox_enabled,
             commands::mailbox_state::mailbox_subscribe_active_ids,
             commands::mailbox_state::mailbox_subscribe_all_ids,
-            commands::mailbox_state::mailbox_subscribe_tracker,
+            commands::mailbox_state::mailbox_subscribe_connection_state,
             commands::mailbox_state::mailbox_subscribe_sync_state,
             // commands::chats::create_group,
             // commands::group_chat::add_member,

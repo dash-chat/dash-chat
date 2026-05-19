@@ -1,7 +1,11 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 
-import { unregisterChannel } from '../utils/tauri-channel';
-import type { MailboxId, MailboxSyncState, MailboxTracker } from './types';
+import { UnsubscribeFn, unregisterChannel } from '../utils/tauri-channel';
+import type {
+	MailboxConnectionState,
+	MailboxId,
+	MailboxSyncState,
+} from './types';
 
 export interface MailboxTrackerClient {
 	subscribeActiveMailboxIds(
@@ -10,17 +14,15 @@ export interface MailboxTrackerClient {
 	subscribeAllMailboxIds(
 		handler: (ids: MailboxId[]) => void,
 	): Promise<UnsubscribeFn>;
-	subscribeTracker(
+	subscribeConnectionState(
+		handler: (state: MailboxConnectionState) => void,
 		mailboxId: MailboxId,
-		handler: (state: MailboxTracker) => void,
 	): Promise<UnsubscribeFn>;
 	subscribeSyncState(
-		mailboxId: MailboxId,
 		handler: (state: MailboxSyncState) => void,
+		mailboxId: MailboxId,
 	): Promise<UnsubscribeFn>;
 }
-
-export type UnsubscribeFn = () => void;
 
 export class TauriMailboxTrackerClient implements MailboxTrackerClient {
 	async subscribeActiveMailboxIds(
@@ -41,13 +43,13 @@ export class TauriMailboxTrackerClient implements MailboxTrackerClient {
 		return () => unregisterChannel(channel);
 	}
 
-	async subscribeTracker(
+	async subscribeConnectionState(
+		handler: (state: MailboxConnectionState) => void,
 		mailboxId: MailboxId,
-		handler: (state: MailboxTracker) => void,
 	): Promise<UnsubscribeFn> {
-		const channel = new Channel<MailboxTracker>();
+		const channel = new Channel<MailboxConnectionState>();
 		channel.onmessage = handler;
-		await invoke('mailbox_subscribe_tracker', {
+		await invoke('mailbox_subscribe_connection_state', {
 			mailboxId,
 			onEvent: channel,
 		});
@@ -55,8 +57,8 @@ export class TauriMailboxTrackerClient implements MailboxTrackerClient {
 	}
 
 	async subscribeSyncState(
-		mailboxId: MailboxId,
 		handler: (state: MailboxSyncState) => void,
+		mailboxId: MailboxId,
 	): Promise<UnsubscribeFn> {
 		const channel = new Channel<MailboxSyncState>();
 		channel.onmessage = handler;

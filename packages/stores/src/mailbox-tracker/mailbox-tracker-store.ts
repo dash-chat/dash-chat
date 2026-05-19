@@ -1,71 +1,22 @@
-import { type ReactivePromise, reactive, relay } from 'signalium';
+import { reactive } from 'signalium';
 
 import type { DeviceId, TopicId } from '../p2panda/types';
-import type {
-	MailboxTrackerClient,
-	UnsubscribeFn,
-} from './mailbox-tracker-client';
-import type { MailboxId, MailboxSyncState, MailboxTracker } from './types';
-
-function bridgeUnsub(pending: Promise<UnsubscribeFn>): UnsubscribeFn {
-	let unsub: UnsubscribeFn | undefined;
-	let cancelled = false;
-	void pending.then(u => {
-		if (cancelled) u();
-		else unsub = u;
-	});
-	return () => {
-		cancelled = true;
-		unsub?.();
-	};
-}
+import { buildReactiveChannel } from '../utils/tauri-channel';
+import type { MailboxTrackerClient } from './mailbox-tracker-client';
+import type { MailboxId } from './types';
 
 export class MailboxTrackerStore {
 	constructor(public client: MailboxTrackerClient) {}
 
-	activeMailboxIds = reactive(
-		(): ReactivePromise<MailboxId[]> =>
-			relay<MailboxId[]>(state =>
-				bridgeUnsub(
-					this.client.subscribeActiveMailboxIds(ids => {
-						state.value = ids;
-					}),
-				),
-			),
+	activeMailboxIds = buildReactiveChannel(
+		this.client.subscribeActiveMailboxIds,
 	);
 
-	allMailboxIds = reactive(
-		(): ReactivePromise<MailboxId[]> =>
-			relay<MailboxId[]>(state =>
-				bridgeUnsub(
-					this.client.subscribeAllMailboxIds(ids => {
-						state.value = ids;
-					}),
-				),
-			),
-	);
+	allMailboxIds = buildReactiveChannel(this.client.subscribeAllMailboxIds);
 
-	tracker = reactive(
-		(mailboxId: MailboxId): ReactivePromise<MailboxTracker> =>
-			relay<MailboxTracker>(state =>
-				bridgeUnsub(
-					this.client.subscribeTracker(mailboxId, s => {
-						state.value = s;
-					}),
-				),
-			),
-	);
+	connectionState = buildReactiveChannel(this.client.subscribeConnectionState);
 
-	syncState = reactive(
-		(mailboxId: MailboxId): ReactivePromise<MailboxSyncState> =>
-			relay<MailboxSyncState>(state =>
-				bridgeUnsub(
-					this.client.subscribeSyncState(mailboxId, s => {
-						state.value = s;
-					}),
-				),
-			),
-	);
+	syncState = buildReactiveChannel(this.client.subscribeSyncState);
 
 	/// Per-(topic, author) view across every mailbox we've ever synced with.
 	/// Recomputes when `allMailboxIds` or any per-mailbox `syncState` changes.

@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use dashchat_node::{topic::TopicId, DeviceId, Node};
-use mailbox_client::{manager::MailboxTracker, sync_tracker::MailboxSyncState, MailboxId};
+use mailbox_client::{manager::MailboxConnectionState, sync_tracker::MailboxSyncState, MailboxId};
 use serde::Serialize;
 use tauri::{ipc::Channel, State};
 use tokio::sync::watch;
@@ -41,17 +41,17 @@ pub async fn mailbox_subscribe_all_ids(
 }
 
 #[tauri::command]
-pub async fn mailbox_subscribe_tracker(
+pub async fn mailbox_subscribe_connection_state(
     mailbox_id: MailboxId,
-    on_event: Channel<MailboxTracker>,
+    on_event: Channel<MailboxConnectionState>,
     node: State<'_, Node>,
 ) -> Result<(), String> {
-    let tracked = node
+    let mailbox = node
         .mailboxes
         .tracked_mailbox(&mailbox_id)
         .await
         .ok_or_else(|| format!("unknown mailbox {mailbox_id}"))?;
-    forward(tracked.tracker(), on_event).await
+    forward(mailbox.connection_state(), on_event).await
 }
 
 #[tauri::command]

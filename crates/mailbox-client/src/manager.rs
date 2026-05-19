@@ -63,7 +63,7 @@ pub struct LastError {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct MailboxTracker {
+pub struct MailboxConnectionState {
     pub status: SyncStatus,
     pub consecutive_errors: u32,
     #[serde(rename = "next_poll_in_ms", serialize_with = "ser_next_poll_in_ms")]
@@ -82,7 +82,7 @@ fn ser_next_poll_in_ms<S: Serializer>(next: &Instant, s: S) -> Result<S::Ok, S::
     s.serialize_i64(ms)
 }
 
-impl MailboxTracker {
+impl MailboxConnectionState {
     fn new() -> Self {
         Self {
             status: SyncStatus::Active,
@@ -132,33 +132,38 @@ impl MailboxTracker {
 /// as `Arc<TrackedMailbox<...>>` so cheap clones can be handed out to subscribers.
 pub struct TrackedMailbox<Item: MailboxItem> {
     pub(crate) client: Arc<dyn MailboxClient<Item>>,
-    pub(crate) tracker: watch::Sender<MailboxTracker>,
+    pub(crate) connection_state: watch::Sender<MailboxConnectionState>,
 }
 
 impl<Item: MailboxItem> TrackedMailbox<Item> {
     fn new(client: Arc<dyn MailboxClient<Item>>) -> Self {
-        let (tracker, _) = watch::channel(MailboxTracker::new());
-        Self { client, tracker }
+        let (tracker, _) = watch::channel(MailboxConnectionState::new());
+        Self {
+            client,
+            connection_state: tracker,
+        }
     }
 
-    pub fn tracker(&self) -> watch::Receiver<MailboxTracker> {
-        self.tracker.subscribe()
+    pub fn connection_state(&self) -> watch::Receiver<MailboxConnectionState> {
+        self.connection_state.subscribe()
     }
 
     fn record_success(&self, config: &MailboxesConfig) {
-        self.tracker.send_modify(|t| t.record_success(config));
+        self.connection_state
+            .send_modify(|t| t.record_success(config));
     }
 
     fn record_error(&self, config: &MailboxesConfig, err: String) {
-        self.tracker.send_modify(|t| t.record_error(config, err));
+        self.connection_state
+            .send_modify(|t| t.record_error(config, err));
     }
 
     fn reschedule(&self, config: &MailboxesConfig) {
-        self.tracker.send_modify(|t| t.reschedule(config));
+        self.connection_state.send_modify(|t| t.reschedule(config));
     }
 
     fn wakeup(&self) {
-        self.tracker.send_modify(|t| t.wakeup());
+        self.connection_state.send_modify(|t| t.wakeup());
     }
 }
 
@@ -346,10 +351,10 @@ where
         let now = Instant::now();
         let (id, tracked) = mm
             .iter()
-            .min_by_key(|(_, t)| t.tracker().borrow().next_poll)
+            .min_by_key(|(_, t)| t.connection_state().borrow().next_poll)
             .unwrap();
 
-        let next = tracked.tracker().borrow().next_poll;
+        let next = tracked.connection_state().borrow().next_poll;
         let wait = if next <= now {
             Duration::ZERO
         } else {
@@ -384,7 +389,7 @@ where
 
         tracing::info!("polling mailbox {id}");
         let result = self
-            .sync_topics(topics.into_iter(), id, &tracked_mailbox.client)
+            .sync_topics(topics.into_iter(), &tracked_mailbox.client)
             .await;
 
         match result {
@@ -392,7 +397,7 @@ where
             Err(err) => {
                 tracing::error!(?err, mailbox = %id, "mailbox sync error");
                 tracked_mailbox.record_error(&self.config, format!("{err:?}"));
-                let tracker = tracked_mailbox.tracker();
+                let tracker = tracked_mailbox.connection_state();
                 let tracker = tracker.borrow();
                 tracing::info!(
                     mailbox = %id,
@@ -410,7 +415,6 @@ where
     async fn sync_topics(
         &self,
         topics: impl Iterator<Item = Item::Topic>,
-        mailbox_id: &MailboxId,
         mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<()> {
         let mut request = BTreeMap::new();
@@ -500,8 +504,8 @@ where
         mailbox.publish(ops_to_publish).await?;
 
         acks.extend(publish_acks);
-        if let Err(err) = self.sync_tracker.record_synced(mailbox_id, &acks).await {
-            tracing::error!(?err, mailbox = %mailbox_id, "failed to record sync watermarks");
+        if let Err(err) = self.sync_tracker.record_synced(&mailbox.id(), &acks).await {
+            tracing::error!(?err, mailbox = %&mailbox.id(), "failed to record sync watermarks");
         }
 
         Ok(())
@@ -589,7 +593,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn tracker_starts_active() {
-        let tracker = MailboxTracker::new();
+        let tracker = MailboxConnectionState::new();
         assert_eq!(tracker.status, SyncStatus::Active);
         assert_eq!(tracker.consecutive_errors, 0);
     }
@@ -597,7 +601,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_success_resets_to_active() {
         let config = test_config();
-        let mut tracker = MailboxTracker::new();
+        let mut tracker = MailboxConnectionState::new();
 
         // Accumulate some errors first
         tracker.record_error(&config, "x".into());
@@ -615,7 +619,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_error_transitions() {
         let config = test_config();
-        let mut tracker = MailboxTracker::new();
+        let mut tracker = MailboxConnectionState::new();
 
         // 1 error: still Active
         tracker.record_error(&config, "x".into());
@@ -642,7 +646,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_next_poll_after_success() {
         let config = test_config();
-        let mut tracker = MailboxTracker::new();
+        let mut tracker = MailboxConnectionState::new();
 
         let before = Instant::now();
         tracker.record_success(&config);
@@ -654,7 +658,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_next_poll_after_errors() {
         let config = test_config();
-        let mut tracker = MailboxTracker::new();
+        let mut tracker = MailboxConnectionState::new();
         let delay = config.between_polls_delay;
 
         // First error: still Active interval
@@ -804,7 +808,7 @@ mod tests {
             t.record_error(&config, "x".into());
             t.record_error(&config, "x".into());
             t.record_error(&config, "x".into());
-            assert_eq!(t.tracker().borrow().status, SyncStatus::Stopped);
+            assert_eq!(t.connection_state().borrow().status, SyncStatus::Stopped);
         }
 
         let (_found_id, wait) = mgr.find_next_due().await.unwrap();
@@ -938,7 +942,7 @@ mod tests {
             t.record_error(&config, "x".into());
             t.record_error(&config, "x".into());
             t.record_error(&config, "x".into());
-            assert_eq!(t.tracker().borrow().status, SyncStatus::Stopped);
+            assert_eq!(t.connection_state().borrow().status, SyncStatus::Stopped);
         }
 
         let (_, wait) = mgr.find_next_due().await.unwrap();
@@ -950,7 +954,7 @@ mod tests {
         assert_eq!(found_id, id);
         assert_eq!(wait, Duration::ZERO);
         let mm = mgr.mailboxes.lock().await;
-        let tracker = mm.get(&id).unwrap().tracker();
+        let tracker = mm.get(&id).unwrap().connection_state();
         let tracker = tracker.borrow();
         assert_eq!(tracker.status, SyncStatus::Active);
         assert_eq!(tracker.consecutive_errors, 0);
@@ -983,7 +987,7 @@ mod tests {
         {
             let mm = mgr.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
-            t.tracker.send_modify(|s| {
+            t.connection_state.send_modify(|s| {
                 s.status = SyncStatus::Stopped;
                 s.consecutive_errors = 100;
                 s.next_poll = Instant::now() + Duration::from_secs(600);
@@ -1005,7 +1009,7 @@ mod tests {
         assert_eq!(poll_count.load(Ordering::Relaxed), 2);
         let mm = mgr.mailboxes.lock().await;
         assert_eq!(
-            mm.get(&id).unwrap().tracker().borrow().status,
+            mm.get(&id).unwrap().connection_state().borrow().status,
             SyncStatus::Active
         );
     }
@@ -1146,14 +1150,14 @@ mod tests {
             let mm = mgr.mailboxes.lock().await;
             for id in &degraded_ids {
                 let t = mm.get(id).unwrap();
-                t.tracker.send_modify(|s| {
+                t.connection_state.send_modify(|s| {
                     s.status = SyncStatus::Degraded;
                     s.consecutive_errors = 1; // at degraded_threshold
                 });
             }
             for id in &stopped_ids {
                 let t = mm.get(id).unwrap();
-                t.tracker.send_modify(|s| {
+                t.connection_state.send_modify(|s| {
                     s.status = SyncStatus::Stopped;
                     s.consecutive_errors = 1000; // at stopped_threshold
                 });
