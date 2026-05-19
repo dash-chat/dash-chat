@@ -1,4 +1,4 @@
-use crate::{DashAction, topic::TopicKind};
+use crate::topic::TopicKind;
 
 use super::*;
 
@@ -7,55 +7,26 @@ impl Node {
     pub(super) async fn author_operation<K: TopicKind>(
         &self,
         topic: Topic<K>,
-        action: impl Into<DashAction>,
+        payload: impl Into<Payload>,
         alias: Option<&str>,
     ) -> Result<Header, anyhow::Error> {
-        let action = action.into();
+        // @TODO: publish operation on p2panda node. It should be processed after being received
+        // on the subscription stream.
+        //
+        // For reference see:
+        //
+        // self.process_operation(op.clone(), true, false).await?;
+        // let Operation {
+        //     header,
+        //     body: _,
+        //     hash,
+        // } = op;
 
-        let op = self
-            .op_store
-            .author_operation(
-                &self.node_keys.private_key,
-                topic.clone(),
-                action.clone(),
-                alias,
-            )
-            .await?;
+        // @TODO: bring back this logging.
+        // tracing::debug!(?topic, hash = ?hash, "authored operation");
 
         self.mailboxes.trigger_sync();
 
-        self.process_authored_ingested_operation(op).await
-    }
-
-    pub(crate) async fn process_authored_ingested_operation(
-        &self,
-        op: Operation,
-    ) -> Result<Header, anyhow::Error> {
-        let topic = op.header.extensions.topic;
-        self.process_operation(op.clone(), true, false).await?;
-        let Operation {
-            header,
-            body: _,
-            hash,
-        } = op;
-
-        // self.notify_payload(&header, &payload).await?;
-        tracing::debug!(?topic, hash = ?hash, "authored operation");
-
-        #[cfg(feature = "p2p")]
-        match self.initialized_topics.read().await.get(&topic) {
-            Some(gossip) => {
-                gossip
-                    .send(ToNetwork::Message {
-                        bytes: encode_gossip_message(&header, body.as_ref())?,
-                    })
-                    .await?;
-            }
-            None => {
-                tracing::error!(?topic, "no gossip channel found for topic");
-            }
-        }
-
-        Ok(header)
+        todo!();
     }
 }

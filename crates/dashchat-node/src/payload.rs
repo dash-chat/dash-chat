@@ -123,43 +123,64 @@ pub enum Payload {
     /// Data only seen within your private device group.
     /// No other person sees these.
     DeviceGroup(DeviceGroupPayload),
-}
 
-#[derive(Clone, Debug, Serialize, Deserialize, RenameAll, derive_more::From)]
-#[serde(tag = "type", content = "payload")]
-pub enum DashAction {
-    Payload(Payload),
+    // @TODO: these will be removed once spaces is integrated into p2panda node as they will move
+    // onto the provided extension type.
+    /// Groups control message.
     #[named_id(skip)]
     GroupControl(GroupsArgs),
 }
 
-impl DashAction {
-    pub fn try_into_body(&self) -> Result<Option<Body>, EncodeError> {
-        Ok(match self {
-            DashAction::Payload(payload) => Some(payload.try_into_body()?),
-            DashAction::GroupControl(_) => None,
-        })
-    }
-
-    pub fn extract_auth_extension(&self) -> Option<GroupsArgs> {
-        match self {
-            DashAction::GroupControl(auth) => Some(auth.clone()),
-            _ => None,
-        }
-    }
-
-    pub fn group_action(
+impl Payload {
+    pub fn group_control(
         group_id: ChatId,
         action: GroupAction<VerifyingKey, ()>,
         dependencies: Vec<Hash>,
     ) -> anyhow::Result<Self> {
-        Ok(DashAction::GroupControl(GroupsArgs {
+        Ok(Payload::GroupControl(GroupsArgs {
             group_id: group_id.to_group_pubkey()?,
             action,
             dependencies,
         }))
     }
 }
+
+//
+// #[derive(Clone, Debug, Serialize, Deserialize, RenameAll, derive_more::From)]
+// #[serde(tag = "type", content = "payload")]
+// pub enum DashAction {
+//     Payload(Payload),
+//     #[named_id(skip)]
+//     GroupControl(GroupsArgs),
+// }
+//
+// impl DashAction {
+//     pub fn try_into_body(&self) -> Result<Option<Body>, EncodeError> {
+//         Ok(match self {
+//             DashAction::Payload(payload) => Some(payload.try_into_body()?),
+//             DashAction::GroupControl(_) => None,
+//         })
+//     }
+//
+//     pub fn extract_auth_extension(&self) -> Option<GroupsArgs> {
+//         match self {
+//             DashAction::GroupControl(auth) => Some(auth.clone()),
+//             _ => None,
+//         }
+//     }
+//
+//     pub fn group_action(
+//         group_id: ChatId,
+//         action: GroupAction<VerifyingKey, ()>,
+//         dependencies: Vec<Hash>,
+//     ) -> anyhow::Result<Self> {
+//         Ok(DashAction::GroupControl(GroupsArgs {
+//             group_id: group_id.to_group_pubkey()?,
+//             action,
+//             dependencies,
+//         }))
+//     }
+// }
 
 impl Cbor for Payload {}
 impl AsBody for Payload {}

@@ -33,7 +33,7 @@ use crate::payload::{
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DashAction, DeviceGroupId, DeviceGroupPayload, DeviceId,
+    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
     DirectChatId, Header, Operation,
 };
 
@@ -277,7 +277,7 @@ impl Node {
         ];
         self.author_operation(
             topic,
-            DashAction::group_action(topic, GroupAction::Create { initial_members }, deps)?,
+            Payload::group_control(topic, GroupAction::Create { initial_members }, deps)?,
             Some(&format!("create_direct_chat_space({})", topic.renamed())),
         )
         .await?;
@@ -328,7 +328,7 @@ impl Node {
         let deps = self.group_store.heads(*chat_id).await?;
         self.author_operation(
             chat_id,
-            DashAction::group_action(chat_id, GroupAction::Create { initial_members }, deps)?,
+            Payload::group_control(chat_id, GroupAction::Create { initial_members }, deps)?,
             Some(&format!("create_group({})", chat_id.renamed())),
         )
         .await?;
@@ -373,7 +373,7 @@ impl Node {
 
         self.author_operation(
             chat_id,
-            DashAction::group_action(
+            Payload::group_control(
                 chat_id,
                 GroupAction::Add {
                     member: GroupMember::Individual(member),
@@ -407,7 +407,7 @@ impl Node {
         let deps = self.group_store.heads(*chat_id).await?;
         self.author_operation(
             chat_id,
-            DashAction::group_action(
+            Payload::group_control(
                 chat_id,
                 GroupAction::Remove {
                     member: GroupMember::Individual(member),

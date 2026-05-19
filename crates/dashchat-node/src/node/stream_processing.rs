@@ -250,6 +250,7 @@ impl Node {
         // XXX: don't repair this often.
         // Box::pin(self.repair_spaces_and_publish()).await?;
 
+        // @TODO: clarify if this is needed.
         self.op_store.mark_op_processed(topic, &hash);
 
         anyhow::Ok(())
@@ -392,6 +393,10 @@ impl Node {
             Payload::DeviceGroup(_) => {
                 // Nothing to do.
             }
+            Payload::GroupControl(groups_args) => {
+                // @TODO: process the groups control message.    
+                todo!()
+            },
         }
         Ok(())
     }

@@ -8,23 +8,17 @@ use std::{
 use p2panda_core::{Hash, SeqNum};
 use p2panda_store::{SqliteStore, logs::LogStore};
 
-use tokio::sync::Mutex;
-
-use crate::{
-    mailbox::MailboxOperation,
-    payload::Extensions,
-    topic::{Topic, TopicId, TopicKind},
-    util::first,
-    *,
-};
+use crate::{mailbox::MailboxOperation, topic::TopicId, util::first, *};
 
 #[derive(Clone, derive_more::Deref, derive_more::DerefMut)]
 pub struct OpStore {
     #[deref]
     #[deref_mut]
     pub(crate) store: SqliteStore,
+    // @TODO: This appears to only be used in the test node where there is a note about removing
+    // or refactoring that code in any case. I believe it can be removed but will wait to confirm
+    // this.
     pub processed_ops: Arc<RwLock<HashMap<TopicId, HashSet<Hash>>>>,
-    write_mutex: Arc<Mutex<()>>,
 }
 
 impl OpStore {
@@ -47,7 +41,6 @@ impl OpStore {
         let store = SqliteStore::from_pool(pool);
         Ok(Self {
             store,
-            write_mutex: Arc::new(Mutex::new(())),
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -55,7 +48,6 @@ impl OpStore {
     pub async fn from_sqlite(store: SqliteStore) -> anyhow::Result<Self> {
         Ok(Self {
             store,
-            write_mutex: Arc::new(Mutex::new(())),
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -96,89 +88,6 @@ impl OpStore {
         topic: &TopicId,
     ) -> Result<BTreeMap<DeviceId, SeqNum>, anyhow::Error> {
         queries::get_log_heights_by_author(&self.store, topic).await
-    }
-
-    pub async fn author_operation<K: TopicKind>(
-        &self,
-        private_key: &SigningKey,
-        topic: Topic<K>,
-        payload: DashAction,
-        alias: Option<&str>,
-    ) -> Result<Operation, anyhow::Error> {
-        let device_id = DeviceId::from(private_key.verifying_key());
-        let topic = topic.clone();
-
-        let body = payload.try_into_body()?;
-
-        let lock = self.write_mutex.lock().await;
-        let latest_operation: Option<Operation> =
-            self.store.get_latest_entry(&device_id, &*topic).await?;
-
-        let (seq_num, backlink) = match latest_operation {
-            Some(op) => (op.header.seq_num + 1, Some(op.hash)),
-            None => (0, None),
-        };
-
-        let extensions = Extensions {
-            topic: topic.clone().into(),
-            auth: payload.extract_auth_extension(),
-        };
-
-        let timestamp = Timestamp::now();
-
-        let mut header = Header {
-            version: 1,
-            verifying_key: *device_id,
-            signature: None,
-            payload_size: body.as_ref().map_or(0, |body| body.size()),
-            payload_hash: body.as_ref().map(|body| body.hash()),
-            timestamp,
-            seq_num,
-            backlink,
-            extensions,
-        };
-
-        header.sign(private_key);
-
-        let topic = header.extensions.topic;
-        let hash = header.hash();
-
-        // if let Some(alias) = alias {
-        //     header.hash().with_name(alias);
-        // } else {
-        //     header.hash().with_serial();
-        // }
-
-        tracing::info!(
-            topic = ?topic.renamed(),
-            hash = ?hash,
-            seq_num = header.seq_num,
-            "PUB: authoring operation"
-        );
-
-        let operation = Operation {
-            hash,
-            header: header.clone(),
-            body,
-        };
-
-        let new = p2panda_stream::ingest::ingest_operation(
-            &mut *self.clone(),
-            &operation,
-            &*topic,
-            &topic,
-            false,
-        )
-        .await?;
-
-        if new {
-            self.mark_op_processed(topic, &hash);
-        }
-
-        // Let the next op be authored as soon as this one's ingested
-        drop(lock);
-
-        Ok(operation)
     }
 
     /// Get the interleaved logs for a topic and a list of authors.
