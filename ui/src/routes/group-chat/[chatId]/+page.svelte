@@ -98,6 +98,7 @@
 									<div class="self-end max-w-[85%]">
 										<MessageFromMe
 											{message}
+											{chatId}
 											position="single"
 											myDeviceId={myDeviceId}
 											searchQuery=""
