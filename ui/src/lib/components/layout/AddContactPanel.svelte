@@ -34,9 +34,8 @@
 	import MyQrCodeCard from '$lib/components/contacts/MyQrCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
 	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
-	import QrCodeUploader from '$lib/components/contacts/QrCodeUploader.svelte';
 
-	type TabName = 'code' | 'scan' | 'upload';
+	type TabName = 'code' | 'scan';
 
 	let { showBack = true }: { showBack?: boolean } = $props();
 
@@ -183,7 +182,7 @@
 							style="align-items: center; justify-content: center"
 						>
 							<Button
-								class="w-22"
+								class="w-24"
 								small
 								rounded
 								tonal={tab !== 'code'}
@@ -193,23 +192,13 @@
 							</Button>
 
 							<Button
-								class="w-22"
+								class="w-24"
 								small
 								rounded
 								tonal={tab !== 'scan'}
 								onClick={() => void switchTab('scan')}
 								data-testid="add-contact-scan-tab"
 								>{m.scan()}
-							</Button>
-
-							<Button
-								class="w-22"
-								small
-								rounded
-								tonal={tab !== 'upload'}
-								onClick={() => void switchTab('upload')}
-								data-testid="add-contact-upload-tab"
-								>{m.upload()}
 							</Button>
 						</div>
 					{:else}
@@ -230,12 +219,6 @@
 									onclick={() => void switchTab('scan')}
 									label={m.scan()}
 									data-testid="add-contact-scan-tab"
-								/>
-								<TabbarLink
-									active={tab === 'upload'}
-									onclick={() => void switchTab('upload')}
-									label={m.upload()}
-									data-testid="add-contact-upload-tab"
 								/>
 							</ToolbarPane>
 						</Tabbar>
@@ -298,11 +281,6 @@
 			{/await}
 		{:else if tab === 'scan'}
 			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveCode} />
-		{:else if tab === 'upload'}
-			<QrCodeUploader
-				onSelectImage={receiveCode}
-				onError={() => void switchTab('code')}
-			/>
 		{/if}
 	</Page>
 {/if}
