@@ -280,12 +280,11 @@
 							</div>
 						</div>
 					</div>
+					<QrCodeUploader bind:this={uploaderRef} onSelectImage={receiveCode} />
 				{/await}
 			{/await}
 		{:else if tab === 'scan'}
 			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveCode} />
 		{/if}
-
-		<QrCodeUploader bind:this={uploaderRef} onSelectImage={receiveCode} />
 	</Page>
 {/if}
