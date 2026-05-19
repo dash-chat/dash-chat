@@ -34,6 +34,7 @@ export const S = {
 		saveButton: tid('add-contact-save-btn'),
 		uploadButton: tid('add-contact-upload-btn'),
 		selectImageButton: tid('add-contact-select-image-btn'),
+		fileInput: tid('add-contact-file-input'),
 		colorButton: tid('add-contact-color-btn'),
 	},
 	directChat: {

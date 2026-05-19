@@ -40,5 +40,6 @@
 	accept="image/*"
 	bind:this={imageFilePicker}
 	class="hidden"
+	data-testid="add-contact-file-input"
 	onchange={onImageSelected}
 />
