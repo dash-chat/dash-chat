@@ -22,6 +22,7 @@ dashchat-compat = { path = "crates/dashchat-compat" }
 mailbox-client = { path = "crates/mailbox-client", features = ["named-id"] }
 mailbox-server = { path = "crates/mailbox-server" }
 
+p2panda = { git = "https://github.com/p2panda/p2panda", rev = "0f5220a46b374829aeca558106cf98b89a1bac74" }
 p2panda-auth = { git = "https://github.com/p2panda/p2panda", rev = "0f5220a46b374829aeca558106cf98b89a1bac74", features = [
   "processor",
 ] }

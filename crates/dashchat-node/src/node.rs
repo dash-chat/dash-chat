@@ -13,13 +13,14 @@ use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use named_id::Rename;
 use named_id::*;
+use p2panda::{Node as P2PandaNode};
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
 use p2panda_core::{Hash, VerifyingKey};
 use p2panda_spaces::ActorId;
 use p2panda_store::SqliteStore;
-use tokio::sync::mpsc;
+use tokio::sync::{RwLock, mpsc};
 
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 
@@ -37,6 +38,8 @@ use crate::{
 };
 
 pub use stream_processing::Notification;
+
+const NETWORK_ID: &'static str = "dash-chat";
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
@@ -77,6 +80,8 @@ pub type DashResolver = StrongRemove<VerifyingKey, Hash, Operation, ()>;
 
 #[derive(Clone)]
 pub struct Node {
+    pub p2panda: Arc<RwLock<P2PandaNode>>,
+    
     pub op_store: OpStore,
 
     pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
@@ -132,14 +137,25 @@ impl Node {
         notification_tx: Option<mpsc::Sender<Notification>>,
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
-        let op_store = OpStore::new(filesystem.op_store_path()).await?;
-        let group_store = GroupStore::new(op_store.store.clone());
-
         let (subscription_tx, subscription_rx) = mpsc::channel(100);
+
+        // @TODO: configure relay and initial bootstrap nodes.
+        let builder = P2PandaNode::builder()
+            .network_id(Hash::digest(NETWORK_ID.as_bytes()).into())
+            .signing_key(node_keys.private_key.clone());
+
+        let p2panda = builder.spawn().await?;
+
+        // @TODO: the store() method is behind the "test_utils" feature flag, if we actually do
+        // need access to the store then we should make this method public.
+        let store = p2panda.store();
+        let group_store = GroupStore::new(store.clone());
+        let op_store = OpStore::from_sqlite(store.clone()).await?;
 
         let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
 
         let mut node = Self {
+            p2panda: Arc::new(RwLock::new(p2panda)),
             op_store,
             mailboxes,
             config,
