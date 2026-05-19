@@ -1,9 +1,9 @@
 import type { MailboxTrackerClient } from '../mailbox-tracker/mailbox-tracker-client';
 import {
-	PRODUCTION_MAILBOX_ID,
 	type MailboxConnectionState,
 	type MailboxId,
 	type MailboxSyncState,
+	PRODUCTION_MAILBOX_ID,
 } from '../mailbox-tracker/types';
 import type { UnsubscribeFn } from '../utils/tauri-channel';
 
