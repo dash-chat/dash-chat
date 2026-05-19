@@ -26,7 +26,7 @@
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myAgentId = useReactivePromise(contactsStore.myAgentId);
+	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
@@ -91,15 +91,15 @@
 		{#await $allMembers then members}
 			<div class="center-in-desktop" style="flex:1">
 				<div class="column m-2 gap-2">
-					{#await $myAgentId then myActorId}
+					{#await $myDeviceId then myDeviceId}
 						{#await $messages then messages}
 							{#each messages as message}
-								{#if myActorId == message.author}
+								{#if myDeviceId == message.author}
 									<div class="self-end max-w-[85%]">
 										<MessageFromMe
 											{message}
 											position="single"
-											myDeviceId={myActorId}
+											myDeviceId={myDeviceId}
 											searchQuery=""
 											onToggleReaction={() => {}}
 										/>
@@ -117,7 +117,7 @@
 										<MessageFromOthers
 											{message}
 											position="single"
-											myDeviceId={myActorId}
+											myDeviceId={myDeviceId}
 											searchQuery=""
 											onToggleReaction={() => {}}
 										/>
