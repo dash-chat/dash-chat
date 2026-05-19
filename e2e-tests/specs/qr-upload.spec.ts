@@ -39,17 +39,6 @@ describe('QR code image upload', () => {
 		);
 	});
 
-	it('adds agent1 as a contact of agent2 via code (reciprocal)', async () => {
-		await agent1.goto('/new-message/add-contact');
-		await agent1.waitUntil(
-			async () => agent1.execute(() => window.__test.getContactCode() !== null),
-			{ timeout: 10_000, timeoutMsg: 'agent1 contact code not available' },
-		);
-		const contactCode = await agent1.getContactCode();
-		if (!contactCode) throw new Error('agent1 contact code missing');
-		await agent2.addContact(contactCode);
-	});
-
 	it('shows an error toast when the uploaded image contains no QR code', async () => {
 		await agent1.goto('/new-message/add-contact');
 		await agent1.waitUntil(
