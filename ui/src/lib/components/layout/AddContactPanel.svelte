@@ -34,6 +34,7 @@
 	import MyQrCodeCard from '$lib/components/contacts/MyQrCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
 	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
+	import QrCodeUploader from '$lib/components/contacts/QrCodeUploader.svelte';
 
 	type TabName = 'code' | 'scan';
 
@@ -48,6 +49,7 @@
 
 	let tab = $state<TabName>('code');
 	let scannerRef: QrCodeScanner | null = $state(null);
+	let uploadOpen = $state(false);
 
 	async function receiveCode(code: string) {
 		try {
@@ -247,6 +249,9 @@
 								{isMobile}
 								onShare={() => shareCode(code)}
 								onSave={() => saveCode(code, color)}
+								onUpload={() => {
+									uploadOpen = true;
+								}}
 								onOpenColorPicker={openColorPicker}
 							/>
 
@@ -281,6 +286,18 @@
 			{/await}
 		{:else if tab === 'scan'}
 			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveCode} />
+		{/if}
+
+		{#if uploadOpen}
+			<QrCodeUploader
+				onSelectImage={async code => {
+					uploadOpen = false;
+					await receiveCode(code);
+				}}
+				onError={() => {
+					uploadOpen = false;
+				}}
+			/>
 		{/if}
 	</Page>
 {/if}

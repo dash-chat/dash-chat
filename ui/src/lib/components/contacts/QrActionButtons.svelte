@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiShareVariant, mdiTrayArrowDown, mdiPalette } from '@mdi/js';
+	import {
+		mdiShareVariant,
+		mdiTrayArrowDown,
+		mdiPalette,
+		mdiUpload,
+	} from '@mdi/js';
 	import LabelledIconButton from '$lib/components/contacts/LabelledIconButton.svelte';
 
 	type ActionHandler = () => void | Promise<void>;
@@ -9,11 +14,13 @@
 		isMobile,
 		onShare,
 		onSave,
+		onUpload,
 		onOpenColorPicker,
 	}: {
 		isMobile: boolean;
 		onShare: ActionHandler;
 		onSave: ActionHandler;
+		onUpload: ActionHandler;
 		onOpenColorPicker: ActionHandler;
 	} = $props();
 </script>
@@ -33,6 +40,12 @@
 			icon={mdiTrayArrowDown}
 			onClick={onSave}
 			testId="add-contact-save-btn"
+		/>
+		<LabelledIconButton
+			label={m.upload()}
+			icon={mdiUpload}
+			onClick={onUpload}
+			testId="add-contact-upload-btn"
 		/>
 	{/if}
 
