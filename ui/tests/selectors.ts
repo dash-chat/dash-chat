@@ -30,6 +30,11 @@ export const S = {
 		qrCode: 'wa-qr-code',
 		copyButton: tid('add-contact-copy-btn'),
 		codeInput: tid('add-contact-code-input'),
+		shareButton: tid('add-contact-share-btn'),
+		saveButton: tid('add-contact-save-btn'),
+		uploadButton: tid('add-contact-upload-btn'),
+		selectImageButton: tid('add-contact-select-image-btn'),
+		colorButton: tid('add-contact-color-btn'),
 	},
 	directChat: {
 		page: tid('direct-chat-page'),

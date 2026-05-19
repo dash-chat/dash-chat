@@ -25,7 +25,6 @@
 	} = $props();
 </script>
 
-<!-- Action buttons: Link, Share, Save, Color -->
 <div class="row gap-4" style="justify-content: center;">
 	{#if isMobile}
 		<LabelledIconButton
