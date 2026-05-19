@@ -1,14 +1,17 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
-use dashchat_node::{AsBody, Payload, Topic};
+use dashchat_node::{AsBody, Payload};
 #[cfg(target_os = "android")]
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
+#[cfg(target_os = "android")]
+use tauri::Manager;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
+use crate::notifications;
 
 #[cfg(target_os = "android")]
 use super::android::setup_android_logs;
@@ -29,6 +32,21 @@ pub fn receive_push_notification(
     notification: NotificationData,
     context: ReceivePushNotificationContext,
 ) -> Option<NotificationData> {
+    // When the main app is already alive its sync pipeline will handle this op via `show_sync_notification`.
+    // All we need to do is poke the live node so its mailbox sync picks up the op promptly.
+    //
+    // iOS doesn't hit this branch because the NSE runs in a separate process where `APP_HANDLE` is never set.
+    #[cfg(target_os = "android")]
+    if let Some(node) = crate::APP_HANDLE
+        .get()
+        .and_then(|h| h.try_state::<dashchat_node::Node>())
+    {
+        node.mailboxes
+            .wakeup(crate::mailbox::PRODUCTION_MAILBOX_ID.to_string());
+        log::info!("Push arrived while main app is alive; deferring to sync pipeline");
+        return None;
+    }
+
     crate::utils::install_crypto_provider();
 
     #[cfg(target_os = "android")]
@@ -63,7 +81,7 @@ pub fn receive_push_notification(
                     // TODO: apply for the exception to Apple that allows apps to not need to show a notification
                     // https://developer.apple.com/contact/request/notification-service
                     #[cfg(target_os = "ios")]
-                    return Some(synced_generic_notification());
+                    return Some(notifications::synced_generic_notification());
                 }
                 result
             }
@@ -73,7 +91,7 @@ pub fn receive_push_notification(
                 // raw APNS payload (topic_id as title, author:seq as body).
                 // Show a generic fallback so the user sees something readable.
                 #[cfg(target_os = "ios")]
-                return Some(may_have_new_messages_generic_notification());
+                return Some(notifications::may_have_new_messages_generic_notification());
                 #[cfg(not(target_os = "ios"))]
                 None
             }
@@ -156,175 +174,53 @@ async fn handle_push_notification(
         log::warn!(
             "Operation {op_id} in topic {topic_hex} not found after polling, showing generic notification"
         );
-        return Ok(Some(new_message_generic_notification()));
+        return Ok(Some(notifications::new_message_generic_notification()));
     };
-    let header = operation.header;
-    let body = operation.body;
 
-    // Don't show notifications for our own messages
-    let sender_device_id = dashchat_node::DeviceId::from(header.public_key);
-    if sender_device_id == node.device_id() {
-        return Ok(None);
-    }
-
-    let Some(body) = body else {
-        return Ok(Some(
-            auth_control_op_notification(&node, sender_device_id, op_id, topic_hex).await,
-        ));
-    };
-    let payload = Payload::try_from_body(&body)
-        .map_err(|err| anyhow!("failed to decode payload: {err:?}"))?;
-
-    match payload {
-        Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
-            // Resolve the sender's agent ID and profile name via the contacts table
-            let sender_agent_id = match node.lookup_contact(sender_device_id).await {
-                Ok(agent_id) => agent_id,
-                Err(err) => {
-                    log::error!(
-                        "Failed to lookup contact for sender {sender_device_id:?}: {err:?}"
-                    );
-                    None
-                }
-            };
-
-            let sender_name = if let Some(agent_id) = sender_agent_id {
-                node.local_store
-                    .get_profile(agent_id)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|profile| profile.name)
-            } else {
-                None
-            };
-
-            let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
-
-            let direct_chat_agent_id = sender_agent_id
-                .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic_id);
-            let chat_route = match direct_chat_agent_id {
-                Some(agent_id) => format!("/direct-chats/{}", agent_id.to_hex()),
-                None => format!("/group-chat/{}", hex::encode(&*topic_id)),
-            };
-            let message_text: &str = content.message();
-            let body_text = match message_text.char_indices().nth(200) {
-                Some((idx, _)) => format!("{}...", &message_text[..idx]),
-                None => message_text.to_string(),
-            };
-
-            #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
-            let mut notification_data = NotificationData {
-                title: Some(title),
-                body: Some(body_text),
-                icon: Some("ic_stat_icon".to_string()),
-                group: Some(hex::encode(&*topic_id)),
-                route: Some(chat_route),
-                ..Default::default()
-            };
-
-            // Android-only: reusing a stable id replaces notifications on iOS.
-            #[cfg(target_os = "android")]
-            if direct_chat_agent_id.is_some() {
-                // TODO: XOR with a node specific secret to avoid mining of topic IDs to cause collisions
-                notification_data.id =
-                    i32::from_le_bytes([topic_id[0], topic_id[1], topic_id[2], topic_id[3]]);
-                notification_data.group = Some("dashchat.chats".to_string());
-                notification_data.messaging_style = true;
+    let notified_operations_store = crate::notifications::NotifiedOperationsStore::open(
+        &filesystem.notified_operations_db_path(),
+    )
+    .await
+    .context("failed to open notified operations store")?;
+    match notified_operations_store
+        .record_notified_operation(operation.header.hash())
+        .await
+    {
+        Ok(false) => {
+            // On iOS the NSE must return some content; the main app's
+            // local notification has the same stable id, so iOS will
+            // collapse them into a single banner and the plugin's
+            // `willPresent` callback suppresses it when the user is on
+            // the notification's route.
+            #[cfg(not(target_os = "ios"))]
+            {
+                log::info!("Skipping push notification for op {op_id}: already notified");
+                return Ok(None);
             }
-
-            Ok(Some(notification_data))
+            #[cfg(target_os = "ios")]
+            log::info!("op {op_id} was already notified by the main app; building the same notification so iOS dedups by id");
         }
-        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { code, profile }) => {
-            Ok(Some(NotificationData {
-                title: Some(sonix_i18n::t!("newContactRequest")),
-                body: Some(profile.name),
-                icon: Some("ic_stat_icon".to_string()),
-                group: Some(topic_hex.to_string()),
-                route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
-                ..Default::default()
-            }))
+        Ok(true) => {}
+        Err(err) => {
+            log::error!("Failed to record notified operation: {err:?} — proceeding anyway");
         }
-        _ => Ok(None),
     }
-}
 
-/// Build the user-facing notification for a body-less p2panda auth/control op
-/// (GroupControl: Create/Add/Remove). These carry their data in the header's
-/// auth extension and have no body to decode.
-///
-/// Today this fires for *every* body-less op the NSE sees, and we surface them
-/// all as "contact request accepted" — the most common case (the auth Create
-/// the acceptor authors on a new direct chat space). It will misrepresent
-/// future group `Add`/`Remove` operations.
-///
-/// TODO: once Apple grants the
-/// `com.apple.developer.usernotifications.filtering` entitlement
-/// (https://developer.apple.com/contact/request/notification-service), delete
-/// this helper. The caller should return `Ok(None)` for body-less ops, the NSE
-/// should call `contentHandler(UNMutableNotificationContent())`, and any cases
-/// that DO warrant a notification (real contact-request acceptance, group
-/// member changes) should be implemented by inspecting the auth extension —
-/// distinguishing Create from Add/Remove — instead of this catch-all.
-async fn auth_control_op_notification(
-    node: &dashchat_node::Node,
-    sender_device_id: dashchat_node::DeviceId,
-    op_id: &str,
-    topic_hex: &str,
-) -> NotificationData {
-    let sender_agent_id = node.lookup_contact(sender_device_id).await.ok().flatten();
-    let sender_name = match sender_agent_id {
-        Some(agent_id) => node
-            .local_store
-            .get_profile(agent_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|profile| profile.name),
+    let payload = match operation.body.as_ref() {
+        Some(body) => Some(
+            Payload::try_from_body(body)
+                .map_err(|err| anyhow!("failed to decode payload: {err:?}"))?,
+        ),
         None => None,
     };
-    let title = match &sender_name {
-        Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
-        None => sonix_i18n::t!("contactRequestAcceptedNoName"),
-    };
-    let route = sender_agent_id.map(|aid| format!("/direct-chats/{}", aid.to_hex()));
-    log::info!(
-        "op {op_id} on topic {topic_hex} has no body (auth control op), delivering contact-request-accepted notification"
-    );
-    NotificationData {
-        title: Some(title),
-        body: None,
-        icon: Some("ic_stat_icon".to_string()),
-        route,
-        ..Default::default()
-    }
-}
 
-fn new_message_generic_notification() -> NotificationData {
-    NotificationData {
-        title: Some(sonix_i18n::t!("youHaveANewMessage")),
-        body: None,
-        icon: Some("ic_stat_icon".to_string()),
-        ..Default::default()
-    }
-}
-
-#[cfg(target_os = "ios")]
-fn synced_generic_notification() -> NotificationData {
-    NotificationData {
-        title: Some(sonix_i18n::t!("syncedWithServer")),
-        body: None,
-        icon: Some("ic_stat_icon".to_string()),
-        ..Default::default()
-    }
-}
-
-#[cfg(target_os = "ios")]
-fn may_have_new_messages_generic_notification() -> NotificationData {
-    NotificationData {
-        title: Some(sonix_i18n::t!("mayHaveNewMessages")),
-        body: None,
-        icon: Some("ic_stat_icon".to_string()),
-        ..Default::default()
-    }
+    Ok(
+        notifications::build_notification_data(
+            &node,
+            topic_id,
+            &operation.header,
+            payload.as_ref(),
+        )
+        .await,
+    )
 }

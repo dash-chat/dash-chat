@@ -52,6 +52,7 @@ pub fn init_data_dir() {
 }
 
 const SETTINGS_FILE_NAME: &str = "settings.json";
+const NOTIFIED_OPERATIONS_DB_FILE_NAME: &str = "notified_operations.db";
 #[cfg(desktop)]
 const LOCAL_MAILBOX_DB_FILE_NAME: &str = "local-mailbox.redb";
 #[cfg(desktop)]
@@ -116,6 +117,13 @@ impl FileSystem {
 
     pub fn settings_path(&self) -> PathBuf {
         self.app_data_dir.join(SETTINGS_FILE_NAME)
+    }
+
+    /// SQLite database file backing the `NotifiedOperationsStore` — the
+    /// cross-process record of operations we've already surfaced a system
+    /// notification for.
+    pub fn notified_operations_db_path(&self) -> PathBuf {
+        self.app_data_dir.join(NOTIFIED_OPERATIONS_DB_FILE_NAME)
     }
 
     #[cfg(desktop)]
