@@ -6,14 +6,17 @@
 
 	type SelectImageHandler = (code: string) => void | Promise<void>;
 	type ErrorHandler = (error: unknown) => void | Promise<void>;
+	type CancelHandler = () => void | Promise<void>;
 
 	let {
 		autoOpen = true,
 		onError,
+		onCancel,
 		onSelectImage,
 	}: {
 		autoOpen?: boolean;
 		onError?: ErrorHandler;
+		onCancel?: CancelHandler;
 		onSelectImage: SelectImageHandler;
 	} = $props();
 
@@ -34,7 +37,7 @@
 
 			await onError?.(e);
 		} finally {
-			imageFilePicker.value = '';
+			if (imageFilePicker) imageFilePicker.value = '';
 		}
 	}
 
@@ -54,4 +57,5 @@
 	bind:this={imageFilePicker}
 	style="display: none"
 	onchange={onImageSelected}
+	oncancel={() => onCancel?.()}
 />

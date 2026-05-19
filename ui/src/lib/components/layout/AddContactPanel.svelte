@@ -294,6 +294,9 @@
 					uploadOpen = false;
 					await receiveCode(code);
 				}}
+				onCancel={() => {
+					uploadOpen = false;
+				}}
 				onError={() => {
 					uploadOpen = false;
 				}}
