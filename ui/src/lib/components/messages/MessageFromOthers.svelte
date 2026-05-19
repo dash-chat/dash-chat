@@ -25,7 +25,7 @@
 <Card
 	raised
 	contentWrapPadding="p-2"
-	class={`m-0 min-w-0 [overflow-wrap:anywhere] others-message ${position}-message`}
+	class={`m-0 min-w-0 [overflow-wrap:anywhere] message others-message ${position}-message`}
 >
 	<div class="row gap-2 mx-1" style="align-items: end">
 		<span class="flex-1">

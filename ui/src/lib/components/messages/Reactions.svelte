@@ -16,7 +16,7 @@
 	const condensed = $derived(condenseReactions(reactions, myDeviceId));
 </script>
 
-<div class="flex">
+<div class="flex gap-0.5">
 	{#each condensed as reaction}
 		<Reaction {reaction} {onToggleReaction} />
 	{/each}
