@@ -26,7 +26,7 @@
 				showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		} finally {
-			if (imageFilePicker) imageFilePicker.value = '';
+			imageFilePicker.value = '';
 		}
 	}
 
@@ -39,6 +39,6 @@
 	type="file"
 	accept="image/*"
 	bind:this={imageFilePicker}
-	style="display: none"
+	class="hidden"
 	onchange={onImageSelected}
 />
