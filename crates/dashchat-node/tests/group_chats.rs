@@ -160,6 +160,11 @@ async fn test_group_chat() {
     .await
     .unwrap();
 
+    // @TODO(sam): When bobby gets constructs dependencies from the groups graph heads he ends up
+    // with an empty array. This is incorrect as the groups "CREATE" operation should have already
+    // been processed. I feel like this might be a race condition, it could be fixed by the node
+    // integration work.    
+
     bobbi
         .add_group_member(chat_id, *cammy.device_id(), p2panda_auth::Access::write())
         .await
