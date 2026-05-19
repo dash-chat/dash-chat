@@ -1,5 +1,5 @@
+import { click, typeInto, waitFor } from '../helpers';
 import { S } from '../selectors';
-import { waitFor, typeInto, click } from '../helpers';
 
 /**
  * Contact exchange flow between two agents.
@@ -26,11 +26,17 @@ export const steps = {
 export async function navigateToAddContact(): Promise<true> {
 	// On narrow screens (Material): FAB is visible
 	// On narrow screens (iOS) or wide screens: navbar link is visible
+	await Promise.race([
+		waitFor(steps.newMessageFab),
+		waitFor(steps.newMessageLink),
+	]);
 	const fab = document.querySelector(steps.newMessageFab);
 	if (fab) {
 		(fab as HTMLElement).click();
 	} else {
-		const link = document.querySelector(steps.newMessageLink) as HTMLElement | null;
+		const link = document.querySelector(
+			steps.newMessageLink,
+		) as HTMLElement | null;
 		if (!link) {
 			throw new Error(
 				`navigateToAddContact: neither FAB (${steps.newMessageFab}) nor link (${steps.newMessageLink}) found in DOM`,
