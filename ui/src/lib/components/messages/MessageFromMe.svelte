@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { Card } from 'konsta/svelte';
-	import type { DeviceId, Message } from 'dash-chat-stores';
+	import type { ChatId, DeviceId, Message } from 'dash-chat-stores';
 	import { highlightMatch, type MessagePosition } from './message-helpers';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
+	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 
 	let {
 		message,
@@ -11,10 +12,12 @@
 		myDeviceId,
 		searchQuery,
 		onToggleReaction,
+		chatId,
 	}: {
 		message: Message;
 		position: MessagePosition;
 		myDeviceId: DeviceId;
+		chatId: ChatId;
 		searchQuery: string;
 		onToggleReaction: (emoji: string) => void;
 	} = $props();
@@ -37,7 +40,15 @@
 		</span>
 
 		{#if isLast}
-			<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
+			<div class="flex items-center gap-1">
+				<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
+
+				<MessageStatusIndicator
+					{chatId}
+					author={message.author}
+					seq={message.seqNum}
+				/>
+			</div>
 		{/if}
 	</div>
 </Card>

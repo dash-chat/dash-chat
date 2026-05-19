@@ -2,6 +2,10 @@ import type { DeviceId, TopicId } from '../p2panda/types';
 
 export type MailboxId = string;
 
+/// Id of the production cloud mailbox.
+/// Kept in sync with `PRODUCTION_MAILBOX_ID` in `src-tauri/src/mailbox.rs`.
+export const PRODUCTION_MAILBOX_ID: MailboxId = 'dashchat-mailbox';
+
 export type SyncStatus = 'Active' | 'Degraded' | 'Stopped';
 
 export interface MailboxConnectionState {
