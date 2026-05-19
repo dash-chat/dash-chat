@@ -15,9 +15,9 @@ export type ScanQrFromImageErrorKind =
 export class ScanQrFromImageError extends Error {
 	constructor(
 		public readonly kind: ScanQrFromImageErrorKind,
-		public readonly cause?: unknown,
+		cause?: unknown,
 	) {
-		super(kind);
+		super(kind, { cause });
 		this.name = 'ScanQrFromImageError';
 	}
 }
