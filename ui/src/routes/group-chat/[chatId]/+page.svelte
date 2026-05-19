@@ -99,7 +99,7 @@
 										<MessageFromMe
 											{message}
 											position="single"
-											myDeviceId={myDeviceId}
+											{myDeviceId}
 											searchQuery=""
 											onToggleReaction={() => {}}
 										/>
@@ -117,7 +117,7 @@
 										<MessageFromOthers
 											{message}
 											position="single"
-											myDeviceId={myDeviceId}
+											{myDeviceId}
 											searchQuery=""
 											onToggleReaction={() => {}}
 										/>
