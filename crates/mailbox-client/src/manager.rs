@@ -245,7 +245,8 @@ where
             // backoff. Keeping the existing TrackedMailbox preserves its
             // connection_state watch::Sender so UI subscribers stay attached.
             tm.replace_client(new_client).await;
-            self.wakeup(id);
+            tm.wakeup();
+            self.trigger_sync();
         } else {
             mailboxes.insert(id.clone(), Arc::new(TrackedMailbox::new(new_client)));
             drop(mailboxes);
