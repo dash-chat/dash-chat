@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { getContext } from 'svelte';
-	import { mdiCheck } from '@mdi/js';
+	import { mdiCheckCircleOutline } from '@mdi/js';
 	import {
 		PRODUCTION_MAILBOX_ID,
 		type DeviceId,
@@ -36,7 +36,7 @@
 	{#if ids.includes(PRODUCTION_MAILBOX_ID)}
 		<wa-icon
 			class="message-status-sent"
-			src={wrapPathInSvg(mdiCheck)}
+			src={wrapPathInSvg(mdiCheckCircleOutline)}
 			aria-label="sent"
 		></wa-icon>
 	{/if}
