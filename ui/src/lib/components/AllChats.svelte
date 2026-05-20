@@ -91,8 +91,8 @@
 							{/if}
 						{/snippet}
 						{#snippet subtitle()}
-							<div class="row" style="align-items: center">
-								<span style="flex: 1"
+							<div class="row items-center">
+								<span class="flex-1 min-w-0 truncate"
 									>{summary.type === 'ContactRequest'
 										? m.messageRequest()
 										: summary.lastEvent.summary === 'contact_added'
