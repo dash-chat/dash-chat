@@ -1,13 +1,14 @@
+pub(crate) mod actor;
 pub(crate) mod author_operation;
 mod stream_processing;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, ShutdownError};
 use crate::filesystem::Filesystem;
+use crate::node::actor::{Actor, Command};
 use anyhow::Result;
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
@@ -18,7 +19,7 @@ use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
 use p2panda_core::{Hash, VerifyingKey};
 use p2panda_spaces::ActorId;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 
@@ -82,13 +83,11 @@ pub struct Node {
 
     config: NodeConfig,
 
-    // @TODO: all of these need to be plugged into the node actor.
+    // @TODO: both of these need to be plugged into the node actor.
     notification_tx: Option<mpsc::Sender<Notification>>,
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
-    /// Abort trigger for the stream processing background task
-    stream_cancel: Option<mpsc::Sender<()>>,
-    /// Join handle for the stream processing background task
-    stream_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+
+    actor_tx: mpsc::Sender<Command>,
 
     pub local_store: LocalStore,
     group_store: GroupStore,
@@ -128,22 +127,33 @@ impl Node {
         notification_tx: Option<mpsc::Sender<Notification>>,
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
+        // === p2panda node === //
+
+        // @TODO: configure bootstrap and relay nodes.
         let builder = P2PandaNode::builder()
             .network_id(Hash::digest(NETWORK_ID.as_bytes()).into())
             .signing_key(node_keys.private_key.clone());
-
-        // @TODO: p2panda node will be passed into actor.
-        let p2panda = builder.spawn().await?;
-
+        let p2panda_node = builder.spawn().await?;
         // @TODO: the store() method is behind the "test_utils" feature flag, if we actually do
         // need access to the store then we should make this method public.
-        let store = p2panda.store();
+        let store = p2panda_node.store();
+
+        // Spawn node actor.
+        let node_actor = Actor::new(p2panda_node);
+        let actor_tx = node_actor.spawn().await?;
+
+        // === stores === //
+
         let group_store = GroupStore::new(store.clone());
         let op_store = OpStore::from_sqlite(store.clone()).await?;
 
+        // === mailboxes === //
+
         let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
 
-        let mut node = Self {
+        // === node === //
+
+        let node = Self {
             op_store,
             mailboxes,
             config,
@@ -153,20 +163,14 @@ impl Node {
             node_keys,
             notification_tx,
             topic_subscribed_tx,
-            stream_cancel: None,
-            stream_handle: Arc::new(Mutex::new(None)),
+            actor_tx,
         };
 
-        // @TODO: construct and spawn node actor here.
-
-        // @TODO: replace with actor shutdown signal.
-        let (cancel_tx, cancel_rx) = mpsc::channel(1);
-        node.stream_cancel = Some(cancel_tx);
-
-        // @TODO: replace with actor abort handle.
-        // node.stream_handle.lock().unwrap().replace(handle);
+        // === topics === //
 
         node.initialize_stored_topics().await?;
+
+        // === announce === //
 
         node.announce_device_capabilities(node.config.capabilities)
             .await?;
@@ -544,22 +548,13 @@ impl Node {
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
 
-        if let Some(cancel) = self.stream_cancel.as_ref() {
-            if let Err(err) = cancel.send(()).await {
-                tracing::warn!(
-                    "failed to send cancel signal to stream processing task: {}",
-                    err
-                );
-                return Err(ShutdownError::StreamTaskJoin(Box::new(err)));
-            }
+        let (reply_tx, reply_rx) = oneshot::channel();
+        if let Err(err) = self.actor_tx.send(Command::Shutdown { reply_tx }).await {
+            tracing::warn!("failed to send shutdown signal to node actor: {}", err);
+            return Err(ShutdownError::ActorShutdown(Box::new(err)));
         }
-        tracing::info!("joining stream processing task");
-        if let Some(handle) = self.stream_handle.lock().unwrap().take() {
-            if let Err(err) = handle.join() {
-                tracing::warn!("failed to join stream processing task: {:?}", err);
-                return Err(ShutdownError::StreamTaskJoin(err));
-            }
-        }
+
+        reply_rx.await?;
 
         // Close pools last. SqlitePool clones share underlying state, so closing
         // here drains every connection across the app.

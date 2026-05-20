@@ -8,25 +8,36 @@ impl Node {
         &self,
         topic: Topic<K>,
         payload: impl Into<Payload>,
-        alias: Option<&str>,
+        _alias: Option<&str>,
     ) -> Result<Header, anyhow::Error> {
-        // @TODO: publish operation on p2panda node. It should be processed after being received
-        // on the subscription stream.
-        //
-        // For reference see:
-        //
-        // self.process_operation(op.clone(), true, false).await?;
-        // let Operation {
-        //     header,
-        //     body: _,
-        //     hash,
-        // } = op;
+        let (reply_tx, reply_rx) = oneshot::channel();
 
-        // @TODO: bring back this logging.
-        // tracing::debug!(?topic, hash = ?hash, "authored operation");
+        // Construct a node actor command.
+        let command = Command::Publish {
+            topic: topic.into(),
+            payload: payload.into(),
+            reply_tx,
+        };
 
+        // Send the command to the node actor.
+        if let Err(err) = self.actor_tx.send(command).await {
+            tracing::warn!("failed to send shutdown signal to node actor: {}", err);
+            return Err(Error::AuthorOperation(err.to_string()).into());
+        }
+
+        // Await the response, this just means that the command has been handled, it does not mean
+        // the operation has been published or processed yet.
+        let (publish_fut, process_fut) = reply_rx.await??;
+
+        // Now we await the operation being published and processed in the node.
+        let event = publish_fut.await?;
+
+        // And finally await any application layer processing.
+        let _ = process_fut.await?;
+
+        // Trigger sync with all mailboxes.
         self.mailboxes.trigger_sync();
 
-        todo!();
+        Ok(event.header().to_owned())
     }
 }
