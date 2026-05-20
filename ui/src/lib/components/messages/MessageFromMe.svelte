@@ -10,7 +10,7 @@
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 
 	let {
@@ -35,81 +35,58 @@
 		'mailbox-tracker-store',
 	);
 
-	const syncStatus = useReactivePromise(
-		mailboxTrackerStore.syncStatusForOp,
-		chatId,
-		message.author,
-		message.seqNum,
+	const syncStatus = $derived(
+		useReactiveValue(
+			mailboxTrackerStore.syncStatusForOp,
+			chatId,
+			message.author,
+			message.seqNum,
+		),
 	);
-	const connectionStatus = useReactivePromise(
+	const connectionStatus = useReactiveValue(
 		mailboxTrackerStore.connectionStatus,
 	);
 
-	function localMailboxSync(
-		connectedToCloudMailboxServer: boolean,
-		connectedToAnyLocalMailbox: boolean,
-		syncedWithCloudMailbox: boolean,
-		syncedWithAnyLocalMailbox: boolean,
-	) {
-		if (syncedWithCloudMailbox) return false;
-		if (connectedToCloudMailboxServer) return false;
-		if (syncedWithAnyLocalMailbox) return true;
-
-		// Sync is pending
-		if (!connectedToCloudMailboxServer) return true;
-		return false;
-	}
+	const isLocalMailboxSync = $derived(
+		$syncStatus !== undefined &&
+			$connectionStatus !== undefined &&
+			!$syncStatus.syncedWithCloudMailbox &&
+			!$connectionStatus.connectedToCloudMailboxServer,
+	);
 </script>
 
-{#await $syncStatus then syncStatus}
-	{#await $connectionStatus then connectionStatus}
-		{@const localSync = localMailboxSync(
-			connectionStatus.connectedToCloudMailboxServer,
-			connectionStatus.connectedToAnyLocalMailbox,
-			syncStatus.syncedWithCloudMailbox,
-			syncStatus.syncedWithAnyLocalMailbox,
-		)}
-		<Card
-			raised
-			contentWrapPadding="p-2"
-			class={`message my-message ${position}-message ${localSync ? 'local-mailbox-sync' : ''}`}
-		>
-			<div class="row gap-2 mx-1" style="align-items: end">
-				<span class="flex-1">
-					{#if searchQuery}
-						{@html highlightMatch(message.content, searchQuery)}
-					{:else}
-						{message.content}
-					{/if}
-				</span>
+<Card
+	raised
+	contentWrapPadding="p-2"
+	class={`message my-message ${position}-message ${isLocalMailboxSync ? 'local-mailbox-sync' : ''}`}
+>
+	<div class="row gap-2 mx-1" style="align-items: end">
+		<span class="flex-1">
+			{#if searchQuery}
+				{@html highlightMatch(message.content, searchQuery)}
+			{:else}
+				{message.content}
+			{/if}
+		</span>
 
-				{#if isLast}
-					<div class="flex items-center gap-1">
-						<MessageTimestamp
-							timestamp={message.timestamp}
-							class="dark-quiet"
-						/>
+		{#if isLast}
+			<div class="flex items-center gap-1">
+				<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
 
-						<MessageStatusIndicator
-							{chatId}
-							author={message.author}
-							seq={message.seqNum}
-						/>
-					</div>
-				{/if}
-			</div>
-		</Card>
-		{#if Object.keys(message.reactions).length}
-			<div class="flex -mt-1.5 mb-0.5 px-1">
-				<Reactions
-					reactions={message.reactions}
-					{myDeviceId}
-					{onToggleReaction}
+				<MessageStatusIndicator
+					{chatId}
+					author={message.author}
+					seq={message.seqNum}
 				/>
 			</div>
 		{/if}
-	{/await}
-{/await}
+	</div>
+</Card>
+{#if Object.keys(message.reactions).length}
+	<div class="flex -mt-1.5 mb-0.5 px-1">
+		<Reactions reactions={message.reactions} {myDeviceId} {onToggleReaction} />
+	</div>
+{/if}
 
 <style>
 	:global(.my-message) {

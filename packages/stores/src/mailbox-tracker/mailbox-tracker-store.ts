@@ -10,6 +10,11 @@ import {
 	PRODUCTION_MAILBOX_ID,
 } from './types';
 
+// Flip the UI to "disconnected" after this many consecutive errors. Intentionally
+// lower than the backend's degraded_threshold (5) so the UI reacts faster than
+// the connection state alone would suggest.
+const UI_DISCONNECTED_ERROR_THRESHOLD = 2;
+
 export interface IMailboxTrackerStore {
 	activeMailboxIds(): ReactivePromise<MailboxId[]>;
 	allMailboxIds(): ReactivePromise<MailboxId[]>;
@@ -82,7 +87,8 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 		const connectedToCloudMailboxServer =
 			cloudMailboxIndex >= 0 &&
 			mailboxesConnectionStates[cloudMailboxIndex].status === 'Active' &&
-			mailboxesConnectionStates[cloudMailboxIndex].consecutive_errors < 2;
+			mailboxesConnectionStates[cloudMailboxIndex].consecutive_errors <
+				UI_DISCONNECTED_ERROR_THRESHOLD;
 
 		let connectedToAnyLocalMailbox = false;
 
@@ -92,7 +98,7 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 			const connectionState = mailboxesConnectionStates[i];
 			if (
 				connectionState.status === 'Active' &&
-				connectionState.consecutive_errors < 2
+				connectionState.consecutive_errors < UI_DISCONNECTED_ERROR_THRESHOLD
 			)
 				connectedToAnyLocalMailbox = true;
 		}

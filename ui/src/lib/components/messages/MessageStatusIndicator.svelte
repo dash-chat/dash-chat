@@ -3,9 +3,9 @@
 	import { getContext } from 'svelte';
 	import { mdiCheckCircleOutline } from '@mdi/js';
 	import {
+		type ChatId,
 		type DeviceId,
 		type MailboxTrackerStore,
-		type TopicId as ChatId,
 	} from 'dash-chat-stores';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
