@@ -3,10 +3,11 @@ import { ReactivePromise, reactive, relay } from 'signalium';
 
 import type { DeviceId, TopicId } from '../p2panda/types';
 import { unregisterChannel } from '../utils/tauri-channel';
-import type {
-	MailboxConnectionState,
-	MailboxId,
-	MailboxSyncState,
+import {
+	type MailboxConnectionState,
+	type MailboxId,
+	type MailboxSyncState,
+	PRODUCTION_MAILBOX_ID,
 } from './types';
 
 export interface IMailboxTrackerStore {
@@ -67,6 +68,41 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 			}),
 	);
 
+	connectionStatus = reactive(async () => {
+		const activeMailboxIds = await this.activeMailboxIds();
+
+		const mailboxesConnectionStates = await ReactivePromise.all(
+			activeMailboxIds.map(mailboxId => this.connectionState(mailboxId)),
+		);
+
+		const cloudMailboxIndex = activeMailboxIds.findIndex(
+			mailboxId => mailboxId === PRODUCTION_MAILBOX_ID,
+		);
+
+		const connectedToCloudMailboxServer =
+			cloudMailboxIndex >= 0 &&
+			mailboxesConnectionStates[cloudMailboxIndex].status === 'Active' &&
+			mailboxesConnectionStates[cloudMailboxIndex].consecutive_errors < 2;
+
+		let connectedToAnyLocalMailbox = false;
+
+		for (let i = 0; i < activeMailboxIds.length; i++) {
+			if (i === cloudMailboxIndex) continue;
+
+			const connectionState = mailboxesConnectionStates[i];
+			if (
+				connectionState.status === 'Active' &&
+				connectionState.consecutive_errors < 2
+			)
+				connectedToAnyLocalMailbox = true;
+		}
+
+		return {
+			connectedToCloudMailboxServer,
+			connectedToAnyLocalMailbox,
+		};
+	});
+
 	syncState = reactive(
 		(mailboxId: MailboxId): ReactivePromise<MailboxSyncState> =>
 			relay<MailboxSyncState>(state => {
@@ -113,6 +149,30 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 			return Object.entries(map)
 				.filter(([, mailboxSeq]) => mailboxSeq >= seq)
 				.map(([mailboxId]) => mailboxId);
+		},
+	);
+
+	syncStatusForOp = reactive(
+		async (topicId: TopicId, author: DeviceId, seq: number) => {
+			const syncedMailboxes = await this.syncedMailboxesForOp(
+				topicId,
+				author,
+				seq,
+			);
+
+			const localMailboxes = syncedMailboxes.filter(
+				mailbox => mailbox !== PRODUCTION_MAILBOX_ID,
+			);
+
+			const syncedWithCloudMailbox = syncedMailboxes.includes(
+				PRODUCTION_MAILBOX_ID,
+			);
+			const syncedWithAnyLocalMailbox = localMailboxes.length > 0;
+
+			return {
+				syncedWithCloudMailbox,
+				syncedWithAnyLocalMailbox,
+			};
 		},
 	);
 }

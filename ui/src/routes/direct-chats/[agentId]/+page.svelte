@@ -64,6 +64,7 @@
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -403,6 +404,7 @@
 									transparent={true}
 									titleClass="opacity1 w-full min-w-0"
 									leftClass="shrink-0"
+									rightClass="bg-transparent! shadow-none! backdrop-blur-none! pointer-events-none! dark:bg-transparent! dark:shadow-none!"
 									centerTitle={false}
 								>
 									{#snippet left()}
@@ -437,6 +439,12 @@
 												</span>
 											{/if}
 										</Link>
+									{/snippet}
+
+									{#snippet right()}
+										<div class={theme === 'material' ? 'pe-2' : ''}>
+											<ConnectionStatusIndicator />
+										</div>
 									{/snippet}
 								</Navbar>
 							{/if}

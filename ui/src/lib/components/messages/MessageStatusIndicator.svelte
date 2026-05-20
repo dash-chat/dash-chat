@@ -3,7 +3,6 @@
 	import { getContext } from 'svelte';
 	import { mdiCheckCircleOutline } from '@mdi/js';
 	import {
-		PRODUCTION_MAILBOX_ID,
 		type DeviceId,
 		type MailboxTrackerStore,
 		type TopicId as ChatId,
@@ -11,6 +10,8 @@
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+
+	import SendingSpinner from './SendingSpinner.svelte';
 
 	interface Props {
 		chatId: ChatId;
@@ -24,28 +25,39 @@
 		'mailbox-tracker-store',
 	);
 
-	const syncedMailboxes = useReactivePromise(
-		mailboxTrackerStore.syncedMailboxesForOp,
+	const syncStatus = useReactivePromise(
+		mailboxTrackerStore.syncStatusForOp,
 		props.chatId,
 		props.author,
 		props.seq,
 	);
 </script>
 
-{#await $syncedMailboxes then ids}
-	{#if ids.includes(PRODUCTION_MAILBOX_ID)}
+{#await $syncStatus then syncStatus}
+	{#if syncStatus.syncedWithCloudMailbox}
 		<wa-icon
-			class="message-status-sent"
+			class="message-status"
 			src={wrapPathInSvg(mdiCheckCircleOutline)}
 			aria-label="sent"
 		></wa-icon>
+	{:else if syncStatus.syncedWithAnyLocalMailbox}
+		<wa-icon
+			class="message-status"
+			src="/localmailboxserver.svg"
+			aria-label="sent-to-local-mailboxes"
+		></wa-icon>
+	{:else}
+		<div class="message-status">
+			<SendingSpinner />
+		</div>
 	{/if}
 {/await}
 
 <style>
-	.message-status-sent {
-		font-size: 0.875rem;
-		line-height: 1;
+	.message-status {
 		opacity: 0.7;
+		font-size: 0.875rem;
+		width: 0.875rem;
+		height: 0.875rem;
 	}
 </style>
