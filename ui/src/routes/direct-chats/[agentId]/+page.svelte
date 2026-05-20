@@ -1,7 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
-	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import 'emoji-picker-element';
 
@@ -69,7 +67,6 @@
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myAgentId = useReactivePromise(contactsStore.myAgentId);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);

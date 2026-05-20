@@ -27,7 +27,6 @@ export * from './chats/chats-client.js';
 export * from './settings/settings-client.js';
 export * from './settings/settings-store.js';
 
-export * from './mailbox-tracker/mailbox-tracker-client.js';
 export * from './mailbox-tracker/mailbox-tracker-store.js';
 export * from './mailbox-tracker/types.js';
 
