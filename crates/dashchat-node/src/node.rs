@@ -12,29 +12,25 @@ use anyhow::Result;
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use named_id::Rename;
-use named_id::*;
-use p2panda::{Node as P2PandaNode};
+use p2panda::Node as P2PandaNode;
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
 use p2panda_core::{Hash, VerifyingKey};
 use p2panda_spaces::ActorId;
-use p2panda_store::SqliteStore;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 
 use crate::chat::ChatMessageContent;
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
-use crate::payload::{
-    AnnouncementsPayload, ChatPayload, Extensions, InboxPayload, Payload, Profile,
-};
+use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, Header, Operation,
+    AgentId, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId, DirectChatId,
+    Header, Operation,
 };
 
 pub use stream_processing::Notification;
@@ -80,20 +76,15 @@ pub type DashResolver = StrongRemove<VerifyingKey, Hash, Operation, ()>;
 
 #[derive(Clone)]
 pub struct Node {
-    pub p2panda: Arc<RwLock<P2PandaNode>>,
-    
     pub op_store: OpStore,
 
     pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
 
-    // groups: p2panda_auth::group::Groups,
     config: NodeConfig,
+
+    // @TODO: all of these need to be plugged into the node actor.
     notification_tx: Option<mpsc::Sender<Notification>>,
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
-
-    /// Add new subscription streams
-    subscription_tx: mpsc::Sender<TopicId>,
-
     /// Abort trigger for the stream processing background task
     stream_cancel: Option<mpsc::Sender<()>>,
     /// Join handle for the stream processing background task
@@ -137,13 +128,11 @@ impl Node {
         notification_tx: Option<mpsc::Sender<Notification>>,
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
-        let (subscription_tx, subscription_rx) = mpsc::channel(100);
-
-        // @TODO: configure relay and initial bootstrap nodes.
         let builder = P2PandaNode::builder()
             .network_id(Hash::digest(NETWORK_ID.as_bytes()).into())
             .signing_key(node_keys.private_key.clone());
 
+        // @TODO: p2panda node will be passed into actor.
         let p2panda = builder.spawn().await?;
 
         // @TODO: the store() method is behind the "test_utils" feature flag, if we actually do
@@ -155,7 +144,6 @@ impl Node {
         let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
 
         let mut node = Self {
-            p2panda: Arc::new(RwLock::new(p2panda)),
             op_store,
             mailboxes,
             config,
@@ -164,16 +152,19 @@ impl Node {
             group_store,
             node_keys,
             notification_tx,
-            subscription_tx,
             topic_subscribed_tx,
             stream_cancel: None,
             stream_handle: Arc::new(Mutex::new(None)),
         };
 
+        // @TODO: construct and spawn node actor here.
+
+        // @TODO: replace with actor shutdown signal.
         let (cancel_tx, cancel_rx) = mpsc::channel(1);
-        let handle = node.spawn_stream_process_loop(subscription_rx, cancel_rx);
         node.stream_cancel = Some(cancel_tx);
-        node.stream_handle.lock().unwrap().replace(handle);
+
+        // @TODO: replace with actor abort handle.
+        // node.stream_handle.lock().unwrap().replace(handle);
 
         node.initialize_stored_topics().await?;
 
