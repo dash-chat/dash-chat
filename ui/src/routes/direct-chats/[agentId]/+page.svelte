@@ -1,12 +1,9 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
-	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import 'emoji-picker-element';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { lessThanAMinuteAgo, moreThanAnHourAgo } from '$lib/utils/time';
 	import { getContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -38,7 +35,6 @@
 		Navbar,
 		NavbarBackLink,
 		Button,
-		Card,
 		Sheet,
 		Dialog,
 		DialogButton,
@@ -60,6 +56,9 @@
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
+	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
+	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
+	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import { longpress } from '$lib/actions/longpress';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -68,7 +67,6 @@
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myAgentId = useReactivePromise(contactsStore.myAgentId);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
@@ -185,35 +183,11 @@
 		}
 	}
 
-	const messageClass = (messageSetLength: number, index: number) => {
-		if (messageSetLength <= 1) return '';
-		if (index === 0) return 'first-message';
-		if (index === messageSetLength - 1) return 'last-message';
-		return 'middle-message';
-	};
-
 	onMount(() => {
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
 	});
-
-	// Search helpers
-	function escapeHtml(text: string): string {
-		return text
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;');
-	}
-
-	function highlightMatch(text: string, query: string): string {
-		if (!query) return escapeHtml(text);
-		const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-		return escapeHtml(text).replace(
-			new RegExp(`(${escaped})`, 'gi'),
-			'<mark class="search-highlight">$1</mark>',
-		);
-	}
 
 	$effect(() => {
 		const q = searchQuery;
@@ -601,6 +575,10 @@
 															})}
 														</div>
 													{/if}
+													{@const position = messagePosition(
+														messageSet.length,
+														i,
+													)}
 													{#if myDeviceId == message.author}
 														<div
 															class="self-end max-w-[85%]"
@@ -610,80 +588,14 @@
 																	showQuickReactionBar(e, message),
 															}}
 														>
-															<Card
-																raised
-																class={`${messageClass(messageSet.length, i)} message my-message`}
-															>
-																<div
-																	class="row gap-2 mx-1"
-																	style="align-items: end"
-																>
-																	<span class="flex-1">
-																		{#if searchMode && searchQuery}
-																			{@html highlightMatch(
-																				message.content,
-																				searchQuery,
-																			)}
-																		{:else}
-																			{message.content}
-																		{/if}
-																	</span>
-
-																	{#if i === messageSet.length - 1}
-																		<div class="dark-quiet text-xs">
-																			{#if lessThanAMinuteAgo(message.timestamp)}
-																				<span>{m.now()}</span>
-																			{:else if moreThanAnHourAgo(message.timestamp)}
-																				<wa-format-date
-																					hour="numeric"
-																					minute="numeric"
-																					hour-format="24"
-																					date={new Date(message.timestamp)}
-																				></wa-format-date>
-																			{:else}
-																				<wa-relative-time
-																					sync
-																					format="narrow"
-																					date={new Date(message.timestamp)}
-																				>
-																				</wa-relative-time>
-																			{/if}
-																		</div>
-																	{/if}
-																</div>
-															</Card>
-															{#if Object.values(message.reactions).length}
-																<div class="flex -mt-1.5 mb-0.5 gap-0.5 px-1">
-																	{#each condenseReactions(message.reactions, myDeviceId) as reaction}
-																		<Chip
-																			class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
-																			colors={reaction.own
-																				? {
-																						fillBgIos:
-																							'bg-gray-300 dark:bg-gray-500',
-																						fillBgMaterial:
-																							'bg-gray-300 dark:bg-gray-500',
-																					}
-																				: {
-																						fillBgIos:
-																							'bg-gray-200 dark:bg-gray-700',
-																						fillBgMaterial:
-																							'bg-gray-200 dark:bg-gray-700',
-																					}}
-																			onclick={e => {
-																				e.stopPropagation();
-																				toggleReaction(
-																					message,
-																					reaction.emoji,
-																					myDeviceId,
-																				);
-																			}}
-																		>
-																			{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
-																		</Chip>
-																	{/each}
-																</div>
-															{/if}
+															<MessageFromMe
+																{message}
+																{position}
+																{myDeviceId}
+																searchQuery={searchMode ? searchQuery : ''}
+																onToggleReaction={emoji =>
+																	toggleReaction(message, emoji, myDeviceId)}
+															/>
 														</div>
 													{:else}
 														<div
@@ -697,82 +609,14 @@
 																	showQuickReactionBar(e, message),
 															}}
 														>
-															<Card
-																raised
-																class={`${messageClass(messageSet.length, i)} message others-message`}
-															>
-																<div
-																	class="row gap-2 mx-1"
-																	style="align-items: end"
-																>
-																	<span class="flex-1">
-																		{#if searchMode && searchQuery}
-																			{@html highlightMatch(
-																				message.content,
-																				searchQuery,
-																			)}
-																		{:else}
-																			{message.content}
-																		{/if}
-																	</span>
-
-																	{#if i === messageSet.length - 1}
-																		<div class="quiet text-xs">
-																			{#if lessThanAMinuteAgo(message.timestamp)}
-																				<span>{m.now()}</span>
-																			{:else if moreThanAnHourAgo(message.timestamp)}
-																				<wa-format-date
-																					hour="numeric"
-																					minute="numeric"
-																					hour-format="24"
-																					date={new Date(message.timestamp)}
-																				></wa-format-date>
-																			{:else}
-																				<wa-relative-time
-																					sync
-																					format="narrow"
-																					date={new Date(message.timestamp)}
-																				>
-																				</wa-relative-time>
-																			{/if}
-																		</div>
-																	{/if}
-																</div>
-															</Card>
-															{#if Object.values(message.reactions).length}
-																<div
-																	class="flex justify-end -mt-1.5 mb-0.5 gap-0.5 px-1"
-																>
-																	{#each condenseReactions(message.reactions, myDeviceId!) as reaction}
-																		<Chip
-																			class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
-																			colors={reaction.own
-																				? {
-																						fillBgIos:
-																							'bg-gray-300 dark:bg-gray-500',
-																						fillBgMaterial:
-																							'bg-gray-300 dark:bg-gray-500',
-																					}
-																				: {
-																						fillBgIos:
-																							'bg-gray-200 dark:bg-gray-700',
-																						fillBgMaterial:
-																							'bg-gray-200 dark:bg-gray-700',
-																					}}
-																			onclick={e => {
-																				e.stopPropagation();
-																				toggleReaction(
-																					message,
-																					reaction.emoji,
-																					myDeviceId!,
-																				);
-																			}}
-																		>
-																			{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
-																		</Chip>
-																	{/each}
-																</div>
-															{/if}
+															<MessageFromOthers
+																{message}
+																{position}
+																{myDeviceId}
+																searchQuery={searchMode ? searchQuery : ''}
+																onToggleReaction={emoji =>
+																	toggleReaction(message, emoji, myDeviceId)}
+															/>
 														</div>
 													{/if}
 												{/each}
