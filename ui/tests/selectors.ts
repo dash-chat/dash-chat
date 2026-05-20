@@ -59,6 +59,10 @@ export const S = {
 		send: tid('message-input-send'),
 		emoji: tid('message-input-emoji'),
 	},
+	status: {
+		message: tid('message-status'),
+		connection: tid('connection-status'),
+	},
 	chatSettings: {
 		back: tid('chat-settings-back'),
 		peerName: tid('chat-settings-peer-name'),

@@ -36,18 +36,26 @@
 {#await $syncStatus then syncStatus}
 	{#if syncStatus.syncedWithCloudMailbox}
 		<wa-icon
+			data-testid="message-status"
+			data-status="cloud"
 			class="message-status"
 			src={wrapPathInSvg(mdiCheckCircleOutline)}
 			aria-label="sent"
 		></wa-icon>
 	{:else if syncStatus.syncedWithAnyLocalMailbox}
 		<wa-icon
+			data-testid="message-status"
+			data-status="local"
 			class="message-status"
 			src="/localmailboxserver.svg"
 			aria-label="sent-to-local-mailboxes"
 		></wa-icon>
 	{:else}
-		<div class="message-status">
+		<div
+			data-testid="message-status"
+			data-status="sending"
+			class="message-status"
+		>
 			<SendingSpinner />
 		</div>
 	{/if}

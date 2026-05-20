@@ -33,9 +33,11 @@ import {
 	chatOverflow,
 	checkNavbarOverflow,
 	clickScrollBottomButton,
+	connectionStatus,
 	isContactRequestBannerVisible,
 	isPeerNamePresent,
 	isScrollAtBottom,
+	lastMessageStatus,
 	messageInput,
 	messagesContainer,
 	navbarBgOpacity,
@@ -46,6 +48,7 @@ import {
 	sendButton,
 	unreadBadgeText,
 } from './pages/direct-chat';
+import { setLocalMailboxEnabled } from './flows/local-mailbox';
 import {
 	dismissCard as dismissGetStartedCard,
 	visibleCards as getStartedCards,
@@ -130,6 +133,9 @@ export const testUtils = {
 	isPeerNamePresent,
 	isContactRequestBannerVisible,
 	checkNavbarOverflow,
+	lastMessageStatus,
+	connectionStatus,
+	setLocalMailboxEnabled,
 	chatSettingsLoaded,
 	isPeerProfileSheetOpen,
 	profileNameListItemContains,

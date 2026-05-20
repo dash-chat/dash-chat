@@ -18,6 +18,10 @@
 {#await $connectionStatus then connectionStatus}
 	{#if !connectionStatus.connectedToCloudMailboxServer}
 		<Chip
+			data-testid="connection-status"
+			data-status={connectionStatus.connectedToAnyLocalMailbox
+				? 'local'
+				: 'disconnected'}
 			class="p-1"
 			colors={{
 				fillBgIos: 'bg-black/10 dark:bg-brand-primary',
@@ -28,13 +32,13 @@
 				<wa-icon
 					class="connection-status"
 					src="/localmailboxserver.svg"
-					aria-label="sent"
+					aria-label="connected-to-local-mailbox"
 				></wa-icon>
 			{:else}
 				<wa-icon
 					class="connection-status"
 					src={wrapPathInSvg(mdiEmoticonPoop)}
-					aria-label="sent"
+					aria-label="disconnected"
 				></wa-icon>
 			{/if}
 		</Chip>
