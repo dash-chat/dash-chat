@@ -237,5 +237,6 @@
     "feedback": "Tagasiside",
     "waitingForProfile": "Ootan profiili laadimist…",
     "contactRequestAccepted": "{{name}} on sinu kontaktipäringuga nõustunud",
-    "contactRequestAcceptedNoName": "Sinu kontaktipäring on vastu võetud"
+    "contactRequestAcceptedNoName": "Sinu kontaktipäring on vastu võetud",
+    "upload": "Laadi üles"
 }
