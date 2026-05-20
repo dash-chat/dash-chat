@@ -1,22 +1,86 @@
-import { reactive } from 'signalium';
+import { Channel, invoke } from '@tauri-apps/api/core';
+import { ReactivePromise, reactive, relay } from 'signalium';
 
 import type { DeviceId, TopicId } from '../p2panda/types';
-import { buildReactiveChannel } from '../utils/tauri-channel';
-import type { MailboxTrackerClient } from './mailbox-tracker-client';
-import type { MailboxId } from './types';
+import { unregisterChannel } from '../utils/tauri-channel';
+import type {
+	MailboxConnectionState,
+	MailboxId,
+	MailboxSyncState,
+} from './types';
 
-export class MailboxTrackerStore {
-	constructor(public client: MailboxTrackerClient) {}
+export interface IMailboxTrackerStore {
+	activeMailboxIds(): ReactivePromise<MailboxId[]>;
+	allMailboxIds(): ReactivePromise<MailboxId[]>;
+	connectionState(
+		mailboxId: MailboxId,
+	): ReactivePromise<MailboxConnectionState>;
+	syncState(mailboxId: MailboxId): ReactivePromise<MailboxSyncState>;
+	syncStateForLog(
+		topicId: TopicId,
+		author: DeviceId,
+	): ReactivePromise<Record<MailboxId, number>>;
+	syncedMailboxesForOp(
+		topicId: TopicId,
+		author: DeviceId,
+		seq: number,
+	): ReactivePromise<MailboxId[]>;
+}
 
-	activeMailboxIds = buildReactiveChannel(
-		this.client.subscribeActiveMailboxIds,
+export class MailboxTrackerStore implements IMailboxTrackerStore {
+	activeMailboxIds = reactive(
+		(): ReactivePromise<MailboxId[]> =>
+			relay<MailboxId[]>(state => {
+				const channel = new Channel<MailboxId[]>();
+				channel.onmessage = v => {
+					state.value = v;
+				};
+				invoke('mailbox_subscribe_active_ids', { onEvent: channel });
+				return () => unregisterChannel(channel);
+			}),
 	);
 
-	allMailboxIds = buildReactiveChannel(this.client.subscribeAllMailboxIds);
+	allMailboxIds = reactive(
+		(): ReactivePromise<MailboxId[]> =>
+			relay<MailboxId[]>(state => {
+				const channel = new Channel<MailboxId[]>();
+				channel.onmessage = v => {
+					state.value = v;
+				};
+				invoke('mailbox_subscribe_all_ids', { onEvent: channel });
+				return () => unregisterChannel(channel);
+			}),
+	);
 
-	connectionState = buildReactiveChannel(this.client.subscribeConnectionState);
+	connectionState = reactive(
+		(mailboxId: MailboxId): ReactivePromise<MailboxConnectionState> =>
+			relay<MailboxConnectionState>(state => {
+				const channel = new Channel<MailboxConnectionState>();
+				channel.onmessage = v => {
+					state.value = v;
+				};
+				invoke('mailbox_subscribe_connection_state', {
+					onEvent: channel,
+					mailboxId,
+				});
+				return () => unregisterChannel(channel);
+			}),
+	);
 
-	syncState = buildReactiveChannel(this.client.subscribeSyncState);
+	syncState = reactive(
+		(mailboxId: MailboxId): ReactivePromise<MailboxSyncState> =>
+			relay<MailboxSyncState>(state => {
+				const channel = new Channel<MailboxSyncState>();
+				channel.onmessage = v => {
+					state.value = v;
+				};
+				invoke('mailbox_subscribe_sync_state', {
+					onEvent: channel,
+					mailboxId,
+				});
+				return () => unregisterChannel(channel);
+			}),
+	);
 
 	/// Per-(topic, author) view across every mailbox we've ever synced with.
 	/// Recomputes when `allMailboxIds` or any per-mailbox `syncState` changes.

@@ -19,14 +19,14 @@
 		DevicesStore,
 		SettingsClient,
 		SettingsStore,
-		TauriMailboxTrackerClient,
 		MailboxTrackerStore,
+		type IMailboxTrackerStore,
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
 		MockDirectChatClient,
 		MockGroupChatClient,
-		MockMailboxTrackerClient,
+		MockMailboxTrackerStore,
 		MockSettingsClient,
 		seedDemoData,
 		DEMO_IDS,
@@ -71,7 +71,7 @@
 	let devicesStore: DevicesStore;
 	let contactsStore: ContactsStore;
 	let chatsStore: ChatsStore;
-	let mailboxTrackerStore: MailboxTrackerStore;
+	let mailboxTrackerStore: IMailboxTrackerStore;
 
 	if (isPreview) {
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
@@ -107,9 +107,7 @@
 			() => new MockGroupChatClient(),
 		);
 
-		mailboxTrackerStore = new MailboxTrackerStore(
-			new MockMailboxTrackerClient(),
-		);
+		mailboxTrackerStore = new MockMailboxTrackerStore();
 	} else {
 		const logsClient = new TauriLogsClient<Payload>();
 		logsStore = new LogsStore<Payload>(logsClient);
@@ -124,9 +122,7 @@
 		const chatsClient = new ChatsClient();
 		chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
 
-		mailboxTrackerStore = new MailboxTrackerStore(
-			new TauriMailboxTrackerClient(),
-		);
+		mailboxTrackerStore = new MailboxTrackerStore();
 
 		invoke('log_webview_info', { userAgent: navigator.userAgent }).catch(
 			() => {},
