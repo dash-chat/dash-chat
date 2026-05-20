@@ -1,9 +1,17 @@
 <script lang="ts">
 	import { Card } from 'konsta/svelte';
-	import type { DeviceId, Message } from 'dash-chat-stores';
+	import type {
+		ChatId,
+		DeviceId,
+		MailboxTrackerStore,
+		Message,
+	} from 'dash-chat-stores';
 	import { highlightMatch, type MessagePosition } from './message-helpers';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
+	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
+	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { getContext } from 'svelte';
 
 	let {
 		message,
@@ -11,21 +19,46 @@
 		myDeviceId,
 		searchQuery,
 		onToggleReaction,
+		chatId,
 	}: {
 		message: Message;
 		position: MessagePosition;
 		myDeviceId: DeviceId;
+		chatId: ChatId;
 		searchQuery: string;
 		onToggleReaction: (emoji: string) => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
+
+	const mailboxTrackerStore: MailboxTrackerStore = getContext(
+		'mailbox-tracker-store',
+	);
+
+	const syncStatus = $derived(
+		useReactiveValue(
+			mailboxTrackerStore.syncStatusForOp,
+			chatId,
+			message.author,
+			message.seqNum,
+		),
+	);
+	const connectionStatus = useReactiveValue(
+		mailboxTrackerStore.connectionStatus,
+	);
+
+	const isLocalMailboxSync = $derived(
+		$syncStatus !== undefined &&
+			$connectionStatus !== undefined &&
+			!$syncStatus.syncedWithCloudMailbox &&
+			!$connectionStatus.connectedToCloudMailboxServer,
+	);
 </script>
 
 <Card
 	raised
 	contentWrapPadding="p-2"
-	class={`message my-message ${position}-message`}
+	class={`message my-message ${position}-message ${isLocalMailboxSync ? 'local-mailbox-sync' : ''}`}
 >
 	<div class="row gap-2 mx-1" style="align-items: end">
 		<span class="flex-1">
@@ -37,7 +70,15 @@
 		</span>
 
 		{#if isLast}
-			<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
+			<div class="flex items-center gap-1">
+				<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
+
+				<MessageStatusIndicator
+					{chatId}
+					author={message.author}
+					seq={message.seqNum}
+				/>
+			</div>
 		{/if}
 	</div>
 </Card>
@@ -66,5 +107,14 @@
 	}
 	:global(.my-message.last-message) {
 		border-start-end-radius: 4px;
+	}
+
+	:global(.my-message.local-mailbox-sync) {
+		background-color: color-mix(in srgb, var(--color-brand-primary), white 25%);
+		border: 2px dashed color-mix(in srgb, var(--color-brand-primary), black 35%);
+		background-clip: padding-box;
+	}
+	:global(.my-message.local-mailbox-sync > div) {
+		padding: calc(0.5rem - 2px) !important;
 	}
 </style>

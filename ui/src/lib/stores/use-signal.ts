@@ -31,6 +31,33 @@ export function useSignal<T, Args extends unknown[]>(
 	};
 }
 
+/**
+ * Synchronously expose a signalium async reactive's resolved value as a Svelte
+ * store. Emits `undefined` while the underlying ReactivePromise is pending,
+ * then the resolved value. Use when you need to consume the value in plain
+ * reactive expressions (`$derived`, class strings, …) rather than gating an
+ * entire subtree behind `{#await}`.
+ */
+export function useReactiveValue<
+	RP extends ReactivePromise<unknown>,
+	Args extends unknown[],
+>(v: (...args: Args) => RP, ...args: Args): Readable<Awaited<RP> | undefined> {
+	type T = Awaited<RP>;
+	const w = watcher(() => {
+		const rp = v(...args);
+		(rp as unknown as { _version: { value: unknown } })._version.value;
+		return (rp.isReady ? rp.value : undefined) as T | undefined;
+	});
+	return {
+		subscribe: set => {
+			const read = () => set(w.value as T | undefined);
+			const unsubs = w.addListener(read);
+			read();
+			return () => unsubs();
+		},
+	};
+}
+
 export function useReactivePromise<
 	RP extends ReactivePromise<unknown>,
 	Args extends unknown[],

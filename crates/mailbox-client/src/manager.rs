@@ -130,8 +130,11 @@ impl MailboxConnectionState {
 
 /// Per-mailbox handle owning the client and its tracker. Held inside `Mailboxes`
 /// as `Arc<TrackedMailbox<...>>` so cheap clones can be handed out to subscribers.
+/// The client is held behind a `Mutex` so re-registering a mailbox can swap it
+/// in place (e.g. mDNS re-resolution producing a new URL) without disturbing
+/// the `connection_state` watcher's existing subscribers.
 pub struct TrackedMailbox<Item: MailboxItem> {
-    pub(crate) client: Arc<dyn MailboxClient<Item>>,
+    pub(crate) client: Mutex<Arc<dyn MailboxClient<Item>>>,
     pub(crate) connection_state: watch::Sender<MailboxConnectionState>,
 }
 
@@ -139,9 +142,17 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     fn new(client: Arc<dyn MailboxClient<Item>>) -> Self {
         let (connection_state, _) = watch::channel(MailboxConnectionState::new());
         Self {
-            client,
+            client: Mutex::new(client),
             connection_state,
         }
+    }
+
+    async fn client(&self) -> Arc<dyn MailboxClient<Item>> {
+        self.client.lock().await.clone()
+    }
+
+    async fn replace_client(&self, client: Arc<dyn MailboxClient<Item>>) {
+        *self.client.lock().await = client;
     }
 
     pub fn connection_state(&self) -> watch::Receiver<MailboxConnectionState> {
@@ -194,10 +205,10 @@ where
         config: MailboxesConfig,
         trigger: mpsc::Sender<Option<MailboxId>>,
     ) -> Self {
-        let (active_ids_tx, _) = watch::channel(BTreeSet::new());
+        let (active_mailbox_ids_tx, _) = watch::channel(BTreeSet::new());
         Self {
             mailboxes: Arc::new(Mutex::new(Default::default())),
-            active_mailbox_ids_tx: active_ids_tx,
+            active_mailbox_ids_tx,
             topics: Arc::new(Mutex::new(Default::default())),
             store,
             sync_tracker,
@@ -224,19 +235,24 @@ where
         // TODO: check for existing mailbox with different ID but same "URL" (which is currently abstracted away and inaccessible here, darn)
         // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.
         let id = mailbox.id();
-        let tracked_mailbox = Arc::new(TrackedMailbox::new(Arc::new(mailbox)));
-        let existing = self
-            .mailboxes
-            .lock()
-            .await
-            .insert(id.clone(), tracked_mailbox);
-        if existing.is_some() {
-            // TODO: potentially track multiple clients for a single mailbox ID, e.g. multiple mDNS discovered addresses for the same node
-            // TODO: at least, make sure the URL being replaced is "better" than the previous one, i.e. ipv4 instead of ipv6
-            tracing::warn!("overwriting existing mailbox for {id}");
+        let new_client: Arc<dyn MailboxClient<Item>> = Arc::new(mailbox);
+
+        let mut mailboxes = self.mailboxes.lock().await;
+        if let Some(tm) = mailboxes.get(&id).cloned() {
+            drop(mailboxes);
+            // Re-registering the same id (e.g. mDNS re-resolution producing a
+            // new URL): swap the client in place and reset any Stopped/Degraded
+            // backoff. Keeping the existing TrackedMailbox preserves its
+            // connection_state watch::Sender so UI subscribers stay attached.
+            tm.replace_client(new_client).await;
+            tm.wakeup();
+            self.trigger_sync();
+        } else {
+            mailboxes.insert(id.clone(), Arc::new(TrackedMailbox::new(new_client)));
+            drop(mailboxes);
+            self.publish_active_ids().await;
+            self.trigger_sync();
         }
-        self.publish_active_ids().await;
-        self.trigger_sync();
     }
 
     pub async fn clear(&self) {
@@ -246,7 +262,7 @@ where
 
     async fn publish_active_ids(&self) {
         let ids: BTreeSet<MailboxId> = self.mailboxes.lock().await.keys().cloned().collect();
-        let _ = self.active_mailbox_ids_tx.send(ids);
+        self.active_mailbox_ids_tx.send_replace(ids);
     }
 
     pub async fn subscribed_topics(&self) -> BTreeSet<Item::Topic> {
@@ -388,9 +404,8 @@ where
         }
 
         tracing::info!("polling mailbox {id}");
-        let result = self
-            .sync_topics(topics.into_iter(), &tracked_mailbox.client)
-            .await;
+        let client = tracked_mailbox.client().await;
+        let result = self.sync_topics(topics.into_iter(), &client).await;
 
         match result {
             Ok(()) => tracked_mailbox.record_success(&self.config),
@@ -921,6 +936,103 @@ mod tests {
         mgr.clear().await;
         rx.changed().await.unwrap();
         assert!(rx.borrow().is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn active_mailbox_ids_subscribed_after_register_sees_registered() {
+        let mgr = test_mailboxes(test_config());
+
+        let mb = MemMailbox::<Msg>::new();
+        let id = mb.client().id();
+        mgr.register(mb.client()).await;
+
+        let rx = mgr.active_mailbox_ids();
+        assert!(rx.borrow().contains(&id));
+    }
+
+    /// Re-registering the same mailbox id (e.g. mDNS re-resolution producing a
+    /// fresh URL) swaps the underlying client in place but must preserve the
+    /// existing `connection_state` watch::Sender — otherwise UI subscribers get
+    /// a closed channel and stop observing later state transitions.
+    #[tokio::test(start_paused = true)]
+    async fn re_register_preserves_connection_state_subscribers() {
+        let config = test_config();
+        let mgr = test_mailboxes(config.clone());
+
+        let mb = MemMailbox::<Msg>::new();
+        let client = mb.client();
+        let id = client.id();
+        mgr.register(client).await;
+
+        let mut rx = {
+            let mm = mgr.mailboxes.lock().await;
+            mm.get(&id).unwrap().connection_state()
+        };
+
+        mgr.register(mb.client()).await;
+
+        // The watcher is still alive: a later state transition reaches the
+        // subscriber instead of erroring out with a closed channel.
+        {
+            let mm = mgr.mailboxes.lock().await;
+            mm.get(&id).unwrap().record_success(&config);
+        }
+        rx.changed().await.expect("subscriber channel closed");
+        assert_eq!(rx.borrow().status, SyncStatus::Active);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn re_register_replaces_client_and_wakes_stopped_mailbox() {
+        let config = MailboxesConfig {
+            active_interval: Duration::from_secs(100),
+            stopped_interval: Duration::from_secs(600),
+            between_polls_delay: Duration::from_millis(0),
+            ..test_config()
+        };
+
+        let mgr = spawn_test_mailboxes(config.clone()).await;
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        // Register an initial client and wait for its first poll.
+        let (client_a, count_a) = TrackingClient::new(false);
+        let id = client_a.id.clone();
+        mgr.register(client_a).await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        let polls_a_after_register = count_a.load(Ordering::Relaxed);
+        assert!(polls_a_after_register >= 1);
+
+        // Force the mailbox into Stopped so without an explicit wake it would not
+        // poll again for ~600s.
+        {
+            let mm = mgr.mailboxes.lock().await;
+            let t = mm.get(&id).unwrap();
+            t.connection_state.send_modify(|s| {
+                s.status = SyncStatus::Stopped;
+                s.consecutive_errors = 100;
+                s.next_poll = Instant::now() + Duration::from_secs(600);
+            });
+        }
+
+        // Re-register with a different client carrying the same id — the loop
+        // should poll the *new* client immediately thanks to the wakeup.
+        let mut client_b = TrackingClient::new(false).0;
+        client_b.id = id.clone();
+        let count_b = client_b.poll_count.clone();
+        let polls_a_before_swap = count_a.load(Ordering::Relaxed);
+        mgr.register(client_b).await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+
+        assert!(count_b.load(Ordering::Relaxed) >= 1);
+        assert_eq!(count_a.load(Ordering::Relaxed), polls_a_before_swap);
+        let mm = mgr.mailboxes.lock().await;
+        assert_eq!(
+            mm.get(&id).unwrap().connection_state().borrow().status,
+            SyncStatus::Active
+        );
     }
 
     // -- wakeup tests --
