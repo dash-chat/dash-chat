@@ -19,11 +19,14 @@
 		DevicesStore,
 		SettingsClient,
 		SettingsStore,
+		MailboxTrackerStore,
+		type IMailboxTrackerStore,
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
 		MockDirectChatClient,
 		MockGroupChatClient,
+		MockMailboxTrackerStore,
 		MockSettingsClient,
 		seedDemoData,
 		DEMO_IDS,
@@ -68,6 +71,7 @@
 	let devicesStore: DevicesStore;
 	let contactsStore: ContactsStore;
 	let chatsStore: ChatsStore;
+	let mailboxTrackerStore: IMailboxTrackerStore;
 
 	if (isPreview) {
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
@@ -102,6 +106,8 @@
 			() => new MockDirectChatClient(mockLogsClient, DEMO_IDS.MY_AGENT_ID),
 			() => new MockGroupChatClient(),
 		);
+
+		mailboxTrackerStore = new MockMailboxTrackerStore();
 	} else {
 		const logsClient = new TauriLogsClient<Payload>();
 		logsStore = new LogsStore<Payload>(logsClient);
@@ -116,6 +122,8 @@
 		const chatsClient = new ChatsClient();
 		chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
 
+		mailboxTrackerStore = new MailboxTrackerStore();
+
 		invoke('log_webview_info', { userAgent: navigator.userAgent }).catch(
 			() => {},
 		);
@@ -125,6 +133,7 @@
 	setContext('devices-store', devicesStore);
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
+	setContext('mailbox-tracker-store', mailboxTrackerStore);
 
 	// Keep the chats summaries signal warm so it's always fully loaded
 	// when navigating back home from any page
