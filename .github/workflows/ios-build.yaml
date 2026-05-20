@@ -62,6 +62,19 @@ jobs:
           </dict></plist>
           EOF
 
+      # The multicast entitlement is a manually-approved capability that flips
+      # PROVISIONING_PROFILE_REQUIRED on, so automatic signing tries to fetch a
+      # matching profile from the Apple account — which CI has no credentials for.
+      # This is only a simulator compile/link check, so strip the entitlement
+      # from the files the build signs against. The committed entitlements keep
+      # it for real device and release builds.
+      - name: Strip multicast entitlement for unsigned simulator compile check
+        run: |
+          for f in src-tauri/gen/apple/dash-chat_iOS/dash-chat_iOS.entitlements \
+                   src-tauri/gen/apple/dash-chat_iOS/dash-chat_iOSrelease.entitlements; do
+            /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.networking.multicast" "$f" || true
+          done
+
       - name: Build iOS app for simulator (compile check)
         env:
           IPHONEOS_DEPLOYMENT_TARGET: "14.0"
