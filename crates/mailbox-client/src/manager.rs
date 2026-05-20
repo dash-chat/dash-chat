@@ -237,31 +237,18 @@ where
         let id = mailbox.id();
         let new_client: Arc<dyn MailboxClient<Item>> = Arc::new(mailbox);
 
-        // Replace the client in place when re-registering the same id (e.g. mDNS
-        // re-resolution may yield a new URL); reusing the existing TrackedMailbox
-        // keeps the `connection_state` watch::Sender alive so subscribers don't
-        // get a closed channel and can keep observing state transitions.
-        let existing = {
-            let mut mailboxes = self.mailboxes.lock().await;
-            match mailboxes.get(&id) {
-                Some(tm) => Some(tm.clone()),
-                None => {
-                    mailboxes.insert(
-                        id.clone(),
-                        Arc::new(TrackedMailbox::new(new_client.clone())),
-                    );
-                    None
-                }
-            }
-        };
-
-        if let Some(tm) = existing {
+        let mut mailboxes = self.mailboxes.lock().await;
+        if let Some(tm) = mailboxes.get(&id).cloned() {
+            drop(mailboxes);
+            // Re-registering the same id (e.g. mDNS re-resolution producing a
+            // new URL): swap the client in place and reset any Stopped/Degraded
+            // backoff. Keeping the existing TrackedMailbox preserves its
+            // connection_state watch::Sender so UI subscribers stay attached.
             tm.replace_client(new_client).await;
-            // Existing tracker may be in Stopped/Degraded state; reset it so
-            // the freshly-swapped client gets polled immediately rather than
-            // waiting out the backoff interval.
             self.wakeup(id);
         } else {
+            mailboxes.insert(id.clone(), Arc::new(TrackedMailbox::new(new_client)));
+            drop(mailboxes);
             self.publish_active_ids().await;
             self.trigger_sync();
         }
