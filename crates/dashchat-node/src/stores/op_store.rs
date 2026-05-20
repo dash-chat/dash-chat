@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use p2panda::operation::LogId;
 use p2panda_core::{Hash, SeqNum};
 use p2panda_store::{SqliteStore, logs::LogStore};
 
@@ -87,7 +88,8 @@ impl OpStore {
         &self,
         topic: &TopicId,
     ) -> Result<BTreeMap<DeviceId, SeqNum>, anyhow::Error> {
-        queries::get_log_heights_by_author(&self.store, topic).await
+        let log_id: LogId = topic.to_owned().into();
+        queries::get_log_heights_by_author(&self.store, &log_id).await
     }
 
     /// Get the interleaved logs for a topic and a list of authors.
@@ -164,6 +166,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         Ok(log.map(|log| {
             log.into_iter()
                 .map(|(op, _)| MailboxOperation {
+                    topic: *topic,
                     header: op.header,
                     body: op.body,
                 })

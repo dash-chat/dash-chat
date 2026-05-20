@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
+use p2panda::operation::LogId;
 use p2panda_core::{SeqNum, VerifyingKey};
 use p2panda_store::SqliteStore;
 use sqlx::prelude::*;
 
-use crate::{DeviceId, LogId};
+use crate::DeviceId;
 
 /// Database representation of a public key and sequence number for a single operation.
 #[derive(FromRow, Debug, Clone, PartialEq, Eq)]
@@ -106,8 +107,8 @@ mod tests {
     async fn test_get_log_heights_by_author() {
         let node = TestNode::new(NodeConfig::default(), "test_node").await;
 
-        let topic = Topic::announcements(node.agent_id());
-        let log_heights = get_log_heights_by_author(&node.op_store.store, &topic)
+        let log_id = LogId::from(Topic::announcements(node.agent_id()));
+        let log_heights = get_log_heights_by_author(&node.op_store.store, &log_id)
             .await
             .unwrap();
         assert_eq!(log_heights, btreemap! { node.device_id() => 1 });

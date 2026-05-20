@@ -6,6 +6,9 @@ use p2panda_core::{Body, VerifyingKey};
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MailboxOperation {
+    // @TODO: topic is only represented on an operation in it's hashed form. We can't derive it
+    // from the header so we add it here as an own field on mailbox operation.
+    pub topic: TopicId,
     pub header: Header,
     pub body: Option<Body>,
 }
@@ -28,7 +31,7 @@ impl MailboxItem for MailboxOperation {
     }
 
     fn topic(&self) -> TopicId {
-        self.header.extensions.topic
+        self.topic
     }
 }
 
@@ -60,15 +63,6 @@ impl mailbox_client::toy::ToyItemTraits for DeviceId {
     }
 }
 
-impl From<Operation> for MailboxOperation {
-    fn from(op: Operation) -> Self {
-        Self {
-            header: op.header,
-            body: op.body,
-        }
-    }
-}
-
 impl From<MailboxOperation> for Operation {
     fn from(op: MailboxOperation) -> Self {
         Self {
@@ -76,12 +70,6 @@ impl From<MailboxOperation> for Operation {
             header: op.header,
             body: op.body,
         }
-    }
-}
-
-impl From<(Header, Option<Body>)> for MailboxOperation {
-    fn from((header, body): (Header, Option<Body>)) -> Self {
-        Self { header, body }
     }
 }
 

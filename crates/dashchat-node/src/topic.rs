@@ -34,6 +34,7 @@ use std::marker::PhantomData;
 use crate::AgentId;
 use named_id::*;
 
+use p2panda::operation::LogId;
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
@@ -140,12 +141,6 @@ impl TopicId {
     }
 }
 
-pub type LogId = TopicId;
-
-impl p2panda_spaces::traits::SpaceId for TopicId {}
-
-pub type DashChatTopicId = TopicId;
-
 // -- SQLite encoding for TopicId --
 
 impl sqlx::Type<Sqlite> for TopicId {
@@ -165,6 +160,26 @@ impl sqlx::Decode<'_, Sqlite> for TopicId {
         let bytes = <Vec<u8> as sqlx::Decode<Sqlite>>::decode(value)?;
         let arr: [u8; 32] = bytes.try_into().map_err(|_| "TopicId is not 32 bytes")?;
         Ok(TopicId(arr))
+    }
+}
+
+// conversion traits for p2panda core types.
+
+impl From<p2panda::Topic> for TopicId {
+    fn from(value: p2panda::Topic) -> Self {
+        TopicId(value.to_bytes())
+    }
+}
+
+impl From<TopicId> for p2panda::Topic {
+    fn from(value: TopicId) -> Self {
+        p2panda::Topic::from(value.0)
+    }
+}
+
+impl From<TopicId> for LogId {
+    fn from(value: TopicId) -> Self {
+        LogId::from_topic(value.into())
     }
 }
 
@@ -290,6 +305,21 @@ impl TryFrom<String> for Topic {
     type Error = anyhow::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(std::str::FromStr::from_str(&value)?)
+    }
+}
+
+// conversion traits for p2panda core types.
+
+impl<K: TopicKind> From<Topic<K>> for p2panda::Topic {
+    fn from(value: Topic<K>) -> Self {
+        p2panda::Topic::from(value.0)
+    }
+}
+
+impl<K: TopicKind> From<Topic<K>> for LogId {
+    fn from(value: Topic<K>) -> Self {
+        let topic: p2panda::Topic = value.into();
+        LogId::from_topic(topic)
     }
 }
 

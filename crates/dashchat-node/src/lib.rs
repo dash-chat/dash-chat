@@ -28,7 +28,7 @@ pub use p2panda_core::SigningKey;
 use p2panda_core::Timestamp;
 pub use p2panda_spaces::ActorId;
 pub use payload::*;
-pub use topic::{LogId, Topic, TopicId};
+pub use topic::{Topic, TopicId};
 
 pub trait Cbor: serde::Serialize + serde::de::DeserializeOwned {
     fn as_bytes(&self) -> Result<Vec<u8>, p2panda_core::cbor::EncodeError> {

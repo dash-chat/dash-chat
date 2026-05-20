@@ -1,38 +1,13 @@
 use named_id::{RenameAll, RenameNone};
 use p2panda_auth::{group::GroupAction, processor::GroupsArgs};
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
-use p2panda_core::{Body, Extension, Hash, PruneFlag, VerifyingKey};
+use p2panda_core::{Body, Hash, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
 use crate::chat::ChatId;
 use crate::compat::Capabilities;
 use crate::contact::QrCode;
-use crate::topic::TopicId;
-use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, Topic};
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Extensions {
-    pub topic: TopicId,
-    pub auth: Option<GroupsArgs>,
-}
-
-impl Extensions {
-    pub fn topic(&self) -> Topic<crate::topic::kind::Untyped> {
-        Topic::untyped(*self.topic)
-    }
-
-    pub fn dependencies(&self) -> Vec<Hash> {
-        self.auth
-            .as_ref()
-            .map_or(vec![], |auth| auth.dependencies.clone())
-    }
-}
-
-impl Extension<GroupsArgs> for Extensions {
-    fn extract(header: &Header) -> Option<GroupsArgs> {
-        header.extensions.auth.clone()
-    }
-}
+use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
 pub struct Profile {
@@ -124,7 +99,7 @@ pub enum Payload {
     /// No other person sees these.
     DeviceGroup(DeviceGroupPayload),
 
-    // @TODO: these will be removed once spaces is integrated into p2panda node as they will move
+    // @TODO: this will be removed once spaces is integrated into p2panda node as they will move
     // onto the provided extension type.
     /// Groups control message.
     #[named_id(skip)]
@@ -145,60 +120,11 @@ impl Payload {
     }
 }
 
-//
-// #[derive(Clone, Debug, Serialize, Deserialize, RenameAll, derive_more::From)]
-// #[serde(tag = "type", content = "payload")]
-// pub enum DashAction {
-//     Payload(Payload),
-//     #[named_id(skip)]
-//     GroupControl(GroupsArgs),
-// }
-//
-// impl DashAction {
-//     pub fn try_into_body(&self) -> Result<Option<Body>, EncodeError> {
-//         Ok(match self {
-//             DashAction::Payload(payload) => Some(payload.try_into_body()?),
-//             DashAction::GroupControl(_) => None,
-//         })
-//     }
-//
-//     pub fn extract_auth_extension(&self) -> Option<GroupsArgs> {
-//         match self {
-//             DashAction::GroupControl(auth) => Some(auth.clone()),
-//             _ => None,
-//         }
-//     }
-//
-//     pub fn group_action(
-//         group_id: ChatId,
-//         action: GroupAction<VerifyingKey, ()>,
-//         dependencies: Vec<Hash>,
-//     ) -> anyhow::Result<Self> {
-//         Ok(DashAction::GroupControl(GroupsArgs {
-//             group_id: group_id.to_group_pubkey()?,
-//             action,
-//             dependencies,
-//         }))
-//     }
-// }
-
 impl Cbor for Payload {}
 impl AsBody for Payload {}
 
-pub type Header = p2panda_core::Header<Extensions>;
-pub type Operation = p2panda_core::Operation<Extensions>;
-
-impl Extension<TopicId> for Extensions {
-    fn extract(header: &Header) -> Option<TopicId> {
-        Some(header.extensions.topic.clone())
-    }
-}
-
-impl Extension<PruneFlag> for Extensions {
-    fn extract(_header: &Header) -> Option<PruneFlag> {
-        Some(PruneFlag::new(false))
-    }
-}
+pub type Header = p2panda::operation::Header;
+pub type Operation = p2panda::operation::Operation;
 
 pub fn encode_gossip_message(header: &Header, body: Option<&Body>) -> Result<Vec<u8>, EncodeError> {
     encode_cbor(&(header.to_bytes(), body.map(|body| body.to_bytes())))
