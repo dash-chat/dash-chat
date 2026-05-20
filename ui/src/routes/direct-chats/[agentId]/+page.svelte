@@ -365,240 +365,239 @@
 	class="absolute inset-0"
 	data-testid="direct-chat-page"
 >
-	{#await $chatId then chatId}
-		{#await $myDeviceId then myDeviceId}
-			{#await $peerProfile then profile}
-				{#await $contactRequest then contactRequest}
-					<ReverseScrollPage
-						bind:this={reverseScrollPage}
-						bind:isAtBottom
-						data-testid="direct-chat-scroll"
-					>
-						{#snippet navbar()}
-							{#if searchMode}
-								<Navbar
-									transparent={true}
-									titleClass="opacity1 w-full min-w-0"
-									leftClass="shrink-0"
-									centerTitle={false}
-								>
-									{#snippet left()}
-										<NavbarBackLink onClick={closeSearch} />
-									{/snippet}
-									{#snippet title()}
-										<div class="flex items-center gap-2">
-											<wa-icon class="quiet" src={wrapPathInSvg(mdiMagnify)}
-											></wa-icon>
-											<input
-												type="text"
-												class="w-full border-none bg-transparent text-base outline-none"
-												placeholder={m.searchMessages()}
-												bind:value={searchQuery}
-												use:focusOnMount
-											/>
-										</div>
-									{/snippet}
-								</Navbar>
-							{:else}
-								<Navbar
-									transparent={true}
-									titleClass="opacity1 w-full min-w-0"
-									leftClass="shrink-0"
-									rightClass="bg-transparent! shadow-none! backdrop-blur-none! pointer-events-none! dark:bg-transparent! dark:shadow-none!"
-									centerTitle={false}
-								>
-									{#snippet left()}
-										{#if !isWideScreen.value}
-											<NavbarBackLink
-												onClick={() => goto('/')}
-												data-testid="direct-chat-back"
-											/>
-										{/if}
-									{/snippet}
-									{#snippet title()}
-										<Link
-											class="flex w-full min-w-0 items-center justify-start"
-											href={`/direct-chats/${agentId}/chat-settings`}
-											data-testid="direct-chat-settings-link"
-										>
-											{#if profile}
-												<AvatarWithName
-													{profile}
-													nameTestId="direct-chat-peer-name"
-												/>
-											{:else}
-												<span
-													class="flex w-full min-w-0 flex-row items-center gap-2"
-												>
-													<span class="shrink-0">
-														<Avatar style="--size: 2.5rem" />
-													</span>
-													<span class="quiet flex-1 min-w-0 truncate">
-														{m.waitingForProfile()}
-													</span>
-												</span>
-											{/if}
-										</Link>
-									{/snippet}
-
-									{#snippet right()}
-										<div class={theme === 'material' ? 'pe-2' : ''}>
-											<ConnectionStatusIndicator />
-										</div>
-									{/snippet}
-								</Navbar>
-							{/if}
-						{/snippet}
-
-						{#await $readMessageHashes then readHashes}
-							{#await $messagesSets then messagesSetsInDays}
-								{@const unreadDivider = getUnreadDividerInfo(
-									messagesSetsInDays,
-									readHashes,
-									myDeviceId,
-								)}
-								<div
-									class="column"
-									style={`padding-bottom: ${bottomBarHeight}px`}
-								>
-									<div
-										class="column min-w-0"
-										style="align-items: center"
-										data-testid="direct-chat-peer-header"
+	{#await $myDeviceId then myDeviceId}
+		{#await $peerProfile then profile}
+			{#await $contactRequest then contactRequest}
+				<ReverseScrollPage
+					bind:this={reverseScrollPage}
+					bind:isAtBottom
+					data-testid="direct-chat-scroll"
+				>
+					{#snippet navbar()}
+						{#if searchMode}
+							<Navbar
+								transparent={true}
+								titleClass="opacity1 w-full min-w-0"
+								leftClass="shrink-0"
+								centerTitle={false}
+							>
+								{#snippet left()}
+									<NavbarBackLink onClick={closeSearch} />
+								{/snippet}
+								{#snippet title()}
+									<div class="flex items-center gap-2">
+										<wa-icon class="quiet" src={wrapPathInSvg(mdiMagnify)}
+										></wa-icon>
+										<input
+											type="text"
+											class="w-full border-none bg-transparent text-base outline-none"
+											placeholder={m.searchMessages()}
+											bind:value={searchQuery}
+											use:focusOnMount
+										/>
+									</div>
+								{/snippet}
+							</Navbar>
+						{:else}
+							<Navbar
+								transparent={true}
+								titleClass="opacity1 w-full min-w-0"
+								leftClass="shrink-0"
+								rightClass="bg-transparent! shadow-none! backdrop-blur-none! pointer-events-none! dark:bg-transparent! dark:shadow-none!"
+								centerTitle={false}
+							>
+								{#snippet left()}
+									{#if !isWideScreen.value}
+										<NavbarBackLink
+											onClick={() => goto('/')}
+											data-testid="direct-chat-back"
+										/>
+									{/if}
+								{/snippet}
+								{#snippet title()}
+									<Link
+										class="flex w-full min-w-0 items-center justify-start"
+										href={`/direct-chats/${agentId}/chat-settings`}
+										data-testid="direct-chat-settings-link"
 									>
 										{#if profile}
-											<Link
-												class="column my-6 gap-2 items-center max-w-full px-4"
-												onclick={() => (showPeerProfile = true)}
-											>
-												<Avatar
-													image={profile.avatar}
-													initials={profile.name.slice(0, 2)}
-													style="--size: 80px;"
-												/>
-												<div class="flex items-center gap-1 max-w-full">
-													<span
-														class="text-xl font-semibold break-words text-center min-w-0"
-														>{fullName(profile)}</span
-													>
-													<wa-icon
-														class="small-icon quiet shrink-0"
-														src={wrapPathInSvg(mdiChevronRight)}
-													></wa-icon>
-												</div>
-											</Link>
+											<AvatarWithName
+												{profile}
+												nameTestId="direct-chat-peer-name"
+											/>
 										{:else}
-											<div class="column my-6 gap-2 items-center">
-												<Avatar style="--size: 80px;" />
-												<span class="quiet text-xl">
+											<span
+												class="flex w-full min-w-0 flex-row items-center gap-2"
+											>
+												<span class="shrink-0">
+													<Avatar style="--size: 2.5rem" />
+												</span>
+												<span class="quiet flex-1 min-w-0 truncate">
 													{m.waitingForProfile()}
 												</span>
-											</div>
+											</span>
 										{/if}
+									</Link>
+								{/snippet}
+
+								{#snippet right()}
+									<div class={theme === 'material' ? 'pe-2' : ''}>
+										<ConnectionStatusIndicator />
 									</div>
-									<div class="row justify-center mb-4">
-										<div
-											class="rounded-xl border-2 border-gray-300 dark:border-gray-600"
+								{/snippet}
+							</Navbar>
+						{/if}
+					{/snippet}
+
+					{#await $readMessageHashes then readHashes}
+						{#await $messagesSets then messagesSetsInDays}
+							{@const unreadDivider = getUnreadDividerInfo(
+								messagesSetsInDays,
+								readHashes,
+								myDeviceId,
+							)}
+							<div
+								class="column"
+								style={`padding-bottom: ${bottomBarHeight}px`}
+							>
+								<div
+									class="column min-w-0"
+									style="align-items: center"
+									data-testid="direct-chat-peer-header"
+								>
+									{#if profile}
+										<Link
+											class="column my-6 gap-2 items-center max-w-full px-4"
+											onclick={() => (showPeerProfile = true)}
 										>
-											<div
-												class="flex flex-col gap-1 items-center p-3 text-center"
-											>
-												{#if contactRequest}
-													<div class="flex items-center gap-2 text-amber-600">
-														<wa-icon
-															class="small-icon"
-															src={wrapPathInSvg(mdiAlert)}
-														></wa-icon>
-														<span class="font-semibold"
-															>{m.reviewCarefully()}</span
-														>
-													</div>
-												{/if}
-												<div
-													class="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300"
+											<Avatar
+												image={profile.avatar}
+												initials={profile.name.slice(0, 2)}
+												style="--size: 80px;"
+											/>
+											<div class="flex items-center gap-1 max-w-full">
+												<span
+													class="text-xl font-semibold break-words text-center min-w-0"
+													>{fullName(profile)}</span
 												>
-													<div
-														class="flex items-center justify-center gap-2"
-														role="button"
-														tabindex="0"
-														onclick={() => (profileNamesSheetOpen = true)}
-														onkeydown={onActivate(
-															() => (profileNamesSheetOpen = true),
-														)}
-													>
-														<wa-icon
-															class="small-icon"
-															src={wrapPathInSvg(mdiAccountQuestion)}
-														></wa-icon>
-														<span
-															><u>{m.profileNames()}</u
-															>{m.areNotVerified()}</span
-														>
-													</div>
-													<div class="flex items-center justify-center gap-2">
-														<wa-icon
-															class="small-icon"
-															src={wrapPathInSvg(mdiAccountGroup)}
-														></wa-icon>
-														<span>{m.noGroupsInCommon()}</span>
-													</div>
-												</div>
-												{#if contactRequest}
-													<div class="row pt-1 justify-center">
-														<Button
-															rounded
-															tonal
-															small
-															onClick={() => (showSecurityTips = true)}
-														>
-															{m.securityTips()}
-														</Button>
-													</div>
-												{/if}
+												<wa-icon
+													class="small-icon quiet shrink-0"
+													src={wrapPathInSvg(mdiChevronRight)}
+												></wa-icon>
 											</div>
+										</Link>
+									{:else}
+										<div class="column my-6 gap-2 items-center">
+											<Avatar style="--size: 80px;" />
+											<span class="quiet text-xl">
+												{m.waitingForProfile()}
+											</span>
+										</div>
+									{/if}
+								</div>
+								<div class="row justify-center mb-4">
+									<div
+										class="rounded-xl border-2 border-gray-300 dark:border-gray-600"
+									>
+										<div
+											class="flex flex-col gap-1 items-center p-3 text-center"
+										>
+											{#if contactRequest}
+												<div class="flex items-center gap-2 text-amber-600">
+													<wa-icon
+														class="small-icon"
+														src={wrapPathInSvg(mdiAlert)}
+													></wa-icon>
+													<span class="font-semibold"
+														>{m.reviewCarefully()}</span
+													>
+												</div>
+											{/if}
+											<div
+												class="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300"
+											>
+												<div
+													class="flex items-center justify-center gap-2"
+													role="button"
+													tabindex="0"
+													onclick={() => (profileNamesSheetOpen = true)}
+													onkeydown={onActivate(
+														() => (profileNamesSheetOpen = true),
+													)}
+												>
+													<wa-icon
+														class="small-icon"
+														src={wrapPathInSvg(mdiAccountQuestion)}
+													></wa-icon>
+													<span
+														><u>{m.profileNames()}</u>{m.areNotVerified()}</span
+													>
+												</div>
+												<div class="flex items-center justify-center gap-2">
+													<wa-icon
+														class="small-icon"
+														src={wrapPathInSvg(mdiAccountGroup)}
+													></wa-icon>
+													<span>{m.noGroupsInCommon()}</span>
+												</div>
+											</div>
+											{#if contactRequest}
+												<div class="row pt-1 justify-center">
+													<Button
+														rounded
+														tonal
+														small
+														onClick={() => (showSecurityTips = true)}
+													>
+														{m.securityTips()}
+													</Button>
+												</div>
+											{/if}
 										</div>
 									</div>
+								</div>
 
-									<ProfileNamesSheet
-										opened={profileNamesSheetOpen}
-										onClose={() => (profileNamesSheetOpen = false)}
-									/>
+								<ProfileNamesSheet
+									opened={profileNamesSheetOpen}
+									onClose={() => (profileNamesSheetOpen = false)}
+								/>
 
-									<div
-										class="column m-2 gap-1"
-										data-testid="direct-chat-messages"
-									>
-										{#each messagesSetsInDays as messageSetInDay}
-											<div use:navbarSticky class="self-center z-10">
-												<DayTag class="quiet" day={messageSetInDay.day} />
-											</div>
+								<div
+									class="column m-2 gap-1"
+									data-testid="direct-chat-messages"
+								>
+									{#each messagesSetsInDays as messageSetInDay}
+										<div use:navbarSticky class="self-center z-10">
+											<DayTag class="quiet" day={messageSetInDay.day} />
+										</div>
 
-											{#each messageSetInDay.eventsSets as messageSet}
-												<div class="column" style="gap: 1px">
-													{#each messageSet as [hash, message], i (hash)}
-														{#if unreadDivider.hash === hash}
-															<div
-																class="unread-divider"
-																data-testid="direct-chat-unread-divider"
-															>
-																{m.unreadMessages({
-																	count: unreadDivider.count,
-																})}
-															</div>
-														{/if}
-														{@const position = messagePosition(
-															messageSet.length,
-															i,
-														)}
-														{#if myDeviceId == message.author}
-															<div
-																class="self-end max-w-[85%]"
-																data-message-hash={hash}
-																use:longpress={{
-																	onLongPress: e =>
-																		showQuickReactionBar(e, message),
-																}}
-															>
+										{#each messageSetInDay.eventsSets as messageSet}
+											<div class="column" style="gap: 1px">
+												{#each messageSet as [hash, message], i (hash)}
+													{#if unreadDivider.hash === hash}
+														<div
+															class="unread-divider"
+															data-testid="direct-chat-unread-divider"
+														>
+															{m.unreadMessages({
+																count: unreadDivider.count,
+															})}
+														</div>
+													{/if}
+													{@const position = messagePosition(
+														messageSet.length,
+														i,
+													)}
+													{#if myDeviceId == message.author}
+														<div
+															class="self-end max-w-[85%]"
+															data-message-hash={hash}
+															use:longpress={{
+																onLongPress: e =>
+																	showQuickReactionBar(e, message),
+															}}
+														>
+															{#await $chatId then chatId}
 																<MessageFromMe
 																	{message}
 																	{position}
@@ -608,282 +607,280 @@
 																	onToggleReaction={emoji =>
 																		toggleReaction(message, emoji, myDeviceId)}
 																/>
-															</div>
-														{:else}
-															<div
-																class="self-start max-w-[85%]"
-																data-message-hash={hash}
-																use:readMessageOnObserve={readHashes?.has(hash)
-																	? null
-																	: hash}
-																use:longpress={{
-																	onLongPress: e =>
-																		showQuickReactionBar(e, message),
-																}}
-															>
-																<MessageFromOthers
-																	{message}
-																	{position}
-																	{myDeviceId}
-																	searchQuery={searchMode ? searchQuery : ''}
-																	onToggleReaction={emoji =>
-																		toggleReaction(message, emoji, myDeviceId)}
-																/>
-															</div>
-														{/if}
-													{/each}
-												</div>
-											{/each}
+															{/await}
+														</div>
+													{:else}
+														<div
+															class="self-start max-w-[85%]"
+															data-message-hash={hash}
+															use:readMessageOnObserve={readHashes?.has(hash)
+																? null
+																: hash}
+															use:longpress={{
+																onLongPress: e =>
+																	showQuickReactionBar(e, message),
+															}}
+														>
+															<MessageFromOthers
+																{message}
+																{position}
+																{myDeviceId}
+																searchQuery={searchMode ? searchQuery : ''}
+																onToggleReaction={emoji =>
+																	toggleReaction(message, emoji, myDeviceId)}
+															/>
+														</div>
+													{/if}
+												{/each}
+											</div>
 										{/each}
-									</div>
+									{/each}
 								</div>
-							{/await}
-						{/await}
-						{#if contactRequest}
-							<Dialog
-								opened={showAcceptDialog}
-								onBackdropClick={() => (showAcceptDialog = false)}
-								title={m.acceptRequestTitle()}
-							>
-								<span>{m.acceptRequestDescription()}</span>
-								{#snippet buttons()}
-									<DialogButton onClick={() => (showAcceptDialog = false)}>
-										{m.cancel()}
-									</DialogButton>
-									<DialogButton
-										data-testid="direct-chat-accept-confirm"
-										onClick={() => {
-											showAcceptDialog = false;
-											acceptContactRequest(contactRequest);
-										}}
-									>
-										{m.accept()}
-									</DialogButton>
-								{/snippet}
-							</Dialog>
-							<Dialog
-								opened={showRejectDialog}
-								onBackdropClick={() => (showRejectDialog = false)}
-								title={m.rejectRequestTitle()}
-							>
-								<span>{m.rejectRequestDescription()}</span>
-								{#snippet buttons()}
-									<DialogButton onClick={() => (showRejectDialog = false)}>
-										{m.cancel()}
-									</DialogButton>
-									<DialogButton
-										data-testid="direct-chat-reject-confirm"
-										onClick={() => {
-											showRejectDialog = false;
-											rejectContactRequest(contactRequest);
-										}}
-									>
-										{m.reject()}
-									</DialogButton>
-								{/snippet}
-							</Dialog>
-						{/if}
-						{#if emojiTargetedMessage && reactionTargetElement && myDeviceId}
-							<QuickReactionBar
-								message={emojiTargetedMessage}
-								targetElement={reactionTargetElement}
-								opened={showQuickBar}
-								isOwnMessage={myDeviceId === emojiTargetedMessage.author}
-								{myDeviceId}
-								onReaction={emoji =>
-									toggleReaction(emojiTargetedMessage!, emoji, myDeviceId)}
-								onExpand={expandToFullPicker}
-								onClose={hideReactionUI}
-							/>
-						{/if}
-						<Sheet
-							class="pb-safe text-lg"
-							opened={showFullPicker}
-							onBackdropClick={hideReactionUI}
-						>
-							<div class="flex flex-col items-center">
-								<div class="sheet-handle"></div>
 							</div>
-							{#if emojiTargetedMessage && myDeviceId}
-								{#if Object.values(emojiTargetedMessage.reactions).length > 0}
-									<Block>
-										{#each condenseReactions(emojiTargetedMessage.reactions, myDeviceId) as reaction}
-											<button
-												class="me-2 text-lg"
-												onclick={() =>
-													toggleReaction(
-														emojiTargetedMessage!,
-														reaction.emoji,
-														myDeviceId!,
-													)}
-											>
-												<Chip class="border !border-white dark:!border-black">
-													{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
-												</Chip>
-											</button>
-										{/each}
-									</Block>
-								{/if}
+						{/await}
+					{/await}
+					{#if contactRequest}
+						<Dialog
+							opened={showAcceptDialog}
+							onBackdropClick={() => (showAcceptDialog = false)}
+							title={m.acceptRequestTitle()}
+						>
+							<span>{m.acceptRequestDescription()}</span>
+							{#snippet buttons()}
+								<DialogButton onClick={() => (showAcceptDialog = false)}>
+									{m.cancel()}
+								</DialogButton>
+								<DialogButton
+									data-testid="direct-chat-accept-confirm"
+									onClick={() => {
+										showAcceptDialog = false;
+										acceptContactRequest(contactRequest);
+									}}
+								>
+									{m.accept()}
+								</DialogButton>
+							{/snippet}
+						</Dialog>
+						<Dialog
+							opened={showRejectDialog}
+							onBackdropClick={() => (showRejectDialog = false)}
+							title={m.rejectRequestTitle()}
+						>
+							<span>{m.rejectRequestDescription()}</span>
+							{#snippet buttons()}
+								<DialogButton onClick={() => (showRejectDialog = false)}>
+									{m.cancel()}
+								</DialogButton>
+								<DialogButton
+									data-testid="direct-chat-reject-confirm"
+									onClick={() => {
+										showRejectDialog = false;
+										rejectContactRequest(contactRequest);
+									}}
+								>
+									{m.reject()}
+								</DialogButton>
+							{/snippet}
+						</Dialog>
+					{/if}
+					{#if emojiTargetedMessage && reactionTargetElement && myDeviceId}
+						<QuickReactionBar
+							message={emojiTargetedMessage}
+							targetElement={reactionTargetElement}
+							opened={showQuickBar}
+							isOwnMessage={myDeviceId === emojiTargetedMessage.author}
+							{myDeviceId}
+							onReaction={emoji =>
+								toggleReaction(emojiTargetedMessage!, emoji, myDeviceId)}
+							onExpand={expandToFullPicker}
+							onClose={hideReactionUI}
+						/>
+					{/if}
+					<Sheet
+						class="pb-safe text-lg"
+						opened={showFullPicker}
+						onBackdropClick={hideReactionUI}
+					>
+						<div class="flex flex-col items-center">
+							<div class="sheet-handle"></div>
+						</div>
+						{#if emojiTargetedMessage && myDeviceId}
+							{#if Object.values(emojiTargetedMessage.reactions).length > 0}
 								<Block>
-									<EmojiPickerWrapper
-										onEmojiSelected={emoji =>
-											toggleReaction(emojiTargetedMessage!, emoji, myDeviceId!)}
-									></EmojiPickerWrapper>
-								</Block>
-							{:else}
-								<Block>
-									<EmojiPickerWrapper
-										onEmojiSelected={emoji => {
-											messageText += emoji;
-											hideReactionUI();
-										}}
-									></EmojiPickerWrapper>
+									{#each condenseReactions(emojiTargetedMessage.reactions, myDeviceId) as reaction}
+										<button
+											class="me-2 text-lg"
+											onclick={() =>
+												toggleReaction(
+													emojiTargetedMessage!,
+													reaction.emoji,
+													myDeviceId!,
+												)}
+										>
+											<Chip class="border !border-white dark:!border-black">
+												{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
+											</Chip>
+										</button>
+									{/each}
 								</Block>
 							{/if}
-						</Sheet>
-
-						<SafetyTipsSheet
-							opened={showSecurityTips}
-							onClose={() => (showSecurityTips = false)}
-						/>
-
-						<PeerProfileSheet
-							opened={showPeerProfile}
-							onClose={() => (showPeerProfile = false)}
-							{profile}
-						/>
-					</ReverseScrollPage>
-
-					{#if !isAtBottom}
-						{#await $unreadCount then count}
-							<div
-								class="absolute end-4"
-								style={`bottom: ${bottomBarHeight + 8}px`}
-							>
-								<ScrollToBottomButton
-									unreadCount={count ?? 0}
-									onClick={() => reverseScrollPage?.scrollToBottom()}
-								/>
-							</div>
-						{/await}
-					{/if}
-
-					<div
-						bind:clientHeight={bottomBarHeight}
-						class="absolute bottom-0 inset-x-0 z-20"
-						class:bg-md-light-surface={theme === 'material'}
-						class:dark:bg-md-dark-surface={theme === 'material'}
-					>
-						{#if searchMode}
-							<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
-								<div
-									class="mx-4 border-t border-gray-300 dark:border-gray-600"
-									style="margin: 0 auto"
-								></div>
-								<div
-									class="row items-center gap-2 px-4 py-3"
-									style="margin: 0 auto"
-								>
-									<button
-										onclick={() => dateInput?.click()}
-										aria-label={m.jumpToDate()}
-									>
-										<wa-icon
-											class="quiet"
-											src={wrapPathInSvg(mdiCalendarSearch)}
-										></wa-icon>
-									</button>
-									<input
-										type="date"
-										class="absolute opacity-0 h-0 w-0"
-										bind:this={dateInput}
-										onchange={e => jumpToDate(e.currentTarget.value)}
-									/>
-									<span class="flex-1 text-center text-sm quiet">
-										{#if !searchQuery}
-											<!-- empty -->
-										{:else if matchingHashes.length === 0}
-											{m.noResults()}
-										{:else}
-											{m.searchResultsCount({
-												current: String(currentMatchIndex + 1),
-												total: String(matchingHashes.length),
-											})}
-										{/if}
-									</span>
-									<button
-										disabled={!matchingHashes.length}
-										onclick={goToPreviousMatch}
-										class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-										aria-label={m.previousResult()}
-									>
-										<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
-									</button>
-									<button
-										disabled={!matchingHashes.length}
-										onclick={goToNextMatch}
-										class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-										aria-label={m.nextResult()}
-									>
-										<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
-									</button>
-								</div>
-							</div>
-						{:else if contactRequest}
-							<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
-								<div
-									class="mx-4 border-t border-gray-300 dark:border-gray-600"
-									style="margin: 0 auto"
-								></div>
-								<div
-									class="flex flex-col items-center gap-3 px-6 py-3"
-									style="margin: 0 auto"
-								>
-									<p
-										class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
-									>
-										{@html m
-											.contactRequestBanner({
-												name: contactRequest.profile.name
-													.replace(/&/g, '&amp;')
-													.replace(/</g, '&lt;')
-													.replace(/>/g, '&gt;')
-													.replace(/"/g, '&quot;'),
-											})
-											.replace(
-												/\*\*(.*?)\*\*/g,
-												'<strong class="text-black dark:text-white">$1</strong>',
-											)}
-									</p>
-									<div class="flex w-full gap-2">
-										<Button
-											class="neutral-tonal-button text-red-500 flex-1"
-											rounded
-											tonal
-											data-testid="direct-chat-reject-btn"
-											onClick={() => (showRejectDialog = true)}
-											>{m.reject()}</Button
-										>
-										<Button
-											class="neutral-tonal-button flex-1"
-											rounded
-											tonal
-											data-testid="direct-chat-accept-btn"
-											onClick={() => (showAcceptDialog = true)}
-											>{m.accept()}</Button
-										>
-									</div>
-								</div>
-							</div>
+							<Block>
+								<EmojiPickerWrapper
+									onEmojiSelected={emoji =>
+										toggleReaction(emojiTargetedMessage!, emoji, myDeviceId!)}
+								></EmojiPickerWrapper>
+							</Block>
 						{:else}
-							<MessageInput
-								bind:value={messageText}
-								onSend={sendMessage}
-								onEmojiClick={() => (showFullPicker = true)}
-							/>
+							<Block>
+								<EmojiPickerWrapper
+									onEmojiSelected={emoji => {
+										messageText += emoji;
+										hideReactionUI();
+									}}
+								></EmojiPickerWrapper>
+							</Block>
 						{/if}
-					</div>
-				{/await}
+					</Sheet>
+
+					<SafetyTipsSheet
+						opened={showSecurityTips}
+						onClose={() => (showSecurityTips = false)}
+					/>
+
+					<PeerProfileSheet
+						opened={showPeerProfile}
+						onClose={() => (showPeerProfile = false)}
+						{profile}
+					/>
+				</ReverseScrollPage>
+
+				{#if !isAtBottom}
+					{#await $unreadCount then count}
+						<div
+							class="absolute end-4"
+							style={`bottom: ${bottomBarHeight + 8}px`}
+						>
+							<ScrollToBottomButton
+								unreadCount={count ?? 0}
+								onClick={() => reverseScrollPage?.scrollToBottom()}
+							/>
+						</div>
+					{/await}
+				{/if}
+
+				<div
+					bind:clientHeight={bottomBarHeight}
+					class="absolute bottom-0 inset-x-0 z-20"
+					class:bg-md-light-surface={theme === 'material'}
+					class:dark:bg-md-dark-surface={theme === 'material'}
+				>
+					{#if searchMode}
+						<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
+							<div
+								class="mx-4 border-t border-gray-300 dark:border-gray-600"
+								style="margin: 0 auto"
+							></div>
+							<div
+								class="row items-center gap-2 px-4 py-3"
+								style="margin: 0 auto"
+							>
+								<button
+									onclick={() => dateInput?.click()}
+									aria-label={m.jumpToDate()}
+								>
+									<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
+									></wa-icon>
+								</button>
+								<input
+									type="date"
+									class="absolute opacity-0 h-0 w-0"
+									bind:this={dateInput}
+									onchange={e => jumpToDate(e.currentTarget.value)}
+								/>
+								<span class="flex-1 text-center text-sm quiet">
+									{#if !searchQuery}
+										<!-- empty -->
+									{:else if matchingHashes.length === 0}
+										{m.noResults()}
+									{:else}
+										{m.searchResultsCount({
+											current: String(currentMatchIndex + 1),
+											total: String(matchingHashes.length),
+										})}
+									{/if}
+								</span>
+								<button
+									disabled={!matchingHashes.length}
+									onclick={goToPreviousMatch}
+									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+									aria-label={m.previousResult()}
+								>
+									<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
+								</button>
+								<button
+									disabled={!matchingHashes.length}
+									onclick={goToNextMatch}
+									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+									aria-label={m.nextResult()}
+								>
+									<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
+								</button>
+							</div>
+						</div>
+					{:else if contactRequest}
+						<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
+							<div
+								class="mx-4 border-t border-gray-300 dark:border-gray-600"
+								style="margin: 0 auto"
+							></div>
+							<div
+								class="flex flex-col items-center gap-3 px-6 py-3"
+								style="margin: 0 auto"
+							>
+								<p
+									class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
+								>
+									{@html m
+										.contactRequestBanner({
+											name: contactRequest.profile.name
+												.replace(/&/g, '&amp;')
+												.replace(/</g, '&lt;')
+												.replace(/>/g, '&gt;')
+												.replace(/"/g, '&quot;'),
+										})
+										.replace(
+											/\*\*(.*?)\*\*/g,
+											'<strong class="text-black dark:text-white">$1</strong>',
+										)}
+								</p>
+								<div class="flex w-full gap-2">
+									<Button
+										class="neutral-tonal-button text-red-500 flex-1"
+										rounded
+										tonal
+										data-testid="direct-chat-reject-btn"
+										onClick={() => (showRejectDialog = true)}
+										>{m.reject()}</Button
+									>
+									<Button
+										class="neutral-tonal-button flex-1"
+										rounded
+										tonal
+										data-testid="direct-chat-accept-btn"
+										onClick={() => (showAcceptDialog = true)}
+										>{m.accept()}</Button
+									>
+								</div>
+							</div>
+						</div>
+					{:else}
+						<MessageInput
+							bind:value={messageText}
+							onSend={sendMessage}
+							onEmojiClick={() => (showFullPicker = true)}
+						/>
+					{/if}
+				</div>
 			{/await}
 		{/await}
 	{/await}
