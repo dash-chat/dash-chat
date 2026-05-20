@@ -2,12 +2,12 @@ use p2panda_auth::{Access, group::GroupCrdtState, processor::GroupsOperation};
 use p2panda_core::{Hash, VerifyingKey};
 use p2panda_store::{SqliteStore, Transaction, groups::GroupsStore};
 
-use crate::{ChatId, ChatMember, topic::TopicId};
+use crate::{ChatId, ChatMember, TopicId};
 
 type GroupState = GroupCrdtState<VerifyingKey, Hash, GroupsOperation, ()>;
 
-/// Singleton groups state id. 
-const GROUPS_STATE_ID: u32 = 0;
+/// Singleton groups state id.
+pub(crate) const GROUPS_STATE_ID: u32 = 0;
 
 #[derive(Clone)]
 pub struct GroupStore {
@@ -19,9 +19,15 @@ impl GroupStore {
         Self { db: sqlite }
     }
 
-    pub async fn heads(&self, _topic: TopicId) -> anyhow::Result<Vec<Hash>> {
+    pub async fn heads(&self, _topic_id: TopicId) -> anyhow::Result<Vec<Hash>> {
         // @TODO: we should use auth.heads_filtered(topic) here instead so as to correctly
         // partition the groups graph based on only the necessary dependencies.
+        //
+        // Like so:
+        //
+        // let group_id = Topic::from_topic_id(topic_id).to_group_pubkey()?;
+        // let auth = self.auth_state().await?;
+        // Ok(auth.heads_filtered(&[group_id]))
         let auth = self.auth_state().await?;
         Ok(auth.heads())
     }

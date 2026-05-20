@@ -43,6 +43,9 @@ pub enum ShutdownError {
     #[error("Error sending shutting signal to node actor: {0:?}")]
     ActorShutdown(Box<dyn std::any::Any + Send + 'static>),
 
+    #[error("Error closing down the processor task: {0:?}")]
+    ProcessorCancel(Box<dyn std::any::Any + Send + 'static>),
+
     #[error(transparent)]
     Receive(#[from] RecvError)
 }

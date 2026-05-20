@@ -133,7 +133,7 @@ pub mod kind {
 )]
 #[display("{}", hex::encode(self.0))]
 #[debug("{}", self)]
-pub struct TopicId([u8; 32]);
+pub struct TopicId(pub(crate) [u8; 32]);
 
 impl TopicId {
     pub const fn new(bytes: [u8; 32]) -> Self {
@@ -258,6 +258,16 @@ impl Topic<kind::Chat> {
 
     pub fn from_group_pubkey(pubkey: p2panda_core::VerifyingKey) -> Self {
         Self::new(*pubkey.as_bytes())
+    }
+
+    // @TODO: need to validate the bytes are the right shape.
+    pub fn from_topic(topic: p2panda::Topic) -> Self {
+        Self::new(*topic.as_bytes())
+    }
+
+    // @TODO: need to validate the bytes are the right shape.
+    pub fn from_topic_id(topic_id: TopicId) -> Self {
+        Self::new(topic_id.0)
     }
 
     pub fn to_group_pubkey(self) -> anyhow::Result<p2panda_core::VerifyingKey> {

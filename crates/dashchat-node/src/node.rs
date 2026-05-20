@@ -4,6 +4,7 @@ mod stream_processing;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, ShutdownError};
@@ -19,9 +20,10 @@ use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
 use p2panda_core::{Hash, VerifyingKey};
 use p2panda_spaces::ActorId;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
+use tokio::task::JoinHandle;
 
 use crate::chat::ChatMessageContent;
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
@@ -88,6 +90,8 @@ pub struct Node {
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
 
     actor_tx: mpsc::Sender<Command>,
+    processor_cancel_tx: mpsc::Sender<()>,
+    processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 
     pub local_store: LocalStore,
     group_store: GroupStore,
@@ -139,13 +143,16 @@ impl Node {
         let store = p2panda_node.store();
 
         // Spawn node actor.
-        let node_actor = Actor::new(p2panda_node);
+        let (node_actor, operations_rx) = Actor::new(p2panda_node);
         let actor_tx = node_actor.spawn().await?;
 
         // === stores === //
 
+        // @TODO: I didn't look too closely into if these stores are needed yet. It's possible we
+        // can reduce the need for these wrappers by either moving generally useful methods into
+        // p2panda or finding alternative routes to achieve the same queries.
         let group_store = GroupStore::new(store.clone());
-        let op_store = OpStore::from_sqlite(store.clone()).await?;
+        let op_store = OpStore::from_sqlite(store.clone());
 
         // === mailboxes === //
 
@@ -153,6 +160,7 @@ impl Node {
 
         // === node === //
 
+        let (processor_cancel_tx, processor_cancel_rx) = mpsc::channel(1);
         let node = Self {
             op_store,
             mailboxes,
@@ -164,7 +172,15 @@ impl Node {
             notification_tx,
             topic_subscribed_tx,
             actor_tx,
+            processor_cancel_tx,
+            processor_handle: Default::default(),
         };
+
+        // === application processor task === //
+
+        let processor_handle =
+            node.spawn_application_processor_task(operations_rx, processor_cancel_rx);
+        node.processor_handle.lock().await.replace(processor_handle);
 
         // === topics === //
 
@@ -556,6 +572,15 @@ impl Node {
 
         reply_rx.await?;
 
+        if let Err(err) = self.processor_cancel_tx.send(()).await {
+            tracing::warn!("failed to send shutdown signal to node actor: {}", err);
+            return Err(ShutdownError::ActorShutdown(Box::new(err)));
+        }
+
+        if let Some(handle) = self.processor_handle.lock().await.take() {
+            let _ = handle.await;
+        }
+
         // Close pools last. SqlitePool clones share underlying state, so closing
         // here drains every connection across the app.
         self.local_store.close().await;
@@ -571,7 +596,12 @@ impl Node {
     /// - send an invitation to them to do the same
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
     pub async fn add_contact(&self, contact: QrCode) -> Result<AgentId, AddContactError> {
-        tracing::debug!("adding contact: {:?}", contact);
+        tracing::debug!(
+            device_pub_key = %contact.device_pubkey,
+            agent_id = %contact.agent_id,
+            inbox_topic = ?contact.inbox_topic,
+            "adding contact",
+        );
 
         self.local_store
             .save_contact(contact.clone())
@@ -746,6 +776,11 @@ impl Node {
         for topic in self.local_store.subscribed_topics().await?.iter() {
             self.initialize_topic(*topic).await?;
         }
+
+        // @TODO: I had to add this so that the device group topic is subscribed to when we later
+        // attempt to publish operations to it.
+        self.initialize_topic(self.device_group_topic().into())
+            .await?;
 
         Ok(())
     }

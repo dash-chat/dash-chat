@@ -1,3 +1,5 @@
+use tracing::debug;
+
 use crate::topic::TopicKind;
 
 use super::*;
@@ -13,9 +15,13 @@ impl Node {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         // Construct a node actor command.
+        let payload: Payload = payload.into();
+
+        debug!(topic = %topic, payload = ?payload, "publish operation");
+
         let command = Command::Publish {
             topic: topic.into(),
-            payload: payload.into(),
+            payload,
             reply_tx,
         };
 

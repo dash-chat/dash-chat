@@ -46,16 +46,16 @@ impl OpStore {
         })
     }
 
-    pub async fn from_sqlite(store: SqliteStore) -> anyhow::Result<Self> {
-        Ok(Self {
+    pub fn from_sqlite(store: SqliteStore) -> Self {
+        Self {
             store,
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
-        })
+        }
     }
 
     pub async fn temporary_sqlite() -> anyhow::Result<Self> {
         let store = SqliteStore::temporary().await;
-        Ok(Self::from_sqlite(store).await?)
+        Ok(Self::from_sqlite(store))
     }
 
     /// Gracefully close the underlying SQLite pool (no-op for the in-memory variant).
@@ -66,15 +66,15 @@ impl OpStore {
     pub async fn get_log(
         &self,
         author: &DeviceId,
-        topic: &TopicId,
+        log_id: &LogId,
         from: Option<u64>,
     ) -> anyhow::Result<Vec<Operation>> {
         let log = self
             .store
-            .get_log_entries(author, topic, from, None)
+            .get_log_entries(author, log_id, from, None)
             .await?
             .unwrap_or_else(|| {
-                tracing::warn!("No log found for topic {topic:?} and author {author:?}");
+                tracing::warn!("No log found for log_id {log_id:?} and author {author:?}");
                 vec![]
             })
             .into_iter()
@@ -86,9 +86,9 @@ impl OpStore {
     /// Get the "height" of each log, which is actually the highest sequence number of the log.
     pub async fn get_log_heights(
         &self,
-        topic: &TopicId,
+        log_id: &LogId,
     ) -> Result<BTreeMap<DeviceId, SeqNum>, anyhow::Error> {
-        let log_id: LogId = topic.to_owned().into();
+        let log_id: LogId = log_id.to_owned().into();
         queries::get_log_heights_by_author(&self.store, &log_id).await
     }
 
@@ -98,12 +98,12 @@ impl OpStore {
     #[cfg(any(test, feature = "testing"))]
     pub async fn get_interleaved_logs(
         &self,
-        topic_id: TopicId,
+        log_id: LogId,
         authors: Vec<DeviceId>,
     ) -> anyhow::Result<Vec<(Header, Option<Payload>)>> {
         let mut logs = Vec::new();
         for author in authors {
-            for op in self.get_log(&author, &topic_id, None).await? {
+            for op in self.get_log(&author, &log_id, None).await? {
                 if let Some(body) = op.body {
                     if let Ok(payload) = Payload::try_from_body(&body) {
                         logs.push((op.header, Some(payload)));
@@ -119,9 +119,9 @@ impl OpStore {
         Ok(logs)
     }
 
-    pub async fn get_authors(&self, topic_id: TopicId) -> anyhow::Result<HashSet<DeviceId>> {
+    pub async fn get_authors(&self, log_id: LogId) -> anyhow::Result<HashSet<DeviceId>> {
         let authors = self
-            .get_log_heights(&topic_id)
+            .get_log_heights(&log_id)
             .await?
             .keys()
             .cloned()
@@ -156,12 +156,15 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         topic: &TopicId,
         from: u64,
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
+        let log_id = LogId::from(*topic);
         let from = if from == 0 { None } else { Some(from - 1) };
         let log = self
             .store
-            .get_log_entries(author, topic, from, None)
+            .get_log_entries(author, &log_id, from, None)
             .await
-            .map_err(|err| anyhow::anyhow!("failed to get log for {author:?}: {topic:?}: {err}"))?;
+            .map_err(|err| {
+                anyhow::anyhow!("failed to get log for {author:?}: {log_id:?}: {err}")
+            })?;
 
         Ok(log.map(|log| {
             log.into_iter()
@@ -175,7 +178,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
     }
 
     async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(DeviceId, u64)>> {
-        Ok(OpStore::get_log_heights(self, topic)
+        Ok(OpStore::get_log_heights(self, &LogId::from(*topic))
             .await?
             .into_iter()
             .collect())
