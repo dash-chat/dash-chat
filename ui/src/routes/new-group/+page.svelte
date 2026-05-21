@@ -64,7 +64,7 @@
 						onClick={() => (currentPage = 'group-info')}
 						data-testid="new-group-next-link"
 					>
-						{selectedContacts.length === 0 ? m.omit() : m.next()}
+						{selectedContacts.length === 0 ? m.skip() : m.next()}
 					</Link>
 				{/if}
 			{/snippet}
@@ -120,7 +120,7 @@
 				class="fixed-action-btn"
 				rounded
 			>
-				{selectedContacts.length === 0 ? m.omit() : m.next()}
+				{selectedContacts.length === 0 ? m.skip() : m.next()}
 			</Button>
 		{/if}
 	</Page>
