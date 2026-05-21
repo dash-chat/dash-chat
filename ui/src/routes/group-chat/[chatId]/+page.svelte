@@ -117,6 +117,7 @@
 										/>
 										<MessageFromOthers
 											{message}
+											{chatId}
 											position="single"
 											{myDeviceId}
 											searchQuery=""
