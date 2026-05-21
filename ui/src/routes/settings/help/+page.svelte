@@ -3,6 +3,7 @@
 	import { getVersion } from '@tauri-apps/api/app';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { developerFeatures } from '$lib/stores/developer-features.svelte';
 	import {
 		BlockTitle,
 		List,
@@ -10,6 +11,7 @@
 		Navbar,
 		NavbarBackLink,
 		Page,
+		Toggle,
 		useTheme,
 	} from 'konsta/svelte';
 
@@ -48,6 +50,17 @@
 						data-testid="help-version"
 					/>
 				{/await}
+				<ListItem
+					title={m.developerFeatures()}
+					data-testid="help-developer-features-toggle"
+				>
+					{#snippet after()}
+						<Toggle
+							checked={developerFeatures.enabled}
+							onChange={() => developerFeatures.toggle()}
+						/>
+					{/snippet}
+				</ListItem>
 			</List>
 		</div>
 	</div>
