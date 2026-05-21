@@ -621,14 +621,17 @@
 																	showQuickReactionBar(e, message),
 															}}
 														>
-															<MessageFromOthers
-																{message}
-																{position}
-																{myDeviceId}
-																searchQuery={searchMode ? searchQuery : ''}
-																onToggleReaction={emoji =>
-																	toggleReaction(message, emoji, myDeviceId)}
-															/>
+															{#await $chatId then chatId}
+																<MessageFromOthers
+																	{message}
+																	{position}
+																	{myDeviceId}
+																	{chatId}
+																	searchQuery={searchMode ? searchQuery : ''}
+																	onToggleReaction={emoji =>
+																		toggleReaction(message, emoji, myDeviceId)}
+																/>
+															{/await}
 														</div>
 													{/if}
 												{/each}

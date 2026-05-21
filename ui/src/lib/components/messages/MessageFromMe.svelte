@@ -47,7 +47,7 @@
 		mailboxTrackerStore.connectionStatus,
 	);
 
-	const isLocalMailboxSync = $derived(
+	const isOfflineMessage = $derived(
 		$syncStatus !== undefined &&
 			$connectionStatus !== undefined &&
 			!$syncStatus.syncedWithCloudMailbox &&
@@ -58,7 +58,7 @@
 <Card
 	raised
 	contentWrapPadding="p-2"
-	class={`message my-message ${position}-message ${isLocalMailboxSync ? 'local-mailbox-sync' : ''}`}
+	class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 >
 	<div class="row gap-2 mx-1" style="align-items: end">
 		<span class="flex-1">
@@ -109,12 +109,12 @@
 		border-start-end-radius: 4px;
 	}
 
-	:global(.my-message.local-mailbox-sync) {
+	:global(.my-message.offline-message) {
 		background-color: color-mix(in srgb, var(--color-brand-primary), white 25%);
 		border: 2px dashed color-mix(in srgb, var(--color-brand-primary), black 35%);
 		background-clip: padding-box;
 	}
-	:global(.my-message.local-mailbox-sync > div) {
+	:global(.my-message.offline-message > div) {
 		padding: calc(0.5rem - 2px) !important;
 	}
 </style>
