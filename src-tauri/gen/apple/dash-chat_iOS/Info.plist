@@ -42,11 +42,28 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Read QR codes</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Dash Chat discovers and syncs with mailboxes on your local network so you can exchange messages without internet access.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_dashchat._tcp</string>
+	</array>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
 	<key>FirebaseMessagingAutoInitEnabled</key>
 	<false/>
 	<key>FirebaseDataCollectionDefaultEnabled</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>dash-chat</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>dash-chat</string>
+		</dict>
+	</array>
 </dict>
 </plist>

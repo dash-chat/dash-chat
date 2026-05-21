@@ -38,6 +38,7 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
 ) -> anyhow::Result<()> {
     let mdns = handle.state::<ServiceDaemon>();
     let receiver = mdns.browse(MDNS_SERVICE_TYPE)?;
+    log::info!("Started mdns browse for local mailboxes: {MDNS_SERVICE_TYPE}");
 
     tokio::spawn(async move {
         while let Ok(event) = receiver.recv_async().await {
