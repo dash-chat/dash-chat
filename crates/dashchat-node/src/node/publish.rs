@@ -6,7 +6,7 @@ use super::*;
 
 impl Node {
     #[tracing::instrument(skip_all, fields(me=?self.device_id().renamed()))]
-    pub(super) async fn author_operation<K: TopicKind>(
+    pub(super) async fn publish<K: TopicKind>(
         &self,
         topic: Topic<K>,
         payload: impl Into<Payload>,

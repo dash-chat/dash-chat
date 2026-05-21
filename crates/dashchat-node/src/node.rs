@@ -1,6 +1,6 @@
 pub(crate) mod actor;
-pub(crate) mod author_operation;
-mod stream_processing;
+mod app_processing;
+pub(crate) mod publish;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -36,7 +36,7 @@ use crate::{
     Header, Operation,
 };
 
-pub use stream_processing::Notification;
+pub use app_processing::Notification;
 
 const NETWORK_ID: &'static str = "dash-chat";
 
@@ -285,7 +285,7 @@ impl Node {
             (GroupMember::Individual(*self.device_id()), Access::write()),
             (GroupMember::Individual(*other_device_id), Access::write()),
         ];
-        self.author_operation(
+        self.publish(
             topic,
             Payload::group_control(topic, GroupAction::Create { initial_members }, deps)?,
             Some(&format!("create_direct_chat_space({})", topic.renamed())),
@@ -336,7 +336,7 @@ impl Node {
 
         // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads(*chat_id).await?;
-        self.author_operation(
+        self.publish(
             chat_id,
             Payload::group_control(chat_id, GroupAction::Create { initial_members }, deps)?,
             Some(&format!("create_group({})", chat_id.renamed())),
@@ -359,7 +359,7 @@ impl Node {
             person.renamed(),
             chat_id.renamed(),
         );
-        self.author_operation(
+        self.publish(
             self.direct_chat_topic(person),
             payload,
             Some(&format!(
@@ -381,7 +381,7 @@ impl Node {
         // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads(*chat_id).await?;
 
-        self.author_operation(
+        self.publish(
             chat_id,
             Payload::group_control(
                 chat_id,
@@ -415,7 +415,7 @@ impl Node {
     ) -> anyhow::Result<()> {
         // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads(*chat_id).await?;
-        self.author_operation(
+        self.publish(
             chat_id,
             Payload::group_control(
                 chat_id,
@@ -454,7 +454,7 @@ impl Node {
     }
 
     pub async fn set_profile(&self, profile: Profile) -> Result<(), crate::Error> {
-        self.author_operation(
+        self.publish(
             Topic::announcements(self.agent_id()),
             Payload::Announcements(AnnouncementsPayload::SetProfile(profile)),
             Some(&format!("set_profile({})", self.device_id().renamed())),
@@ -534,7 +534,7 @@ impl Node {
         let message = message.to_version(&capabilities)?;
 
         let header = self
-            .author_operation(
+            .publish(
                 topic,
                 Payload::Chat(ChatPayload::Message(message.clone())),
                 None,
@@ -552,7 +552,7 @@ impl Node {
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
         let header = self
-            .author_operation(topic, Payload::Chat(ChatPayload::Reaction(reaction)), None)
+            .publish(topic, Payload::Chat(ChatPayload::Reaction(reaction)), None)
             .await?;
 
         Ok(header)
@@ -666,7 +666,7 @@ impl Node {
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
-        self.author_operation(
+        self.publish(
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact.clone())),
             Some(&format!("add_contact/add_contact({})", agent.renamed())),
@@ -689,7 +689,7 @@ impl Node {
             else {
                 return Err(AddContactError::ProfileNotCreated);
             };
-            self.author_operation(
+            self.publish(
                 inbox_topic.topic,
                 Payload::Inbox(InboxPayload::ContactRequest { code, profile }),
                 Some(&format!("add_contact/contact_request({})", agent.renamed())),
@@ -715,7 +715,7 @@ impl Node {
     pub async fn reject_contact_request(&self, agent_id: AgentId) -> Result<(), Error> {
         tracing::debug!("rejecting contact request from: {:?}", agent_id);
 
-        self.author_operation(
+        self.publish(
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::RejectContactRequest(agent_id)),
             Some(&format!("reject_contact_request({})", agent_id.renamed())),
@@ -741,7 +741,7 @@ impl Node {
     ) -> Result<(), Error> {
         use crate::payload::ReadMessagesPayload;
 
-        self.author_operation(
+        self.publish(
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::ReadMessages(ReadMessagesPayload {
                 chat_id,
@@ -793,7 +793,7 @@ impl Node {
 
         // If the capability is unset or different from the current one, set it now.
         if latest_capability != Some(capabilities) {
-            self.author_operation(
+            self.publish(
                 announcements,
                 Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }),
                 Some(&format!(
