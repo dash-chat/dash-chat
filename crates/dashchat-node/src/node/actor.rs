@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use futures::future::join;
 use futures::{FutureExt, Stream};
 use p2panda::node::CreateStreamError;
 use p2panda::operation::{Extensions, LogId, Operation};
@@ -23,6 +24,7 @@ use crate::stores::GROUPS_STATE_ID;
 
 type GroupsProcessor = p2panda_auth::processor::GroupsProcessor<Topic, Extensions, LogId>;
 
+/// Node actor commands.
 pub(crate) enum Command {
     Subscribe {
         topic: Topic,
@@ -40,42 +42,44 @@ pub(crate) enum Command {
     Publish {
         topic: Topic,
         payload: Payload,
-        reply_tx: oneshot::Sender<Result<(PublishFuture, ProcessFuture), NodeActorError>>,
+        reply_tx: oneshot::Sender<Result<ProcessFuture, NodeActorError>>,
     },
     Shutdown {
         reply_tx: oneshot::Sender<()>,
     },
 }
 
-/// Future which can be awaited to find out when a locally published operation has finished
-/// application layer processing.
-#[derive(Debug)]
-pub struct ProcessFuture {
-    hash: Hash,
-    processed_rx: oneshot::Receiver<()>,
-}
-
-impl ProcessFuture {
-    /// Returns hash of the published operation.
-    pub fn hash(&self) -> Hash {
-        self.hash
-    }
-}
-
-impl Future for ProcessFuture {
-    type Output = Result<(), oneshot::error::RecvError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.processed_rx.poll_unpin(cx)
-    }
-}
-
+/// Actor for the p2panda node.
+/// 
+/// This is a thin wrapper around the p2panda node API which includes merging of all subscription
+/// streams and holding all publish handles. It also processes groups control messages when they
+/// arrive on the stream and allows users to await this processing for operations they process
+/// locally.
 pub struct Actor {
+    /// p2panda node.
     inner: p2panda::Node,
+
+    /// All publishing channel senders.
     tx_map: HashMap<Topic, StreamPublisher<Payload>>,
+
+    /// All subscription streams.
     streams: StreamMap<Topic, StreamSubscription<Payload>>,
+
+    /// One shot channels for all received operations which resolve once the operation has
+    /// completed additional processing. 
+    /// 
+    /// These are held while groups control messages are being processed so the user can await
+    /// this processing on top of what the node already provides with PublishFuture. 
+    /// 
+    /// // @TODO: could be good to allow the user to await further dash chat application layer
+    /// processing with this same mechanism, this would be possible if we forward the tx on along
+    /// with the operation onto the application layer.
     processed: HashMap<Hash, oneshot::Sender<()>>,
+
+    /// Groups processor.
     groups_processor: GroupsProcessor,
+
+    /// Channel for forwarding all received operations onto the application layer processor.
     operations_tx: broadcast::Sender<ProcessedOperation<Payload>>,
 }
 
@@ -182,15 +186,13 @@ impl Actor {
         &mut self,
         topic: Topic,
         payload: Payload,
-    ) -> Result<(PublishFuture, ProcessFuture), NodeActorError> {
+    ) -> Result<ProcessFuture, NodeActorError> {
         // @TODO: from running the tests I can see there are some places where we are trying to
         // publish an operation before subscribing to the topic. Ideally we error if there is no
         // existing stream for the topic we are publishing into. I've added a logic here to
         // automatically subscribe to a topic if the tx is not present. We should rather figure
         // out where calls to subscribe to the topic is missing and remove this snippet.
         if !self.tx_map.contains_key(&topic) {
-            // If the topic isn't present in the tx_map it means we didn't subscribe yet. We
-            // should subscribe now to make sure we can publish this message.
             let (tx, rx) = self.inner.stream(topic).await?;
             self.tx_map.insert(topic, tx);
             self.streams.insert(topic, rx);
@@ -211,8 +213,8 @@ impl Actor {
         let (processed_tx, processed_rx) = oneshot::channel();
         let hash = publish_fut.hash();
         let _ = self.processed.insert(hash, processed_tx);
-        let process_fut = ProcessFuture { hash, processed_rx };
-        Ok((publish_fut, process_fut))
+        let process_fut = ProcessFuture::new(hash, publish_fut, processed_rx);
+        Ok(process_fut)
     }
 
     async fn handle_shutdown(&self) {}
@@ -273,6 +275,40 @@ impl Actor {
             .await?;
 
         Ok(())
+    }
+}
+
+/// Future which can be awaited to find out when a locally published operation has finished
+/// system layer processing.
+pub struct ProcessFuture {
+    hash: Hash,
+    inner: Pin<Box<dyn Future<Output = <PublishFuture as Future>::Output> + Send + Sync>>,
+}
+
+impl ProcessFuture {
+    pub fn new(
+        hash: Hash,
+        published_fut: PublishFuture,
+        processed_rx: oneshot::Receiver<()>,
+    ) -> Self {
+        Self {
+            hash,
+            inner: Box::pin(join(published_fut, processed_rx).map(|(result, _)| result)),
+        }
+    }
+}
+
+impl ProcessFuture {
+    pub fn hash(&self) -> Hash {
+        self.hash
+    }
+}
+
+impl Future for ProcessFuture {
+    type Output = <PublishFuture as Future>::Output;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.inner.poll_unpin(cx)
     }
 }
 

@@ -33,13 +33,10 @@ impl Node {
 
         // Await the response, this just means that the command has been handled, it does not mean
         // the operation has been published or processed yet.
-        let (publish_fut, process_fut) = reply_rx.await??;
+        let process_fut = reply_rx.await??;
 
-        // Now we await the operation being published and processed in the node.
-        let event = publish_fut.await?;
-
-        // And finally await any application layer processing.
-        let _ = process_fut.await?;
+        // Now we await the operation being published and processed on the system layer.
+        let event = process_fut.await?;
 
         // Trigger sync with all mailboxes.
         self.mailboxes.trigger_sync();
