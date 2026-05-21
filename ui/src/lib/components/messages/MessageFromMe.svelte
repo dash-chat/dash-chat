@@ -110,7 +110,6 @@
 	}
 
 	:global(.my-message.offline-message) {
-		background-color: color-mix(in srgb, var(--color-brand-primary), white 25%);
 		border: 2px dashed color-mix(in srgb, var(--color-brand-primary), black 35%);
 		background-clip: padding-box;
 	}
