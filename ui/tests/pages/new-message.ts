@@ -20,3 +20,10 @@ export function search(query: string) {
 export function assertContactListVisible() {
 	return `!!document.querySelector('${selectors.contactList}')`;
 }
+
+export function clickNewGroup(): void {
+	const el = (document.querySelector(`${selectors.newGroup} a`) ??
+		document.querySelector(selectors.newGroup)) as HTMLElement | null;
+	if (!el) throw new Error('New group item not found');
+	el.click();
+}

@@ -56,11 +56,13 @@ import {
 import { versionItem } from './pages/help';
 import {
 	checkChatListOverflow,
+	clickNewMessage,
 	firstChatTooltip,
 	getChatListItem,
 	hasChatListItem,
 	homeLoaded,
 } from './pages/home';
+import { clickNewGroup } from './pages/new-message';
 import { isPeerProfileSheetOpen } from './pages/peer-profile-sheet';
 import { profileNameListItemContains } from './pages/profile-settings';
 import {
@@ -113,6 +115,7 @@ export const testUtils = {
 	openDirectChat,
 	getStartedCards,
 	dismissGetStartedCard,
+	clickNewMessage,
 	homeLoaded,
 	firstChatTooltip,
 	getChatListItem,
@@ -144,6 +147,7 @@ export const testUtils = {
 	updaterBannerTitle,
 	updaterDismissBtn,
 	simulateUpdate,
+	clickNewGroup,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(
@@ -176,6 +180,7 @@ export function registerTestUtils(
 	setLocale?: (locale: string) => void,
 	messages?: Messages,
 ) {
+	localStorage.setItem('preview-features-enabled', 'true');
 	window.__test = testUtils;
 	if (goto) {
 		testUtils.goto = goto;

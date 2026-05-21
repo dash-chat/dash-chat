@@ -116,6 +116,7 @@ export const S = {
 		search: tid('new-message-search'),
 		addContact: tid('new-message-add-contact'),
 		contactList: tid('new-message-contact-list'),
+		newGroup: tid('new-message-new-group'),
 	},
 	newGroup: {
 		back: tid('new-group-back'),

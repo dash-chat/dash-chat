@@ -1,0 +1,24 @@
+/**
+ * New group creation E2E test.
+ */
+import {
+	type Agent,
+	makeAgent,
+	waitForTestUtils,
+} from '../../helpers/setup-agents';
+
+describe('New group', () => {
+	let agent: Agent;
+
+	before(async () => {
+		agent = makeAgent(browser.getInstance('agent1'));
+		await waitForTestUtils(agent);
+		await agent.createProfile('Alice', 'Test');
+	});
+
+	it('navigates to the new-group page and types a group name', async () => {
+		await agent.clickNewMessage();
+		await agent.clickNewGroup();
+		await agent.waitForText('body', 'Adding members not yet implemented');
+	});
+});

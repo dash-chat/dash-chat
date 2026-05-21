@@ -22,18 +22,6 @@ export function goBackFromInfo() {
 	return { action: 'click' as const, selector: selectors.infoBack };
 }
 
-/**
- * Type the group name.
- * ListInput puts data-testid on the outer <li>, so target the inner input.
- */
-export function typeGroupName(name: string) {
-	return {
-		action: 'type' as const,
-		selector: `${selectors.nameInput} input`,
-		text: name,
-	};
-}
-
 /** Click create (Material theme) */
 export function clickCreate() {
 	return { action: 'click' as const, selector: selectors.createButton };
