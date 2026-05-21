@@ -2,6 +2,11 @@ import { S } from '../selectors';
 
 export const selectors = S.newMessage;
 
+/** Return the new-message page element if present */
+export function newMessageLoaded() {
+	return document.querySelector(selectors.back);
+}
+
 /** Go back to the home page */
 export function goBack() {
 	return { action: 'click' as const, selector: selectors.back };

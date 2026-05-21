@@ -21,7 +21,10 @@ describe('New group', () => {
 			.onHomePage()
 			.ready()
 			.then(p => p.clickNewMessage());
-		await agent.clickNewGroup();
+		await agent
+			.onNewMessagePage()
+			.ready()
+			.then(p => p.clickNewGroup());
 		await agent.waitForText('body', 'Adding members not yet implemented');
 	});
 });

@@ -11,6 +11,7 @@
  * the element stays in the browser context.
  */
 import { HomePage } from './pages/home';
+import { NewMessagePage } from './pages/new-message';
 
 type TestUtils = Window['__test'];
 
@@ -23,6 +24,7 @@ type Asyncified<T> = {
 export type Agent = WebdriverIO.Browser &
 	Asyncified<TestUtils> & {
 		onHomePage(): HomePage;
+		onNewMessagePage(): NewMessagePage;
 	};
 
 type Result = { ok: true; value: unknown } | { ok: false; error: string };
@@ -62,6 +64,7 @@ const PROMISE_KEYS = new Set(['then', 'catch', 'finally']);
 export function makeAgent(b: WebdriverIO.Browser): Agent {
 	const pageObjectFactories: Record<string, () => unknown> = {
 		onHomePage: () => new HomePage(b),
+		onNewMessagePage: () => new NewMessagePage(b),
 	};
 	return new Proxy(b, {
 		get(target, prop) {

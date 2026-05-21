@@ -16,30 +16,4 @@ export class HomePage {
 	homeLoaded(): Promise<Element | null> {
 		return callTestUtil(this.b, 'homeLoaded', []) as Promise<Element | null>;
 	}
-
-	firstChatTooltip(): Promise<Element | null> {
-		return callTestUtil(
-			this.b,
-			'firstChatTooltip',
-			[],
-		) as Promise<Element | null>;
-	}
-
-	getChatListItem(contactName: string): Promise<Element | null> {
-		return callTestUtil(this.b, 'getChatListItem', [
-			contactName,
-		]) as Promise<Element | null>;
-	}
-
-	hasChatListItem(contactName: string): Promise<boolean> {
-		return callTestUtil(this.b, 'hasChatListItem', [
-			contactName,
-		]) as Promise<boolean>;
-	}
-
-	checkChatListOverflow(): Promise<string[]> {
-		return callTestUtil(this.b, 'checkChatListOverflow', []) as Promise<
-			string[]
-		>;
-	}
 }
