@@ -85,7 +85,6 @@ pub struct Node {
 
     config: NodeConfig,
 
-    // @TODO: both of these need to be plugged into the node actor.
     notification_tx: Option<mpsc::Sender<Notification>>,
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
 
