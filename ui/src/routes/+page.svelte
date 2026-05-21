@@ -40,7 +40,7 @@
 
 		{#snippet right()}
 			{#if theme === 'ios'}
-				<Link iconOnly href="/new-message" data-testid="home-new-message-link">
+				<Link iconOnly href="/new-message" data-testid="home-new-message-btn">
 					<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
 				</Link>
 				{#if !isWideScreen.value}
@@ -80,7 +80,7 @@
 					class="z-20 me-4 pointer-events-auto"
 					style="align-self: end;"
 					onClick={() => goto('/new-message')}
-					data-testid="home-new-message-fab"
+					data-testid="home-new-message-btn"
 				>
 					<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
 				</Fab>

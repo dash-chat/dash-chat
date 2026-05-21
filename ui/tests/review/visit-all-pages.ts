@@ -229,14 +229,8 @@ export async function visitOtherPages(options?: VisitOptions): Promise<VisitResu
 	await nav('/', HOME);
 	await breathe();
 
-	// New Message (theme-agnostic: try FAB first, fall back to link)
 	progress('other:newMessage');
-	const fab = document.querySelector(S.home.newMessageFab) as HTMLElement | null;
-	if (fab && fab.offsetWidth > 0) {
-		fab.click();
-	} else {
-		click(S.home.newMessageLink);
-	}
+	click(S.home.newMessageButton);
 	await waitFor(S.newMessage.addContact, NAV_TIMEOUT);
 	pages.push(runCheck('new-message', co));
 	await breathe();

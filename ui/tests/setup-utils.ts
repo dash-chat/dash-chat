@@ -16,6 +16,7 @@ import {
 	getContactCode,
 	navigateToAddContact,
 } from './flows/contact-exchange';
+import { setLocalMailboxEnabled } from './flows/local-mailbox';
 import { openDirectChat } from './flows/open-chat';
 import { createProfile } from './flows/profile-creation';
 import { sendMessage, waitForMessage } from './flows/send-message';
@@ -48,7 +49,6 @@ import {
 	sendButton,
 	unreadBadgeText,
 } from './pages/direct-chat';
-import { setLocalMailboxEnabled } from './flows/local-mailbox';
 import {
 	dismissCard as dismissGetStartedCard,
 	visibleCards as getStartedCards,

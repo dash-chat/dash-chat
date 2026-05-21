@@ -10,6 +10,11 @@
  * cleanly across the bridge — call those via `agent.execute(...)` directly so
  * the element stays in the browser context.
  */
+import { AddContactPage } from './pages/add-contact-page';
+import { CreateProfilePage } from './pages/create-profile-page';
+import { DirectChatPage } from './pages/direct-chat-page';
+import { HomePage } from './pages/home-page';
+import { NewMessagePage } from './pages/new-message-page';
 
 type TestUtils = Window['__test'];
 
@@ -19,14 +24,26 @@ type Asyncified<T> = {
 		: never;
 };
 
-export type Agent = WebdriverIO.Browser & Asyncified<TestUtils>;
+export type Agent = WebdriverIO.Browser & {
+	homePage: HomePage;
+	newMessagePage: NewMessagePage;
+	addContactPage: AddContactPage;
+	createProfilePage: CreateProfilePage;
+	directChatPage: DirectChatPage;
+};
 
 type Result = { ok: true; value: unknown } | { ok: false; error: string };
 
-async function callTestUtil(b: WebdriverIO.Browser, method: string, args: unknown[]): Promise<unknown> {
-	const result = await b.execute(
+async function callTestUtil(
+	b: WebdriverIO.Browser,
+	method: string,
+	args: unknown[],
+): Promise<unknown> {
+	const result = (await b.execute(
 		async (m: string, a: unknown[]): Promise<Result> => {
-			const fn = (window.__test as unknown as Record<string, (...a: unknown[]) => unknown>)[m];
+			const fn = (
+				window.__test as unknown as Record<string, (...a: unknown[]) => unknown>
+			)[m];
 			if (typeof fn !== 'function') {
 				return { ok: false, error: `window.__test.${m} is not a function` };
 			}
@@ -39,7 +56,7 @@ async function callTestUtil(b: WebdriverIO.Browser, method: string, args: unknow
 		},
 		method,
 		args,
-	) as Result;
+	)) as Result;
 	if (!result.ok) throw new Error(`${method} failed: ${result.error}`);
 	return result.value;
 }
@@ -50,9 +67,19 @@ async function callTestUtil(b: WebdriverIO.Browser, method: string, args: unknow
 const PROMISE_KEYS = new Set(['then', 'catch', 'finally']);
 
 export function makeAgent(b: WebdriverIO.Browser): Agent {
+	const agent = b as Agent;
+	agent.homePage = new HomePage(b);
+	agent.newMessagePage = new NewMessagePage(b);
+	agent.addContactPage = new AddContactPage(b);
+	agent.createProfilePage = new CreateProfilePage(b);
+	agent.directChatPage = new DirectChatPage(b);
+
+	return agent;
 	return new Proxy(b, {
 		get(target, prop) {
-			const value = (target as unknown as Record<string | symbol, unknown>)[prop];
+			const value = (target as unknown as Record<string | symbol, unknown>)[
+				prop
+			];
 			if (value !== undefined) {
 				return typeof value === 'function' ? value.bind(target) : value;
 			}
@@ -63,31 +90,26 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 }
 
 /** Wait for window.__test to be registered on a single agent. */
-export async function waitForTestUtils(agent: WebdriverIO.Browser): Promise<void> {
+export async function waitForTestUtils(
+	agent: WebdriverIO.Browser,
+): Promise<void> {
 	await agent.waitUntil(
 		async () => agent.execute(() => typeof window.__test !== 'undefined'),
-		{ timeout: 30_000, interval: 500, timeoutMsg: 'window.__test not registered' },
+		{
+			timeout: 30_000,
+			interval: 500,
+			timeoutMsg: 'window.__test not registered',
+		},
 	);
 }
 
 /** Build an agent by capability name and wait for window.__test to be ready. */
 export async function setupAgent(agentName: string): Promise<Agent> {
-	const agent = makeAgent(browser.getInstance(agentName));
-	await waitForTestUtils(agent);
-	return agent;
+	const b = browser.getInstance(agentName);
+	await waitForTestUtils(b);
+	return makeAgent(b);
 }
 
-/** Exchange contact codes between two agents. */
-export async function exchangeContacts(agent1: Agent, agent2: Agent): Promise<void> {
-	await agent1.navigateToAddContact();
-	await agent2.navigateToAddContact();
-	const code1 = await agent1.getContactCode();
-	const code2 = await agent2.getContactCode();
-	if (!code1) throw new Error('agent1 contact code missing');
-	if (!code2) throw new Error('agent2 contact code missing');
-	await agent1.addContact(code2);
-	await agent2.addContact(code1);
-}
 
 /**
  * Switch the agent's UI locale. setLocale triggers a full page reload at the
@@ -104,4 +126,3 @@ export async function setLocale(agent: Agent, locale: string): Promise<void> {
 	}, locale);
 	await waitForTestUtils(agent);
 }
-

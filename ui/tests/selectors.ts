@@ -3,8 +3,7 @@ export const tid = (id: string) => `[data-testid="${id}"]`;
 export const S = {
 	home: {
 		settingsLink: tid('home-settings-link'),
-		newMessageLink: tid('home-new-message-link'),
-		newMessageFab: tid('home-new-message-fab'),
+		newMessageButton: tid('home-new-message-btn'),
 		firstChatTooltip: tid('first-chat-tooltip'),
 		chatList: tid('all-chats-list'),
 		chatRow: tid('all-chats-row'),

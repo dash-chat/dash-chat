@@ -2,17 +2,26 @@
  * Shared DOM helpers for test automation via webview_execute_js.
  */
 
-export function waitFor(selector: string, timeout = 15_000): Promise<Element> {
+export async function waitFor(
+	selector: string,
+	timeout = 15_000,
+): Promise<Element> {
+	await waitUntil(() => !!document.querySelector(selector), timeout);
+
+	return document.querySelector(selector)!;
+}
+
+export function waitUntil(
+	condition: () => boolean,
+	timeout = 15_000,
+): Promise<void> {
 	return new Promise((resolve, reject) => {
-		const timer = setTimeout(
-			() => reject(`Timeout waiting for ${selector}`),
-			timeout,
-		);
+		const timer = setTimeout(() => reject(`Timeout`), timeout);
 		const check = () => {
-			const el = document.querySelector(selector);
+			const el = condition();
 			if (el) {
 				clearTimeout(timer);
-				resolve(el);
+				resolve();
 			} else {
 				setTimeout(check, 50);
 			}

@@ -15,8 +15,7 @@ import { S } from '../selectors';
  */
 
 export const steps = {
-	newMessageFab: S.home.newMessageFab,
-	newMessageLink: S.home.newMessageLink,
+	newMessageButton: S.home.newMessageButton,
 	addContactItem: S.newMessage.addContact,
 	copyButton: S.addContact.copyButton,
 	codeInput: `${S.addContact.codeInput} input`,
@@ -24,26 +23,8 @@ export const steps = {
 
 /** Navigate from home to the add-contact page via the UI. */
 export async function navigateToAddContact(): Promise<true> {
-	// On narrow screens (Material): FAB is visible
-	// On narrow screens (iOS) or wide screens: navbar link is visible
-	await Promise.race([
-		waitFor(steps.newMessageFab),
-		waitFor(steps.newMessageLink),
-	]);
-	const fab = document.querySelector(steps.newMessageFab);
-	if (fab) {
-		(fab as HTMLElement).click();
-	} else {
-		const link = document.querySelector(
-			steps.newMessageLink,
-		) as HTMLElement | null;
-		if (!link) {
-			throw new Error(
-				`navigateToAddContact: neither FAB (${steps.newMessageFab}) nor link (${steps.newMessageLink}) found in DOM`,
-			);
-		}
-		link.click();
-	}
+	await waitFor(steps.newMessageButton);
+	click(steps.newMessageButton);
 	await waitFor(steps.addContactItem);
 	click(steps.addContactItem);
 	await waitFor(steps.codeInput);
