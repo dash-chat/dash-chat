@@ -56,14 +56,15 @@
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
-	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
-	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import { longpress } from '$lib/actions/longpress';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
+	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
+	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
+	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -75,6 +76,7 @@
 	const readMessageOnObserve = readTracker.observe;
 
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
+	const chatId = useReactivePromise(store.chatId);
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const contactRequest = useReactivePromise(store.contactRequest);
 	const messagesSets = useReactivePromise(store.messageSets);
@@ -401,6 +403,7 @@
 								transparent={true}
 								titleClass="opacity1 w-full min-w-0"
 								leftClass="shrink-0"
+								rightClass="bg-transparent! shadow-none! backdrop-blur-none! pointer-events-none! dark:bg-transparent! dark:shadow-none!"
 								centerTitle={false}
 							>
 								{#snippet left()}
@@ -435,6 +438,12 @@
 											</span>
 										{/if}
 									</Link>
+								{/snippet}
+
+								{#snippet right()}
+									<div class={theme === 'material' ? 'pe-2' : ''}>
+										<ConnectionStatusIndicator />
+									</div>
 								{/snippet}
 							</Navbar>
 						{/if}
@@ -588,14 +597,17 @@
 																	showQuickReactionBar(e, message),
 															}}
 														>
-															<MessageFromMe
-																{message}
-																{position}
-																{myDeviceId}
-																searchQuery={searchMode ? searchQuery : ''}
-																onToggleReaction={emoji =>
-																	toggleReaction(message, emoji, myDeviceId)}
-															/>
+															{#await $chatId then chatId}
+																<MessageFromMe
+																	{message}
+																	{position}
+																	{myDeviceId}
+																	{chatId}
+																	searchQuery={searchMode ? searchQuery : ''}
+																	onToggleReaction={emoji =>
+																		toggleReaction(message, emoji, myDeviceId)}
+																/>
+															{/await}
 														</div>
 													{:else}
 														<div

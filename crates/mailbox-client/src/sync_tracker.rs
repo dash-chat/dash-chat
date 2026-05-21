@@ -178,17 +178,23 @@ where
 
         let per_mailbox = self.per_mailbox.lock().await;
         if let Some(tx) = per_mailbox.get(mailbox) {
-            tx.send_modify(|state| {
+            tx.send_if_modified(|state| {
+                let mut changed = false;
                 for (t, a, s) in entries {
-                    let entry = state
-                        .entry(t.clone())
-                        .or_default()
-                        .entry(a.clone())
-                        .or_insert(0);
-                    if *s > *entry {
-                        *entry = *s;
+                    let map = state.entry(t.clone()).or_default();
+                    match map.get_mut(a) {
+                        Some(entry) if *s > *entry => {
+                            *entry = *s;
+                            changed = true;
+                        }
+                        None => {
+                            map.insert(a.clone(), *s);
+                            changed = true;
+                        }
+                        _ => {}
                     }
                 }
+                changed
             });
         }
 
