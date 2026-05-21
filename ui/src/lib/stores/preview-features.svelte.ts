@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'developer-features-enabled';
+const STORAGE_KEY = 'preview-features-enabled';
 
 let enabled = $state(
 	typeof localStorage !== 'undefined'
@@ -6,7 +6,7 @@ let enabled = $state(
 		: false,
 );
 
-export const developerFeatures = {
+export const previewFeatures = {
 	get enabled() {
 		return enabled;
 	},

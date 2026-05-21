@@ -3,7 +3,7 @@
 	import { getVersion } from '@tauri-apps/api/app';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { developerFeatures } from '$lib/stores/developer-features.svelte';
+	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import {
 		BlockTitle,
 		List,
@@ -51,13 +51,13 @@
 					/>
 				{/await}
 				<ListItem
-					title={m.developerFeatures()}
-					data-testid="help-developer-features-toggle"
+					title={m.previewFeatures()}
+					data-testid="help-preview-features-toggle"
 				>
 					{#snippet after()}
 						<Toggle
-							checked={developerFeatures.enabled}
-							onChange={() => developerFeatures.toggle()}
+							checked={previewFeatures.enabled}
+							onChange={() => previewFeatures.toggle()}
 						/>
 					{/snippet}
 				</ListItem>
