@@ -252,7 +252,7 @@ impl Node {
             }
         }
 
-        tracing::debug!(hash = ?hash, "processed operation");
+        tracing::debug!(hash = %hash, "processed operation");
 
         // For all message types except groups control messages notify that a new payload has been
         // received.
