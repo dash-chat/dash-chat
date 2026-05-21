@@ -155,6 +155,19 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		// Expose the URL so launch scripts pass it to the Tauri agents.
 		process.env.MAILBOX_URL = mailboxUrl;
 		console.log(`Mailbox server ready at ${mailboxUrl}`);
+
+		// Persist mailbox info so individual specs can suspend/resume it to
+		// drive the offline-UX state transitions.
+		const mailboxInfoPath = path.join(ROOT, '.dbs', 'e2e', 'mailbox-info.json');
+		writeFileSync(
+			mailboxInfoPath,
+			JSON.stringify({
+				pid: mailboxServer.pid,
+				port: mailboxPort,
+				url: mailboxUrl,
+				dbPath: mailboxDb,
+			}),
+		);
 	},
 
 	async beforeSession() {
