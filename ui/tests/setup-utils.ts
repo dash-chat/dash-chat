@@ -62,6 +62,7 @@ import {
 	hasChatListItem,
 	homeLoaded,
 } from './pages/home';
+import { newGroupLoaded } from './pages/new-group';
 import { clickNewGroup, newMessageLoaded } from './pages/new-message';
 import { isPeerProfileSheetOpen } from './pages/peer-profile-sheet';
 import { profileNameListItemContains } from './pages/profile-settings';
@@ -149,6 +150,7 @@ export const testUtils = {
 	simulateUpdate,
 	clickNewGroup,
 	newMessageLoaded,
+	newGroupLoaded,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(

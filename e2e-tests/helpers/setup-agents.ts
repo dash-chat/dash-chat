@@ -11,6 +11,7 @@
  * the element stays in the browser context.
  */
 import { HomePage } from './pages/home';
+import { NewGroupPage } from './pages/new-group';
 import { NewMessagePage } from './pages/new-message';
 
 type TestUtils = Window['__test'];
@@ -25,11 +26,12 @@ export type Agent = WebdriverIO.Browser &
 	Asyncified<TestUtils> & {
 		onHomePage(): HomePage;
 		onNewMessagePage(): NewMessagePage;
+		onNewGroupPage(): NewGroupPage;
 	};
 
 type Result = { ok: true; value: unknown } | { ok: false; error: string };
 
-export async function callTestUtil(
+async function callTestUtil(
 	b: WebdriverIO.Browser,
 	method: string,
 	args: unknown[],
@@ -62,11 +64,13 @@ export async function callTestUtil(
 const PROMISE_KEYS = new Set(['then', 'catch', 'finally']);
 
 export function makeAgent(b: WebdriverIO.Browser): Agent {
+	let agent: Agent;
 	const pageObjectFactories: Record<string, () => unknown> = {
-		onHomePage: () => new HomePage(b),
-		onNewMessagePage: () => new NewMessagePage(b),
+		onHomePage: () => new HomePage(agent),
+		onNewMessagePage: () => new NewMessagePage(agent),
+		onNewGroupPage: () => new NewGroupPage(agent),
 	};
-	return new Proxy(b, {
+	agent = new Proxy(b, {
 		get(target, prop) {
 			if (typeof prop === 'string' && prop in pageObjectFactories) {
 				return pageObjectFactories[prop];
@@ -81,6 +85,7 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			return (...args: unknown[]) => callTestUtil(target, prop, args);
 		},
 	}) as Agent;
+	return agent;
 }
 
 /** Wait for window.__test to be registered on a single agent. */

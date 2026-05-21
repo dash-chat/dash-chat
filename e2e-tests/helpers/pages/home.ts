@@ -1,19 +1,15 @@
-import { callTestUtil } from '../setup-agents';
+import type { Agent } from '../setup-agents';
 
 export class HomePage {
-	constructor(private readonly b: WebdriverIO.Browser) {}
+	constructor(private readonly agent: Agent) {}
 
 	async ready(): Promise<HomePage> {
-		const el = await this.homeLoaded();
+		const el = await this.agent.homeLoaded();
 		if (!el) throw new Error('Not on home page');
 		return this;
 	}
 
 	clickNewMessage(): Promise<void> {
-		return callTestUtil(this.b, 'clickNewMessage', []) as Promise<void>;
-	}
-
-	homeLoaded(): Promise<Element | null> {
-		return callTestUtil(this.b, 'homeLoaded', []) as Promise<Element | null>;
+		return this.agent.clickNewMessage();
 	}
 }

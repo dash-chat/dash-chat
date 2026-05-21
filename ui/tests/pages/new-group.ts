@@ -2,6 +2,10 @@ import { S } from '../selectors';
 
 export const selectors = S.newGroup;
 
+export function newGroupLoaded(): Element | null {
+	return document.querySelector(selectors.back);
+}
+
 /** Go back from the members page */
 export function goBack() {
 	return { action: 'click' as const, selector: selectors.back };
