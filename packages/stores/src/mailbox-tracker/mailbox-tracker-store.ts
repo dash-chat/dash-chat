@@ -87,6 +87,7 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 		const connectedToCloudMailboxServer =
 			cloudMailboxIndex >= 0 &&
 			mailboxesConnectionStates[cloudMailboxIndex].status === 'Active' &&
+			!!mailboxesConnectionStates[cloudMailboxIndex].last_success_at &&
 			mailboxesConnectionStates[cloudMailboxIndex].consecutive_errors <
 				UI_DISCONNECTED_ERROR_THRESHOLD;
 
@@ -98,6 +99,7 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 			const connectionState = mailboxesConnectionStates[i];
 			if (
 				connectionState.status === 'Active' &&
+				!!connectionState.last_success_at &&
 				connectionState.consecutive_errors < UI_DISCONNECTED_ERROR_THRESHOLD
 			)
 				connectedToAnyLocalMailbox = true;
