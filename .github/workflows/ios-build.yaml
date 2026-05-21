@@ -75,15 +75,17 @@ jobs:
             /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.networking.multicast" "$f" || true
           done
 
-      # xcodebuild reads build settings from an xcconfig pointed at by
-      # XCODE_XCCONFIG_FILE. CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION is a
-      # build setting (not a regular env var), so wrap it in an xcconfig.
-      # Tauri's `tauri ios xcode-script` rewrites the entitlements file mid-build;
-      # allowed here because this is an unsigned simulator compile check.
+      # Tauri's `tauri ios xcode-script` rewrites the entitlements file
+      # mid-build, which xcodebuild rejects by default. The error message itself
+      # advertises CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION=YES as the escape
+      # hatch — bake it into every build configuration in the Xcode project so
+      # xcodebuild definitely picks it up (env vars and XCODE_XCCONFIG_FILE are
+      # ignored once Tauri's wrapper invokes xcodebuild). Safe here because this
+      # job is only an unsigned simulator compile check.
       - name: Allow entitlements modification during build
         run: |
-          echo "CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES" > "$RUNNER_TEMP/allow-entitlements-mod.xcconfig"
-          echo "XCODE_XCCONFIG_FILE=$RUNNER_TEMP/allow-entitlements-mod.xcconfig" >> "$GITHUB_ENV"
+          sed -i '' 's|CODE_SIGN_STYLE = Automatic;|CODE_SIGN_STYLE = Automatic;\n\t\t\t\tCODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;|g' \
+            src-tauri/gen/apple/dash-chat.xcodeproj/project.pbxproj
 
       - name: Build iOS app for simulator (compile check)
         env:
