@@ -75,12 +75,18 @@ jobs:
             /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.networking.multicast" "$f" || true
           done
 
+      # xcodebuild reads build settings from an xcconfig pointed at by
+      # XCODE_XCCONFIG_FILE. CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION is a
+      # build setting (not a regular env var), so wrap it in an xcconfig.
+      # Tauri's `tauri ios xcode-script` rewrites the entitlements file mid-build;
+      # allowed here because this is an unsigned simulator compile check.
+      - name: Allow entitlements modification during build
+        run: |
+          echo "CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES" > "$RUNNER_TEMP/allow-entitlements-mod.xcconfig"
+          echo "XCODE_XCCONFIG_FILE=$RUNNER_TEMP/allow-entitlements-mod.xcconfig" >> "$GITHUB_ENV"
+
       - name: Build iOS app for simulator (compile check)
         env:
           IPHONEOS_DEPLOYMENT_TARGET: "14.0"
-          # Tauri's iOS build pipeline rewrites the entitlements file mid-build, which
-          # xcodebuild rejects by default. Allowed here because this job only does an
-          # unsigned simulator compile check — no real signature is produced.
-          CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION: "YES"
         run: |
           pnpm tauri ios build --debug --target aarch64-sim
