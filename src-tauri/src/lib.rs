@@ -3,12 +3,10 @@ mod device_info;
 mod filesystem;
 mod i18n;
 mod mailbox;
+mod notifications;
 mod settings;
 mod setup;
 mod utils;
-
-#[cfg(mobile)]
-mod push_notifications;
 
 #[cfg(desktop)]
 mod menu;
@@ -101,6 +99,10 @@ pub fn run() {
             commands::settings::set_setting,
             #[cfg(not(mobile))]
             commands::settings::set_local_mailbox_enabled,
+            commands::mailbox_state::mailbox_subscribe_active_ids,
+            commands::mailbox_state::mailbox_subscribe_all_ids,
+            commands::mailbox_state::mailbox_subscribe_connection_state,
+            commands::mailbox_state::mailbox_subscribe_sync_state,
             // commands::chats::create_group,
             // commands::group_chat::add_member,
             // commands::group_chat::send_message,

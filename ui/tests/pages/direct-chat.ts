@@ -86,6 +86,36 @@ export function messagesContainer() {
 	return document.querySelector(selectors.messages);
 }
 
+export type MessageStatus = 'sending' | 'local' | 'cloud';
+export type ConnectionStatus = 'connected' | 'local' | 'disconnected';
+
+/** Read the data-status of the message status indicator (on the last sent message). */
+export function lastMessageStatus(): MessageStatus | null {
+	const el = document.querySelector(S.status.message) as HTMLElement | null;
+	const status = el?.dataset.status;
+	if (status === 'sending' || status === 'local' || status === 'cloud') {
+		return status;
+	}
+	return null;
+}
+
+/**
+ * Read the connection indicator state in the chat navbar.
+ *
+ * ConnectionStatusIndicator renders nothing when connected to the cloud
+ * mailbox (the chip is the "something is wrong" affordance), so we treat the
+ * chip's absence as `connected`. Callers should only invoke this once the
+ * chat page has fully rendered, otherwise `connected` and "still loading"
+ * are indistinguishable.
+ */
+export function connectionStatus(): ConnectionStatus {
+	const el = document.querySelector(S.status.connection) as HTMLElement | null;
+	if (!el) return 'connected';
+	const status = el.dataset.status;
+	if (status === 'local' || status === 'disconnected') return status;
+	throw new Error(`connectionStatus: unexpected data-status="${status}"`);
+}
+
 /** True if the chat scroll container is pinned to the bottom (column-reverse). */
 export function isScrollAtBottom(): boolean {
 	const el = document.querySelector(selectors.scroll) as HTMLElement | null;

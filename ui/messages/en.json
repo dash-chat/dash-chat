@@ -56,6 +56,7 @@
 	"enterYourContactsCode": "Enter your contact's code",
 	"code": "Code",
 	"scan": "Scan",
+	"upload": "Upload",
 	"scanQrCodeOfYourContact": "Scan the QR code from your contact's device.",
 	"messageRequest": "Message request.",
 	"contactRequests": "Contact requests",

@@ -30,6 +30,12 @@ export const S = {
 		qrCode: 'wa-qr-code',
 		copyButton: tid('add-contact-copy-btn'),
 		codeInput: tid('add-contact-code-input'),
+		shareButton: tid('add-contact-share-btn'),
+		saveButton: tid('add-contact-save-btn'),
+		uploadButton: tid('add-contact-upload-btn'),
+		selectImageButton: tid('add-contact-select-image-btn'),
+		fileInput: tid('add-contact-file-input'),
+		colorButton: tid('add-contact-color-btn'),
 	},
 	directChat: {
 		page: tid('direct-chat-page'),
@@ -52,6 +58,10 @@ export const S = {
 		textarea: tid('message-input-textarea'),
 		send: tid('message-input-send'),
 		emoji: tid('message-input-emoji'),
+	},
+	status: {
+		message: tid('message-status'),
+		connection: tid('connection-status'),
 	},
 	chatSettings: {
 		back: tid('chat-settings-back'),

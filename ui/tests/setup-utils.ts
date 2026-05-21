@@ -16,22 +16,28 @@ import {
 	getContactCode,
 	navigateToAddContact,
 } from './flows/contact-exchange';
-
-type Messages = typeof m;
-type MessageKey = Extract<keyof Messages, string>;
-type MessageParams<K extends MessageKey> = Parameters<Messages[K]>[0];
 import { openDirectChat } from './flows/open-chat';
 import { createProfile } from './flows/profile-creation';
 import { sendMessage, waitForMessage } from './flows/send-message';
-import { click, nextTick, typeInto, waitFor, waitForText } from './helpers';
+import {
+	captureNextToastMessage,
+	click,
+	nextTick,
+	typeInto,
+	waitFor,
+	waitForText,
+} from './helpers';
+import { uploadEmptyImage, uploadQrCodeImage } from './pages/add-contact';
 import { chatSettingsLoaded } from './pages/chat-settings';
 import {
 	chatOverflow,
 	checkNavbarOverflow,
 	clickScrollBottomButton,
+	connectionStatus,
 	isContactRequestBannerVisible,
 	isPeerNamePresent,
 	isScrollAtBottom,
+	lastMessageStatus,
 	messageInput,
 	messagesContainer,
 	navbarBgOpacity,
@@ -42,6 +48,7 @@ import {
 	sendButton,
 	unreadBadgeText,
 } from './pages/direct-chat';
+import { setLocalMailboxEnabled } from './flows/local-mailbox';
 import {
 	dismissCard as dismissGetStartedCard,
 	visibleCards as getStartedCards,
@@ -75,6 +82,10 @@ import {
 	visitSettingsPages,
 } from './review/visit-all-pages';
 
+type Messages = typeof m;
+type MessageKey = Extract<keyof Messages, string>;
+type MessageParams<K extends MessageKey> = Parameters<Messages[K]>[0];
+
 /** Trigger UpdaterBanner into a specific state via custom event. */
 function simulateUpdate(
 	state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden',
@@ -94,6 +105,9 @@ export const testUtils = {
 	navigateToAddContact,
 	getContactCode,
 	addContact,
+	uploadQrCodeImage,
+	uploadEmptyImage,
+	captureNextToastMessage,
 	sendMessage,
 	waitForMessage,
 	openDirectChat,
@@ -119,6 +133,9 @@ export const testUtils = {
 	isPeerNamePresent,
 	isContactRequestBannerVisible,
 	checkNavbarOverflow,
+	lastMessageStatus,
+	connectionStatus,
+	setLocalMailboxEnabled,
 	chatSettingsLoaded,
 	isPeerProfileSheetOpen,
 	profileNameListItemContains,
