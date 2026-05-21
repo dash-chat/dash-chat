@@ -84,8 +84,9 @@ jobs:
       # job is only an unsigned simulator compile check.
       - name: Allow entitlements modification during build
         run: |
-          sed -i '' 's|CODE_SIGN_STYLE = Automatic;|CODE_SIGN_STYLE = Automatic;\n\t\t\t\tCODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;|g' \
+          perl -i -pe 's|(CODE_SIGN_ENTITLEMENTS = [^;]+;)|$1\n\t\t\t\tCODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;|g' \
             src-tauri/gen/apple/dash-chat.xcodeproj/project.pbxproj
+          grep -c CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION src-tauri/gen/apple/dash-chat.xcodeproj/project.pbxproj
 
       - name: Build iOS app for simulator (compile check)
         env:
