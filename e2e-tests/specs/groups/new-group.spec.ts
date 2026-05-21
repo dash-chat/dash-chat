@@ -17,7 +17,7 @@ describe('New group', () => {
 	});
 
 	it('navigates to the new-group page and types a group name', async () => {
-		await agent.clickNewMessage();
+		await agent.onHomePage().clickNewMessage();
 		await agent.clickNewGroup();
 		await agent.waitForText('body', 'Adding members not yet implemented');
 	});

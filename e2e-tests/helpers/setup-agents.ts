@@ -10,6 +10,7 @@
  * cleanly across the bridge — call those via `agent.execute(...)` directly so
  * the element stays in the browser context.
  */
+import { HomePage } from './pages/home';
 
 type TestUtils = Window['__test'];
 
@@ -19,14 +20,23 @@ type Asyncified<T> = {
 		: never;
 };
 
-export type Agent = WebdriverIO.Browser & Asyncified<TestUtils>;
+export type Agent = WebdriverIO.Browser &
+	Asyncified<TestUtils> & {
+		onHomePage(): HomePage;
+	};
 
 type Result = { ok: true; value: unknown } | { ok: false; error: string };
 
-async function callTestUtil(b: WebdriverIO.Browser, method: string, args: unknown[]): Promise<unknown> {
-	const result = await b.execute(
+export async function callTestUtil(
+	b: WebdriverIO.Browser,
+	method: string,
+	args: unknown[],
+): Promise<unknown> {
+	const result = (await b.execute(
 		async (m: string, a: unknown[]): Promise<Result> => {
-			const fn = (window.__test as unknown as Record<string, (...a: unknown[]) => unknown>)[m];
+			const fn = (
+				window.__test as unknown as Record<string, (...a: unknown[]) => unknown>
+			)[m];
 			if (typeof fn !== 'function') {
 				return { ok: false, error: `window.__test.${m} is not a function` };
 			}
@@ -39,7 +49,7 @@ async function callTestUtil(b: WebdriverIO.Browser, method: string, args: unknow
 		},
 		method,
 		args,
-	) as Result;
+	)) as Result;
 	if (!result.ok) throw new Error(`${method} failed: ${result.error}`);
 	return result.value;
 }
@@ -50,9 +60,17 @@ async function callTestUtil(b: WebdriverIO.Browser, method: string, args: unknow
 const PROMISE_KEYS = new Set(['then', 'catch', 'finally']);
 
 export function makeAgent(b: WebdriverIO.Browser): Agent {
+	const pageObjectFactories: Record<string, () => unknown> = {
+		onHomePage: () => new HomePage(b),
+	};
 	return new Proxy(b, {
 		get(target, prop) {
-			const value = (target as unknown as Record<string | symbol, unknown>)[prop];
+			if (typeof prop === 'string' && prop in pageObjectFactories) {
+				return pageObjectFactories[prop];
+			}
+			const value = (target as unknown as Record<string | symbol, unknown>)[
+				prop
+			];
 			if (value !== undefined) {
 				return typeof value === 'function' ? value.bind(target) : value;
 			}
@@ -63,10 +81,16 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 }
 
 /** Wait for window.__test to be registered on a single agent. */
-export async function waitForTestUtils(agent: WebdriverIO.Browser): Promise<void> {
+export async function waitForTestUtils(
+	agent: WebdriverIO.Browser,
+): Promise<void> {
 	await agent.waitUntil(
 		async () => agent.execute(() => typeof window.__test !== 'undefined'),
-		{ timeout: 30_000, interval: 500, timeoutMsg: 'window.__test not registered' },
+		{
+			timeout: 30_000,
+			interval: 500,
+			timeoutMsg: 'window.__test not registered',
+		},
 	);
 }
 
@@ -78,7 +102,10 @@ export async function setupAgent(agentName: string): Promise<Agent> {
 }
 
 /** Exchange contact codes between two agents. */
-export async function exchangeContacts(agent1: Agent, agent2: Agent): Promise<void> {
+export async function exchangeContacts(
+	agent1: Agent,
+	agent2: Agent,
+): Promise<void> {
 	await agent1.navigateToAddContact();
 	await agent2.navigateToAddContact();
 	const code1 = await agent1.getContactCode();
@@ -104,4 +131,3 @@ export async function setLocale(agent: Agent, locale: string): Promise<void> {
 	}, locale);
 	await waitForTestUtils(agent);
 }
-
