@@ -120,12 +120,10 @@ export const S = {
 	},
 	newGroup: {
 		back: tid('new-group-back'),
-		nextButton: tid('new-group-next-btn'),
-		nextLink: tid('new-group-next-link'),
+		next: tid('new-group-next'),
 		infoBack: tid('new-group-info-back'),
 		nameInput: tid('new-group-name-input'),
-		createButton: tid('new-group-create-btn'),
-		createLink: tid('new-group-create-link'),
+		create: tid('new-group-create'),
 	},
 	groupChat: {
 		back: tid('group-chat-back'),

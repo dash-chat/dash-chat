@@ -16,8 +16,7 @@
 	backTestId="new-group-back"
 	actionLabel={m.next()}
 	onAction={onNext}
-	actionLinkTestId="new-group-next-link"
-	actionBtnTestId="new-group-next-btn"
+	actionTestId="new-group-next"
 >
 	<p class="text-center mt-8 text-gray-500">
 		Adding members not yet implemented

@@ -9,8 +9,7 @@
 		backTestId?: string;
 		actionLabel: string;
 		onAction: () => void;
-		actionLinkTestId?: string;
-		actionBtnTestId?: string;
+		actionTestId?: string;
 		children: Snippet;
 	}
 
@@ -20,8 +19,7 @@
 		backTestId,
 		actionLabel,
 		onAction,
-		actionLinkTestId,
-		actionBtnTestId,
+		actionTestId,
 		children,
 	}: Props = $props();
 </script>
@@ -37,7 +35,7 @@
 
 		{#snippet right()}
 			{#if isIos}
-				<Link onClick={onAction} data-testid={actionLinkTestId}>
+				<Link onClick={onAction} data-testid={actionTestId}>
 					{actionLabel}
 				</Link>
 			{/if}
@@ -49,7 +47,7 @@
 	{#if !isIos}
 		<Button
 			onClick={onAction}
-			data-testid={actionBtnTestId}
+			data-testid={actionTestId}
 			class="fixed-action-btn"
 			rounded
 		>

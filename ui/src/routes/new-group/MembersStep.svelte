@@ -32,8 +32,7 @@
 	backTestId="new-group-back"
 	actionLabel={selectedContacts.length === 0 ? m.skip() : m.next()}
 	onAction={onNext}
-	actionLinkTestId="new-group-next-link"
-	actionBtnTestId="new-group-next-btn"
+	actionTestId="new-group-next"
 >
 	<div class="column" style="flex: 1">
 		<div class="center-in-desktop">

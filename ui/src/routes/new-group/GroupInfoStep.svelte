@@ -33,8 +33,7 @@
 	backTestId="new-group-info-back"
 	actionLabel={m.create()}
 	onAction={onCreate}
-	actionLinkTestId="new-group-create-link"
-	actionBtnTestId="new-group-create-btn"
+	actionTestId="new-group-create"
 >
 	<div class="column" style="flex: 1">
 		<div class="center-in-desktop m-1">

@@ -25,6 +25,11 @@ describe('New group', () => {
 			.onNewMessagePage()
 			.ready()
 			.then(p => p.clickNewGroup());
-		await agent.onNewGroupPage().onAddMembersStep().ready();
+		await agent
+			.onNewGroupPage()
+			.onAddMembersStep()
+			.ready()
+			.then(p => p.clickNext());
+		await agent.onNewGroupPage().onGroupInfoStep().ready();
 	});
 });

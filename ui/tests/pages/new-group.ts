@@ -11,14 +11,10 @@ export function goBack() {
 	return { action: 'click' as const, selector: selectors.back };
 }
 
-/** Click next (Material theme) */
-export function clickNext() {
-	return { action: 'click' as const, selector: selectors.nextButton };
-}
-
-/** Click next (iOS theme) */
-export function clickNextLink() {
-	return { action: 'click' as const, selector: selectors.nextLink };
+export function clickNewGroupNext(): void {
+	const el = document.querySelector(selectors.next) as HTMLElement | null;
+	if (!el) throw new Error('New group next button not found');
+	el.click();
 }
 
 /** Go back from the group info page */
@@ -26,12 +22,6 @@ export function goBackFromInfo() {
 	return { action: 'click' as const, selector: selectors.infoBack };
 }
 
-/** Click create (Material theme) */
 export function clickCreate() {
-	return { action: 'click' as const, selector: selectors.createButton };
-}
-
-/** Click create (iOS theme) */
-export function clickCreateLink() {
-	return { action: 'click' as const, selector: selectors.createLink };
+	return { action: 'click' as const, selector: selectors.create };
 }

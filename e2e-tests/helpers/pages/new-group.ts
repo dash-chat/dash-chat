@@ -7,6 +7,19 @@ export class AddMembersStep {
 		await this.agent.waitForText('body', 'Adding members not yet implemented');
 		return this;
 	}
+
+	clickNext(): Promise<void> {
+		return this.agent.clickNewGroupNext();
+	}
+}
+
+export class GroupInfoStep {
+	constructor(private readonly agent: Agent) {}
+
+	async ready(): Promise<GroupInfoStep> {
+		await this.agent.waitFor('[data-testid="new-group-info-back"]');
+		return this;
+	}
 }
 
 export class NewGroupPage {
@@ -20,5 +33,9 @@ export class NewGroupPage {
 
 	onAddMembersStep(): AddMembersStep {
 		return new AddMembersStep(this.agent);
+	}
+
+	onGroupInfoStep(): GroupInfoStep {
+		return new GroupInfoStep(this.agent);
 	}
 }
