@@ -1,18 +1,9 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
-	import {
-		Page,
-		Navbar,
-		NavbarBackLink,
-		Button,
-		Link,
-		List,
-		ListInput,
-		useTheme,
-	} from 'konsta/svelte';
-	import { isIos } from '$lib/utils/environment';
+	import { List, ListInput, useTheme } from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import StepPage from './StepPage.svelte';
 
 	interface Props {
 		groupName: string;
@@ -36,21 +27,15 @@
 	const theme = $derived(useTheme());
 </script>
 
-<Page>
-	<Navbar title={m.groupName()} titleClass="opacity1" transparent={true}>
-		{#snippet left()}
-			<NavbarBackLink onClick={onBack} data-testid="new-group-info-back" />
-		{/snippet}
-
-		{#snippet right()}
-			{#if isIos}
-				<Link onClick={onCreate} data-testid="new-group-create-link">
-					{m.create()}
-				</Link>
-			{/if}
-		{/snippet}
-	</Navbar>
-
+<StepPage
+	title={m.groupName()}
+	{onBack}
+	backTestId="new-group-info-back"
+	actionLabel={m.create()}
+	onAction={onCreate}
+	actionLinkTestId="new-group-create-link"
+	actionBtnTestId="new-group-create-btn"
+>
 	<div class="column" style="flex: 1">
 		<div class="center-in-desktop m-1">
 			<List
@@ -73,15 +58,4 @@
 			</List>
 		</div>
 	</div>
-
-	{#if !isIos}
-		<Button
-			onClick={onCreate}
-			data-testid="new-group-create-btn"
-			class="fixed-action-btn"
-			rounded
-		>
-			{m.create()}
-		</Button>
-	{/if}
-</Page>
+</StepPage>
