@@ -173,6 +173,18 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		const workerId = String(cid ?? `pid-${process.pid}`);
 		const workerDir = path.join(ROOT, '.dbs', 'e2e', `worker-${workerId}`);
 
+		// Wipe this worker's prior state before each session so specFileRetries
+		// starts from a clean slate. Wipe agent dirs only — the mailbox dir is
+		// re-created by spawnWorkerMailbox below and we'd race a half-deleted
+		// workerDir if we nuked it whole.
+		for (const agent of ['agent-1', 'agent-2']) {
+			try {
+				rmSync(path.join(workerDir, agent), { recursive: true, force: true });
+			} catch {
+				/* ignore */
+			}
+		}
+
 		// Allocate disjoint ports per worker.
 		const driverPort1 = allocatePort();
 		const nativePort1 = allocatePort();
