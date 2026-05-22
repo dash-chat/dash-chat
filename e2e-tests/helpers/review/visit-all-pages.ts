@@ -31,6 +31,7 @@ function summarize(pages: PageResult[]): VisitResult {
 	const totalIssues = pages.reduce((sum, p) => {
 		let count = sum + p.overflow.length;
 		if (p.darkMode) count += p.darkMode.issues.length;
+		if (p.rtl) count += p.rtl.issues.length;
 		return count;
 	}, 0);
 	return { pages, summary: { totalIssues, pagesVisited: pages.length } };

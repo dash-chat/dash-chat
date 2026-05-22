@@ -9,6 +9,8 @@ export function formatIssues(res: VisitResult): string {
 			issues.push(...p.overflow.map(o => `  overflow: ${o}`));
 		if (p.darkMode?.issues?.length)
 			issues.push(...p.darkMode.issues.map(d => `  dark-mode: ${d}`));
+		if (p.rtl?.issues?.length)
+			issues.push(...p.rtl.issues.map(r => `  rtl: ${r}`));
 		if (issues.length) lines.push(`[${p.page}]\n${issues.join('\n')}`);
 	}
 	return lines.join('\n');

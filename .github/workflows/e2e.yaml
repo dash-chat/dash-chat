@@ -64,7 +64,7 @@ jobs:
 
       - name: Run E2E tests
         env:
-          E2E_MAX_INSTANCES: '4'
+          E2E_MAX_INSTANCES: '3'
         run: set -o pipefail && xvfb-run pnpm test 2>&1 | tee e2e-output.log
         working-directory: e2e-tests
 

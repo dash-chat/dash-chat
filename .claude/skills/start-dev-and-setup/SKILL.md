@@ -36,9 +36,7 @@ The dev/e2e bridge exposes a deliberately small set of helpers — DOM-side prim
 | `setLocale(locale)` | Switch UI locale; triggers a full reload. |
 | `tr(key)` | Resolve a paraglide message key in the current locale. |
 | `hasText(selector, text)` | `querySelector(sel)?.textContent?.includes(text)` predicate. |
-| `captureNextToastMessage(timeout?)` | Resolve with the next toast text. |
 | `simulateUpdate(state)` | Fire the updater-banner state event. |
-| `checkOverflow()` / `checkDarkMode()` / `checkRTL()` / `checkPage()` | Bulk DOM scans used by the review-checks spec. |
 
 For everything else (clicking buttons, typing into inputs, waiting for elements), use the inline `waitFor` / `typeInto` snippets below or the canonical selectors in `e2e-tests/helpers/selectors.ts` and the page-object files under `e2e-tests/helpers/pages/`.
 
