@@ -15,18 +15,18 @@ export class SettingsStore {
 		if (typeof window === 'undefined') return;
 		const mq = window.matchMedia('(prefers-color-scheme: dark)');
 		this.systemDarkSignal.value = mq.matches;
-		mq.addEventListener('change', (e) => {
+		mq.addEventListener('change', e => {
 			this.systemDarkSignal.value = e.matches;
 		});
 	}
 
 	private settings = reactive(() =>
-		relay<Settings>((state) => {
-			this.client.getSettings().then((s) => {
+		relay<Settings>(state => {
+			this.client.getSettings().then(s => {
 				state.value = s;
 			});
 
-			const unsubs = this.client.onSettingsUpdated((settings) => {
+			const unsubs = this.client.onSettingsUpdated(settings => {
 				state.value = settings;
 			});
 
@@ -51,6 +51,11 @@ export class SettingsStore {
 		return settings.local_mailbox_enabled;
 	});
 
+	notificationsEnabled = reactive(async () => {
+		const settings = await this.settings();
+		return settings.notifications_enabled;
+	});
+
 	isDark = reactive(async () => {
 		const systemDark = this.systemDarkSignal.value;
 		const scheme = await this.colorScheme();
@@ -60,7 +65,10 @@ export class SettingsStore {
 	});
 
 	async setColorScheme(scheme: ColorScheme): Promise<void> {
-		await this.client.setSetting('color_scheme', scheme === 'system' ? null : scheme);
+		await this.client.setSetting(
+			'color_scheme',
+			scheme === 'system' ? null : scheme,
+		);
 	}
 
 	async setQrColor(color: string): Promise<void> {
@@ -69,5 +77,9 @@ export class SettingsStore {
 
 	async setLocalMailboxEnabled(enabled: boolean): Promise<void> {
 		await this.client.setLocalMailboxEnabled(enabled);
+	}
+
+	async setNotificationsEnabled(enabled: boolean): Promise<void> {
+		await this.client.setNotificationsEnabled(enabled);
 	}
 }

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiAccountMultiplePlus, mdiAccountPlus } from '@mdi/js';
 	import type { ContactsStore } from 'dash-chat-stores';
@@ -8,6 +7,7 @@
 	import { goto } from '$app/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import {
 		Navbar,
 		NavbarBackLink,
@@ -22,6 +22,8 @@
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from '../profiles/Avatar.svelte';
+	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
@@ -79,7 +81,7 @@
 				linkProps={{ href: '/new-group' }}
 				title={m.newGroup()}
 				chevron={false}
-				style="display: none"
+				class={previewFeatures.enabled ? '' : '!hidden'}
 			>
 				{#snippet media()}
 					<wa-icon src={wrapPathInSvg(mdiAccountMultiplePlus)}></wa-icon>
@@ -121,20 +123,19 @@
 						profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
 					)}
 					{#each filteredContacts as [actorId, profile]}
-						<ListItem
+						<TitleTruncatedListItem
 							link
 							linkProps={{ href: `/direct-chats/${actorId}` }}
 							title={profile.name}
 							chevron={false}
 						>
 							{#snippet media()}
-								<wa-avatar
+								<Avatar
 									image={profile.avatar}
 									initials={profile.name.slice(0, 2)}
-								>
-								</wa-avatar>
+								/>
 							{/snippet}
-						</ListItem>
+						</TitleTruncatedListItem>
 					{:else}
 						<ListItem title={m.noContactsMatchFilter()} />
 					{/each}

@@ -1,16 +1,82 @@
 import { isTauriEnv } from '$lib/utils/environment';
+import {
+	Format,
+	checkPermissions,
+	requestPermissions,
+	scan,
+} from '@tauri-apps/plugin-barcode-scanner';
 import jsQR from 'jsqr';
 
-export async function scanQrcode(): Promise<string> {
+export type ScanQrFromImageErrorKind =
+	| 'NoQrCodeFound'
+	| 'LoadImageFailed'
+	| 'ReadFileFailed';
+
+export class ScanQrFromImageError extends Error {
+	constructor(
+		public readonly kind: ScanQrFromImageErrorKind,
+		cause?: unknown,
+	) {
+		super(kind, { cause });
+		this.name = 'ScanQrFromImageError';
+	}
+}
+
+export function isScanQrFromImageError(
+	error: unknown,
+): error is ScanQrFromImageError {
+	return error instanceof ScanQrFromImageError;
+}
+
+export async function scanQrCode(): Promise<string> {
 	if (!isTauriEnv()) {
 		throw new Error('QR code scanning requires the Tauri desktop/mobile app');
 	}
-	const { Format, requestPermissions, scan } = await import(
-		'@tauri-apps/plugin-barcode-scanner'
-	);
-	await requestPermissions();
+	await ensureCameraPermission();
+
 	const result = await scan({ windowed: true, formats: [Format.QRCode] });
 	return result.content;
+}
+
+/**
+ * The Tauri barcode scanner plugin's `requestPermissions()` sometimes hangs
+ * on Android: the permission dialog shows and the user grants it, but the
+ * plugin's internal callback never fires, so the JS promise never resolves.
+ *
+ * Workaround: check first with `checkPermissions()` (which always resolves).
+ * If not granted, race `requestPermissions()` against a polling loop that
+ * calls `checkPermissions()` until the permission is granted.
+ */
+async function ensureCameraPermission(): Promise<void> {
+	const state = await checkPermissions();
+	if (state === 'granted') return;
+
+	// Start the permission request (may hang due to plugin bug)
+	const requestPromise = requestPermissions().catch(() => 'denied' as string);
+
+	// Poll checkPermissions as a fallback — the OS grants the permission
+	// even if the plugin callback never fires.
+	const granted = await Promise.race([
+		requestPromise.then(state => state === 'granted'),
+		pollUntilGranted(),
+	]);
+
+	if (!granted) {
+		throw new Error('Camera permission not granted');
+	}
+}
+
+async function pollUntilGranted(): Promise<boolean> {
+	const maxWaitMs = 30_000;
+	const intervalMs = 500;
+	const start = Date.now();
+
+	while (Date.now() - start < maxWaitMs) {
+		await new Promise(r => setTimeout(r, intervalMs));
+		const state = await checkPermissions();
+		if (state === 'granted') return true;
+	}
+	return false;
 }
 
 export function scanQrFromImage(file: File): Promise<string> {
@@ -36,13 +102,15 @@ export function scanQrFromImage(file: File): Promise<string> {
 				if (code) {
 					resolve(code.data);
 				} else {
-					reject(new Error('No QR code found in image'));
+					reject(new ScanQrFromImageError('NoQrCodeFound'));
 				}
 			};
-			img.onerror = () => reject(new Error('Failed to load image'));
+			img.onerror = event =>
+				reject(new ScanQrFromImageError('LoadImageFailed', event));
 			img.src = e.target?.result as string;
 		};
-		reader.onerror = () => reject(new Error('Failed to read file'));
+		reader.onerror = event =>
+			reject(new ScanQrFromImageError('ReadFileFailed', event));
 		reader.readAsDataURL(file);
 	});
 }

@@ -1,57 +1,55 @@
 pub(crate) mod author_operation;
 mod stream_processing;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
-use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use crate::compat::Capabilities;
+use crate::error::{AddContactError, Error, ShutdownError};
+use crate::filesystem::Filesystem;
 use anyhow::Result;
+use chrono::{Duration, Utc};
+use dashchat_compat::VersionConvert;
+use named_id::Rename;
+use named_id::*;
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
-
-use crate::error::{AddContactError, Error};
-use crate::filesystem::Filesystem;
-use chrono::{Duration, Utc};
-use futures::Stream;
-use named_id::Rename;
-use named_id::*;
-use p2panda_core::{Body, Hash, PublicKey};
+use p2panda_core::{Hash, PublicKey};
 use p2panda_spaces::ActorId;
-use p2panda_store::{LogStore, SqliteStore};
-use p2panda_stream::IngestExt;
-use p2panda_stream::partial::operations::PartialOrder;
+use p2panda_store::SqliteStore;
 use tokio::sync::mpsc;
 
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 
 use crate::chat::ChatMessageContent;
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
-use crate::local_store::NodeData;
 use crate::mailbox::MailboxOperation;
 use crate::payload::{
     AnnouncementsPayload, ChatPayload, Extensions, InboxPayload, Payload, Profile,
 };
-use crate::stores::OpStore;
+use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DashAction, DeviceGroupId, DeviceGroupPayload, DeviceId,
     DirectChatId, Header, Operation,
 };
 
-pub use crate::local_store::LocalStore;
 pub use stream_processing::Notification;
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
     pub contact_code_expiry: Duration,
     pub mailboxes_config: MailboxesConfig,
+    pub capabilities: Capabilities,
 }
 
 impl NodeConfig {
     #[cfg(feature = "testing")]
     pub fn testing() -> Self {
+        use crate::compat::Capabilities;
+
         let mut mailboxes_config = MailboxesConfig::default();
         mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
         mailboxes_config.degraded_interval = std::time::Duration::from_millis(2000);
@@ -60,6 +58,7 @@ impl NodeConfig {
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
+            capabilities: Capabilities::current(),
         }
     }
 }
@@ -69,153 +68,125 @@ impl Default for NodeConfig {
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
+            capabilities: Capabilities::current(),
         }
     }
 }
 
 pub type DashResolver = StrongRemove<PublicKey, Hash, Operation, ()>;
 
-pub type Orderer<S> =
-    PartialOrder<TopicId, Extensions, S, p2panda_stream::partial::MemoryStore<p2panda_core::Hash>>;
-
-pub type NodeOpStore = OpStore<SqliteStore<TopicId, Extensions>>;
-// pub type NodeOpStore = OpStore<p2panda_store::MemoryStore<TopicId, Extensions>>;
-
-#[derive(Clone)]
-pub(crate) struct CancelAndWait<R> {
-    handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<R>>>>,
-    token: tokio_util::sync::CancellationToken,
-}
-
-impl<R> CancelAndWait<R> {
-    pub fn new(
-        handle: tokio::task::JoinHandle<R>,
-        token: tokio_util::sync::CancellationToken,
-    ) -> Self {
-        Self {
-            handle: Arc::new(tokio::sync::Mutex::new(Some(handle))),
-            token,
-        }
-    }
-
-    pub async fn cancel_and_wait(self) -> Option<Result<R, tokio::task::JoinError>> {
-        self.token.cancel();
-        Some(self.handle.lock().await.take()?.await)
-    }
-}
-
 #[derive(Clone)]
 pub struct Node {
-    pub op_store: NodeOpStore,
+    pub op_store: OpStore,
 
-    pub mailboxes: Mailboxes<MailboxOperation, NodeOpStore>,
+    pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
 
     // groups: p2panda_auth::group::Groups,
     config: NodeConfig,
     notification_tx: Option<mpsc::Sender<Notification>>,
+    topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
 
     /// Add new subscription streams
-    stream_tx: mpsc::Sender<Pin<Box<dyn Stream<Item = Operation> + Send + 'static>>>,
+    subscription_tx: mpsc::Sender<TopicId>,
 
-    /// Abort handle for the stream processing background task
-    stream_task: Option<CancelAndWait<()>>,
+    /// Abort trigger for the stream processing background task
+    stream_cancel: Option<mpsc::Sender<()>>,
+    /// Join handle for the stream processing background task
+    stream_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 
-    local_store: LocalStore,
-    node_data: NodeData,
+    pub local_store: LocalStore,
+    group_store: GroupStore,
+    node_keys: NodeKeys,
 
-    _filesystem: Filesystem,
+    filesystem: Filesystem,
 }
 
 impl Node {
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all))]
     pub async fn new(
         data_path: PathBuf,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
+        topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
         let local_store = LocalStore::new(filesystem.local_store_path()).await?;
-        let node_data = local_store.node_data()?;
+        let node_keys = local_store.node_keys().await?;
 
-        let op_store = OpStore::new_sqlite(filesystem.op_store_path()).await?;
-        // let op_store = OpStore::new_memory();
+        Self::init(
+            filesystem,
+            local_store,
+            node_keys,
+            config,
+            notification_tx,
+            topic_subscribed_tx,
+        )
+        .await
+    }
 
-        let (stream_tx, stream_rx) = mpsc::channel(100);
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?node_keys.device_id().renamed())))]
+    pub async fn init(
+        filesystem: Filesystem,
+        local_store: LocalStore,
+        node_keys: NodeKeys,
+        config: NodeConfig,
+        notification_tx: Option<mpsc::Sender<Notification>>,
+        topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
+    ) -> Result<Self> {
+        let op_store = OpStore::new(filesystem.op_store_path()).await?;
+        let group_store = GroupStore::new(op_store.store.clone());
 
-        let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
+        let (subscription_tx, subscription_rx) = mpsc::channel(100);
+
+        let sync_tracker = std::sync::Arc::new(
+            mailbox_client::sync_tracker::MailboxSyncTracker::open(
+                filesystem.mailbox_sync_tracker_path(),
+            )
+            .await?,
+        );
+
+        let mailboxes = Mailboxes::spawn(
+            op_store.clone(),
+            sync_tracker,
+            config.mailboxes_config.clone(),
+        )
+        .await?;
 
         let mut node = Self {
-            op_store: op_store.clone(),
+            op_store,
             mailboxes,
             config,
-            _filesystem: filesystem,
+            filesystem,
             local_store: local_store.clone(),
-            node_data,
+            group_store,
+            node_keys,
             notification_tx,
-            stream_tx,
-            stream_task: None,
+            subscription_tx,
+            topic_subscribed_tx,
+            stream_cancel: None,
+            stream_handle: Arc::new(Mutex::new(None)),
         };
 
-        node.stream_task = Some(node.spawn_stream_process_loop(stream_rx));
+        let (cancel_tx, cancel_rx) = mpsc::channel(1);
+        let handle = node.spawn_stream_process_loop(subscription_rx, cancel_rx);
+        node.stream_cancel = Some(cancel_tx);
+        node.stream_handle.lock().unwrap().replace(handle);
 
         node.initialize_stored_topics().await?;
+
+        node.announce_device_capabilities(node.config.capabilities)
+            .await?;
 
         Ok(node)
     }
 
-    pub async fn get_interleaved_logs(
-        &self,
-        topic_id: TopicId,
-        authors: Vec<DeviceId>,
-    ) -> anyhow::Result<Vec<(Header, Option<Payload>)>> {
-        let mut logs = Vec::new();
-        for author in authors {
-            for (h, b) in self.get_log(topic_id, author).await? {
-                if let Some(body) = b {
-                    if let Ok(payload) = Payload::try_from_body(&body) {
-                        logs.push((h, Some(payload)));
-                    } else {
-                        tracing::error!("Failed to decode payload: {body:?}");
-                    }
-                } else {
-                    logs.push((h, None));
-                }
-            }
-        }
-        logs.sort_by_key(|(h, _)| h.timestamp);
-        Ok(logs)
+    pub fn data_path(&self) -> &PathBuf {
+        self.filesystem.data_path()
     }
 
-    pub async fn get_log(
-        &self,
-        topic: TopicId,
-        author: DeviceId,
-    ) -> anyhow::Result<Vec<(Header, Option<Body>)>> {
-        let _heights = self.op_store.get_log_heights(&topic).await?;
-        match self.op_store.get_log(&author, &topic, None).await? {
-            Some(log) => Ok(log),
-            None => {
-                let author = *author;
-                tracing::warn!("No log found for topic {topic:?} and author {author:?}");
-                Ok(vec![])
-            }
-        }
-    }
-
-    pub async fn get_authors(&self, topic_id: TopicId) -> anyhow::Result<HashSet<DeviceId>> {
-        let authors = self
-            .op_store
-            .get_log_heights(&topic_id)
-            .await?
-            .into_iter()
-            .map(|(pk, _)| DeviceId::from(pk))
-            .collect::<HashSet<_>>();
-        Ok(authors)
-    }
-
-    pub fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
+    pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
         self.local_store
             .get_active_inbox_topics()
+            .await
             .map_err(|err| Error::GetActiveInboxes(format!("{err}")))
     }
 
@@ -236,6 +207,7 @@ impl Node {
                 .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
             self.local_store
                 .add_active_inbox_topic(inbox_topic.clone())
+                .await
                 .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
             Some(inbox_topic)
         } else {
@@ -245,17 +217,17 @@ impl Node {
         Ok(QrCode {
             device_pubkey: self.device_id(),
             inbox_topic,
-            agent_id: self.node_data.agent_id,
+            agent_id: self.node_keys.agent_id,
             share_intent,
         })
     }
 
     pub fn agent_id(&self) -> AgentId {
-        self.node_data.agent_id
+        self.node_keys.agent_id
     }
 
     pub fn device_id(&self) -> DeviceId {
-        self.node_data.device_id()
+        self.node_keys.device_id()
     }
 
     pub fn device_group_topic(&self) -> DeviceGroupId {
@@ -287,6 +259,25 @@ impl Node {
         let my_actor = self.agent_id();
         self.register_topic(topic).await?;
 
+        let other_device_id = self
+            .local_store
+            .lookup_contact_by_agent_id(other)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
+
+        // TODO: this should use a transaction, but the race is not a big deal here
+        let deps = self.group_store.heads(*topic).await?;
+        let initial_members = vec![
+            (GroupMember::Individual(*self.device_id()), Access::write()),
+            (GroupMember::Individual(*other_device_id), Access::write()),
+        ];
+        self.author_operation(
+            topic,
+            DashAction::group_action(topic, GroupAction::Create { initial_members }, deps)?,
+            Some(&format!("create_direct_chat_space({})", topic.renamed())),
+        )
+        .await?;
+
         tracing::info!(
             my_actor = ?my_actor.renamed(),
             other = ?other.renamed(),
@@ -305,21 +296,21 @@ impl Node {
     ) -> anyhow::Result<ChatId> {
         let chat_id = Topic::random();
 
-        let agents = initial_members
+        let device_ids: Vec<DeviceId> = initial_members
+            .keys()
+            .map(|public_key| DeviceId::from(*public_key))
+            .collect();
+        let contacts = self.local_store.lookup_contacts(&device_ids).await?;
+        let agents: Vec<AgentId> = device_ids
             .iter()
-            .map(|(public_key, _)| self.local_store.lookup_contact(DeviceId::from(*public_key)))
-            .filter_map(|m| match m {
-                Ok(None) => {
-                    tracing::warn!("Contact not found");
+            .filter_map(|did| match contacts.get(did) {
+                Some(agent) => Some(*agent),
+                None => {
+                    tracing::warn!("Contact not found: {}", did.renamed());
                     None
                 }
-                Ok(Some(agent)) => Some(Ok(agent)),
-                Err(e) => {
-                    tracing::error!("Error looking up contact: {}", e);
-                    Some(Err(e))
-                }
             })
-            .collect::<anyhow::Result<Vec<AgentId>>>()?;
+            .collect();
 
         // The creator must always have Manage access
         initial_members.insert(*self.device_id(), p2panda_auth::Access::manage());
@@ -329,9 +320,11 @@ impl Node {
             .map(|(public_key, access)| (GroupMember::Individual(public_key), access))
             .collect();
 
+        // TODO: this should use a transaction, but the race is not a big deal here
+        let deps = self.group_store.heads(*chat_id).await?;
         self.author_operation(
             chat_id,
-            DashAction::group_action(chat_id, GroupAction::Create { initial_members })?,
+            DashAction::group_action(chat_id, GroupAction::Create { initial_members }, deps)?,
             Some(&format!("create_group({})", chat_id.renamed())),
         )
         .await?;
@@ -345,7 +338,7 @@ impl Node {
     }
 
     async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
-        let payload = Payload::Chat(ChatPayload::JoinGroup(chat_id));
+        let payload = Payload::Chat(ChatPayload::JoinGroup { chat_id });
         tracing::info!(
             "{} is inviting {} to group {}",
             self.device_id().renamed(),
@@ -371,6 +364,9 @@ impl Node {
         member: PublicKey,
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
+        // TODO: this should use a transaction, but the race is not a big deal here
+        let deps = self.group_store.heads(*chat_id).await?;
+
         self.author_operation(
             chat_id,
             DashAction::group_action(
@@ -379,12 +375,16 @@ impl Node {
                     member: GroupMember::Individual(member),
                     access,
                 },
+                deps,
             )?,
             Some(&format!("add_group_member({})", chat_id.renamed())),
         )
         .await?;
 
-        let agent_id = self.local_store.lookup_contact(DeviceId::from(member))?;
+        let agent_id = self
+            .local_store
+            .lookup_contact_by_device_id(DeviceId::from(member))
+            .await?;
         if let Some(agent_id) = agent_id {
             self.invite_to_group(chat_id, agent_id).await?;
         } else {
@@ -399,6 +399,8 @@ impl Node {
         chat_id: ChatId,
         member: PublicKey,
     ) -> anyhow::Result<()> {
+        // TODO: this should use a transaction, but the race is not a big deal here
+        let deps = self.group_store.heads(*chat_id).await?;
         self.author_operation(
             chat_id,
             DashAction::group_action(
@@ -406,6 +408,7 @@ impl Node {
                 GroupAction::Remove {
                     member: GroupMember::Individual(member),
                 },
+                deps,
             )?,
             Some(&format!("remove_group_member({})", chat_id.renamed())),
         )
@@ -418,8 +421,7 @@ impl Node {
         chat_id: ChatId,
     ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
         let members = self
-            .local_store
-            .groups
+            .group_store
             .members(chat_id)
             .await?
             .into_iter()
@@ -450,28 +452,21 @@ impl Node {
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        let topic_id: TopicId = Topic::announcements(self.agent_id()).into();
-        let authors = self.get_authors(topic_id.clone()).await?;
-        let ops = self
-            .get_interleaved_logs(topic_id, authors.into_iter().collect())
-            .await?;
+        self.local_store.get_profile(self.agent_id()).await
+    }
 
-        let mut set_profile_ops: Vec<(u64, Profile)> = ops
-            .into_iter()
-            .filter_map(|(header, payload)| match payload {
-                Some(Payload::Announcements(AnnouncementsPayload::SetProfile(profile))) => {
-                    Some((header.timestamp, profile))
-                }
-                _ => None,
-            })
-            .collect();
+    pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
+        self.local_store
+            .lookup_contact_by_device_id(device_id)
+            .await
+    }
 
-        set_profile_ops.sort_by_key(|(timestamp, _)| *timestamp);
+    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
+        self.local_store.all_contact_agent_ids().await
+    }
 
-        let Some((_, profile)) = set_profile_ops.last() else {
-            return Ok(None);
-        };
-        Ok(Some(profile.clone()))
+    pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
+        self.local_store.subscribed_topics().await
     }
 
     /// Get all messages for a chat from the logs.
@@ -486,9 +481,10 @@ impl Node {
         let chat_id = topic.into();
         let mut messages = vec![];
 
-        let authors = self.get_authors(chat_id.into()).await?;
+        let authors = self.op_store.get_authors(chat_id.into()).await?;
 
         for (header, payload) in self
+            .op_store
             .get_interleaved_logs(chat_id.into(), authors.into_iter().collect())
             .await?
         {
@@ -496,18 +492,6 @@ impl Node {
                 messages.push(crate::chat::testing::ChatMessage::new(message, &header));
             }
         }
-
-        // for (events, author, timestamp) in events {
-        //     for event in events {
-        //         use crate::Cbor;
-        //         match event {
-        //             Event::Application { space_id, data } => {
-        //                 messages.push(ChatMessage::from_bytes(&data)?)
-        //             }
-        //             _ => {}
-        //         }
-        //     }
-        // }
 
         Ok(messages)
     }
@@ -519,6 +503,21 @@ impl Node {
         message: ChatMessageContent,
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
+
+        let (capabilities, num_agents) = self.get_group_capabilities(topic).await?;
+        let capabilities = capabilities.ok_or(anyhow::anyhow!(
+            "no capabilities found for chat: {}",
+            topic.renamed()
+        ))?;
+
+        // NOTE: we may need logic for an agent to re-send a downgraded message if they later discover
+        //       intended recipients who don't have the proper capabilities for receiving this message
+        if num_agents == 1 {
+            tracing::warn!(
+                "sending message to group without knowing any other members' capabilities",
+            );
+        }
+        let message = message.to_version(&capabilities)?;
 
         let header = self
             .author_operation(
@@ -546,10 +545,33 @@ impl Node {
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.
-    pub async fn shutdown(mut self) {
-        if let Some(cancel_and_wait) = self.stream_task.take() {
-            cancel_and_wait.cancel_and_wait().await;
+    pub async fn shutdown(&self) -> Result<(), ShutdownError> {
+        // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
+        self.mailboxes.clear().await;
+
+        if let Some(cancel) = self.stream_cancel.as_ref() {
+            if let Err(err) = cancel.send(()).await {
+                tracing::warn!(
+                    "failed to send cancel signal to stream processing task: {}",
+                    err
+                );
+                return Err(ShutdownError::StreamTaskJoin(Box::new(err)));
+            }
         }
+        tracing::info!("joining stream processing task");
+        if let Some(handle) = self.stream_handle.lock().unwrap().take() {
+            if let Err(err) = handle.join() {
+                tracing::warn!("failed to join stream processing task: {:?}", err);
+                return Err(ShutdownError::StreamTaskJoin(err));
+            }
+        }
+
+        // Close pools last. SqlitePool clones share underlying state, so closing
+        // here drains every connection across the app.
+        self.local_store.close().await;
+        self.op_store.close().await;
+
+        Ok(())
     }
 
     /// Store someone as a contact, and:
@@ -563,6 +585,7 @@ impl Node {
 
         self.local_store
             .save_contact(contact.clone())
+            .await
             .map_err(|e| AddContactError::StoreContact(e.to_string()))?;
 
         // SPACES: Register the member in the spaces manager
@@ -627,7 +650,7 @@ impl Node {
         self.author_operation(
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact.clone())),
-            Some(&format!("add_contact/invitation({})", agent.renamed())),
+            Some(&format!("add_contact/add_contact({})", agent.renamed())),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
@@ -650,7 +673,7 @@ impl Node {
             self.author_operation(
                 inbox_topic.topic,
                 Payload::Inbox(InboxPayload::ContactRequest { code, profile }),
-                Some(&format!("add_contact/invitation({})", agent.renamed())),
+                Some(&format!("add_contact/contact_request({})", agent.renamed())),
             )
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?;
@@ -720,7 +743,7 @@ impl Node {
         )
         .await?;
 
-        for topic in self.local_store.get_active_inbox_topics()?.iter() {
+        for topic in self.local_store.get_active_inbox_topics().await?.iter() {
             self.initialize_topic(
                 *topic
                     .topic
@@ -730,10 +753,68 @@ impl Node {
             .await?;
         }
 
-        for topic in self.local_store.subscribed_topics()?.iter() {
+        for topic in self.local_store.subscribed_topics().await?.iter() {
             self.initialize_topic(*topic).await?;
         }
 
         Ok(())
+    }
+
+    pub async fn announce_device_capabilities(
+        &self,
+        capabilities: Capabilities,
+    ) -> anyhow::Result<()> {
+        let announcements = Topic::announcements(self.agent_id());
+        let latest_capability = self.local_store.get_capabilities(self.device_id()).await?;
+
+        // If the capability is unset or different from the current one, set it now.
+        if latest_capability != Some(capabilities) {
+            self.author_operation(
+                announcements,
+                Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }),
+                Some(&format!(
+                    "set_device_capabilities({})",
+                    self.device_id().renamed()
+                )),
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Find the infimum of the capabilities of all other members of the group with read access or above.
+    ///
+    /// This is dependent on eventual consistency, and as other members join, the capabilities may change.
+    pub async fn get_group_capabilities(
+        &self,
+        topic: ChatId,
+    ) -> anyhow::Result<(Option<Capabilities>, usize)> {
+        let members = self.group_store.members(topic).await?;
+        let mut devices = members
+            .iter()
+            .filter_map(|(member, access)| {
+                // Only include members with read access or above
+                // TODO: make sure this pubkey corresponds to a DeviceId and not an AgentId,
+                //       once device groups are implemented
+                (*access >= Access::read()).then_some(*member)
+            })
+            .collect::<BTreeSet<_>>();
+        devices.insert(self.device_id());
+
+        // Collect capabilities for all agents
+        let caps = futures::future::join_all(
+            devices
+                .into_iter()
+                .map(|device| self.local_store.get_capabilities(device)),
+        )
+        .await
+        .into_iter()
+        .collect::<Result<Vec<Option<Capabilities>>>>()?;
+
+        let caps = caps.into_iter().flatten().collect::<Vec<_>>();
+        let num = caps.len();
+
+        Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 }

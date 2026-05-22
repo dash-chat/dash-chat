@@ -19,9 +19,10 @@ jobs:
           fetch-depth: 1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
-          version: 10.15.0
+          version: 10.33.0
+          cache: true
 
       - name: Setup node
         uses: actions/setup-node@v4
@@ -82,7 +83,7 @@ jobs:
 
             You MUST always write this verdict file, even if the review encounters errors (write `FAIL` with an explanation).
 
-          claude_args: "--model claude-opus-4-6 --allowed-tools Bash(gh api:*),Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(pnpm:*),mcp__tauri__driver_session,mcp__tauri__webview_find_element,mcp__tauri__read_logs,mcp__tauri__webview_interact,mcp__tauri__webview_screenshot,mcp__tauri__webview_keyboard,mcp__tauri__webview_wait_for,mcp__tauri__webview_get_styles,mcp__tauri__webview_execute_js,mcp__tauri__manage_window"
+          claude_args: "--model claude-opus-4-7 --allowed-tools Bash(gh api:*),Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(pnpm:*),mcp__tauri__driver_session,mcp__tauri__webview_find_element,mcp__tauri__read_logs,mcp__tauri__webview_interact,mcp__tauri__webview_screenshot,mcp__tauri__webview_keyboard,mcp__tauri__webview_wait_for,mcp__tauri__webview_get_styles,mcp__tauri__webview_execute_js,mcp__tauri__manage_window"
 
       - name: Check review verdict
         if: always()

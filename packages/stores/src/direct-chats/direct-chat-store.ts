@@ -6,21 +6,28 @@ import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
-import { ChatReaction, ChatSummary, MessageContent, Payload } from '../types';
+import {
+	ChatReaction,
+	ChatSummary,
+	MessageContent,
+	Payload,
+	ReadMessagesStore,
+	getMessageText,
+} from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
-import { toPromise } from '../utils/to-promise';
 import { type IDirectChatClient } from './direct-chat-client';
 
 export interface Message {
 	hash: string;
-	content: MessageContent;
+	content: string;
 	timestamp: number;
 	author: DeviceId;
+	seqNum: number;
 	reactions: Record<DeviceId, string>;
 }
 
 // Store tied to a specific direct chat
-export class DirectChatStore {
+export class DirectChatStore implements ReadMessagesStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
@@ -54,9 +61,10 @@ export class DirectChatStore {
 					if (body.payload.type === 'Message') {
 						messages[operation.hash] = {
 							hash: operation.hash,
-							content: body.payload.payload,
+							content: getMessageText(body.payload.payload),
 							author,
-							timestamp: operation.header.timestamp * 1000,
+							seqNum: operation.header.seq_num,
+							timestamp: operation.header.timestamp,
 							reactions: {},
 						};
 					}
@@ -122,29 +130,26 @@ export class DirectChatStore {
 	});
 
 	onNewMessage(
-		handler: (
-			operation: SimplifiedOperation<Payload>,
-			message: MessageContent,
-		) => void,
+		handler: (operation: SimplifiedOperation<Payload>, message: string) => void,
 	) {
 		return this.logsStore.logsClient.onNewOperation(async (topicId, op) => {
-			const chatId = await toPromise(this.chatId);
+			const chatId = await this.chatId();
 			if (topicId !== chatId) return;
 			if (op.body?.payload.type !== 'Message') return;
-			handler(op, op.body.payload.payload);
+			handler(op, getMessageText(op.body.payload.payload));
 		});
 	}
 
-	async sendMessage(content: MessageContent) {
-		const chatId = await toPromise(this.chatId);
-		const myDeviceId = await toPromise(this.contactsStore.myDeviceId);
+	async sendMessage(text: string) {
+		const chatId = await this.chatId();
+		const myDeviceId = await this.contactsStore.myDeviceId();
+		const content: MessageContent = { v: '1', message: text, media: null };
 		await Promise.all([
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
 				if (op.header.public_key !== myDeviceId) return false;
-				const payload = op.body.payload.payload;
-				if (payload.message !== content.message) return false;
+				if (getMessageText(op.body.payload.payload) !== text) return false;
 				return true;
 			}),
 			this.client.sendMessage(chatId, content),
@@ -217,12 +222,12 @@ export class DirectChatStore {
 	});
 
 	async markAsRead(messageHashes: Hash[]): Promise<void> {
-		const chatId = await toPromise(this.chatId);
+		const chatId = await this.chatId();
 		await this.client.markMessagesRead(chatId, messageHashes);
 	}
 
 	async sendReaction(reaction: ChatReaction) {
-		const chatId = await toPromise(this.chatId);
+		const chatId = await this.chatId();
 		await this.client.sendReaction(chatId, reaction);
 	}
 }

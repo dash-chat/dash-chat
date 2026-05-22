@@ -4,7 +4,7 @@
  *
  * Split into three small functions to stay within MCP bridge's ~20s timeout:
  *   visitProfilePages  — home → settings → profile → sub-pages → home (~7 pages)
- *   visitOtherPages    — home → settings → offline/appearance/account → home + new-message (~5 pages)
+ *   visitOtherPages    — home → settings → offline/appearance/help/contact-us/account → home + new-message (~7 pages)
  *   visitChatPages     — home → direct-chat → chat-settings → home (~2 pages)
  *
  * visitAllPages combines all three (for E2E tests with longer timeouts).
@@ -103,8 +103,26 @@ export async function visitProfilePages(options?: VisitOptions): Promise<VisitRe
 	// Home
 	progress('profile:home');
 	await waitFor(HOME, NAV_TIMEOUT);
+	// Settle pending paints/transitions before the first check — switchCombo's
+	// dark-mode + theme changes can still be propagating when we land here.
+	await breathe();
 	pages.push(runCheck('home', co));
 	await breathe();
+
+	// Home with FirstChatTooltip visible — only possible when chat list is empty
+	// (tooltip is gated behind chats.length === 0 and !isWideScreen). Skip when
+	// chats exist since the tooltip won't render regardless of localStorage.
+	if (document.querySelector(S.home.emptyState)) {
+		progress('profile:home-tooltip');
+		localStorage.removeItem('first-chat-tooltip-shown');
+		await nav('/settings', S.settings.profileLink);
+		await nav('/', HOME);
+		await waitFor(S.home.firstChatTooltip, NAV_TIMEOUT);
+		pages.push(runCheck('home-with-tooltip', co));
+		// Dismiss tooltip (click restores the localStorage flag internally)
+		(document.querySelector(S.home.firstChatTooltip) as HTMLElement)?.click();
+		await breathe();
+	}
 
 	// Settings
 	progress('profile:settings-click');
@@ -181,6 +199,25 @@ export async function visitOtherPages(options?: VisitOptions): Promise<VisitResu
 	progress('other:appearance');
 	await nav('/settings/appearance', S.appearance.light);
 	pages.push(runCheck('appearance', co));
+	await breathe();
+
+	// Notifications — mobile only, use content selector
+	progress('other:notifications');
+	await nav('/settings/notifications', S.notifications.toggle);
+	pages.push(runCheck('notifications', co));
+	await breathe();
+
+	// Help — navigate directly (help-back hidden on desktop)
+	progress('other:help');
+	await nav('/settings/help', S.help.contactUsLink);
+	pages.push(runCheck('help', co));
+	await breathe();
+
+	// Contact Us — click from help page
+	progress('other:contactUs');
+	click(S.help.contactUsLink);
+	await waitFor(S.contactUs.messageInput, NAV_TIMEOUT);
+	pages.push(runCheck('contact-us', co));
 	await breathe();
 
 	// Account — navigate directly (account-back hidden on desktop)

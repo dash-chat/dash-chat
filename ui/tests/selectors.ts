@@ -5,7 +5,9 @@ export const S = {
 		settingsLink: tid('home-settings-link'),
 		newMessageLink: tid('home-new-message-link'),
 		newMessageFab: tid('home-new-message-fab'),
+		firstChatTooltip: tid('first-chat-tooltip'),
 		chatList: tid('all-chats-list'),
+		chatRow: tid('all-chats-row'),
 		emptyState: tid('all-chats-empty'),
 	},
 	getStarted: {
@@ -28,6 +30,12 @@ export const S = {
 		qrCode: 'wa-qr-code',
 		copyButton: tid('add-contact-copy-btn'),
 		codeInput: tid('add-contact-code-input'),
+		shareButton: tid('add-contact-share-btn'),
+		saveButton: tid('add-contact-save-btn'),
+		uploadButton: tid('add-contact-upload-btn'),
+		selectImageButton: tid('add-contact-select-image-btn'),
+		fileInput: tid('add-contact-file-input'),
+		colorButton: tid('add-contact-color-btn'),
 	},
 	directChat: {
 		page: tid('direct-chat-page'),
@@ -35,7 +43,9 @@ export const S = {
 		searchBack: tid('direct-chat-search-back'),
 		settingsLink: tid('direct-chat-settings-link'),
 		peerName: tid('direct-chat-peer-name'),
+		peerHeader: tid('direct-chat-peer-header'),
 		scrollBottom: tid('direct-chat-scroll-bottom'),
+		scroll: tid('direct-chat-scroll'),
 		unreadBadge: tid('direct-chat-unread-badge'),
 		acceptButton: tid('direct-chat-accept-btn'),
 		rejectButton: tid('direct-chat-reject-btn'),
@@ -49,10 +59,18 @@ export const S = {
 		send: tid('message-input-send'),
 		emoji: tid('message-input-emoji'),
 	},
+	status: {
+		message: tid('message-status'),
+		connection: tid('connection-status'),
+	},
 	chatSettings: {
 		back: tid('chat-settings-back'),
 		peerName: tid('chat-settings-peer-name'),
+		peerHeader: tid('chat-settings-peer-header'),
 		searchButton: tid('chat-settings-search-btn'),
+	},
+	peerProfileSheet: {
+		root: tid('peer-profile-sheet'),
 	},
 	settings: {
 		back: tid('settings-back'),
@@ -61,6 +79,7 @@ export const S = {
 		appearanceLink: tid('settings-appearance-link'),
 		accountLink: tid('settings-account-link'),
 		helpLink: tid('settings-help-link'),
+		notificationsLink: tid('settings-notifications-link'),
 		offlineLink: tid('settings-offline-link'),
 	},
 	profile: {
@@ -111,6 +130,10 @@ export const S = {
 		back: tid('group-chat-back'),
 		infoLink: tid('group-chat-info-link'),
 	},
+	notifications: {
+		back: tid('notifications-back'),
+		toggle: tid('notifications-toggle'),
+	},
 	offline: {
 		back: tid('offline-back'),
 		localMailboxToggle: tid('offline-local-mailbox-toggle'),
@@ -130,6 +153,7 @@ export const S = {
 	help: {
 		back: tid('help-back'),
 		contactUsLink: tid('help-contact-us'),
+		versionItem: tid('help-version'),
 	},
 	contactUs: {
 		back: tid('contact-us-back'),

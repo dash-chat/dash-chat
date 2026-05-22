@@ -3,14 +3,19 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
+		"check": "pnpm -F ui paraglide && tsc --noEmit -p tsconfig.json",
 		"test": "wdio run wdio.conf.ts"
 	},
 	"devDependencies": {
+		"@types/node": "^24.10.0",
 		"@wdio/cli": "^9.12.1",
 		"@wdio/local-runner": "^9.12.1",
 		"@wdio/mocha-framework": "^9.12.1",
 		"@wdio/spec-reporter": "^9.12.1",
+		"@wdio/types": "^9.12.1",
+		"expect-webdriverio": "^5.6.4",
 		"ts-node": "^10.9.2",
-		"typescript": "^5.9.3"
+		"typescript": "^5.9.3",
+		"webdriverio": "^9.12.1"
 	}
 }

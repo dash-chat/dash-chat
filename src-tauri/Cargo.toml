@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.10.3"
+version = "0.16.0"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -16,6 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.4.0", default-features = false, features = [] }
+vergen-gitcl = "9"
 
 [dependencies]
 tauri = { version = "2.9", features = ["devtools", "tray-icon"] }
@@ -27,6 +28,7 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-sharekit = "0.3"
 tauri-plugin-fs = "2"
+tauri-plugin-os = "2"
 tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
 
 tauri-plugin-virtual-keyboard-padding = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding", branch = "main" }
@@ -36,7 +38,9 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
 ] }
 
 dashchat-node = { path = "../crates/dashchat-node" }
-mailbox-client = { path = "../crates/mailbox-client" }
+mailbox-client = { workspace = true }
+push-notifications-client = { path = "../crates/push-notifications-client" }
+dashchat-utils = { path = "../crates/dashchat-utils" }
 
 p2panda-auth = { workspace = true }
 p2panda-core = { workspace = true }
@@ -59,14 +63,19 @@ mdns-sd = "0.17"
 nanoid = "0"
 image = "0.25"
 
-
 opener = { version = "0.7", features = ["reveal"] }
 log = "0.4"
+netdev = "0.43"
+if-watch = { version = "3", features = ["tokio"] }
+iana-time-zone = "0.1"
+sysinfo = "0.38"
 url2 = "0.0.6"
 app_dirs2 = "2.5.5"
 uuid = "1"
 serde = "1"
 serde_json = "1"
+sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio"] }
+chrono = "0.4.42"
 sonix-i18n = "0.1.1"
 futures = "0.3"
 
@@ -81,14 +90,21 @@ env_logger = "0.11"
 # Build openssl from source to cross-compile to each platform as needed
 openssl-sys = { version = "0.9", features = ["vendored"] }
 
+# `iroh-relay` (via `reqwest 0.13` + `rustls 0.23`) panics on first TLS
+# handshake unless a CryptoProvider has been installed. Pull rustls in
+# directly so we can install the `ring` provider at startup.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-tauri-plugin-barcode-scanner = "2.4"
+tauri-plugin-barcode-scanner = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "fix/barcode-scanner-ios" }
 tauri-plugin-system-bars-styles = { git = "https://github.com/dash-chat/tauri-plugin-system-bars-styles", branch = "main" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
-ndk-context = "0.1"
 ndk-sys = "0.6"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+oslog = "0.2"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-autostart = "2"
@@ -102,3 +118,4 @@ e2e-tests = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+tempfile = "3"

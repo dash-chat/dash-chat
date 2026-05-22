@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AppState, Author, Blob, BlobsKey, BlobsKeyPrefix, SequenceNumber, TopicId, WatermarksKey,
-    BLOBS_TABLE, WATERMARKS_TABLE,
+    notify_topics_subscribers::notify_topics_subscribers, AppState, Author, Blob, BlobsKey,
+    BlobsKeyPrefix, SequenceNumber, TopicId, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -21,25 +21,42 @@ pub async fn store_blobs(
     // Use spawn_blocking because redb's begin_write() is a blocking call that waits
     // for exclusive write access. Running this directly in async context would block
     // tokio worker threads and cause deadlocks under concurrent load.
-    tokio::task::spawn_blocking(move || store_blobs_inner(&db, &payload))
-        .await
-        .map_err(|e| {
-            tracing::error!("Task join error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-        })?
-        .map_err(|e| {
-            tracing::error!("{}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, e)
-        })?;
+    let topics_with_new_blobs =
+        tokio::task::spawn_blocking(move || store_blobs_inner(&db, &payload))
+            .await
+            .map_err(|e| {
+                tracing::error!("Task join error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
+            })?
+            .map_err(|e| {
+                tracing::error!("{}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
+            })?;
+
+    notify_topics_subscribers(&state, topics_with_new_blobs).await;
+
     Ok(StatusCode::CREATED)
 }
 
-fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), String> {
+/// Returns a map of topic_id → map of op_id (author:seq) → author for newly inserted blobs.
+/// The author is preserved separately so the push-notifications-server can filter the
+/// author out of the subscriber list (devices don't get pushes for their own messages).
+fn store_blobs_inner(
+    db: &Database,
+    request: &StoreBlobsRequest,
+) -> Result<BTreeMap<TopicId, BTreeMap<String, Author>>, String> {
     let write_txn = db
         .begin_write()
         .map_err(|e| format!("Failed to begin transaction: {}", e))?;
 
     let mut blob_count = 0;
+    let mut topics_with_new_blobs: BTreeMap<TopicId, BTreeMap<String, Author>> = BTreeMap::new();
 
     {
         let mut blobs_table = write_txn
@@ -97,6 +114,11 @@ fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), S
                             current_watermark,
                             wm
                         );
+                        let topic_entry =
+                            topics_with_new_blobs.entry(topic_id.clone()).or_default();
+                        for seq in &stored_seqs {
+                            topic_entry.insert(format!("{}:{}", author, seq), author.clone());
+                        }
                     }
                 }
             }
@@ -108,7 +130,7 @@ fn store_blobs_inner(db: &Database, request: &StoreBlobsRequest) -> Result<(), S
         .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
     tracing::debug!("Stored {} blobs", blob_count);
-    Ok(())
+    Ok(topics_with_new_blobs)
 }
 
 /// Computes the new watermark after storing blobs.

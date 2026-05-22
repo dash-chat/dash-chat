@@ -1,9 +1,13 @@
 <script lang="ts">
+	import { isTauriEnv } from '$lib/utils/environment';
+
+	const isPreview = !isTauriEnv();
 	let theme = $state<'ios' | 'material'>('material');
 	let dark = $state(false);
 	let mobile = $state(false);
 	let open = $state(false);
 	let updater = $state(false);
+	let rtl = $state(false);
 
 	function toggleTheme() {
 		theme = theme === 'ios' ? 'material' : 'ios';
@@ -22,9 +26,6 @@
 		window.dispatchEvent(
 			new CustomEvent('set-wide-screen', { detail: !mobile }),
 		);
-		window.dispatchEvent(
-			new CustomEvent('set-mobile-frame', { detail: mobile }),
-		);
 	}
 
 	function toggleUpdater() {
@@ -34,6 +35,11 @@
 				detail: updater ? 'downloading' : 'idle',
 			}),
 		);
+	}
+
+	function toggleRtl() {
+		rtl = !rtl;
+		document.documentElement.dir = rtl ? 'rtl' : 'ltr';
 	}
 
 	function resetData() {
@@ -63,15 +69,20 @@
 			<button class="preview-btn" onclick={toggleLayout}>
 				{mobile ? 'Mobile' : 'Desktop'}
 			</button>
+			<button class="preview-btn" onclick={toggleRtl}>
+				{rtl ? 'RTL' : 'LTR'}
+			</button>
 			<button class="preview-btn" onclick={toggleUpdater}>
 				{updater ? 'Hide Update' : 'Show Update'}
 			</button>
-			<button class="preview-btn preview-btn-reset" onclick={resetData}>
-				Reset
-			</button>
-			<button class="preview-btn preview-btn-danger" onclick={removeAllData}>
-				Wipe
-			</button>
+			{#if isPreview}
+				<button class="preview-btn preview-btn-reset" onclick={resetData}>
+					Reset
+				</button>
+				<button class="preview-btn preview-btn-danger" onclick={removeAllData}>
+					Wipe
+				</button>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -80,7 +91,7 @@
 	.preview-float {
 		position: fixed;
 		bottom: 16px;
-		left: 16px;
+		inset-inline-start: 16px;
 		z-index: 99999;
 		display: flex;
 		flex-direction: row;

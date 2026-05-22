@@ -12,31 +12,20 @@ impl Node {
     ) -> Result<Header, anyhow::Error> {
         let action = action.into();
 
-        let previous = match &action {
-            DashAction::Payload(_) => {
-                vec![]
-            }
-            DashAction::GroupControl(_) => self.local_store.groups.heads().await?,
-        };
-
-        let (header, body) = self
+        let op = self
             .op_store
             .author_operation(
-                &self.node_data.private_key,
+                &self.node_keys.private_key,
                 topic.clone(),
                 action.clone(),
-                previous,
                 alias,
             )
             .await?;
 
+        op.hash.with_serial();
+
         self.mailboxes.trigger_sync();
 
-        let op = Operation {
-            hash: header.hash().with_serial(),
-            header,
-            body,
-        };
         self.process_authored_ingested_operation(op).await
     }
 

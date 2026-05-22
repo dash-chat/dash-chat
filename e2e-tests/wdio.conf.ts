@@ -1,7 +1,7 @@
-import type { Options } from '@wdio/types';
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 import { allocateDriverPorts, allocatePort } from './helpers/allocate-port';
@@ -22,10 +22,26 @@ const ALL_PORTS = [port1, nativePort1, port2, nativePort2];
 let mailboxServer: ChildProcess;
 let tauriDriver1: ChildProcess;
 let tauriDriver2: ChildProcess;
+let agent1Logger: ChildProcess | null = null;
+let agent2Logger: ChildProcess | null = null;
 
-export const config: Options.Testrunner = {
+function startAgentLogger(agent: string, logFile: string): ChildProcess {
+	// Pre-create the log file so `tail` doesn't error before the agent boots.
+	mkdirSync(path.dirname(logFile), { recursive: true });
+	writeFileSync(logFile, '');
+
+	const proc = spawn('tail', ['-n', '0', '-F', logFile], {
+		stdio: ['ignore', 'pipe', 'ignore'],
+	});
+	const rl = createInterface({ input: proc.stdout! });
+	rl.on('line', (line: string) => {
+		console.log(`[${agent}] ${line}`);
+	});
+	return proc;
+}
+
+export const config: WebdriverIO.MultiremoteConfig = {
 	runner: 'local',
-	tsNodeOpts: { esm: true, project: path.join(__dirname, 'tsconfig.json') },
 
 	specs: ['./specs/**/*.spec.ts'],
 	exclude: ['./specs/compat-*.spec.ts'],
@@ -78,14 +94,6 @@ export const config: Options.Testrunner = {
 		killLeftoverMailboxServers();
 		killPortHolders(ALL_PORTS);
 
-		if (!process.env.SKIP_BUILD) {
-			console.log('Building Tauri app (debug, no-bundle)...');
-			execSync('pnpm tauri build --debug --no-bundle --features e2e-tests', {
-				cwd: ROOT,
-				stdio: 'inherit',
-			});
-		}
-
 		// Start a local mailbox server so e2e tests don't hit the internet.
 		const mailboxPort = allocatePort();
 		const mailboxUrl = `http://localhost:${mailboxPort}`;
@@ -99,6 +107,10 @@ export const config: Options.Testrunner = {
 		mkdirSync(path.dirname(mailboxDb), { recursive: true });
 
 		console.log(`Starting local mailbox server on ${mailboxUrl}...`);
+		// `detached: true` puts the mailbox (cargo + its mailbox-server child) in
+		// its OWN process group. Without this, the mailbox sits in the wdio
+		// launcher's process group; when a worker crashes mid-spec and wdio kills
+		// its worker group on retry, mailbox can get reaped as collateral damage.
 		mailboxServer = spawn(
 			'cargo',
 			[
@@ -111,10 +123,19 @@ export const config: Options.Testrunner = {
 				'--addr',
 				`0.0.0.0:${mailboxPort}`,
 			],
-			{ cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'] },
+			{ cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'], detached: true },
 		);
+		console.log(`[mailbox-server] spawned (cargo pid=${mailboxServer.pid})`);
 		mailboxServer.stderr?.on('data', (data: Buffer) => {
 			console.error(`[mailbox-server] ${data.toString().trim()}`);
+		});
+		mailboxServer.on('exit', (code, signal) => {
+			console.error(
+				`[mailbox-server] EXITED code=${code} signal=${signal} at ${new Date().toISOString()}`,
+			);
+		});
+		mailboxServer.on('error', err => {
+			console.error(`[mailbox-server] ERROR ${err.message}`);
 		});
 
 		// Wait for the mailbox server to be ready.
@@ -134,6 +155,19 @@ export const config: Options.Testrunner = {
 		// Expose the URL so launch scripts pass it to the Tauri agents.
 		process.env.MAILBOX_URL = mailboxUrl;
 		console.log(`Mailbox server ready at ${mailboxUrl}`);
+
+		// Persist mailbox info so individual specs can suspend/resume it to
+		// drive the offline-UX state transitions.
+		const mailboxInfoPath = path.join(ROOT, '.dbs', 'e2e', 'mailbox-info.json');
+		writeFileSync(
+			mailboxInfoPath,
+			JSON.stringify({
+				pid: mailboxServer.pid,
+				port: mailboxPort,
+				url: mailboxUrl,
+				dbPath: mailboxDb,
+			}),
+		);
 	},
 
 	async beforeSession() {
@@ -158,6 +192,17 @@ export const config: Options.Testrunner = {
 				/* ignore */
 			}
 		}
+
+		// Tail each agent's stdout/stderr (written by launch-agent.sh) and
+		// echo lines to the test runner's stdout with an agent-specific prefix.
+		agent1Logger = startAgentLogger(
+			'agent-1',
+			path.join(ROOT, '.dbs', 'e2e', 'agent-1', 'agent.log'),
+		);
+		agent2Logger = startAgentLogger(
+			'agent-2',
+			path.join(ROOT, '.dbs', 'e2e', 'agent-2', 'agent.log'),
+		);
 
 		tauriDriver1 = spawn(
 			'tauri-driver',
@@ -190,11 +235,25 @@ export const config: Options.Testrunner = {
 		// Kill orphaned dash-chat E2E instances and anything holding our ports.
 		killAllE2EProcesses();
 		killPortHolders(ALL_PORTS);
+		agent1Logger?.kill();
+		agent2Logger?.kill();
+		agent1Logger = null;
+		agent2Logger = null;
 	},
 
 	onComplete() {
-		if (mailboxServer) mailboxServer.kill();
+		if (mailboxServer?.pid) {
+			// Negative PID = signal the entire process group, so we reach the
+			// mailbox-server child that `cargo run` spawned underneath.
+			try {
+				process.kill(-mailboxServer.pid, 'SIGTERM');
+			} catch {
+				/* already gone */
+			}
+		}
 		killAllE2EProcesses();
 		killPortHolders(ALL_PORTS);
+		agent1Logger?.kill();
+		agent2Logger?.kill();
 	},
 };

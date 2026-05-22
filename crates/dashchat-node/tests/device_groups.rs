@@ -1,5 +1,3 @@
-#![feature(bool_to_result)]
-
 use named_id::*;
 
 use dashchat_node::{testing::*, *};

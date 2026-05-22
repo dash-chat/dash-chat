@@ -1,5 +1,3 @@
-#![feature(bool_to_result)]
-
 mod chat;
 mod contact;
 mod error;
@@ -13,9 +11,9 @@ mod util;
 pub mod polestar;
 
 mod id;
-pub mod local_store;
 pub mod mailbox;
 
+pub mod compat;
 #[cfg(feature = "testing")]
 pub mod testing;
 
@@ -25,11 +23,12 @@ pub use chat::*;
 pub use contact::{QrCode, ShareIntent};
 pub use error::{AddContactError, Error};
 pub use id::*;
-pub use node::{LocalStore, Node, NodeConfig, Notification};
+pub use node::{Node, NodeConfig, Notification};
 pub use p2panda_core::PrivateKey;
+use p2panda_core::Timestamp;
 pub use p2panda_spaces::ActorId;
 pub use payload::*;
-pub use topic::Topic;
+pub use topic::{LogId, Topic, TopicId};
 
 pub trait Cbor: serde::Serialize + serde::de::DeserializeOwned {
     fn as_bytes(&self) -> Result<Vec<u8>, p2panda_core::cbor::EncodeError> {
@@ -50,12 +49,4 @@ pub trait AsBody: Cbor {
     fn try_from_body(body: &p2panda_core::Body) -> Result<Self, p2panda_core::cbor::DecodeError> {
         Self::from_bytes(body.to_bytes().as_slice())
     }
-}
-
-pub fn timestamp_now() -> u64 {
-    use std::time::SystemTime;
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("time from operation system")
-        .as_secs()
 }

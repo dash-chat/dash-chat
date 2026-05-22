@@ -11,9 +11,9 @@ use tokio::sync::{Mutex, mpsc::Receiver};
 use mailbox_client::{MailboxClient, mem::MemMailbox};
 
 use crate::{
-    AgentId, DeviceGroupPayload, LocalStore, NodeConfig, Notification, Payload, Profile,
-    filesystem::Filesystem, mailbox::MailboxOperation, node::Node, testing::behavior::Behavior,
-    topic::TopicId,
+    AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
+    filesystem::Filesystem, mailbox::MailboxOperation, node::Node, stores::LocalStore,
+    testing::behavior::Behavior, topic::TopicId,
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::Debug)]
@@ -31,6 +31,7 @@ impl TestNode {
     pub async fn new(config: impl Into<TestNodeConfig>, name: &str) -> Self {
         let config = config.into();
         let dir = tempfile::tempdir().unwrap();
+        tracing::info!("temp storage dir: {}", dir.path().display());
         let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
 
         let filesystem = Filesystem::new(dir.path().to_path_buf());
@@ -38,14 +39,19 @@ impl TestNode {
             .await
             .unwrap();
         if config.use_named_id {
-            local_store.device_id().unwrap().with_name(name);
-            local_store.agent_id().unwrap().with_name(name);
+            local_store.device_id().await.unwrap().with_name(name);
+            local_store.agent_id().await.unwrap().with_name(name);
         }
         drop(local_store);
 
-        let node = Node::new(dir.path().into(), config.node_config, Some(notification_tx))
-            .await
-            .unwrap();
+        let node = Node::new(
+            dir.path().into(),
+            config.node_config,
+            Some(notification_tx),
+            None,
+        )
+        .await
+        .unwrap();
         if config.create_profile {
             node.set_profile(Profile {
                 name: name.to_string(),
@@ -79,11 +85,11 @@ impl TestNode {
         let local_store = LocalStore::new(filesystem.local_store_path())
             .await
             .unwrap();
-        local_store.device_id().unwrap().with_name(name);
-        local_store.agent_id().unwrap().with_name(name);
+        local_store.device_id().await.unwrap().with_name(name);
+        local_store.agent_id().await.unwrap().with_name(name);
         drop(local_store);
 
-        let node = Node::new(store_dir.path().into(), config, Some(notification_tx))
+        let node = Node::new(store_dir.path().into(), config, Some(notification_tx), None)
             .await
             .unwrap();
 
@@ -98,7 +104,7 @@ impl TestNode {
     /// The store directory can be passed to `new_at_path` to restart the node.
     pub async fn shutdown(self) -> Arc<TempDir> {
         let dir = self._store_dir.clone();
-        self.node.shutdown().await;
+        self.node.shutdown().await.unwrap();
         dir
     }
 
@@ -118,6 +124,7 @@ impl TestNode {
     pub async fn get_contacts(&self) -> anyhow::Result<Vec<AgentId>> {
         // FIXME: use all local device IDs
         let ids = self
+            .op_store
             .get_interleaved_logs(self.device_group_topic().into(), vec![self.device_id()])
             .await?
             .into_iter()
@@ -131,6 +138,7 @@ impl TestNode {
 
     pub async fn get_rejected_contact_requests(&self) -> anyhow::Result<Vec<AgentId>> {
         let ids = self
+            .op_store
             .get_interleaved_logs(self.device_group_topic().into(), vec![self.device_id()])
             .await?
             .into_iter()
@@ -294,15 +302,8 @@ pub async fn consistency(
         }
     })
     .await
-    .map_err(|diffs| {
-        for n in nodes {
-            println!(
-                ">>> {:?}\n{}\n",
-                n.device_id(),
-                n.op_store.report(topics.clone())
-            );
-        }
-        println!("consistency report: {:#?}", diffs);
+    .map_err(|_diffs| {
+        // TODO: print a report here
         anyhow::anyhow!("consistency check failed")
     })
 }

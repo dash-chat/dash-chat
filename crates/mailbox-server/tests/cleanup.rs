@@ -97,7 +97,8 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     }
 
     // Step 6: Test get_blobs - verify missing response is correct
-    let app = mailbox_server::create_app_with_arc(db.clone());
+    let push_tasks = std::sync::Arc::new(tokio::sync::Mutex::new(tokio::task::JoinSet::new()));
+    let app = mailbox_server::create_app(db.clone(), None, push_tasks);
     let config = axum_test::TestServerConfig {
         transport: Some(axum_test::Transport::HttpRandomPort),
         ..Default::default()

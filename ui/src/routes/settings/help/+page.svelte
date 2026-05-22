@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { getVersion } from '@tauri-apps/api/app';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import {
 		BlockTitle,
 		List,
@@ -9,10 +11,13 @@
 		Navbar,
 		NavbarBackLink,
 		Page,
+		Toggle,
 		useTheme,
 	} from 'konsta/svelte';
 
 	const theme = $derived(useTheme());
+
+	const versionPromise = getVersion();
 </script>
 
 <Page>
@@ -38,6 +43,24 @@
 					title={m.contactUs()}
 					data-testid="help-contact-us"
 				/>
+				{#await versionPromise then version}
+					<ListItem
+						title={m.version()}
+						after={version}
+						data-testid="help-version"
+					/>
+				{/await}
+				<ListItem
+					title={m.previewFeatures()}
+					data-testid="help-preview-features-toggle"
+				>
+					{#snippet after()}
+						<Toggle
+							checked={previewFeatures.enabled}
+							onChange={() => previewFeatures.toggle()}
+						/>
+					{/snippet}
+				</ListItem>
 			</List>
 		</div>
 	</div>

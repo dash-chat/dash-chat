@@ -3,6 +3,12 @@
 use anyhow::anyhow;
 use std::time::Duration;
 
+/// Install the rustls `ring` crypto provider. Required before any TLS handshake;
+/// idempotent — `install_default()` returns `Err` on re-call, which we ignore.
+pub fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 pub async fn with_retries<T>(
     condition: impl AsyncFn() -> anyhow::Result<T>,
     retries: usize,

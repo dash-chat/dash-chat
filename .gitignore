@@ -22,23 +22,22 @@ dist/
 storybook-static
 *.tsbuildinfo
 
-# holochain
-*.happ
-*.webhapp
-*.zip
-*.dna
-*-dna_hashes
-.hc*
-.hc
-
 # cargo
 /target/
 target
 
+# nix
 .direnv/
-.hc*
+.envrc
 result*
+
+# tauri
+src-tauri/gen/schemas/
+
+# push notifications
+src-tauri/gen/apple/build/
 **/*/google-services.json
+**/*/GoogleService-Info.plist
 service-account-key.json
 
 # Development environment database files
@@ -46,3 +45,6 @@ service-account-key.json
 .dbs
 .e2e-binaries
 signal-reference
+
+# Development environment log files
+*.log

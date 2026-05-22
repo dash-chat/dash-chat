@@ -1,10 +1,5 @@
 import { Profile } from './contacts/contacts-client';
-import {
-	AgentId,
-	DeviceId,
-	Hash,
-	TopicId,
-} from './p2panda/types';
+import { AgentId, DeviceId, Hash, TopicId } from './p2panda/types';
 
 export type ChatId = TopicId;
 
@@ -41,11 +36,26 @@ export type MediaAttachment =
 	| { type: 'Photos'; payload: { photos: PhotoAttachment[] } }
 	| { type: 'File'; payload: { file: FileAttachment } };
 
-export interface MessageContent {
+/**
+ * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
+ * `crates/dashchat-node/src/chat/message.rs`. Sent messages are always V1.
+ * Stored payloads may also appear as a bare string (V0/Unversioned); see
+ * `getMessageText` for reading either form.
+ */
+export type MessageContentV1 = {
+	v: '1';
 	message: string;
-	media: MediaAttachment | undefined;
+	media: null;
+};
+export type MessageContent = MessageContentV1;
+
+export function getMessageText(content: MessageContent | string): string {
+	return typeof content === 'string' ? content : content.message;
 }
-export type AnnouncementPayload = { type: 'SetProfile'; payload: Profile };
+
+export type AnnouncementPayload =
+	| { type: 'SetProfile'; payload: Profile }
+	| { type: 'SetCapabilities'; payload: unknown };
 export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
 	| { type: 'Reaction'; payload: ChatReaction };
@@ -105,6 +115,10 @@ export type MessageId = string;
 // 	author: PublicKey;
 // 	timestamp: number;
 // }
+
+export interface ReadMessagesStore {
+	markAsRead(messageHashes: Hash[]): Promise<void>;
+}
 
 export interface ChatSummary {
 	type: 'GroupChat' | 'DirectChat' | 'ContactRequest';

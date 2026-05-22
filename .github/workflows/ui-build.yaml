@@ -17,9 +17,9 @@ jobs:
           node-version: 20
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@master
+        uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 10.33.0
           cache: true
 
       - name: Install pnpm dependencies
@@ -28,5 +28,5 @@ jobs:
       - name: Build UI packages
         run: pnpm --recursive build
 
-      - name: Check Svelte types and formatting
-        run: pnpm -F ui check
+      - name: Check types and formatting across packages
+        run: pnpm -r --if-present check

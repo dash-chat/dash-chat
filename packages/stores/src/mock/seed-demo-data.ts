@@ -1,5 +1,5 @@
 import { personalTopicFor } from '../topics';
-import { hash, LocalStorageLogsClient } from './client';
+import { LocalStorageLogsClient, hash } from './client';
 
 export const DEMO_IDS = {
 	MY_AGENT_ID: 'aa'.repeat(32),
@@ -65,7 +65,12 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 			type: 'Announcements',
 			payload: {
 				type: 'SetProfile',
-				payload: { name: 'You', surname: undefined, avatar: undefined, about: 'Testing preview mode' },
+				payload: {
+					name: 'You',
+					surname: undefined,
+					avatar: undefined,
+					about: 'Testing preview mode',
+				},
 			},
 		},
 		minutesAgo(120),
@@ -118,35 +123,62 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 	const aliceChatId = chatIdFor(DEMO_IDS.MY_AGENT_ID, CONTACTS[0].agentId);
 	const aliceClient = new LocalStorageLogsClient(CONTACTS[0].deviceId);
 
-	aliceClient.createSync(aliceChatId, {
-		type: 'Chat',
-		payload: { type: 'Message', payload: { message: 'Hey! Have you tried the new encrypted messaging?' } },
-	}, minutesAgo(30));
+	aliceClient.createSync(
+		aliceChatId,
+		{
+			type: 'Chat',
+			payload: {
+				type: 'Message',
+				payload: 'Hey! Have you tried the new encrypted messaging?',
+			},
+		},
+		minutesAgo(30),
+	);
 
-	logsClient.createSync(aliceChatId, {
-		type: 'Chat',
-		payload: { type: 'Message', payload: { message: 'Yes! The p2p sync is working great.' } },
-	}, minutesAgo(28));
+	logsClient.createSync(
+		aliceChatId,
+		{
+			type: 'Chat',
+			payload: {
+				type: 'Message',
+				payload: 'Yes! The p2p sync is working great.',
+			},
+		},
+		minutesAgo(28),
+	);
 
-	aliceClient.createSync(aliceChatId, {
-		type: 'Chat',
-		payload: { type: 'Message', payload: { message: 'I love that it works offline too' } },
-	}, minutesAgo(25));
+	aliceClient.createSync(
+		aliceChatId,
+		{
+			type: 'Chat',
+			payload: { type: 'Message', payload: 'I love that it works offline too' },
+		},
+		minutesAgo(25),
+	);
 
-	logsClient.createSync(aliceChatId, {
-		type: 'Chat',
-		payload: { type: 'Message', payload: { message: 'Absolutely. No servers needed!' } },
-	}, minutesAgo(20));
+	logsClient.createSync(
+		aliceChatId,
+		{
+			type: 'Chat',
+			payload: { type: 'Message', payload: 'Absolutely. No servers needed!' },
+		},
+		minutesAgo(20),
+	);
 
-	aliceClient.createSync(aliceChatId, {
-		type: 'Chat',
-		payload: { type: 'Message', payload: { message: 'See you at the meetup tomorrow?' } },
-	}, minutesAgo(5));
+	aliceClient.createSync(
+		aliceChatId,
+		{
+			type: 'Chat',
+			payload: { type: 'Message', payload: 'See you at the meetup tomorrow?' },
+		},
+		minutesAgo(5),
+	);
 
 	// Bob: short conversation
 	const bobChatId = chatIdFor(DEMO_IDS.MY_AGENT_ID, CONTACTS[1].agentId);
 	const bobClient = new LocalStorageLogsClient(CONTACTS[1].deviceId);
 
+<<<<<<< HEAD
 	bobClient.createSync(bobChatId, {
 		type: 'Chat',
 		payload: { type: 'Message', payload: { message: 'Check out this article on E2EE' } },
@@ -156,15 +188,45 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 		type: 'Chat',
 		payload: { type: 'Message', payload: { message: 'Thanks, will read it later!' } },
 	}, minutesAgo(55));
+=======
+	bobClient.createSync(
+		bobChatId,
+		{
+			type: 'Chat',
+			payload: { type: 'Message', payload: 'Check out this article on E2EE' },
+		},
+		minutesAgo(60),
+	);
+
+	logsClient.createSync(
+		bobChatId,
+		{
+			type: 'Chat',
+			payload: { type: 'Message', payload: 'Thanks, will read it later!' },
+		},
+		minutesAgo(55),
+	);
+>>>>>>> origin/develop
 
 	// Carol: single message
 	const carolChatId = chatIdFor(DEMO_IDS.MY_AGENT_ID, CONTACTS[2].agentId);
 	const carolClient = new LocalStorageLogsClient(CONTACTS[2].deviceId);
 
+<<<<<<< HEAD
 	carolClient.createSync(carolChatId, {
 		type: 'Chat',
 		payload: { type: 'Message', payload: { message: 'Welcome to Dash Chat!' } },
 	}, minutesAgo(180));
+=======
+	carolClient.createSync(
+		carolChatId,
+		{
+			type: 'Chat',
+			payload: { type: 'Message', payload: 'Welcome to Dash Chat!' },
+		},
+		minutesAgo(180),
+	);
+>>>>>>> origin/develop
 
 	// Dave: no messages (contact only)
 

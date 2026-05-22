@@ -20,7 +20,43 @@ where
     }
 }
 
-#[deprecated = "need a more certain way to know that an ActorId is actually a pubkey"]
-pub fn actor_to_pubkey(actor: ActorId) -> PublicKey {
-    PublicKey::from_bytes(actor.as_bytes()).unwrap()
+pub fn first<T, U>(pair: (T, U)) -> T {
+    pair.0
+}
+
+pub fn second<T, U>(pair: (T, U)) -> U {
+    pair.1
+}
+
+#[derive(Clone)]
+pub(crate) struct CancelAndWait<R> {
+    handle: std::sync::Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<R>>>>,
+    token: tokio_util::sync::CancellationToken,
+}
+
+impl<R> CancelAndWait<R> {
+    pub fn new(
+        handle: tokio::task::JoinHandle<R>,
+        token: tokio_util::sync::CancellationToken,
+    ) -> Self {
+        Self {
+            handle: std::sync::Arc::new(tokio::sync::Mutex::new(Some(handle))),
+            token,
+        }
+    }
+
+    pub async fn cancel_and_wait(&self) -> Option<Result<R, tokio::task::JoinError>> {
+        self.token.cancel();
+        Some(self.handle.lock().await.take()?.await)
+    }
+}
+
+/// Clamp a hash to a valid ed25519 public key.
+pub fn clamp_to_ed25519_pubkey(mut hash: [u8; 32]) -> PublicKey {
+    hash[0] &= 248;
+    hash[31] &= 127;
+    hash[31] |= 64;
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&hash);
+    let pubkey = signing_key.verifying_key();
+    PublicKey::from_bytes(pubkey.as_bytes()).unwrap()
 }

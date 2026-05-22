@@ -4,6 +4,7 @@
 
 	import '../app.css';
 	import { setContext } from 'svelte';
+	import { invoke } from '@tauri-apps/api/core';
 
 	import {
 		ChatsClient,
@@ -18,11 +19,14 @@
 		DevicesStore,
 		SettingsClient,
 		SettingsStore,
+		MailboxTrackerStore,
+		type IMailboxTrackerStore,
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
 		MockDirectChatClient,
 		MockGroupChatClient,
+		MockMailboxTrackerStore,
 		MockSettingsClient,
 		seedDemoData,
 		DEMO_IDS,
@@ -33,24 +37,33 @@
 	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
+	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useSignal } from '$lib/stores/use-signal';
+	import { useReactivePromise, useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
-	import { isIos, isMac, isTauriEnv } from '$lib/utils/environment';
+	import { isIos, isMac, isMobile, isTauriEnv } from '$lib/utils/environment';
+	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { setLocale } from '$lib/paraglide/runtime';
 	import { goto } from '$app/navigation';
-	window.__setLocale = setLocale;
+	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
 
 	import('../../tests/setup-utils').then(({ registerTestUtils }) =>
-		registerTestUtils(goto),
+		// Paraglide types setLocale with a string-literal union; we widen to
+		// plain `string` at the test boundary since invalid locales fail at
+		// runtime anyway.
+		registerTestUtils(goto, setLocale as (locale: string) => void, m),
 	);
+
+	// Forward console.log/info/warn/error from the WebView to the tauri logs
+	forwardConsoleToTauriLog();
 
 	let { children } = $props();
 
 	const isPreview = !isTauriEnv();
+	const showToolbar = (isPreview || import.meta.env.DEV) && !isMobile;
 
 	// --- Store initialization ---
 	let settingsStore: SettingsStore;
@@ -58,6 +71,7 @@
 	let devicesStore: DevicesStore;
 	let contactsStore: ContactsStore;
 	let chatsStore: ChatsStore;
+	let mailboxTrackerStore: IMailboxTrackerStore;
 
 	if (isPreview) {
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
@@ -92,6 +106,8 @@
 			() => new MockDirectChatClient(mockLogsClient, DEMO_IDS.MY_AGENT_ID),
 			() => new MockGroupChatClient(),
 		);
+
+		mailboxTrackerStore = new MockMailboxTrackerStore();
 	} else {
 		const logsClient = new TauriLogsClient<Payload>();
 		logsStore = new LogsStore<Payload>(logsClient);
@@ -105,12 +121,23 @@
 
 		const chatsClient = new ChatsClient();
 		chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
+
+		mailboxTrackerStore = new MailboxTrackerStore();
+
+		invoke('log_webview_info', { userAgent: navigator.userAgent }).catch(
+			() => {},
+		);
 	}
 
 	setContext('settings-store', settingsStore);
 	setContext('devices-store', devicesStore);
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
+	setContext('mailbox-tracker-store', mailboxTrackerStore);
+
+	// Keep the chats summaries signal warm so it's always fully loaded
+	// when navigating back home from any page
+	useKeepAlive(chatsStore.allChatsSummaries);
 
 	const isDark = useSignal(settingsStore.isDark);
 
@@ -143,16 +170,14 @@
 	});
 
 	$effect(() => {
-		const handler = (event: CustomEvent<boolean>) => {
-			document.body.classList.toggle('mobile-frame', event.detail);
-		};
-		window.addEventListener('set-mobile-frame', handler as EventListener);
-		return () =>
-			window.removeEventListener('set-mobile-frame', handler as EventListener);
+		document.documentElement.classList.toggle(
+			'wide-layout',
+			isWideScreen.value,
+		);
 	});
 </script>
 
-{#if isPreview}
+{#if showToolbar}
 	<PreviewToolbar />
 {/if}
 
@@ -164,7 +189,9 @@
 					{@render children()}
 				</DesktopLayout>
 			{:else}
-				{@render children()}
+				<MobileLayout>
+					{@render children()}
+				</MobileLayout>
 			{/if}
 		</SplashscreenPrompt>
 		<ToastManager />

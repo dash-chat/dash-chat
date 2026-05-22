@@ -2,6 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { goto } from '$app/navigation';
 	import {
 		mdiAccountMultiplePlus,
 		mdiAccountPlus,
@@ -74,7 +75,7 @@
 			id: 'chat-color',
 			label: () => m.chatColor(),
 			icon: mdiPalette,
-			href: '/settings/appearance',
+			href: '/settings/appearance?setup=true',
 			tone: 'warm',
 		},
 		{
@@ -121,6 +122,7 @@
 	});
 
 	function dismiss(id: string) {
+		if (dismissed.includes(id)) return;
 		dismissed = [...dismissed, id];
 		try {
 			localStorage.setItem(DISMISSED_KEY, JSON.stringify(dismissed));
@@ -128,42 +130,54 @@
 			console.error('Failed to persist dismissed cards:', e);
 		}
 	}
+
+	function onCardClick(id: string, href: string) {
+		if (id === 'chat-color') {
+			dismiss(id);
+		}
+		goto(href);
+	}
 </script>
 
 {#await $contacts then contactsList}
 	{#await $chatSummaries then chats}
 		{#if (contactsList?.length ?? 0) === 0 && (chats?.length ?? 0) === 0 && visibleCards.length > 0}
-			<div class="px-4 pb-4">
-				<p class="mb-3 text-lg font-bold">{m.getStarted()}</p>
-				<div class="flex gap-3.5 overflow-x-auto pb-1">
-					{#each visibleCards as card}
-						<div
-							class="relative w-[165px] shrink-0 rounded-[20px] {cardClasses(
-								card.tone,
-							)}"
-							data-testid="get-started-{card.id}"
+			<p class="px-4 mb-3 text-lg font-bold pointer-events-auto">
+				{m.getStarted()}
+			</p>
+			<div class="px-4 flex gap-3.5 overflow-x-auto pb-1 pointer-events-auto">
+				{#each visibleCards as card}
+					<div
+						class="relative w-[165px] shrink-0 rounded-[20px] {cardClasses(
+							card.tone,
+						)}"
+						data-testid="get-started-{card.id}"
+					>
+						<a
+							href={card.href}
+							onclick={e => {
+								e.preventDefault();
+								onCardClick(card.id, card.href);
+							}}
+							class="flex flex-col items-center px-5 pb-5 pt-7"
 						>
-							<a
-								href={card.href}
-								class="flex flex-col items-center px-5 pb-5 pt-7"
+							<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 28px">
+							</wa-icon>
+							<span class="mt-2 text-center text-sm font-semibold"
+								>{card.label()}</span
 							>
-								<wa-icon src={wrapPathInSvg(card.icon)} style="font-size: 28px">
-								</wa-icon>
-								<span class="mt-2 text-center text-sm font-semibold"
-									>{card.label()}</span
-								>
-							</a>
-							<button
-								class="absolute right-2 top-2 z-10 p-1 text-black/40 dark:text-white/40"
-								data-testid="get-started-dismiss-{card.id}"
-								onclick={() => dismiss(card.id)}
-							>
-								<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 20px"
-								></wa-icon>
-							</button>
-						</div>
-					{/each}
-				</div>
+						</a>
+						<button
+							class="absolute end-2 top-2 z-10 p-1 text-black/40 dark:text-white/40"
+							data-testid="get-started-dismiss-{card.id}"
+							onclick={() => dismiss(card.id)}
+							aria-label={m.close()}
+						>
+							<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 20px"
+							></wa-icon>
+						</button>
+					</div>
+				{/each}
 			</div>
 		{/if}
 	{/await}

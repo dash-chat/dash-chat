@@ -178,7 +178,7 @@ async fn test_group_chat() {
 
     wait_for(
         Duration::from_millis(100),
-        Duration::from_secs(10),
+        Duration::from_secs(5),
         || async {
             let msgs = [
                 alice.get_messages(chat_id).await.unwrap().len(),
@@ -191,6 +191,33 @@ async fn test_group_chat() {
     .await
     .unwrap();
 
+    let expected_members = maplit::btreeset![
+        (alice.device_id(), p2panda_auth::Access::manage()),
+        (bobbi.device_id(), p2panda_auth::Access::manage()),
+        (cammy.device_id(), p2panda_auth::Access::write()),
+    ];
+
+    let result = wait_for(
+        Duration::from_millis(100),
+        Duration::from_secs(5),
+        || async {
+            let members = [
+                alice.get_group_members(chat_id).await.unwrap(),
+                bobbi.get_group_members(chat_id).await.unwrap(),
+                cammy.get_group_members(chat_id).await.unwrap(),
+            ];
+            members
+                .iter()
+                .all(|m| *m == expected_members)
+                .ok_or(members)
+        },
+    )
+    .await;
+
+    if let Err(members) = result {
+        panic!("memberships are not consistent: {:#?}", members.renamed());
+    }
+
     let alice_messages = alice.get_messages(chat_id).await.unwrap();
     let bobbi_messages = bobbi.get_messages(chat_id).await.unwrap();
     let cammy_messages = cammy.get_messages(chat_id).await.unwrap();
@@ -199,18 +226,12 @@ async fn test_group_chat() {
     let bobbi_members = bobbi.get_group_members(chat_id).await.unwrap();
     let cammy_members = cammy.get_group_members(chat_id).await.unwrap();
 
-    let expected_members = maplit::btreeset![
-        (alice.device_id(), p2panda_auth::Access::manage()),
-        (bobbi.device_id(), p2panda_auth::Access::manage()),
-        (cammy.device_id(), p2panda_auth::Access::write()),
-    ];
+    assert_eq!(alice_members.renamed_ref(), expected_members.renamed_ref());
+    assert_eq!(bobbi_members.renamed_ref(), expected_members.renamed_ref());
+    assert_eq!(cammy_members.renamed_ref(), expected_members.renamed_ref());
 
-    assert_eq!(alice_members, expected_members);
-    assert_eq!(bobbi_members, expected_members);
-    assert_eq!(cammy_members, expected_members);
-
-    assert_eq!(alice_messages, bobbi_messages);
-    assert_eq!(alice_messages, cammy_messages);
+    assert_eq!(alice_messages.renamed_ref(), bobbi_messages.renamed_ref());
+    assert_eq!(alice_messages.renamed_ref(), cammy_messages.renamed_ref());
     assert_eq!(
         bobbi_messages.first().map(|m| m.content.clone()),
         Some("Hello".into())

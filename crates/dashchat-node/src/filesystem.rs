@@ -13,11 +13,19 @@ impl Filesystem {
         Self(data_path)
     }
 
+    pub fn data_path(&self) -> &PathBuf {
+        &self.0
+    }
+
     pub fn local_store_path(&self) -> PathBuf {
-        self.0.join("localdata.redb")
+        self.0.join("localdata.db")
     }
 
     pub fn op_store_path(&self) -> PathBuf {
         self.0.join("opstore.db")
+    }
+
+    pub fn mailbox_sync_tracker_path(&self) -> PathBuf {
+        self.0.join("mailbox_tracker.db")
     }
 }

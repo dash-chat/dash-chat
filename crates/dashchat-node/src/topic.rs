@@ -36,6 +36,7 @@ use named_id::*;
 
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
 
 pub trait TopicKind:
     Default
@@ -117,8 +118,6 @@ pub mod kind {
 #[derive(
     Copy,
     Clone,
-    Serialize,
-    Deserialize,
     Hash,
     Eq,
     PartialEq,
@@ -133,9 +132,66 @@ pub mod kind {
 #[debug("{}", self)]
 pub struct TopicId([u8; 32]);
 
+impl TopicId {
+    pub const fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+}
+
+// Hex-string serialization for human-readable formats (e.g. JSON, where map
+// keys must be strings); raw byte array for binary formats (e.g. CBOR on disk).
+impl Serialize for TopicId {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        if ser.is_human_readable() {
+            hex::encode(self.0).serialize(ser)
+        } else {
+            self.0.serialize(ser)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TopicId {
+    fn deserialize<D: serde::Deserializer<'de>>(deser: D) -> Result<Self, D::Error> {
+        if deser.is_human_readable() {
+            let s = String::deserialize(deser)?;
+            let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
+            let arr: [u8; 32] = bytes
+                .try_into()
+                .map_err(|_| serde::de::Error::custom("TopicId hex must decode to 32 bytes"))?;
+            Ok(TopicId(arr))
+        } else {
+            <[u8; 32]>::deserialize(deser).map(TopicId)
+        }
+    }
+}
+
+pub type LogId = TopicId;
+
 impl p2panda_spaces::traits::SpaceId for TopicId {}
 
 pub type DashChatTopicId = TopicId;
+
+// -- SQLite encoding for TopicId --
+
+impl sqlx::Type<Sqlite> for TopicId {
+    fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {
+        <Vec<u8> as sqlx::Type<Sqlite>>::type_info()
+    }
+}
+
+impl sqlx::Encode<'_, Sqlite> for TopicId {
+    fn encode_by_ref(&self, buf: &mut Vec<SqliteArgumentValue<'_>>) -> Result<IsNull, BoxDynError> {
+        <Vec<u8> as sqlx::Encode<Sqlite>>::encode(self.0.to_vec(), buf)
+    }
+}
+
+impl sqlx::Decode<'_, Sqlite> for TopicId {
+    fn decode(value: <Sqlite as sqlx::Database>::ValueRef<'_>) -> Result<Self, BoxDynError> {
+        let bytes = <Vec<u8> as sqlx::Decode<Sqlite>>::decode(value)?;
+        let arr: [u8; 32] = bytes.try_into().map_err(|_| "TopicId is not 32 bytes")?;
+        Ok(TopicId(arr))
+    }
+}
 
 impl Nameable for TopicId {
     fn shortener(&self) -> Option<Shortener> {
@@ -206,7 +262,8 @@ impl Topic<kind::Chat> {
         let mut hasher = blake3::Hasher::new();
         hasher.update(pks[0].as_bytes());
         hasher.update(pks[1].as_bytes());
-        Self::new(hasher.finalize().into())
+        let pk = crate::util::clamp_to_ed25519_pubkey(hasher.finalize().into());
+        Self::new(*pk.as_bytes())
     }
 
     pub fn from_group_pubkey(pubkey: p2panda_core::PublicKey) -> Self {

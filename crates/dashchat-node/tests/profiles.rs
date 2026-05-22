@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use mailbox_client::mem::MemMailbox;
-use p2panda_store::LogStore;
 
 use dashchat_node::{testing::*, *};
 use named_id::*;
@@ -128,10 +127,9 @@ async fn test_profiles_sync_between_contacts() {
                 )
                 .await
                 .map_err(|_| "failed to get log")?
-                .ok_or("no log found")?
                 .iter()
-                .find(|(_, body)| {
-                    let p = Payload::try_from_body(body.as_ref().unwrap()).unwrap();
+                .find(|op| {
+                    let p = Payload::try_from_body(op.body.as_ref().unwrap()).unwrap();
                     matches!(
                         p,
                         Payload::Announcements(AnnouncementsPayload::SetProfile(p)) if p == profile

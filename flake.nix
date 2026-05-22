@@ -7,6 +7,7 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-parts.url = "github:hercules-ci/flake-parts";
     crane.url = "github:ipetkov/crane";
+
     garnix-lib = {
       url = "github:garnix-io/garnix-lib";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -39,6 +40,7 @@
         ./nix/servers.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix
+        ./crates/push-notifications-server/default.nix
       ];
 
       systems =
@@ -60,14 +62,16 @@
             librsvg
             libsoup_3
             libayatana-appindicator
+            pango
           ];
           packages = [
             pkgs.mprocs
+            pkgs.just
             pkgs.pnpm
+            pkgs.cargo-nextest
             inputs'.tauri-driver.packages.tauri-driver
           ];
         in rec {
-
           devShells.default = let
             rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           in pkgs.mkShell {
@@ -75,7 +79,10 @@
             inputsFrom =
               [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
             shellHook = lib.optionalString pkgs.stdenv.isLinux ''
-              export CARGO_BUILD_RUSTFLAGS="-C link-args=-Wl,-rpath,${
+              export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
+                lib.makeLibraryPath tauriLibraries
+              }"
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${
                 lib.makeLibraryPath tauriLibraries
               }"
             '';
@@ -86,10 +93,8 @@
               ./rust-toolchain.android.toml;
           in pkgs.mkShell {
             packages = [ rust ];
-            inputsFrom = [
-              devShells.default
-              inputs'.tauri-plugin-holochain.devShells.holochainTauriAndroidDev
-            ];
+            inputsFrom =
+              [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
           };
 
           devShells.iosDev = let

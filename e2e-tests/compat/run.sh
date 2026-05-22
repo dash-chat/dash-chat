@@ -199,7 +199,6 @@ for REF in "${REFS[@]}"; do
     COMPAT_BINARY="$REF_BINARY_DIR/dash-chat" \
     COMPAT_PHASE=setup \
     MAILBOX_URL="$MAILBOX_URL" \
-    SKIP_BUILD=1 \
         run_wdio || PHASE1_OK=false
 
     if [ "$PHASE1_OK" != "true" ]; then
@@ -218,7 +217,6 @@ for REF in "${REFS[@]}"; do
     COMPAT_BINARY="$BINARIES_DIR/current/dash-chat" \
     COMPAT_PHASE=verify \
     MAILBOX_URL="$MAILBOX_URL" \
-    SKIP_BUILD=1 \
         run_wdio || PHASE2_OK=false
 
     # --- Cleanup ---

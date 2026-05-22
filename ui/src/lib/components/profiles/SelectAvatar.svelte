@@ -1,14 +1,15 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import { resizeAndExport } from '$lib/utils/image';
+	import { onActivate } from '$lib/utils/keyboard';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiAccount, mdiPlus } from '@mdi/js';
+	import { mdiAccount } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button, Fab } from 'konsta/svelte';
+	import { Button } from 'konsta/svelte';
+	import Avatar from './Avatar.svelte';
 
 	let {
-		value = $bindable(),
 		defaultValue,
+		value = $bindable(defaultValue),
 		size = 46,
 	}: {
 		value?: string | undefined;
@@ -17,10 +18,6 @@
 	} = $props();
 	let uploading = $state(false);
 	let avatarFilePicker: HTMLInputElement;
-
-	if (!value) {
-		value = defaultValue;
-	}
 
 	function onAvatarUploaded() {
 		uploading = true;
@@ -53,31 +50,35 @@
 	<div
 		class="column"
 		style="align-items: center; height: {size + 4}px"
+		role="button"
+		tabindex="0"
 		onclick={() => avatarFilePicker.click()}
+		onkeydown={onActivate(() => avatarFilePicker.click())}
 	>
-		<wa-avatar
+		<Avatar
 			id="avatar"
 			image={value}
 			alt="Avatar"
-			shape="circle"
 			initials=""
 			style="--size: {size}px"
-		></wa-avatar>
+		/>
 	</div>
 {:else if defaultValue}
 	<div
 		class="column"
 		style="align-items: center; height: {size + 4}px"
+		role="button"
+		tabindex="0"
 		onclick={() => avatarFilePicker.click()}
+		onkeydown={onActivate(() => avatarFilePicker.click())}
 	>
-		<wa-avatar
+		<Avatar
 			id="avatar"
 			image={defaultValue}
 			alt="Avatar"
-			shape="circle"
 			initials=""
 			style="--size: {size}px"
-		></wa-avatar>
+		/>
 	</div>
 {:else}
 	<div class="column" style="align-items: center; height: {size + 4}px">

@@ -2,11 +2,11 @@ import { ReactivePromise, reactive } from 'signalium';
 
 import { Profile } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
+import { Message } from '../direct-chats/direct-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, PublicKey } from '../p2panda/types';
 import { ChatId, MessageContent, Payload } from '../types';
 import { type IGroupChatClient } from './group-chat-client';
-import { Message } from '../direct-chats/direct-chat-store';
 
 export interface GroupInfo {
 	name: string;
@@ -53,8 +53,9 @@ export class GroupChatStore {
 				hash: '123',
 				content: { message: 'heeey', media: undefined },
 				author: await this.contactsStore.myAgentId(),
+				seqNum: 0,
 				timestamp: Date.now(),
-				reactions: {}
+				reactions: {},
 			},
 		];
 
@@ -105,7 +106,8 @@ export class GroupChatStore {
 		return this.client.addMember(this.chatId, member);
 	}
 
-	sendMessage(content: MessageContent) {
+	sendMessage(text: string) {
+		const content: MessageContent = { v: '1', message: text, media: null };
 		return this.client.sendMessage(this.chatId, content);
 	}
 }

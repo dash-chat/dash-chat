@@ -2,14 +2,14 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import '@awesome.me/webawesome/dist/components/button/button.js';
 	import '@awesome.me/webawesome/dist/components/badge/badge.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 	import { ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Badge, List, ListItem } from 'konsta/svelte';
+	import { Badge, List } from 'konsta/svelte';
+	import TitleTruncatedListItem from './TitleTruncatedListItem.svelte';
 	import {
 		moreThanAnHourAgo,
 		lessThanAMinuteAgo,
@@ -19,6 +19,8 @@
 	import { useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from './profiles/Avatar.svelte';
+	import ErrorPlaceholder from './ErrorPlaceholder.svelte';
 
 	let { class: className = '' }: { class?: string } = $props();
 
@@ -46,19 +48,20 @@
 				data-testid="all-chats-list"
 			>
 				{#each summaries as summary}
-					<ListItem
-						title={summary.name}
+					<TitleTruncatedListItem
+						title={summary.name || m.waitingForProfile()}
+						titleWrapClass={summary.name ? '' : 'quiet'}
 						link
 						class={isActive(summary) ? 'active' : ''}
 						linkProps={{ href: chatHref(summary) }}
 						chevron={false}
+						data-testid="all-chats-row"
 					>
 						{#snippet media()}
-							<wa-avatar
+							<Avatar
 								image={summary.avatar}
 								initials={summary.name.slice(0, 2)}
-							>
-							</wa-avatar>
+							/>
 						{/snippet}
 						{#snippet after()}
 							{#if beforeYesterday(summary.lastEvent.timestamp)}
@@ -80,7 +83,7 @@
 							{:else}
 								<wa-relative-time
 									sync
-									style="text-align: right"
+									style="text-align: end"
 									format="narrow"
 									date={new Date(summary.lastEvent.timestamp)}
 								>
@@ -88,8 +91,8 @@
 							{/if}
 						{/snippet}
 						{#snippet subtitle()}
-							<div class="row" style="align-items: center">
-								<span style="flex: 1"
+							<div class="row items-center">
+								<span class="flex-1 min-w-0 truncate"
 									>{summary.type === 'ContactRequest'
 										? m.messageRequest()
 										: summary.lastEvent.summary === 'contact_added'
@@ -101,7 +104,7 @@
 								{/if}
 							</div>
 						{/snippet}
-					</ListItem>
+					</TitleTruncatedListItem>
 				{/each}
 			</List>
 		{:else}
@@ -113,5 +116,7 @@
 				<p>{m.noChatsYetSubtitle()}</p>
 			</div>
 		{/if}
+	{:catch error}
+		<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 	{/await}
 </div>

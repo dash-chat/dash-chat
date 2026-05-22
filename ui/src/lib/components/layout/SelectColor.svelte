@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/qr-code/qr-code.js';
-	import { getContext } from 'svelte';
+	import { getContext, untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiContentCopy } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -42,8 +42,12 @@
 		'#af52de',
 	];
 
-	let qrColorIndex = $state(qrColors.indexOf(qrColor));
-	if (qrColorIndex === -1) qrColorIndex = 0;
+	let qrColorIndex = $state(
+		untrack(() => {
+			const idx = qrColors.indexOf(qrColor);
+			return idx === -1 ? 0 : idx;
+		}),
+	);
 
 	const selectedColor = $derived(qrColors[qrColorIndex]);
 	const isWhite = $derived(selectedColor === '#ffffff');

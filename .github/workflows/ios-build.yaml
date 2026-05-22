@@ -1,0 +1,95 @@
+name: "ios build"
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  ios-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+          cache: true
+
+      - name: Install xcodegen and just
+        run: brew install xcodegen just
+
+      - name: Use iOS rust toolchain
+        run: cp rust-toolchain.ios.toml rust-toolchain.toml
+
+      # Workaround for actions/runner-images#14097: on macos-15-arm64/20260511.0048+
+      # /opt/homebrew/bin/{cargo,rustc,rustup,rustup-init} are broken rustup-init shims
+      # that reject standard subcommands like `metadata`. We must delete them BEFORE
+      # setup-rust-toolchain runs — otherwise the action sees `command -v rustup` succeed
+      # against the broken shim, takes its "rustup already installed" branch, skips the
+      # curl install of real proxies into ~/.cargo/bin/, and never adds ~/.cargo/bin to
+      # GITHUB_PATH. Subsequent `cargo` invocations then fall through to the broken shim.
+      - name: Remove broken homebrew rust shims
+        run: rm -f /opt/homebrew/bin/cargo /opt/homebrew/bin/rustc /opt/homebrew/bin/rustup /opt/homebrew/bin/rustup-init
+
+      - name: Install Rust (with iOS targets)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+          cache-shared-key: ios
+
+      - name: Install pnpm dependencies
+        run: pnpm install
+
+      - name: Stub GoogleService-Info.plist for compile check
+        run: |
+          mkdir -p src-tauri/gen/apple/dash-chat_iOS
+          cat > src-tauri/gen/apple/dash-chat_iOS/GoogleService-Info.plist <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>BUNDLE_ID</key><string>studio.darksoil.dashchat</string>
+            <key>GOOGLE_APP_ID</key><string>1:0:ios:0</string>
+            <key>GCM_SENDER_ID</key><string>0</string>
+            <key>API_KEY</key><string>STUB</string>
+            <key>PROJECT_ID</key><string>stub</string>
+          </dict></plist>
+          EOF
+
+      # The multicast entitlement is a manually-approved capability that flips
+      # PROVISIONING_PROFILE_REQUIRED on, so automatic signing tries to fetch a
+      # matching profile from the Apple account — which CI has no credentials for.
+      # This is only a simulator compile/link check, so strip the entitlement
+      # from the files the build signs against. The committed entitlements keep
+      # it for real device and release builds.
+      - name: Strip multicast entitlement for unsigned simulator compile check
+        run: |
+          for f in src-tauri/gen/apple/dash-chat_iOS/dash-chat_iOS.entitlements \
+                   src-tauri/gen/apple/dash-chat_iOS/dash-chat_iOSrelease.entitlements; do
+            /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.networking.multicast" "$f" || true
+          done
+
+      # Tauri's `tauri ios xcode-script` rewrites the entitlements file
+      # mid-build, which xcodebuild rejects by default. The error message itself
+      # advertises CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION=YES as the escape
+      # hatch — bake it into every build configuration in the Xcode project so
+      # xcodebuild definitely picks it up (env vars and XCODE_XCCONFIG_FILE are
+      # ignored once Tauri's wrapper invokes xcodebuild). Safe here because this
+      # job is only an unsigned simulator compile check.
+      - name: Allow entitlements modification during build
+        run: |
+          perl -i -pe 's|(CODE_SIGN_ENTITLEMENTS = [^;]+;)|$1\n\t\t\t\tCODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;|g' \
+            src-tauri/gen/apple/dash-chat.xcodeproj/project.pbxproj
+          grep -c CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION src-tauri/gen/apple/dash-chat.xcodeproj/project.pbxproj
+
+      - name: Build iOS app for simulator (compile check)
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+        run: |
+          pnpm tauri ios build --debug --target aarch64-sim

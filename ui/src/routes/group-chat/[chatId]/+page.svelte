@@ -1,12 +1,8 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
-	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
-	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { lessThanAMinuteAgo, moreThanAnHourAgo } from '$lib/utils/time';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { ChatsStore, ContactsStore } from 'dash-chat-stores';
@@ -17,10 +13,6 @@
 		Navbar,
 		NavbarBackLink,
 		Link,
-		Button,
-		Card,
-		ListInput,
-		List,
 		Messagebar,
 		ToolbarPane,
 		Icon,
@@ -28,10 +20,13 @@
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
+	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myAgentId = useReactivePromise(contactsStore.myAgentId);
+	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
@@ -59,7 +54,12 @@
 </script>
 
 <Page style={theme === 'material' ? 'height: calc(100vh - 57px)' : ''}>
-	<Navbar transparent={true} titleClass="opacity1 w-full" centerTitle={false}>
+	<Navbar
+		transparent={true}
+		titleClass="opacity1 w-full"
+		leftClass="shrink-0"
+		centerTitle={false}
+	>
 		{#snippet left()}
 			{#if !isWideScreen.value}
 				<NavbarBackLink
@@ -76,12 +76,11 @@
 					class="gap-2"
 					style="display: flex; justify-content: start; align-items: center;"
 				>
-					<wa-avatar
+					<Avatar
 						image={info.avatar}
 						initials={info.name.slice(0, 2)}
 						style="--size: 2.5rem"
-					>
-					</wa-avatar>
+					/>
 					<span>{info.name}</span>
 				</Link>
 			{/await}
@@ -92,9 +91,10 @@
 		{#await $allMembers then members}
 			<div class="center-in-desktop" style="flex:1">
 				<div class="column m-2 gap-2">
-					{#await $myAgentId then myActorId}
+					{#await $myDeviceId then myDeviceId}
 						{#await $messages then messages}
 							{#each messages as message}
+<<<<<<< HEAD
 								{#if myActorId == message.author}
 									<Card raised class="message my-message">
 										<div class="row gap-2" style="align-items: end">
@@ -121,15 +121,29 @@
 											</div>
 										</div>
 									</Card>
+=======
+								{#if myDeviceId == message.author}
+									<div class="self-end max-w-[85%]">
+										<MessageFromMe
+											{message}
+											{chatId}
+											position="single"
+											{myDeviceId}
+											searchQuery=""
+											onToggleReaction={() => {}}
+										/>
+									</div>
+>>>>>>> origin/develop
 								{:else}
-									<div class="row gap-2 m-0">
-										<wa-avatar
+									<div class="row gap-2 self-start max-w-[85%]">
+										<Avatar
 											image={members[message.author].profile?.avatar}
 											initials={members[message.author].profile?.name.slice(
 												0,
 												2,
 											)}
 											style="--size: 2.5rem"
+<<<<<<< HEAD
 										>
 										</wa-avatar>
 										<Card raised class="message others-message">
@@ -157,6 +171,17 @@
 												</div>
 											</div>
 										</Card>
+=======
+										/>
+										<MessageFromOthers
+											{message}
+											{chatId}
+											position="single"
+											{myDeviceId}
+											searchQuery=""
+											onToggleReaction={() => {}}
+										/>
+>>>>>>> origin/develop
 									</div>
 								{/if}
 							{/each}
@@ -186,27 +211,6 @@
 					</ToolbarPane>
 				{/snippet}
 			</Messagebar>
-
-			<!--			<div
-				class="column pr-4 bottom-0 left-0 right-0 fixed bg-white dark:bg-gray-800"
-				style="display:none"
-			>
-				<div class="row gap-1 center-in-desktop" style="align-items: center;">
-					<List nested style="flex: 1">
-						<ListInput
-							type="textarea"
-							outline
-							bind:value={messageText}
-							inputStyle="min-height: 1em; padding: 0; max-height: 4em; resize: none"
-							placeholder={m.typeMessage()}
-						/>
-					</List>
-
-					<Link iconOnly onClick={sendMessage}>
-						<wa-icon src={wrapPathInSvg(mdiSend)}> </wa-icon>
-					</Link>
-				</div>
-			</div> -->
 		{/await}
 	</div>
 </Page>

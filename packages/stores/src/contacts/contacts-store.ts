@@ -5,13 +5,14 @@ import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
-import { AnnouncementPayload, ChatId, ContactCode, Payload } from '../types';
+import { AnnouncementPayload, ContactCode, Payload } from '../types';
 import { IContactsClient, Profile } from './contacts-client';
 
 export interface ContactRequest {
 	profile: Profile;
 	code: ContactCode;
 	timestamp: number;
+	topicId: TopicId;
 }
 
 export class ContactsStore {
@@ -75,7 +76,7 @@ export class ContactsStore {
 					op.body?.payload?.type === 'AddContact' &&
 					op.body.payload.payload.agent_id === agentId
 				) {
-					return op.header.timestamp * 1000;
+					return op.header.timestamp;
 				}
 			}
 		}
@@ -95,17 +96,14 @@ export class ContactsStore {
 				const existingTimestamp = rejected[agentId];
 
 				// Keep the latest rejection timestamp
-				if (
-					!existingTimestamp ||
-					op.header.timestamp * 1000 > existingTimestamp
-				) {
-					rejected[agentId] = op.header.timestamp * 1000;
+				if (!existingTimestamp || op.header.timestamp > existingTimestamp) {
+					rejected[agentId] = op.header.timestamp;
 				}
 			}
 		}
 
 		return rejected;
-		});
+	});
 
 	contactRequests = reactive(async () => {
 		const activeInboxTopics = await this.activeInboxTopics();
@@ -120,11 +118,16 @@ export class ContactsStore {
 
 		const contactRequests: ContactRequest[] = [];
 
-		for (const log of allLogs) {
+		for (let i = 0; i < allLogs.length; i++) {
+			const topicId = activeInboxTopics[i];
+			const log = allLogs[i];
 			for (const operations of Object.values(log)) {
 				for (const operation of operations) {
 					if (operation.body?.type !== 'Inbox') continue;
-					const agentId = operation.body.payload.payload.code.agent_id;
+					if (operation.body.payload.type !== 'ContactRequest') continue;
+					const { code, profile } = operation.body.payload.payload;
+					if (!code?.agent_id) continue;
+					const agentId = code.agent_id;
 
 					// We have already accepted this contact request
 					if (contacts.includes(agentId)) continue;
@@ -133,13 +136,15 @@ export class ContactsStore {
 					const rejectionTimestamp = rejectedMap[agentId];
 					if (
 						rejectionTimestamp &&
-						operation.header.timestamp * 1000 < rejectionTimestamp
+						operation.header.timestamp < rejectionTimestamp
 					)
 						continue;
 
 					contactRequests.push({
-						...operation.body.payload.payload,
-						timestamp: operation.header.timestamp * 1000,
+						code,
+						profile,
+						topicId,
+						timestamp: operation.header.timestamp,
 					});
 				}
 			}
@@ -164,14 +169,12 @@ export class ContactsStore {
 			for (const operations of Object.values(log)) {
 				for (const operation of operations) {
 					if (operation.body?.type !== 'Inbox') continue;
-					if (operation.body.payload.payload.code.agent_id !== agentId)
-						continue;
-					const ts = operation.header.timestamp * 1000;
+					if (operation.body.payload.type !== 'ContactRequest') continue;
+					const { code, profile } = operation.body.payload.payload;
+					if (code?.agent_id !== agentId) continue;
+					const ts = operation.header.timestamp;
 					if (!latest || ts > latest.timestamp) {
-						latest = {
-							timestamp: ts,
-							profile: operation.body.payload.payload.profile,
-						};
+						latest = { timestamp: ts, profile };
 					}
 				}
 			}
@@ -196,7 +199,7 @@ export class ContactsStore {
 			)
 			.map(l => [
 				l.header.timestamp,
-				(l.body!.payload as AnnouncementPayload).payload,
+				(l.body!.payload as AnnouncementPayload).payload as Profile,
 			]);
 
 		const descendantSortedOperations = setProfiles.sort(
@@ -221,7 +224,10 @@ export class ContactsStore {
 		);
 
 		const profilesWithContacts: Array<[AgentId, Profile]> = contacts
-			.map((contact, i) => [contact, profiles[i]] as [AgentId, Profile | undefined])
+			.map(
+				(contact, i) =>
+					[contact, profiles[i]] as [AgentId, Profile | undefined],
+			)
 			.filter((pair): pair is [AgentId, Profile] => !!pair[1]);
 
 		return profilesWithContacts;

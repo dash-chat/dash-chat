@@ -8,7 +8,9 @@
 	"types": "dist/index.d.ts",
 	"scripts": {
 		"build": "rimraf dist && tsc && babel ./src --extensions \".ts\" --out-dir ./dist",
-		"dev": "concurrently -k \"tsc -w --preserveWatchOutput\" \"babel --watch ./src --extensions \".ts\" --out-dir ./dist\""
+		"dev": "concurrently -k \"tsc -w --preserveWatchOutput\" \"babel --watch ./src --extensions \".ts\" --out-dir ./dist\"",
+		"format": "prettier --write 'src/**/*.ts'",
+		"check": "prettier --check 'src/**/*.ts'"
 	},
 	"dependencies": {
 		"@tauri-apps/api": "^2",
@@ -18,7 +20,7 @@
 		"cbor-web": "^10.0.11",
 		"emittery": "^1.2.0",
 		"rimraf": "^6.1.0",
-		"signalium": "^2.0.7",
+		"signalium": "^3.0.1",
 		"webbuf": "^3.0.28"
 	},
 	"devDependencies": {

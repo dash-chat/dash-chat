@@ -1,6 +1,6 @@
 {
 	"productName": "Dash Chat",
-	"version": "0.10.3",
+	"version": "0.16.0",
 	"identifier": "studio.darksoil.dashchat",
 	"build": {
 		"beforeDevCommand": "pnpm dev",
@@ -12,8 +12,8 @@
 		"windows": [
 			{
 				"title": "Dash Chat",
-				"width": 800,
-				"height": 600
+				"width": 850,
+				"height": 650
 			}
 		],
 		"withGlobalTauri": true,

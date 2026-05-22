@@ -26,21 +26,19 @@
 		height: string;
 		media?: Media | undefined;
 		onSend?: () => void;
-		onInput?: () => void;
 		onEmojiClick?: () => void;
 		onMediaChange?: (media: Media | undefined) => void;
 	}
 
 	let {
 		value = $bindable(''),
-		height = $bindable(''),
 		placeholder = m.typeMessage(),
 		media = undefined,
 		onSend,
-		onInput,
 		onEmojiClick,
 		onMediaChange,
 	}: Props = $props();
+	
 	let div: HTMLDivElement;
 	let showAttachMenu = $state(false);
 	let photoFilePicker: HTMLInputElement;
@@ -104,15 +102,12 @@
 	function handleInput() {
 		value = textarea.value;
 		autoResize();
-		onInput?.();
 	}
 
 	function autoResize() {
 		if (textarea.scrollHeight > 100) return;
 		textarea.style.height = 'auto';
-		const textareaHeight = textarea.scrollHeight + 'px';
-		textarea.style.height = textareaHeight;
-		height = `${div.scrollHeight}px`;
+		textarea.style.height = textarea.scrollHeight + 'px';
 	}
 
 	function handleSendClick() {
@@ -124,19 +119,23 @@
 			onSend?.();
 			textarea.style.height = 'auto';
 			tick().then(updateHeight);
+			textarea.focus();
 		}
 	}
 
-	onMount(() => {
-		height = `${div.scrollHeight}px`;
-	});
+	function keepKeyboardOpen(event: Event) {
+		if (event.target !== textarea) {
+			event.preventDefault();
+		}
+	}
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	bind:this={div}
-	class="message-input-bar m-2 pb-safe"
-	class:bg-md-light-surface={theme === 'material'}
-	class:dark:bg-md-dark-surface={theme === 'material'}
+	style="display: flow-root"
+	onmousedown={keepKeyboardOpen}
+	ontouchstart={keepKeyboardOpen}
+	onpointerdown={keepKeyboardOpen}
 >
 	<input
 		type="file"
@@ -153,130 +152,136 @@
 		onchange={() => onFilePickerSelected(fileFilePicker)}
 	/>
 
-	{#if media}
-		<div class="media-preview">
-			{#if media.kind === 'photos'}
-				<div class="photo-preview-row">
-					{#each media.photos as photo, i}
-						<div class="photo-thumb-wrapper">
-							<img src={photo.dataUrl} alt="" class="photo-thumb" />
-							<button
-								type="button"
-								class="thumb-remove"
-								onclick={() => removePhoto(i)}
-								aria-label="Remove"
-							>
-								<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
-							</button>
-						</div>
-					{/each}
-				</div>
-			{:else}
-				<div class="file-preview">
-					<wa-icon src={wrapPathInSvg(mdiFile)} class="file-preview-icon"
-					></wa-icon>
-					<div class="file-preview-info">
-						<span class="file-preview-name">{media.name}</span>
-						<span class="file-preview-size">{formatFileSize(media.size)}</span>
+	<div
+		class="message-input-bar m-2 pb-safe"
+		class:bg-md-light-surface={theme === 'material'}
+		class:dark:bg-md-dark-surface={theme === 'material'}
+	>
+		{#if media}
+			<div class="media-preview">
+				{#if media.kind === 'photos'}
+					<div class="photo-preview-row">
+						{#each media.photos as photo, i}
+							<div class="photo-thumb-wrapper">
+								<img src={photo.dataUrl} alt="" class="photo-thumb" />
+								<button
+									type="button"
+									class="thumb-remove"
+									onclick={() => removePhoto(i)}
+									aria-label="Remove"
+								>
+									<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
+								</button>
+							</div>
+						{/each}
 					</div>
-					<button
-						type="button"
-						class="thumb-remove"
-						onclick={removeMedia}
-						aria-label="Remove"
-					>
-						<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
-					</button>
-				</div>
-			{/if}
-		</div>
-	{/if}
+				{:else}
+					<div class="file-preview">
+						<wa-icon src={wrapPathInSvg(mdiFile)} class="file-preview-icon"
+						></wa-icon>
+						<div class="file-preview-info">
+							<span class="file-preview-name">{media.name}</span>
+							<span class="file-preview-size">{formatFileSize(media.size)}</span>
+						</div>
+						<button
+							type="button"
+							class="thumb-remove"
+							onclick={removeMedia}
+							aria-label="Remove"
+						>
+							<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
+						</button>
+					</div>
+				{/if}
+			</div>
+		{/if}
 
-	<div class="row gap-2" style="align-items: flex-end; margin: 0 auto">
-		<div class="relative" style="align-self: flex-end; margin-bottom: 4px;">
-			<button
-				type="button"
-				class="attach-button"
-				data-testid="message-input-attach"
-				onclick={() => (showAttachMenu = !showAttachMenu)}
-				aria-label="Attach"
-			>
-				<wa-icon src={wrapPathInSvg(mdiPlus)}></wa-icon>
-			</button>
-			{#if showAttachMenu}
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div
-					class="fixed inset-0 z-10"
-					onclick={() => (showAttachMenu = false)}
-					onkeydown={() => {}}
-				></div>
-				<div class="attach-menu" data-testid="message-input-attach-menu">
-					<button
-						class="attach-menu-item"
-						data-testid="message-input-attach-photos"
-						onclick={() => {
-							showAttachMenu = false;
-							photoFilePicker.click();
-						}}
-					>
-						<wa-icon src={wrapPathInSvg(mdiImage)}></wa-icon>
-						<span>{m.photosAndVideo()}</span>
-					</button>
-					<button
-						class="attach-menu-item"
-						data-testid="message-input-attach-file"
-						onclick={() => {
-							showAttachMenu = false;
-							fileFilePicker.click();
-						}}
-					>
-						<wa-icon src={wrapPathInSvg(mdiFile)}></wa-icon>
-						<span>{m.menuFile()}</span>
-					</button>
-				</div>
-			{/if}
-		</div>
-
-		<div
-			class={theme === 'ios'
-				? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-				: 'input-container bg-white dark:bg-gray-800'}
-		>
-			{#if onEmojiClick && !isIos}
+		<div class="row gap-2" style="align-items: flex-end; margin: 0 auto">
+			<div class="relative" style="align-self: flex-end; margin-bottom: 4px;">
 				<button
 					type="button"
-					class="icon-button emoji-btn"
-					onclick={onEmojiClick}
-					aria-label="Emoji"
-					data-testid="message-input-emoji"
+					class="attach-button"
+					data-testid="message-input-attach"
+					onclick={() => (showAttachMenu = !showAttachMenu)}
+					aria-label="Attach"
 				>
-					<wa-icon src={wrapPathInSvg(mdiEmoticonHappyOutline)}></wa-icon>
+					<wa-icon src={wrapPathInSvg(mdiPlus)}></wa-icon>
 				</button>
-			{/if}
+				{#if showAttachMenu}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						class="fixed inset-0 z-10"
+						onclick={() => (showAttachMenu = false)}
+						onkeydown={() => {}}
+					></div>
+					<div class="attach-menu" data-testid="message-input-attach-menu">
+						<button
+							class="attach-menu-item"
+							data-testid="message-input-attach-photos"
+							onclick={() => {
+								showAttachMenu = false;
+								photoFilePicker.click();
+							}}
+						>
+							<wa-icon src={wrapPathInSvg(mdiImage)}></wa-icon>
+							<span>{m.photosAndVideo()}</span>
+						</button>
+						<button
+							class="attach-menu-item"
+							data-testid="message-input-attach-file"
+							onclick={() => {
+								showAttachMenu = false;
+								fileFilePicker.click();
+							}}
+						>
+							<wa-icon src={wrapPathInSvg(mdiFile)}></wa-icon>
+							<span>{m.menuFile()}</span>
+						</button>
+					</div>
+				{/if}
+			</div>
 
-			<textarea
-				class="message-textarea"
-				data-testid="message-input-textarea"
-				{placeholder}
-				bind:value
-				bind:this={textarea}
-				rows="1"
-				onkeydown={handleKeydown}
-				oninput={handleInput}
-			></textarea>
+			<div
+				class={theme === 'ios'
+					? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+					: 'input-container bg-white dark:bg-gray-800'}
+			>
+				{#if onEmojiClick && !isIos}
+					<button
+						type="button"
+						class="icon-button emoji-btn"
+						onclick={onEmojiClick}
+						aria-label="Emoji"
+						data-testid="message-input-emoji"
+					>
+						<wa-icon src={wrapPathInSvg(mdiEmoticonHappyOutline)}></wa-icon>
+					</button>
+				{/if}
+
+				<textarea
+					class="message-textarea"
+					data-testid="message-input-textarea"
+					{placeholder}
+					bind:value
+					bind:this={textarea}
+					rows="1"
+					onkeydown={handleKeydown}
+					oninput={handleInput}
+				></textarea>
+			</div>
+
+			<button
+				type="button"
+				class="send-button"
+				data-testid="message-input-send"
+				class:active={hasContent}
+				onclick={handleSendClick}
+				disabled={!hasContent}
+				aria-label="Send"
+			>
+				<wa-icon src={wrapPathInSvg(mdiSend)}></wa-icon>
+			</button>
 		</div>
-
-		<button
-			type="button"
-			class="send-button"
-			data-testid="message-input-send"
-			class:active={hasContent}
-			onclick={handleSendClick}
-			disabled={!hasContent}
-			aria-label="Send"
-		>
-			<wa-icon src={wrapPathInSvg(mdiSend)}></wa-icon>
-		</button>
 	</div>
 </div>
 
@@ -392,7 +397,7 @@
 	}
 
 	.send-button :global(wa-icon) {
-		margin-left: 2px; /* Optical centering for send arrow */
+		margin-inline-start: 2px; /* Optical centering for send arrow */
 	}
 
 	.attach-button {
