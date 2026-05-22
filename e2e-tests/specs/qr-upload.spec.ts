@@ -1,5 +1,5 @@
-import { S } from '../../ui/tests/selectors';
-import { type Agent, setupAgent } from '../helpers/setup-agents';
+import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
+import { type Agent, setupAgent } from '../setup/setup-agents';
 
 describe('QR code image upload', () => {
 	let agent1: Agent;
@@ -13,42 +13,22 @@ describe('QR code image upload', () => {
 	});
 
 	it('creates profiles on both agents', async () => {
-		await agent1.createProfile('Alice', 'Test');
-		await agent2.createProfile('Bob', 'Test');
+		await agent1.createProfilePage.createProfile('Alice', 'Test');
+		await agent2.createProfilePage.createProfile('Bob', 'Test');
 	});
 
 	it('adds a contact by uploading a QR code image on desktop', async () => {
-		await agent1.navigateToAddContact();
-		await agent2.navigateToAddContact();
+		await navigateToAddContact(agent1);
+		await navigateToAddContact(agent2);
 
-		const contactCode = await agent2.getContactCode();
-		if (!contactCode) throw new Error('agent2 contact code missing');
+		const contactCode = await agent2.addContactPage.getContactCode();
+		await agent1.addContactPage.uploadQrCodeImage(contactCode);
 
-		await agent1.uploadQrCodeImage(contactCode);
-
-		await agent1.waitUntil(
-			async () =>
-				agent1.execute(
-					(sel: string) => document.querySelector(sel) !== null,
-					S.directChat.page,
-				),
-			{
-				timeout: 15_000,
-				timeoutMsg: 'Direct chat did not open after QR image upload',
-			},
-		);
+		await agent1.directChatPage.ready();
 	});
 
 	it('shows an error toast when the uploaded image contains no QR code', async () => {
-		await agent1.goto('/new-message/add-contact');
-		await agent1.waitUntil(
-			async () =>
-				agent1.execute(
-					(sel: string) => document.querySelector(sel) !== null,
-					S.addContact.fileInput,
-				),
-			{ timeout: 10_000, timeoutMsg: 'add-contact file input not found' },
-		);
+		await navigateToAddContact(agent1);
 
 		const toastMessage = await agent1.execute(async () => {
 			const toastPromise = window.__test.captureNextToastMessage();

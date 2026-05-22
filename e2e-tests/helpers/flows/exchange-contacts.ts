@@ -1,11 +1,16 @@
-import { tid } from '../../../ui/tests/selectors';
-import type { Agent } from '../setup-agents';
+import type { Agent } from '../../setup/setup-agents';
 
-async function navigateToAddContact(agent: Agent): Promise<void> {
+/** Walk from the home screen to the add-contact page. */
+export async function navigateToAddContact(agent: Agent): Promise<void> {
 	await agent.homePage.newMessageButton.click();
 	await agent.newMessagePage.addContact.click();
+	await agent.addContactPage.ready();
 }
 
+/**
+ * Two-way contact exchange: both agents add each other's code and end up on
+ * their respective direct-chat pages.
+ */
 export async function exchangeContacts(
 	agent1: Agent,
 	agent2: Agent,
@@ -14,10 +19,8 @@ export async function exchangeContacts(
 	await navigateToAddContact(agent2);
 	const code1 = await agent1.addContactPage.getContactCode();
 	const code2 = await agent2.addContactPage.getContactCode();
-	if (!code1) throw new Error('agent1 contact code missing');
-	if (!code2) throw new Error('agent2 contact code missing');
 	await agent1.addContactPage.enterCode(code2);
-	await agent1.$(tid('direct-chat-page')).waitForExist();
+	await agent1.directChatPage.ready();
 	await agent2.addContactPage.enterCode(code1);
-	await agent2.$(tid('direct-chat-page')).waitForExist();
+	await agent2.directChatPage.ready();
 }

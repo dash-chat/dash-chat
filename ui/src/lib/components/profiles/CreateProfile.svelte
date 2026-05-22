@@ -123,7 +123,7 @@
 		>
 			{#snippet right()}
 				{#if isIos}
-					<Link onClick={setProfile} data-testid="create-profile-create-link">
+					<Link onClick={setProfile} data-testid="create-profile-create-btn">
 						{m.create()}
 					</Link>
 				{/if}

@@ -3,13 +3,13 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { allocateDriverPorts } from '../helpers/allocate-port';
+import { allocateDriverPorts } from '../setup/allocate-port';
 import {
 	killAndWait,
 	killAllE2EProcesses,
 	killPortHolders,
-} from '../helpers/cleanup';
-import { waitForPortFree, waitForPortListening } from '../helpers/wait-for-port';
+} from '../setup/cleanup';
+import { waitForPortFree, waitForPortListening } from '../setup/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..');

@@ -20,7 +20,6 @@ export const S = {
 		nameInput: tid('create-profile-name'),
 		surnameInput: tid('create-profile-surname'),
 		createButton: tid('create-profile-create-btn'),
-		createLink: tid('create-profile-create-link'),
 	},
 	addContact: {
 		back: tid('add-contact-back'),
@@ -93,13 +92,11 @@ export const S = {
 		nameInput: tid('edit-name-name'),
 		surnameInput: tid('edit-name-surname'),
 		saveButton: tid('edit-name-save-btn'),
-		saveLink: tid('edit-name-save-link'),
 	},
 	editAbout: {
 		back: tid('edit-about-back'),
 		input: tid('edit-about-input'),
 		saveButton: tid('edit-about-save-btn'),
-		saveLink: tid('edit-about-save-link'),
 	},
 	editPhoto: {
 		back: tid('edit-photo-back'),
@@ -119,11 +116,9 @@ export const S = {
 	newGroup: {
 		back: tid('new-group-back'),
 		nextButton: tid('new-group-next-btn'),
-		nextLink: tid('new-group-next-link'),
 		infoBack: tid('new-group-info-back'),
 		nameInput: tid('new-group-name-input'),
 		createButton: tid('new-group-create-btn'),
-		createLink: tid('new-group-create-link'),
 	},
 	groupChat: {
 		back: tid('group-chat-back'),

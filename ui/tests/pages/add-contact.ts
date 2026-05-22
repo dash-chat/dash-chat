@@ -2,6 +2,8 @@ import QrCreator from 'qr-creator';
 
 import { S } from '../selectors';
 
+const FILE_INPUT = S.addContact.fileInput;
+
 /**
  * Generate a QR code image for the given contact code and inject it into the
  * hidden file input, simulating the user selecting an image via the upload button.
@@ -31,9 +33,7 @@ export async function uploadQrCodeImage(code: string): Promise<true> {
 	const dt = new DataTransfer();
 	dt.items.add(file);
 
-	const input = document.querySelector(
-		`${S.addContact.fileInput}`,
-	) as HTMLInputElement | null;
+	const input = document.querySelector(FILE_INPUT) as HTMLInputElement | null;
 	if (!input) throw new Error('QR file input not found');
 
 	input.files = dt.files;
@@ -61,9 +61,7 @@ export async function uploadEmptyImage(): Promise<true> {
 	const dt = new DataTransfer();
 	dt.items.add(file);
 
-	const input = document.querySelector(
-		`${S.addContact.fileInput}`,
-	) as HTMLInputElement | null;
+	const input = document.querySelector(FILE_INPUT) as HTMLInputElement | null;
 	if (!input) throw new Error('QR file input not found');
 
 	input.files = dt.files;

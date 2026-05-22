@@ -9,7 +9,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type Agent, setupAgent } from '../helpers/setup-agents';
+
+import { type Agent, setupAgent } from '../setup/setup-agents';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -34,7 +35,9 @@ const NEW_MSG_BOB = 'Post-upgrade message from Bob!';
 describe('Compat verify — check data with current version', () => {
 	before(async () => {
 		if (!existsSync(STATE_FILE)) {
-			throw new Error(`State file not found: ${STATE_FILE}. Did the setup phase run?`);
+			throw new Error(
+				`State file not found: ${STATE_FILE}. Did the setup phase run?`,
+			);
 		}
 		state = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
 
@@ -45,49 +48,34 @@ describe('Compat verify — check data with current version', () => {
 	});
 
 	it('both agents skip profile creation (profiles persisted)', async () => {
-		// If profiles persisted, the app goes straight to the home screen.
-		await agent1.waitUntil(async () => !!(await agent1.homeLoaded()), {
-			timeout: 10_000,
-			timeoutMsg: 'Alice did not reach the home screen',
-		});
-		await agent2.waitUntil(async () => !!(await agent2.homeLoaded()), {
-			timeout: 10_000,
-			timeoutMsg: 'Bob did not reach the home screen',
-		});
+		await agent1.homePage.ready();
+		await agent2.homePage.ready();
 	});
 
 	it('contact names are visible in the chat list', async () => {
-		await agent1.waitUntil(
-			async () => (await agent1.getChatListItem(state.bobName)) !== null,
-			{ timeout: 15_000, interval: 1000, timeoutMsg: `Alice never saw "${state.bobName}" in chat list` },
+		await agent1.waitUntil(async () =>
+			agent1.homePage.hasChatListItem(state.bobName),
 		);
-
-		await agent2.waitUntil(
-			async () => (await agent2.getChatListItem(state.aliceName)) !== null,
-			{ timeout: 15_000, interval: 1000, timeoutMsg: `Bob never saw "${state.aliceName}" in chat list` },
+		await agent2.waitUntil(async () =>
+			agent2.homePage.hasChatListItem(state.aliceName),
 		);
 	});
 
 	it('old messages are still visible after upgrade', async () => {
-		await agent1.openDirectChat(state.bobName);
-		await agent1.waitForMessage(state.msgAlice);
-		await agent1.waitForMessage(state.msgBob);
+		await agent1.homePage.openChat(state.bobName);
+		await agent1.directChatPage.waitForMessage(state.msgAlice);
+		await agent1.directChatPage.waitForMessage(state.msgBob);
 
-		await agent2.openDirectChat(state.aliceName);
-		await agent2.waitForMessage(state.msgAlice);
-		await agent2.waitForMessage(state.msgBob);
+		await agent2.homePage.openChat(state.aliceName);
+		await agent2.directChatPage.waitForMessage(state.msgAlice);
+		await agent2.directChatPage.waitForMessage(state.msgBob);
 	});
 
 	it('can send new messages after upgrade', async () => {
-		await agent1.openDirectChat(state.bobName);
-		await agent2.openDirectChat(state.aliceName);
+		await agent1.directChatPage.sendMessage(NEW_MSG_ALICE);
+		await agent2.directChatPage.waitForMessage(NEW_MSG_ALICE);
 
-		// Alice sends a new message
-		await agent1.sendMessage(NEW_MSG_ALICE);
-		await agent2.waitForMessage(NEW_MSG_ALICE);
-
-		// Bob sends a new message
-		await agent2.sendMessage(NEW_MSG_BOB);
-		await agent1.waitForMessage(NEW_MSG_BOB);
+		await agent2.directChatPage.sendMessage(NEW_MSG_BOB);
+		await agent1.directChatPage.waitForMessage(NEW_MSG_BOB);
 	});
 });

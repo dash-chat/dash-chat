@@ -1,5 +1,5 @@
-import { tid } from '../../../ui/tests/selectors';
-import { TestPage } from './test-page';
+import { tid } from '../../selectors';
+import { TestPage } from '../test-page';
 
 export class AddContactPage extends TestPage {
 	back = this.agent.$(tid('add-contact-back'));
@@ -20,27 +20,27 @@ export class AddContactPage extends TestPage {
 	}
 
 	/** Read the contact code from the QR element. */
-	async getContactCode(): Promise<string | null> {
+	async getContactCode(): Promise<string> {
 		await this.qrCode.waitForExist();
-		return (await this.qrCode.getProperty('value')) as string | null;
+		const code = (await this.qrCode.getProperty('value')) as string | null;
+		if (!code) throw new Error('contact code missing on QR element');
+		return code;
 	}
 
 	async enterCode(code: string) {
-		const selector = `${tid('add-contact-code-input')} input`;
-		await this.agent.$(selector).waitForExist();
+		await this.typeInto(`${tid('add-contact-code-input')} input`, code);
+	}
+
+	/** Generate a QR PNG for the given code and inject it into the file input. */
+	async uploadQrCodeImage(code: string): Promise<void> {
 		await this.agent.execute(
-			(sel: string, value: string) => {
-				const el = document.querySelector(sel) as HTMLInputElement;
-				const setter = Object.getOwnPropertyDescriptor(
-					HTMLInputElement.prototype,
-					'value',
-				)!.set!;
-				setter.call(el, value);
-				el.dispatchEvent(new Event('input', { bubbles: true }));
-				el.dispatchEvent(new Event('change', { bubbles: true }));
-			},
-			selector,
+			(c: string) => window.__test.uploadQrCodeImage(c),
 			code,
 		);
+	}
+
+	/** Inject a blank PNG (no QR code) into the file input. */
+	async uploadEmptyImage(): Promise<void> {
+		await this.agent.execute(() => window.__test.uploadEmptyImage());
 	}
 }

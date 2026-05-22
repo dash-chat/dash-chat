@@ -62,7 +62,7 @@
 				{#if isIos}
 					<Link
 						onClick={() => (currentPage = 'group-info')}
-						data-testid="new-group-next-link"
+						data-testid="new-group-next-btn"
 					>
 						{selectedContacts.length === 0 ? m.omit() : m.next()}
 					</Link>
@@ -136,7 +136,7 @@
 
 			{#snippet right()}
 				{#if isIos}
-					<Link onClick={createGroupChat} data-testid="new-group-create-link">
+					<Link onClick={createGroupChat} data-testid="new-group-create-btn">
 						{m.create()}
 					</Link>
 				{/if}

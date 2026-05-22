@@ -1,4 +1,4 @@
-import { tid } from '../../../ui/tests/selectors';
+import { tid } from '../selectors';
 import { TestPage } from './test-page';
 
 const GET_STARTED_CARD_IDS = [
@@ -25,13 +25,24 @@ export class HomePage extends TestPage {
 		]);
 	}
 
+	async isLoaded(): Promise<boolean> {
+		return (await this.chatList.isExisting()) || (await this.emptyState.isExisting());
+	}
+
 	/** Chat-list entry whose link text contains `contactName`. */
-	getChatListItem(contactName: string) {
+	chatListItem(contactName: string) {
 		return this.chatList.$(`a*=${contactName}`);
 	}
 
 	hasChatListItem(contactName: string) {
-		return this.getChatListItem(contactName).isExisting();
+		return this.chatListItem(contactName).isExisting();
+	}
+
+	/** Open a chat by contact name and wait for the direct-chat page. */
+	async openChat(contactName: string): Promise<void> {
+		await this.chatList.waitForExist();
+		await this.chatListItem(contactName).click();
+		await this.agent.$(tid('direct-chat-messages')).waitForExist();
 	}
 
 	getStartedCard(id: GetStartedCardId) {

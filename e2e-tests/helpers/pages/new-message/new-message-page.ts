@@ -1,5 +1,5 @@
-import { tid } from '../../../ui/tests/selectors';
-import { TestPage } from './test-page';
+import { tid } from '../../selectors';
+import { TestPage } from '../test-page';
 
 export class NewMessagePage extends TestPage {
 	back = this.agent.$(tid('new-message-back'));

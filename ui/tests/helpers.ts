@@ -1,5 +1,9 @@
 /**
- * Shared DOM helpers for test automation via webview_execute_js.
+ * DOM helpers used by `ui/tests/review/visit-all-pages.ts` and registered on
+ * `window.__test` for in-browser test orchestration.
+ *
+ * Generic UI interaction (typing, clicking, waiting) for E2E specs lives in
+ * `e2e-tests/helpers/pages/*` and drives the app via WDIO `$()` selectors.
  */
 
 export async function waitFor(
@@ -7,7 +11,6 @@ export async function waitFor(
 	timeout = 15_000,
 ): Promise<Element> {
 	await waitUntil(() => !!document.querySelector(selector), timeout);
-
 	return document.querySelector(selector)!;
 }
 
@@ -18,8 +21,7 @@ export function waitUntil(
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => reject(`Timeout`), timeout);
 		const check = () => {
-			const el = condition();
-			if (el) {
+			if (condition()) {
 				clearTimeout(timer);
 				resolve();
 			} else {
@@ -30,44 +32,6 @@ export function waitUntil(
 	});
 }
 
-export function waitForText(
-	selector: string,
-	text: string,
-	timeout = 15_000,
-): Promise<true> {
-	return new Promise((resolve, reject) => {
-		const timer = setTimeout(
-			() => reject(`Timeout waiting for "${text}" in ${selector}`),
-			timeout,
-		);
-		const check = () => {
-			if (document.querySelector(selector)?.textContent?.includes(text)) {
-				clearTimeout(timer);
-				resolve(true);
-			} else {
-				setTimeout(check, 100);
-			}
-		};
-		check();
-	});
-}
-
-export function typeInto(selector: string, value: string): void {
-	const el = document.querySelector(selector) as
-		| HTMLInputElement
-		| HTMLTextAreaElement
-		| null;
-	if (!el) throw new Error(`typeInto: element not found for "${selector}"`);
-	const isTextArea = el.tagName === 'TEXTAREA';
-	const proto = isTextArea
-		? HTMLTextAreaElement.prototype
-		: HTMLInputElement.prototype;
-	const setter = Object.getOwnPropertyDescriptor(proto, 'value')!.set!;
-	setter.call(el, value);
-	el.dispatchEvent(new Event('input', { bubbles: true }));
-	el.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
 export function click(selector: string): void {
 	const el =
 		document.querySelector(selector + ' a') ?? document.querySelector(selector);
@@ -75,14 +39,7 @@ export function click(selector: string): void {
 	(el as HTMLElement).click();
 }
 
-/** Wait for framework reactivity to settle.
- *  Uses setTimeout instead of requestAnimationFrame because rAF may never
- *  fire in offscreen/headless WebKitGTK contexts (e.g. tauri-driver). */
-export function nextTick(): Promise<void> {
-	return new Promise(r => setTimeout(r, 50));
-}
-
-/** Returns a promise that resolves with the message text of the next app:toast event. */
+/** Resolves with the message text of the next `app:toast` event. */
 export function captureNextToastMessage(timeout = 5_000): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(

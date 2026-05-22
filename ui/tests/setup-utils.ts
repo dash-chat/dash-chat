@@ -1,86 +1,24 @@
 /**
- * Registers test utilities on `window.__test` for UI automation
- * via webview_execute_js in dev mode.
+ * Registers browser-side test utilities on `window.__test`.
  *
- * Usage:
- *   await window.__test.createProfile('Alice', 'Test')
- *   await window.__test.navigateToAddContact()
- *   window.__test.getContactCode()
- *   await window.__test.addContact('<code>')
- *   window.__test.sendMessage('Hello!')
- *   await window.__test.waitForMessage('Hello!')
+ * Only keep helpers here that genuinely need to execute inside the page:
+ *   - bulk DOM scans (`checkOverflow`/`checkDarkMode`/`checkRTL`/`checkPage`)
+ *   - the `visit*Pages` orchestrators that walk multiple pages in one shot
+ *   - app-bound helpers (`tr`/`goto`/`setLocale`)
+ *   - browser-resource helpers (`uploadQrCodeImage`/`uploadEmptyImage`,
+ *     `captureNextToastMessage`, `simulateUpdate`)
+ *
+ * Single-purpose DOM queries belong in `e2e-tests/helpers/pages/*`.
  */
 import type { m } from '../src/lib/paraglide/messages.js';
-import {
-	addContact,
-	getContactCode,
-	navigateToAddContact,
-} from './flows/contact-exchange';
-import { setLocalMailboxEnabled } from './flows/local-mailbox';
-import { openDirectChat } from './flows/open-chat';
-import { createProfile } from './flows/profile-creation';
-import { sendMessage, waitForMessage } from './flows/send-message';
-import {
-	captureNextToastMessage,
-	click,
-	nextTick,
-	typeInto,
-	waitFor,
-	waitForText,
-} from './helpers';
-import { uploadEmptyImage, uploadQrCodeImage } from './pages/add-contact';
-import { chatSettingsLoaded } from './pages/chat-settings';
-import {
-	chatOverflow,
-	checkNavbarOverflow,
-	clickScrollBottomButton,
-	connectionStatus,
-	isContactRequestBannerVisible,
-	isPeerNamePresent,
-	isScrollAtBottom,
-	lastMessageStatus,
-	messageInput,
-	messagesContainer,
-	navbarBgOpacity,
-	scrollBottomButtonVisible,
-	scrollChatToBottom,
-	scrollChatToTop,
-	scrollChatUp,
-	sendButton,
-	unreadBadgeText,
-} from './pages/direct-chat';
-import {
-	dismissCard as dismissGetStartedCard,
-	visibleCards as getStartedCards,
-} from './pages/get-started';
-import { versionItem } from './pages/help';
-import {
-	checkChatListOverflow,
-	firstChatTooltip,
-	getChatListItem,
-	hasChatListItem,
-	homeLoaded,
-} from './pages/home';
-import { isPeerProfileSheetOpen } from './pages/peer-profile-sheet';
-import { profileNameListItemContains } from './pages/profile-settings';
-import {
-	updaterBanner,
-	updaterBannerTitle,
-	updaterDismissBtn,
-} from './pages/updater-banner';
 import {
 	checkDarkMode,
 	checkOverflow,
 	checkPage,
 	checkRTL,
-} from './review/checks';
-import {
-	visitAllPages,
-	visitChatPages,
-	visitOtherPages,
-	visitProfilePages,
-	visitSettingsPages,
-} from './review/visit-all-pages';
+} from '../../e2e-tests/helpers/review/checks';
+import { captureNextToastMessage } from './helpers';
+import { uploadEmptyImage, uploadQrCodeImage } from './pages/add-contact';
 
 type Messages = typeof m;
 type MessageKey = Extract<keyof Messages, string>;
@@ -95,70 +33,27 @@ function simulateUpdate(
 	);
 }
 
+/** True if the first element matching `selector` contains `text`. */
+function hasText(selector: string, text: string): boolean {
+	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
+}
+
 export const testUtils = {
-	waitFor,
-	waitForText,
-	typeInto,
-	click,
-	nextTick,
-	createProfile,
-	navigateToAddContact,
-	getContactCode,
-	addContact,
+	captureNextToastMessage,
 	uploadQrCodeImage,
 	uploadEmptyImage,
-	captureNextToastMessage,
-	sendMessage,
-	waitForMessage,
-	openDirectChat,
-	getStartedCards,
-	dismissGetStartedCard,
-	homeLoaded,
-	firstChatTooltip,
-	getChatListItem,
-	hasChatListItem,
-	checkChatListOverflow,
-	messageInput,
-	sendButton,
-	messagesContainer,
-	isScrollAtBottom,
-	chatOverflow,
-	scrollChatUp,
-	scrollBottomButtonVisible,
-	unreadBadgeText,
-	clickScrollBottomButton,
-	scrollChatToBottom,
-	scrollChatToTop,
-	navbarBgOpacity,
-	isPeerNamePresent,
-	isContactRequestBannerVisible,
-	checkNavbarOverflow,
-	lastMessageStatus,
-	connectionStatus,
-	setLocalMailboxEnabled,
-	chatSettingsLoaded,
-	isPeerProfileSheetOpen,
-	profileNameListItemContains,
-	versionItem,
-	updaterBanner,
-	updaterBannerTitle,
-	updaterDismissBtn,
 	simulateUpdate,
+	hasText,
+	checkOverflow,
+	checkDarkMode,
+	checkRTL,
+	checkPage,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(
 			`tr(${JSON.stringify(key)}) called before registerTestUtils provided messages`,
 		);
 	},
-	checkOverflow,
-	checkDarkMode,
-	checkRTL,
-	checkPage,
-	visitAllPages,
-	visitSettingsPages,
-	visitProfilePages,
-	visitOtherPages,
-	visitChatPages,
 	/** Paraglide setLocale — set by registerTestUtils from +layout.svelte. */
 	setLocale: (_locale: string) => {},
 	/** SvelteKit goto — set by registerTestUtils from +layout.svelte. */

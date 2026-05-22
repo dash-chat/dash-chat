@@ -1,5 +1,22 @@
-import { S } from '../../ui/tests/selectors';
-import { type Agent, setupAgent } from '../helpers/setup-agents';
+import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
+import { type Agent, setupAgent } from '../setup/setup-agents';
+import { tid } from '../helpers/selectors';
+
+async function waitForTextContent(
+	agent: Agent,
+	selector: string,
+	text: string,
+): Promise<void> {
+	await agent.waitUntil(
+		async () =>
+			agent.execute(
+				(sel: string, t: string) => window.__test.hasText(sel, t),
+				selector,
+				text,
+			),
+		{ timeout: 15_000 },
+	);
+}
 
 describe('Waiting-for-profile placeholder', () => {
 	let agent1: Agent;
@@ -11,30 +28,37 @@ describe('Waiting-for-profile placeholder', () => {
 			setupAgent('agent1'),
 			setupAgent('agent2'),
 		]);
-		await agent1.createProfile('Alice', 'Test');
-		await agent2.createProfile('Bob', 'Test');
+		await agent1.createProfilePage.createProfile('Alice', 'Test');
+		await agent2.createProfilePage.createProfile('Bob', 'Test');
 		waitingText = await agent2.tr('waitingForProfile');
 	});
 
 	it('shows the placeholder on direct-chat after one-sided contact addition', async () => {
-		await agent1.navigateToAddContact();
-		const code1 = await agent1.getContactCode();
-		if (!code1) throw new Error('agent1 contact code missing');
+		await navigateToAddContact(agent1);
+		const code1 = await agent1.addContactPage.getContactCode();
 
-		await agent2.navigateToAddContact();
-		await agent2.addContact(code1);
+		await navigateToAddContact(agent2);
+		await agent2.addContactPage.enterCode(code1);
+		await agent2.directChatPage.ready();
 
-		await agent2.waitForText(S.directChat.peerHeader, waitingText);
-		await agent2.waitForText(S.directChat.settingsLink, waitingText);
+		await waitForTextContent(agent2, tid('direct-chat-peer-header'), waitingText);
+		await waitForTextContent(
+			agent2,
+			tid('direct-chat-settings-link'),
+			waitingText,
+		);
 	});
 
 	it('shows the placeholder on chat-settings', async () => {
-		await agent2.click(S.directChat.settingsLink);
-		await agent2.waitForText(S.chatSettings.peerHeader, waitingText);
+		await agent2.directChatPage.settingsLink.click();
+		await waitForTextContent(
+			agent2,
+			tid('chat-settings-peer-header'),
+			waitingText,
+		);
 	});
 
 	it('shows the placeholder on the home chat-list row', async () => {
-		await agent2.goto('/');
-		await agent2.waitForText(S.home.chatRow, waitingText);
+		await waitForTextContent(agent2, tid('all-chats-row'), waitingText);
 	});
 });

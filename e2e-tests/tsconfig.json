@@ -17,6 +17,7 @@
 	},
 	"include": [
 		"specs/**/*.ts",
+		"setup/**/*.ts",
 		"helpers/**/*.ts",
 		"wdio.conf.ts",
 		"compat/wdio.compat.ts",
