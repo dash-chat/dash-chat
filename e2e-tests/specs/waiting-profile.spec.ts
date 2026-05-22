@@ -59,6 +59,10 @@ describe('Waiting-for-profile placeholder', () => {
 	});
 
 	it('shows the placeholder on the home chat-list row', async () => {
+		await agent2.chatSettingsPage.back.click();
+		await agent2.directChatPage.ready();
+		await agent2.directChatPage.back.click();
+		await agent2.homePage.ready();
 		await waitForTextContent(agent2, tid('all-chats-row'), waitingText);
 	});
 });

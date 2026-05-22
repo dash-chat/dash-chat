@@ -28,15 +28,11 @@ describe('QR code image upload', () => {
 	});
 
 	it('shows an error toast when the uploaded image contains no QR code', async () => {
+		await agent1.directChatPage.back.click();
+		await agent1.homePage.ready();
 		await navigateToAddContact(agent1);
 
-		const toastMessage = await agent1.execute(async () => {
-			const toastPromise = window.__test.captureNextToastMessage();
-			await window.__test.uploadEmptyImage();
-			return toastPromise;
-		});
-
-		const expected = await agent1.tr('errorNoQrCodeInImage');
-		expect(toastMessage).toBe(expected);
+		await agent1.addContactPage.uploadEmptyImage();
+		await agent1.toast.expectMessage(await agent1.tr('errorNoQrCodeInImage'));
 	});
 });

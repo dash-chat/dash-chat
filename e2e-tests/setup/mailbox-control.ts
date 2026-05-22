@@ -14,14 +14,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MAILBOX_INFO_PATH = path.join(
-	__dirname,
-	'..',
-	'..',
-	'.dbs',
-	'e2e',
-	'mailbox-info.json',
-);
+// In parallel-worker mode, wdio.conf.ts writes a per-worker mailbox-info JSON
+// and exposes its path via E2E_MAILBOX_INFO_PATH. Fall back to the legacy
+// single-worker location so external callers keep working.
+const MAILBOX_INFO_PATH =
+	process.env.E2E_MAILBOX_INFO_PATH ??
+	path.join(__dirname, '..', '..', '.dbs', 'e2e', 'mailbox-info.json');
 
 interface MailboxInfo {
 	pid: number;

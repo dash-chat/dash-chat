@@ -202,7 +202,13 @@ export async function visitOtherPages(
 	pages.push(await runCheck(agent, 'new-message-add-contact', co));
 	await breathe();
 
-	await agent.addContactPage.back.click();
+	// /new-message/add-contact passes showBack={!isWideScreen} to AddContactPanel,
+	// so its back button is only mounted in narrow mode. In wide-screen the
+	// NewMessagePanel sidebar back is used directly.
+	if (await agent.addContactPage.back.isDisplayed()) {
+		await agent.addContactPage.back.click();
+		await agent.newMessagePage.ready();
+	}
 	await agent.newMessagePage.back.click();
 	await agent.homePage.ready();
 

@@ -15,6 +15,8 @@ import { resumeMailbox, suspendMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgent } from '../setup/setup-agents';
 
 async function openOfflineSettings(agent: Agent): Promise<void> {
+	await agent.directChatPage.back.click();
+	await agent.homePage.ready();
 	await agent.homePage.settingsLink.click();
 	await agent.settingsPage.ready();
 	await agent.settingsPage.offlineLink.click();

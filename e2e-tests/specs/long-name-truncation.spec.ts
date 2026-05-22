@@ -59,6 +59,8 @@ describe('Long name truncation', () => {
 	});
 
 	it('agent2 accepts the contact — navbar and welcome banner have no overflow', async () => {
+		await agent2.directChatPage.back.click();
+		await agent2.homePage.ready();
 		await navigateToAddContact(agent2);
 		await agent2.addContactPage.enterCode(agent1Code);
 		await agent2.directChatPage.ready();
@@ -81,6 +83,8 @@ describe('Long name truncation', () => {
 	});
 
 	it("opens agent1's settings/profile — name list item has no overflow", async () => {
+		await agent1.directChatPage.back.click();
+		await agent1.homePage.ready();
 		await agent1.homePage.settingsLink.click();
 		await agent1.settingsPage.ready();
 		await agent1.settingsPage.profileLink.click();

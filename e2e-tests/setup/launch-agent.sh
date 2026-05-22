@@ -5,7 +5,11 @@ set -euo pipefail
 
 AGENT="${1:?Usage: launch-agent.sh <agent-number>}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-export DATA_DIR="$ROOT/.dbs/e2e/agent-$AGENT"
+
+# When multiple workers run in parallel, namespace agent dirs by worker id so
+# they don't share state. E2E_WORKER_ID is set by wdio.conf.ts beforeSession.
+WORKER_ID="${E2E_WORKER_ID:-default}"
+export DATA_DIR="$ROOT/.dbs/e2e/worker-$WORKER_ID/agent-$AGENT"
 export MAILBOX_URL="${MAILBOX_URL:?MAILBOX_URL env var required}"
 
 # Disable AT-SPI accessibility bridge to prevent D-Bus contention.

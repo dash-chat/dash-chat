@@ -15,6 +15,7 @@ import { NewGroupPage } from '../helpers/pages/new-group/new-group-page';
 import { AddContactPage } from '../helpers/pages/new-message/add-contact-page';
 import { NewMessagePage } from '../helpers/pages/new-message/new-message-page';
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
+import { Toast } from '../helpers/components/toast';
 import { AccountPage } from '../helpers/pages/settings/account-page';
 import { AppearancePage } from '../helpers/pages/settings/appearance-page';
 import { ContactUsPage } from '../helpers/pages/settings/help/contact-us-page';
@@ -49,14 +50,13 @@ export type Agent = WebdriverIO.Browser & {
 	peerProfileSheet: PeerProfileSheet;
 	profilePage: ProfilePage;
 	settingsPage: SettingsPage;
+	toast: Toast;
 	updaterBanner: UpdaterBanner;
 
 	/** SvelteKit `goto` — uses `window.__test.goto` for client-side nav. */
 	goto(path: string): Promise<void>;
 	/** Resolve a paraglide message key in the agent's current locale. */
 	tr(key: string): Promise<string>;
-	/** Capture the next `app:toast` event's message. */
-	captureNextToastMessage(timeout?: number): Promise<string>;
 	/** Scan the whole page for horizontal-overflow issues. */
 	checkOverflow(): Promise<string[]>;
 	/** Force the responsive `isWideScreen` store (true = desktop, false = mobile). */
@@ -89,6 +89,7 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	agent.peerProfileSheet = new PeerProfileSheet(b);
 	agent.profilePage = new ProfilePage(b);
 	agent.settingsPage = new SettingsPage(b);
+	agent.toast = new Toast(b);
 	agent.updaterBanner = new UpdaterBanner(b);
 
 	agent.goto = async (path: string) => {
@@ -101,11 +102,6 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			async (k: string) =>
 				window.__test.tr(k as Parameters<Window['__test']['tr']>[0]),
 			key,
-		);
-	agent.captureNextToastMessage = async (timeout?: number) =>
-		await b.execute(
-			async (t?: number) => window.__test.captureNextToastMessage(t),
-			timeout,
 		);
 	agent.checkOverflow = async () =>
 		(await b.execute(() => window.__test.checkOverflow())) as string[];

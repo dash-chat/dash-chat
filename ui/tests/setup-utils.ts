@@ -3,10 +3,8 @@
  *
  * Only keep helpers here that genuinely need to execute inside the page:
  *   - bulk DOM scans (`checkOverflow`/`checkDarkMode`/`checkRTL`/`checkPage`)
- *   - the `visit*Pages` orchestrators that walk multiple pages in one shot
  *   - app-bound helpers (`tr`/`goto`/`setLocale`)
- *   - browser-resource helpers (`uploadQrCodeImage`/`uploadEmptyImage`,
- *     `captureNextToastMessage`, `simulateUpdate`)
+ *   - browser-event helpers (`simulateUpdate`, `hasText`)
  *
  * Single-purpose DOM queries belong in `e2e-tests/helpers/pages/*`.
  */
@@ -17,8 +15,6 @@ import {
 	checkPage,
 	checkRTL,
 } from '../../e2e-tests/helpers/review/checks';
-import { captureNextToastMessage } from './helpers';
-import { uploadEmptyImage, uploadQrCodeImage } from './pages/add-contact';
 
 type Messages = typeof m;
 type MessageKey = Extract<keyof Messages, string>;
@@ -39,9 +35,6 @@ function hasText(selector: string, text: string): boolean {
 }
 
 export const testUtils = {
-	captureNextToastMessage,
-	uploadQrCodeImage,
-	uploadEmptyImage,
 	simulateUpdate,
 	hasText,
 	checkOverflow,
