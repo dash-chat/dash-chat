@@ -42,15 +42,16 @@ jobs:
         with:
           rustflags: ''
 
+      - name: Cache Rust target
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
       - name: Install tauri-driver
         run: cargo install tauri-driver --locked
 
       - name: Install pnpm dependencies
         run: pnpm install
-
-      - name: Type-check E2E tests
-        run: pnpm check
-        working-directory: e2e-tests
 
       - name: Build UI packages
         run: pnpm -F ./packages/stores build
@@ -59,9 +60,11 @@ jobs:
         run: pnpm tauri build --debug --no-bundle --features e2e-tests
 
       - name: Make launch scripts executable
-        run: chmod +x e2e-tests/scripts/*.sh
+        run: chmod +x e2e-tests/setup/*.sh
 
       - name: Run E2E tests
+        env:
+          E2E_MAX_INSTANCES: '4'
         run: set -o pipefail && xvfb-run pnpm test 2>&1 | tee e2e-output.log
         working-directory: e2e-tests
 

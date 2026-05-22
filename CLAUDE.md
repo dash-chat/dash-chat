@@ -422,7 +422,7 @@ just test e2e full-flow
 - Tests use page objects from `e2e-tests/helpers/pages/`. `setupAgent('agent1')` returns an `Agent` with all page-object instances pre-attached (`agent.homePage`, `agent.directChatPage`, …).
 - For DOM-side work that can't be modeled as a click (bulk overflow scans, programmatic event dispatch, test-only file-input injection), tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`.
 - Two `tauri-driver` instances run on ports 4444 and 4446.
-- Launch scripts (`e2e-tests/scripts/`) set `DATA_DIR` and `MAILBOX_URL` env vars.
+- Launch scripts (`e2e-tests/setup/`) set `DATA_DIR` and `MAILBOX_URL` env vars.
 - The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events.
 - Test data is stored in `.dbs/e2e/` and cleaned up after each run.
 
