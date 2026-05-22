@@ -60,9 +60,7 @@
 		: ''}
 	opened={toastOpen}
 >
-	{#if toastOpen}
-		<span data-testid="toast">{toastMessage}</span>
-	{/if}
+	<span data-testid="toast">{toastMessage}</span>
 	{#snippet button()}
 		{#if toastVariant === 'unexpected'}
 			<Button inline clear onClick={handleSendErrorReport}>

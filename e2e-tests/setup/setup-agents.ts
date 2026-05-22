@@ -7,6 +7,7 @@
  * registry (`agent.tr`, `agent.goto`, `agent.setLocale`, …).
  */
 import { CreateProfilePage } from '../helpers/pages/create-profile-page';
+import { checkOverflow } from '../helpers/review/checks';
 import { ChatSettingsPage } from '../helpers/pages/direct-chats/chat-settings-page';
 import { DirectChatPage } from '../helpers/pages/direct-chats/direct-chat-page';
 import { GroupChatPage } from '../helpers/pages/group-chat/group-chat-page';
@@ -103,8 +104,7 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 				window.__test.tr(k as Parameters<Window['__test']['tr']>[0]),
 			key,
 		);
-	agent.checkOverflow = async () =>
-		(await b.execute(() => window.__test.checkOverflow())) as string[];
+	agent.checkOverflow = async () => checkOverflow(b);
 	agent.setWideScreen = async (value: boolean) => {
 		await b.execute(
 			(v: boolean) =>

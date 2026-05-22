@@ -1,5 +1,5 @@
 import type { Agent } from '../../setup/setup-agents';
-import type { CheckResult, PageResult } from './checks';
+import { checkPage, type CheckOptions, type PageResult } from './checks';
 
 export interface VisitOptions {
 	checkDarkMode?: boolean;
@@ -13,8 +13,6 @@ export interface VisitResult {
 	summary: { totalIssues: number; pagesVisited: number };
 }
 
-type CheckOpts = { checkDarkMode?: boolean; checkRTL?: boolean };
-
 /** Yield to the event loop so WebKitGTK can settle before the next big DOM scan. */
 function breathe(): Promise<void> {
 	return new Promise(r => setTimeout(r, 200));
@@ -23,12 +21,9 @@ function breathe(): Promise<void> {
 async function runCheck(
 	agent: Agent,
 	pageName: string,
-	options: CheckOpts,
+	options: CheckOptions,
 ): Promise<PageResult> {
-	const result = (await agent.execute(
-		(opts: CheckOpts) => window.__test.checkPage(opts),
-		options,
-	)) as CheckResult;
+	const result = await checkPage(agent, options);
 	return { page: pageName, ...result };
 }
 
@@ -46,7 +41,7 @@ export async function visitProfilePages(
 	agent: Agent,
 	options?: VisitOptions,
 ): Promise<VisitResult> {
-	const co: CheckOpts = {
+	const co: CheckOptions = {
 		checkDarkMode: options?.checkDarkMode,
 		checkRTL: options?.checkRTL,
 	};
@@ -124,7 +119,7 @@ export async function visitOtherPages(
 	agent: Agent,
 	options?: VisitOptions,
 ): Promise<VisitResult> {
-	const co: CheckOpts = {
+	const co: CheckOptions = {
 		checkDarkMode: options?.checkDarkMode,
 		checkRTL: options?.checkRTL,
 	};
@@ -220,7 +215,7 @@ export async function visitChatPages(
 	agent: Agent,
 	options?: VisitOptions,
 ): Promise<VisitResult> {
-	const co: CheckOpts = {
+	const co: CheckOptions = {
 		checkDarkMode: options?.checkDarkMode,
 		checkRTL: options?.checkRTL,
 	};

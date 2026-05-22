@@ -2,19 +2,12 @@
  * Registers browser-side test utilities on `window.__test`.
  *
  * Only keep helpers here that genuinely need to execute inside the page:
- *   - bulk DOM scans (`checkOverflow`/`checkDarkMode`/`checkRTL`/`checkPage`)
  *   - app-bound helpers (`tr`/`goto`/`setLocale`)
  *   - browser-event helpers (`simulateUpdate`, `hasText`)
  *
  * Single-purpose DOM queries belong in `e2e-tests/helpers/pages/*`.
  */
 import type { m } from '../src/lib/paraglide/messages.js';
-import {
-	checkDarkMode,
-	checkOverflow,
-	checkPage,
-	checkRTL,
-} from '../../e2e-tests/helpers/review/checks';
 
 type Messages = typeof m;
 type MessageKey = Extract<keyof Messages, string>;
@@ -37,10 +30,6 @@ function hasText(selector: string, text: string): boolean {
 export const testUtils = {
 	simulateUpdate,
 	hasText,
-	checkOverflow,
-	checkDarkMode,
-	checkRTL,
-	checkPage,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(

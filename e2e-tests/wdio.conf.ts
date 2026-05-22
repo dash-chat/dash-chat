@@ -1,5 +1,5 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -158,15 +158,12 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 		// Build the standalone mailbox-server binary once so workers can exec it
 		// directly instead of paying the `cargo run` lock-contention tax each
-		// time. Skip the rebuild if the binary already exists (it's a debug
-		// build, cargo would no-op anyway, but this saves the cargo invocation).
-		if (!existsSync(MAILBOX_BIN)) {
-			console.log('Building mailbox-server binary...');
-			execSync('cargo build -p mailbox-server', {
-				cwd: ROOT,
-				stdio: 'inherit',
-			});
-		}
+		// time. cargo no-ops when the binary is up to date.
+		console.log('Building mailbox-server binary...');
+		execSync('cargo build -p mailbox-server', {
+			cwd: ROOT,
+			stdio: 'inherit',
+		});
 	},
 
 	async beforeSession(_config, capabilities, _specs, cid) {
