@@ -259,7 +259,7 @@ All interactive elements have `data-testid` attributes. Page objects and selecto
 - **`e2e-tests/helpers/pages/**/*.ts`** — One page object per route (e.g. `home-page.ts`, `direct-chats/direct-chat-page.ts`, `settings/profile/edit-name-page.ts`). Each extends `TestPage`, exposes its elements as `this.agent.$(tid('...'))` fields, and provides a `ready()` method that waits for the page to be interactive.
 - **`e2e-tests/helpers/components/*.ts`** — Page objects for reusable components (sheets, banners) that aren't tied to one route.
 - **`e2e-tests/helpers/flows/*.ts`** — Multi-page UI flows shared across specs (e.g. `exchange-contacts.ts` walks both agents through navigateToAddContact + enterCode).
-- **`e2e-tests/helpers/setup-agents.ts`** — `setupAgent('agent1' | 'agent2')` returns an `Agent` (the WDIO browser plus all page-object instances and a few agent-level helpers like `agent.tr`, `agent.checkOverflow`, `agent.setTheme`).
+- **`e2e-tests/setup/setup-agents.ts`** — `setupAgent('agent1' | 'agent2')` returns an `Agent` (the WDIO browser plus all page-object instances and a few agent-level helpers like `agent.tr`, `agent.checkOverflow`, `agent.setTheme`).
 
 When driving the app via Tauri MCP tools (not via WDIO), use `data-testid` selectors directly. For Konsta `ListInput` components, the `data-testid` lands on the outer `<li>`, so type into `[data-testid="..."] input` (or `textarea` for text areas).
 

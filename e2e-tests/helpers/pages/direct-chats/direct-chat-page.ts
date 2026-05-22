@@ -1,7 +1,6 @@
+import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
-
-const SCROLL_BOTTOM_THRESHOLD = 200;
 
 export type MessageStatus = 'sending' | 'local' | 'cloud';
 export type ConnectionStatus = 'connected' | 'local' | 'disconnected';
@@ -13,7 +12,6 @@ export class DirectChatPage extends TestPage {
 	settingsLink = this.agent.$(tid('direct-chat-settings-link'));
 	peerName = this.agent.$(tid('direct-chat-peer-name'));
 	peerHeader = this.agent.$(tid('direct-chat-peer-header'));
-	scroll = this.agent.$(tid('direct-chat-scroll'));
 	scrollBottom = this.agent.$(tid('direct-chat-scroll-bottom'));
 	unreadBadge = this.agent.$(tid('direct-chat-unread-badge'));
 	unreadDivider = this.agent.$(tid('direct-chat-unread-divider'));
@@ -27,6 +25,7 @@ export class DirectChatPage extends TestPage {
 	emojiButton = this.agent.$(tid('message-input-emoji'));
 	messageStatus = this.agent.$(tid('message-status'));
 	connectionStatusIndicator = this.agent.$(tid('connection-status'));
+	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
 
 	async ready() {
 		await this.page.waitForExist();
@@ -76,67 +75,6 @@ export class DirectChatPage extends TestPage {
 		}, tid('connection-status'));
 	}
 
-	async isScrollAtBottom(): Promise<boolean> {
-		return this.agent.execute(
-			(sel: string, threshold: number) => {
-				const el = document.querySelector(sel) as HTMLElement | null;
-				if (!el) throw new Error('isScrollAtBottom: scroll container not found');
-				return Math.abs(el.scrollTop) < threshold;
-			},
-			tid('direct-chat-scroll'),
-			SCROLL_BOTTOM_THRESHOLD,
-		);
-	}
-
-	async chatOverflow(): Promise<number> {
-		return this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLElement | null;
-			if (!el) return 0;
-			return el.scrollHeight - el.clientHeight;
-		}, tid('direct-chat-scroll'));
-	}
-
-	async scrollChatUp(): Promise<void> {
-		await this.agent.execute(
-			(sel: string, threshold: number) => {
-				const el = document.querySelector(sel) as HTMLElement | null;
-				if (!el) throw new Error('scrollChatUp: scroll container not found');
-				const max = el.scrollHeight - el.clientHeight;
-				if (max <= threshold) {
-					throw new Error(
-						`scrollChatUp: not enough overflow (max=${max}); send more messages first`,
-					);
-				}
-				const distance = Math.min(max, 600);
-				el.scrollTop = -distance;
-				if (Math.abs(el.scrollTop) < distance - 1) el.scrollTop = distance;
-				el.dispatchEvent(new Event('scroll'));
-			},
-			tid('direct-chat-scroll'),
-			SCROLL_BOTTOM_THRESHOLD,
-		);
-	}
-
-	async scrollChatToBottom(): Promise<void> {
-		await this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLElement | null;
-			if (!el) throw new Error('scrollChatToBottom: scroll container not found');
-			el.scrollTop = 0;
-			el.dispatchEvent(new Event('scroll'));
-		}, tid('direct-chat-scroll'));
-	}
-
-	async scrollChatToTop(): Promise<void> {
-		await this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLElement | null;
-			if (!el) throw new Error('scrollChatToTop: scroll container not found');
-			const distance = el.scrollHeight - el.clientHeight;
-			el.scrollTop = -distance;
-			if (Math.abs(el.scrollTop) < distance - 1) el.scrollTop = distance;
-			el.dispatchEvent(new Event('scroll'));
-		}, tid('direct-chat-scroll'));
-	}
-
 	scrollBottomButtonVisible(): Promise<boolean> {
 		return this.scrollBottom.isExisting();
 	}
@@ -149,15 +87,6 @@ export class DirectChatPage extends TestPage {
 
 	async clickScrollBottomButton(): Promise<void> {
 		await this.scrollBottom.click();
-	}
-
-	/** Inline opacity of the transparent navbar bg element. */
-	async navbarBgOpacity(): Promise<string | null> {
-		return this.agent.execute(() => {
-			const candidates = document.querySelectorAll('.k-navbar > div.absolute');
-			const bg = candidates[candidates.length - 1] as HTMLElement | undefined;
-			return bg?.style.opacity ?? null;
-		});
 	}
 
 	isPeerNamePresent(): Promise<boolean> {
