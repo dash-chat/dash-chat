@@ -35,8 +35,33 @@ pub struct ChatMessageContentV1 {
     pub media: Option<Media>,
 }
 
-/// Placeholder for media type.
-pub type Media = ();
+/// A photo attachment. `data` is the raw bytes of the encoded image (JPEG,
+/// PNG, etc.), not base64. `mime_type` identifies the encoding.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, RenameNone)]
+pub struct Photo {
+    pub data: Vec<u8>,
+    pub name: String,
+    pub mime_type: String,
+}
+
+/// A non-image file attachment.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, RenameNone)]
+pub struct FileAttachment {
+    pub data: Vec<u8>,
+    pub name: String,
+    pub mime_type: String,
+}
+
+/// Media attached to a chat message. A message has either a set of photos
+/// or a single file — not both — matching Signal's UX.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, RenameNone)]
+#[serde(tag = "kind")]
+pub enum Media {
+    #[serde(rename = "photos")]
+    Photos { photos: Vec<Photo> },
+    #[serde(rename = "file")]
+    File { file: FileAttachment },
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone, Deref, From)]
 pub struct ChatMessageContent(dashchat_compat::Compat<ChatMessageContentV0, ChatMessageContentV>);

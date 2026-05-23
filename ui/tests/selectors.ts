@@ -58,6 +58,17 @@ export const S = {
 		textarea: tid('message-input-textarea'),
 		send: tid('message-input-send'),
 		emoji: tid('message-input-emoji'),
+		attach: tid('message-input-attach'),
+		attachMenu: tid('message-input-attach-menu'),
+		attachPhotos: tid('message-input-attach-photos'),
+		attachFile: tid('message-input-attach-file'),
+		photoPicker: tid('message-input-photo-picker'),
+		filePicker: tid('message-input-file-picker'),
+		mediaPreview: tid('message-input-media-preview'),
+	},
+	messageAttachment: {
+		photos: tid('message-attachment-photos'),
+		file: tid('message-attachment-file'),
 	},
 	status: {
 		message: tid('message-status'),

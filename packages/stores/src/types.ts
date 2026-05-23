@@ -19,6 +19,33 @@ export interface ChatReaction {
 }
 
 /**
+ * `data` carries raw bytes — NOT base64. On the wire (Tauri JSON IPC) a
+ * `Vec<u8>` arrives as `number[]`; in-process callers may also construct
+ * these with a `Uint8Array`. Helpers in `ui/src/lib/types/media.ts`
+ * (`asUint8Array`, `byteLengthOf`, `bytesToBlobUrl`) accept either form.
+ */
+export interface Photo {
+	data: Uint8Array | number[];
+	name: string;
+	mime_type: string;
+}
+
+/** A non-image file attachment. See `Photo` for the `data` shape. */
+export interface FileAttachment {
+	data: Uint8Array | number[];
+	name: string;
+	mime_type: string;
+}
+
+/**
+ * Media attached to a chat message. A message has either a set of photos
+ * or a single file — not both. Matches `dashchat_node::Media`.
+ */
+export type Media =
+	| { kind: 'photos'; photos: Photo[] }
+	| { kind: 'file'; file: FileAttachment };
+
+/**
  * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
  * `crates/dashchat-node/src/chat/message.rs`. Sent messages are always V1.
  * Stored payloads may also appear as a bare string (V0/Unversioned); see
@@ -27,12 +54,31 @@ export interface ChatReaction {
 export type MessageContentV1 = {
 	v: '1';
 	message: string;
-	media: null;
+	media: Media | null;
 };
 export type MessageContent = MessageContentV1;
 
 export function getMessageText(content: MessageContent | string): string {
 	return typeof content === 'string' ? content : content.message;
+}
+
+export function getMessageMedia(content: MessageContent | string): Media | null {
+	return typeof content === 'string' ? null : content.media;
+}
+
+/**
+ * Short single-line description of a message for chat list previews. Falls
+ * back to a media descriptor when the text is empty.
+ */
+export function summarizeMessageContent(content: {
+	message: string;
+	media: Media | null;
+}): string {
+	if (content.message) return content.message;
+	if (!content.media) return '';
+	if (content.media.kind === 'file') return `📎 ${content.media.file.name}`;
+	const n = content.media.photos.length;
+	return n > 1 ? `📷 ${n} photos` : '📷 Photo';
 }
 
 export type AnnouncementPayload =

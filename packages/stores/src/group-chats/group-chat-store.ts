@@ -5,7 +5,7 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, PublicKey } from '../p2panda/types';
-import { ChatId, MessageContent, Payload } from '../types';
+import { ChatId, Media, MessageContent, Payload } from '../types';
 import { type IGroupChatClient } from './group-chat-client';
 
 export interface GroupInfo {
@@ -51,7 +51,7 @@ export class GroupChatStore {
 		const messages: Array<Message> = [
 			{
 				hash: '123',
-				content: 'heeey',
+				content: { message: 'heeey', media: null },
 				author: await this.contactsStore.myAgentId(),
 				seqNum: 0,
 				timestamp: Date.now(),
@@ -106,8 +106,12 @@ export class GroupChatStore {
 		return this.client.addMember(this.chatId, member);
 	}
 
-	sendMessage(text: string) {
-		const content: MessageContent = { v: '1', message: text, media: null };
+	sendMessage(input: { message: string; media: Media | null }) {
+		const content: MessageContent = {
+			v: '1',
+			message: input.message,
+			media: input.media,
+		};
 		return this.client.sendMessage(this.chatId, content);
 	}
 }

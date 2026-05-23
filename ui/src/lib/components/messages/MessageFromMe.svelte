@@ -10,6 +10,7 @@
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
+	import MessageAttachment from './MessageAttachment.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 
@@ -60,27 +61,32 @@
 	contentWrapPadding="p-2"
 	class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 >
-	<div class="row gap-2 mx-1" style="align-items: end">
-		<span class="flex-1">
-			{#if searchQuery}
-				{@html highlightMatch(message.content, searchQuery)}
-			{:else}
-				{message.content}
+	{#if message.content.media}
+		<MessageAttachment media={message.content.media} />
+	{/if}
+	{#if message.content.message || isLast}
+		<div class="row gap-2 mx-1" style="align-items: end">
+			<span class="flex-1">
+				{#if searchQuery}
+					{@html highlightMatch(message.content.message, searchQuery)}
+				{:else}
+					{message.content.message}
+				{/if}
+			</span>
+
+			{#if isLast}
+				<div class="flex items-center gap-1">
+					<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
+
+					<MessageStatusIndicator
+						{chatId}
+						author={message.author}
+						seq={message.seqNum}
+					/>
+				</div>
 			{/if}
-		</span>
-
-		{#if isLast}
-			<div class="flex items-center gap-1">
-				<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
-
-				<MessageStatusIndicator
-					{chatId}
-					author={message.author}
-					seq={message.seqNum}
-				/>
-			</div>
-		{/if}
-	</div>
+		</div>
+	{/if}
 </Card>
 {#if Object.keys(message.reactions).length}
 	<div class="flex -mt-1.5 mb-0.5 px-1">

@@ -20,6 +20,13 @@ import { openDirectChat } from './flows/open-chat';
 import { createProfile } from './flows/profile-creation';
 import { sendMessage, waitForMessage } from './flows/send-message';
 import {
+	attachFile,
+	attachPhotos,
+	sendComposer,
+	waitForFileMessage,
+	waitForPhotoMessage,
+} from './flows/send-media-message';
+import {
 	captureNextToastMessage,
 	click,
 	nextTick,
@@ -110,6 +117,11 @@ export const testUtils = {
 	captureNextToastMessage,
 	sendMessage,
 	waitForMessage,
+	attachPhotos,
+	attachFile,
+	sendComposer,
+	waitForPhotoMessage,
+	waitForFileMessage,
 	openDirectChat,
 	getStartedCards,
 	dismissGetStartedCard,

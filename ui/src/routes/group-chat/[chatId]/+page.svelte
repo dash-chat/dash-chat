@@ -47,7 +47,7 @@
 		const message = messageText;
 		if (!message || message.trim() === '') return;
 
-		await store.sendMessage(message);
+		await store.sendMessage({ message, media: null });
 		messageText = '';
 	}
 	const theme = $derived(useTheme());

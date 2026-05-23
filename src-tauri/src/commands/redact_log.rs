@@ -34,6 +34,13 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // ChatMessageContentV1 { message: "...", media: ... }. Use \b so we
         // don't match substrings inside identifiers.
         r#"\bmessage:\s*"[^"]*""#,
+        // Debug format: media attachment byte arrays — `data: [1, 2, 3, ...]`
+        // inside Photo { ... } / FileAttachment { ... }. Strips the bytes so
+        // attachment content never leaves the device in a log report.
+        r#"\bdata:\s*\[[\d,\s]*\]"#,
+        // Debug format: attachment filename — `name: "foo.jpg"` inside
+        // Photo/FileAttachment. The bare `name:` pattern above also matches
+        // here; this entry documents the intent.
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
         // JSON format: "name":"...", "surname":"...", "about":"..."
@@ -281,6 +288,35 @@ mod tests {
         assert!(
             !result.contains("secret v1 body"),
             "v1 message not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_chat_message_media_photo() {
+        let input = r#"ChatMessageContentV1 { message: "caption", media: Some(Photos { photos: [Photo { data: [137, 80, 78, 71, 13, 10, 26, 10], name: "private.jpg", mime_type: "image/jpeg" }] }) }"#;
+        let result = redact(input);
+        assert!(!result.contains("caption"), "caption leaked: {result}");
+        assert!(
+            !result.contains("137, 80, 78"),
+            "photo bytes leaked: {result}"
+        );
+        assert!(
+            !result.contains("private.jpg"),
+            "photo filename leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_chat_message_media_file() {
+        let input = r#"ChatMessageContentV1 { message: "", media: Some(File { file: FileAttachment { data: [1, 2, 3, 4, 5], name: "secrets.pdf", mime_type: "application/pdf" } }) }"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("1, 2, 3, 4, 5"),
+            "file bytes leaked: {result}"
+        );
+        assert!(
+            !result.contains("secrets.pdf"),
+            "file name leaked: {result}"
         );
     }
 
