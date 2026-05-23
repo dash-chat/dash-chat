@@ -23,42 +23,22 @@ export function killAndWait(
 	});
 }
 
-/**
- * Kill orphan dash-chat E2E processes (NOT the mailbox server).
- *
- * In parallel-worker mode, pass `dataDirFilter` (e.g. `"worker-0-0"`) to scope
- * the sweep to a single worker so we don't kill peer workers' agents. Without
- * a filter, every E2E dash-chat under `.dbs/e2e` or `.dbs/compat` is reaped.
- *
- * NOTE: this also kills any leftover `tauri-driver` processes. tauri-driver
- * exposes no env hint we can filter on, so callers that need per-worker
- * isolation must kill their own driver child processes by PID before falling
- * back to this helper.
- */
-export function killAllE2EProcesses(dataDirFilter?: string) {
-	const grepPattern = dataDirFilter
-		? // Match the worker dir inside .dbs/e2e but stay defensive against shell
-			// meta-chars: dataDirFilter is constructed in-repo, but keep it simple.
-			`\\.dbs/e2e/${dataDirFilter}`
-		: '\\.dbs/e2e\\|\\.dbs/compat';
+/** Kill all E2E dash-chat and tauri-driver processes (NOT the mailbox server). */
+export function killAllE2EProcesses() {
+	try {
+		execSync('pkill -9 tauri-driver', { stdio: 'ignore' });
+	} catch {
+		/* ignore */
+	}
 	try {
 		execSync(
-			`for pid in $(pgrep -f "target/(debug|release)/dash-chat"); do ` +
-				`grep -qz "${grepPattern}" /proc/$pid/environ 2>/dev/null && kill -9 $pid 2>/dev/null; ` +
-				`done`,
+			'for pid in $(pgrep -f "target/(debug|release)/dash-chat"); do ' +
+				'grep -qz "\\.dbs/e2e\\|\\.dbs/compat" /proc/$pid/environ 2>/dev/null && kill -9 $pid 2>/dev/null; ' +
+				'done',
 			{ stdio: 'ignore' },
 		);
 	} catch {
 		/* ignore */
-	}
-	// Only the unscoped sweep should nuke every tauri-driver. Per-worker callers
-	// are responsible for killing their own driver child processes by PID.
-	if (!dataDirFilter) {
-		try {
-			execSync('pkill -9 tauri-driver', { stdio: 'ignore' });
-		} catch {
-			/* ignore */
-		}
 	}
 }
 

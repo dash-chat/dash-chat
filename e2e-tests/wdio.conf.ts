@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
-import { allocatePort } from './setup/allocate-port';
+import { allocateDriverPorts, allocatePort } from './setup/allocate-port';
 import {
 	killAndWait,
 	killAllE2EProcesses,
@@ -15,29 +15,15 @@ import { waitForPortFree, waitForPortListening } from './setup/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const MAILBOX_BIN = path.join(ROOT, 'target', 'debug', 'mailbox-server');
 
-// Number of multiremote workers to run in parallel. Each worker drives its own
-// pair of agents + a private mailbox server on disjoint ports.
-const MAX_INSTANCES = Number(process.env.E2E_MAX_INSTANCES ?? '2');
+const { port1, nativePort1, port2, nativePort2 } = allocateDriverPorts();
+const ALL_PORTS = [port1, nativePort1, port2, nativePort2];
 
-interface WorkerResources {
-	workerId: string;
-	dataDir: string;
-	driverPort1: number;
-	nativePort1: number;
-	driverPort2: number;
-	nativePort2: number;
-	mailboxPort: number;
-	mailboxServer: ChildProcess;
-	tauriDriver1: ChildProcess;
-	tauriDriver2: ChildProcess;
-	agent1Logger: ChildProcess | null;
-	agent2Logger: ChildProcess | null;
-}
-
-// Each worker is its own Node process, so this Map is naturally per-worker.
-const workerResources = new Map<string, WorkerResources>();
+let mailboxServer: ChildProcess;
+let tauriDriver1: ChildProcess;
+let tauriDriver2: ChildProcess;
+let agent1Logger: ChildProcess | null = null;
+let agent2Logger: ChildProcess | null = null;
 
 function startAgentLogger(agent: string, logFile: string): ChildProcess {
 	// Pre-create the log file so `tail` doesn't error before the agent boots.
@@ -54,65 +40,17 @@ function startAgentLogger(agent: string, logFile: string): ChildProcess {
 	return proc;
 }
 
-async function spawnWorkerMailbox(
-	workerId: string,
-	dataDir: string,
-): Promise<{ proc: ChildProcess; port: number; url: string; dbPath: string }> {
-	const port = allocatePort();
-	const url = `http://localhost:${port}`;
-	const dbPath = path.join(dataDir, 'mailbox-server', 'mailbox.db');
-	mkdirSync(path.dirname(dbPath), { recursive: true });
-
-	console.log(`[worker ${workerId}] starting mailbox server on ${url}...`);
-	// detached:true puts the mailbox in its own process group so we can SIGSTOP
-	// the whole group from inside specs to drive offline-UX transitions.
-	const proc = spawn(
-		MAILBOX_BIN,
-		['--db-path', dbPath, '--addr', `0.0.0.0:${port}`],
-		{ cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'], detached: true },
-	);
-	console.log(`[worker ${workerId}] mailbox spawned (pid=${proc.pid})`);
-	proc.stderr?.on('data', (data: Buffer) => {
-		console.error(
-			`[worker ${workerId}][mailbox-server] ${data.toString().trim()}`,
-		);
-	});
-	proc.on('exit', (code, signal) => {
-		console.error(
-			`[worker ${workerId}][mailbox-server] EXITED code=${code} signal=${signal}`,
-		);
-	});
-
-	const deadline = Date.now() + 30_000;
-	let ready = false;
-	while (Date.now() < deadline) {
-		try {
-			execSync(`curl -s ${url}`, { stdio: 'ignore' });
-			ready = true;
-			break;
-		} catch {
-			await new Promise(r => setTimeout(r, 250));
-		}
-	}
-	if (!ready) throw new Error(`Mailbox server for worker ${workerId} failed to start`);
-
-	return { proc, port, url, dbPath };
-}
-
 export const config: WebdriverIO.MultiremoteConfig = {
 	runner: 'local',
 
 	specs: ['./specs/**/*.spec.ts'],
 	exclude: ['./specs/compat-*.spec.ts'],
-	maxInstances: MAX_INSTANCES,
+	maxInstances: 1,
 	specFileRetries: 1,
 
-	// Placeholder ports — overwritten per-worker in beforeSession before WDIO
-	// initialises sessions. Each worker rewrites these to its own free ports so
-	// parallel workers don't collide.
 	capabilities: {
 		agent1: {
-			port: 0,
+			port: port1,
 			capabilities: {
 				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
 				'tauri:options': {
@@ -121,7 +59,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			} as WebdriverIO.Capabilities,
 		},
 		agent2: {
-			port: 0,
+			port: port2,
 			capabilities: {
 				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
 				'tauri:options': {
@@ -143,180 +81,179 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	reporters: ['spec'],
 
 	async onPrepare() {
-		// Aggressive global cleanup — we know nothing of ours should be running.
-		killAllE2EProcesses();
-		killLeftoverMailboxServers();
-
-		// Wipe the whole e2e data tree once; per-worker subdirs are recreated
-		// inside beforeSession.
+		// Clean up leftover databases from previous interrupted runs
 		const dataDir = path.join(ROOT, '.dbs', 'e2e');
 		try {
 			rmSync(dataDir, { recursive: true, force: true });
 		} catch {
-			/* ignore */
+			// ignore
 		}
 
-		// Build the standalone mailbox-server binary once so workers can exec it
-		// directly instead of paying the `cargo run` lock-contention tax each
-		// time. cargo no-ops when the binary is up to date.
-		console.log('Building mailbox-server binary...');
-		execSync('cargo build -p mailbox-server', {
-			cwd: ROOT,
-			stdio: 'inherit',
+		// Kill any leftover processes from previous interrupted runs
+		killAllE2EProcesses();
+		killLeftoverMailboxServers();
+		killPortHolders(ALL_PORTS);
+
+		// Start a local mailbox server so e2e tests don't hit the internet.
+		const mailboxPort = allocatePort();
+		const mailboxUrl = `http://localhost:${mailboxPort}`;
+		const mailboxDb = path.join(
+			ROOT,
+			'.dbs',
+			'e2e',
+			'mailbox-server',
+			'mailbox.db',
+		);
+		mkdirSync(path.dirname(mailboxDb), { recursive: true });
+
+		console.log(`Starting local mailbox server on ${mailboxUrl}...`);
+		// `detached: true` puts the mailbox (cargo + its mailbox-server child) in
+		// its OWN process group. Without this, the mailbox sits in the wdio
+		// launcher's process group; when a worker crashes mid-spec and wdio kills
+		// its worker group on retry, mailbox can get reaped as collateral damage.
+		mailboxServer = spawn(
+			'cargo',
+			[
+				'run',
+				'-p',
+				'mailbox-server',
+				'--',
+				'--db-path',
+				mailboxDb,
+				'--addr',
+				`0.0.0.0:${mailboxPort}`,
+			],
+			{ cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'], detached: true },
+		);
+		console.log(`[mailbox-server] spawned (cargo pid=${mailboxServer.pid})`);
+		mailboxServer.stderr?.on('data', (data: Buffer) => {
+			console.error(`[mailbox-server] ${data.toString().trim()}`);
 		});
+		mailboxServer.on('exit', (code, signal) => {
+			console.error(
+				`[mailbox-server] EXITED code=${code} signal=${signal} at ${new Date().toISOString()}`,
+			);
+		});
+		mailboxServer.on('error', err => {
+			console.error(`[mailbox-server] ERROR ${err.message}`);
+		});
+
+		// Wait for the mailbox server to be ready.
+		const deadline = Date.now() + 30_000;
+		let ready = false;
+		while (Date.now() < deadline) {
+			try {
+				execSync(`curl -s ${mailboxUrl}`, { stdio: 'ignore' });
+				ready = true;
+				break;
+			} catch {
+				await new Promise(r => setTimeout(r, 1000));
+			}
+		}
+		if (!ready) throw new Error('Mailbox server failed to start');
+
+		// Expose the URL so launch scripts pass it to the Tauri agents.
+		process.env.MAILBOX_URL = mailboxUrl;
+		console.log(`Mailbox server ready at ${mailboxUrl}`);
+
+		// Persist mailbox info so individual specs can suspend/resume it to
+		// drive the offline-UX state transitions.
+		const mailboxInfoPath = path.join(ROOT, '.dbs', 'e2e', 'mailbox-info.json');
+		writeFileSync(
+			mailboxInfoPath,
+			JSON.stringify({
+				pid: mailboxServer.pid,
+				port: mailboxPort,
+				url: mailboxUrl,
+				dbPath: mailboxDb,
+			}),
+		);
 	},
 
-	async beforeSession(_config, capabilities, _specs, cid) {
-		const workerId = String(cid ?? `pid-${process.pid}`);
-		const workerDir = path.join(ROOT, '.dbs', 'e2e', `worker-${workerId}`);
+	async beforeSession() {
+		// Force-kill any leftover processes from the previous session.
+		await Promise.all([killAndWait(tauriDriver1), killAndWait(tauriDriver2)]);
+		killAllE2EProcesses();
+		// Kill anything still holding our specific ports (handles orphaned
+		// dash-chat processes that inherited tauri-driver's listening sockets).
+		killPortHolders(ALL_PORTS);
+		// Wait for ports to be fully released after SIGKILL.
+		await Promise.all(ALL_PORTS.map(p => waitForPortFree(p)));
 
-		// Wipe this worker's prior state before each session so specFileRetries
-		// starts from a clean slate. Wipe agent dirs only — the mailbox dir is
-		// re-created by spawnWorkerMailbox below and we'd race a half-deleted
-		// workerDir if we nuked it whole.
+		// Clean all agent data for a fresh start (important for specFileRetries).
+		// Must remove the entire agent directory, not just the Rust backend data,
+		// because WebKitGTK stores localStorage/IndexedDB under the XDG dirs
+		// (.local/share/, .config/, .cache/) inside the agent directory.
 		for (const agent of ['agent-1', 'agent-2']) {
+			const agentDir = path.join(ROOT, '.dbs', 'e2e', agent);
 			try {
-				rmSync(path.join(workerDir, agent), { recursive: true, force: true });
+				rmSync(agentDir, { recursive: true, force: true });
 			} catch {
 				/* ignore */
 			}
 		}
 
-		// Allocate disjoint ports per worker.
-		const driverPort1 = allocatePort();
-		const nativePort1 = allocatePort();
-		const driverPort2 = allocatePort();
-		const nativePort2 = allocatePort();
-		const workerPorts = [driverPort1, nativePort1, driverPort2, nativePort2];
-
-		// Mutate capabilities so WDIO connects to the right tauri-driver per
-		// browser. In multiremote, capabilities is a Record<name, capability>;
-		// the `.port` field is read AFTER beforeSession.
-		const caps = capabilities as Record<string, { port?: number }>;
-		caps.agent1.port = driverPort1;
-		caps.agent2.port = driverPort2;
-
-		// Per-worker mailbox server.
-		const mailbox = await spawnWorkerMailbox(workerId, workerDir);
-
-		// Per-worker mailbox-info JSON. mailbox-control.ts reads
-		// E2E_MAILBOX_INFO_PATH to find this file.
-		const mailboxInfoPath = path.join(workerDir, 'mailbox-info.json');
-		mkdirSync(path.dirname(mailboxInfoPath), { recursive: true });
-		writeFileSync(
-			mailboxInfoPath,
-			JSON.stringify({
-				pid: mailbox.proc.pid,
-				port: mailbox.port,
-				url: mailbox.url,
-				dbPath: mailbox.dbPath,
-			}),
+		// Tail each agent's stdout/stderr (written by launch-agent.sh) and
+		// echo lines to the test runner's stdout with an agent-specific prefix.
+		agent1Logger = startAgentLogger(
+			'agent-1',
+			path.join(ROOT, '.dbs', 'e2e', 'agent-1', 'agent.log'),
+		);
+		agent2Logger = startAgentLogger(
+			'agent-2',
+			path.join(ROOT, '.dbs', 'e2e', 'agent-2', 'agent.log'),
 		);
 
-		// Env vars consumed by launch-agent.sh + mailbox-control.ts. These flow
-		// into all child processes this worker spawns.
-		process.env.MAILBOX_URL = mailbox.url;
-		process.env.E2E_WORKER_ID = workerId;
-		process.env.E2E_MAILBOX_INFO_PATH = mailboxInfoPath;
-
-		// Make sure ports are free (in case a prior crashed run leaked).
-		killPortHolders(workerPorts);
-		await Promise.all(workerPorts.map(p => waitForPortFree(p)));
-
-		// Per-worker agent log tails.
-		const agent1Logger = startAgentLogger(
-			`worker-${workerId}/agent-1`,
-			path.join(workerDir, 'agent-1', 'agent.log'),
-		);
-		const agent2Logger = startAgentLogger(
-			`worker-${workerId}/agent-2`,
-			path.join(workerDir, 'agent-2', 'agent.log'),
-		);
-
-		const tauriDriver1 = spawn(
+		tauriDriver1 = spawn(
 			'tauri-driver',
-			['--port', String(driverPort1), '--native-port', String(nativePort1)],
+			['--port', String(port1), '--native-port', String(nativePort1)],
 			{ stdio: ['ignore', 'ignore', 'pipe'] },
 		);
 		tauriDriver1.stderr?.on('data', (data: Buffer) => {
-			console.error(
-				`[worker ${workerId}][tauri-driver:${driverPort1}] ${data.toString().trim()}`,
-			);
+			console.error(`[tauri-driver:${port1}] ${data.toString().trim()}`);
 		});
 
-		const tauriDriver2 = spawn(
+		tauriDriver2 = spawn(
 			'tauri-driver',
-			['--port', String(driverPort2), '--native-port', String(nativePort2)],
+			['--port', String(port2), '--native-port', String(nativePort2)],
 			{ stdio: ['ignore', 'ignore', 'pipe'] },
 		);
 		tauriDriver2.stderr?.on('data', (data: Buffer) => {
-			console.error(
-				`[worker ${workerId}][tauri-driver:${driverPort2}] ${data.toString().trim()}`,
-			);
+			console.error(`[tauri-driver:${port2}] ${data.toString().trim()}`);
 		});
 
+		// Wait for tauri-driver instances to accept connections.
 		await Promise.all([
-			waitForPortListening(driverPort1),
-			waitForPortListening(driverPort2),
+			waitForPortListening(port1),
+			waitForPortListening(port2),
 		]);
-
-		workerResources.set(workerId, {
-			workerId,
-			dataDir: workerDir,
-			driverPort1,
-			nativePort1,
-			driverPort2,
-			nativePort2,
-			mailboxPort: mailbox.port,
-			mailboxServer: mailbox.proc,
-			tauriDriver1,
-			tauriDriver2,
-			agent1Logger,
-			agent2Logger,
-		});
 	},
 
-	async afterSession(_config, _capabilities, _specs) {
-		const workerId = process.env.E2E_WORKER_ID;
-		if (!workerId) return;
-		const res = workerResources.get(workerId);
-		if (!res) return;
+	async afterSession() {
+		// SIGKILL tauri-drivers and wait for exit to free ports.
+		await Promise.all([killAndWait(tauriDriver1), killAndWait(tauriDriver2)]);
+		// Kill orphaned dash-chat E2E instances and anything holding our ports.
+		killAllE2EProcesses();
+		killPortHolders(ALL_PORTS);
+		agent1Logger?.kill();
+		agent2Logger?.kill();
+		agent1Logger = null;
+		agent2Logger = null;
+	},
 
-		// Kill drivers first so they release their ports.
-		await Promise.all([
-			killAndWait(res.tauriDriver1),
-			killAndWait(res.tauriDriver2),
-		]);
-
-		// Reap this worker's dash-chat processes; do NOT touch peer workers.
-		killAllE2EProcesses(`worker-${workerId}`);
-
-		// Then the mailbox process group.
-		if (res.mailboxServer.pid && res.mailboxServer.exitCode === null) {
+	onComplete() {
+		if (mailboxServer?.pid) {
+			// Negative PID = signal the entire process group, so we reach the
+			// mailbox-server child that `cargo run` spawned underneath.
 			try {
-				process.kill(-res.mailboxServer.pid, 'SIGTERM');
+				process.kill(-mailboxServer.pid, 'SIGTERM');
 			} catch {
 				/* already gone */
 			}
 		}
-
-		killPortHolders([
-			res.driverPort1,
-			res.nativePort1,
-			res.driverPort2,
-			res.nativePort2,
-			res.mailboxPort,
-		]);
-
-		res.agent1Logger?.kill();
-		res.agent2Logger?.kill();
-
-		workerResources.delete(workerId);
-	},
-
-	onComplete() {
-		// Final sweep in the launcher in case workers crashed before afterSession.
 		killAllE2EProcesses();
-		killLeftoverMailboxServers();
+		killPortHolders(ALL_PORTS);
+		agent1Logger?.kill();
+		agent2Logger?.kill();
 	},
 };
