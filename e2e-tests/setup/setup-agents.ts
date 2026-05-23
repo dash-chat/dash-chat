@@ -162,17 +162,13 @@ export async function setupAgent(agentName: string): Promise<Agent> {
 }
 
 /**
- * Switch the agent's UI locale. setLocale triggers a full page reload at the
- * locale-prefixed URL, which wipes and re-registers `window.__test`. We
- * atomically delete the existing `__test` inside the same execute() block so
- * that waitForTestUtils blocks until the new page has re-registered, rather
- * than returning immediately against the stale (old-page) registry.
+ * Switch the agent's UI locale. `window.__test.setLocale` is the overwritten
+ * paraglide setLocale that updates the cookie + global-variable strategies
+ * without reloading; the layout's `{#key currentLocale}` block re-mounts the
+ * rendered route so every `m.foo()` call reads the new locale.
  */
 export async function setLocale(agent: Agent, locale: string): Promise<void> {
 	await agent.execute((loc: string) => {
-		const setLocaleFn = window.__test.setLocale;
-		delete (window as unknown as { __test?: unknown }).__test;
-		setLocaleFn(loc);
+		window.__test.setLocale(loc);
 	}, locale);
-	await waitForTestUtils(agent);
 }

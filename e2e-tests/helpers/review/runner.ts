@@ -1,5 +1,20 @@
-import { type Agent, waitForTestUtils } from '../../setup/setup-agents';
+import type { Agent } from '../../setup/setup-agents';
 import type { VisitResult } from './visit-all-pages';
+
+/** Suppress CSS transitions and animations so static layout checks don't race
+ *  against in-flight color/opacity animations. Must be called after every
+ *  full page reload (location.href = …, paraglide setLocale, …). */
+export async function disableTransitions(agent: Agent): Promise<void> {
+	await agent.execute(() => {
+		const id = '__e2e-no-transitions';
+		if (document.getElementById(id)) return;
+		const style = document.createElement('style');
+		style.id = id;
+		style.textContent =
+			'*, *::before, *::after { transition: none !important; animation: none !important; }';
+		document.head.appendChild(style);
+	});
+}
 
 export function formatIssues(res: VisitResult): string {
 	const lines: string[] = [];
@@ -24,23 +39,15 @@ export function assertNoIssues(res: VisitResult): void {
 	}
 }
 
-/** Reload to home and disable CSS transitions so static layout checks don't
- *  race against in-flight color/opacity animations. */
+/** Navigate to home and disable CSS transitions so static layout checks don't
+ *  race against in-flight color/opacity animations. Uses SvelteKit's
+ *  client-side `goto` instead of a full reload — a full reload orphans every
+ *  in-flight Tauri callback, and the resulting storm of "callback id not
+ *  found" warnings overwhelms the WebKitGTK event loop enough that the next
+ *  `execute/sync` (e.g. waiting for `window.__test`) times out. */
 export async function reloadToHome(agent: Agent): Promise<void> {
-	await agent.execute(() => {
-		delete (window as unknown as { __test?: unknown }).__test;
-		window.location.href = '/';
-	});
-	await waitForTestUtils(agent);
-	await agent.execute(() => {
-		const id = '__e2e-no-transitions';
-		if (document.getElementById(id)) return;
-		const style = document.createElement('style');
-		style.id = id;
-		style.textContent =
-			'*, *::before, *::after { transition: none !important; animation: none !important; }';
-		document.head.appendChild(style);
-	});
+	await agent.goto('/');
+	await disableTransitions(agent);
 	await agent.homePage.ready();
 }
 

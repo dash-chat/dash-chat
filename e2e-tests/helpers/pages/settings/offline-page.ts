@@ -25,7 +25,11 @@ export class OfflinePage extends TestPage {
 	async setLocalMailboxEnabled(enabled: boolean): Promise<void> {
 		await this.toggleInput.waitForExist();
 		if ((await this.toggleChecked()) === enabled) return;
-		await this.toggleInput.click();
+		// The checkbox has `sr-only` styling (visually hidden), which trips
+		// WebDriver's interactability check. Dispatch the click in-page instead.
+		await this.agent.execute((sel: string) => {
+			(document.querySelector(sel) as HTMLInputElement | null)?.click();
+		}, TOGGLE_INPUT_SELECTOR);
 		await this.agent.waitUntil(
 			async () => (await this.toggleChecked()) === enabled,
 		);

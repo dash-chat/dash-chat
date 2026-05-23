@@ -1,4 +1,5 @@
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
+import { resumeMailbox, suspendMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgent } from '../setup/setup-agents';
 import { tid } from '../helpers/selectors';
 
@@ -22,15 +23,34 @@ describe('Waiting-for-profile placeholder', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 	let waitingText: string;
+	let mailboxSuspended = false;
 
 	before(async () => {
 		[agent1, agent2] = await Promise.all([
 			setupAgent('agent1'),
 			setupAgent('agent2'),
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
+		await Promise.all([
+			agent1.createProfilePage.createProfile('Alice', 'Test'),
+			agent2.createProfilePage.createProfile('Bob', 'Test'),
+		]);
 		waitingText = await agent2.tr('waitingForProfile');
+		// Suspend the shared mailbox before any contact exchange so agent1's
+		// profile cannot sync to agent2 while we check the placeholder. Without
+		// this the placeholder window is only ~2s wide and races slow setups.
+		suspendMailbox();
+		mailboxSuspended = true;
+	});
+
+	after(() => {
+		if (mailboxSuspended) {
+			try {
+				resumeMailbox();
+			} catch {
+				/* ignore */
+			}
+			mailboxSuspended = false;
+		}
 	});
 
 	it('shows the placeholder on direct-chat after one-sided contact addition', async () => {
