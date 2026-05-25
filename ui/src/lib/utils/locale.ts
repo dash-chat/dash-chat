@@ -6,15 +6,6 @@ import * as paraglide from '$lib/paraglide/runtime';
  * returns the new value on the next call), and `onLocaleChange` fires with
  * the new locale so the caller can drive a re-render — typically a
  * `$state`-backed cache key in a `{#key}` block.
- *
- * Why no reload: paraglide's default behaviour orphans every in-flight Tauri
- * Channel callback when the page navigates away (`Channel::send` is
- * fire-and-forget; the JS handler disappears but the Rust forward task keeps
- * emitting), which floods the WebKitGTK event loop and stalls the next page
- * boot. Skipping the reload sidesteps that entirely.
- *
- * Safe to call more than once — the second call replaces the previous
- * callback without re-capturing the (already overwritten) `setLocale`.
  */
 let originalSetLocale: typeof paraglide.setLocale | undefined;
 
