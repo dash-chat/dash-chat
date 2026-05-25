@@ -21,6 +21,7 @@ import { createProfile } from './flows/profile-creation';
 import { sendMessage, waitForMessage } from './flows/send-message';
 import {
 	attachFile,
+	attachFileOfSize,
 	attachPhotos,
 	sendComposer,
 	waitForFileMessage,
@@ -119,6 +120,7 @@ export const testUtils = {
 	waitForMessage,
 	attachPhotos,
 	attachFile,
+	attachFileOfSize,
 	sendComposer,
 	waitForPhotoMessage,
 	waitForFileMessage,

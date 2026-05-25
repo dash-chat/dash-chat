@@ -52,7 +52,14 @@
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
 	import MessageInput from '$lib/components/MessageInput.svelte';
-	import { type DraftMedia, draftToMedia, revokeDraft } from '$lib/types/media';
+	import {
+		type DraftMedia,
+		draftToMedia,
+		revokeDraft,
+		AttachmentTooLargeError,
+		formatFileSize,
+		MAX_MESSAGE_BYTES,
+	} from '$lib/types/media';
 	import { condenseReactions } from '$lib/utils/emojis';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
@@ -187,6 +194,15 @@
 			// hidden behind the input bar.
 			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		} catch (e) {
+			if (e instanceof AttachmentTooLargeError) {
+				showToast(
+					m.errorAttachmentTooLarge({
+						max: formatFileSize(MAX_MESSAGE_BYTES),
+					}),
+					'error',
+				);
+				return;
+			}
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}

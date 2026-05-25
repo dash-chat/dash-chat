@@ -1,4 +1,5 @@
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{get, post},
     Json, Router,
 };
@@ -21,6 +22,8 @@ mod watermarks_table;
 
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
+
+const MAX_PAYLOAD_SIZE: usize = 16 * 1024 * 1024; // 16 MB
 
 pub use blob::Blob;
 pub use blobs_table::{BlobsKey, BlobsKeyError, BlobsKeyPrefix, BLOBS_TABLE};
@@ -138,5 +141,6 @@ pub fn create_app(
         .route("/blobs/get", post(get_blobs_for_topics))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
+        .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))
         .with_state(state)
 }

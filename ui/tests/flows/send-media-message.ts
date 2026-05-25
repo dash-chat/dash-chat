@@ -55,6 +55,22 @@ export async function attachFile(
 	return true;
 }
 
+/**
+ * Attach a single file padded with zero bytes to `sizeBytes`. Used to test the
+ * 16 MiB message-size cap without needing a real large file on disk.
+ */
+export async function attachFileOfSize(
+	sizeBytes: number,
+	name = 'big.bin',
+	mimeType = 'application/octet-stream',
+): Promise<true> {
+	const blob = new Blob([new Uint8Array(sizeBytes)], { type: mimeType });
+	const file = new File([blob], name, { type: mimeType });
+	setHiddenFileInput(S.messageInput.filePicker, [file]);
+	await waitFor(S.messageInput.mediaPreview, 5_000);
+	return true;
+}
+
 /** Click send. Composer must already have content (text and/or media). */
 export async function sendComposer(): Promise<void> {
 	await nextTick();

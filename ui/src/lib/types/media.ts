@@ -1,4 +1,18 @@
+import { compressImage } from '$lib/utils/compress';
 import type { FileAttachment, Media, Photo } from 'dash-chat-stores';
+
+export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
+
+export class AttachmentTooLargeError extends Error {
+	readonly totalBytes: number;
+	readonly maxBytes: number;
+	constructor(totalBytes: number, maxBytes: number = MAX_MESSAGE_BYTES) {
+		super(`Attachments total ${totalBytes} bytes, exceeds ${maxBytes}`);
+		this.name = 'AttachmentTooLargeError';
+		this.totalBytes = totalBytes;
+		this.maxBytes = maxBytes;
+	}
+}
 
 /**
  * Draft media held in the composer before sending. Holds raw `File` refs so
@@ -33,15 +47,31 @@ async function fileToBytes(file: File): Promise<Uint8Array> {
 	return new Uint8Array(await file.arrayBuffer());
 }
 
-/** Convert composer-side draft to the wire-format `Media` for sending. */
+/**
+ * Convert composer-side draft to the wire-format `Media` for sending.
+ * Compresses images first, then enforces a total-size cap; throws
+ * `AttachmentTooLargeError` if the post-compression payload still exceeds it.
+ */
 export async function draftToMedia(draft: DraftMedia): Promise<Media> {
+	const media = await buildMedia(draft);
+	const total = totalMediaBytes(media);
+	if (total > MAX_MESSAGE_BYTES) {
+		throw new AttachmentTooLargeError(total);
+	}
+	return media;
+}
+
+async function buildMedia(draft: DraftMedia): Promise<Media> {
 	if (draft.kind === 'photos') {
 		const photos: Photo[] = await Promise.all(
-			draft.items.map(async ({ file }) => ({
-				data: await fileToBytes(file),
-				name: file.name,
-				mime_type: file.type || 'application/octet-stream',
-			})),
+			draft.items.map(async ({ file }) => {
+				const compressed = await compressImage(file);
+				return {
+					data: await fileToBytes(compressed),
+					name: compressed.name,
+					mime_type: compressed.type || 'application/octet-stream',
+				};
+			}),
 		);
 		return { kind: 'photos', photos };
 	}
@@ -51,6 +81,13 @@ export async function draftToMedia(draft: DraftMedia): Promise<Media> {
 		mime_type: draft.file.type || 'application/octet-stream',
 	};
 	return { kind: 'file', file };
+}
+
+function totalMediaBytes(media: Media): number {
+	if (media.kind === 'photos') {
+		return media.photos.reduce((sum, p) => sum + byteLengthOf(p.data), 0);
+	}
+	return byteLengthOf(media.file.data);
 }
 
 export function formatFileSize(bytes: number): string {
