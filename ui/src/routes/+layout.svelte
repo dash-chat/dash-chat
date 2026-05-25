@@ -51,12 +51,6 @@
 	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
 	import { registerSetLocale } from '$lib/utils/locale';
 
-	// `currentLocale` drives the `{#key currentLocale}` block around the
-	// rendered route below. `registerSetLocale` overwrites paraglide's
-	// `setLocale` to be non-reloading and calls back with the new locale on
-	// every change, so the `{#key}` remounts and every `m.foo()` call inside
-	// child components re-evaluates against the new locale.
-	//
 	// TODO: once the language-selector setting lands, make that setting the
 	// source of truth for this state (read it via `useSignal(settingsStore.locale)`
 	// or similar) and have the selector's onChange call into paraglide's
