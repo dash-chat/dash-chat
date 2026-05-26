@@ -67,6 +67,7 @@
           packages = [
             pkgs.mprocs
             pkgs.just
+            pkgs.nodejs_22
             pkgs.pnpm
             pkgs.cargo-nextest
             inputs'.tauri-driver.packages.tauri-driver
