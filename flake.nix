@@ -64,7 +64,7 @@
             libayatana-appindicator
             pango
           ];
-          nodeVersion = lib.strings.trim (builtins.readFile ./.node-version);
+          nodeVersion = lib.versions.major (lib.strings.trim (builtins.readFile ./.node-version));
           packages = [
             pkgs.mprocs
             pkgs.just
