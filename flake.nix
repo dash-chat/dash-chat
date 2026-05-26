@@ -94,7 +94,7 @@
             rust = pkgs.rust-bin.fromRustupToolchainFile
               ./rust-toolchain.android.toml;
           in pkgs.mkShell {
-            packages = [ rust ];
+            packages = [ rust pkgs."nodejs_${nodeVersion}" ];
             inputsFrom =
               [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
           };
