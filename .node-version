@@ -1,1 +1,4 @@
 22
+# When changing the Node version, also update:
+#   - package.json  engines.node  (e.g. ">=22 <23")
+# flake.nix reads this file directly and needs no manual change.

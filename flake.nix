@@ -64,10 +64,11 @@
             libayatana-appindicator
             pango
           ];
+          nodeVersion = lib.strings.trim (builtins.readFile ./.node-version);
           packages = [
             pkgs.mprocs
             pkgs.just
-            pkgs.nodejs_22
+            pkgs."nodejs_${nodeVersion}"
             pkgs.pnpm
             pkgs.cargo-nextest
             inputs'.tauri-driver.packages.tauri-driver
