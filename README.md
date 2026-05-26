@@ -25,10 +25,11 @@ Please contact the Dash Chat team at hello [at] dashchat [dot] org if you're int
 ## Developer setup
 
 1. Install [Rust](https://rust-lang.org/tools/install/).
-2. Install [pnpm](https://pnpm.io/).
-3. Install [just](https://just.systems/man/en/).
-4. Install the [Tauri pre-requisits](https://tauri.app/start/prerequisites/) for your platform.
-5. Run `pnpm install`.
+2. Install Node.js 22 (see `.node-version`). If you use [asdf](https://asdf-vm.com/), add `legacy_version_file = yes` to `~/.asdfrc` so that `asdf install` picks up `.node-version`.
+3. Install [pnpm](https://pnpm.io/).
+4. Install [just](https://just.systems/man/en/).
+5. Install the [Tauri pre-requisits](https://tauri.app/start/prerequisites/) for your platform.
+6. Run `pnpm install`.
 
   OR
 
