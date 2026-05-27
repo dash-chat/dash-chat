@@ -20,6 +20,10 @@ export class GroupInfoStep {
 		await this.agent.waitFor('[data-testid="new-group-info-back"]');
 		return this;
 	}
+
+	clickCreate(): Promise<void> {
+		return this.agent.clickNewGroupCreate();
+	}
 }
 
 export class NewGroupPage {

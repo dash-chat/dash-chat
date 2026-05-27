@@ -16,7 +16,7 @@ describe('New group', () => {
 		await agent.createProfile('Alice', 'Test');
 	});
 
-	it('navigates to the new-group page and types a group name', async () => {
+	it('navigates to the new-group page and creates new group', async () => {
 		await agent
 			.onHomePage()
 			.ready()
@@ -30,6 +30,15 @@ describe('New group', () => {
 			.onAddMembersStep()
 			.ready()
 			.then(p => p.clickNext());
-		await agent.onNewGroupPage().onGroupInfoStep().ready();
+		await agent
+			.onNewGroupPage()
+			.onGroupInfoStep()
+			.ready()
+			.then(p => p.clickCreate());
+
+		await agent
+			.onHomePage()
+			.ready()
+			.then(p => p.expectChatListToHaveGroupChatWithName('mygroup'));
 	});
 });

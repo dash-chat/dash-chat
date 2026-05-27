@@ -11,11 +11,13 @@
  *   await window.__test.waitForMessage('Hello!')
  */
 import type { m } from '../src/lib/paraglide/messages.js';
+import { previewFeatures } from '$lib/stores/preview-features.svelte';
 import {
 	addContact,
 	getContactCode,
 	navigateToAddContact,
 } from './flows/contact-exchange';
+import { setLocalMailboxEnabled } from './flows/local-mailbox';
 import { openDirectChat } from './flows/open-chat';
 import { createProfile } from './flows/profile-creation';
 import { sendMessage, waitForMessage } from './flows/send-message';
@@ -48,7 +50,6 @@ import {
 	sendButton,
 	unreadBadgeText,
 } from './pages/direct-chat';
-import { setLocalMailboxEnabled } from './flows/local-mailbox';
 import {
 	dismissCard as dismissGetStartedCard,
 	visibleCards as getStartedCards,
@@ -62,7 +63,11 @@ import {
 	hasChatListItem,
 	homeLoaded,
 } from './pages/home';
-import { clickNewGroupNext, newGroupLoaded } from './pages/new-group';
+import {
+	clickNewGroupCreate,
+	clickNewGroupNext,
+	newGroupLoaded,
+} from './pages/new-group';
 import { clickNewGroup, newMessageLoaded } from './pages/new-message';
 import { isPeerProfileSheetOpen } from './pages/peer-profile-sheet';
 import { profileNameListItemContains } from './pages/profile-settings';
@@ -152,6 +157,7 @@ export const testUtils = {
 	newMessageLoaded,
 	newGroupLoaded,
 	clickNewGroupNext,
+	clickNewGroupCreate,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(
@@ -184,7 +190,7 @@ export function registerTestUtils(
 	setLocale?: (locale: string) => void,
 	messages?: Messages,
 ) {
-	localStorage.setItem('preview-features-enabled', 'true');
+	previewFeatures.enable();
 	window.__test = testUtils;
 	if (goto) {
 		testUtils.goto = goto;

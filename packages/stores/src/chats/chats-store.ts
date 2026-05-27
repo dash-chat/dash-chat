@@ -1,4 +1,4 @@
-import { reactive } from 'signalium';
+import { reactive, signal } from 'signalium';
 
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
@@ -19,6 +19,8 @@ import { memo } from '../utils/memo';
 import { type IChatsClient } from './chats-client';
 
 export class ChatsStore {
+	private groupChatIdsSignal = signal<ChatId[]>([]);
+
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
@@ -27,10 +29,15 @@ export class ChatsStore {
 			new DirectChatClient(),
 		private groupChatClientFactory: () => IGroupChatClient = () =>
 			new GroupChatClient(),
-	) {}
+	) {
+		this.client.getGroupChats().then(ids => {
+			this.groupChatIdsSignal.value = ids;
+		});
+	}
 
 	async createGroup(initialMembers: PublicKey[]): Promise<GroupChatStore> {
 		const chatId = await this.client.createGroup(initialMembers);
+		this.groupChatIdsSignal.value = [...this.groupChatIdsSignal.value, chatId];
 		return this.groupChats(chatId);
 	}
 
@@ -79,7 +86,7 @@ export class ChatsStore {
 	});
 
 	private allGroupChatSummaries = reactive(async () => {
-		const groupChatIds = await this.client.getGroupChats();
+		const groupChatIds = this.groupChatIdsSignal.value;
 		return Promise.all(
 			groupChatIds.map(chatId => this.groupChats(chatId).summary()),
 		);
