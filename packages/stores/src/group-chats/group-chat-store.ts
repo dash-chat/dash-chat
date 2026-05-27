@@ -9,7 +9,7 @@ import { ChatId, ChatSummary, MessageContent, Payload } from '../types';
 import { type IGroupChatClient } from './group-chat-client';
 
 export interface GroupInfo {
-	name: string;
+	name: string | undefined;
 	description: string | undefined;
 	avatar: string | undefined;
 }
@@ -31,7 +31,7 @@ export class GroupChatStore {
 	info = reactive(async () => {
 		const info: GroupInfo = {
 			name: 'mygroup',
-			description: 'descmygroup',
+			description: undefined,
 			avatar: undefined,
 		};
 		return info;
@@ -113,7 +113,7 @@ export class GroupChatStore {
 		return {
 			type: 'GroupChat',
 			chatId: this.chatId,
-			name: info.name,
+			name: info.name ?? '',
 			avatar: info.avatar,
 			lastEvent,
 			unreadMessages: 0,

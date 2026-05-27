@@ -5,7 +5,7 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
-	import AllChats from '$lib/components/AllChats.svelte';
+	import AllChats from '$lib/components/chats/AllChats.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
 	import FirstChatTooltip from '$lib/components/FirstChatTooltip.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';

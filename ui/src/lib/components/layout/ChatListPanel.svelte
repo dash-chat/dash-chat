@@ -5,7 +5,7 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiSquareEditOutline } from '@mdi/js';
-	import AllChats from '$lib/components/AllChats.svelte';
+	import AllChats from '$lib/components/chats/AllChats.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
 
 	import { Link, Navbar, useTheme } from 'konsta/svelte';
