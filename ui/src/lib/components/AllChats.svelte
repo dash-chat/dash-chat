@@ -19,6 +19,7 @@
 	import { useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import Avatar from './profiles/Avatar.svelte';
 	import ErrorPlaceholder from './ErrorPlaceholder.svelte';
 
@@ -40,7 +41,10 @@
 </script>
 
 <div class={className}>
-	{#await $chatSummaries then summaries}
+	{#await $chatSummaries then allSummaries}
+		{@const summaries = allSummaries.filter(
+			s => s.type !== 'GroupChat' || previewFeatures.enabled,
+		)}
 		{#if summaries.length > 0}
 			<List
 				nested
