@@ -131,7 +131,7 @@
 				</div>
 			</div>
 
-			<Messagebar
+			<!-- <Messagebar
 				placeholder={m.typeMessage()}
 				onInput={onMessageTextChange}
 				value={messageText}
@@ -151,7 +151,7 @@
 						</Link>
 					</ToolbarPane>
 				{/snippet}
-			</Messagebar>
+			</Messagebar> -->
 		{/await}
 	</div>
 </Page>
