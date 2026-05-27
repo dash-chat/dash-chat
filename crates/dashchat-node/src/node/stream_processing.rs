@@ -350,7 +350,12 @@ impl Node {
 
             Payload::Chat(ChatPayload::ChangeGroupDetails(details)) => {
                 self.local_store
-                    .update_group_chat_details(ChatId::new(*topic), details.clone())
+                    .update_group_chat_details(
+                        ChatId::new(*topic),
+                        details.clone(),
+                        header.timestamp.into(),
+                        *header.hash().as_bytes(),
+                    )
                     .await?;
             }
 

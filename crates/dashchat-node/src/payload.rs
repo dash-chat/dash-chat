@@ -103,6 +103,17 @@ pub struct GroupDetails {
     pub image: Option<String>,
 }
 
+/// Internal LWW-wrapper persisted alongside group details. Concurrent
+/// `ChangeGroupDetails` ops are resolved by `(timestamp, hash)`: the larger
+/// timestamp wins, and the larger hash breaks ties, giving every node the
+/// same final value.
+#[derive(Clone, Debug, Serialize, Deserialize, RenameNone)]
+pub struct StoredGroupDetails {
+    pub details: GroupDetails,
+    pub timestamp: u64,
+    pub hash: [u8; 32],
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, RenameNone)]
 pub struct ReadMessagesPayload {
     pub chat_id: ChatId,
@@ -198,7 +209,7 @@ pub fn decode_gossip_message(bytes: &[u8]) -> Result<(Vec<u8>, Option<Vec<u8>>),
 
 mod sqlx_impls {
 
-    use super::{GroupDetails, Profile};
+    use super::{GroupDetails, Profile, StoredGroupDetails};
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
     use sqlx::*;
     use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
@@ -234,4 +245,5 @@ mod sqlx_impls {
 
     cbor_sqlx!(Profile);
     cbor_sqlx!(GroupDetails);
+    cbor_sqlx!(StoredGroupDetails);
 }

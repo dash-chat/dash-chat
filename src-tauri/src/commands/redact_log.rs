@@ -23,8 +23,8 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"(PublicKey|Hash|Signature)\(\[[\d, ]+\]\)",
         // Timestamps (seconds or microseconds since epoch, 10+ digits)
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
-        // Debug format: name/surname/about fields with quoted values
-        r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
+        // Debug format: name/surname/about/description/image fields with quoted values
+        r#"(name|surname|about|description|image):\s*(Some\()?"[^"]*"(\))?"#,
         // Debug format: ChatMessageContent("...") — legacy bare form, kept
         // in case rotating log buffers still contain entries from older builds.
         r#"ChatMessageContent\("[^"]*"\)"#,
@@ -36,8 +36,8 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#"\bmessage:\s*"[^"]*""#,
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
-        // JSON format: "name":"...", "surname":"...", "about":"..."
-        r#""(name|surname|about)"\s*:\s*"[^"]*""#,
+        // JSON format: "name":"...", "surname":"...", "about":"...", "description":"...", "image":"..."
+        r#""(name|surname|about|description|image)"\s*:\s*"[^"]*""#,
         // JSON format: "content":"..."
         r#""content"\s*:\s*"[^"]*""#,
         // JSON format: "emoji":"..."
@@ -249,6 +249,36 @@ mod tests {
         assert!(
             !result.contains("Hello world"),
             "about not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_group_details_debug() {
+        let input = r#"GroupDetails { name: Some("Friends"), description: Some("Just friends"), image: Some("avatar.png") }"#;
+        let result = redact(input);
+        assert!(!result.contains("Friends"), "name not redacted: {result}");
+        assert!(
+            !result.contains("Just friends"),
+            "description not redacted: {result}"
+        );
+        assert!(
+            !result.contains("avatar.png"),
+            "image not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_group_details_json() {
+        let input = r#"{"name":"Friends","description":"Just friends","image":"avatar.png"}"#;
+        let result = redact(input);
+        assert!(!result.contains("Friends"), "name not redacted: {result}");
+        assert!(
+            !result.contains("Just friends"),
+            "description not redacted: {result}"
+        );
+        assert!(
+            !result.contains("avatar.png"),
+            "image not redacted: {result}"
         );
     }
 

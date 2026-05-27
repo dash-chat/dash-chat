@@ -451,17 +451,15 @@ impl Node {
         chat_id: ChatId,
         details: GroupDetails,
     ) -> anyhow::Result<Header> {
-        let header = self
-            .author_operation(
-                chat_id,
-                Payload::Chat(ChatPayload::ChangeGroupDetails(details.clone())),
-                Some(&format!("change_group_details({})", chat_id.renamed())),
-            )
-            .await?;
-        self.local_store
-            .update_group_chat_details(chat_id, details)
-            .await?;
-        Ok(header)
+        // The local store is updated by stream processing of our own op
+        // (synchronously, during author_operation), so we get read-after-write
+        // consistency without a separate write here. Matches `set_profile`.
+        self.author_operation(
+            chat_id,
+            Payload::Chat(ChatPayload::ChangeGroupDetails(details)),
+            Some(&format!("change_group_details({})", chat_id.renamed())),
+        )
+        .await
     }
 
     pub async fn get_group_details(
