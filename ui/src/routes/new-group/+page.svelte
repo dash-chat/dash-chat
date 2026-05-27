@@ -3,15 +3,13 @@
 	import { goto } from '$app/navigation';
 	import type { ChatsStore, PublicKey } from 'dash-chat-stores';
 	import DisabledMembersStep from './DisabledMembersStep.svelte';
-	import GroupInfoStep from './GroupInfoStep.svelte';
+	import DisabledGroupInfoStep from './DisabledGroupInfoStep.svelte';
 	// To re-enable the real members step: swap DisabledMembersStep back to MembersStep
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 
 	let currentPage: 'members' | 'group-info' = $state('members');
 	let selectedContacts = $state<PublicKey[]>([]);
-	let groupName = $state('');
-	let groupAvatar = $state<string | undefined>(undefined);
 
 	async function createGroupChat() {
 		const groupStore = await chatsStore.createGroup(
@@ -27,9 +25,7 @@
 		onNext={() => (currentPage = 'group-info')}
 	/>
 {:else if currentPage === 'group-info'}
-	<GroupInfoStep
-		bind:groupName
-		bind:groupAvatar
+	<DisabledGroupInfoStep
 		onBack={() => (currentPage = 'members')}
 		onCreate={createGroupChat}
 	/>
