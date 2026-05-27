@@ -439,6 +439,10 @@ impl Node {
         self.register_topic(chat_id).await
     }
 
+    pub async fn get_groups(&self) -> anyhow::Result<Vec<ChatId>> {
+        self.group_store.all_group_chat_ids().await
+    }
+
     pub async fn set_profile(&self, profile: Profile) -> Result<(), crate::Error> {
         self.author_operation(
             Topic::announcements(self.agent_id()),

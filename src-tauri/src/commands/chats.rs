@@ -35,9 +35,9 @@ pub async fn mark_messages_read(
 //         .map_err(|e| format!("Failed to create group: {e:?}"))
 // }
 
-// #[command]
-// pub async fn get_group_chats(node: State<'_, Node>) -> Result<Vec<ChatId>, String> {
-//     node.get_groups()
-//         .await
-//         .map_err(|e| format!("Failed to get groups: {e:?}"))
-// }
+#[tauri::command]
+pub async fn get_group_chats(node: State<'_, Node>) -> Result<Vec<ChatId>, String> {
+    node.get_groups()
+        .await
+        .map_err(|e| format!("Failed to get groups: {e:?}"))
+}

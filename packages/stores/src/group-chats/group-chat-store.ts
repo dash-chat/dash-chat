@@ -5,7 +5,7 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, PublicKey } from '../p2panda/types';
-import { ChatId, MessageContent, Payload } from '../types';
+import { ChatId, ChatSummary, MessageContent, Payload } from '../types';
 import { type IGroupChatClient } from './group-chat-client';
 
 export interface GroupInfo {
@@ -98,6 +98,25 @@ export class GroupChatStore {
 		};
 
 		return member;
+	});
+
+	summary = reactive(async (): Promise<ChatSummary> => {
+		const info = await this.info();
+		const messages = await this.messages();
+		const lastMessage = messages[messages.length - 1];
+
+		const lastEvent = lastMessage
+			? { summary: lastMessage.content, timestamp: lastMessage.timestamp }
+			: { summary: '', timestamp: 0 };
+
+		return {
+			type: 'GroupChat',
+			chatId: this.chatId,
+			name: info.name,
+			avatar: info.avatar,
+			lastEvent,
+			unreadMessages: 0,
+		};
 	});
 
 	/// Actions

@@ -61,23 +61,39 @@ export class ChatsStore {
 	});
 
 	allChatsSummaries = reactive(async () => {
-		const chatIds = await this.allChatsIds();
+		const [direct, groups, pending] = await Promise.all([
+			this.allDirectChatSummaries(),
+			this.allGroupChatSummaries(),
+			this.allPendingRequestSummaries(),
+		]);
+		const summaries = [...direct, ...groups, ...pending];
+		summaries.sort((a, b) => b.lastEvent.timestamp - a.lastEvent.timestamp);
+		return summaries;
+	});
 
-		let summaries = await Promise.all(
+	private allDirectChatSummaries = reactive(async () => {
+		const chatIds = await this.allChatsIds();
+		return Promise.all(
 			chatIds.map(chatId => this.directChats(chatId).summary()),
 		);
+	});
 
-		const pendingRequests = await this.contactsStore.contactRequests();
-
-		// Deduplicate by agent_id
-		const uniquePendingRequests = pendingRequests.filter(
-			(request, index, self) =>
-				self.findIndex(r => r.code.agent_id === request.code.agent_id) ===
-				index,
+	private allGroupChatSummaries = reactive(async () => {
+		const groupChatIds = await this.client.getGroupChats();
+		return Promise.all(
+			groupChatIds.map(chatId => this.groupChats(chatId).summary()),
 		);
+	});
 
-		const pendingRequestsSummaries: ChatSummary[] = uniquePendingRequests.map(
-			pendingRequest => ({
+	private allPendingRequestSummaries = reactive(
+		async (): Promise<ChatSummary[]> => {
+			const pendingRequests = await this.contactsStore.contactRequests();
+			const unique = pendingRequests.filter(
+				(request, index, self) =>
+					self.findIndex(r => r.code.agent_id === request.code.agent_id) ===
+					index,
+			);
+			return unique.map(pendingRequest => ({
 				type: 'ContactRequest',
 				chatId: pendingRequest.code.agent_id,
 				name: fullName(pendingRequest.profile),
@@ -87,12 +103,7 @@ export class ChatsStore {
 					timestamp: pendingRequest.timestamp,
 				},
 				unreadMessages: 1,
-			}),
-		);
-
-		summaries = [...summaries, ...pendingRequestsSummaries];
-		summaries.sort((a, b) => b.lastEvent.timestamp - a.lastEvent.timestamp);
-
-		return summaries;
-	});
+			}));
+		},
+	);
 }
