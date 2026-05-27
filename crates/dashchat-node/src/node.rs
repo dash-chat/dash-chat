@@ -27,7 +27,7 @@ use crate::chat::ChatMessageContent;
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{
-    AnnouncementsPayload, ChatPayload, Extensions, InboxPayload, Payload, Profile,
+    AnnouncementsPayload, ChatPayload, Extensions, GroupDetails, InboxPayload, Payload, Profile,
 };
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
@@ -443,6 +443,32 @@ impl Node {
 
     pub async fn get_groups(&self) -> anyhow::Result<Vec<ChatId>> {
         self.local_store.get_group_chat_ids().await
+    }
+
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    pub async fn change_group_details(
+        &self,
+        chat_id: ChatId,
+        details: GroupDetails,
+    ) -> anyhow::Result<Header> {
+        let header = self
+            .author_operation(
+                chat_id,
+                Payload::Chat(ChatPayload::ChangeGroupDetails(details.clone())),
+                Some(&format!("change_group_details({})", chat_id.renamed())),
+            )
+            .await?;
+        self.local_store
+            .update_group_chat_details(chat_id, details)
+            .await?;
+        Ok(header)
+    }
+
+    pub async fn get_group_details(
+        &self,
+        chat_id: ChatId,
+    ) -> anyhow::Result<Option<GroupDetails>> {
+        self.local_store.get_group_chat_details(chat_id).await
     }
 
     pub async fn set_profile(&self, profile: Profile) -> Result<(), crate::Error> {

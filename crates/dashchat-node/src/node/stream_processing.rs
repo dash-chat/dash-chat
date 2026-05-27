@@ -347,6 +347,12 @@ impl Node {
                 }
             }
 
+            Payload::Chat(ChatPayload::ChangeGroupDetails(details)) => {
+                self.local_store
+                    .update_group_chat_details(ChatId::new(*topic), details.clone())
+                    .await?;
+            }
+
             Payload::Chat(ChatPayload::Message(_) | ChatPayload::Reaction(_)) => {
                 // Nothing to do.
             }

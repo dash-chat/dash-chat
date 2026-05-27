@@ -42,7 +42,8 @@ const MIGRATIONS: &[&str] = &[
         expires_at_nanos INTEGER NOT NULL
     )",
     "CREATE TABLE IF NOT EXISTS group_chats (
-        chat_id BLOB PRIMARY KEY
+        chat_id BLOB PRIMARY KEY,
+        details BLOB NULL
     )",
 ];
 
@@ -351,6 +352,34 @@ impl LocalStore {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    pub async fn update_group_chat_details(
+        &self,
+        chat_id: ChatId,
+        details: GroupDetails,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO group_chats (chat_id, details) VALUES (?, ?) \
+             ON CONFLICT(chat_id) DO UPDATE SET details = excluded.details",
+        )
+        .bind(*chat_id)
+        .bind(details)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_group_chat_details(
+        &self,
+        chat_id: ChatId,
+    ) -> anyhow::Result<Option<GroupDetails>> {
+        let row: Option<(Option<GroupDetails>,)> =
+            sqlx::query_as("SELECT details FROM group_chats WHERE chat_id = ?")
+                .bind(*chat_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.and_then(|(details,)| details))
     }
 
     pub async fn get_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
