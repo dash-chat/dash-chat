@@ -18,15 +18,6 @@ import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
 import { type IChatsClient } from './chats-client';
 
-function random_hexadecimal(length: number) {
-	var result = '';
-	var characters = 'abcdef0123456789';
-	var charactersLength = characters.length;
-	for (let i = 0; i < length; i++)
-		result += characters.charAt(Math.floor(Math.random() * charactersLength));
-	return result;
-}
-
 export class ChatsStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
@@ -39,17 +30,8 @@ export class ChatsStore {
 	) {}
 
 	async createGroup(initialMembers: PublicKey[]): Promise<GroupChatStore> {
-		const chatId = random_hexadecimal(64);
-
-		await this.client.createGroupChat(chatId);
-
-		const groupStore = this.groupChats(chatId);
-
-		for (const initialMember of initialMembers) {
-			await groupStore.addMember(initialMember);
-		}
-
-		return groupStore;
+		const chatId = await this.client.createGroup(initialMembers);
+		return this.groupChats(chatId);
 	}
 
 	groupChats = memo(

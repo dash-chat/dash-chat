@@ -20,12 +20,7 @@ export interface IGroupChatClient {
 }
 
 export class GroupChatClient implements IGroupChatClient {
-	addMember(chatId: ChatId, member: PublicKey): Promise<void> {
-		return invoke('add_member', {
-			chatId,
-			member,
-		});
-	}
+	async addMember(chatId: ChatId, member: PublicKey): Promise<void> {}
 	async removeMember(chatId: ChatId, member: PublicKey): Promise<void> {}
 
 	sendMessage(topic: ChatId, content: MessageContent): Promise<void> {

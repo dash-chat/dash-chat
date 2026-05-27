@@ -95,6 +95,7 @@ pub fn run() {
             commands::direct_chats::direct_chat_send_message,
             commands::chats::mark_messages_read,
             commands::direct_chats::direct_chat_send_reaction,
+            commands::chats::create_group,
             commands::settings::get_settings,
             commands::settings::set_setting,
             #[cfg(not(mobile))]
