@@ -354,32 +354,58 @@ impl LocalStore {
         Ok(())
     }
 
+    /// Apply a `ChangeGroupDetails` op using last-write-wins ordered by
+    /// `(timestamp, hash)`. Returns `true` if the incoming op won and the
+    /// stored details were updated.
     pub async fn update_group_chat_details(
         &self,
         chat_id: ChatId,
         details: GroupDetails,
-    ) -> anyhow::Result<()> {
+        timestamp: u64,
+        hash: [u8; 32],
+    ) -> anyhow::Result<bool> {
+        let mut tx = self.pool.begin().await?;
+        let current: Option<(Option<StoredGroupDetails>,)> =
+            sqlx::query_as("SELECT details FROM group_chats WHERE chat_id = ?")
+                .bind(*chat_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+
+        let incoming_key = (timestamp, hash);
+        if let Some((Some(existing),)) = &current {
+            if (existing.timestamp, existing.hash) >= incoming_key {
+                tx.commit().await?;
+                return Ok(false);
+            }
+        }
+
+        let stored = StoredGroupDetails {
+            details,
+            timestamp,
+            hash,
+        };
         sqlx::query(
             "INSERT INTO group_chats (chat_id, details) VALUES (?, ?) \
              ON CONFLICT(chat_id) DO UPDATE SET details = excluded.details",
         )
         .bind(*chat_id)
-        .bind(details)
-        .execute(&self.pool)
+        .bind(stored)
+        .execute(&mut *tx)
         .await?;
-        Ok(())
+        tx.commit().await?;
+        Ok(true)
     }
 
     pub async fn get_group_chat_details(
         &self,
         chat_id: ChatId,
     ) -> anyhow::Result<Option<GroupDetails>> {
-        let row: Option<(Option<GroupDetails>,)> =
+        let row: Option<(Option<StoredGroupDetails>,)> =
             sqlx::query_as("SELECT details FROM group_chats WHERE chat_id = ?")
                 .bind(*chat_id)
                 .fetch_optional(&self.pool)
                 .await?;
-        Ok(row.and_then(|(details,)| details))
+        Ok(row.and_then(|(stored,)| stored.map(|s| s.details)))
     }
 
     pub async fn get_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
@@ -469,5 +495,71 @@ mod tests {
 
         let loaded_topics = store.get_active_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
+    }
+
+    #[tokio::test]
+    async fn test_group_chat_details_lww_converges() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::new(dir.path().join("lww.db")).await.unwrap();
+
+        let chat_id = ChatId::new([42; 32]);
+        store.save_group_chat(chat_id).await.unwrap();
+
+        let older = GroupDetails {
+            name: Some("Older".into()),
+            description: None,
+            image: None,
+        };
+        let newer = GroupDetails {
+            name: Some("Newer".into()),
+            description: None,
+            image: None,
+        };
+        let tied_lo = GroupDetails {
+            name: Some("TiedLo".into()),
+            description: None,
+            image: None,
+        };
+        let tied_hi = GroupDetails {
+            name: Some("TiedHi".into()),
+            description: None,
+            image: None,
+        };
+
+        // Newer timestamp wins regardless of arrival order.
+        assert!(
+            store
+                .update_group_chat_details(chat_id, newer.clone(), 200, [2; 32])
+                .await
+                .unwrap()
+        );
+        assert!(
+            !store
+                .update_group_chat_details(chat_id, older.clone(), 100, [9; 32])
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            store.get_group_chat_details(chat_id).await.unwrap(),
+            Some(newer)
+        );
+
+        // Tie on timestamp: higher hash wins, deterministically.
+        assert!(
+            store
+                .update_group_chat_details(chat_id, tied_hi.clone(), 300, [5; 32])
+                .await
+                .unwrap()
+        );
+        assert!(
+            !store
+                .update_group_chat_details(chat_id, tied_lo, 300, [4; 32])
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            store.get_group_chat_details(chat_id).await.unwrap(),
+            Some(tied_hi)
+        );
     }
 }
