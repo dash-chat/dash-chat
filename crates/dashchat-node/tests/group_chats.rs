@@ -242,3 +242,123 @@ async fn test_group_chat() {
     let alice_members = alice.get_group_members(chat_id).await.unwrap();
     assert_eq!(alice_members, expected_members);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_change_group_details() {
+    dashchat_node::testing::setup_tracing(
+        &[
+            "dashchat=info",
+            "p2panda_stream=warn",
+            "p2panda_auth=warn",
+            "p2panda_encryption=warn",
+            "p2panda_spaces=warn",
+            "named_id=warn",
+        ],
+        true,
+    );
+
+    let mailbox = MemMailbox::new();
+    let alice = TestNode::new(NodeConfig::testing(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    introduce_and_wait([&alice, &bobbi]).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::manage(),
+        })
+        .await
+        .unwrap();
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    consistency(
+        [&alice, &bobbi],
+        &[chat_id.into()],
+        &ClusterConfig::default(),
+    )
+    .await
+    .unwrap();
+
+    let details = GroupDetails {
+        name: Some("Friends".to_string()),
+        description: Some("Just friends".to_string()),
+        image: None,
+    };
+
+    alice
+        .change_group_details(chat_id, details.clone())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        alice.get_group_details(chat_id).await.unwrap(),
+        Some(details.clone())
+    );
+
+    wait_for(
+        Duration::from_millis(100),
+        Duration::from_secs(5),
+        || async {
+            bobbi
+                .get_group_details(chat_id)
+                .await
+                .unwrap()
+                .filter(|d| d == &details)
+                .map(|_| ())
+                .ok_or(())
+        },
+    )
+    .await
+    .unwrap();
+
+    let updated = GroupDetails {
+        name: Some("Besties".to_string()),
+        description: None,
+        image: Some("avatar.png".to_string()),
+    };
+
+    bobbi
+        .change_group_details(chat_id, updated.clone())
+        .await
+        .unwrap();
+
+    wait_for(
+        Duration::from_millis(100),
+        Duration::from_secs(5),
+        || async {
+            alice
+                .get_group_details(chat_id)
+                .await
+                .unwrap()
+                .filter(|d| d == &updated)
+                .map(|_| ())
+                .ok_or(())
+        },
+    )
+    .await
+    .unwrap();
+
+    let alice_dir = alice.shutdown().await;
+    let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir).await;
+    assert_eq!(
+        alice.get_group_details(chat_id).await.unwrap(),
+        Some(updated)
+    );
+}
