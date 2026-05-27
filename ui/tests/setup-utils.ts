@@ -11,7 +11,7 @@
  *   await window.__test.waitForMessage('Hello!')
  */
 import type { m } from '../src/lib/paraglide/messages.js';
-import { previewFeatures } from '$lib/stores/preview-features.svelte';
+import { previewFeatures } from '$lib/stores/preview-features.svelte.js';
 import {
 	addContact,
 	getContactCode,
