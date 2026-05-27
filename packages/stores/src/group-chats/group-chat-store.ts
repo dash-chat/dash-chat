@@ -51,7 +51,8 @@ export class GroupChatStore {
 		const messages: Array<Message> = [
 			{
 				hash: '123',
-				content: 'heeey',
+				content:
+					"This is a dummy first message. Real group messaging isn't implement yet.",
 				author: await this.contactsStore.myAgentId(),
 				seqNum: 0,
 				timestamp: Date.now(),
