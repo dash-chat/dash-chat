@@ -74,7 +74,11 @@ impl OpStore {
             .get_log_entries(author, log_id, from, None)
             .await?
             .unwrap_or_else(|| {
-                tracing::warn!("No log found for log_id {log_id:?} and author {author:?}");
+                tracing::warn!(
+                    "No log found for log_id {} and author {}",
+                    Hash::from_bytes(*log_id.as_bytes()),
+                    author
+                );
                 vec![]
             })
             .into_iter()
