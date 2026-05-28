@@ -1,5 +1,5 @@
 use p2panda_auth::{Access, group::GroupCrdtState, processor::GroupsOperation};
-use p2panda_core::{Hash, Operation, PublicKey, cbor::decode_cbor};
+use p2panda_core::{Hash, Operation, PublicKey};
 use p2panda_store::{SqliteStore, Transaction, groups::GroupsStore};
 
 use crate::{topic::TopicId, *};
@@ -43,19 +43,6 @@ impl GroupStore {
             .into_iter()
             .map(|(m, a)| (ChatMember::from(m), a))
             .collect())
-    }
-
-    pub async fn all_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
-        let rows: Vec<(Vec<u8>,)> = sqlx::query_as("SELECT id FROM groups_v1")
-            .fetch_all(self.db.pool())
-            .await?;
-        rows.into_iter()
-            .map(|(bytes,)| {
-                let topic_id: TopicId =
-                    decode_cbor(&bytes[..]).map_err(|e| anyhow::anyhow!("decode group id: {e}"))?;
-                Ok(ChatId::new(*topic_id))
-            })
-            .collect()
     }
 
     async fn auth_state(&self, topic: TopicId) -> anyhow::Result<GroupState> {

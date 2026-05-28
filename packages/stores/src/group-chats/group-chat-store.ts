@@ -52,7 +52,7 @@ export class GroupChatStore {
 			{
 				hash: '123',
 				content:
-					"This is a dummy first message. Real group messaging isn't implement yet.",
+					"This is a dummy first message. Real group messaging isn't implemented yet.",
 				author: await this.contactsStore.myAgentId(),
 				seqNum: 0,
 				timestamp: Date.now(),
