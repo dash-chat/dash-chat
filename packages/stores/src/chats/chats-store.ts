@@ -19,7 +19,7 @@ import { memo } from '../utils/memo';
 import { type IChatsClient } from './chats-client';
 
 export class ChatsStore {
-	private groupChatIdsSignal = signal<ChatId[]>([]);
+	private groupChatVersion = signal(0);
 
 	constructor(
 		protected logsStore: LogsStore<Payload>,
@@ -29,15 +29,21 @@ export class ChatsStore {
 			new DirectChatClient(),
 		private groupChatClientFactory: () => IGroupChatClient = () =>
 			new GroupChatClient(),
-	) {
-		this.client.getGroupChats().then(ids => {
-			this.groupChatIdsSignal.value = ids;
-		});
-	}
+	) {}
+
+	private groupChatIds = reactive(async () => {
+		void this.groupChatVersion.value;
+		try {
+			return await this.client.getGroupChats();
+		} catch (err) {
+			console.error('Failed to fetch group chats', err);
+			throw err;
+		}
+	});
 
 	async createGroup(initialMembers: PublicKey[]): Promise<GroupChatStore> {
 		const chatId = await this.client.createGroup(initialMembers);
-		this.groupChatIdsSignal.value = [...this.groupChatIdsSignal.value, chatId];
+		this.groupChatVersion.value++;
 		return this.groupChats(chatId);
 	}
 
@@ -86,7 +92,7 @@ export class ChatsStore {
 	});
 
 	private allGroupChatSummaries = reactive(async () => {
-		const groupChatIds = this.groupChatIdsSignal.value;
+		const groupChatIds = await this.groupChatIds();
 		return Promise.all(
 			groupChatIds.map(chatId => this.groupChats(chatId).summary()),
 		);

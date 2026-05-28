@@ -3,7 +3,9 @@ import { writable } from 'svelte/store';
 const STORAGE_KEY = 'preview-features-enabled';
 
 const initialEnabled =
-	typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) === 'true' : false;
+	typeof localStorage !== 'undefined'
+		? localStorage.getItem(STORAGE_KEY) === 'true'
+		: false;
 
 let enabled = $state(initialEnabled);
 
