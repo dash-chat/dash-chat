@@ -45,7 +45,7 @@
 		{#snippet right()}
 			{#if isIosTheme}
 				<Link onClick={onAction} data-testid={actionTestId}>
-					{actionLabel}XX
+					{actionLabel}
 				</Link>
 			{/if}
 		{/snippet}
@@ -60,7 +60,7 @@
 			class="fixed-action-btn"
 			rounded
 		>
-			{actionLabel}YY
+			{actionLabel}
 		</Button>
 	{/if}
 </Page>
