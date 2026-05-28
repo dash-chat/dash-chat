@@ -4,17 +4,17 @@ use std::task::{Context, Poll};
 
 use futures::future::join;
 use futures::{FutureExt, Stream};
+use p2panda::network::NetworkError;
 use p2panda::node::CreateStreamError;
 use p2panda::operation::{Extensions, LogId, Operation};
 use p2panda::streams::{
     ExternalStreamFuture, ImportError, ProcessedOperation, PublishError, PublishFuture,
     StreamEvent, StreamPublisher, StreamSubscription,
 };
-use p2panda::{Hash, Topic};
+use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use p2panda_auth::processor::GroupsProcessorError;
 use thiserror::Error;
 use tokio::select;
-use tokio::sync::broadcast::error::SendError;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{StreamExt, StreamMap};
 use tracing::warn;
@@ -44,13 +44,18 @@ pub(crate) enum Command {
         payload: Payload,
         reply_tx: oneshot::Sender<Result<ProcessFuture, NodeActorError>>,
     },
+    RegisterBootstrap {
+        node_id: NodeId,
+        relay_url: RelayUrl,
+        reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
+    },
     Shutdown {
         reply_tx: oneshot::Sender<()>,
     },
 }
 
 /// Actor for the p2panda node.
-/// 
+///
 /// This is a thin wrapper around the p2panda node API which includes merging of all subscription
 /// streams and holding all publish handles. It also processes groups control messages when they
 /// arrive on the stream and allows users to await this processing for operations they process
@@ -66,11 +71,11 @@ pub struct Actor {
     streams: StreamMap<Topic, StreamSubscription<Payload>>,
 
     /// One shot channels for all received operations which resolve once the operation has
-    /// completed additional processing. 
-    /// 
+    /// completed additional processing.
+    ///
     /// These are held while groups control messages are being processed so the user can await
-    /// this processing on top of what the node already provides with PublishFuture. 
-    /// 
+    /// this processing on top of what the node already provides with PublishFuture.
+    ///
     /// // @TODO: could be good to allow the user to await further dash chat application layer
     /// processing with this same mechanism, this would be possible if we forward the tx on along
     /// with the operation onto the application layer.
@@ -79,14 +84,12 @@ pub struct Actor {
     /// Groups processor.
     groups_processor: GroupsProcessor,
 
-    /// Channel for forwarding all received operations onto the application layer processor.
-    operations_tx: broadcast::Sender<ProcessedOperation<Payload>>,
+    /// Channel for forwarding all received events on to the application layer processor.
+    operations_tx: broadcast::Sender<StreamEvent<Payload>>,
 }
 
 impl Actor {
-    pub(crate) fn new(
-        node: p2panda::Node,
-    ) -> (Self, broadcast::Receiver<ProcessedOperation<Payload>>) {
+    pub(crate) fn new(node: p2panda::Node) -> (Self, broadcast::Receiver<StreamEvent<Payload>>) {
         let groups_processor = GroupsProcessor::new(node.store());
         let (operations_tx, operations_rx) = broadcast::channel(100);
 
@@ -131,6 +134,11 @@ impl Actor {
                                 let result = self.handle_publish(topic, payload).await;
                                 let _ = reply_tx.send(result);
                             }
+                            Command::RegisterBootstrap { node_id, relay_url, reply_tx } => {
+                                let result = self.handle_register_bootstrap(node_id, relay_url).await;
+                                let _ = reply_tx.send(result);
+
+                            },
                             Command::Shutdown { reply_tx } => {
                                 // Drop self and then break out of the processing loop which will
                                 // cause the actor task to complete.
@@ -219,40 +227,35 @@ impl Actor {
         let process_fut = ProcessFuture::new(hash, publish_fut, processed_rx);
         Ok(process_fut)
     }
-    async fn process_event(&mut self, event: StreamEvent<Payload>) -> Result<(), NodeActorError> {
-        match event {
-            StreamEvent::Processed { operation, source } => {
-                let id = operation.id();
-                self.process_operation(operation).await?;
-                if let Some(processed_tx) = self.processed.remove(&id) {
-                    let _ = processed_tx.send(());
-                };
-                return Ok(());
-            }
-            // @TODO: handle any of these events we're interested in.
-            StreamEvent::SyncStarted { .. } => (),
-            StreamEvent::SyncEnded { .. } => (),
-            StreamEvent::ImportStarted { session_id } => (),
-            StreamEvent::ImportEnded { session_id } => (),
-            StreamEvent::ProcessingFailed { .. } => (),
-            StreamEvent::DecodeFailed { event, error } => (),
-            StreamEvent::ReplayFailed { error } => (),
-            StreamEvent::AckFailed { event, error } => (),
-        }
+
+    async fn handle_register_bootstrap(
+        &self,
+        node_id: NodeId,
+        relay_url: RelayUrl,
+    ) -> Result<(), NodeActorError> {
+        self.inner.insert_bootstrap(node_id, relay_url).await?;
         Ok(())
     }
 
-    pub async fn process_operation(
-        &self,
-        operation: ProcessedOperation<Payload>,
-    ) -> Result<(), NodeActorError> {
-        // Process any group control messages.
-        if let Payload::GroupControl(_) = operation.message() {
-            self.process_groups_control(&operation).await?;
+    async fn process_event(&mut self, event: StreamEvent<Payload>) -> Result<(), NodeActorError> {
+        if let StreamEvent::Processed { operation, .. } = &event {
+            let id = operation.id();
+
+            // Process any group control messages.
+            if let Payload::GroupControl(_) = operation.message() {
+                self.process_groups_control(operation).await?;
+            }
+
+            // Signal that the event has been processed at system level.
+            if let Some(processed_tx) = self.processed.remove(&id) {
+                let _ = processed_tx.send(());
+            };
         }
 
-        // Forward the operation for further application layer processing.
-        self.operations_tx.send(operation)?;
+        // Forward the event for further application layer processing.
+        self.operations_tx
+            .send(event)
+            .map_err(|_| NodeActorError::EventSend)?;
 
         Ok(())
     }
@@ -330,6 +333,9 @@ pub enum NodeActorError {
     #[error(transparent)]
     GroupsProcessor(#[from] GroupsProcessorError<()>),
 
+    #[error("error sending on event tx")]
+    EventSend,
+
     #[error(transparent)]
-    OperationSend(#[from] SendError<ProcessedOperation<Payload>>),
+    Network(#[from] NetworkError),
 }

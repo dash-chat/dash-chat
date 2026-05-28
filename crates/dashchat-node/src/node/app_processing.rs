@@ -1,6 +1,8 @@
 use anyhow::anyhow;
 use futures::StreamExt;
-use p2panda::{operation::Header, streams::ProcessedOperation};
+use p2panda::NodeId;
+use p2panda::operation::Header;
+use p2panda::streams::{ProcessedOperation, Source, StreamEvent};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::ReceiverStream;
@@ -104,7 +106,7 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().renamed())))]
     pub(super) fn spawn_application_processor_task(
         &self,
-        mut operations_rx: broadcast::Receiver<ProcessedOperation<Payload>>,
+        mut events_rx: broadcast::Receiver<StreamEvent<Payload>>,
         mut cancel_rx: mpsc::Receiver<()>,
     ) -> tokio::task::JoinHandle<()> {
         let node = self.clone();
@@ -114,11 +116,55 @@ impl Node {
 
             loop {
                 tokio::select! {
-                    Ok(op) = operations_rx.recv() => {
-                        tracing::info!(op = %op.id(), topic = %op.topic(), "processing stream item");
-                        if let Err(err) = node.process_stream_item(op).await {
-                            tracing::error!(?err, "process stream item error");
+                    Ok(event) = events_rx.recv() => {
+                        match &event {
+                            StreamEvent::Processed { operation, source } => {
+                                tracing::info!(op = %operation.id(), topic = %operation.topic(), "processing operation");
+
+                                // Dash Chat relies on mailbox servers for discovering bootstrap
+                                // nodes over the internet. Any operations we're sent from an
+                                // external stream is assumed to come from a mailbox, and we
+                                // attempt to register all authors we find as bootstrap nodes.
+                                //
+                                // @TODO: This is a temp solution and not a recommended way to
+                                // discover bootstraps because 1) not all authors will be online
+                                // and contactable for bootstrapping, 2) it locks all peers into
+                                // using the same relay. A better approach would be to have
+                                // bootstrap nodes notify connected nodes of each-others presence
+                                // via a dedicated channel.
+                                if let Source::ExternalStream {..} = source {
+                                    let node_id: NodeId = operation.author().into();
+
+                                    // Only register the bootstrap if we didn't already do so.
+                                    if node.registered_bootstraps.lock().await.insert((node_id, RELAY_URL.clone())) {
+                                        let (reply_tx, reply_rx) = oneshot::channel();
+                                        let result = node.actor_tx.send(Command::RegisterBootstrap { node_id, relay_url: RELAY_URL.clone(), reply_tx }).await;
+                                        if let Err(err) = result {
+                                            tracing::error!(?err, "send to node actor error");
+                                        }
+
+                                        let result = reply_rx.await;
+                                        if let Err(err) = result {
+                                            tracing::error!(?err, "register bootstrap error");
+                                        }
+                                    };
+                                }
+
+                                if let Err(err) = node.process_operation(operation).await {
+                                    tracing::error!(?err, "process operation error");
+                                }
+                            }
+                            // @TODO: add logging for all variants.
+                            StreamEvent::SyncStarted { .. } => (),
+                            StreamEvent::SyncEnded { .. } => (),
+                            StreamEvent::ImportStarted { .. } => (),
+                            StreamEvent::ImportEnded { .. } => (),
+                            StreamEvent::ProcessingFailed { .. } => (),
+                            StreamEvent::DecodeFailed { .. } => (),
+                            StreamEvent::ReplayFailed { .. } => (),
+                            StreamEvent::AckFailed { .. } => (),
                         }
+
                     }
                     Some(()) = cancel_rx.recv() => {
                         tracing::info!("stream processing loop cancelled");
@@ -138,9 +184,9 @@ impl Node {
         handle
     }
 
-    async fn process_stream_item(
+    async fn process_operation(
         &self,
-        operation: ProcessedOperation<Payload>,
+        operation: &ProcessedOperation<Payload>,
     ) -> anyhow::Result<()> {
         let hash = operation.id();
         let topic = operation.topic();

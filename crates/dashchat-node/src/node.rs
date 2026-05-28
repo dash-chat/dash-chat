@@ -2,9 +2,9 @@ pub(crate) mod actor;
 mod app_processing;
 pub(crate) mod publish;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, ShutdownError};
@@ -14,7 +14,7 @@ use anyhow::Result;
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use named_id::Rename;
-use p2panda::Node as P2PandaNode;
+use p2panda::{Node as P2PandaNode, NodeId, RelayUrl};
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
@@ -39,6 +39,12 @@ use crate::{
 pub use app_processing::Notification;
 
 const NETWORK_ID: &'static str = "dash-chat";
+
+static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
+    "https://euc1-1.relay.n0.iroh-canary.iroh.link"
+        .parse()
+        .expect("valid relay URL")
+});
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
@@ -92,6 +98,11 @@ pub struct Node {
     processor_cancel_tx: mpsc::Sender<()>,
     processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 
+    /// All bootstrap nodes we have registered on our node.
+    ///
+    /// These are kept to avoid redundant duplicate calls to node.insert_bootstrap.
+    registered_bootstraps: Arc<Mutex<HashSet<(NodeId, RelayUrl)>>>,
+
     pub local_store: LocalStore,
     group_store: GroupStore,
     node_keys: NodeKeys,
@@ -142,7 +153,7 @@ impl Node {
         let store = p2panda_node.store();
 
         // Spawn node actor.
-        let (node_actor, operations_rx) = Actor::new(p2panda_node);
+        let (node_actor, events_rx) = Actor::new(p2panda_node);
         let actor_tx = node_actor.spawn().await?;
 
         // === stores === //
@@ -173,12 +184,13 @@ impl Node {
             actor_tx,
             processor_cancel_tx,
             processor_handle: Default::default(),
+            registered_bootstraps: Default::default(),
         };
 
         // === application processor task === //
 
         let processor_handle =
-            node.spawn_application_processor_task(operations_rx, processor_cancel_rx);
+            node.spawn_application_processor_task(events_rx, processor_cancel_rx);
         node.processor_handle.lock().await.replace(processor_handle);
 
         // === topics === //
