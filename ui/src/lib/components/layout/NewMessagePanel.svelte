@@ -82,6 +82,7 @@
 				title={m.newGroup()}
 				chevron={false}
 				class={previewFeatures.enabled ? '' : '!hidden'}
+				data-testid="new-message-new-group"
 			>
 				{#snippet media()}
 					<wa-icon src={wrapPathInSvg(mdiAccountMultiplePlus)}></wa-icon>

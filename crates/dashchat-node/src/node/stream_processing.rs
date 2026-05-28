@@ -323,8 +323,11 @@ impl Node {
         let topic = header.extensions.topic;
 
         match &payload {
-            Payload::Chat(ChatPayload::JoinGroup { .. }) => {
-                // Nothing to do.
+            Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
+                if let Err(err) = self.join_group(*chat_id).await {
+                    // TODO: no retry path — device ends up with no topic registered for this group.
+                    tracing::error!(?err, "failed to join group from invitation");
+                }
             }
 
             Payload::Inbox(invitation) => {

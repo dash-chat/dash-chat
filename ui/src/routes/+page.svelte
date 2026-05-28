@@ -3,9 +3,10 @@
 	import type { ChatsStore, ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useVisibleChatSummaries } from '$lib/stores/visible-chats';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
-	import AllChats from '$lib/components/AllChats.svelte';
+	import AllChats from '$lib/components/chats/AllChats.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
 	import FirstChatTooltip from '$lib/components/FirstChatTooltip.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
@@ -21,7 +22,7 @@
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
-	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+	const chatSummaries = useVisibleChatSummaries(chatsStore);
 </script>
 
 <Page>

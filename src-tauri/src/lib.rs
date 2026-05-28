@@ -95,6 +95,8 @@ pub fn run() {
             commands::direct_chats::direct_chat_send_message,
             commands::chats::mark_messages_read,
             commands::direct_chats::direct_chat_send_reaction,
+            commands::chats::create_group,
+            commands::chats::get_group_chats,
             commands::settings::get_settings,
             commands::settings::set_setting,
             #[cfg(not(mobile))]
@@ -103,10 +105,6 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_all_ids,
             commands::mailbox_state::mailbox_subscribe_connection_state,
             commands::mailbox_state::mailbox_subscribe_sync_state,
-            // commands::chats::create_group,
-            // commands::group_chat::add_member,
-            // commands::group_chat::send_message,
-            // commands::group_chat::get_messages,
         ])
         // .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())

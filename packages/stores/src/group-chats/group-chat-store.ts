@@ -5,11 +5,11 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, PublicKey } from '../p2panda/types';
-import { ChatId, MessageContent, Payload } from '../types';
+import { ChatId, ChatSummary, MessageContent, Payload } from '../types';
 import { type IGroupChatClient } from './group-chat-client';
 
 export interface GroupInfo {
-	name: string;
+	name: string | undefined;
 	description: string | undefined;
 	avatar: string | undefined;
 }
@@ -31,7 +31,7 @@ export class GroupChatStore {
 	info = reactive(async () => {
 		const info: GroupInfo = {
 			name: 'mygroup',
-			description: 'descmygroup',
+			description: undefined,
 			avatar: undefined,
 		};
 		return info;
@@ -51,7 +51,8 @@ export class GroupChatStore {
 		const messages: Array<Message> = [
 			{
 				hash: '123',
-				content: 'heeey',
+				content:
+					"This is a dummy first message. Real group messaging isn't implemented yet.",
 				author: await this.contactsStore.myAgentId(),
 				seqNum: 0,
 				timestamp: Date.now(),
@@ -98,6 +99,25 @@ export class GroupChatStore {
 		};
 
 		return member;
+	});
+
+	summary = reactive(async (): Promise<ChatSummary> => {
+		const info = await this.info();
+		const messages = await this.messages();
+		const lastMessage = messages[messages.length - 1];
+
+		const lastEvent = lastMessage
+			? { summary: lastMessage.content, timestamp: lastMessage.timestamp }
+			: { summary: '', timestamp: 0 };
+
+		return {
+			type: 'GroupChat',
+			chatId: this.chatId,
+			name: info.name ?? '',
+			avatar: info.avatar,
+			lastEvent,
+			unreadMessages: 0,
+		};
 	});
 
 	/// Actions

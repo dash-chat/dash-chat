@@ -49,12 +49,15 @@
 	import { setLocale } from '$lib/paraglide/runtime';
 	import { goto } from '$app/navigation';
 	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
+	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 
 	import('../../tests/setup-utils').then(({ registerTestUtils }) =>
 		// Paraglide types setLocale with a string-literal union; we widen to
 		// plain `string` at the test boundary since invalid locales fail at
 		// runtime anyway.
-		registerTestUtils(goto, setLocale as (locale: string) => void, m),
+		registerTestUtils(goto, setLocale as (locale: string) => void, m, () =>
+			previewFeatures.enable(),
+		),
 	);
 
 	// Forward console.log/info/warn/error from the WebView to the tauri logs

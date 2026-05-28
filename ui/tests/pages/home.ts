@@ -8,14 +8,23 @@ export function goToSettings() {
 	return { action: 'click' as const, selector: selectors.settingsLink };
 }
 
-/** Navigate to new message (iOS theme — navbar link) */
-export function goToNewMessageLink() {
-	return { action: 'click' as const, selector: selectors.newMessageLink };
-}
-
-/** Navigate to new message (Material theme — FAB) */
-export function goToNewMessageFab() {
-	return { action: 'click' as const, selector: selectors.newMessageFab };
+/** Navigate to new message using whichever control is present (FAB or navbar link). */
+export function clickNewMessage(): void {
+	const fab = document.querySelector(
+		selectors.newMessageFab,
+	) as HTMLElement | null;
+	if (fab) {
+		fab.click();
+		return;
+	}
+	const link = document.querySelector(
+		selectors.newMessageLink,
+	) as HTMLElement | null;
+	if (link) {
+		link.click();
+		return;
+	}
+	throw new Error('New message button not found (neither FAB nor link)');
 }
 
 /** Return the home page element (chat list or empty state) if present */

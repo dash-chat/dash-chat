@@ -16,6 +16,7 @@ import {
 	getContactCode,
 	navigateToAddContact,
 } from './flows/contact-exchange';
+import { setLocalMailboxEnabled } from './flows/local-mailbox';
 import { openDirectChat } from './flows/open-chat';
 import { createProfile } from './flows/profile-creation';
 import { sendMessage, waitForMessage } from './flows/send-message';
@@ -48,7 +49,6 @@ import {
 	sendButton,
 	unreadBadgeText,
 } from './pages/direct-chat';
-import { setLocalMailboxEnabled } from './flows/local-mailbox';
 import {
 	dismissCard as dismissGetStartedCard,
 	visibleCards as getStartedCards,
@@ -56,11 +56,18 @@ import {
 import { versionItem } from './pages/help';
 import {
 	checkChatListOverflow,
+	clickNewMessage,
 	firstChatTooltip,
 	getChatListItem,
 	hasChatListItem,
 	homeLoaded,
 } from './pages/home';
+import {
+	clickNewGroupCreate,
+	clickNewGroupNext,
+	newGroupLoaded,
+} from './pages/new-group';
+import { clickNewGroup, newMessageLoaded } from './pages/new-message';
 import { isPeerProfileSheetOpen } from './pages/peer-profile-sheet';
 import { profileNameListItemContains } from './pages/profile-settings';
 import {
@@ -113,6 +120,7 @@ export const testUtils = {
 	openDirectChat,
 	getStartedCards,
 	dismissGetStartedCard,
+	clickNewMessage,
 	homeLoaded,
 	firstChatTooltip,
 	getChatListItem,
@@ -144,6 +152,11 @@ export const testUtils = {
 	updaterBannerTitle,
 	updaterDismissBtn,
 	simulateUpdate,
+	clickNewGroup,
+	newMessageLoaded,
+	newGroupLoaded,
+	clickNewGroupNext,
+	clickNewGroupCreate,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(
@@ -163,6 +176,10 @@ export const testUtils = {
 	setLocale: (_locale: string) => {},
 	/** SvelteKit goto — set by registerTestUtils from +layout.svelte. */
 	goto: (_path: string) => Promise.resolve() as Promise<void>,
+	/** Enable preview features — set by registerTestUtils from +layout.svelte. */
+	enablePreviewFeatures: (): void => {
+		throw new Error('enablePreviewFeatures called before registerTestUtils provided the callback');
+	},
 };
 
 declare global {
@@ -175,8 +192,12 @@ export function registerTestUtils(
 	goto?: (path: string) => Promise<void>,
 	setLocale?: (locale: string) => void,
 	messages?: Messages,
+	enablePreviewFeatures?: () => void,
 ) {
 	window.__test = testUtils;
+	if (enablePreviewFeatures) {
+		testUtils.enablePreviewFeatures = enablePreviewFeatures;
+	}
 	if (goto) {
 		testUtils.goto = goto;
 	}

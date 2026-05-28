@@ -1,6 +1,21 @@
 use dashchat_node::{ChatId, Node};
-use p2panda_core::Hash;
+use p2panda_auth::Access;
+use p2panda_core::{Hash, PublicKey};
 use tauri::State;
+
+#[tauri::command]
+pub async fn create_group(
+    initial_members: Vec<PublicKey>,
+    node: State<'_, Node>,
+) -> Result<ChatId, String> {
+    let members = initial_members
+        .into_iter()
+        .map(|pk| (pk, Access::write()))
+        .collect();
+    node.create_group(members)
+        .await
+        .map_err(|e| format!("Failed to create group: {e:?}"))
+}
 
 #[tauri::command]
 pub async fn mark_messages_read(
@@ -20,9 +35,9 @@ pub async fn mark_messages_read(
 //         .map_err(|e| format!("Failed to create group: {e:?}"))
 // }
 
-// #[command]
-// pub async fn get_group_chats(node: State<'_, Node>) -> Result<Vec<ChatId>, String> {
-//     node.get_groups()
-//         .await
-//         .map_err(|e| format!("Failed to get groups: {e:?}"))
-// }
+#[tauri::command]
+pub async fn get_group_chats(node: State<'_, Node>) -> Result<Vec<ChatId>, String> {
+    node.get_groups()
+        .await
+        .map_err(|e| format!("Failed to get groups: {e:?}"))
+}
