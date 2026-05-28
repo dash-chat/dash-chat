@@ -345,11 +345,17 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn save_group_chat(&self, chat_id: ChatId) -> anyhow::Result<()> {
+    pub async fn save_group_chat_subscribed(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("INSERT OR IGNORE INTO subscribed_topics (topic_id) VALUES (?)")
+            .bind(*chat_id)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
             .bind(*chat_id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+        tx.commit().await?;
         Ok(())
     }
 
