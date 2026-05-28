@@ -1,6 +1,12 @@
 <script lang="ts">
-	import { Page, Navbar, NavbarBackLink, Button, Link } from 'konsta/svelte';
-	import { isIos } from '$lib/utils/environment';
+	import {
+		Page,
+		Navbar,
+		NavbarBackLink,
+		Button,
+		Link,
+		useTheme,
+	} from 'konsta/svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -22,6 +28,9 @@
 		actionTestId,
 		children,
 	}: Props = $props();
+
+	const theme = $derived(useTheme());
+	const isIosTheme = $derived(theme === 'ios');
 </script>
 
 <Page>
@@ -34,9 +43,9 @@
 		{/snippet}
 
 		{#snippet right()}
-			{#if isIos}
+			{#if isIosTheme}
 				<Link onClick={onAction} data-testid={actionTestId}>
-					{actionLabel}
+					{actionLabel}XX
 				</Link>
 			{/if}
 		{/snippet}
@@ -44,14 +53,14 @@
 
 	{@render children()}
 
-	{#if !isIos}
+	{#if !isIosTheme}
 		<Button
 			onClick={onAction}
 			data-testid={actionTestId}
 			class="fixed-action-btn"
 			rounded
 		>
-			{actionLabel}
+			{actionLabel}YY
 		</Button>
 	{/if}
 </Page>
