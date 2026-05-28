@@ -176,6 +176,10 @@ export const testUtils = {
 	setLocale: (_locale: string) => {},
 	/** SvelteKit goto — set by registerTestUtils from +layout.svelte. */
 	goto: (_path: string) => Promise.resolve() as Promise<void>,
+	/** Enable preview features — set by registerTestUtils from +layout.svelte. */
+	enablePreviewFeatures: () => {
+		throw new Error('enablePreviewFeatures called before registerTestUtils provided the callback');
+	},
 };
 
 declare global {
@@ -190,8 +194,10 @@ export function registerTestUtils(
 	messages?: Messages,
 	enablePreviewFeatures?: () => void,
 ) {
-	enablePreviewFeatures?.();
 	window.__test = testUtils;
+	if (enablePreviewFeatures) {
+		testUtils.enablePreviewFeatures = enablePreviewFeatures;
+	}
 	if (goto) {
 		testUtils.goto = goto;
 	}

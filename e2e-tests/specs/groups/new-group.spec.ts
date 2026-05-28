@@ -13,6 +13,7 @@ describe('New group', () => {
 	before(async () => {
 		agent = makeAgent(browser.getInstance('agent1'));
 		await waitForTestUtils(agent);
+		await agent.enablePreviewFeatures();
 		await agent.createProfile('Alice', 'Test');
 	});
 
