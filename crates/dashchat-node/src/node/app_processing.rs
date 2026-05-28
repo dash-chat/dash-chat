@@ -64,7 +64,6 @@ impl Node {
 
         let subscribed = reply_rx.await??;
 
-        // @TODO: I'm not sure what this notification channel is for.
         if let Some(tx) = &self.topic_subscribed_tx {
             let _ = tx.send(topic).await;
         }
@@ -149,18 +148,6 @@ impl Node {
         let payload = operation.message();
 
         match payload {
-            Payload::Chat(ChatPayload::JoinGroup { .. }) => {
-                // Nothing to do.
-            }
-
-            Payload::Inbox(_invitation) => {
-                // Nothing to do.
-            }
-
-            Payload::Chat(ChatPayload::Message(_) | ChatPayload::Reaction(_)) => {
-                // Nothing to do.
-            }
-
             Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
                 // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct
                 // it here.
@@ -180,7 +167,6 @@ impl Node {
                     tracing::warn!(?err, "failed to save profile from SetProfile");
                 }
             }
-
             Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
                 // Save the device_id -> agent_id mapping so group members can look each other up.
 
@@ -206,20 +192,21 @@ impl Node {
                     tracing::warn!(?err, "failed to save capabilities from SetCapabilities");
                 }
             }
-
-            Payload::DeviceGroup(_) => {
-                // Nothing to do.
-            }
             Payload::GroupControl(_) => {
                 // Subscribe to announcements topics for any group members whose agent_id we know.
                 let topic = ChatId::from_topic(topic);
 
-                // Calculate the current group membership based on local store state
-                // rather than looking into the group actions themselves.
-
-                // @TODO: currently we're processing operations here out-of-order but soon the
-                // node will be doing ordering for us and operations will be "released" only once
-                // their dependencies are met, which is the desired behavior.
+                // Calculate the current group membership based on local store state rather than
+                // looking into the group actions themselves.
+                //
+                // @TODO: currently we're receiving group control operations here out-of-order but
+                // soon the node will be doing ordering for us and operations will be released
+                // only once their dependencies are met, which is the desired behavior. Once that
+                // change occurs we can also receive current member state, or better just a diff,
+                // in the node event and use that to understand who has been added/removed. For
+                // now we get _all_ members and (possibly redundantly) attempt to subscribe to
+                // them all. Even with the messages arriving out-of-order this will result in us
+                // subscribing to all the correct topics.
                 let member_device_ids: Vec<DeviceId> = self
                     .group_store
                     .members(topic)
@@ -228,11 +215,11 @@ impl Node {
                     .map(|(id, _)| *id)
                     .collect();
 
-                // @TODO: when removals are support we should also unsubscribe from topics of
+                // @TODO: when removals are supported we should also unsubscribe from topics of
                 // removed members.
 
                 // Retrieve the agent_ids from the member_device_ids.
-
+                //
                 // @TODO: this requires a reliable way to know the agent id from the device id
                 // even if they're not a contact.
                 let known = self
@@ -249,6 +236,9 @@ impl Node {
                         );
                     }
                 }
+            }
+            Payload::Chat(_) | Payload::Inbox(_) | Payload::DeviceGroup(_) => {
+                // Nothing to do.
             }
         }
 
