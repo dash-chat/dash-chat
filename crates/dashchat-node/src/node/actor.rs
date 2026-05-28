@@ -132,8 +132,11 @@ impl Actor {
                                 let _ = reply_tx.send(result);
                             }
                             Command::Shutdown { reply_tx } => {
-                                self.handle_shutdown().await;
+                                // Drop self and then break out of the processing loop which will
+                                // cause the actor task to complete.
+                                drop(self);
                                 let _ = reply_tx.send(());
+                                break;
                             }
                         };
                     }
@@ -216,8 +219,6 @@ impl Actor {
         let process_fut = ProcessFuture::new(hash, publish_fut, processed_rx);
         Ok(process_fut)
     }
-
-    async fn handle_shutdown(&self) {}
     async fn process_event(&mut self, event: StreamEvent<Payload>) -> Result<(), NodeActorError> {
         match event {
             StreamEvent::Processed { operation, source } => {
