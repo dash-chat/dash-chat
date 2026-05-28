@@ -1,7 +1,8 @@
-import { derived } from 'svelte/store';
 import type { ChatsStore } from 'dash-chat-stores';
-import { useReactivePromise } from './use-signal';
+import { derived } from 'svelte/store';
+
 import { previewFeatures } from './preview-features.svelte';
+import { useReactivePromise } from './use-signal';
 
 export function useVisibleChatSummaries(chatsStore: ChatsStore) {
 	const all = useReactivePromise(chatsStore.allChatsSummaries);
