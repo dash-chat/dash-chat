@@ -20,7 +20,9 @@ export interface IGroupChatClient {
 }
 
 export class GroupChatClient implements IGroupChatClient {
-	async addMember(chatId: ChatId, member: PublicKey): Promise<void> {}
+	async addMember(chatId: ChatId, member: PublicKey): Promise<void> {
+		throw new Error('addMember not implemented');
+	}
 	async removeMember(chatId: ChatId, member: PublicKey): Promise<void> {}
 
 	sendMessage(topic: ChatId, content: MessageContent): Promise<void> {

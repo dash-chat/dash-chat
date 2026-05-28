@@ -177,7 +177,7 @@ export const testUtils = {
 	/** SvelteKit goto — set by registerTestUtils from +layout.svelte. */
 	goto: (_path: string) => Promise.resolve() as Promise<void>,
 	/** Enable preview features — set by registerTestUtils from +layout.svelte. */
-	enablePreviewFeatures: () => {
+	enablePreviewFeatures: (): void => {
 		throw new Error('enablePreviewFeatures called before registerTestUtils provided the callback');
 	},
 };
