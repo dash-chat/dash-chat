@@ -11,7 +11,6 @@
  *   await window.__test.waitForMessage('Hello!')
  */
 import type { m } from '../src/lib/paraglide/messages.js';
-import { previewFeatures } from '$lib/stores/preview-features.svelte.js';
 import {
 	addContact,
 	getContactCode,
@@ -189,8 +188,9 @@ export function registerTestUtils(
 	goto?: (path: string) => Promise<void>,
 	setLocale?: (locale: string) => void,
 	messages?: Messages,
+	enablePreviewFeatures?: () => void,
 ) {
-	previewFeatures.enable();
+	enablePreviewFeatures?.();
 	window.__test = testUtils;
 	if (goto) {
 		testUtils.goto = goto;
