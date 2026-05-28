@@ -325,7 +325,8 @@ impl Node {
         match &payload {
             Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
                 if let Err(err) = self.join_group(*chat_id).await {
-                    tracing::warn!(?err, "failed to join group from invitation");
+                    // TODO: no retry path — device ends up with no topic registered for this group.
+                    tracing::error!(?err, "failed to join group from invitation");
                 }
             }
 
