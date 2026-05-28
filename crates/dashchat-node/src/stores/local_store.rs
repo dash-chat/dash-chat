@@ -42,7 +42,7 @@ const MIGRATIONS: &[&str] = &[
         expires_at_nanos INTEGER NOT NULL
     )",
     "CREATE TABLE IF NOT EXISTS group_chats (
-        chat_id BLOB PRIMARY KEY
+        chat_id BLOB NOT NULL PRIMARY KEY
     )",
 ];
 
