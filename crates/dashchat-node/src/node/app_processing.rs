@@ -194,7 +194,7 @@ impl Node {
             }
             Payload::GroupControl(_) => {
                 // Subscribe to announcements topics for any group members whose agent_id we know.
-                let topic = ChatId::from_topic(topic);
+                let topic = ChatId::from_topic(topic)?;
 
                 // Calculate the current group membership based on local store state rather than
                 // looking into the group actions themselves.

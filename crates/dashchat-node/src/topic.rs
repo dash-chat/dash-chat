@@ -260,14 +260,20 @@ impl Topic<kind::Chat> {
         Self::new(*pubkey.as_bytes())
     }
 
-    // @TODO: need to validate the bytes are the right shape.
-    pub fn from_topic(topic: p2panda::Topic) -> Self {
-        Self::new(*topic.as_bytes())
+    /// Instantiate a chat topic from a p2panda::Topic.
+    ///
+    /// This can fail if the topic bytes do not actually represent a valid Ed25519 public key.
+    pub fn from_topic(topic: p2panda::Topic) -> anyhow::Result<Self> {
+        let verifying_key = p2panda_core::VerifyingKey::from_bytes(&topic.as_bytes())?;
+        Ok(Self::new(*verifying_key.as_bytes()))
     }
 
-    // @TODO: need to validate the bytes are the right shape.
-    pub fn from_topic_id(topic_id: TopicId) -> Self {
-        Self::new(topic_id.0)
+    /// Instantiate a chat topic from a TopicId.
+    ///
+    /// This can fail if the topic id bytes do not actually represent a valid Ed25519 public key.
+    pub fn from_topic_id(topic_id: TopicId) -> anyhow::Result<Self> {
+        let verifying_key = p2panda_core::VerifyingKey::from_bytes(&topic_id.0)?;
+        Ok(Self::new(*verifying_key.as_bytes()))
     }
 
     pub fn to_group_pubkey(self) -> anyhow::Result<p2panda_core::VerifyingKey> {
