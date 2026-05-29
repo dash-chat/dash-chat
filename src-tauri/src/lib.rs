@@ -73,9 +73,8 @@ pub fn run() {
                     tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                     Some(vec!["--minimized"]),
                 ))
-                .plugin(tauri_plugin_updater::Builder::new().build());
-            // @TODO: see comment in Cargo.toml regarding rustc version mismatch.
-            // .plugin(tauri_plugin_keepawake::init());
+                .plugin(tauri_plugin_updater::Builder::new().build())
+                .plugin(tauri_plugin_keepawake::init());
         }
     }
 
