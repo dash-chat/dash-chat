@@ -14,6 +14,7 @@ use p2panda::streams::{
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use p2panda_auth::processor::GroupsProcessorError;
+use p2panda_store::operations::OperationStore;
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -207,6 +208,7 @@ impl Actor {
         // out where calls to subscribe to the topic is missing and remove this snippet.
         if !self.tx_map.contains_key(&topic) {
             let (tx, rx) = self.inner.stream(topic).await?;
+            tracing::warn!(topic = ?topic.aliased(), "publishing operation before subscribing, automatically subscribed");
             self.tx_map.insert(topic, tx);
             self.streams.insert(topic, rx);
         }
@@ -228,6 +230,7 @@ impl Actor {
         hash.alias_numbered();
         let _ = self.processed.insert(hash, processed_tx);
         let process_fut = ProcessFuture::new(hash, publish_fut, processed_rx);
+
         Ok(process_fut)
     }
 

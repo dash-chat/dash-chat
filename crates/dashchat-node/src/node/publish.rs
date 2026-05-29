@@ -17,7 +17,7 @@ impl Node {
         // Construct a node actor command.
         let payload: Payload = payload.into();
 
-        debug!(topic = %topic, payload = ?payload, "publish operation");
+        debug!(topic = ?topic.aliased(), payload = ?payload.aliased(), "publish operation");
 
         let command = Command::Publish {
             topic: topic.into(),

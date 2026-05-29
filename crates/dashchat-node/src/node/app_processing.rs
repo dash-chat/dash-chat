@@ -154,9 +154,14 @@ impl Node {
                                     };
                                 }
 
-                                if let Err(err) = node.process_operation(operation).await {
-                                    tracing::error!(?err, "process operation error");
-                                }
+                                // // Only process operations received externally here
+                                // // (local operations are processed immediately upon authoring)
+                                // if !matches!(source, Source::LocalStore) {
+                                    if let Err(err) = node.process_operation(operation).await {
+                                        tracing::error!(?err, "process operation error");
+                                    }
+                                // }
+
                             }
                             StreamEvent::ProcessingFailed { error, .. } => warn!("error processing operation: {error:?}"),
                             StreamEvent::DecodeFailed { error, .. } => warn!("error decoding operation: {error:?}"),

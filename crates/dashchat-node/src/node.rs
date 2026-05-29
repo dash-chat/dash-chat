@@ -481,16 +481,17 @@ impl Node {
         self.register_topic(chat_id).await
     }
 
-    pub async fn set_profile(&self, profile: Profile) -> Result<(), crate::Error> {
-        self.publish(
-            Topic::announcements(self.agent_id()),
-            Payload::Announcements(AnnouncementsPayload::SetProfile(profile)),
-            Some(&format!("set_profile({:?})", self.device_id().aliased())),
-        )
-        .await
-        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+    pub async fn set_profile(&self, profile: Profile) -> Result<Header, crate::Error> {
+        let header = self
+            .publish(
+                Topic::announcements(self.agent_id()),
+                Payload::Announcements(AnnouncementsPayload::SetProfile(profile)),
+                Some(&format!("set_profile({:?})", self.device_id().aliased())),
+            )
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
-        Ok(())
+        Ok(header)
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
