@@ -22,7 +22,15 @@
 		Array.from(
 			{ length: 100 },
 			(_, i) =>
-				[`fake-contact-${i}`, { name: `Test Contact ${i + 1}`, surname: undefined, about: undefined, avatar: `https://i.pravatar.cc/150?img=${(i % 70) + 1}` }] as [string, Profile],
+				[
+					`fake-contact-${i}`,
+					{
+						name: `Test Contact ${i + 1}`,
+						surname: undefined,
+						about: undefined,
+						avatar: `https://i.pravatar.cc/150?img=${(i % 70) + 1}`,
+					},
+				] as [string, Profile],
 		),
 	);
 
@@ -39,11 +47,12 @@
 	actionTestId="new-group-next"
 >
 	{#snippet belowNavbar()}
-		<div>
+		<div class="column gap-4">
 			<Searchbar
 				clearButton
 				placeholder={m.searchByName()}
 				value={searchQuery}
+				class="!mx-0 py-0 !w-full"
 				onInput={e => {
 					searchQuery = (e.target as HTMLInputElement).value;
 				}}

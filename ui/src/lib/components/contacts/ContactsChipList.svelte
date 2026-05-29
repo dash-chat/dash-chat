@@ -12,7 +12,7 @@
 </script>
 
 {#if contacts.length > 0}
-	<div class="flex flex-wrap gap-2 px-4 py-2">
+	<div class="flex flex-wrap gap-2">
 		{#each contacts as [key, profile]}
 			<Chip deleteButton onDelete={() => onRemove(key)}>{profile.name}</Chip>
 		{/each}

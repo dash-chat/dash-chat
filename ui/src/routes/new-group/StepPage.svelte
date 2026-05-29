@@ -59,7 +59,9 @@
 
 		{#snippet subnavbar()}
 			{#if belowNavbar}
-				{@render belowNavbar()}
+				<div class="w-full mb-4 {isIosTheme ? 'mt-4' : ''}">
+					{@render belowNavbar()}
+				</div>
 			{/if}
 		{/snippet}
 	</Navbar>
