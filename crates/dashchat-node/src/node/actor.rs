@@ -30,6 +30,7 @@ pub(crate) enum Command {
         topic: Topic,
         reply_tx: oneshot::Sender<Result<bool, NodeActorError>>,
     },
+    #[allow(unused)]
     Unsubscribe {
         topic: Topic,
         reply_tx: oneshot::Sender<()>,
@@ -303,6 +304,7 @@ impl ProcessFuture {
 }
 
 impl ProcessFuture {
+    #[allow(unused)]
     pub fn hash(&self) -> Hash {
         self.hash
     }
