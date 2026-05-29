@@ -4,7 +4,7 @@ use p2panda_auth::group::GroupCrdtState;
 use p2panda_auth::processor::GroupsOperation;
 use p2panda_store::{SqliteStore, Transaction, groups::GroupsStore};
 
-use crate::{ChatId, ChatMember, TopicId};
+use crate::{ChatId, ChatMember, Topic, TopicId};
 
 type GroupState = GroupCrdtState<VerifyingKey, Hash, GroupsOperation, ()>;
 
@@ -21,17 +21,10 @@ impl GroupStore {
         Self { db: sqlite }
     }
 
-    pub async fn heads(&self, _topic_id: TopicId) -> anyhow::Result<Vec<Hash>> {
-        // @TODO: we should use auth.heads_filtered(topic) here instead so as to correctly
-        // partition the groups graph based on only the necessary dependencies.
-        //
-        // Like so:
-        //
-        // let group_id = Topic::from_topic_id(topic_id).to_group_pubkey()?;
-        // let auth = self.auth_state().await?;
-        // Ok(auth.heads_filtered(&[group_id]))
+    pub async fn heads(&self, topic_id: TopicId) -> anyhow::Result<Vec<Hash>> {
+        let group_id = Topic::from_topic_id(topic_id)?.to_group_pubkey()?;
         let auth = self.auth_state().await?;
-        Ok(auth.heads())
+        Ok(auth.heads_filtered(&[group_id]))
     }
 
     pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(ChatMember, Access)>> {
