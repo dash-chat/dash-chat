@@ -86,13 +86,13 @@ pub struct Actor {
     groups_processor: GroupsProcessor,
 
     /// Channel for forwarding all received events on to the application layer processor.
-    operations_tx: broadcast::Sender<StreamEvent<Payload>>,
+    events_tx: broadcast::Sender<StreamEvent<Payload>>,
 }
 
 impl Actor {
     pub(crate) fn new(node: p2panda::Node) -> (Self, broadcast::Receiver<StreamEvent<Payload>>) {
         let groups_processor = GroupsProcessor::new(node.store());
-        let (operations_tx, operations_rx) = broadcast::channel(100);
+        let (events_tx, events_rx) = broadcast::channel(100);
 
         (
             Self {
@@ -101,9 +101,9 @@ impl Actor {
                 streams: Default::default(),
                 processed: Default::default(),
                 groups_processor,
-                operations_tx,
+                events_tx,
             },
-            operations_rx,
+            events_rx,
         )
     }
 
@@ -254,7 +254,7 @@ impl Actor {
         }
 
         // Forward the event for further application layer processing.
-        self.operations_tx
+        self.events_tx
             .send(event)
             .map_err(|_| NodeActorError::EventSend)?;
 
@@ -340,4 +340,215 @@ pub enum NodeActorError {
 
     #[error(transparent)]
     Network(#[from] NetworkError),
+}
+
+#[cfg(test)]
+mod tests {
+    use p2panda::streams::StreamEvent;
+    use p2panda::{Hash, SigningKey, Topic, VerifyingKey};
+    use p2panda_auth::Access;
+    use p2panda_auth::group::{GroupAction, GroupCrdtState, GroupMember};
+    use p2panda_auth::processor::{GroupsArgs, GroupsOperation};
+    use p2panda_store::groups::GroupsStore;
+    use p2panda_store::{SqliteStore, tx_unwrap};
+    use tokio::sync::oneshot;
+
+    use crate::testing::setup_tracing;
+    use crate::{ChatMessageContent, ChatPayload, Payload};
+
+    use super::{Actor, Command};
+
+    type GroupsState = GroupCrdtState<VerifyingKey, Hash, GroupsOperation, ()>;
+
+    fn chat(message: &str) -> Payload {
+        Payload::Chat(ChatPayload::Message(ChatMessageContent::text_only(message)))
+    }
+
+    async fn groups_control(
+        store: &SqliteStore,
+        group_id: VerifyingKey,
+        action: GroupAction<VerifyingKey>,
+    ) -> Payload {
+        let groups_y: GroupsState = tx_unwrap!(store, { store.get_groups_state(&0).await })
+            .unwrap()
+            .unwrap_or_default();
+
+        let dependencies = groups_y.heads();
+        Payload::GroupControl(GroupsArgs {
+            group_id,
+            action,
+            dependencies,
+        })
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn subscribe_and_send() {
+        setup_tracing(&["dashchat=info"], true);
+
+        let topic_a = Topic::random();
+        let topic_b = Topic::random();
+
+        let alice = p2panda::spawn().await.unwrap();
+        let bobbi = p2panda::spawn().await.unwrap();
+
+        let (alice_actor, alice_events_rx) = Actor::new(alice);
+        let alice_actor_tx = alice_actor.spawn().await.unwrap();
+
+        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi);
+        let bobbi_actor_tx = bobbi_actor.spawn().await.unwrap();
+
+        // Both alice and bobbi subscribe to topics a & b.
+        for topic in [topic_a, topic_b] {
+            let (reply_tx, reply_rx) = oneshot::channel();
+            alice_actor_tx
+                .send(Command::Subscribe { topic, reply_tx })
+                .await
+                .unwrap();
+
+            assert!(reply_rx.await.unwrap().unwrap());
+
+            let (reply_tx, reply_rx) = oneshot::channel();
+            bobbi_actor_tx
+                .send(Command::Subscribe { topic, reply_tx })
+                .await
+                .unwrap();
+
+            assert!(reply_rx.await.unwrap().unwrap());
+        }
+
+        // Alice sends a message into each topic.
+        let topic_a_message = chat("hey from topic a!");
+        let topic_b_message = chat("hey from topic b!");
+
+        for (topic, payload) in [
+            (topic_a, topic_a_message.clone()),
+            (topic_b, topic_b_message.clone()),
+        ] {
+            let (reply_tx, reply_rx) = oneshot::channel();
+            alice_actor_tx
+                .send(Command::Publish {
+                    topic,
+                    payload,
+                    reply_tx,
+                })
+                .await
+                .unwrap();
+
+            let event = reply_rx.await.unwrap().unwrap().await.unwrap();
+            assert!(event.is_completed());
+        }
+
+        // Both alice and bobbi receive the messages on their events stream.
+        for mut events_rx in [alice_events_rx, bobbi_events_rx] {
+            let mut topic_a_message_received = false;
+            let mut topic_b_message_received = false;
+            while let Ok(event) = events_rx.recv().await {
+                if let StreamEvent::Processed { operation, .. } = event {
+                    if operation.message() == &topic_a_message {
+                        topic_a_message_received = true;
+                    }
+
+                    if operation.message() == &topic_b_message {
+                        topic_b_message_received = true;
+                    }
+
+                    if topic_a_message_received && topic_b_message_received {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn process_groups_control_messages() {
+        setup_tracing(&["dashchat=info"], true);
+
+        let topic = Topic::random();
+
+        let alice = p2panda::spawn().await.unwrap();
+        let bobbi = p2panda::spawn().await.unwrap();
+        let alice_store = alice.store();
+        let bobbi_store = bobbi.store();
+        let alice_id = alice.id();
+        let bobbi_id = bobbi.id();
+
+        let (alice_actor, alice_events_rx) = Actor::new(alice);
+        let alice_actor_tx = alice_actor.spawn().await.unwrap();
+
+        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi);
+        let bobbi_actor_tx = bobbi_actor.spawn().await.unwrap();
+
+        // Alice subscribes to topic.
+        let (reply_tx, reply_rx) = oneshot::channel();
+        alice_actor_tx
+            .send(Command::Subscribe { topic, reply_tx })
+            .await
+            .unwrap();
+        assert!(reply_rx.await.unwrap().unwrap());
+
+        // Bobbi subscribes to topic.
+        let (reply_tx, reply_rx) = oneshot::channel();
+        bobbi_actor_tx
+            .send(Command::Subscribe { topic, reply_tx })
+            .await
+            .unwrap();
+        assert!(reply_rx.await.unwrap().unwrap());
+
+        // Alice publishes a "create" group message.
+        let group_id = SigningKey::generate().verifying_key();
+        let create_group = groups_control(
+            &alice_store,
+            group_id,
+            GroupAction::Create {
+                initial_members: vec![
+                    (GroupMember::Individual(alice_id), Access::manage()),
+                    (GroupMember::Individual(bobbi_id), Access::manage()),
+                ],
+            },
+        )
+        .await;
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        alice_actor_tx
+            .send(Command::Publish {
+                topic,
+                payload: create_group.clone(),
+                reply_tx,
+            })
+            .await
+            .unwrap();
+
+        let event = reply_rx.await.unwrap().unwrap().await.unwrap();
+        assert!(event.is_completed());
+
+        // Alice's has processed the groups message.
+        let groups_y: GroupsState =
+            tx_unwrap!(alice_store, { alice_store.get_groups_state(&0).await })
+                .unwrap()
+                .unwrap();
+        let members = groups_y.members(group_id);
+        assert!(members.contains(&(alice_id, Access::manage())));
+        assert!(members.contains(&(bobbi_id, Access::manage())));
+
+        // Bobbi receives the messages on their events stream.
+        for mut events_rx in [alice_events_rx, bobbi_events_rx] {
+            while let Ok(event) = events_rx.recv().await {
+                if let StreamEvent::Processed { operation, .. } = event {
+                    if operation.message() == &create_group {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // And they have also processed the groups control message.
+        let groups_y: GroupsState =
+            tx_unwrap!(bobbi_store, { bobbi_store.get_groups_state(&0).await })
+                .unwrap()
+                .unwrap();
+        let members = groups_y.members(group_id);
+        assert!(members.contains(&(alice_id, Access::manage())));
+        assert!(members.contains(&(bobbi_id, Access::manage())));
+    }
 }

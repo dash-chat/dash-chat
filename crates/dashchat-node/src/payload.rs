@@ -47,7 +47,7 @@ pub enum InboxPayload {
 }
 
 // TODO: consolidate into something else
-#[derive(Clone, Debug, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, RenameAll)]
 #[serde(tag = "type", content = "payload")]
 pub enum ChatPayload {
     /// Instructs the recipient to subscribe to the group chat topic.
@@ -71,13 +71,13 @@ pub enum ChatPayload {
     Reaction(ChatReaction),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, RenameNone)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, RenameNone)]
 pub struct ReadMessagesPayload {
     pub chat_id: ChatId,
     pub message_hashes: Vec<Hash>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, RenameAll)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
     AddContact(QrCode),
@@ -85,7 +85,7 @@ pub enum DeviceGroupPayload {
     ReadMessages(ReadMessagesPayload),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, RenameAll)]
 #[serde(tag = "type", content = "payload")]
 pub enum Payload {
     /// Pushing data out to my contacts.
