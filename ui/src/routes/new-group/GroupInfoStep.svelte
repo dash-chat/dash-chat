@@ -1,28 +1,16 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
 	import { List, ListInput, useTheme } from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import StepPage from './StepPage.svelte';
 
 	interface Props {
 		groupName: string;
-		groupAvatar: string | undefined;
 		onBack: () => void;
 		onCreate: () => void;
 	}
 
-	let {
-		groupName = $bindable(),
-		groupAvatar = $bindable(),
-		onBack,
-		onCreate,
-	}: Props = $props();
-
-	let avatarBinding = $state(groupAvatar ?? '');
-	$effect(() => {
-		groupAvatar = avatarBinding || undefined;
-	});
+	let { groupName = $bindable(), onBack, onCreate }: Props = $props();
 
 	const theme = $derived(useTheme());
 </script>
@@ -49,11 +37,7 @@
 					outline
 					class="plain"
 					placeholder={m.name()}
-				>
-					{#snippet media()}
-						<SelectAvatar bind:value={avatarBinding}></SelectAvatar>
-					{/snippet}
-				</ListInput>
+				/>
 			</List>
 		</div>
 	</div>
