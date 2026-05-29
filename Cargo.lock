@@ -1697,6 +1697,7 @@ dependencies = [
  "opener",
  "openssl-sys",
  "oslog",
+ "p2panda",
  "p2panda-auth",
  "p2panda-core",
  "p2panda-discovery",

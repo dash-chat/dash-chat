@@ -14,6 +14,7 @@ use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Notification {
+    pub topic: Topic,
     pub header: Header,
     pub payload: Payload,
 }
@@ -297,7 +298,9 @@ impl Node {
         // @TODO: once group control messages are properly ordered then we could also send these
         // to the frontend.
         if !matches!(payload, Payload::GroupControl(_)) {
-            self.notify_payload(&operation.processed().header(), payload)
+            // We convert the p2panda::Topic into a dashchat Topic here in its untyped form.
+            let dashchat_topic = crate::Topic::untyped(*topic.as_bytes());
+            self.notify_payload(dashchat_topic, &operation.processed().header(), payload)
                 .await?;
         }
 
@@ -309,10 +312,16 @@ impl Node {
     }
 
     // @TODO: move to application processor.
-    pub async fn notify_payload(&self, header: &Header, payload: &Payload) -> anyhow::Result<()> {
+    pub async fn notify_payload(
+        &self,
+        topic: Topic,
+        header: &Header,
+        payload: &Payload,
+    ) -> anyhow::Result<()> {
         if let Some((notification_tx, payload)) = self.notification_tx.clone().zip(Some(payload)) {
             notification_tx
                 .send(Notification {
+                    topic: topic.clone(),
                     header: header.clone(),
                     payload: payload.clone(),
                 })

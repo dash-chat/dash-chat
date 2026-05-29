@@ -1,5 +1,5 @@
 use dashchat_node::{ChatId, Node};
-use p2panda_core::Hash;
+use p2panda::Hash;
 use tauri::State;
 
 #[tauri::command]

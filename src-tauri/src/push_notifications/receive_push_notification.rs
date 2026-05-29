@@ -6,6 +6,7 @@ use dashchat_node::{AsBody, Payload, Topic};
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
+use p2panda::VerifyingKey;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
@@ -104,8 +105,8 @@ async fn handle_push_notification(
         .context("failed to hex-decode author")?
         .try_into()
         .map_err(|_| anyhow!("author bytes are not 32 bytes long"))?;
-    let verifying_key = p2panda_core::VerifyingKey::from_bytes(&author_bytes)
-        .context("failed to construct public key")?;
+    let verifying_key =
+        VerifyingKey::from_bytes(&author_bytes).context("failed to construct public key")?;
 
     let topic_bytes: [u8; 32] = hex::decode(topic_hex)
         .context("failed to hex-decode topic")?

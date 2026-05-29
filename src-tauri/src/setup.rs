@@ -155,6 +155,7 @@ fn spawn_notification_loop(
                 }
             };
             let simplified_operation = match simplify(
+                notification.topic,
                 notification.header.hash(),
                 notification.header,
                 Some(Body::new(&body[..])),
