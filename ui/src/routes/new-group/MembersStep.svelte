@@ -14,6 +14,7 @@
 	} from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import StepPage from './StepPage.svelte';
+	import ContactsList from '$lib/components/contacts/ContactsList.svelte';
 
 	interface Props {
 		selectedContacts: PublicKey[];
@@ -38,6 +39,7 @@
 >
 	<div class="column" style="flex: 1">
 		<div class="center-in-desktop">
+			<ContactsList {selectedContacts} />
 			<BlockTitle>{m.contacts()}</BlockTitle>
 
 			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
