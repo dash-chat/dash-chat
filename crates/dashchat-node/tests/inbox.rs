@@ -28,8 +28,9 @@ async fn test_inbox_2() {
     println!("alice: {:?}", alice.device_id().short());
     println!("bobbi: {:?}", bobbi.device_id().short());
 
-    #[cfg(feature = "p2p")]
-    introduce_and_wait([&alice.network, &bobbi.network]).await;
+    // @TODO: comment out unsupported feature for now.
+    // #[cfg(feature = "p2p")]
+    // introduce_and_wait([&alice.network, &bobbi.network]).await;
 
     println!("peers see each other");
 
