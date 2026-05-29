@@ -18,21 +18,7 @@
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
 	const loading = $derived($contacts === undefined);
-	const resolvedContacts = $derived(
-		Array.from(
-			{ length: 100 },
-			(_, i) =>
-				[
-					`fake-contact-${i}`,
-					{
-						name: `Testeradfdsfgjdkewrjlkdsfjdsfnewkjrhewiofhdsfjknwe2rkjdhsfoidshfgdsjhdfsdfdsfdsfdsfdsfsdggfdgdsfgsdfgfdsgdsfgdgsdfds Contact ${i + 1}`,
-						surname: undefined,
-						about: undefined,
-						avatar: `https://i.pravatar.cc/150?img=${(i % 70) + 1}`,
-					},
-				] as [string, Profile],
-		),
-	);
+	const resolvedContacts = $derived($contacts ?? []);
 
 	let searchQuery = $state('');
 </script>
