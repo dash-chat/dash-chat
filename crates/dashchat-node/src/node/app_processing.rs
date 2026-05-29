@@ -6,7 +6,7 @@ use p2panda::streams::{ProcessedOperation, Source, StreamEvent};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::topic::AutoRegisteredTopic;
 
@@ -156,17 +156,11 @@ impl Node {
                                     tracing::error!(?err, "process operation error");
                                 }
                             }
-                            // @TODO: add logging for all variants.
-                            StreamEvent::SyncStarted { .. } => (),
-                            StreamEvent::SyncEnded { .. } => (),
-                            StreamEvent::ImportStarted { .. } => (),
-                            StreamEvent::ImportEnded { .. } => (),
-                            StreamEvent::ProcessingFailed { .. } => (),
-                            StreamEvent::DecodeFailed { .. } => (),
-                            StreamEvent::ReplayFailed { .. } => (),
-                            StreamEvent::AckFailed { .. } => (),
-                            StreamEvent::ReplayStarted { .. } => (),
-                            StreamEvent::ReplayEnded => (),
+                            StreamEvent::ProcessingFailed { error, .. } => warn!("error processing operation: {error:?}"),
+                            StreamEvent::DecodeFailed { error, .. } => warn!("error decoding operation: {error:?}"),
+                            StreamEvent::ReplayFailed { error, .. } => warn!("error replaying stream: {error:?}"),
+                            StreamEvent::AckFailed { error, .. } => warn!("error acking operation: {error:?}"),
+                            _ => ()
                         }
                     }
                     Some(()) = cancel_rx.recv() => {
