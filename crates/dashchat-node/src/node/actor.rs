@@ -14,7 +14,6 @@ use p2panda::streams::{
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use p2panda_auth::processor::GroupsProcessorError;
-use p2panda_store::operations::OperationStore;
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc, oneshot};
