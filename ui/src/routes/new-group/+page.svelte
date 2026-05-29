@@ -2,7 +2,7 @@
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { ChatsStore, PublicKey } from 'dash-chat-stores';
-	import DisabledMembersStep from './DisabledMembersStep.svelte';
+	import MembersStep from './MembersStep.svelte';
 	import DisabledGroupInfoStep from './DisabledGroupInfoStep.svelte';
 	// To re-enable the real members step: swap DisabledMembersStep back to MembersStep
 
@@ -20,7 +20,7 @@
 </script>
 
 {#if currentPage === 'members'}
-	<DisabledMembersStep
+	<MembersStep
 		bind:selectedContacts
 		onNext={() => (currentPage = 'group-info')}
 	/>

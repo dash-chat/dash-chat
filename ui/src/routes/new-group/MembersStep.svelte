@@ -28,7 +28,9 @@
 </script>
 
 <StepPage
-	title={m.newGroup()}
+	title={selectedContacts.length === 0
+		? m.newGroup()
+		: m.membersCount({ count: selectedContacts.length })}
 	backTestId="new-group-back"
 	actionLabel={selectedContacts.length === 0 ? m.skip() : m.next()}
 	onAction={onNext}
