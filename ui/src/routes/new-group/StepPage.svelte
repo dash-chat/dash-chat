@@ -16,7 +16,7 @@
 		actionLabel: string;
 		onAction: () => void;
 		actionTestId?: string;
-		belowNavbar?: Snippet;
+		subnavbar?: Snippet;
 		children: Snippet;
 	}
 
@@ -27,7 +27,7 @@
 		actionLabel,
 		onAction,
 		actionTestId,
-		belowNavbar,
+		subnavbar: belowNavbar,
 		children,
 	}: Props = $props();
 

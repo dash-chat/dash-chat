@@ -9,6 +9,7 @@
 		selectedContacts: PublicKey[];
 		loading?: boolean;
 		noDataMessage?: string;
+		selectable?: boolean;
 	}
 
 	let {
@@ -16,6 +17,7 @@
 		selectedContacts = $bindable(),
 		loading = false,
 		noDataMessage,
+		selectable = true,
 	}: Props = $props();
 
 	const theme = $derived(useTheme());
@@ -38,19 +40,21 @@
 					{/snippet}
 
 					{#snippet after()}
-						<Checkbox
-							checked={selectedContacts.includes(publicKey)}
-							onChange={e => {
-								const target = e.target as HTMLInputElement;
-								if (target.checked) {
-									selectedContacts = [...selectedContacts, publicKey];
-								} else {
-									selectedContacts = selectedContacts.filter(
-										c => c !== publicKey,
-									);
-								}
-							}}
-						/>
+						{#if selectable}
+							<Checkbox
+								checked={selectedContacts.includes(publicKey)}
+								onChange={e => {
+									const target = e.target as HTMLInputElement;
+									if (target.checked) {
+										selectedContacts = [...selectedContacts, publicKey];
+									} else {
+										selectedContacts = selectedContacts.filter(
+											c => c !== publicKey,
+										);
+									}
+								}}
+							/>
+						{/if}
 					{/snippet}
 				</ListItem>
 			{/each}

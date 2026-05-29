@@ -117,7 +117,7 @@
 	"contactRequestAcceptedNoName": "Your contact request was accepted",
 	"typeMessage": "Type a message...",
 
-	"groupName": "Group name",
+	"nameThisGroup": "Name this group",
 	"newGroup": "New group",
 	"createGroup": "Create group",
 	"groupInfo": "Group info",

@@ -32,7 +32,7 @@
 	onAction={onNext}
 	actionTestId="new-group-next"
 >
-	{#snippet belowNavbar()}
+	{#snippet subnavbar()}
 		<div class="column gap-4">
 			<Searchbar
 				clearButton
