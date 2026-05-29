@@ -131,7 +131,7 @@ impl Node {
                                 // discover bootstraps because 1) not all authors will be online
                                 // and contactable for bootstrapping, 2) it locks all peers into
                                 // using the same relay. A better approach would be to have
-                                // bootstrap nodes notify connected nodes of each-others presence
+                                // mailbox servers notify connected nodes of each-others presence
                                 // via a dedicated channel.
                                 if let Source::ExternalStream {..} = source {
                                     let node_id: NodeId = operation.author().into();
@@ -306,7 +306,6 @@ impl Node {
         Ok(())
     }
 
-    // @TODO: move to application processor.
     pub async fn notify_payload(
         &self,
         topic: Topic,
