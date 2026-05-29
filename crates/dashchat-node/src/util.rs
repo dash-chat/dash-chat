@@ -60,3 +60,13 @@ pub fn clamp_to_ed25519_pubkey(mut hash: [u8; 32]) -> VerifyingKey {
     let pubkey = signing_key.verifying_key();
     VerifyingKey::from_bytes(pubkey.as_bytes()).unwrap()
 }
+
+pub fn setup_aliases() {
+    use aliased::Aliasing;
+    crate::AgentId::alias_prefix("A");
+    crate::DeviceId::alias_prefix("D");
+    p2panda::VerifyingKey::alias_prefix("K");
+    p2panda::Hash::alias_prefix("H");
+    crate::topic::TopicId::alias_prefix("T");
+    p2panda::Topic::alias_prefix("t");
+}

@@ -10,10 +10,10 @@ use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, ShutdownError};
 use crate::filesystem::Filesystem;
 use crate::node::actor::{Actor, Command};
+use aliased::Aliasing;
 use anyhow::Result;
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
-use named_id::Rename;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, Operation};
 use p2panda::{Hash, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
@@ -140,7 +140,7 @@ impl Node {
         .await
     }
 
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?node_keys.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?node_keys.device_id().aliased())))]
     pub async fn init(
         filesystem: Filesystem,
         local_store: LocalStore,
@@ -240,7 +240,8 @@ impl Node {
     ) -> Result<QrCode, crate::Error> {
         let inbox_topic = if inbox {
             let inbox_topic = InboxTopic {
-                topic: Topic::inbox().with_name(&format!("inbox({})", self.device_id().renamed())),
+                topic: Topic::inbox()
+                    .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
                 expires_at: Utc::now() + self.config.contact_code_expiry,
             };
             self.initialize_topic(*inbox_topic.topic)
@@ -285,15 +286,15 @@ impl Node {
         // TODO: use two secrets from each party to construct the topic
         let topic = Topic::direct_chat([me, other]);
         if me > other {
-            topic.with_name(&format!("direct({},{})", other.renamed(), me.renamed()))
+            topic.alias_named(&format!("direct({:?},{:?})", other.aliased(), me.aliased()))
         } else {
-            topic.with_name(&format!("direct({},{})", me.renamed(), other.renamed()))
+            topic.alias_named(&format!("direct({:?},{:?})", me.aliased(), other.aliased()))
         }
     }
 
     /// Create a new direct chat Space.
     /// Note that only one node should create the space!
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn create_direct_chat_space(&self, other: AgentId) -> anyhow::Result<()> {
         let topic = self.direct_chat_topic(other);
 
@@ -315,14 +316,14 @@ impl Node {
         self.publish(
             topic,
             Payload::group_control(topic, GroupAction::Create { initial_members }, deps)?,
-            Some(&format!("create_direct_chat_space({})", topic.renamed())),
+            Some(&format!("create_direct_chat_space({:?})", topic.aliased())),
         )
         .await?;
 
         tracing::info!(
-            my_actor = ?my_actor.renamed(),
-            other = ?other.renamed(),
-            topic = ?topic.renamed(),
+            my_actor = ?my_actor.aliased(),
+            other = ?other.aliased(),
+            topic = ?topic.aliased(),
             "creating direct chat space"
         );
 
@@ -347,7 +348,7 @@ impl Node {
             .filter_map(|did| match contacts.get(did) {
                 Some(agent) => Some(*agent),
                 None => {
-                    tracing::warn!("Contact not found: {}", did.renamed());
+                    tracing::warn!("Contact not found: {:?}", did.aliased());
                     None
                 }
             })
@@ -366,7 +367,7 @@ impl Node {
         self.publish(
             chat_id,
             Payload::group_control(chat_id, GroupAction::Create { initial_members }, deps)?,
-            Some(&format!("create_group({})", chat_id.renamed())),
+            Some(&format!("create_group({:?})", chat_id.aliased())),
         )
         .await?;
 
@@ -381,18 +382,18 @@ impl Node {
     async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
         let payload = Payload::Chat(ChatPayload::JoinGroup { chat_id });
         tracing::info!(
-            "{} is inviting {} to group {}",
-            self.device_id().renamed(),
-            person.renamed(),
-            chat_id.renamed(),
+            "{:?} is inviting {:?} to group {:?}",
+            self.device_id().aliased(),
+            person.aliased(),
+            chat_id.aliased(),
         );
         self.publish(
             self.direct_chat_topic(person),
             payload,
             Some(&format!(
-                "invite_to_group({}, {})",
-                chat_id.renamed(),
-                person.renamed()
+                "invite_to_group({:?}, {:?})",
+                chat_id.aliased(),
+                person.aliased()
             )),
         )
         .await?;
@@ -418,7 +419,7 @@ impl Node {
                 },
                 deps,
             )?,
-            Some(&format!("add_group_member({})", chat_id.renamed())),
+            Some(&format!("add_group_member({:?})", chat_id.aliased())),
         )
         .await?;
 
@@ -429,7 +430,7 @@ impl Node {
         if let Some(agent_id) = agent_id {
             self.invite_to_group(chat_id, agent_id).await?;
         } else {
-            tracing::warn!("Contact not found: {}", DeviceId::from(member).renamed());
+            tracing::warn!("Contact not found: {:?}", DeviceId::from(member).aliased());
         }
 
         Ok(())
@@ -451,7 +452,7 @@ impl Node {
                 },
                 deps,
             )?,
-            Some(&format!("remove_group_member({})", chat_id.renamed())),
+            Some(&format!("remove_group_member({:?})", chat_id.aliased())),
         )
         .await?;
         Ok(())
@@ -474,7 +475,7 @@ impl Node {
     /// "Joining" a chat means subscribing to messages for that chat.
     /// This needs to be accompanied by being added as a member of the chat Space by an existing member
     /// -- you're not fully a member until someone adds you.
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().aliased())))]
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
         self.register_topic(chat_id).await
@@ -484,7 +485,7 @@ impl Node {
         self.publish(
             Topic::announcements(self.agent_id()),
             Payload::Announcements(AnnouncementsPayload::SetProfile(profile)),
-            Some(&format!("set_profile({})", self.device_id().renamed())),
+            Some(&format!("set_profile({:?})", self.device_id().aliased())),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
@@ -513,7 +514,7 @@ impl Node {
     /// Get all messages for a chat from the logs.
     ///
     /// In the real app, the interleaving of logs happens on the front end.
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     #[cfg(feature = "testing")]
     pub async fn get_messages(
         &self,
@@ -537,7 +538,7 @@ impl Node {
         Ok(messages)
     }
 
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn send_message(
         &self,
         topic: impl Into<ChatId>,
@@ -547,8 +548,8 @@ impl Node {
 
         let (capabilities, num_agents) = self.get_group_capabilities(topic).await?;
         let capabilities = capabilities.ok_or(anyhow::anyhow!(
-            "no capabilities found for chat: {}",
-            topic.renamed()
+            "no capabilities found for chat: {:?}",
+            topic.aliased()
         ))?;
 
         // NOTE: we may need logic for an agent to re-send a downgraded message if they later discover
@@ -571,7 +572,7 @@ impl Node {
         Ok(header)
     }
 
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn add_reaction(
         &self,
         topic: impl Into<ChatId>,
@@ -592,14 +593,14 @@ impl Node {
 
         let (reply_tx, reply_rx) = oneshot::channel();
         if let Err(err) = self.actor_tx.send(Command::Shutdown { reply_tx }).await {
-            tracing::warn!("failed to send shutdown signal to node actor: {}", err);
+            tracing::warn!("failed to send shutdown signal to node actor: {:?}", err);
             return Err(ShutdownError::ActorShutdown(Box::new(err)));
         }
 
         reply_rx.await?;
 
         if let Err(err) = self.processor_cancel_tx.send(()).await {
-            tracing::warn!("failed to send shutdown signal to node actor: {}", err);
+            tracing::warn!("failed to send shutdown signal to node actor: {:?}", err);
             return Err(ShutdownError::ActorShutdown(Box::new(err)));
         }
 
@@ -620,7 +621,7 @@ impl Node {
     /// - subscribe to their inbox
     /// - store them in the contacts map
     /// - send an invitation to them to do the same
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn add_contact(&self, contact: QrCode) -> Result<AgentId, AddContactError> {
         tracing::debug!(
             device_pub_key = %contact.device_pubkey,
@@ -696,7 +697,7 @@ impl Node {
         self.publish(
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact.clone())),
-            Some(&format!("add_contact/add_contact({})", agent.renamed())),
+            Some(&format!("add_contact/add_contact({:?})", agent.aliased())),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
@@ -719,7 +720,10 @@ impl Node {
             self.publish(
                 inbox_topic.topic,
                 Payload::Inbox(InboxPayload::ContactRequest { code, profile }),
-                Some(&format!("add_contact/contact_request({})", agent.renamed())),
+                Some(&format!(
+                    "add_contact/contact_request({:?})",
+                    agent.aliased()
+                )),
             )
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?;
@@ -738,14 +742,14 @@ impl Node {
     /// Reject a contact request from the given agent.
     /// This creates a RejectContactRequest operation in the device group topic.
     /// Contact requests made before this rejection will be filtered out.
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn reject_contact_request(&self, agent_id: AgentId) -> Result<(), Error> {
         tracing::debug!("rejecting contact request from: {:?}", agent_id);
 
         self.publish(
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::RejectContactRequest(agent_id)),
-            Some(&format!("reject_contact_request({})", agent_id.renamed())),
+            Some(&format!("reject_contact_request({:?})", agent_id.aliased())),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
@@ -753,14 +757,14 @@ impl Node {
         Ok(())
     }
 
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn remove_contact(&self, _chat_actor_id: ActorId) -> anyhow::Result<()> {
         // TODO: shutdown inbox task, etc.
         todo!("add tombstone to contacts list");
     }
 
     /// Mark messages as read by storing a ReadMessages operation in the device group topic.
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn mark_messages_read(
         &self,
         chat_id: ChatId,
@@ -774,7 +778,7 @@ impl Node {
                 chat_id,
                 message_hashes,
             })),
-            Some(&format!("mark_messages_read({})", chat_id.renamed())),
+            Some(&format!("mark_messages_read({:?})", chat_id.aliased())),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
@@ -785,7 +789,7 @@ impl Node {
     async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
         self.initialize_topic(
             *Topic::announcements(self.agent_id())
-                .with_name(&format!("announce({})", self.agent_id().renamed())),
+                .alias_named(&format!("announce({:?})", self.agent_id().aliased())),
         )
         .await?;
 
@@ -794,7 +798,7 @@ impl Node {
                 *topic
                     .topic
                     .clone()
-                    .with_name(&format!("inbox({})", self.device_id().renamed())),
+                    .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
             )
             .await?;
         }
@@ -824,8 +828,8 @@ impl Node {
                 announcements,
                 Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }),
                 Some(&format!(
-                    "set_device_capabilities({})",
-                    self.device_id().renamed()
+                    "set_device_capabilities({:?})",
+                    self.device_id().aliased()
                 )),
             )
             .await?;
@@ -852,7 +856,7 @@ impl Node {
             })
             .collect::<BTreeSet<_>>();
         devices.insert(self.device_id());
-        dbg!(&devices.renamed_ref());
+        dbg!(&devices.aliased());
 
         // Collect capabilities for all agents
         let caps = futures::future::join_all(

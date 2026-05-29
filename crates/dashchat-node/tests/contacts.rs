@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use dashchat_node::{testing::*, *};
 use mailbox_client::mem::MemMailbox;
-use named_id::*;
 
 const TRACING_FILTER: [&str; 5] = [
     "contacts=info",
@@ -28,8 +27,8 @@ async fn test_reject_contact_request() {
         .await;
 
     println!("nodes:");
-    println!("alice: {:?}", alice.device_id().short());
-    println!("bobbi: {:?}", bobbi.device_id().short());
+    println!("alice: {}", alice.device_id());
+    println!("bobbi: {}", bobbi.device_id());
 
     #[cfg(feature = "p2p")]
     introduce_and_wait([&alice, &bobbi]).await;

@@ -3,9 +3,6 @@ pub mod mem;
 pub mod store;
 pub mod toy;
 
-#[cfg(feature = "named-id")]
-pub use named_id::Rename;
-
 #[cfg(test)]
 pub mod testing;
 
@@ -107,14 +104,6 @@ pub trait MailboxItem:
     fn topic(&self) -> Self::Topic;
 }
 
-// /// Extra traits for ItemTraits which are feature-dependent.
-// #[cfg(feature = "named-id")]
-// pub trait OptionalItemTraits: named_id::Rename {}
-// #[cfg(feature = "named-id")]
-// impl<T> OptionalItemTraits for T where T: named_id::Rename {}
-
 /// Extra traits for ItemTraits which are feature-dependent.
-// #[cfg(not(feature = "named-id"))]
 pub trait OptionalItemTraits {}
-// #[cfg(not(feature = "named-id"))]
 impl<T> OptionalItemTraits for T {}

@@ -1,4 +1,3 @@
-use named_id::{RenameAll, RenameNone};
 use p2panda::operation::Header;
 use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::{group::GroupAction, processor::GroupsArgs};
@@ -11,7 +10,7 @@ use crate::compat::Capabilities;
 use crate::contact::QrCode;
 use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
     #[serde(default)]
@@ -21,7 +20,7 @@ pub struct Profile {
     pub about: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum AnnouncementsPayload {
     SetProfile(Profile),
@@ -32,14 +31,13 @@ pub enum AnnouncementsPayload {
     /// is the infimum of the capabilities of all devices in the agent's device group.
     /// Only when the agent updates all of their devices to a higher capability set,
     /// should they advertise the new capability set.
-    #[named_id(skip)]
     SetCapabilities {
         /// The new capabilities.
         capabilities: Capabilities,
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum InboxPayload {
     /// Invites the recipient to add the sender as a contact.
@@ -47,7 +45,7 @@ pub enum InboxPayload {
 }
 
 // TODO: consolidate into something else
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum ChatPayload {
     /// Instructs the recipient to subscribe to the group chat topic.
@@ -71,13 +69,13 @@ pub enum ChatPayload {
     Reaction(ChatReaction),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, RenameNone)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReadMessagesPayload {
     pub chat_id: ChatId,
     pub message_hashes: Vec<Hash>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
     AddContact(QrCode),
@@ -85,7 +83,7 @@ pub enum DeviceGroupPayload {
     ReadMessages(ReadMessagesPayload),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum Payload {
     /// Pushing data out to my contacts.
@@ -104,7 +102,6 @@ pub enum Payload {
     // @TODO: this will be removed once spaces is integrated into p2panda node as they will move
     // onto the provided extension type.
     /// Groups control message.
-    #[named_id(skip)]
     GroupControl(GroupsArgs),
 }
 

@@ -32,8 +32,8 @@
 use std::marker::PhantomData;
 
 use crate::AgentId;
-use named_id::*;
 
+use aliased::Aliasing;
 use p2panda::operation::LogId;
 use p2panda::{SigningKey, VerifyingKey};
 use p2panda_spaces::ActorId;
@@ -55,7 +55,6 @@ pub trait TopicKind:
     + Ord
     + std::fmt::Display
     + std::fmt::Debug
-    + Rename
     + 'static
 {
 }
@@ -89,7 +88,6 @@ pub mod kind {
                 Hash,
                 Serialize,
                 Deserialize,
-                RenameNone,
                 derive_more::Display,
                 derive_more::Debug,
             )]
@@ -168,28 +166,25 @@ impl sqlx::Decode<'_, Sqlite> for TopicId {
 
 impl From<p2panda::Topic> for TopicId {
     fn from(value: p2panda::Topic) -> Self {
-        TopicId(value.to_bytes())
+        value.alias_numbered();
+        let t = TopicId(value.to_bytes());
+        t.alias_numbered();
+        t
     }
 }
 
 impl From<TopicId> for p2panda::Topic {
     fn from(value: TopicId) -> Self {
-        p2panda::Topic::from(value.0)
+        value.alias_numbered();
+        let t = p2panda::Topic::from(value.0);
+        t.alias_numbered();
+        t
     }
 }
 
 impl From<TopicId> for LogId {
     fn from(value: TopicId) -> Self {
         LogId::from_topic(value.into())
-    }
-}
-
-impl Nameable for TopicId {
-    fn shortener(&self) -> Option<Shortener> {
-        Some(Shortener {
-            length: 4,
-            prefix: "L",
-        })
     }
 }
 
@@ -201,7 +196,6 @@ impl Nameable for TopicId {
     PartialEq,
     PartialOrd,
     Ord,
-    named_id::RenameAll,
     derive_more::Deref,
     derive_more::Display,
     derive_more::Debug,
@@ -225,8 +219,9 @@ impl<K: TopicKind> Topic<K> {
         }
     }
 
-    pub fn with_name(self, name: &str) -> Self {
-        self.id.with_name(name);
+    pub fn alias_named(self, name: &str) -> Self {
+        self.id.alias_named(name);
+        p2panda::Topic::from(self.id).alias_named(name);
         self
     }
 
@@ -238,7 +233,9 @@ impl<K: TopicKind> Topic<K> {
 
 impl Topic<kind::Announcements> {
     pub fn announcements(agent_id: AgentId) -> Self {
-        Self::new(*agent_id.as_bytes())
+        let t = Self::new(*agent_id.as_bytes());
+        t.alias_named(&format!("announcements({:?})", agent_id.aliased()));
+        t
     }
 }
 

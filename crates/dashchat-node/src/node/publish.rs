@@ -5,7 +5,7 @@ use crate::topic::TopicKind;
 use super::*;
 
 impl Node {
-    #[tracing::instrument(skip_all, fields(me=?self.device_id().renamed()))]
+    #[tracing::instrument(skip_all, fields(me=?self.device_id().aliased()))]
     pub(super) async fn publish<K: TopicKind>(
         &self,
         topic: Topic<K>,

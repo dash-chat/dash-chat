@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use aliased::Aliasing;
 use futures::future::join;
 use futures::{FutureExt, Stream};
 use p2panda::network::NetworkError;
@@ -224,6 +225,7 @@ impl Actor {
 
         let (processed_tx, processed_rx) = oneshot::channel();
         let hash = publish_fut.hash();
+        hash.alias_numbered();
         let _ = self.processed.insert(hash, processed_tx);
         let process_fut = ProcessFuture::new(hash, publish_fut, processed_rx);
         Ok(process_fut)

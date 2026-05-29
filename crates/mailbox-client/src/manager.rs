@@ -1,9 +1,6 @@
 use crate::store::MailboxStore;
 use tokio::time::Instant;
 
-#[cfg(feature = "named-id")]
-use named_id::Rename;
-
 use super::*;
 
 #[derive(Clone, Debug)]
@@ -176,7 +173,6 @@ where
         &self,
         topic: Item::Topic,
     ) -> Result<Option<mpsc::Receiver<Item>>, anyhow::Error> {
-        #[cfg(feature = "named-id")]
         tracing::info!(topic = ?topic, "subscribing to topic");
 
         let mut tt = self.topics.lock().await;
@@ -189,7 +185,6 @@ where
     }
 
     pub async fn unsubscribe(&self, topic: Item::Topic) -> Result<(), anyhow::Error> {
-        #[cfg(feature = "named-id")]
         tracing::info!(topic = ?topic, "unsubscribing from topic");
         self.topics.lock().await.remove(&topic);
         Ok(())
@@ -346,7 +341,6 @@ where
             }
 
             let Some(sender) = self.topics.lock().await.get(&topic).cloned() else {
-                #[cfg(feature = "named-id")]
                 tracing::warn!(topic = ?topic, "no sender for topic");
                 continue;
             };

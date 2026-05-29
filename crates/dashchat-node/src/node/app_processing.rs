@@ -42,6 +42,8 @@ impl Node {
     /// - when creating a new group chat
     /// - when initializing the node, for each existing group chat
     pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
+        topic.alias_numbered();
+
         if self.subscribe_to_topic(topic).await? {
             self.import_mailbox_stream(topic).await?;
         };
@@ -104,7 +106,7 @@ impl Node {
     }
 
     /// Spawn a task for application layer processing of received operations.
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().aliased())))]
     pub(super) fn spawn_application_processor_task(
         &self,
         mut events_rx: broadcast::Receiver<StreamEvent<Payload>>,
@@ -120,7 +122,7 @@ impl Node {
                     Ok(event) = events_rx.recv() => {
                         match &event {
                             StreamEvent::Processed { operation, source } => {
-                                tracing::info!(op = %operation.id(), topic = %operation.topic(), "processing operation");
+                                tracing::info!(op = ?operation.id().aliased(), topic = ?operation.topic().aliased(), "processing operation");
 
                                 // Dash Chat relies on mailbox servers for discovering bootstrap
                                 // nodes over the internet. Any operations we're sent from an
