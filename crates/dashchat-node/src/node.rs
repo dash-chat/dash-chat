@@ -151,9 +151,11 @@ impl Node {
     ) -> Result<Self> {
         // === p2panda node === //
 
+        let url = format!("sqlite://{}", filesystem.op_store_path().to_string_lossy());
         let mut builder = P2PandaNode::builder()
             .network_id(Hash::digest(NETWORK_ID.as_bytes()).into())
             .signing_key(node_keys.private_key.clone())
+            .database_url(&url)
             .mdns_mode(config.mdns_mode.clone());
 
         if let Some(relay_url) = &config.relay_url {
