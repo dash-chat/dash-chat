@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use p2panda::Hash;
 #[cfg(any(test, feature = "testing"))]
 use p2panda::operation::Header;
 use p2panda::operation::{LogId, Operation};
