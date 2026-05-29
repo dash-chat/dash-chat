@@ -1,6 +1,7 @@
 use dashchat_node::{testing::*, *};
 use mailbox_client::mem::MemMailbox;
 use named_id::*;
+use p2panda::network::MdnsDiscoveryMode;
 
 const TRACING_FILTER: [&str; 5] = [
     "inbox=info",
@@ -33,6 +34,38 @@ async fn test_inbox_2() {
     // introduce_and_wait([&alice.network, &bobbi.network]).await;
 
     println!("peers see each other");
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    assert_eq!(alice.get_contacts().await.unwrap(), vec![bobbi.agent_id()]);
+    assert_eq!(bobbi.get_contacts().await.unwrap(), vec![alice.agent_id()]);
+
+    let direct_chat_topic = alice.direct_chat_topic(bobbi.agent_id());
+
+    tracing::info!(%direct_chat_topic, ?direct_chat_topic, "direct chat id");
+
+    alice
+        .send_message(direct_chat_topic, "Hello".into())
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_p2p_inbox_2() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let mut alice_config = NodeConfig::testing();
+    alice_config.mdns_mode = MdnsDiscoveryMode::Active;
+
+    let mut bobbi_config = NodeConfig::testing();
+    bobbi_config.mdns_mode = MdnsDiscoveryMode::Active;
+
+    let alice = TestNode::new(alice_config, "alice").await;
+    let bobbi = TestNode::new(bobbi_config, "bobbi").await;
 
     alice
         .behavior()

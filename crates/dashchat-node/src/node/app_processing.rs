@@ -138,6 +138,7 @@ impl Node {
 
                                     // Only register the bootstrap if we didn't already do so.
                                     if node.registered_bootstraps.lock().await.insert((node_id, RELAY_URL.clone())) {
+                                        debug!(node_id = %node_id, "add bootstrap node");
                                         let (reply_tx, reply_rx) = oneshot::channel();
                                         let result = node.actor_tx.send(Command::RegisterBootstrap { node_id, relay_url: RELAY_URL.clone(), reply_tx }).await;
                                         if let Err(err) = result {

@@ -11,6 +11,7 @@ use mailbox_client::mem::MemMailbox;
 
 use maplit::btreemap;
 use named_id::*;
+use p2panda::network::MdnsDiscoveryMode;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_direct_chat() {
@@ -63,6 +64,59 @@ async fn test_direct_chat() {
     // )
     // .await
     // .unwrap();
+
+    wait_for(
+        Duration::from_millis(100),
+        Duration::from_secs(10),
+        || async {
+            let msgs = [
+                alice.get_messages(chat_id).await.unwrap().len(),
+                bobbi.get_messages(chat_id).await.unwrap().len(),
+            ];
+            msgs.iter().all(|m| *m == 1).ok_or(msgs)
+        },
+    )
+    .await
+    .unwrap();
+
+    let alice_messages = alice.get_messages(chat_id).await.unwrap();
+    let bobbi_messages = bobbi.get_messages(chat_id).await.unwrap();
+
+    assert_eq!(alice_messages, bobbi_messages);
+    assert_eq!(
+        bobbi_messages.first().map(|m| m.content.clone()),
+        Some("Hello".into())
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_p2p_direct_chat() {
+    dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
+
+    let mut alice_config = NodeConfig::testing();
+    alice_config.mdns_mode = MdnsDiscoveryMode::Active;
+
+    let mut bobbi_config = NodeConfig::testing();
+    bobbi_config.mdns_mode = MdnsDiscoveryMode::Active;
+
+    let alice = TestNode::new(alice_config, "alice").await;
+    let bobbi = TestNode::new(bobbi_config, "bobbi").await;
+
+    introduce_and_wait([&alice, &bobbi]).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice.direct_chat_topic(bobbi.agent_id());
+    assert_eq!(chat_id, bobbi.direct_chat_topic(alice.agent_id()));
+
+    assert!(alice.subscribed_topics().await.contains(&chat_id));
+    assert!(bobbi.subscribed_topics().await.contains(&chat_id));
+
+    alice.send_message(chat_id, "Hello".into()).await.unwrap();
 
     wait_for(
         Duration::from_millis(100),
@@ -163,7 +217,7 @@ async fn test_group_chat() {
     // @TODO(sam): When bobby gets constructs dependencies from the groups graph heads he ends up
     // with an empty array. This is incorrect as the groups "CREATE" operation should have already
     // been processed. I feel like this might be a race condition, it could be fixed by the node
-    // integration work.    
+    // integration work.
 
     bobbi
         .add_group_member(chat_id, *cammy.device_id(), p2panda_auth::Access::write())
