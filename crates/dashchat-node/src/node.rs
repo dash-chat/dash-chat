@@ -14,11 +14,11 @@ use anyhow::Result;
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use named_id::Rename;
-use p2panda::{Node as P2PandaNode, NodeId, RelayUrl};
+use p2panda::operation::{Header, Operation};
+use p2panda::{Hash, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
-use p2panda_core::{Hash, VerifyingKey};
 use p2panda_spaces::ActorId;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
@@ -33,7 +33,6 @@ use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId, DirectChatId,
-    Header, Operation,
 };
 
 pub use app_processing::Notification;
@@ -749,7 +748,7 @@ impl Node {
     pub async fn mark_messages_read(
         &self,
         chat_id: ChatId,
-        message_hashes: Vec<p2panda_core::Hash>,
+        message_hashes: Vec<Hash>,
     ) -> Result<(), Error> {
         use crate::payload::ReadMessagesPayload;
 

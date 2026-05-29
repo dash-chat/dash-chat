@@ -35,6 +35,7 @@ use crate::AgentId;
 use named_id::*;
 
 use p2panda::operation::LogId;
+use p2panda::{SigningKey, VerifyingKey};
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
@@ -243,7 +244,7 @@ impl Topic<kind::Announcements> {
 
 impl Topic<kind::Chat> {
     pub fn random() -> Self {
-        let pk = p2panda_core::SigningKey::generate().verifying_key();
+        let pk = SigningKey::generate().verifying_key();
         Self::new(*pk.as_bytes())
     }
 
@@ -256,7 +257,7 @@ impl Topic<kind::Chat> {
         Self::new(*pk.as_bytes())
     }
 
-    pub fn from_group_pubkey(pubkey: p2panda_core::VerifyingKey) -> Self {
+    pub fn from_group_pubkey(pubkey: VerifyingKey) -> Self {
         Self::new(*pubkey.as_bytes())
     }
 
@@ -264,7 +265,7 @@ impl Topic<kind::Chat> {
     ///
     /// This can fail if the topic bytes do not actually represent a valid Ed25519 public key.
     pub fn from_topic(topic: p2panda::Topic) -> anyhow::Result<Self> {
-        let verifying_key = p2panda_core::VerifyingKey::from_bytes(&topic.as_bytes())?;
+        let verifying_key = VerifyingKey::from_bytes(&topic.as_bytes())?;
         Ok(Self::new(*verifying_key.as_bytes()))
     }
 
@@ -272,12 +273,12 @@ impl Topic<kind::Chat> {
     ///
     /// This can fail if the topic id bytes do not actually represent a valid Ed25519 public key.
     pub fn from_topic_id(topic_id: TopicId) -> anyhow::Result<Self> {
-        let verifying_key = p2panda_core::VerifyingKey::from_bytes(&topic_id.0)?;
+        let verifying_key = VerifyingKey::from_bytes(&topic_id.0)?;
         Ok(Self::new(*verifying_key.as_bytes()))
     }
 
-    pub fn to_group_pubkey(self) -> anyhow::Result<p2panda_core::VerifyingKey> {
-        Ok(p2panda_core::VerifyingKey::from_bytes(&self.id.0)?)
+    pub fn to_group_pubkey(self) -> anyhow::Result<VerifyingKey> {
+        Ok(VerifyingKey::from_bytes(&self.id.0)?)
     }
 }
 

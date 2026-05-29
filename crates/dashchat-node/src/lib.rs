@@ -24,9 +24,7 @@ pub use contact::{QrCode, ShareIntent};
 pub use error::{AddContactError, Error};
 pub use id::*;
 pub use node::{Node, NodeConfig, Notification};
-pub use p2panda_core::SigningKey;
-use p2panda_core::Timestamp;
-pub use p2panda_spaces::ActorId;
+pub use p2panda::SigningKey;
 pub use payload::*;
 pub use topic::{Topic, TopicId};
 

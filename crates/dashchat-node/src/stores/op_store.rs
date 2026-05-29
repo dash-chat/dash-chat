@@ -5,9 +5,12 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use p2panda::operation::LogId;
-use p2panda_core::{Hash, SeqNum};
-use p2panda_store::{SqliteStore, logs::LogStore};
+#[cfg(any(test, feature = "testing"))]
+use p2panda::operation::Header;
+use p2panda::operation::{LogId, Operation};
+use p2panda_core::SeqNum;
+use p2panda_store::SqliteStore;
+use p2panda_store::logs::LogStore;
 
 use crate::{mailbox::MailboxOperation, topic::TopicId, util::first, *};
 

@@ -1,7 +1,9 @@
 use named_id::{RenameAll, RenameNone};
+use p2panda::operation::Header;
+use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::{group::GroupAction, processor::GroupsArgs};
+use p2panda_core::Body;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
-use p2panda_core::{Body, Hash, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
 use crate::chat::ChatId;
@@ -122,9 +124,6 @@ impl Payload {
 
 impl Cbor for Payload {}
 impl AsBody for Payload {}
-
-pub type Header = p2panda::operation::Header;
-pub type Operation = p2panda::operation::Operation;
 
 pub fn encode_gossip_message(header: &Header, body: Option<&Body>) -> Result<Vec<u8>, EncodeError> {
     encode_cbor(&(header.to_bytes(), body.map(|body| body.to_bytes())))

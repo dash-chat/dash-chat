@@ -1,7 +1,7 @@
 use dashchat_compat::{Compat, VersionConvert, VersionConvertError};
 use derive_more::derive::{Deref, From};
 use named_id::RenameNone;
-use p2panda_core::Hash;
+use p2panda::Hash;
 use serde::{Deserialize, Serialize};
 
 use crate::compat::Capabilities;
@@ -144,9 +144,10 @@ pub mod testing {
     use std::cmp::Ordering;
 
     use named_id::RenameAll;
+    use p2panda::operation::Header;
     use p2panda_core::Timestamp;
 
-    use crate::{Cbor, DeviceId, Header};
+    use crate::{Cbor, DeviceId};
 
     /// A standalone chat message suitable for sending to the frontend.
     #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]

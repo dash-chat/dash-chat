@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use p2panda_core::VerifyingKey;
+use p2panda::VerifyingKey;
 use tokio::sync::RwLock;
 
 #[derive(Clone, Debug)]

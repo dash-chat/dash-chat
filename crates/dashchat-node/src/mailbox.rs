@@ -1,8 +1,10 @@
+use p2panda::operation::{Header, Operation};
+use p2panda::{Hash, VerifyingKey};
+use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
-use crate::{DeviceId, Header, Operation, topic::TopicId};
+use crate::{DeviceId, topic::TopicId};
 use mailbox_client::MailboxItem;
-use p2panda_core::{Body, VerifyingKey};
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MailboxOperation {
@@ -14,11 +16,11 @@ pub struct MailboxOperation {
 }
 
 impl MailboxItem for MailboxOperation {
-    type Hash = p2panda_core::Hash;
+    type Hash = Hash;
     type Author = DeviceId;
     type Topic = TopicId;
 
-    fn hash(&self) -> p2panda_core::Hash {
+    fn hash(&self) -> Hash {
         self.header.hash()
     }
 

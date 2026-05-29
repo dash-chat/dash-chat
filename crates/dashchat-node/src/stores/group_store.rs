@@ -1,5 +1,7 @@
-use p2panda_auth::{Access, group::GroupCrdtState, processor::GroupsOperation};
-use p2panda_core::{Hash, VerifyingKey};
+use p2panda::{Hash, VerifyingKey};
+use p2panda_auth::Access;
+use p2panda_auth::group::GroupCrdtState;
+use p2panda_auth::processor::GroupsOperation;
 use p2panda_store::{SqliteStore, Transaction, groups::GroupsStore};
 
 use crate::{ChatId, ChatMember, TopicId};

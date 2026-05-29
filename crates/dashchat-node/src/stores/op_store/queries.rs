@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
+use p2panda::VerifyingKey;
 use p2panda::operation::LogId;
-use p2panda_core::{SeqNum, VerifyingKey};
+use p2panda_core::SeqNum;
 use p2panda_store::SqliteStore;
 use sqlx::prelude::*;
 

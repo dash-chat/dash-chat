@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use p2panda_core::VerifyingKey;
+use p2panda::VerifyingKey;
 use p2panda_spaces::ActorId;
 
 pub trait ResultExt<T, E> {

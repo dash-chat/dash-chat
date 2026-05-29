@@ -96,7 +96,7 @@ impl TryFrom<String> for QrCode {
 #[cfg(test)]
 mod tests {
 
-    use p2panda_core::VerifyingKey;
+    use p2panda::VerifyingKey;
     use p2panda_spaces::ActorId;
 
     use super::*;

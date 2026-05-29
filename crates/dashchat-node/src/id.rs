@@ -1,6 +1,6 @@
 use derive_more::{Deref, From, derive::Display};
 use named_id::RenameAll;
-use p2panda_core::VerifyingKey;
+use p2panda::VerifyingKey;
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize};
 use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
