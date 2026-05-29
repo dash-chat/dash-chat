@@ -16,6 +16,7 @@
 		actionLabel: string;
 		onAction: () => void;
 		actionTestId?: string;
+		belowNavbar?: Snippet;
 		children: Snippet;
 	}
 
@@ -26,6 +27,7 @@
 		actionLabel,
 		onAction,
 		actionTestId,
+		belowNavbar,
 		children,
 	}: Props = $props();
 
@@ -50,6 +52,12 @@
 			{/if}
 		{/snippet}
 	</Navbar>
+
+	{#if belowNavbar}
+		<div class="sticky top-[--k-navbar-height] z-10 bg-[--k-page-bg-color]">
+			{@render belowNavbar()}
+		</div>
+	{/if}
 
 	{@render children()}
 

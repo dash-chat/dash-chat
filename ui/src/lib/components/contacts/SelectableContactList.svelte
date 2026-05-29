@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Profile, PublicKey } from 'dash-chat-stores';
-	import ProfileAvatar from '$lib/components/profiles/ProfileAvatar.svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { List, ListItem, Checkbox, Preloader, useTheme } from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 
@@ -31,7 +31,10 @@
 			{#each contacts as [publicKey, profile]}
 				<ListItem label title={profile.name}>
 					{#snippet media()}
-						<ProfileAvatar chatActorId={publicKey} />
+						<Avatar
+							image={profile.avatar}
+							initials={profile.name.slice(0, 2)}
+						/>
 					{/snippet}
 
 					{#snippet after()}
