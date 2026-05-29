@@ -36,7 +36,12 @@
 </script>
 
 <Page>
-	<Navbar {title} titleClass="opacity1" transparent={true}>
+	<Navbar
+		{title}
+		titleClass="opacity1"
+		transparent={true}
+		subnavbarClass={belowNavbar ? '!h-auto' : ''}
+	>
 		{#snippet left()}
 			<NavbarBackLink
 				onClick={onBack ?? (() => window.history.back())}
@@ -51,13 +56,13 @@
 				</Link>
 			{/if}
 		{/snippet}
-	</Navbar>
 
-	{#if belowNavbar}
-		<div class="sticky top-[--k-navbar-height] z-10 bg-[--k-page-bg-color]">
-			{@render belowNavbar()}
-		</div>
-	{/if}
+		{#snippet subnavbar()}
+			{#if belowNavbar}
+				{@render belowNavbar()}
+			{/if}
+		{/snippet}
+	</Navbar>
 
 	{@render children()}
 
