@@ -163,8 +163,9 @@ impl Node {
                             StreamEvent::DecodeFailed { .. } => (),
                             StreamEvent::ReplayFailed { .. } => (),
                             StreamEvent::AckFailed { .. } => (),
+                            StreamEvent::ReplayStarted { .. } => (),
+                            StreamEvent::ReplayEnded => (),
                         }
-
                     }
                     Some(()) = cancel_rx.recv() => {
                         tracing::info!("stream processing loop cancelled");
