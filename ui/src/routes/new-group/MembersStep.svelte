@@ -25,7 +25,7 @@
 				[
 					`fake-contact-${i}`,
 					{
-						name: `Test Contact ${i + 1}`,
+						name: `Testeradfdsfgjdkewrjlkdsfjdsfnewkjrhewiofhdsfjknwe2rkjdhsfoidshfgdsjhdfsdfdsfdsfdsfdsfsdggfdgdsfgsdfgfdsgdsfgdgsdfds Contact ${i + 1}`,
 						surname: undefined,
 						about: undefined,
 						avatar: `https://i.pravatar.cc/150?img=${(i % 70) + 1}`,
