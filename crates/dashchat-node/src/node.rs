@@ -14,6 +14,7 @@ use anyhow::Result;
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use named_id::Rename;
+use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, Operation};
 use p2panda::{Hash, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
@@ -39,7 +40,7 @@ pub use app_processing::Notification;
 
 const NETWORK_ID: &'static str = "dash-chat";
 
-static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
+pub static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
     "https://euc1-1.relay.n0.iroh-canary.iroh.link"
         .parse()
         .expect("valid relay URL")
@@ -50,6 +51,8 @@ pub struct NodeConfig {
     pub contact_code_expiry: Duration,
     pub mailboxes_config: MailboxesConfig,
     pub capabilities: Capabilities,
+    pub mdns_mode: MdnsDiscoveryMode,
+    pub relay_url: Option<RelayUrl>,
 }
 
 impl NodeConfig {
@@ -66,6 +69,10 @@ impl NodeConfig {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
             capabilities: Capabilities::current(),
+            // In testing we disable mDNS discovery and do not provide a relay address so as not
+            // to effect expected behavior of existing tests.
+            mdns_mode: MdnsDiscoveryMode::Disabled,
+            relay_url: None,
         }
     }
 }
@@ -76,6 +83,8 @@ impl Default for NodeConfig {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
             capabilities: Capabilities::current(),
+            mdns_mode: MdnsDiscoveryMode::Active,
+            relay_url: Some(RELAY_URL.clone()),
         }
     }
 }
@@ -142,10 +151,15 @@ impl Node {
     ) -> Result<Self> {
         // === p2panda node === //
 
-        // @TODO: configure bootstrap and relay nodes.
-        let builder = P2PandaNode::builder()
+        let mut builder = P2PandaNode::builder()
             .network_id(Hash::digest(NETWORK_ID.as_bytes()).into())
-            .signing_key(node_keys.private_key.clone());
+            .signing_key(node_keys.private_key.clone())
+            .mdns_mode(config.mdns_mode.clone());
+
+        if let Some(relay_url) = &config.relay_url {
+            builder = builder.relay_url(relay_url.clone());
+        }
+
         let p2panda_node = builder.spawn().await?;
         // @TODO: the store() method is behind the "test_utils" feature flag, if we actually do
         // need access to the store then we should make this method public.
