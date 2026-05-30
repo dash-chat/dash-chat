@@ -42,7 +42,7 @@ async fn test_mailbox_bootstrap() {
 
     let direct_chat_topic = alice.direct_chat_topic(bobbi.agent_id());
 
-    tracing::info!(%direct_chat_topic, ?direct_chat_topic, "direct chat id");
+    tracing::info!(topic = ?direct_chat_topic.aliased(), "direct chat id");
 
     alice
         .send_message(direct_chat_topic, "Hello".into())

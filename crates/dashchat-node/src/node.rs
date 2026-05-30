@@ -625,8 +625,8 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn add_contact(&self, contact: QrCode) -> Result<AgentId, AddContactError> {
         tracing::debug!(
-            device_pub_key = %contact.device_pubkey,
-            agent_id = %contact.agent_id,
+            device_pub_key = ?contact.device_pubkey.aliased(),
+            agent_id = ?contact.agent_id.aliased(),
             inbox_topic = ?contact.inbox_topic,
             "adding contact",
         );

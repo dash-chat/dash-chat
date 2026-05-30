@@ -52,7 +52,7 @@ impl Node {
 
     /// Subscribe to a topic.
     async fn subscribe_to_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
-        debug!(topic = %topic, "subscribe to topic");
+        debug!(topic = ?topic.aliased(), "subscribe to topic");
 
         let (reply_tx, reply_rx) = oneshot::channel();
         if self
@@ -78,7 +78,7 @@ impl Node {
 
     /// Import external operation stream from a mailbox.
     async fn import_mailbox_stream(&self, topic: TopicId) -> anyhow::Result<()> {
-        debug!(topic = %topic, "import mailbox stream");
+        debug!(topic = ?topic.aliased(), "import mailbox stream");
 
         let Some(mailbox_rx) = self.mailboxes.subscribe(topic.into()).await? else {
             tracing::warn!("topic already initialized, skipping");
@@ -140,7 +140,7 @@ impl Node {
 
                                     // Only register the bootstrap if we didn't already do so.
                                     if node.registered_bootstraps.lock().await.insert((node_id, RELAY_URL.clone())) {
-                                        debug!(node_id = %node_id, "add bootstrap node");
+                                        debug!(node_id = ?node_id.aliased(), "add bootstrap node");
                                         let (reply_tx, reply_rx) = oneshot::channel();
                                         let result = node.actor_tx.send(Command::RegisterBootstrap { node_id, relay_url: RELAY_URL.clone(), reply_tx }).await;
                                         if let Err(err) = result {
@@ -292,7 +292,7 @@ impl Node {
             }
         }
 
-        tracing::debug!(hash = %hash, "processed operation");
+        tracing::debug!(hash = ?hash.aliased(), "processed operation");
 
         // For all message types except groups control messages notify that a new payload has been
         // received.
