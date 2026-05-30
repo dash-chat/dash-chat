@@ -4,7 +4,6 @@ use p2panda::NodeId;
 use p2panda::operation::Header;
 use p2panda::streams::{ProcessedOperation, Source, StreamEvent};
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
@@ -107,7 +106,7 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().renamed())))]
     pub(super) fn spawn_application_processor_task(
         &self,
-        mut events_rx: broadcast::Receiver<StreamEvent<Payload>>,
+        mut events_rx: mpsc::Receiver<StreamEvent<Payload>>,
         mut cancel_rx: mpsc::Receiver<()>,
     ) -> tokio::task::JoinHandle<()> {
         let node = self.clone();
@@ -117,7 +116,7 @@ impl Node {
 
             loop {
                 tokio::select! {
-                    Ok(event) = events_rx.recv() => {
+                    Some(event) = events_rx.recv() => {
                         match &event {
                             StreamEvent::Processed { operation, source } => {
                                 tracing::info!(op = %operation.id(), topic = %operation.topic(), "processing operation");

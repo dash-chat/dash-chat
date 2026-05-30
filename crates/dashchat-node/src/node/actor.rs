@@ -15,7 +15,7 @@ use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use p2panda_auth::processor::GroupsProcessorError;
 use thiserror::Error;
 use tokio::select;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{StreamExt, StreamMap};
 use tracing::warn;
 
@@ -86,13 +86,13 @@ pub struct Actor {
     groups_processor: GroupsProcessor,
 
     /// Channel for forwarding all received events on to the application layer processor.
-    events_tx: broadcast::Sender<StreamEvent<Payload>>,
+    events_tx: mpsc::Sender<StreamEvent<Payload>>,
 }
 
 impl Actor {
-    pub(crate) fn new(node: p2panda::Node) -> (Self, broadcast::Receiver<StreamEvent<Payload>>) {
+    pub(crate) fn new(node: p2panda::Node) -> (Self, mpsc::Receiver<StreamEvent<Payload>>) {
         let groups_processor = GroupsProcessor::new(node.store());
-        let (events_tx, events_rx) = broadcast::channel(100);
+        let (events_tx, events_rx) = mpsc::channel(100);
 
         (
             Self {
@@ -256,6 +256,7 @@ impl Actor {
         // Forward the event for further application layer processing.
         self.events_tx
             .send(event)
+            .await
             .map_err(|_| NodeActorError::EventSend)?;
 
         Ok(())
@@ -442,7 +443,7 @@ mod tests {
         for mut events_rx in [alice_events_rx, bobbi_events_rx] {
             let mut topic_a_message_received = false;
             let mut topic_b_message_received = false;
-            while let Ok(event) = events_rx.recv().await {
+            while let Some(event) = events_rx.recv().await {
                 if let StreamEvent::Processed { operation, .. } = event {
                     if operation.message() == &topic_a_message {
                         topic_a_message_received = true;
@@ -533,7 +534,7 @@ mod tests {
 
         // Bobbi receives the messages on their events stream.
         for mut events_rx in [alice_events_rx, bobbi_events_rx] {
-            while let Ok(event) = events_rx.recv().await {
+            while let Some(event) = events_rx.recv().await {
                 if let StreamEvent::Processed { operation, .. } = event {
                     if operation.message() == &create_group {
                         break;
