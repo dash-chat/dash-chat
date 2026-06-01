@@ -235,7 +235,7 @@ async fn direct_chat_capability_upgrade() {
 async fn group_chat_capability_upgrade() {
     use maplit::btreemap;
 
-    dashchat_node::testing::setup_tracing(&["dashchat=warn"], true);
+    dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
 
     let mut alice_config = TestNodeConfig::default();
     alice_config.node_config.capabilities = Capabilities::zero();
@@ -291,6 +291,8 @@ async fn group_chat_capability_upgrade() {
     .await
     .unwrap();
 
+    // @TODO: the test fails here because bobbi doesn't yet know about the chat group that alice
+    // created.
     bobbi
         .add_group_member(chat_id, *cammy.device_id(), p2panda_auth::Access::write())
         .await
