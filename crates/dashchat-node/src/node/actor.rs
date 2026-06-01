@@ -210,14 +210,19 @@ impl Actor {
     }
 
     async fn handle_import(
-        &self,
+        &mut self,
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     ) -> Result<ExternalStreamFuture, NodeActorError> {
-        // Retrieve the topic tx from the tx_map. If it isn't present it means we didn't subscribe
-        // to this topic yet.
-        let Some(tx) = self.tx_map.get(&topic) else {
-            return Err(NodeActorError::MissingTopicTX(topic));
+        // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
+        let tx = match self.tx_map.get(&topic) {
+            Some(tx) => tx.clone(),
+            None => {
+                let (tx, rx) = self.inner.stream(topic).await?;
+                self.tx_map.insert(topic, tx.clone());
+                self.streams.insert(topic, rx);
+                tx
+            },
         };
 
         let import_fut = tx.import(stream).await?;
@@ -229,20 +234,15 @@ impl Actor {
         topic: Topic,
         payload: Payload,
     ) -> Result<ProcessFuture, NodeActorError> {
-        // @TODO: from running the tests I can see there are some places where we are trying to
-        // publish an operation before subscribing to the topic. Ideally we error if there is no
-        // existing stream for the topic we are publishing into. I've added a logic here to
-        // automatically subscribe to a topic if the tx is not present. We should rather figure
-        // out where calls to subscribe to the topic is missing and remove this snippet.
-        if !self.tx_map.contains_key(&topic) {
-            let (tx, rx) = self.inner.stream(topic).await?;
-            self.tx_map.insert(topic, tx);
-            self.streams.insert(topic, rx);
-        }
-
-        // Retrieve the topic tx from the tx_map.
-        let Some(tx) = self.tx_map.get(&topic) else {
-            return Err(NodeActorError::MissingTopicTX(topic));
+        // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
+        let tx = match self.tx_map.get(&topic) {
+            Some(tx) => tx.clone(),
+            None => {
+                let (tx, rx) = self.inner.stream(topic).await?;
+                self.tx_map.insert(topic, tx.clone());
+                self.streams.insert(topic, rx);
+                tx
+            },
         };
 
         // If the payload represents a change to group state then publish it as a groups control
@@ -365,9 +365,6 @@ impl Future for ProcessFuture {
 
 #[derive(Debug, Error)]
 pub enum NodeActorError {
-    #[error("missing publish stream for topic: {0}")]
-    MissingTopicTX(Topic),
-
     #[error(transparent)]
     Publish(#[from] PublishError),
 
