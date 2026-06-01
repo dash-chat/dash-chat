@@ -22,19 +22,19 @@ dashchat-compat = { path = "crates/dashchat-compat" }
 mailbox-client = { path = "crates/mailbox-client", features = ["named-id"] }
 mailbox-server = { path = "crates/mailbox-server" }
 
-p2panda = { git = "https://github.com/p2panda/p2panda", rev = "41b3fcacb3d4130ba0dc49502d8c36737d53c4be" }
-p2panda-auth = { git = "https://github.com/p2panda/p2panda", rev = "41b3fcacb3d4130ba0dc49502d8c36737d53c4be", features = [
+p2panda = { git = "https://github.com/p2panda/p2panda", rev = "920b880f22b9298bb384afb8ae503bfb4ec9ee64" }
+p2panda-auth = { git = "https://github.com/p2panda/p2panda", rev = "920b880f22b9298bb384afb8ae503bfb4ec9ee64", features = [
   "processor",
 ] }
-p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "41b3fcacb3d4130ba0dc49502d8c36737d53c4be" }
-p2panda-encryption = { git = "https://github.com/p2panda/p2panda", rev = "41b3fcacb3d4130ba0dc49502d8c36737d53c4be" }
-p2panda-discovery = { git = "https://github.com/p2panda/p2panda", rev = "41b3fcacb3d4130ba0dc49502d8c36737d53c4be" }
-p2panda-net = { git = "https://github.com/p2panda/p2panda", rev = "41b3fcacb3d4130ba0dc49502d8c36737d53c4be" }
-p2panda-store = { git = "https://github.com/p2panda/p2panda", rev = "41b3fcacb3d4130ba0dc49502d8c36737d53c4be", features = [
+p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "920b880f22b9298bb384afb8ae503bfb4ec9ee64" }
+p2panda-encryption = { git = "https://github.com/p2panda/p2panda", rev = "920b880f22b9298bb384afb8ae503bfb4ec9ee64" }
+p2panda-discovery = { git = "https://github.com/p2panda/p2panda", rev = "920b880f22b9298bb384afb8ae503bfb4ec9ee64" }
+p2panda-net = { git = "https://github.com/p2panda/p2panda", rev = "920b880f22b9298bb384afb8ae503bfb4ec9ee64" }
+p2panda-store = { git = "https://github.com/p2panda/p2panda", rev = "920b880f22b9298bb384afb8ae503bfb4ec9ee64", features = [
   "sqlite",
 ] }
-p2panda-stream = { git = "https://github.com/p2panda/p2panda", rev = "41b3fcacb3d4130ba0dc49502d8c36737d53c4be" }
-p2panda-sync = { git = "https://github.com/p2panda/p2panda", rev = "41b3fcacb3d4130ba0dc49502d8c36737d53c4be" }
-p2panda-spaces = { git = "https://github.com/p2panda/p2panda", rev = "41b3fcacb3d4130ba0dc49502d8c36737d53c4be", features = [
+p2panda-stream = { git = "https://github.com/p2panda/p2panda", rev = "920b880f22b9298bb384afb8ae503bfb4ec9ee64" }
+p2panda-sync = { git = "https://github.com/p2panda/p2panda", rev = "920b880f22b9298bb384afb8ae503bfb4ec9ee64" }
+p2panda-spaces = { git = "https://github.com/p2panda/p2panda", rev = "920b880f22b9298bb384afb8ae503bfb4ec9ee64", features = [
   "test_utils",
 ] }
