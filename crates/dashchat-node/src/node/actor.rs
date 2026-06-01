@@ -9,14 +9,13 @@ use p2panda::network::NetworkError;
 use p2panda::node::CreateStreamError;
 use p2panda::operation::{Extensions, LogId, Operation};
 use p2panda::streams::{
-    ExternalStreamFuture, ImportError, ProcessedOperation, PublishError, PublishFuture,
+    ExternalStreamFuture, ImportError, ProcessedOperation, PublishError, PublishFuture, Source,
     StreamEvent, StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
-use p2panda_auth::processor::GroupsProcessorError;
 use thiserror::Error;
 use tokio::select;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{StreamExt, StreamMap};
 use tracing::warn;
 
@@ -56,6 +55,39 @@ pub(crate) enum Command {
     },
 }
 
+// Wrapper around StreamEvent from p2panda with variants for "system", "groups" and "application"
+// events.
+//
+// This is used to express different variants of event types which will be forwarded to further
+// application layer event processors and to package operations with their processed_tx and any
+// errors which already occurred in this processor. The processed_tx is required so that the
+// ProcessorFuture can be signaled to complete only after all application processing has occurred.
+// The error is required so that if a groups control message fails processing, then the
+// application layer can still decide separately whether to perform further processing or not.
+//
+// @TODO: This wrapping might not have been required if the node actor and app processing pipeline
+// was combined into one process. I(sam) avoided doing that so as to keep my work as self
+// contained as possible, it could be that i've generated some additional abstraction because of
+// that though. It's also a side-effect of groups operations not being processed inside of the
+// p2panda node yet, this generated some further error handling requirements. In any further
+// refactoring it could be worth considering how these modules could actually be refactored into
+// one place. In any case, it would be required to have both the processed_tx and additional error
+// handling in place, so this is not wasted work in the long-run.
+pub enum ProcessorEvent {
+    System(StreamEvent<Payload>),
+    Groups {
+        operation: ProcessedOperation<Payload>,
+        source: Source,
+        processed_tx: Option<oneshot::Sender<Result<(), ProcessorError>>>,
+        error: Option<ProcessorError>,
+    },
+    App {
+        operation: ProcessedOperation<Payload>,
+        source: Source,
+        processed_tx: Option<oneshot::Sender<Result<(), ProcessorError>>>,
+    },
+}
+
 /// Actor for the p2panda node.
 ///
 /// This is a thin wrapper around the p2panda node API which includes merging of all subscription
@@ -76,24 +108,22 @@ pub struct Actor {
     /// completed additional processing.
     ///
     /// These are held while groups control messages are being processed so the user can await
-    /// this processing on top of what the node already provides with PublishFuture.
-    ///
-    /// // @TODO: could be good to allow the user to await further dash chat application layer
-    /// processing with this same mechanism, this would be possible if we forward the tx on along
-    /// with the operation onto the application layer.
-    processed: HashMap<Hash, oneshot::Sender<()>>,
+    /// this processing on top of what the node already provides with PublishFuture. The oneshot
+    /// channel sender is forwarded further up the processing pipeline (to the application layer)
+    /// so that any further processing which occurs there can also be awaited.
+    processed: HashMap<Hash, oneshot::Sender<Result<(), ProcessorError>>>,
 
     /// Groups processor.
     groups_processor: GroupsProcessor,
 
     /// Channel for forwarding all received events on to the application layer processor.
-    events_tx: broadcast::Sender<StreamEvent<Payload>>,
+    events_tx: mpsc::Sender<ProcessorEvent>,
 }
 
 impl Actor {
-    pub(crate) fn new(node: p2panda::Node) -> (Self, broadcast::Receiver<StreamEvent<Payload>>) {
+    pub(crate) fn new(node: p2panda::Node) -> (Self, mpsc::Receiver<ProcessorEvent>) {
         let groups_processor = GroupsProcessor::new(node.store());
-        let (events_tx, events_rx) = broadcast::channel(100);
+        let (events_tx, events_rx) = mpsc::channel(100);
 
         (
             Self {
@@ -181,14 +211,19 @@ impl Actor {
     }
 
     async fn handle_import(
-        &self,
+        &mut self,
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     ) -> Result<ExternalStreamFuture, NodeActorError> {
-        // Retrieve the topic tx from the tx_map. If it isn't present it means we didn't subscribe
-        // to this topic yet.
-        let Some(tx) = self.tx_map.get(&topic) else {
-            return Err(NodeActorError::MissingTopicTX(topic));
+        // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
+        let tx = match self.tx_map.get(&topic) {
+            Some(tx) => tx.clone(),
+            None => {
+                let (tx, rx) = self.inner.stream(topic).await?;
+                self.tx_map.insert(topic, tx.clone());
+                self.streams.insert(topic, rx);
+                tx
+            }
         };
 
         let import_fut = tx.import(stream).await?;
@@ -200,21 +235,15 @@ impl Actor {
         topic: Topic,
         payload: Payload,
     ) -> Result<ProcessFuture, NodeActorError> {
-        // @TODO: from running the tests I can see there are some places where we are trying to
-        // publish an operation before subscribing to the topic. Ideally we error if there is no
-        // existing stream for the topic we are publishing into. I've added a logic here to
-        // automatically subscribe to a topic if the tx is not present. We should rather figure
-        // out where calls to subscribe to the topic is missing and remove this snippet.
-        if !self.tx_map.contains_key(&topic) {
-            let (tx, rx) = self.inner.stream(topic).await?;
-            tracing::warn!(topic = ?topic.aliased(), "publishing operation before subscribing, automatically subscribed");
-            self.tx_map.insert(topic, tx);
-            self.streams.insert(topic, rx);
-        }
-
-        // Retrieve the topic tx from the tx_map.
-        let Some(tx) = self.tx_map.get(&topic) else {
-            return Err(NodeActorError::MissingTopicTX(topic));
+        // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
+        let tx = match self.tx_map.get(&topic) {
+            Some(tx) => tx.clone(),
+            None => {
+                let (tx, rx) = self.inner.stream(topic).await?;
+                self.tx_map.insert(topic, tx.clone());
+                self.streams.insert(topic, rx);
+                tx
+            }
         };
 
         // If the payload represents a change to group state then publish it as a groups control
@@ -243,23 +272,37 @@ impl Actor {
     }
 
     async fn process_event(&mut self, event: StreamEvent<Payload>) -> Result<(), NodeActorError> {
-        if let StreamEvent::Processed { operation, .. } = &event {
-            let id = operation.id();
+        let processor_event = match &event {
+            StreamEvent::Processed { operation, source } => {
+                let id = operation.id();
+                // For all processed operations remove the processed_tx from the map for forwarding to the
+                // application layer.
+                let processed_tx = self.processed.remove(&id);
 
-            // Process any group control messages.
-            if let Payload::GroupControl(_) = operation.message() {
-                self.process_groups_control(operation).await?;
+                if let Payload::GroupControl(_) = operation.message() {
+                    // Process any groups control messages.
+                    let error = self.process_groups_control(operation).await.err();
+                    ProcessorEvent::Groups {
+                        operation: operation.clone(),
+                        source: source.clone(),
+                        processed_tx,
+                        error,
+                    }
+                } else {
+                    ProcessorEvent::App {
+                        operation: operation.clone(),
+                        source: source.clone(),
+                        processed_tx,
+                    }
+                }
             }
-
-            // Signal that the event has been processed at system level.
-            if let Some(processed_tx) = self.processed.remove(&id) {
-                let _ = processed_tx.send(());
-            };
-        }
+            _ => ProcessorEvent::System(event),
+        };
 
         // Forward the event for further application layer processing.
         self.events_tx
-            .send(event)
+            .send(processor_event)
+            .await
             .map_err(|_| NodeActorError::EventSend)?;
 
         Ok(())
@@ -268,7 +311,7 @@ impl Actor {
     async fn process_groups_control(
         &self,
         operation: &ProcessedOperation<Payload>,
-    ) -> Result<(), NodeActorError> {
+    ) -> Result<(), ProcessorError> {
         let topic = operation.topic();
         let header = operation.processed().header().to_owned();
         let body = operation.processed().body().cloned();
@@ -281,7 +324,8 @@ impl Actor {
 
         self.groups_processor
             .process(&GROUPS_STATE_ID, &topic, &operation)
-            .await?;
+            .await
+            .map_err(|err| ProcessorError::Groups(err.to_string()))?;
 
         Ok(())
     }
@@ -298,7 +342,7 @@ impl ProcessFuture {
     pub fn new(
         hash: Hash,
         published_fut: PublishFuture,
-        processed_rx: oneshot::Receiver<()>,
+        processed_rx: oneshot::Receiver<Result<(), ProcessorError>>,
     ) -> Self {
         Self {
             hash,
@@ -324,9 +368,6 @@ impl Future for ProcessFuture {
 
 #[derive(Debug, Error)]
 pub enum NodeActorError {
-    #[error("missing publish stream for topic: {0}")]
-    MissingTopicTX(Topic),
-
     #[error(transparent)]
     Publish(#[from] PublishError),
 
@@ -336,9 +377,6 @@ pub enum NodeActorError {
     #[error(transparent)]
     Import(#[from] ImportError),
 
-    #[error(transparent)]
-    GroupsProcessor(#[from] GroupsProcessorError<()>),
-
     #[error("error sending on event tx")]
     EventSend,
 
@@ -346,9 +384,18 @@ pub enum NodeActorError {
     Network(#[from] NetworkError),
 }
 
+#[derive(Clone, Debug, Error)]
+pub enum ProcessorError {
+    #[error("application layer processing error: {0}")]
+    App(String),
+
+    #[error("groups operation processing error: {0}")]
+    Groups(String),
+}
+
 #[cfg(test)]
 mod tests {
-    use p2panda::streams::StreamEvent;
+    use futures::future::join_all;
     use p2panda::{Hash, SigningKey, Topic, VerifyingKey};
     use p2panda_auth::Access;
     use p2panda_auth::group::{GroupAction, GroupCrdtState, GroupMember};
@@ -357,6 +404,7 @@ mod tests {
     use p2panda_store::{SqliteStore, tx_unwrap};
     use tokio::sync::oneshot;
 
+    use crate::node::actor::ProcessorEvent;
     use crate::testing::setup_tracing;
     use crate::{ChatMessageContent, ChatPayload, Payload};
 
@@ -424,6 +472,7 @@ mod tests {
         let topic_a_message = chat("hey from topic a!");
         let topic_b_message = chat("hey from topic b!");
 
+        let mut processed_futures = vec![];
         for (topic, payload) in [
             (topic_a, topic_a_message.clone()),
             (topic_b, topic_b_message.clone()),
@@ -438,35 +487,37 @@ mod tests {
                 .await
                 .unwrap();
 
-            let event = reply_rx.await.unwrap().unwrap().await.unwrap();
-            assert!(event.is_completed());
+            let processed_future = reply_rx.await.unwrap().unwrap();
+            processed_futures.push(processed_future);
         }
 
         // Both alice and bobbi receive the messages on their events stream.
         for mut events_rx in [alice_events_rx, bobbi_events_rx] {
             let mut topic_a_message_received = false;
             let mut topic_b_message_received = false;
-            while let Ok(event) = events_rx.recv().await {
-                if let StreamEvent::Processed { operation, .. } = event {
-                    if operation.message() == &topic_a_message {
-                        topic_a_message_received = true;
-                    }
+            while let Some(ProcessorEvent::App { operation, .. }) = events_rx.recv().await {
+                if operation.message() == &topic_a_message {
+                    topic_a_message_received = true;
+                }
 
-                    if operation.message() == &topic_b_message {
-                        topic_b_message_received = true;
-                    }
+                if operation.message() == &topic_b_message {
+                    topic_b_message_received = true;
+                }
 
-                    if topic_a_message_received && topic_b_message_received {
-                        break;
-                    }
+                if topic_a_message_received && topic_b_message_received {
+                    break;
                 }
             }
+        }
+
+        for event in join_all(processed_futures).await {
+            assert!(event.unwrap().is_completed());
         }
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn process_groups_control_messages() {
-        setup_tracing(&["dashchat=info"], true);
+        setup_tracing(&["dashchat=info", "named_id=warn"], true);
 
         let topic = Topic::random();
 
@@ -522,23 +573,12 @@ mod tests {
             })
             .await
             .unwrap();
+        let processed_fut = reply_rx.await.unwrap().unwrap();
 
-        let event = reply_rx.await.unwrap().unwrap().await.unwrap();
-        assert!(event.is_completed());
-
-        // Alice's has processed the groups message.
-        let groups_y: GroupsState =
-            tx_unwrap!(alice_store, { alice_store.get_groups_state(&0).await })
-                .unwrap()
-                .unwrap();
-        let members = groups_y.members(group_id);
-        assert!(members.contains(&(alice_id, Access::manage())));
-        assert!(members.contains(&(bobbi_id, Access::manage())));
-
-        // Bobbi receives the messages on their events stream.
+        // Both receive the message on their events stream.
         for mut events_rx in [alice_events_rx, bobbi_events_rx] {
-            while let Ok(event) = events_rx.recv().await {
-                if let StreamEvent::Processed { operation, .. } = event {
+            while let Some(event) = events_rx.recv().await {
+                if let ProcessorEvent::Groups { operation, .. } = event {
                     if operation.message() == &create_group {
                         break;
                     }
@@ -546,13 +586,16 @@ mod tests {
             }
         }
 
+        assert!(processed_fut.await.unwrap().is_completed());
+
         // And they have also processed the groups control message.
-        let groups_y: GroupsState =
-            tx_unwrap!(bobbi_store, { bobbi_store.get_groups_state(&0).await })
+        for store in [alice_store, bobbi_store] {
+            let groups_y: GroupsState = tx_unwrap!(store, { store.get_groups_state(&0).await })
                 .unwrap()
                 .unwrap();
-        let members = groups_y.members(group_id);
-        assert!(members.contains(&(alice_id, Access::manage())));
-        assert!(members.contains(&(bobbi_id, Access::manage())));
+            let members = groups_y.members(group_id);
+            assert!(members.contains(&(alice_id, Access::manage())));
+            assert!(members.contains(&(bobbi_id, Access::manage())));
+        }
     }
 }

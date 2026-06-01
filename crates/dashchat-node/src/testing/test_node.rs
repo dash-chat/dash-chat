@@ -332,8 +332,8 @@ impl<T: std::fmt::Debug> Watcher<T> {
         timeout: tokio::time::Duration,
         f: impl Fn(&T) -> Option<R>,
     ) -> anyhow::Result<R> {
-        let timeout = tokio::time::sleep(timeout);
-        tokio::pin!(timeout);
+        let sleep = tokio::time::sleep(timeout);
+        tokio::pin!(sleep);
 
         loop {
             tokio::select! {
@@ -346,7 +346,7 @@ impl<T: std::fmt::Debug> Watcher<T> {
                         None => return Err(anyhow::anyhow!("channel closed")),
                     }
                 }
-                _ = &mut timeout => return Err(anyhow::anyhow!("timeout")),
+                _ = &mut sleep => return Err(anyhow::anyhow!("timeout after {:?}", timeout)),
             }
         }
     }

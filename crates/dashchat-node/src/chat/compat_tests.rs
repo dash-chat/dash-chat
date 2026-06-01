@@ -2,16 +2,18 @@
 mod tests {
     use std::time::Duration;
 
+    use aliased::Aliasing;
     use dashchat_compat::{VersionConvert, VersionConvertError};
 
     use mailbox_client::mem::MemMailbox;
+    use maplit::btreeset;
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
 
     use crate::{
         ShareIntent,
         chat::*,
         compat::Capabilities,
-        testing::{ClusterConfig, TestNode, TestNodeConfig, consistency},
+        testing::{ClusterConfig, TestNode, TestNodeConfig, consistency, wait_for},
     };
 
     #[test]
@@ -154,6 +156,41 @@ mod tests {
             .unwrap();
         assert_eq!(alice_bobbi_caps, Capabilities::current());
         assert_eq!(bobbi_alice_caps, Capabilities::zero());
+
+        consistency([&alice, &bobbi], &[topic.into()], &ClusterConfig::default())
+            .await
+            .unwrap();
+
+        let alice_members = alice.get_group_members(topic).await.unwrap();
+        let bobbi_members = bobbi.get_group_members(topic).await.unwrap();
+        let expected_members = btreeset![
+            (alice.device_id(), p2panda_auth::Access::write()),
+            (bobbi.device_id(), p2panda_auth::Access::write())
+        ];
+
+        assert_eq!(alice_members, expected_members);
+        assert_eq!(bobbi_members, expected_members);
+
+        // wait_for(
+        //     Duration::from_millis(100),
+        //     Duration::from_secs(5),
+        //     || async {
+        //         let alice_members = alice.get_group_members(topic).await.unwrap();
+        //         let bobbi_members = bobbi.get_group_members(topic).await.unwrap();
+        //         let expected_members = btreeset![
+        //             (alice.device_id(), p2panda_auth::Access::write()),
+        //             (bobbi.device_id(), p2panda_auth::Access::write())
+        //         ];
+
+        //         if alice_members == expected_members && bobbi_members == expected_members {
+        //             Ok(())
+        //         } else {
+        //             Err("waiting for alice and bobbi to learn each other's members")
+        //         }
+        //     },
+        // )
+        // .await
+        // .unwrap();
 
         // Both nodes return zero capabilities because alice is the limiting factor.
         let alice_caps = alice
