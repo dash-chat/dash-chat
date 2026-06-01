@@ -27,7 +27,7 @@ impl Node {
 
         // Send the command to the node actor.
         if let Err(err) = self.actor_tx.send(command).await {
-            tracing::warn!("failed to send shutdown signal to node actor: {}", err);
+            tracing::warn!("failed to publish command to node actor: {}", err);
             return Err(Error::AuthorOperation(err.to_string()).into());
         }
 

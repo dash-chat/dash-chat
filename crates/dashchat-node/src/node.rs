@@ -592,14 +592,14 @@ impl Node {
 
         let (reply_tx, reply_rx) = oneshot::channel();
         if let Err(err) = self.actor_tx.send(Command::Shutdown { reply_tx }).await {
-            tracing::warn!("failed to send shutdown signal to node actor: {}", err);
+            tracing::warn!("failed to send shutdown command to node actor: {}", err);
             return Err(ShutdownError::ActorShutdown(Box::new(err)));
         }
 
         reply_rx.await?;
 
         if let Err(err) = self.processor_cancel_tx.send(()).await {
-            tracing::warn!("failed to send shutdown signal to node actor: {}", err);
+            tracing::warn!("failed to send cancel signal to application processor: {}", err);
             return Err(ShutdownError::ActorShutdown(Box::new(err)));
         }
 
