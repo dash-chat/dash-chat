@@ -80,10 +80,11 @@ dependencies = [
 
 [[package]]
 name = "aliased"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "210ffdda1f5fd22996c891542a05296d0bbb5e13e19f5d6cab98f83000f3ce39"
+checksum = "42a1cd7a850b4491532b65a0bc9a94cbf4fc5483d0d4c4423bd7081b9e7db1fb"
 dependencies = [
+ "aho-corasick",
  "regex",
  "tracing",
 ]
@@ -2036,7 +2037,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccc2776f0c61eca1ca32528f85548abd1a4be8fb53d1b21c013e4f18da1e7090"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]

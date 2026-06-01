@@ -407,8 +407,10 @@ impl Node {
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
         // TODO: this should use a transaction, but the race is not a big deal here
+        dbg!();
         let deps = self.group_store.heads(*chat_id).await?;
 
+        dbg!();
         self.publish(
             chat_id,
             Payload::group_control(
@@ -423,15 +425,18 @@ impl Node {
         )
         .await?;
 
+        dbg!();
         let agent_id = self
             .local_store
             .lookup_contact_by_device_id(DeviceId::from(member))
             .await?;
         if let Some(agent_id) = agent_id {
+            dbg!();
             self.invite_to_group(chat_id, agent_id).await?;
         } else {
             tracing::warn!("Contact not found: {:?}", DeviceId::from(member).aliased());
         }
+        dbg!();
 
         Ok(())
     }

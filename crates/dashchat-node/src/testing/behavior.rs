@@ -104,25 +104,4 @@ impl Behavior {
         tracing::info!(?chat_id, "joined group");
         Ok(chat_id)
     }
-
-    #[deprecated = "not needed anymore"]
-    /// Wait for an operation to be fully processed by the node.
-    pub async fn await_processing(
-        &self,
-        topic: &TopicId,
-        hash: &p2panda::Hash,
-    ) -> anyhow::Result<()> {
-        wait_for(
-            Duration::from_millis(100),
-            Duration::from_secs(5),
-            || async {
-                self.node
-                    .op_store
-                    .is_op_processed(topic, hash)
-                    .then_some(())
-                    .ok_or(anyhow::anyhow!("operation not processed"))
-            },
-        )
-        .await
-    }
 }

@@ -25,18 +25,22 @@ impl Node {
             reply_tx,
         };
 
+        dbg!();
         // Send the command to the node actor.
         if let Err(err) = self.actor_tx.send(command).await {
             tracing::warn!("failed to send shutdown signal to node actor: {}", err);
             return Err(Error::AuthorOperation(err.to_string()).into());
         }
+        dbg!();
 
         // Await the response, this just means that the command has been handled, it does not mean
         // the operation has been published or processed yet.
         let process_fut = reply_rx.await??;
+        dbg!();
 
         // Now we await the operation being published and processed on the system layer.
         let event = process_fut.await?;
+        dbg!();
 
         // Trigger sync with all mailboxes.
         self.mailboxes.trigger_sync();

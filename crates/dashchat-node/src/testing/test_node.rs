@@ -302,9 +302,10 @@ pub async fn consistency(
         }
     })
     .await
-    .map_err(|_diffs| {
+    .map_err(|diffs| {
+        dbg!(diffs.aliased());
         // TODO: print a report here
-        anyhow::anyhow!("consistency check failed")
+        anyhow::anyhow!("consistency check failed after {:?}", config.poll_timeout)
     })
 }
 
