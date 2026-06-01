@@ -278,12 +278,16 @@ impl Actor {
 
                 if let Payload::GroupControl(_) = operation.message() {
                     // Process any groups control messages.
-                    let error = self.process_groups_control(operation).await.err();
+                    let result = self.process_groups_control(operation).await;
+                    if let Err(err) = result.as_ref() {
+                        warn!("groups processing error: {err:?}");
+                    }
+
                     ProcessorEvent::Groups {
                         operation: operation.clone(),
                         source: source.clone(),
                         processed_tx,
-                        error,
+                        error: result.err(),
                     }
                 } else {
                     ProcessorEvent::App {
