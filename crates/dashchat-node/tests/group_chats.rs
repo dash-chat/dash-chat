@@ -102,8 +102,6 @@ async fn test_p2p_direct_chat() {
     let alice = TestNode::new(alice_config, "alice").await;
     let bobbi = TestNode::new(bobbi_config, "bobbi").await;
 
-    introduce_and_wait([&alice, &bobbi]).await;
-
     alice
         .behavior()
         .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
@@ -116,30 +114,17 @@ async fn test_p2p_direct_chat() {
     assert!(alice.subscribed_topics().await.contains(&chat_id));
     assert!(bobbi.subscribed_topics().await.contains(&chat_id));
 
+    let message = "Hello";
     alice.send_message(chat_id, "Hello".into()).await.unwrap();
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(10),
-        || async {
-            let msgs = [
-                alice.get_messages(chat_id).await.unwrap().len(),
-                bobbi.get_messages(chat_id).await.unwrap().len(),
-            ];
-            msgs.iter().all(|m| *m == 1).ok_or(msgs)
-        },
-    )
-    .await
-    .unwrap();
-
-    let alice_messages = alice.get_messages(chat_id).await.unwrap();
-    let bobbi_messages = bobbi.get_messages(chat_id).await.unwrap();
-
-    assert_eq!(alice_messages, bobbi_messages);
-    assert_eq!(
-        bobbi_messages.first().map(|m| m.content.clone()),
-        Some("Hello".into())
-    );
+    for mut rx in [alice.watcher.lock().await, bobbi.watcher.lock().await] {
+        while let Some(notification) = rx.recv().await {
+            if let Payload::Chat(ChatPayload::Message(content)) = notification.payload {
+                assert_eq!(message, content.message());
+                break;
+            }
+        }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

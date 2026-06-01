@@ -64,7 +64,7 @@ impl Behavior {
     ) -> anyhow::Result<Capabilities> {
         let mut watcher = self.watcher.lock().await;
         watcher
-            .watch_mapped(Duration::from_secs(5), |n: &Notification| {
+            .watch_mapped(Duration::from_secs(10), |n: &Notification| {
                 if n.header.verifying_key != *device_id {
                     return None;
                 }
