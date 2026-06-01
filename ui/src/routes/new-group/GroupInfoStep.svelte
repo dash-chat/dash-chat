@@ -68,6 +68,7 @@
 			)}
 			{selectedContacts}
 			selectable={false}
+			noDataMessage={m.youCanAddMembersLater()}
 		/>
 	</div>
 </StepPage>

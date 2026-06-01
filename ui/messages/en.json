@@ -125,6 +125,7 @@
 	"membersCount_one": "{{count}} member",
 	"membersCount_other": "{{count}} members",
 	"addMembers": "Add members",
+	"youCanAddMembersLater": "You can add or invite friends after creating this group.",
 	"add": "Add",
 	"removeMember": "Remove member",
 	"remove": "Remove",
