@@ -1,4 +1,4 @@
-use dashchat_node::{AgentId, ChatId, Node};
+use dashchat_node::{AgentId, ChatId, ChatMessageContent, ChatReaction, Node};
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::{Hash, PublicKey};
 use tauri::State;
@@ -15,6 +15,30 @@ pub async fn create_group(
     node.create_group(members)
         .await
         .map_err(|e| format!("Failed to create group: {e:?}"))
+}
+
+#[tauri::command]
+pub async fn send_message(
+    chat_id: ChatId,
+    content: ChatMessageContent,
+    node: State<'_, Node>,
+) -> Result<(), String> {
+    node.send_message(chat_id, content)
+        .await
+        .map_err(|err| format!("{err:?}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn send_reaction(
+    chat_id: ChatId,
+    content: ChatReaction,
+    node: State<'_, Node>,
+) -> Result<(), String> {
+    node.add_reaction(chat_id, content)
+        .await
+        .map_err(|err| format!("{err:?}"))?;
+    Ok(())
 }
 
 #[tauri::command]
