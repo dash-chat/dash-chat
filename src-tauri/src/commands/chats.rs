@@ -1,5 +1,5 @@
-use dashchat_node::{ChatId, Node};
-use p2panda_auth::Access;
+use dashchat_node::{ChatId, DeviceId, Node};
+use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::{Hash, PublicKey};
 use tauri::State;
 
@@ -40,4 +40,19 @@ pub async fn get_group_chats(node: State<'_, Node>) -> Result<Vec<ChatId>, Strin
     node.get_groups()
         .await
         .map_err(|e| format!("Failed to get groups: {e:?}"))
+}
+
+#[tauri::command]
+pub async fn get_group_members(
+    chat_id: ChatId,
+    node: State<'_, Node>,
+) -> Result<Vec<(DeviceId, bool)>, String> {
+    let members = node
+        .get_group_members(chat_id)
+        .await
+        .map_err(|e| format!("Failed to get group members: {e:?}"))?;
+    Ok(members
+        .into_iter()
+        .map(|(id, access)| (id, access.level >= AccessLevel::Manage))
+        .collect())
 }

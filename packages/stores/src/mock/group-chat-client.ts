@@ -1,10 +1,13 @@
 import type { IGroupChatClient } from '../group-chats/group-chat-client';
-import type { AgentId, PublicKey } from '../p2panda/types';
+import type { AgentId, ChatMember, PublicKey } from '../p2panda/types';
 import type { ChatId, MessageContent } from '../types';
 
 export class MockGroupChatClient implements IGroupChatClient {
-	async addMember(_chatId: ChatId, _member: PublicKey): Promise<void> {}
-	async removeMember(_chatId: ChatId, _member: PublicKey): Promise<void> {}
+	async getMembers(_chatId: ChatId): Promise<[ChatMember, boolean][]> {
+		return [];
+	}
+	async addMember(_chatId: ChatId, _member: ChatMember): Promise<void> {}
+	async removeMember(_chatId: ChatId, _member: ChatMember): Promise<void> {}
 	async promoteToAdministrator(
 		_chatId: ChatId,
 		_member: AgentId,

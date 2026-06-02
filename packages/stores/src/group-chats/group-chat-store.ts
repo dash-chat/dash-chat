@@ -4,7 +4,7 @@ import { Profile } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
-import { AgentId, PublicKey } from '../p2panda/types';
+import { AgentId, ChatMember, PublicKey } from '../p2panda/types';
 import { ChatId, ChatSummary, MessageContent, Payload } from '../types';
 import { type IGroupChatClient } from './group-chat-client';
 
@@ -15,7 +15,7 @@ export interface GroupInfo {
 }
 
 export interface GroupMember {
-	agentId: AgentId;
+	chatMemberId: ChatMember;
 	profile: Profile | undefined;
 	admin: boolean;
 }
@@ -63,43 +63,32 @@ export class GroupChatStore {
 		return messages;
 	});
 
-	membersIds = reactive(async () => {
-		const myAgentId = await this.contactsStore.myAgentId();
-		return [myAgentId];
+	membersData = reactive(async () => {
+		return await this.client.getMembers(this.chatId);
 	});
 
 	me = reactive(async () => {
-		const agentId = await this.contactsStore.myAgentId();
-		return await this.members(agentId);
+		const myAgentId = await this.contactsStore.myAgentId();
+		const data = await this.membersData();
+		const entry = data.find(([id]) => id === myAgentId);
+		return this.buildMember(myAgentId, entry?.[1] ?? false);
 	});
 
 	allMembers = reactive(async () => {
-		const membersIds = await this.membersIds();
-
-		const members = await Promise.all(
-			membersIds.map(memberId => this.members(memberId)),
-		);
-
-		const allMembers: Record<AgentId, GroupMember> = {};
-
-		for (let i = 0; i < membersIds.length; i++) {
-			allMembers[membersIds[i]] = members[i];
+		const data = await this.membersData();
+		const allMembers: Record<ChatMember, GroupMember> = {};
+		for (const [deviceId, admin] of data) {
+			allMembers[deviceId] = await this.buildMember(deviceId, admin);
 		}
-
 		return allMembers;
 	});
 
-	members = reactive(async (agentId: AgentId) => {
-		const profile = await this.contactsStore.profiles(agentId);
-
-		const member: GroupMember = {
-			agentId: agentId,
-			profile,
-			admin: true,
-		};
-
-		return member;
-	});
+	private buildMember = reactive(
+		async (deviceId: ChatMember, admin: boolean) => {
+			const profile = await this.contactsStore.profiles(deviceId);
+			return { chatMemberId: deviceId, profile, admin } satisfies GroupMember;
+		},
+	);
 
 	summary = reactive(async (): Promise<ChatSummary> => {
 		const info = await this.info();

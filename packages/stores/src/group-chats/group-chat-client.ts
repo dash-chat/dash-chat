@@ -1,12 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 
-import { AgentId, PublicKey, TopicId } from '../p2panda/types';
+import { AgentId, ChatMember, PublicKey, TopicId } from '../p2panda/types';
 import { ChatId, MessageContent, Payload } from '../types';
 
 export interface IGroupChatClient {
 	/// Members
-	addMember(chatId: ChatId, member: PublicKey): Promise<void>;
-	removeMember(chatId: ChatId, member: PublicKey): Promise<void>;
+	getMembers(chatId: ChatId): Promise<[ChatMember, boolean][]>;
+	addMember(chatId: ChatId, member: ChatMember): Promise<void>;
+	removeMember(chatId: ChatId, member: ChatMember): Promise<void>;
 
 	promoteToAdministrator(chatId: ChatId, member: AgentId): Promise<void>;
 	demoteFromAdministrator(chatId: ChatId, member: AgentId): Promise<void>;
@@ -20,10 +21,14 @@ export interface IGroupChatClient {
 }
 
 export class GroupChatClient implements IGroupChatClient {
-	async addMember(chatId: ChatId, member: PublicKey): Promise<void> {
+	getMembers(chatId: ChatId): Promise<[ChatMember, boolean][]> {
+		return invoke('get_group_members', { chatId });
+	}
+
+	async addMember(chatId: ChatId, member: ChatMember): Promise<void> {
 		throw new Error('addMember not implemented');
 	}
-	async removeMember(chatId: ChatId, member: PublicKey): Promise<void> {}
+	async removeMember(chatId: ChatId, member: ChatMember): Promise<void> {}
 
 	sendMessage(topic: ChatId, content: MessageContent): Promise<void> {
 		return invoke('send_message', { topic, content });
