@@ -279,7 +279,7 @@ pub async fn consistency(
                             .cloned()
                             .unwrap_or_default()
                             .into_iter()
-                            .map(|h| format!("{}", h))
+                            .map(|h| format!("{:?}", h))
                     })
                     .collect::<BTreeSet<_>>()
             })
