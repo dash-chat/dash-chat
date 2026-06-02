@@ -13,26 +13,7 @@ export class AddMembersStep {
 	}
 
 	async addContactByName(name: string): Promise<void> {
-		await this.agent.execute((contactName: string) => {
-			const listItems = Array.from(document.querySelectorAll('li'));
-			const contactItem = listItems.find(item => {
-				const title = item.querySelector('.item-title');
-				return title?.textContent?.trim() === contactName;
-			}) as HTMLElement | undefined;
-
-			if (!contactItem) {
-				throw new Error(
-					`Contact "${contactName}" not found in group members list`,
-				);
-			}
-
-			const clickTarget =
-				(contactItem.querySelector('.item-content') as HTMLElement | null) ??
-				contactItem;
-			clickTarget.click();
-		}, name);
-
-		await this.clickNext();
+		await this.agent.clickNewGroupMemberByName(name);
 	}
 }
 

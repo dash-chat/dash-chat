@@ -31,7 +31,12 @@
 	{:else}
 		<List strongIos inset={isWideScreen.value || theme === 'ios'}>
 			{#each contacts as [publicKey, profile]}
-				<ListItem label title={profile.name}>
+				<ListItem
+					label
+					title={profile.name}
+					data-testid="selectable-contact-item"
+					data-contact-name={profile.name}
+				>
 					{#snippet media()}
 						<Avatar
 							image={profile.avatar}

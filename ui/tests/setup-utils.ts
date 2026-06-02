@@ -64,6 +64,7 @@ import {
 } from './pages/home';
 import {
 	clickNewGroupCreate,
+	clickNewGroupMemberByName,
 	clickNewGroupNext,
 	newGroupLoaded,
 } from './pages/new-group';
@@ -157,6 +158,7 @@ export const testUtils = {
 	newGroupLoaded,
 	clickNewGroupNext,
 	clickNewGroupCreate,
+	clickNewGroupMemberByName,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(

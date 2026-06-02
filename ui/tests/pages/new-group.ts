@@ -23,6 +23,22 @@ export function clickNewGroupCreate(): void {
 	el.click();
 }
 
+export function clickNewGroupMemberByName(name: string): void {
+	const items = Array.from(
+		document.querySelectorAll('[data-testid="selectable-contact-item"]'),
+	) as HTMLElement[];
+	const item = items.find(
+		candidate => candidate.getAttribute('data-contact-name') === name,
+	);
+	if (!item) {
+		throw new Error(`New group contact "${name}" not found`);
+	}
+
+	const clickTarget =
+		(item.querySelector('.item-content') as HTMLElement | null) ?? item;
+	clickTarget.click();
+}
+
 /** Go back from the group info page */
 export function goBackFromInfo() {
 	return { action: 'click' as const, selector: selectors.infoBack };
