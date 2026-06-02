@@ -79,11 +79,13 @@ export class GroupChatStore {
 
 	allMembers = reactive(async () => {
 		const data = await this.membersData();
-		const allMembers: Record<AgentId, GroupMember> = {};
-		for (const { agentId, isAdmin } of data) {
-			allMembers[agentId] = await this.buildMember(agentId, isAdmin);
-		}
-		return allMembers;
+		const entries = await Promise.all(
+			data.map(async ({ agentId, isAdmin }) => {
+				const member = await this.buildMember(agentId, isAdmin);
+				return [agentId, member] as const;
+			}),
+		);
+		return Object.fromEntries(entries) as Record<AgentId, GroupMember>;
 	});
 
 	private buildMember = reactive(async (agentId: AgentId, admin: boolean) => {
