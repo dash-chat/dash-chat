@@ -46,10 +46,20 @@
 	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 
 	import { m } from '$lib/paraglide/messages.js';
-	import { setLocale } from '$lib/paraglide/runtime';
+	import { getLocale, type Locale, setLocale } from '$lib/paraglide/runtime';
 	import { goto } from '$app/navigation';
 	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
+	import { registerSetLocale } from '$lib/utils/locale';
+
+	// TODO: once the language-selector setting lands, make that setting the
+	// source of truth for this state (read it via `useSignal(settingsStore.locale)`
+	// or similar) and have the selector's onChange call into paraglide's
+	// `setLocale`. The `{#key}` mechanism stays the same.
+	let currentLocale = $state<Locale>(getLocale());
+	registerSetLocale(locale => {
+		currentLocale = locale;
+	});
 
 	import('../../tests/setup-utils').then(({ registerTestUtils }) =>
 		// Paraglide types setLocale with a string-literal union; we widen to
@@ -187,15 +197,17 @@
 <KonstaProvider {theme} dark={effectiveDark}>
 	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
 		<SplashscreenPrompt>
-			{#if isWideScreen.value}
-				<DesktopLayout>
-					{@render children()}
-				</DesktopLayout>
-			{:else}
-				<MobileLayout>
-					{@render children()}
-				</MobileLayout>
-			{/if}
+			{#key currentLocale}
+				{#if isWideScreen.value}
+					<DesktopLayout>
+						{@render children()}
+					</DesktopLayout>
+				{:else}
+					<MobileLayout>
+						{@render children()}
+					</MobileLayout>
+				{/if}
+			{/key}
 		</SplashscreenPrompt>
 		<ToastManager />
 	</App>

@@ -38,7 +38,7 @@
 				onClick={() => {
 					pushState('', { sidebarPanel: 'new-message' });
 				}}
-				data-testid="home-new-message-link"
+				data-testid="home-new-message-btn"
 			>
 				<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
 			</Link>

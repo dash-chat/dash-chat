@@ -52,6 +52,11 @@ jobs:
         with:
           rustflags: ''
 
+      - name: Cache Rust target
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
       - name: Install tauri-driver
         run: cargo install tauri-driver --locked
 
