@@ -6,7 +6,10 @@ import { Message } from '../direct-chats/direct-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, ChatMember, PublicKey } from '../p2panda/types';
 import { ChatId, ChatSummary, MessageContent, Payload } from '../types';
-import { type IGroupChatClient } from './group-chat-client';
+import {
+	type GroupMemberData,
+	type IGroupChatClient,
+} from './group-chat-client';
 
 export interface GroupInfo {
 	name: string | undefined;
@@ -70,15 +73,15 @@ export class GroupChatStore {
 	me = reactive(async () => {
 		const myAgentId = await this.contactsStore.myAgentId();
 		const data = await this.membersData();
-		const entry = data.find(([id]) => id === myAgentId);
-		return this.buildMember(myAgentId, entry?.[1] ?? false);
+		const entry = data.find(m => m.chatMemberId === myAgentId);
+		return this.buildMember(myAgentId, entry?.isAdmin ?? false);
 	});
 
 	allMembers = reactive(async () => {
 		const data = await this.membersData();
 		const allMembers: Record<ChatMember, GroupMember> = {};
-		for (const [deviceId, admin] of data) {
-			allMembers[deviceId] = await this.buildMember(deviceId, admin);
+		for (const { chatMemberId, isAdmin } of data) {
+			allMembers[chatMemberId] = await this.buildMember(chatMemberId, isAdmin);
 		}
 		return allMembers;
 	});

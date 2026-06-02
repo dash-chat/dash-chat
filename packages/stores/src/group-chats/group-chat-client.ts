@@ -3,9 +3,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { AgentId, ChatMember, PublicKey, TopicId } from '../p2panda/types';
 import { ChatId, MessageContent, Payload } from '../types';
 
+export interface GroupMemberData {
+	chatMemberId: ChatMember;
+	isAdmin: boolean;
+}
+
 export interface IGroupChatClient {
 	/// Members
-	getMembers(chatId: ChatId): Promise<[ChatMember, boolean][]>;
+	getMembers(chatId: ChatId): Promise<GroupMemberData[]>;
 	addMember(chatId: ChatId, member: ChatMember): Promise<void>;
 	removeMember(chatId: ChatId, member: ChatMember): Promise<void>;
 
@@ -21,8 +26,14 @@ export interface IGroupChatClient {
 }
 
 export class GroupChatClient implements IGroupChatClient {
-	getMembers(chatId: ChatId): Promise<[ChatMember, boolean][]> {
-		return invoke('get_group_members', { chatId });
+	async getMembers(chatId: ChatId): Promise<GroupMemberData[]> {
+		const members: [ChatMember, boolean][] = await invoke('get_group_members', {
+			chatId,
+		});
+		return members.map(([chatMemberId, isAdmin]) => ({
+			chatMemberId,
+			isAdmin,
+		}));
 	}
 
 	async addMember(chatId: ChatId, member: ChatMember): Promise<void> {
