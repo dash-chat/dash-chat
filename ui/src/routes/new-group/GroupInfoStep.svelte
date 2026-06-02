@@ -1,12 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import {
-		BlockTitle,
-		List,
-		ListInput,
-		ListItem,
-		useTheme,
-	} from 'konsta/svelte';
+	import { BlockTitle, List, ListItem, useTheme } from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import StepPage from './StepPage.svelte';
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';

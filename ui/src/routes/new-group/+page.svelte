@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { ChatsStore, ContactsStore, Profile, PublicKey } from 'dash-chat-stores';
+	import type { ChatsStore, ContactsStore, PublicKey } from 'dash-chat-stores';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import MembersStep from './MembersStep.svelte';
 	import GroupInfoStep from './GroupInfoStep.svelte';
