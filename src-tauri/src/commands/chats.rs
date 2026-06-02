@@ -1,4 +1,4 @@
-use dashchat_node::{ChatId, DeviceId, Node};
+use dashchat_node::{AgentId, ChatId, DeviceId, Node};
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::{Hash, PublicKey};
 use tauri::State;
@@ -46,13 +46,25 @@ pub async fn get_group_chats(node: State<'_, Node>) -> Result<Vec<ChatId>, Strin
 pub async fn get_group_members(
     chat_id: ChatId,
     node: State<'_, Node>,
-) -> Result<Vec<(DeviceId, bool)>, String> {
+) -> Result<Vec<(AgentId, bool)>, String> {
     let members = node
         .get_group_members(chat_id)
         .await
         .map_err(|e| format!("Failed to get group members: {e:?}"))?;
-    Ok(members
-        .into_iter()
-        .map(|(id, access)| (id, access.level >= AccessLevel::Manage))
-        .collect())
+    let my_device_id = node.device_id();
+    let my_agent_id = node.agent_id();
+    let mut result = Vec::with_capacity(members.len());
+    for (device_id, access) in members {
+        let agent_id = if device_id == my_device_id {
+            my_agent_id
+        } else {
+            node.local_store
+                .lookup_contact_by_device_id(device_id)
+                .await
+                .map_err(|e| format!("Failed to lookup contact: {e:?}"))?
+                .unwrap_or_else(|| AgentId::from_bytes(device_id.as_bytes()).expect("DeviceId is a valid 32-byte key"))
+        };
+        result.push((agent_id, access.level >= AccessLevel::Manage));
+    }
+    Ok(result)
 }
