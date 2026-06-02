@@ -302,7 +302,8 @@ pub async fn consistency(
         }
     })
     .await
-    .map_err(|_diffs| {
+    .map_err(|diffs| {
+        dbg!(diffs);
         // TODO: print a report here
         anyhow::anyhow!("consistency check failed")
     })
