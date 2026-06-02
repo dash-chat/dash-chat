@@ -20,11 +20,11 @@ describe('New group', () => {
 		await agent1.newMessagePage.ready();
 		await agent1.newMessagePage.newGroup.click();
 
-		await agent1.newGroupPage.ready();
-		await agent1.newGroupPage.next();
+		await agent1.newGroupPage.addMembersStep.ready();
+		await agent1.newGroupPage.addMembersStep.nextButton.click();
 
-		await agent1.newGroupPage.readyOnInfo();
-		await agent1.newGroupPage.create();
+		await agent1.newGroupPage.groupInfoStep.ready();
+		await agent1.newGroupPage.groupInfoStep.createButton.click();
 
 		await agent1.groupChatPage.ready();
 		await agent1.groupChatPage.back.click();
@@ -41,12 +41,12 @@ describe('New group', () => {
 		await agent1.newMessagePage.ready();
 		await agent1.newMessagePage.newGroup.click();
 
-		await agent1.newGroupPage.ready();
-		await agent1.newGroupPage.selectMember('Bob');
-		await agent1.newGroupPage.next();
+		await agent1.newGroupPage.addMembersStep.ready();
+		await agent1.newGroupPage.addMembersStep.addContactByName('Bob');
+		await agent1.newGroupPage.addMembersStep.nextButton.click();
 
-		await agent1.newGroupPage.readyOnInfo();
-		await agent1.newGroupPage.create();
+		await agent1.newGroupPage.groupInfoStep.ready();
+		await agent1.newGroupPage.groupInfoStep.createButton.click();
 
 		await agent1.groupChatPage.ready();
 		await agent1.groupChatPage.back.click();
