@@ -49,6 +49,7 @@
 	import { getLocale, type Locale, setLocale } from '$lib/paraglide/runtime';
 	import { goto } from '$app/navigation';
 	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
+	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import { registerSetLocale } from '$lib/utils/locale';
 
 	// TODO: once the language-selector setting lands, make that setting the
@@ -63,9 +64,10 @@
 	import('../../tests/setup-utils').then(({ registerTestUtils }) =>
 		// Paraglide types setLocale with a string-literal union; we widen to
 		// plain `string` at the test boundary since invalid locales fail at
-		// runtime anyway. `setLocale` here is the non-reloading variant
-		// installed by `registerSetLocale` above.
-		registerTestUtils(goto, setLocale as (locale: string) => void, m),
+		// runtime anyway.
+		registerTestUtils(goto, setLocale as (locale: string) => void, m, () =>
+			previewFeatures.enable(),
+		),
 	);
 
 	// Forward console.log/info/warn/error from the WebView to the tauri logs

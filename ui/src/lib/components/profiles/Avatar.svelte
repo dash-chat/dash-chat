@@ -44,20 +44,22 @@
 	const showPlaceholder = $derived(!avatarImage && !avatarInitials);
 </script>
 
-<wa-avatar
-	{id}
-	image={avatarImage}
-	initials={avatarInitials}
-	style={avatarStyle}
-	{alt}
-	shape="circle"
->
-	{#if showPlaceholder}
-		<wa-icon
-			slot="icon"
-			src={wrapPathInSvg(mdiAccountQuestion)}
-			style="font-size: calc(var(--size, 3rem) * 0.5)"
-		></wa-icon>
-	{/if}
-	{@render children?.()}
-</wa-avatar>
+<span class="inline-block">
+	<wa-avatar
+		{id}
+		image={avatarImage}
+		initials={avatarInitials}
+		style={avatarStyle}
+		{alt}
+		shape="circle"
+	>
+		{#if showPlaceholder}
+			<wa-icon
+				slot="icon"
+				src={wrapPathInSvg(mdiAccountQuestion)}
+				style="font-size: calc(var(--size, 3rem) * 0.5)"
+			></wa-icon>
+		{/if}
+		{@render children?.()}
+	</wa-avatar>
+</span>

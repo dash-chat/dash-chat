@@ -66,6 +66,8 @@ export type Agent = WebdriverIO.Browser & {
 	setTheme(theme: 'material' | 'ios'): Promise<void>;
 	/** Force dark mode on/off via the test event. */
 	setDarkMode(value: boolean): Promise<void>;
+	/** Enable preview features so gated UI (e.g. new-group) becomes visible. */
+	enablePreviewFeatures(): Promise<void>;
 };
 
 export function makeAgent(b: WebdriverIO.Browser): Agent {
@@ -131,6 +133,9 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 				),
 			value,
 		);
+	};
+	agent.enablePreviewFeatures = async () => {
+		await b.execute(() => window.__test.enablePreviewFeatures());
 	};
 
 	return agent;

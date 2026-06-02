@@ -1,17 +1,3 @@
-// use dashchat_node::{ChatId, ChatMessage, ChatMessageContent, Node};
-// use tauri::{command, State};
-
-// #[command]
-// pub async fn add_member(
-//     chat_id: ChatId,
-//     repped_group: ReppedGroup,
-//     node: State<'_, Node>,
-// ) -> Result<(), String> {
-//     node.add_member(chat_id, repped_group)
-//         .await
-//         .map_err(|e| format!("Failed to add member: {e:?}"))
-// }
-
 // #[command]
 // pub async fn send_message(
 //     chat_id: ChatId,

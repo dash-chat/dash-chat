@@ -78,10 +78,10 @@
 				>
 					<Avatar
 						image={info.avatar}
-						initials={info.name.slice(0, 2)}
+						initials={(info.name ?? '').slice(0, 2)}
 						style="--size: 2.5rem"
 					/>
-					<span>{info.name}</span>
+					<span>{info.name ?? ''}</span>
 				</Link>
 			{/await}
 		{/snippet}
@@ -131,7 +131,7 @@
 				</div>
 			</div>
 
-			<Messagebar
+			<!-- <Messagebar
 				placeholder={m.typeMessage()}
 				onInput={onMessageTextChange}
 				value={messageText}
@@ -151,7 +151,7 @@
 						</Link>
 					</ToolbarPane>
 				{/snippet}
-			</Messagebar>
+			</Messagebar> -->
 		{/await}
 	</div>
 </Page>

@@ -27,6 +27,7 @@
 	},
 	"type": "module",
 	"engines": {
+		"node": ">=22 <23",
 		"pnpm": ">=9.0.0"
 	}
 }
