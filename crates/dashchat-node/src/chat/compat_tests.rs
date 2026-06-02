@@ -171,27 +171,6 @@ mod tests {
         assert_eq!(alice_members, expected_members);
         assert_eq!(bobbi_members, expected_members);
 
-        // wait_for(
-        //     Duration::from_millis(100),
-        //     Duration::from_secs(5),
-        //     || async {
-        //         let alice_members = alice.get_group_members(topic).await.unwrap();
-        //         let bobbi_members = bobbi.get_group_members(topic).await.unwrap();
-        //         let expected_members = btreeset![
-        //             (alice.device_id(), p2panda_auth::Access::write()),
-        //             (bobbi.device_id(), p2panda_auth::Access::write())
-        //         ];
-
-        //         if alice_members == expected_members && bobbi_members == expected_members {
-        //             Ok(())
-        //         } else {
-        //             Err("waiting for alice and bobbi to learn each other's members")
-        //         }
-        //     },
-        // )
-        // .await
-        // .unwrap();
-
         // Both nodes return zero capabilities because alice is the limiting factor.
         let alice_caps = alice
             .get_group_capabilities(topic)
