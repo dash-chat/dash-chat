@@ -99,10 +99,6 @@ pub fn run() {
             commands::settings::set_setting,
             #[cfg(not(mobile))]
             commands::settings::set_local_mailbox_enabled,
-            commands::mailbox_state::mailbox_subscribe_active_ids,
-            commands::mailbox_state::mailbox_subscribe_all_ids,
-            commands::mailbox_state::mailbox_subscribe_connection_state,
-            commands::mailbox_state::mailbox_subscribe_sync_state,
             // commands::chats::create_group,
             // commands::group_chat::add_member,
             // commands::group_chat::send_message,
@@ -117,6 +113,7 @@ pub fn run() {
         .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(commands::mailbox_state::subscription_plugin())
         .setup(move |app| {
             let handle = app.handle().clone();
 

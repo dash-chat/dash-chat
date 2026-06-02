@@ -1,8 +1,7 @@
-import { Channel, invoke } from '@tauri-apps/api/core';
 import { ReactivePromise, reactive, relay } from 'signalium';
 
 import type { DeviceId, TopicId } from '../p2panda/types';
-import { unregisterChannel } from '../utils/tauri-channel';
+import { subscribeChannel } from '../utils/tauri-channel';
 import {
 	type MailboxConnectionState,
 	type MailboxId,
@@ -36,41 +35,33 @@ export interface IMailboxTrackerStore {
 export class MailboxTrackerStore implements IMailboxTrackerStore {
 	activeMailboxIds = reactive(
 		(): ReactivePromise<MailboxId[]> =>
-			relay<MailboxId[]>(state => {
-				const channel = new Channel<MailboxId[]>();
-				channel.onmessage = v => {
+			relay(state =>
+				subscribeChannel<MailboxId[]>('mailbox_active_ids', {}, v => {
 					state.value = v;
-				};
-				invoke('mailbox_subscribe_active_ids', { onEvent: channel });
-				return () => unregisterChannel(channel);
-			}),
+				}),
+			),
 	);
 
 	allMailboxIds = reactive(
 		(): ReactivePromise<MailboxId[]> =>
-			relay<MailboxId[]>(state => {
-				const channel = new Channel<MailboxId[]>();
-				channel.onmessage = v => {
+			relay(state =>
+				subscribeChannel<MailboxId[]>('mailbox_all_ids', {}, v => {
 					state.value = v;
-				};
-				invoke('mailbox_subscribe_all_ids', { onEvent: channel });
-				return () => unregisterChannel(channel);
-			}),
+				}),
+			),
 	);
 
 	connectionState = reactive(
 		(mailboxId: MailboxId): ReactivePromise<MailboxConnectionState> =>
-			relay<MailboxConnectionState>(state => {
-				const channel = new Channel<MailboxConnectionState>();
-				channel.onmessage = v => {
-					state.value = v;
-				};
-				invoke('mailbox_subscribe_connection_state', {
-					onEvent: channel,
-					mailboxId,
-				});
-				return () => unregisterChannel(channel);
-			}),
+			relay(state =>
+				subscribeChannel<MailboxConnectionState>(
+					'mailbox_connection_state',
+					{ mailboxId },
+					v => {
+						state.value = v;
+					},
+				),
+			),
 	);
 
 	connectionStatus = reactive(async () => {
@@ -113,17 +104,15 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 
 	syncState = reactive(
 		(mailboxId: MailboxId): ReactivePromise<MailboxSyncState> =>
-			relay<MailboxSyncState>(state => {
-				const channel = new Channel<MailboxSyncState>();
-				channel.onmessage = v => {
-					state.value = v;
-				};
-				invoke('mailbox_subscribe_sync_state', {
-					onEvent: channel,
-					mailboxId,
-				});
-				return () => unregisterChannel(channel);
-			}),
+			relay(state =>
+				subscribeChannel<MailboxSyncState>(
+					'mailbox_sync_state',
+					{ mailboxId },
+					v => {
+						state.value = v;
+					},
+				),
+			),
 	);
 
 	/// Per-(topic, author) view across every mailbox we've ever synced with.

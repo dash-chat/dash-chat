@@ -1902,12 +1902,14 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-sharekit",
  "tauri-plugin-single-instance",
+ "tauri-plugin-subscription",
  "tauri-plugin-system-bars-styles",
  "tauri-plugin-updater",
  "tauri-plugin-virtual-keyboard-padding",
  "tempfile",
  "time",
  "tokio",
+ "tokio-util",
  "url2",
  "uuid",
  "vergen-gitcl 9.1.0",
@@ -9943,6 +9945,19 @@ dependencies = [
  "tracing",
  "windows-sys 0.60.2",
  "zbus 5.15.0",
+]
+
+[[package]]
+name = "tauri-plugin-subscription"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

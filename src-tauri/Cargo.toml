@@ -41,6 +41,7 @@ dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { workspace = true }
 push-notifications-client = { path = "../crates/push-notifications-client" }
 dashchat-utils = { path = "../crates/dashchat-utils" }
+tauri-plugin-subscription = { path = "../crates/tauri-plugin-subscription" }
 
 p2panda-auth = { workspace = true }
 p2panda-core = { workspace = true }
@@ -57,6 +58,7 @@ anyhow = "1.0.95"
 async-trait = "0.1.85"
 time = "0.3"
 tokio = { version = "1.43.0", features = ["fs"] }
+tokio-util = "0.7"
 regex = "1"
 hex = "0.4.3"
 mdns-sd = "0.17"
