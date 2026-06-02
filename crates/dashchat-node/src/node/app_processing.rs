@@ -163,6 +163,10 @@ impl Node {
                                     }
                                 }
 
+                                // @TODO: this is required for tests, but nowhere else, it can be placed behind the
+                               // testing flag.
+                               node.op_store.mark_op_processed(operation.topic().into(), &operation.id());
+
                             },
                             ProcessorEvent::App { operation, source, processed_tx } => {
                                 tracing::info!(op = %operation.id(), topic = %operation.topic(), "application operation processing");
@@ -182,6 +186,9 @@ impl Node {
                                     }
                                 }
 
+                                // @TODO: this is required for tests, but nowhere else, it can be placed behind the
+                               // testing flag.
+                               node.op_store.mark_op_processed(operation.topic().into(), &operation.id());
                             },
                         }
                     }
@@ -311,7 +318,10 @@ impl Node {
                         anyhow::anyhow!("failed to save capabilities from SetCapabilities: {err}")
                     })?;
             }
-            Payload::Chat(_) | Payload::Inbox(_) | Payload::DeviceGroup(_) | Payload::GroupControl(_) => {
+            Payload::Chat(_)
+            | Payload::Inbox(_)
+            | Payload::DeviceGroup(_)
+            | Payload::GroupControl(_) => {
                 // Nothing to do.
             }
         }
@@ -329,10 +339,6 @@ impl Node {
         let dashchat_topic = crate::Topic::untyped(*topic.as_bytes());
         self.notify_payload(dashchat_topic, &operation.processed().header(), payload)
             .await?;
-
-        // @TODO: this is required for tests, but nowhere else, it can be placed behind the
-        // testing flag.
-        self.op_store.mark_op_processed(topic.into(), &hash);
 
         Ok(())
     }
