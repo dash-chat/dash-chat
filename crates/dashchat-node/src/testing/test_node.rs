@@ -279,7 +279,7 @@ pub async fn consistency(
                             .cloned()
                             .unwrap_or_default()
                             .into_iter()
-                            .map(|h| format!("{:?}", h))
+                            .map(|h| format!("{:?}", h.alias_numbered().aliased()))
                     })
                     .collect::<BTreeSet<_>>()
             })
@@ -303,7 +303,7 @@ pub async fn consistency(
     })
     .await
     .map_err(|diffs| {
-        dbg!(diffs.aliased());
+        dbg!(diffs);
         // TODO: print a report here
         anyhow::anyhow!("consistency check failed after {:?}", config.poll_timeout)
     })

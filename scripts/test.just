@@ -2,7 +2,8 @@ set working-directory := '..'
 
 # run integration tests for the dashchat-node crate
 dashchat-node:
-    cd crates/dashchat-node && cargo nextest run --no-fail-fast --success-output never --failure-output final --final-status-level slow
+    # config file is in .config/nextest.toml
+    cd crates/dashchat-node && cargo nextest run
 
 # build the Tauri binary used by the e2e tests
 e2e-build:
