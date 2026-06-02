@@ -59,8 +59,6 @@ export interface Lifetime {
 
 export type DeviceId = PublicKey;
 export type AgentId = PublicKey;
-// TODO: when device groups are implemented, this switches to AgentId.
-export type ChatMember = DeviceId;
 
 export type PreKey = [PublicKey, Lifetime];
 

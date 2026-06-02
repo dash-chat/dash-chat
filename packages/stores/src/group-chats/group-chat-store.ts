@@ -4,7 +4,7 @@ import { Profile } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
-import { AgentId, ChatMember, PublicKey } from '../p2panda/types';
+import { AgentId, PublicKey } from '../p2panda/types';
 import { ChatId, ChatSummary, MessageContent, Payload } from '../types';
 import {
 	type GroupMemberData,
@@ -18,7 +18,7 @@ export interface GroupInfo {
 }
 
 export interface GroupMember {
-	chatMemberId: ChatMember;
+	chatMemberId: AgentId;
 	profile: Profile | undefined;
 	admin: boolean;
 }
@@ -79,19 +79,17 @@ export class GroupChatStore {
 
 	allMembers = reactive(async () => {
 		const data = await this.membersData();
-		const allMembers: Record<ChatMember, GroupMember> = {};
+		const allMembers: Record<AgentId, GroupMember> = {};
 		for (const { chatMemberId, isAdmin } of data) {
 			allMembers[chatMemberId] = await this.buildMember(chatMemberId, isAdmin);
 		}
 		return allMembers;
 	});
 
-	private buildMember = reactive(
-		async (deviceId: ChatMember, admin: boolean) => {
-			const profile = await this.contactsStore.profiles(deviceId);
-			return { chatMemberId: deviceId, profile, admin } satisfies GroupMember;
-		},
-	);
+	private buildMember = reactive(async (agentId: AgentId, admin: boolean) => {
+		const profile = await this.contactsStore.profiles(agentId);
+		return { chatMemberId: agentId, profile, admin } satisfies GroupMember;
+	});
 
 	summary = reactive(async (): Promise<ChatSummary> => {
 		const info = await this.info();
