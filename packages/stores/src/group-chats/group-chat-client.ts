@@ -4,7 +4,7 @@ import { AgentId } from '../p2panda/types';
 import { ChatId, MessageContent } from '../types';
 
 export interface GroupMemberData {
-	chatMemberId: AgentId;
+	agentId: AgentId;
 	isAdmin: boolean;
 }
 
@@ -30,8 +30,8 @@ export class GroupChatClient implements IGroupChatClient {
 		const members: [AgentId, boolean][] = await invoke('get_group_members', {
 			chatId,
 		});
-		return members.map(([chatMemberId, isAdmin]) => ({
-			chatMemberId,
+		return members.map(([agentId, isAdmin]) => ({
+			agentId,
 			isAdmin,
 		}));
 	}

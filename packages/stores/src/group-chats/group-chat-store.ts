@@ -18,7 +18,7 @@ export interface GroupInfo {
 }
 
 export interface GroupMember {
-	chatMemberId: AgentId;
+	agentId: AgentId;
 	profile: Profile | undefined;
 	admin: boolean;
 }
@@ -73,22 +73,22 @@ export class GroupChatStore {
 	me = reactive(async () => {
 		const myAgentId = await this.contactsStore.myAgentId();
 		const data = await this.membersData();
-		const entry = data.find(m => m.chatMemberId === myAgentId);
+		const entry = data.find(m => m.agentId === myAgentId);
 		return this.buildMember(myAgentId, entry?.isAdmin ?? false);
 	});
 
 	allMembers = reactive(async () => {
 		const data = await this.membersData();
 		const allMembers: Record<AgentId, GroupMember> = {};
-		for (const { chatMemberId, isAdmin } of data) {
-			allMembers[chatMemberId] = await this.buildMember(chatMemberId, isAdmin);
+		for (const { agentId, isAdmin } of data) {
+			allMembers[agentId] = await this.buildMember(agentId, isAdmin);
 		}
 		return allMembers;
 	});
 
 	private buildMember = reactive(async (agentId: AgentId, admin: boolean) => {
 		const profile = await this.contactsStore.profiles(agentId);
-		return { chatMemberId: agentId, profile, admin } satisfies GroupMember;
+		return { agentId, profile, admin } satisfies GroupMember;
 	});
 
 	summary = reactive(async (): Promise<ChatSummary> => {
