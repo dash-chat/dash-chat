@@ -1,60 +1,69 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
-	import { List, ListInput, useTheme } from 'konsta/svelte';
+	import { BlockTitle, List, ListItem, useTheme } from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import StepPage from './StepPage.svelte';
+	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
+	import type { Profile, PublicKey } from 'dash-chat-stores';
 
 	interface Props {
 		groupName: string;
-		groupAvatar: string | undefined;
+		selectedContacts: PublicKey[];
+		resolvedContacts: [PublicKey, Profile][];
 		onBack: () => void;
 		onCreate: () => void;
 	}
 
 	let {
 		groupName = $bindable(),
-		groupAvatar = $bindable(),
+		selectedContacts,
+		resolvedContacts,
 		onBack,
 		onCreate,
 	}: Props = $props();
-
-	let avatarBinding = $state(groupAvatar ?? '');
-	$effect(() => {
-		groupAvatar = avatarBinding || undefined;
-	});
 
 	const theme = $derived(useTheme());
 </script>
 
 <StepPage
-	title={m.groupName()}
+	title={m.nameThisGroup()}
 	{onBack}
 	backTestId="new-group-info-back"
 	actionLabel={m.create()}
 	onAction={onCreate}
+	navbarTestId="new-group-info-navbar"
 	actionTestId="new-group-create"
 >
-	<div class="column" style="flex: 1">
-		<div class="center-in-desktop m-1">
+	{#snippet subnavbar()}
+		<div class="column gap-4">
 			<List
 				inset={isWideScreen.value || theme === 'ios'}
 				strongIos
 				nested={theme !== 'ios'}
 			>
-				<ListInput
+				<ListItem>Naming is not actually implemented yet.</ListItem>
+				<!-- <ListInput
 					type="text"
 					bind:value={groupName}
 					data-testid="new-group-name-input"
 					outline
 					class="plain"
 					placeholder={m.name()}
-				>
-					{#snippet media()}
-						<SelectAvatar bind:value={avatarBinding}></SelectAvatar>
-					{/snippet}
-				</ListInput>
+				/> -->
 			</List>
 		</div>
+	{/snippet}
+
+	<div class="column" style="flex: 1">
+		<BlockTitle>{m.members()}</BlockTitle>
+
+		<SelectableContactList
+			contacts={resolvedContacts.filter(([key]) =>
+				selectedContacts.includes(key),
+			)}
+			{selectedContacts}
+			selectable={false}
+			noDataMessage={m.youCanAddMembersLater()}
+		/>
 	</div>
 </StepPage>

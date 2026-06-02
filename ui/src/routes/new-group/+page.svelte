@@ -1,15 +1,19 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { ChatsStore, PublicKey } from 'dash-chat-stores';
-	import DisabledMembersStep from './DisabledMembersStep.svelte';
-	import DisabledGroupInfoStep from './DisabledGroupInfoStep.svelte';
-	// To re-enable the real members step: swap DisabledMembersStep back to MembersStep
+	import type { ChatsStore, ContactsStore, PublicKey } from 'dash-chat-stores';
+	import { useReactiveValue } from '$lib/stores/use-signal';
+	import MembersStep from './MembersStep.svelte';
+	import GroupInfoStep from './GroupInfoStep.svelte';
 
 	const chatsStore: ChatsStore = getContext('chats-store');
+	const contactsStore: ContactsStore = getContext('contacts-store');
+	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
+	const resolvedContacts = $derived($contacts ?? []);
 
 	let currentPage: 'members' | 'group-info' = $state('members');
 	let selectedContacts = $state<PublicKey[]>([]);
+	let groupName = $state('');
 
 	async function createGroupChat() {
 		const groupStore = await chatsStore.createGroup(
@@ -20,12 +24,15 @@
 </script>
 
 {#if currentPage === 'members'}
-	<DisabledMembersStep
+	<MembersStep
 		bind:selectedContacts
 		onNext={() => (currentPage = 'group-info')}
 	/>
 {:else if currentPage === 'group-info'}
-	<DisabledGroupInfoStep
+	<GroupInfoStep
+		bind:groupName
+		{selectedContacts}
+		{resolvedContacts}
 		onBack={() => (currentPage = 'members')}
 		onCreate={createGroupChat}
 	/>

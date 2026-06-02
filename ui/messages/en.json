@@ -117,7 +117,7 @@
 	"contactRequestAcceptedNoName": "Your contact request was accepted",
 	"typeMessage": "Type a message...",
 
-	"groupName": "Group name",
+	"nameThisGroup": "Name this group",
 	"newGroup": "New group",
 	"createGroup": "Create group",
 	"groupInfo": "Group info",
@@ -125,6 +125,7 @@
 	"membersCount_one": "{{count}} member",
 	"membersCount_other": "{{count}} members",
 	"addMembers": "Add members",
+	"youCanAddMembersLater": "You can add or invite friends after creating this group.",
 	"add": "Add",
 	"removeMember": "Remove member",
 	"remove": "Remove",
@@ -172,6 +173,7 @@
 
 	"mute": "Mute",
 	"search": "Search",
+	"searchByName": "Search by name",
 	"chatColorAndWallpaper": "Chat color & wallpaper",
 	"addToAGroup": "Add to a group",
 	"noGroupsInCommonTitle": "No groups in common",

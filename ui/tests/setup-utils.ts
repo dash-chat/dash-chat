@@ -64,6 +64,7 @@ import {
 } from './pages/home';
 import {
 	clickNewGroupCreate,
+	clickNewGroupMemberByName,
 	clickNewGroupNext,
 	newGroupLoaded,
 } from './pages/new-group';
@@ -157,6 +158,7 @@ export const testUtils = {
 	newGroupLoaded,
 	clickNewGroupNext,
 	clickNewGroupCreate,
+	clickNewGroupMemberByName,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(
@@ -178,7 +180,9 @@ export const testUtils = {
 	goto: (_path: string) => Promise.resolve() as Promise<void>,
 	/** Enable preview features — set by registerTestUtils from +layout.svelte. */
 	enablePreviewFeatures: (): void => {
-		throw new Error('enablePreviewFeatures called before registerTestUtils provided the callback');
+		throw new Error(
+			'enablePreviewFeatures called before registerTestUtils provided the callback',
+		);
 	},
 };
 

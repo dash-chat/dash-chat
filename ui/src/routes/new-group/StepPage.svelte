@@ -12,10 +12,12 @@
 	interface Props {
 		title: string;
 		onBack?: () => void;
+		navbarTestId?: string;
 		backTestId?: string;
 		actionLabel: string;
 		onAction: () => void;
 		actionTestId?: string;
+		subnavbar?: Snippet;
 		children: Snippet;
 	}
 
@@ -26,6 +28,8 @@
 		actionLabel,
 		onAction,
 		actionTestId,
+		navbarTestId,
+		subnavbar: belowNavbar,
 		children,
 	}: Props = $props();
 
@@ -34,7 +38,13 @@
 </script>
 
 <Page>
-	<Navbar {title} titleClass="opacity1" transparent={true}>
+	<Navbar
+		{title}
+		titleClass="opacity1"
+		transparent={true}
+		subnavbarClass={belowNavbar ? '!h-auto' : ''}
+		data-testid={navbarTestId}
+	>
 		{#snippet left()}
 			<NavbarBackLink
 				onClick={onBack ?? (() => window.history.back())}
@@ -47,6 +57,14 @@
 				<Link onClick={onAction} data-testid={actionTestId}>
 					{actionLabel}
 				</Link>
+			{/if}
+		{/snippet}
+
+		{#snippet subnavbar()}
+			{#if belowNavbar}
+				<div class="w-full mb-4 {isIosTheme ? 'mt-4' : ''}">
+					{@render belowNavbar()}
+				</div>
 			{/if}
 		{/snippet}
 	</Navbar>

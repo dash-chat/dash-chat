@@ -1,19 +1,12 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { getContext } from 'svelte';
-	import type { ContactsStore, PublicKey } from 'dash-chat-stores';
-	import { useReactivePromise } from '$lib/stores/use-signal';
-	import ProfileAvatar from '$lib/components/profiles/ProfileAvatar.svelte';
-	import {
-		List,
-		ListItem,
-		Checkbox,
-		BlockTitle,
-		Preloader,
-		useTheme,
-	} from 'konsta/svelte';
-	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import type { ContactsStore, Profile, PublicKey } from 'dash-chat-stores';
+	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { BlockTitle, Searchbar } from 'konsta/svelte';
 	import StepPage from './StepPage.svelte';
+	import ContactsChipList from '$lib/components/contacts/ContactsChipList.svelte';
+	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
 
 	interface Props {
 		selectedContacts: PublicKey[];
@@ -23,57 +16,61 @@
 	let { selectedContacts = $bindable(), onNext }: Props = $props();
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const contacts = useReactivePromise(contactsStore.profilesForAllContacts);
-	const theme = $derived(useTheme());
+	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
+	const loading = $derived($contacts === undefined);
+	const resolvedContacts = $derived($contacts ?? []);
+
+	let searchQuery = $state('');
 </script>
 
 <StepPage
-	title={m.newGroup()}
+	title={selectedContacts.length === 0
+		? m.newGroup()
+		: m.membersCount({ count: selectedContacts.length })}
 	backTestId="new-group-back"
 	actionLabel={selectedContacts.length === 0 ? m.skip() : m.next()}
 	onAction={onNext}
+	navbarTestId="new-group-members-navbar"
 	actionTestId="new-group-next"
 >
-	<div class="column" style="flex: 1">
-		<div class="center-in-desktop">
-			<BlockTitle>{m.contacts()}</BlockTitle>
+	{#snippet subnavbar()}
+		<div class="column gap-4">
+			<Searchbar
+				clearButton
+				placeholder={m.searchByName()}
+				value={searchQuery}
+				class="!mx-0 py-0 !w-full"
+				onInput={e => {
+					searchQuery = (e.target as HTMLInputElement).value;
+				}}
+				onClear={() => {
+					searchQuery = '';
+				}}
+			/>
 
-			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
-				{#await $contacts}
-					<div
-						class="column"
-						style="flex: 1; align-items: center; justify-content: center"
-					>
-						<Preloader />
-					</div>
-				{:then contacts}
-					{#each contacts as [publicKey, profile]}
-						<ListItem label title={profile.name}>
-							{#snippet media()}
-								<ProfileAvatar chatActorId={publicKey}></ProfileAvatar>
-							{/snippet}
-
-							{#snippet after()}
-								<Checkbox
-									checked={selectedContacts.includes(publicKey)}
-									onChange={e => {
-										const target = e.target as HTMLInputElement;
-										if (target.checked) {
-											selectedContacts = [...selectedContacts, publicKey];
-										} else {
-											selectedContacts = selectedContacts.filter(
-												c => c !== publicKey,
-											);
-										}
-									}}
-								/>
-							{/snippet}
-						</ListItem>
-					{:else}
-						<ListItem title={m.noContactsYet()} />
-					{/each}
-				{/await}
-			</List>
+			<ContactsChipList
+				contacts={resolvedContacts.filter(([key]) =>
+					selectedContacts.includes(key),
+				)}
+				onRemove={key => {
+					selectedContacts = selectedContacts.filter(c => c !== key);
+				}}
+			/>
 		</div>
+	{/snippet}
+
+	<div class="column" style="flex: 1">
+		<BlockTitle>{m.contacts()}</BlockTitle>
+
+		<SelectableContactList
+			contacts={resolvedContacts.filter(([, profile]) =>
+				profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
+			)}
+			{loading}
+			noDataMessage={searchQuery
+				? m.noContactsMatchFilter()
+				: m.noContactsYet()}
+			bind:selectedContacts
+		/>
 	</div>
 </StepPage>

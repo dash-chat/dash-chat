@@ -17,7 +17,7 @@ describe('New group', () => {
 		await agent.createProfile('Alice', 'Test');
 	});
 
-	it('navigates to the new-group page and creates new group', async () => {
+	it('creates a new group with no members except the creator', async () => {
 		await agent
 			.onHomePage()
 			.ready()
@@ -41,5 +41,39 @@ describe('New group', () => {
 			.onHomePage()
 			.ready()
 			.then(p => p.expectChatListToHaveGroupChatWithName('mygroup'));
+	});
+
+	it('creates a new group with another member', async () => {
+		// Create another agent and exchange contact info
+		const agent2 = makeAgent(browser.getInstance('agent2'));
+		await waitForTestUtils(agent2);
+		await agent2.createProfile('Bob', 'Test');
+		await agent.navigateToAddContact();
+		await agent2.navigateToAddContact();
+		const code1 = await agent.getContactCode();
+		const code2 = await agent2.getContactCode();
+		if (!code1 || !code2) throw new Error('contact code missing');
+		await agent.addContact(code2);
+		await agent2.addContact(code1);
+
+		// Create group with both members
+		await agent.onHomePage().ready();
+		await agent.onHomePage().clickNewMessage();
+
+		await agent.onNewMessagePage().ready();
+		await agent.onNewMessagePage().clickNewGroup();
+
+		const addMembersStep = await agent
+			.onNewGroupPage()
+			.onAddMembersStep()
+			.ready();
+		await addMembersStep.addContactByName('Bob');
+		await addMembersStep.clickNext();
+
+		await agent.onNewGroupPage().onGroupInfoStep().ready();
+		await agent.onNewGroupPage().onGroupInfoStep().clickCreate();
+
+		await agent.onHomePage().ready();
+		await agent.onHomePage().expectChatListToHaveGroupChatWithName('mygroup');
 	});
 });
