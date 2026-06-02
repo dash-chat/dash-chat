@@ -4,7 +4,7 @@ export class AddMembersStep {
 	constructor(private readonly agent: Agent) {}
 
 	async ready(): Promise<AddMembersStep> {
-		await this.agent.waitForText('body', 'Adding members not yet implemented');
+		await this.agent.waitFor('[data-testid="new-group-members-navbar"]');
 		return this;
 	}
 

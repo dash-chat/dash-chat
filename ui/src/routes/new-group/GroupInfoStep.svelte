@@ -31,6 +31,7 @@
 	backTestId="new-group-info-back"
 	actionLabel={m.create()}
 	onAction={onCreate}
+	navbarTestId="new-group-info-navbar"
 	actionTestId="new-group-create"
 >
 	{#snippet subnavbar()}

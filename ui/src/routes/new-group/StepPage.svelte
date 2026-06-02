@@ -12,6 +12,7 @@
 	interface Props {
 		title: string;
 		onBack?: () => void;
+		navbarTestId?: string;
 		backTestId?: string;
 		actionLabel: string;
 		onAction: () => void;
@@ -27,6 +28,7 @@
 		actionLabel,
 		onAction,
 		actionTestId,
+		navbarTestId,
 		subnavbar: belowNavbar,
 		children,
 	}: Props = $props();
@@ -41,6 +43,7 @@
 		titleClass="opacity1"
 		transparent={true}
 		subnavbarClass={belowNavbar ? '!h-auto' : ''}
+		data-testid={navbarTestId}
 	>
 		{#snippet left()}
 			<NavbarBackLink

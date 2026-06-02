@@ -30,6 +30,7 @@
 	backTestId="new-group-back"
 	actionLabel={selectedContacts.length === 0 ? m.skip() : m.next()}
 	onAction={onNext}
+	navbarTestId="new-group-members-navbar"
 	actionTestId="new-group-next"
 >
 	{#snippet subnavbar()}

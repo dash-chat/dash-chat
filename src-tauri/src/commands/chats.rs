@@ -1,4 +1,4 @@
-use dashchat_node::{AgentId, ChatId, DeviceId, Node};
+use dashchat_node::{AgentId, ChatId, Node};
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::{Hash, PublicKey};
 use tauri::State;
