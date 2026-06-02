@@ -291,6 +291,8 @@ async fn group_chat_capability_upgrade() {
     .await
     .unwrap();
 
+    // @TODO: the test fails here because bobbi doesn't yet know about the chat group that alice
+    // created.
     bobbi
         .add_group_member(chat_id, *cammy.device_id(), p2panda_auth::Access::write())
         .await
