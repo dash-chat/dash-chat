@@ -180,7 +180,9 @@ export const testUtils = {
 	goto: (_path: string) => Promise.resolve() as Promise<void>,
 	/** Enable preview features — set by registerTestUtils from +layout.svelte. */
 	enablePreviewFeatures: (): void => {
-		throw new Error('enablePreviewFeatures called before registerTestUtils provided the callback');
+		throw new Error(
+			'enablePreviewFeatures called before registerTestUtils provided the callback',
+		);
 	},
 };
 

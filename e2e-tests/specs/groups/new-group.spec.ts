@@ -17,31 +17,31 @@ describe('New group', () => {
 		await agent.createProfile('Alice', 'Test');
 	});
 
-	// it('creates a new group with no members except the creator', async () => {
-	// 	await agent
-	// 		.onHomePage()
-	// 		.ready()
-	// 		.then(p => p.clickNewMessage());
-	// 	await agent
-	// 		.onNewMessagePage()
-	// 		.ready()
-	// 		.then(p => p.clickNewGroup());
-	// 	await agent
-	// 		.onNewGroupPage()
-	// 		.onAddMembersStep()
-	// 		.ready()
-	// 		.then(p => p.clickNext());
-	// 	await agent
-	// 		.onNewGroupPage()
-	// 		.onGroupInfoStep()
-	// 		.ready()
-	// 		.then(p => p.clickCreate());
+	it('creates a new group with no members except the creator', async () => {
+		await agent
+			.onHomePage()
+			.ready()
+			.then(p => p.clickNewMessage());
+		await agent
+			.onNewMessagePage()
+			.ready()
+			.then(p => p.clickNewGroup());
+		await agent
+			.onNewGroupPage()
+			.onAddMembersStep()
+			.ready()
+			.then(p => p.clickNext());
+		await agent
+			.onNewGroupPage()
+			.onGroupInfoStep()
+			.ready()
+			.then(p => p.clickCreate());
 
-	// 	await agent
-	// 		.onHomePage()
-	// 		.ready()
-	// 		.then(p => p.expectChatListToHaveGroupChatWithName('mygroup'));
-	// });
+		await agent
+			.onHomePage()
+			.ready()
+			.then(p => p.expectChatListToHaveGroupChatWithName('mygroup'));
+	});
 
 	it('creates a new group with another member', async () => {
 		// Create another agent and exchange contact info
