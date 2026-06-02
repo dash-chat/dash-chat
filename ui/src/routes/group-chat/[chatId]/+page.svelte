@@ -101,7 +101,7 @@
 						<div class="column" style="gap: 1px">
 							{#each messageSet as [hash, message], i (hash)}
 								{@const position = messagePosition(messageSet.length, i)}
-								{#if myDeviceId !== message.author}
+								{#if myDeviceId === message.author}
 									<div class="self-end max-w-[85%]" data-message-hash={hash}>
 										<MessageFromMe
 											{message}
