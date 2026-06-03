@@ -31,4 +31,22 @@ export class GroupChatPage extends TestPage {
 			{ timeout, timeoutMsg: `Message "${text}" not found` },
 		);
 	}
+
+	async getAuthorInitials(messageText: string): Promise<string | null> {
+		return this.agent.execute(
+			(sel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${sel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return wrapper.querySelector('wa-avatar')?.getAttribute('initials') ?? null;
+					}
+				}
+				return null;
+			},
+			tid('group-chat-messages'),
+			messageText,
+		);
+	}
 }
