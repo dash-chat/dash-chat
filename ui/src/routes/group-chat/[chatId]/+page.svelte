@@ -9,6 +9,7 @@
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
@@ -54,7 +55,7 @@
 		{#snippet navbar()}
 			<Navbar
 				transparent={true}
-				titleClass="opacity1 w-full"
+				titleClass="opacity1 min-w-0 flex-1"
 				leftClass="shrink-0"
 				centerTitle={false}
 			>
@@ -83,6 +84,10 @@
 						</Link>
 					{/await}
 				{/snippet}
+
+				<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
+					<ConnectionStatusIndicator />
+				</div>
 			</Navbar>
 		{/snippet}
 
