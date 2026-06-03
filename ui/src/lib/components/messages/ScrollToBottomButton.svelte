@@ -42,13 +42,10 @@
 	onclick={handleClick}
 	onpointerdown={rememberFocus}
 	aria-label={m.scrollToBottom()}
-	data-testid="direct-chat-scroll-bottom"
+	data-testid="chat-scroll-bottom"
 >
 	{#if unreadCount > 0}
-		<Badge
-			class="absolute -top-1 -end-1"
-			data-testid="direct-chat-unread-badge"
-		>
+		<Badge class="absolute -top-1 -end-1" data-testid="chat-unread-badge">
 			{unreadCount > 99 ? '99+' : unreadCount}
 		</Badge>
 	{/if}

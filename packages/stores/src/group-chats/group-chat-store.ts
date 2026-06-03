@@ -11,6 +11,7 @@ import {
 	ChatSummary,
 	MessageContent,
 	Payload,
+	ReadMessagesStore,
 	getMessageText,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
@@ -29,7 +30,7 @@ export interface GroupMemberWithProfile {
 	admin: boolean;
 }
 
-export class GroupChatStore {
+export class GroupChatStore implements ReadMessagesStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
@@ -162,9 +163,45 @@ export class GroupChatStore {
 		},
 	);
 
+	readMessageHashes = reactive(async () => {
+		const myDeviceGroupTopic =
+			await this.contactsStore.devicesStore.myDeviceGroupTopic();
+		const readHashes: Set<Hash> = new Set();
+
+		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				if (
+					op.body?.payload?.type === 'ReadMessages' &&
+					op.body.payload.payload.chat_id === this.chatId
+				) {
+					for (const hash of op.body.payload.payload.message_hashes) {
+						readHashes.add(hash);
+					}
+				}
+			}
+		}
+
+		return readHashes;
+	});
+
+	unreadCount = reactive(async () => {
+		const messages = await this.messages();
+		const readHashes = await this.readMessageHashes();
+		const myDeviceId = await this.contactsStore.myDeviceId();
+
+		let count = 0;
+		for (const [hash, message] of Object.entries(messages)) {
+			if (message.author !== myDeviceId && !readHashes.has(hash)) {
+				count++;
+			}
+		}
+		return count;
+	});
+
 	summary = reactive(async (): Promise<ChatSummary> => {
 		const info = await this.info();
 		const last = await this.lastMessage();
+		const unread = await this.unreadCount();
 
 		return {
 			type: 'GroupChat',
@@ -175,7 +212,7 @@ export class GroupChatStore {
 				summary: last?.content ?? '',
 				timestamp: last?.timestamp ?? 0,
 			},
-			unreadMessages: 0,
+			unreadMessages: unread,
 		};
 	});
 
@@ -183,6 +220,10 @@ export class GroupChatStore {
 
 	addMember(member: PublicKey) {
 		return this.client.addMember(this.chatId, member);
+	}
+
+	async markAsRead(messageHashes: Hash[]): Promise<void> {
+		await this.client.markMessagesRead(this.chatId, messageHashes);
 	}
 
 	async sendMessage(text: string) {

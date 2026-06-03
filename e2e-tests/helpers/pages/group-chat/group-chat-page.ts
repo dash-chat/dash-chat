@@ -1,3 +1,4 @@
+import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
 
@@ -8,9 +9,27 @@ export class GroupChatPage extends TestPage {
 	messages = this.agent.$(tid('group-chat-messages'));
 	messageInput = this.agent.$(tid('message-input-textarea'));
 	sendButton = this.agent.$(tid('message-input-send'));
+	scrollBottom = this.agent.$(tid('chat-scroll-bottom'));
+	unreadBadge = this.agent.$(tid('chat-unread-badge'));
+	unreadDivider = this.agent.$(tid('group-chat-unread-divider'));
+	scroll = new ReverseScrollPage(this.agent, 'group-chat-scroll');
 
 	async ready() {
 		await this.infoLink.waitForExist();
+	}
+
+	scrollBottomButtonVisible(): Promise<boolean> {
+		return this.scrollBottom.isExisting();
+	}
+
+	async unreadBadgeText(): Promise<string | null> {
+		if (!(await this.unreadBadge.isExisting())) return null;
+		const text = (await this.unreadBadge.getText()).trim();
+		return text === '' ? null : text;
+	}
+
+	async clickScrollBottomButton(): Promise<void> {
+		await this.scrollBottom.click();
 	}
 
 	async sendMessage(text: string) {
