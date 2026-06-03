@@ -228,5 +228,7 @@
     "trayShow": "Show",
     "trayQuit": "Quit",
     "edit": "Editar",
-    "members": "Miembros"
+    "members": "Miembros",
+    "contactRequestAccepted": "{{name}} ha aceptado su solicitud de contacto",
+    "contactRequestAcceptedNoName": "Su solicitud de contacto fue aceptada"
 }
