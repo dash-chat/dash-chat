@@ -22,8 +22,9 @@ export interface GroupInfo {
 	avatar: string | undefined;
 }
 
-export interface GroupMember {
+export interface GroupMemberWithProfile {
 	agentId: AgentId;
+	devicesIds: DeviceId[];
 	profile: Profile | undefined;
 	admin: boolean;
 }
@@ -128,24 +129,38 @@ export class GroupChatStore {
 		const myAgentId = await this.contactsStore.myAgentId();
 		const data = await this.membersData();
 		const entry = data.find(m => m.agentId === myAgentId);
-		return this.buildMember(myAgentId, entry?.isAdmin ?? false);
+		return this.buildMember(
+			myAgentId,
+			entry?.deviceIds ?? [],
+			entry?.isAdmin ?? false,
+		);
 	});
 
 	allMembers = reactive(async () => {
 		const data = await this.membersData();
 		const entries = await Promise.all(
-			data.map(async ({ agentId, isAdmin }) => {
-				const member = await this.buildMember(agentId, isAdmin);
+			data.map(async ({ agentId, deviceIds, isAdmin }) => {
+				const member = await this.buildMember(agentId, deviceIds, isAdmin);
 				return [agentId, member] as const;
 			}),
 		);
-		return Object.fromEntries(entries) as Record<AgentId, GroupMember>;
+		return Object.fromEntries(entries) as Record<
+			AgentId,
+			GroupMemberWithProfile
+		>;
 	});
 
-	private buildMember = reactive(async (agentId: AgentId, admin: boolean) => {
-		const profile = await this.contactsStore.profiles(agentId);
-		return { agentId, profile, admin } satisfies GroupMember;
-	});
+	private buildMember = reactive(
+		async (agentId: AgentId, devices: DeviceId[], admin: boolean) => {
+			const profile = await this.contactsStore.profiles(agentId);
+			return {
+				agentId,
+				devicesIds: devices,
+				profile,
+				admin,
+			} satisfies GroupMemberWithProfile;
+		},
+	);
 
 	summary = reactive(async (): Promise<ChatSummary> => {
 		const info = await this.info();

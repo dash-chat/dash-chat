@@ -113,17 +113,17 @@
 										/>
 									</div>
 								{:else}
+									{@const author = Object.values(members).find(m =>
+										m.devices.includes(message.author),
+									)}
 									<div
 										class="row items-end gap-2 self-start max-w-[85%]"
 										data-message-hash={hash}
 									>
 										{#if position === 'last' || position === 'single'}
 											<Avatar
-												image={members[message.author]?.profile?.avatar}
-												initials={members[message.author]?.profile?.name.slice(
-													0,
-													2,
-												)}
+												image={author?.profile?.avatar}
+												initials={author?.profile?.name.slice(0, 2)}
 												style="--size: 2.5rem"
 											/>
 										{:else}
