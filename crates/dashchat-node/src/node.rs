@@ -407,10 +407,8 @@ impl Node {
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
         // TODO: this should use a transaction, but the race is not a big deal here
-        dbg!();
         let deps = self.group_store.heads(*chat_id).await?;
 
-        dbg!();
         if deps.is_empty() {
             return Err(anyhow::anyhow!(
                 "group must be known locally before adding member: {chat_id:?}"
@@ -431,18 +429,15 @@ impl Node {
         )
         .await?;
 
-        dbg!();
         let agent_id = self
             .local_store
             .lookup_contact_by_device_id(DeviceId::from(member))
             .await?;
         if let Some(agent_id) = agent_id {
-            dbg!();
             self.invite_to_group(chat_id, agent_id).await?;
         } else {
             tracing::warn!("Contact not found: {:?}", DeviceId::from(member).aliased());
         }
-        dbg!();
 
         Ok(())
     }
@@ -871,7 +866,6 @@ impl Node {
             })
             .collect::<BTreeSet<_>>();
         devices.insert(self.device_id());
-        dbg!(&devices.aliased());
 
         // Collect capabilities for all agents
         let caps = futures::future::join_all(
@@ -882,7 +876,6 @@ impl Node {
         .await
         .into_iter()
         .collect::<Result<Vec<Option<Capabilities>>>>()?;
-        dbg!(&caps);
 
         let caps = caps.into_iter().flatten().collect::<Vec<_>>();
         let num = caps.len();

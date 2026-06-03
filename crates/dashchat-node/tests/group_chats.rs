@@ -181,8 +181,6 @@ async fn test_group_chat() {
         .unwrap()
         .alias_named("groupchat");
 
-    dbg!(&chat_id);
-
     alice.send_message(chat_id, "Hello".into()).await.unwrap();
 
     bobbi

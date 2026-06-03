@@ -484,7 +484,6 @@ async fn group_chat_capability_upgrade() {
         .send_message(chat_id, ChatMessageContent::text_only("v1-msg-3"))
         .await
         .unwrap();
-    dbg!();
 
     wait_for(
         Duration::from_millis(100),
@@ -504,11 +503,9 @@ async fn group_chat_capability_upgrade() {
     )
     .await
     .unwrap();
-    dbg!();
 
     let msgs = bobbi.get_messages(chat_id).await.unwrap();
     assert_eq!(msgs[2].content, ChatMessageContent::text_only("v1-msg-3"));
-    dbg!();
 
     // A fourth member with zero capabilities joins.
     let mut danae_config = TestNodeConfig::default();
@@ -517,20 +514,17 @@ async fn group_chat_capability_upgrade() {
         .await
         .add_mailbox_client(mailbox.client())
         .await;
-    dbg!();
 
     danae
         .behavior()
         .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
         .await
         .unwrap();
-    dbg!();
 
     bobbi
         .add_group_member(chat_id, *danae.device_id(), p2panda_auth::Access::write())
         .await
         .unwrap();
-    dbg!();
 
     danae
         .behavior()
@@ -538,7 +532,6 @@ async fn group_chat_capability_upgrade() {
         .await
         .unwrap();
 
-    dbg!();
     // Wait for bobbi to learn danae's capabilities (danae contacted bobbi, so bobbi knows danae).
     wait_for(
         Duration::from_millis(100),
@@ -558,7 +551,6 @@ async fn group_chat_capability_upgrade() {
     )
     .await
     .unwrap();
-    dbg!();
 
     // Bobbi knows all four members, so bobbi's group capability is the true infimum.
     let (bobbi_group_caps, _) = bobbi.get_group_capabilities(chat_id).await.unwrap();
@@ -567,14 +559,12 @@ async fn group_chat_capability_upgrade() {
         Capabilities::zero(),
         "bobbi's view of group should revert to zero after danae (zero capability) joins"
     );
-    dbg!();
 
     // Bobbi sends (bobbi has full visibility of all members' capabilities).
     bobbi
         .send_message(chat_id, ChatMessageContent::text_only("back-to-zero-msg-4"))
         .await
         .unwrap();
-    dbg!();
 
     wait_for(
         Duration::from_millis(100),
@@ -595,7 +585,6 @@ async fn group_chat_capability_upgrade() {
     )
     .await
     .unwrap();
-    dbg!();
     let msgs = bobbi.get_messages(chat_id).await.unwrap();
     assert_eq!(
         msgs[3].content,
