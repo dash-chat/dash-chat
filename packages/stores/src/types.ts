@@ -40,7 +40,8 @@ export type AnnouncementPayload =
 	| { type: 'SetCapabilities'; payload: unknown };
 export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
-	| { type: 'Reaction'; payload: ChatReaction };
+	| { type: 'Reaction'; payload: ChatReaction }
+	| { type: 'JoinGroup'; payload: { chat_id: string } };
 
 export interface InboxTopic {
 	expires_at: number;
