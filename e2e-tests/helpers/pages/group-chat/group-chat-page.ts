@@ -1,3 +1,4 @@
+import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
 import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
 
@@ -8,6 +9,7 @@ export class GroupChatPage extends TestPage {
 	messages = this.agent.$(tid('group-chat-messages'));
 	messageInput = this.agent.$(tid('message-input-textarea'));
 	sendButton = this.agent.$(tid('message-input-send'));
+	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 
 	async ready() {
 		await this.infoLink.waitForExist();
