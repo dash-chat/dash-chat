@@ -22,7 +22,10 @@
 	import MessageInput from '$lib/components/MessageInput.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import {
+		messagePosition,
+		senderColor,
+	} from '$lib/components/messages/message-helpers';
 	import { showToast } from '$lib/utils/toasts';
 	import { m } from '$lib/paraglide/messages';
 
@@ -204,6 +207,8 @@
 										{@const author = Object.values(members).find(m =>
 											m.deviceIds.includes(message.author),
 										)}
+										{@const showSender =
+											position === 'first' || position === 'single'}
 										<div
 											class="row items-end gap-2 self-start max-w-[85%]"
 											data-message-hash={hash}
@@ -227,6 +232,12 @@
 												{chatId}
 												searchQuery=""
 												onToggleReaction={() => {}}
+												senderName={showSender
+													? author?.profile?.name
+													: undefined}
+												senderColor={showSender
+													? senderColor(message.author)
+													: undefined}
 											/>
 										</div>
 									{/if}
