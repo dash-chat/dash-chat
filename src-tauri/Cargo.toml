@@ -43,15 +43,7 @@ push-notifications-client = { path = "../crates/push-notifications-client" }
 dashchat-utils = { path = "../crates/dashchat-utils" }
 
 p2panda = { workspace = true }
-p2panda-auth = { workspace = true }
 p2panda-core = { workspace = true }
-p2panda-encryption = { workspace = true }
-p2panda-discovery = { workspace = true }
-p2panda-net = { workspace = true }
-p2panda-store = { workspace = true }
-p2panda-stream = { workspace = true }
-p2panda-sync = { workspace = true }
-p2panda-spaces = { workspace = true }
 
 fs2 = "0.4"
 anyhow = "1.0.95"
