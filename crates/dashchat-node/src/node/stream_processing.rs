@@ -264,15 +264,23 @@ impl Node {
                 };
                 // Subscribe to announcements topics for any group members whose agent_id we know.
                 let member_device_ids: Vec<DeviceId> = match &auth.action {
-                    p2panda_auth::group::GroupAction::Create { initial_members } => initial_members
-                        .iter()
-                        .filter_map(|(m, _)| match m {
-                            p2panda_auth::group::GroupMember::Individual(pk) => {
-                                Some(DeviceId::from(*pk))
-                            }
-                            _ => None,
-                        })
-                        .collect(),
+                    p2panda_auth::group::GroupAction::Create { initial_members } => {
+                        tracing::info!(
+                            me = ?self.device_id().renamed(),
+                            group_topic = ?operation.header.extensions.topic.renamed(),
+                            member_count = initial_members.len(),
+                            "processing group Create auth extension"
+                        );
+                        initial_members
+                            .iter()
+                            .filter_map(|(m, _)| match m {
+                                p2panda_auth::group::GroupMember::Individual(pk) => {
+                                    Some(DeviceId::from(*pk))
+                                }
+                                _ => None,
+                            })
+                            .collect()
+                    }
                     p2panda_auth::group::GroupAction::Add { member, .. } => match member {
                         p2panda_auth::group::GroupMember::Individual(pk) => {
                             vec![DeviceId::from(*pk)]
@@ -324,6 +332,12 @@ impl Node {
 
         match &payload {
             Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
+                tracing::info!(
+                    me = ?self.device_id().renamed(),
+                    chat_id = ?chat_id.renamed(),
+                    from = ?header.public_key.renamed(),
+                    "received JoinGroup invitation"
+                );
                 if let Err(err) = self.join_group(*chat_id).await {
                     // TODO: no retry path — device ends up with no topic registered for this group.
                     tracing::error!(?err, "failed to join group from invitation");
