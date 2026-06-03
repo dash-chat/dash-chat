@@ -32,17 +32,27 @@ export class GroupChatPage extends TestPage {
 		await this.scrollBottom.click();
 	}
 
-	/** True if the unread divider's next sibling is the message wrapper containing `text`. */
+	/** True if the unread divider precedes (in DOM order) the message wrapper containing `text`. */
 	async unreadDividerPrecedes(messageText: string): Promise<boolean> {
 		return this.agent.execute(
-			(dividerSel: string, text: string) => {
+			(dividerSel: string, messagesSel: string, text: string) => {
 				const divider = document.querySelector(dividerSel);
 				if (!divider) return false;
-				const next = divider.nextElementSibling as HTMLElement | null;
-				if (!next?.hasAttribute('data-message-hash')) return false;
-				return next.textContent?.includes(text) ?? false;
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(text)) {
+						return !!(
+							divider.compareDocumentPosition(wrapper) &
+							Node.DOCUMENT_POSITION_FOLLOWING
+						);
+					}
+				}
+				return false;
 			},
 			tid('group-chat-unread-divider'),
+			tid('group-chat-messages'),
 			messageText,
 		);
 	}
