@@ -64,6 +64,35 @@ wa-icon[slot='end'] {
 	color: #9ca3af;
 }
 
+:root {
+	--sender-color-0: #c92a39;
+	--sender-color-1: #a44b1a;
+	--sender-color-2: #805c00;
+	--sender-color-3: #4a781f;
+	--sender-color-4: #1f7a5e;
+	--sender-color-5: #156f8f;
+	--sender-color-6: #1f5fb6;
+	--sender-color-7: #4f3fa6;
+	--sender-color-8: #823f96;
+	--sender-color-9: #aa2f63;
+	--sender-color-10: #8c4824;
+	--sender-color-11: #4a5566;
+}
+.dark {
+	--sender-color-0: #ff7178;
+	--sender-color-1: #ff9a55;
+	--sender-color-2: #e6b04a;
+	--sender-color-3: #94c160;
+	--sender-color-4: #5dc9a5;
+	--sender-color-5: #5fc6e0;
+	--sender-color-6: #75a8f0;
+	--sender-color-7: #a094e8;
+	--sender-color-8: #c780d8;
+	--sender-color-9: #f870a0;
+	--sender-color-10: #d39062;
+	--sender-color-11: #98a8b8;
+}
+
 .dark-quiet {
 	color: var(--wa-color-neutral-80);
 }
