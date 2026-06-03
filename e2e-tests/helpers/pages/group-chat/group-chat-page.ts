@@ -40,7 +40,10 @@ export class GroupChatPage extends TestPage {
 				);
 				for (const wrapper of wrappers) {
 					if (wrapper.textContent?.includes(t)) {
-						return wrapper.querySelector('wa-avatar')?.getAttribute('initials') ?? null;
+						const avatar = wrapper.querySelector('wa-avatar') as
+							| (Element & { initials?: string })
+							| null;
+						return avatar?.initials || null;
 					}
 				}
 				return null;
