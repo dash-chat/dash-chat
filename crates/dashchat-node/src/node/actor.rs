@@ -336,7 +336,7 @@ impl Actor {
 }
 
 /// Future which can be awaited to find out when a locally published operation has finished
-/// system layer processing.
+/// system and application layer processing.
 pub struct ProcessFuture {
     hash: Hash,
     inner: Pin<Box<dyn Future<Output = <PublishFuture as Future>::Output> + Send + Sync>>,
