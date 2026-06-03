@@ -19,8 +19,7 @@
 		searchQuery,
 		onToggleReaction,
 		chatId,
-		senderName,
-		senderColor,
+		sender,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -28,8 +27,7 @@
 		chatId: ChatId;
 		searchQuery: string;
 		onToggleReaction: (emoji: string) => void;
-		senderName?: string;
-		senderColor?: string;
+		sender?: { name: string; color: string };
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -63,13 +61,13 @@
 	contentWrapPadding="p-2"
 	class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 >
-	{#if senderName}
+	{#if sender}
 		<div
 			class="mx-1 mb-0.5 text-sm font-semibold text-start"
-			style="color: {senderColor}"
+			style="color: {sender.color}"
 			data-testid="group-message-sender-name"
 		>
-			{senderName}
+			{sender.name}
 		</div>
 	{/if}
 	<div class="row gap-2 mx-1" style="align-items: end">
