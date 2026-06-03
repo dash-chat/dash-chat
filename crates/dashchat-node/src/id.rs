@@ -22,15 +22,6 @@ use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentVal
 )]
 pub struct DeviceId(VerifyingKey);
 
-impl named_id::Nameable for DeviceId {
-    fn shortener(&self) -> Option<named_id::Shortener> {
-        Some(named_id::Shortener {
-            length: 4,
-            prefix: "D",
-        })
-    }
-}
-
 /// The ID for an "agent" which may control multiple devices.
 #[derive(
     Clone,
@@ -48,15 +39,6 @@ impl named_id::Nameable for DeviceId {
     Deref,
 )]
 pub struct AgentId(ActorId);
-
-impl named_id::Nameable for AgentId {
-    fn shortener(&self) -> Option<named_id::Shortener> {
-        Some(named_id::Shortener {
-            length: 4,
-            prefix: "A",
-        })
-    }
-}
 
 impl AgentId {
     pub fn from_bytes(bytes: &[u8; 32]) -> anyhow::Result<Self> {

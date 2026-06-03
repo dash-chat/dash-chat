@@ -585,7 +585,6 @@ async fn group_chat_capability_upgrade() {
     )
     .await
     .unwrap();
-
     let msgs = bobbi.get_messages(chat_id).await.unwrap();
     assert_eq!(
         msgs[3].content,

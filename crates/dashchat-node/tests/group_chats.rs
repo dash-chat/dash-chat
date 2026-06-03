@@ -10,11 +10,11 @@ use dashchat_node::{testing::*, *};
 use mailbox_client::mem::MemMailbox;
 
 use maplit::btreemap;
-use named_id::*;
 use p2panda::network::MdnsDiscoveryMode;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_direct_chat() {
+    dashchat_node::util::setup_aliases();
     dashchat_node::testing::setup_tracing(
         &[
             "dashchat=info",
@@ -40,8 +40,8 @@ async fn test_direct_chat() {
     introduce_and_wait([&alice, &bobbi]).await;
 
     println!("nodes:");
-    println!("alice: {:?}", alice.device_id().short());
-    println!("bobbi: {:?}", bobbi.device_id().short());
+    println!("alice: {}", alice.device_id());
+    println!("bobbi: {}", bobbi.device_id());
 
     alice
         .behavior()
@@ -158,9 +158,9 @@ async fn test_group_chat() {
     introduce_and_wait([&alice, &bobbi, &cammy]).await;
 
     println!("nodes:");
-    println!("alice: {:?}", alice.device_id().short());
-    println!("bobbi: {:?}", bobbi.device_id().short());
-    println!("cammy: {:?}", cammy.device_id().short());
+    println!("alice: {}", alice.device_id());
+    println!("bobbi: {}", bobbi.device_id());
+    println!("cammy: {}", cammy.device_id());
 
     alice
         .behavior()
@@ -179,9 +179,7 @@ async fn test_group_chat() {
         })
         .await
         .unwrap()
-        .with_name("groupchat");
-
-    dbg!(&chat_id);
+        .alias_named("groupchat");
 
     alice.send_message(chat_id, "Hello".into()).await.unwrap();
 

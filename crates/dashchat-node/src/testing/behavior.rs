@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use aliased::Aliasing;
 use anyhow::Context;
 
 use super::*;
@@ -20,7 +21,7 @@ impl Behavior {
 
     /// Simulate sending a contact a QR code and them using it to add me as a contact,
     /// and sending me an Inbox message with their contact info so I can add them too.
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
     pub async fn initiate_and_establish_contact(
         &mut self,
         other: &TestNode,
@@ -33,7 +34,7 @@ impl Behavior {
         Ok(())
     }
 
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
     pub async fn accept_next_contact(&self) -> anyhow::Result<QrCode> {
         let mut watcher = self.watcher.lock().await;
         let qr = watcher
@@ -57,7 +58,7 @@ impl Behavior {
 
     // NOTE: we technically want to wait for the *last* capabilities announcement.
     //       this is an approximation, assuming that this signals the entire announcement topic being synced.
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
     pub async fn await_first_capabilities(
         &self,
         device_id: DeviceId,
@@ -79,7 +80,7 @@ impl Behavior {
             .context("no capabilities announcement found")
     }
 
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
     pub async fn accept_next_group_invitation(&self) -> anyhow::Result<ChatId> {
         let chat_id = self
             .watcher

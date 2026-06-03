@@ -1,6 +1,5 @@
 use dashchat_node::{testing::*, *};
 use mailbox_client::mem::MemMailbox;
-use named_id::*;
 use p2panda::network::MdnsDiscoveryMode;
 
 const TRACING_FILTER: [&str; 5] = [
@@ -26,8 +25,8 @@ async fn test_inbox_2() {
         .await;
 
     println!("nodes:");
-    println!("alice: {:?}", alice.device_id().short());
-    println!("bobbi: {:?}", bobbi.device_id().short());
+    println!("alice: {}", alice.device_id());
+    println!("bobbi: {}", bobbi.device_id());
 
     // @TODO: comment out unsupported feature for now.
     // #[cfg(feature = "p2p")]
@@ -46,7 +45,7 @@ async fn test_inbox_2() {
 
     let direct_chat_topic = alice.direct_chat_topic(bobbi.agent_id());
 
-    tracing::info!(%direct_chat_topic, ?direct_chat_topic, "direct chat id");
+    tracing::info!(topic = ?direct_chat_topic.aliased(), "direct chat id");
 
     alice
         .send_message(direct_chat_topic, "Hello".into())
@@ -78,7 +77,7 @@ async fn test_p2p_inbox_2() {
 
     let direct_chat_topic = alice.direct_chat_topic(bobbi.agent_id());
 
-    tracing::info!(%direct_chat_topic, ?direct_chat_topic, "direct chat id");
+    tracing::info!(topic = ?direct_chat_topic.aliased(), "direct chat id");
 
     alice
         .send_message(direct_chat_topic, "Hello".into())

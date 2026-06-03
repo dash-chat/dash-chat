@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use named_id::*;
+use aliased::Aliasing;
 use tempfile::TempDir;
 use tokio::sync::{Mutex, mpsc::Receiver};
 
@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::Debug)]
-#[debug("TestNode({})", self.node.device_id().renamed())]
+#[debug("TestNode({:?})", self.node.device_id().aliased())]
 pub struct TestNode {
     #[deref]
     node: Node,
@@ -39,8 +39,8 @@ impl TestNode {
             .await
             .unwrap();
         if config.use_named_id {
-            local_store.device_id().await.unwrap().with_name(name);
-            local_store.agent_id().await.unwrap().with_name(name);
+            local_store.device_id().await.unwrap().alias_named(name);
+            local_store.agent_id().await.unwrap().alias_named(name);
         }
         drop(local_store);
 
@@ -85,8 +85,8 @@ impl TestNode {
         let local_store = LocalStore::new(filesystem.local_store_path())
             .await
             .unwrap();
-        local_store.device_id().await.unwrap().with_name(name);
-        local_store.agent_id().await.unwrap().with_name(name);
+        local_store.device_id().await.unwrap().alias_named(name);
+        local_store.agent_id().await.unwrap().alias_named(name);
         drop(local_store);
 
         let node = Node::new(store_dir.path().into(), config, Some(notification_tx), None)
@@ -279,7 +279,7 @@ pub async fn consistency(
                             .cloned()
                             .unwrap_or_default()
                             .into_iter()
-                            .map(|h| format!("{}", h))
+                            .map(|h| format!("{:?}", h.alias_numbered().aliased()))
                     })
                     .collect::<BTreeSet<_>>()
             })
@@ -302,9 +302,10 @@ pub async fn consistency(
         }
     })
     .await
-    .map_err(|_diffs| {
+    .map_err(|diffs| {
+        dbg!(diffs);
         // TODO: print a report here
-        anyhow::anyhow!("consistency check failed")
+        anyhow::anyhow!("consistency check failed after {:?}", config.poll_timeout)
     })
 }
 
@@ -332,8 +333,8 @@ impl<T: std::fmt::Debug> Watcher<T> {
         timeout: tokio::time::Duration,
         f: impl Fn(&T) -> Option<R>,
     ) -> anyhow::Result<R> {
-        let timeout = tokio::time::sleep(timeout);
-        tokio::pin!(timeout);
+        let sleep = tokio::time::sleep(timeout);
+        tokio::pin!(sleep);
 
         loop {
             tokio::select! {
@@ -346,7 +347,7 @@ impl<T: std::fmt::Debug> Watcher<T> {
                         None => return Err(anyhow::anyhow!("channel closed")),
                     }
                 }
-                _ = &mut timeout => return Err(anyhow::anyhow!("timeout")),
+                _ = &mut sleep => return Err(anyhow::anyhow!("timeout after {:?}", timeout)),
             }
         }
     }
