@@ -113,8 +113,7 @@
 	.connection-status-dialog-icon {
 		font-size: 32px;
 	}
-	:global(.dark) .connection-status,
-	:global(.dark) .connection-status-dialog-icon {
+	:global(.dark) .connection-status {
 		color: white;
 	}
 </style>
