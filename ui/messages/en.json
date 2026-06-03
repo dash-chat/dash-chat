@@ -193,7 +193,7 @@
 	"trayTitle": "DashChat Local Mailbox",
 	"trayShow": "Show",
 	"trayQuit": "Quit",
-	"menuRunLocalMailbox": "Run Local Mailbox",
+	"menuRunLocalMailbox": "Run Local Mailbox Server",
 	"menuFile": "File",
 	"menuEdit": "Edit",
 	"menuUndo": "Undo",
@@ -204,11 +204,11 @@
 	"menuSelectAll": "Select All",
 	"menuOpenLogsFolder": "Open Logs Folder",
 	"quitConfirmTitle": "Quit Dash Chat?",
-	"quitConfirmMessage": "The Local Message Server is running. Are you sure you want to quit?",
+	"quitConfirmMessage": "The Local Mailbox Server is running. Are you sure you want to quit?",
 
 	"offlineFunctionality": "Offline functionality",
-	"localMessageServer": "Local Message Server",
-	"enableLocalMessageServer": "Enable Local Message Server",
+	"localMessageServer": "Local Mailbox Server",
+	"enableLocalMessageServer": "Enable Local Mailbox Server",
 	"localMessageServerDescription": "Runs a local server to receive messages while the app is closed. Other devices on your network can deliver messages to this server.",
 
 	"connectionStatusDisconnectedTitle": "Disconnected",
