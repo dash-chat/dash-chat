@@ -206,7 +206,7 @@ impl Default for ClusterConfig {
     fn default() -> Self {
         Self {
             poll_interval: Duration::from_millis(100),
-            poll_timeout: Duration::from_secs(10),
+            poll_timeout: Duration::from_secs(30),
         }
     }
 }
