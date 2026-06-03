@@ -439,9 +439,7 @@
 									</Link>
 								{/snippet}
 
-								<div
-									class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}
-								>
+								<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
 									<ConnectionStatusIndicator />
 								</div>
 							</Navbar>

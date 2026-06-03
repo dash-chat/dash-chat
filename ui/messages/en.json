@@ -213,9 +213,11 @@
 
 	"connectionStatusDisconnectedTitle": "Disconnected",
 	"connectionStatusDisconnectedDescription": "You have no Internet connection, and we can't find any Local Mailbox in your local network. Messages will be synchronized once you reconnect.",
+	"connectionStatusDisconnectedAriaLabel": "Connection status: disconnected. Tap for details.",
 	"connectionStatusLocalTitle": "Local Mailbox Sync",
 	"connectionStatusLocalDescription_one": "You have no Internet connection, but you're connected to {{count}} Local Mailbox on your network. Messages will be synchronized with it.",
 	"connectionStatusLocalDescription_other": "You have no Internet connection, but you're connected to {{count}} Local Mailboxes on your network. Messages will be synchronized with them.",
+	"connectionStatusLocalAriaLabel": "Connection status: connected to local mailbox. Tap for details.",
 
 	"help": "Help",
 	"contactUs": "Contact us",

@@ -9,7 +9,6 @@
  *   - Message status: "cloud" → "sending" → "local" → "cloud"
  *   - Navbar chip:    hidden (connected) → disconnected → local → hidden (connected)
  */
-
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { resumeMailbox, suspendMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgent } from '../setup/setup-agents';
@@ -69,9 +68,12 @@ describe('Offline UX', () => {
 			await agent2.directChatPage.waitForMessage('online hello');
 
 			await agent1.waitUntil(
-				async () => (await agent1.directChatPage.lastMessageStatus()) === 'cloud',
+				async () =>
+					(await agent1.directChatPage.lastMessageStatus()) === 'cloud',
 			);
-			expect(await agent1.directChatPage.connectionStatus()).toBe('connected');
+			expect(
+				await agent1.directChatPage.connectionStatusIndicator.status(),
+			).toBe('connected');
 		});
 	});
 
@@ -91,7 +93,8 @@ describe('Offline UX', () => {
 		it('new messages stay on the sending spinner', async () => {
 			await agent1.directChatPage.sendMessage('offline hello');
 			await agent1.waitUntil(
-				async () => (await agent1.directChatPage.lastMessageStatus()) === 'sending',
+				async () =>
+					(await agent1.directChatPage.lastMessageStatus()) === 'sending',
 				{ timeout: 5_000 },
 			);
 			await agent1.pause(5_000);
@@ -101,11 +104,24 @@ describe('Offline UX', () => {
 		// connect_timeout=5s + timeout=10s × degraded_threshold(5) gives a
 		// worst case around ~60s before the chip flips. Pad on top so a slow
 		// runner doesn't false-fail.
-		it('navbar chip flips to "disconnected" once consecutive errors accumulate', async () => {
+		it('navbar chip flips to "disconnected", clicking it opens the explainer dialog, and the close button dismisses it', async () => {
+			const indicator = agent1.directChatPage.connectionStatusIndicator;
 			await agent1.waitUntil(
-				async () => (await agent1.directChatPage.connectionStatus()) === 'disconnected',
+				async () => (await indicator.status()) === 'disconnected',
 				{ timeout: 90_000, interval: 1_000 },
 			);
+
+			await indicator.chip.click();
+			await agent1.waitUntil(() => indicator.isDialogOpen());
+			expect(await indicator.dialogTitle.getText()).toBe(
+				await agent1.tr('connectionStatusDisconnectedTitle'),
+			);
+			expect(await indicator.dialogDescription.getText()).toBe(
+				await agent1.tr('connectionStatusDisconnectedDescription'),
+			);
+
+			await indicator.dialogCloseButton.click();
+			await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
 		});
 
 		describe('with local mailbox enabled on the sender', () => {
@@ -122,17 +138,31 @@ describe('Offline UX', () => {
 				await returnToChat(agent1, 'Bob');
 			});
 
-			it('navbar chip switches from "disconnected" to "local" once the local mailbox is discovered and polled', async () => {
+			it('navbar chip switches from "disconnected" to "local" once the local mailbox is discovered, and the dialog reports the local-mailbox state', async () => {
+				const indicator = agent1.directChatPage.connectionStatusIndicator;
 				await agent1.waitUntil(
-					async () => (await agent1.directChatPage.connectionStatus()) === 'local',
+					async () => (await indicator.status()) === 'local',
 					{ timeout: 60_000 },
 				);
+
+				await indicator.chip.click();
+				await agent1.waitUntil(() => indicator.isDialogOpen());
+				expect(await indicator.dialogTitle.getText()).toBe(
+					await agent1.tr('connectionStatusLocalTitle'),
+				);
+				expect(await indicator.dialogDescription.getText()).toBe(
+					await agent1.tr('connectionStatusLocalDescription', { count: 1 }),
+				);
+
+				await indicator.dialogCloseButton.click();
+				await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
 			});
 
 			it('a new message advances to the "local" mailbox icon', async () => {
 				await agent1.directChatPage.sendMessage('local hello');
 				await agent1.waitUntil(
-					async () => (await agent1.directChatPage.lastMessageStatus()) === 'local',
+					async () =>
+						(await agent1.directChatPage.lastMessageStatus()) === 'local',
 					{ timeout: 30_000 },
 				);
 			});
@@ -142,11 +172,14 @@ describe('Offline UX', () => {
 	describe('cloud mailbox back online', () => {
 		it('navbar chip hides again and pending message advances to "cloud"', async () => {
 			await agent1.waitUntil(
-				async () => (await agent1.directChatPage.connectionStatus()) === 'connected',
+				async () =>
+					(await agent1.directChatPage.connectionStatusIndicator.status()) ===
+					'connected',
 				{ timeout: 30_000 },
 			);
 			await agent1.waitUntil(
-				async () => (await agent1.directChatPage.lastMessageStatus()) === 'cloud',
+				async () =>
+					(await agent1.directChatPage.lastMessageStatus()) === 'cloud',
 				{ timeout: 30_000 },
 			);
 			await agent2.directChatPage.waitForMessage('offline hello');

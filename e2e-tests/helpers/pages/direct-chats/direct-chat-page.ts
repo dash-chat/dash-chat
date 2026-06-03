@@ -1,9 +1,10 @@
+import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
 
 export type MessageStatus = 'sending' | 'local' | 'cloud';
-export type ConnectionStatus = 'connected' | 'local' | 'disconnected';
+export type { ConnectionStatus } from '../../components/connection-status-indicator';
 
 export class DirectChatPage extends TestPage {
 	page = this.agent.$(tid('direct-chat-page'));
@@ -24,7 +25,7 @@ export class DirectChatPage extends TestPage {
 	sendButton = this.agent.$(tid('message-input-send'));
 	emojiButton = this.agent.$(tid('message-input-emoji'));
 	messageStatus = this.agent.$(tid('message-status'));
-	connectionStatusIndicator = this.agent.$(tid('connection-status'));
+	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
 
 	async ready() {
@@ -62,17 +63,6 @@ export class DirectChatPage extends TestPage {
 			}
 			return null;
 		}, tid('message-status'));
-	}
-
-	/** Read the navbar connection chip. Absence === 'connected'. */
-	async connectionStatus(): Promise<ConnectionStatus> {
-		return this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLElement | null;
-			if (!el) return 'connected';
-			const status = el.dataset.status;
-			if (status === 'local' || status === 'disconnected') return status;
-			throw new Error(`connectionStatus: unexpected data-status="${status}"`);
-		}, tid('connection-status'));
 	}
 
 	scrollBottomButtonVisible(): Promise<boolean> {

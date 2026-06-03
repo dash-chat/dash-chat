@@ -34,19 +34,30 @@
 				fillBgIos: 'bg-black/10 dark:bg-brand-primary',
 				fillBgMaterial: 'bg-md-light-secondary-container dark:bg-brand-primary',
 			}}
+			role="button"
+			tabindex={0}
+			aria-label={isLocal
+				? m.connectionStatusLocalAriaLabel()
+				: m.connectionStatusDisconnectedAriaLabel()}
 			onClick={() => (dialogOpened = true)}
+			onkeydown={(e: KeyboardEvent) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					dialogOpened = true;
+				}
+			}}
 		>
 			{#if isLocal}
 				<wa-icon
 					class="connection-status"
 					src="/localmailboxserver.svg"
-					aria-label="connected-to-local-mailbox"
+					aria-hidden="true"
 				></wa-icon>
 			{:else}
 				<wa-icon
 					class="connection-status"
 					src={wrapPathInSvg(mdiEmoticonPoop)}
-					aria-label="disconnected"
+					aria-hidden="true"
 				></wa-icon>
 			{/if}
 		</Chip>
@@ -58,9 +69,9 @@
 					src={isLocal
 						? '/localmailboxserver.svg'
 						: wrapPathInSvg(mdiEmoticonPoop)}
-					aria-label={isLocal ? 'connected-to-local-mailbox' : 'disconnected'}
+					aria-hidden="true"
 				></wa-icon>
-				<span>
+				<span data-testid="connection-status-dialog-title">
 					{isLocal
 						? m.connectionStatusLocalTitle()
 						: m.connectionStatusDisconnectedTitle()}
@@ -74,7 +85,7 @@
 			onBackdropClick={() => (dialogOpened = false)}
 			title={asTitle(titleSlot)}
 		>
-			<span>
+			<span data-testid="connection-status-dialog-description">
 				{#if isLocal}
 					{m.connectionStatusLocalDescription({ count: localCount })}
 				{:else}
@@ -83,7 +94,10 @@
 			</span>
 
 			{#snippet buttons()}
-				<DialogButton onClick={() => (dialogOpened = false)}>
+				<DialogButton
+					data-testid="connection-status-dialog-close"
+					onClick={() => (dialogOpened = false)}
+				>
 					{m.close()}
 				</DialogButton>
 			{/snippet}
