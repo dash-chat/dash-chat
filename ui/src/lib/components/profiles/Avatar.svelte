@@ -11,6 +11,7 @@
 	import type { Snippet } from 'svelte';
 
 	let {
+		waitingForProfile,
 		image,
 		initials,
 		alt,
@@ -18,6 +19,7 @@
 		id,
 		children,
 	}: {
+		waitingForProfile?: boolean | undefined;
 		image?: string | undefined;
 		initials?: string | undefined;
 		alt?: string | undefined;
@@ -41,7 +43,6 @@
 		const textAvatarStyle = `background-color: ${textAvatarData.sanitizedHexColor()}; color: ${TEXT_AVATAR_TEXT_COLOR};`;
 		return style ? `${style}; ${textAvatarStyle}` : textAvatarStyle;
 	});
-	const showPlaceholder = $derived(!avatarImage && !avatarInitials);
 </script>
 
 <span class="inline-block">
@@ -53,7 +54,7 @@
 		{alt}
 		shape="circle"
 	>
-		{#if showPlaceholder}
+		{#if waitingForProfile}
 			<wa-icon
 				slot="icon"
 				src={wrapPathInSvg(mdiAccountQuestion)}
