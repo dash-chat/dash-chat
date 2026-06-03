@@ -68,4 +68,56 @@ export class GroupChatPage extends TestPage {
 			messageText,
 		);
 	}
+
+	async getMessageHash(messageText: string): Promise<string | null> {
+		return this.agent.execute(
+			(sel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${sel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return wrapper.getAttribute('data-message-hash');
+					}
+				}
+				return null;
+			},
+			tid('group-chat-messages'),
+			messageText,
+		);
+	}
+
+	async getSenderName(hash: string): Promise<string | null> {
+		return this.agent.execute(
+			(sel: string, h: string) => {
+				const wrapper = document.querySelector<HTMLElement>(
+					`${sel} [data-message-hash="${h}"]`,
+				);
+				const name = wrapper?.querySelector(
+					'[data-testid="group-message-sender-name"]',
+				);
+				return name?.textContent?.trim() ?? null;
+			},
+			tid('group-chat-messages'),
+			hash,
+		);
+	}
+
+	async getSenderColorVar(hash: string): Promise<string | null> {
+		return this.agent.execute(
+			(sel: string, h: string) => {
+				const wrapper = document.querySelector<HTMLElement>(
+					`${sel} [data-message-hash="${h}"]`,
+				);
+				const name = wrapper?.querySelector(
+					'[data-testid="group-message-sender-name"]',
+				);
+				const style = name?.getAttribute('style') ?? '';
+				const match = style.match(/--sender-color-\d+/);
+				return match ? match[0] : null;
+			},
+			tid('group-chat-messages'),
+			hash,
+		);
+	}
 }

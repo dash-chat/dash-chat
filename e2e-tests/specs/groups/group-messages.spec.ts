@@ -46,8 +46,50 @@ describe('Group messages', () => {
 		await agent1.waitUntil(
 			async () =>
 				(await agent1.groupChatPage.getAuthorInitials('Hello from Bob!')) ===
-				'Bo',
-			{ timeoutMsg: 'Avatar initials "Bo" did not appear on Bob\'s message' },
+				'B',
+			{ timeoutMsg: 'Avatar initials "B" did not appear on Bob\'s message' },
 		);
+	});
+
+	it('shows the sender name only on the first message of a cluster, with a consistent color across clusters', async () => {
+		await agent1.groupChatPage.sendMessage('Alice break A');
+		await agent2.groupChatPage.waitForMessage('Alice break A');
+
+		await agent2.groupChatPage.sendMessage('Bob cluster first');
+		await agent2.groupChatPage.sendMessage('Bob cluster middle');
+		await agent2.groupChatPage.sendMessage('Bob cluster last');
+		await agent1.groupChatPage.waitForMessage('Bob cluster last');
+
+		await agent1.groupChatPage.sendMessage('Alice break B');
+		await agent2.groupChatPage.waitForMessage('Alice break B');
+
+		await agent2.groupChatPage.sendMessage('Bob single');
+		await agent1.groupChatPage.waitForMessage('Bob single');
+
+		const firstHash =
+			await agent1.groupChatPage.getMessageHash('Bob cluster first');
+		const middleHash =
+			await agent1.groupChatPage.getMessageHash('Bob cluster middle');
+		const lastHash =
+			await agent1.groupChatPage.getMessageHash('Bob cluster last');
+		const singleHash = await agent1.groupChatPage.getMessageHash('Bob single');
+
+		expect(firstHash).not.toBeNull();
+		expect(middleHash).not.toBeNull();
+		expect(lastHash).not.toBeNull();
+		expect(singleHash).not.toBeNull();
+
+		expect(await agent1.groupChatPage.getSenderName(firstHash!)).toBe('Bob');
+		expect(await agent1.groupChatPage.getSenderName(singleHash!)).toBe('Bob');
+
+		expect(await agent1.groupChatPage.getSenderName(middleHash!)).toBeNull();
+		expect(await agent1.groupChatPage.getSenderName(lastHash!)).toBeNull();
+
+		const firstColor =
+			await agent1.groupChatPage.getSenderColorVar(firstHash!);
+		const singleColor =
+			await agent1.groupChatPage.getSenderColorVar(singleHash!);
+		expect(firstColor).toMatch(/^--sender-color-\d+$/);
+		expect(singleColor).toBe(firstColor);
 	});
 });
