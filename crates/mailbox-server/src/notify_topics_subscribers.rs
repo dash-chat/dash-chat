@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use push_notifications_client::client::PushNotificationsClient;
-use push_notifications_client::types::{OperationId, VerifyingKey, TopicId as PushTopicId};
+use push_notifications_client::types::{OperationId, TopicId as PushTopicId, VerifyingKey};
 
 use crate::{AppState, Author, TopicId};
 

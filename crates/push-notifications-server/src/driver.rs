@@ -3,7 +3,7 @@ pub mod sql;
 
 use std::collections::{HashMap, HashSet};
 
-use push_notifications_client::types::{FcmToken, VerifyingKey, TopicId};
+use push_notifications_client::types::{FcmToken, TopicId, VerifyingKey};
 
 #[async_trait::async_trait]
 pub trait Driver: Send + Sync + 'static {

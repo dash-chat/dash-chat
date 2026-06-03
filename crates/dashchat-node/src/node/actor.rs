@@ -547,7 +547,6 @@ mod tests {
             .await
             .unwrap();
 
-
         let alice_store = alice.store();
         let bobbi_store = bobbi.store();
         let alice_id = alice.id();

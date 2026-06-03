@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 use anyhow::Result;
 
 use crate::driver::Driver;
-use push_notifications_client::types::{FcmToken, VerifyingKey, TopicId};
+use push_notifications_client::types::{FcmToken, TopicId, VerifyingKey};
 
 pub struct MemDb {
     tokens: Mutex<HashMap<VerifyingKey, FcmToken>>,
@@ -22,7 +22,11 @@ impl MemDb {
 
 #[async_trait::async_trait]
 impl Driver for MemDb {
-    async fn store_fcm_token(&self, verifying_key: &VerifyingKey, fcm_token: &FcmToken) -> Result<()> {
+    async fn store_fcm_token(
+        &self,
+        verifying_key: &VerifyingKey,
+        fcm_token: &FcmToken,
+    ) -> Result<()> {
         self.tokens
             .lock()
             .await

@@ -5,7 +5,7 @@ use sqlx::{AnyPool, Row};
 use std::collections::{HashMap, HashSet};
 
 use crate::driver::Driver;
-use push_notifications_client::types::{FcmToken, VerifyingKey, TopicId};
+use push_notifications_client::types::{FcmToken, TopicId, VerifyingKey};
 
 pub struct SqlDriver {
     pool: AnyPool,
@@ -82,7 +82,11 @@ fn build_batch_insert(
 
 #[async_trait::async_trait]
 impl Driver for SqlDriver {
-    async fn store_fcm_token(&self, verifying_key: &VerifyingKey, fcm_token: &FcmToken) -> Result<()> {
+    async fn store_fcm_token(
+        &self,
+        verifying_key: &VerifyingKey,
+        fcm_token: &FcmToken,
+    ) -> Result<()> {
         sqlx::query(
             "INSERT INTO fcm_tokens (verifying_key, fcm_token) VALUES ($1, $2)
              ON CONFLICT (verifying_key) DO UPDATE SET fcm_token = $2",

@@ -6,7 +6,7 @@ use futures::StreamExt;
 
 use push_notifications_client::requests::NotifyTopicsRequest;
 use push_notifications_client::types::{
-    FcmToken, OperationId, VerifyingKey, PushNotification, TopicId,
+    FcmToken, OperationId, PushNotification, TopicId, VerifyingKey,
 };
 
 use crate::{AppState, error::AppError, fcm_client::SendResult};

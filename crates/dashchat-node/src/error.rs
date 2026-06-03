@@ -47,5 +47,5 @@ pub enum ShutdownError {
     ProcessorCancel(Box<dyn std::any::Any + Send + 'static>),
 
     #[error(transparent)]
-    Receive(#[from] RecvError)
+    Receive(#[from] RecvError),
 }

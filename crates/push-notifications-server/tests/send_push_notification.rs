@@ -8,7 +8,7 @@ use push_notifications_client::requests::{
     AddTopicSubscriptionsRequest, NotifyTopicsRequest, RegisterFcmTokenRequest,
     RemoveTopicSubscriptionsRequest, UnregisterFcmTokenRequest, UpdateTopicSubscriptionsRequest,
 };
-use push_notifications_client::types::{FcmToken, OperationId, VerifyingKey, TopicId};
+use push_notifications_client::types::{FcmToken, OperationId, TopicId, VerifyingKey};
 use push_notifications_server::build;
 use push_notifications_server::driver::Driver;
 use push_notifications_server::driver::mem::MemDb;
@@ -409,7 +409,9 @@ async fn invalid_token_is_removed() {
 
     let db = Arc::new(MemDb::new());
 
-    db.store_fcm_token(&verifying_key, &fcm_token).await.unwrap();
+    db.store_fcm_token(&verifying_key, &fcm_token)
+        .await
+        .unwrap();
     db.add_topic_subscriptions(&verifying_key, &[topic_id.clone()].into())
         .await
         .unwrap();

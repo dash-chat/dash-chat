@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use crate::types::{FcmToken, OperationId, VerifyingKey, TopicId};
+use crate::types::{FcmToken, OperationId, TopicId, VerifyingKey};
 
 /// Maximum length for an FCM token string.
 const MAX_FCM_TOKEN_LEN: usize = 4096;
