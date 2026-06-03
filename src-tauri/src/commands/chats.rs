@@ -1,17 +1,23 @@
 use dashchat_node::{AgentId, ChatId, ChatMessageContent, ChatReaction, Node};
 use p2panda_auth::{Access, AccessLevel};
-use p2panda_core::{Hash, PublicKey};
+use p2panda_core::Hash;
 use tauri::State;
 
 #[tauri::command]
 pub async fn create_group(
-    initial_members: Vec<PublicKey>,
+    initial_members: Vec<AgentId>,
     node: State<'_, Node>,
 ) -> Result<ChatId, String> {
-    let members = initial_members
-        .into_iter()
-        .map(|pk| (pk, Access::write()))
-        .collect();
+    let mut members = std::collections::BTreeMap::new();
+    for agent_id in initial_members {
+        let device_id = node
+            .local_store
+            .lookup_contact_by_agent_id(agent_id)
+            .await
+            .map_err(|e| format!("Failed to look up contact: {e:?}"))?
+            .ok_or_else(|| format!("No device found for agent {:?}", agent_id))?;
+        members.insert(*device_id, Access::write());
+    }
     node.create_group(members)
         .await
         .map_err(|e| format!("Failed to create group: {e:?}"))

@@ -295,18 +295,25 @@ impl Node {
         mut initial_members: BTreeMap<PublicKey, p2panda_auth::Access>,
     ) -> anyhow::Result<ChatId> {
         let chat_id = Topic::random();
+        tracing::info!(
+            me = ?self.device_id().renamed(),
+            chat_id = ?chat_id.renamed(),
+            member_count = initial_members.len(),
+            "creating group"
+        );
 
         let device_ids: Vec<DeviceId> = initial_members
             .keys()
             .map(|public_key| DeviceId::from(*public_key))
             .collect();
+
         let contacts = self.local_store.lookup_contacts(&device_ids).await?;
         let agents: Vec<AgentId> = device_ids
             .iter()
             .filter_map(|did| match contacts.get(did) {
                 Some(agent) => Some(*agent),
                 None => {
-                    tracing::warn!("Contact not found: {}", did.renamed());
+                    tracing::warn!("Contact not found (when creating group): {}", did.renamed());
                     None
                 }
             })
@@ -389,7 +396,10 @@ impl Node {
         if let Some(agent_id) = agent_id {
             self.invite_to_group(chat_id, agent_id).await?;
         } else {
-            tracing::warn!("Contact not found: {}", DeviceId::from(member).renamed());
+            tracing::warn!(
+                "Contact not found (when adding group member): {}",
+                DeviceId::from(member).renamed()
+            );
         }
 
         Ok(())
