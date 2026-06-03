@@ -43,8 +43,11 @@ describe('Group messages', () => {
 		await agent2.groupChatPage.waitForMessage('Hello from Bob!');
 
 		await agent1.groupChatPage.waitForMessage('Hello from Bob!');
-		expect(await agent1.groupChatPage.getAuthorInitials('Hello from Bob!')).toBe(
-			'Bo',
+		await agent1.waitUntil(
+			async () =>
+				(await agent1.groupChatPage.getAuthorInitials('Hello from Bob!')) ===
+				'Bo',
+			{ timeoutMsg: 'Avatar initials "Bo" did not appear on Bob\'s message' },
 		);
 	});
 });
