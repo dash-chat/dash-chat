@@ -207,8 +207,6 @@
 										{@const author = Object.values(members).find(m =>
 											m.deviceIds.includes(message.author),
 										)}
-										{@const showSender =
-											position === 'first' || position === 'single'}
 										<div
 											class="row items-end gap-2 self-start max-w-[85%]"
 											data-message-hash={hash}
@@ -232,11 +230,13 @@
 												{chatId}
 												searchQuery=""
 												onToggleReaction={() => {}}
-												senderName={showSender
-													? author?.profile?.name
-													: undefined}
-												senderColor={showSender
-													? senderColor(message.author)
+												sender={(position === 'first' ||
+													position === 'single') &&
+												author?.profile?.name
+													? {
+															name: author.profile.name,
+															color: senderColor(message.author),
+														}
 													: undefined}
 											/>
 										</div>
