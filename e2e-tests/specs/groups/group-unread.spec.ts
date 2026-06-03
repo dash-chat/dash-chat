@@ -46,6 +46,11 @@ describe('Group unread messages', () => {
 		expect(await agent2.groupChatPage.scroll.isAtBottom()).toBe(false);
 		expect(await agent2.groupChatPage.scrollBottomButtonVisible()).toBe(true);
 		expect(await agent2.groupChatPage.unreadBadgeText()).toBeTruthy();
+
+		await agent2.groupChatPage.unreadDivider.waitForExist();
+		expect(
+			await agent2.groupChatPage.unreadDividerPrecedes('peer while scrolled up'),
+		).toBe(true);
 	});
 
 	it('clicking scroll-to-bottom returns to bottom and clears unread badge', async () => {
