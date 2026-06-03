@@ -235,7 +235,7 @@ async fn direct_chat_capability_upgrade() {
 async fn group_chat_capability_upgrade() {
     use maplit::btreemap;
 
-    dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
+    dashchat_node::testing::setup_tracing(&["dashchat=warn"], true);
 
     let mut alice_config = TestNodeConfig::default();
     alice_config.node_config.capabilities = Capabilities::zero();
@@ -270,12 +270,16 @@ async fn group_chat_capability_upgrade() {
         .await
         .unwrap();
 
+    println!("### alice creating group with alice and bobbi");
+
     let chat_id = alice
         .create_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
         .unwrap();
+
+    println!("### bobbi accepting");
 
     bobbi
         .behavior()
@@ -291,12 +295,16 @@ async fn group_chat_capability_upgrade() {
     .await
     .unwrap();
 
+    println!("### bobbi adding cammy");
+
     // @TODO: the test fails here because bobbi doesn't yet know about the chat group that alice
     // created.
     bobbi
         .add_group_member(chat_id, *cammy.device_id(), p2panda_auth::Access::write())
         .await
         .unwrap();
+
+    println!("### cammy accepting");
 
     cammy
         .behavior()
@@ -311,6 +319,8 @@ async fn group_chat_capability_upgrade() {
     )
     .await
     .unwrap();
+
+    println!("### alice sending zero-msg-1");
 
     // All three are at zero; messages should be V0.
     alice
@@ -337,11 +347,15 @@ async fn group_chat_capability_upgrade() {
     .await
     .unwrap();
 
+    println!("### alice getting zero-msg-1");
+
     let msgs = alice.get_messages(chat_id).await.unwrap();
     assert_eq!(
         msgs[0].content,
         ChatMessageContent::unversioned("zero-msg-1")
     );
+
+    println!("### alice upgrading");
 
     // Alice and bobbi upgrade; cammy is still zero so the group infimum remains zero.
     let alice_dir = alice.shutdown().await;
@@ -357,6 +371,8 @@ async fn group_chat_capability_upgrade() {
     .add_mailbox_client(mailbox.client())
     .await;
 
+    println!("### bobbi upgrading");
+
     let bobbi_dir = bobbi.shutdown().await;
     let bobbi = TestNode::new_at_path(
         NodeConfig {
@@ -369,6 +385,8 @@ async fn group_chat_capability_upgrade() {
     .await
     .add_mailbox_client(mailbox.client())
     .await;
+
+    println!("### bobbi waiting for capabilities to propagate after alice and bobbi upgrade");
 
     // Wait for bobbi to learn alice's updated capabilities (bobbi knows alice).
     // Cammy knows bobbi, so when bobbi propagates alice's capability to the group,
@@ -399,6 +417,8 @@ async fn group_chat_capability_upgrade() {
     .await
     .unwrap();
 
+    println!("### bobbi getting group capabilities");
+
     // Bobbi knows both alice and cammy, so bobbi's group capability is the true infimum.
     let (bobbi_group_caps, _) = bobbi.get_group_capabilities(chat_id).await.unwrap();
     assert_eq!(
@@ -407,11 +427,15 @@ async fn group_chat_capability_upgrade() {
         "bobbi's view of group should still be zero while cammy hasn't upgraded"
     );
 
+    println!("### bobbi sending still-zero-msg-2");
+
     // Bobbi sends (bobbi has full visibility of all members' capabilities).
     bobbi
         .send_message(chat_id, ChatMessageContent::text_only("still-zero-msg-2"))
         .await
         .unwrap();
+
+    println!("### all wait for all messages");
 
     wait_for(
         Duration::from_millis(100),
@@ -437,6 +461,8 @@ async fn group_chat_capability_upgrade() {
         msgs[1].content,
         ChatMessageContent::unversioned("still-zero-msg-2")
     );
+
+    println!("### cammy upgrading");
 
     // Cammy upgrades; all three are now at current, so messages should be V1.
     let cammy_dir = cammy.shutdown().await;
@@ -472,6 +498,8 @@ async fn group_chat_capability_upgrade() {
     .await
     .unwrap();
 
+    println!("### bobbi getting group capabilities after cammy upgrade");
+
     // Bobbi knows all three members, so bobbi's group capability is the true infimum.
     let (bobbi_group_caps, _) = bobbi.get_group_capabilities(chat_id).await.unwrap();
     assert_eq!(
@@ -479,6 +507,8 @@ async fn group_chat_capability_upgrade() {
         Capabilities::current(),
         "bobbi's view of group should be current after all three upgrade"
     );
+
+    println!("### bobbi sending v1-msg-3");
 
     bobbi
         .send_message(chat_id, ChatMessageContent::text_only("v1-msg-3"))
@@ -507,6 +537,8 @@ async fn group_chat_capability_upgrade() {
     let msgs = bobbi.get_messages(chat_id).await.unwrap();
     assert_eq!(msgs[2].content, ChatMessageContent::text_only("v1-msg-3"));
 
+    println!("### danae joining");
+
     // A fourth member with zero capabilities joins.
     let mut danae_config = TestNodeConfig::default();
     danae_config.node_config.capabilities = Capabilities::zero();
@@ -521,10 +553,14 @@ async fn group_chat_capability_upgrade() {
         .await
         .unwrap();
 
+    println!("### bobbi adding danae");
+
     bobbi
         .add_group_member(chat_id, *danae.device_id(), p2panda_auth::Access::write())
         .await
         .unwrap();
+
+    println!("### danae accepting");
 
     danae
         .behavior()
@@ -552,6 +588,8 @@ async fn group_chat_capability_upgrade() {
     .await
     .unwrap();
 
+    println!("### bobbi getting group capabilities after danae joins");
+
     // Bobbi knows all four members, so bobbi's group capability is the true infimum.
     let (bobbi_group_caps, _) = bobbi.get_group_capabilities(chat_id).await.unwrap();
     assert_eq!(
@@ -559,6 +597,8 @@ async fn group_chat_capability_upgrade() {
         Capabilities::zero(),
         "bobbi's view of group should revert to zero after danae (zero capability) joins"
     );
+
+    println!("### bobbi sending back-to-zero-msg-4");
 
     // Bobbi sends (bobbi has full visibility of all members' capabilities).
     bobbi

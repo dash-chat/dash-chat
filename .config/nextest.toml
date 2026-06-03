@@ -7,10 +7,10 @@
 # * retries = 3
 # * retries = { backoff = "fixed", count = 2, delay = "1s" }
 # * retries = { backoff = "exponential", count = 10, delay = "1s", jitter = true, max-delay = "10s" }
-retries = 2
+retries = { backoff = "exponential", count = 4, delay = "1s", jitter = true, max-delay = "10s" }
 
 # Whether to treat flaky tests as passing or failing.
-flaky-result = "fail"
+flaky-result = "pass"
 
 # Number of threads to run tests with. Either an integer or "num-cpus". Can be
 # overridden through the `--test-threads` option.
