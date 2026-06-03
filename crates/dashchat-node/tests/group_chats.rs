@@ -93,10 +93,14 @@ async fn test_direct_chat() {
 async fn test_p2p_direct_chat() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
 
+    let network_id = p2panda::Topic::random();
+
     let mut alice_config = NodeConfig::testing();
+    alice_config.network_id = network_id.into();
     alice_config.mdns_mode = MdnsDiscoveryMode::Active;
 
     let mut bobbi_config = NodeConfig::testing();
+    bobbi_config.network_id = network_id.into();
     bobbi_config.mdns_mode = MdnsDiscoveryMode::Active;
 
     let alice = TestNode::new(alice_config, "alice").await;

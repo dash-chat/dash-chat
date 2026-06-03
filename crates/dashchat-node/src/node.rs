@@ -16,7 +16,7 @@ use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, Operation};
-use p2panda::{Hash, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
+use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
@@ -51,6 +51,7 @@ pub struct NodeConfig {
     pub contact_code_expiry: Duration,
     pub mailboxes_config: MailboxesConfig,
     pub capabilities: Capabilities,
+    pub network_id: NetworkId,
     pub mdns_mode: MdnsDiscoveryMode,
     pub relay_url: Option<RelayUrl>,
 }
@@ -69,6 +70,7 @@ impl NodeConfig {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
             capabilities: Capabilities::current(),
+            network_id: Hash::digest(NETWORK_ID.as_bytes()).into(),
             // In testing we disable mDNS discovery and do not provide a relay address so as not
             // to effect expected behavior of existing tests.
             mdns_mode: MdnsDiscoveryMode::Disabled,
@@ -83,6 +85,7 @@ impl Default for NodeConfig {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
             capabilities: Capabilities::current(),
+            network_id: Hash::digest(NETWORK_ID.as_bytes()).into(),
             mdns_mode: MdnsDiscoveryMode::Active,
             relay_url: Some(RELAY_URL.clone()),
         }
@@ -153,7 +156,7 @@ impl Node {
 
         let url = format!("sqlite://{}", filesystem.op_store_path().to_string_lossy());
         let mut builder = P2PandaNode::builder()
-            .network_id(Hash::digest(NETWORK_ID.as_bytes()).into())
+            .network_id(config.network_id)
             .signing_key(node_keys.private_key.clone())
             .database_url(&url)
             .mdns_mode(config.mdns_mode.clone());
