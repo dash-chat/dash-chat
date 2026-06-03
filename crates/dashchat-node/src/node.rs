@@ -184,7 +184,19 @@ impl Node {
 
         // === mailboxes === //
 
-        let mailboxes = Mailboxes::spawn(op_store.clone(), config.mailboxes_config.clone()).await?;
+        let sync_tracker = std::sync::Arc::new(
+            mailbox_client::sync_tracker::MailboxSyncTracker::open(
+                filesystem.mailbox_sync_tracker_path(),
+            )
+            .await?,
+        );
+
+        let mailboxes = Mailboxes::spawn(
+            op_store.clone(),
+            sync_tracker,
+            config.mailboxes_config.clone(),
+        )
+        .await?;
 
         // === node === //
 
@@ -340,18 +352,28 @@ impl Node {
         mut initial_members: BTreeMap<VerifyingKey, p2panda_auth::Access>,
     ) -> anyhow::Result<ChatId> {
         let chat_id = Topic::random();
+        tracing::info!(
+            me = ?self.device_id().aliased(),
+            chat_id = ?chat_id.aliased(),
+            member_count = initial_members.len(),
+            "creating group"
+        );
 
         let device_ids: Vec<DeviceId> = initial_members
             .keys()
             .map(|verifying_key| DeviceId::from(*verifying_key))
             .collect();
+
         let contacts = self.local_store.lookup_contacts(&device_ids).await?;
         let agents: Vec<AgentId> = device_ids
             .iter()
             .filter_map(|did| match contacts.get(did) {
                 Some(agent) => Some(*agent),
                 None => {
-                    tracing::warn!("Contact not found: {:?}", did.aliased());
+                    tracing::warn!(
+                        "Contact not found (when creating group): {:?}",
+                        did.aliased()
+                    );
                     None
                 }
             })
@@ -374,7 +396,8 @@ impl Node {
         )
         .await?;
 
-        self.register_topic(chat_id).await?;
+        self.local_store.save_group_chat_subscribed(chat_id).await?;
+        self.initialize_topic(*chat_id).await?;
 
         for agent in agents {
             self.invite_to_group(chat_id, agent).await?;
@@ -439,7 +462,10 @@ impl Node {
         if let Some(agent_id) = agent_id {
             self.invite_to_group(chat_id, agent_id).await?;
         } else {
-            tracing::warn!("Contact not found: {:?}", DeviceId::from(member).aliased());
+            tracing::warn!(
+                "Contact not found (when adding group member): {:?}",
+                DeviceId::from(member).aliased()
+            );
         }
 
         Ok(())
@@ -487,7 +513,12 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().aliased())))]
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
-        self.register_topic(chat_id).await
+        self.local_store.save_group_chat_subscribed(chat_id).await?;
+        self.initialize_topic(*chat_id).await
+    }
+
+    pub async fn get_groups(&self) -> anyhow::Result<Vec<ChatId>> {
+        self.local_store.get_group_chat_ids().await
     }
 
     pub async fn set_profile(&self, profile: Profile) -> Result<Header, crate::Error> {

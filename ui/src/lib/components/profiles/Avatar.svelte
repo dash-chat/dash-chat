@@ -11,6 +11,7 @@
 	import type { Snippet } from 'svelte';
 
 	let {
+		waitingForProfile,
 		image,
 		initials,
 		alt,
@@ -18,6 +19,7 @@
 		id,
 		children,
 	}: {
+		waitingForProfile?: boolean | undefined;
 		image?: string | undefined;
 		initials?: string | undefined;
 		alt?: string | undefined;
@@ -41,23 +43,24 @@
 		const textAvatarStyle = `background-color: ${textAvatarData.sanitizedHexColor()}; color: ${TEXT_AVATAR_TEXT_COLOR};`;
 		return style ? `${style}; ${textAvatarStyle}` : textAvatarStyle;
 	});
-	const showPlaceholder = $derived(!avatarImage && !avatarInitials);
 </script>
 
-<wa-avatar
-	{id}
-	image={avatarImage}
-	initials={avatarInitials}
-	style={avatarStyle}
-	{alt}
-	shape="circle"
->
-	{#if showPlaceholder}
-		<wa-icon
-			slot="icon"
-			src={wrapPathInSvg(mdiAccountQuestion)}
-			style="font-size: calc(var(--size, 3rem) * 0.5)"
-		></wa-icon>
-	{/if}
-	{@render children?.()}
-</wa-avatar>
+<span class="inline-block">
+	<wa-avatar
+		{id}
+		image={avatarImage}
+		initials={avatarInitials}
+		style={avatarStyle}
+		{alt}
+		shape="circle"
+	>
+		{#if waitingForProfile}
+			<wa-icon
+				slot="icon"
+				src={wrapPathInSvg(mdiAccountQuestion)}
+				style="font-size: calc(var(--size, 3rem) * 0.5)"
+			></wa-icon>
+		{/if}
+		{@render children?.()}
+	</wa-avatar>
+</span>

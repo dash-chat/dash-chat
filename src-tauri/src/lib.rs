@@ -3,12 +3,10 @@ mod device_info;
 mod filesystem;
 mod i18n;
 mod mailbox;
+mod notifications;
 mod settings;
 mod setup;
 mod utils;
-
-#[cfg(mobile)]
-mod push_notifications;
 
 #[cfg(desktop)]
 mod menu;
@@ -94,17 +92,20 @@ pub fn run() {
             commands::contacts::active_inbox_topics,
             commands::contacts::reject_contact_request,
             commands::direct_chats::direct_chat_id,
-            commands::direct_chats::direct_chat_send_message,
+            commands::chats::send_message,
+            commands::chats::send_reaction,
             commands::chats::mark_messages_read,
-            commands::direct_chats::direct_chat_send_reaction,
+            commands::chats::create_group,
+            commands::chats::get_group_chats,
+            commands::chats::get_group_members,
             commands::settings::get_settings,
             commands::settings::set_setting,
             #[cfg(not(mobile))]
             commands::settings::set_local_mailbox_enabled,
-            // commands::chats::create_group,
-            // commands::group_chat::add_member,
-            // commands::group_chat::send_message,
-            // commands::group_chat::get_messages,
+            commands::mailbox_state::mailbox_subscribe_active_ids,
+            commands::mailbox_state::mailbox_subscribe_all_ids,
+            commands::mailbox_state::mailbox_subscribe_connection_state,
+            commands::mailbox_state::mailbox_subscribe_sync_state,
         ])
         // .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())

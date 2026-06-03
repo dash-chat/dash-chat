@@ -118,8 +118,6 @@ pub mod kind {
 #[derive(
     Copy,
     Clone,
-    Serialize,
-    Deserialize,
     Hash,
     Eq,
     PartialEq,
@@ -139,6 +137,37 @@ impl TopicId {
         Self(bytes)
     }
 }
+
+// Hex-string serialization for human-readable formats (e.g. JSON, where map
+// keys must be strings); raw byte array for binary formats (e.g. CBOR on disk).
+impl Serialize for TopicId {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        if ser.is_human_readable() {
+            hex::encode(self.0).serialize(ser)
+        } else {
+            self.0.serialize(ser)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TopicId {
+    fn deserialize<D: serde::Deserializer<'de>>(deser: D) -> Result<Self, D::Error> {
+        if deser.is_human_readable() {
+            let s = String::deserialize(deser)?;
+            let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
+            let arr: [u8; 32] = bytes
+                .try_into()
+                .map_err(|_| serde::de::Error::custom("TopicId hex must decode to 32 bytes"))?;
+            Ok(TopicId(arr))
+        } else {
+            <[u8; 32]>::deserialize(deser).map(TopicId)
+        }
+    }
+}
+
+impl p2panda_spaces::traits::SpaceId for TopicId {}
+
+pub type DashChatTopicId = TopicId;
 
 // -- SQLite encoding for TopicId --
 
@@ -185,6 +214,12 @@ impl From<TopicId> for p2panda::Topic {
 impl From<TopicId> for LogId {
     fn from(value: TopicId) -> Self {
         LogId::from_topic(value.into())
+    }
+}
+
+impl From<LogId> for TopicId {
+    fn from(value: LogId) -> Self {
+        TopicId::new(*value.as_bytes())
     }
 }
 

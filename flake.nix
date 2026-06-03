@@ -64,9 +64,11 @@
             libayatana-appindicator
             pango
           ];
+          nodeVersion = lib.versions.major (lib.strings.trim (builtins.readFile ./.node-version));
           packages = [
             pkgs.mprocs
             pkgs.just
+            pkgs."nodejs_${nodeVersion}"
             pkgs.pnpm
             pkgs.cargo-nextest
             inputs'.tauri-driver.packages.tauri-driver
@@ -92,7 +94,7 @@
             rust = pkgs.rust-bin.fromRustupToolchainFile
               ./rust-toolchain.android.toml;
           in pkgs.mkShell {
-            packages = [ rust ];
+            packages = [ rust pkgs."nodejs_${nodeVersion}" ];
             inputsFrom =
               [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
           };

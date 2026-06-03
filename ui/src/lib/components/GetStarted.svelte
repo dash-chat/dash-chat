@@ -13,6 +13,7 @@
 	import type { ContactsStore, ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useVisibleChatSummaries } from '$lib/stores/visible-chats';
 	import { useTheme } from 'konsta/svelte';
 
 	type CardColor = 'warm' | 'sage';
@@ -46,7 +47,7 @@
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	const contacts = useReactivePromise(contactsStore.contactsAgentIds);
-	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+	const chatSummaries = useVisibleChatSummaries(chatsStore);
 
 	let hasAvatar = $state(false);
 	$effect(() => {

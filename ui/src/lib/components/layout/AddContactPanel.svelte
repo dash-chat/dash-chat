@@ -14,7 +14,6 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { isMobile } from '$lib/utils/environment';
-	import { scanQrFromImage } from '$lib/utils/qrcode';
 	import {
 		Page,
 		Navbar,
@@ -35,6 +34,7 @@
 	import MyQrCodeCard from '$lib/components/contacts/MyQrCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
 	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
+	import QrCodeUploader from '$lib/components/contacts/QrCodeUploader.svelte';
 
 	type TabName = 'code' | 'scan';
 
@@ -49,6 +49,7 @@
 
 	let tab = $state<TabName>('code');
 	let scannerRef: QrCodeScanner | null = $state(null);
+	let uploaderRef: QrCodeUploader | null = $state(null);
 
 	async function receiveCode(code: string) {
 		try {
@@ -132,8 +133,6 @@
 		}
 	}
 
-	let imageFilePicker: HTMLInputElement;
-
 	async function switchTab(nextTab: TabName) {
 		if (nextTab === tab) return;
 
@@ -143,32 +142,7 @@
 
 		tab = nextTab;
 	}
-
-	async function onImageSelected() {
-		if (!imageFilePicker.files || !imageFilePicker.files[0]) return;
-		try {
-			const code = await scanQrFromImage(imageFilePicker.files[0]);
-			await receiveCode(code);
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorNoQrCodeInImage(), 'error');
-		} finally {
-			imageFilePicker.value = '';
-		}
-	}
-
-	function onScannerRequestPickFile() {
-		imageFilePicker.click();
-	}
 </script>
-
-<input
-	type="file"
-	accept="image/*"
-	bind:this={imageFilePicker}
-	style="display: none"
-	onchange={onImageSelected}
-/>
 
 {#if colorPickerOpen}
 	{#await myCode then code}
@@ -243,7 +217,7 @@
 									data-testid="add-contact-code-tab"
 								/>
 								<TabbarLink
-									active={tab !== 'code'}
+									active={tab === 'scan'}
 									onclick={() => void switchTab('scan')}
 									label={m.scan()}
 									data-testid="add-contact-scan-tab"
@@ -275,6 +249,7 @@
 								{isMobile}
 								onShare={() => shareCode(code)}
 								onSave={() => saveCode(code, color)}
+								onUpload={() => uploaderRef?.trigger()}
 								onOpenColorPicker={openColorPicker}
 							/>
 
@@ -305,14 +280,11 @@
 							</div>
 						</div>
 					</div>
+					<QrCodeUploader bind:this={uploaderRef} onSelectImage={receiveCode} />
 				{/await}
 			{/await}
-		{:else}
-			<QrCodeScanner
-				bind:this={scannerRef}
-				onSelectImage={receiveCode}
-				onRequestPickFile={onScannerRequestPickFile}
-			/>
+		{:else if tab === 'scan'}
+			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveCode} />
 		{/if}
 	</Page>
 {/if}

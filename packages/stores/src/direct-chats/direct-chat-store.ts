@@ -22,6 +22,7 @@ export interface Message {
 	content: string;
 	timestamp: number;
 	author: DeviceId;
+	seqNum: number;
 	reactions: Record<DeviceId, string>;
 }
 
@@ -62,6 +63,7 @@ export class DirectChatStore implements ReadMessagesStore {
 							hash: operation.hash,
 							content: getMessageText(body.payload.payload),
 							author,
+							seqNum: operation.header.seq_num,
 							timestamp: operation.header.timestamp,
 							reactions: {},
 						};

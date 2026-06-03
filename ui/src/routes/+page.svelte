@@ -3,9 +3,10 @@
 	import type { ChatsStore, ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useVisibleChatSummaries } from '$lib/stores/visible-chats';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
-	import AllChats from '$lib/components/AllChats.svelte';
+	import AllChats from '$lib/components/chats/AllChats.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
 	import FirstChatTooltip from '$lib/components/FirstChatTooltip.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
@@ -21,7 +22,7 @@
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
-	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+	const chatSummaries = useVisibleChatSummaries(chatsStore);
 </script>
 
 <Page>
@@ -40,7 +41,7 @@
 
 		{#snippet right()}
 			{#if theme === 'ios'}
-				<Link iconOnly href="/new-message" data-testid="home-new-message-link">
+				<Link iconOnly href="/new-message" data-testid="home-new-message-btn">
 					<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
 				</Link>
 				{#if !isWideScreen.value}
@@ -80,7 +81,7 @@
 					class="z-20 me-4 pointer-events-auto"
 					style="align-self: end;"
 					onClick={() => goto('/new-message')}
-					data-testid="home-new-message-fab"
+					data-testid="home-new-message-btn"
 				>
 					<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
 				</Fab>

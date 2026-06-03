@@ -1,79 +1,17 @@
 /**
- * Registers test utilities on `window.__test` for UI automation
- * via webview_execute_js in dev mode.
+ * Registers browser-side test utilities on `window.__test`.
  *
- * Usage:
- *   await window.__test.createProfile('Alice', 'Test')
- *   await window.__test.navigateToAddContact()
- *   window.__test.getContactCode()
- *   await window.__test.addContact('<code>')
- *   window.__test.sendMessage('Hello!')
- *   await window.__test.waitForMessage('Hello!')
+ * Only keep helpers here that genuinely need to execute inside the page:
+ *   - app-bound helpers (`tr`/`goto`/`setLocale`)
+ *   - browser-event helpers (`simulateUpdate`, `hasText`)
+ *
+ * Single-purpose DOM queries belong in `e2e-tests/helpers/pages/*`.
  */
 import type { m } from '../src/lib/paraglide/messages.js';
-import {
-	addContact,
-	getContactCode,
-	navigateToAddContact,
-} from './flows/contact-exchange';
 
 type Messages = typeof m;
 type MessageKey = Extract<keyof Messages, string>;
 type MessageParams<K extends MessageKey> = Parameters<Messages[K]>[0];
-import { openDirectChat } from './flows/open-chat';
-import { createProfile } from './flows/profile-creation';
-import { sendMessage, waitForMessage } from './flows/send-message';
-import { click, nextTick, typeInto, waitFor, waitForText } from './helpers';
-import { chatSettingsLoaded } from './pages/chat-settings';
-import {
-	chatOverflow,
-	checkNavbarOverflow,
-	clickScrollBottomButton,
-	isContactRequestBannerVisible,
-	isPeerNamePresent,
-	isScrollAtBottom,
-	messageInput,
-	messagesContainer,
-	navbarBgOpacity,
-	scrollBottomButtonVisible,
-	scrollChatToBottom,
-	scrollChatToTop,
-	scrollChatUp,
-	sendButton,
-	unreadBadgeText,
-} from './pages/direct-chat';
-import {
-	dismissCard as dismissGetStartedCard,
-	visibleCards as getStartedCards,
-} from './pages/get-started';
-import { versionItem } from './pages/help';
-import {
-	checkChatListOverflow,
-	firstChatTooltip,
-	getChatListItem,
-	hasChatListItem,
-	homeLoaded,
-} from './pages/home';
-import { isPeerProfileSheetOpen } from './pages/peer-profile-sheet';
-import { profileNameListItemContains } from './pages/profile-settings';
-import {
-	updaterBanner,
-	updaterBannerTitle,
-	updaterDismissBtn,
-} from './pages/updater-banner';
-import {
-	checkDarkMode,
-	checkOverflow,
-	checkPage,
-	checkRTL,
-} from './review/checks';
-import {
-	visitAllPages,
-	visitChatPages,
-	visitOtherPages,
-	visitProfilePages,
-	visitSettingsPages,
-} from './review/visit-all-pages';
 
 /** Trigger UpdaterBanner into a specific state via custom event. */
 function simulateUpdate(
@@ -84,68 +22,30 @@ function simulateUpdate(
 	);
 }
 
+/** True if the first element matching `selector` contains `text`. */
+function hasText(selector: string, text: string): boolean {
+	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
+}
+
 export const testUtils = {
-	waitFor,
-	waitForText,
-	typeInto,
-	click,
-	nextTick,
-	createProfile,
-	navigateToAddContact,
-	getContactCode,
-	addContact,
-	sendMessage,
-	waitForMessage,
-	openDirectChat,
-	getStartedCards,
-	dismissGetStartedCard,
-	homeLoaded,
-	firstChatTooltip,
-	getChatListItem,
-	hasChatListItem,
-	checkChatListOverflow,
-	messageInput,
-	sendButton,
-	messagesContainer,
-	isScrollAtBottom,
-	chatOverflow,
-	scrollChatUp,
-	scrollBottomButtonVisible,
-	unreadBadgeText,
-	clickScrollBottomButton,
-	scrollChatToBottom,
-	scrollChatToTop,
-	navbarBgOpacity,
-	isPeerNamePresent,
-	isContactRequestBannerVisible,
-	checkNavbarOverflow,
-	chatSettingsLoaded,
-	isPeerProfileSheetOpen,
-	profileNameListItemContains,
-	versionItem,
-	updaterBanner,
-	updaterBannerTitle,
-	updaterDismissBtn,
 	simulateUpdate,
+	hasText,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(
 			`tr(${JSON.stringify(key)}) called before registerTestUtils provided messages`,
 		);
 	},
-	checkOverflow,
-	checkDarkMode,
-	checkRTL,
-	checkPage,
-	visitAllPages,
-	visitSettingsPages,
-	visitProfilePages,
-	visitOtherPages,
-	visitChatPages,
 	/** Paraglide setLocale — set by registerTestUtils from +layout.svelte. */
 	setLocale: (_locale: string) => {},
 	/** SvelteKit goto — set by registerTestUtils from +layout.svelte. */
 	goto: (_path: string) => Promise.resolve() as Promise<void>,
+	/** Enable preview features — set by registerTestUtils from +layout.svelte. */
+	enablePreviewFeatures: (): void => {
+		throw new Error(
+			'enablePreviewFeatures called before registerTestUtils provided the callback',
+		);
+	},
 };
 
 declare global {
@@ -158,8 +58,12 @@ export function registerTestUtils(
 	goto?: (path: string) => Promise<void>,
 	setLocale?: (locale: string) => void,
 	messages?: Messages,
+	enablePreviewFeatures?: () => void,
 ) {
 	window.__test = testUtils;
+	if (enablePreviewFeatures) {
+		testUtils.enablePreviewFeatures = enablePreviewFeatures;
+	}
 	if (goto) {
 		testUtils.goto = goto;
 	}

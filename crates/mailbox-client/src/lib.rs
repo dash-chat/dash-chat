@@ -1,6 +1,7 @@
 pub mod manager;
 pub mod mem;
 pub mod store;
+pub mod sync_tracker;
 pub mod toy;
 
 #[cfg(test)]

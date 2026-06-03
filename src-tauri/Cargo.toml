@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.15.0"
+version = "0.16.0"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -43,6 +43,7 @@ push-notifications-client = { path = "../crates/push-notifications-client" }
 dashchat-utils = { path = "../crates/dashchat-utils" }
 
 p2panda = { workspace = true }
+p2panda-auth = { workspace = true }
 p2panda-core = { workspace = true }
 
 fs2 = "0.4"
@@ -67,6 +68,8 @@ app_dirs2 = "2.5.5"
 uuid = "1"
 serde = "1"
 serde_json = "1"
+sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio"] }
+chrono = "0.4.42"
 sonix-i18n = "0.1.1"
 futures = "0.3"
 
@@ -109,3 +112,4 @@ e2e-tests = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+tempfile = "3"

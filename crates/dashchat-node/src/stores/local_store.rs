@@ -41,6 +41,9 @@ const MIGRATIONS: &[&str] = &[
         topic_id BLOB NOT NULL PRIMARY KEY,
         expires_at_nanos INTEGER NOT NULL
     )",
+    "CREATE TABLE IF NOT EXISTS group_chats (
+        chat_id BLOB NOT NULL PRIMARY KEY
+    )",
 ];
 
 #[derive(Clone, Debug)]
@@ -340,6 +343,27 @@ impl LocalStore {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    pub async fn save_group_chat_subscribed(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("INSERT OR IGNORE INTO subscribed_topics (topic_id) VALUES (?)")
+            .bind(*chat_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
+            .bind(*chat_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn get_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
+        let rows: Vec<(TopicId,)> = sqlx::query_as("SELECT chat_id FROM group_chats")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(|(id,)| ChatId::new(*id)).collect())
     }
 }
 

@@ -2,7 +2,6 @@
 mod tests {
     use std::time::Duration;
 
-    use aliased::Aliasing;
     use dashchat_compat::{VersionConvert, VersionConvertError};
 
     use mailbox_client::mem::MemMailbox;
@@ -13,7 +12,7 @@ mod tests {
         ShareIntent,
         chat::*,
         compat::Capabilities,
-        testing::{ClusterConfig, TestNode, TestNodeConfig, consistency, wait_for},
+        testing::{ClusterConfig, TestNode, TestNodeConfig, consistency},
     };
 
     #[test]

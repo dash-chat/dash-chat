@@ -7,6 +7,7 @@
 	import { goto } from '$app/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import {
 		Navbar,
 		NavbarBackLink,
@@ -80,7 +81,8 @@
 				linkProps={{ href: '/new-group' }}
 				title={m.newGroup()}
 				chevron={false}
-				style="display: none"
+				class={previewFeatures.enabled ? '' : '!hidden'}
+				data-testid="new-message-new-group"
 			>
 				{#snippet media()}
 					<wa-icon src={wrapPathInSvg(mdiAccountMultiplePlus)}></wa-icon>

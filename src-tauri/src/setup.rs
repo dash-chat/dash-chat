@@ -44,6 +44,11 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     let fs = FileSystem::new(&app_handle)?;
     let local_data_path = fs.app_data_dir().clone();
 
+    let notified_operations_store =
+        crate::notifications::NotifiedOperationsStore::open(&fs.notified_operations_db_path())
+            .await?;
+    app_handle.manage(notified_operations_store);
+
     #[cfg(not(mobile))]
     {
         app_handle.set_menu(crate::menu::build_menu(&app_handle)?)?;
@@ -77,7 +82,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     #[cfg(mobile)]
     {
-        crate::push_notifications::setup_push_notifications(
+        crate::notifications::push_notifications::setup_push_notifications(
             app_handle.clone(),
             topic_subscribed_rx,
         )?;
@@ -157,7 +162,7 @@ fn spawn_notification_loop(
             let simplified_operation = match simplify(
                 notification.topic,
                 notification.header.hash(),
-                notification.header,
+                notification.header.clone(),
                 Some(Body::new(&body[..])),
             ) {
                 Ok(o) => o,
@@ -170,6 +175,8 @@ fn spawn_notification_loop(
             if let Err(err) = app_handle.emit("p2panda://new-operation", simplified_operation) {
                 log::error!("Failed to emit operation: {err:?}");
             }
+
+            crate::notifications::show_sync_notification(&app_handle, &notification).await;
 
             // Small delay between emissions to avoid overwhelming the WebKitGTK
             // event loop with rapid-fire events (which can freeze the webview).

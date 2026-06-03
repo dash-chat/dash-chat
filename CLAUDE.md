@@ -253,15 +253,15 @@ Create Profile (first launch only)
 
 ### UI Test Utilities
 
-All interactive elements have `data-testid` attributes. The selector registry and page objects live in `ui/tests/`:
+All interactive elements have `data-testid` attributes. Page objects and selector helpers live in `e2e-tests/helpers/`:
 
-- **`ui/tests/selectors.ts`** — Single source of truth for all `data-testid` selectors, organized by page. Use `S.pageName.elementName` to get a CSS selector like `[data-testid="page-element"]`.
-- **`ui/tests/pages/*.ts`** — Page object modules exporting selectors, interaction descriptors, and assertion scripts for each page.
-- **`ui/tests/flows/*.ts`** — Multi-step workflow descriptors (profile creation, contact exchange, send message).
+- **`e2e-tests/helpers/selectors.ts`** — Exports `tid(id)` which produces a `[data-testid="id"]` CSS selector. Use this everywhere instead of hand-writing the attribute selector.
+- **`e2e-tests/helpers/pages/**/*.ts`** — One page object per route (e.g. `home-page.ts`, `direct-chats/direct-chat-page.ts`, `settings/profile/edit-name-page.ts`). Each extends `TestPage`, exposes its elements as `this.agent.$(tid('...'))` fields, and provides a `ready()` method that waits for the page to be interactive.
+- **`e2e-tests/helpers/components/*.ts`** — Page objects for reusable components (sheets, banners) that aren't tied to one route.
+- **`e2e-tests/helpers/flows/*.ts`** — Multi-page UI flows shared across specs (e.g. `exchange-contacts.ts` walks both agents through navigateToAddContact + enterCode).
+- **`e2e-tests/setup/setup-agents.ts`** — `setupAgent('agent1' | 'agent2')` returns an `Agent` (the WDIO browser plus all page-object instances and a few agent-level helpers like `agent.tr`, `agent.checkOverflow`, `agent.setTheme`).
 
-When driving the app via Tauri MCP tools, always use `data-testid` selectors instead of CSS class selectors. For Konsta `ListInput` components, the `data-testid` lands on the outer `<li>`, so type into `[data-testid="..."] input` (or `textarea` for text areas).
-
-Reference `ui/tests/selectors.ts` for the full list of available selectors.
+When driving the app via Tauri MCP tools (not via WDIO), use `data-testid` selectors directly. For Konsta `ListInput` components, the `data-testid` lands on the outer `<li>`, so type into `[data-testid="..."] input` (or `textarea` for text areas).
 
 ### State Management (packages/stores)
 
@@ -419,17 +419,26 @@ just test e2e full-flow
 ```
 
 **Key details:**
-- Tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`
-- Two `tauri-driver` instances run on ports 4444 and 4446
-- Launch scripts (`e2e-tests/scripts/`) set `DATA_DIR` and `MAILBOX_URL` env vars
-- The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events
-- Test data is stored in `.dbs/e2e/` and cleaned up after each run
+- Tests use page objects from `e2e-tests/helpers/pages/`. `setupAgent('agent1')` returns an `Agent` with all page-object instances pre-attached (`agent.homePage`, `agent.directChatPage`, …).
+- For DOM-side work that can't be modeled as a click (bulk overflow scans, programmatic event dispatch, test-only file-input injection), tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`.
+- Two `tauri-driver` instances run on ports 4444 and 4446.
+- Launch scripts (`e2e-tests/setup/`) set `DATA_DIR` and `MAILBOX_URL` env vars.
+- The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events.
+- Test data is stored in `.dbs/e2e/` and cleaned up after each run.
 
-**REQUIREMENT:** E2E tests must use `window.__test` helpers for DOM queries instead of inlining `document.querySelector` calls. Add helper functions to `ui/tests/pages/*.ts`, register them in `ui/tests/setup-utils.ts`, then call them via `agent.execute(() => window.__test.myHelper())` in the spec. This keeps DOM selectors in one place and makes tests readable.
+**E2E coding style:**
 
-**REQUIREMENT:** New UI features must include E2E test coverage in `e2e-tests/specs/`.
+- **Navigate via the UI, not `agent.goto()`.** Always walk through the app the way a user would — click back buttons, sidebar links, FABs, list items. `agent.goto()` and `window.__test.goto()` exist as escape hatches only for cases that genuinely cannot be reached by clicking (e.g. simulating a page reload, or the `review-checks` spec that programmatically enumerates every page). If you add a new `goto()` call, leave a comment explaining why the UI path doesn't work.
+- **Specs run in narrow (mobile) layout by default.** `setupAgent` forces `agent.setWideScreen(false)` so back buttons (`direct-chat-back`, `offline-back`, …) and FABs render — most of those are gated by `{#if !isWideScreen.value}`. When a spec needs the desktop two-panel layout (e.g. `review-checks` switching combos), call `agent.setWideScreen(true)` in `before()`. Wide-screen mode mounts `ChatListPanel` / `SettingsPanel` / `NewMessagePanel` in the sidebar; some navigation steps that need a back-out in narrow can skip it in wide-screen because the sidebar is always there. The handful of cross-mode helpers (`helpers/review/visit-all-pages.ts`) guard with `if (await page.back.isDisplayed())` to handle both.
+- **Use `page.ready()` instead of bare waits after navigation.** Each page object has a `ready()` method that waits for the first stable element on that page. Call it right after the click that triggered the navigation.
+- **Only pass custom `waitUntil` / `waitForExist` arguments when strictly necessary.** The default `waitforTimeout` (10s) is correct for incidental waits — animations, navigations, store hydration. Override `timeout` / `interval` / `timeoutMsg` only when (a) the operation genuinely needs longer than 10s (network sync, p2p propagation, connection-state flips that depend on real timeouts) or (b) a custom error message is the only way to diagnose a flake. Don't copy timeouts from neighbouring code without justifying them.
+- **One page object per route, one spec per feature.** When you add a new route under `ui/src/routes/`, add a matching page object under `e2e-tests/helpers/pages/` (mirror the route structure: `routes/settings/profile/edit-name/+page.svelte` → `helpers/pages/settings/profile/edit-name-page.ts`) and wire it into `setup-agents.ts`. New UI features must also ship with a spec in `e2e-tests/specs/` covering the happy path.
 
-**REQUIREMENT:** The review-checks E2E test (`e2e-tests/specs/review-checks.spec.ts`) must visit every page in the app. When adding a new page, add it to `ui/tests/review/visit-all-pages.ts` so it is covered by the overflow, dark-mode, and RTL checks.
+**REQUIREMENT:** E2E specs must drive the UI via page objects (`agent.homePage.newMessageButton.click()`), not by inlining `document.querySelector` or duplicating selectors. DOM-side helpers that can't be expressed as clicks belong in `ui/tests/setup-utils.ts` under `window.__test`.
+
+**REQUIREMENT:** New UI features must include E2E test coverage in `e2e-tests/specs/`, and every new route must have a corresponding page object under `e2e-tests/helpers/pages/` registered in `setup-agents.ts`.
+
+**REQUIREMENT:** The review-checks E2E test (`e2e-tests/specs/review-checks.spec.ts`) must visit every page in the app. When adding a new page, add it to `e2e-tests/helpers/review/visit-all-pages.ts` so it is covered by the overflow, dark-mode, and RTL checks.
 
 ### Backwards Compatibility Tests
 
@@ -513,7 +522,7 @@ Testing keyboard behavior and UI interactions in the iOS simulator has inherent 
 - **Log redaction**: The `get_redacted_log` command in `src-tauri/src/commands/logs.rs` strips sensitive data from log files before they are sent as error report attachments. This includes: hex strings, base64 blobs, public key byte arrays, hashes, signatures, device/agent IDs, timestamps, profile fields (name, surname, about), chat message content, and reactions. **When adding any new feature that introduces private or user-generated data, you must also update the redaction patterns in `get_redacted_log` to ensure that data never leaves the device in error reports.**
 - **P2panda fork**: This project uses a custom fork of p2panda. Do not update p2panda dependencies without checking compatibility.
 - **Rust edition**: Uses Rust edition 2021 (src-tauri) and 2024 (dashchat-node)
-- **Nightly features**: dashchat-node uses `#![feature(bool_to_result)]`
+- **Rust toolchain**: Pinned to stable 1.94.0 via `rust-toolchain.toml` (mobile variants: `rust-toolchain.ios.toml`, `rust-toolchain.android.toml`).
 - **Mobile vs Desktop**: Code paths differ for mobile/desktop (check `#[cfg(mobile)]` and `#[cfg(not(mobile))]`)
 - **Internationalization**: UI supports multiple languages via Weblate integration
 

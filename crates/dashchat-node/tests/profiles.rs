@@ -37,7 +37,7 @@ async fn test_set_profile_and_my_profile() {
         avatar: Some("alice_avatar.png".to_string()),
         about: None,
     };
-    let header = alice.set_profile(profile.clone()).await.unwrap();
+    let _header = alice.set_profile(profile.clone()).await.unwrap();
 
     let retrieved = alice.my_profile().await.unwrap();
     assert_eq!(retrieved, Some(profile));
@@ -56,7 +56,7 @@ async fn test_set_profile_overwrites_previous_profile() {
         avatar: Some("new_avatar.png".to_string()),
         about: None,
     };
-    let header = alice.set_profile(updated_profile.clone()).await.unwrap();
+    let _header = alice.set_profile(updated_profile.clone()).await.unwrap();
 
     let retrieved = alice.my_profile().await.unwrap();
     assert_eq!(retrieved, Some(updated_profile));

@@ -1851,11 +1851,12 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "app_dirs2",
  "async-trait",
+ "chrono",
  "dashchat-node",
  "dashchat-utils",
  "env_logger",
@@ -1872,13 +1873,14 @@ dependencies = [
  "mailbox-client",
  "mailbox-server",
  "mdns-sd",
- "nanoid 0.5.0",
+ "nanoid 0.4.0",
  "ndk-sys",
  "netdev 0.43.0",
  "opener",
  "openssl-sys",
  "oslog",
  "p2panda",
+ "p2panda-auth",
  "p2panda-core",
  "push-notifications-client",
  "regex",
@@ -1886,6 +1888,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sonix-i18n",
+ "sqlx",
  "sysinfo",
  "tauri",
  "tauri-build",
@@ -1907,6 +1910,7 @@ dependencies = [
  "tauri-plugin-system-bars-styles",
  "tauri-plugin-updater",
  "tauri-plugin-virtual-keyboard-padding",
+ "tempfile",
  "time",
  "tokio",
  "url2",
@@ -5066,6 +5070,8 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bytes",
+ "chrono",
+ "ciborium",
  "derive_more 1.0.0",
  "hex",
  "mailbox-server",
@@ -5075,6 +5081,8 @@ dependencies = [
  "pretty_assertions",
  "reqwest 0.12.28",
  "serde",
+ "sqlx",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -9820,7 +9828,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification"
 version = "2.3.3"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#092cdc38115157dba4673ff534d536868b7e5f17"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#5a86891aa12086cc0ec77a3257f552d61a084c89"
 dependencies = [
  "log",
  "notify-rust",
@@ -9841,7 +9849,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-macros"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#092cdc38115157dba4673ff534d536868b7e5f17"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#5a86891aa12086cc0ec77a3257f552d61a084c89"
 dependencies = [
  "jni 0.21.1",
  "libc",
@@ -9855,7 +9863,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-models"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#092cdc38115157dba4673ff534d536868b7e5f17"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#5a86891aa12086cc0ec77a3257f552d61a084c89"
 dependencies = [
  "rand 0.8.6",
  "serde",

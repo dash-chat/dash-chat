@@ -1,4 +1,4 @@
-import { reactive } from 'signalium';
+import { reactive, signal } from 'signalium';
 
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
@@ -18,16 +18,9 @@ import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
 import { type IChatsClient } from './chats-client';
 
-function random_hexadecimal(length: number) {
-	var result = '';
-	var characters = 'abcdef0123456789';
-	var charactersLength = characters.length;
-	for (let i = 0; i < length; i++)
-		result += characters.charAt(Math.floor(Math.random() * charactersLength));
-	return result;
-}
-
 export class ChatsStore {
+	private groupChatVersion = signal(0);
+
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
@@ -36,20 +29,28 @@ export class ChatsStore {
 			new DirectChatClient(),
 		private groupChatClientFactory: () => IGroupChatClient = () =>
 			new GroupChatClient(),
-	) {}
+	) {
+		this.logsStore.logsClient.onNewOperation((_topicId, op) => {
+			if (op.body?.type === 'Chat' && op.body.payload.type === 'JoinGroup') {
+				this.groupChatVersion.value++;
+			}
+		});
+	}
+
+	private groupChatIds = reactive(async () => {
+		void this.groupChatVersion.value;
+		try {
+			return await this.client.getGroupChats();
+		} catch (err) {
+			console.error('Failed to fetch group chats', err);
+			throw err;
+		}
+	});
 
 	async createGroup(initialMembers: VerifyingKey[]): Promise<GroupChatStore> {
-		const chatId = random_hexadecimal(64);
-
-		await this.client.createGroupChat(chatId);
-
-		const groupStore = this.groupChats(chatId);
-
-		for (const initialMember of initialMembers) {
-			await groupStore.addMember(initialMember);
-		}
-
-		return groupStore;
+		const chatId = await this.client.createGroup(initialMembers);
+		this.groupChatVersion.value++;
+		return this.groupChats(chatId);
 	}
 
 	groupChats = memo(
@@ -79,23 +80,39 @@ export class ChatsStore {
 	});
 
 	allChatsSummaries = reactive(async () => {
-		const chatIds = await this.allChatsIds();
+		const [direct, groups, pending] = await Promise.all([
+			this.allDirectChatSummaries(),
+			this.allGroupChatSummaries(),
+			this.allPendingRequestSummaries(),
+		]);
+		const summaries = [...direct, ...groups, ...pending];
+		summaries.sort((a, b) => b.lastEvent.timestamp - a.lastEvent.timestamp);
+		return summaries;
+	});
 
-		let summaries = await Promise.all(
+	private allDirectChatSummaries = reactive(async () => {
+		const chatIds = await this.allChatsIds();
+		return Promise.all(
 			chatIds.map(chatId => this.directChats(chatId).summary()),
 		);
+	});
 
-		const pendingRequests = await this.contactsStore.contactRequests();
-
-		// Deduplicate by agent_id
-		const uniquePendingRequests = pendingRequests.filter(
-			(request, index, self) =>
-				self.findIndex(r => r.code.agent_id === request.code.agent_id) ===
-				index,
+	private allGroupChatSummaries = reactive(async () => {
+		const groupChatIds = await this.groupChatIds();
+		return Promise.all(
+			groupChatIds.map(chatId => this.groupChats(chatId).summary()),
 		);
+	});
 
-		const pendingRequestsSummaries: ChatSummary[] = uniquePendingRequests.map(
-			pendingRequest => ({
+	private allPendingRequestSummaries = reactive(
+		async (): Promise<ChatSummary[]> => {
+			const pendingRequests = await this.contactsStore.contactRequests();
+			const unique = pendingRequests.filter(
+				(request, index, self) =>
+					self.findIndex(r => r.code.agent_id === request.code.agent_id) ===
+					index,
+			);
+			return unique.map(pendingRequest => ({
 				type: 'ContactRequest',
 				chatId: pendingRequest.code.agent_id,
 				name: fullName(pendingRequest.profile),
@@ -105,12 +122,7 @@ export class ChatsStore {
 					timestamp: pendingRequest.timestamp,
 				},
 				unreadMessages: 1,
-			}),
-		);
-
-		summaries = [...summaries, ...pendingRequestsSummaries];
-		summaries.sort((a, b) => b.lastEvent.timestamp - a.lastEvent.timestamp);
-
-		return summaries;
-	});
+			}));
+		},
+	);
 }

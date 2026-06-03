@@ -5,13 +5,32 @@ use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Settings {
     pub local_mailbox_enabled: bool,
+    #[serde(default = "default_notifications_enabled")]
     pub notifications_enabled: bool,
     pub qr_color: Option<String>,
     pub color_scheme: Option<String>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            local_mailbox_enabled: false,
+            notifications_enabled: default_notifications_enabled(),
+            qr_color: None,
+            color_scheme: None,
+        }
+    }
+}
+
+// On desktop the OS-level permission is always granted, so default the
+// app-level toggle to ON. On mobile the user has to grant permission
+// through the OS dialog, which we tie to flipping the toggle ON.
+const fn default_notifications_enabled() -> bool {
+    cfg!(desktop)
 }
 
 pub(crate) fn load_settings<R: Runtime>(handle: &AppHandle<R>) -> Settings {
