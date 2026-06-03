@@ -65,7 +65,7 @@ impl Behavior {
     ) -> anyhow::Result<Capabilities> {
         let mut watcher = self.watcher.lock().await;
         watcher
-            .watch_mapped(Duration::from_secs(30), |n: &Notification| {
+            .watch_mapped(Duration::from_secs(15), |n: &Notification| {
                 if n.header.verifying_key != *device_id {
                     return None;
                 }
@@ -86,7 +86,7 @@ impl Behavior {
             .watcher
             .lock()
             .await
-            .watch_mapped(Duration::from_secs(30), |n: &Notification| {
+            .watch_mapped(Duration::from_secs(15), |n: &Notification| {
                 tracing::debug!(
                     hash = ?n.header.hash(),
                     "checking for group invitation"
