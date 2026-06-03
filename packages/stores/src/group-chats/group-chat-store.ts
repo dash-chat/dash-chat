@@ -24,7 +24,7 @@ export interface GroupInfo {
 
 export interface GroupMemberWithProfile {
 	agentId: AgentId;
-	devicesIds: DeviceId[];
+	deviceIds: DeviceId[];
 	profile: Profile | undefined;
 	admin: boolean;
 }
@@ -151,11 +151,11 @@ export class GroupChatStore {
 	});
 
 	private buildMember = reactive(
-		async (agentId: AgentId, devices: DeviceId[], admin: boolean) => {
+		async (agentId: AgentId, deviceIds: DeviceId[], admin: boolean) => {
 			const profile = await this.contactsStore.profiles(agentId);
 			return {
 				agentId,
-				devicesIds: devices,
+				deviceIds,
 				profile,
 				admin,
 			} satisfies GroupMemberWithProfile;

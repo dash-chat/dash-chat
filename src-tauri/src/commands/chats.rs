@@ -107,7 +107,7 @@ pub async fn get_group_members(
             is_admin: false,
         });
         entry.device_ids.push(device_id);
-        entry.is_admin = is_admin;
+        entry.is_admin |= is_admin;
     }
     Ok(grouped.into_values().collect())
 }

@@ -114,7 +114,7 @@
 									</div>
 								{:else}
 									{@const author = Object.values(members).find(m =>
-										m.devices.includes(message.author),
+										m.deviceIds.includes(message.author),
 									)}
 									<div
 										class="row items-end gap-2 self-start max-w-[85%]"
