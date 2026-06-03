@@ -29,7 +29,13 @@ export class ChatsStore {
 			new DirectChatClient(),
 		private groupChatClientFactory: () => IGroupChatClient = () =>
 			new GroupChatClient(),
-	) {}
+	) {
+		this.logsStore.logsClient.onNewOperation((_topicId, op) => {
+			if (op.body?.type === 'Chat' && op.body.payload.type === 'JoinGroup') {
+				this.groupChatVersion.value++;
+			}
+		});
+	}
 
 	private groupChatIds = reactive(async () => {
 		void this.groupChatVersion.value;
