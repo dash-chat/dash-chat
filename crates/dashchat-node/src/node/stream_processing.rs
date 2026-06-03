@@ -250,6 +250,7 @@ impl Node {
         // XXX: don't repair this often.
         // Box::pin(self.repair_spaces_and_publish()).await?;
 
+        #[cfg(feature = "testing")]
         self.op_store.mark_op_processed(topic, &hash);
 
         anyhow::Ok(())

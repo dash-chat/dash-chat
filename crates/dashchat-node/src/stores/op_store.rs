@@ -20,9 +20,8 @@ pub struct OpStore {
     #[deref]
     #[deref_mut]
     pub(crate) store: SqliteStore,
-    // @TODO: This appears to only be used in the test node where there is a note about removing
-    // or refactoring that code in any case. I believe it can be removed but will wait to confirm
-    // this.
+
+    #[cfg(feature = "testing")]
     pub processed_ops: Arc<RwLock<HashMap<TopicId, HashSet<Hash>>>>,
 }
 
@@ -137,6 +136,7 @@ impl OpStore {
         Ok(authors)
     }
 
+    #[cfg(feature = "testing")]
     pub fn mark_op_processed(&self, topic: TopicId, hash: &Hash) {
         self.processed_ops
             .write()
@@ -146,6 +146,7 @@ impl OpStore {
             .insert(hash.clone());
     }
 
+    #[cfg(feature = "testing")]
     pub fn is_op_processed(&self, topic: &TopicId, hash: &Hash) -> bool {
         self.processed_ops
             .read()
