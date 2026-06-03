@@ -3,7 +3,6 @@ use std::time::Duration;
 use mailbox_client::mem::MemMailbox;
 
 use dashchat_node::{testing::*, *};
-use named_id::*;
 
 const TRACING_FILTER: [&str; 4] = [
     "dashchat=info",
@@ -38,7 +37,7 @@ async fn test_set_profile_and_my_profile() {
         avatar: Some("alice_avatar.png".to_string()),
         about: None,
     };
-    alice.set_profile(profile.clone()).await.unwrap();
+    let header = alice.set_profile(profile.clone()).await.unwrap();
 
     let retrieved = alice.my_profile().await.unwrap();
     assert_eq!(retrieved, Some(profile));
@@ -57,7 +56,7 @@ async fn test_set_profile_overwrites_previous_profile() {
         avatar: Some("new_avatar.png".to_string()),
         about: None,
     };
-    alice.set_profile(updated_profile.clone()).await.unwrap();
+    let header = alice.set_profile(updated_profile.clone()).await.unwrap();
 
     let retrieved = alice.my_profile().await.unwrap();
     assert_eq!(retrieved, Some(updated_profile));
@@ -78,8 +77,8 @@ async fn test_profiles_sync_between_contacts() {
         .add_mailbox_client(mailbox.client())
         .await;
 
-    println!("alice: {:?}", alice.device_id().short());
-    println!("bobbi: {:?}", bobbi.device_id().short());
+    println!("alice: {}", alice.device_id());
+    println!("bobbi: {}", bobbi.device_id());
 
     introduce_and_wait([&alice, &bobbi]).await;
 

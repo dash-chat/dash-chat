@@ -6,7 +6,7 @@ pub mod node;
 mod payload;
 pub mod stores;
 pub mod topic;
-mod util;
+pub mod util;
 
 pub mod polestar;
 
@@ -17,7 +17,7 @@ pub mod compat;
 #[cfg(feature = "testing")]
 pub mod testing;
 
-use named_id::*;
+pub use aliased::Aliasing;
 
 pub use chat::*;
 pub use contact::{QrCode, ShareIntent};

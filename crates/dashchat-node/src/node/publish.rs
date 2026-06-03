@@ -5,7 +5,7 @@ use crate::topic::TopicKind;
 use super::*;
 
 impl Node {
-    #[tracing::instrument(skip_all, fields(me=?self.device_id().renamed()))]
+    #[tracing::instrument(skip_all, fields(me=?self.device_id().aliased()))]
     pub(super) async fn publish<K: TopicKind>(
         &self,
         topic: Topic<K>,
@@ -17,7 +17,7 @@ impl Node {
         // Construct a node actor command.
         let payload: Payload = payload.into();
 
-        debug!(topic = %topic, payload = ?payload, "publish operation");
+        debug!(topic = ?topic.aliased(), payload = ?payload.aliased(), "publish operation");
 
         let command = Command::Publish {
             topic: topic.into(),

@@ -79,6 +79,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "aliased"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42a1cd7a850b4491532b65a0bc9a94cbf4fc5483d0d4c4423bd7081b9e7db1fb"
+dependencies = [
+ "aho-corasick",
+ "regex",
+ "tracing",
+]
+
+[[package]]
 name = "aligned"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1868,15 +1879,7 @@ dependencies = [
  "openssl-sys",
  "oslog",
  "p2panda",
- "p2panda-auth",
  "p2panda-core",
- "p2panda-discovery",
- "p2panda-encryption",
- "p2panda-net",
- "p2panda-spaces",
- "p2panda-store",
- "p2panda-stream",
- "p2panda-sync",
  "push-notifications-client",
  "regex",
  "rustls 0.23.40",
@@ -1915,9 +1918,9 @@ dependencies = [
 name = "dashchat-compat"
 version = "0.1.0"
 dependencies = [
+ "aliased",
  "ciborium",
  "derive_more 2.1.1",
- "named-id",
  "serde",
  "serde_json",
 ]
@@ -1926,6 +1929,7 @@ dependencies = [
 name = "dashchat-node"
 version = "0.1.0"
 dependencies = [
+ "aliased",
  "anyhow",
  "async-trait",
  "base64 0.22.1",
@@ -1942,18 +1946,12 @@ dependencies = [
  "mailbox-client",
  "mailbox-server",
  "maplit",
- "named-id",
  "nanoid 0.4.0",
  "p2panda",
  "p2panda-auth",
  "p2panda-core",
- "p2panda-discovery",
- "p2panda-encryption",
- "p2panda-net",
  "p2panda-spaces",
  "p2panda-store",
- "p2panda-stream",
- "p2panda-sync",
  "pretty_assertions",
  "rand 0.9.4",
  "serde",
@@ -2026,7 +2024,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccc2776f0c61eca1ca32528f85548abd1a4be8fb53d1b21c013e4f18da1e7090"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -5064,13 +5062,13 @@ dependencies = [
 name = "mailbox-client"
 version = "0.1.0"
 dependencies = [
+ "aliased",
  "anyhow",
  "async-trait",
  "bytes",
  "derive_more 1.0.0",
  "hex",
  "mailbox-server",
- "named-id",
  "nanoid 0.5.0",
  "once_cell",
  "p2panda-core",
@@ -5376,27 +5374,6 @@ dependencies = [
  "derive_more 2.1.1",
  "n0-error",
  "n0-future",
-]
-
-[[package]]
-name = "named-id"
-version = "0.1.0"
-source = "git+https://github.com/maackle/named-id.git#424294a3fff3ffb65cc37ffbd1c3b764ab3f4a54"
-dependencies = [
- "named-id-derive",
- "regex",
- "serde",
- "tracing",
-]
-
-[[package]]
-name = "named-id-derive"
-version = "0.1.0"
-source = "git+https://github.com/maackle/named-id.git#424294a3fff3ffb65cc37ffbd1c3b764ab3f4a54"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use aliased::Aliasing;
 use futures::future::join;
 use futures::{FutureExt, Stream};
 use p2panda::network::NetworkError;
@@ -222,7 +223,7 @@ impl Actor {
                 self.tx_map.insert(topic, tx.clone());
                 self.streams.insert(topic, rx);
                 tx
-            },
+            }
         };
 
         let import_fut = tx.import(stream).await?;
@@ -242,7 +243,7 @@ impl Actor {
                 self.tx_map.insert(topic, tx.clone());
                 self.streams.insert(topic, rx);
                 tx
-            },
+            }
         };
 
         // If the payload represents a change to group state then publish it as a groups control
@@ -254,8 +255,10 @@ impl Actor {
 
         let (processed_tx, processed_rx) = oneshot::channel();
         let hash = publish_fut.hash();
+        hash.alias_numbered();
         let _ = self.processed.insert(hash, processed_tx);
         let process_fut = ProcessFuture::new(hash, publish_fut, processed_rx);
+
         Ok(process_fut)
     }
 
@@ -333,7 +336,7 @@ impl Actor {
 }
 
 /// Future which can be awaited to find out when a locally published operation has finished
-/// system layer processing.
+/// system and application layer processing.
 pub struct ProcessFuture {
     hash: Hash,
     inner: Pin<Box<dyn Future<Output = <PublishFuture as Future>::Output> + Send + Sync>>,
@@ -397,7 +400,7 @@ pub enum ProcessorError {
 #[cfg(test)]
 mod tests {
     use futures::future::join_all;
-    use p2panda::{Hash, SigningKey, Topic, VerifyingKey};
+    use p2panda::{Hash, Node, SigningKey, Topic, VerifyingKey};
     use p2panda_auth::Access;
     use p2panda_auth::group::{GroupAction, GroupCrdtState, GroupMember};
     use p2panda_auth::processor::{GroupsArgs, GroupsOperation};
@@ -438,11 +441,21 @@ mod tests {
     async fn subscribe_and_send() {
         setup_tracing(&["dashchat=info"], true);
 
+        let network_id = Topic::random();
+
         let topic_a = Topic::random();
         let topic_b = Topic::random();
 
-        let alice = p2panda::spawn().await.unwrap();
-        let bobbi = p2panda::spawn().await.unwrap();
+        let alice = Node::builder()
+            .network_id(network_id.into())
+            .spawn()
+            .await
+            .unwrap();
+        let bobbi = Node::builder()
+            .network_id(network_id.into())
+            .spawn()
+            .await
+            .unwrap();
 
         let (alice_actor, alice_events_rx) = Actor::new(alice);
         let alice_actor_tx = alice_actor.spawn().await.unwrap();
@@ -520,10 +533,21 @@ mod tests {
     async fn process_groups_control_messages() {
         setup_tracing(&["dashchat=info", "named_id=warn"], true);
 
+        let network_id = Topic::random();
         let topic = Topic::random();
 
-        let alice = p2panda::spawn().await.unwrap();
-        let bobbi = p2panda::spawn().await.unwrap();
+        let alice = Node::builder()
+            .network_id(network_id.into())
+            .spawn()
+            .await
+            .unwrap();
+        let bobbi = Node::builder()
+            .network_id(network_id.into())
+            .spawn()
+            .await
+            .unwrap();
+
+
         let alice_store = alice.store();
         let bobbi_store = bobbi.store();
         let alice_id = alice.id();

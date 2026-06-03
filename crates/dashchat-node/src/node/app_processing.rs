@@ -42,6 +42,8 @@ impl Node {
     /// - when creating a new group chat
     /// - when initializing the node, for each existing group chat
     pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
+        topic.alias_numbered();
+
         if self.subscribe_to_topic(topic).await? {
             self.import_mailbox_stream(topic).await?;
         };
@@ -50,7 +52,7 @@ impl Node {
 
     /// Subscribe to a topic.
     async fn subscribe_to_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
-        debug!(topic = %topic, "subscribe to topic");
+        debug!(topic = ?topic.aliased(), "subscribe to topic");
 
         let (reply_tx, reply_rx) = oneshot::channel();
         if self
@@ -76,7 +78,7 @@ impl Node {
 
     /// Import external operation stream from a mailbox.
     async fn import_mailbox_stream(&self, topic: TopicId) -> anyhow::Result<()> {
-        debug!(topic = %topic, "import mailbox stream");
+        debug!(topic = ?topic.aliased(), "import mailbox stream");
 
         let Some(mailbox_rx) = self.mailboxes.subscribe(topic.into()).await? else {
             tracing::warn!("topic already initialized, skipping");
@@ -104,7 +106,7 @@ impl Node {
     }
 
     /// Spawn a task for application layer processing of received operations.
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().aliased())))]
     pub(super) fn spawn_application_processor_task(
         &self,
         mut events_rx: mpsc::Receiver<ProcessorEvent>,
@@ -133,7 +135,7 @@ impl Node {
                                 }
                             },
                             ProcessorEvent::Groups { operation, source, processed_tx, error } => {
-                                tracing::info!(op = %operation.id(), topic = %operation.topic(), "groups operation processing");
+                                tracing::info!(op = ?operation.id().aliased(), topic = ?operation.topic().aliased(), "groups operation processing");
 
                                 if let Some(err) = error {
                                     // @TODO: should consider if this is the desired behavior.
@@ -164,12 +166,12 @@ impl Node {
                                 }
 
                                 // @TODO: this is required for tests, but nowhere else, it can be placed behind the
-                               // testing flag.
-                               node.op_store.mark_op_processed(operation.topic().into(), &operation.id());
+                                // testing flag.
+                                node.op_store.mark_op_processed(operation.topic().into(), &operation.id());
 
                             },
                             ProcessorEvent::App { operation, source, processed_tx } => {
-                                tracing::info!(op = %operation.id(), topic = %operation.topic(), "application operation processing");
+                                tracing::info!(op = ?operation.id().aliased(), topic = ?operation.topic().aliased(), "application operation processing");
 
                                 // Process the operation.
                                 let result = node.process_app(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
@@ -184,13 +186,17 @@ impl Node {
                                     if let Err(err) = processed_tx.send(result) {
                                         tracing::error!(?err, "processed_tx send error")
                                     }
+
+
                                 }
 
                                 // @TODO: this is required for tests, but nowhere else, it can be placed behind the
-                               // testing flag.
-                               node.op_store.mark_op_processed(operation.topic().into(), &operation.id());
+                                // testing flag.
+                                node.op_store.mark_op_processed(operation.topic().into(), &operation.id());
+
                             },
                         }
+
                     }
                     Some(()) = cancel_rx.recv() => {
                         tracing::info!("stream processing loop cancelled");
@@ -326,7 +332,7 @@ impl Node {
             }
         }
 
-        tracing::debug!(hash = %hash, "processed operation");
+        tracing::debug!(hash = ?hash.aliased(), "processed operation");
 
         // For all message types except groups control messages notify that a new payload has been
         // received.

@@ -1,5 +1,3 @@
-use named_id::*;
-
 use dashchat_node::{testing::*, *};
 use mailbox_client::mem::MemMailbox;
 
@@ -26,8 +24,8 @@ async fn device_group_solo() {
         .await;
 
     println!("nodes:");
-    println!("alice: {:?}", alice.device_id().short());
-    println!("alicia: {:?}", alicia.device_id().short());
+    println!("alice: {}", alice.device_id());
+    println!("alicia: {}", alicia.device_id());
 
     // @TODO: comment out unsupported feature for now.
     // #[cfg(feature = "p2p")]

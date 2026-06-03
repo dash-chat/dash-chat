@@ -79,7 +79,6 @@ where
             let author = op.author();
             let seq_num = op.seq_num();
             let topic = op.topic();
-            #[cfg(feature = "named-id")]
             tracing::info!(topic = ?topic, hash = ?op.hash(), "publishing mailbox operation");
             store
                 .entry(topic)
@@ -145,7 +144,6 @@ where
                 }
             }
 
-            #[cfg(feature = "named-id")]
             tracing::info!(
                 topic = ?topic,
                 num = new.len(),

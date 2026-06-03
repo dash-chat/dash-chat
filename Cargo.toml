@@ -11,15 +11,15 @@ resolver = "2"
 
 [workspace.dependencies]
 
+aliased = "0.1.0"
 ciborium = "0.2.2"
 ed25519-dalek = "2.2"
 derive_more = { version = "2.1.1", features = ["full"] }
-named-id = { git = "https://github.com/maackle/named-id.git" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 dashchat-compat = { path = "crates/dashchat-compat" }
-mailbox-client = { path = "crates/mailbox-client", features = ["named-id"] }
+mailbox-client = { path = "crates/mailbox-client" }
 mailbox-server = { path = "crates/mailbox-server" }
 
 p2panda = { git = "https://github.com/p2panda/p2panda", rev = "a2e7614aa5538f267f98e3e8c34bca5bee24217d" }
@@ -27,14 +27,9 @@ p2panda-auth = { git = "https://github.com/p2panda/p2panda", rev = "a2e7614aa553
   "processor",
 ] }
 p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "a2e7614aa5538f267f98e3e8c34bca5bee24217d" }
-p2panda-encryption = { git = "https://github.com/p2panda/p2panda", rev = "a2e7614aa5538f267f98e3e8c34bca5bee24217d" }
-p2panda-discovery = { git = "https://github.com/p2panda/p2panda", rev = "a2e7614aa5538f267f98e3e8c34bca5bee24217d" }
-p2panda-net = { git = "https://github.com/p2panda/p2panda", rev = "a2e7614aa5538f267f98e3e8c34bca5bee24217d" }
 p2panda-store = { git = "https://github.com/p2panda/p2panda", rev = "a2e7614aa5538f267f98e3e8c34bca5bee24217d", features = [
   "sqlite",
 ] }
-p2panda-stream = { git = "https://github.com/p2panda/p2panda", rev = "a2e7614aa5538f267f98e3e8c34bca5bee24217d" }
-p2panda-sync = { git = "https://github.com/p2panda/p2panda", rev = "a2e7614aa5538f267f98e3e8c34bca5bee24217d" }
 p2panda-spaces = { git = "https://github.com/p2panda/p2panda", rev = "a2e7614aa5538f267f98e3e8c34bca5bee24217d", features = [
   "test_utils",
 ] }

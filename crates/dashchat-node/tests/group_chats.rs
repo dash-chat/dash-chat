@@ -10,17 +10,16 @@ use dashchat_node::{testing::*, *};
 use mailbox_client::mem::MemMailbox;
 
 use maplit::btreemap;
-use named_id::*;
 use p2panda::network::MdnsDiscoveryMode;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_direct_chat() {
+    dashchat_node::util::setup_aliases();
     dashchat_node::testing::setup_tracing(
         &[
             "dashchat=info",
             "p2panda_stream=warn",
             "p2panda_auth=warn",
-            "p2panda_encryption=warn",
             "p2panda_spaces=warn",
             "named_id=warn",
         ],
@@ -40,8 +39,8 @@ async fn test_direct_chat() {
     introduce_and_wait([&alice, &bobbi]).await;
 
     println!("nodes:");
-    println!("alice: {:?}", alice.device_id().short());
-    println!("bobbi: {:?}", bobbi.device_id().short());
+    println!("alice: {}", alice.device_id());
+    println!("bobbi: {}", bobbi.device_id());
 
     alice
         .behavior()
@@ -93,10 +92,14 @@ async fn test_direct_chat() {
 async fn test_p2p_direct_chat() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
 
+    let network_id = p2panda::Topic::random();
+
     let mut alice_config = NodeConfig::testing();
+    alice_config.network_id = network_id.into();
     alice_config.mdns_mode = MdnsDiscoveryMode::Active;
 
     let mut bobbi_config = NodeConfig::testing();
+    bobbi_config.network_id = network_id.into();
     bobbi_config.mdns_mode = MdnsDiscoveryMode::Active;
 
     let alice = TestNode::new(alice_config, "alice").await;
@@ -134,7 +137,6 @@ async fn test_group_chat() {
             "dashchat=info",
             "p2panda_stream=warn",
             "p2panda_auth=warn",
-            "p2panda_encryption=warn",
             "p2panda_spaces=warn",
             "named_id=warn",
         ],
@@ -158,9 +160,9 @@ async fn test_group_chat() {
     introduce_and_wait([&alice, &bobbi, &cammy]).await;
 
     println!("nodes:");
-    println!("alice: {:?}", alice.device_id().short());
-    println!("bobbi: {:?}", bobbi.device_id().short());
-    println!("cammy: {:?}", cammy.device_id().short());
+    println!("alice: {}", alice.device_id());
+    println!("bobbi: {}", bobbi.device_id());
+    println!("cammy: {}", cammy.device_id());
 
     alice
         .behavior()
@@ -179,9 +181,7 @@ async fn test_group_chat() {
         })
         .await
         .unwrap()
-        .with_name("groupchat");
-
-    dbg!(&chat_id);
+        .alias_named("groupchat");
 
     alice.send_message(chat_id, "Hello".into()).await.unwrap();
 
