@@ -16,6 +16,7 @@
     // Ensure that Babel can safely transpile files in the TypeScript project
     "isolatedModules": true,
     "outDir": "./dist",
+    "rootDir": "./src",
     "incremental":false
   },
   "include": ["src/**/*.ts"]
