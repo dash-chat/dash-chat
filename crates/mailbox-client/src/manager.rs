@@ -403,7 +403,7 @@ where
             return;
         }
 
-        tracing::info!("polling mailbox {id}");
+        tracing::debug!("polling mailbox {id}");
         let client = tracked_mailbox.client().await;
         let result = self.sync_topics(topics.into_iter(), &client).await;
 
