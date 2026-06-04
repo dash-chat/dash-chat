@@ -5,9 +5,10 @@
 # consumed by the macOS bundle).
 set -euo pipefail
 
-if [[ "${TAURI_ENV_PLATFORM:-$(uname -s)}" != "macos" && "${TAURI_ENV_PLATFORM:-$(uname -s)}" != "Darwin" ]]; then
-  exit 0
-fi
+case "${TAURI_ENV_PLATFORM:-$(uname -s)}" in
+  macos|darwin|Darwin) ;;
+  *) exit 0 ;;
+esac
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/src-tauri/icons/AppIcon.icon"
