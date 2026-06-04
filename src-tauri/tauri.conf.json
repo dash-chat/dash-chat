@@ -5,6 +5,7 @@
 	"build": {
 		"beforeDevCommand": "pnpm dev",
 		"beforeBuildCommand": "pnpm -F dash-chat-stores build && pnpm -F ui build",
+		"beforeBundleCommand": "./scripts/build-assets-car.sh",
 		"devUrl": "http://localhost:1420",
 		"frontendDist": "../ui/build"
 	},
@@ -36,7 +37,10 @@
 			"icons/icon.ico"
 		],
 		"macOS": {
-			"entitlements": "entitlements.plist"
+			"entitlements": "entitlements.plist",
+			"files": {
+				"Resources/Assets.car": "icons/Assets.car"
+			}
 		},
 		"createUpdaterArtifacts": true
 	},

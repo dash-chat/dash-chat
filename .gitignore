@@ -33,6 +33,7 @@ result*
 
 # tauri
 src-tauri/gen/schemas/
+src-tauri/icons/Assets.car
 
 # push notifications
 src-tauri/gen/apple/build/
