@@ -10,7 +10,7 @@ case "${TAURI_ENV_PLATFORM:-$(uname -s)}" in
   *) exit 0 ;;
 esac
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(pwd)"
 SRC="$ROOT/src-tauri/icons/AppIcon.icon"
 OUT="$ROOT/src-tauri/icons"
 
