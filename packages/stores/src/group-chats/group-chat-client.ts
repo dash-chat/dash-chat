@@ -30,7 +30,7 @@ export class GroupChatClient implements IGroupChatClient {
 	}
 
 	async addMember(chatId: ChatId, member: AgentId): Promise<void> {
-		throw new Error('addMember not implemented');
+		await invoke('add_group_member', { chatId, agentId: member });
 	}
 	async removeMember(chatId: ChatId, member: AgentId): Promise<void> {}
 

@@ -99,6 +99,7 @@
 	"securityTipFakeBusinessesTitle": "Fake businesses and institutions",
 	"securityTipFakeBusinessesDescription": "Be careful of businesses or government agencies contacting you. Messages involving tax agencies, couriers, and more can be spam.",
 	"noContactsYet": "You don't have any contacts yet.",
+	"allContactsAlreadyInGroup": "All your contacts are already in this group.",
 	"noContactsMatchFilter": "No contacts match this filter.",
 	"chats": "Chats",
 	"noChatsYet": "No chats yet.",
