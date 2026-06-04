@@ -118,9 +118,9 @@
 						})}
 					{/if}
 				{:else if summary.lastEvent.kind === 'message'}
-					{#if summary.type === 'GroupChat' && summary.lastEvent.authorName}
-						<strong>{summary.lastEvent.authorName}</strong>: {summary.lastEvent
-							.text}
+					{#if summary.type === 'GroupChat'}
+						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
+						{summary.lastEvent.text}
 					{:else}
 						{summary.lastEvent.text}
 					{/if}
