@@ -308,11 +308,7 @@ impl Node {
         Ok(())
     }
 
-    pub async fn notify(
-        &self,
-        header: &Header,
-        payload: Option<&Payload>,
-    ) -> anyhow::Result<()> {
+    pub async fn notify(&self, header: &Header, payload: Option<&Payload>) -> anyhow::Result<()> {
         if let Some(notification_tx) = self.notification_tx.clone() {
             notification_tx
                 .send(Notification {

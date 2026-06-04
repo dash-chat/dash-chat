@@ -91,8 +91,7 @@ impl Behavior {
                     hash = ?n.header.hash().renamed(),
                     "checking for group invitation"
                 );
-                let Some(Payload::Chat(ChatPayload::JoinGroup { chat_id, .. })) = &n.payload
-                else {
+                let Some(Payload::Chat(ChatPayload::JoinGroup { chat_id, .. })) = &n.payload else {
                     return None;
                 };
                 Some(*chat_id)
