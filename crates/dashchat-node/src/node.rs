@@ -599,8 +599,7 @@ impl Node {
                     None => true,
                     Some((h, _)) => {
                         op.header.timestamp > h.timestamp
-                            || (op.header.timestamp == h.timestamp
-                                && op.header.seq_num > h.seq_num)
+                            || (op.header.timestamp == h.timestamp && op.header.seq_num > h.seq_num)
                     }
                 };
                 if is_later {
