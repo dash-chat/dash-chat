@@ -30,7 +30,7 @@ export class GroupInfoStep extends TestPage {
 	}
 
 	async setName(name: string) {
-		await this.typeInto(`${tid('new-group-name-input')} input`, name);
+		await this.typeInto(tid('new-group-name-input'), name);
 	}
 }
 

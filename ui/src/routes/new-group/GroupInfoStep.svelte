@@ -1,13 +1,16 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { BlockTitle, List, ListItem, useTheme } from 'konsta/svelte';
+	import { mdiCamera } from '@mdi/js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import StepPage from './StepPage.svelte';
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
+	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
 	import type { Profile, PublicKey } from 'dash-chat-stores';
 
 	interface Props {
 		groupName: string;
+		groupImage: string | undefined;
 		selectedContacts: PublicKey[];
 		resolvedContacts: [PublicKey, Profile][];
 		onBack: () => void;
@@ -16,6 +19,7 @@
 
 	let {
 		groupName = $bindable(),
+		groupImage = $bindable(),
 		selectedContacts,
 		resolvedContacts,
 		onBack,
@@ -31,30 +35,37 @@
 	backTestId="new-group-info-back"
 	actionLabel={m.create()}
 	onAction={onCreate}
+	actionDisabled={groupName.trim() === ''}
 	navbarTestId="new-group-info-navbar"
 	actionTestId="new-group-create"
 >
-	{#snippet subnavbar()}
-		<div class="column gap-4">
-			<List
-				inset={isWideScreen.value || theme === 'ios'}
-				strongIos
-				nested={theme !== 'ios'}
-			>
-				<ListItem>Naming is not actually implemented yet.</ListItem>
-				<!-- <ListInput
-					type="text"
-					bind:value={groupName}
-					data-testid="new-group-name-input"
-					outline
-					class="plain"
-					placeholder={m.name()}
-				/> -->
-			</List>
-		</div>
-	{/snippet}
-
 	<div class="column" style="flex: 1">
+		<List
+			inset={isWideScreen.value || theme === 'ios'}
+			strongIos
+			nested={theme !== 'ios'}
+		>
+			<ListItem>
+				{#snippet media()}
+					<SelectAvatar
+						bind:value={groupImage}
+						size={56}
+						placeholderIconPath={mdiCamera}
+						placeholderLabel={m.groupAvatar()}
+					/>
+				{/snippet}
+				{#snippet inner()}
+					<input
+						type="text"
+						data-testid="new-group-name-input"
+						placeholder={m.groupNameRequired()}
+						bind:value={groupName}
+						class="w-full bg-transparent border-none outline-none py-2 text-base"
+					/>
+				{/snippet}
+			</ListItem>
+		</List>
+
 		<BlockTitle>{m.members()}</BlockTitle>
 
 		<SelectableContactList

@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
-import { ChatId, MessageContent } from '../types';
+import { ChatId, GroupDetails, MessageContent } from '../types';
 
 export interface GroupMember {
 	agentId: AgentId;
@@ -19,6 +19,8 @@ export interface IGroupChatClient {
 
 	sendMessage(chatId: ChatId, content: MessageContent): Promise<void>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
+
+	setDetails(chatId: ChatId, details: GroupDetails): Promise<void>;
 
 	leaveGroup(): Promise<void>;
 	deleteGroup(): Promise<void>;
@@ -39,6 +41,9 @@ export class GroupChatClient implements IGroupChatClient {
 	}
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void> {
 		return invoke('mark_messages_read', { chatId, messageHashes });
+	}
+	setDetails(chatId: ChatId, details: GroupDetails): Promise<void> {
+		return invoke('set_group_details', { chatId, details });
 	}
 	async promoteToAdministrator(
 		chatId: ChatId,

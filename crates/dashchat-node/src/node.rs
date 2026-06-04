@@ -560,6 +560,23 @@ impl Node {
         Ok(header)
     }
 
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    pub async fn set_group_details(
+        &self,
+        chat_id: ChatId,
+        details: crate::GroupDetails,
+    ) -> anyhow::Result<Header> {
+        let header = self
+            .author_operation(
+                chat_id,
+                Payload::Chat(ChatPayload::GroupDetails(details)),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
