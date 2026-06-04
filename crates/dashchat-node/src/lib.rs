@@ -8,8 +8,6 @@ pub mod stores;
 pub mod topic;
 pub mod util;
 
-pub mod polestar;
-
 mod id;
 pub mod mailbox;
 
