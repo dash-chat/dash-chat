@@ -42,12 +42,12 @@
 		});
 	});
 	const theme = $derived(useTheme());
+	const saveDisabled = $derived(name.trim() === '');
 
 	async function save() {
-		const trimmedName = name.trim();
-		if (!trimmedName) return;
+		if (saveDisabled) return;
 		await store.setDetails({
-			name: trimmedName,
+			name: name.trim(),
 			description: description.trim() || undefined,
 			image,
 		});
@@ -56,7 +56,12 @@
 </script>
 
 <Page>
-	<Navbar title={m.editGroup()} titleClass="opacity1" transparent={true}>
+	<Navbar
+		title={m.editGroup()}
+		titleClass="opacity1"
+		transparent={true}
+		rightClass={saveDisabled ? 'ios-right-disabled' : ''}
+	>
 		{#snippet left()}
 			<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}/info`)} />
 		{/snippet}
@@ -100,7 +105,12 @@
 		</div>
 
 		{#if !isIos}
-			<Button onClick={save} class="fixed-action-btn" rounded>
+			<Button
+				onClick={save}
+				class="fixed-action-btn"
+				rounded
+				disabled={saveDisabled}
+			>
 				{m.save()}
 			</Button>
 		{/if}
