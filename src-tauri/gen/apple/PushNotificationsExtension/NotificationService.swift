@@ -119,6 +119,12 @@ class NotificationService: UNNotificationServiceExtension {
             bestAttemptContent.userInfo = userInfo
         }
 
+        // Decode the avatar once — both the Communication Notification path
+        // (iOS 15+) and the legacy attachment fallback need the same bytes.
+        let avatarData: Data? = (largeIconBytes?.isEmpty == false)
+            ? decodeBase64DataURL(largeIconBytes!)
+            : nil
+
         // Try the iOS 15+ Communication Notifications path: this re-renders the
         // notification with the sender's avatar prominently shown (the
         // "avatar replaces app icon" Signal/iMessage look). Requires title +
@@ -128,8 +134,7 @@ class NotificationService: UNNotificationServiceExtension {
            let title, !title.isEmpty,
            let body, !body.isEmpty,
            let route, !route.isEmpty,
-           let largeIconBytes, !largeIconBytes.isEmpty,
-           let avatarData = decodeBase64DataURL(largeIconBytes) {
+           let avatarData {
             // Prefer the explicit sender id (so group senders don't collapse
             // into one INPerson); fall back to route for direct chats.
             let personHandle: String = (conversationSenderId?.isEmpty == false) ? conversationSenderId! : route
@@ -148,8 +153,8 @@ class NotificationService: UNNotificationServiceExtension {
         }
 
         // Legacy fallback: attach the avatar as a notification image thumbnail.
-        if let largeIconBytes, !largeIconBytes.isEmpty,
-           let attachment = makeAvatarAttachment(largeIconBytes) {
+        if let avatarData, let largeIconBytes,
+           let attachment = makeAvatarAttachment(avatarData, dataUrl: largeIconBytes) {
             bestAttemptContent.attachments = [attachment]
         }
         log.info("delivering modified content title=\(bestAttemptContent.title, privacy: .private) body=\(bestAttemptContent.body, privacy: .private)")
@@ -219,14 +224,11 @@ class NotificationService: UNNotificationServiceExtension {
         }
     }
 
-    /// Decode a `data:image/...;base64,...` data URL into a file under the
-    /// extension's temp dir and wrap it in a `UNNotificationAttachment`.
-    /// Returns nil on any decode/I/O failure — caller falls back to no image.
-    private func makeAvatarAttachment(_ dataUrl: String) -> UNNotificationAttachment? {
-        guard let bytes = decodeBase64DataURL(dataUrl) else {
-            log.error("avatar base64 decode failed")
-            return nil
-        }
+    /// Write already-decoded avatar bytes to a file under the extension's
+    /// temp dir and wrap it in a `UNNotificationAttachment`. The `dataUrl`
+    /// is consulted only for its MIME hint to pick the file extension.
+    /// Returns nil on any I/O failure — caller falls back to no image.
+    private func makeAvatarAttachment(_ bytes: Data, dataUrl: String) -> UNNotificationAttachment? {
         let ext = dataUrl.contains("image/jpeg") || dataUrl.contains("image/jpg") ? "jpg" : "png"
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString)
