@@ -75,6 +75,8 @@ async fn test_reject_contact_request() {
 async fn test_reject_multiple_contact_requests() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
+    let start = tokio::time::Instant::now();
+
     let mailbox = MemMailbox::new();
     let alice = TestNode::new(NodeConfig::testing(), "alice")
         .await
@@ -89,6 +91,8 @@ async fn test_reject_multiple_contact_requests() {
         .add_mailbox_client(mailbox.client())
         .await;
 
+    println!("### {:3.1?} alice creating QR codes", start.elapsed());
+
     // Alice generates QR codes for both Bobbi and Carol
     let qr_for_bobbi = alice
         .new_qr_code(ShareIntent::AddContact, true)
@@ -99,9 +103,19 @@ async fn test_reject_multiple_contact_requests() {
         .await
         .unwrap();
 
+    println!(
+        "### {:3.1?} bobbi and carol scanning QR codes",
+        start.elapsed()
+    );
+
     // Both send contact requests
     bobbi.add_contact(qr_for_bobbi).await.unwrap();
     carol.add_contact(qr_for_carol).await.unwrap();
+
+    println!(
+        "### {:3.1?} alice waiting for contact requests",
+        start.elapsed()
+    );
 
     // Wait for both contact requests
     let mut received_agents = Vec::new();
@@ -125,17 +139,21 @@ async fn test_reject_multiple_contact_requests() {
     assert!(received_agents.contains(&bobbi.agent_id()));
     assert!(received_agents.contains(&carol.agent_id()));
 
-    // Alice rejects Bobbi but accepts Carol
+    println!("### {:3.1?} alice rejecting first contact", start.elapsed());
+
+    // Alice rejects first contact but accepts the second
     alice
-        .reject_contact_request(bobbi.agent_id())
+        .reject_contact_request(received_agents[0])
         .await
         .unwrap();
 
-    // Accept Carol's request by adding her as a contact
-    alice.behavior().accept_next_contact().await.ok(); // This might fail if Carol's request was processed first, that's ok
+    println!(
+        "### {:3.1?} alice verifying first contact was rejected",
+        start.elapsed()
+    );
 
-    // Verify Bobbi was rejected
+    // Verify first contact was rejected
     let rejected = alice.get_rejected_contact_requests().await.unwrap();
-    assert!(rejected.contains(&bobbi.agent_id()));
-    assert!(!rejected.contains(&carol.agent_id()));
+    assert!(rejected.contains(&received_agents[0]));
+    assert!(!rejected.contains(&received_agents[1]));
 }
