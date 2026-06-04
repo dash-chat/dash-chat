@@ -77,6 +77,21 @@ jobs:
         if: startsWith(matrix.platform, 'macos')
         run: rm -f /opt/homebrew/bin/cargo /opt/homebrew/bin/rustc /opt/homebrew/bin/rustup /opt/homebrew/bin/rustup-init
 
+      # Icon Composer (.icon) sources require Xcode 26+'s actool to compile
+      # into Assets.car; the default Xcode 16 emits only a partial-info.plist.
+      - name: Select Xcode 26 (macOS)
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          XCODE_APP=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [[ -z "$XCODE_APP" ]]; then
+            echo "No Xcode 26.x found on runner" >&2
+            ls /Applications | grep -i xcode >&2 || true
+            exit 1
+          fi
+          echo "Selecting $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
       - name: install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
