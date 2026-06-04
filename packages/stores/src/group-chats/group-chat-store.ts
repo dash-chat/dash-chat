@@ -1,4 +1,4 @@
-import { reactive } from 'signalium';
+import { reactive, signal } from 'signalium';
 
 import { Profile } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
@@ -31,6 +31,8 @@ export interface GroupMemberWithProfile {
 }
 
 export class GroupChatStore implements ReadMessagesStore {
+	private membersVersion = signal(0);
+
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
@@ -123,6 +125,7 @@ export class GroupChatStore implements ReadMessagesStore {
 	});
 
 	membersData = reactive(async () => {
+		void this.membersVersion.value;
 		return await this.client.getMembers(this.chatId);
 	});
 
@@ -218,8 +221,9 @@ export class GroupChatStore implements ReadMessagesStore {
 
 	/// Actions
 
-	addMember(member: PublicKey) {
-		return this.client.addMember(this.chatId, member);
+	async addMember(member: PublicKey) {
+		await this.client.addMember(this.chatId, member);
+		this.membersVersion.value++;
 	}
 
 	async markAsRead(messageHashes: Hash[]): Promise<void> {
