@@ -219,6 +219,21 @@ async fn chat_message_notification(
     notification_data
 }
 
+/// Resolves the latest group name for `topic_id`, falling back to a localized
+/// "New group" placeholder when there's no `GroupDetails` op yet or the name is
+/// empty. Used in notification titles for group invites/adds.
+#[cfg(mobile)]
+async fn group_title(node: &Node, topic_id: TopicId) -> String {
+    match node.get_group_details(topic_id).await {
+        Ok(Some(details)) if !details.name.is_empty() => details.name,
+        Ok(_) => sonix_i18n::t!("newGroup"),
+        Err(err) => {
+            log::error!("Failed to look up group details for notification: {err:?}");
+            sonix_i18n::t!("newGroup")
+        }
+    }
+}
+
 /// Build the user-facing notification for a body-less p2panda auth/control op
 /// (GroupControl: Create/Add/Remove/Promote/Demote). These carry their data in
 /// the header's auth extension and have no body to decode. Returns `None` to
@@ -284,9 +299,7 @@ async fn auth_control_op_notification(
                     Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
                     None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
                 };
-                // TODO: replace with the real group name once group naming lands;
-                // the UI currently hardcodes "mygroup" too (see GroupChatStore.info).
-                ("mygroup".to_string(), Some(body), group_route)
+                (group_title(node, header.extensions.topic).await, Some(body), group_route)
             }
         }
         p2panda_auth::group::GroupAction::Add { member, .. } => {
@@ -297,9 +310,7 @@ async fn auth_control_op_notification(
                 Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
                 None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
             };
-            // TODO: replace with the real group name once group naming lands;
-            // the UI currently hardcodes "mygroup" too (see GroupChatStore.info).
-            ("mygroup".to_string(), Some(body), group_route)
+            (group_title(node, header.extensions.topic).await, Some(body), group_route)
         }
         p2panda_auth::group::GroupAction::Remove { member } => {
             if !target_is_me(member) {
