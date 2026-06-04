@@ -13,8 +13,8 @@ export class DirectChatPage extends TestPage {
 	settingsLink = this.agent.$(tid('direct-chat-settings-link'));
 	peerName = this.agent.$(tid('direct-chat-peer-name'));
 	peerHeader = this.agent.$(tid('direct-chat-peer-header'));
-	scrollBottom = this.agent.$(tid('direct-chat-scroll-bottom'));
-	unreadBadge = this.agent.$(tid('direct-chat-unread-badge'));
+	scrollBottom = this.agent.$(tid('chat-scroll-bottom'));
+	unreadBadge = this.agent.$(tid('chat-unread-badge'));
 	unreadDivider = this.agent.$(tid('direct-chat-unread-divider'));
 	acceptButton = this.agent.$(tid('direct-chat-accept-btn'));
 	rejectButton = this.agent.$(tid('direct-chat-reject-btn'));
