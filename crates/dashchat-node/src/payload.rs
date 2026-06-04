@@ -101,6 +101,11 @@ pub enum ChatPayload {
     Reaction(ChatReaction),
 
     GroupDetails(GroupDetails),
+    /// Used to introduce oneself to a group when joining, so that non-contacts
+    /// can subscribe to my announcements topic.
+    IntroduceSelf {
+        agent_id: AgentId,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, RenameNone)]

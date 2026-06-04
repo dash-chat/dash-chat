@@ -295,7 +295,7 @@ impl Node {
                     .await?;
                 for agent_id in known.into_values() {
                     let topic = Topic::announcements(agent_id);
-                    if let Err(err) = self.initialize_topic(*topic).await {
+                    if let Err(err) = self.register_topic(topic).await {
                         tracing::warn!(
                             ?err,
                             "failed to subscribe to announcements topic for group member"
@@ -331,6 +331,22 @@ impl Node {
         let topic = header.extensions.topic;
 
         match &payload {
+            Payload::Chat(ChatPayload::IntroduceSelf { agent_id }) => {
+                if agent_id != &self.agent_id() {
+                    tracing::info!(
+                        me = ?self.device_id().renamed(),
+                        agent_id = ?agent_id.renamed(),
+                        "received IntroduceSelf message"
+                    );
+                    if let Err(err) = self.register_topic(Topic::announcements(*agent_id)).await {
+                        tracing::error!(
+                            ?err,
+                            "failed to register announcements topic for IntroduceSelf"
+                        );
+                    }
+                }
+            }
+
             Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
                 tracing::info!(
                     me = ?self.device_id().renamed(),
@@ -373,6 +389,8 @@ impl Node {
                 let agent_id = AgentId::from(crate::ActorId::from_bytes(&*topic).map_err(|e| {
                     anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
                 })?);
+
+                tracing::info!(me = ?self.agent_id().renamed(), agent_id = ?agent_id.renamed(), ?profile, "save_profile");
 
                 if let Err(err) = self
                     .local_store

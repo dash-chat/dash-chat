@@ -336,6 +336,16 @@ impl Node {
         )
         .await?;
 
+        // Ensure that future non-contact members can see the creator's profile.
+        self.author_operation(
+            chat_id,
+            Payload::Chat(ChatPayload::IntroduceSelf {
+                agent_id: self.agent_id(),
+            }),
+            Some(&format!("introduce_self({})", chat_id.renamed())),
+        )
+        .await?;
+
         self.local_store.save_group_chat_subscribed(chat_id).await?;
         self.initialize_topic(*chat_id).await?;
 
@@ -447,8 +457,19 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().renamed())))]
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
-        self.local_store.save_group_chat_subscribed(chat_id).await?;
-        self.initialize_topic(*chat_id).await
+
+        // Recursive call requires boxing.
+        // TODO: re-examine
+        Box::pin(self.author_operation(
+            chat_id,
+            Payload::Chat(ChatPayload::IntroduceSelf {
+                agent_id: self.agent_id(),
+            }),
+            Some(&format!("introduce_self({})", chat_id.renamed())),
+        ))
+        .await?;
+
+        self.register_topic(chat_id).await
     }
 
     pub async fn get_groups(&self) -> anyhow::Result<Vec<ChatId>> {
