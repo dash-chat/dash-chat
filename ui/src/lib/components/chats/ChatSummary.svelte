@@ -12,6 +12,7 @@
 		inYesterday,
 		beforeYesterday,
 	} from '$lib/utils/time';
+	import { groupEventText } from '$lib/utils/group-event-text';
 	import Avatar from '../profiles/Avatar.svelte';
 
 	let { summary, active }: { summary: ChatSummary; active: boolean } = $props();
@@ -68,74 +69,6 @@
 					{m.messageRequest()}
 				{:else if summary.lastEvent.kind === 'contact_added'}
 					{m.contactAccepted()}
-				{:else if summary.lastEvent.kind === 'group_created'}
-					{#if summary.lastEvent.isMine}
-						{m.youCreatedTheGroup()}
-					{:else if summary.lastEvent.iAmInitialMember}
-						{m.someoneAddedYouToTheGroup({
-							name: summary.lastEvent.creatorName || m.someone(),
-						})}
-					{:else if summary.lastEvent.creatorName}
-						{m.someoneCreatedTheGroup({
-							name: summary.lastEvent.creatorName,
-						})}
-					{:else}
-						{m.groupCreated()}
-					{/if}
-				{:else if summary.lastEvent.kind === 'group_member_added'}
-					{#if summary.lastEvent.isMine}
-						{m.someoneAddedYouToTheGroup({
-							name: summary.lastEvent.adminName || m.someone(),
-						})}
-					{:else if summary.lastEvent.addedByMe}
-						{m.youAddedMember({
-							name: summary.lastEvent.memberName || m.someone(),
-						})}
-					{:else}
-						{m.memberAddedToGroup({
-							admin: summary.lastEvent.adminName || m.someone(),
-							name: summary.lastEvent.memberName || m.someone(),
-						})}
-					{/if}
-				{:else if summary.lastEvent.kind === 'group_member_removed'}
-					{#if summary.lastEvent.isMine}
-						{m.someoneRemovedYouFromTheGroup({
-							name: summary.lastEvent.adminName || m.someone(),
-						})}
-					{:else if summary.lastEvent.removedByMe}
-						{m.youRemovedMember({
-							name: summary.lastEvent.memberName || m.someone(),
-						})}
-					{:else if summary.lastEvent.memberName || summary.lastEvent.adminName}
-						{m.memberRemovedFromGroupBy({
-							admin: summary.lastEvent.adminName || m.someone(),
-							name: summary.lastEvent.memberName || m.someone(),
-						})}
-					{:else}
-						{m.memberRemovedFromGroup()}
-					{/if}
-				{:else if summary.lastEvent.kind === 'group_member_promoted'}
-					{#if summary.lastEvent.promotedByMe}
-						{m.youMadeMemberAdmin({
-							name: summary.lastEvent.memberName || m.someone(),
-						})}
-					{:else}
-						{m.someoneMadeMemberAdmin({
-							admin: summary.lastEvent.adminName || m.someone(),
-							name: summary.lastEvent.memberName || m.someone(),
-						})}
-					{/if}
-				{:else if summary.lastEvent.kind === 'group_member_demoted'}
-					{#if summary.lastEvent.demotedByMe}
-						{m.youRevokedAdminFromMember({
-							name: summary.lastEvent.memberName || m.someone(),
-						})}
-					{:else}
-						{m.someoneRevokedAdminFromMember({
-							admin: summary.lastEvent.adminName || m.someone(),
-							name: summary.lastEvent.memberName || m.someone(),
-						})}
-					{/if}
 				{:else if summary.lastEvent.kind === 'message'}
 					{#if summary.type === 'GroupChat'}
 						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
@@ -143,6 +76,8 @@
 					{:else}
 						{summary.lastEvent.text}
 					{/if}
+				{:else}
+					{groupEventText(summary.lastEvent)}
 				{/if}
 			</span>
 			{#if summary.unreadMessages !== 0}

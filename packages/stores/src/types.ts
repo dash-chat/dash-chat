@@ -108,37 +108,37 @@ export type GroupControlEvent =
 			kind: 'group_created';
 			isMine: boolean;
 			iAmInitialMember: boolean;
-			creatorName: string;
+			creatorName: string | undefined;
 			timestamp: number;
 	  }
 	| {
 			kind: 'group_member_added';
 			isMine: boolean;
 			addedByMe: boolean;
-			memberName: string;
-			adminName: string;
+			memberName: string | undefined;
+			adminName: string | undefined;
 			timestamp: number;
 	  }
 	| {
 			kind: 'group_member_removed';
 			isMine: boolean;
 			removedByMe: boolean;
-			memberName: string;
-			adminName: string;
+			memberName: string | undefined;
+			adminName: string | undefined;
 			timestamp: number;
 	  }
 	| {
 			kind: 'group_member_promoted';
 			promotedByMe: boolean;
-			memberName: string;
-			adminName: string;
+			memberName: string | undefined;
+			adminName: string | undefined;
 			timestamp: number;
 	  }
 	| {
 			kind: 'group_member_demoted';
 			demotedByMe: boolean;
-			memberName: string;
-			adminName: string;
+			memberName: string | undefined;
+			adminName: string | undefined;
 			timestamp: number;
 	  };
 

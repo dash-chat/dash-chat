@@ -8,7 +8,7 @@
 		mdiShieldAccountOutline,
 	} from '@mdi/js';
 	import type { GroupControlEvent } from 'dash-chat-stores';
-	import { m } from '$lib/paraglide/messages';
+	import { groupEventText } from '$lib/utils/group-event-text';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 
 	let { event }: { event: GroupControlEvent } = $props();
@@ -37,67 +37,5 @@
 		src={wrapPathInSvg(iconPath)}
 		style="font-size: 1rem;"
 	></wa-icon>
-	<span>
-		{#if event.kind === 'group_created'}
-			{#if event.isMine}
-				{m.youCreatedTheGroup()}
-			{:else if event.iAmInitialMember}
-				{m.someoneAddedYouToTheGroup({
-					name: event.creatorName || m.someone(),
-				})}
-			{:else if event.creatorName}
-				{m.someoneCreatedTheGroup({ name: event.creatorName })}
-			{:else}
-				{m.groupCreated()}
-			{/if}
-		{:else if event.kind === 'group_member_added'}
-			{#if event.isMine}
-				{m.someoneAddedYouToTheGroup({
-					name: event.adminName || m.someone(),
-				})}
-			{:else if event.addedByMe}
-				{m.youAddedMember({ name: event.memberName || m.someone() })}
-			{:else}
-				{m.memberAddedToGroup({
-					admin: event.adminName || m.someone(),
-					name: event.memberName || m.someone(),
-				})}
-			{/if}
-		{:else if event.kind === 'group_member_removed'}
-			{#if event.isMine}
-				{m.someoneRemovedYouFromTheGroup({
-					name: event.adminName || m.someone(),
-				})}
-			{:else if event.removedByMe}
-				{m.youRemovedMember({ name: event.memberName || m.someone() })}
-			{:else if event.memberName || event.adminName}
-				{m.memberRemovedFromGroupBy({
-					admin: event.adminName || m.someone(),
-					name: event.memberName || m.someone(),
-				})}
-			{:else}
-				{m.memberRemovedFromGroup()}
-			{/if}
-		{:else if event.kind === 'group_member_promoted'}
-			{#if event.promotedByMe}
-				{m.youMadeMemberAdmin({ name: event.memberName || m.someone() })}
-			{:else}
-				{m.someoneMadeMemberAdmin({
-					admin: event.adminName || m.someone(),
-					name: event.memberName || m.someone(),
-				})}
-			{/if}
-		{:else if event.kind === 'group_member_demoted'}
-			{#if event.demotedByMe}
-				{m.youRevokedAdminFromMember({
-					name: event.memberName || m.someone(),
-				})}
-			{:else}
-				{m.someoneRevokedAdminFromMember({
-					admin: event.adminName || m.someone(),
-					name: event.memberName || m.someone(),
-				})}
-			{/if}
-		{/if}
-	</span>
+	<span>{groupEventText(event)}</span>
 </div>

@@ -107,24 +107,24 @@ export class GroupChatStore implements ReadMessagesStore {
 		return messages;
 	});
 
+	private nameForDevice = reactive(
+		async (deviceId: DeviceId): Promise<string | undefined> => {
+			const members = await this.allMembers();
+			return findName(members, deviceId);
+		},
+	);
+
 	controlEvents = reactive(async () => {
 		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
-		const members = await this.allMembers();
 		const myDeviceId = await this.contactsStore.myDeviceId();
-
-		const nameForDevice = (deviceId: DeviceId): string => {
-			for (const m of Object.values(members)) {
-				if (m.deviceIds.includes(deviceId)) {
-					return m.profile ? fullName(m.profile) : '';
-				}
-			}
-			return '';
-		};
+		const members = await this.allMembers();
 
 		const events: Record<Hash, GroupControlEvent> = {};
 		for (const ops of Object.values(logs)) {
 			for (const op of ops) {
-				const event = buildGroupControlEvent(op, myDeviceId, nameForDevice);
+				const event = buildGroupControlEvent(op, myDeviceId, id =>
+					findName(members, id),
+				);
 				if (event) events[op.hash] = event;
 			}
 		}
@@ -184,47 +184,21 @@ export class GroupChatStore implements ReadMessagesStore {
 	});
 
 	lastEvent = reactive(async (): Promise<ChatSummaryLastEvent | undefined> => {
-		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const controlEvents = await this.controlEvents();
 		const lastMessage = await this.lastMessage();
-		const members = await this.allMembers();
-		const myDeviceId = await this.contactsStore.myDeviceId();
-
-		const nameForDevice = (deviceId: DeviceId): string => {
-			for (const m of Object.values(members)) {
-				if (m.deviceIds.includes(deviceId)) {
-					return m.profile ? fullName(m.profile) : '';
-				}
-			}
-			return '';
-		};
 
 		let bestAuth: GroupControlEvent | undefined;
 		let createdByMe = false;
 		let iWasAdded = false;
-		for (const ops of Object.values(logs)) {
-			for (const op of ops) {
-				const action = op.header.auth?.action;
-				if (!action) continue;
-				if ('Create' in action) {
-					if (op.header.public_key === myDeviceId) createdByMe = true;
-					const initiallyIncludedMe = action.Create.initial_members.some(
-						([m]) => 'Individual' in m && m.Individual === myDeviceId,
-					);
-					if (initiallyIncludedMe) iWasAdded = true;
-				} else if ('Add' in action) {
-					const member = action.Add.member;
-					const addedDeviceId =
-						'Individual' in member ? member.Individual : undefined;
-					if (addedDeviceId === myDeviceId) iWasAdded = true;
-				}
-
-				const candidate = buildGroupControlEvent(op, myDeviceId, nameForDevice);
-				if (
-					candidate &&
-					(!bestAuth || candidate.timestamp > bestAuth.timestamp)
-				) {
-					bestAuth = candidate;
-				}
+		for (const event of Object.values(controlEvents)) {
+			if (event.kind === 'group_created') {
+				if (event.isMine) createdByMe = true;
+				if (event.iAmInitialMember) iWasAdded = true;
+			} else if (event.kind === 'group_member_added' && event.isMine) {
+				iWasAdded = true;
+			}
+			if (!bestAuth || event.timestamp > bestAuth.timestamp) {
+				bestAuth = event;
 			}
 		}
 
@@ -236,7 +210,7 @@ export class GroupChatStore implements ReadMessagesStore {
 			? {
 					kind: 'message',
 					text: lastMessage.content,
-					authorName: nameForDevice(lastMessage.author),
+					authorName: await this.nameForDevice(lastMessage.author),
 					timestamp: lastMessage.timestamp,
 				}
 			: undefined;
@@ -370,10 +344,22 @@ export class GroupChatStore implements ReadMessagesStore {
 	}
 }
 
+function findName(
+	members: Record<AgentId, GroupMemberWithProfile>,
+	deviceId: DeviceId,
+): string | undefined {
+	for (const m of Object.values(members)) {
+		if (m.deviceIds.includes(deviceId)) {
+			return m.profile ? fullName(m.profile) : undefined;
+		}
+	}
+	return undefined;
+}
+
 function buildGroupControlEvent(
 	op: SimplifiedOperation<Payload>,
 	myDeviceId: DeviceId,
-	nameForDevice: (deviceId: DeviceId) => string,
+	nameForDevice: (deviceId: DeviceId) => string | undefined,
 ): GroupControlEvent | undefined {
 	const action = op.header.auth?.action;
 	if (!action) return undefined;
@@ -389,7 +375,7 @@ function buildGroupControlEvent(
 			kind: 'group_created',
 			isMine: actorIsMe,
 			iAmInitialMember,
-			creatorName: actorIsMe ? '' : nameForDevice(actorDeviceId),
+			creatorName: actorIsMe ? undefined : nameForDevice(actorDeviceId),
 			timestamp: ts,
 		};
 	}
@@ -402,7 +388,7 @@ function buildGroupControlEvent(
 			kind: 'group_member_added',
 			isMine: !!memberDeviceId && memberDeviceId === myDeviceId,
 			addedByMe: actorIsMe,
-			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : '',
+			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : undefined,
 			adminName: nameForDevice(actorDeviceId),
 			timestamp: ts,
 		};
@@ -416,7 +402,7 @@ function buildGroupControlEvent(
 			kind: 'group_member_removed',
 			isMine: !!memberDeviceId && memberDeviceId === myDeviceId,
 			removedByMe: actorIsMe,
-			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : '',
+			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : undefined,
 			adminName: nameForDevice(actorDeviceId),
 			timestamp: ts,
 		};
@@ -429,7 +415,7 @@ function buildGroupControlEvent(
 		return {
 			kind: 'group_member_promoted',
 			promotedByMe: actorIsMe,
-			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : '',
+			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : undefined,
 			adminName: nameForDevice(actorDeviceId),
 			timestamp: ts,
 		};
@@ -442,7 +428,7 @@ function buildGroupControlEvent(
 		return {
 			kind: 'group_member_demoted',
 			demotedByMe: actorIsMe,
-			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : '',
+			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : undefined,
 			adminName: nameForDevice(actorDeviceId),
 			timestamp: ts,
 		};
