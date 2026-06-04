@@ -85,6 +85,8 @@
 	"someoneRevokedAdminFromYou": "{{name}} revoked your admin privileges.",
 	"someoneRevokedAdminFromYouNoName": "Your admin privileges were revoked.",
 	"memberRemovedFromGroup": "Member removed.",
+	"youRemovedMember": "You removed {{name}}.",
+	"memberRemovedFromGroupBy": "{{admin}} removed {{name}}.",
 	"youMadeMemberAdmin": "You made {{name}} an admin.",
 	"someoneMadeMemberAdmin": "{{admin}} made {{name}} an admin.",
 	"youRevokedAdminFromMember": "You revoked admin privileges from {{name}}.",

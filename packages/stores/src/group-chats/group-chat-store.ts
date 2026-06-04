@@ -5,11 +5,13 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
 import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
+import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, PublicKey } from '../p2panda/types';
 import {
 	ChatId,
 	ChatSummary,
 	ChatSummaryLastEvent,
+	GroupControlEvent,
 	MessageContent,
 	Payload,
 	ReadMessagesStore,
@@ -17,6 +19,10 @@ import {
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IGroupChatClient } from './group-chat-client';
+
+export type ChatEvent =
+	| { kind: 'message'; message: Message }
+	| { kind: 'control'; event: GroupControlEvent };
 
 export interface GroupInfo {
 	name: string | undefined;
@@ -101,19 +107,65 @@ export class GroupChatStore implements ReadMessagesStore {
 		return messages;
 	});
 
+	controlEvents = reactive(async () => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const members = await this.allMembers();
+		const myDeviceId = await this.contactsStore.myDeviceId();
+
+		const nameForDevice = (deviceId: DeviceId): string => {
+			for (const m of Object.values(members)) {
+				if (m.deviceIds.includes(deviceId)) {
+					return m.profile ? fullName(m.profile) : '';
+				}
+			}
+			return '';
+		};
+
+		const events: Record<Hash, GroupControlEvent> = {};
+		for (const ops of Object.values(logs)) {
+			for (const op of ops) {
+				const event = buildGroupControlEvent(op, myDeviceId, nameForDevice);
+				if (event) events[op.hash] = event;
+			}
+		}
+		return events;
+	});
+
 	messageSets = reactive(async () => {
 		const messages = await this.messages();
+		const controlEvents = await this.controlEvents();
 
-		const eventsWithProvenance: Record<Hash, EventWithProvenance<Message>> = {};
+		const eventsWithProvenance: Record<
+			Hash,
+			EventWithProvenance<ChatEvent>
+		> = {};
 		const devices = new Set<DeviceId>();
 
 		for (const [hash, message] of Object.entries(messages)) {
 			devices.add(message.author);
 			eventsWithProvenance[hash] = {
-				event: message,
+				event: { kind: 'message', message },
 				author: message.author,
 				timestamp: message.timestamp,
 				type: 'Message',
+			};
+		}
+
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const opAuthorByHash: Record<Hash, DeviceId> = {};
+		for (const ops of Object.values(logs)) {
+			for (const op of ops) opAuthorByHash[op.hash] = op.header.public_key;
+		}
+
+		for (const [hash, event] of Object.entries(controlEvents)) {
+			const author = opAuthorByHash[hash];
+			if (!author) continue;
+			devices.add(author);
+			eventsWithProvenance[hash] = {
+				event: { kind: 'control', event },
+				author,
+				timestamp: event.timestamp,
+				type: 'GroupControl',
 			};
 		}
 
@@ -146,70 +198,27 @@ export class GroupChatStore implements ReadMessagesStore {
 			return '';
 		};
 
-		let bestAuth: ChatSummaryLastEvent | undefined;
+		let bestAuth: GroupControlEvent | undefined;
 		let createdByMe = false;
 		let iWasAdded = false;
 		for (const ops of Object.values(logs)) {
 			for (const op of ops) {
 				const action = op.header.auth?.action;
 				if (!action) continue;
-				const ts = op.header.timestamp;
-
-				let candidate: ChatSummaryLastEvent | undefined;
 				if ('Create' in action) {
-					const isMine = op.header.public_key === myDeviceId;
-					if (isMine) createdByMe = true;
+					if (op.header.public_key === myDeviceId) createdByMe = true;
 					const initiallyIncludedMe = action.Create.initial_members.some(
 						([m]) => 'Individual' in m && m.Individual === myDeviceId,
 					);
 					if (initiallyIncludedMe) iWasAdded = true;
-					candidate = {
-						kind: 'group_created',
-						isMine,
-						creatorName: isMine ? '' : nameForDevice(op.header.public_key),
-						timestamp: ts,
-					};
 				} else if ('Add' in action) {
 					const member = action.Add.member;
 					const addedDeviceId =
 						'Individual' in member ? member.Individual : undefined;
-					const isMine = !!addedDeviceId && addedDeviceId === myDeviceId;
-					if (isMine) iWasAdded = true;
-					const addedByMe = op.header.public_key === myDeviceId;
-					candidate = {
-						kind: 'group_member_added',
-						isMine,
-						addedByMe,
-						memberName: addedDeviceId ? nameForDevice(addedDeviceId) : '',
-						adminName: nameForDevice(op.header.public_key),
-						timestamp: ts,
-					};
-				} else if ('Remove' in action) {
-					candidate = { kind: 'group_member_removed', timestamp: ts };
-				} else if ('Promote' in action) {
-					const member = action.Promote.member;
-					const deviceId =
-						'Individual' in member ? member.Individual : undefined;
-					candidate = {
-						kind: 'group_member_promoted',
-						promotedByMe: op.header.public_key === myDeviceId,
-						memberName: deviceId ? nameForDevice(deviceId) : '',
-						adminName: nameForDevice(op.header.public_key),
-						timestamp: ts,
-					};
-				} else if ('Demote' in action) {
-					const member = action.Demote.member;
-					const deviceId =
-						'Individual' in member ? member.Individual : undefined;
-					candidate = {
-						kind: 'group_member_demoted',
-						demotedByMe: op.header.public_key === myDeviceId,
-						memberName: deviceId ? nameForDevice(deviceId) : '',
-						adminName: nameForDevice(op.header.public_key),
-						timestamp: ts,
-					};
+					if (addedDeviceId === myDeviceId) iWasAdded = true;
 				}
 
+				const candidate = buildGroupControlEvent(op, myDeviceId, nameForDevice);
 				if (
 					candidate &&
 					(!bestAuth || candidate.timestamp > bestAuth.timestamp)
@@ -359,4 +368,80 @@ export class GroupChatStore implements ReadMessagesStore {
 			this.client.sendMessage(this.chatId, content),
 		]);
 	}
+}
+
+function buildGroupControlEvent(
+	op: SimplifiedOperation<Payload>,
+	myDeviceId: DeviceId,
+	nameForDevice: (deviceId: DeviceId) => string,
+): GroupControlEvent | undefined {
+	const action = op.header.auth?.action;
+	if (!action) return undefined;
+	const ts = op.header.timestamp;
+	const actorDeviceId = op.header.public_key;
+	const actorIsMe = actorDeviceId === myDeviceId;
+
+	if ('Create' in action) {
+		return {
+			kind: 'group_created',
+			isMine: actorIsMe,
+			creatorName: actorIsMe ? '' : nameForDevice(actorDeviceId),
+			timestamp: ts,
+		};
+	}
+	if ('Add' in action) {
+		const memberDeviceId =
+			'Individual' in action.Add.member
+				? action.Add.member.Individual
+				: undefined;
+		return {
+			kind: 'group_member_added',
+			isMine: !!memberDeviceId && memberDeviceId === myDeviceId,
+			addedByMe: actorIsMe,
+			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : '',
+			adminName: nameForDevice(actorDeviceId),
+			timestamp: ts,
+		};
+	}
+	if ('Remove' in action) {
+		const memberDeviceId =
+			'Individual' in action.Remove.member
+				? action.Remove.member.Individual
+				: undefined;
+		return {
+			kind: 'group_member_removed',
+			isMine: !!memberDeviceId && memberDeviceId === myDeviceId,
+			removedByMe: actorIsMe,
+			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : '',
+			adminName: nameForDevice(actorDeviceId),
+			timestamp: ts,
+		};
+	}
+	if ('Promote' in action) {
+		const memberDeviceId =
+			'Individual' in action.Promote.member
+				? action.Promote.member.Individual
+				: undefined;
+		return {
+			kind: 'group_member_promoted',
+			promotedByMe: actorIsMe,
+			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : '',
+			adminName: nameForDevice(actorDeviceId),
+			timestamp: ts,
+		};
+	}
+	if ('Demote' in action) {
+		const memberDeviceId =
+			'Individual' in action.Demote.member
+				? action.Demote.member.Individual
+				: undefined;
+		return {
+			kind: 'group_member_demoted',
+			demotedByMe: actorIsMe,
+			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : '',
+			adminName: nameForDevice(actorDeviceId),
+			timestamp: ts,
+		};
+	}
+	return undefined;
 }

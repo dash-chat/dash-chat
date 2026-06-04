@@ -103,15 +103,7 @@ export interface ReadMessagesStore {
 	markAsRead(messageHashes: Hash[]): Promise<void>;
 }
 
-export type ChatSummaryLastEvent =
-	| {
-			kind: 'message';
-			text: string;
-			authorName?: string;
-			timestamp: number;
-	  }
-	| { kind: 'contact_request'; timestamp: number }
-	| { kind: 'contact_added'; timestamp: number }
+export type GroupControlEvent =
 	| {
 			kind: 'group_created';
 			isMine: boolean;
@@ -126,7 +118,14 @@ export type ChatSummaryLastEvent =
 			adminName: string;
 			timestamp: number;
 	  }
-	| { kind: 'group_member_removed'; timestamp: number }
+	| {
+			kind: 'group_member_removed';
+			isMine: boolean;
+			removedByMe: boolean;
+			memberName: string;
+			adminName: string;
+			timestamp: number;
+	  }
 	| {
 			kind: 'group_member_promoted';
 			promotedByMe: boolean;
@@ -141,6 +140,17 @@ export type ChatSummaryLastEvent =
 			adminName: string;
 			timestamp: number;
 	  };
+
+export type ChatSummaryLastEvent =
+	| {
+			kind: 'message';
+			text: string;
+			authorName?: string;
+			timestamp: number;
+	  }
+	| { kind: 'contact_request'; timestamp: number }
+	| { kind: 'contact_added'; timestamp: number }
+	| GroupControlEvent;
 
 export interface ChatSummary {
 	type: 'GroupChat' | 'DirectChat';

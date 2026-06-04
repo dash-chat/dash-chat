@@ -94,7 +94,22 @@
 						})}
 					{/if}
 				{:else if summary.lastEvent.kind === 'group_member_removed'}
-					{m.memberRemovedFromGroup()}
+					{#if summary.lastEvent.isMine}
+						{m.someoneRemovedYouFromTheGroup({
+							name: summary.lastEvent.adminName || m.someone(),
+						})}
+					{:else if summary.lastEvent.removedByMe}
+						{m.youRemovedMember({
+							name: summary.lastEvent.memberName || m.someone(),
+						})}
+					{:else if summary.lastEvent.memberName || summary.lastEvent.adminName}
+						{m.memberRemovedFromGroupBy({
+							admin: summary.lastEvent.adminName || m.someone(),
+							name: summary.lastEvent.memberName || m.someone(),
+						})}
+					{:else}
+						{m.memberRemovedFromGroup()}
+					{/if}
 				{:else if summary.lastEvent.kind === 'group_member_promoted'}
 					{#if summary.lastEvent.promotedByMe}
 						{m.youMadeMemberAdmin({
