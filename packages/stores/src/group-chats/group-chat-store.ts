@@ -186,6 +186,28 @@ export class GroupChatStore implements ReadMessagesStore {
 					};
 				} else if ('Remove' in action) {
 					candidate = { kind: 'group_member_removed', timestamp: ts };
+				} else if ('Promote' in action) {
+					const member = action.Promote.member;
+					const deviceId =
+						'Individual' in member ? member.Individual : undefined;
+					candidate = {
+						kind: 'group_member_promoted',
+						promotedByMe: op.header.public_key === myDeviceId,
+						memberName: deviceId ? nameForDevice(deviceId) : '',
+						adminName: nameForDevice(op.header.public_key),
+						timestamp: ts,
+					};
+				} else if ('Demote' in action) {
+					const member = action.Demote.member;
+					const deviceId =
+						'Individual' in member ? member.Individual : undefined;
+					candidate = {
+						kind: 'group_member_demoted',
+						demotedByMe: op.header.public_key === myDeviceId,
+						memberName: deviceId ? nameForDevice(deviceId) : '',
+						adminName: nameForDevice(op.header.public_key),
+						timestamp: ts,
+					};
 				}
 
 				if (
@@ -212,7 +234,7 @@ export class GroupChatStore implements ReadMessagesStore {
 
 		if (!messageEvent) return bestAuth;
 		if (!bestAuth) return messageEvent;
-		return messageEvent.timestamp >= bestAuth.timestamp
+		return messageEvent.timestamp > bestAuth.timestamp
 			? messageEvent
 			: bestAuth;
 	});

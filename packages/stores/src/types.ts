@@ -126,7 +126,21 @@ export type ChatSummaryLastEvent =
 			adminName: string;
 			timestamp: number;
 	  }
-	| { kind: 'group_member_removed'; timestamp: number };
+	| { kind: 'group_member_removed'; timestamp: number }
+	| {
+			kind: 'group_member_promoted';
+			promotedByMe: boolean;
+			memberName: string;
+			adminName: string;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_demoted';
+			demotedByMe: boolean;
+			memberName: string;
+			adminName: string;
+			timestamp: number;
+	  };
 
 export interface ChatSummary {
 	type: 'GroupChat' | 'DirectChat';

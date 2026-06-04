@@ -93,6 +93,26 @@
 					{/if}
 				{:else if summary.lastEvent.kind === 'group_member_removed'}
 					{m.memberRemovedFromGroup()}
+				{:else if summary.lastEvent.kind === 'group_member_promoted'}
+					{#if summary.lastEvent.promotedByMe}
+						{m.youMadeMemberAdmin({ name: summary.lastEvent.memberName })}
+					{:else}
+						{m.someoneMadeMemberAdmin({
+							admin: summary.lastEvent.adminName,
+							name: summary.lastEvent.memberName,
+						})}
+					{/if}
+				{:else if summary.lastEvent.kind === 'group_member_demoted'}
+					{#if summary.lastEvent.demotedByMe}
+						{m.youRevokedAdminFromMember({
+							name: summary.lastEvent.memberName,
+						})}
+					{:else}
+						{m.someoneRevokedAdminFromMember({
+							admin: summary.lastEvent.adminName,
+							name: summary.lastEvent.memberName,
+						})}
+					{/if}
 				{:else if summary.lastEvent.kind === 'message'}
 					{#if summary.type === 'GroupChat' && summary.lastEvent.authorName}
 						<strong>{summary.lastEvent.authorName}</strong>: {summary.lastEvent
