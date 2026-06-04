@@ -219,7 +219,7 @@
 
 							{#each messageSetInDay.eventsSets as messageSet}
 								<div class="column" style="gap: 1px">
-									{#each messageSet as [hash, message], i (hash)}
+									{#each messageSet as [hash, item], i (hash)}
 										{#if unreadDivider.hash === hash}
 											<div
 												class="unread-divider"
