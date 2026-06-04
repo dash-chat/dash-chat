@@ -604,6 +604,40 @@ impl Node {
         Ok(header)
     }
 
+    /// Returns the most recent `GroupDetails` payload in this topic's logs, or
+    /// `None` if no member has authored one yet. "Most recent" is
+    /// `(timestamp, seq_num)` across all author logs — matches the resolution
+    /// in `GroupChatStore.details` on the frontend.
+    pub async fn get_group_details(
+        &self,
+        topic_id: TopicId,
+    ) -> anyhow::Result<Option<crate::GroupDetails>> {
+        let authors = self.op_store.get_authors(topic_id).await?;
+        let mut latest: Option<(Header, crate::GroupDetails)> = None;
+        for author in authors {
+            for op in self.op_store.get_log(&author, &topic_id, None).await? {
+                let Some(body) = op.body else { continue };
+                let Ok(Payload::Chat(ChatPayload::GroupDetails(details))) =
+                    Payload::try_from_body(&body)
+                else {
+                    continue;
+                };
+                let is_later = match &latest {
+                    None => true,
+                    Some((h, _)) => {
+                        op.header.timestamp > h.timestamp
+                            || (op.header.timestamp == h.timestamp
+                                && op.header.seq_num > h.seq_num)
+                    }
+                };
+                if is_later {
+                    latest = Some((op.header, details));
+                }
+            }
+        }
+        Ok(latest.map(|(_, d)| d))
+    }
+
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
