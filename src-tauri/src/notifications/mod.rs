@@ -114,7 +114,15 @@ pub async fn build_notification_data(
     };
 
     let Some(payload) = payload else {
-        return Some(auth_control_op_notification(node, sender_device_id, id).await);
+        #[cfg(mobile)]
+        {
+            return auth_control_op_notification(node, header, sender_device_id, id).await;
+        }
+        #[cfg(not(mobile))]
+        {
+            let _ = (header, sender_device_id, id);
+            return None;
+        }
     };
 
     match payload {
@@ -212,27 +220,28 @@ async fn chat_message_notification(
 }
 
 /// Build the user-facing notification for a body-less p2panda auth/control op
-/// (GroupControl: Create/Add/Remove). These carry their data in the header's
-/// auth extension and have no body to decode.
+/// (GroupControl: Create/Add/Remove/Promote/Demote). These carry their data in
+/// the header's auth extension and have no body to decode. Returns `None` to
+/// suppress the notification (e.g. a group action targeting someone else).
 ///
-/// Today this fires for *every* body-less op the NSE sees, and we surface them
-/// all as "contact request accepted" — the most common case (the auth Create
-/// the acceptor authors on a new direct chat space). It will misrepresent
-/// future group `Add`/`Remove` operations.
-///
-/// TODO: once Apple grants the
-/// `com.apple.developer.usernotifications.filtering` entitlement
-/// (https://developer.apple.com/contact/request/notification-service), delete
-/// this helper. The caller should return `None` for body-less ops, the NSE
-/// should call `contentHandler(UNMutableNotificationContent())`, and any cases
-/// that DO warrant a notification (real contact-request acceptance, group
-/// member changes) should be implemented by inspecting the auth extension —
-/// distinguishing Create from Add/Remove — instead of this catch-all.
+/// Mobile-only: on desktop we don't surface these as system notifications —
+/// the chat-list row already reflects the auth event reactively.
+#[cfg(mobile)]
 async fn auth_control_op_notification(
     node: &Node,
+    header: &Header,
     sender_device_id: DeviceId,
     id: i32,
-) -> NotificationData {
+) -> Option<NotificationData> {
+    let action = &header.extensions.auth.as_ref()?.action;
+
+    let target_is_me = |member: &p2panda_auth::group::GroupMember<p2panda_core::PublicKey>| {
+        matches!(
+            member,
+            p2panda_auth::group::GroupMember::Individual(pk) if DeviceId::from(*pk) == node.device_id()
+        )
+    };
+
     let sender_agent_id = node.lookup_contact(sender_device_id).await.ok().flatten();
     let sender_name = match sender_agent_id {
         Some(agent_id) => node
@@ -244,19 +253,75 @@ async fn auth_control_op_notification(
             .map(|profile| profile.name),
         None => None,
     };
-    let title = match &sender_name {
-        Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
-        None => sonix_i18n::t!("contactRequestAcceptedNoName"),
+
+    let group_route = Some(format!(
+        "/group-chat/{}",
+        hex::encode(&*header.extensions.topic)
+    ));
+
+    let (title, body, route) = match action {
+        // In practice this is the auth Create the acceptor authors on a new
+        // direct-chat space when they accept a contact request.
+        p2panda_auth::group::GroupAction::Create { .. } => {
+            let title = match &sender_name {
+                Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
+                None => sonix_i18n::t!("contactRequestAcceptedNoName"),
+            };
+            let route = sender_agent_id.map(|aid| format!("/direct-chats/{}", aid.to_hex()));
+            (title, None, route)
+        }
+        p2panda_auth::group::GroupAction::Add { member, .. } => {
+            if !target_is_me(member) {
+                return None;
+            }
+            let body = match &sender_name {
+                Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
+                None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
+            };
+            // TODO: replace with the real group name once group naming lands;
+            // the UI currently hardcodes "mygroup" too (see GroupChatStore.info).
+            ("mygroup".to_string(), Some(body), group_route)
+        }
+        p2panda_auth::group::GroupAction::Remove { member } => {
+            if !target_is_me(member) {
+                return None;
+            }
+            let title = match &sender_name {
+                Some(name) => sonix_i18n::t!("someoneRemovedYouFromTheGroup", { "name": name }),
+                None => sonix_i18n::t!("someoneRemovedYouFromTheGroupNoName"),
+            };
+            (title, None, group_route)
+        }
+        p2panda_auth::group::GroupAction::Promote { member, .. } => {
+            if !target_is_me(member) {
+                return None;
+            }
+            let title = match &sender_name {
+                Some(name) => sonix_i18n::t!("someoneMadeYouAnAdmin", { "name": name }),
+                None => sonix_i18n::t!("someoneMadeYouAnAdminNoName"),
+            };
+            (title, None, group_route)
+        }
+        p2panda_auth::group::GroupAction::Demote { member, .. } => {
+            if !target_is_me(member) {
+                return None;
+            }
+            let title = match &sender_name {
+                Some(name) => sonix_i18n::t!("someoneRevokedAdminFromYou", { "name": name }),
+                None => sonix_i18n::t!("someoneRevokedAdminFromYouNoName"),
+            };
+            (title, None, group_route)
+        }
     };
-    let route = sender_agent_id.map(|aid| format!("/direct-chats/{}", aid.to_hex()));
-    NotificationData {
+
+    Some(NotificationData {
         id,
         title: Some(title),
-        body: None,
+        body,
         icon: Some("ic_stat_icon".to_string()),
         route,
         ..Default::default()
-    }
+    })
 }
 
 #[cfg(mobile)]
