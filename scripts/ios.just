@@ -9,9 +9,15 @@ export IPHONEOS_DEPLOYMENT_TARGET := "14.0"
 dev:
     pnpm tauri ios dev --host
 
+# run the app in an iPhone simulator
+dev-sim device="iPhone 16":
+    pnpm tauri ios dev "{{device}}"
+
+# build the app
 build:
     pnpm tauri ios build
 
+# open XCode to build the app
 build-xcode:    
     pnpm tauri ios build -o
 

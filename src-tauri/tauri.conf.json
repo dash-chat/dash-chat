@@ -1,10 +1,11 @@
 {
 	"productName": "Dash Chat",
-	"version": "0.15.0",
+	"version": "0.17.1",
 	"identifier": "studio.darksoil.dashchat",
 	"build": {
 		"beforeDevCommand": "pnpm dev",
 		"beforeBuildCommand": "pnpm -F dash-chat-stores build && pnpm -F ui build",
+		"beforeBundleCommand": "../scripts/build-assets-car.sh",
 		"devUrl": "http://localhost:1420",
 		"frontendDist": "../ui/build"
 	},
@@ -12,8 +13,8 @@
 		"windows": [
 			{
 				"title": "Dash Chat",
-				"width": 800,
-				"height": 600
+				"width": 850,
+				"height": 650
 			}
 		],
 		"withGlobalTauri": true,
@@ -36,7 +37,10 @@
 			"icons/icon.ico"
 		],
 		"macOS": {
-			"entitlements": "entitlements.plist"
+			"entitlements": "entitlements.plist",
+			"files": {
+				"Resources/Assets.car": "icons/Assets.car"
+			}
 		},
 		"createUpdaterArtifacts": true
 	},
@@ -52,6 +56,14 @@
 			"desktop": {
 				"schemes": ["dash-chat"]
 			}
+		},
+		"notification": {
+			"priority": "high",
+			"sound": "default",
+			"icon": "ic_stat_icon",
+			"iconColor": "#3b82f6",
+			"vibrationPattern": [0, 250, 250, 250],
+			"lightColor": "#3b82f6"
 		}
 	}
 }

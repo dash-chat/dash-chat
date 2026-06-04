@@ -1,13 +1,12 @@
 mod commands;
+mod device_info;
 mod filesystem;
 mod i18n;
 mod mailbox;
+mod notifications;
 mod settings;
 mod setup;
 mod utils;
-
-#[cfg(mobile)]
-mod push_notifications;
 
 #[cfg(desktop)]
 mod menu;
@@ -79,6 +78,7 @@ pub fn run() {
 
     builder
         .invoke_handler(tauri::generate_handler![
+            device_info::display::log_webview_info,
             commands::logs::get_log,
             commands::logs::get_authors,
             commands::redact_log::get_redacted_log,
@@ -92,17 +92,22 @@ pub fn run() {
             commands::contacts::active_inbox_topics,
             commands::contacts::reject_contact_request,
             commands::direct_chats::direct_chat_id,
-            commands::direct_chats::direct_chat_send_message,
+            commands::chats::send_message,
+            commands::chats::send_reaction,
             commands::chats::mark_messages_read,
-            commands::direct_chats::direct_chat_send_reaction,
+            commands::chats::create_group,
+            commands::chats::set_group_details,
+            commands::chats::add_group_member,
+            commands::chats::get_group_chats,
+            commands::chats::get_group_members,
             commands::settings::get_settings,
             commands::settings::set_setting,
             #[cfg(not(mobile))]
             commands::settings::set_local_mailbox_enabled,
-            // commands::chats::create_group,
-            // commands::group_chat::add_member,
-            // commands::group_chat::send_message,
-            // commands::group_chat::get_messages,
+            commands::mailbox_state::mailbox_subscribe_active_ids,
+            commands::mailbox_state::mailbox_subscribe_all_ids,
+            commands::mailbox_state::mailbox_subscribe_connection_state,
+            commands::mailbox_state::mailbox_subscribe_sync_state,
         ])
         // .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
@@ -112,6 +117,7 @@ pub fn run() {
         .plugin(tauri_plugin_sharekit::init())
         .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_os::init())
         .setup(move |app| {
             let handle = app.handle().clone();
 

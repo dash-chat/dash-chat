@@ -49,7 +49,7 @@
 			{#if isSidebarRoute}
 				<EmptyState />
 				{#if isHome}
-					<div class="absolute bottom-3 left-0 right-0 z-10">
+					<div class="absolute bottom-3 inset-x-0 z-10">
 						<GetStarted />
 					</div>
 				{/if}
@@ -93,7 +93,7 @@
 	}
 
 	.desktop-content-settings :global(.k-navbar:not(:has(.k-navbar-back-link))) {
-		padding-left: 12px;
+		padding-inline-start: 12px;
 	}
 
 	:global(.dark) .desktop-sidebar {

@@ -29,5 +29,10 @@ jobs:
         with:
           rustflags: '' # TODO: remove this when we want to disallow warnings in our rust code in CI
 
+      - name: Cache Rust target
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
       - name: Test
         run: cargo test

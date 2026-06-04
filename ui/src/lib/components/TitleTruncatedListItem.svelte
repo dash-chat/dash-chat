@@ -14,6 +14,7 @@
 	titleWrapClass={['title-truncated-wrap', titleWrapClass]
 		.filter(Boolean)
 		.join(' ')}
+	innerClass="min-w-0"
 	{...rest}
 >
 	{#if children}{@render children()}{/if}
@@ -27,6 +28,6 @@
 		width: 0;
 		flex-shrink: 1;
 		flex-grow: 1;
-		margin-right: 8px;
+		margin-inline-end: 8px;
 	}
 </style>

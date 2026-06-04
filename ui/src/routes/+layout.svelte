@@ -4,6 +4,7 @@
 
 	import '../app.css';
 	import { setContext } from 'svelte';
+	import { invoke } from '@tauri-apps/api/core';
 
 	import {
 		ChatsClient,
@@ -18,11 +19,14 @@
 		DevicesStore,
 		SettingsClient,
 		SettingsStore,
+		MailboxTrackerStore,
+		type IMailboxTrackerStore,
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
 		MockDirectChatClient,
 		MockGroupChatClient,
+		MockMailboxTrackerStore,
 		MockSettingsClient,
 		seedDemoData,
 		DEMO_IDS,
@@ -35,19 +39,39 @@
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useSignal } from '$lib/stores/use-signal';
+	import { useReactivePromise, useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMac, isMobile, isTauriEnv } from '$lib/utils/environment';
+	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 
 	import { m } from '$lib/paraglide/messages.js';
-	import { setLocale } from '$lib/paraglide/runtime';
+	import { getLocale, type Locale, setLocale } from '$lib/paraglide/runtime';
 	import { goto } from '$app/navigation';
-	window.__setLocale = setLocale;
+	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
+	import { previewFeatures } from '$lib/stores/preview-features.svelte';
+	import { registerSetLocale } from '$lib/utils/locale';
+
+	// TODO: once the language-selector setting lands, make that setting the
+	// source of truth for this state (read it via `useSignal(settingsStore.locale)`
+	// or similar) and have the selector's onChange call into paraglide's
+	// `setLocale`. The `{#key}` mechanism stays the same.
+	let currentLocale = $state<Locale>(getLocale());
+	registerSetLocale(locale => {
+		currentLocale = locale;
+	});
 
 	import('../../tests/setup-utils').then(({ registerTestUtils }) =>
-		registerTestUtils(goto),
+		// Paraglide types setLocale with a string-literal union; we widen to
+		// plain `string` at the test boundary since invalid locales fail at
+		// runtime anyway.
+		registerTestUtils(goto, setLocale as (locale: string) => void, m, () =>
+			previewFeatures.enable(),
+		),
 	);
+
+	// Forward console.log/info/warn/error from the WebView to the tauri logs
+	forwardConsoleToTauriLog();
 
 	let { children } = $props();
 
@@ -60,6 +84,7 @@
 	let devicesStore: DevicesStore;
 	let contactsStore: ContactsStore;
 	let chatsStore: ChatsStore;
+	let mailboxTrackerStore: IMailboxTrackerStore;
 
 	if (isPreview) {
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
@@ -94,6 +119,8 @@
 			() => new MockDirectChatClient(mockLogsClient, DEMO_IDS.MY_AGENT_ID),
 			() => new MockGroupChatClient(),
 		);
+
+		mailboxTrackerStore = new MockMailboxTrackerStore();
 	} else {
 		const logsClient = new TauriLogsClient<Payload>();
 		logsStore = new LogsStore<Payload>(logsClient);
@@ -107,12 +134,23 @@
 
 		const chatsClient = new ChatsClient();
 		chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
+
+		mailboxTrackerStore = new MailboxTrackerStore();
+
+		invoke('log_webview_info', { userAgent: navigator.userAgent }).catch(
+			() => {},
+		);
 	}
 
 	setContext('settings-store', settingsStore);
 	setContext('devices-store', devicesStore);
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
+	setContext('mailbox-tracker-store', mailboxTrackerStore);
+
+	// Keep the chats summaries signal warm so it's always fully loaded
+	// when navigating back home from any page
+	useKeepAlive(chatsStore.allChatsSummaries);
 
 	const isDark = useSignal(settingsStore.isDark);
 
@@ -159,15 +197,17 @@
 <KonstaProvider {theme} dark={effectiveDark}>
 	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
 		<SplashscreenPrompt>
-			{#if isWideScreen.value}
-				<DesktopLayout>
-					{@render children()}
-				</DesktopLayout>
-			{:else}
-				<MobileLayout>
-					{@render children()}
-				</MobileLayout>
-			{/if}
+			{#key currentLocale}
+				{#if isWideScreen.value}
+					<DesktopLayout>
+						{@render children()}
+					</DesktopLayout>
+				{:else}
+					<MobileLayout>
+						{@render children()}
+					</MobileLayout>
+				{/if}
+			{/key}
 		</SplashscreenPrompt>
 		<ToastManager />
 	</App>

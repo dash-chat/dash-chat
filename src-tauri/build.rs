@@ -4,6 +4,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=MAILBOX_PORT");
     println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_PORT");
 
+    capture_git_commit();
+
     // Bake the dev server URLs (using the compile host's local IP) into debug
     // builds so mobile devices on the same LAN can reach them. Release builds
     // fall through to the production URLs at runtime.
@@ -40,4 +42,29 @@ fn local_ip() -> Option<String> {
     let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
     socket.connect("8.8.8.8:80").ok()?;
     Some(socket.local_addr().ok()?.ip().to_string())
+}
+
+fn capture_git_commit() {
+    let mut gitcl = match vergen_gitcl::GitclBuilder::default()
+        .sha(true)
+        .branch(true)
+        .dirty(true)
+        .build()
+    {
+        Ok(g) => g,
+        Err(err) => {
+            println!("cargo:warning=Failed to build vergen Gitcl: {err}");
+            return;
+        }
+    };
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("CARGO_MANIFEST_DIR has no parent");
+    gitcl.at_path(workspace_root.to_path_buf());
+    if let Err(err) = vergen_gitcl::Emitter::default()
+        .add_instructions(&gitcl)
+        .and_then(|e| e.emit())
+    {
+        println!("cargo:warning=Failed to emit git instructions: {err}");
+    }
 }

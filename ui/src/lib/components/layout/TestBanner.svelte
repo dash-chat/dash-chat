@@ -22,7 +22,7 @@
 			disabled={isContactUsPage}
 			small
 			inline
-			class="ml-2 normal-case feedback-btn"
+			class="ms-2 normal-case feedback-btn"
 			colors={{
 				fillBgIos: 'bg-white active:bg-gray-100',
 				fillBgMaterial: 'bg-white',

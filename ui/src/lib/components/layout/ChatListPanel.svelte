@@ -5,7 +5,7 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiSquareEditOutline } from '@mdi/js';
-	import AllChats from '$lib/components/AllChats.svelte';
+	import AllChats from '$lib/components/chats/AllChats.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
 
 	import { Link, Navbar, useTheme } from 'konsta/svelte';
@@ -38,7 +38,7 @@
 				onClick={() => {
 					pushState('', { sidebarPanel: 'new-message' });
 				}}
-				data-testid="home-new-message-link"
+				data-testid="home-new-message-btn"
 			>
 				<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
 			</Link>

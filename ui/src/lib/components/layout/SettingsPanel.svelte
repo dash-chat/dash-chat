@@ -86,7 +86,7 @@
 						initials={myProfile?.name.slice(0, 2)}
 						style={isWideScreen.value || theme === 'ios'
 							? '--size: 64px'
-							: '--size: 64px; margin-left: 16px'}
+							: '--size: 64px; margin-inline-start: 16px'}
 					/>
 				{/snippet}
 				{#snippet after()}
@@ -136,21 +136,19 @@
 					></wa-icon>
 				{/snippet}
 			</ListItem>
-			{#if isMobile}
-				<ListItem
-					link
-					class={isActive('/settings/notifications') ? 'active' : ''}
-					linkProps={{ href: '/settings/notifications' }}
-					data-testid="settings-notifications-link"
-					title={m.notifications()}
-					chevron={false}
-				>
-					{#snippet media()}
-						<wa-icon src={wrapPathInSvg(mdiBellOutline)} style="font-size: 28px"
-						></wa-icon>
-					{/snippet}
-				</ListItem>
-			{/if}
+			<ListItem
+				link
+				class={isActive('/settings/notifications') ? 'active' : ''}
+				linkProps={{ href: '/settings/notifications' }}
+				data-testid="settings-notifications-link"
+				title={m.notifications()}
+				chevron={false}
+			>
+				{#snippet media()}
+					<wa-icon src={wrapPathInSvg(mdiBellOutline)} style="font-size: 28px"
+					></wa-icon>
+				{/snippet}
+			</ListItem>
 		</List>
 
 		{#if !isMobile}

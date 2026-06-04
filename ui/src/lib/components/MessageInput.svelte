@@ -54,54 +54,68 @@
 			textarea.focus();
 		}
 	}
+
+	function keepKeyboardOpen(event: Event) {
+		if (event.target !== textarea) {
+			event.preventDefault();
+		}
+	}
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="message-input-bar m-2 pb-safe"
-	class:bg-md-light-surface={theme === 'material'}
-	class:dark:bg-md-dark-surface={theme === 'material'}
+	style="display: flow-root"
+	onmousedown={keepKeyboardOpen}
+	ontouchstart={keepKeyboardOpen}
+	onpointerdown={keepKeyboardOpen}
 >
-	<div class="row gap-2" style="align-items: flex-end; margin: 0 auto">
-		<div
-			class={theme === 'ios'
-				? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-				: 'input-container bg-white dark:bg-gray-800'}
-		>
-			{#if onEmojiClick && !isIos}
-				<button
-					type="button"
-					class="icon-button emoji-btn"
-					onclick={onEmojiClick}
-					aria-label="Emoji"
-					data-testid="message-input-emoji"
-				>
-					<wa-icon src={wrapPathInSvg(mdiEmoticonHappyOutline)}></wa-icon>
-				</button>
-			{/if}
+	<div
+		class="message-input-bar m-2 pb-safe"
+		class:bg-md-light-surface={theme === 'material'}
+		class:dark:bg-md-dark-surface={theme === 'material'}
+	>
+		<div class="row gap-2" style="align-items: flex-end; margin: 0 auto">
+			<div
+				class={theme === 'ios'
+					? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+					: 'input-container bg-white dark:bg-gray-800'}
+			>
+				{#if onEmojiClick && !isIos}
+					<button
+						type="button"
+						class="icon-button emoji-btn"
+						onclick={onEmojiClick}
+						aria-label="Emoji"
+						data-testid="message-input-emoji"
+					>
+						<wa-icon src={wrapPathInSvg(mdiEmoticonHappyOutline)}></wa-icon>
+					</button>
+				{/if}
 
-			<textarea
-				class="message-textarea"
-				data-testid="message-input-textarea"
-				{placeholder}
-				bind:value
-				bind:this={textarea}
-				rows="1"
-				onkeydown={handleKeydown}
-				oninput={handleInput}
-			></textarea>
+				<textarea
+					class="message-textarea"
+					data-testid="message-input-textarea"
+					{placeholder}
+					bind:value
+					bind:this={textarea}
+					rows="1"
+					onkeydown={handleKeydown}
+					oninput={handleInput}
+				></textarea>
+			</div>
+
+			<button
+				type="button"
+				class="send-button"
+				data-testid="message-input-send"
+				class:active={hasText}
+				onclick={handleSendClick}
+				disabled={!hasText}
+				aria-label="Send"
+			>
+				<wa-icon src={wrapPathInSvg(mdiSend)}></wa-icon>
+			</button>
 		</div>
-
-		<button
-			type="button"
-			class="send-button"
-			data-testid="message-input-send"
-			class:active={hasText}
-			onclick={handleSendClick}
-			disabled={!hasText}
-			aria-label="Send"
-		>
-			<wa-icon src={wrapPathInSvg(mdiSend)}></wa-icon>
-		</button>
 	</div>
 </div>
 
@@ -217,6 +231,6 @@
 	}
 
 	.send-button :global(wa-icon) {
-		margin-left: 2px; /* Optical centering for send arrow */
+		margin-inline-start: 2px; /* Optical centering for send arrow */
 	}
 </style>

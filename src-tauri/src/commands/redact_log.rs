@@ -1,11 +1,13 @@
 use regex::Regex;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
+use std::time::SystemTime;
 use tauri::{AppHandle, Manager};
 
 use crate::filesystem::FileSystem;
 
-const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
+const MAX_LOG_BYTES: usize = 5 * 1024 * 1024;
 
 static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     [
@@ -21,39 +23,81 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"(PublicKey|Hash|Signature)\(\[[\d, ]+\]\)",
         // Timestamps (seconds or microseconds since epoch, 10+ digits)
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
-        // Debug format: name/surname/about fields with quoted values
-        r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
-        // Debug format: ChatMessageContent("...")
+        // Debug format: name/surname/about/description fields with quoted values
+        r#"(name|surname|about|description):\s*(Some\()?"[^"]*"(\))?"#,
+        // Debug format: ChatMessageContent("...") — legacy bare form, kept
+        // in case rotating log buffers still contain entries from older builds.
         r#"ChatMessageContent\("[^"]*"\)"#,
+        // Debug format: V0 unversioned content — ChatMessageContentV0("hello")
+        r#"ChatMessageContentV0\("[^"]*"\)"#,
+        // Debug format: V1 versioned content — `message: "hello"` inside
+        // ChatMessageContentV1 { message: "...", media: ... }. Use \b so we
+        // don't match substrings inside identifiers.
+        r#"\bmessage:\s*"[^"]*""#,
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
-        // JSON format: "name":"...", "surname":"...", "about":"..."
-        r#""(name|surname|about)"\s*:\s*"[^"]*""#,
+        // JSON format: "name":"...", "surname":"...", "about":"...", "description":"..."
+        r#""(name|surname|about|description)"\s*:\s*"[^"]*""#,
         // JSON format: "content":"..."
         r#""content"\s*:\s*"[^"]*""#,
         // JSON format: "emoji":"..."
         r#""emoji"\s*:\s*"[^"]*""#,
+        // OS username inside filesystem paths. The whole `/home/<user>` (or
+        // `/Users/<user>` / `\Users\<user>`) prefix is collapsed to [REDACTED];
+        // the rest of the path is preserved so logs stay readable.
+        r"/home/[^/\s]+",
+        r"/Users/[^/\s]+",
+        r"\\Users\\[^\\\s]+",
+        // Hostname value (e.g. "Alices-MacBook-Pro.local" on macOS) — match
+        // the whole `Hostname: <value>` line; both label and value are
+        // identifying enough that we just drop the lot.
+        r"Hostname:\s*[^\n\r]*",
     ]
     .iter()
     .map(|p| Regex::new(p).expect("invalid redaction pattern"))
     .collect()
 });
 
-fn read_tail(path: &std::path::Path, max_bytes: u64) -> std::io::Result<String> {
-    let mut file = std::fs::File::open(path)?;
-    let len = file.metadata()?.len();
-    if len > max_bytes {
-        file.seek(SeekFrom::End(-(max_bytes as i64)))?;
-    }
+/// Read `paths` in order, concatenate their contents, and tail the result
+/// to at most `max_bytes`. When truncation happens, the first partial line
+/// is dropped so the output starts on a clean log line.
+fn read_concat_tail(paths: &[PathBuf], max_bytes: usize) -> std::io::Result<String> {
     let mut buf = String::new();
-    file.read_to_string(&mut buf)?;
-    if len > max_bytes {
-        // Drop the first partial line
+    for path in paths {
+        let mut file = std::fs::File::open(path)?;
+        file.read_to_string(&mut buf)?;
+        if !buf.is_empty() && !buf.ends_with('\n') {
+            buf.push('\n');
+        }
+    }
+    if buf.len() > max_bytes {
+        let mut start = buf.len() - max_bytes;
+        while start < buf.len() && !buf.is_char_boundary(start) {
+            start += 1;
+        }
+        buf.drain(..start);
         if let Some(pos) = buf.find('\n') {
             buf.drain(..=pos);
         }
     }
     Ok(buf)
+}
+
+/// List every `*.log` file in `log_dir`, sorted by modification time
+/// ascending (oldest first). `tauri-plugin-log` with KeepOne rotation
+/// leaves a date-stamped older sibling alongside the live file; this
+/// returns both so the caller can stitch the full history back together.
+fn list_log_files_oldest_first(log_dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let mut entries: Vec<(SystemTime, PathBuf)> = std::fs::read_dir(log_dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("log"))
+        .filter_map(|e| {
+            let mtime = e.metadata().and_then(|m| m.modified()).ok()?;
+            Some((mtime, e.path()))
+        })
+        .collect();
+    entries.sort_by_key(|(mtime, _)| *mtime);
+    Ok(entries.into_iter().map(|(_, p)| p).collect())
 }
 
 pub fn redact(content: &str) -> String {
@@ -69,23 +113,27 @@ pub fn get_redacted_log(app_handle: AppHandle) -> Result<String, String> {
     let log_dir = FileSystem::new(&app_handle)
         .map_err(|e| format!("Failed to resolve log dir: {e:?}"))?
         .logs_dir();
-    // tauri-plugin-log writes to `<log_dir>/<package_name>.log`, but the
-    // package name source has shifted between Tauri versions, and the
-    // KeepOne rotation can leave a date-stamped older file alongside the
-    // live one. Scan for any `*.log` and pick the most recently modified —
-    // that's the active log regardless of how it's named.
-    let log_file = std::fs::read_dir(&log_dir)
-        .map_err(|e| format!("Failed to list log dir {}: {e:?}", log_dir.display()))?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("log"))
-        .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
-        .map(|e| e.path())
-        .ok_or_else(|| format!("No *.log file in {}", log_dir.display()))?;
+    // tauri-plugin-log rotates `<package_name>.log` into a date-stamped
+    // sibling under KeepOne, so the directory can hold one rotated file
+    // plus the live one. Read both (oldest first) so the report covers
+    // the full retained history, not just the post-rotation tail.
+    let log_files = list_log_files_oldest_first(&log_dir)
+        .map_err(|e| format!("Failed to list log dir {}: {e:?}", log_dir.display()))?;
+    if log_files.is_empty() {
+        return Err(format!("No *.log file in {}", log_dir.display()));
+    }
 
-    log::info!("Redacting log file: {}", log_file.display());
+    log::info!(
+        "Redacting log files: {}",
+        log_files
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 
-    let content = read_tail(&log_file, MAX_LOG_BYTES)
-        .map_err(|e| format!("Failed to read log {}: {e:?}", log_file.display()))?;
+    let content = read_concat_tail(&log_files, MAX_LOG_BYTES)
+        .map_err(|e| format!("Failed to read logs in {}: {e:?}", log_dir.display()))?;
 
     let redacted = redact(&content);
 
@@ -205,12 +253,57 @@ mod tests {
     }
 
     #[test]
+    fn redacts_group_details_debug() {
+        let input =
+            r#"GroupDetails { name: "Family", description: Some("Secret plan"), image: None }"#;
+        let result = redact(input);
+        assert!(!result.contains("Family"), "name not redacted: {result}");
+        assert!(
+            !result.contains("Secret plan"),
+            "description not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_group_details_json() {
+        let input = r#"{"name":"Family","description":"Secret plan","image":null}"#;
+        let result = redact(input);
+        assert!(!result.contains("Family"), "name not redacted: {result}");
+        assert!(
+            !result.contains("Secret plan"),
+            "description not redacted: {result}"
+        );
+    }
+
+    #[test]
     fn redacts_chat_message_debug() {
         let input = r#"ChatMessageContent("secret message here")"#;
         let result = redact(input);
         assert!(
             !result.contains("secret message"),
             "message not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_chat_message_debug_v0_wrapped() {
+        // Compat<…V0, …V> Debug for the V0 branch:
+        let input = r#"ChatMessageContent(Unversioned(ChatMessageContentV0("secret v0 body")))"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("secret v0 body"),
+            "v0 message not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_chat_message_debug_v1_wrapped() {
+        // Compat<…V0, …V> Debug for the V1 branch:
+        let input = r#"ChatMessageContent(Versioned(V1(ChatMessageContentV1 { message: "secret v1 body", media: None })))"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("secret v1 body"),
+            "v1 message not redacted: {result}"
         );
     }
 
@@ -237,39 +330,142 @@ mod tests {
     }
 
     #[test]
+    fn redacts_hostname_line() {
+        let input = "Hostname: Alices-MacBook-Pro.local";
+        let result = redact(input);
+        assert!(
+            !result.contains("Alices"),
+            "hostname not redacted: {result}"
+        );
+        assert!(
+            !result.contains("MacBook-Pro"),
+            "hostname not redacted: {result}"
+        );
+        assert_eq!(result, "[REDACTED]");
+    }
+
+    #[test]
+    fn redacts_username_in_linux_path_keeps_rest() {
+        let input = "App data dir: /home/alice/.local/share/dash-chat";
+        let result = redact(input);
+        assert!(!result.contains("alice"), "username not redacted: {result}");
+        assert_eq!(result, "App data dir: [REDACTED]/.local/share/dash-chat",);
+    }
+
+    #[test]
+    fn redacts_username_in_macos_path_keeps_rest() {
+        let input = "App root dir: /Users/alice/Library/Application Support/dash-chat";
+        let result = redact(input);
+        assert!(!result.contains("alice"), "username not redacted: {result}");
+        assert_eq!(
+            result,
+            "App root dir: [REDACTED]/Library/Application Support/dash-chat",
+        );
+    }
+
+    #[test]
+    fn redacts_username_in_windows_path_keeps_rest() {
+        let input = "Logs dir: C:\\Users\\alice\\AppData\\Roaming\\dash-chat\\logs";
+        let result = redact(input);
+        assert!(!result.contains("alice"), "username not redacted: {result}");
+        assert_eq!(
+            result,
+            "Logs dir: C:[REDACTED]\\AppData\\Roaming\\dash-chat\\logs",
+        );
+    }
+
+    #[test]
+    fn redacts_username_anywhere_paths_appear() {
+        // Paths leak through many log lines, not just the device-info labels.
+        let input = "Redacting log file: /home/alice/.local/share/dash-chat/logs/dash-chat.log";
+        let result = redact(input);
+        assert!(!result.contains("alice"), "username not redacted: {result}");
+        assert!(
+            result.contains("[REDACTED]/.local/share/dash-chat/logs/dash-chat.log"),
+            "path tail should be preserved: {result}"
+        );
+    }
+
+    #[test]
     fn preserves_non_sensitive_log_lines() {
         let input = "2024-02-15T10:30:00 INFO stream processing loop cancelled";
         assert_eq!(redact(input), input);
     }
 
     #[test]
-    fn read_tail_small_file() {
-        let dir = std::env::temp_dir().join("dashchat_test_read_tail_small");
+    fn read_concat_tail_small_single_file() {
+        let dir = std::env::temp_dir().join("dashchat_test_concat_small");
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("small.log");
         std::fs::write(&path, "line1\nline2\nline3\n").unwrap();
-        let result = read_tail(&path, 1024).unwrap();
+        let result = read_concat_tail(&[path], 1024).unwrap();
         assert_eq!(result, "line1\nline2\nline3\n");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn read_tail_truncates_large_file() {
-        let dir = std::env::temp_dir().join("dashchat_test_read_tail_large");
+    fn read_concat_tail_truncates_large_single_file() {
+        let dir = std::env::temp_dir().join("dashchat_test_concat_truncate");
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("large.log");
-        // Write 100 bytes of padding then 3 meaningful lines
         let padding = "x".repeat(90) + "\n";
         let tail = "line_a\nline_b\nline_c\n";
         std::fs::write(&path, format!("{padding}{tail}")).unwrap();
-        // Read only last 30 bytes — should drop the first partial line
-        let result = read_tail(&path, 30).unwrap();
+        let result = read_concat_tail(&[path], 30).unwrap();
         assert!(
             !result.contains('x'),
             "padding should be truncated: {result}"
         );
         assert!(result.contains("line_b"), "should contain line_b: {result}");
         assert!(result.contains("line_c"), "should contain line_c: {result}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_concat_tail_joins_files_in_order() {
+        let dir = std::env::temp_dir().join("dashchat_test_concat_join");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let older = dir.join("rotated.log");
+        let newer = dir.join("live.log");
+        std::fs::write(&older, "older1\nolder2\n").unwrap();
+        std::fs::write(&newer, "newer1\nnewer2\n").unwrap();
+        let result = read_concat_tail(&[older, newer], 1024).unwrap();
+        assert_eq!(result, "older1\nolder2\nnewer1\nnewer2\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_concat_tail_inserts_newline_between_files() {
+        let dir = std::env::temp_dir().join("dashchat_test_concat_newline");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = dir.join("a.log");
+        let b = dir.join("b.log");
+        std::fs::write(&a, "tail_of_a").unwrap();
+        std::fs::write(&b, "head_of_b\n").unwrap();
+        let result = read_concat_tail(&[a, b], 1024).unwrap();
+        assert_eq!(result, "tail_of_a\nhead_of_b\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn list_log_files_orders_by_mtime_ascending() {
+        let dir = std::env::temp_dir().join("dashchat_test_list_logs");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let older = dir.join("older.log");
+        let newer = dir.join("newer.log");
+        let ignored = dir.join("notes.txt");
+        std::fs::write(&older, "x\n").unwrap();
+        std::fs::write(&ignored, "ignore\n").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&newer, "y\n").unwrap();
+
+        let result = list_log_files_oldest_first(&dir).unwrap();
+        assert_eq!(result, vec![older, newer]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

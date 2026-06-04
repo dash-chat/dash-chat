@@ -20,11 +20,6 @@ where
     }
 }
 
-#[deprecated = "need a more certain way to know that an ActorId is actually a pubkey"]
-pub fn actor_to_pubkey(actor: ActorId) -> PublicKey {
-    PublicKey::from_bytes(actor.as_bytes()).unwrap()
-}
-
 pub fn first<T, U>(pair: (T, U)) -> T {
     pair.0
 }
@@ -54,4 +49,14 @@ impl<R> CancelAndWait<R> {
         self.token.cancel();
         Some(self.handle.lock().await.take()?.await)
     }
+}
+
+/// Clamp a hash to a valid ed25519 public key.
+pub fn clamp_to_ed25519_pubkey(mut hash: [u8; 32]) -> PublicKey {
+    hash[0] &= 248;
+    hash[31] &= 127;
+    hash[31] |= 64;
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&hash);
+    let pubkey = signing_key.verifying_key();
+    PublicKey::from_bytes(pubkey.as_bytes()).unwrap()
 }

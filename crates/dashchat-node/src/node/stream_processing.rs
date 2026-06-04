@@ -19,7 +19,7 @@ use super::*;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Notification {
     pub header: Header,
-    pub payload: Payload,
+    pub payload: Option<Payload>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -243,8 +243,8 @@ impl Node {
 
         tracing::debug!(hash = ?hash.renamed(), "processed operation");
 
-        if let Some(payload) = payload.as_ref() {
-            self.notify_payload(&header, payload).await?;
+        if payload.is_some() || header.extensions.auth.is_some() {
+            self.notify(&header, payload.as_ref()).await?;
         }
 
         // XXX: don't repair this often.
@@ -262,18 +262,58 @@ impl Node {
                 if let Err(err) = self.group_store.process(operation).await {
                     tracing::error!(?err, "error processing auth extensions");
                 };
+                // Subscribe to announcements topics for any group members whose agent_id we know.
+                let member_device_ids: Vec<DeviceId> = match &auth.action {
+                    p2panda_auth::group::GroupAction::Create { initial_members } => {
+                        tracing::info!(
+                            me = ?self.device_id().renamed(),
+                            group_topic = ?operation.header.extensions.topic.renamed(),
+                            member_count = initial_members.len(),
+                            "processing group Create auth extension"
+                        );
+                        initial_members
+                            .iter()
+                            .filter_map(|(m, _)| match m {
+                                p2panda_auth::group::GroupMember::Individual(pk) => {
+                                    Some(DeviceId::from(*pk))
+                                }
+                                _ => None,
+                            })
+                            .collect()
+                    }
+                    p2panda_auth::group::GroupAction::Add { member, .. } => match member {
+                        p2panda_auth::group::GroupMember::Individual(pk) => {
+                            vec![DeviceId::from(*pk)]
+                        }
+                        _ => vec![],
+                    },
+                    _ => vec![],
+                };
+                let known = self
+                    .local_store
+                    .lookup_contacts(member_device_ids.iter())
+                    .await?;
+                for agent_id in known.into_values() {
+                    let topic = Topic::announcements(agent_id);
+                    if let Err(err) = self.register_topic(topic).await {
+                        tracing::warn!(
+                            ?err,
+                            "failed to subscribe to announcements topic for group member"
+                        );
+                    }
+                }
             }
             None => {}
         }
         Ok(())
     }
 
-    pub async fn notify_payload(&self, header: &Header, payload: &Payload) -> anyhow::Result<()> {
-        if let Some((notification_tx, payload)) = self.notification_tx.clone().zip(Some(payload)) {
+    pub async fn notify(&self, header: &Header, payload: Option<&Payload>) -> anyhow::Result<()> {
+        if let Some(notification_tx) = self.notification_tx.clone() {
             notification_tx
                 .send(Notification {
                     header: header.clone(),
-                    payload: payload.clone(),
+                    payload: payload.cloned(),
                 })
                 .await
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
@@ -284,16 +324,56 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().renamed())))]
     pub async fn process_payload(
         &self,
-        // topic: Topic<K>,
         header: &Header,
         payload: &Payload,
         _is_author: bool,
     ) -> anyhow::Result<()> {
         let topic = header.extensions.topic;
-        // TODO: maybe have different loops for the different kinds of topics and the different payloads in each
+
         match &payload {
-            Payload::Chat(ChatPayload::JoinGroup(_chat_id)) => {
-                // TODO: maybe close down the chat tasks if we are kicked out?
+            Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
+                tracing::info!(
+                    me = ?self.device_id().renamed(),
+                    count = agents.len(),
+                    "received IntroduceAgents message"
+                );
+                for (device_id, agent_id) in agents {
+                    if let Err(err) = self
+                        .local_store
+                        .save_agent_mapping(*device_id, *agent_id)
+                        .await
+                    {
+                        tracing::warn!(
+                            ?err,
+                            device_id = ?device_id.renamed(),
+                            agent_id = ?agent_id.renamed(),
+                            "failed to save agent mapping from IntroduceAgents"
+                        );
+                    }
+                    if agent_id == &self.agent_id() {
+                        continue;
+                    }
+                    if let Err(err) = self.register_topic(Topic::announcements(*agent_id)).await {
+                        tracing::error!(
+                            ?err,
+                            agent_id = ?agent_id.renamed(),
+                            "failed to register announcements topic for IntroduceAgents"
+                        );
+                    }
+                }
+            }
+
+            Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
+                tracing::info!(
+                    me = ?self.device_id().renamed(),
+                    chat_id = ?chat_id.renamed(),
+                    from = ?header.public_key.renamed(),
+                    "received JoinGroup invitation"
+                );
+                if let Err(err) = self.join_group(*chat_id).await {
+                    // TODO: no retry path — device ends up with no topic registered for this group.
+                    tracing::error!(?err, "failed to join group from invitation");
+                }
             }
 
             Payload::Inbox(invitation) => {
@@ -314,12 +394,52 @@ impl Node {
                 }
             }
 
-            Payload::Chat(ChatPayload::Message(_) | ChatPayload::Reaction(_)) => {
+            Payload::Chat(
+                ChatPayload::Message(_) | ChatPayload::Reaction(_) | ChatPayload::GroupDetails(_),
+            ) => {
                 // Nothing to do.
             }
 
-            Payload::Announcements(_) => {
-                // Nothing to do.
+            Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
+                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
+                let agent_id = AgentId::from(crate::ActorId::from_bytes(&*topic).map_err(|e| {
+                    anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
+                })?);
+
+                tracing::info!(me = ?self.agent_id().renamed(), agent_id = ?agent_id.renamed(), ?profile, "save_profile");
+
+                if let Err(err) = self
+                    .local_store
+                    .save_profile(agent_id, profile.clone())
+                    .await
+                {
+                    tracing::warn!(?err, "failed to save profile from SetProfile");
+                }
+            }
+
+            Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
+                // Save the device_id -> agent_id mapping so group members can look each other up.
+
+                let device_id = DeviceId::from(header.public_key);
+                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
+                let agent_id = AgentId::from(crate::ActorId::from_bytes(&*topic).map_err(|e| {
+                    anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
+                })?);
+                if let Err(err) = self
+                    .local_store
+                    .save_agent_mapping(device_id, agent_id)
+                    .await
+                {
+                    tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
+                }
+
+                if let Err(err) = self
+                    .local_store
+                    .save_capabilities(device_id, capabilities.clone())
+                    .await
+                {
+                    tracing::warn!(?err, "failed to save capabilities from SetCapabilities");
+                }
             }
 
             Payload::DeviceGroup(_) => {

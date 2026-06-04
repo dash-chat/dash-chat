@@ -12,16 +12,17 @@ import {
 	MessageContent,
 	Payload,
 	ReadMessagesStore,
+	getMessageText,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
-import { toPromise } from '../utils/to-promise';
 import { type IDirectChatClient } from './direct-chat-client';
 
 export interface Message {
 	hash: string;
-	content: MessageContent;
+	content: string;
 	timestamp: number;
 	author: DeviceId;
+	seqNum: number;
 	reactions: Record<DeviceId, string>;
 }
 
@@ -60,8 +61,9 @@ export class DirectChatStore implements ReadMessagesStore {
 					if (body.payload.type === 'Message') {
 						messages[operation.hash] = {
 							hash: operation.hash,
-							content: body.payload.payload,
+							content: getMessageText(body.payload.payload),
 							author,
+							seqNum: operation.header.seq_num,
 							timestamp: operation.header.timestamp,
 							reactions: {},
 						};
@@ -128,28 +130,26 @@ export class DirectChatStore implements ReadMessagesStore {
 	});
 
 	onNewMessage(
-		handler: (
-			operation: SimplifiedOperation<Payload>,
-			message: MessageContent,
-		) => void,
+		handler: (operation: SimplifiedOperation<Payload>, message: string) => void,
 	) {
 		return this.logsStore.logsClient.onNewOperation(async (topicId, op) => {
-			const chatId = await toPromise(this.chatId);
+			const chatId = await this.chatId();
 			if (topicId !== chatId) return;
 			if (op.body?.payload.type !== 'Message') return;
-			handler(op, op.body.payload.payload);
+			handler(op, getMessageText(op.body.payload.payload));
 		});
 	}
 
-	async sendMessage(content: MessageContent) {
-		const chatId = await toPromise(this.chatId);
-		const myDeviceId = await toPromise(this.contactsStore.myDeviceId);
+	async sendMessage(text: string) {
+		const chatId = await this.chatId();
+		const myDeviceId = await this.contactsStore.myDeviceId();
+		const content: MessageContent = { v: '1', message: text, media: null };
 		await Promise.all([
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
 				if (op.header.public_key !== myDeviceId) return false;
-				if (op.body.payload.payload !== content) return false;
+				if (getMessageText(op.body.payload.payload) !== text) return false;
 				return true;
 			}),
 			this.client.sendMessage(chatId, content),
@@ -193,19 +193,21 @@ export class DirectChatStore implements ReadMessagesStore {
 		return count;
 	});
 
-	summary = reactive(async () => {
+	summary = reactive(async (): Promise<ChatSummary> => {
 		const profile = await this.peerProfile();
 		const message = await this.lastMessage();
 		const unreadCount = await this.unreadCount();
 
-		const lastEvent = message
+		const lastEvent: ChatSummary['lastEvent'] = message
 			? {
-					summary: message.content,
+					kind: 'message',
+					text: message.content,
 					timestamp: message.timestamp,
 				}
 			: {
-					summary: 'contact_added',
-					timestamp: await this.contactsStore.contactAddedTimestamp(this.peer),
+					kind: 'contact_added',
+					timestamp:
+						(await this.contactsStore.contactAddedTimestamp(this.peer)) ?? 0,
 				};
 
 		return {
@@ -213,21 +215,18 @@ export class DirectChatStore implements ReadMessagesStore {
 			chatId: this.peer,
 			name: profile ? fullName(profile) : '',
 			avatar: profile?.avatar,
-			lastEvent: {
-				summary: lastEvent.summary,
-				timestamp: lastEvent.timestamp ?? 0,
-			},
+			lastEvent,
 			unreadMessages: unreadCount,
-		} as ChatSummary;
+		};
 	});
 
 	async markAsRead(messageHashes: Hash[]): Promise<void> {
-		const chatId = await toPromise(this.chatId);
+		const chatId = await this.chatId();
 		await this.client.markMessagesRead(chatId, messageHashes);
 	}
 
 	async sendReaction(reaction: ChatReaction) {
-		const chatId = await toPromise(this.chatId);
+		const chatId = await this.chatId();
 		await this.client.sendReaction(chatId, reaction);
 	}
 }

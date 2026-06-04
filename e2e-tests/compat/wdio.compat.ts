@@ -1,19 +1,30 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import type { Options } from '@wdio/types';
-import { allocateDriverPorts } from '../helpers/allocate-port';
+import { allocateDriverPorts } from '../setup/allocate-port';
 import {
 	killAndWait,
 	killAllE2EProcesses,
 	killPortHolders,
-} from '../helpers/cleanup';
-import { waitForPortFree, waitForPortListening } from '../helpers/wait-for-port';
+} from '../setup/cleanup';
+import { waitForPortFree, waitForPortListening } from '../setup/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..');
 const ROOT = path.resolve(__dirname, '../..');
+
+function getSpecFileRetries(): number {
+	const rawRetries = process.env.E2E_SPEC_FILE_RETRIES ?? '1';
+	const retries = Number.parseInt(rawRetries, 10);
+	if (Number.isNaN(retries) || retries < 0) {
+		throw new Error(
+			`E2E_SPEC_FILE_RETRIES must be a non-negative integer, got ${rawRetries}`,
+		);
+	}
+	return retries;
+}
 
 const phase = process.env.COMPAT_PHASE;
 if (!phase || !['setup', 'verify'].includes(phase)) {
@@ -34,14 +45,28 @@ const ALL_PORTS = [port1, nativePort1, port2, nativePort2];
 
 let tauriDriver1: ChildProcess;
 let tauriDriver2: ChildProcess;
+let agent1Logger: ChildProcess | null = null;
+let agent2Logger: ChildProcess | null = null;
 
-export const config: Options.Testrunner = {
+function startAgentLogger(agent: string, logFile: string): ChildProcess {
+	mkdirSync(path.dirname(logFile), { recursive: true });
+	writeFileSync(logFile, '');
+	const proc = spawn('tail', ['-n', '0', '-F', logFile], {
+		stdio: ['ignore', 'pipe', 'ignore'],
+	});
+	const rl = createInterface({ input: proc.stdout! });
+	rl.on('line', (line: string) => {
+		console.log(`[${agent}] ${line}`);
+	});
+	return proc;
+}
+
+export const config: WebdriverIO.MultiremoteConfig = {
 	runner: 'local',
-	tsNodeOpts: { esm: true, project: path.join(E2E_DIR, 'tsconfig.json') },
 
 	specs: [specFile],
 	maxInstances: 1,
-	specFileRetries: 1,
+	specFileRetries: getSpecFileRetries(),
 
 	capabilities: {
 		agent1: {
@@ -85,14 +110,29 @@ export const config: Options.Testrunner = {
 		// Wait for ports to be fully released after SIGKILL.
 		await Promise.all(ALL_PORTS.map(p => waitForPortFree(p)));
 
-		// Clean agent app data for a fresh start on setup retries.
+		// Clean agent app data for a fresh start on setup retries. The Tauri
+		// agent stores its DB under $DATA_DIR/<version>/ and WebKitGTK puts
+		// localStorage/IndexedDB under XDG dirs inside $DATA_DIR
+		// (.local/share/, .config/, .cache/), so we must wipe the whole dir,
+		// not just an `studio.darksoil.dashchat` subpath that doesn't exist.
 		// Skip for verify phase — it needs data from the setup phase.
 		if (phase === 'setup') {
 			for (const agent of ['agent-1', 'agent-2']) {
-				const appData = path.join(ROOT, '.dbs', 'compat', agent, 'studio.darksoil.dashchat');
-				try { rmSync(appData, { recursive: true, force: true }); } catch { /* ignore */ }
+				const agentDir = path.join(ROOT, '.dbs', 'compat', agent);
+				try { rmSync(agentDir, { recursive: true, force: true }); } catch { /* ignore */ }
 			}
 		}
+
+		// Tail each agent's stdout/stderr (written by launch-agent.sh) and
+		// echo lines to the test runner's stdout with an agent-specific prefix.
+		agent1Logger = startAgentLogger(
+			'agent-1',
+			path.join(ROOT, '.dbs', 'compat', 'agent-1', 'agent.log'),
+		);
+		agent2Logger = startAgentLogger(
+			'agent-2',
+			path.join(ROOT, '.dbs', 'compat', 'agent-2', 'agent.log'),
+		);
 
 		tauriDriver1 = spawn(
 			'tauri-driver',
@@ -125,6 +165,10 @@ export const config: Options.Testrunner = {
 		// Kill orphaned dash-chat instances and anything holding our ports.
 		killAllE2EProcesses();
 		killPortHolders(ALL_PORTS);
+		agent1Logger?.kill();
+		agent2Logger?.kill();
+		agent1Logger = null;
+		agent2Logger = null;
 		// Do NOT clean up .dbs/compat/ — data must persist between setup and verify phases
 	},
 };

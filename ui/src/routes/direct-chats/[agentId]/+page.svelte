@@ -1,17 +1,13 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
-	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import 'emoji-picker-element';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { lessThanAMinuteAgo, moreThanAnHourAgo } from '$lib/utils/time';
 	import { getContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
-		toPromise,
 		type ChatsStore,
 		type ContactCode,
 		type ContactRequest,
@@ -39,7 +35,6 @@
 		Navbar,
 		NavbarBackLink,
 		Button,
-		Card,
 		Sheet,
 		Dialog,
 		DialogButton,
@@ -66,10 +61,13 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
+	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
+	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
+	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myAgentId = useReactivePromise(contactsStore.myAgentId);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
@@ -78,6 +76,7 @@
 	const readMessageOnObserve = readTracker.observe;
 
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
+	const chatId = useReactivePromise(store.chatId);
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const contactRequest = useReactivePromise(store.contactRequest);
 	const messagesSets = useReactivePromise(store.messageSets);
@@ -141,8 +140,9 @@
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
 
-	// Unread divider state — hash captured once on load so position stays fixed,
-	// count always recomputed so it updates as new messages arrive
+	// Sticky once set so the divider doesn't shift as messages are read. We allow
+	// a re-capture later only when the user is scrolled up — at-bottom new
+	// arrivals get auto-read by the IntersectionObserver, so no divider is needed.
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
@@ -169,7 +169,6 @@
 		try {
 			await store.sendMessage(message);
 			messageText = '';
-			// Hide the unread messages divider after sending, and allow it to reappear for future messages
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
 			// Defer the scroll one macrotask: store.sendMessage resolves once
@@ -186,35 +185,11 @@
 		}
 	}
 
-	const messageClass = (messageSetLength: number, index: number) => {
-		if (messageSetLength <= 1) return '';
-		if (index === 0) return 'first-message';
-		if (index === messageSetLength - 1) return 'last-message';
-		return 'middle-message';
-	};
-
 	onMount(() => {
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
 	});
-
-	// Search helpers
-	function escapeHtml(text: string): string {
-		return text
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;');
-	}
-
-	function highlightMatch(text: string, query: string): string {
-		if (!query) return escapeHtml(text);
-		const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-		return escapeHtml(text).replace(
-			new RegExp(`(${escaped})`, 'gi'),
-			'<mark class="search-highlight">$1</mark>',
-		);
-	}
 
 	$effect(() => {
 		const q = searchQuery;
@@ -348,8 +323,10 @@
 			return { hash: null, count: 0 };
 		}
 
-		// Capture the divider position once so it doesn't jump as messages are read
-		if (!unreadDividerCaptured) {
+		if (
+			capturedUnreadHash === null &&
+			(!unreadDividerCaptured || !isAtBottom)
+		) {
 			for (const day of messagesSetsInDays) {
 				for (const messageSet of day.eventsSets) {
 					for (const [hash, message] of messageSet) {
@@ -362,8 +339,8 @@
 				}
 				if (capturedUnreadHash) break;
 			}
-			unreadDividerCaptured = true;
 		}
+		unreadDividerCaptured = true;
 
 		if (!capturedUnreadHash) return { hash: null, count: 0 };
 
@@ -426,7 +403,7 @@
 						{:else}
 							<Navbar
 								transparent={true}
-								titleClass="opacity1 w-full min-w-0"
+								titleClass="opacity1 min-w-0 flex-1"
 								leftClass="shrink-0"
 								centerTitle={false}
 							>
@@ -439,19 +416,34 @@
 									{/if}
 								{/snippet}
 								{#snippet title()}
-									{#if profile}
-										<Link
-											class="flex w-full min-w-0 items-center justify-start"
-											href={`/direct-chats/${agentId}/chat-settings`}
-											data-testid="direct-chat-settings-link"
-										>
+									<Link
+										class="flex w-full min-w-0 items-center justify-start"
+										href={`/direct-chats/${agentId}/chat-settings`}
+										data-testid="direct-chat-settings-link"
+									>
+										{#if profile}
 											<AvatarWithName
 												{profile}
 												nameTestId="direct-chat-peer-name"
 											/>
-										</Link>
-									{/if}
+										{:else}
+											<span
+												class="flex w-full min-w-0 flex-row items-center gap-2"
+											>
+												<span class="shrink-0">
+													<Avatar waitingForProfile style="--size: 2.5rem" />
+												</span>
+												<span class="quiet flex-1 min-w-0 truncate">
+													{m.waitingForProfile()}
+												</span>
+											</span>
+										{/if}
+									</Link>
 								{/snippet}
+
+								<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
+									<ConnectionStatusIndicator />
+								</div>
 							</Navbar>
 						{/if}
 					{/snippet}
@@ -467,10 +459,14 @@
 								class="column"
 								style={`padding-bottom: ${bottomBarHeight}px`}
 							>
-								{#if profile}
-									<div class="column" style="align-items: center">
+								<div
+									class="column min-w-0"
+									style="align-items: center"
+									data-testid="direct-chat-peer-header"
+								>
+									{#if profile}
 										<Link
-											class="column my-6 gap-2 items-center"
+											class="column my-6 gap-2 items-center max-w-full px-4"
 											onclick={() => (showPeerProfile = true)}
 										>
 											<Avatar
@@ -478,22 +474,28 @@
 												initials={profile.name.slice(0, 2)}
 												style="--size: 80px;"
 											/>
-											<div class="flex items-center gap-1">
-												<span class="text-xl font-semibold"
-													>{fullName(profile!)}</span
+											<div class="flex items-center gap-1 max-w-full">
+												<span
+													class="text-xl font-semibold break-words text-center min-w-0"
+													>{fullName(profile)}</span
 												>
 												<wa-icon
-													class="small-icon quiet"
+													class="small-icon quiet shrink-0"
 													src={wrapPathInSvg(mdiChevronRight)}
 												></wa-icon>
 											</div>
 										</Link>
-									</div>
-								{/if}
+									{:else}
+										<div class="column my-6 gap-2 items-center">
+											<Avatar waitingForProfile style="--size: 80px;" />
+											<span class="quiet text-xl">
+												{m.waitingForProfile()}
+											</span>
+										</div>
+									{/if}
+								</div>
 								<div class="row justify-center mb-4">
-									<div
-										class="rounded-xl border-2 border-gray-300 dark:border-gray-600"
-									>
+									<div class="outline-card" style="border-radius: 0.75rem;">
 										<div
 											class="flex flex-col gap-1 items-center p-3 text-center"
 										>
@@ -579,6 +581,10 @@
 															})}
 														</div>
 													{/if}
+													{@const position = messagePosition(
+														messageSet.length,
+														i,
+													)}
 													{#if myDeviceId == message.author}
 														<div
 															class="self-end max-w-[85%]"
@@ -588,80 +594,17 @@
 																	showQuickReactionBar(e, message),
 															}}
 														>
-															<Card
-																raised
-																class={`${messageClass(messageSet.length, i)} message my-message`}
-															>
-																<div
-																	class="row gap-2 mx-1"
-																	style="align-items: end"
-																>
-																	<span class="flex-1">
-																		{#if searchMode && searchQuery}
-																			{@html highlightMatch(
-																				message.content,
-																				searchQuery,
-																			)}
-																		{:else}
-																			{message.content}
-																		{/if}
-																	</span>
-
-																	{#if i === messageSet.length - 1}
-																		<div class="dark-quiet text-xs">
-																			{#if lessThanAMinuteAgo(message.timestamp)}
-																				<span>{m.now()}</span>
-																			{:else if moreThanAnHourAgo(message.timestamp)}
-																				<wa-format-date
-																					hour="numeric"
-																					minute="numeric"
-																					hour-format="24"
-																					date={new Date(message.timestamp)}
-																				></wa-format-date>
-																			{:else}
-																				<wa-relative-time
-																					sync
-																					format="narrow"
-																					date={new Date(message.timestamp)}
-																				>
-																				</wa-relative-time>
-																			{/if}
-																		</div>
-																	{/if}
-																</div>
-															</Card>
-															{#if Object.values(message.reactions).length}
-																<div class="flex -mt-1.5 mb-0.5 gap-0.5 px-1">
-																	{#each condenseReactions(message.reactions, myDeviceId) as reaction}
-																		<Chip
-																			class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
-																			colors={reaction.own
-																				? {
-																						fillBgIos:
-																							'bg-gray-300 dark:bg-gray-500',
-																						fillBgMaterial:
-																							'bg-gray-300 dark:bg-gray-500',
-																					}
-																				: {
-																						fillBgIos:
-																							'bg-gray-200 dark:bg-gray-700',
-																						fillBgMaterial:
-																							'bg-gray-200 dark:bg-gray-700',
-																					}}
-																			onclick={e => {
-																				e.stopPropagation();
-																				toggleReaction(
-																					message,
-																					reaction.emoji,
-																					myDeviceId,
-																				);
-																			}}
-																		>
-																			{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
-																		</Chip>
-																	{/each}
-																</div>
-															{/if}
+															{#await $chatId then chatId}
+																<MessageFromMe
+																	{message}
+																	{position}
+																	{myDeviceId}
+																	{chatId}
+																	searchQuery={searchMode ? searchQuery : ''}
+																	onToggleReaction={emoji =>
+																		toggleReaction(message, emoji, myDeviceId)}
+																/>
+															{/await}
 														</div>
 													{:else}
 														<div
@@ -675,82 +618,17 @@
 																	showQuickReactionBar(e, message),
 															}}
 														>
-															<Card
-																raised
-																class={`${messageClass(messageSet.length, i)} message others-message`}
-															>
-																<div
-																	class="row gap-2 mx-1"
-																	style="align-items: end"
-																>
-																	<span class="flex-1">
-																		{#if searchMode && searchQuery}
-																			{@html highlightMatch(
-																				message.content,
-																				searchQuery,
-																			)}
-																		{:else}
-																			{message.content}
-																		{/if}
-																	</span>
-
-																	{#if i === messageSet.length - 1}
-																		<div class="quiet text-xs">
-																			{#if lessThanAMinuteAgo(message.timestamp)}
-																				<span>{m.now()}</span>
-																			{:else if moreThanAnHourAgo(message.timestamp)}
-																				<wa-format-date
-																					hour="numeric"
-																					minute="numeric"
-																					hour-format="24"
-																					date={new Date(message.timestamp)}
-																				></wa-format-date>
-																			{:else}
-																				<wa-relative-time
-																					sync
-																					format="narrow"
-																					date={new Date(message.timestamp)}
-																				>
-																				</wa-relative-time>
-																			{/if}
-																		</div>
-																	{/if}
-																</div>
-															</Card>
-															{#if Object.values(message.reactions).length}
-																<div
-																	class="flex justify-end -mt-1.5 mb-0.5 gap-0.5 px-1"
-																>
-																	{#each condenseReactions(message.reactions, myDeviceId!) as reaction}
-																		<Chip
-																			class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
-																			colors={reaction.own
-																				? {
-																						fillBgIos:
-																							'bg-gray-300 dark:bg-gray-500',
-																						fillBgMaterial:
-																							'bg-gray-300 dark:bg-gray-500',
-																					}
-																				: {
-																						fillBgIos:
-																							'bg-gray-200 dark:bg-gray-700',
-																						fillBgMaterial:
-																							'bg-gray-200 dark:bg-gray-700',
-																					}}
-																			onclick={e => {
-																				e.stopPropagation();
-																				toggleReaction(
-																					message,
-																					reaction.emoji,
-																					myDeviceId!,
-																				);
-																			}}
-																		>
-																			{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
-																		</Chip>
-																	{/each}
-																</div>
-															{/if}
+															{#await $chatId then chatId}
+																<MessageFromOthers
+																	{message}
+																	{position}
+																	{myDeviceId}
+																	{chatId}
+																	searchQuery={searchMode ? searchQuery : ''}
+																	onToggleReaction={emoji =>
+																		toggleReaction(message, emoji, myDeviceId)}
+																/>
+															{/await}
 														</div>
 													{/if}
 												{/each}
@@ -831,7 +709,7 @@
 								<Block>
 									{#each condenseReactions(emojiTargetedMessage.reactions, myDeviceId) as reaction}
 										<button
-											class="mr-2 text-lg"
+											class="me-2 text-lg"
 											onclick={() =>
 												toggleReaction(
 													emojiTargetedMessage!,
@@ -879,7 +757,7 @@
 				{#if !isAtBottom}
 					{#await $unreadCount then count}
 						<div
-							class="absolute right-4"
+							class="absolute end-4"
 							style={`bottom: ${bottomBarHeight + 8}px`}
 						>
 							<ScrollToBottomButton
@@ -892,7 +770,7 @@
 
 				<div
 					bind:clientHeight={bottomBarHeight}
-					class="absolute bottom-0 left-0 right-0 z-20"
+					class="absolute bottom-0 inset-x-0 z-10"
 					class:bg-md-light-surface={theme === 'material'}
 					class:dark:bg-md-dark-surface={theme === 'material'}
 				>
@@ -959,7 +837,9 @@
 								class="flex flex-col items-center gap-3 px-6 py-3"
 								style="margin: 0 auto"
 							>
-								<p class="text-center text-sm text-gray-600 dark:text-gray-400">
+								<p
+									class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
+								>
 									{@html m
 										.contactRequestBanner({
 											name: contactRequest.profile.name

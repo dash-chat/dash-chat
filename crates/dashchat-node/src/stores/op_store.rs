@@ -181,6 +181,43 @@ impl OpStore {
         Ok(operation)
     }
 
+    /// Get the interleaved logs for a topic and a list of authors.
+    ///
+    /// This is only used for testing and should stay that way.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn get_interleaved_logs(
+        &self,
+        topic_id: TopicId,
+        authors: Vec<DeviceId>,
+    ) -> anyhow::Result<Vec<(Header, Option<Payload>)>> {
+        let mut logs = Vec::new();
+        for author in authors {
+            for op in self.get_log(&author, &topic_id, None).await? {
+                if let Some(body) = op.body {
+                    if let Ok(payload) = Payload::try_from_body(&body) {
+                        logs.push((op.header, Some(payload)));
+                    } else {
+                        tracing::error!("Failed to decode payload: {body:?}");
+                    }
+                } else {
+                    logs.push((op.header, None));
+                }
+            }
+        }
+        logs.sort_by_key(|(h, _)| h.timestamp);
+        Ok(logs)
+    }
+
+    pub async fn get_authors(&self, topic_id: TopicId) -> anyhow::Result<HashSet<DeviceId>> {
+        let authors = self
+            .get_log_heights(&topic_id)
+            .await?
+            .keys()
+            .cloned()
+            .collect::<HashSet<_>>();
+        Ok(authors)
+    }
+
     pub fn mark_op_processed(&self, topic: TopicId, hash: &Hash) {
         self.processed_ops
             .write()

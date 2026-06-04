@@ -7,17 +7,17 @@
 	import { scanQrCode } from '$lib/utils/qrcode';
 	import { showToast } from '$lib/utils/toasts';
 	import { isTauriEnv } from '$lib/utils/environment';
+	import QrCodeUploader from './QrCodeUploader.svelte';
 
 	type SelectImageHandler = (code: string) => void | Promise<void>;
-	type RequestPickFileHandler = () => void | Promise<void>;
 
 	let {
 		onSelectImage,
-		onRequestPickFile,
 	}: {
 		onSelectImage: SelectImageHandler;
-		onRequestPickFile: RequestPickFileHandler;
 	} = $props();
+
+	let uploaderRef: QrCodeUploader | null = $state(null);
 
 	let cancelled = false;
 
@@ -51,8 +51,8 @@
 
 <div class="column" style="position: relative; flex: 1;">
 	<div
-		class="row p-4 top-2"
-		style="color: white; position: absolute; width: 100%; align-items: center; justify-content: center; z-index: 1; text-align: center"
+		class="row p-4"
+		style="color: white; align-items: center; justify-content: center; z-index: 1; text-align: center"
 	>
 		<span class="w-60">{m.scanQrCodeOfYourContact()}</span>
 	</div>
@@ -67,11 +67,11 @@
 		</div>
 	</div>
 	<div
-		style="position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); left: 0; right: 0; display: flex; justify-content: center; z-index: 1;"
+		style="padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); padding-top: 24px; display: flex; justify-content: center; z-index: 1;"
 	>
 		<button
 			class="w-14 h-14 rounded-full bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.3)] transition-transform duration-200 hover:scale-105 active:scale-95"
-			onclick={onRequestPickFile}
+			onclick={() => uploaderRef?.trigger()}
 			aria-label={m.photo()}
 			data-testid="add-contact-select-image-btn"
 		>
@@ -81,6 +81,8 @@
 			></wa-icon>
 		</button>
 	</div>
+
+	<QrCodeUploader {onSelectImage} bind:this={uploaderRef} />
 </div>
 
 <style>
@@ -98,10 +100,7 @@
 	}
 	.square > div {
 		position: absolute;
-		top: 0;
-		left: 0;
-		bottom: 0;
-		right: 0;
+		inset: 0;
 	}
 
 	.surround-cover {

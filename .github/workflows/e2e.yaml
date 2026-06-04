@@ -29,7 +29,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: '.node-version'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -41,6 +41,11 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ''
+
+      - name: Cache Rust target
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
       - name: Install tauri-driver
         run: cargo install tauri-driver --locked
@@ -55,13 +60,11 @@ jobs:
         run: pnpm tauri build --debug --no-bundle --features e2e-tests
 
       - name: Make launch scripts executable
-        run: chmod +x e2e-tests/scripts/*.sh
+        run: chmod +x e2e-tests/setup/*.sh
 
       - name: Run E2E tests
         run: set -o pipefail && xvfb-run pnpm test 2>&1 | tee e2e-output.log
         working-directory: e2e-tests
-        env:
-          SKIP_BUILD: '1'
 
       - name: Upload test logs on failure
         if: failure()

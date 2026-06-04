@@ -7,77 +7,42 @@
  * Only needs one agent — uses agent1.
  */
 
-import { waitForTestUtils, createProfile } from '../helpers/setup-agents';
+import {
+	type Agent,
+	setupAgent,
+	waitForTestUtils,
+} from '../setup/setup-agents';
 
 describe('FirstChatTooltip', () => {
-	let agent: WebdriverIO.Browser;
+	let agent: Agent;
 
 	before(async () => {
-		agent = browser.getInstance('agent1');
-		await waitForTestUtils(agent);
+		agent = await setupAgent('agent1');
 
-		// Force narrow layout so the tooltip renders (default window is 800px, above the 768px threshold)
 		await agent.execute(() =>
-			window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: false })),
+			localStorage.removeItem('first-chat-tooltip-shown'),
 		);
-
-		// Clear any previous tooltip state so the test starts fresh
-		await agent.execute(() => localStorage.removeItem('first-chat-tooltip-shown'));
-		await createProfile(agent, 'Tooltip', 'Test');
+		await agent.createProfilePage.createProfile('Tooltip', 'Test');
 	});
 
 	it('shows tooltip on first run when chat list is empty', async () => {
-		// Wait for home page with empty state
-		await agent.waitUntil(
-			async () =>
-				agent.execute(() => window.__test.homeLoaded() !== null),
-			{ timeout: 10_000, timeoutMsg: 'Home page empty state not visible' },
-		);
-
-		// Tooltip should be visible
-		await agent.waitUntil(
-			async () =>
-				agent.execute(() => window.__test.firstChatTooltip() !== null),
-			{ timeout: 5_000, timeoutMsg: 'First chat tooltip not visible on first run' },
-		);
+		await agent.homePage.ready();
+		await agent.homePage.firstChatTooltip.waitForExist();
 	});
 
 	it('dismisses tooltip on click', async () => {
-		// Click the tooltip
-		await agent.execute(() => {
-			(window.__test.firstChatTooltip() as HTMLElement)?.click();
-		});
-
-		// Verify tooltip is removed from DOM
-		await agent.waitUntil(
-			async () => {
-				const exists = await agent.execute(
-					() => window.__test.firstChatTooltip() !== null,
-				);
-				return !exists;
-			},
-			{ timeout: 5_000, timeoutMsg: 'Tooltip was not dismissed after click' },
-		);
+		await agent.homePage.firstChatTooltip.click();
+		await agent.homePage.firstChatTooltip.waitForExist({ reverse: true });
 	});
 
 	it('does not reappear after page reload', async () => {
-		// Reload the page
 		await agent.execute(() => {
 			window.location.href = '/';
 		});
 
-		// Wait for test utils and home page to load
 		await waitForTestUtils(agent);
-		await agent.waitUntil(
-			async () =>
-				agent.execute(() => window.__test.homeLoaded() !== null),
-			{ timeout: 10_000, timeoutMsg: 'Home page not loaded after reload' },
-		);
+		await agent.homePage.ready();
 
-		// Tooltip should NOT be visible
-		const exists = await agent.execute(
-			() => window.__test.firstChatTooltip() !== null,
-		);
-		expect(exists).toBe(false);
+		expect(await agent.homePage.firstChatTooltip.isExisting()).toBe(false);
 	});
 });

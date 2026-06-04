@@ -49,12 +49,12 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       # Checks out a copy of your repository on the ubuntu-latest machine
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: setup node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v4
         with:
-          node-version: 20.12.2
+          node-version-file: '.node-version'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -65,6 +65,17 @@ jobs:
       - name: Install and prepare
         run: |
           pnpm install
+
+      # Workaround for actions/runner-images#14097: on macos-15-arm64/20260511.0048+
+      # /opt/homebrew/bin/{cargo,rustc,rustup,rustup-init} are broken rustup-init shims
+      # that reject standard subcommands like `metadata`. We must delete them BEFORE
+      # setup-rust-toolchain runs — otherwise the action sees `command -v rustup` succeed
+      # against the broken shim, takes its "rustup already installed" branch, skips the
+      # curl install of real proxies into ~/.cargo/bin/, and never adds ~/.cargo/bin to
+      # GITHUB_PATH. Subsequent `cargo` invocations then fall through to the broken shim.
+      - name: Remove broken homebrew rust shims (macOS)
+        if: startsWith(matrix.platform, 'macos')
+        run: rm -f /opt/homebrew/bin/cargo /opt/homebrew/bin/rustc /opt/homebrew/bin/rustup /opt/homebrew/bin/rustup-init
 
       - name: install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -136,7 +147,7 @@ jobs:
 
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       # Checks out a copy of your repository on the ubuntu-latest machine
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install nix
         uses: cachix/install-nix-action@v27

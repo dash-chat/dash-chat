@@ -34,24 +34,26 @@ pub(crate) async fn build_node(
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     install_logger(&app_handle)?;
+    crate::device_info::log_device_info(&app_handle);
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
 
     // Manage the mDNS service daemon
     app_handle.manage(mdns_sd::ServiceDaemon::new()?);
 
-    let local_data_path: std::path::PathBuf = FileSystem::new(&app_handle)?.app_data_dir().clone();
-    log::info!("Using local data path: {local_data_path:?}");
+    let fs = FileSystem::new(&app_handle)?;
+    let local_data_path = fs.app_data_dir().clone();
+
+    let notified_operations_store =
+        crate::notifications::NotifiedOperationsStore::open(&fs.notified_operations_db_path())
+            .await?;
+    app_handle.manage(notified_operations_store);
 
     #[cfg(not(mobile))]
     {
         app_handle.set_menu(crate::menu::build_menu(&app_handle)?)?;
         app_handle.manage(crate::mailbox::server::LocalMailboxMutex::default());
         crate::tray::setup_tray(&app_handle)?;
-
-        if crate::settings::load_mailbox_enabled(&app_handle) {
-            crate::mailbox::server::set_local_mailbox_server_enabled(&app_handle, true).await?;
-        }
 
         // Hide the main window when launched with --minimized (autostart)
         if std::env::args().any(|a| a == "--minimized") {
@@ -80,13 +82,20 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     #[cfg(mobile)]
     {
-        crate::push_notifications::setup_push_notifications(
+        crate::notifications::push_notifications::setup_push_notifications(
             app_handle.clone(),
             topic_subscribed_rx,
         )?;
     }
 
     crate::mailbox::spawn_local_mailbox_mdns_discovery(&app_handle, node)?;
+
+    // Start the local mailbox server after the node is managed so it can
+    // derive a stable mDNS instance name from the device id.
+    #[cfg(not(mobile))]
+    if crate::settings::load_mailbox_enabled(&app_handle) {
+        crate::mailbox::server::set_local_mailbox_server_enabled(&app_handle, true).await?;
+    }
 
     spawn_notification_loop(app_handle.clone(), notification_rx);
 
@@ -103,6 +112,7 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
             .level_for("mailbox_client", log::LevelFilter::Debug)
             .level_for("mailbox_server", log::LevelFilter::Debug)
             .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
+            .level_for("webview", log::LevelFilter::Debug) // JS console.* forwarded via @tauri-apps/plugin-log
             // This is the default formatter for desktop, also use it in mobile platforms to record time
             // in the log file, as the logcat timestamp does not get included there
             .format(move |out, message, record| {
@@ -121,6 +131,7 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
                 ))
             })
             .clear_targets()
+            .max_file_size(5 * 1024 * 1024)
             .targets([
                 tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                 tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
@@ -141,17 +152,20 @@ fn spawn_notification_loop(
         while let Some(notification) = notification_rx.recv().await {
             log::info!("Received notification: {:?}", notification);
 
-            let body = match encode_cbor(&notification.payload) {
-                Ok(body) => body,
-                Err(err) => {
-                    log::error!("Failed to serialize payload: {err:?}");
-                    continue;
-                }
+            let body = match notification.payload.as_ref() {
+                Some(payload) => match encode_cbor(payload) {
+                    Ok(bytes) => Some(Body::new(&bytes[..])),
+                    Err(err) => {
+                        log::error!("Failed to serialize payload: {err:?}");
+                        continue;
+                    }
+                },
+                None => None,
             };
             let simplified_operation = match simplify(
                 notification.header.hash(),
-                notification.header,
-                Some(Body::new(&body[..])),
+                notification.header.clone(),
+                body,
             ) {
                 Ok(o) => o,
                 Err(err) => {
@@ -163,6 +177,8 @@ fn spawn_notification_loop(
             if let Err(err) = app_handle.emit("p2panda://new-operation", simplified_operation) {
                 log::error!("Failed to emit operation: {err:?}");
             }
+
+            crate::notifications::show_sync_notification(&app_handle, &notification).await;
 
             // Small delay between emissions to avoid overwhelming the WebKitGTK
             // event loop with rapid-fire events (which can freeze the webview).

@@ -1,10 +1,4 @@
 {
-  "enabledPlugins": {
-    "typescript-lsp@claude-plugins-official": true,
-    "rust-analyzer-lsp@claude-plugins-official": true,
-    "code-simplifier@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true
-  },
   "permissions": {
     "allow": [
       "Bash(node -e *)",
@@ -33,5 +27,11 @@
       "mcp__tauri__ipc_monitor",
       "mcp__tauri__ipc_get_captured"
     ]
+  },
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true
   }
 }

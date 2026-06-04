@@ -1,10 +1,5 @@
 import { Profile } from './contacts/contacts-client';
-import {
-	AgentId,
-	DeviceId,
-	Hash,
-	TopicId,
-} from './p2panda/types';
+import { AgentId, DeviceId, Hash, TopicId } from './p2panda/types';
 
 export type ChatId = TopicId;
 
@@ -23,11 +18,37 @@ export interface ChatReaction {
 	target: Hash;
 }
 
-export type MessageContent = string;
-export type AnnouncementPayload = { type: 'SetProfile'; payload: Profile };
+/**
+ * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
+ * `crates/dashchat-node/src/chat/message.rs`. Sent messages are always V1.
+ * Stored payloads may also appear as a bare string (V0/Unversioned); see
+ * `getMessageText` for reading either form.
+ */
+export type MessageContentV1 = {
+	v: '1';
+	message: string;
+	media: null;
+};
+export type MessageContent = MessageContentV1;
+
+export function getMessageText(content: MessageContent | string): string {
+	return typeof content === 'string' ? content : content.message;
+}
+
+export type AnnouncementPayload =
+	| { type: 'SetProfile'; payload: Profile }
+	| { type: 'SetCapabilities'; payload: unknown };
+export interface GroupDetails {
+	name: string;
+	description: string | undefined;
+	image: string | undefined;
+}
+
 export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
-	| { type: 'Reaction'; payload: ChatReaction };
+	| { type: 'Reaction'; payload: ChatReaction }
+	| { type: 'JoinGroup'; payload: { chat_id: string } }
+	| { type: 'GroupDetails'; payload: GroupDetails };
 
 export interface InboxTopic {
 	expires_at: number;
@@ -89,14 +110,61 @@ export interface ReadMessagesStore {
 	markAsRead(messageHashes: Hash[]): Promise<void>;
 }
 
+export type GroupControlEvent =
+	| {
+			kind: 'group_created';
+			isMine: boolean;
+			iAmInitialMember: boolean;
+			creatorName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_added';
+			isMine: boolean;
+			addedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_removed';
+			isMine: boolean;
+			removedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_promoted';
+			promotedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_demoted';
+			demotedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  };
+
+export type ChatSummaryLastEvent =
+	| {
+			kind: 'message';
+			text: string;
+			authorName?: string;
+			timestamp: number;
+	  }
+	| { kind: 'contact_request'; timestamp: number }
+	| { kind: 'contact_added'; timestamp: number }
+	| GroupControlEvent;
+
 export interface ChatSummary {
-	type: 'GroupChat' | 'DirectChat' | 'ContactRequest';
+	type: 'GroupChat' | 'DirectChat';
 	chatId: TopicId;
 	unreadMessages: number;
 	name: string;
 	avatar: string | undefined;
-	lastEvent: {
-		summary: string;
-		timestamp: number;
-	};
+	lastEvent: ChatSummaryLastEvent;
 }

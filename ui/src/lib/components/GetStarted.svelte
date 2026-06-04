@@ -13,6 +13,7 @@
 	import type { ContactsStore, ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useVisibleChatSummaries } from '$lib/stores/visible-chats';
 	import { useTheme } from 'konsta/svelte';
 
 	type CardColor = 'warm' | 'sage';
@@ -46,7 +47,7 @@
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	const contacts = useReactivePromise(contactsStore.contactsAgentIds);
-	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+	const chatSummaries = useVisibleChatSummaries(chatsStore);
 
 	let hasAvatar = $state(false);
 	$effect(() => {
@@ -142,8 +143,10 @@
 {#await $contacts then contactsList}
 	{#await $chatSummaries then chats}
 		{#if (contactsList?.length ?? 0) === 0 && (chats?.length ?? 0) === 0 && visibleCards.length > 0}
-			<p class="px-4 mb-3 text-lg font-bold">{m.getStarted()}</p>
-			<div class="px-4 flex gap-3.5 overflow-x-auto pb-1">
+			<p class="px-4 mb-3 text-lg font-bold pointer-events-auto">
+				{m.getStarted()}
+			</p>
+			<div class="px-4 flex gap-3.5 overflow-x-auto pb-1 pointer-events-auto">
 				{#each visibleCards as card}
 					<div
 						class="relative w-[165px] shrink-0 rounded-[20px] {cardClasses(
@@ -166,7 +169,7 @@
 							>
 						</a>
 						<button
-							class="absolute right-2 top-2 z-10 p-1 text-black/40 dark:text-white/40"
+							class="absolute end-2 top-2 z-10 p-1 text-black/40 dark:text-white/40"
 							data-testid="get-started-dismiss-{card.id}"
 							onclick={() => dismiss(card.id)}
 							aria-label={m.close()}

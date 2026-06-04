@@ -2,80 +2,96 @@
  * Long-name truncation E2E test.
  *
  * Verifies that contacts with very long names don't cause horizontal overflow
- * in the chat list or the direct-chat navbar.
+ * in the chat list, the direct-chat navbar, the contact-request banner, the
+ * in-chat peer-name welcome banner, the chat-settings page, the peer profile
+ * sheet, and the profile-settings list item.
  */
-import { S } from '../../ui/tests/selectors';
-import {
-	createProfile,
-	exchangeContacts,
-	openDirectChat,
-	waitForBothAgents,
-} from '../helpers/setup-agents';
+import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
+import { type Agent, setupAgent } from '../setup/setup-agents';
 
 const LONG_NAME = 'Bartholomew';
 const LONG_SURNAME = 'Wolfeschlegelsteinhausenbergerdorff';
 
 describe('Long name truncation', () => {
+	let agent1: Agent;
+	let agent2: Agent;
+	let agent1Code = '';
+	let agent2Code = '';
+
 	before(async () => {
-		await waitForBothAgents();
+		[agent1, agent2] = await Promise.all([
+			setupAgent('agent1'),
+			setupAgent('agent2'),
+		]);
 	});
 
 	it('creates profiles — agent1 with a very long name', async () => {
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
-		await createProfile(agent1, LONG_NAME, LONG_SURNAME);
-		await createProfile(agent2, 'Bob', 'Test');
+		await agent1.createProfilePage.createProfile(LONG_NAME, LONG_SURNAME);
+		await agent2.createProfilePage.createProfile('Bob', 'Test');
 	});
 
-	it('exchanges contacts', async () => {
-		const agent1 = browser.getInstance('agent1');
-		const agent2 = browser.getInstance('agent2');
-		await exchangeContacts(agent1, agent2);
-	});
+	// One-way exchange: agent2 sees a pending request from agent1 — lets us
+	// assert overflow on the pending chat-list entry and the contact-request
+	// banner before agent2 accepts.
+	it('agent1 sends a one-way contact request — chat list has no overflow', async () => {
+		await navigateToAddContact(agent1);
+		await navigateToAddContact(agent2);
+		agent1Code = await agent1.addContactPage.getContactCode();
+		agent2Code = await agent2.addContactPage.getContactCode();
+		await agent1.addContactPage.enterCode(agent2Code);
 
-	it('chat list shows long name without horizontal overflow', async () => {
-		const agent2 = browser.getInstance('agent2');
-
-		// Wait for the chat entry to appear in agent2's chat list
+		await agent2.addContactPage.back.click();
+		await agent2.newMessagePage.back.click();
+		await agent2.homePage.ready();
 		await agent2.waitUntil(
-			async () =>
-				agent2.execute(
-					(name: string, chatListSelector: string) =>
-						!!document
-							.querySelector(chatListSelector)
-							?.textContent?.includes(name),
-					LONG_NAME,
-					S.home.chatList,
-				),
-			{
-				timeout: 30_000,
-				interval: 1_000,
-				timeoutMsg: 'Long-name contact not in chat list',
-			},
+			async () => agent2.homePage.hasChatListItem(LONG_NAME),
+			{ timeout: 30_000 },
 		);
-
-		const overflowIssues = (await agent2.execute(() =>
-			window.__test.checkChatListOverflow(),
-		)) as string[];
-
-		expect(overflowIssues).toEqual([]);
+		expect(await agent2.homePage.checkChatListOverflow()).toEqual([]);
 	});
 
-	it('direct-chat navbar shows long name without horizontal overflow', async () => {
-		const agent2 = browser.getInstance('agent2');
-		await openDirectChat(agent2, LONG_NAME);
-
-		// Peer name element should be present
-		const peerNamePresent = await agent2.execute(() =>
-			window.__test.isPeerNamePresent(),
+	it('agent2 opens the pending chat — contact-request banner has no overflow', async () => {
+		await agent2.homePage.openChat(LONG_NAME);
+		await agent2.waitUntil(async () =>
+			agent2.directChatPage.isContactRequestBannerVisible(),
 		);
-		expect(peerNamePresent).toBe(true);
+		expect(await agent2.checkOverflow()).toEqual([]);
+	});
 
-		// Navbar should not overflow
-		const navbarOverflow = (await agent2.execute(() =>
-			window.__test.checkNavbarOverflow(),
-		)) as string[];
+	it('agent2 accepts the contact — navbar and welcome banner have no overflow', async () => {
+		await agent2.directChatPage.back.click();
+		await agent2.homePage.ready();
+		await navigateToAddContact(agent2);
+		await agent2.addContactPage.enterCode(agent1Code);
+		await agent2.directChatPage.ready();
 
-		expect(navbarOverflow).toEqual([]);
+		expect(await agent2.directChatPage.isPeerNamePresent()).toBe(true);
+		expect(await agent2.directChatPage.checkNavbarOverflow()).toEqual([]);
+		expect(await agent2.checkOverflow()).toEqual([]);
+	});
+
+	it('opens chat-settings — chat-settings page has no overflow', async () => {
+		await agent2.directChatPage.settingsLink.click();
+		await agent2.chatSettingsPage.ready();
+		expect(await agent2.checkOverflow()).toEqual([]);
+	});
+
+	it('opens peer profile sheet — sheet has no overflow', async () => {
+		await agent2.chatSettingsPage.peerName.click();
+		await agent2.waitUntil(async () => agent2.peerProfileSheet.isOpen());
+		expect(await agent2.checkOverflow()).toEqual([]);
+	});
+
+	it("opens agent1's settings/profile — name list item has no overflow", async () => {
+		await agent1.directChatPage.back.click();
+		await agent1.homePage.ready();
+		await agent1.homePage.settingsLink.click();
+		await agent1.settingsPage.ready();
+		await agent1.settingsPage.profileLink.click();
+		await agent1.profilePage.ready();
+		await agent1.waitUntil(
+			async () => agent1.profilePage.nameItemContains(LONG_NAME),
+		);
+		expect(await agent1.checkOverflow()).toEqual([]);
 	});
 });

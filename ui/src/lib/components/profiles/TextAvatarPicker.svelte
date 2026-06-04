@@ -9,6 +9,7 @@
 		Navbar,
 		Segmented,
 		SegmentedButton,
+		useTheme,
 	} from 'konsta/svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { TextAvatarData } from './text-avatar-data-url';
@@ -76,9 +77,17 @@
 		activeTab = 'text';
 	}
 
+	function selectColorTab() {
+		activeTab = 'color';
+		// Explicit blur so iOS reliably dismisses the keyboard.
+		hiddenInput?.blur();
+	}
+
 	function handleColorSelect(color: string) {
 		currentTextAvatar = new TextAvatarData(color, currentTextAvatar.text);
 	}
+
+	const theme = $derived(useTheme());
 </script>
 
 <input
@@ -91,7 +100,7 @@
 	aria-label={m.avatarText()}
 	tabindex="-1"
 	onblur={() =>
-		activeTab === 'text' && setTimeout(() => hiddenInput?.focus(), 0)}
+		setTimeout(() => activeTab === 'text' && hiddenInput?.focus(), 0)}
 />
 
 <!-- Text avatar editor -->
@@ -114,20 +123,6 @@
 	{/snippet}
 </Navbar>
 
-<div style="padding: 0 16px 16px;">
-	<Segmented strong>
-		<SegmentedButton active={activeTab === 'text'} onClick={selectTextTab}>
-			{m.text()}
-		</SegmentedButton>
-		<SegmentedButton
-			active={activeTab === 'color'}
-			onClick={() => (activeTab = 'color')}
-		>
-			{m.color()}
-		</SegmentedButton>
-	</Segmented>
-</div>
-
 <!-- Text avatar preview -->
 <div class="column" style="align-items: center; padding: 24px 0;">
 	<button
@@ -143,7 +138,7 @@
 				style="color: {TEXT_AVATAR_TEXT_COLOR}"
 				>{currentTextAvatar.text}<span
 					aria-hidden="true"
-					class="text-[56px] font-light animate-[blink_1s_infinite] -ml-0.5"
+					class="text-[56px] font-light animate-[blink_1s_infinite] -ms-0.5"
 					style="color: {TEXT_AVATAR_TEXT_COLOR}">|</span
 				></span
 			>
@@ -154,6 +149,17 @@
 			>
 		{/if}
 	</button>
+</div>
+
+<div style="padding: 0 16px 16px;">
+	<Segmented strong rounded={theme === 'ios'}>
+		<SegmentedButton active={activeTab === 'text'} onClick={selectTextTab}>
+			{m.text()}
+		</SegmentedButton>
+		<SegmentedButton active={activeTab === 'color'} onClick={selectColorTab}>
+			{m.color()}
+		</SegmentedButton>
+	</Segmented>
 </div>
 
 {#if activeTab === 'color'}

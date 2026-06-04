@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Manager, Runtime};
 
-const DATABASE_VERSION: &str = "0.2";
+const DATABASE_VERSION: &str = "0.3";
 
 /// Hold the lock file handle for the lifetime of the process so the exclusive
 /// lock is never released while the app is running.
@@ -52,6 +52,7 @@ pub fn init_data_dir() {
 }
 
 const SETTINGS_FILE_NAME: &str = "settings.json";
+const NOTIFIED_OPERATIONS_DB_FILE_NAME: &str = "notified_operations.db";
 #[cfg(desktop)]
 const LOCAL_MAILBOX_DB_FILE_NAME: &str = "local-mailbox.redb";
 #[cfg(desktop)]
@@ -99,6 +100,10 @@ impl FileSystem {
         })
     }
 
+    pub fn app_root_dir(&self) -> &PathBuf {
+        &self.app_root_dir
+    }
+
     // The folder where all the data files for the app should be stored
     pub fn app_data_dir(&self) -> &PathBuf {
         &self.app_data_dir
@@ -112,6 +117,13 @@ impl FileSystem {
 
     pub fn settings_path(&self) -> PathBuf {
         self.app_data_dir.join(SETTINGS_FILE_NAME)
+    }
+
+    /// SQLite database file backing the `NotifiedOperationsStore` — the
+    /// cross-process record of operations we've already surfaced a system
+    /// notification for.
+    pub fn notified_operations_db_path(&self) -> PathBuf {
+        self.app_data_dir.join(NOTIFIED_OPERATIONS_DB_FILE_NAME)
     }
 
     #[cfg(desktop)]

@@ -1,3 +1,4 @@
+use dashchat_node::{DeviceId, Node};
 use futures::FutureExt;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use tauri::{AppHandle, Manager, Runtime};
@@ -20,6 +21,8 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         return Ok(());
     }
 
+    let device_id = handle.state::<Node>().device_id();
+
     let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel();
     let stop_signal_rx = stop_signal_rx.map(|f| f.expect("failed to listen for event"));
     let path = FileSystem::new(handle)?.local_mailbox_db_path();
@@ -27,9 +30,10 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     let mut last_err = None;
     let mut port = 0;
     let mut mdns_fullname = String::new();
+    let mut registered = false;
     for attempt in 1..=3 {
         port = free_port()?;
-        let service = mdns_service_info(port, handle)?;
+        let service = mdns_service_info(port, &device_id)?;
         let fullname = service.get_fullname().to_string();
         log::info!(
             "Registering local mailbox service via mdns: {} ({})",
@@ -40,6 +44,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         match handle.state::<ServiceDaemon>().register(service) {
             Ok(()) => {
                 mdns_fullname = fullname;
+                registered = true;
                 last_err = None;
                 break;
             }
@@ -51,6 +56,11 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     }
     if let Some(e) = last_err {
         return Err(e.into());
+    }
+    if !registered {
+        return Err(anyhow::anyhow!(
+            "failed to register local mailbox service via mdns after 3 attempts"
+        ));
     }
 
     let addr = format!("0.0.0.0:{port}");
@@ -169,8 +179,13 @@ fn free_port() -> anyhow::Result<u16> {
     Ok(listener.local_addr()?.port())
 }
 
-fn mdns_service_info<R: Runtime>(port: u16, _handle: &AppHandle<R>) -> anyhow::Result<ServiceInfo> {
-    let instance_name = nanoid::nanoid!(7);
+fn mdns_service_info(port: u16, device_id: &DeviceId) -> anyhow::Result<ServiceInfo> {
+    // Derive a stable instance name from the device id so peers can keep using
+    // the same MailboxId across restarts. The instance name lives in a single
+    // DNS label (63-byte limit); 32 hex chars (16 bytes of public key) is plenty
+    // for collision resistance on a local network.
+    let mut instance_name = device_id.to_string();
+    instance_name.truncate(32);
 
     let host_name = "0.0.0.0.local.";
 

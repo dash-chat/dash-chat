@@ -8,5 +8,5 @@ pub mod profile;
 
 pub mod chats;
 pub mod direct_chats;
-pub mod group_chat;
+pub mod mailbox_state;
 pub mod settings;

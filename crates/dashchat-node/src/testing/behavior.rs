@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Context;
 
 use super::*;
-use crate::*;
+use crate::{compat::Capabilities, *};
 
 #[derive(derive_more::Deref, derive_more::From)]
 pub struct Behavior {
@@ -29,21 +29,21 @@ impl Behavior {
         let qr = self.new_qr_code(share_intent, true).await?;
         other.add_contact(qr).await?;
         self.accept_next_contact().await?;
+        self.await_first_capabilities(other.device_id()).await?;
         Ok(())
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().renamed())))]
     pub async fn accept_next_contact(&self) -> anyhow::Result<QrCode> {
-        let qr = self
-            .watcher
-            .lock()
-            .await
-            .watch_mapped(Duration::from_secs(5), |n: &Notification| {
+        let mut watcher = self.watcher.lock().await;
+        let qr = watcher
+            .watch_mapped(Duration::from_secs(30), |n: &Notification| {
                 tracing::debug!(
                     hash = ?n.header.hash().renamed(),
                     "checking for contact invitation"
                 );
-                let Payload::Inbox(InboxPayload::ContactRequest { code, .. }) = &n.payload else {
+                let Some(Payload::Inbox(InboxPayload::ContactRequest { code, .. })) = &n.payload
+                else {
                     return None;
                 };
                 Some(code.clone())
@@ -52,7 +52,32 @@ impl Behavior {
             .context("no contact invitation found")?;
 
         self.node.add_contact(qr.clone()).await?;
+
         Ok(qr)
+    }
+
+    // NOTE: we technically want to wait for the *last* capabilities announcement.
+    //       this is an approximation, assuming that this signals the entire announcement topic being synced.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().renamed())))]
+    pub async fn await_first_capabilities(
+        &self,
+        device_id: DeviceId,
+    ) -> anyhow::Result<Capabilities> {
+        let mut watcher = self.watcher.lock().await;
+        watcher
+            .watch_mapped(Duration::from_secs(5), |n: &Notification| {
+                if n.header.public_key != *device_id {
+                    return None;
+                }
+                match n.payload {
+                    Some(Payload::Announcements(AnnouncementsPayload::SetCapabilities {
+                        capabilities,
+                    })) => Some(capabilities),
+                    _ => None,
+                }
+            })
+            .await
+            .context("no capabilities announcement found")
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().renamed())))]
@@ -66,7 +91,7 @@ impl Behavior {
                     hash = ?n.header.hash().renamed(),
                     "checking for group invitation"
                 );
-                let Payload::Chat(ChatPayload::JoinGroup(chat_id)) = &n.payload else {
+                let Some(Payload::Chat(ChatPayload::JoinGroup { chat_id, .. })) = &n.payload else {
                     return None;
                 };
                 Some(*chat_id)
