@@ -338,7 +338,11 @@ impl Node {
                     "received IntroduceAgents message"
                 );
                 for (device_id, agent_id) in agents {
-                    if let Err(err) = self.local_store.save_agent_mapping(*device_id, *agent_id).await {
+                    if let Err(err) = self
+                        .local_store
+                        .save_agent_mapping(*device_id, *agent_id)
+                        .await
+                    {
                         tracing::warn!(
                             ?err,
                             device_id = ?device_id.renamed(),
