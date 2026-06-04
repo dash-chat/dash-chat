@@ -23,8 +23,8 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"(PublicKey|Hash|Signature)\(\[[\d, ]+\]\)",
         // Timestamps (seconds or microseconds since epoch, 10+ digits)
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
-        // Debug format: name/surname/about fields with quoted values
-        r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
+        // Debug format: name/surname/about/description fields with quoted values
+        r#"(name|surname|about|description):\s*(Some\()?"[^"]*"(\))?"#,
         // Debug format: ChatMessageContent("...") — legacy bare form, kept
         // in case rotating log buffers still contain entries from older builds.
         r#"ChatMessageContent\("[^"]*"\)"#,
@@ -36,8 +36,8 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#"\bmessage:\s*"[^"]*""#,
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
-        // JSON format: "name":"...", "surname":"...", "about":"..."
-        r#""(name|surname|about)"\s*:\s*"[^"]*""#,
+        // JSON format: "name":"...", "surname":"...", "about":"...", "description":"..."
+        r#""(name|surname|about|description)"\s*:\s*"[^"]*""#,
         // JSON format: "content":"..."
         r#""content"\s*:\s*"[^"]*""#,
         // JSON format: "emoji":"..."
@@ -249,6 +249,29 @@ mod tests {
         assert!(
             !result.contains("Hello world"),
             "about not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_group_details_debug() {
+        let input =
+            r#"GroupDetails { name: "Family", description: Some("Secret plan"), image: None }"#;
+        let result = redact(input);
+        assert!(!result.contains("Family"), "name not redacted: {result}");
+        assert!(
+            !result.contains("Secret plan"),
+            "description not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_group_details_json() {
+        let input = r#"{"name":"Family","description":"Secret plan","image":null}"#;
+        let result = redact(input);
+        assert!(!result.contains("Family"), "name not redacted: {result}");
+        assert!(
+            !result.contains("Secret plan"),
+            "description not redacted: {result}"
         );
     }
 

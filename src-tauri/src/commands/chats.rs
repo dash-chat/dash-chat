@@ -1,4 +1,6 @@
-use dashchat_node::{AgentId, ChatId, ChatMessageContent, ChatReaction, DeviceId, Node};
+use dashchat_node::{
+    AgentId, ChatId, ChatMessageContent, ChatReaction, DeviceId, GroupDetails, Node,
+};
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
@@ -30,6 +32,18 @@ pub async fn create_group(
     node.create_group(members)
         .await
         .map_err(|e| format!("Failed to create group: {e:?}"))
+}
+
+#[tauri::command]
+pub async fn set_group_details(
+    chat_id: ChatId,
+    details: GroupDetails,
+    node: State<'_, Node>,
+) -> Result<(), String> {
+    node.set_group_details(chat_id, details)
+        .await
+        .map_err(|e| format!("Failed to set group details: {e:?}"))?;
+    Ok(())
 }
 
 #[tauri::command]
