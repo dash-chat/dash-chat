@@ -73,7 +73,10 @@
 		<div class="column">
 			<div class="column center-in-desktop">
 				<div class="mt-4">
-					<SelectAvatar defaultValue={details.image} bind:value={image} size={64}
+					<SelectAvatar
+						defaultValue={details.image}
+						bind:value={image}
+						size={64}
 					></SelectAvatar>
 				</div>
 

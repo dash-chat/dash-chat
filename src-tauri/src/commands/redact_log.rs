@@ -254,7 +254,8 @@ mod tests {
 
     #[test]
     fn redacts_group_details_debug() {
-        let input = r#"GroupDetails { name: "Family", description: Some("Secret plan"), image: None }"#;
+        let input =
+            r#"GroupDetails { name: "Family", description: Some("Secret plan"), image: None }"#;
         let result = redact(input);
         assert!(!result.contains("Family"), "name not redacted: {result}");
         assert!(
