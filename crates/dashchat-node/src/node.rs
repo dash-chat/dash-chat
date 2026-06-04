@@ -343,14 +343,8 @@ impl Node {
         // creator's contacts), so we publish them here.
         let mut introduced_agents = device_to_agent.clone();
         introduced_agents.insert(self.device_id(), self.agent_id());
-        self.author_operation(
-            chat_id,
-            Payload::Chat(ChatPayload::IntroduceAgents {
-                agents: introduced_agents,
-            }),
-            Some(&format!("introduce_agents({})", chat_id.renamed())),
-        )
-        .await?;
+        self.introduce_agents_to_group(chat_id, introduced_agents)
+            .await?;
 
         self.local_store.save_group_chat_subscribed(chat_id).await?;
         self.initialize_topic(*chat_id).await?;
@@ -359,6 +353,21 @@ impl Node {
             self.invite_to_group(chat_id, agent).await?;
         }
         Ok(chat_id)
+    }
+
+    /// This is a temporary hack until we have device groups, see docs for [`ChatPayload::IntroduceAgents`].
+    async fn introduce_agents_to_group(
+        &self,
+        chat_id: ChatId,
+        agents: BTreeMap<DeviceId, AgentId>,
+    ) -> anyhow::Result<()> {
+        self.author_operation(
+            chat_id,
+            Payload::Chat(ChatPayload::IntroduceAgents { agents }),
+            Some(&format!("introduce_to_group({})", chat_id.renamed())),
+        )
+        .await?;
+        Ok(())
     }
 
     async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
@@ -413,12 +422,9 @@ impl Node {
             // Tell existing group members about the new member's agent_id so
             // they can subscribe to its announcements topic and see its profile,
             // even before the new member has come online to announce itself.
-            self.author_operation(
+            self.introduce_agents_to_group(
                 chat_id,
-                Payload::Chat(ChatPayload::IntroduceAgents {
-                    agents: BTreeMap::from([(DeviceId::from(member), agent_id)]),
-                }),
-                Some(&format!("introduce_agents({})", chat_id.renamed())),
+                BTreeMap::from([(DeviceId::from(member), agent_id)]),
             )
             .await?;
             self.invite_to_group(chat_id, agent_id).await?;

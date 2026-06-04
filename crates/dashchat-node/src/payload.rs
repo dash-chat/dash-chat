@@ -104,6 +104,16 @@ pub enum ChatPayload {
     /// The mapping is from each member's device_id (which is what appears in the
     /// group's auth extensions) to its agent_id (which identifies the
     /// announcements topic to subscribe to).
+    ///
+    /// TODO: this will be unnecessary once device groups are implemented,
+    /// because AgentIds will be added to groups directly, so everyone will already know
+    /// the AgentIds to subscribe to.
+    ///
+    /// XXX: even though this is going away, it's worth noting that the device_id -> agent_id
+    /// mapping MUST come from the agent itself, not from some third party, so this is quite
+    /// wrong from a security standpoint. Side note, maybe we should save the signing key of the
+    /// AgentId so that any operation that defines a device mapping can be signed by both the
+    /// Agent and the Device.
     IntroduceAgents {
         agents: BTreeMap<DeviceId, AgentId>,
     },
