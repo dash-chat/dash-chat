@@ -71,6 +71,10 @@
 				{:else if summary.lastEvent.kind === 'group_created'}
 					{#if summary.lastEvent.isMine}
 						{m.youCreatedTheGroup()}
+					{:else if summary.lastEvent.iAmInitialMember}
+						{m.someoneAddedYouToTheGroup({
+							name: summary.lastEvent.creatorName || m.someone(),
+						})}
 					{:else if summary.lastEvent.creatorName}
 						{m.someoneCreatedTheGroup({
 							name: summary.lastEvent.creatorName,

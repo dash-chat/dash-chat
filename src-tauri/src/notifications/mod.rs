@@ -260,15 +260,34 @@ async fn auth_control_op_notification(
     ));
 
     let (title, body, route) = match action {
-        // In practice this is the auth Create the acceptor authors on a new
-        // direct-chat space when they accept a contact request.
-        p2panda_auth::group::GroupAction::Create { .. } => {
-            let title = match &sender_name {
-                Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
-                None => sonix_i18n::t!("contactRequestAcceptedNoName"),
-            };
-            let route = sender_agent_id.map(|aid| format!("/direct-chats/{}", aid.to_hex()));
-            (title, None, route)
+        // Two distinct cases share this variant: the acceptor authoring the
+        // Create on a new direct-chat space (contact-request accepted), and a
+        // peer creating a group with us in `initial_members` (group invite).
+        // Discriminate by topic id — a direct-chat topic is deterministic from
+        // the two agent ids.
+        p2panda_auth::group::GroupAction::Create { initial_members } => {
+            let is_direct_chat = sender_agent_id
+                .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == header.extensions.topic)
+                .unwrap_or(false);
+            if is_direct_chat {
+                let title = match &sender_name {
+                    Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
+                    None => sonix_i18n::t!("contactRequestAcceptedNoName"),
+                };
+                let route = sender_agent_id.map(|aid| format!("/direct-chats/{}", aid.to_hex()));
+                (title, None, route)
+            } else {
+                if !initial_members.iter().any(|(m, _)| target_is_me(m)) {
+                    return None;
+                }
+                let body = match &sender_name {
+                    Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
+                    None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
+                };
+                // TODO: replace with the real group name once group naming lands;
+                // the UI currently hardcodes "mygroup" too (see GroupChatStore.info).
+                ("mygroup".to_string(), Some(body), group_route)
+            }
         }
         p2panda_auth::group::GroupAction::Add { member, .. } => {
             if !target_is_me(member) {

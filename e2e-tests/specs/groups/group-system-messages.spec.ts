@@ -34,11 +34,9 @@ describe('Group chat inline system messages', () => {
 		await agent2.homePage.chatListItem('mygroup').click();
 		await agent2.groupChatPage.ready();
 
-		await agent2.groupChatPage
-			.systemMessage('group_member_added')
-			.waitForExist();
+		await agent2.groupChatPage.systemMessage('group_created').waitForExist();
 		const added = await agent2.groupChatPage
-			.systemMessage('group_member_added')
+			.systemMessage('group_created')
 			.getText();
 		expect(added).toContain('Alice Test added you to the group.');
 	});

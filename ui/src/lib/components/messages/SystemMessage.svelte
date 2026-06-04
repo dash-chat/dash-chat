@@ -41,6 +41,10 @@
 		{#if event.kind === 'group_created'}
 			{#if event.isMine}
 				{m.youCreatedTheGroup()}
+			{:else if event.iAmInitialMember}
+				{m.someoneAddedYouToTheGroup({
+					name: event.creatorName || m.someone(),
+				})}
 			{:else if event.creatorName}
 				{m.someoneCreatedTheGroup({ name: event.creatorName })}
 			{:else}

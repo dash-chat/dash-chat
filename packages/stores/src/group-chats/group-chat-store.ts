@@ -382,9 +382,13 @@ function buildGroupControlEvent(
 	const actorIsMe = actorDeviceId === myDeviceId;
 
 	if ('Create' in action) {
+		const iAmInitialMember = action.Create.initial_members.some(
+			([m]) => 'Individual' in m && m.Individual === myDeviceId,
+		);
 		return {
 			kind: 'group_created',
 			isMine: actorIsMe,
+			iAmInitialMember,
 			creatorName: actorIsMe ? '' : nameForDevice(actorDeviceId),
 			timestamp: ts,
 		};

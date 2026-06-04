@@ -107,6 +107,7 @@ export type GroupControlEvent =
 	| {
 			kind: 'group_created';
 			isMine: boolean;
+			iAmInitialMember: boolean;
 			creatorName: string;
 			timestamp: number;
 	  }
