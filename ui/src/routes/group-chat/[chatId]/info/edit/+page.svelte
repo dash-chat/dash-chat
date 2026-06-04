@@ -24,26 +24,33 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
-	const info = useReactivePromise(store.info);
+	const details = useReactivePromise(store.details);
 
-	let avatar = $state<string | undefined>(undefined);
+	let image = $state<string | undefined>(undefined);
 	let name = $state<string>('');
 	let description = $state<string>('');
 
 	let initialized = false;
-	info.subscribe(i => {
-		i.then(info => {
+	details.subscribe(d => {
+		d.then(details => {
 			if (!initialized) {
 				initialized = true;
-				avatar = info?.avatar;
-				name = info?.name || '';
-				description = info?.description || '';
+				image = details?.image;
+				name = details?.name || '';
+				description = details?.description || '';
 			}
 		});
 	});
 	const theme = $derived(useTheme());
 
 	async function save() {
+		const trimmedName = name.trim();
+		if (!trimmedName) return;
+		await store.setDetails({
+			name: trimmedName,
+			description: description.trim() || undefined,
+			image,
+		});
 		goto(`/group-chat/${chatId}/info`);
 	}
 </script>
@@ -62,11 +69,11 @@
 		{/snippet}
 	</Navbar>
 
-	{#await $info then info}
+	{#await $details then details}
 		<div class="column">
 			<div class="column center-in-desktop">
 				<div class="mt-4">
-					<SelectAvatar defaultValue={info.avatar} bind:value={avatar} size={64}
+					<SelectAvatar defaultValue={details.image} bind:value={image} size={64}
 					></SelectAvatar>
 				</div>
 

@@ -9,6 +9,7 @@ import { AgentId, DeviceId, Hash, PublicKey } from '../p2panda/types';
 import {
 	ChatId,
 	ChatSummary,
+	GroupDetails,
 	MessageContent,
 	Payload,
 	ReadMessagesStore,
@@ -16,12 +17,6 @@ import {
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IGroupChatClient } from './group-chat-client';
-
-export interface GroupInfo {
-	name: string | undefined;
-	description: string | undefined;
-	avatar: string | undefined;
-}
 
 export interface GroupMemberWithProfile {
 	agentId: AgentId;
@@ -40,13 +35,35 @@ export class GroupChatStore implements ReadMessagesStore {
 		public chatId: ChatId,
 	) {}
 
-	info = reactive(async () => {
-		const info: GroupInfo = {
-			name: 'mygroup',
+	details = reactive(async () => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+
+		let latest:
+			| { details: GroupDetails; timestamp: number; seqNum: number }
+			| undefined;
+		for (const operations of Object.values(logs)) {
+			for (const operation of operations) {
+				const body = operation.body;
+				if (body?.type !== 'Chat') continue;
+				if (body.payload.type !== 'GroupDetails') continue;
+				const timestamp = operation.header.timestamp;
+				const seqNum = operation.header.seq_num;
+				if (
+					!latest ||
+					timestamp > latest.timestamp ||
+					(timestamp === latest.timestamp && seqNum > latest.seqNum)
+				) {
+					latest = { details: body.payload.payload, timestamp, seqNum };
+				}
+			}
+		}
+
+		const details: GroupDetails = latest?.details ?? {
+			name: '',
 			description: undefined,
-			avatar: undefined,
+			image: undefined,
 		};
-		return info;
+		return details;
 	});
 
 	messages = reactive(async () => {
@@ -202,15 +219,15 @@ export class GroupChatStore implements ReadMessagesStore {
 	});
 
 	summary = reactive(async (): Promise<ChatSummary> => {
-		const info = await this.info();
+		const details = await this.details();
 		const last = await this.lastMessage();
 		const unread = await this.unreadCount();
 
 		return {
 			type: 'GroupChat',
 			chatId: this.chatId,
-			name: info.name ?? '',
-			avatar: info.avatar,
+			name: details.name,
+			avatar: details.image,
 			lastEvent: {
 				summary: last?.content ?? '',
 				timestamp: last?.timestamp ?? 0,
@@ -226,6 +243,10 @@ export class GroupChatStore implements ReadMessagesStore {
 			members.map(member => this.client.addMember(this.chatId, member)),
 		);
 		this.membersVersion.value++;
+	}
+
+	async setDetails(details: GroupDetails): Promise<void> {
+		await this.client.setDetails(this.chatId, details);
 	}
 
 	async markAsRead(messageHashes: Hash[]): Promise<void> {

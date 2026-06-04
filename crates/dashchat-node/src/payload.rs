@@ -69,6 +69,13 @@ pub enum InboxPayload {
     ContactRequest { code: QrCode, profile: Profile },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
+pub struct GroupDetails {
+    pub name: String,
+    pub description: Option<String>,
+    pub image: Option<String>,
+}
+
 // TODO: consolidate into something else
 #[derive(Clone, Debug, Serialize, Deserialize, RenameAll)]
 #[serde(tag = "type", content = "payload")]
@@ -92,6 +99,8 @@ pub enum ChatPayload {
     Message(ChatMessageContent),
 
     Reaction(ChatReaction),
+
+    GroupDetails(GroupDetails),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, RenameNone)]

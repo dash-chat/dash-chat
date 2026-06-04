@@ -38,7 +38,7 @@
 	const readMessageOnObserve = readTracker.observe;
 
 	const messageSets = useReactivePromise(store.messageSets);
-	const info = useReactivePromise(store.info);
+	const details = useReactivePromise(store.details);
 	const allMembers = useReactivePromise(store.allMembers);
 	const readMessageHashes = useReactivePromise(store.readMessageHashes);
 	const unreadCount = useReactivePromise(store.unreadCount);
@@ -137,7 +137,7 @@
 					{/if}
 				{/snippet}
 				{#snippet title()}
-					{#await $info then info}
+					{#await $details then details}
 						<Link
 							href={`/group-chat/${chatId}/info`}
 							data-testid="group-chat-info-link"
@@ -145,11 +145,11 @@
 							style="display: flex; justify-content: start; align-items: center;"
 						>
 							<Avatar
-								image={info.avatar}
-								initials={(info.name ?? '').slice(0, 2)}
+								image={details.image}
+								initials={details.name.slice(0, 2)}
 								style="--size: 2.5rem"
 							/>
-							<span>{info.name ?? ''}</span>
+							<span>{details.name}</span>
 						</Link>
 					{/await}
 				{/snippet}

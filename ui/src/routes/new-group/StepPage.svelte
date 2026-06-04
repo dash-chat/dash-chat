@@ -17,6 +17,7 @@
 		actionLabel: string;
 		onAction: () => void;
 		actionTestId?: string;
+		actionDisabled?: boolean;
 		subnavbar?: Snippet;
 		children: Snippet;
 	}
@@ -28,14 +29,28 @@
 		actionLabel,
 		onAction,
 		actionTestId,
+		actionDisabled = false,
 		navbarTestId,
 		subnavbar: belowNavbar,
 		children,
 	}: Props = $props();
 
+	function handleAction() {
+		if (actionDisabled) return;
+		onAction();
+	}
+
 	const theme = $derived(useTheme());
 	const isIosTheme = $derived(theme === 'ios');
 </script>
+
+{#snippet subnavbarSnippet()}
+	{#if belowNavbar}
+		<div class="w-full mb-4 {isIosTheme ? 'mt-4' : ''}">
+			{@render belowNavbar()}
+		</div>
+	{/if}
+{/snippet}
 
 <Page>
 	<Navbar
@@ -43,7 +58,9 @@
 		titleClass="opacity1"
 		transparent={true}
 		subnavbarClass={belowNavbar ? '!h-auto' : ''}
+		rightClass={actionDisabled ? 'ios-right-disabled' : ''}
 		data-testid={navbarTestId}
+		subnavbar={belowNavbar ? subnavbarSnippet : undefined}
 	>
 		{#snippet left()}
 			<NavbarBackLink
@@ -54,17 +71,9 @@
 
 		{#snippet right()}
 			{#if isIosTheme}
-				<Link onClick={onAction} data-testid={actionTestId}>
+				<Link onClick={handleAction} data-testid={actionTestId}>
 					{actionLabel}
 				</Link>
-			{/if}
-		{/snippet}
-
-		{#snippet subnavbar()}
-			{#if belowNavbar}
-				<div class="w-full mb-4 {isIosTheme ? 'mt-4' : ''}">
-					{@render belowNavbar()}
-				</div>
 			{/if}
 		{/snippet}
 	</Navbar>
@@ -77,6 +86,7 @@
 			data-testid={actionTestId}
 			class="fixed-action-btn"
 			rounded
+			disabled={actionDisabled}
 		>
 			{actionLabel}
 		</Button>

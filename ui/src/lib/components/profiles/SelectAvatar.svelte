@@ -4,17 +4,20 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccount } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button } from 'konsta/svelte';
 	import Avatar from './Avatar.svelte';
 
 	let {
 		defaultValue,
-		value = $bindable(defaultValue),
+		value = $bindable(),
 		size = 46,
+		placeholderIconPath = mdiAccount,
+		placeholderLabel = m.addAvatarImage(),
 	}: {
 		value?: string | undefined;
 		defaultValue?: string | undefined;
 		size?: number;
+		placeholderIconPath?: string;
+		placeholderLabel?: string;
 	} = $props();
 	let uploading = $state(false);
 	let avatarFilePicker: HTMLInputElement;
@@ -81,15 +84,18 @@
 		/>
 	</div>
 {:else}
-	<div class="column" style="align-items: center; height: {size + 4}px">
-		<Button
-			onclick={() => avatarFilePicker.click()}
-			disabled={uploading}
-			rounded
-			style="border-radius: 50%; height: {size}px; width: {size}px"
-		>
-			<wa-icon src={wrapPathInSvg(mdiAccount)} label={m.addAvatarImage()}
-			></wa-icon>
-		</Button>
-	</div>
+	<button
+		type="button"
+		onclick={() => avatarFilePicker.click()}
+		disabled={uploading}
+		aria-label={placeholderLabel}
+		class="rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
+		style="height: {size}px; width: {size}px"
+	>
+		<wa-icon
+			src={wrapPathInSvg(placeholderIconPath)}
+			label={placeholderLabel}
+			style="font-size: {Math.round(size * 0.5)}px;"
+		></wa-icon>
+	</button>
 {/if}
