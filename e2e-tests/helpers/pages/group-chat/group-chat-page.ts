@@ -84,16 +84,69 @@ export class GroupChatPage extends TestPage {
 				);
 				for (const wrapper of wrappers) {
 					if (wrapper.textContent?.includes(t)) {
-						const avatar = wrapper.querySelector('wa-avatar') as
-							| (Element & { initials?: string })
-							| null;
-						return avatar?.initials || null;
+						const avatar = wrapper.querySelector('wa-avatar');
+						if (!avatar) return null;
+						const attr = avatar.getAttribute('initials');
+						const prop = (avatar as unknown as { initials?: string }).initials;
+						return attr || prop || null;
 					}
 				}
 				return null;
 			},
 			tid('group-chat-messages'),
 			messageText,
+		);
+	}
+
+	async getMessageHash(messageText: string): Promise<string | null> {
+		return this.agent.execute(
+			(sel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${sel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return wrapper.getAttribute('data-message-hash');
+					}
+				}
+				return null;
+			},
+			tid('group-chat-messages'),
+			messageText,
+		);
+	}
+
+	async getSenderName(hash: string): Promise<string | null> {
+		return this.agent.execute(
+			(sel: string, h: string) => {
+				const wrapper = document.querySelector<HTMLElement>(
+					`${sel} [data-message-hash="${h}"]`,
+				);
+				const name = wrapper?.querySelector(
+					'[data-testid="group-message-sender-name"]',
+				);
+				return name?.textContent?.trim() ?? null;
+			},
+			tid('group-chat-messages'),
+			hash,
+		);
+	}
+
+	async getSenderColorVar(hash: string): Promise<string | null> {
+		return this.agent.execute(
+			(sel: string, h: string) => {
+				const wrapper = document.querySelector<HTMLElement>(
+					`${sel} [data-message-hash="${h}"]`,
+				);
+				const name = wrapper?.querySelector(
+					'[data-testid="group-message-sender-name"]',
+				);
+				const style = name?.getAttribute('style') ?? '';
+				const match = style.match(/--sender-color-\d+/);
+				return match ? match[0] : null;
+			},
+			tid('group-chat-messages'),
+			hash,
 		);
 	}
 }
