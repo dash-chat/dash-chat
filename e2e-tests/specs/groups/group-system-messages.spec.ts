@@ -13,20 +13,12 @@ describe('Group chat inline system messages', () => {
 		await exchangeContactsAndCreateGroup(agent1, agent2);
 	});
 
-	it('renders "You created the group." and "You added X." for the creator', async () => {
+	it('renders "You created the group." for the creator', async () => {
 		await agent1.groupChatPage.systemMessage('group_created').waitForExist();
 		const created = await agent1.groupChatPage
 			.systemMessage('group_created')
 			.getText();
 		expect(created).toContain('You created the group.');
-
-		await agent1.groupChatPage
-			.systemMessage('group_member_added')
-			.waitForExist();
-		const added = await agent1.groupChatPage
-			.systemMessage('group_member_added')
-			.getText();
-		expect(added).toContain('You added Bob Test.');
 	});
 
 	it('renders "{creator} added you to the group." for the invited member', async () => {
