@@ -192,9 +192,11 @@ async fn chat_message_notification(
         ..Default::default()
     };
 
-    // Android-only: collapse direct-chat messages into one MessagingStyle thread.
-    // The id must be stable per conversation so MessagingStyle accumulates the
-    // messages onto the same notification instead of stacking new ones.
+    // Android-only: collapse messages from the same conversation into one
+    // MessagingStyle thread. The id must be stable per conversation so
+    // MessagingStyle accumulates the messages onto the same notification
+    // instead of stacking new ones. `sender_id` keeps each `Person` distinct
+    // within group threads so different senders don't collapse into one.
     //
     // TODO: XOR the truncated topic id with a node-specific secret before
     // using it as the notification id. As-is, the first 4 bytes of the topic
@@ -205,7 +207,7 @@ async fn chat_message_notification(
     let sender_id_hex = sender_agent_id.map(|aid| aid.to_hex());
 
     #[cfg(target_os = "android")]
-    if direct_chat_agent_id.is_some() {
+    {
         match stable_notification_id(&*topic_id) {
             Ok(id) => notification_data.id = id,
             Err(err) => log::error!(

@@ -114,10 +114,6 @@ impl Fcm for RealFcmClient {
         aps_data.insert("alert".to_string(), Value::Object(alert_data));
         aps_data.insert("mutable-content".to_string(), Value::Number(1.into()));
         aps_data.insert("sound".to_string(), Value::String("default".into()));
-        aps_data.insert(
-            "interruption-level".to_string(),
-            Value::String("time-sensitive".into()),
-        );
         // `thread-id` becomes UNNotificationContent.threadIdentifier on iOS, which the
         // notification plugin surfaces as `group` on tap — the client uses that to
         // navigate to the correct chat. Title carries the topic id by convention
@@ -129,6 +125,10 @@ impl Fcm for RealFcmClient {
         let mut apns_data = HashMap::new();
         apns_data.insert("aps".to_string(), Value::Object(aps_data));
         apns_config.payload = Some(apns_data);
+        let mut apns_headers = HashMap::new();
+        apns_headers.insert("apns-priority".to_string(), Value::String("10".into()));
+        apns_headers.insert("apns-push-type".to_string(), Value::String("alert".into()));
+        apns_config.headers = Some(apns_headers);
         message.apns = Some(apns_config);
 
         let mut android_config = AndroidConfig::default();
