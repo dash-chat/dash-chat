@@ -160,50 +160,34 @@ async fn chat_message_notification(
         }
     };
 
-    let sender_name = if let Some(agent_id) = sender_agent_id {
-        node.local_store
+    let sender_name = match sender_agent_id {
+        Some(agent_id) => node
+            .local_store
             .get_profile(agent_id)
             .await
             .ok()
             .flatten()
-            .map(|profile| profile.name)
-    } else {
-        None
+            .map(|p| p.name),
+        None => None,
     };
-
-    let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
 
     let direct_chat_agent_id = sender_agent_id
         .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic_id);
-    let is_group = direct_chat_agent_id.is_none();
     let chat_route = match direct_chat_agent_id {
         Some(agent_id) => format!("/direct-chats/{}", agent_id.to_hex()),
         None => format!("/group-chat/{}", hex::encode(&*topic_id)),
     };
+
     let message_text: &str = content.message();
     let body_text = match message_text.char_indices().nth(200) {
         Some((idx, _)) => format!("{}...", &message_text[..idx]),
         None => message_text.to_string(),
     };
 
-    // For group chats, resolve the group name once and pass it as the
-    // MessagingStyle conversation title (Signal style: collapsed view shows
-    // the group name, expanded view stacks per-sender rows). Only mobile
-    // surfaces this — desktop notifications don't use MessagingStyle /
-    // Communication Notifications.
-    #[cfg(mobile)]
-    let conversation_title = if is_group {
-        Some(group_title(node, topic_id).await)
-    } else {
-        None
-    };
-    #[cfg(not(mobile))]
-    let _ = is_group;
-
     #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
-    let mut notification_data = NotificationData {
+    let mut data = NotificationData {
         id,
-        title: Some(title),
+        title: Some(sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"))),
         body: Some(body_text),
         icon: Some("ic_stat_icon".to_string()),
         group: Some(hex::encode(&*topic_id)),
@@ -211,49 +195,45 @@ async fn chat_message_notification(
         ..Default::default()
     };
 
-    // Android-only: collapse messages from the same conversation into one
-    // MessagingStyle thread. The id must be stable per conversation so
-    // MessagingStyle accumulates the messages onto the same notification
-    // instead of stacking new ones. `sender_id` keeps each `Person` distinct
-    // within group threads so different senders don't collapse into one;
-    // `conversation_title` (groups only) surfaces the group name as the
-    // collapsed-row title and switches MessagingStyle into
-    // `isGroupConversation = true`.
-    //
-    // TODO: XOR the truncated topic id with a node-specific secret before
-    // using it as the notification id. As-is, the first 4 bytes of the topic
-    // id are public-derivable, so an adversary could mine a contact whose
-    // topic id shares a 4-byte LE prefix with an existing conversation and
-    // get their messages collapsed into the wrong MessagingStyle thread.
-    #[cfg(target_os = "android")]
-    if direct_chat_agent_id.is_some() {
-        match stable_notification_id(&*topic_id) {
-            Ok(id) => notification_data.id = id,
-            Err(err) => log::error!(
-                "Failed to derive Android MessagingStyle id from topic, falling back to random: {err:?}"
-            ),
-        }
-        notification_data.group = Some("dashchat.chats".to_string());
-        notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
-            sender_id: sender_id_hex.clone(),
-            conversation_title: conversation_title.clone(),
-        });
-    }
-
-    // iOS Communication Notifications: the NSE reads `conversation_style.sender_id`
-    // (via the `notification_conversation_sender_id` FFI accessor) to give each
-    // sender within a group thread its own `INPersonHandle.value`, and
-    // `conversation_title` (via `notification_conversation_title`) to set
-    // `INSendMessageIntent.speakableGroupName`.
-    #[cfg(target_os = "ios")]
+    // Mobile-only: render as a chat thread (Android MessagingStyle /
+    // iOS Communication Notifications). `sender_id` keeps each `Person`
+    // distinct within group threads so different senders don't collapse;
+    // `conversation_title` (groups only) is the group name — Android
+    // surfaces it via `setConversationTitle(...) + setGroupConversation(true)`
+    // and iOS via `INSendMessageIntent.speakableGroupName`.
+    #[cfg(mobile)]
     {
-        notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
-            sender_id: sender_id_hex,
+        let conversation_title = match direct_chat_agent_id {
+            Some(_) => None,
+            None => Some(group_title(node, topic_id).await),
+        };
+        data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
+            sender_id: sender_agent_id.map(|agent_id| agent_id.to_hex()),
             conversation_title,
         });
     }
 
-    notification_data
+    // Android-only: reuse a stable per-conversation id (so successive
+    // messages update the same notification instead of stacking) and put
+    // every chat thread under the "dashchat.chats" OS-level group.
+    //
+    // TODO: XOR the truncated topic id with a node-specific secret before
+    // using it as the notification id. The first 4 bytes are
+    // public-derivable, so an adversary could mine a contact whose topic
+    // id shares a 4-byte LE prefix with an existing conversation and get
+    // their messages collapsed into the wrong MessagingStyle thread.
+    #[cfg(target_os = "android")]
+    {
+        match stable_notification_id(&*topic_id) {
+            Ok(id) => data.id = id,
+            Err(err) => log::error!(
+                "Failed to derive Android MessagingStyle id from topic, falling back to random: {err:?}"
+            ),
+        }
+        data.group = Some("dashchat.chats".to_string());
+    }
+
+    data
 }
 
 /// Resolves the latest group name for `topic_id`, falling back to a localized
@@ -322,14 +302,17 @@ async fn auth_control_op_notification(
         // the two agent ids.
         p2panda_auth::group::GroupAction::Create { initial_members } => {
             let is_direct_chat = sender_agent_id
-                .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == header.extensions.topic)
+                .map(|agent_id| {
+                    *Topic::direct_chat([node.agent_id(), agent_id]) == header.extensions.topic
+                })
                 .unwrap_or(false);
             if is_direct_chat {
                 let title = match &sender_name {
                     Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
                     None => sonix_i18n::t!("contactRequestAcceptedNoName"),
                 };
-                let route = sender_agent_id.map(|aid| format!("/direct-chats/{}", aid.to_hex()));
+                let route =
+                    sender_agent_id.map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()));
                 (title, None, route)
             } else {
                 if !initial_members.iter().any(|(m, _)| target_is_me(m)) {
