@@ -331,17 +331,29 @@ impl Node {
         let topic = header.extensions.topic;
 
         match &payload {
-            Payload::Chat(ChatPayload::IntroduceSelf { agent_id }) => {
-                if agent_id != &self.agent_id() {
-                    tracing::info!(
-                        me = ?self.device_id().renamed(),
-                        agent_id = ?agent_id.renamed(),
-                        "received IntroduceSelf message"
-                    );
+            Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
+                tracing::info!(
+                    me = ?self.device_id().renamed(),
+                    count = agents.len(),
+                    "received IntroduceAgents message"
+                );
+                for (device_id, agent_id) in agents {
+                    if let Err(err) = self.local_store.save_agent_mapping(*device_id, *agent_id).await {
+                        tracing::warn!(
+                            ?err,
+                            device_id = ?device_id.renamed(),
+                            agent_id = ?agent_id.renamed(),
+                            "failed to save agent mapping from IntroduceAgents"
+                        );
+                    }
+                    if agent_id == &self.agent_id() {
+                        continue;
+                    }
                     if let Err(err) = self.register_topic(Topic::announcements(*agent_id)).await {
                         tracing::error!(
                             ?err,
-                            "failed to register announcements topic for IntroduceSelf"
+                            agent_id = ?agent_id.renamed(),
+                            "failed to register announcements topic for IntroduceAgents"
                         );
                     }
                 }
