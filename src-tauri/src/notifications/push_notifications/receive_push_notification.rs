@@ -160,7 +160,7 @@ async fn handle_push_notification(
     for _ in 0..75 {
         let log = node
             .op_store
-            .get_log(&device_id, &topic_id, from)
+            .get_log(&device_id, &topic_id.into(), from)
             .await
             .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
         if let Some(first) = log.into_iter().next() {
