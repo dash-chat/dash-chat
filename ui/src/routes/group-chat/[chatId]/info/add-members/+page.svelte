@@ -22,6 +22,12 @@
 	let selectedContacts = $state<PublicKey[]>([]);
 
 	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
+	const groupChatStore = chatsStore.groupChats(chatId);
+	const members = useReactiveValue(groupChatStore.allMembers);
+
+	const nonMemberContacts = $derived(
+		($contacts ?? []).filter(([agentId]) => !($members && agentId in $members)),
+	);
 
 	async function addMembers() {
 		const store = chatsStore.groupChats(chatId);
@@ -54,9 +60,11 @@
 			<BlockTitle>{m.contacts()}</BlockTitle>
 
 			<SelectableContactList
-				contacts={$contacts ?? []}
-				loading={$contacts === undefined}
-				noDataMessage={m.noContactsYet()}
+				contacts={nonMemberContacts}
+				loading={$contacts === undefined || $members === undefined}
+				noDataMessage={($contacts ?? []).length === 0
+					? m.noContactsYet()
+					: m.allContactsAlreadyInGroup()}
 				bind:selectedContacts
 			/>
 		</div>
