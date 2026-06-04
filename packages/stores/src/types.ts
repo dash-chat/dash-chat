@@ -110,14 +110,61 @@ export interface ReadMessagesStore {
 	markAsRead(messageHashes: Hash[]): Promise<void>;
 }
 
+export type GroupControlEvent =
+	| {
+			kind: 'group_created';
+			isMine: boolean;
+			iAmInitialMember: boolean;
+			creatorName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_added';
+			isMine: boolean;
+			addedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_removed';
+			isMine: boolean;
+			removedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_promoted';
+			promotedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_demoted';
+			demotedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  };
+
+export type ChatSummaryLastEvent =
+	| {
+			kind: 'message';
+			text: string;
+			authorName?: string;
+			timestamp: number;
+	  }
+	| { kind: 'contact_request'; timestamp: number }
+	| { kind: 'contact_added'; timestamp: number }
+	| GroupControlEvent;
+
 export interface ChatSummary {
-	type: 'GroupChat' | 'DirectChat' | 'ContactRequest';
+	type: 'GroupChat' | 'DirectChat';
 	chatId: TopicId;
 	unreadMessages: number;
 	name: string;
 	avatar: string | undefined;
-	lastEvent: {
-		summary: string;
-		timestamp: number;
-	};
+	lastEvent: ChatSummaryLastEvent;
 }

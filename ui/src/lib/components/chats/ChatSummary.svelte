@@ -12,6 +12,7 @@
 		inYesterday,
 		beforeYesterday,
 	} from '$lib/utils/time';
+	import { groupEventText } from '$lib/utils/group-event-text';
 	import Avatar from '../profiles/Avatar.svelte';
 
 	let { summary, active }: { summary: ChatSummary; active: boolean } = $props();
@@ -63,13 +64,22 @@
 	{/snippet}
 	{#snippet subtitle()}
 		<div class="row items-center">
-			<span class="flex-1 min-w-0 truncate"
-				>{summary.type === 'ContactRequest'
-					? m.messageRequest()
-					: summary.lastEvent.summary === 'contact_added'
-						? m.contactAccepted()
-						: summary.lastEvent.summary}</span
-			>
+			<span class="flex-1 min-w-0 truncate">
+				{#if summary.lastEvent.kind === 'contact_request'}
+					{m.messageRequest()}
+				{:else if summary.lastEvent.kind === 'contact_added'}
+					{m.contactAccepted()}
+				{:else if summary.lastEvent.kind === 'message'}
+					{#if summary.type === 'GroupChat'}
+						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
+						{summary.lastEvent.text}
+					{:else}
+						{summary.lastEvent.text}
+					{/if}
+				{:else}
+					{groupEventText(summary.lastEvent)}
+				{/if}
+			</span>
 			{#if summary.unreadMessages !== 0}
 				<Badge>{summary.unreadMessages}</Badge>
 			{/if}

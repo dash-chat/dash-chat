@@ -19,7 +19,7 @@ use super::*;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Notification {
     pub header: Header,
-    pub payload: Payload,
+    pub payload: Option<Payload>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -243,8 +243,8 @@ impl Node {
 
         tracing::debug!(hash = ?hash.renamed(), "processed operation");
 
-        if let Some(payload) = payload.as_ref() {
-            self.notify_payload(&header, payload).await?;
+        if payload.is_some() || header.extensions.auth.is_some() {
+            self.notify(&header, payload.as_ref()).await?;
         }
 
         // XXX: don't repair this often.
@@ -308,12 +308,12 @@ impl Node {
         Ok(())
     }
 
-    pub async fn notify_payload(&self, header: &Header, payload: &Payload) -> anyhow::Result<()> {
-        if let Some((notification_tx, payload)) = self.notification_tx.clone().zip(Some(payload)) {
+    pub async fn notify(&self, header: &Header, payload: Option<&Payload>) -> anyhow::Result<()> {
+        if let Some(notification_tx) = self.notification_tx.clone() {
             notification_tx
                 .send(Notification {
                     header: header.clone(),
-                    payload: payload.clone(),
+                    payload: payload.cloned(),
                 })
                 .await
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
