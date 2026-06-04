@@ -19,6 +19,9 @@ if [[ ! -d "$SRC" ]]; then
   exit 1
 fi
 
+# The .icon (Icon Composer) source requires a recent deployment target for
+# actool to emit Assets.car; pin it independently of MACOSX_DEPLOYMENT_TARGET,
+# which controls the binary, not the icon catalog.
 xcrun actool "$SRC" \
   --compile "$OUT" \
   --output-format human-readable-text \
@@ -28,12 +31,15 @@ xcrun actool "$SRC" \
   --include-all-app-icons \
   --enable-on-demand-resources NO \
   --target-device mac \
-  --minimum-deployment-target "${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
-  --platform macosx \
-  >/dev/null
+  --minimum-deployment-target 14.0 \
+  --platform macosx
 
-# actool drops AppIcon.icns + a partial Info.plist alongside Assets.car; we
-# only need Assets.car (the legacy .icns is regenerated separately).
 rm -f "$OUT/AppIcon.icns" "$OUT/.partial-info.plist"
+
+if [[ ! -f "$OUT/Assets.car" ]]; then
+  echo "build-assets-car: actool did not produce $OUT/Assets.car" >&2
+  ls -la "$OUT" >&2
+  exit 1
+fi
 
 echo "build-assets-car: wrote $OUT/Assets.car"
