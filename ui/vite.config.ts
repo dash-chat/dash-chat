@@ -44,8 +44,8 @@ export default defineConfig(async () => ({
 		],
 	},
 	plugins: [
-		tailwindcss(),
 		sveltekit(),
+		tailwindcss(),
 		paraglideVitePlugin({
 			project: './project.inlang',
 			outdir: './src/lib/paraglide',
