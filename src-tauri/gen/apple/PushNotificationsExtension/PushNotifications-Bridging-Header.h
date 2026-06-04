@@ -20,3 +20,6 @@ void notification_destroy(struct push_notification *data);
 RustByteSlice notification_title(const struct push_notification *data);
 RustByteSlice notification_body(const struct push_notification *data);
 RustByteSlice notification_route(const struct push_notification *data);
+RustByteSlice notification_large_icon_bytes(const struct push_notification *data);
+RustByteSlice notification_conversation_sender_id(const struct push_notification *data);
+RustByteSlice notification_conversation_title(const struct push_notification *data);

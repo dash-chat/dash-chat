@@ -81,8 +81,9 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
     if let Some(route) = data.route {
         builder = builder.route(route);
     }
-    if data.messaging_style {
-        builder = builder.messaging_style();
+    builder = builder.sound(data.sound.unwrap_or_else(|| "default".to_string()));
+    if let Some(style) = data.conversation_style {
+        builder = builder.conversation_style(style);
     }
     builder.show()?;
     Ok(())
@@ -174,6 +175,7 @@ async fn chat_message_notification(
 
     let direct_chat_agent_id = sender_agent_id
         .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic_id);
+    let is_group = direct_chat_agent_id.is_none();
     let chat_route = match direct_chat_agent_id {
         Some(agent_id) => format!("/direct-chats/{}", agent_id.to_hex()),
         None => format!("/group-chat/{}", hex::encode(&*topic_id)),
@@ -183,6 +185,20 @@ async fn chat_message_notification(
         Some((idx, _)) => format!("{}...", &message_text[..idx]),
         None => message_text.to_string(),
     };
+
+    // For group chats, resolve the group name once and pass it as the
+    // MessagingStyle conversation title (Signal style: collapsed view shows
+    // the group name, expanded view stacks per-sender rows). Only mobile
+    // surfaces this — desktop notifications don't use MessagingStyle /
+    // Communication Notifications.
+    #[cfg(mobile)]
+    let conversation_title = if is_group {
+        Some(group_title(node, topic_id).await)
+    } else {
+        None
+    };
+    #[cfg(not(mobile))]
+    let _ = is_group;
 
     #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
     let mut notification_data = NotificationData {
@@ -195,9 +211,14 @@ async fn chat_message_notification(
         ..Default::default()
     };
 
-    // Android-only: collapse direct-chat messages into one MessagingStyle thread.
-    // The id must be stable per conversation so MessagingStyle accumulates the
-    // messages onto the same notification instead of stacking new ones.
+    // Android-only: collapse messages from the same conversation into one
+    // MessagingStyle thread. The id must be stable per conversation so
+    // MessagingStyle accumulates the messages onto the same notification
+    // instead of stacking new ones. `sender_id` keeps each `Person` distinct
+    // within group threads so different senders don't collapse into one;
+    // `conversation_title` (groups only) surfaces the group name as the
+    // collapsed-row title and switches MessagingStyle into
+    // `isGroupConversation = true`.
     //
     // TODO: XOR the truncated topic id with a node-specific secret before
     // using it as the notification id. As-is, the first 4 bytes of the topic
@@ -213,7 +234,23 @@ async fn chat_message_notification(
             ),
         }
         notification_data.group = Some("dashchat.chats".to_string());
-        notification_data.messaging_style = true;
+        notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
+            sender_id: sender_id_hex.clone(),
+            conversation_title: conversation_title.clone(),
+        });
+    }
+
+    // iOS Communication Notifications: the NSE reads `conversation_style.sender_id`
+    // (via the `notification_conversation_sender_id` FFI accessor) to give each
+    // sender within a group thread its own `INPersonHandle.value`, and
+    // `conversation_title` (via `notification_conversation_title`) to set
+    // `INSendMessageIntent.speakableGroupName`.
+    #[cfg(target_os = "ios")]
+    {
+        notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
+            sender_id: sender_id_hex,
+            conversation_title,
+        });
     }
 
     notification_data
@@ -221,7 +258,10 @@ async fn chat_message_notification(
 
 /// Resolves the latest group name for `topic_id`, falling back to a localized
 /// "New group" placeholder when there's no `GroupDetails` op yet or the name is
-/// empty. Used in notification titles for group invites/adds.
+/// empty. Used in chat-message notifications (as the MessagingStyle conversation
+/// title) and in auth-control notifications (as the title for group
+/// invites/adds). Mobile-only: desktop notifications use neither MessagingStyle
+/// nor the auth-control variant.
 #[cfg(mobile)]
 async fn group_title(node: &Node, topic_id: TopicId) -> String {
     match node.get_group_details(topic_id).await {
