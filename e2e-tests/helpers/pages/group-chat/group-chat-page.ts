@@ -1,3 +1,4 @@
+import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
@@ -9,6 +10,7 @@ export class GroupChatPage extends TestPage {
 	messages = this.agent.$(tid('group-chat-messages'));
 	messageInput = this.agent.$(tid('message-input-textarea'));
 	sendButton = this.agent.$(tid('message-input-send'));
+	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scrollBottom = this.agent.$(tid('chat-scroll-bottom'));
 	unreadBadge = this.agent.$(tid('chat-unread-badge'));
 	unreadDivider = this.agent.$(tid('group-chat-unread-divider'));
