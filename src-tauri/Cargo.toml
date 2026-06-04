@@ -19,7 +19,7 @@ tauri-build = { version = "2.4.0", default-features = false, features = [] }
 vergen-gitcl = "9"
 
 [dependencies]
-tauri = { version = "2.9", features = ["devtools", "tray-icon"] }
+tauri = { version = "2.9", features = ["devtools", "tray-icon", "image-png"] }
 
 tauri-plugin-dialog = "2.3"
 tauri-plugin-process = "2.3"
