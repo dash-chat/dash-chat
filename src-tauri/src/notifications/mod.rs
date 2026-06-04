@@ -75,12 +75,16 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
     if let Some(icon) = data.icon {
         builder = builder.icon(icon);
     }
+    if let Some(bytes) = data.large_icon_bytes {
+        builder = builder.large_icon_bytes(bytes);
+    }
     if let Some(group) = data.group {
         builder = builder.group(group);
     }
     if let Some(route) = data.route {
         builder = builder.route(route);
     }
+    builder = builder.sound(data.sound.unwrap_or_else(|| "default".to_string()));
     if data.messaging_style {
         builder = builder.messaging_style();
     }
@@ -151,16 +155,16 @@ async fn chat_message_notification(
         }
     };
 
-    let sender_name = if let Some(agent_id) = sender_agent_id {
-        node.local_store
-            .get_profile(agent_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|profile| profile.name)
+    let sender_profile = if let Some(agent_id) = sender_agent_id {
+        node.local_store.get_profile(agent_id).await.ok().flatten()
     } else {
         None
     };
+
+    let sender_name = sender_profile.as_ref().map(|p| p.name.clone());
+    let sender_avatar = sender_profile
+        .and_then(|p| p.avatar)
+        .filter(|s| s.starts_with("data:image/"));
 
     let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
 
@@ -182,6 +186,7 @@ async fn chat_message_notification(
         title: Some(title),
         body: Some(body_text),
         icon: Some("ic_stat_icon".to_string()),
+        large_icon_bytes: sender_avatar,
         group: Some(hex::encode(&*topic_id)),
         route: Some(chat_route),
         ..Default::default()

@@ -90,6 +90,7 @@ class NotificationService: UNNotificationServiceExtension {
         let title = notification_title(n).asString()
         let body = notification_body(n).asString()
         let route = notification_route(n).asString()
+        let largeIconBytes = notification_large_icon_bytes(n).asString()
         notification_destroy(n)
         log.info("decoded title=\(title ?? "<nil>", privacy: .private) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .private) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
         if (title == nil || title!.isEmpty) && (body == nil || body!.isEmpty) {
@@ -104,8 +105,39 @@ class NotificationService: UNNotificationServiceExtension {
             userInfo["__notification_route__"] = route
             bestAttemptContent.userInfo = userInfo
         }
+        if let largeIconBytes, !largeIconBytes.isEmpty,
+           let attachment = makeAvatarAttachment(largeIconBytes) {
+            bestAttemptContent.attachments = [attachment]
+        }
         log.info("delivering modified content title=\(bestAttemptContent.title, privacy: .private) body=\(bestAttemptContent.body, privacy: .private)")
         self.deliver(bestAttemptContent)
+    }
+
+    /// Decode a `data:image/...;base64,...` data URL into a file under the
+    /// extension's temp dir and wrap it in a `UNNotificationAttachment`.
+    /// Returns nil on any decode/I/O failure — caller falls back to no image.
+    private func makeAvatarAttachment(_ dataUrl: String) -> UNNotificationAttachment? {
+        let stripped: String
+        if let range = dataUrl.range(of: "base64,") {
+            stripped = String(dataUrl[range.upperBound...])
+        } else {
+            stripped = dataUrl
+        }
+        guard let bytes = Data(base64Encoded: stripped) else {
+            log.error("avatar base64 decode failed")
+            return nil
+        }
+        let ext = dataUrl.contains("image/jpeg") || dataUrl.contains("image/jpg") ? "jpg" : "png"
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(ext)
+        do {
+            try bytes.write(to: url, options: .atomic)
+            return try UNNotificationAttachment(identifier: "avatar", url: url, options: nil)
+        } catch {
+            log.error("avatar attachment write/create failed: \(error, privacy: .public)")
+            return nil
+        }
     }
 
     /// Called by iOS just before the extension's ~30s budget expires. Without

@@ -52,6 +52,14 @@
 			"desktop": {
 				"schemes": ["dash-chat"]
 			}
+		},
+		"notification": {
+			"priority": "high",
+			"sound": "default",
+			"icon": "ic_stat_icon",
+			"iconColor": "#3b82f6",
+			"vibrationPattern": [0, 250, 250, 250],
+			"lightColor": "#3b82f6"
 		}
 	}
 }
