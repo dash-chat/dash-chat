@@ -140,8 +140,9 @@
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
 
-	// Unread divider state — hash captured once on load so position stays fixed,
-	// count always recomputed so it updates as new messages arrive
+	// Sticky once set so the divider doesn't shift as messages are read. We allow
+	// a re-capture later only when the user is scrolled up — at-bottom new
+	// arrivals get auto-read by the IntersectionObserver, so no divider is needed.
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
@@ -168,7 +169,6 @@
 		try {
 			await store.sendMessage(message);
 			messageText = '';
-			// Hide the unread messages divider after sending, and allow it to reappear for future messages
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
 			// Defer the scroll one macrotask: store.sendMessage resolves once
@@ -323,8 +323,10 @@
 			return { hash: null, count: 0 };
 		}
 
-		// Capture the divider position once so it doesn't jump as messages are read
-		if (!unreadDividerCaptured) {
+		if (
+			capturedUnreadHash === null &&
+			(!unreadDividerCaptured || !isAtBottom)
+		) {
 			for (const day of messagesSetsInDays) {
 				for (const messageSet of day.eventsSets) {
 					for (const [hash, message] of messageSet) {
@@ -337,8 +339,8 @@
 				}
 				if (capturedUnreadHash) break;
 			}
-			unreadDividerCaptured = true;
 		}
+		unreadDividerCaptured = true;
 
 		if (!capturedUnreadHash) return { hash: null, count: 0 };
 

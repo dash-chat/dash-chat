@@ -1,7 +1,16 @@
-use dashchat_node::{AgentId, ChatId, ChatMessageContent, ChatReaction, Node};
+use dashchat_node::{AgentId, ChatId, ChatMessageContent, ChatReaction, DeviceId, Node};
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
+use serde::{Deserialize, Serialize};
 use tauri::State;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupMember {
+    pub agent_id: AgentId,
+    pub device_ids: Vec<DeviceId>,
+    pub is_admin: bool,
+}
 
 #[tauri::command]
 pub async fn create_group(
@@ -69,14 +78,15 @@ pub async fn get_group_chats(node: State<'_, Node>) -> Result<Vec<ChatId>, Strin
 pub async fn get_group_members(
     chat_id: ChatId,
     node: State<'_, Node>,
-) -> Result<Vec<(AgentId, bool)>, String> {
+) -> Result<Vec<GroupMember>, String> {
     let members = node
         .get_group_members(chat_id)
         .await
         .map_err(|e| format!("Failed to get group members: {e:?}"))?;
     let my_device_id = node.device_id();
     let my_agent_id = node.agent_id();
-    let mut result = Vec::with_capacity(members.len());
+    let mut grouped: std::collections::BTreeMap<AgentId, GroupMember> =
+        std::collections::BTreeMap::new();
     for (device_id, access) in members {
         let agent_id = if device_id == my_device_id {
             my_agent_id
@@ -90,7 +100,14 @@ pub async fn get_group_members(
                         .expect("DeviceId is a valid 32-byte key")
                 })
         };
-        result.push((agent_id, access.level >= AccessLevel::Manage));
+        let is_admin = access.level >= AccessLevel::Manage;
+        let entry = grouped.entry(agent_id).or_insert_with(|| GroupMember {
+            agent_id,
+            device_ids: Vec::new(),
+            is_admin: false,
+        });
+        entry.device_ids.push(device_id);
+        entry.is_admin |= is_admin;
     }
-    Ok(result)
+    Ok(grouped.into_values().collect())
 }

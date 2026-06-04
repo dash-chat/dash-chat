@@ -81,7 +81,6 @@
 
 <style>
 	:global(.others-message) {
-		align-self: start;
 		margin: 0;
 		min-width: 0;
 		overflow-wrap: anywhere;
