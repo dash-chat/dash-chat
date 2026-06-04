@@ -403,9 +403,8 @@
 						{:else}
 							<Navbar
 								transparent={true}
-								titleClass="opacity1 w-full min-w-0"
+								titleClass="opacity1 min-w-0 flex-1"
 								leftClass="shrink-0"
-								rightClass="bg-transparent! shadow-none! backdrop-blur-none! pointer-events-none! dark:bg-transparent! dark:shadow-none!"
 								centerTitle={false}
 							>
 								{#snippet left()}
@@ -442,11 +441,9 @@
 									</Link>
 								{/snippet}
 
-								{#snippet right()}
-									<div class={theme === 'material' ? 'pe-2' : ''}>
-										<ConnectionStatusIndicator />
-									</div>
-								{/snippet}
+								<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
+									<ConnectionStatusIndicator />
+								</div>
 							</Navbar>
 						{/if}
 					{/snippet}
@@ -775,7 +772,7 @@
 
 				<div
 					bind:clientHeight={bottomBarHeight}
-					class="absolute bottom-0 inset-x-0 z-20"
+					class="absolute bottom-0 inset-x-0 z-10"
 					class:bg-md-light-surface={theme === 'material'}
 					class:dark:bg-md-dark-surface={theme === 'material'}
 				>

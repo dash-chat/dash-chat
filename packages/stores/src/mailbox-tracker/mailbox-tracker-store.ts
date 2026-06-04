@@ -91,7 +91,7 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 			mailboxesConnectionStates[cloudMailboxIndex].consecutive_errors <
 				UI_DISCONNECTED_ERROR_THRESHOLD;
 
-		let connectedToAnyLocalMailbox = false;
+		let connectedLocalMailboxCount = 0;
 
 		for (let i = 0; i < activeMailboxIds.length; i++) {
 			if (i === cloudMailboxIndex) continue;
@@ -102,12 +102,12 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 				!!connectionState.last_success_at &&
 				connectionState.consecutive_errors < UI_DISCONNECTED_ERROR_THRESHOLD
 			)
-				connectedToAnyLocalMailbox = true;
+				connectedLocalMailboxCount++;
 		}
 
 		return {
 			connectedToCloudMailboxServer,
-			connectedToAnyLocalMailbox,
+			connectedLocalMailboxCount,
 		};
 	});
 
