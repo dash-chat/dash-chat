@@ -495,9 +495,7 @@
 									{/if}
 								</div>
 								<div class="row justify-center mb-4">
-									<div
-										class="rounded-xl border-2 border-gray-300 dark:border-gray-600"
-									>
+									<div class="outline-card" style="border-radius: 0.75rem;">
 										<div
 											class="flex flex-col gap-1 items-center p-3 text-center"
 										>
