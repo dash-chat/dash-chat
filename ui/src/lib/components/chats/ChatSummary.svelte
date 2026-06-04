@@ -81,36 +81,40 @@
 				{:else if summary.lastEvent.kind === 'group_member_added'}
 					{#if summary.lastEvent.isMine}
 						{m.someoneAddedYouToTheGroup({
-							name: summary.lastEvent.adminName,
+							name: summary.lastEvent.adminName || m.someone(),
 						})}
 					{:else if summary.lastEvent.addedByMe}
-						{m.youAddedMember({ name: summary.lastEvent.memberName })}
+						{m.youAddedMember({
+							name: summary.lastEvent.memberName || m.someone(),
+						})}
 					{:else}
 						{m.memberAddedToGroup({
-							admin: summary.lastEvent.adminName,
-							name: summary.lastEvent.memberName,
+							admin: summary.lastEvent.adminName || m.someone(),
+							name: summary.lastEvent.memberName || m.someone(),
 						})}
 					{/if}
 				{:else if summary.lastEvent.kind === 'group_member_removed'}
 					{m.memberRemovedFromGroup()}
 				{:else if summary.lastEvent.kind === 'group_member_promoted'}
 					{#if summary.lastEvent.promotedByMe}
-						{m.youMadeMemberAdmin({ name: summary.lastEvent.memberName })}
+						{m.youMadeMemberAdmin({
+							name: summary.lastEvent.memberName || m.someone(),
+						})}
 					{:else}
 						{m.someoneMadeMemberAdmin({
-							admin: summary.lastEvent.adminName,
-							name: summary.lastEvent.memberName,
+							admin: summary.lastEvent.adminName || m.someone(),
+							name: summary.lastEvent.memberName || m.someone(),
 						})}
 					{/if}
 				{:else if summary.lastEvent.kind === 'group_member_demoted'}
 					{#if summary.lastEvent.demotedByMe}
 						{m.youRevokedAdminFromMember({
-							name: summary.lastEvent.memberName,
+							name: summary.lastEvent.memberName || m.someone(),
 						})}
 					{:else}
 						{m.someoneRevokedAdminFromMember({
-							admin: summary.lastEvent.adminName,
-							name: summary.lastEvent.memberName,
+							admin: summary.lastEvent.adminName || m.someone(),
+							name: summary.lastEvent.memberName || m.someone(),
 						})}
 					{/if}
 				{:else if summary.lastEvent.kind === 'message'}
