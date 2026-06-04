@@ -122,7 +122,7 @@ async fn handle_push_notification(
         .context("failed to hex-decode author")?
         .try_into()
         .map_err(|_| anyhow!("author bytes are not 32 bytes long"))?;
-    let public_key = p2panda_core::PublicKey::from_bytes(&author_bytes)
+    let verifying_key = p2panda_core::VerifyingKey::from_bytes(&author_bytes)
         .context("failed to construct public key")?;
 
     let topic_bytes: [u8; 32] = hex::decode(topic_hex)
@@ -152,7 +152,7 @@ async fn handle_push_notification(
     // Poll for the operation to arrive (up to 15 seconds)
     // PERF: consider adding the ability for the op store to notify when an op is stored,
     //     instead of polling
-    let device_id = dashchat_node::DeviceId::from(public_key);
+    let device_id = dashchat_node::DeviceId::from(verifying_key);
     // `get_log`'s `from` is exclusive (maps to p2panda's `after`), so subtract 1
     // to include seq_num itself. seq_num == 0 → None means "from the start".
     let from = seq_num.checked_sub(1);

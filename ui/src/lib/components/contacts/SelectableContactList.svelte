@@ -1,12 +1,12 @@
 <script lang="ts">
-	import type { Profile, PublicKey } from 'dash-chat-stores';
+	import type { Profile, VerifyingKey } from 'dash-chat-stores';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { List, ListItem, Checkbox, Preloader, useTheme } from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	interface Props {
-		contacts: [PublicKey, Profile][];
-		selectedContacts: PublicKey[];
+		contacts: [VerifyingKey, Profile][];
+		selectedContacts: VerifyingKey[];
 		loading?: boolean;
 		noDataMessage?: string;
 		selectable?: boolean;
@@ -30,7 +30,7 @@
 		</div>
 	{:else}
 		<List strongIos inset={isWideScreen.value || theme === 'ios'}>
-			{#each contacts as [publicKey, profile]}
+			{#each contacts as [verifyingKey, profile]}
 				<ListItem
 					label
 					title={profile.name}
@@ -47,14 +47,14 @@
 					{#snippet after()}
 						{#if selectable}
 							<Checkbox
-								checked={selectedContacts.includes(publicKey)}
+								checked={selectedContacts.includes(verifyingKey)}
 								onChange={e => {
 									const target = e.target as HTMLInputElement;
 									if (target.checked) {
-										selectedContacts = [...selectedContacts, publicKey];
+										selectedContacts = [...selectedContacts, verifyingKey];
 									} else {
 										selectedContacts = selectedContacts.filter(
-											c => c !== publicKey,
+											c => c !== verifyingKey,
 										);
 									}
 								}}
