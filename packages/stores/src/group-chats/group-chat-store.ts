@@ -221,8 +221,10 @@ export class GroupChatStore implements ReadMessagesStore {
 
 	/// Actions
 
-	async addMember(member: PublicKey) {
-		await this.client.addMember(this.chatId, member);
+	async addMembers(members: PublicKey[]) {
+		await Promise.all(
+			members.map(member => this.client.addMember(this.chatId, member)),
+		);
 		this.membersVersion.value++;
 	}
 

@@ -25,7 +25,7 @@
 
 	async function addMembers() {
 		const store = chatsStore.groupChats(chatId);
-		await Promise.all(selectedContacts.map(member => store.addMember(member)));
+		await store.addMembers(selectedContacts);
 		goto(`/group-chat/${chatId}/info`);
 	}
 </script>
