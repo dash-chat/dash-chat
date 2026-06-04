@@ -36,7 +36,10 @@
 			"icons/icon.ico"
 		],
 		"macOS": {
-			"entitlements": "entitlements.plist"
+			"entitlements": "entitlements.plist",
+			"files": {
+				"Resources/Assets.car": "icons/Assets.car"
+			}
 		},
 		"createUpdaterArtifacts": true
 	},
