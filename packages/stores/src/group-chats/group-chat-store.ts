@@ -1,6 +1,6 @@
 import { reactive, signal } from 'signalium';
 
-import { Profile } from '../contacts/contacts-client';
+import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
 import { waitForOperation } from '../p2panda/logs-client';
@@ -9,6 +9,7 @@ import { AgentId, DeviceId, Hash, PublicKey } from '../p2panda/types';
 import {
 	ChatId,
 	ChatSummary,
+	ChatSummaryLastEvent,
 	MessageContent,
 	Payload,
 	ReadMessagesStore,
@@ -38,7 +39,13 @@ export class GroupChatStore implements ReadMessagesStore {
 		protected contactsStore: ContactsStore,
 		public client: IGroupChatClient,
 		public chatId: ChatId,
-	) {}
+	) {
+		this.logsStore.logsClient.onNewOperation((topicId, op) => {
+			if (topicId === this.chatId && op.header.auth) {
+				this.membersVersion.value++;
+			}
+		});
+	}
 
 	info = reactive(async () => {
 		const info: GroupInfo = {
@@ -124,6 +131,92 @@ export class GroupChatStore implements ReadMessagesStore {
 		return sortedMessages.length > 0 ? sortedMessages[0] : undefined;
 	});
 
+	lastEvent = reactive(async (): Promise<ChatSummaryLastEvent | undefined> => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const lastMessage = await this.lastMessage();
+		const members = await this.allMembers();
+		const myDeviceId = await this.contactsStore.myDeviceId();
+
+		const nameForDevice = (deviceId: DeviceId): string => {
+			for (const m of Object.values(members)) {
+				if (m.deviceIds.includes(deviceId)) {
+					return m.profile ? fullName(m.profile) : '';
+				}
+			}
+			return '';
+		};
+
+		let bestAuth: ChatSummaryLastEvent | undefined;
+		let createdByMe = false;
+		let iWasAdded = false;
+		for (const ops of Object.values(logs)) {
+			for (const op of ops) {
+				const action = op.header.auth?.action;
+				if (!action) continue;
+				const ts = op.header.timestamp;
+
+				let candidate: ChatSummaryLastEvent | undefined;
+				if ('Create' in action) {
+					const isMine = op.header.public_key === myDeviceId;
+					if (isMine) createdByMe = true;
+					const initiallyIncludedMe = action.Create.initial_members.some(
+						([m]) => 'Individual' in m && m.Individual === myDeviceId,
+					);
+					if (initiallyIncludedMe) iWasAdded = true;
+					candidate = {
+						kind: 'group_created',
+						isMine,
+						creatorName: isMine ? '' : nameForDevice(op.header.public_key),
+						timestamp: ts,
+					};
+				} else if ('Add' in action) {
+					const member = action.Add.member;
+					const addedDeviceId =
+						'Individual' in member ? member.Individual : undefined;
+					const isMine = !!addedDeviceId && addedDeviceId === myDeviceId;
+					if (isMine) iWasAdded = true;
+					const addedByMe = op.header.public_key === myDeviceId;
+					candidate = {
+						kind: 'group_member_added',
+						isMine,
+						addedByMe,
+						memberName: addedDeviceId ? nameForDevice(addedDeviceId) : '',
+						adminName: nameForDevice(op.header.public_key),
+						timestamp: ts,
+					};
+				} else if ('Remove' in action) {
+					candidate = { kind: 'group_member_removed', timestamp: ts };
+				}
+
+				if (
+					candidate &&
+					(!bestAuth || candidate.timestamp > bestAuth.timestamp)
+				) {
+					bestAuth = candidate;
+				}
+			}
+		}
+
+		// Hide the group until we either authored the Create or see our own Add op.
+		// Avoids the chat-list flicker between empty → "Group created" → "X added you".
+		if (!createdByMe && !iWasAdded) return undefined;
+
+		const messageEvent: ChatSummaryLastEvent | undefined = lastMessage
+			? {
+					kind: 'message',
+					text: lastMessage.content,
+					authorName: nameForDevice(lastMessage.author),
+					timestamp: lastMessage.timestamp,
+				}
+			: undefined;
+
+		if (!messageEvent) return bestAuth;
+		if (!bestAuth) return messageEvent;
+		return messageEvent.timestamp >= bestAuth.timestamp
+			? messageEvent
+			: bestAuth;
+	});
+
 	membersData = reactive(async () => {
 		void this.membersVersion.value;
 		return await this.client.getMembers(this.chatId);
@@ -201,9 +294,10 @@ export class GroupChatStore implements ReadMessagesStore {
 		return count;
 	});
 
-	summary = reactive(async (): Promise<ChatSummary> => {
+	summary = reactive(async (): Promise<ChatSummary | undefined> => {
+		const last = await this.lastEvent();
+		if (!last) return undefined;
 		const info = await this.info();
-		const last = await this.lastMessage();
 		const unread = await this.unreadCount();
 
 		return {
@@ -211,10 +305,7 @@ export class GroupChatStore implements ReadMessagesStore {
 			chatId: this.chatId,
 			name: info.name ?? '',
 			avatar: info.avatar,
-			lastEvent: {
-				summary: last?.content ?? '',
-				timestamp: last?.timestamp ?? 0,
-			},
+			lastEvent: last,
 			unreadMessages: unread,
 		};
 	});

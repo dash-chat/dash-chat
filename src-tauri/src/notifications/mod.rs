@@ -53,7 +53,7 @@ pub(crate) async fn show_sync_notification(
         &node,
         topic_id,
         &notification.header,
-        Some(&notification.payload),
+        notification.payload.as_ref(),
     )
     .await;
 

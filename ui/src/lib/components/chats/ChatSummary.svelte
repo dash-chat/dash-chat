@@ -63,13 +63,45 @@
 	{/snippet}
 	{#snippet subtitle()}
 		<div class="row items-center">
-			<span class="flex-1 min-w-0 truncate"
-				>{summary.type === 'ContactRequest'
-					? m.messageRequest()
-					: summary.lastEvent.summary === 'contact_added'
-						? m.contactAccepted()
-						: summary.lastEvent.summary}</span
-			>
+			<span class="flex-1 min-w-0 truncate">
+				{#if summary.lastEvent.kind === 'contact_request'}
+					{m.messageRequest()}
+				{:else if summary.lastEvent.kind === 'contact_added'}
+					{m.contactAccepted()}
+				{:else if summary.lastEvent.kind === 'group_created'}
+					{#if summary.lastEvent.isMine}
+						{m.youCreatedTheGroup()}
+					{:else if summary.lastEvent.creatorName}
+						{m.someoneCreatedTheGroup({
+							name: summary.lastEvent.creatorName,
+						})}
+					{:else}
+						{m.groupCreated()}
+					{/if}
+				{:else if summary.lastEvent.kind === 'group_member_added'}
+					{#if summary.lastEvent.isMine}
+						{m.someoneAddedYouToTheGroup({
+							name: summary.lastEvent.adminName,
+						})}
+					{:else if summary.lastEvent.addedByMe}
+						{m.youAddedMember({ name: summary.lastEvent.memberName })}
+					{:else}
+						{m.memberAddedToGroup({
+							admin: summary.lastEvent.adminName,
+							name: summary.lastEvent.memberName,
+						})}
+					{/if}
+				{:else if summary.lastEvent.kind === 'group_member_removed'}
+					{m.memberRemovedFromGroup()}
+				{:else if summary.lastEvent.kind === 'message'}
+					{#if summary.type === 'GroupChat' && summary.lastEvent.authorName}
+						<strong>{summary.lastEvent.authorName}</strong>: {summary.lastEvent
+							.text}
+					{:else}
+						{summary.lastEvent.text}
+					{/if}
+				{/if}
+			</span>
 			{#if summary.unreadMessages !== 0}
 				<Badge>{summary.unreadMessages}</Badge>
 			{/if}

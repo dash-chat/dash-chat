@@ -28,6 +28,26 @@ export interface SimplifiedHeader {
 
 	topic_id: Hash;
 
-	/// Custom meta data.
-	// extensions: E>, | undefined
+	/// p2panda-auth group-control extension. Present on operations that author a group action
+	/// (Create / Add / Remove / Promote / Demote) instead of a chat payload body.
+	auth?: GroupsArgs;
+}
+
+export type AuthGroupMember = { Individual: PublicKey } | { Group: PublicKey };
+
+/// `Access<()>` from p2panda-auth. The chat-list summary only inspects the action discriminant,
+/// so the inner shape is opaque here.
+export type GroupAccess = unknown;
+
+export type GroupAction =
+	| { Create: { initial_members: Array<[AuthGroupMember, GroupAccess]> } }
+	| { Add: { member: AuthGroupMember; access: GroupAccess } }
+	| { Remove: { member: AuthGroupMember } }
+	| { Promote: { member: AuthGroupMember; access: GroupAccess } }
+	| { Demote: { member: AuthGroupMember; access: GroupAccess } };
+
+export interface GroupsArgs {
+	group_id: PublicKey;
+	action: GroupAction;
+	dependencies: Hash[];
 }

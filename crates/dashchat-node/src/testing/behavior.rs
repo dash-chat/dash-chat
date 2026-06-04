@@ -42,7 +42,8 @@ impl Behavior {
                     hash = ?n.header.hash().renamed(),
                     "checking for contact invitation"
                 );
-                let Payload::Inbox(InboxPayload::ContactRequest { code, .. }) = &n.payload else {
+                let Some(Payload::Inbox(InboxPayload::ContactRequest { code, .. })) = &n.payload
+                else {
                     return None;
                 };
                 Some(code.clone())
@@ -69,9 +70,9 @@ impl Behavior {
                     return None;
                 }
                 match n.payload {
-                    Payload::Announcements(AnnouncementsPayload::SetCapabilities {
+                    Some(Payload::Announcements(AnnouncementsPayload::SetCapabilities {
                         capabilities,
-                    }) => Some(capabilities),
+                    })) => Some(capabilities),
                     _ => None,
                 }
             })
@@ -90,7 +91,8 @@ impl Behavior {
                     hash = ?n.header.hash().renamed(),
                     "checking for group invitation"
                 );
-                let Payload::Chat(ChatPayload::JoinGroup { chat_id, .. }) = &n.payload else {
+                let Some(Payload::Chat(ChatPayload::JoinGroup { chat_id, .. })) = &n.payload
+                else {
                     return None;
                 };
                 Some(*chat_id)
