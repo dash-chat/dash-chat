@@ -1,4 +1,5 @@
 use sonix_i18n::t;
+use tauri::image::Image;
 use tauri::tray::TrayIconBuilder;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -6,6 +7,12 @@ use tauri::{
 };
 
 const TRAY_ID: &str = "dash-chat-tray";
+
+#[cfg(target_os = "macos")]
+const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-icon.png");
+
+#[cfg(not(target_os = "macos"))]
+const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-icon-colored.png");
 
 /// Build the tray icon (hidden by default). Call once during app setup.
 pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
@@ -16,8 +23,8 @@ pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
     let menu = Menu::with_items(app_handle, &[&title, &separator, &show_i, &quit_i])?;
 
     let tray = TrayIconBuilder::with_id(TRAY_ID)
-        .icon(app_handle.default_window_icon().unwrap().clone())
-        .icon_as_template(true)
+        .icon(Image::from_bytes(TRAY_ICON_BYTES)?)
+        .icon_as_template(cfg!(target_os = "macos"))
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, menu_event| match menu_event.id().as_ref() {
