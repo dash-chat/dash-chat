@@ -79,6 +79,17 @@ export class GroupChatPage extends TestPage {
 		);
 	}
 
+	systemMessage(
+		kind:
+			| 'group_created'
+			| 'group_member_added'
+			| 'group_member_removed'
+			| 'group_member_promoted'
+			| 'group_member_demoted',
+	) {
+		return this.agent.$(tid(`group-chat-system-message-${kind}`));
+	}
+
 	async getAuthorInitials(messageText: string): Promise<string | null> {
 		return this.agent.execute(
 			(sel: string, t: string) => {
