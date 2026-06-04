@@ -1,4 +1,4 @@
-import { reactive } from 'signalium';
+import { reactive, signal } from 'signalium';
 
 import { Profile } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
@@ -11,6 +11,7 @@ import {
 	ChatSummary,
 	MessageContent,
 	Payload,
+	ReadMessagesStore,
 	getMessageText,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
@@ -22,13 +23,16 @@ export interface GroupInfo {
 	avatar: string | undefined;
 }
 
-export interface GroupMember {
+export interface GroupMemberWithProfile {
 	agentId: AgentId;
+	deviceIds: DeviceId[];
 	profile: Profile | undefined;
 	admin: boolean;
 }
 
-export class GroupChatStore {
+export class GroupChatStore implements ReadMessagesStore {
+	private membersVersion = signal(0);
+
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
@@ -121,6 +125,7 @@ export class GroupChatStore {
 	});
 
 	membersData = reactive(async () => {
+		void this.membersVersion.value;
 		return await this.client.getMembers(this.chatId);
 	});
 
@@ -128,28 +133,78 @@ export class GroupChatStore {
 		const myAgentId = await this.contactsStore.myAgentId();
 		const data = await this.membersData();
 		const entry = data.find(m => m.agentId === myAgentId);
-		return this.buildMember(myAgentId, entry?.isAdmin ?? false);
+		return this.buildMember(
+			myAgentId,
+			entry?.deviceIds ?? [],
+			entry?.isAdmin ?? false,
+		);
 	});
 
 	allMembers = reactive(async () => {
 		const data = await this.membersData();
 		const entries = await Promise.all(
-			data.map(async ({ agentId, isAdmin }) => {
-				const member = await this.buildMember(agentId, isAdmin);
+			data.map(async ({ agentId, deviceIds, isAdmin }) => {
+				const member = await this.buildMember(agentId, deviceIds, isAdmin);
 				return [agentId, member] as const;
 			}),
 		);
-		return Object.fromEntries(entries) as Record<AgentId, GroupMember>;
+		return Object.fromEntries(entries) as Record<
+			AgentId,
+			GroupMemberWithProfile
+		>;
 	});
 
-	private buildMember = reactive(async (agentId: AgentId, admin: boolean) => {
-		const profile = await this.contactsStore.profiles(agentId);
-		return { agentId, profile, admin } satisfies GroupMember;
+	private buildMember = reactive(
+		async (agentId: AgentId, deviceIds: DeviceId[], admin: boolean) => {
+			const profile = await this.contactsStore.profiles(agentId);
+			return {
+				agentId,
+				deviceIds,
+				profile,
+				admin,
+			} satisfies GroupMemberWithProfile;
+		},
+	);
+
+	readMessageHashes = reactive(async () => {
+		const myDeviceGroupTopic =
+			await this.contactsStore.devicesStore.myDeviceGroupTopic();
+		const readHashes: Set<Hash> = new Set();
+
+		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				if (
+					op.body?.payload?.type === 'ReadMessages' &&
+					op.body.payload.payload.chat_id === this.chatId
+				) {
+					for (const hash of op.body.payload.payload.message_hashes) {
+						readHashes.add(hash);
+					}
+				}
+			}
+		}
+
+		return readHashes;
+	});
+
+	unreadCount = reactive(async () => {
+		const messages = await this.messages();
+		const readHashes = await this.readMessageHashes();
+		const myDeviceId = await this.contactsStore.myDeviceId();
+
+		let count = 0;
+		for (const [hash, message] of Object.entries(messages)) {
+			if (message.author !== myDeviceId && !readHashes.has(hash)) {
+				count++;
+			}
+		}
+		return count;
 	});
 
 	summary = reactive(async (): Promise<ChatSummary> => {
 		const info = await this.info();
 		const last = await this.lastMessage();
+		const unread = await this.unreadCount();
 
 		return {
 			type: 'GroupChat',
@@ -160,14 +215,21 @@ export class GroupChatStore {
 				summary: last?.content ?? '',
 				timestamp: last?.timestamp ?? 0,
 			},
-			unreadMessages: 0,
+			unreadMessages: unread,
 		};
 	});
 
 	/// Actions
 
-	addMember(member: PublicKey) {
-		return this.client.addMember(this.chatId, member);
+	async addMembers(members: PublicKey[]) {
+		await Promise.all(
+			members.map(member => this.client.addMember(this.chatId, member)),
+		);
+		this.membersVersion.value++;
+	}
+
+	async markAsRead(messageHashes: Hash[]): Promise<void> {
+		await this.client.markMessagesRead(this.chatId, messageHashes);
 	}
 
 	async sendMessage(text: string) {

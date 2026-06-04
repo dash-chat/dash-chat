@@ -1,7 +1,6 @@
 //! NOTE: these tests don't test the full proper friendship flow
 //! in that they don't use the inbox.
 
-#![feature(bool_to_result)]
 #![cfg(test)]
 
 use std::time::Duration;
@@ -72,7 +71,7 @@ async fn test_direct_chat() {
                 alice.get_messages(chat_id).await.unwrap().len(),
                 bobbi.get_messages(chat_id).await.unwrap().len(),
             ];
-            msgs.iter().all(|m| *m == 1).ok_or(msgs)
+            msgs.iter().all(|m| *m == 1).then_some(()).ok_or(msgs)
         },
     )
     .await
@@ -185,7 +184,7 @@ async fn test_group_chat() {
                 bobbi.get_messages(chat_id).await.unwrap().len(),
                 cammy.get_messages(chat_id).await.unwrap().len(),
             ];
-            msgs.iter().all(|m| *m == 1).ok_or(msgs)
+            msgs.iter().all(|m| *m == 1).then_some(()).ok_or(msgs)
         },
     )
     .await
@@ -209,6 +208,7 @@ async fn test_group_chat() {
             members
                 .iter()
                 .all(|m| *m == expected_members)
+                .then_some(())
                 .ok_or(members)
         },
     )
