@@ -33,14 +33,25 @@ impl Node {
 
         // Await the response, this just means that the command has been handled, it does not mean
         // the operation has been published or processed yet.
-        let process_fut = reply_rx.await??;
+        let process_fut = warn_if_slow("awaiting reply_rx", reply_rx).await??;
 
         // Now we await the operation being published and processed on the system layer.
-        let event = process_fut.await?;
+        let event = warn_if_slow("awaiting process_fut", process_fut).await?;
 
         // Trigger sync with all mailboxes.
         self.mailboxes.trigger_sync();
 
         Ok(event.header().to_owned())
+    }
+}
+
+async fn warn_if_slow<F: std::future::Future>(what: &str, fut: F) -> F::Output {
+    tokio::pin!(fut);
+    match tokio::time::timeout(std::time::Duration::from_secs(30), &mut fut).await {
+        Ok(out) => out,
+        Err(_) => {
+            tracing::warn!("{what} is taking longer than 30s");
+            fut.await
+        }
     }
 }
