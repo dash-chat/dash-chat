@@ -81,7 +81,6 @@
 
 <style>
 	:global(.others-message) {
-		align-self: start;
 		margin: 0;
 		min-width: 0;
 		overflow-wrap: anywhere;
@@ -98,7 +97,7 @@
 	}
 
 	:global(.others-message.offline-message) {
-		border: 2px dashed color-mix(in srgb, var(--color-brand-primary), black 35%);
+		border: 3px dashed rgb(255, 182, 193);
 		background-clip: padding-box;
 	}
 	:global(.others-message.offline-message > div) {

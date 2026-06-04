@@ -96,6 +96,7 @@ pub fn run() {
             commands::chats::send_reaction,
             commands::chats::mark_messages_read,
             commands::chats::create_group,
+            commands::chats::add_group_member,
             commands::chats::get_group_chats,
             commands::chats::get_group_members,
             commands::settings::get_settings,
