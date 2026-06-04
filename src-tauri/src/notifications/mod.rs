@@ -85,8 +85,8 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
         builder = builder.route(route);
     }
     builder = builder.sound(data.sound.unwrap_or_else(|| "default".to_string()));
-    if data.messaging_style {
-        builder = builder.messaging_style();
+    if let Some(style) = data.conversation_style {
+        builder = builder.conversation_style(style.sender_id);
     }
     builder.show()?;
     Ok(())
@@ -201,6 +201,9 @@ async fn chat_message_notification(
     // id are public-derivable, so an adversary could mine a contact whose
     // topic id shares a 4-byte LE prefix with an existing conversation and
     // get their messages collapsed into the wrong MessagingStyle thread.
+    #[cfg(mobile)]
+    let sender_id_hex = sender_agent_id.map(|aid| aid.to_hex());
+
     #[cfg(target_os = "android")]
     if direct_chat_agent_id.is_some() {
         match stable_notification_id(&*topic_id) {
@@ -210,7 +213,19 @@ async fn chat_message_notification(
             ),
         }
         notification_data.group = Some("dashchat.chats".to_string());
-        notification_data.messaging_style = true;
+        notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
+            sender_id: sender_id_hex.clone(),
+        });
+    }
+
+    // iOS Communication Notifications: the NSE reads `conversation_style.sender_id`
+    // (via the `notification_conversation_sender_id` FFI accessor) to give each
+    // sender within a group thread its own `INPersonHandle.value`.
+    #[cfg(target_os = "ios")]
+    {
+        notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
+            sender_id: sender_id_hex,
+        });
     }
 
     notification_data
