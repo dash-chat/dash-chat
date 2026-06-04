@@ -49,6 +49,7 @@ export default defineConfig(async () => ({
 		paraglideVitePlugin({
 			project: './project.inlang',
 			outdir: './src/lib/paraglide',
+			strategy: ['preferredLanguage', 'cookie', 'globalVariable', 'baseLocale'],
 		}),
 		// If the desired port was already taken, another Vite is serving — exit cleanly.
 		{
