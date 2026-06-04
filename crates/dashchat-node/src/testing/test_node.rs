@@ -180,7 +180,7 @@ pub struct TestNodeConfig {
 impl Default for TestNodeConfig {
     fn default() -> Self {
         Self {
-            node_config: NodeConfig::default(),
+            node_config: NodeConfig::testing(),
             create_profile: true,
             use_named_id: true,
         }
