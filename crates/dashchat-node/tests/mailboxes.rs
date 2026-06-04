@@ -1,5 +1,3 @@
-#![feature(bool_to_result)]
-
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
@@ -101,6 +99,7 @@ async fn mailbox_late_join(
         || async {
             (alice.get_messages(chat).await.unwrap().len() == 2
                 && bobbi.get_messages(chat).await.unwrap().len() == 2)
+                .then_some(())
                 .ok_or("message not received")
         },
     )
@@ -171,6 +170,7 @@ async fn test_mailbox_restart_relay() {
         Duration::from_secs(5),
         || async {
             (bobbi.get_messages(chat).await.unwrap().len() == 2)
+                .then_some(())
                 .ok_or("bobbi hasn't received both messages yet")
         },
     )
@@ -215,7 +215,7 @@ async fn test_mailbox_restart_relay() {
         Duration::from_secs(10),
         || async {
             let msgs = bobbi.get_messages(chat).await.unwrap();
-            (msgs.len() == 4).ok_or(format!(
+            (msgs.len() == 4).then_some(()).ok_or(format!(
                 "expected 4 messages, got {} ({:?})",
                 msgs.len(),
                 msgs
