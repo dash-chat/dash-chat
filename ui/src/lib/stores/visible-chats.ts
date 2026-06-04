@@ -6,9 +6,8 @@ import { useReactivePromise } from './use-signal';
 
 export function useVisibleChatSummaries(chatsStore: ChatsStore) {
 	const all = useReactivePromise(chatsStore.allChatsSummaries);
-	return derived([all, previewFeaturesEnabled], ([$all, $previewEnabled]) =>
-		$all.then(summaries =>
-			summaries.filter(s => s.type !== 'GroupChat' || $previewEnabled),
-		),
+	return derived(
+		[all, previewFeaturesEnabled],
+		([$all, $previewEnabled]) => $all,
 	);
 }
