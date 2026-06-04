@@ -165,7 +165,7 @@
 							strongIos
 							inset={isWideScreen.value || theme === 'ios'}
 						>
-							<!-- {#if me.admin}
+							{#if me.admin}
 								<ListItem
 									link
 									chevron={false}
@@ -181,7 +181,7 @@
 										></wa-icon>
 									{/snippet}
 								</ListItem>
-							{/if} -->
+							{/if}
 
 							{#each Object.entries(members) as [actorId, member]}
 								<!--

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import type { ContactsStore, PublicKey } from 'dash-chat-stores';
+	import type { ChatsStore, ContactsStore, PublicKey } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -18,11 +18,14 @@
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
+	const chatsStore: ChatsStore = getContext('chats-store');
 	let selectedContacts = $state<PublicKey[]>([]);
 
 	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
 
 	async function addMembers() {
+		const store = chatsStore.groupChats(chatId);
+		await Promise.all(selectedContacts.map(member => store.addMember(member)));
 		goto(`/group-chat/${chatId}/info`);
 	}
 </script>
@@ -49,6 +52,7 @@
 	<div class="column">
 		<div class="center-in-desktop">
 			<BlockTitle>{m.contacts()}</BlockTitle>
+
 			<SelectableContactList
 				contacts={$contacts ?? []}
 				loading={$contacts === undefined}

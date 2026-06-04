@@ -33,6 +33,23 @@ pub async fn create_group(
 }
 
 #[tauri::command]
+pub async fn add_group_member(
+    chat_id: ChatId,
+    agent_id: AgentId,
+    node: State<'_, Node>,
+) -> Result<(), String> {
+    let device_id = node
+        .local_store
+        .lookup_contact_by_agent_id(agent_id)
+        .await
+        .map_err(|e| format!("Failed to look up contact: {e:?}"))?
+        .ok_or_else(|| format!("No device found for agent {:?}", agent_id))?;
+    node.add_group_member(chat_id, *device_id, Access::write())
+        .await
+        .map_err(|e| format!("Failed to add group member: {e:?}"))
+}
+
+#[tauri::command]
 pub async fn send_message(
     chat_id: ChatId,
     content: ChatMessageContent,
