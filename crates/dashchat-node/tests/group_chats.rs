@@ -237,6 +237,51 @@ async fn test_group_chat() {
         Some("Hello".into())
     );
 
+    // Ensure that the two members who aren't contacts can see each others' profiles.
+
+    consistency(
+        [&cammy, &alice],
+        &[
+            Topic::announcements(alice.agent_id()).into(),
+            Topic::announcements(cammy.agent_id()).into(),
+        ],
+        &ClusterConfig::default(),
+    )
+    .await
+    .unwrap();
+
+    let alice_profile = cammy
+        .local_store
+        .get_profile(alice.agent_id())
+        .await
+        .unwrap();
+    assert_eq!(
+        alice_profile,
+        Some(Profile {
+            name: "alice".to_string(),
+            surname: None,
+            avatar: None,
+            about: None,
+        })
+    );
+
+    let cammy_profile = alice
+        .local_store
+        .get_profile(cammy.agent_id())
+        .await
+        .unwrap();
+    assert_eq!(
+        cammy_profile,
+        Some(Profile {
+            name: "cammy".to_string(),
+            surname: None,
+            avatar: None,
+            about: None,
+        })
+    );
+
+    // shutdown alice
+
     let alice_dir = alice.shutdown().await;
     let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir).await;
     let alice_members = alice.get_group_members(chat_id).await.unwrap();
