@@ -3,7 +3,7 @@
 	import { BlockTitle, List, ListItem, useTheme } from 'konsta/svelte';
 	import { mdiCamera } from '@mdi/js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import StepPage from './StepPage.svelte';
+	import FormPage from '../../lib/components/layout/FormPage.svelte';
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
 	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
 	import type { Profile, VerifyingKey } from 'dash-chat-stores';
@@ -29,7 +29,7 @@
 	const theme = $derived(useTheme());
 </script>
 
-<StepPage
+<FormPage
 	title={m.nameThisGroup()}
 	{onBack}
 	backTestId="new-group-info-back"
@@ -77,4 +77,4 @@
 			noDataMessage={m.youCanAddMembersLater()}
 		/>
 	</div>
-</StepPage>
+</FormPage>

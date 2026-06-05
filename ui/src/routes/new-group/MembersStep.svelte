@@ -4,7 +4,7 @@
 	import type { ContactsStore, Profile, VerifyingKey } from 'dash-chat-stores';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { BlockTitle, Searchbar } from 'konsta/svelte';
-	import StepPage from './StepPage.svelte';
+	import FormPage from '../../lib/components/layout/FormPage.svelte';
 	import ContactsChipList from '$lib/components/contacts/ContactsChipList.svelte';
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
 
@@ -23,7 +23,7 @@
 	let searchQuery = $state('');
 </script>
 
-<StepPage
+<FormPage
 	title={selectedContacts.length === 0
 		? m.newGroup()
 		: m.membersCount({ count: selectedContacts.length })}
@@ -73,4 +73,4 @@
 			bind:selectedContacts
 		/>
 	</div>
-</StepPage>
+</FormPage>
