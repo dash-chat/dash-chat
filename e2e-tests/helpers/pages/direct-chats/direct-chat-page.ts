@@ -22,7 +22,6 @@ export class DirectChatPage extends TestPage {
 	rejectConfirm = this.agent.$(tid('direct-chat-reject-confirm'));
 	messages = this.agent.$(tid('direct-chat-messages'));
 	messageInput = this.agent.$(tid('message-input-textarea'));
-	sendButton = this.agent.$(tid('message-input-send'));
 	emojiButton = this.agent.$(tid('message-input-emoji'));
 	messageStatus = this.agent.$(tid('message-status'));
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
@@ -36,8 +35,17 @@ export class DirectChatPage extends TestPage {
 		await this.typeInto(tid('message-input-textarea'), text);
 		await this.agent.pause(50);
 		await this.agent.execute((sel: string) => {
-			(document.querySelector(sel) as HTMLElement).click();
-		}, tid('message-input-send'));
+			const el = document.querySelector(sel) as HTMLTextAreaElement;
+			el.focus();
+			el.dispatchEvent(
+				new KeyboardEvent('keydown', {
+					key: 'Enter',
+					code: 'Enter',
+					bubbles: true,
+					cancelable: true,
+				}),
+			);
+		}, tid('message-input-textarea'));
 	}
 
 	async waitForMessage(text: string, timeout = 25_000) {

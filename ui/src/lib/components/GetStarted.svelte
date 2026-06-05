@@ -47,7 +47,7 @@
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	const contacts = useReactivePromise(contactsStore.contactsAgentIds);
-	const chatSummaries = useVisibleChatSummaries(chatsStore);
+	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
 
 	let hasAvatar = $state(false);
 	$effect(() => {

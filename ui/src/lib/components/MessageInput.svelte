@@ -4,7 +4,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiSend, mdiEmoticonHappyOutline } from '@mdi/js';
 	import { useTheme } from 'konsta/svelte';
-	import { isIos } from '$lib/utils/environment';
+	import { isIos, isMobile } from '$lib/utils/environment';
 
 	interface Props {
 		value?: string;
@@ -79,6 +79,7 @@
 				class={theme === 'ios'
 					? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
 					: 'input-container bg-white dark:bg-gray-800'}
+				style="padding-left: 8px"
 			>
 				{#if onEmojiClick && !isIos}
 					<button
@@ -88,7 +89,10 @@
 						aria-label="Emoji"
 						data-testid="message-input-emoji"
 					>
-						<wa-icon src={wrapPathInSvg(mdiEmoticonHappyOutline)}></wa-icon>
+						<wa-icon
+							style="font-size: 26px"
+							src={wrapPathInSvg(mdiEmoticonHappyOutline)}
+						></wa-icon>
 					</button>
 				{/if}
 
@@ -104,17 +108,20 @@
 				></textarea>
 			</div>
 
-			<button
-				type="button"
-				class="send-button"
-				data-testid="message-input-send"
-				class:active={hasText}
-				onclick={handleSendClick}
-				disabled={!hasText}
-				aria-label="Send"
-			>
-				<wa-icon src={wrapPathInSvg(mdiSend)}></wa-icon>
-			</button>
+			{#if isMobile}
+				<button
+					type="button"
+					class="send-button"
+					data-testid="message-input-send"
+					class:active={hasText}
+					onclick={handleSendClick}
+					disabled={!hasText}
+					aria-label="Send"
+				>
+					<wa-icon style="font-size: 24px" src={wrapPathInSvg(mdiSend)}
+					></wa-icon>
+				</button>
+			{/if}
 		</div>
 	</div>
 </div>
@@ -123,11 +130,11 @@
 	.input-container {
 		flex: 1;
 		display: flex;
-		align-items: flex-end;
+		align-items: center;
 		min-width: 0;
+		min-height: 42px;
 		border: 1px solid var(--k-hairline-color);
 		border-radius: 22px;
-		padding: 4px 4px 4px 6px;
 		transition: border-color 0.15s ease;
 	}
 
@@ -137,8 +144,8 @@
 
 	.icon-button {
 		flex-shrink: 0;
-		width: 36px;
-		height: 36px;
+		width: 28px;
+		height: 28px;
 		border: none;
 		background: transparent;
 		border-radius: 50%;
@@ -151,7 +158,6 @@
 		transition:
 			opacity 0.15s ease,
 			background-color 0.15s ease;
-		padding: 0;
 	}
 
 	.icon-button:hover {
@@ -169,12 +175,11 @@
 		border: none;
 		outline: none;
 		resize: none;
-		font-size: 16px;
 		line-height: 1.375;
-		padding: 8px 8px;
 		color: var(--k-text-color);
 		font-family: inherit;
-		min-height: 20px;
+		min-height: 28px;
+		padding: 8px;
 		max-height: 100px;
 		overflow-y: auto;
 	}
@@ -186,8 +191,8 @@
 
 	.send-button {
 		flex-shrink: 0;
-		width: 40px;
-		height: 40px;
+		width: 42px;
+		height: 42px;
 		border: none;
 		border-radius: 50%;
 		display: flex;
@@ -195,7 +200,6 @@
 		justify-content: center;
 		cursor: pointer;
 		padding: 0;
-		margin-bottom: 4px;
 		background: rgba(128, 128, 128, 0.15);
 		color: var(--k-text-color);
 		opacity: 0.4;
