@@ -110,7 +110,10 @@
 	{#await $info then info}
 		<Navbar transparent={true}>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}`)} />
+				<NavbarBackLink
+					data-testid="group-info-back"
+					onClick={() => goto(`/group-chat/${chatId}`)}
+				/>
 			{/snippet}
 
 			{#snippet title()}
@@ -173,6 +176,7 @@
 										href: `/group-chat/${chatId}/info/add-members`,
 									}}
 									title={m.addMembers()}
+									data-testid="group-info-add-members"
 								>
 									{#snippet media()}
 										<wa-icon
