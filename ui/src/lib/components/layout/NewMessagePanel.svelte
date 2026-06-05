@@ -81,7 +81,6 @@
 				linkProps={{ href: '/new-group' }}
 				title={m.newGroup()}
 				chevron={false}
-				class={previewFeatures.enabled ? '' : '!hidden'}
 				data-testid="new-message-new-group"
 			>
 				{#snippet media()}
