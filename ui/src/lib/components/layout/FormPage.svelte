@@ -16,9 +16,10 @@
 		backTestId?: string;
 		actionLabel: string;
 		onAction: () => void;
-		actionTestId?: string;
 		actionDisabled?: boolean;
+		actionTestId?: string;
 		subnavbar?: Snippet;
+		constrainedWidth?: boolean;
 		children: Snippet;
 	}
 
@@ -28,10 +29,11 @@
 		backTestId,
 		actionLabel,
 		onAction,
-		actionTestId,
 		actionDisabled = false,
+		actionTestId,
 		navbarTestId,
 		subnavbar: belowNavbar,
+		constrainedWidth,
 		children,
 	}: Props = $props();
 
@@ -71,14 +73,26 @@
 
 		{#snippet right()}
 			{#if isIosTheme}
-				<Link onClick={handleAction} data-testid={actionTestId}>
+				<Link
+					onClick={onAction}
+					data-testid={actionTestId}
+					class={actionDisabled ? 'ios-right-disabled' : ''}
+				>
 					{actionLabel}
 				</Link>
 			{/if}
 		{/snippet}
 	</Navbar>
 
-	{@render children()}
+	{#if constrainedWidth}
+		<div class="column">
+			<div class="center-in-desktop">
+				{@render children()}
+			</div>
+		</div>
+	{:else}
+		{@render children()}
+	{/if}
 
 	{#if !isIosTheme}
 		<Button

@@ -7,17 +7,10 @@
 	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import {
-		Page,
-		Navbar,
-		NavbarBackLink,
-		BlockTitle,
-		Button,
-		Link,
-	} from 'konsta/svelte';
+	import { BlockTitle } from 'konsta/svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
-	import { isIos } from '$lib/utils/environment';
+	import FormPage from '$lib/components/layout/FormPage.svelte';
 	import { page } from '$app/state';
 	let chatId = page.params.chatId!;
 
@@ -40,52 +33,22 @@
 	}
 </script>
 
-<Page>
-	<Navbar
-		title={m.addMembers()}
-		titleClass="opacity1"
-		transparent={true}
-		rightClass={selectedContacts.length === 0 ? 'ios-right-disabled' : ''}
-	>
-		{#snippet left()}
-			<NavbarBackLink
-				data-testid="add-members-back"
-				onClick={() => goto(`/group-chat/${chatId}/info`)}
-			/>
-		{/snippet}
-		{#snippet right()}
-			{#if isIos}
-				<Link onClick={addMembers} data-testid="add-members-add-btn">
-					{m.add()}
-				</Link>
-			{/if}
-		{/snippet}
-	</Navbar>
+<FormPage
+	title={m.addMembers()}
+	actionLabel={m.add()}
+	onAction={addMembers}
+	actionDisabled={selectedContacts.length === 0}
+	onBack={() => goto(`/group-chat/${chatId}/info`)}
+	constrainedWidth={true}
+>
+	<BlockTitle>{m.contacts()}</BlockTitle>
 
-	<div class="column">
-		<div class="center-in-desktop">
-			<BlockTitle>{m.contacts()}</BlockTitle>
-
-			<SelectableContactList
-				contacts={nonMemberContacts}
-				loading={$contacts === undefined || $members === undefined}
-				noDataMessage={($contacts ?? []).length === 0
-					? m.noContactsYet()
-					: m.allContactsAlreadyInGroup()}
-				bind:selectedContacts
-			/>
-		</div>
-	</div>
-
-	{#if !isIos}
-		<Button
-			onClick={addMembers}
-			class="fixed-action-btn"
-			rounded
-			disabled={selectedContacts.length === 0}
-			data-testid="add-members-add-btn"
-		>
-			{m.add()}
-		</Button>
-	{/if}
-</Page>
+	<SelectableContactList
+		contacts={nonMemberContacts}
+		loading={$contacts === undefined || $members === undefined}
+		noDataMessage={($contacts ?? []).length === 0
+			? m.noContactsYet()
+			: m.allContactsAlreadyInGroup()}
+		bind:selectedContacts
+	/>
+</FormPage>
