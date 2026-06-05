@@ -75,14 +75,18 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
     if let Some(icon) = data.icon {
         builder = builder.icon(icon);
     }
+    if let Some(bytes) = data.large_icon_bytes {
+        builder = builder.large_icon_bytes(bytes);
+    }
     if let Some(group) = data.group {
         builder = builder.group(group);
     }
     if let Some(route) = data.route {
         builder = builder.route(route);
     }
-    if data.messaging_style {
-        builder = builder.messaging_style();
+    builder = builder.sound(data.sound.unwrap_or_else(|| "default".to_string()));
+    if let Some(style) = data.conversation_style {
+        builder = builder.conversation_style(style.sender_id);
     }
     builder.show()?;
     Ok(())
@@ -159,16 +163,16 @@ async fn chat_message_notification(
         }
     };
 
-    let sender_name = if let Some(agent_id) = sender_agent_id {
-        node.local_store
-            .get_profile(agent_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|profile| profile.name)
+    let sender_profile = if let Some(agent_id) = sender_agent_id {
+        node.local_store.get_profile(agent_id).await.ok().flatten()
     } else {
         None
     };
+
+    let sender_name = sender_profile.as_ref().map(|p| p.name.clone());
+    let sender_avatar = sender_profile
+        .and_then(|p| p.avatar)
+        .filter(|s| s.starts_with("data:image/"));
 
     let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
 
@@ -190,22 +194,28 @@ async fn chat_message_notification(
         title: Some(title),
         body: Some(body_text),
         icon: Some("ic_stat_icon".to_string()),
+        large_icon_bytes: sender_avatar,
         group: Some(hex::encode(&*topic_id)),
         route: Some(chat_route),
         ..Default::default()
     };
 
-    // Android-only: collapse direct-chat messages into one MessagingStyle thread.
-    // The id must be stable per conversation so MessagingStyle accumulates the
-    // messages onto the same notification instead of stacking new ones.
+    // Android-only: collapse messages from the same conversation into one
+    // MessagingStyle thread. The id must be stable per conversation so
+    // MessagingStyle accumulates the messages onto the same notification
+    // instead of stacking new ones. `sender_id` keeps each `Person` distinct
+    // within group threads so different senders don't collapse into one.
     //
     // TODO: XOR the truncated topic id with a node-specific secret before
     // using it as the notification id. As-is, the first 4 bytes of the topic
     // id are public-derivable, so an adversary could mine a contact whose
     // topic id shares a 4-byte LE prefix with an existing conversation and
     // get their messages collapsed into the wrong MessagingStyle thread.
+    #[cfg(mobile)]
+    let sender_id_hex = sender_agent_id.map(|aid| aid.to_hex());
+
     #[cfg(target_os = "android")]
-    if direct_chat_agent_id.is_some() {
+    {
         match stable_notification_id(&*topic_id) {
             Ok(id) => notification_data.id = id,
             Err(err) => log::error!(
@@ -213,7 +223,19 @@ async fn chat_message_notification(
             ),
         }
         notification_data.group = Some("dashchat.chats".to_string());
-        notification_data.messaging_style = true;
+        notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
+            sender_id: sender_id_hex.clone(),
+        });
+    }
+
+    // iOS Communication Notifications: the NSE reads `conversation_style.sender_id`
+    // (via the `notification_conversation_sender_id` FFI accessor) to give each
+    // sender within a group thread its own `INPersonHandle.value`.
+    #[cfg(target_os = "ios")]
+    {
+        notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
+            sender_id: sender_id_hex,
+        });
     }
 
     notification_data
