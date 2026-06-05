@@ -3,9 +3,9 @@
 	import { getContext } from 'svelte';
 	import type { ContactsStore, Profile, VerifyingKey } from 'dash-chat-stores';
 	import { useReactiveValue } from '$lib/stores/use-signal';
-	import { BlockTitle, Searchbar } from 'konsta/svelte';
+	import { BlockTitle } from 'konsta/svelte';
 	import FormPage from '../../lib/components/layout/FormPage.svelte';
-	import ContactsChipList from '$lib/components/contacts/ContactsChipList.svelte';
+	import ContactSearchNav from '$lib/components/contacts/ContactSearchNav.svelte';
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
 
 	interface Props {
@@ -34,29 +34,14 @@
 	actionTestId="new-group-next"
 >
 	{#snippet subnavbar()}
-		<div class="column gap-4">
-			<Searchbar
-				clearButton
-				placeholder={m.searchByName()}
-				value={searchQuery}
-				class="!mx-0 py-0 !w-full"
-				onInput={e => {
-					searchQuery = (e.target as HTMLInputElement).value;
-				}}
-				onClear={() => {
-					searchQuery = '';
-				}}
-			/>
-
-			<ContactsChipList
-				contacts={resolvedContacts.filter(([key]) =>
-					selectedContacts.includes(key),
-				)}
-				onRemove={key => {
-					selectedContacts = selectedContacts.filter(c => c !== key);
-				}}
-			/>
-		</div>
+		<ContactSearchNav
+			bind:searchQuery
+			{selectedContacts}
+			contacts={resolvedContacts}
+			onRemove={key => {
+				selectedContacts = selectedContacts.filter(c => c !== key);
+			}}
+		/>
 	{/snippet}
 
 	<div class="column" style="flex: 1">

@@ -12,6 +12,7 @@
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
 	import FormPage from '$lib/components/layout/FormPage.svelte';
 	import { page } from '$app/state';
+	import ContactSearchNav from '$lib/components/contacts/ContactSearchNav.svelte';
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -21,6 +22,8 @@
 	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
 	const groupChatStore = chatsStore.groupChats(chatId);
 	const members = useReactiveValue(groupChatStore.allMembers);
+
+	let searchQuery = $state('');
 
 	const nonMemberContacts = $derived(
 		($contacts ?? []).filter(([agentId]) => !($members && agentId in $members)),
@@ -41,6 +44,17 @@
 	onBack={() => goto(`/group-chat/${chatId}/info`)}
 	constrainedWidth={true}
 >
+	{#snippet subnavbar()}
+		<ContactSearchNav
+			bind:searchQuery
+			{selectedContacts}
+			contacts={nonMemberContacts}
+			onRemove={key => {
+				selectedContacts = selectedContacts.filter(c => c !== key);
+			}}
+		/>
+	{/snippet}
+
 	<BlockTitle>{m.contacts()}</BlockTitle>
 
 	<SelectableContactList
