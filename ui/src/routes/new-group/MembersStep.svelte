@@ -32,6 +32,7 @@
 	onAction={onNext}
 	navbarTestId="new-group-members-navbar"
 	actionTestId="new-group-next"
+	constrainedWidth
 >
 	{#snippet subnavbar()}
 		<ContactSearchNav

@@ -38,6 +38,7 @@
 	actionDisabled={groupName.trim() === ''}
 	navbarTestId="new-group-info-navbar"
 	actionTestId="new-group-create"
+	constrainedWidth
 >
 	<div class="column" style="flex: 1">
 		<List
