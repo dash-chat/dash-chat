@@ -30,6 +30,7 @@ describe('Group chat list last-event summary', () => {
 		await agent1.newGroupPage.addMembersStep.nextButton.click();
 
 		await agent1.newGroupPage.groupInfoStep.ready();
+		await agent1.newGroupPage.groupInfoStep.setName('mygroup');
 		await agent1.newGroupPage.groupInfoStep.createButton.click();
 
 		await agent1.groupChatPage.ready();

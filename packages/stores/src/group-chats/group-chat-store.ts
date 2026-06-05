@@ -317,9 +317,9 @@ export class GroupChatStore implements ReadMessagesStore {
 	});
 
 	summary = reactive(async (): Promise<ChatSummary | undefined> => {
-		const details = await this.details();
 		const last = await this.lastEvent();
 		if (!last) return undefined;
+		const details = await this.details();
 		const unread = await this.unreadCount();
 
 		return {
