@@ -139,7 +139,7 @@ pub async fn build_notification_data(
                 title: Some(sonix_i18n::t!("newContactRequest")),
                 body: Some(profile.name.clone()),
                 icon: Some("ic_stat_icon".to_string()),
-                group: Some(hex::encode(topic_id)),
+                group: Some(hex::encode(*topic_id)),
                 route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
                 ..Default::default()
             })
@@ -173,8 +173,6 @@ async fn chat_message_notification(
     let sender_avatar = sender_profile
         .and_then(|p| p.avatar)
         .filter(|s| s.starts_with("data:image/"));
-
-    let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
 
     let direct_chat_agent_id = sender_agent_id
         .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic_id);
