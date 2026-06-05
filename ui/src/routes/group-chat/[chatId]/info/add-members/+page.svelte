@@ -44,11 +44,14 @@
 		rightClass={selectedContacts.length === 0 ? 'ios-right-disabled' : ''}
 	>
 		{#snippet left()}
-			<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}/info`)} />
+			<NavbarBackLink
+				data-testid="add-members-back"
+				onClick={() => goto(`/group-chat/${chatId}/info`)}
+			/>
 		{/snippet}
 		{#snippet right()}
 			{#if isIos}
-				<Link onClick={addMembers}>
+				<Link onClick={addMembers} data-testid="add-members-add-btn">
 					{m.add()}
 				</Link>
 			{/if}
@@ -76,6 +79,7 @@
 			class="fixed-action-btn"
 			rounded
 			disabled={selectedContacts.length === 0}
+			data-testid="add-members-add-btn"
 		>
 			{m.add()}
 		</Button>

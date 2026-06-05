@@ -19,7 +19,7 @@ use super::*;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Notification {
     pub header: Header,
-    pub payload: Payload,
+    pub payload: Option<Payload>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -243,8 +243,8 @@ impl Node {
 
         tracing::debug!(hash = ?hash.renamed(), "processed operation");
 
-        if let Some(payload) = payload.as_ref() {
-            self.notify_payload(&header, payload).await?;
+        if payload.is_some() || header.extensions.auth.is_some() {
+            self.notify(&header, payload.as_ref()).await?;
         }
 
         // XXX: don't repair this often.
@@ -295,7 +295,7 @@ impl Node {
                     .await?;
                 for agent_id in known.into_values() {
                     let topic = Topic::announcements(agent_id);
-                    if let Err(err) = self.initialize_topic(*topic).await {
+                    if let Err(err) = self.register_topic(topic).await {
                         tracing::warn!(
                             ?err,
                             "failed to subscribe to announcements topic for group member"
@@ -308,12 +308,12 @@ impl Node {
         Ok(())
     }
 
-    pub async fn notify_payload(&self, header: &Header, payload: &Payload) -> anyhow::Result<()> {
-        if let Some((notification_tx, payload)) = self.notification_tx.clone().zip(Some(payload)) {
+    pub async fn notify(&self, header: &Header, payload: Option<&Payload>) -> anyhow::Result<()> {
+        if let Some(notification_tx) = self.notification_tx.clone() {
             notification_tx
                 .send(Notification {
                     header: header.clone(),
-                    payload: payload.clone(),
+                    payload: payload.cloned(),
                 })
                 .await
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
@@ -331,6 +331,38 @@ impl Node {
         let topic = header.extensions.topic;
 
         match &payload {
+            Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
+                tracing::info!(
+                    me = ?self.device_id().renamed(),
+                    count = agents.len(),
+                    "received IntroduceAgents message"
+                );
+                for (device_id, agent_id) in agents {
+                    if let Err(err) = self
+                        .local_store
+                        .save_agent_mapping(*device_id, *agent_id)
+                        .await
+                    {
+                        tracing::warn!(
+                            ?err,
+                            device_id = ?device_id.renamed(),
+                            agent_id = ?agent_id.renamed(),
+                            "failed to save agent mapping from IntroduceAgents"
+                        );
+                    }
+                    if agent_id == &self.agent_id() {
+                        continue;
+                    }
+                    if let Err(err) = self.register_topic(Topic::announcements(*agent_id)).await {
+                        tracing::error!(
+                            ?err,
+                            agent_id = ?agent_id.renamed(),
+                            "failed to register announcements topic for IntroduceAgents"
+                        );
+                    }
+                }
+            }
+
             Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
                 tracing::info!(
                     me = ?self.device_id().renamed(),
@@ -373,6 +405,8 @@ impl Node {
                 let agent_id = AgentId::from(crate::ActorId::from_bytes(&*topic).map_err(|e| {
                     anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
                 })?);
+
+                tracing::info!(me = ?self.agent_id().renamed(), agent_id = ?agent_id.renamed(), ?profile, "save_profile");
 
                 if let Err(err) = self
                     .local_store

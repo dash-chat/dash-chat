@@ -308,16 +308,17 @@ impl Node {
             .collect();
 
         let contacts = self.local_store.lookup_contacts(&device_ids).await?;
-        let agents: Vec<AgentId> = device_ids
+        let device_to_agent: BTreeMap<DeviceId, AgentId> = device_ids
             .iter()
             .filter_map(|did| match contacts.get(did) {
-                Some(agent) => Some(*agent),
+                Some(agent) => Some((*did, *agent)),
                 None => {
                     tracing::warn!("Contact not found (when creating group): {}", did.renamed());
                     None
                 }
             })
             .collect();
+        let agents: Vec<AgentId> = device_to_agent.values().copied().collect();
 
         // The creator must always have Manage access
         initial_members.insert(*self.device_id(), p2panda_auth::Access::manage());
@@ -336,6 +337,15 @@ impl Node {
         )
         .await?;
 
+        // Ensure that future non-contact members can see every initial member's
+        // profile, including the creator's. The creator is the only node that
+        // knows all of these agent_ids (initial members are by definition the
+        // creator's contacts), so we publish them here.
+        let mut introduced_agents = device_to_agent.clone();
+        introduced_agents.insert(self.device_id(), self.agent_id());
+        self.introduce_agents_to_group(chat_id, introduced_agents)
+            .await?;
+
         self.local_store.save_group_chat_subscribed(chat_id).await?;
         self.initialize_topic(*chat_id).await?;
 
@@ -343,6 +353,21 @@ impl Node {
             self.invite_to_group(chat_id, agent).await?;
         }
         Ok(chat_id)
+    }
+
+    /// This is a temporary hack until we have device groups, see docs for [`ChatPayload::IntroduceAgents`].
+    async fn introduce_agents_to_group(
+        &self,
+        chat_id: ChatId,
+        agents: BTreeMap<DeviceId, AgentId>,
+    ) -> anyhow::Result<()> {
+        self.author_operation(
+            chat_id,
+            Payload::Chat(ChatPayload::IntroduceAgents { agents }),
+            Some(&format!("introduce_to_group({})", chat_id.renamed())),
+        )
+        .await?;
+        Ok(())
     }
 
     async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
@@ -394,6 +419,14 @@ impl Node {
             .lookup_contact_by_device_id(DeviceId::from(member))
             .await?;
         if let Some(agent_id) = agent_id {
+            // Tell existing group members about the new member's agent_id so
+            // they can subscribe to its announcements topic and see its profile,
+            // even before the new member has come online to announce itself.
+            self.introduce_agents_to_group(
+                chat_id,
+                BTreeMap::from([(DeviceId::from(member), agent_id)]),
+            )
+            .await?;
             self.invite_to_group(chat_id, agent_id).await?;
         } else {
             tracing::warn!(
