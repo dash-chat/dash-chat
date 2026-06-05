@@ -38,6 +38,18 @@ export class HomePage extends TestPage {
 		return this.chatListItem(contactName).isExisting();
 	}
 
+	/** Full visible text of the first chat-list row containing `name`. */
+	async chatRowText(name: string): Promise<string> {
+		await this.chatListItem(name).waitForExist();
+		return this.agent.execute((sel: string, nameArg: string) => {
+			const rows = Array.from(
+				document.querySelectorAll<HTMLElement>(sel),
+			);
+			const row = rows.find(r => r.innerText.includes(nameArg));
+			return row?.innerText ?? '';
+		}, tid('all-chats-row'), name);
+	}
+
 	/** Open a chat by contact name and wait for the direct-chat page. */
 	async openChat(contactName: string): Promise<void> {
 		await this.chatList.waitForExist();

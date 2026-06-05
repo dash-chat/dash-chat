@@ -193,19 +193,21 @@ export class DirectChatStore implements ReadMessagesStore {
 		return count;
 	});
 
-	summary = reactive(async () => {
+	summary = reactive(async (): Promise<ChatSummary> => {
 		const profile = await this.peerProfile();
 		const message = await this.lastMessage();
 		const unreadCount = await this.unreadCount();
 
-		const lastEvent = message
+		const lastEvent: ChatSummary['lastEvent'] = message
 			? {
-					summary: message.content,
+					kind: 'message',
+					text: message.content,
 					timestamp: message.timestamp,
 				}
 			: {
-					summary: 'contact_added',
-					timestamp: await this.contactsStore.contactAddedTimestamp(this.peer),
+					kind: 'contact_added',
+					timestamp:
+						(await this.contactsStore.contactAddedTimestamp(this.peer)) ?? 0,
 				};
 
 		return {
@@ -213,12 +215,9 @@ export class DirectChatStore implements ReadMessagesStore {
 			chatId: this.peer,
 			name: profile ? fullName(profile) : '',
 			avatar: profile?.avatar,
-			lastEvent: {
-				summary: lastEvent.summary,
-				timestamp: lastEvent.timestamp ?? 0,
-			},
+			lastEvent,
 			unreadMessages: unreadCount,
-		} as ChatSummary;
+		};
 	});
 
 	async markAsRead(messageHashes: Hash[]): Promise<void> {

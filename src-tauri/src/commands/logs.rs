@@ -1,4 +1,5 @@
 use dashchat_node::{topic::TopicId, DeviceId, Header, Node, Payload, Topic};
+use p2panda_auth::processor::GroupsArgs;
 use p2panda_core::{cbor::decode_cbor, Body, Hash, PublicKey, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tauri::State;
@@ -56,6 +57,11 @@ pub struct SimplifiedHeader {
     previous: Vec<Hash>,
 
     topic_id: Topic,
+
+    /// p2panda-auth group-control extension, when this operation is a group action
+    /// (Create / Add / Remove / Promote / Demote) rather than a chat payload.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth: Option<GroupsArgs>,
 }
 
 impl From<Header> for SimplifiedHeader {
@@ -68,6 +74,7 @@ impl From<Header> for SimplifiedHeader {
             backlink: header.backlink,
             previous,
             topic_id: Topic::untyped(*header.extensions.topic),
+            auth: header.extensions.auth.clone(),
         }
     }
 }
