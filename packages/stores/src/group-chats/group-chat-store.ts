@@ -325,9 +325,9 @@ export class GroupChatStore implements ReadMessagesStore {
 		return {
 			type: 'GroupChat',
 			chatId: this.chatId,
-			lastEvent: last,
 			name: details.name,
 			avatar: details.image,
+			lastEvent: last,
 			unreadMessages: unread,
 		};
 	});
