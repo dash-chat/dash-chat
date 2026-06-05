@@ -7,7 +7,6 @@
 
 import Intents
 import UserNotifications
-import Intents
 import os
 
 private let log = Logger(
@@ -22,16 +21,6 @@ func makeCString(from str: String) -> UnsafeMutablePointer<UInt8> {
     let result = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: count)
     _ = result.initialize(from: utf8)
     return result.baseAddress!
-}
-
-private func decodeBase64DataURL(_ s: String) -> Data? {
-    let stripped: String
-    if let range = s.range(of: "base64,") {
-        stripped = String(s[range.upperBound...])
-    } else {
-        stripped = s
-    }
-    return Data(base64Encoded: stripped)
 }
 
 extension RustByteSlice {
