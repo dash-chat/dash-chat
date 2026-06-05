@@ -299,11 +299,11 @@ async fn auth_control_op_notification(
     ));
 
     let (title, body, route) = match action {
-        // Two distinct cases share this variant: the acceptor authoring the
-        // Create on a new direct-chat space (contact-request accepted), and a
-        // peer creating a group with us in `initial_members` (group invite).
-        // Discriminate by topic id — a direct-chat topic is deterministic from
-        // the two agent ids.
+        // A Create can mean either: (a) the acceptor authoring a new
+        // direct-chat space when they accept a contact request, or (b) someone
+        // creating a new group with us in it. Distinguish by checking whether
+        // the topic matches the deterministic direct-chat topic with the
+        // sender.
         p2panda_auth::group::GroupAction::Create { initial_members } => {
             let is_direct_chat = sender_agent_id
                 .map(|agent_id| {

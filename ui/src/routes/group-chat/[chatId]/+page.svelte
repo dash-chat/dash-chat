@@ -262,7 +262,7 @@
 														<Avatar
 															image={author?.profile?.avatar}
 															initials={author?.profile?.name.slice(0, 2)}
-															style="--size: 2.5rem"
+															style="--size: 2rem"
 														/>
 													{:else}
 														<div class="shrink-0" style="width: 2.5rem"></div>
