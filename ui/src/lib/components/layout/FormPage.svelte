@@ -49,7 +49,13 @@
 {#snippet subnavbarSnippet()}
 	{#if belowNavbar}
 		<div class="w-full mb-4 {isIosTheme ? 'mt-4' : ''}">
-			{@render belowNavbar()}
+			{#if constrainedWidth}
+				<div class="center-in-desktop">
+					{@render belowNavbar()}
+				</div>
+			{:else}
+				{@render belowNavbar()}
+			{/if}
 		</div>
 	{/if}
 {/snippet}

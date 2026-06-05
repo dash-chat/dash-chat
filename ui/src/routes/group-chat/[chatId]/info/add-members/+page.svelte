@@ -22,12 +22,27 @@
 	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
 	const groupChatStore = chatsStore.groupChats(chatId);
 	const members = useReactiveValue(groupChatStore.allMembers);
+	const loading = $derived($contacts === undefined || $members === undefined);
 
 	let searchQuery = $state('');
 
 	const nonMemberContacts = $derived(
 		($contacts ?? []).filter(([agentId]) => !($members && agentId in $members)),
 	);
+	const filteredContacts = $derived(
+		nonMemberContacts.filter(([, profile]) =>
+			profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
+		),
+	);
+
+	const noDataMessage = $derived(() => {
+		if (loading) return 'xxx';
+		if (($contacts ?? []).length === 0) return m.noContactsYet();
+		if (filteredContacts.length === 0 && searchQuery)
+			return m.noContactsMatchFilter();
+		if (filteredContacts.length === 0) return m.allContactsAlreadyInGroup();
+		return 'yyy';
+	});
 
 	async function addMembers() {
 		const store = chatsStore.groupChats(chatId);
@@ -58,11 +73,9 @@
 	<BlockTitle>{m.contacts()}</BlockTitle>
 
 	<SelectableContactList
-		contacts={nonMemberContacts}
-		loading={$contacts === undefined || $members === undefined}
-		noDataMessage={($contacts ?? []).length === 0
-			? m.noContactsYet()
-			: m.allContactsAlreadyInGroup()}
+		contacts={filteredContacts}
+		{loading}
+		noDataMessage={noDataMessage()}
 		bind:selectedContacts
 	/>
 </FormPage>
