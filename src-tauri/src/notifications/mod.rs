@@ -75,6 +75,9 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
     if let Some(icon) = data.icon {
         builder = builder.icon(icon);
     }
+    if let Some(bytes) = data.large_icon_bytes {
+        builder = builder.large_icon_bytes(bytes);
+    }
     if let Some(group) = data.group {
         builder = builder.group(group);
     }
@@ -136,7 +139,7 @@ pub async fn build_notification_data(
                 title: Some(sonix_i18n::t!("newContactRequest")),
                 body: Some(profile.name.clone()),
                 icon: Some("ic_stat_icon".to_string()),
-                group: Some(hex::encode(&*topic_id)),
+                group: Some(hex::encode(topic_id)),
                 route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
                 ..Default::default()
             })
@@ -160,16 +163,18 @@ async fn chat_message_notification(
         }
     };
 
-    let sender_name = match sender_agent_id {
-        Some(agent_id) => node
-            .local_store
-            .get_profile(agent_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|p| p.name),
-        None => None,
+    let sender_profile = if let Some(agent_id) = sender_agent_id {
+        node.local_store.get_profile(agent_id).await.ok().flatten()
+    } else {
+        None
     };
+
+    let sender_name = sender_profile.as_ref().map(|p| p.name.clone());
+    let sender_avatar = sender_profile
+        .and_then(|p| p.avatar)
+        .filter(|s| s.starts_with("data:image/"));
+
+    let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
 
     let direct_chat_agent_id = sender_agent_id
         .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic_id);
@@ -190,6 +195,7 @@ async fn chat_message_notification(
         title: Some(sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"))),
         body: Some(body_text),
         icon: Some("ic_stat_icon".to_string()),
+        large_icon_bytes: sender_avatar,
         group: Some(hex::encode(&*topic_id)),
         route: Some(chat_route),
         ..Default::default()

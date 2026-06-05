@@ -7,6 +7,7 @@
 
 import Intents
 import UserNotifications
+import Intents
 import os
 
 private let log = Logger(
@@ -46,6 +47,17 @@ extension RustByteSlice {
 struct Notification: Codable {
     let title: String
     let body: String
+}
+
+/// Decodes a base64 data-URL (e.g. `data:image/png;base64,…`) or a bare base64 string into raw bytes.
+private func decodeBase64DataURL(_ s: String) -> Data? {
+    let stripped: String
+    if let range = s.range(of: "base64,") {
+        stripped = String(s[range.upperBound...])
+    } else {
+        stripped = s
+    }
+    return Data(base64Encoded: stripped)
 }
 
 class NotificationService: UNNotificationServiceExtension {
