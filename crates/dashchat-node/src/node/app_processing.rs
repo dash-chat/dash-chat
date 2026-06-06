@@ -280,54 +280,116 @@ impl Node {
 
         let hash = operation.id();
         let topic = operation.topic();
-        let author = operation.author();
+        let device_id = DeviceId::from(operation.author());
         let payload = operation.message();
 
-        match payload {
-            Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
-                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct
-                // it here.
-
-                // The agent_id is the root identity for a person, it will be mapped to
-                // device_id's in the future.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
-
-                self.local_store
-                    .save_profile(agent_id, profile.clone())
-                    .await
-                    .map_err(|err| anyhow::anyhow!("save profile from SetProfile: {err}"))?;
+        match &payload {
+            Payload::GroupControl(_) => {
+                // Nothing to do.
             }
-            Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
-                // Save the device_id -> agent_id mapping so group members can look each other up.
+            Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
+                tracing::info!(
+                    me = ?device_id.aliased(),
+                    count = agents.len(),
+                    "received IntroduceAgents message"
+                );
+                for (device_id, agent_id) in agents {
+                    if let Err(err) = self
+                        .local_store
+                        .save_agent_mapping(*device_id, *agent_id)
+                        .await
+                    {
+                        tracing::warn!(
+                            ?err,
+                            device_id = ?device_id.aliased(),
+                            agent_id = ?agent_id.aliased(),
+                            "failed to save agent mapping from IntroduceAgents"
+                        );
+                    }
+                    if agent_id == &self.agent_id() {
+                        continue;
+                    }
+                    if let Err(err) = self.register_topic(Topic::announcements(*agent_id)).await {
+                        tracing::error!(
+                            ?err,
+                            agent_id = ?agent_id.aliased(),
+                            "failed to register announcements topic for IntroduceAgents"
+                        );
+                    }
+                }
+            }
 
-                let device_id = DeviceId::from(author);
+            Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
+                if let Err(err) = self.join_group(*chat_id).await {
+                    // TODO: no retry path — device ends up with no topic registered for this group.
+                    tracing::error!(?err, "failed to join group from invitation");
+                }
+            }
+
+            Payload::Inbox(invitation) => {
+                let active_topics = self.local_store.get_active_inbox_topics().await?;
+                if !active_topics
+                    .iter()
+                    .any(|it| *it.topic == TopicId::from(topic))
+                {
+                    // not for me, ignore
+                    return Ok(());
+                }
+                match invitation {
+                    InboxPayload::ContactRequest { .. } => {
+                        // Nothing to do.
+                    }
+                }
+            }
+
+            Payload::Chat(ChatPayload::Message(_) | ChatPayload::Reaction(_)) => {
+                // Nothing to do.
+            }
+
+            Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
                 // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
                 let agent_id =
                     AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
                         anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
                     })?);
 
-                self.local_store
+                tracing::info!(me = ?self.agent_id().aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
+
+                if let Err(err) = self
+                    .local_store
+                    .save_profile(agent_id, profile.clone())
+                    .await
+                {
+                    tracing::warn!(?err, "failed to save profile from SetProfile");
+                }
+            }
+
+            Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
+                // Save the device_id -> agent_id mapping so group members can look each other up.
+
+                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
+                let agent_id =
+                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
+                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
+                    })?);
+                if let Err(err) = self
+                    .local_store
                     .save_agent_mapping(device_id, agent_id)
                     .await
-                    .map_err(|err| {
-                        anyhow::anyhow!("failed to save agent mapping from SetCapabilities: {err}")
-                    })?;
+                {
+                    tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
+                }
 
-                self.local_store
+                if let Err(err) = self
+                    .local_store
                     .save_capabilities(device_id, capabilities.clone())
                     .await
-                    .map_err(|err| {
-                        anyhow::anyhow!("failed to save capabilities from SetCapabilities: {err}")
-                    })?;
+                {
+                    tracing::warn!(?err, "failed to save capabilities from SetCapabilities");
+                }
             }
-            Payload::Chat(_)
-            | Payload::Inbox(_)
-            | Payload::DeviceGroup(_)
-            | Payload::GroupControl(_) => {
+
+            Payload::DeviceGroup(_) => {
                 // Nothing to do.
             }
         }
