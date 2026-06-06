@@ -16,7 +16,7 @@ use super::*;
 pub struct Notification {
     pub topic: Topic,
     pub header: Header,
-    pub payload: Payload,
+    pub payload: Option<Payload>,
 }
 
 impl Node {
@@ -343,7 +343,7 @@ impl Node {
 
         // We convert the p2panda::Topic into a dashchat Topic here in its untyped form.
         let dashchat_topic = crate::Topic::untyped(*topic.as_bytes());
-        self.notify_payload(dashchat_topic, &operation.processed().header(), payload)
+        self.notify_payload(dashchat_topic, &operation.processed().header(), &payload)
             .await?;
 
         Ok(())
@@ -404,7 +404,7 @@ impl Node {
                 .send(Notification {
                     topic: topic.clone(),
                     header: header.clone(),
-                    payload: payload.clone(),
+                    payload: Some(payload.clone()),
                 })
                 .await
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));

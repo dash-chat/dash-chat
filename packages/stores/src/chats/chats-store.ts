@@ -99,9 +99,10 @@ export class ChatsStore {
 
 	private allGroupChatSummaries = reactive(async () => {
 		const groupChatIds = await this.groupChatIds();
-		return Promise.all(
+		const summaries = await Promise.all(
 			groupChatIds.map(chatId => this.groupChats(chatId).summary()),
 		);
+		return summaries.filter((s): s is ChatSummary => s !== undefined);
 	});
 
 	private allPendingRequestSummaries = reactive(
@@ -113,12 +114,12 @@ export class ChatsStore {
 					index,
 			);
 			return unique.map(pendingRequest => ({
-				type: 'ContactRequest',
+				type: 'DirectChat',
 				chatId: pendingRequest.code.agent_id,
 				name: fullName(pendingRequest.profile),
 				avatar: pendingRequest.profile.avatar,
 				lastEvent: {
-					summary: '',
+					kind: 'contact_request',
 					timestamp: pendingRequest.timestamp,
 				},
 				unreadMessages: 1,

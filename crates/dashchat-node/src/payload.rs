@@ -5,10 +5,12 @@ use p2panda_core::Body;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 
+use std::collections::BTreeMap;
+
 use crate::chat::ChatId;
 use crate::compat::Capabilities;
 use crate::contact::QrCode;
-use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction};
+use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, DeviceId};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
@@ -67,6 +69,29 @@ pub enum ChatPayload {
     Message(ChatMessageContent),
 
     Reaction(ChatReaction),
+
+    /// Used to tell other group members about agents they may not know about
+    /// (typically because they aren't contacts), so they can subscribe to those
+    /// agents' announcements topics and see their profiles. The inviter publishes
+    /// this on behalf of any agents they add, since a newly-added member may be
+    /// offline and can't announce themselves until they come online.
+    ///
+    /// The mapping is from each member's device_id (which is what appears in the
+    /// group's auth extensions) to its agent_id (which identifies the
+    /// announcements topic to subscribe to).
+    ///
+    /// TODO: this will be unnecessary once device groups are implemented,
+    /// because AgentIds will be added to groups directly, so everyone will already know
+    /// the AgentIds to subscribe to.
+    ///
+    /// XXX: even though this is going away, it's worth noting that the device_id -> agent_id
+    /// mapping MUST come from the agent itself, not from some third party, so this is quite
+    /// wrong from a security standpoint. Side note, maybe we should save the signing key of the
+    /// AgentId so that any operation that defines a device mapping can be signed by both the
+    /// Agent and the Device.
+    IntroduceAgents {
+        agents: BTreeMap<DeviceId, AgentId>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

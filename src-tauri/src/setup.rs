@@ -152,18 +152,21 @@ fn spawn_notification_loop(
         while let Some(notification) = notification_rx.recv().await {
             log::info!("Received notification: {:?}", notification);
 
-            let body = match encode_cbor(&notification.payload) {
-                Ok(body) => body,
-                Err(err) => {
-                    log::error!("Failed to serialize payload: {err:?}");
-                    continue;
-                }
+            let body = match notification.payload.as_ref() {
+                Some(payload) => match encode_cbor(payload) {
+                    Ok(bytes) => Some(Body::new(&bytes[..])),
+                    Err(err) => {
+                        log::error!("Failed to serialize payload: {err:?}");
+                        continue;
+                    }
+                },
+                None => None,
             };
             let simplified_operation = match simplify(
                 notification.topic,
                 notification.header.hash(),
                 notification.header.clone(),
-                Some(Body::new(&body[..])),
+                body,
             ) {
                 Ok(o) => o,
                 Err(err) => {

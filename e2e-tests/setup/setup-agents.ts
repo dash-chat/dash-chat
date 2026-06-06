@@ -6,17 +6,19 @@
  * small set of agent-level helpers that proxy to the browser-side test
  * registry (`agent.tr`, `agent.goto`, `agent.setLocale`, …).
  */
+import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
+import { Toast } from '../helpers/components/toast';
+import { UpdaterBanner } from '../helpers/components/updater-banner';
 import { CreateProfilePage } from '../helpers/pages/create-profile-page';
-import { checkOverflow } from '../helpers/review/checks';
 import { ChatSettingsPage } from '../helpers/pages/direct-chats/chat-settings-page';
 import { DirectChatPage } from '../helpers/pages/direct-chats/direct-chat-page';
+import { AddMembersPage } from '../helpers/pages/group-chat/add-members-page';
 import { GroupChatPage } from '../helpers/pages/group-chat/group-chat-page';
+import { GroupInfoPage } from '../helpers/pages/group-chat/group-info-page';
 import { HomePage } from '../helpers/pages/home-page';
 import { NewGroupPage } from '../helpers/pages/new-group/new-group-page';
 import { AddContactPage } from '../helpers/pages/new-message/add-contact-page';
 import { NewMessagePage } from '../helpers/pages/new-message/new-message-page';
-import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
-import { Toast } from '../helpers/components/toast';
 import { AccountPage } from '../helpers/pages/settings/account-page';
 import { AppearancePage } from '../helpers/pages/settings/appearance-page';
 import { ContactUsPage } from '../helpers/pages/settings/help/contact-us-page';
@@ -28,7 +30,7 @@ import { EditNamePage } from '../helpers/pages/settings/profile/edit-name-page';
 import { EditPhotoPage } from '../helpers/pages/settings/profile/edit-photo-page';
 import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
-import { UpdaterBanner } from '../helpers/components/updater-banner';
+import { checkOverflow } from '../helpers/review/checks';
 
 export type Agent = WebdriverIO.Browser & {
 	accountPage: AccountPage;
@@ -41,7 +43,9 @@ export type Agent = WebdriverIO.Browser & {
 	editAboutPage: EditAboutPage;
 	editNamePage: EditNamePage;
 	editPhotoPage: EditPhotoPage;
+	addMembersPage: AddMembersPage;
 	groupChatPage: GroupChatPage;
+	groupInfoPage: GroupInfoPage;
 	helpPage: HelpPage;
 	homePage: HomePage;
 	newGroupPage: NewGroupPage;
@@ -57,7 +61,7 @@ export type Agent = WebdriverIO.Browser & {
 	/** SvelteKit `goto` — uses `window.__test.goto` for client-side nav. */
 	goto(path: string): Promise<void>;
 	/** Resolve a paraglide message key in the agent's current locale. */
-	tr(key: string): Promise<string>;
+	tr(key: string, params?: Record<string, unknown>): Promise<string>;
 	/** Scan the whole page for horizontal-overflow issues. */
 	checkOverflow(): Promise<string[]>;
 	/** Force the responsive `isWideScreen` store (true = desktop, false = mobile). */
@@ -82,7 +86,9 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	agent.editAboutPage = new EditAboutPage(b);
 	agent.editNamePage = new EditNamePage(b);
 	agent.editPhotoPage = new EditPhotoPage(b);
+	agent.addMembersPage = new AddMembersPage(b);
 	agent.groupChatPage = new GroupChatPage(b);
+	agent.groupInfoPage = new GroupInfoPage(b);
 	agent.helpPage = new HelpPage(b);
 	agent.homePage = new HomePage(b);
 	agent.newGroupPage = new NewGroupPage(b);
@@ -100,19 +106,21 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			await window.__test.goto(p);
 		}, path);
 	};
-	agent.tr = async (key: string) =>
+	agent.tr = async (key: string, params?: Record<string, unknown>) =>
 		await b.execute(
-			async (k: string) =>
-				window.__test.tr(k as Parameters<Window['__test']['tr']>[0]),
+			async (k: string, p: Record<string, unknown> | undefined) => {
+				type Key = Parameters<Window['__test']['tr']>[0];
+				type Params = Parameters<Window['__test']['tr']>[1];
+				return window.__test.tr(k as Key, p as Params);
+			},
 			key,
+			params,
 		);
 	agent.checkOverflow = async () => checkOverflow(b);
 	agent.setWideScreen = async (value: boolean) => {
 		await b.execute(
 			(v: boolean) =>
-				window.dispatchEvent(
-					new CustomEvent('set-wide-screen', { detail: v }),
-				),
+				window.dispatchEvent(new CustomEvent('set-wide-screen', { detail: v })),
 			value,
 		);
 	};
@@ -128,9 +136,7 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	agent.setDarkMode = async (value: boolean) => {
 		await b.execute(
 			(v: boolean) =>
-				window.dispatchEvent(
-					new CustomEvent('set-dark-mode', { detail: v }),
-				),
+				window.dispatchEvent(new CustomEvent('set-dark-mode', { detail: v })),
 			value,
 		);
 	};

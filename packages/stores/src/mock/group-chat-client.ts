@@ -1,12 +1,12 @@
 import type {
-	GroupMemberData,
+	GroupMember,
 	IGroupChatClient,
 } from '../group-chats/group-chat-client';
-import type { AgentId, VerifyingKey } from '../p2panda/types';
+import type { AgentId, Hash } from '../p2panda/types';
 import type { ChatId, MessageContent } from '../types';
 
 export class MockGroupChatClient implements IGroupChatClient {
-	async getMembers(_chatId: ChatId): Promise<GroupMemberData[]> {
+	async getMembers(_chatId: ChatId): Promise<GroupMember[]> {
 		return [];
 	}
 	async addMember(_chatId: ChatId, _member: AgentId): Promise<void> {}
@@ -20,6 +20,10 @@ export class MockGroupChatClient implements IGroupChatClient {
 		_member: AgentId,
 	): Promise<void> {}
 	async sendMessage(_chatId: ChatId, _content: MessageContent): Promise<void> {}
+	async markMessagesRead(
+		_chatId: ChatId,
+		_messageHashes: Hash[],
+	): Promise<void> {}
 	async leaveGroup(): Promise<void> {}
 	async deleteGroup(): Promise<void> {}
 }

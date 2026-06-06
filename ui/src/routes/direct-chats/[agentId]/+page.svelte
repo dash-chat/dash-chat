@@ -140,8 +140,9 @@
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
 
-	// Unread divider state — hash captured once on load so position stays fixed,
-	// count always recomputed so it updates as new messages arrive
+	// Sticky once set so the divider doesn't shift as messages are read. We allow
+	// a re-capture later only when the user is scrolled up — at-bottom new
+	// arrivals get auto-read by the IntersectionObserver, so no divider is needed.
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
@@ -168,7 +169,6 @@
 		try {
 			await store.sendMessage(message);
 			messageText = '';
-			// Hide the unread messages divider after sending, and allow it to reappear for future messages
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
 			// Defer the scroll one macrotask: store.sendMessage resolves once
@@ -323,8 +323,10 @@
 			return { hash: null, count: 0 };
 		}
 
-		// Capture the divider position once so it doesn't jump as messages are read
-		if (!unreadDividerCaptured) {
+		if (
+			capturedUnreadHash === null &&
+			(!unreadDividerCaptured || !isAtBottom)
+		) {
 			for (const day of messagesSetsInDays) {
 				for (const messageSet of day.eventsSets) {
 					for (const [hash, message] of messageSet) {
@@ -337,8 +339,8 @@
 				}
 				if (capturedUnreadHash) break;
 			}
-			unreadDividerCaptured = true;
 		}
+		unreadDividerCaptured = true;
 
 		if (!capturedUnreadHash) return { hash: null, count: 0 };
 
@@ -401,9 +403,8 @@
 						{:else}
 							<Navbar
 								transparent={true}
-								titleClass="opacity1 w-full min-w-0"
+								titleClass="opacity1 min-w-0 flex-1"
 								leftClass="shrink-0"
-								rightClass="bg-transparent! shadow-none! backdrop-blur-none! pointer-events-none! dark:bg-transparent! dark:shadow-none!"
 								centerTitle={false}
 							>
 								{#snippet left()}
@@ -440,11 +441,9 @@
 									</Link>
 								{/snippet}
 
-								{#snippet right()}
-									<div class={theme === 'material' ? 'pe-2' : ''}>
-										<ConnectionStatusIndicator />
-									</div>
-								{/snippet}
+								<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
+									<ConnectionStatusIndicator />
+								</div>
 							</Navbar>
 						{/if}
 					{/snippet}
@@ -773,7 +772,7 @@
 
 				<div
 					bind:clientHeight={bottomBarHeight}
-					class="absolute bottom-0 inset-x-0 z-20"
+					class="absolute bottom-0 inset-x-0 z-10"
 					class:bg-md-light-surface={theme === 'material'}
 					class:dark:bg-md-dark-surface={theme === 'material'}
 				>

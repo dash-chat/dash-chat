@@ -1,8 +1,9 @@
 use dashchat_node::{DeviceId, Node, Payload, Topic};
 use p2panda::operation::{Header, LogId};
 use p2panda::{Hash, VerifyingKey};
+use p2panda_auth::processor::GroupsArgs;
 use p2panda_core::cbor::decode_cbor;
-use p2panda_core::{Body, Timestamp};
+use p2panda_core::Timestamp;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tauri::State;
 
@@ -59,6 +60,11 @@ pub struct SimplifiedHeader {
     previous: Vec<Hash>,
 
     topic_id: Topic,
+
+    /// p2panda-auth group-control extension, when this operation is a group action
+    /// (Create / Add / Remove / Promote / Demote) rather than a chat payload.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth: Option<GroupsArgs>,
 }
 
 impl SimplifiedHeader {
@@ -71,7 +77,8 @@ impl SimplifiedHeader {
         let previous = header
             .extensions
             .groups_args
-            .map(|args| args.dependencies)
+            .as_ref()
+            .map(|args| args.dependencies.clone())
             .unwrap_or_default();
         SimplifiedHeader {
             verifying_key: header.verifying_key,
@@ -80,6 +87,7 @@ impl SimplifiedHeader {
             backlink: header.backlink,
             previous,
             topic_id: topic,
+            auth: header.extensions.groups_args.clone(),
         }
     }
 }
@@ -121,7 +129,7 @@ pub fn simplify(
     topic: Topic,
     hash: Hash,
     header: Header,
-    body: Option<Body>,
+    body: Option<p2panda_core::Body>,
 ) -> anyhow::Result<SimplifiedOperation> {
     let body: Option<serde_json::Value> = match body {
         Some(b) => {

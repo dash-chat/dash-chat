@@ -1,9 +1,10 @@
+import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
 
 export type MessageStatus = 'sending' | 'local' | 'cloud';
-export type ConnectionStatus = 'connected' | 'local' | 'disconnected';
+export type { ConnectionStatus } from '../../components/connection-status-indicator';
 
 export class DirectChatPage extends TestPage {
 	page = this.agent.$(tid('direct-chat-page'));
@@ -12,8 +13,8 @@ export class DirectChatPage extends TestPage {
 	settingsLink = this.agent.$(tid('direct-chat-settings-link'));
 	peerName = this.agent.$(tid('direct-chat-peer-name'));
 	peerHeader = this.agent.$(tid('direct-chat-peer-header'));
-	scrollBottom = this.agent.$(tid('direct-chat-scroll-bottom'));
-	unreadBadge = this.agent.$(tid('direct-chat-unread-badge'));
+	scrollBottom = this.agent.$(tid('chat-scroll-bottom'));
+	unreadBadge = this.agent.$(tid('chat-unread-badge'));
 	unreadDivider = this.agent.$(tid('direct-chat-unread-divider'));
 	acceptButton = this.agent.$(tid('direct-chat-accept-btn'));
 	rejectButton = this.agent.$(tid('direct-chat-reject-btn'));
@@ -21,10 +22,9 @@ export class DirectChatPage extends TestPage {
 	rejectConfirm = this.agent.$(tid('direct-chat-reject-confirm'));
 	messages = this.agent.$(tid('direct-chat-messages'));
 	messageInput = this.agent.$(tid('message-input-textarea'));
-	sendButton = this.agent.$(tid('message-input-send'));
 	emojiButton = this.agent.$(tid('message-input-emoji'));
 	messageStatus = this.agent.$(tid('message-status'));
-	connectionStatusIndicator = this.agent.$(tid('connection-status'));
+	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
 
 	async ready() {
@@ -35,8 +35,17 @@ export class DirectChatPage extends TestPage {
 		await this.typeInto(tid('message-input-textarea'), text);
 		await this.agent.pause(50);
 		await this.agent.execute((sel: string) => {
-			(document.querySelector(sel) as HTMLElement).click();
-		}, tid('message-input-send'));
+			const el = document.querySelector(sel) as HTMLTextAreaElement;
+			el.focus();
+			el.dispatchEvent(
+				new KeyboardEvent('keydown', {
+					key: 'Enter',
+					code: 'Enter',
+					bubbles: true,
+					cancelable: true,
+				}),
+			);
+		}, tid('message-input-textarea'));
 	}
 
 	async waitForMessage(text: string, timeout = 25_000) {
@@ -62,17 +71,6 @@ export class DirectChatPage extends TestPage {
 			}
 			return null;
 		}, tid('message-status'));
-	}
-
-	/** Read the navbar connection chip. Absence === 'connected'. */
-	async connectionStatus(): Promise<ConnectionStatus> {
-		return this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLElement | null;
-			if (!el) return 'connected';
-			const status = el.dataset.status;
-			if (status === 'local' || status === 'disconnected') return status;
-			throw new Error(`connectionStatus: unexpected data-status="${status}"`);
-		}, tid('connection-status'));
 	}
 
 	scrollBottomButtonVisible(): Promise<boolean> {

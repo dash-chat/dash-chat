@@ -6,10 +6,18 @@
 	--color-brand-primary: #007aff;
 	--color-brand-red: #ff0000;
 	--color-brand-green: #00ff00;
+	--text-sm: 1rem; /* default: 0.875rem */
+	--text-sm--line-height: 1.45rem; /* optional, default: 1.25rem */
+}
+
+.wide-layout {
+	--text-sm: 0.875rem; /* default: 0.875rem */
+	--text-sm--line-height: 1.25rem; /* optional, default: 1.25rem */
 }
 
 html {
 	background-color: transparent !important;
+	-webkit-text-size-adjust: 100%;
 }
 
 body {

@@ -257,6 +257,7 @@ impl<K: TopicKind> Topic<K> {
     pub fn alias_named(self, name: &str) -> Self {
         self.id.alias_named(name);
         p2panda::Topic::from(self.id).alias_named(name);
+        TopicId::from(p2panda::Topic::from(self.id)).alias_named(name);
         self
     }
 

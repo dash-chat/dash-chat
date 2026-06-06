@@ -1,6 +1,6 @@
-import { reactive } from 'signalium';
+import { reactive, signal } from 'signalium';
 
-import { Profile } from '../contacts/contacts-client';
+import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
 import { waitForOperation } from '../p2panda/logs-client';
@@ -9,8 +9,10 @@ import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
 import {
 	ChatId,
 	ChatSummary,
+	ChatSummaryLastEvent,
 	MessageContent,
 	Payload,
+	ReadMessagesStore,
 	getMessageText,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
@@ -22,19 +24,28 @@ export interface GroupInfo {
 	avatar: string | undefined;
 }
 
-export interface GroupMember {
+export interface GroupMemberWithProfile {
 	agentId: AgentId;
+	deviceIds: DeviceId[];
 	profile: Profile | undefined;
 	admin: boolean;
 }
 
-export class GroupChatStore {
+export class GroupChatStore implements ReadMessagesStore {
+	private membersVersion = signal(0);
+
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		public client: IGroupChatClient,
 		public chatId: ChatId,
-	) {}
+	) {
+		this.logsStore.logsClient.onNewOperation((topicId, op) => {
+			if (topicId === this.chatId && op.header.auth) {
+				this.membersVersion.value++;
+			}
+		});
+	}
 
 	info = reactive(async () => {
 		const info: GroupInfo = {
@@ -120,7 +131,116 @@ export class GroupChatStore {
 		return sortedMessages.length > 0 ? sortedMessages[0] : undefined;
 	});
 
+	lastEvent = reactive(async (): Promise<ChatSummaryLastEvent | undefined> => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const lastMessage = await this.lastMessage();
+		const members = await this.allMembers();
+		const myDeviceId = await this.contactsStore.myDeviceId();
+
+		const nameForDevice = (deviceId: DeviceId): string => {
+			for (const m of Object.values(members)) {
+				if (m.deviceIds.includes(deviceId)) {
+					return m.profile ? fullName(m.profile) : '';
+				}
+			}
+			return '';
+		};
+
+		let bestAuth: ChatSummaryLastEvent | undefined;
+		let createdByMe = false;
+		let iWasAdded = false;
+		for (const ops of Object.values(logs)) {
+			for (const op of ops) {
+				const action = op.header.auth?.action;
+				if (!action) continue;
+				const ts = op.header.timestamp;
+
+				let candidate: ChatSummaryLastEvent | undefined;
+				if ('Create' in action) {
+					const isMine = op.header.verifying_key === myDeviceId;
+					if (isMine) createdByMe = true;
+					const initiallyIncludedMe = action.Create.initial_members.some(
+						([m]) => 'Individual' in m && m.Individual === myDeviceId,
+					);
+					if (initiallyIncludedMe) iWasAdded = true;
+					candidate = {
+						kind: 'group_created',
+						isMine,
+						creatorName: isMine ? '' : nameForDevice(op.header.verifying_key),
+						timestamp: ts,
+					};
+				} else if ('Add' in action) {
+					const member = action.Add.member;
+					const addedDeviceId =
+						'Individual' in member ? member.Individual : undefined;
+					const isMine = !!addedDeviceId && addedDeviceId === myDeviceId;
+					if (isMine) iWasAdded = true;
+					const addedByMe = op.header.verifying_key === myDeviceId;
+					candidate = {
+						kind: 'group_member_added',
+						isMine,
+						addedByMe,
+						memberName: addedDeviceId ? nameForDevice(addedDeviceId) : '',
+						adminName: nameForDevice(op.header.verifying_key),
+						timestamp: ts,
+					};
+				} else if ('Remove' in action) {
+					candidate = { kind: 'group_member_removed', timestamp: ts };
+				} else if ('Promote' in action) {
+					const member = action.Promote.member;
+					const deviceId =
+						'Individual' in member ? member.Individual : undefined;
+					candidate = {
+						kind: 'group_member_promoted',
+						promotedByMe: op.header.verifying_key === myDeviceId,
+						memberName: deviceId ? nameForDevice(deviceId) : '',
+						adminName: nameForDevice(op.header.verifying_key),
+						timestamp: ts,
+					};
+				} else if ('Demote' in action) {
+					const member = action.Demote.member;
+					const deviceId =
+						'Individual' in member ? member.Individual : undefined;
+					candidate = {
+						kind: 'group_member_demoted',
+						demotedByMe: op.header.verifying_key === myDeviceId,
+						memberName: deviceId ? nameForDevice(deviceId) : '',
+						adminName: nameForDevice(op.header.verifying_key),
+						timestamp: ts,
+					};
+				}
+
+				if (
+					candidate &&
+					(!bestAuth || candidate.timestamp > bestAuth.timestamp)
+				) {
+					bestAuth = candidate;
+				}
+			}
+		}
+
+		// Hide the group until we either authored the Create or see our own Add op.
+		// Avoids the chat-list flicker between empty → "Group created" → "X added you".
+		if (!createdByMe && !iWasAdded) return undefined;
+
+		const messageEvent: ChatSummaryLastEvent | undefined = lastMessage
+			? {
+					kind: 'message',
+					text: lastMessage.content,
+					authorName: nameForDevice(lastMessage.author),
+					timestamp: lastMessage.timestamp,
+				}
+			: undefined;
+
+		if (!messageEvent) return bestAuth;
+		if (!bestAuth) return messageEvent;
+		return messageEvent.timestamp > bestAuth.timestamp
+			? messageEvent
+			: bestAuth;
+	});
+
 	membersData = reactive(async () => {
+		void this.membersVersion.value;
 		return await this.client.getMembers(this.chatId);
 	});
 
@@ -128,46 +248,101 @@ export class GroupChatStore {
 		const myAgentId = await this.contactsStore.myAgentId();
 		const data = await this.membersData();
 		const entry = data.find(m => m.agentId === myAgentId);
-		return this.buildMember(myAgentId, entry?.isAdmin ?? false);
+		return this.buildMember(
+			myAgentId,
+			entry?.deviceIds ?? [],
+			entry?.isAdmin ?? false,
+		);
 	});
 
 	allMembers = reactive(async () => {
 		const data = await this.membersData();
 		const entries = await Promise.all(
-			data.map(async ({ agentId, isAdmin }) => {
-				const member = await this.buildMember(agentId, isAdmin);
+			data.map(async ({ agentId, deviceIds, isAdmin }) => {
+				const member = await this.buildMember(agentId, deviceIds, isAdmin);
 				return [agentId, member] as const;
 			}),
 		);
-		return Object.fromEntries(entries) as Record<AgentId, GroupMember>;
+		return Object.fromEntries(entries) as Record<
+			AgentId,
+			GroupMemberWithProfile
+		>;
 	});
 
-	private buildMember = reactive(async (agentId: AgentId, admin: boolean) => {
-		const profile = await this.contactsStore.profiles(agentId);
-		return { agentId, profile, admin } satisfies GroupMember;
+	private buildMember = reactive(
+		async (agentId: AgentId, deviceIds: DeviceId[], admin: boolean) => {
+			const profile = await this.contactsStore.profiles(agentId);
+			return {
+				agentId,
+				deviceIds,
+				profile,
+				admin,
+			} satisfies GroupMemberWithProfile;
+		},
+	);
+
+	readMessageHashes = reactive(async () => {
+		const myDeviceGroupTopic =
+			await this.contactsStore.devicesStore.myDeviceGroupTopic();
+		const readHashes: Set<Hash> = new Set();
+
+		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				if (
+					op.body?.payload?.type === 'ReadMessages' &&
+					op.body.payload.payload.chat_id === this.chatId
+				) {
+					for (const hash of op.body.payload.payload.message_hashes) {
+						readHashes.add(hash);
+					}
+				}
+			}
+		}
+
+		return readHashes;
 	});
 
-	summary = reactive(async (): Promise<ChatSummary> => {
+	unreadCount = reactive(async () => {
+		const messages = await this.messages();
+		const readHashes = await this.readMessageHashes();
+		const myDeviceId = await this.contactsStore.myDeviceId();
+
+		let count = 0;
+		for (const [hash, message] of Object.entries(messages)) {
+			if (message.author !== myDeviceId && !readHashes.has(hash)) {
+				count++;
+			}
+		}
+		return count;
+	});
+
+	summary = reactive(async (): Promise<ChatSummary | undefined> => {
+		const last = await this.lastEvent();
+		if (!last) return undefined;
 		const info = await this.info();
-		const last = await this.lastMessage();
+		const unread = await this.unreadCount();
 
 		return {
 			type: 'GroupChat',
 			chatId: this.chatId,
 			name: info.name ?? '',
 			avatar: info.avatar,
-			lastEvent: {
-				summary: last?.content ?? '',
-				timestamp: last?.timestamp ?? 0,
-			},
-			unreadMessages: 0,
+			lastEvent: last,
+			unreadMessages: unread,
 		};
 	});
 
 	/// Actions
 
-	addMember(member: VerifyingKey) {
-		return this.client.addMember(this.chatId, member);
+	async addMembers(members: VerifyingKey[]) {
+		await Promise.all(
+			members.map(member => this.client.addMember(this.chatId, member)),
+		);
+		this.membersVersion.value++;
+	}
+
+	async markAsRead(messageHashes: Hash[]): Promise<void> {
+		await this.client.markMessagesRead(this.chatId, messageHashes);
 	}
 
 	async sendMessage(text: string) {

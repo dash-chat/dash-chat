@@ -1245,9 +1245,9 @@ dependencies = [
 
 [[package]]
 name = "chrono"
-version = "0.4.44"
+version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c673075a2e0e5f4a1dde27ce9dee1ea4558c7ffe648f576438a20ca1d2acc4b0"
+checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
 dependencies = [
  "iana-time-zone",
  "js-sys",
@@ -5034,9 +5034,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.31"
+version = "0.4.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "113b30b4cd05f7c06868fdb2854f66a7b9fece9a48425351cd532e810d74024f"
+checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 dependencies = [
  "value-bag",
 ]
@@ -9635,6 +9635,7 @@ dependencies = [
  "gtk",
  "heck 0.5.0",
  "http 1.4.1",
+ "image",
  "jni 0.21.1",
  "libc",
  "log",
@@ -9933,7 +9934,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification"
 version = "2.3.3"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#5a86891aa12086cc0ec77a3257f552d61a084c89"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#6d8519f28c8a02aebd236e9ab1b4fcba8a7cd42f"
 dependencies = [
  "log",
  "notify-rust",
@@ -9954,7 +9955,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-macros"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#5a86891aa12086cc0ec77a3257f552d61a084c89"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#6d8519f28c8a02aebd236e9ab1b4fcba8a7cd42f"
 dependencies = [
  "jni 0.21.1",
  "libc",
@@ -9968,7 +9969,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-models"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#5a86891aa12086cc0ec77a3257f552d61a084c89"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#6d8519f28c8a02aebd236e9ab1b4fcba8a7cd42f"
 dependencies = [
  "rand 0.8.6",
  "serde",
@@ -12494,9 +12495,9 @@ checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
 name = "yoke"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abe8c5fda708d9ca3df187cae8bfb9ceda00dd96231bed36e445a1a48e66f9ca"
+checksum = "709fe23a0424b6a435d82152b1bd3fdfb0833487d5fa90d05d42762a9891fef5"
 dependencies = [
  "stable_deref_trait",
  "yoke-derive",

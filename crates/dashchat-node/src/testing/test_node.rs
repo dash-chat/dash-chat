@@ -1,17 +1,19 @@
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
 
 use aliased::Aliasing;
+use p2panda::operation::{Header, LogId, Operation};
+use p2panda_store::operations::OperationStore;
 use tempfile::TempDir;
 use tokio::sync::{Mutex, mpsc::Receiver};
 
 use mailbox_client::{MailboxClient, mem::MemMailbox};
 
 use crate::{
-    AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
+    AgentId, DeviceGroupPayload, DeviceId, NodeConfig, Notification, Payload, Profile,
     filesystem::Filesystem, mailbox::MailboxOperation, node::Node, stores::LocalStore,
     testing::behavior::Behavior, topic::TopicId,
 };
@@ -206,7 +208,7 @@ impl Default for ClusterConfig {
     fn default() -> Self {
         Self {
             poll_interval: Duration::from_millis(100),
-            poll_timeout: Duration::from_secs(30),
+            poll_timeout: Duration::from_secs(10),
         }
     }
 }
@@ -269,58 +271,93 @@ pub async fn consistency(
         // The operations field is now private in the new p2panda-store version
         let sets = nodes
             .iter()
-            .map(|node| {
+            .map(|&node| {
                 let ops = node.op_store.processed_ops.read().unwrap();
-
-                topics
+                let hashes = topics
                     .iter()
-                    .flat_map(|topic| {
-                        ops.get(topic)
-                            .cloned()
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|h| format!("{:?}", h.alias_numbered().aliased()))
-                    })
-                    .collect::<BTreeSet<_>>()
+                    .flat_map(|topic| ops.get(topic).cloned().unwrap_or_default().into_iter())
+                    .collect::<BTreeSet<_>>();
+                (node.clone(), hashes)
             })
             .collect::<Vec<_>>();
-        let mut diffs = ConsistencyReport::new(sets);
-        for i in 0..diffs.sets.len() {
-            for j in 0..i {
-                if i != j && diffs.sets[i] != diffs.sets[j] {
-                    diffs.diffs.insert(
-                        (i, j),
-                        (diffs.sets[i].len() as isize - diffs.sets[j].len() as isize).abs(),
-                    );
-                }
-            }
-        }
-        if diffs.diffs.is_empty() {
-            Ok(())
-        } else {
-            Err(diffs)
-        }
+        let mut report = ConsistencyReport::new(sets).await.unwrap();
+        if report.passes() { Ok(()) } else { Err(report) }
     })
     .await
-    .map_err(|diffs| {
-        dbg!(diffs);
-        // TODO: print a report here
+    .map_err(|report| {
+        println!("--------------------------------");
+        println!("{:?}", report);
+        println!("--------------------------------");
         anyhow::anyhow!("consistency check failed after {:?}", config.poll_timeout)
     })
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Clone, Default)]
 pub struct ConsistencyReport {
-    sets: Vec<BTreeSet<String>>,
-    diffs: HashMap<(usize, usize), isize>,
+    ops: Vec<(TestNode, Vec<(p2panda::Hash, Header)>)>,
 }
 
 impl ConsistencyReport {
-    pub fn new(sets: Vec<BTreeSet<String>>) -> Self {
-        Self {
-            sets,
-            diffs: HashMap::new(),
+    pub async fn new(hashes: Vec<(TestNode, BTreeSet<p2panda::Hash>)>) -> anyhow::Result<Self> {
+        let mut nodes = vec![];
+        for (node, hashes) in hashes.iter() {
+            let mut headers = vec![];
+            for hash in hashes {
+                let op = OperationStore::<Operation, p2panda::Hash, LogId>::get_operation(
+                    &node.op_store.store,
+                    hash,
+                )
+                .await?
+                .unwrap();
+                headers.push((*hash, op.header));
+            }
+            headers.sort_by_key(|op| Self::op_line(op.clone()));
+            nodes.push((node.clone(), headers));
         }
+        Ok(Self { ops: nodes })
+    }
+
+    pub fn passes(&self) -> bool {
+        let mut digests = HashSet::new();
+        for (_, headers) in self.ops.iter() {
+            let hashes = headers
+                .iter()
+                .map(|(hash, _)| hash)
+                .collect::<BTreeSet<_>>();
+            digests.insert(hashes);
+        }
+        digests.len() <= 1
+    }
+
+    fn op_line((hash, header): (p2panda::Hash, Header)) -> String {
+        format!(
+            "{:32?} {:3} {:32?}",
+            TopicId::from(header.extensions.log_id).aliased(),
+            header.seq_num,
+            hash.aliased()
+        )
+    }
+}
+
+impl std::fmt::Debug for ConsistencyReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (node, headers) in self.ops.iter() {
+            writeln!(f, "=== {:?} ===", node.device_id().aliased())?;
+            for (hash, header) in headers.iter() {
+                writeln!(f, "- {}", Self::op_line((*hash, header.clone())),)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl PartialEq for ConsistencyReport {
+    fn eq(&self, other: &Self) -> bool {
+        self.ops.iter().zip(other.ops.iter()).all(
+            |((left_node, left_ops), (right_node, right_ops))| {
+                left_node.device_id() == right_node.device_id() && left_ops == right_ops
+            },
+        )
     }
 }
 

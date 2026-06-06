@@ -48,7 +48,7 @@ async fn test_reject_contact_request() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-            let Payload::Inbox(InboxPayload::ContactRequest { code, .. }) = &n.payload else {
+            let Some(Payload::Inbox(InboxPayload::ContactRequest { code, .. })) = &n.payload else {
                 return None;
             };
             Some(code.clone())
@@ -125,7 +125,8 @@ async fn test_reject_multiple_contact_requests() {
             .lock()
             .await
             .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-                let Payload::Inbox(InboxPayload::ContactRequest { code, .. }) = &n.payload else {
+                let Some(Payload::Inbox(InboxPayload::ContactRequest { code, .. })) = &n.payload
+                else {
                     return None;
                 };
                 Some(code.agent_id)
