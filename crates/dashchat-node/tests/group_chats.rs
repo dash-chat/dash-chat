@@ -3,8 +3,6 @@
 
 #![cfg(test)]
 
-use std::time::Duration;
-
 use dashchat_node::{testing::*, *};
 use mailbox_client::mem::MemMailbox;
 
@@ -25,6 +23,7 @@ async fn test_direct_chat() {
         true,
     );
 
+    let poll = PollConfig::default();
     let mailbox = MemMailbox::new();
     let alice = TestNode::new(NodeConfig::testing(), "alice")
         .await
@@ -63,17 +62,13 @@ async fn test_direct_chat() {
     // .await
     // .unwrap();
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(10),
-        || async {
-            let msgs = [
-                alice.get_messages(chat_id).await.unwrap().len(),
-                bobbi.get_messages(chat_id).await.unwrap().len(),
-            ];
-            msgs.iter().all(|m| *m == 1).then_some(()).ok_or(msgs)
-        },
-    )
+    poll.wait_for(|| async {
+        let msgs = [
+            alice.get_messages(chat_id).await.unwrap().len(),
+            bobbi.get_messages(chat_id).await.unwrap().len(),
+        ];
+        msgs.iter().all(|m| *m == 1).then_some(()).ok_or(msgs)
+    })
     .await
     .unwrap();
 
@@ -142,6 +137,7 @@ async fn test_group_chat() {
         true,
     );
 
+    let poll = PollConfig::default();
     let mailbox = MemMailbox::new();
     let alice = TestNode::new(NodeConfig::testing(), "alice")
         .await
@@ -190,13 +186,9 @@ async fn test_group_chat() {
         .await
         .unwrap();
 
-    consistency(
-        [&alice, &bobbi],
-        &[chat_id.into()],
-        &ClusterConfig::default(),
-    )
-    .await
-    .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
 
     bobbi
         .add_group_member(chat_id, *cammy.device_id(), p2panda_auth::Access::write())
@@ -209,26 +201,18 @@ async fn test_group_chat() {
         .await
         .unwrap();
 
-    consistency(
-        [&alice, &bobbi, &cammy],
-        &[chat_id.into()],
-        &ClusterConfig::default(),
-    )
-    .await
-    .unwrap();
+    poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let msgs = [
-                alice.get_messages(chat_id).await.unwrap().len(),
-                bobbi.get_messages(chat_id).await.unwrap().len(),
-                cammy.get_messages(chat_id).await.unwrap().len(),
-            ];
-            msgs.iter().all(|m| *m == 1).then_some(()).ok_or(msgs)
-        },
-    )
+    poll.wait_for(|| async {
+        let msgs = [
+            alice.get_messages(chat_id).await.unwrap().len(),
+            bobbi.get_messages(chat_id).await.unwrap().len(),
+            cammy.get_messages(chat_id).await.unwrap().len(),
+        ];
+        msgs.iter().all(|m| *m == 1).then_some(()).ok_or(msgs)
+    })
     .await
     .unwrap();
 
@@ -238,10 +222,8 @@ async fn test_group_chat() {
         (cammy.device_id(), p2panda_auth::Access::write()),
     ];
 
-    let result = wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
+    let result = poll
+        .wait_for(|| async {
             let members = [
                 alice.get_group_members(chat_id).await.unwrap(),
                 bobbi.get_group_members(chat_id).await.unwrap(),
@@ -252,9 +234,8 @@ async fn test_group_chat() {
                 .all(|m| *m == expected_members)
                 .then_some(())
                 .ok_or(members)
-        },
-    )
-    .await;
+        })
+        .await;
 
     if let Err(members) = result {
         panic!("memberships are not consistent: {:#?}", members);
@@ -281,13 +262,12 @@ async fn test_group_chat() {
 
     // Ensure that the two members who aren't contacts can see each others' profiles.
 
-    consistency(
+    poll.consistency(
         [&cammy, &alice],
         &[
             Topic::announcements(alice.agent_id()).into(),
             Topic::announcements(cammy.agent_id()).into(),
         ],
-        &ClusterConfig::default(),
     )
     .await
     .unwrap();

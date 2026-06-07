@@ -1,7 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use dashchat_compat::{VersionConvert, VersionConvertError};
 
     use mailbox_client::mem::MemMailbox;
@@ -12,7 +10,7 @@ mod tests {
         ShareIntent,
         chat::*,
         compat::Capabilities,
-        testing::{ClusterConfig, TestNode, TestNodeConfig, consistency},
+        testing::{PollConfig, TestNode, TestNodeConfig},
     };
 
     #[test]
@@ -115,6 +113,7 @@ mod tests {
         let bobbi_config = TestNodeConfig::default();
         alice_config.node_config.capabilities = Capabilities::zero();
 
+        let poll = PollConfig::default();
         let mailbox = MemMailbox::new();
         let alice = TestNode::new(alice_config, "alice")
             .await
@@ -136,7 +135,7 @@ mod tests {
 
         let topic = alice.direct_chat_topic(bobbi.agent_id());
 
-        consistency([&alice, &bobbi], &[topic.into()], &ClusterConfig::default())
+        poll.consistency([&alice, &bobbi], &[topic.into()])
             .await
             .unwrap();
 
@@ -156,7 +155,7 @@ mod tests {
         assert_eq!(alice_bobbi_caps, Capabilities::current());
         assert_eq!(bobbi_alice_caps, Capabilities::zero());
 
-        consistency([&alice, &bobbi], &[topic.into()], &ClusterConfig::default())
+        poll.consistency([&alice, &bobbi], &[topic.into()])
             .await
             .unwrap();
 
@@ -196,19 +195,15 @@ mod tests {
             .await
             .unwrap();
 
-        crate::testing::wait_for(
-            Duration::from_millis(100),
-            Duration::from_secs(5),
-            || async {
-                let ma = alice.get_messages(chat).await.unwrap();
-                let mb = bobbi.get_messages(chat).await.unwrap();
-                if ma.len() == 2 && mb.len() == 2 {
-                    Ok(())
-                } else {
-                    Err("messages not received")
-                }
-            },
-        )
+        poll.wait_for(|| async {
+            let ma = alice.get_messages(chat).await.unwrap();
+            let mb = bobbi.get_messages(chat).await.unwrap();
+            if ma.len() == 2 && mb.len() == 2 {
+                Ok(())
+            } else {
+                Err("messages not received")
+            }
+        })
         .await
         .unwrap();
 

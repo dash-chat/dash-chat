@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use mailbox_client::mem::MemMailbox;
 
 use dashchat_node::{testing::*, *};
@@ -77,6 +75,8 @@ async fn test_profiles_sync_between_contacts() {
         .add_mailbox_client(mailbox.client())
         .await;
 
+    let poll = PollConfig::default();
+
     println!("alice: {}", alice.device_id());
     println!("bobbi: {}", bobbi.device_id());
 
@@ -113,31 +113,27 @@ async fn test_profiles_sync_between_contacts() {
     bobbi.behavior().accept_next_contact().await.unwrap();
 
     // Bob has joined the group via his inbox topic
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            bobbi
-                .op_store
-                .get_log(
-                    &alice.device_id(),
-                    &Topic::announcements(alice.agent_id()).into(),
-                    None,
+    poll.wait_for(|| async {
+        bobbi
+            .op_store
+            .get_log(
+                &alice.device_id(),
+                &Topic::announcements(alice.agent_id()).into(),
+                None,
+            )
+            .await
+            .map_err(|_| "failed to get log")?
+            .iter()
+            .find(|op| {
+                let p = Payload::try_from_body(op.body.as_ref().unwrap()).unwrap();
+                matches!(
+                    p,
+                    Payload::Announcements(AnnouncementsPayload::SetProfile(p)) if p == profile
                 )
-                .await
-                .map_err(|_| "failed to get log")?
-                .iter()
-                .find(|op| {
-                    let p = Payload::try_from_body(op.body.as_ref().unwrap()).unwrap();
-                    matches!(
-                        p,
-                        Payload::Announcements(AnnouncementsPayload::SetProfile(p)) if p == profile
-                    )
-                })
-                .ok_or("no profile found")
-                .map(|_| ())
-        },
-    )
+            })
+            .ok_or("no profile found")
+            .map(|_| ())
+    })
     .await
     .unwrap();
 }

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -10,10 +10,10 @@ use p2panda_store::operations::OperationStore;
 use tempfile::TempDir;
 use tokio::sync::{Mutex, mpsc::Receiver};
 
-use mailbox_client::{MailboxClient, mem::MemMailbox};
+use mailbox_client::MailboxClient;
 
 use crate::{
-    AgentId, DeviceGroupPayload, DeviceId, NodeConfig, Notification, Payload, Profile,
+    AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
     filesystem::Filesystem, mailbox::MailboxOperation, node::Node, stores::LocalStore,
     testing::behavior::Behavior, topic::TopicId,
 };
@@ -198,13 +198,14 @@ impl From<NodeConfig> for TestNodeConfig {
     }
 }
 
+/// Config for operations that involve polling and waiting for conditions to be met.
 #[derive(Clone, Debug)]
-pub struct ClusterConfig {
+pub struct PollConfig {
     pub poll_interval: Duration,
     pub poll_timeout: Duration,
 }
 
-impl Default for ClusterConfig {
+impl Default for PollConfig {
     fn default() -> Self {
         Self {
             poll_interval: Duration::from_millis(100),
@@ -213,83 +214,105 @@ impl Default for ClusterConfig {
     }
 }
 
-#[derive(derive_more::Deref)]
-pub struct TestCluster<const N: usize> {
-    #[deref]
-    nodes: [TestNode; N],
-    pub config: ClusterConfig,
-}
-
-impl<const N: usize> TestCluster<N> {
-    // TODO: maybe don't always add a memory mailbox
-    pub async fn new(node_config: NodeConfig, config: ClusterConfig, aliases: [&str; N]) -> Self {
-        let mailbox = MemMailbox::<MailboxOperation>::new();
-        let nodes: [TestNode; N] = futures::future::join_all(
-            (0..N).map(|i| TestNode::new(node_config.clone(), aliases[i])),
-        )
-        .await
-        .try_into()
-        .unwrap_or_else(|_| panic!("expected {} nodes", N));
-
-        for n in nodes.iter() {
-            n.add_mailbox_client(mailbox.client()).await;
-        }
-
-        Self { nodes, config }
-    }
-
-    pub async fn introduce_all(&self) {
-        unimplemented!("re-implement when p2p sync is available")
-    }
-
-    pub async fn nodes(&self) -> [TestNode; N] {
-        self.nodes
-            .iter()
-            .map(|node| node.clone())
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap()
-    }
-
+impl PollConfig {
     pub async fn consistency(
         &self,
+        nodes: impl IntoIterator<Item = &TestNode>,
         topics: impl IntoIterator<Item = &TopicId>,
     ) -> anyhow::Result<()> {
-        consistency(self.nodes().await.iter(), topics, &self.config).await
+        let topics = topics.into_iter().collect::<HashSet<_>>();
+        let nodes = nodes.into_iter().collect::<Vec<_>>();
+        self.wait_for_resetting(|| async {
+            // TODO: Fix this when we have a proper way to access operations
+            // The operations field is now private in the new p2panda-store version
+            let sets = nodes
+                .iter()
+                .map(|&node| {
+                    let ops = node.op_store.processed_ops.read().unwrap();
+                    let hashes = topics
+                        .iter()
+                        .flat_map(|topic| ops.get(topic).cloned().unwrap_or_default().into_iter())
+                        .collect::<BTreeSet<_>>();
+                    (node.clone(), hashes)
+                })
+                .collect::<Vec<_>>();
+            let report = ConsistencyReport::new(sets).await.unwrap();
+            if report.passes() { Ok(()) } else { Err(report) }
+        })
+        .await
+        .map_err(|report| {
+            println!("--------------------------------");
+            println!("{:?}", report);
+            println!("--------------------------------");
+            anyhow::anyhow!("consistency check failed after {:?}", self.poll_timeout)
+        })
+    }
+
+    pub async fn wait_for<F, E>(&self, f: impl Fn() -> F) -> Result<(), E>
+    where
+        F: Future<Output = Result<(), E>>,
+    {
+        assert!(self.poll_interval < self.poll_timeout);
+        let start = Instant::now();
+        tracing::info!("=== wait_for() up to {:?} ===", self.poll_timeout);
+        loop {
+            let result = f().await;
+            match &result {
+                Ok(()) => break,
+                Err(_) => {
+                    if start.elapsed() > self.poll_timeout {
+                        return result;
+                    }
+
+                    tokio::time::sleep(self.poll_interval).await;
+                }
+            }
+        }
+        tracing::info!("=== wait_for() success after {:?} ===", start.elapsed());
+        Ok(())
+    }
+
+    pub async fn wait_for_resetting<F, E>(&self, f: impl Fn() -> F) -> Result<(), E>
+    where
+        F: Future<Output = Result<(), E>>,
+        E: std::fmt::Debug + PartialEq,
+    {
+        assert!(self.poll_interval < self.poll_timeout);
+        let mut start = Instant::now();
+        tracing::info!("=== wait_for_resetting() up to {:?} ===", self.poll_timeout);
+        let mut previous = None;
+        loop {
+            let result = f().await;
+            match &result {
+                Ok(()) => break,
+                Err(_) => {
+                    if start.elapsed() > self.poll_timeout {
+                        return result;
+                    }
+
+                    if previous.as_ref() != Some(&result) {
+                        start = Instant::now();
+                    }
+
+                    previous = Some(result);
+
+                    tokio::time::sleep(self.poll_interval).await;
+                }
+            }
+        }
+        tracing::info!(
+            "=== wait_for_resetting() success after {:?} ===",
+            start.elapsed()
+        );
+        Ok(())
     }
 }
 
 pub async fn consistency(
     nodes: impl IntoIterator<Item = &TestNode>,
     topics: impl IntoIterator<Item = &TopicId>,
-    config: &ClusterConfig,
 ) -> anyhow::Result<()> {
-    let topics = topics.into_iter().collect::<HashSet<_>>();
-    let nodes = nodes.into_iter().collect::<Vec<_>>();
-    wait_for_resetting(config.poll_interval, config.poll_timeout, || async {
-        // TODO: Fix this when we have a proper way to access operations
-        // The operations field is now private in the new p2panda-store version
-        let sets = nodes
-            .iter()
-            .map(|&node| {
-                let ops = node.op_store.processed_ops.read().unwrap();
-                let hashes = topics
-                    .iter()
-                    .flat_map(|topic| ops.get(topic).cloned().unwrap_or_default().into_iter())
-                    .collect::<BTreeSet<_>>();
-                (node.clone(), hashes)
-            })
-            .collect::<Vec<_>>();
-        let mut report = ConsistencyReport::new(sets).await.unwrap();
-        if report.passes() { Ok(()) } else { Err(report) }
-    })
-    .await
-    .map_err(|report| {
-        println!("--------------------------------");
-        println!("{:?}", report);
-        println!("--------------------------------");
-        anyhow::anyhow!("consistency check failed after {:?}", config.poll_timeout)
-    })
+    PollConfig::default().consistency(nodes, topics).await
 }
 
 #[derive(Clone, Default)]
@@ -413,67 +436,4 @@ impl<T: std::fmt::Debug> Watcher<T> {
             }
         }
     }
-}
-
-pub async fn wait_for<F, E>(poll: Duration, timeout: Duration, f: impl Fn() -> F) -> Result<(), E>
-where
-    F: Future<Output = Result<(), E>>,
-{
-    assert!(poll < timeout);
-    let start = Instant::now();
-    tracing::info!("=== wait_for() up to {:?} ===", timeout);
-    loop {
-        let result = f().await;
-        match &result {
-            Ok(()) => break,
-            Err(_) => {
-                if start.elapsed() > timeout {
-                    return result;
-                }
-
-                tokio::time::sleep(poll).await;
-            }
-        }
-    }
-    tracing::info!("=== wait_for() success after {:?} ===", start.elapsed());
-    Ok(())
-}
-
-pub async fn wait_for_resetting<F, E>(
-    poll: Duration,
-    timeout: Duration,
-    f: impl Fn() -> F,
-) -> Result<(), E>
-where
-    F: Future<Output = Result<(), E>>,
-    E: std::fmt::Debug + PartialEq,
-{
-    assert!(poll < timeout);
-    let mut start = Instant::now();
-    tracing::info!("=== wait_for_resetting() up to {:?} ===", timeout);
-    let mut previous = None;
-    loop {
-        let result = f().await;
-        match &result {
-            Ok(()) => break,
-            Err(_) => {
-                if start.elapsed() > timeout {
-                    return result;
-                }
-
-                if previous.as_ref() != Some(&result) {
-                    start = Instant::now();
-                }
-
-                previous = Some(result);
-
-                tokio::time::sleep(poll).await;
-            }
-        }
-    }
-    tracing::info!(
-        "=== wait_for_resetting() success after {:?} ===",
-        start.elapsed()
-    );
-    Ok(())
 }

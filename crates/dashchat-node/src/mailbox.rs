@@ -78,7 +78,6 @@ impl From<MailboxOperation> for Operation {
 #[cfg(test)]
 
 mod tests {
-    use std::time::Duration;
 
     use crate::{testing::*, *};
     use mailbox_client::{MailboxClient, mem::MemMailbox};
@@ -103,6 +102,7 @@ mod tests {
 
         let mb = MemMailbox::new();
         let config = NodeConfig::testing();
+        let poll = PollConfig::default();
 
         // Start with no mailbox
         let alice = TestNode::new(config.clone(), "alice").await;
@@ -120,17 +120,13 @@ mod tests {
         bobbi.register_topic(chat).await.unwrap();
         println!("=== added mailboxes ===");
 
-        wait_for(
-            Duration::from_millis(100),
-            Duration::from_secs(5),
-            || async {
-                if bobbi.get_messages(chat).await.unwrap().len() == 1 {
-                    Ok(())
-                } else {
-                    Err("message not received")
-                }
-            },
-        )
+        poll.wait_for(|| async {
+            if bobbi.get_messages(chat).await.unwrap().len() == 1 {
+                Ok(())
+            } else {
+                Err("message not received")
+            }
+        })
         .await
         .unwrap();
     }
@@ -150,6 +146,7 @@ mod tests {
 
         let mb = MemMailbox::new();
         let config = NodeConfig::testing();
+        let poll = PollConfig::default();
 
         let alice = TestNode::new(config.clone(), "alice").await;
         let bobbi = TestNode::new(config.clone(), "bobbi").await;
@@ -163,17 +160,13 @@ mod tests {
 
         alice.send_message(chat, "Hello".into()).await.unwrap();
 
-        wait_for(
-            Duration::from_millis(100),
-            Duration::from_secs(5),
-            || async {
-                if bobbi.get_messages(chat).await.unwrap().len() == 1 {
-                    Ok(())
-                } else {
-                    Err("message not received")
-                }
-            },
-        )
+        poll.wait_for(|| async {
+            if bobbi.get_messages(chat).await.unwrap().len() == 1 {
+                Ok(())
+            } else {
+                Err("message not received")
+            }
+        })
         .await
         .unwrap();
 
@@ -195,27 +188,23 @@ mod tests {
             .await
             .expect("bobbi sync state missing");
 
-        wait_for(
-            Duration::from_millis(100),
-            Duration::from_secs(5),
-            || async {
-                let alice_seq = alice_sync
-                    .borrow()
-                    .get(&chat_id)
-                    .and_then(|m| m.get(&alice_device))
-                    .copied();
-                let bobbi_seq = bobbi_sync
-                    .borrow()
-                    .get(&chat_id)
-                    .and_then(|m| m.get(&alice_device))
-                    .copied();
-                if alice_seq == Some(0) && bobbi_seq == Some(0) {
-                    Ok(())
-                } else {
-                    Err("watermark not recorded")
-                }
-            },
-        )
+        poll.wait_for(|| async {
+            let alice_seq = alice_sync
+                .borrow()
+                .get(&chat_id)
+                .and_then(|m| m.get(&alice_device))
+                .copied();
+            let bobbi_seq = bobbi_sync
+                .borrow()
+                .get(&chat_id)
+                .and_then(|m| m.get(&alice_device))
+                .copied();
+            if alice_seq == Some(0) && bobbi_seq == Some(0) {
+                Ok(())
+            } else {
+                Err("watermark not recorded")
+            }
+        })
         .await
         .unwrap();
     }

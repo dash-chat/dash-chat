@@ -1,8 +1,7 @@
 use dashchat_node::ChatMessageContent;
-use dashchat_node::testing::{ClusterConfig, TestNode, TestNodeConfig, consistency, wait_for};
+use dashchat_node::testing::{PollConfig, TestNode, TestNodeConfig};
 use dashchat_node::{ShareIntent, compat::Capabilities, node::NodeConfig};
 use mailbox_client::mem::MemMailbox;
-use std::time::Duration;
 
 /// Capability upgrade in a direct chat:
 /// - Start with both nodes at zero capabilities, exchange messages (V0)
@@ -17,6 +16,7 @@ async fn direct_chat_capability_upgrade() {
     let mut bobbi_config = TestNodeConfig::default();
     bobbi_config.node_config.capabilities = Capabilities::zero();
 
+    let poll = PollConfig::default();
     let mailbox = MemMailbox::new();
     let alice = TestNode::new(alice_config, "alice")
         .await
@@ -41,19 +41,15 @@ async fn direct_chat_capability_upgrade() {
         .await
         .unwrap();
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let ma = alice.get_messages(chat).await.unwrap();
-            let mb = bobbi.get_messages(chat).await.unwrap();
-            if ma.len() == 1 && mb.len() == 1 {
-                Ok(())
-            } else {
-                Err("waiting for v0 message")
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let ma = alice.get_messages(chat).await.unwrap();
+        let mb = bobbi.get_messages(chat).await.unwrap();
+        if ma.len() == 1 && mb.len() == 1 {
+            Ok(())
+        } else {
+            Err("waiting for v0 message")
+        }
+    })
     .await
     .unwrap();
 
@@ -75,43 +71,35 @@ async fn direct_chat_capability_upgrade() {
     .await;
 
     // Wait for bobbi to learn alice's updated capabilities via the mailbox.
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let caps = bobbi
-                .local_store
-                .get_capabilities(bobbi.device_id())
-                .await
-                .unwrap();
-            // Also verify alice still sees bobbi as zero
-            let alice_sees_bobbi = alice
-                .local_store
-                .get_capabilities(bobbi.device_id())
-                .await
-                .unwrap();
-            if caps.is_some() && alice_sees_bobbi == Some(Capabilities::zero()) {
-                Ok(())
-            } else {
-                Err("waiting for capabilities to propagate after alice upgrade")
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let caps = bobbi
+            .local_store
+            .get_capabilities(bobbi.device_id())
+            .await
+            .unwrap();
+        // Also verify alice still sees bobbi as zero
+        let alice_sees_bobbi = alice
+            .local_store
+            .get_capabilities(bobbi.device_id())
+            .await
+            .unwrap();
+        if caps.is_some() && alice_sees_bobbi == Some(Capabilities::zero()) {
+            Ok(())
+        } else {
+            Err("waiting for capabilities to propagate after alice upgrade")
+        }
+    })
     .await
     .unwrap();
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let members = alice.get_group_members(chat).await.unwrap();
-            if members.contains(&(bobbi.device_id(), p2panda_auth::Access::write())) {
-                Ok(())
-            } else {
-                Err("waiting for bobbi to be added to alice's group")
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let members = alice.get_group_members(chat).await.unwrap();
+        if members.contains(&(bobbi.device_id(), p2panda_auth::Access::write())) {
+            Ok(())
+        } else {
+            Err("waiting for bobbi to be added to alice's group")
+        }
+    })
     .await
     .unwrap();
 
@@ -131,19 +119,15 @@ async fn direct_chat_capability_upgrade() {
         .await
         .unwrap();
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let ma = alice.get_messages(chat).await.unwrap();
-            let mb = bobbi.get_messages(chat).await.unwrap();
-            if ma.len() == 3 && mb.len() == 3 {
-                Ok(())
-            } else {
-                Err("waiting for messages after alice upgrade")
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let ma = alice.get_messages(chat).await.unwrap();
+        let mb = bobbi.get_messages(chat).await.unwrap();
+        if ma.len() == 3 && mb.len() == 3 {
+            Ok(())
+        } else {
+            Err("waiting for messages after alice upgrade")
+        }
+    })
     .await
     .unwrap();
 
@@ -169,22 +153,18 @@ async fn direct_chat_capability_upgrade() {
     .await;
 
     // Wait for alice to learn bobbi's updated capabilities.
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let caps = alice
-                .local_store
-                .get_capabilities(bobbi.device_id())
-                .await
-                .unwrap();
-            if caps == Some(Capabilities::current()) {
-                Ok(())
-            } else {
-                Err("waiting for alice to see bobbi's upgraded capabilities")
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let caps = alice
+            .local_store
+            .get_capabilities(bobbi.device_id())
+            .await
+            .unwrap();
+        if caps == Some(Capabilities::current()) {
+            Ok(())
+        } else {
+            Err("waiting for alice to see bobbi's upgraded capabilities")
+        }
+    })
     .await
     .unwrap();
 
@@ -204,19 +184,15 @@ async fn direct_chat_capability_upgrade() {
         .await
         .unwrap();
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let ma = alice.get_messages(chat).await.unwrap();
-            let mb = bobbi.get_messages(chat).await.unwrap();
-            if ma.len() == 5 && mb.len() == 5 {
-                Ok(())
-            } else {
-                Err("waiting for v1 messages")
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let ma = alice.get_messages(chat).await.unwrap();
+        let mb = bobbi.get_messages(chat).await.unwrap();
+        if ma.len() == 5 && mb.len() == 5 {
+            Ok(())
+        } else {
+            Err("waiting for v1 messages")
+        }
+    })
     .await
     .unwrap();
 
@@ -246,6 +222,7 @@ async fn group_chat_capability_upgrade() {
     let mut cammy_config = TestNodeConfig::default();
     cammy_config.node_config.capabilities = Capabilities::zero();
 
+    let poll = PollConfig::default();
     let mailbox = MemMailbox::new();
     let alice = TestNode::new(alice_config, "alice")
         .await
@@ -297,13 +274,9 @@ async fn group_chat_capability_upgrade() {
         .await
         .unwrap();
 
-    consistency(
-        [&alice, &bobbi],
-        &[chat_id.into()],
-        &ClusterConfig::default(),
-    )
-    .await
-    .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
 
     println!("### {:3.1?} bobbi adding cammy", start.elapsed());
 
@@ -322,13 +295,9 @@ async fn group_chat_capability_upgrade() {
         .await
         .unwrap();
 
-    consistency(
-        [&alice, &bobbi, &cammy],
-        &[chat_id.into()],
-        &ClusterConfig::default(),
-    )
-    .await
-    .unwrap();
+    poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
 
     assert!(alice.subscribed_topics().await.contains(&chat_id));
     assert!(bobbi.subscribed_topics().await.contains(&chat_id));
@@ -342,22 +311,18 @@ async fn group_chat_capability_upgrade() {
         .await
         .unwrap();
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let counts = [
-                alice.get_messages(chat_id).await.unwrap().len(),
-                bobbi.get_messages(chat_id).await.unwrap().len(),
-                cammy.get_messages(chat_id).await.unwrap().len(),
-            ];
-            if counts.iter().all(|&c| c == 1) {
-                Ok(())
-            } else {
-                Err(format!("waiting for zero-msg-1, counts: {:?}", counts))
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let counts = [
+            alice.get_messages(chat_id).await.unwrap().len(),
+            bobbi.get_messages(chat_id).await.unwrap().len(),
+            cammy.get_messages(chat_id).await.unwrap().len(),
+        ];
+        if counts.iter().all(|&c| c == 1) {
+            Ok(())
+        } else {
+            Err(format!("waiting for zero-msg-1, counts: {:?}", counts))
+        }
+    })
     .await
     .unwrap();
 
@@ -408,29 +373,25 @@ async fn group_chat_capability_upgrade() {
     // Wait for bobbi to learn alice's updated capabilities (bobbi knows alice).
     // Cammy knows bobbi, so when bobbi propagates alice's capability to the group,
     // the group infimum will still be zero (cammy is still zero).
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let bobbi_sees_alice = bobbi
-                .local_store
-                .get_capabilities(alice.device_id())
-                .await
-                .unwrap();
-            let cammy_sees_bobbi = cammy
-                .local_store
-                .get_capabilities(bobbi.device_id())
-                .await
-                .unwrap();
-            if bobbi_sees_alice == Some(Capabilities::current())
-                && cammy_sees_bobbi == Some(Capabilities::current())
-            {
-                Ok(())
-            } else {
-                Err("waiting for capabilities to propagate after alice and bobbi upgrade")
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let bobbi_sees_alice = bobbi
+            .local_store
+            .get_capabilities(alice.device_id())
+            .await
+            .unwrap();
+        let cammy_sees_bobbi = cammy
+            .local_store
+            .get_capabilities(bobbi.device_id())
+            .await
+            .unwrap();
+        if bobbi_sees_alice == Some(Capabilities::current())
+            && cammy_sees_bobbi == Some(Capabilities::current())
+        {
+            Ok(())
+        } else {
+            Err("waiting for capabilities to propagate after alice and bobbi upgrade")
+        }
+    })
     .await
     .unwrap();
 
@@ -460,22 +421,18 @@ async fn group_chat_capability_upgrade() {
 
     println!("### {:3.1?} all wait for all messages", start.elapsed());
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let counts = [
-                alice.get_messages(chat_id).await.unwrap().len(),
-                bobbi.get_messages(chat_id).await.unwrap().len(),
-                cammy.get_messages(chat_id).await.unwrap().len(),
-            ];
-            if counts.iter().all(|&c| c == 2) {
-                Ok(())
-            } else {
-                Err("waiting for still-zero-msg-2")
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let counts = [
+            alice.get_messages(chat_id).await.unwrap().len(),
+            bobbi.get_messages(chat_id).await.unwrap().len(),
+            cammy.get_messages(chat_id).await.unwrap().len(),
+        ];
+        if counts.iter().all(|&c| c == 2) {
+            Ok(())
+        } else {
+            Err("waiting for still-zero-msg-2")
+        }
+    })
     .await
     .unwrap();
 
@@ -502,22 +459,18 @@ async fn group_chat_capability_upgrade() {
     .await;
 
     // Wait for bobbi to learn cammy's updated capabilities (bobbi knows cammy).
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let bobbi_sees_cammy = bobbi
-                .local_store
-                .get_capabilities(cammy.device_id())
-                .await
-                .unwrap();
-            if bobbi_sees_cammy == Some(Capabilities::current()) {
-                Ok(())
-            } else {
-                Err("waiting for bobbi to see cammy's upgraded capabilities")
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let bobbi_sees_cammy = bobbi
+            .local_store
+            .get_capabilities(cammy.device_id())
+            .await
+            .unwrap();
+        if bobbi_sees_cammy == Some(Capabilities::current()) {
+            Ok(())
+        } else {
+            Err("waiting for bobbi to see cammy's upgraded capabilities")
+        }
+    })
     .await
     .unwrap();
 
@@ -541,22 +494,18 @@ async fn group_chat_capability_upgrade() {
         .await
         .unwrap();
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let counts = [
-                alice.get_messages(chat_id).await.unwrap().len(),
-                bobbi.get_messages(chat_id).await.unwrap().len(),
-                cammy.get_messages(chat_id).await.unwrap().len(),
-            ];
-            if counts.iter().all(|&c| c == 3) {
-                Ok(())
-            } else {
-                Err("waiting for v1-msg-3")
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let counts = [
+            alice.get_messages(chat_id).await.unwrap().len(),
+            bobbi.get_messages(chat_id).await.unwrap().len(),
+            cammy.get_messages(chat_id).await.unwrap().len(),
+        ];
+        if counts.iter().all(|&c| c == 3) {
+            Ok(())
+        } else {
+            Err("waiting for v1-msg-3")
+        }
+    })
     .await
     .unwrap();
 
@@ -595,22 +544,18 @@ async fn group_chat_capability_upgrade() {
         .unwrap();
 
     // Wait for bobbi to learn danae's capabilities (danae contacted bobbi, so bobbi knows danae).
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let bobbi_sees_danae = bobbi
-                .local_store
-                .get_capabilities(danae.device_id())
-                .await
-                .unwrap();
-            if bobbi_sees_danae == Some(Capabilities::zero()) {
-                Ok(())
-            } else {
-                Err("waiting for bobbi to learn danae's zero capabilities")
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let bobbi_sees_danae = bobbi
+            .local_store
+            .get_capabilities(danae.device_id())
+            .await
+            .unwrap();
+        if bobbi_sees_danae == Some(Capabilities::zero()) {
+            Ok(())
+        } else {
+            Err("waiting for bobbi to learn danae's zero capabilities")
+        }
+    })
     .await
     .unwrap();
 
@@ -638,23 +583,19 @@ async fn group_chat_capability_upgrade() {
         .await
         .unwrap();
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            let counts = [
-                alice.get_messages(chat_id).await.unwrap().len(),
-                bobbi.get_messages(chat_id).await.unwrap().len(),
-                cammy.get_messages(chat_id).await.unwrap().len(),
-                danae.get_messages(chat_id).await.unwrap().len(),
-            ];
-            if counts.iter().all(|&c| c == 4) {
-                Ok(())
-            } else {
-                Err("waiting for back-to-zero-msg-4")
-            }
-        },
-    )
+    poll.wait_for(|| async {
+        let counts = [
+            alice.get_messages(chat_id).await.unwrap().len(),
+            bobbi.get_messages(chat_id).await.unwrap().len(),
+            cammy.get_messages(chat_id).await.unwrap().len(),
+            danae.get_messages(chat_id).await.unwrap().len(),
+        ];
+        if counts.iter().all(|&c| c == 4) {
+            Ok(())
+        } else {
+            Err("waiting for back-to-zero-msg-4")
+        }
+    })
     .await
     .unwrap();
     let msgs = bobbi.get_messages(chat_id).await.unwrap();
