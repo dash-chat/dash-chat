@@ -258,7 +258,7 @@ async fn auth_control_op_notification(
 ) -> Option<NotificationData> {
     let action = &header.extensions.auth.as_ref()?.action;
 
-    let target_is_me = |member: &p2panda_auth::group::GroupMember<p2panda_core::PublicKey>| {
+    let target_is_me = |member: &p2panda_auth::group::GroupMember<p2panda_core::VerifyingKey>| {
         matches!(
             member,
             p2panda_auth::group::GroupMember::Individual(pk) if DeviceId::from(*pk) == node.device_id()

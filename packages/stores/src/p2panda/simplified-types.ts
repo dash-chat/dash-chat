@@ -33,7 +33,7 @@ export interface SimplifiedHeader {
 	auth?: GroupsArgs;
 }
 
-export type AuthGroupMember = { Individual: PublicKey } | { Group: PublicKey };
+export type AuthGroupMember = { Individual: VerifyingKey } | { Group: VerifyingKey };
 
 /// `Access<()>` from p2panda-auth. The chat-list summary only inspects the action discriminant,
 /// so the inner shape is opaque here.
@@ -47,7 +47,7 @@ export type GroupAction =
 	| { Demote: { member: AuthGroupMember; access: GroupAccess } };
 
 export interface GroupsArgs {
-	group_id: PublicKey;
+	group_id: VerifyingKey;
 	action: GroupAction;
 	dependencies: Hash[];
 }
