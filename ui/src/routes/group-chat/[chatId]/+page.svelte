@@ -277,6 +277,14 @@
 														{chatId}
 														searchQuery=""
 														onToggleReaction={() => {}}
+														sender={(position === 'first' ||
+															position === 'single') &&
+														author?.profile?.name
+															? {
+																	name: author.profile.name,
+																	color: senderColor(message.author),
+																}
+															: undefined}
 													/>
 												</div>
 											{/if}
