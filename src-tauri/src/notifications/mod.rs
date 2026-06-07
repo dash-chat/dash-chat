@@ -256,7 +256,9 @@ async fn auth_control_op_notification(
     sender_device_id: DeviceId,
     id: i32,
 ) -> Option<NotificationData> {
-    let action = &header.extensions.auth.as_ref()?.action;
+    type GroupAction = p2panda_auth::group::GroupAction<p2panda_core::VerifyingKey>;
+
+    let action = &header.extensions.groups_args.as_ref()?.action;
 
     let target_is_me = |member: &p2panda_auth::group::GroupMember<p2panda_core::VerifyingKey>| {
         matches!(
@@ -276,11 +278,9 @@ async fn auth_control_op_notification(
             .map(|profile| profile.name),
         None => None,
     };
+    let topic_id = TopicId::from(header.extensions.log_id);
 
-    let group_route = Some(format!(
-        "/group-chat/{}",
-        hex::encode(&*header.extensions.topic)
-    ));
+    let group_route = Some(format!("/group-chat/{}", hex::encode(&*topic_id)));
 
     let (title, body, route) = match action {
         // A Create can mean either: (a) the acceptor authoring a new
@@ -288,9 +288,9 @@ async fn auth_control_op_notification(
         // creating a new group with us in it. Distinguish by checking whether
         // the topic matches the deterministic direct-chat topic with the
         // sender.
-        p2panda_auth::group::GroupAction::Create { .. } => {
+        GroupAction::Create { .. } => {
             let is_direct_chat = sender_agent_id
-                .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == header.extensions.topic)
+                .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == topic_id)
                 .unwrap_or(false);
             if is_direct_chat {
                 let title = match &sender_name {
@@ -309,8 +309,8 @@ async fn auth_control_op_notification(
                 ("mygroup".to_string(), Some(body), group_route)
             }
         }
-        p2panda_auth::group::GroupAction::Add { member, .. } => {
-            if !target_is_me(member) {
+        GroupAction::Add { member, .. } => {
+            if !target_is_me(&member) {
                 return None;
             }
             let body = match &sender_name {
@@ -321,8 +321,8 @@ async fn auth_control_op_notification(
             // the UI currently hardcodes "mygroup" too (see GroupChatStore.info).
             ("mygroup".to_string(), Some(body), group_route)
         }
-        p2panda_auth::group::GroupAction::Remove { member } => {
-            if !target_is_me(member) {
+        GroupAction::Remove { member } => {
+            if !target_is_me(&member) {
                 return None;
             }
             let title = match &sender_name {
@@ -331,8 +331,8 @@ async fn auth_control_op_notification(
             };
             (title, None, group_route)
         }
-        p2panda_auth::group::GroupAction::Promote { member, .. } => {
-            if !target_is_me(member) {
+        GroupAction::Promote { member, .. } => {
+            if !target_is_me(&member) {
                 return None;
             }
             let title = match &sender_name {
@@ -341,8 +341,8 @@ async fn auth_control_op_notification(
             };
             (title, None, group_route)
         }
-        p2panda_auth::group::GroupAction::Demote { member, .. } => {
-            if !target_is_me(member) {
+        GroupAction::Demote { member, .. } => {
+            if !target_is_me(&member) {
                 return None;
             }
             let title = match &sender_name {
