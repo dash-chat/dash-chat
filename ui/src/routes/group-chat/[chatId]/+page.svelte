@@ -218,7 +218,7 @@
 													style="--size: 2rem"
 												/>
 											{:else}
-												<div class="shrink-0" style="width: 2.5rem"></div>
+												<div class="shrink-0" style="width: 2rem"></div>
 											{/if}
 											<MessageFromOthers
 												{message}
