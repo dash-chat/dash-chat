@@ -2,7 +2,7 @@ import { type ReactivePromise, reactive, relay } from 'signalium';
 
 import type { LogsClient } from './logs-client';
 import type { SimplifiedOperation } from './simplified-types';
-import type { VerifyingKey, TopicId } from './types';
+import type { TopicId, VerifyingKey } from './types';
 
 /// Stopgap: re-fetch each subscribed log on this interval as a safety net for
 /// `p2panda://new-operation` events that don't reach this process. Concretely,
@@ -121,8 +121,10 @@ export class LogsStore<PAYLOAD> {
 			authorsForTopic.map(author => this.logs(topicId, author)),
 		);
 
-		const logsForAllAuthors: Record<VerifyingKey, SimplifiedOperation<PAYLOAD>[]> =
-			{};
+		const logsForAllAuthors: Record<
+			VerifyingKey,
+			SimplifiedOperation<PAYLOAD>[]
+		> = {};
 		for (let i = 0; i < authorsForTopic.length; i++) {
 			logsForAllAuthors[authorsForTopic[i]] = logs[i];
 		}

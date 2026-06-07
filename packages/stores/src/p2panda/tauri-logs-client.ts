@@ -4,7 +4,7 @@ import { type UnsubscribeFunction } from 'emittery';
 
 import type { LogsClient } from './logs-client';
 import type { SimplifiedOperation } from './simplified-types';
-import type { VerifyingKey, TopicId } from './types';
+import type { TopicId, VerifyingKey } from './types';
 
 export class TauriLogsClient<PAYLOAD> implements LogsClient<PAYLOAD> {
 	// myPubKey(): Promise<VerifyingKey> {

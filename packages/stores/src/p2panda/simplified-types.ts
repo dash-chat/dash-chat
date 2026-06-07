@@ -33,7 +33,9 @@ export interface SimplifiedHeader {
 	auth?: GroupsArgs;
 }
 
-export type AuthGroupMember = { Individual: VerifyingKey } | { Group: VerifyingKey };
+export type AuthGroupMember =
+	| { Individual: VerifyingKey }
+	| { Group: VerifyingKey };
 
 /// `Access<()>` from p2panda-auth. The chat-list summary only inspects the action discriminant,
 /// so the inner shape is opaque here.

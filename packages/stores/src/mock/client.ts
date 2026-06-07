@@ -11,8 +11,8 @@ import type {
 	Header,
 	LogId,
 	Operation,
-	VerifyingKey,
 	TopicId,
+	VerifyingKey,
 } from './../p2panda/types';
 
 export function hash<T>(obj: T): Hash {
