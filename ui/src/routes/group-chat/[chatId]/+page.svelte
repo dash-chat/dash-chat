@@ -22,7 +22,10 @@
 	import MessageInput from '$lib/components/MessageInput.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import {
+		messagePosition,
+		senderColor,
+	} from '$lib/components/messages/message-helpers';
 	import { showToast } from '$lib/utils/toasts';
 	import { m } from '$lib/paraglide/messages';
 
@@ -227,6 +230,14 @@
 												{chatId}
 												searchQuery=""
 												onToggleReaction={() => {}}
+												sender={(position === 'first' ||
+													position === 'single') &&
+												author?.profile?.name
+													? {
+															name: author.profile.name,
+															color: senderColor(message.author),
+														}
+													: undefined}
 											/>
 										</div>
 									{/if}
