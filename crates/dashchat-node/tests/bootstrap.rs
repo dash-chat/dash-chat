@@ -8,6 +8,8 @@ const TRACING_FILTER: [&str; 1] = ["dashchat=debug"];
 async fn test_mailbox_bootstrap() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
+    let poll = PollConfig::default();
+
     let mut alice_config = NodeConfig::testing();
     // NOTE: mDNS discovery is disabled by default in testing environment anyway but adding here
     // so it is made explicit in this test.
@@ -48,4 +50,17 @@ async fn test_mailbox_bootstrap() {
         .send_message(direct_chat_topic, "Hello".into())
         .await
         .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[direct_chat_topic.into()])
+        .await
+        .unwrap();
+
+    let alice_messages = alice.get_messages(direct_chat_topic).await.unwrap();
+    let bobbi_messages = bobbi.get_messages(direct_chat_topic).await.unwrap();
+
+    assert_eq!(alice_messages, bobbi_messages);
+    assert_eq!(
+        bobbi_messages.first().map(|m| m.content.clone()),
+        Some("Hello".into())
+    );
 }
