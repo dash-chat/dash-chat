@@ -244,7 +244,7 @@ async fn run_interface_watcher(
                     }
                 }
 
-                if !debounce_burst(&mut watcher, &mut stop).await {
+                if !debounce_reannounce_burst(&mut watcher, &mut stop).await {
                     return;
                 }
                 reannounce_mdns(&daemon, &fullname, port, &device_id);
@@ -253,10 +253,10 @@ async fn run_interface_watcher(
     }
 }
 
-/// Wait 500ms after an interface event, draining any further events that arrive
-/// during the window so a burst of related changes triggers a single re-announce.
-/// Returns false if the stop signal fired during the wait.
-async fn debounce_burst(
+/// Wait 500ms after an interface event so a burst of related changes triggers
+/// a single re-announce. Returns false if the stop signal fired during the
+/// wait (caller should treat that as shutdown) or if the watcher stream ended.
+async fn debounce_reannounce_burst(
     watcher: &mut if_watch::tokio::IfWatcher,
     stop: &mut tokio::sync::oneshot::Receiver<()>,
 ) -> bool {

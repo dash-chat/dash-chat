@@ -50,10 +50,8 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     let mut handler_task = tokio::spawn(handle_browse_events(node.clone(), receiver));
 
     // The browse receiver is tied to the interface set the daemon had at
-    // `browse()` time; when the device switches Wi-Fi networks (or a new
-    // interface like macOS's bridge100 from Internet Sharing appears later),
-    // services on the new interface aren't picked up until we re-issue the
-    // browse. Mirror what the server side does for re-announcement.
+    // `browse()` time; when the device switches networks services on the
+    // new interface aren't picked up until we re-issue the browse.
     tokio::spawn(async move {
         use futures::StreamExt;
         let mut watcher = match if_watch::tokio::IfWatcher::new() {
@@ -67,10 +65,14 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
         while let Some(event) = watcher.next().await {
             match event {
                 Ok(if_watch::IfEvent::Up(net)) => {
-                    log::info!("Mailbox browse interface watcher: up {net}, refreshing mDNS browse");
+                    log::info!(
+                        "Mailbox browse interface watcher: up {net}, refreshing mDNS browse"
+                    );
                 }
                 Ok(if_watch::IfEvent::Down(net)) => {
-                    log::info!("Mailbox browse interface watcher: down {net}, refreshing mDNS browse");
+                    log::info!(
+                        "Mailbox browse interface watcher: down {net}, refreshing mDNS browse"
+                    );
                 }
                 Err(err) => {
                     log::warn!("Mailbox browse interface watcher error: {err:?}");
@@ -78,10 +80,7 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
                 }
             }
 
-            // Debounce 500ms so a burst of related interface events (a typical
-            // Wi-Fi handoff produces several in quick succession) triggers a
-            // single refresh.
-            debounce_browse_burst(&mut watcher).await;
+            debounce_rebrowse_burst(&mut watcher).await;
 
             // Tear down the current browse + handler, then restart against the
             // now-current interface set. `stop_browse` closes the existing
@@ -128,13 +127,8 @@ async fn handle_browse_events(
                     instance_name_from_fullname(&resolved.fullname, &resolved.ty_domain);
                 let port = resolved.port;
 
-                // IPv4 only. The local mailbox server binds `0.0.0.0:port`, so
-                // any v6 record in the announcement would point at a port
-                // nothing is listening on (ECONNREFUSED at best, link-local
-                // zone-id headaches at worst). If the server is ever switched
-                // to dual-stack (`[::]:port`), reintroduce v6 here at the same
-                // time. Loopback is also rejected — the announcer's `lo0` is
-                // *our* `lo0` and points at ourselves, not the remote host.
+                // Consider IPv4 addresses only.
+                // iOS needs a zone ID to be able to use IPv6 addresses.
                 let host = resolved.addresses.iter().find_map(|addr| match addr {
                     mdns_sd::ScopedIp::V4(ip) if !ip.addr().is_loopback() => {
                         Some(ip.addr().to_string())
@@ -163,9 +157,7 @@ async fn handle_browse_events(
             mdns_sd::ServiceEvent::ServiceRemoved(ty_domain, fullname) => {
                 let mailbox_id = instance_name_from_fullname(&fullname, &ty_domain);
                 if node.mailboxes.unregister(&mailbox_id).await {
-                    log::info!(
-                        "*** Removed local mailbox client via mdns: {mailbox_id} ***"
-                    );
+                    log::info!("*** Removed local mailbox client via mdns: {mailbox_id} ***");
                 }
             }
             other_event => {
@@ -210,9 +202,12 @@ fn strip_collision_suffix(name: &str) -> &str {
     }
 }
 
-/// Drain interface events for 500ms so a burst of related changes (typical
-/// during a Wi-Fi handoff) collapses into a single refresh.
-async fn debounce_browse_burst(watcher: &mut if_watch::tokio::IfWatcher) {
+/// Wait 500ms after an interface event so a burst of related changes
+/// (a typical Wi-Fi handoff produces several in quick succession) triggers
+/// a single re-browse. The browse side has no cancel signal — if the watcher
+/// stream ends inside the window, the outer loop exits on its own next
+/// iteration.
+async fn debounce_rebrowse_burst(watcher: &mut if_watch::tokio::IfWatcher) {
     use futures::StreamExt;
     let debounce = tokio::time::sleep(std::time::Duration::from_millis(500));
     tokio::pin!(debounce);
