@@ -54,7 +54,10 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
                     let mailbox_id = resolved.fullname;
                     let port = resolved.port;
 
-                    // Prefer IPv4, fall back to IPv6 with bracket notation
+                    // Prefer IPv4, fall back to non-link-local IPv6.
+                    // Link-local IPv6 (fe80::/10) needs a `%ifN` zone identifier to be
+                    // routable; the announcer's interface index isn't usable from here.
+                    // Without a zone, iOS TCP connect fails with EHOSTUNREACH.
                     let host = resolved
                         .addresses
                         .iter()
@@ -64,13 +67,19 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
                         })
                         .or_else(|| {
                             resolved.addresses.iter().find_map(|addr| match addr {
-                                mdns_sd::ScopedIp::V6(ip) => Some(format!("[{}]", ip.addr())),
+                                mdns_sd::ScopedIp::V6(ip)
+                                    if !ip.addr().is_unicast_link_local() =>
+                                {
+                                    Some(format!("[{}]", ip.addr()))
+                                }
                                 _ => None,
                             })
                         });
 
                     let Some(host) = host else {
-                        log::warn!("Resolved mdns service {mailbox_id} has no addresses, skipping");
+                        log::info!(
+                            "Resolved mdns service {mailbox_id} has no usable addresses (only link-local IPv6?), waiting for next announcement"
+                        );
                         continue;
                     };
 
