@@ -38,8 +38,19 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
 
-    // Manage the mDNS service daemon
-    app_handle.manage(mdns_sd::ServiceDaemon::new()?);
+    // Manage the mDNS service daemon. Disable loopback interfaces before any
+    // browse/register calls so we never announce or resolve at `127.0.0.1` /
+    // `::1` — those aren't reachable from remote peers and self-discovery
+    // (the desktop browsing its own announcement) just creates a useless
+    // mailbox client pointing at our own loopback.
+    let daemon = mdns_sd::ServiceDaemon::new()?;
+    if let Err(err) = daemon.disable_interface(vec![
+        mdns_sd::IfKind::LoopbackV4,
+        mdns_sd::IfKind::LoopbackV6,
+    ]) {
+        log::warn!("Failed to disable loopback interfaces on mDNS daemon: {err:?}");
+    }
+    app_handle.manage(daemon);
 
     let fs = FileSystem::new(&app_handle)?;
     let local_data_path = fs.app_data_dir().clone();
