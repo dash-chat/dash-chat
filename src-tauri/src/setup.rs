@@ -16,6 +16,7 @@ pub(crate) async fn build_node(
         let mut config = dashchat_node::NodeConfig::default();
         config.mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
         config.mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
+        config.mdns_mode = p2panda::network::MdnsDiscoveryMode::Disabled;
         config
     } else {
         dashchat_node::NodeConfig::default()
