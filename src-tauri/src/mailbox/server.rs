@@ -10,6 +10,8 @@ pub(crate) struct LocalMailboxState {
     stop_signal: tokio::sync::oneshot::Sender<()>,
     server: tokio::task::JoinHandle<()>,
     mdns_fullname: String,
+    interface_watcher_stop: tokio::sync::oneshot::Sender<()>,
+    interface_watcher: tokio::task::JoinHandle<()>,
 }
 
 pub(crate) type LocalMailboxMutex = Mutex<Option<LocalMailboxState>>;
@@ -27,41 +29,9 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     let stop_signal_rx = stop_signal_rx.map(|f| f.expect("failed to listen for event"));
     let path = FileSystem::new(handle)?.local_mailbox_db_path();
 
-    let mut last_err = None;
-    let mut port = 0;
-    let mut mdns_fullname = String::new();
-    let mut registered = false;
-    for attempt in 1..=3 {
-        port = free_port()?;
-        let service = mdns_service_info(port, &device_id)?;
-        let fullname = service.get_fullname().to_string();
-        log::info!(
-            "Registering local mailbox service via mdns: {} ({})",
-            fullname,
-            service.get_type()
-        );
-
-        match handle.state::<ServiceDaemon>().register(service) {
-            Ok(()) => {
-                mdns_fullname = fullname;
-                registered = true;
-                last_err = None;
-                break;
-            }
-            Err(e) => {
-                log::error!("Failed to register local mailbox service via mdns, attempt {attempt} of 3, error: {e:?}");
-                last_err = Some(e);
-            }
-        }
-    }
-    if let Some(e) = last_err {
-        return Err(e.into());
-    }
-    if !registered {
-        return Err(anyhow::anyhow!(
-            "failed to register local mailbox service via mdns after 3 attempts"
-        ));
-    }
+    let daemon: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
+    let port = free_port()?;
+    let mdns_fullname = register_mdns_with_retry(&daemon, port, &device_id, 3)?;
 
     let addr = format!("0.0.0.0:{port}");
     let server = tokio::spawn(async move {
@@ -71,10 +41,27 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         }
     });
 
+    let (interface_watcher_stop, interface_watcher_stop_rx) = tokio::sync::oneshot::channel();
+    let watcher_daemon = daemon.clone();
+    let watcher_fullname = mdns_fullname.clone();
+    let watcher_device_id = device_id.clone();
+    let interface_watcher = tokio::spawn(async move {
+        run_interface_watcher(
+            watcher_daemon,
+            watcher_device_id,
+            port,
+            watcher_fullname,
+            interface_watcher_stop_rx,
+        )
+        .await;
+    });
+
     *guard = Some(LocalMailboxState {
         server,
         stop_signal,
         mdns_fullname,
+        interface_watcher_stop,
+        interface_watcher,
     });
 
     log::info!("Started local mailbox");
@@ -90,6 +77,8 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
         return Ok(());
     };
     log::info!("Sending stop signal to local mailbox...");
+    let _ = state.interface_watcher_stop.send(());
+    let _ = state.interface_watcher.await;
     let _ = state.stop_signal.send(());
     state.server.await?;
     if let Err(e) = handle
@@ -179,6 +168,127 @@ fn free_port() -> anyhow::Result<u16> {
     Ok(listener.local_addr()?.port())
 }
 
+fn register_mdns_with_retry(
+    daemon: &ServiceDaemon,
+    port: u16,
+    device_id: &DeviceId,
+    attempts: u32,
+) -> anyhow::Result<String> {
+    let mut last_err = None;
+    for attempt in 1..=attempts {
+        let service = mdns_service_info(port, device_id)?;
+        let fullname = service.get_fullname().to_string();
+        log::info!(
+            "Registering local mailbox service via mdns: {} ({})",
+            fullname,
+            service.get_type()
+        );
+        match daemon.register(service) {
+            Ok(()) => return Ok(fullname),
+            Err(e) => {
+                log::error!(
+                    "Failed to register local mailbox service via mdns, attempt {attempt} of {attempts}, error: {e:?}"
+                );
+                last_err = Some(e);
+            }
+        }
+    }
+    Err(last_err
+        .map(anyhow::Error::from)
+        .unwrap_or_else(|| anyhow::anyhow!("failed to register local mailbox service via mdns")))
+}
+
+/// Re-announce the mDNS record whenever a network interface comes up or down.
+/// `enable_addr_auto()` only enumerates interfaces at registration time, so without
+/// this the announcement misses interfaces (like macOS Internet Sharing's bridge100)
+/// that appear after the mailbox starts. Returns when the stop signal fires or the
+/// watcher stream ends.
+async fn run_interface_watcher(
+    daemon: ServiceDaemon,
+    device_id: DeviceId,
+    port: u16,
+    fullname: String,
+    mut stop: tokio::sync::oneshot::Receiver<()>,
+) {
+    use futures::StreamExt;
+    let mut watcher = match if_watch::tokio::IfWatcher::new() {
+        Ok(w) => w,
+        Err(err) => {
+            log::warn!("Failed to start mailbox interface watcher: {err:?}");
+            return;
+        }
+    };
+
+    loop {
+        tokio::select! {
+            biased;
+            _ = &mut stop => {
+                log::debug!("Mailbox interface watcher stopped");
+                return;
+            }
+            event = watcher.next() => {
+                let Some(event) = event else {
+                    log::warn!("Mailbox interface watcher stream ended");
+                    return;
+                };
+                match event {
+                    Ok(if_watch::IfEvent::Up(net)) => {
+                        log::info!("Mailbox interface watcher: up {net}, re-announcing mDNS");
+                    }
+                    Ok(if_watch::IfEvent::Down(net)) => {
+                        log::info!("Mailbox interface watcher: down {net}, re-announcing mDNS");
+                    }
+                    Err(err) => {
+                        log::warn!("Mailbox interface watcher error: {err:?}");
+                        continue;
+                    }
+                }
+
+                if !debounce_burst(&mut watcher, &mut stop).await {
+                    return;
+                }
+                reannounce_mdns(&daemon, &fullname, port, &device_id);
+            }
+        }
+    }
+}
+
+/// Wait 500ms after an interface event, draining any further events that arrive
+/// during the window so a burst of related changes triggers a single re-announce.
+/// Returns false if the stop signal fired during the wait.
+async fn debounce_burst(
+    watcher: &mut if_watch::tokio::IfWatcher,
+    stop: &mut tokio::sync::oneshot::Receiver<()>,
+) -> bool {
+    use futures::StreamExt;
+    let debounce = tokio::time::sleep(std::time::Duration::from_millis(500));
+    tokio::pin!(debounce);
+    loop {
+        tokio::select! {
+            biased;
+            _ = &mut *stop => return false,
+            _ = &mut debounce => return true,
+            next = watcher.next() => {
+                if next.is_none() {
+                    return false;
+                }
+            }
+        }
+    }
+}
+
+fn reannounce_mdns(daemon: &ServiceDaemon, fullname: &str, port: u16, device_id: &DeviceId) {
+    let _ = daemon.unregister(fullname);
+    match mdns_service_info(port, device_id) {
+        Ok(service) => {
+            if let Err(err) = daemon.register(service) {
+                log::warn!("Failed to re-register mailbox mDNS: {err:?}");
+            }
+        }
+        Err(err) => log::warn!("Failed to build mDNS service info for re-announce: {err:?}"),
+    }
+}
+
 fn mdns_service_info(port: u16, device_id: &DeviceId) -> anyhow::Result<ServiceInfo> {
     // Derive a stable instance name from the device id so peers can keep using
     // the same MailboxId across restarts. The instance name lives in a single
@@ -187,12 +297,15 @@ fn mdns_service_info(port: u16, device_id: &DeviceId) -> anyhow::Result<ServiceI
     let mut instance_name = device_id.to_string();
     instance_name.truncate(32);
 
-    let host_name = "0.0.0.0.local.";
+    // Per-device hostname so the A/AAAA owner-name doesn't collide with every
+    // other Dash Chat instance on the LAN. A shared hostname can cause one
+    // instance's address cache entry to overwrite another's in the resolver.
+    let host_name = format!("{instance_name}.local.");
 
     Ok(ServiceInfo::new(
         super::MDNS_SERVICE_TYPE,
         &instance_name,
-        host_name,
+        &host_name,
         "",
         port,
         vec![],
