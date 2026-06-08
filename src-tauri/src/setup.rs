@@ -38,7 +38,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
 
-    // Manage the mDNS service daemon.
+    // Manage the mDNS service daemon
     app_handle.manage(mdns_sd::ServiceDaemon::new()?);
 
     let fs = FileSystem::new(&app_handle)?;
