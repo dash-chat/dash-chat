@@ -33,3 +33,10 @@ p2panda-store = { git = "https://github.com/p2panda/p2panda", rev = "b6bdd46abbf
 p2panda-spaces = { git = "https://github.com/p2panda/p2panda", rev = "b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc", features = [
   "test_utils",
 ] }
+
+[patch."https://github.com/p2panda/p2panda"]
+p2panda = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+p2panda-auth = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+p2panda-core = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+p2panda-store = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+p2panda-spaces = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }

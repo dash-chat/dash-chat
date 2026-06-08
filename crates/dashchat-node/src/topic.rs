@@ -181,7 +181,7 @@ impl<K: TopicKind> p2panda_spaces::traits::SpaceId for Topic<K> {}
 impl<K: TopicKind> Topic<K> {
     pub(crate) fn new(id: [u8; 32]) -> Self {
         Self {
-            id: TopicId::try_from(id).unwrap(),
+            id: TopicId::from(id),
             kind: PhantomData::<K>,
         }
     }
@@ -196,8 +196,6 @@ impl<K: TopicKind> Topic<K> {
 
     pub fn alias_named(self, name: &str) -> Self {
         self.id.alias_named(name);
-        p2panda::Topic::from(self.id).alias_named(name);
-        TopicId::from(p2panda::Topic::from(self.id)).alias_named(name);
         self
     }
 }
@@ -274,6 +272,12 @@ impl Topic<kind::DeviceGroup> {
 
 impl Topic<kind::Untyped> {
     /// Declare the actual type of an Untyped topic.
+    ///
+    /// This performs no validation of the underlying bytes against `K`'s
+    /// invariants. For kinds whose bytes must form a valid Ed25519 public key
+    /// (e.g. [`kind::Chat`]), prefer the fallible constructors
+    /// ([`Topic::<kind::Chat>::from_topic_id`]) so downstream code that relies
+    /// on that invariant can't be handed a malformed topic.
     pub fn upcast<K: TopicKind>(self) -> Topic<K> {
         Topic::new(*self.id.as_bytes())
     }
@@ -304,18 +308,13 @@ impl TryFrom<String> for Topic {
     }
 }
 
-// conversion traits for p2panda core types.
-pub fn log2topic(log_id: LogId) -> Topic<kind::Untyped> {
-    Topic::new(*log_id.as_bytes())
-}
-
-pub fn topic2log(topic: impl Into<Topic<kind::Untyped>>) -> LogId {
+pub fn topic_to_log(topic: impl Into<Topic<kind::Untyped>>) -> LogId {
     LogId::from_topic(p2panda::Topic::from(topic.into().id))
 }
 
 impl<K: TopicKind> Serialize for Topic<K> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(&hex::encode(&self.id.as_bytes()))
+        serializer.collect_str(&hex::encode(self.id.as_bytes()))
     }
 }
 
@@ -327,7 +326,7 @@ fn to_fixed_size_array<T>(v: Vec<T>) -> Result<[T; 32], String> {
         Ok(ba) => ba,
         Err(o) => Err(format!(
             "Expected a Vec of length {} but it was {}",
-            4,
+            32,
             o.len()
         ))?,
     };
@@ -358,5 +357,29 @@ impl<'de, K: TopicKind> Deserialize<'de> for Topic<K> {
         deserializer.deserialize_str(Vis {
             phantom_data: PhantomData::<K>,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOPIC_BYTES: [u8; 32] = [0xab; 32];
+    const TOPIC_HEX: &str = "abababababababababababababababababababababababababababababababab";
+
+    #[test]
+    fn upcast_preserves_bytes() {
+        let untyped = Topic::<kind::Untyped>::new(TOPIC_BYTES);
+        let chat: Topic<kind::Chat> = untyped.upcast();
+        assert_eq!(chat.as_bytes(), &TOPIC_BYTES);
+    }
+
+    #[test]
+    fn serializes_to_quoted_hex_string() {
+        let topic = Topic::<kind::Untyped>::new(TOPIC_BYTES);
+        assert_eq!(
+            serde_json::to_string(&topic).unwrap(),
+            format!("\"{}\"", TOPIC_HEX)
+        );
     }
 }
