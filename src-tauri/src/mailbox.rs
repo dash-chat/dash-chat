@@ -128,21 +128,27 @@ async fn handle_browse_events(
                     instance_name_from_fullname(&resolved.fullname, &resolved.ty_domain);
                 let port = resolved.port;
 
-                // Prefer IPv4, fall back to non-link-local IPv6.
-                // Link-local IPv6 (fe80::/10) needs a `%ifN` zone identifier to be
-                // routable; the announcer's interface index isn't usable from here.
-                // Without a zone, iOS TCP connect fails with EHOSTUNREACH.
+                // Prefer IPv4, fall back to non-link-local IPv6. Reject loopback
+                // and link-local addresses in both: the announcer's `lo0` is our
+                // `lo0` from the receiver's perspective (so loopback would point
+                // at ourselves), and link-local IPv6 (fe80::/10) needs a `%ifN`
+                // zone identifier to route — the announcer's interface index
+                // isn't usable from here, and without a zone iOS TCP connect
+                // fails with EHOSTUNREACH.
                 let host = resolved
                     .addresses
                     .iter()
                     .find_map(|addr| match addr {
-                        mdns_sd::ScopedIp::V4(ip) => Some(ip.addr().to_string()),
+                        mdns_sd::ScopedIp::V4(ip) if !ip.addr().is_loopback() => {
+                            Some(ip.addr().to_string())
+                        }
                         _ => None,
                     })
                     .or_else(|| {
                         resolved.addresses.iter().find_map(|addr| match addr {
                             mdns_sd::ScopedIp::V6(ip)
-                                if !ip.addr().is_unicast_link_local() =>
+                                if !ip.addr().is_loopback()
+                                    && !ip.addr().is_unicast_link_local() =>
                             {
                                 Some(format!("[{}]", ip.addr()))
                             }
@@ -152,7 +158,7 @@ async fn handle_browse_events(
 
                 let Some(host) = host else {
                     log::info!(
-                        "Resolved mdns service {mailbox_id} has no usable addresses (only link-local IPv6?), waiting for next announcement"
+                        "Resolved mdns service {mailbox_id} has no usable addresses (only loopback or link-local IPv6?), waiting for next announcement"
                     );
                     continue;
                 };
