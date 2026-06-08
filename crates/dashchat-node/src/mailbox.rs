@@ -1,16 +1,16 @@
+use p2panda::Hash;
 use p2panda::operation::{Header, Operation};
-use p2panda::{Hash, VerifyingKey};
 use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
-use crate::{DeviceId, Topic};
+use crate::{DeviceId, TopicId};
 use mailbox_client::MailboxItem;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MailboxOperation {
     // @TODO: topic is only represented on an operation in it's hashed form. We can't derive it
     // from the header so we add it here as an own field on mailbox operation.
-    pub topic: Topic,
+    pub topic: TopicId,
     pub header: Header,
     pub body: Option<Body>,
 }
@@ -18,7 +18,7 @@ pub struct MailboxOperation {
 impl MailboxItem for MailboxOperation {
     type Hash = Hash;
     type Author = DeviceId;
-    type Topic = Topic;
+    type Topic = TopicId;
 
     fn hash(&self) -> Hash {
         self.header.hash()
@@ -32,7 +32,7 @@ impl MailboxItem for MailboxOperation {
         self.header.seq_num
     }
 
-    fn topic(&self) -> Topic {
+    fn topic(&self) -> TopicId {
         self.topic
     }
 }

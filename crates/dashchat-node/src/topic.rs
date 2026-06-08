@@ -31,7 +31,7 @@
 
 use std::marker::PhantomData;
 
-use crate::{AgentId, ChatId};
+use crate::AgentId;
 
 use aliased::Aliasing;
 use p2panda::operation::LogId;

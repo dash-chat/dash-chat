@@ -5,7 +5,10 @@ pub mod push_notifications;
 pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
-use dashchat_node::{topic::TopicId, DeviceId, Node, Payload, Topic};
+use dashchat_node::{
+    topic::{log2topic, TopicId},
+    DeviceId, Node, Payload, Topic,
+};
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionState};
@@ -49,10 +52,10 @@ pub(crate) async fn show_sync_notification(
     }
 
     let node = app_handle.state::<Node>();
-    let topic_id = notification.header.extensions.log_id.into();
+    let topic_id = log2topic(notification.header.extensions.log_id);
     let data = build_notification_data(
         &node,
-        topic_id,
+        topic_id.into(),
         &notification.header,
         notification.payload.as_ref(),
     )
@@ -140,7 +143,7 @@ pub async fn build_notification_data(
                 title: Some(sonix_i18n::t!("newContactRequest")),
                 body: Some(profile.name.clone()),
                 icon: Some("ic_stat_icon".to_string()),
-                group: Some(hex::encode(&*topic_id)),
+                group: Some(topic_id.to_hex()),
                 route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
                 ..Default::default()
             })
@@ -181,7 +184,7 @@ async fn chat_message_notification(
         .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic_id);
     let chat_route = match direct_chat_agent_id {
         Some(agent_id) => format!("/direct-chats/{}", agent_id.to_hex()),
-        None => format!("/group-chat/{}", hex::encode(&*topic_id)),
+        None => format!("/group-chat/{}", topic_id.to_hex()),
     };
     let message_text: &str = content.message();
     let body_text = match message_text.char_indices().nth(200) {
@@ -196,7 +199,7 @@ async fn chat_message_notification(
         body: Some(body_text),
         icon: Some("ic_stat_icon".to_string()),
         large_icon_bytes: sender_avatar,
-        group: Some(hex::encode(&*topic_id)),
+        group: Some(topic_id.to_hex()),
         route: Some(chat_route),
         ..Default::default()
     };
@@ -217,7 +220,7 @@ async fn chat_message_notification(
 
     #[cfg(target_os = "android")]
     {
-        match stable_notification_id(&*topic_id) {
+        match stable_notification_id(topic_id.as_bytes()) {
             Ok(id) => notification_data.id = id,
             Err(err) => log::error!(
                 "Failed to derive Android MessagingStyle id from topic, falling back to random: {err:?}"

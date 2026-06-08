@@ -4,10 +4,8 @@ use mailbox_server::{Blob, GetBlobsRequest, GetBlobsResponse, StoreBlobsRequest}
 
 use super::*;
 
-pub trait ToyItemTraits: ItemTraits {
-    // fn as_bytes(&self) -> &[u8];
-    fn from_str(s: &str) -> Result<Self, anyhow::Error>;
-}
+pub trait ToyItemTraits: ItemTraits + Serialize + DeserializeOwned {}
+impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {}
 
 /// A client for the toy mailbox server.
 #[derive(Clone)]
@@ -153,20 +151,20 @@ where
     /// Helper functions
 
     fn encode_topic_id(topic_id: &Item::Topic) -> String {
-        hex::encode(topic_id.as_bytes())
+        serde_json::to_string(topic_id).unwrap()
     }
 
     fn device_id_to_log_id(device_id: &Item::Author) -> String {
-        hex::encode(device_id.as_bytes())
+        serde_json::to_string(device_id).unwrap()
     }
 
     fn log_id_from_string(s: &str) -> Result<Item::Topic, anyhow::Error> {
-        let topic: Item::Topic = Item::Topic::from_str(s)?;
+        let topic: Item::Topic = serde_json::from_str(s)?;
         Ok(topic)
     }
 
     fn device_id_from_string(s: &str) -> Result<Item::Author, anyhow::Error> {
-        let author: Item::Author = Item::Author::from_str(s)?;
+        let author: Item::Author = serde_json::from_str(s)?;
         Ok(author)
     }
 

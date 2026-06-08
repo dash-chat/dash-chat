@@ -10,12 +10,7 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 
-use crate::{
-    compat::Capabilities,
-    contact::InboxTopic,
-    topic::{AutoRegisteredTopic, TopicId},
-    *,
-};
+use crate::{compat::Capabilities, contact::InboxTopic, topic::AutoRegisteredTopic, *};
 
 const PRIVATE_KEY_KEY: &str = "private_key";
 const AGENT_ID_KEY: &str = "agent_id";
