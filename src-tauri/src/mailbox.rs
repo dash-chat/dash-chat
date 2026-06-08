@@ -127,25 +127,21 @@ async fn handle_browse_events(
                     instance_name_from_fullname(&resolved.fullname, &resolved.ty_domain);
                 let port = resolved.port;
 
-                // IPv4 only — iOS needs a zone ID to use IPv6 link-local, and
-                // the local mailbox server binds `0.0.0.0:port` so v6 records
-                // would point at a port nothing is listening on. If the
-                // server is ever switched to dual-stack (`[::]:port`),
-                // reintroduce v6 here.
-                //
-                // We probe each v4 address before registering. Non-loopback
-                // first (more stable identity in logs, works regardless of
-                // which side issued the announcement), then loopback as a
-                // fallback. A loopback address from a *remote* announcer
-                // would point at our own loopback — but the probe will fail
-                // unless we happen to be listening on that exact port, which
-                // for a randomly-allocated mailbox server port is vanishingly
-                // unlikely. For our *own* announcement, the loopback fallback
-                // is what makes offline self-discovery work.
-                let host = pick_reachable_v4(&resolved, port).await;
+                // The local mailbox server listens dual-stack (`[::]:port`), so
+                // both IPv4 and IPv6 records are usable. We probe each address
+                // before registering. Non-loopback first (more stable identity
+                // in logs, works regardless of which side issued the
+                // announcement), then loopback as a fallback. A loopback
+                // address from a *remote* announcer would point at our own
+                // loopback — but the probe will fail unless we happen to be
+                // listening on that exact port, which for a randomly-allocated
+                // mailbox server port is vanishingly unlikely. For our *own*
+                // announcement, the loopback fallback is what makes offline
+                // self-discovery work.
+                let host = pick_reachable_host(&resolved, port).await;
                 let Some(host) = host else {
                     log::info!(
-                        "Resolved mdns service {mailbox_id}: no IPv4 address in the announcement is reachable on port {port}, waiting for next announcement"
+                        "Resolved mdns service {mailbox_id}: no address in the announcement is reachable on port {port}, waiting for next announcement"
                     );
                     continue;
                 };
@@ -176,27 +172,39 @@ async fn handle_browse_events(
     log::debug!("mdns browse handler loop ended");
 }
 
-/// Try a TCP connect to each non-loopback IPv4, then to each loopback IPv4,
-/// returning the first that accepts a connection within the probe timeout.
-/// Returns `None` if no address in the announcement is reachable on the given
-/// port. The probe is a bare TCP connect — it doesn't verify the listener is
-/// actually a mailbox server, but in practice no other service shares the
-/// randomly-allocated port.
-async fn pick_reachable_v4(resolved: &mdns_sd::ResolvedService, port: u16) -> Option<String> {
-    let v4s = resolved.addresses.iter().filter_map(|addr| match addr {
-        mdns_sd::ScopedIp::V4(ip) => Some(ip.addr()),
+/// Try a TCP connect to each routable address, then to each loopback address,
+/// returning the first that accepts a connection within the probe timeout,
+/// formatted for a URL authority (IPv6 wrapped in `[...]`). Returns `None` if
+/// no address in the announcement is reachable on the given port. The probe is
+/// a bare TCP connect — it doesn't verify the listener is actually a mailbox
+/// server, but in practice no other service shares the randomly-allocated port.
+async fn pick_reachable_host(resolved: &mdns_sd::ResolvedService, port: u16) -> Option<String> {
+    let ips = resolved.addresses.iter().filter_map(|addr| match addr {
+        mdns_sd::ScopedIp::V4(ip) => Some(std::net::IpAddr::V4(*ip.addr())),
+        // Link-local IPv6 (fe80::/10) needs a `%ifN` zone identifier to route;
+        // the announcer's interface index isn't usable from here, so skip it.
+        mdns_sd::ScopedIp::V6(ip) if !ip.addr().is_unicast_link_local() => {
+            Some(std::net::IpAddr::V6(*ip.addr()))
+        }
         _ => None,
     });
-    let (loopback, routable): (Vec<_>, Vec<_>) = v4s.partition(|ip| ip.is_loopback());
+    let (loopback, routable): (Vec<_>, Vec<_>) = ips.partition(|ip| ip.is_loopback());
     for ip in routable.into_iter().chain(loopback.into_iter()) {
         if probe_tcp(ip, port).await {
-            return Some(ip.to_string());
+            return Some(url_host(ip));
         }
     }
     None
 }
 
-async fn probe_tcp(host: std::net::Ipv4Addr, port: u16) -> bool {
+fn url_host(ip: std::net::IpAddr) -> String {
+    match ip {
+        std::net::IpAddr::V4(ip) => ip.to_string(),
+        std::net::IpAddr::V6(ip) => format!("[{ip}]"),
+    }
+}
+
+async fn probe_tcp(host: std::net::IpAddr, port: u16) -> bool {
     let addr = std::net::SocketAddr::from((host, port));
     let connect = tokio::net::TcpStream::connect(&addr);
     match tokio::time::timeout(std::time::Duration::from_millis(500), connect).await {

@@ -33,7 +33,11 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     let port = free_port()?;
     let mdns_fullname = register_mdns_with_retry(&daemon, port, &device_id, 3)?;
 
-    let addr = format!("0.0.0.0:{port}");
+    // Bind dual-stack so peers can reach us over both the IPv4 and IPv6
+    // addresses the mDNS record auto-announces. A `::` socket accepts IPv4
+    // connections as v4-mapped addresses on platforms where `IPV6_V6ONLY`
+    // defaults off (macOS, Linux).
+    let addr = format!("[::]:{port}");
     let server = tokio::spawn(async move {
         match mailbox_server::spawn_server(path, addr, None, stop_signal_rx).await {
             Ok(_) => (),
