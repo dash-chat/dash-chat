@@ -147,7 +147,7 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
             .subscribed_topics()
             .await?
             .into_iter()
-            .map(|t| PushTopicId::from(hex::encode(&*t)))
+            .map(|t| PushTopicId::from(t.to_hex()))
             .collect();
         topic_ids
     } else {
