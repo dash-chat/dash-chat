@@ -38,17 +38,16 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
 
-    // Manage the mDNS service daemon. Disable loopback interfaces before any
-    // browse/register calls so we never announce or resolve at `127.0.0.1` /
-    // `::1` — those aren't reachable from remote peers and self-discovery
-    // (the desktop browsing its own announcement) just creates a useless
-    // mailbox client pointing at our own loopback.
+    // Manage the mDNS service daemon. Disable IPv6 loopback so we never
+    // announce `::1` — that address isn't reachable from remote peers and the
+    // bug we kept hitting was the browse side registering `http://[::1]:port/`
+    // as a remote mailbox. IPv4 loopback stays enabled because the E2E test
+    // harness runs both agents on a single host and mDNS multicast over `lo`
+    // (V4) is how they discover each other; the browse-side filter still
+    // rejects `127.0.0.1` URLs if any leak through.
     let daemon = mdns_sd::ServiceDaemon::new()?;
-    if let Err(err) = daemon.disable_interface(vec![
-        mdns_sd::IfKind::LoopbackV4,
-        mdns_sd::IfKind::LoopbackV6,
-    ]) {
-        log::warn!("Failed to disable loopback interfaces on mDNS daemon: {err:?}");
+    if let Err(err) = daemon.disable_interface(vec![mdns_sd::IfKind::LoopbackV6]) {
+        log::warn!("Failed to disable IPv6 loopback on mDNS daemon: {err:?}");
     }
     app_handle.manage(daemon);
 
