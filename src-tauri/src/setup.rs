@@ -38,12 +38,20 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
 
-    // Manage the mDNS service daemon. Disable loopback interfaces before any
-    // browse/register calls so we never announce or resolve at `127.0.0.1` /
-    // `::1` — those aren't reachable from remote peers and self-discovery
-    // (the desktop browsing its own announcement) just creates a useless
-    // mailbox client pointing at our own loopback.
+    // Manage the mDNS service daemon. In production, disable loopback so we
+    // don't emit `127.0.0.1` / `::1` records that no remote peer can use —
+    // this matches what iroh and libp2p's local-discovery code do (libp2p
+    // doesn't even open a multicast socket on `lo`; iroh filters loopback out
+    // of its `direct_addresses` upstream of mDNS, unless it's the only
+    // interface available).
+    //
+    // E2E builds keep loopback enabled: the test harness runs two agents on a
+    // single host and relies on `lo` multicast to bridge them. The browse-side
+    // discovery loop's loopback filter then keeps `127.0.0.1` URLs from
+    // actually being registered as a remote mailbox, even when an
+    // announcement contains them.
     let daemon = mdns_sd::ServiceDaemon::new()?;
+    #[cfg(not(feature = "e2e-tests"))]
     if let Err(err) = daemon.disable_interface(vec![
         mdns_sd::IfKind::LoopbackV4,
         mdns_sd::IfKind::LoopbackV6,
