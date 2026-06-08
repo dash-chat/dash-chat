@@ -200,15 +200,6 @@ impl<K: TopicKind> Topic<K> {
         TopicId::from(p2panda::Topic::from(self.id)).alias_named(name);
         self
     }
-
-    pub fn untyped(self) -> Topic<kind::Untyped> {
-        Topic::new(*self.id.as_bytes())
-    }
-
-    #[deprecated(note = "refactor so this is impossible")]
-    pub fn recast<K2: TopicKind>(self) -> Topic<K2> {
-        Topic::new(*self.id.as_bytes())
-    }
 }
 
 impl std::str::FromStr for Topic<kind::Untyped> {
@@ -278,6 +269,13 @@ impl Topic<kind::DeviceGroup> {
         let mut hasher = blake3::Hasher::new();
         hasher.update(agent_id.as_bytes());
         Self::new(hasher.finalize().into())
+    }
+}
+
+impl Topic<kind::Untyped> {
+    /// Declare the actual type of an Untyped topic.
+    pub fn upcast<K: TopicKind>(self) -> Topic<K> {
+        Topic::new(*self.id.as_bytes())
     }
 }
 

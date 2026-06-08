@@ -162,12 +162,12 @@ mod tests {
         poll.wait_for(|| async {
             let alice_seq = alice_sync
                 .borrow()
-                .get(&chat_id.untyped())
+                .get(&*chat_id)
                 .and_then(|m| m.get(&alice_device))
                 .copied();
             let bobbi_seq = bobbi_sync
                 .borrow()
-                .get(&chat_id.untyped())
+                .get(&*chat_id)
                 .and_then(|m| m.get(&alice_device))
                 .copied();
             if alice_seq == Some(0) && bobbi_seq == Some(0) {

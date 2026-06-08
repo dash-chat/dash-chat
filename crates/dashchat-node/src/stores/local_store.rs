@@ -10,7 +10,12 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 
-use crate::{compat::Capabilities, contact::InboxTopic, topic::AutoRegisteredTopic, *};
+use crate::{
+    compat::Capabilities,
+    contact::InboxTopic,
+    topic::{AutoRegisteredTopic, kind},
+    *,
+};
 
 const PRIVATE_KEY_KEY: &str = "private_key";
 const AGENT_ID_KEY: &str = "agent_id";
@@ -114,11 +119,11 @@ impl LocalStore {
         })
     }
 
-    pub async fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<Topic>> {
+    pub async fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
         let rows: Vec<(Topic,)> = sqlx::query_as("SELECT topic_id FROM subscribed_topics")
             .fetch_all(&self.pool)
             .await?;
-        Ok(rows.into_iter().map(|(id,)| id).collect())
+        Ok(rows.into_iter().map(|(id,)| *id).collect())
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
@@ -311,7 +316,7 @@ impl LocalStore {
             .into_iter()
             .map(|(topic, nanos)| InboxTopic {
                 expires_at: DateTime::from_timestamp_nanos(nanos),
-                topic: topic.recast(),
+                topic: topic.upcast::<kind::Inbox>(),
             })
             .collect())
     }
