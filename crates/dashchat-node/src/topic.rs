@@ -308,10 +308,6 @@ impl TryFrom<String> for Topic {
     }
 }
 
-pub fn topic_to_log(topic: impl Into<Topic<kind::Untyped>>) -> LogId {
-    LogId::from_topic(p2panda::Topic::from(topic.into().id))
-}
-
 impl<K: TopicKind> Serialize for Topic<K> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_str(&hex::encode(self.id.as_bytes()))
