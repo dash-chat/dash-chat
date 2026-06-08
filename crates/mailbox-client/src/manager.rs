@@ -255,6 +255,18 @@ where
         }
     }
 
+    /// Returns `true` if a mailbox with the given id was removed.
+    pub async fn unregister(&self, id: &MailboxId) -> bool {
+        let mut mailboxes = self.mailboxes.lock().await;
+        if mailboxes.remove(id).is_some() {
+            drop(mailboxes);
+            self.publish_active_ids().await;
+            true
+        } else {
+            false
+        }
+    }
+
     pub async fn clear(&self) {
         self.mailboxes.lock().await.clear();
         self.publish_active_ids().await;
