@@ -1,4 +1,4 @@
-name: "cargo test"
+name: "cargo nextest"
 on:
   push:
     branches: [ main, develop ]
@@ -35,4 +35,4 @@ jobs:
           cache-on-failure: true
 
       - name: Test
-        run: cargo test
+        run: cargo nextest run
