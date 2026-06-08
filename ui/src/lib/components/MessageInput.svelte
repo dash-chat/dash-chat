@@ -79,6 +79,7 @@
 				class={theme === 'ios'
 					? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
 					: 'input-container bg-white dark:bg-gray-800'}
+				style="padding-left: 8px"
 			>
 				{#if onEmojiClick && !isIos}
 					<button
@@ -157,7 +158,6 @@
 		transition:
 			opacity 0.15s ease,
 			background-color 0.15s ease;
-		margin: 8px;
 	}
 
 	.icon-button:hover {
@@ -179,7 +179,7 @@
 		color: var(--k-text-color);
 		font-family: inherit;
 		min-height: 28px;
-		padding: 4px;
+		padding: 8px;
 		max-height: 100px;
 		overflow-y: auto;
 	}
