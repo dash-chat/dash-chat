@@ -45,14 +45,9 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
 ) -> anyhow::Result<()> {
     let mdns: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
     let receiver = mdns.browse(MDNS_SERVICE_TYPE)?;
-    let own_mailbox_id = own_mailbox_id(&node);
     log::info!("Started mdns browse for local mailboxes: {MDNS_SERVICE_TYPE}");
 
-    let mut handler_task = tokio::spawn(handle_browse_events(
-        node.clone(),
-        receiver,
-        own_mailbox_id.clone(),
-    ));
+    let mut handler_task = tokio::spawn(handle_browse_events(node.clone(), receiver));
 
     // The browse receiver is tied to the interface set the daemon had at
     // `browse()` time; when the device switches networks services on the
@@ -99,11 +94,7 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
 
             match mdns.browse(MDNS_SERVICE_TYPE) {
                 Ok(receiver) => {
-                    handler_task = tokio::spawn(handle_browse_events(
-                        node.clone(),
-                        receiver,
-                        own_mailbox_id.clone(),
-                    ));
+                    handler_task = tokio::spawn(handle_browse_events(node.clone(), receiver));
                 }
                 Err(err) => {
                     log::warn!("Failed to restart mDNS browse after interface change: {err:?}");
@@ -120,7 +111,6 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
 async fn handle_browse_events(
     node: dashchat_node::Node,
     receiver: mdns_sd::Receiver<mdns_sd::ServiceEvent>,
-    own_mailbox_id: String,
 ) {
     while let Ok(event) = receiver.recv_async().await {
         match event {
@@ -135,48 +125,27 @@ async fn handle_browse_events(
                 // node identifier the announcer chose.
                 let mailbox_id =
                     instance_name_from_fullname(&resolved.fullname, &resolved.ty_domain);
-                let is_self = mailbox_id == own_mailbox_id;
                 let port = resolved.port;
 
-                // Consider IPv4 addresses only — iOS needs a zone ID to use
-                // IPv6 addresses, and the local mailbox server binds
-                // `0.0.0.0:port` so v6 records would point at a port nothing
-                // is listening on anyway. If the server is ever switched to
-                // dual-stack (`[::]:port`), reintroduce v6 here.
+                // IPv4 only — iOS needs a zone ID to use IPv6 link-local, and
+                // the local mailbox server binds `0.0.0.0:port` so v6 records
+                // would point at a port nothing is listening on. If the
+                // server is ever switched to dual-stack (`[::]:port`),
+                // reintroduce v6 here.
                 //
-                // For *remote* announcers, loopback addresses (`127.0.0.1`)
-                // are rejected: they'd point at *our* loopback, not the
-                // announcer's. For our *own* announcement (e.g. the desktop
-                // browsing its own mailbox server over `lo` multicast), the
-                // announcer's loopback IS the right address — and it's the
-                // only one available when the host has no LAN interface up.
-                // We still prefer a non-loopback v4 when both are present so
-                // the registered URL doesn't change with network state, but
-                // fall back to loopback for self when nothing else exists.
-                let host = resolved
-                    .addresses
-                    .iter()
-                    .find_map(|addr| match addr {
-                        mdns_sd::ScopedIp::V4(ip) if !ip.addr().is_loopback() => {
-                            Some(ip.addr().to_string())
-                        }
-                        _ => None,
-                    })
-                    .or_else(|| {
-                        if !is_self {
-                            return None;
-                        }
-                        resolved.addresses.iter().find_map(|addr| match addr {
-                            mdns_sd::ScopedIp::V4(ip) if ip.addr().is_loopback() => {
-                                Some(ip.addr().to_string())
-                            }
-                            _ => None,
-                        })
-                    });
-
+                // We probe each v4 address before registering. Non-loopback
+                // first (more stable identity in logs, works regardless of
+                // which side issued the announcement), then loopback as a
+                // fallback. A loopback address from a *remote* announcer
+                // would point at our own loopback — but the probe will fail
+                // unless we happen to be listening on that exact port, which
+                // for a randomly-allocated mailbox server port is vanishingly
+                // unlikely. For our *own* announcement, the loopback fallback
+                // is what makes offline self-discovery work.
+                let host = pick_reachable_v4(&resolved, port).await;
                 let Some(host) = host else {
                     log::info!(
-                        "Resolved mdns service {mailbox_id} has no usable IPv4 address (loopback only from a remote peer, or v6-only announcement), waiting for next announcement"
+                        "Resolved mdns service {mailbox_id}: no IPv4 address in the announcement is reachable on port {port}, waiting for next announcement"
                     );
                     continue;
                 };
@@ -207,13 +176,40 @@ async fn handle_browse_events(
     log::debug!("mdns browse handler loop ended");
 }
 
-/// Derive the mailbox id our *own* local mailbox server would announce, so
-/// the browse loop can tell self-announcements apart from remote ones. Must
-/// match the truncation rule used in `mdns_service_info` on the announce side.
-fn own_mailbox_id(node: &dashchat_node::Node) -> String {
-    let mut id = node.device_id().to_string();
-    id.truncate(32);
-    id
+/// Try a TCP connect to each non-loopback IPv4, then to each loopback IPv4,
+/// returning the first that accepts a connection within the probe timeout.
+/// Returns `None` if no address in the announcement is reachable on the given
+/// port. The probe is a bare TCP connect — it doesn't verify the listener is
+/// actually a mailbox server, but in practice no other service shares the
+/// randomly-allocated port.
+async fn pick_reachable_v4(resolved: &mdns_sd::ResolvedService, port: u16) -> Option<String> {
+    let v4s = resolved.addresses.iter().filter_map(|addr| match addr {
+        mdns_sd::ScopedIp::V4(ip) => Some(ip.addr()),
+        _ => None,
+    });
+    let (loopback, routable): (Vec<_>, Vec<_>) = v4s.partition(|ip| ip.is_loopback());
+    for ip in routable.into_iter().chain(loopback.into_iter()) {
+        if probe_tcp(ip, port).await {
+            return Some(ip.to_string());
+        }
+    }
+    None
+}
+
+async fn probe_tcp(host: std::net::Ipv4Addr, port: u16) -> bool {
+    let addr = std::net::SocketAddr::from((host, port));
+    let connect = tokio::net::TcpStream::connect(&addr);
+    match tokio::time::timeout(std::time::Duration::from_millis(500), connect).await {
+        Ok(Ok(_stream)) => true,
+        Ok(Err(err)) => {
+            log::trace!("Probe to {addr} refused / errored: {err}");
+            false
+        }
+        Err(_elapsed) => {
+            log::trace!("Probe to {addr} timed out after 500ms");
+            false
+        }
+    }
 }
 
 /// Recover the announcer-chosen instance name from a resolved mDNS fullname.
