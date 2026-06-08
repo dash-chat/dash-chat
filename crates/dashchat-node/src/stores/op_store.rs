@@ -13,7 +13,12 @@ use p2panda_core::SeqNum;
 use p2panda_store::SqliteStore;
 use p2panda_store::logs::LogStore;
 
-use crate::{mailbox::MailboxOperation, topic::TopicId, util::first, *};
+use crate::{
+    mailbox::MailboxOperation,
+    topic::{TopicId, topic2log},
+    util::first,
+    *,
+};
 
 #[derive(Clone, derive_more::Deref, derive_more::DerefMut)]
 pub struct OpStore {
@@ -162,10 +167,10 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
     async fn get_log(
         &self,
         author: &DeviceId,
-        topic: &TopicId,
+        topic: &Topic,
         from: u64,
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
-        let log_id = LogId::from(*topic);
+        let log_id = topic2log(*topic);
         let from = if from == 0 { None } else { Some(from - 1) };
         let log = self
             .store
@@ -186,8 +191,8 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         }))
     }
 
-    async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(DeviceId, u64)>> {
-        Ok(OpStore::get_log_heights(self, &LogId::from(*topic))
+    async fn get_log_heights(&self, topic: &Topic) -> anyhow::Result<Vec<(DeviceId, u64)>> {
+        Ok(OpStore::get_log_heights(self, &topic2log(*topic))
             .await?
             .into_iter()
             .collect())

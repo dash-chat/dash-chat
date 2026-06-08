@@ -22,6 +22,19 @@ use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentVal
 )]
 pub struct DeviceId(VerifyingKey);
 
+impl From<DeviceId> for [u8; 32] {
+    fn from(device_id: DeviceId) -> Self {
+        (*device_id).into()
+    }
+}
+
+impl std::str::FromStr for DeviceId {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(DeviceId::from(VerifyingKey::from_str(s)?))
+    }
+}
+
 /// The ID for an "agent" which may control multiple devices.
 #[derive(
     Clone,

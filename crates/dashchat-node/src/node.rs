@@ -583,7 +583,7 @@ impl Node {
         self.local_store.all_contact_agent_ids().await
     }
 
-    pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
+    pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<Topic>> {
         self.local_store.subscribed_topics().await
     }
 
@@ -880,7 +880,7 @@ impl Node {
         }
 
         for topic in self.local_store.subscribed_topics().await?.iter() {
-            self.initialize_topic(*topic).await?;
+            self.initialize_topic(**topic).await?;
         }
 
         // @TODO: I had to add this so that the device group topic is subscribed to when we later

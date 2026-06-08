@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, mpsc::Receiver};
 use mailbox_client::MailboxClient;
 
 use crate::{
-    AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
+    AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile, Topic,
     filesystem::Filesystem, mailbox::MailboxOperation, node::Node, stores::LocalStore,
     testing::behavior::Behavior, topic::TopicId,
 };
@@ -355,7 +355,7 @@ impl ConsistencyReport {
     fn op_line((hash, header): (p2panda::Hash, Header)) -> String {
         format!(
             "{:32?} {:3} {:32?}",
-            TopicId::from(header.extensions.log_id).aliased(),
+            Topic::from(header.extensions.log_id).aliased(),
             header.seq_num,
             hash.aliased()
         )

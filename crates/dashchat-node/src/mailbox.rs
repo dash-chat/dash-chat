@@ -3,14 +3,14 @@ use p2panda::{Hash, VerifyingKey};
 use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
-use crate::{DeviceId, topic::TopicId};
+use crate::{DeviceId, Topic};
 use mailbox_client::MailboxItem;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MailboxOperation {
     // @TODO: topic is only represented on an operation in it's hashed form. We can't derive it
     // from the header so we add it here as an own field on mailbox operation.
-    pub topic: TopicId,
+    pub topic: Topic,
     pub header: Header,
     pub body: Option<Body>,
 }
@@ -18,7 +18,7 @@ pub struct MailboxOperation {
 impl MailboxItem for MailboxOperation {
     type Hash = Hash;
     type Author = DeviceId;
-    type Topic = TopicId;
+    type Topic = Topic;
 
     fn hash(&self) -> Hash {
         self.header.hash()
@@ -32,36 +32,8 @@ impl MailboxItem for MailboxOperation {
         self.header.seq_num
     }
 
-    fn topic(&self) -> TopicId {
+    fn topic(&self) -> Topic {
         self.topic
-    }
-}
-
-impl mailbox_client::toy::ToyItemTraits for TopicId {
-    fn as_bytes(&self) -> &[u8] {
-        &**self
-    }
-
-    fn from_str(s: &str) -> Result<Self, anyhow::Error> {
-        let bytes: [u8; 32] = hex::decode(s)?
-            .try_into()
-            .map_err(|e| anyhow::anyhow!("Invalid TopicId: {e:?}"))?;
-
-        Ok(TopicId::from(bytes))
-    }
-}
-
-impl mailbox_client::toy::ToyItemTraits for DeviceId {
-    fn as_bytes(&self) -> &[u8] {
-        VerifyingKey::as_bytes(&*self)
-    }
-
-    fn from_str(s: &str) -> Result<Self, anyhow::Error> {
-        let bytes: [u8; 32] = hex::decode(s)?
-            .try_into()
-            .map_err(|e| anyhow::anyhow!("Invalid DeviceId: {e:?}"))?;
-
-        Ok(DeviceId::from(VerifyingKey::from_bytes(&bytes)?))
     }
 }
 
@@ -151,17 +123,17 @@ mod tests {
         let alice = TestNode::new(config.clone(), "alice").await;
         let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
-        let chat = alice.direct_chat_topic(bobbi.agent_id());
-        alice.register_topic(chat).await.unwrap();
+        let chat_id = alice.direct_chat_topic(bobbi.agent_id());
+        alice.register_topic(chat_id).await.unwrap();
 
         alice.add_mailbox_client(mb.client()).await;
         bobbi.add_mailbox_client(mb.client()).await;
-        bobbi.register_topic(chat).await.unwrap();
+        bobbi.register_topic(chat_id).await.unwrap();
 
-        alice.send_message(chat, "Hello".into()).await.unwrap();
+        alice.send_message(chat_id, "Hello".into()).await.unwrap();
 
         poll.wait_for(|| async {
-            if bobbi.get_messages(chat).await.unwrap().len() == 1 {
+            if bobbi.get_messages(chat_id).await.unwrap().len() == 1 {
                 Ok(())
             } else {
                 Err("message not received")
@@ -172,7 +144,6 @@ mod tests {
 
         let mailbox_id = mb.client().id();
         let alice_device: crate::DeviceId = alice.device_id();
-        let chat_id: crate::topic::TopicId = chat.into();
 
         // The mailbox should have recorded alice's seq 0 from both sides.
         let alice_sync = alice
@@ -191,12 +162,12 @@ mod tests {
         poll.wait_for(|| async {
             let alice_seq = alice_sync
                 .borrow()
-                .get(&chat_id)
+                .get(&chat_id.untyped())
                 .and_then(|m| m.get(&alice_device))
                 .copied();
             let bobbi_seq = bobbi_sync
                 .borrow()
-                .get(&chat_id)
+                .get(&chat_id.untyped())
                 .and_then(|m| m.get(&alice_device))
                 .copied();
             if alice_seq == Some(0) && bobbi_seq == Some(0) {

@@ -5,7 +5,7 @@ use mailbox_server::{Blob, GetBlobsRequest, GetBlobsResponse, StoreBlobsRequest}
 use super::*;
 
 pub trait ToyItemTraits: ItemTraits {
-    fn as_bytes(&self) -> &[u8];
+    // fn as_bytes(&self) -> &[u8];
     fn from_str(s: &str) -> Result<Self, anyhow::Error>;
 }
 

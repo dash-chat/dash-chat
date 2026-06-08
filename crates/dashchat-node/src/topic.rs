@@ -31,7 +31,7 @@
 
 use std::marker::PhantomData;
 
-use crate::AgentId;
+use crate::{AgentId, ChatId};
 
 use aliased::Aliasing;
 use p2panda::operation::LogId;
@@ -115,111 +115,43 @@ pub mod kind {
     topic_kind_no_auto_register!(Inbox);
 }
 
-#[derive(
-    Copy,
-    Clone,
-    Hash,
-    Eq,
-    PartialEq,
-    PartialOrd,
-    Ord,
-    derive_more::Deref,
-    derive_more::Display,
-    derive_more::Debug,
-    derive_more::From,
-)]
-#[display("{}", hex::encode(self.0))]
-#[debug("{}", self)]
-pub struct TopicId(pub(crate) [u8; 32]);
-
-impl TopicId {
-    pub const fn new(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-}
-
-// Hex-string serialization for human-readable formats (e.g. JSON, where map
-// keys must be strings); raw byte array for binary formats (e.g. CBOR on disk).
-impl Serialize for TopicId {
-    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
-        if ser.is_human_readable() {
-            hex::encode(self.0).serialize(ser)
-        } else {
-            self.0.serialize(ser)
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for TopicId {
-    fn deserialize<D: serde::Deserializer<'de>>(deser: D) -> Result<Self, D::Error> {
-        if deser.is_human_readable() {
-            let s = String::deserialize(deser)?;
-            let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
-            let arr: [u8; 32] = bytes
-                .try_into()
-                .map_err(|_| serde::de::Error::custom("TopicId hex must decode to 32 bytes"))?;
-            Ok(TopicId(arr))
-        } else {
-            <[u8; 32]>::deserialize(deser).map(TopicId)
-        }
-    }
-}
-
-impl p2panda_spaces::traits::SpaceId for TopicId {}
+pub type TopicId = p2panda::Topic;
 
 pub type DashChatTopicId = TopicId;
 
 // -- SQLite encoding for TopicId --
 
-impl sqlx::Type<Sqlite> for TopicId {
+impl sqlx::Type<Sqlite> for Topic {
     fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {
         <Vec<u8> as sqlx::Type<Sqlite>>::type_info()
     }
 }
 
-impl sqlx::Encode<'_, Sqlite> for TopicId {
+impl<K: TopicKind> sqlx::Encode<'_, Sqlite> for Topic<K> {
     fn encode_by_ref(&self, buf: &mut Vec<SqliteArgumentValue<'_>>) -> Result<IsNull, BoxDynError> {
-        <Vec<u8> as sqlx::Encode<Sqlite>>::encode(self.0.to_vec(), buf)
+        <Vec<u8> as sqlx::Encode<Sqlite>>::encode(self.to_vec(), buf)
     }
 }
 
-impl sqlx::Decode<'_, Sqlite> for TopicId {
+impl sqlx::Decode<'_, Sqlite> for Topic<kind::Untyped> {
     fn decode(value: <Sqlite as sqlx::Database>::ValueRef<'_>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as sqlx::Decode<Sqlite>>::decode(value)?;
-        let arr: [u8; 32] = bytes.try_into().map_err(|_| "TopicId is not 32 bytes")?;
-        Ok(TopicId(arr))
+        let arr: [u8; 32] = bytes.try_into().map_err(|_| "Topic is not 32 bytes")?;
+        Ok(Topic::new(arr))
     }
 }
 
 // conversion traits for p2panda core types.
 
-impl From<p2panda::Topic> for TopicId {
-    fn from(value: p2panda::Topic) -> Self {
-        value.alias_numbered();
-        let t = TopicId(value.to_bytes());
-        t.alias_numbered();
-        t
-    }
-}
-
-impl From<TopicId> for p2panda::Topic {
-    fn from(value: TopicId) -> Self {
-        value.alias_numbered();
-        let t = p2panda::Topic::from(value.0);
-        t.alias_numbered();
-        t
-    }
-}
-
-impl From<TopicId> for LogId {
-    fn from(value: TopicId) -> Self {
+impl<K: TopicKind> From<Topic<K>> for LogId {
+    fn from(value: Topic<K>) -> Self {
         LogId::from_topic(value.into())
     }
 }
 
-impl From<LogId> for TopicId {
+impl From<LogId> for Topic<kind::Untyped> {
     fn from(value: LogId) -> Self {
-        TopicId::new(*value.as_bytes())
+        Topic::new(*value.as_bytes())
     }
 }
 
@@ -235,7 +167,7 @@ impl From<LogId> for TopicId {
     derive_more::Display,
     derive_more::Debug,
 )]
-#[display("{}", hex::encode(self.id.0))]
+#[display("{}", self.id.to_hex())]
 #[debug("{}", self)]
 pub struct Topic<K: TopicKind = kind::Untyped> {
     #[deref]
@@ -249,9 +181,17 @@ impl<K: TopicKind> p2panda_spaces::traits::SpaceId for Topic<K> {}
 impl<K: TopicKind> Topic<K> {
     pub(crate) fn new(id: [u8; 32]) -> Self {
         Self {
-            id: TopicId(id),
+            id: TopicId::try_from(id).unwrap(),
             kind: PhantomData::<K>,
         }
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        self.id.as_bytes()
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.id.as_bytes().to_vec()
     }
 
     pub fn alias_named(self, name: &str) -> Self {
@@ -261,9 +201,20 @@ impl<K: TopicKind> Topic<K> {
         self
     }
 
+    pub fn untyped(self) -> Topic<kind::Untyped> {
+        Topic::new(*self.id.as_bytes())
+    }
+
     #[deprecated(note = "refactor so this is impossible")]
     pub fn recast<K2: TopicKind>(self) -> Topic<K2> {
-        Topic::new(self.id.0)
+        Topic::new(*self.id.as_bytes())
+    }
+}
+
+impl std::str::FromStr for Topic<kind::Untyped> {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(TopicId::from_str(s)?.into())
     }
 }
 
@@ -306,12 +257,12 @@ impl Topic<kind::Chat> {
     ///
     /// This can fail if the topic id bytes do not actually represent a valid Ed25519 public key.
     pub fn from_topic_id(topic_id: TopicId) -> anyhow::Result<Self> {
-        let verifying_key = VerifyingKey::from_bytes(&topic_id.0)?;
+        let verifying_key = VerifyingKey::from_bytes(&topic_id.as_bytes())?;
         Ok(Self::new(*verifying_key.as_bytes()))
     }
 
     pub fn to_group_pubkey(self) -> anyhow::Result<VerifyingKey> {
-        Ok(VerifyingKey::from_bytes(&self.id.0)?)
+        Ok(VerifyingKey::from_bytes(self.as_bytes())?)
     }
 }
 
@@ -330,18 +281,15 @@ impl Topic<kind::DeviceGroup> {
     }
 }
 
-impl Topic<kind::Untyped> {
-    pub fn untyped(id: [u8; 32]) -> Self {
-        Self {
-            id: TopicId(id),
-            kind: PhantomData,
-        }
+impl<K: TopicKind> From<Topic<K>> for TopicId {
+    fn from(topic: Topic<K>) -> Self {
+        topic.id
     }
 }
 
-impl<K: TopicKind> From<Topic<K>> for TopicId {
-    fn from(topic: Topic<K>) -> Self {
-        Self(topic.id.0)
+impl From<TopicId> for Topic<kind::Untyped> {
+    fn from(id: TopicId) -> Self {
+        Topic::new(*id.as_bytes())
     }
 }
 
@@ -359,36 +307,17 @@ impl TryFrom<String> for Topic {
 }
 
 // conversion traits for p2panda core types.
-
-impl<K: TopicKind> From<Topic<K>> for p2panda::Topic {
-    fn from(value: Topic<K>) -> Self {
-        p2panda::Topic::from(value.0)
-    }
+pub fn log2topic(log_id: LogId) -> Topic<kind::Untyped> {
+    Topic::new(*log_id.as_bytes())
 }
 
-impl<K: TopicKind> From<Topic<K>> for LogId {
-    fn from(value: Topic<K>) -> Self {
-        let topic: p2panda::Topic = value.into();
-        LogId::from_topic(topic)
-    }
-}
-
-impl std::str::FromStr for Topic {
-    type Err = anyhow::Error;
-
-    fn from_str(topic: &str) -> Result<Self, Self::Err> {
-        // maybe base64?
-        Ok(Self::new(
-            hex::decode(topic)?
-                .try_into()
-                .map_err(|e| anyhow::anyhow!("Invalid Topic: {e:?}"))?,
-        ))
-    }
+pub fn topic2log(topic: impl Into<Topic<kind::Untyped>>) -> LogId {
+    LogId::from_topic(p2panda::Topic::from(topic.into().id))
 }
 
 impl<K: TopicKind> Serialize for Topic<K> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(&hex::encode(&self.id.0))
+        serializer.collect_str(&hex::encode(&self.id.as_bytes()))
     }
 }
 

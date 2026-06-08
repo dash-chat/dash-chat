@@ -415,7 +415,7 @@ impl Node {
         // informed of any errors or these events are not even forwarded.
 
         // We convert the p2panda::Topic into a dashchat Topic here in its untyped form.
-        let dashchat_topic = crate::Topic::untyped(*topic.as_bytes());
+        let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         self.notify_payload(dashchat_topic, &operation.processed().header(), &payload)
             .await?;
 
