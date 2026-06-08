@@ -128,37 +128,23 @@ async fn handle_browse_events(
                     instance_name_from_fullname(&resolved.fullname, &resolved.ty_domain);
                 let port = resolved.port;
 
-                // Prefer IPv4, fall back to non-link-local IPv6. Reject loopback
-                // and link-local addresses in both: the announcer's `lo0` is our
-                // `lo0` from the receiver's perspective (so loopback would point
-                // at ourselves), and link-local IPv6 (fe80::/10) needs a `%ifN`
-                // zone identifier to route — the announcer's interface index
-                // isn't usable from here, and without a zone iOS TCP connect
-                // fails with EHOSTUNREACH.
-                let host = resolved
-                    .addresses
-                    .iter()
-                    .find_map(|addr| match addr {
-                        mdns_sd::ScopedIp::V4(ip) if !ip.addr().is_loopback() => {
-                            Some(ip.addr().to_string())
-                        }
-                        _ => None,
-                    })
-                    .or_else(|| {
-                        resolved.addresses.iter().find_map(|addr| match addr {
-                            mdns_sd::ScopedIp::V6(ip)
-                                if !ip.addr().is_loopback()
-                                    && !ip.addr().is_unicast_link_local() =>
-                            {
-                                Some(format!("[{}]", ip.addr()))
-                            }
-                            _ => None,
-                        })
-                    });
+                // IPv4 only. The local mailbox server binds `0.0.0.0:port`, so
+                // any v6 record in the announcement would point at a port
+                // nothing is listening on (ECONNREFUSED at best, link-local
+                // zone-id headaches at worst). If the server is ever switched
+                // to dual-stack (`[::]:port`), reintroduce v6 here at the same
+                // time. Loopback is also rejected — the announcer's `lo0` is
+                // *our* `lo0` and points at ourselves, not the remote host.
+                let host = resolved.addresses.iter().find_map(|addr| match addr {
+                    mdns_sd::ScopedIp::V4(ip) if !ip.addr().is_loopback() => {
+                        Some(ip.addr().to_string())
+                    }
+                    _ => None,
+                });
 
                 let Some(host) = host else {
                     log::info!(
-                        "Resolved mdns service {mailbox_id} has no usable addresses (only loopback or link-local IPv6?), waiting for next announcement"
+                        "Resolved mdns service {mailbox_id} has no usable IPv4 address (loopback only or v6-only announcement), waiting for next announcement"
                     );
                     continue;
                 };
