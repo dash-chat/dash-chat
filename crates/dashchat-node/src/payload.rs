@@ -46,7 +46,7 @@ pub enum InboxPayload {
     ContactRequest { code: QrCode, profile: Profile },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GroupInfo {
     pub name: String,
     pub description: Option<String>,
