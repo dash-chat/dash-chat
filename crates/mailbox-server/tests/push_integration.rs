@@ -5,7 +5,7 @@ use axum_test::{TestServer, TestServerConfig, Transport};
 use mailbox_server::test_utils::create_test_db;
 use push_notifications_client::client::PushNotificationsClient;
 use push_notifications_client::requests::{AddTopicSubscriptionsRequest, RegisterFcmTokenRequest};
-use push_notifications_client::types::{FcmToken, PublicKey, TopicId};
+use push_notifications_client::types::{FcmToken, TopicId, VerifyingKey};
 use push_notifications_server::driver::mem::MemDb;
 use push_notifications_server::fcm_client::{MockFcm, SendResult};
 use serde_json::json;
@@ -76,7 +76,7 @@ async fn drain_push_tasks(push_tasks: &Arc<tokio::sync::Mutex<tokio::task::JoinS
 /// Full integration test: subscribe → store blobs → push notification sent.
 #[tokio::test]
 async fn mailbox_store_triggers_push_notification() {
-    let public_key = PublicKey::from(
+    let verifying_key = VerifyingKey::from(
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
     );
     let fcm_token = FcmToken::from("fcm-token-xyz".to_string());
@@ -100,7 +100,7 @@ async fn mailbox_store_triggers_push_notification() {
     let resp = http
         .post(format!("{push_url}/fcm-tokens/register"))
         .json(&RegisterFcmTokenRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             fcm_token,
         })
         .send()
@@ -111,7 +111,7 @@ async fn mailbox_store_triggers_push_notification() {
     let resp = http
         .post(format!("{push_url}/topic-subscriptions/add"))
         .json(&AddTopicSubscriptionsRequest {
-            public_key,
+            verifying_key,
             topic_ids: [topic_id].into(),
         })
         .send()
@@ -181,7 +181,7 @@ async fn mailbox_store_no_subscribers_no_push() {
 /// (watermark doesn't advance on duplicate data).
 #[tokio::test]
 async fn mailbox_store_duplicate_blob_no_second_push() {
-    let public_key = PublicKey::from(
+    let verifying_key = VerifyingKey::from(
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
     );
     let fcm_token = FcmToken::from("fcm-token-xyz".to_string());
@@ -204,7 +204,7 @@ async fn mailbox_store_duplicate_blob_no_second_push() {
 
     http.post(format!("{push_url}/fcm-tokens/register"))
         .json(&RegisterFcmTokenRequest {
-            public_key: public_key.clone(),
+            verifying_key: verifying_key.clone(),
             fcm_token,
         })
         .send()
@@ -213,7 +213,7 @@ async fn mailbox_store_duplicate_blob_no_second_push() {
 
     http.post(format!("{push_url}/topic-subscriptions/add"))
         .json(&AddTopicSubscriptionsRequest {
-            public_key,
+            verifying_key,
             topic_ids: [topic_id].into(),
         })
         .send()
