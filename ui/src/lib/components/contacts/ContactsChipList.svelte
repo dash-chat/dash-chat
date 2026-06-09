@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { PublicKey } from 'dash-chat-stores';
+	import type { VerifyingKey } from 'dash-chat-stores';
 	import { Chip } from 'konsta/svelte';
 
 	let {
@@ -7,8 +7,8 @@
 		onRemove,
 		maxNameLength = 16,
 	}: {
-		contacts: [PublicKey, { name: string }][];
-		onRemove: (key: PublicKey) => void;
+		contacts: [VerifyingKey, { name: string }][];
+		onRemove: (key: VerifyingKey) => void;
 		maxNameLength?: number;
 	} = $props();
 

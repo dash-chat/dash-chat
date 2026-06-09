@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import type { ChatsStore, ContactsStore, PublicKey } from 'dash-chat-stores';
+	import type {
+		ChatsStore,
+		ContactsStore,
+		VerifyingKey,
+	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -19,7 +23,7 @@
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const chatsStore: ChatsStore = getContext('chats-store');
-	let selectedContacts = $state<PublicKey[]>([]);
+	let selectedContacts = $state<VerifyingKey[]>([]);
 
 	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
 	const groupChatStore = chatsStore.groupChats(chatId);

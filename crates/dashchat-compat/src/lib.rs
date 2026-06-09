@@ -1,4 +1,3 @@
-use named_id::RenameAll;
 use serde::de::Deserializer;
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
@@ -7,7 +6,7 @@ use std::fmt;
 #[cfg(test)]
 mod util;
 
-#[derive(Clone, Debug, PartialEq, Eq, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Compat<Bare, Tagged> {
     Unversioned(Bare),
     Versioned(Tagged),

@@ -6,13 +6,13 @@
 	import StepPage from './StepPage.svelte';
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
 	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
-	import type { Profile, PublicKey } from 'dash-chat-stores';
+	import type { Profile, VerifyingKey } from 'dash-chat-stores';
 
 	interface Props {
 		groupName: string;
 		groupImage: string | undefined;
-		selectedContacts: PublicKey[];
-		resolvedContacts: [PublicKey, Profile][];
+		selectedContacts: VerifyingKey[];
+		resolvedContacts: [VerifyingKey, Profile][];
 		onBack: () => void;
 		onCreate: () => void;
 	}

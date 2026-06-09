@@ -9,7 +9,7 @@ pub(crate) async fn unregister_fcm_token(
     Json(req): Json<UnregisterFcmTokenRequest>,
 ) -> Result<StatusCode, AppError> {
     req.validate()?;
-    state.db.remove_fcm_token(&req.public_key).await?;
-    tracing::info!(public_key = %req.public_key, "unregistered FCM token");
+    state.db.remove_fcm_token(&req.verifying_key).await?;
+    tracing::info!(verifying_key = %req.verifying_key, "unregistered FCM token");
     Ok(StatusCode::NO_CONTENT)
 }

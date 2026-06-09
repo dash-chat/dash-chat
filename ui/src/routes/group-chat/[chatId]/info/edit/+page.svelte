@@ -5,7 +5,11 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { ContactsStore, ChatsStore, PublicKey } from 'dash-chat-stores';
+	import type {
+		ContactsStore,
+		ChatsStore,
+		VerifyingKey,
+	} from 'dash-chat-stores';
 	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
 	import {
 		Page,
@@ -24,20 +28,20 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
-	const details = useReactivePromise(store.details);
+	const info = useReactivePromise(store.info);
 
 	let image = $state<string | undefined>(undefined);
 	let name = $state<string>('');
 	let description = $state<string>('');
 
 	let initialized = false;
-	details.subscribe(d => {
-		d.then(details => {
+	info.subscribe(d => {
+		d.then(info => {
 			if (!initialized) {
 				initialized = true;
-				image = details?.image;
-				name = details?.name || '';
-				description = details?.description || '';
+				image = info?.image;
+				name = info?.name || '';
+				description = info?.description || '';
 			}
 		});
 	});
@@ -46,7 +50,7 @@
 
 	async function save() {
 		if (saveDisabled) return;
-		await store.setDetails({
+		await store.setInfo({
 			name: name.trim(),
 			description: description.trim() || undefined,
 			image,
@@ -74,14 +78,11 @@
 		{/snippet}
 	</Navbar>
 
-	{#await $details then details}
+	{#await $info then info}
 		<div class="column">
 			<div class="column center-in-desktop">
 				<div class="mt-4">
-					<SelectAvatar
-						defaultValue={details.image}
-						bind:value={image}
-						size={64}
+					<SelectAvatar defaultValue={info.image} bind:value={image} size={64}
 					></SelectAvatar>
 				</div>
 
