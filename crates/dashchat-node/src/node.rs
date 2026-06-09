@@ -662,6 +662,19 @@ impl Node {
         Ok(header)
     }
 
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn set_group_info(
+        &self,
+        chat_id: ChatId,
+        info: crate::GroupInfo,
+    ) -> anyhow::Result<Header> {
+        let header = self
+            .publish(chat_id, Payload::Chat(ChatPayload::GroupInfo(info)), None)
+            .await?;
+
+        Ok(header)
+    }
+
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.

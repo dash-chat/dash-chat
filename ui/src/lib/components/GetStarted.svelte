@@ -13,7 +13,6 @@
 	import type { ContactsStore, ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { useVisibleChatSummaries } from '$lib/stores/visible-chats';
 	import { useTheme } from 'konsta/svelte';
 
 	type CardColor = 'warm' | 'sage';

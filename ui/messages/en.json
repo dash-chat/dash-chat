@@ -140,6 +140,8 @@
 	"nameThisGroup": "Name this group",
 	"newGroup": "New group",
 	"createGroup": "Create group",
+	"groupNameRequired": "Group name (required)",
+	"groupAvatar": "Group avatar",
 	"groupInfo": "Group info",
 	"members": "Members",
 	"membersCount_one": "{{count}} member",

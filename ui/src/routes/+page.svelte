@@ -3,7 +3,6 @@
 	import type { ChatsStore, ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { useVisibleChatSummaries } from '$lib/stores/visible-chats';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
@@ -22,7 +21,7 @@
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
-	const chatSummaries = useVisibleChatSummaries(chatsStore);
+	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
 </script>
 
 <Page>

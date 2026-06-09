@@ -62,6 +62,12 @@ in {
 
   flake = {
 
+    nixosModules = {
+      ssh = sshModule;
+      mailbox-server = mailbox_server_module;
+      push-notifications-server = push_notifications_server_module;
+    };
+
     nixosConfigurations = {
       mailbox-server = inputs.nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";

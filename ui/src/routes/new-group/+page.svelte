@@ -18,11 +18,17 @@
 	let currentPage: 'members' | 'group-info' = $state('members');
 	let selectedContacts = $state<VerifyingKey[]>([]);
 	let groupName = $state('');
+	let groupImage = $state<string | undefined>(undefined);
 
 	async function createGroupChat() {
 		const groupStore = await chatsStore.createGroup(
 			Array.from(selectedContacts),
 		);
+		await groupStore.setInfo({
+			name: groupName.trim(),
+			description: undefined,
+			image: groupImage,
+		});
 		goto(`/group-chat/${groupStore.chatId}`);
 	}
 </script>
@@ -35,6 +41,7 @@
 {:else if currentPage === 'group-info'}
 	<GroupInfoStep
 		bind:groupName
+		bind:groupImage
 		{selectedContacts}
 		{resolvedContacts}
 		onBack={() => (currentPage = 'members')}
