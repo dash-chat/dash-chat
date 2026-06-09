@@ -22,21 +22,21 @@ dashchat-compat = { path = "crates/dashchat-compat" }
 mailbox-client = { path = "crates/mailbox-client" }
 mailbox-server = { path = "crates/mailbox-server" }
 
-p2panda = { git = "https://github.com/p2panda/p2panda", rev = "b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc" }
-p2panda-auth = { git = "https://github.com/p2panda/p2panda", rev = "b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc", features = [
+p2panda = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e" }
+p2panda-auth = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e", features = [
   "processor",
 ] }
-p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc" }
-p2panda-store = { git = "https://github.com/p2panda/p2panda", rev = "b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc", features = [
+p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e" }
+p2panda-store = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e", features = [
   "sqlite",
 ] }
-p2panda-spaces = { git = "https://github.com/p2panda/p2panda", rev = "b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc", features = [
+p2panda-spaces = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e", features = [
   "test_utils",
 ] }
 
-[patch."https://github.com/p2panda/p2panda"]
-p2panda = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
-p2panda-auth = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
-p2panda-core = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
-p2panda-store = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
-p2panda-spaces = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+# [patch."https://github.com/p2panda/p2panda"]
+# p2panda = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+# p2panda-auth = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+# p2panda-core = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+# p2panda-store = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+# p2panda-spaces = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
