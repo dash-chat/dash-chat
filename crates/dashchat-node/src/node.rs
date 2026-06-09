@@ -662,14 +662,14 @@ impl Node {
         Ok(header)
     }
 
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn set_group_info(
         &self,
         chat_id: ChatId,
         info: crate::GroupInfo,
     ) -> anyhow::Result<Header> {
         let header = self
-            .author_operation(chat_id, Payload::Chat(ChatPayload::GroupInfo(info)), None)
+            .publish(chat_id, Payload::Chat(ChatPayload::GroupInfo(info)), None)
             .await?;
 
         Ok(header)
