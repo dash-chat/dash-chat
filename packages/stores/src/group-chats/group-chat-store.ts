@@ -5,12 +5,12 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
 import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
-import { AgentId, DeviceId, Hash, PublicKey } from '../p2panda/types';
+import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
 import {
 	ChatId,
 	ChatSummary,
 	ChatSummaryLastEvent,
-	GroupDetails,
+	GroupInfo,
 	MessageContent,
 	Payload,
 	ReadMessagesStore,
@@ -42,17 +42,17 @@ export class GroupChatStore implements ReadMessagesStore {
 		});
 	}
 
-	details = reactive(async () => {
+	info = reactive(async () => {
 		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
 
 		let latest:
-			| { details: GroupDetails; timestamp: number; seqNum: number }
+			| { info: GroupInfo; timestamp: number; seqNum: number }
 			| undefined;
 		for (const operations of Object.values(logs)) {
 			for (const operation of operations) {
 				const body = operation.body;
 				if (body?.type !== 'Chat') continue;
-				if (body.payload.type !== 'GroupDetails') continue;
+				if (body.payload.type !== 'GroupInfo') continue;
 				const timestamp = operation.header.timestamp;
 				const seqNum = operation.header.seq_num;
 				if (
@@ -60,17 +60,17 @@ export class GroupChatStore implements ReadMessagesStore {
 					timestamp > latest.timestamp ||
 					(timestamp === latest.timestamp && seqNum > latest.seqNum)
 				) {
-					latest = { details: body.payload.payload, timestamp, seqNum };
+					latest = { info: body.payload.payload, timestamp, seqNum };
 				}
 			}
 		}
 
-		const details: GroupDetails = latest?.details ?? {
+		const info: GroupInfo = latest?.info ?? {
 			name: '',
 			description: undefined,
 			image: undefined,
 		};
-		return details;
+		return info;
 	});
 
 	messages = reactive(async () => {
@@ -174,7 +174,7 @@ export class GroupChatStore implements ReadMessagesStore {
 
 				let candidate: ChatSummaryLastEvent | undefined;
 				if ('Create' in action) {
-					const isMine = op.header.public_key === myDeviceId;
+					const isMine = op.header.verifying_key === myDeviceId;
 					if (isMine) createdByMe = true;
 					const initiallyIncludedMe = action.Create.initial_members.some(
 						([m]) => 'Individual' in m && m.Individual === myDeviceId,
@@ -183,7 +183,7 @@ export class GroupChatStore implements ReadMessagesStore {
 					candidate = {
 						kind: 'group_created',
 						isMine,
-						creatorName: isMine ? '' : nameForDevice(op.header.public_key),
+						creatorName: isMine ? '' : nameForDevice(op.header.verifying_key),
 						timestamp: ts,
 					};
 				} else if ('Add' in action) {
@@ -192,13 +192,13 @@ export class GroupChatStore implements ReadMessagesStore {
 						'Individual' in member ? member.Individual : undefined;
 					const isMine = !!addedDeviceId && addedDeviceId === myDeviceId;
 					if (isMine) iWasAdded = true;
-					const addedByMe = op.header.public_key === myDeviceId;
+					const addedByMe = op.header.verifying_key === myDeviceId;
 					candidate = {
 						kind: 'group_member_added',
 						isMine,
 						addedByMe,
 						memberName: addedDeviceId ? nameForDevice(addedDeviceId) : '',
-						adminName: nameForDevice(op.header.public_key),
+						adminName: nameForDevice(op.header.verifying_key),
 						timestamp: ts,
 					};
 				} else if ('Remove' in action) {
@@ -209,9 +209,9 @@ export class GroupChatStore implements ReadMessagesStore {
 						'Individual' in member ? member.Individual : undefined;
 					candidate = {
 						kind: 'group_member_promoted',
-						promotedByMe: op.header.public_key === myDeviceId,
+						promotedByMe: op.header.verifying_key === myDeviceId,
 						memberName: deviceId ? nameForDevice(deviceId) : '',
-						adminName: nameForDevice(op.header.public_key),
+						adminName: nameForDevice(op.header.verifying_key),
 						timestamp: ts,
 					};
 				} else if ('Demote' in action) {
@@ -220,9 +220,9 @@ export class GroupChatStore implements ReadMessagesStore {
 						'Individual' in member ? member.Individual : undefined;
 					candidate = {
 						kind: 'group_member_demoted',
-						demotedByMe: op.header.public_key === myDeviceId,
+						demotedByMe: op.header.verifying_key === myDeviceId,
 						memberName: deviceId ? nameForDevice(deviceId) : '',
-						adminName: nameForDevice(op.header.public_key),
+						adminName: nameForDevice(op.header.verifying_key),
 						timestamp: ts,
 					};
 				}
@@ -336,14 +336,14 @@ export class GroupChatStore implements ReadMessagesStore {
 	summary = reactive(async (): Promise<ChatSummary | undefined> => {
 		const last = await this.lastEvent();
 		if (!last) return undefined;
-		const details = await this.details();
+		const info = await this.info();
 		const unread = await this.unreadCount();
 
 		return {
 			type: 'GroupChat',
 			chatId: this.chatId,
-			name: details.name,
-			avatar: details.image,
+			name: info.name,
+			avatar: info.image,
 			lastEvent: last,
 			unreadMessages: unread,
 		};
@@ -351,15 +351,15 @@ export class GroupChatStore implements ReadMessagesStore {
 
 	/// Actions
 
-	async addMembers(members: PublicKey[]) {
+	async addMembers(members: VerifyingKey[]) {
 		await Promise.all(
 			members.map(member => this.client.addMember(this.chatId, member)),
 		);
 		this.membersVersion.value++;
 	}
 
-	async setDetails(details: GroupDetails): Promise<void> {
-		await this.client.setDetails(this.chatId, details);
+	async setInfo(info: GroupInfo): Promise<void> {
+		await this.client.setInfo(this.chatId, info);
 	}
 
 	async markAsRead(messageHashes: Hash[]): Promise<void> {
@@ -373,7 +373,7 @@ export class GroupChatStore implements ReadMessagesStore {
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== this.chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
-				if (op.header.public_key !== myDeviceId) return false;
+				if (op.header.verifying_key !== myDeviceId) return false;
 				if (getMessageText(op.body.payload.payload) !== text) return false;
 				return true;
 			}),

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import type { ContactsStore, PublicKey } from 'dash-chat-stores';
+	import type { ContactsStore, VerifyingKey } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { Preloader } from 'konsta/svelte';
 	import Avatar from './Avatar.svelte';
 
-	let { chatActorId }: { chatActorId: PublicKey } = $props();
+	let { chatActorId }: { chatActorId: VerifyingKey } = $props();
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 

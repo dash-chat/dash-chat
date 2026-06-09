@@ -11,10 +11,10 @@ pub(crate) async fn remove_topic_subscriptions(
     req.validate()?;
     state
         .db
-        .remove_topic_subscriptions(&req.public_key, &req.topic_ids)
+        .remove_topic_subscriptions(&req.verifying_key, &req.topic_ids)
         .await?;
     tracing::info!(
-        public_key = %req.public_key,
+        verifying_key = %req.verifying_key,
         topics = req.topic_ids.len(),
         "unsubscribed from topics"
     );

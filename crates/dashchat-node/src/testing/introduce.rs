@@ -41,7 +41,7 @@ pub async fn introduce(_nodes: impl IntoIterator<Item = &TestNode>) {
     //         let n_addr = n.endpoint().node_addr().await.unwrap();
 
     //         m.add_peer(NodeAddress {
-    //             public_key: p2panda_core::PublicKey::from_bytes(n_addr.node_id.as_bytes())
+    //             verifying_key: p2panda_core::VerifyingKey::from_bytes(n_addr.node_id.as_bytes())
     //                 .expect("already validated public key"),
     //             direct_addresses: n_addr
     //                 .direct_addresses
@@ -54,7 +54,7 @@ pub async fn introduce(_nodes: impl IntoIterator<Item = &TestNode>) {
     //         .unwrap();
 
     //         n.add_peer(NodeAddress {
-    //             public_key: p2panda_core::PublicKey::from_bytes(m_addr.node_id.as_bytes())
+    //             verifying_key: p2panda_core::VerifyingKey::from_bytes(m_addr.node_id.as_bytes())
     //                 .expect("already validated public key"),
     //             direct_addresses: m_addr
     //                 .direct_addresses

@@ -24,7 +24,10 @@
 	import MessageInput from '$lib/components/MessageInput.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import {
+		messagePosition,
+		senderColor,
+	} from '$lib/components/messages/message-helpers';
 	import { showToast } from '$lib/utils/toasts';
 	import { m } from '$lib/paraglide/messages';
 
@@ -40,7 +43,7 @@
 	const readMessageOnObserve = readTracker.observe;
 
 	const messageSets = useReactivePromise(store.messageSets);
-	const details = useReactivePromise(store.details);
+	const info = useReactivePromise(store.info);
 	const allMembers = useReactivePromise(store.allMembers);
 	const readMessageHashes = useReactivePromise(store.readMessageHashes);
 	const unreadCount = useReactivePromise(store.unreadCount);
@@ -139,7 +142,7 @@
 					{/if}
 				{/snippet}
 				{#snippet title()}
-					{#await $details then details}
+					{#await $info then info}
 						<Link
 							href={`/group-chat/${chatId}/info`}
 							data-testid="group-chat-info-link"
@@ -147,11 +150,11 @@
 							style="display: flex; justify-content: start; align-items: center;"
 						>
 							<Avatar
-								image={details.image}
-								initials={details.name.slice(0, 2)}
+								image={info.image}
+								initials={info.name.slice(0, 2)}
 								style="--size: 2.5rem"
 							/>
-							<span>{details.name}</span>
+							<span>{info.name}</span>
 						</Link>
 					{/await}
 				{/snippet}
@@ -164,7 +167,7 @@
 
 		<div class="column" style={`padding-bottom: ${bottomBarHeight}px`}>
 			<div class="mt-16 mb-6 px-4" data-testid="group-chat-header">
-				{#await Promise.all([$details, $allMembers]) then [details, members]}
+				{#await Promise.all([$info, $allMembers]) then [info, members]}
 					<div class="column items-center">
 						<div
 							class="outline-card"
@@ -172,15 +175,15 @@
 						>
 							<div class="column items-center gap-3 px-8 pb-6 -mt-10">
 								<Avatar
-									image={details.image}
-									initials={details.name.slice(0, 2)}
+									image={info.image}
+									initials={info.name.slice(0, 2)}
 									style="--size: 80px"
 								/>
 								<span
 									class="text-2xl font-semibold break-words text-center"
 									data-testid="group-chat-header-name"
 								>
-									{details.name}
+									{info.name}
 								</span>
 								<div class="flex items-center gap-1.5 quiet text-sm">
 									<wa-icon
@@ -223,10 +226,7 @@
 										{/if}
 										{@const position = messagePosition(messageSet.length, i)}
 										{#if myDeviceId === message.author}
-											<div
-												class="self-end max-w-[85%]"
-												data-message-hash={hash}
-											>
+											<div class="self-end max-w-[85%]" data-message-hash={hash}>
 												<MessageFromMe
 													{message}
 													{position}
@@ -251,10 +251,10 @@
 													<Avatar
 														image={author?.profile?.avatar}
 														initials={author?.profile?.name.slice(0, 2)}
-														style="--size: 2.5rem"
+														style="--size: 2rem"
 													/>
 												{:else}
-													<div class="shrink-0" style="width: 2.5rem"></div>
+													<div class="shrink-0" style="width: 2rem"></div>
 												{/if}
 												<MessageFromOthers
 													{message}
@@ -263,6 +263,14 @@
 													{chatId}
 													searchQuery=""
 													onToggleReaction={() => {}}
+													sender={(position === 'first' ||
+														position === 'single') &&
+													author?.profile?.name
+														? {
+																name: author.profile.name,
+																color: senderColor(message.author),
+															}
+														: undefined}
 												/>
 											</div>
 										{/if}

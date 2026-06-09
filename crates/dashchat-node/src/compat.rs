@@ -1,10 +1,9 @@
-use named_id::RenameNone;
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
 
 dashchat_compat::capabilities! {
-    #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, RenameNone)]
+    #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Capabilities {
         messaging: 1,
     }

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { getContext } from 'svelte';
-	import type { ContactsStore, Profile, PublicKey } from 'dash-chat-stores';
+	import type { ContactsStore, Profile, VerifyingKey } from 'dash-chat-stores';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { BlockTitle, Searchbar } from 'konsta/svelte';
 	import StepPage from './StepPage.svelte';
@@ -9,7 +9,7 @@
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
 
 	interface Props {
-		selectedContacts: PublicKey[];
+		selectedContacts: VerifyingKey[];
 		onNext: () => void;
 	}
 
