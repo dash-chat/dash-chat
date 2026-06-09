@@ -202,7 +202,7 @@ fn spawn_topic_subscription_loop(
 ) {
     tauri::async_runtime::spawn(async move {
         while let Some(topic_id) = topic_subscribed_rx.recv().await {
-            let hex_topic = PushTopicId::from(hex::encode(&*topic_id));
+            let hex_topic = PushTopicId::from(topic_id.to_hex());
             if let Err(err) = subscribe_to_topics(&app_handle, [hex_topic].into()).await {
                 log::error!("Failed to subscribe to topic: {err:?}");
                 sync_topic_subscriptions_task.trigger();

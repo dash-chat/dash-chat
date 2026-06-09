@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
-use dashchat_node::{AsBody, Payload};
+use dashchat_node::{AsBody, Payload, TopicId};
 #[cfg(target_os = "android")]
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
@@ -77,7 +77,7 @@ pub fn receive_push_notification(
                         "Successfully processed push notification, no actual notification needs to be shown.",
                     );
                     // On iOS, alert notifications must be shown. If we return None here,
-                    // iOS will display a notification with title = log_id, and body = author:seq_num
+                    // iOS will display a notification with title = topic_id, and body = author:seq_num
                     // Show a generic notification instead
                     // TODO: apply for the exception to Apple that allows apps to not need to show a notification
                     // https://developer.apple.com/contact/request/notification-service
@@ -89,7 +89,7 @@ pub fn receive_push_notification(
             Err(err) => {
                 log::error!("Failed to handle push notification: {err:?}");
                 // On iOS, returning None here would let iOS fall back to the
-                // raw APNS payload (log_id as title, author:seq as body).
+                // raw APNS payload (topic_id as title, author:seq as body).
                 // Show a generic fallback so the user sees something readable.
                 #[cfg(target_os = "ios")]
                 return Some(notifications::may_have_new_messages_generic_notification());
@@ -105,7 +105,7 @@ async fn handle_push_notification(
     app_data_root: PathBuf,
 ) -> anyhow::Result<Option<NotificationData>> {
     // Title = log ID (hex), Body = operation ID ("author_hex:seq_num")
-    let log_hex = notification
+    let topic_hex = notification
         .title
         .as_deref()
         .context("notification has no title")?;
@@ -126,11 +126,11 @@ async fn handle_push_notification(
     let verifying_key = p2panda_core::VerifyingKey::from_bytes(&author_bytes)
         .context("failed to construct public key")?;
 
-    let log_id_bytes: [u8; 32] = hex::decode(log_hex)
+    let topic_bytes: [u8; 32] = hex::decode(topic_hex)
         .context("failed to hex-decode log")?
         .try_into()
-        .map_err(|_| anyhow!("log_id bytes are not 32 bytes long"))?;
-    let log_id = LogId::from_bytes(&log_id_bytes)?;
+        .map_err(|_| anyhow!("topic_id bytes are not 32 bytes long"))?;
+    let topic_id = TopicId::try_from(topic_bytes)?;
 
     let filesystem = FileSystem::from_app_root_dir(app_data_root)?;
     let app_data_dir = filesystem.app_data_dir();
@@ -161,7 +161,7 @@ async fn handle_push_notification(
     for _ in 0..75 {
         let log = node
             .op_store
-            .get_log(&device_id, &log_id, from)
+            .get_log(&device_id, &LogId::from_topic(topic_id), from)
             .await
             .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
         if let Some(first) = log.into_iter().next() {
@@ -173,7 +173,7 @@ async fn handle_push_notification(
 
     let Some(operation) = entry else {
         log::warn!(
-            "Operation {op_id} in log {log_hex} not found after polling, showing generic notification"
+            "Operation {op_id} in log {topic_hex} not found after polling, showing generic notification"
         );
         return Ok(Some(notifications::new_message_generic_notification()));
     };
@@ -216,7 +216,12 @@ async fn handle_push_notification(
     };
 
     Ok(
-        notifications::build_notification_data(&node, log_id, &operation.header, payload.as_ref())
-            .await,
+        notifications::build_notification_data(
+            &node,
+            topic_id,
+            &operation.header,
+            payload.as_ref(),
+        )
+        .await,
     )
 }

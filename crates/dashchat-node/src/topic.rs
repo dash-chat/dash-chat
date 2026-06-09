@@ -147,12 +147,6 @@ impl<K: TopicKind> From<Topic<K>> for LogId {
     }
 }
 
-impl From<LogId> for Topic<kind::Untyped> {
-    fn from(value: LogId) -> Self {
-        Topic::new(*value.as_bytes())
-    }
-}
-
 #[derive(
     Copy,
     Clone,
@@ -194,6 +188,7 @@ impl<K: TopicKind> Topic<K> {
 
     pub fn alias_named(self, name: &str) -> Self {
         self.id.alias_named(name);
+        LogId::from_topic(self.id).alias_named(name);
         self
     }
 }
