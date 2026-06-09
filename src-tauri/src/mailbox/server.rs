@@ -90,10 +90,18 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
     };
     log::info!("Sending stop signal to local mailbox...");
     let _ = state.interface_watcher_stop.send(());
-    let _ = state.interface_watcher.await;
+    if let Err(err) = state.interface_watcher.await {
+        log::error!("Mailbox interface watcher ended unexpectedly: {err}");
+    }
     let _ = state.stop_signal.send(());
-    state.server.await?;
-    let fullname = state.mdns_fullname.lock().unwrap().clone();
+    if let Err(err) = state.server.await {
+        log::error!("Local mailbox server task ended unexpectedly: {err}");
+    }
+    let fullname = state
+        .mdns_fullname
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
     if let Err(e) = handle.state::<ServiceDaemon>().unregister(&fullname) {
         log::error!("Failed to unregister MDNS service: {e:?}");
     }
@@ -257,9 +265,9 @@ async fn run_interface_watcher(
                 if !debounce_reannounce_burst(&mut watcher, &mut stop).await {
                     return;
                 }
-                let prev = fullname.lock().unwrap().clone();
+                let prev = fullname.lock().unwrap_or_else(|p| p.into_inner()).clone();
                 if let Some(new_fullname) = reannounce_mdns(&daemon, &prev, port, &device_id) {
-                    *fullname.lock().unwrap() = new_fullname;
+                    *fullname.lock().unwrap_or_else(|p| p.into_inner()) = new_fullname;
                 }
             }
         }
