@@ -121,7 +121,7 @@ pub async fn build_notification_data(
     let Some(payload) = payload else {
         #[cfg(mobile)]
         {
-            return auth_control_op_notification(node, header, sender_device_id, id).await;
+            return auth_control_op_notification(node, header, topic, sender_device_id, id).await;
         }
         #[cfg(not(mobile))]
         {
@@ -253,6 +253,7 @@ async fn chat_message_notification(
 async fn auth_control_op_notification(
     node: &Node,
     header: &Header,
+    topic: TopicId,
     sender_device_id: DeviceId,
     id: i32,
 ) -> Option<NotificationData> {
@@ -278,7 +279,6 @@ async fn auth_control_op_notification(
             .map(|profile| profile.name),
         None => None,
     };
-    let topic = header.extensions.topic;
 
     let group_route = Some(format!("/group-chat/{}", topic.to_hex()));
 
@@ -290,9 +290,7 @@ async fn auth_control_op_notification(
         // sender.
         GroupAction::Create { .. } => {
             let is_direct_chat = sender_agent_id
-                .map(|aid| {
-                    TopicId::from_topic(*Topic::direct_chat([node.agent_id(), aid])) == topic
-                })
+                .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == topic)
                 .unwrap_or(false);
             if is_direct_chat {
                 let title = match &sender_name {
