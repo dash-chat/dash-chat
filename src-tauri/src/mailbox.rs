@@ -126,6 +126,7 @@ async fn handle_browse_events(
                 let mailbox_id =
                     instance_name_from_fullname(&resolved.fullname, &resolved.ty_domain);
                 let port = resolved.port;
+                let node = node.clone();
 
                 // The local mailbox server listens dual-stack (`[::]:port`), so
                 // both IPv4 and IPv6 records are usable. We probe each address
@@ -138,24 +139,30 @@ async fn handle_browse_events(
                 // mailbox server port is vanishingly unlikely. For our *own*
                 // announcement, the loopback fallback is what makes offline
                 // self-discovery work.
-                let host = pick_reachable_host(&resolved, port).await;
-                let Some(host) = host else {
-                    log::info!(
-                        "Resolved mdns service {mailbox_id}: no address in the announcement is reachable on port {port}, waiting for next announcement"
-                    );
-                    continue;
-                };
+                //
+                // Probe + register runs off the handler so a slow / unreachable
+                // peer can't stall the event loop. Re-resolutions for the same
+                // mailbox_id are idempotent: `MailboxManager::register` swaps
+                // the client in place via `replace_client`.
+                tokio::spawn(async move {
+                    let Some(host) = pick_reachable_host(&resolved, port).await else {
+                        log::info!(
+                            "Resolved mdns service {mailbox_id}: no address in the announcement is reachable on port {port}, waiting for next announcement"
+                        );
+                        return;
+                    };
 
-                let url = format!("http://{host}:{port}");
-                node.mailboxes
-                    .register(mailbox_client::toy::ToyMailboxClient::new(
-                        mailbox_id.clone(),
-                        url.clone(),
-                    ))
-                    .await;
-                log::info!(
-                    "*** Registered local mailbox client via mdns: {mailbox_id} ({url}) ***",
-                );
+                    let url = format!("http://{host}:{port}");
+                    node.mailboxes
+                        .register(mailbox_client::toy::ToyMailboxClient::new(
+                            mailbox_id.clone(),
+                            url.clone(),
+                        ))
+                        .await;
+                    log::info!(
+                        "*** Registered local mailbox client via mdns: {mailbox_id} ({url}) ***",
+                    );
+                });
             }
             mdns_sd::ServiceEvent::ServiceRemoved(ty_domain, fullname) => {
                 let mailbox_id = instance_name_from_fullname(&fullname, &ty_domain);
@@ -172,8 +179,15 @@ async fn handle_browse_events(
     log::debug!("mdns browse handler loop ended");
 }
 
-/// Try a TCP connect to each routable address, then to each loopback address,
-/// returning the first that accepts a connection within the probe timeout,
+/// Per-address TCP probe budget. Probes run concurrently within a tier, so the
+/// effective per-event latency is closer to the slowest single RTT than to the
+/// sum. Generous enough to give a sleepy mobile peer time to ACK over lossy
+/// Wi-Fi — a tight (e.g. 500 ms) bound risks skipping otherwise-reachable
+/// peers whenever the first SYN gets dropped and has to retransmit.
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Concurrently TCP-probe the routable addresses, then the loopback addresses,
+/// returning the first that accepts a connection within `PROBE_TIMEOUT`,
 /// formatted for a URL authority (IPv6 wrapped in `[...]`). Returns `None` if
 /// no address in the announcement is reachable on the given port. The probe is
 /// a bare TCP connect — it doesn't verify the listener is actually a mailbox
@@ -189,12 +203,29 @@ async fn pick_reachable_host(resolved: &mdns_sd::ResolvedService, port: u16) -> 
         _ => None,
     });
     let (loopback, routable): (Vec<_>, Vec<_>) = ips.partition(|ip| ip.is_loopback());
-    for ip in routable.into_iter().chain(loopback.into_iter()) {
-        if probe_tcp(ip, port).await {
-            return Some(url_host(ip));
-        }
+    if let Some(host) = probe_first_reachable(&routable, port).await {
+        return Some(host);
     }
-    None
+    probe_first_reachable(&loopback, port).await
+}
+
+async fn probe_first_reachable(ips: &[std::net::IpAddr], port: u16) -> Option<String> {
+    if ips.is_empty() {
+        return None;
+    }
+    let probes = ips.iter().map(|&ip| {
+        Box::pin(async move {
+            if probe_tcp(ip, port).await {
+                Ok::<std::net::IpAddr, ()>(ip)
+            } else {
+                Err(())
+            }
+        })
+    });
+    futures::future::select_ok(probes)
+        .await
+        .ok()
+        .map(|(ip, _)| url_host(ip))
 }
 
 fn url_host(ip: std::net::IpAddr) -> String {
@@ -207,14 +238,14 @@ fn url_host(ip: std::net::IpAddr) -> String {
 async fn probe_tcp(host: std::net::IpAddr, port: u16) -> bool {
     let addr = std::net::SocketAddr::from((host, port));
     let connect = tokio::net::TcpStream::connect(&addr);
-    match tokio::time::timeout(std::time::Duration::from_millis(500), connect).await {
+    match tokio::time::timeout(PROBE_TIMEOUT, connect).await {
         Ok(Ok(_stream)) => true,
         Ok(Err(err)) => {
             log::trace!("Probe to {addr} refused / errored: {err}");
             false
         }
         Err(_elapsed) => {
-            log::trace!("Probe to {addr} timed out after 500ms");
+            log::trace!("Probe to {addr} timed out after {:?}", PROBE_TIMEOUT);
             false
         }
     }

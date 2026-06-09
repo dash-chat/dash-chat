@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex as StdMutex};
+
 use dashchat_node::{DeviceId, Node};
 use futures::FutureExt;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
@@ -9,7 +11,11 @@ use crate::filesystem::FileSystem;
 pub(crate) struct LocalMailboxState {
     stop_signal: tokio::sync::oneshot::Sender<()>,
     server: tokio::task::JoinHandle<()>,
-    mdns_fullname: String,
+    /// Currently-registered mDNS fullname. Owned by `run_interface_watcher`
+    /// which overwrites it on every re-announce so `stop_local_mailbox`
+    /// unregisters the actually-registered service rather than a stale one
+    /// from a previous re-announce cycle.
+    mdns_fullname: Arc<StdMutex<String>>,
     interface_watcher_stop: tokio::sync::oneshot::Sender<()>,
     interface_watcher: tokio::task::JoinHandle<()>,
 }
@@ -31,7 +37,9 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
 
     let daemon: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
     let port = free_port()?;
-    let mdns_fullname = register_mdns_with_retry(&daemon, port, &device_id, 3)?;
+    let mdns_fullname = Arc::new(StdMutex::new(register_mdns_with_retry(
+        &daemon, port, &device_id, 3,
+    )?));
 
     // Bind dual-stack so peers can reach us over both the IPv4 and IPv6
     // addresses the mDNS record auto-announces. A `::` socket accepts IPv4
@@ -85,10 +93,8 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
     let _ = state.interface_watcher.await;
     let _ = state.stop_signal.send(());
     state.server.await?;
-    if let Err(e) = handle
-        .state::<ServiceDaemon>()
-        .unregister(&state.mdns_fullname)
-    {
+    let fullname = state.mdns_fullname.lock().unwrap().clone();
+    if let Err(e) = handle.state::<ServiceDaemon>().unregister(&fullname) {
         log::error!("Failed to unregister MDNS service: {e:?}");
     }
 
@@ -211,7 +217,7 @@ async fn run_interface_watcher(
     daemon: ServiceDaemon,
     device_id: DeviceId,
     port: u16,
-    fullname: String,
+    fullname: Arc<StdMutex<String>>,
     mut stop: tokio::sync::oneshot::Receiver<()>,
 ) {
     use futures::StreamExt;
@@ -251,7 +257,10 @@ async fn run_interface_watcher(
                 if !debounce_reannounce_burst(&mut watcher, &mut stop).await {
                     return;
                 }
-                reannounce_mdns(&daemon, &fullname, port, &device_id);
+                let prev = fullname.lock().unwrap().clone();
+                if let Some(new_fullname) = reannounce_mdns(&daemon, &prev, port, &device_id) {
+                    *fullname.lock().unwrap() = new_fullname;
+                }
             }
         }
     }
@@ -281,16 +290,29 @@ async fn debounce_reannounce_burst(
     }
 }
 
-fn reannounce_mdns(daemon: &ServiceDaemon, fullname: &str, port: u16, device_id: &DeviceId) {
+/// Returns the fullname that is now registered with the daemon, or `None` if
+/// the re-register failed (in which case the previous `fullname` is no longer
+/// registered either — the unregister already ran).
+fn reannounce_mdns(
+    daemon: &ServiceDaemon,
+    fullname: &str,
+    port: u16,
+    device_id: &DeviceId,
+) -> Option<String> {
     let _ = daemon.unregister(fullname);
-    match mdns_service_info(port, device_id) {
-        Ok(service) => {
-            if let Err(err) = daemon.register(service) {
-                log::warn!("Failed to re-register mailbox mDNS: {err:?}");
-            }
+    let service = match mdns_service_info(port, device_id) {
+        Ok(service) => service,
+        Err(err) => {
+            log::warn!("Failed to build mDNS service info for re-announce: {err:?}");
+            return None;
         }
-        Err(err) => log::warn!("Failed to build mDNS service info for re-announce: {err:?}"),
+    };
+    let new_fullname = service.get_fullname().to_string();
+    if let Err(err) = daemon.register(service) {
+        log::warn!("Failed to re-register mailbox mDNS: {err:?}");
+        return None;
     }
+    Some(new_fullname)
 }
 
 fn mdns_service_info(port: u16, device_id: &DeviceId) -> anyhow::Result<ServiceInfo> {
