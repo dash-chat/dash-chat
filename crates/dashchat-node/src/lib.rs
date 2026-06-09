@@ -6,9 +6,7 @@ pub mod node;
 mod payload;
 pub mod stores;
 pub mod topic;
-mod util;
-
-pub mod polestar;
+pub mod util;
 
 mod id;
 pub mod mailbox;
@@ -17,18 +15,17 @@ pub mod compat;
 #[cfg(feature = "testing")]
 pub mod testing;
 
-use named_id::*;
+pub use aliased::Aliasing;
 
 pub use chat::*;
 pub use contact::{QrCode, ShareIntent};
 pub use error::{AddContactError, Error};
 pub use id::*;
 pub use node::{Node, NodeConfig, Notification};
-pub use p2panda_core::PrivateKey;
-use p2panda_core::Timestamp;
+pub use p2panda::SigningKey;
 pub use p2panda_spaces::ActorId;
 pub use payload::*;
-pub use topic::{LogId, Topic, TopicId};
+pub use topic::{Topic, TopicId};
 
 pub trait Cbor: serde::Serialize + serde::de::DeserializeOwned {
     fn as_bytes(&self) -> Result<Vec<u8>, p2panda_core::cbor::EncodeError> {

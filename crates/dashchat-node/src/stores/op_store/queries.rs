@@ -1,21 +1,23 @@
 use std::collections::BTreeMap;
 
-use p2panda_core::{PublicKey, SeqNum};
+use p2panda::VerifyingKey;
+use p2panda::operation::LogId;
+use p2panda_core::SeqNum;
 use p2panda_store::SqliteStore;
 use sqlx::prelude::*;
 
-use crate::{DeviceId, LogId};
+use crate::DeviceId;
 
 /// Database representation of a public key and sequence number for a single operation.
 #[derive(FromRow, Debug, Clone, PartialEq, Eq)]
 pub struct LogHeightRow {
-    pub(crate) public_key: String,
+    pub(crate) verifying_key: String,
     pub(crate) seq_num: String,
 }
 
 #[derive(FromRow)]
 struct DumpLogRow {
-    public_key: String,
+    verifying_key: String,
     log_id: Vec<u8>,
     seq_num: String,
 }
@@ -23,13 +25,13 @@ struct DumpLogRow {
 pub async fn dump_logs(db: &SqliteStore) -> Result<Vec<(DeviceId, LogId, SeqNum)>, anyhow::Error> {
     let query_str = "
         SELECT
-            public_key,
+            verifying_key,
             log_id,
             CAST(MAX(CAST(seq_num AS NUMERIC)) AS TEXT) as seq_num
         FROM
             operations_v1
         GROUP BY
-            public_key, log_id
+            verifying_key, log_id
         ";
 
     let rows = db
@@ -42,10 +44,11 @@ pub async fn dump_logs(db: &SqliteStore) -> Result<Vec<(DeviceId, LogId, SeqNum)
     let mut result = Vec::new();
 
     for row in rows {
-        let public_key = PublicKey::from_bytes(&hex::decode(&row.public_key)?.try_into().unwrap())?;
+        let verifying_key =
+            VerifyingKey::from_bytes(&hex::decode(&row.verifying_key)?.try_into().unwrap())?;
         let log_id: LogId = p2panda_core::cbor::decode_cbor(&*row.log_id)?;
         let seq_num = row.seq_num.parse::<u64>()?;
-        result.push((DeviceId::from(public_key), log_id, seq_num));
+        result.push((DeviceId::from(verifying_key), log_id, seq_num));
     }
 
     Ok(result)
@@ -58,14 +61,14 @@ pub(super) async fn get_log_heights_by_author(
 ) -> Result<BTreeMap<DeviceId, SeqNum>, anyhow::Error> {
     let query_str = "
         SELECT
-            public_key,
+            verifying_key,
             CAST(MAX(CAST(seq_num AS NUMERIC)) AS TEXT) as seq_num
         FROM
             operations_v1
         WHERE
             log_id = ?
         GROUP BY
-            public_key
+            verifying_key
         ";
 
     let log_id_encoded = p2panda_core::cbor::encode_cbor(&log_id)?;
@@ -81,12 +84,13 @@ pub(super) async fn get_log_heights_by_author(
 
     for row in rows {
         let LogHeightRow {
-            public_key,
+            verifying_key,
             seq_num,
         } = row;
 
-        let public_key = PublicKey::from_bytes(&hex::decode(&public_key)?.try_into().unwrap())?;
-        log_heights.insert(DeviceId::from(public_key), seq_num.parse::<u64>()?);
+        let verifying_key =
+            VerifyingKey::from_bytes(&hex::decode(&verifying_key)?.try_into().unwrap())?;
+        log_heights.insert(DeviceId::from(verifying_key), seq_num.parse::<u64>()?);
     }
 
     Ok(log_heights)
@@ -104,8 +108,8 @@ mod tests {
     async fn test_get_log_heights_by_author() {
         let node = TestNode::new(NodeConfig::default(), "test_node").await;
 
-        let topic = Topic::announcements(node.agent_id());
-        let log_heights = get_log_heights_by_author(&node.op_store.store, &topic)
+        let log_id = LogId::from(Topic::announcements(node.agent_id()));
+        let log_heights = get_log_heights_by_author(&node.op_store.store, &log_id)
             .await
             .unwrap();
         assert_eq!(log_heights, btreemap! { node.device_id() => 1 });

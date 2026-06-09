@@ -1,4 +1,4 @@
-import type { Hash, PublicKey } from './types';
+import type { Hash, VerifyingKey } from './types';
 
 export interface SimplifiedOperation<B> {
 	hash: Hash;
@@ -8,7 +8,7 @@ export interface SimplifiedOperation<B> {
 
 export interface SimplifiedHeader {
 	/// Author of this operation.
-	public_key: PublicKey;
+	verifying_key: VerifyingKey;
 
 	/// Milliseconds since the Unix epoch (suitable for `new Date(ms)`).
 	timestamp: number;
@@ -33,7 +33,9 @@ export interface SimplifiedHeader {
 	auth?: GroupsArgs;
 }
 
-export type AuthGroupMember = { Individual: PublicKey } | { Group: PublicKey };
+export type AuthGroupMember =
+	| { Individual: VerifyingKey }
+	| { Group: VerifyingKey };
 
 /// `Access<()>` from p2panda-auth. The chat-list summary only inspects the action discriminant,
 /// so the inner shape is opaque here.
@@ -47,7 +49,7 @@ export type GroupAction =
 	| { Demote: { member: AuthGroupMember; access: GroupAccess } };
 
 export interface GroupsArgs {
-	group_id: PublicKey;
+	group_id: VerifyingKey;
 	action: GroupAction;
 	dependencies: Hash[];
 }

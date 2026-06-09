@@ -1,5 +1,5 @@
 export type Signature = Uint8Array;
-export type PublicKey = string;
+export type VerifyingKey = string;
 export type Hash = string;
 export type LogId = string;
 export type TopicId = string;
@@ -15,7 +15,7 @@ export interface Header<E = void> {
 	version: number;
 
 	/// Author of this operation.
-	public_key: PublicKey;
+	verifying_key: VerifyingKey;
 
 	/// Signature by author over all fields in header, providing authenticity.
 	signature: Signature | undefined;
@@ -57,15 +57,15 @@ export interface Lifetime {
 	not_after: number;
 }
 
-export type DeviceId = PublicKey;
-export type AgentId = PublicKey;
+export type DeviceId = VerifyingKey;
+export type AgentId = VerifyingKey;
 
-export type PreKey = [PublicKey, Lifetime];
+export type PreKey = [VerifyingKey, Lifetime];
 
 export type XSignature = string; // TODO: check this is correct
 
 export interface LongTermKeyBundle {
-	identity_key: PublicKey;
+	identity_key: VerifyingKey;
 	signed_prekey: PreKey;
 	prekey_signature: XSignature;
 }

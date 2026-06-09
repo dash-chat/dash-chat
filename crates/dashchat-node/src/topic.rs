@@ -32,8 +32,10 @@
 use std::marker::PhantomData;
 
 use crate::AgentId;
-use named_id::*;
 
+use aliased::Aliasing;
+use p2panda::operation::LogId;
+use p2panda::{SigningKey, VerifyingKey};
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
@@ -53,7 +55,6 @@ pub trait TopicKind:
     + Ord
     + std::fmt::Display
     + std::fmt::Debug
-    + Rename
     + 'static
 {
 }
@@ -87,7 +88,6 @@ pub mod kind {
                 Hash,
                 Serialize,
                 Deserialize,
-                RenameNone,
                 derive_more::Display,
                 derive_more::Debug,
             )]
@@ -130,7 +130,7 @@ pub mod kind {
 )]
 #[display("{}", hex::encode(self.0))]
 #[debug("{}", self)]
-pub struct TopicId([u8; 32]);
+pub struct TopicId(pub(crate) [u8; 32]);
 
 impl TopicId {
     pub const fn new(bytes: [u8; 32]) -> Self {
@@ -165,8 +165,6 @@ impl<'de> Deserialize<'de> for TopicId {
     }
 }
 
-pub type LogId = TopicId;
-
 impl p2panda_spaces::traits::SpaceId for TopicId {}
 
 pub type DashChatTopicId = TopicId;
@@ -193,12 +191,35 @@ impl sqlx::Decode<'_, Sqlite> for TopicId {
     }
 }
 
-impl Nameable for TopicId {
-    fn shortener(&self) -> Option<Shortener> {
-        Some(Shortener {
-            length: 4,
-            prefix: "L",
-        })
+// conversion traits for p2panda core types.
+
+impl From<p2panda::Topic> for TopicId {
+    fn from(value: p2panda::Topic) -> Self {
+        value.alias_numbered();
+        let t = TopicId(value.to_bytes());
+        t.alias_numbered();
+        t
+    }
+}
+
+impl From<TopicId> for p2panda::Topic {
+    fn from(value: TopicId) -> Self {
+        value.alias_numbered();
+        let t = p2panda::Topic::from(value.0);
+        t.alias_numbered();
+        t
+    }
+}
+
+impl From<TopicId> for LogId {
+    fn from(value: TopicId) -> Self {
+        LogId::from_topic(value.into())
+    }
+}
+
+impl From<LogId> for TopicId {
+    fn from(value: LogId) -> Self {
+        TopicId::new(*value.as_bytes())
     }
 }
 
@@ -210,7 +231,6 @@ impl Nameable for TopicId {
     PartialEq,
     PartialOrd,
     Ord,
-    named_id::RenameAll,
     derive_more::Deref,
     derive_more::Display,
     derive_more::Debug,
@@ -234,8 +254,10 @@ impl<K: TopicKind> Topic<K> {
         }
     }
 
-    pub fn with_name(self, name: &str) -> Self {
-        self.id.with_name(name);
+    pub fn alias_named(self, name: &str) -> Self {
+        self.id.alias_named(name);
+        p2panda::Topic::from(self.id).alias_named(name);
+        TopicId::from(p2panda::Topic::from(self.id)).alias_named(name);
         self
     }
 
@@ -247,13 +269,15 @@ impl<K: TopicKind> Topic<K> {
 
 impl Topic<kind::Announcements> {
     pub fn announcements(agent_id: AgentId) -> Self {
-        Self::new(*agent_id.as_bytes())
+        let t = Self::new(*agent_id.as_bytes());
+        t.alias_named(&format!("announcements({:?})", agent_id.aliased()));
+        t
     }
 }
 
 impl Topic<kind::Chat> {
     pub fn random() -> Self {
-        let pk = p2panda_core::PrivateKey::new().public_key();
+        let pk = SigningKey::generate().verifying_key();
         Self::new(*pk.as_bytes())
     }
 
@@ -266,12 +290,28 @@ impl Topic<kind::Chat> {
         Self::new(*pk.as_bytes())
     }
 
-    pub fn from_group_pubkey(pubkey: p2panda_core::PublicKey) -> Self {
+    pub fn from_group_pubkey(pubkey: VerifyingKey) -> Self {
         Self::new(*pubkey.as_bytes())
     }
 
-    pub fn to_group_pubkey(self) -> anyhow::Result<p2panda_core::PublicKey> {
-        Ok(p2panda_core::PublicKey::from_bytes(&self.id.0)?)
+    /// Instantiate a chat topic from a p2panda::Topic.
+    ///
+    /// This can fail if the topic bytes do not actually represent a valid Ed25519 public key.
+    pub fn from_topic(topic: p2panda::Topic) -> anyhow::Result<Self> {
+        let verifying_key = VerifyingKey::from_bytes(&topic.as_bytes())?;
+        Ok(Self::new(*verifying_key.as_bytes()))
+    }
+
+    /// Instantiate a chat topic from a TopicId.
+    ///
+    /// This can fail if the topic id bytes do not actually represent a valid Ed25519 public key.
+    pub fn from_topic_id(topic_id: TopicId) -> anyhow::Result<Self> {
+        let verifying_key = VerifyingKey::from_bytes(&topic_id.0)?;
+        Ok(Self::new(*verifying_key.as_bytes()))
+    }
+
+    pub fn to_group_pubkey(self) -> anyhow::Result<VerifyingKey> {
+        Ok(VerifyingKey::from_bytes(&self.id.0)?)
     }
 }
 
@@ -315,6 +355,21 @@ impl TryFrom<String> for Topic {
     type Error = anyhow::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(std::str::FromStr::from_str(&value)?)
+    }
+}
+
+// conversion traits for p2panda core types.
+
+impl<K: TopicKind> From<Topic<K>> for p2panda::Topic {
+    fn from(value: Topic<K>) -> Self {
+        p2panda::Topic::from(value.0)
+    }
+}
+
+impl<K: TopicKind> From<Topic<K>> for LogId {
+    fn from(value: Topic<K>) -> Self {
+        let topic: p2panda::Topic = value.into();
+        LogId::from_topic(topic)
     }
 }
 
