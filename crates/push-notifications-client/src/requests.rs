@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use crate::types::{FcmToken, OperationId, PublicKey, TopicId};
+use crate::types::{FcmToken, OperationId, TopicId, VerifyingKey};
 
 /// Maximum length for an FCM token string.
 const MAX_FCM_TOKEN_LEN: usize = 4096;
@@ -40,8 +40,8 @@ fn validate_hex32(value: &str, field: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
-fn validate_public_key(key: &PublicKey) -> Result<(), ValidationError> {
-    validate_hex32(key, "public_key")
+fn validate_verifying_key(key: &VerifyingKey) -> Result<(), ValidationError> {
+    validate_hex32(key, "verifying_key")
 }
 
 fn validate_topic_id(id: &TopicId) -> Result<(), ValidationError> {
@@ -87,13 +87,13 @@ fn validate_topic_ids(topic_ids: &HashSet<TopicId>) -> Result<(), ValidationErro
 
 #[derive(Serialize, Deserialize)]
 pub struct RegisterFcmTokenRequest {
-    pub public_key: PublicKey,
+    pub verifying_key: VerifyingKey,
     pub fcm_token: FcmToken,
 }
 
 impl RegisterFcmTokenRequest {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_public_key(&self.public_key)?;
+        validate_verifying_key(&self.verifying_key)?;
         validate_fcm_token(&self.fcm_token)?;
         Ok(())
     }
@@ -101,25 +101,25 @@ impl RegisterFcmTokenRequest {
 
 #[derive(Serialize, Deserialize)]
 pub struct UnregisterFcmTokenRequest {
-    pub public_key: PublicKey,
+    pub verifying_key: VerifyingKey,
 }
 
 impl UnregisterFcmTokenRequest {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_public_key(&self.public_key)?;
+        validate_verifying_key(&self.verifying_key)?;
         Ok(())
     }
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct AddTopicSubscriptionsRequest {
-    pub public_key: PublicKey,
+    pub verifying_key: VerifyingKey,
     pub topic_ids: HashSet<TopicId>,
 }
 
 impl AddTopicSubscriptionsRequest {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_public_key(&self.public_key)?;
+        validate_verifying_key(&self.verifying_key)?;
         validate_topic_ids(&self.topic_ids)?;
         Ok(())
     }
@@ -127,13 +127,13 @@ impl AddTopicSubscriptionsRequest {
 
 #[derive(Serialize, Deserialize)]
 pub struct RemoveTopicSubscriptionsRequest {
-    pub public_key: PublicKey,
+    pub verifying_key: VerifyingKey,
     pub topic_ids: HashSet<TopicId>,
 }
 
 impl RemoveTopicSubscriptionsRequest {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_public_key(&self.public_key)?;
+        validate_verifying_key(&self.verifying_key)?;
         validate_topic_ids(&self.topic_ids)?;
         Ok(())
     }
@@ -141,13 +141,13 @@ impl RemoveTopicSubscriptionsRequest {
 
 #[derive(Serialize, Deserialize)]
 pub struct UpdateTopicSubscriptionsRequest {
-    pub public_key: PublicKey,
+    pub verifying_key: VerifyingKey,
     pub topic_ids: HashSet<TopicId>,
 }
 
 impl UpdateTopicSubscriptionsRequest {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_public_key(&self.public_key)?;
+        validate_verifying_key(&self.verifying_key)?;
         validate_topic_ids(&self.topic_ids)?;
         Ok(())
     }
@@ -159,7 +159,7 @@ pub struct NotifyTopicsRequest {
     /// device that authored each one. Subscribers whose registered public key
     /// matches an operation's author are filtered out — devices don't get
     /// pushes for messages they wrote themselves.
-    pub topics_to_notify: HashMap<TopicId, HashMap<OperationId, PublicKey>>,
+    pub topics_to_notify: HashMap<TopicId, HashMap<OperationId, VerifyingKey>>,
 }
 
 impl NotifyTopicsRequest {
@@ -180,7 +180,7 @@ impl NotifyTopicsRequest {
             }
             for (op_id, author) in ops {
                 validate_operation_id(op_id)?;
-                validate_public_key(author)?;
+                validate_verifying_key(author)?;
             }
         }
         Ok(())

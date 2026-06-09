@@ -7,6 +7,9 @@ pub use test_node::*;
 use tracing_subscriber::EnvFilter;
 
 pub fn setup_tracing(dirs: &[&str], more: bool) {
+    // Ensure aliases are set up. Idempotent.
+    crate::util::setup_aliases();
+
     let dirs = dirs.join(",");
     let filter = EnvFilter::try_new(dirs).unwrap();
     let _ = tracing_subscriber::fmt::fmt()

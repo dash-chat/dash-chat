@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { ChatsStore, ContactsStore, PublicKey } from 'dash-chat-stores';
+	import type {
+		ChatsStore,
+		ContactsStore,
+		VerifyingKey,
+	} from 'dash-chat-stores';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import MembersStep from './MembersStep.svelte';
 	import GroupInfoStep from './GroupInfoStep.svelte';
@@ -12,7 +16,7 @@
 	const resolvedContacts = $derived($contacts ?? []);
 
 	let currentPage: 'members' | 'group-info' = $state('members');
-	let selectedContacts = $state<PublicKey[]>([]);
+	let selectedContacts = $state<VerifyingKey[]>([]);
 	let groupName = $state('');
 
 	async function createGroupChat() {

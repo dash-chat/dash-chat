@@ -1,5 +1,6 @@
 use serde::Serialize;
 use thiserror::Error;
+use tokio::sync::oneshot::error::RecvError;
 
 #[derive(Debug, Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
@@ -39,6 +40,12 @@ pub enum AddContactError {
 
 #[derive(Debug, Error)]
 pub enum ShutdownError {
-    #[error("Stream processing task failed to join: {0:?}")]
-    StreamTaskJoin(Box<dyn std::any::Any + Send + 'static>),
+    #[error("Error sending shutting signal to node actor: {0:?}")]
+    ActorShutdown(Box<dyn std::any::Any + Send + 'static>),
+
+    #[error("Error closing down the processor task: {0:?}")]
+    ProcessorCancel(Box<dyn std::any::Any + Send + 'static>),
+
+    #[error(transparent)]
+    Receive(#[from] RecvError),
 }
