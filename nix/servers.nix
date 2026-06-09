@@ -50,7 +50,7 @@ let
         wants = [ "network-online.target" ];
         serviceConfig = {
           ExecStart =
-            "${mailbox}/bin/mailbox-server --addr 0.0.0.0:80 --push-notifications-url https://push-notifications-server.production.dash-chat.dash-chat.garnix.me";
+            "${mailbox}/bin/mailbox-server --addr 0.0.0.0:80 --push-notifications-url http://65.108.254.103";
           Restart = "always";
         };
       };
