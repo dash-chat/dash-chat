@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::Once;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use push_notifications_client::types::{FcmToken, PublicKey, TopicId};
+use push_notifications_client::types::{FcmToken, TopicId, VerifyingKey};
 use push_notifications_server::driver::Driver;
 use push_notifications_server::driver::sql::SqlDriver;
 
@@ -17,8 +17,8 @@ async fn create_driver() -> SqlDriver {
 }
 
 /// Generate a valid 64-char hex public key from a u8 seed.
-fn pub_key(seed: u8) -> PublicKey {
-    PublicKey::from(format!("{:02x}", seed).repeat(32))
+fn pub_key(seed: u8) -> VerifyingKey {
+    VerifyingKey::from(format!("{:02x}", seed).repeat(32))
 }
 
 /// Generate a valid 64-char hex topic ID from a u8 seed.

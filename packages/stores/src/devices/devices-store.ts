@@ -2,7 +2,7 @@ import { reactive } from 'signalium';
 
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { PublicKey } from '../p2panda/types';
+import { VerifyingKey } from '../p2panda/types';
 import { DeviceGroupPayload, Payload } from '../types';
 import { IDevicesClient } from './devices-client';
 
@@ -22,7 +22,7 @@ export class DevicesStore {
 		const operations = await this.logsStore.logsForAllAuthors(topicId);
 
 		return operations as Record<
-			PublicKey,
+			VerifyingKey,
 			SimplifiedOperation<{
 				type: 'DeviceGroupPayload';
 				payload: DeviceGroupPayload;

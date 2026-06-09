@@ -1,26 +1,31 @@
+use p2panda::operation::{Header, Operation};
+use p2panda::{Hash, VerifyingKey};
+use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
-use crate::{DeviceId, Header, Operation, topic::TopicId};
+use crate::{DeviceId, topic::TopicId};
 use mailbox_client::MailboxItem;
-use p2panda_core::{Body, PublicKey};
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MailboxOperation {
+    // @TODO: topic is only represented on an operation in it's hashed form. We can't derive it
+    // from the header so we add it here as an own field on mailbox operation.
+    pub topic: TopicId,
     pub header: Header,
     pub body: Option<Body>,
 }
 
 impl MailboxItem for MailboxOperation {
-    type Hash = p2panda_core::Hash;
+    type Hash = Hash;
     type Author = DeviceId;
     type Topic = TopicId;
 
-    fn hash(&self) -> p2panda_core::Hash {
+    fn hash(&self) -> Hash {
         self.header.hash()
     }
 
     fn author(&self) -> DeviceId {
-        self.header.public_key.into()
+        self.header.verifying_key.into()
     }
 
     fn seq_num(&self) -> u64 {
@@ -28,7 +33,7 @@ impl MailboxItem for MailboxOperation {
     }
 
     fn topic(&self) -> TopicId {
-        self.header.extensions.topic
+        self.topic
     }
 }
 
@@ -48,7 +53,7 @@ impl mailbox_client::toy::ToyItemTraits for TopicId {
 
 impl mailbox_client::toy::ToyItemTraits for DeviceId {
     fn as_bytes(&self) -> &[u8] {
-        PublicKey::as_bytes(&*self)
+        VerifyingKey::as_bytes(&*self)
     }
 
     fn from_str(s: &str) -> Result<Self, anyhow::Error> {
@@ -56,16 +61,7 @@ impl mailbox_client::toy::ToyItemTraits for DeviceId {
             .try_into()
             .map_err(|e| anyhow::anyhow!("Invalid DeviceId: {e:?}"))?;
 
-        Ok(DeviceId::from(PublicKey::from_bytes(&bytes)?))
-    }
-}
-
-impl From<Operation> for MailboxOperation {
-    fn from(op: Operation) -> Self {
-        Self {
-            header: op.header,
-            body: op.body,
-        }
+        Ok(DeviceId::from(VerifyingKey::from_bytes(&bytes)?))
     }
 }
 
@@ -79,16 +75,9 @@ impl From<MailboxOperation> for Operation {
     }
 }
 
-impl From<(Header, Option<Body>)> for MailboxOperation {
-    fn from((header, body): (Header, Option<Body>)) -> Self {
-        Self { header, body }
-    }
-}
-
 #[cfg(test)]
 
 mod tests {
-    use std::time::Duration;
 
     use crate::{testing::*, *};
     use mailbox_client::{MailboxClient, mem::MemMailbox};
@@ -105,7 +94,6 @@ mod tests {
                 "mailbox_client=debug",
                 "p2panda_stream=warn",
                 "p2panda_auth=warn",
-                "p2panda_encryption=warn",
                 "p2panda_spaces=warn",
                 "named_id=warn",
             ],
@@ -114,6 +102,7 @@ mod tests {
 
         let mb = MemMailbox::new();
         let config = NodeConfig::testing();
+        let poll = PollConfig::default();
 
         // Start with no mailbox
         let alice = TestNode::new(config.clone(), "alice").await;
@@ -131,17 +120,13 @@ mod tests {
         bobbi.register_topic(chat).await.unwrap();
         println!("=== added mailboxes ===");
 
-        wait_for(
-            Duration::from_millis(100),
-            Duration::from_secs(5),
-            || async {
-                if bobbi.get_messages(chat).await.unwrap().len() == 1 {
-                    Ok(())
-                } else {
-                    Err("message not received")
-                }
-            },
-        )
+        poll.wait_for(|| async {
+            if bobbi.get_messages(chat).await.unwrap().len() == 1 {
+                Ok(())
+            } else {
+                Err("message not received")
+            }
+        })
         .await
         .unwrap();
     }
@@ -161,6 +146,7 @@ mod tests {
 
         let mb = MemMailbox::new();
         let config = NodeConfig::testing();
+        let poll = PollConfig::default();
 
         let alice = TestNode::new(config.clone(), "alice").await;
         let bobbi = TestNode::new(config.clone(), "bobbi").await;
@@ -174,17 +160,13 @@ mod tests {
 
         alice.send_message(chat, "Hello".into()).await.unwrap();
 
-        wait_for(
-            Duration::from_millis(100),
-            Duration::from_secs(5),
-            || async {
-                if bobbi.get_messages(chat).await.unwrap().len() == 1 {
-                    Ok(())
-                } else {
-                    Err("message not received")
-                }
-            },
-        )
+        poll.wait_for(|| async {
+            if bobbi.get_messages(chat).await.unwrap().len() == 1 {
+                Ok(())
+            } else {
+                Err("message not received")
+            }
+        })
         .await
         .unwrap();
 
@@ -206,27 +188,23 @@ mod tests {
             .await
             .expect("bobbi sync state missing");
 
-        wait_for(
-            Duration::from_millis(100),
-            Duration::from_secs(5),
-            || async {
-                let alice_seq = alice_sync
-                    .borrow()
-                    .get(&chat_id)
-                    .and_then(|m| m.get(&alice_device))
-                    .copied();
-                let bobbi_seq = bobbi_sync
-                    .borrow()
-                    .get(&chat_id)
-                    .and_then(|m| m.get(&alice_device))
-                    .copied();
-                if alice_seq == Some(0) && bobbi_seq == Some(0) {
-                    Ok(())
-                } else {
-                    Err("watermark not recorded")
-                }
-            },
-        )
+        poll.wait_for(|| async {
+            let alice_seq = alice_sync
+                .borrow()
+                .get(&chat_id)
+                .and_then(|m| m.get(&alice_device))
+                .copied();
+            let bobbi_seq = bobbi_sync
+                .borrow()
+                .get(&chat_id)
+                .and_then(|m| m.get(&alice_device))
+                .copied();
+            if alice_seq == Some(0) && bobbi_seq == Some(0) {
+                Ok(())
+            } else {
+                Err("watermark not recorded")
+            }
+        })
         .await
         .unwrap();
     }

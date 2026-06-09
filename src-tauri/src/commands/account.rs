@@ -52,11 +52,11 @@ pub async fn delete_account(app: AppHandle, node: State<'_, Node>) -> Result<(),
 #[cfg(mobile)]
 async fn unregister_fcm_token(app: &AppHandle, node: &Node) {
     use push_notifications_client::client::PushNotificationsClient;
-    use push_notifications_client::types::PublicKey;
+    use push_notifications_client::types::VerifyingKey;
 
     let client = app.state::<PushNotificationsClient>();
-    let public_key = PublicKey::from(node.device_id().to_string());
-    match client.unregister_fcm_token(public_key).await {
+    let verifying_key = VerifyingKey::from(node.device_id().to_string());
+    match client.unregister_fcm_token(verifying_key).await {
         Ok(()) => log::info!("Unregistered FCM token from push notifications server."),
         Err(e) => log::error!("Failed to unregister FCM token: {e:?}"),
     }

@@ -1,35 +1,26 @@
 use dashchat_compat::{Compat, VersionConvert, VersionConvertError};
 use derive_more::derive::{Deref, From};
-use named_id::RenameNone;
-use p2panda_core::Hash;
+use p2panda::Hash;
 use serde::{Deserialize, Serialize};
 
 use crate::compat::Capabilities;
 
 #[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    derive_more::From,
-    derive_more::Deref,
-    RenameNone,
+    Clone, Debug, PartialEq, Eq, Serialize, Deserialize, derive_more::From, derive_more::Deref,
 )]
 pub struct ChatMessageContentV0(String);
 
 /// Placeholder for future message versions.
 //
 // TODO: macro to ensure proper tagging
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "v")]
 pub enum ChatMessageContentV {
     #[serde(rename = "1")]
     V1(ChatMessageContentV1),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, RenameNone)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ChatMessageContentV1 {
     pub message: String,
     pub media: Option<Media>,
@@ -38,7 +29,7 @@ pub struct ChatMessageContentV1 {
 /// Placeholder for media type.
 pub type Media = ();
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone, Deref, From)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Deref, From)]
 pub struct ChatMessageContent(dashchat_compat::Compat<ChatMessageContentV0, ChatMessageContentV>);
 
 impl ChatMessageContent {
@@ -128,7 +119,7 @@ impl VersionConvert for ChatMessageContent {
 /// An emoji reaction to a message.
 ///
 /// If an author creates multiple reactions to the same message, only the last one is shown.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatReaction {
     /// The emoji to react with.
     /// Use None to "remove" the prior reaction.
@@ -143,13 +134,13 @@ pub mod testing {
 
     use std::cmp::Ordering;
 
-    use named_id::RenameAll;
+    use p2panda::operation::Header;
     use p2panda_core::Timestamp;
 
-    use crate::{Cbor, DeviceId, Header};
+    use crate::{Cbor, DeviceId};
 
     /// A standalone chat message suitable for sending to the frontend.
-    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
     pub struct ChatMessage {
         pub content: ChatMessageContent,
         pub author: DeviceId,
@@ -160,7 +151,7 @@ pub mod testing {
         pub fn new(content: ChatMessageContent, header: &Header) -> Self {
             Self {
                 content,
-                author: header.public_key.into(),
+                author: header.verifying_key.into(),
                 timestamp: header.timestamp,
             }
         }
