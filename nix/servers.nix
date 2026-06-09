@@ -6,6 +6,8 @@ let
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDTE+RwRfcG3UNTOZwGmQOKd5R+9jN0adH4BIaZvmWjO guillem.cordoba@gmail.com";
     guillemslaptop =
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO8DVpvRgQ90MyMyiuNdvyMNAio9n2o/+57MyhZS2A5A guillem.cordoba@gmail.com";
+    jade =
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOllETiFdOEe8vGdr3CDiYJmWBQEz7j+2yyUfLFOt80+ jade@thirdfish";
   };
 
   sshModule = {
