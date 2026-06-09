@@ -225,7 +225,7 @@ impl Node {
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
-        let topic = ChatId::from_topic(topic)?;
+        let topic = ChatId::from_topic_id(topic)?;
 
         // Calculate the current group membership based on local store state rather than
         // looking into the group actions themselves.
@@ -271,7 +271,8 @@ impl Node {
         //
         // @TODO: once group control messages are properly ordered we could send a
         // membership diff here instead of relying on the frontend to refetch.
-        let dashchat_topic = crate::Topic::untyped(*operation.topic().as_bytes());
+        let dashchat_topic =
+            crate::Topic::<crate::topic::kind::Untyped>::new(*operation.topic().as_bytes());
         self.notify_payload(
             dashchat_topic,
             &operation.processed().header(),

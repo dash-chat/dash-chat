@@ -367,10 +367,9 @@ impl LocalStore {
         let rows: Vec<(Topic,)> = sqlx::query_as("SELECT chat_id FROM group_chats")
             .fetch_all(&self.pool)
             .await?;
-        Ok(rows
-            .into_iter()
-            .map(|(id,)| ChatId::new(*id.as_bytes()))
-            .collect())
+        rows.into_iter()
+            .map(|(id,)| Topic::<kind::Chat>::from_topic_id(TopicId::from(id)))
+            .collect()
     }
 }
 

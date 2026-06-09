@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
 use dashchat_node::{AsBody, Payload};
+use p2panda::operation::LogId;
 #[cfg(target_os = "android")]
 use jni::objects::JClass;
 #[cfg(target_os = "android")]

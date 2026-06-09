@@ -4,6 +4,15 @@ use mailbox_server::{Blob, GetBlobsRequest, GetBlobsResponse, StoreBlobsRequest}
 
 use super::*;
 
+/// Trait bounds the toy client requires of an item's `Topic` and `Author` types.
+///
+/// CONTRACT: the `Serialize`/`Deserialize` impls of these types MUST round-trip
+/// through a single JSON string (e.g. `serializer.collect_str(&hex)`). The toy
+/// client encodes topic/author ids as HTTP map keys via [`stringify`], which
+/// strips the surrounding quotes; a `Serialize` impl that emits anything other
+/// than a JSON string (an array, object, or number) silently produces a
+/// malformed key. `dashchat-node` pins this for the real `TopicId`/`DeviceId`
+/// types via its `serializes_as_json_string_for_mailbox_key` tests.
 pub trait ToyItemTraits: ItemTraits + Serialize + DeserializeOwned {}
 impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {}
 
@@ -176,14 +185,14 @@ where
     }
 }
 
-fn stringify(value: impl Serialize) -> String {
+pub fn stringify(value: impl Serialize) -> String {
     serde_json::to_string(&value)
         .expect("value is JSON-serializable")
         .trim_matches('"')
         .to_string()
 }
 
-fn unstringify<T: DeserializeOwned>(s: &str) -> Result<T, anyhow::Error> {
+pub fn unstringify<T: DeserializeOwned>(s: &str) -> Result<T, anyhow::Error> {
     serde_json::from_str(&format!("\"{}\"", s))
         .map_err(|e| anyhow::anyhow!("Failed to unstringify: {}", e))
 }
