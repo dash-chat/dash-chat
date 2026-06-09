@@ -8,14 +8,14 @@
 	import { useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useVisibleChatSummaries } from '$lib/stores/visible-chats';
 	import ErrorPlaceholder from '../ErrorPlaceholder.svelte';
 	import ChatSummary from './ChatSummary.svelte';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 
 	let { class: className = '' }: { class?: string } = $props();
 
 	const chatsStore: ChatsStore = getContext('chats-store');
-	const chatSummaries = useVisibleChatSummaries(chatsStore);
+	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
 
 	const chatHref = (summary: { type: string; chatId: string }) =>
 		summary.type === 'GroupChat'
