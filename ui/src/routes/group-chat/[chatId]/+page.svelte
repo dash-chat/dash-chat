@@ -226,7 +226,10 @@
 										{/if}
 										{@const position = messagePosition(messageSet.length, i)}
 										{#if myDeviceId === message.author}
-											<div class="self-end max-w-[85%]" data-message-hash={hash}>
+											<div
+												class="self-end max-w-[85%]"
+												data-message-hash={hash}
+											>
 												<MessageFromMe
 													{message}
 													{position}
