@@ -18,7 +18,7 @@ mod receive_push_notification;
 mod android;
 
 const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str =
-    "https://push-notifications-server.production.dash-chat.dash-chat.garnix.me";
+    "http://push-notifications.darksoil.studio";
 
 /// Returns the push notifications server URL to use.
 ///
