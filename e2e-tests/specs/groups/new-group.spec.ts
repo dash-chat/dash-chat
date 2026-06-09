@@ -25,12 +25,13 @@ describe('New group', () => {
 		await agent1.newGroupPage.addMembersStep.nextButton.click();
 
 		await agent1.newGroupPage.groupInfoStep.ready();
+		await agent1.newGroupPage.groupInfoStep.setName('Solo Group');
 		await agent1.newGroupPage.groupInfoStep.createButton.click();
 
 		await agent1.groupChatPage.ready();
 		await agent1.groupChatPage.back.click();
 		await agent1.homePage.ready();
-		await agent1.homePage.chatListItem('mygroup').waitForExist();
+		await agent1.homePage.chatListItem('Solo Group').waitForExist();
 	});
 
 	it('creates a new group with another member', async () => {
@@ -50,13 +51,14 @@ describe('New group', () => {
 		await agent1.newGroupPage.addMembersStep.nextButton.click();
 
 		await agent1.newGroupPage.groupInfoStep.ready();
+		await agent1.newGroupPage.groupInfoStep.setName('Family');
 		await agent1.newGroupPage.groupInfoStep.createButton.click();
 
 		await agent1.groupChatPage.ready();
 		await agent1.groupChatPage.back.click();
 		await agent1.homePage.ready();
-		await agent1.homePage.chatListItem('mygroup').waitForExist();
+		await agent1.homePage.chatListItem('Family').waitForExist();
 
-		await agent2.homePage.chatListItem('mygroup').waitForExist();
+		await agent2.homePage.chatListItem('Family').waitForExist();
 	});
 });

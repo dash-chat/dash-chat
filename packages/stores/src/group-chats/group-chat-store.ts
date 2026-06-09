@@ -10,6 +10,7 @@ import {
 	ChatId,
 	ChatSummary,
 	ChatSummaryLastEvent,
+	GroupInfo,
 	MessageContent,
 	Payload,
 	ReadMessagesStore,
@@ -17,12 +18,6 @@ import {
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IGroupChatClient } from './group-chat-client';
-
-export interface GroupInfo {
-	name: string | undefined;
-	description: string | undefined;
-	avatar: string | undefined;
-}
 
 export interface GroupMemberWithProfile {
 	agentId: AgentId;
@@ -48,10 +43,32 @@ export class GroupChatStore implements ReadMessagesStore {
 	}
 
 	info = reactive(async () => {
-		const info: GroupInfo = {
-			name: 'mygroup',
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+
+		let latest:
+			| { info: GroupInfo; timestamp: number; seqNum: number }
+			| undefined;
+		for (const operations of Object.values(logs)) {
+			for (const operation of operations) {
+				const body = operation.body;
+				if (body?.type !== 'Chat') continue;
+				if (body.payload.type !== 'GroupInfo') continue;
+				const timestamp = operation.header.timestamp;
+				const seqNum = operation.header.seq_num;
+				if (
+					!latest ||
+					timestamp > latest.timestamp ||
+					(timestamp === latest.timestamp && seqNum > latest.seqNum)
+				) {
+					latest = { info: body.payload.payload, timestamp, seqNum };
+				}
+			}
+		}
+
+		const info: GroupInfo = latest?.info ?? {
+			name: '',
 			description: undefined,
-			avatar: undefined,
+			image: undefined,
 		};
 		return info;
 	});
@@ -325,8 +342,8 @@ export class GroupChatStore implements ReadMessagesStore {
 		return {
 			type: 'GroupChat',
 			chatId: this.chatId,
-			name: info.name ?? '',
-			avatar: info.avatar,
+			name: info.name,
+			avatar: info.image,
 			lastEvent: last,
 			unreadMessages: unread,
 		};
@@ -339,6 +356,10 @@ export class GroupChatStore implements ReadMessagesStore {
 			members.map(member => this.client.addMember(this.chatId, member)),
 		);
 		this.membersVersion.value++;
+	}
+
+	async setInfo(info: GroupInfo): Promise<void> {
+		await this.client.setInfo(this.chatId, info);
 	}
 
 	async markAsRead(messageHashes: Hash[]): Promise<void> {

@@ -46,6 +46,13 @@ pub enum InboxPayload {
     ContactRequest { code: QrCode, profile: Profile },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroupInfo {
+    pub name: String,
+    pub description: Option<String>,
+    pub image: Option<String>,
+}
+
 // TODO: consolidate into something else
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
@@ -70,6 +77,7 @@ pub enum ChatPayload {
 
     Reaction(ChatReaction),
 
+    GroupInfo(GroupInfo),
     /// Used to tell other group members about agents they may not know about
     /// (typically because they aren't contacts), so they can subscribe to those
     /// agents' announcements topics and see their profiles. The inviter publishes

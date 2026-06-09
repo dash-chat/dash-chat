@@ -148,11 +148,11 @@
 							style="display: flex; justify-content: start; align-items: center;"
 						>
 							<Avatar
-								image={info.avatar}
-								initials={(info.name ?? '').slice(0, 2)}
+								image={info.image}
+								initials={info.name.slice(0, 2)}
 								style="--size: 2.5rem"
 							/>
-							<span>{info.name ?? ''}</span>
+							<span>{info.name}</span>
 						</Link>
 					{/await}
 				{/snippet}
