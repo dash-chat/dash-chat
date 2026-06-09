@@ -20,7 +20,7 @@
 		const groupStore = await chatsStore.createGroup(
 			Array.from(selectedContacts),
 		);
-		await groupStore.setDetails({
+		await groupStore.setInfo({
 			name: groupName.trim(),
 			description: undefined,
 			image: groupImage,

@@ -33,7 +33,7 @@
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const groupChatStore = chatsStore.groupChats(chatId);
 
-	const details = useReactivePromise(groupChatStore.details);
+	const info = useReactivePromise(groupChatStore.info);
 	const members = useReactivePromise(groupChatStore.allMembers);
 	const me = useReactivePromise(groupChatStore.me);
 
@@ -107,7 +107,7 @@
 </script>
 
 <Page>
-	{#await $details then details}
+	{#await $info then info}
 		<Navbar transparent={true}>
 			{#snippet left()}
 				<NavbarBackLink
@@ -122,11 +122,11 @@
 					style="display: flex; justify-content: start; align-items: center; flex: 1"
 				>
 					<Avatar
-						image={details.image}
-						initials={details.name.slice(0, 2)}
+						image={info.image}
+						initials={info.name.slice(0, 2)}
 						style="--size: 2.5rem"
 					/>
-					<span>{details.name}</span>
+					<span>{info.name}</span>
 				</div>
 			{/snippet}
 
@@ -148,13 +148,13 @@
 			<div class="column" style="flex: 1">
 				<div class="column center-in-desktop gap-8 p-2">
 					<div class="column" style="align-items: center; gap: 1rem">
-						<Avatar image={details.image} style="--size: 5rem">
+						<Avatar image={info.image} style="--size: 5rem">
 							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
 						</Avatar>
 
-						<span class="text-xl font-semibold">{details.name}</span>
+						<span class="text-xl font-semibold">{info.name}</span>
 
-						<span class="quiet">{details.description}</span>
+						<span class="quiet">{info.description}</span>
 					</div>
 
 					{#await $members then members}

@@ -594,17 +594,13 @@ impl Node {
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().renamed())))]
-    pub async fn set_group_details(
+    pub async fn set_group_info(
         &self,
         chat_id: ChatId,
-        details: crate::GroupDetails,
+        info: crate::GroupInfo,
     ) -> anyhow::Result<Header> {
         let header = self
-            .author_operation(
-                chat_id,
-                Payload::Chat(ChatPayload::GroupDetails(details)),
-                None,
-            )
+            .author_operation(chat_id, Payload::Chat(ChatPayload::GroupInfo(info)), None)
             .await?;
 
         Ok(header)

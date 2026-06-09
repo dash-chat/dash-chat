@@ -253,9 +253,9 @@ mod tests {
     }
 
     #[test]
-    fn redacts_group_details_debug() {
+    fn redacts_group_info_debug() {
         let input =
-            r#"GroupDetails { name: "Family", description: Some("Secret plan"), image: None }"#;
+            r#"GroupInfo { name: "Family", description: Some("Secret plan"), image: None }"#;
         let result = redact(input);
         assert!(!result.contains("Family"), "name not redacted: {result}");
         assert!(
@@ -265,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn redacts_group_details_json() {
+    fn redacts_group_info_json() {
         let input = r#"{"name":"Family","description":"Secret plan","image":null}"#;
         let result = redact(input);
         assert!(!result.contains("Family"), "name not redacted: {result}");

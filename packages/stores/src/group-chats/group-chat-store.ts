@@ -10,7 +10,7 @@ import {
 	ChatId,
 	ChatSummary,
 	ChatSummaryLastEvent,
-	GroupDetails,
+	GroupInfo,
 	MessageContent,
 	Payload,
 	ReadMessagesStore,
@@ -42,17 +42,17 @@ export class GroupChatStore implements ReadMessagesStore {
 		});
 	}
 
-	details = reactive(async () => {
+	info = reactive(async () => {
 		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
 
 		let latest:
-			| { details: GroupDetails; timestamp: number; seqNum: number }
+			| { info: GroupInfo; timestamp: number; seqNum: number }
 			| undefined;
 		for (const operations of Object.values(logs)) {
 			for (const operation of operations) {
 				const body = operation.body;
 				if (body?.type !== 'Chat') continue;
-				if (body.payload.type !== 'GroupDetails') continue;
+				if (body.payload.type !== 'GroupInfo') continue;
 				const timestamp = operation.header.timestamp;
 				const seqNum = operation.header.seq_num;
 				if (
@@ -60,17 +60,17 @@ export class GroupChatStore implements ReadMessagesStore {
 					timestamp > latest.timestamp ||
 					(timestamp === latest.timestamp && seqNum > latest.seqNum)
 				) {
-					latest = { details: body.payload.payload, timestamp, seqNum };
+					latest = { info: body.payload.payload, timestamp, seqNum };
 				}
 			}
 		}
 
-		const details: GroupDetails = latest?.details ?? {
+		const info: GroupInfo = latest?.info ?? {
 			name: '',
 			description: undefined,
 			image: undefined,
 		};
-		return details;
+		return info;
 	});
 
 	messages = reactive(async () => {
@@ -336,14 +336,14 @@ export class GroupChatStore implements ReadMessagesStore {
 	summary = reactive(async (): Promise<ChatSummary | undefined> => {
 		const last = await this.lastEvent();
 		if (!last) return undefined;
-		const details = await this.details();
+		const info = await this.info();
 		const unread = await this.unreadCount();
 
 		return {
 			type: 'GroupChat',
 			chatId: this.chatId,
-			name: details.name,
-			avatar: details.image,
+			name: info.name,
+			avatar: info.image,
 			lastEvent: last,
 			unreadMessages: unread,
 		};
@@ -358,8 +358,8 @@ export class GroupChatStore implements ReadMessagesStore {
 		this.membersVersion.value++;
 	}
 
-	async setDetails(details: GroupDetails): Promise<void> {
-		await this.client.setDetails(this.chatId, details);
+	async setInfo(info: GroupInfo): Promise<void> {
+		await this.client.setInfo(this.chatId, info);
 	}
 
 	async markAsRead(messageHashes: Hash[]): Promise<void> {

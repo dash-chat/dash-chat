@@ -395,7 +395,7 @@ impl Node {
             }
 
             Payload::Chat(
-                ChatPayload::Message(_) | ChatPayload::Reaction(_) | ChatPayload::GroupDetails(_),
+                ChatPayload::Message(_) | ChatPayload::Reaction(_) | ChatPayload::GroupInfo(_),
             ) => {
                 // Nothing to do.
             }

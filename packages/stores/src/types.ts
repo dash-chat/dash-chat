@@ -38,7 +38,7 @@ export function getMessageText(content: MessageContent | string): string {
 export type AnnouncementPayload =
 	| { type: 'SetProfile'; payload: Profile }
 	| { type: 'SetCapabilities'; payload: unknown };
-export interface GroupDetails {
+export interface GroupInfo {
 	name: string;
 	description: string | undefined;
 	image: string | undefined;
@@ -48,7 +48,7 @@ export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
 	| { type: 'Reaction'; payload: ChatReaction }
 	| { type: 'JoinGroup'; payload: { chat_id: string } }
-	| { type: 'GroupDetails'; payload: GroupDetails };
+	| { type: 'GroupInfo'; payload: GroupInfo };
 
 export interface InboxTopic {
 	expires_at: number;

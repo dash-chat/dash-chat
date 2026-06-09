@@ -72,7 +72,7 @@ pub enum InboxPayload {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
-pub struct GroupDetails {
+pub struct GroupInfo {
     pub name: String,
     pub description: Option<String>,
     pub image: Option<String>,
@@ -102,7 +102,7 @@ pub enum ChatPayload {
 
     Reaction(ChatReaction),
 
-    GroupDetails(GroupDetails),
+    GroupInfo(GroupInfo),
     /// Used to tell other group members about agents they may not know about
     /// (typically because they aren't contacts), so they can subscribe to those
     /// agents' announcements topics and see their profiles. The inviter publishes
