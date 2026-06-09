@@ -37,19 +37,9 @@ describe('Group chat inline system messages', () => {
 		await agent1.groupChatPage.sendMessage('Hi everyone');
 		await agent1.groupChatPage.waitForMessage('Hi everyone');
 
-		const bubble = await agent1.execute(
-			(messagesSel: string, text: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(text)) return true;
-				}
-				return false;
-			},
-			'[data-testid="group-chat-messages"]',
+		const bubble = await agent1.groupChatPage.messageBubbleWithText(
 			'Hi everyone',
 		);
-		expect(bubble).toBe(true);
+		expect(bubble).not.toBeNull();
 	});
 });
