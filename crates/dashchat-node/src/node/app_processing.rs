@@ -265,8 +265,19 @@ impl Node {
             })?;
         }
 
-        // @TODO: once group control messages are properly ordered then we could also send these
-        // to the frontend via the notify channel.
+        // Notify the frontend so it refetches the chat log and observes the new
+        // group-control action (Create / Add / Remove / Promote / Demote). The
+        // op's `auth.action` is what the UI reads to render membership changes.
+        //
+        // @TODO: once group control messages are properly ordered we could send a
+        // membership diff here instead of relying on the frontend to refetch.
+        let dashchat_topic = crate::Topic::untyped(*operation.topic().as_bytes());
+        self.notify_payload(
+            dashchat_topic,
+            &operation.processed().header(),
+            operation.message(),
+        )
+        .await?;
 
         Ok(())
     }
