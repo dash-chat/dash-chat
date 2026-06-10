@@ -58,6 +58,8 @@
 	actionDisabled={selectedContacts.length === 0}
 	onBack={() => goto(`/group-chat/${chatId}/info`)}
 	constrainedWidth={true}
+	backTestId="add-members-back"
+	actionTestId="add-members-add-btn"
 >
 	{#snippet subnavbar()}
 		<ContactSearchNav
