@@ -17,6 +17,7 @@
 	import FormInput from '$lib/components/form/FormInput.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos } from '$lib/utils/environment';
+	import Container from '$lib/components/layout/Container.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let name = $state<string>('');
@@ -94,20 +95,22 @@
 			{/snippet}
 		</Navbar>
 
-		<Form>
-			<FormInput
-				type="text"
-				bind:value={name}
-				data-testid="edit-name-name"
-				label={m.name()}
-			/>
-			<FormInput
-				type="text"
-				bind:value={surname}
-				data-testid="edit-name-surname"
-				label={m.surname()}
-			/>
-		</Form>
+		<Container>
+			<Form>
+				<FormInput
+					type="text"
+					bind:value={name}
+					data-testid="edit-name-name"
+					label={m.name()}
+				/>
+				<FormInput
+					type="text"
+					bind:value={surname}
+					data-testid="edit-name-surname"
+					label={m.surname()}
+				/>
+			</Form>
+		</Container>
 
 		{#if !isIos}
 			<Button

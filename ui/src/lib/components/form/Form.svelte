@@ -9,13 +9,11 @@
 	const theme = $derived(useTheme());
 </script>
 
-<div class="column">
-	<List
-		class={['center-in-desktop', className].filter(Boolean).join(' ')}
-		inset={isWideScreen.value || theme === 'ios'}
-		strongIos
-		nested={theme === 'material'}
-	>
-		{@render children()}
-	</List>
-</div>
+<List
+	class={className}
+	inset={isWideScreen.value || theme === 'ios'}
+	strongIos
+	nested={theme === 'material'}
+>
+	{@render children()}
+</List>
