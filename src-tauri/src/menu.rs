@@ -15,14 +15,6 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
     )?;
     let mailbox_toggle_handle = mailbox_toggle.clone();
 
-    let quit = MenuItem::with_id(
-        app_handle,
-        "menu-quit",
-        t!("menuQuit"),
-        true,
-        Some("CmdOrCtrl+Q"),
-    )?;
-
     app_handle.on_menu_event(
         move |app_handle, menu_event| match menu_event.id().as_ref() {
             "menu-quit" => {
@@ -60,9 +52,8 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
         true,
         &[
             &mailbox_toggle,
-            &PredefinedMenuItem::close_window(app_handle, None)?,
             &PredefinedMenuItem::separator(app_handle)?,
-            &quit,
+            &PredefinedMenuItem::quit(app_handle, None)?,
         ],
     )?;
 
@@ -89,9 +80,9 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
     // click into the webview — so a menu entry there would be inert when
     // clicked.
     let submenus: &[&dyn IsMenuItem<R>] = if cfg!(target_os = "macos") {
-        &[&file_submenu]
-    } else {
         &[&file_submenu, &edit_submenu]
+    } else {
+        &[&file_submenu]
     };
 
     Menu::with_items(app_handle, submenus)

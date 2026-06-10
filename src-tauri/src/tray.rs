@@ -60,8 +60,6 @@ pub fn hide_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
 /// Handle the tray's "Quit" item. Always disables the local message server (in
 /// settings). If a window is visible, leave it open; otherwise terminate the app.
 fn quit_from_tray(app: &AppHandle<impl Runtime>) {
-    use std::sync::atomic::Ordering;
-
     let window_visible = app
         .get_webview_window("main")
         .and_then(|w| w.is_visible().ok())
@@ -75,46 +73,6 @@ fn quit_from_tray(app: &AppHandle<impl Runtime>) {
             log::error!("Failed to stop local mailbox: {err:?}");
         }
         if !window_visible {
-            crate::FORCE_QUIT.store(true, Ordering::Relaxed);
-            app.exit(0);
-        }
-    });
-}
-
-/// Show a quit-confirmation dialog on a background thread.
-/// If the user confirms, the local mailbox is stopped and the app exits.
-/// Guards against multiple simultaneous dialogs via `QUIT_DIALOG_OPEN`.
-pub fn confirm_quit_and_exit(app: &AppHandle<impl Runtime>) {
-    use std::sync::atomic::Ordering;
-    // Prevent stacking multiple dialogs
-    if crate::QUIT_DIALOG_OPEN.swap(true, Ordering::Relaxed) {
-        return;
-    }
-    let app = app.clone();
-    std::thread::spawn(move || {
-        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-        let confirmed = app
-            .dialog()
-            .message(sonix_i18n::t!("quitConfirmMessage"))
-            .title(sonix_i18n::t!("quitConfirmTitle"))
-            .kind(MessageDialogKind::Warning)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                sonix_i18n::t!("trayQuit").to_string(),
-                sonix_i18n::t!("cancel").to_string(),
-            ))
-            .blocking_show();
-        crate::QUIT_DIALOG_OPEN.store(false, Ordering::Relaxed);
-        if confirmed {
-            tauri::async_runtime::block_on(async {
-                let _ = crate::mailbox::server::stop_local_mailbox(&app).await;
-            });
-            // Disable autostart so the app doesn't relaunch after quit,
-            // but keep the mailbox-enabled setting so it starts on next manual launch.
-            if !tauri::is_dev() {
-                use tauri_plugin_autostart::ManagerExt;
-                let _ = app.autolaunch().disable();
-            }
-            crate::FORCE_QUIT.store(true, Ordering::Relaxed);
             app.exit(0);
         }
     });
