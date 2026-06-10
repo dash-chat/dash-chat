@@ -35,7 +35,7 @@
 		),
 	);
 
-	const noDataMessage = $derived(() => {
+	const noDataMessage = $derived.by(() => {
 		if (loading) return '';
 		if (($contacts ?? []).length === 0) return m.noContactsYet();
 		if (filteredContacts.length === 0 && searchQuery)
@@ -77,7 +77,7 @@
 	<SelectableContactList
 		contacts={filteredContacts}
 		{loading}
-		noDataMessage={noDataMessage()}
+		{noDataMessage}
 		bind:selectedContacts
 	/>
 </FormPage>
