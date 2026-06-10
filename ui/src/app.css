@@ -172,21 +172,21 @@ li.plain span {
 	-webkit-backdrop-filter: none;
 }
 
-/* Desktop: navbar buttons are bare icons with a hover tint (Signal-style),
-   not floating glass capsules. */
+/* Desktop: navbar buttons are bare icons that get an instant grey tile on
+   hover (Signal-style), not floating glass capsules. The navbar's gradient
+   backdrop is flattened per-area in DesktopLayout.svelte. */
 .wide-layout .k-navbar :is(.bg-ios-light-glass, .bg-ios-dark-glass) {
 	background-color: transparent;
 	box-shadow: none;
 }
 .wide-layout .k-ios .k-navbar .k-link {
-	border-radius: 9999px;
-	transition: background-color 150ms;
+	border-radius: 10px;
 }
 .wide-layout .k-ios .k-navbar .k-link:hover {
-	background-color: rgba(0, 0, 0, 0.06);
+	background-color: rgba(0, 0, 0, 0.08);
 }
 .wide-layout.dark .k-ios .k-navbar .k-link:hover {
-	background-color: rgba(255, 255, 255, 0.1);
+	background-color: rgba(255, 255, 255, 0.08);
 }
 
 .icon-only-card {

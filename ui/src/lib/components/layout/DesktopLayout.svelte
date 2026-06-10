@@ -102,4 +102,21 @@
 	:global(.dark) .desktop-content {
 		background-color: var(--color-md-dark-surface);
 	}
+
+	/* Replace Konsta's iOS navbar gradient backdrop with the surface color of
+	   the area behind it, so desktop navbars read as one flat surface. */
+	.desktop-sidebar :global(.k-navbar .bg-gradient-to-b) {
+		background-image: none;
+		background-color: var(--color-md-light-surface-2);
+	}
+	.desktop-content :global(.k-navbar .bg-gradient-to-b) {
+		background-image: none;
+		background-color: var(--color-md-light-surface);
+	}
+	:global(.dark) .desktop-sidebar :global(.k-navbar .bg-gradient-to-b) {
+		background-color: var(--color-md-dark-surface-2);
+	}
+	:global(.dark) .desktop-content :global(.k-navbar .bg-gradient-to-b) {
+		background-color: var(--color-md-dark-surface);
+	}
 </style>
