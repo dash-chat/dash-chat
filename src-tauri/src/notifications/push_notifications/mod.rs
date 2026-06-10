@@ -17,8 +17,7 @@ mod receive_push_notification;
 #[cfg(target_os = "android")]
 mod android;
 
-const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str =
-    "https://push-notifications-server.production.dash-chat.dash-chat.garnix.me";
+const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str = "http://push-notifications.darksoil.studio";
 
 /// Returns the push notifications server URL to use.
 ///
