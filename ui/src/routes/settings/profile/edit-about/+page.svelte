@@ -19,6 +19,8 @@
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import FormInput from '$lib/components/form/FormInput.svelte';
+	import Form from '$lib/components/form/Form.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let name = $state<string>('');
@@ -116,22 +118,15 @@
 			{/snippet}
 		</Navbar>
 
-		<div class="column">
-			<List
-				class="center-in-desktop"
-				inset={isWideScreen.value || theme === 'ios'}
-				strongIos
-				nested={theme === 'material'}
-			>
-				<ListInput
-					type="text"
-					bind:value={about}
-					placeholder={m.aboutPlaceholder()}
-					data-testid="edit-about-input"
-					clearButton={!!about}
-					onClear={clearAbout}
-				/>
-			</List>
+		<Form>
+			<FormInput
+				type="text"
+				bind:value={about}
+				placeholder={m.aboutPlaceholder()}
+				data-testid="edit-about-input"
+				clearButton={!!about}
+				onClear={clearAbout}
+			/>
 
 			<!-- Preset options -->
 			<List
@@ -152,7 +147,7 @@
 					</ListItem>
 				{/each}
 			</List>
-		</div>
+		</Form>
 
 		{#if !isIos}
 			<Button
