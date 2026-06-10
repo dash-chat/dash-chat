@@ -20,7 +20,7 @@
 	import FormInput from '$lib/components/form/FormInput.svelte';
 	import Form from '$lib/components/form/Form.svelte';
 	import Container from '$lib/components/layout_helpers/Container.svelte';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import EditableAvatar from '$lib/components/profiles/EditableAvatar.svelte';
 
 	let chatId = page.params.chatId!;
 
@@ -78,22 +78,11 @@
 
 	{#await $info then info}
 		<Container class="pt-2">
-			<div class="column mt-2 mb-4 gap-2" style="align-items: center">
-				<Avatar
-					image={info.image}
-					initials={info.name?.slice(0, 2)}
-					size={100}
-				/>
-
-				<Button
-					tonal
-					style="width: auto"
-					rounded
-					small
-					onClick={() => goto('/settings/profile/edit-photo')}
-					data-testid="profile-edit-photo">{m.editPhoto()}</Button
-				>
-			</div>
+			<EditableAvatar
+				image={info.image}
+				initials={info.name?.slice(0, 2)}
+				editUrl="/settings/profile/edit-photo"
+			/>
 
 			<!-- <div class="column items-center">
 				<SelectAvatar defaultValue={info.image} bind:value={image} size={64}
