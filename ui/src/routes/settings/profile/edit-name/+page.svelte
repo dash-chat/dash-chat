@@ -12,13 +12,11 @@
 		NavbarBackLink,
 		Page,
 		Preloader,
-		List,
-		useTheme,
 	} from 'konsta/svelte';
+	import Form from '$lib/components/form/Form.svelte';
 	import FormInput from '$lib/components/form/FormInput.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos } from '$lib/utils/environment';
-	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let name = $state<string>('');
@@ -27,7 +25,6 @@
 	let about = $state<string | undefined>(undefined);
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
-	const theme = $derived(useTheme());
 	let initialized = false;
 	$effect(() => {
 		$myProfile.then(profile => {
@@ -97,27 +94,20 @@
 			{/snippet}
 		</Navbar>
 
-		<div class="column">
-			<List
-				class="center-in-desktop"
-				inset={isWideScreen.value || theme === 'ios'}
-				strongIos
-				nested={theme === 'material'}
-			>
-				<FormInput
-					type="text"
-					bind:value={name}
-					data-testid="edit-name-name"
-					label={m.name()}
-				/>
-				<FormInput
-					type="text"
-					bind:value={surname}
-					data-testid="edit-name-surname"
-					label={m.surname()}
-				/>
-			</List>
-		</div>
+		<Form>
+			<FormInput
+				type="text"
+				bind:value={name}
+				data-testid="edit-name-name"
+				label={m.name()}
+			/>
+			<FormInput
+				type="text"
+				bind:value={surname}
+				data-testid="edit-name-surname"
+				label={m.surname()}
+			/>
+		</Form>
 
 		{#if !isIos}
 			<Button
