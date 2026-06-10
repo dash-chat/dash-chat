@@ -16,9 +16,10 @@
 		backTestId?: string;
 		actionLabel: string;
 		onAction: () => void;
-		actionTestId?: string;
 		actionDisabled?: boolean;
+		actionTestId?: string;
 		subnavbar?: Snippet;
+		constrainedWidth?: boolean;
 		children: Snippet;
 	}
 
@@ -28,10 +29,11 @@
 		backTestId,
 		actionLabel,
 		onAction,
-		actionTestId,
 		actionDisabled = false,
+		actionTestId,
 		navbarTestId,
 		subnavbar: belowNavbar,
+		constrainedWidth,
 		children,
 	}: Props = $props();
 
@@ -47,7 +49,13 @@
 {#snippet subnavbarSnippet()}
 	{#if belowNavbar}
 		<div class="w-full mb-4 {isIosTheme ? 'mt-4' : ''}">
-			{@render belowNavbar()}
+			{#if constrainedWidth}
+				<div class="center-in-desktop">
+					{@render belowNavbar()}
+				</div>
+			{:else}
+				{@render belowNavbar()}
+			{/if}
 		</div>
 	{/if}
 {/snippet}
@@ -78,11 +86,19 @@
 		{/snippet}
 	</Navbar>
 
-	{@render children()}
+	{#if constrainedWidth}
+		<div class="column">
+			<div class="center-in-desktop">
+				{@render children()}
+			</div>
+		</div>
+	{:else}
+		{@render children()}
+	{/if}
 
 	{#if !isIosTheme}
 		<Button
-			onClick={onAction}
+			onClick={handleAction}
 			data-testid={actionTestId}
 			class="fixed-action-btn"
 			rounded
