@@ -53,7 +53,7 @@
 		<SelectableContactList
 			contacts={filteredContacts}
 			{loading}
-			noDataMessage={filteredContacts.length < resolvedContacts.length
+			noDataMessage={searchQuery.length > 0
 				? m.noContactsMatchFilter()
 				: m.noContactsYet()}
 			bind:selectedContacts
