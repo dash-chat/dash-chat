@@ -288,7 +288,7 @@ async fn auth_control_op_notification(
         // creating a new group with us in it. Distinguish by checking whether
         // the topic matches the deterministic direct-chat topic with the
         // sender.
-        GroupAction::Create { .. } => {
+        GroupAction::Create { initial_members } => {
             let is_direct_chat = sender_agent_id
                 .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == topic)
                 .unwrap_or(false);
@@ -300,6 +300,9 @@ async fn auth_control_op_notification(
                 let route = sender_agent_id.map(|aid| format!("/direct-chats/{}", aid.to_hex()));
                 (title, None, route)
             } else {
+                if !initial_members.iter().any(|(m, _)| target_is_me(m)) {
+                    return None;
+                }
                 let body = match &sender_name {
                     Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
                     None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
