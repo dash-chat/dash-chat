@@ -4,10 +4,17 @@ use mailbox_server::{Blob, GetBlobsRequest, GetBlobsResponse, StoreBlobsRequest}
 
 use super::*;
 
-pub trait ToyItemTraits: ItemTraits {
-    fn as_bytes(&self) -> &[u8];
-    fn from_str(s: &str) -> Result<Self, anyhow::Error>;
-}
+/// Trait bounds the toy client requires of an item's `Topic` and `Author` types.
+///
+/// CONTRACT: the `Serialize`/`Deserialize` impls of these types MUST round-trip
+/// through a single JSON string (e.g. `serializer.collect_str(&hex)`). The toy
+/// client encodes topic/author ids as HTTP map keys via [`stringify`], which
+/// strips the surrounding quotes; a `Serialize` impl that emits anything other
+/// than a JSON string (an array, object, or number) silently produces a
+/// malformed key. `dashchat-node` pins this for the real `TopicId`/`DeviceId`
+/// types via its `serializes_as_json_string_for_mailbox_key` tests.
+pub trait ToyItemTraits: ItemTraits + Serialize + DeserializeOwned {}
+impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {}
 
 /// A client for the toy mailbox server.
 #[derive(Clone)]
@@ -150,23 +157,21 @@ where
     Item::Topic: ToyItemTraits,
     Item::Author: ToyItemTraits,
 {
-    /// Helper functions
-
     fn encode_topic_id(topic_id: &Item::Topic) -> String {
-        hex::encode(topic_id.as_bytes())
+        stringify(topic_id)
     }
 
     fn device_id_to_log_id(device_id: &Item::Author) -> String {
-        hex::encode(device_id.as_bytes())
+        stringify(device_id)
     }
 
     fn log_id_from_string(s: &str) -> Result<Item::Topic, anyhow::Error> {
-        let topic: Item::Topic = Item::Topic::from_str(s)?;
+        let topic: Item::Topic = unstringify(s)?;
         Ok(topic)
     }
 
     fn device_id_from_string(s: &str) -> Result<Item::Author, anyhow::Error> {
-        let author: Item::Author = Item::Author::from_str(s)?;
+        let author: Item::Author = unstringify(s)?;
         Ok(author)
     }
 
@@ -177,5 +182,56 @@ where
 
     fn deserialize_operation(blob: &Blob) -> Result<Item, anyhow::Error> {
         Ok(p2panda_core::cbor::decode_cbor(blob.as_slice())?)
+    }
+}
+
+pub fn stringify(value: impl Serialize) -> String {
+    serde_json::to_string(&value)
+        .expect("value is JSON-serializable")
+        .trim_matches('"')
+        .to_string()
+}
+
+pub fn unstringify<T: DeserializeOwned>(s: &str) -> Result<T, anyhow::Error> {
+    serde_json::from_str(&format!("\"{}\"", s))
+        .map_err(|e| anyhow::anyhow!("Failed to unstringify: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::Deserialize;
+
+    use super::*;
+
+    #[derive(Debug, PartialEq)]
+    struct Abecedarian(u8);
+
+    impl Serialize for Abecedarian {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.serialize_str(&format!(
+                "{}",
+                "abcdefghijklmnopqrstuvwxyz"
+                    .chars()
+                    .take(self.0 as usize)
+                    .collect::<String>()
+            ))
+        }
+    }
+
+    impl<'de> Deserialize<'de> for Abecedarian {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            let s = String::deserialize(deserializer)?;
+            let value = s.chars().count() as u8;
+            Ok(Abecedarian(value))
+        }
+    }
+
+    #[test]
+    fn test_stringify_unstringify() {
+        let topic = Abecedarian(10);
+        let topic_str = stringify(&topic);
+        assert_eq!(topic_str, "abcdefghij");
+        let topic_unstr = unstringify(&topic_str).unwrap();
+        assert_eq!(topic, topic_unstr);
     }
 }

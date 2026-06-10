@@ -165,7 +165,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         topic: &TopicId,
         from: u64,
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
-        let log_id = LogId::from(*topic);
+        let log_id = LogId::from_topic(*topic);
         let from = if from == 0 { None } else { Some(from - 1) };
         let log = self
             .store
@@ -187,7 +187,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
     }
 
     async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(DeviceId, u64)>> {
-        Ok(OpStore::get_log_heights(self, &LogId::from(*topic))
+        Ok(OpStore::get_log_heights(self, &LogId::from_topic(*topic))
             .await?
             .into_iter()
             .collect())
