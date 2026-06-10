@@ -7,16 +7,15 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import {
 		Button,
-		Card,
 		Link,
 		Navbar,
 		NavbarBackLink,
 		Page,
 		Preloader,
-		ListInput,
 		List,
 		useTheme,
 	} from 'konsta/svelte';
+	import FormInput from '$lib/components/form/FormInput.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -28,6 +27,7 @@
 	let about = $state<string | undefined>(undefined);
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const theme = $derived(useTheme());
 	let initialized = false;
 	$effect(() => {
 		$myProfile.then(profile => {
@@ -62,7 +62,6 @@
 			}
 		}
 	}
-	const theme = $derived(useTheme());
 </script>
 
 <Page>
@@ -105,19 +104,17 @@
 				strongIos
 				nested={theme === 'material'}
 			>
-				<ListInput
+				<FormInput
 					type="text"
 					bind:value={name}
 					data-testid="edit-name-name"
-					label={theme === 'material' ? m.name() : ''}
-					placeholder={theme === 'ios' ? m.name() : ''}
+					label={m.name()}
 				/>
-				<ListInput
+				<FormInput
 					type="text"
 					bind:value={surname}
 					data-testid="edit-name-surname"
-					label={theme === 'material' ? m.surname() : ''}
-					placeholder={theme === 'ios' ? m.surname() : ''}
+					label={m.surname()}
 				/>
 			</List>
 		</div>
