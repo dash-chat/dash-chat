@@ -153,7 +153,7 @@ This is a pnpm workspace with multiple packages:
 
 ### Backend Architecture (Rust)
 
-The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tauri`) and several library/binary crates under `crates/`. All p2panda dependencies come from a custom fork at `https://github.com/maackle/p2panda.git` (branch `dashchat`).
+The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tauri`) and several library/binary crates under `crates/`.
 
 **dashchat-node** is the p2p core. It owns the `Node`, which manages p2panda topics and spaces — the distributed structures that organize conversations, device groups, contact lists, and profile announcements — and runs p2panda's discovery, networking, sync, encryption, and group-auth layers on top of a local SQLite operation store. Each topic is an append-only log; CRDT semantics resolve concurrent writes. The Node exposes a subscription/notification interface that the host layer consumes for real-time UI updates, and integrates the mailbox client so messages keep flowing when peers are offline.
 
