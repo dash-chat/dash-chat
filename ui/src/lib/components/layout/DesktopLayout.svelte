@@ -17,6 +17,7 @@
 	const isSettings = $derived(page.url.pathname.startsWith('/settings'));
 	const isNewMessage = $derived(
 		page.url.pathname.startsWith('/new-message') ||
+			page.url.pathname === '/new-group' ||
 			page.state.sidebarPanel === 'new-message',
 	);
 	const isNavigatingToSidebarRoute = $derived(
