@@ -9,7 +9,7 @@
 	import { resizeAndExport } from '$lib/utils/image';
 	import { isMobile, isIos } from '$lib/utils/environment';
 	import Avatar from './Avatar.svelte';
-	import { editorPrefill } from './avatar-helpers';
+	import { editorPrefill, joinName } from './avatar-helpers';
 
 	let {
 		avatar = $bindable(),
@@ -35,7 +35,7 @@
 		saveDisabled?: boolean;
 	} = $props();
 
-	const displayName = $derived(name && surname ? `${name} ${surname}` : name);
+	const displayName = $derived(joinName(name, surname));
 
 	let view = $state<'picker' | 'text'>('picker');
 	$effect(() => {
@@ -94,8 +94,10 @@
 		ctx.arc(128, 128, 128, 0, Math.PI * 2);
 		ctx.fill();
 
+		// Same emoji-to-circle ratio as the picker grid (36px in a 56px bubble),
+		// so the avatar keeps its proportions once rendered from this image.
 		ctx.font =
-			'140px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+			'165px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
 		ctx.fillText(emoji, 128, 128);
@@ -151,18 +153,18 @@
 	<div class="column" style="align-items: center; padding: 16px 0 24px;">
 		<div style="position: relative; display: inline-block;">
 			<Avatar
-				style="--size: 140px"
+				style="--size: 80px"
 				image={avatar}
 				name={displayName}
 				{colorSeed}
 			/>
 			{#if avatar}
 				<button
-					class="absolute top-2 end-2 w-10 h-10 rounded-[10px] bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center transition-colors duration-200 hover:bg-gray-100 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
+					class="absolute -top-1 -end-1 w-6 h-6 rounded-full bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center transition-colors duration-200 hover:bg-gray-100 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
 					onclick={removeAvatar}
 					aria-label={m.removePhoto()}
 				>
-					<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 20px"
+					<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 14px"
 					></wa-icon>
 				</button>
 			{/if}
@@ -213,14 +215,16 @@
 	<!-- Divider -->
 	<div style="height: 1px; background: var(--k-hairline-color);"></div>
 
-	<!-- Default avatars grid -->
-	<div class="grid grid-cols-4 gap-3 py-6 px-4 justify-items-center">
+	<!-- Default avatars grid. Signal Desktop's visual rhythm: its 56px bubbles
+	     hold a 48px avatar, so circles sit ~17px apart; our artwork fills the
+	     bubble, so the gap carries all of that spacing. -->
+	<div class="flex flex-wrap justify-center gap-4 py-6 px-4">
 		{#each defaultAvatars as emoji}
 			<button
-				class="w-[72px] h-[72px] rounded-full bg-gray-200 border-none cursor-pointer flex items-center justify-center transition-all duration-200 hover:scale-105 hover:bg-gray-300 active:scale-95"
+				class="w-14 h-14 rounded-full bg-gray-200 border-none cursor-pointer flex items-center justify-center transition-all duration-200 hover:scale-105 hover:bg-gray-300 active:scale-95"
 				onclick={() => selectDefaultAvatar(emoji)}
 			>
-				<span style="font-size: 32px">{emoji}</span>
+				<span style="font-size: 36px">{emoji}</span>
 			</button>
 		{/each}
 	</div>
