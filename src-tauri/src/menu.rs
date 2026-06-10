@@ -1,5 +1,5 @@
 use sonix_i18n::t;
-use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Manager, Runtime};
 
 pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
