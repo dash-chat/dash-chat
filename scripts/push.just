@@ -9,4 +9,4 @@ server:
 
 # copy a Google service account key to the push notifications server
 deploy-service-account-key file="crates/push-notifications-server/service-account-key.json":
-    scp {{file}} root@push-notifications-server.dash-chat.garnix.me:/var/lib/push-notifications/service-account-key.json
+    scp {{file}} root@push-notifications.darksoil.studio:/var/lib/push-notifications/service-account-key.json
