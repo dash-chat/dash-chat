@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { getContext } from 'svelte';
-	import type { ContactsStore, Profile, VerifyingKey } from 'dash-chat-stores';
+	import type { ContactsStore, VerifyingKey } from 'dash-chat-stores';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { BlockTitle } from 'konsta/svelte';
 	import FormPage from '$lib/components/layout/FormPage.svelte';
@@ -21,6 +21,7 @@
 	const resolvedContacts = $derived($contacts ?? []);
 
 	let searchQuery = $state('');
+	let filteredContacts = $state<typeof resolvedContacts>([]);
 </script>
 
 <FormPage
@@ -37,6 +38,7 @@
 	{#snippet subnavbar()}
 		<ContactSearchNav
 			bind:searchQuery
+			bind:filteredContacts
 			{selectedContacts}
 			contacts={resolvedContacts}
 			onRemove={key => {
@@ -49,11 +51,9 @@
 		<BlockTitle>{m.contacts()}</BlockTitle>
 
 		<SelectableContactList
-			contacts={resolvedContacts.filter(([, profile]) =>
-				profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
-			)}
+			contacts={filteredContacts}
 			{loading}
-			noDataMessage={searchQuery
+			noDataMessage={filteredContacts.length < resolvedContacts.length
 				? m.noContactsMatchFilter()
 				: m.noContactsYet()}
 			bind:selectedContacts

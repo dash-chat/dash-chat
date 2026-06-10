@@ -24,21 +24,18 @@
 	const members = useReactiveValue(groupChatStore.allMembers);
 	const loading = $derived($contacts === undefined || $members === undefined);
 
-	let searchQuery = $state('');
-
 	const nonMemberContacts = $derived(
 		($contacts ?? []).filter(([agentId]) => !($members && agentId in $members)),
 	);
-	const filteredContacts = $derived(
-		nonMemberContacts.filter(([, profile]) =>
-			profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
-		),
-	);
+	let filteredContacts = $state<typeof nonMemberContacts>([]);
 
 	const noDataMessage = $derived.by(() => {
 		if (loading) return '';
 		if (($contacts ?? []).length === 0) return m.noContactsYet();
-		if (filteredContacts.length === 0 && searchQuery)
+		if (
+			filteredContacts.length === 0 &&
+			filteredContacts.length !== nonMemberContacts.length
+		)
 			return m.noContactsMatchFilter();
 		if (filteredContacts.length === 0) return m.allContactsAlreadyInGroup();
 		return '';
@@ -63,7 +60,7 @@
 >
 	{#snippet subnavbar()}
 		<ContactSearchNav
-			bind:searchQuery
+			bind:filteredContacts
 			{selectedContacts}
 			contacts={nonMemberContacts}
 			onRemove={key => {

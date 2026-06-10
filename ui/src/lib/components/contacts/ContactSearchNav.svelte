@@ -5,18 +5,26 @@
 	import ContactsChipList from './ContactsChipList.svelte';
 
 	interface Props {
-		searchQuery: string;
+		searchQuery?: string;
+		filteredContacts?: [VerifyingKey, Profile][];
 		selectedContacts: VerifyingKey[];
 		contacts: [VerifyingKey, Profile][];
 		onRemove: (key: VerifyingKey) => void;
 	}
 
 	let {
-		searchQuery = $bindable(),
+		searchQuery = $bindable(''),
+		filteredContacts = $bindable(),
 		selectedContacts,
 		contacts,
 		onRemove,
 	}: Props = $props();
+
+	$effect(() => {
+		filteredContacts = contacts.filter(([, profile]) =>
+			profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
+		);
+	});
 </script>
 
 <div class="column gap-4">
