@@ -198,7 +198,7 @@
 	"errorScanningQrCode": "Failed to scan QR code. Please try again.",
 	"errorNoQrCodeInImage": "No QR code found in the selected image.",
 	"errorUnexpected": "An unexpected error occurred.",
-	"errorAttachmentTooLarge": "Attachment is too large. Maximum total size per message is {max}.",
+	"errorAttachmentTooLarge": "Attachment is too large. Maximum total size per message is {{max}}.",
 	"errorApplyStyle": "Failed to apply style. Please try again.",
 	"errorSendErrorReport": "Failed to send error report. Please try again.",
 

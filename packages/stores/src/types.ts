@@ -62,7 +62,9 @@ export function getMessageText(content: MessageContent | string): string {
 	return typeof content === 'string' ? content : content.message;
 }
 
-export function getMessageMedia(content: MessageContent | string): Media | null {
+export function getMessageMedia(
+	content: MessageContent | string,
+): Media | null {
 	return typeof content === 'string' ? null : content.media;
 }
 
