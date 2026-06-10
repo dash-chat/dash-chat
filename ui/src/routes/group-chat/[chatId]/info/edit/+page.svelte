@@ -20,6 +20,8 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { page } from '$app/state';
+	import FormInput from '$lib/components/form/FormInput.svelte';
+	import Form from '$lib/components/form/Form.svelte';
 	let chatId = page.params.chatId!;
 
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -75,31 +77,21 @@
 	</Navbar>
 
 	{#await $info then info}
-		<div class="column">
-			<div class="column center-in-desktop">
-				<div class="mt-4">
-					<SelectAvatar defaultValue={info.image} bind:value={image} size={64}
-					></SelectAvatar>
-				</div>
-
-				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
-					<ListInput
-						type="text"
-						outline={theme === 'material'}
-						bind:value={name}
-						label={m.name()}
-					/>
-
-					<ListInput
-						type="textarea"
-						outline={theme === 'material'}
-						inputStyle={{ 'min-height': '2em' }}
-						bind:value={description}
-						label={m.description()}
-					/>
-				</List>
+		<Form>
+			<div class="mt-4">
+				<SelectAvatar defaultValue={info.image} bind:value={image} size={64}
+				></SelectAvatar>
 			</div>
-		</div>
+
+			<FormInput type="text" bind:value={name} label={m.name()} />
+
+			<FormInput
+				type="textarea"
+				inputStyle={{ 'min-height': '2em' }}
+				bind:value={description}
+				label={m.description()}
+			/>
+		</Form>
 
 		{#if !isIos}
 			<Button
