@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Button, Page } from 'konsta/svelte';
 	import { isIos } from '$lib/utils/environment';
@@ -12,26 +12,25 @@
 	const chatId = page.params.chatId!;
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
-	const info = useReactivePromise(store.info);
+	const info = useReactiveValue(store.info);
 
 	let avatar = $state<string | undefined>(undefined);
 	let originalAvatar = $state<string | undefined>(undefined);
 
 	let initialized = false;
-	info.subscribe(d => {
-		d.then(groupInfo => {
-			if (!initialized) {
-				initialized = true;
-				originalAvatar = groupInfo?.image;
-				avatar = groupInfo?.image;
-			}
-		});
+	$effect(() => {
+		const groupInfo = $info;
+		if (groupInfo && !initialized) {
+			initialized = true;
+			originalAvatar = groupInfo.image;
+			avatar = groupInfo.image;
+		}
 	});
 
 	const backUrl = `/group-chat/${chatId}/info/edit`;
 
 	async function save() {
-		const current = await $info;
+		const current = $info;
 		await store.setInfo({
 			name: current?.name || '',
 			description: current?.description,
@@ -45,31 +44,25 @@
 </script>
 
 <Page>
-	{#await $info}
-		<div
-			class="column"
-			style="height: 100%; align-items: center; justify-content: center"
-		></div>
-	{:then}
-		<AvatarPicker
-			bind:avatar
-			bind:inModalState
-			onClose={() => goto(backUrl)}
-			onSave={save}
-			saveLabel={m.save()}
-			saveDisabled={!hasChanges}
-		/>
+	<AvatarPicker
+		loading={$info === undefined}
+		bind:avatar
+		bind:inModalState
+		onClose={() => goto(backUrl)}
+		onSave={save}
+		saveLabel={m.save()}
+		saveDisabled={!hasChanges}
+	/>
 
-		{#if !inModalState && !isIos}
-			<Button
-				rounded
-				tonal
-				disabled={!hasChanges}
-				onClick={save}
-				class="fixed-action-btn"
-			>
-				{m.save()}
-			</Button>
-		{/if}
-	{/await}
+	{#if !inModalState && !isIos}
+		<Button
+			rounded
+			tonal
+			disabled={!hasChanges}
+			onClick={save}
+			class="fixed-action-btn"
+		>
+			{m.save()}
+		</Button>
+	{/if}
 </Page>
