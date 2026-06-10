@@ -120,16 +120,32 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
                 let format = time::macros::format_description!(
                     "[[[year]-[month]-[day]][[[hour]:[minute]:[second]]"
                 );
-                out.finish(format_args!(
-                    "{}[{}][{}] {}",
-                    tauri_plugin_log::TimezoneStrategy::UseUtc
-                        .get_now()
-                        .format(&format)
-                        .unwrap(),
-                    record.target(),
-                    record.level(),
-                    message
-                ))
+                let args = if let (Some(file), Some(line)) = (record.file(), record.line()) {
+                    format_args!(
+                        "{}[{} {}:{}][{}] {}",
+                        tauri_plugin_log::TimezoneStrategy::UseUtc
+                            .get_now()
+                            .format(&format)
+                            .unwrap(),
+                        record.target(),
+                        file.to_string(),
+                        line.to_string(),
+                        record.level(),
+                        message
+                    )
+                } else {
+                    format_args!(
+                        "{}[{}][{}] {}",
+                        tauri_plugin_log::TimezoneStrategy::UseUtc
+                            .get_now()
+                            .format(&format)
+                            .unwrap(),
+                        record.target(),
+                        record.level(),
+                        message
+                    )
+                };
+                out.finish(args)
             })
             .clear_targets()
             .max_file_size(5 * 1024 * 1024)

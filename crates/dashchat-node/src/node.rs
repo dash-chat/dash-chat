@@ -57,6 +57,13 @@ pub struct NodeConfig {
 }
 
 impl NodeConfig {
+    /// Disable p2p features and only use mailbox-based communication.
+    pub fn no_p2p(mut self) -> Self {
+        self.mdns_mode = MdnsDiscoveryMode::Disabled;
+        self.relay_url = None;
+        self
+    }
+
     #[cfg(feature = "testing")]
     pub fn testing() -> Self {
         use crate::compat::Capabilities;
