@@ -13,6 +13,7 @@ build server:
     version=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' src-tauri/tauri.conf.json | head -1)
     image={{replace(server, "-server", "")}}-v${version}-do-image.qcow2
     nix build .#{{server}}-do-image --out-link .do-image-{{server}}
-    gunzip -c .do-image-{{server}}/*.qcow2.gz > "$image"
+    cp .do-image-{{server}}/*.qcow2 "$image"
+    chmod +w "$image"
     rm .do-image-{{server}}
     echo "Wrote $image"
