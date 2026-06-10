@@ -13,7 +13,7 @@ use sqlx::{
 use crate::{
     compat::Capabilities,
     contact::InboxTopic,
-    topic::{AutoRegisteredTopic, TopicId},
+    topic::{AutoRegisteredTopic, kind},
     *,
 };
 
@@ -120,10 +120,10 @@ impl LocalStore {
     }
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
-        let rows: Vec<(TopicId,)> = sqlx::query_as("SELECT topic_id FROM subscribed_topics")
+        let rows: Vec<(Topic,)> = sqlx::query_as("SELECT topic_id FROM subscribed_topics")
             .fetch_all(&self.pool)
             .await?;
-        Ok(rows.into_iter().map(|(id,)| id).collect())
+        Ok(rows.into_iter().map(|(id,)| *id).collect())
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
@@ -262,7 +262,7 @@ impl LocalStore {
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
         sqlx::query("INSERT OR IGNORE INTO subscribed_topics (topic_id) VALUES (?)")
-            .bind(*topic)
+            .bind(topic.to_vec())
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -273,7 +273,7 @@ impl LocalStore {
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM subscribed_topics WHERE topic_id = ?")
-            .bind(*topic)
+            .bind(topic.to_vec())
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -308,25 +308,29 @@ impl LocalStore {
     }
 
     pub async fn get_active_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
-        let rows: Vec<(TopicId, i64)> =
+        let rows: Vec<(Topic, i64)> =
             sqlx::query_as("SELECT topic_id, expires_at_nanos FROM active_inboxes")
                 .fetch_all(&self.pool)
                 .await?;
         Ok(rows
             .into_iter()
-            .map(|(topic_id, nanos)| InboxTopic {
+            .map(|(topic, nanos)| InboxTopic {
                 expires_at: DateTime::from_timestamp_nanos(nanos),
-                topic: Topic::new(*topic_id),
+                topic: topic.upcast::<kind::Inbox>(),
             })
             .collect())
     }
 
-    pub async fn add_active_inbox_topic(&self, topic: InboxTopic) -> anyhow::Result<()> {
-        let nanos = topic.expires_at.timestamp_nanos_opt().unwrap_or(0).max(0);
+    pub async fn add_active_inbox_topic(&self, inbox_topic: InboxTopic) -> anyhow::Result<()> {
+        let nanos = inbox_topic
+            .expires_at
+            .timestamp_nanos_opt()
+            .unwrap_or(0)
+            .max(0);
         sqlx::query(
             "INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos) VALUES (?, ?)",
         )
-        .bind(*topic.topic)
+        .bind(inbox_topic.topic.to_vec())
         .bind(nanos)
         .execute(&self.pool)
         .await?;
@@ -348,11 +352,11 @@ impl LocalStore {
     pub async fn save_group_chat_subscribed(&self, chat_id: ChatId) -> anyhow::Result<()> {
         let mut tx = self.pool.begin().await?;
         sqlx::query("INSERT OR IGNORE INTO subscribed_topics (topic_id) VALUES (?)")
-            .bind(*chat_id)
+            .bind(chat_id.to_vec())
             .execute(&mut *tx)
             .await?;
         sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
-            .bind(*chat_id)
+            .bind(chat_id.to_vec())
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
@@ -360,10 +364,12 @@ impl LocalStore {
     }
 
     pub async fn get_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
-        let rows: Vec<(TopicId,)> = sqlx::query_as("SELECT chat_id FROM group_chats")
+        let rows: Vec<(Topic,)> = sqlx::query_as("SELECT chat_id FROM group_chats")
             .fetch_all(&self.pool)
             .await?;
-        Ok(rows.into_iter().map(|(id,)| ChatId::new(*id)).collect())
+        rows.into_iter()
+            .map(|(id,)| Topic::<kind::Chat>::from_topic_id(TopicId::from(id)))
+            .collect()
     }
 }
 

@@ -3280,8 +3280,8 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1",
- "windows-result 0.4.1",
+ "windows-link 0.1.3",
+ "windows-result 0.3.4",
 ]
 
 [[package]]
@@ -4016,7 +4016,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "system-configuration 0.7.0",
  "tokio",
  "tower-service",
@@ -4036,7 +4036,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -5115,6 +5115,7 @@ dependencies = [
  "pretty_assertions",
  "reqwest 0.12.28",
  "serde",
+ "serde_json",
  "sqlx",
  "tempfile",
  "tokio",
@@ -5746,7 +5747,7 @@ dependencies = [
  "pin-project-lite",
  "rustc-hash 2.1.2",
  "rustls 0.23.40",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -5789,7 +5790,7 @@ checksum = "b3c1520eacd33fd6b009e2e70116b05508ade51db5e0d315ff8bf6b702148c2b"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.6.4",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -5958,7 +5959,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 3.5.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -6677,7 +6678,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc#b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc"
+source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -6698,7 +6699,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc#b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc"
+source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
 dependencies = [
  "p2panda-core",
  "p2panda-store",
@@ -6715,7 +6716,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc#b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc"
+source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
 dependencies = [
  "blake3",
  "ciborium",
@@ -6730,7 +6731,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc#b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc"
+source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
 dependencies = [
  "blake3",
  "futures-util",
@@ -6745,7 +6746,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc#b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc"
+source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -6768,7 +6769,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc#b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc"
+source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
 dependencies = [
  "ciborium",
  "futures-channel",
@@ -6796,7 +6797,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc#b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc"
+source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -6810,7 +6811,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc#b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc"
+source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
 dependencies = [
  "p2panda-core",
  "rand 0.10.1",
@@ -6824,7 +6825,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc#b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc"
+source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
 dependencies = [
  "futures-core",
  "p2panda-core",
@@ -6837,7 +6838,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc#b6bdd46abbf87543ed5c651b2c6905d3eacfc8fc"
+source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
 dependencies = [
  "futures",
  "futures-util",
@@ -12298,8 +12299,8 @@ dependencies = [
  "log",
  "serde",
  "thiserror 2.0.18",
- "windows 0.62.2",
- "windows-core 0.62.2",
+ "windows 0.61.3",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
