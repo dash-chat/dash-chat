@@ -81,7 +81,7 @@
 		border-inline-end: 1px solid var(--k-hairline-color);
 		overflow-y: auto;
 		overflow-x: hidden;
-		background-color: var(--desktop-sidebar-bg);
+		background-color: var(--color-desktop-sidebar-bg);
 	}
 
 	.desktop-content {

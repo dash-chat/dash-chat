@@ -6,8 +6,16 @@
 	--color-brand-primary: #007aff;
 	--color-brand-red: #ff0000;
 	--color-brand-green: #00ff00;
+	--color-desktop-sidebar-bg: #f5f4f7;
+	--background-color: var(--color-md-light-surface);
+
 	--text-sm: 1rem; /* default: 0.875rem */
 	--text-sm--line-height: 1.45rem; /* optional, default: 1.25rem */
+}
+
+:where(.dark) {
+	--background-color: var(--color-md-dark-surface);
+	--color-desktop-sidebar-bg: var(--color-md-dark-surface-2);
 }
 
 .wide-layout {
@@ -22,13 +30,7 @@ html {
 
 body {
 	display: flex;
-	--background-color: var(--color-md-light-surface);
-	/* background-color: var(--background-color); */
 	background-color: transparent !important;
-}
-
-:where(.dark) body {
-	--background-color: var(--color-md-dark-surface);
 }
 
 .column {
@@ -136,20 +138,6 @@ li.plain span {
 
 .transparent.k-page {
 	background-color: transparent !important;
-}
-
-/* Desktop only: replace Konsta's tinted iOS surface on the chat page. */
-.wide-layout {
-	--desktop-chat-bg: #ffffff;
-	--desktop-sidebar-bg: #f5f4f7;
-}
-.wide-layout.dark {
-	--desktop-chat-bg: var(--color-md-dark-surface);
-	--desktop-sidebar-bg: var(--color-md-dark-surface-2);
-}
-.wide-layout .reverse-scroll-host,
-.dark .wide-layout .reverse-scroll-host {
-	background-color: var(--desktop-chat-bg);
 }
 
 .k-toolbar.transparent .bg-gradient-to-t {
