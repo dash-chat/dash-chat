@@ -43,7 +43,7 @@ Do NOT ask if the issue is perfectly clear. Move straight to planning.
 1. Use `EnterPlanMode` to explore the codebase and design the implementation.
 2. After the plan is approved, implement the fix.
 3. Keep changes minimal and focused — fix only what the issue describes.
-4. Run `cargo test` and `pnpm -C ui check` to verify no regressions.
+4. Run `cargo nextest run` and `pnpm -C ui check` to verify no regressions.
 
 ## Step 4: Test in the running app and iterate
 
@@ -66,7 +66,7 @@ Before proceeding, review your own changes:
    - Missing edge cases or error handling
    - Leftover debug code, TODOs, or commented-out lines
    - Any regressions or unintended side effects
-3. Fix any issues you find. Re-run `cargo test` and `pnpm -C ui check` if you made fixes.
+3. Fix any issues you find. Re-run `cargo nextest run` and `pnpm -C ui check` if you made fixes.
 4. Verify the fix still addresses the original issue requirements.
 
 Do NOT skip this step. Do NOT proceed if you find issues — fix them first.
