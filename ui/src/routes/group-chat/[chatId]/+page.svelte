@@ -14,6 +14,8 @@
 	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { mdiAccountGroup } from '@mdi/js';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
@@ -163,90 +165,125 @@
 			</Navbar>
 		{/snippet}
 
-		<div
-			class="column m-2 gap-1"
-			style={`padding-bottom: ${bottomBarHeight}px`}
-			data-testid="group-chat-messages"
-		>
-			{#await $readMessageHashes then readHashes}
-				{#await Promise.all( [$myDeviceId, $messageSets, $allMembers], ) then [myDeviceId, messageSetsInDays, members]}
-					{@const unreadDivider = getUnreadDividerInfo(
-						messageSetsInDays,
-						readHashes,
-						myDeviceId,
-					)}
-					{#each messageSetsInDays as messageSetInDay}
-						<div class="self-center z-10">
-							<DayTag class="quiet" day={messageSetInDay.day} />
-						</div>
-
-						{#each messageSetInDay.eventsSets as messageSet}
-							<div class="column" style="gap: 1px">
-								{#each messageSet as [hash, message], i (hash)}
-									{#if unreadDivider.hash === hash}
-										<div
-											class="unread-divider"
-											data-testid="group-chat-unread-divider"
-										>
-											{m.unreadMessages({ count: unreadDivider.count })}
-										</div>
-									{/if}
-									{@const position = messagePosition(messageSet.length, i)}
-									{#if myDeviceId === message.author}
-										<div class="self-end max-w-[85%]" data-message-hash={hash}>
-											<MessageFromMe
-												{message}
-												{position}
-												{myDeviceId}
-												{chatId}
-												searchQuery=""
-												onToggleReaction={() => {}}
-											/>
-										</div>
-									{:else}
-										{@const author = Object.values(members).find(m =>
-											m.deviceIds.includes(message.author),
-										)}
-										<div
-											class="row items-end gap-2 self-start max-w-[85%]"
-											data-message-hash={hash}
-											use:readMessageOnObserve={readHashes?.has(hash)
-												? null
-												: hash}
-										>
-											{#if position === 'last' || position === 'single'}
-												<Avatar
-													image={author?.profile?.avatar}
-													initials={author?.profile?.name.slice(0, 2)}
-													style="--size: 2rem"
-												/>
-											{:else}
-												<div class="shrink-0" style="width: 2rem"></div>
-											{/if}
-											<MessageFromOthers
-												{message}
-												{position}
-												{myDeviceId}
-												{chatId}
-												searchQuery=""
-												onToggleReaction={() => {}}
-												sender={(position === 'first' ||
-													position === 'single') &&
-												author?.profile?.name
-													? {
-															name: author.profile.name,
-															color: senderColor(message.author),
-														}
-													: undefined}
-											/>
-										</div>
-									{/if}
-								{/each}
+		<div class="column" style={`padding-bottom: ${bottomBarHeight}px`}>
+			<div class="mt-16 mb-6 px-4" data-testid="group-chat-header">
+				{#await Promise.all([$info, $allMembers]) then [info, members]}
+					<div class="column items-center">
+						<div
+							class="outline-card"
+							style="border-radius: 2rem; min-width: 250px"
+						>
+							<div class="column items-center gap-3 px-8 pb-6 -mt-10">
+								<Avatar
+									image={info.image}
+									initials={info.name.slice(0, 2)}
+									style="--size: 80px"
+								/>
+								<span
+									class="text-2xl font-semibold break-words text-center"
+									data-testid="group-chat-header-name"
+								>
+									{info.name}
+								</span>
+								<div class="flex items-center gap-1.5 quiet text-sm">
+									<wa-icon
+										class="small-icon"
+										src={wrapPathInSvg(mdiAccountGroup)}
+									></wa-icon>
+									<span>
+										{m.membersCount({ count: Object.keys(members).length })}
+									</span>
+								</div>
 							</div>
-						{/each}
-					{/each}
+						</div>
+					</div>
 				{/await}
-			{/await}
+			</div>
+
+			<div class="column m-2 gap-1" data-testid="group-chat-messages">
+				{#await $readMessageHashes then readHashes}
+					{#await Promise.all( [$myDeviceId, $messageSets, $allMembers], ) then [myDeviceId, messageSetsInDays, members]}
+						{@const unreadDivider = getUnreadDividerInfo(
+							messageSetsInDays,
+							readHashes,
+							myDeviceId,
+						)}
+						{#each messageSetsInDays as messageSetInDay}
+							<div class="self-center z-10">
+								<DayTag class="quiet" day={messageSetInDay.day} />
+							</div>
+
+							{#each messageSetInDay.eventsSets as messageSet}
+								<div class="column" style="gap: 1px">
+									{#each messageSet as [hash, message], i (hash)}
+										{#if unreadDivider.hash === hash}
+											<div
+												class="unread-divider"
+												data-testid="group-chat-unread-divider"
+											>
+												{m.unreadMessages({ count: unreadDivider.count })}
+											</div>
+										{/if}
+										{@const position = messagePosition(messageSet.length, i)}
+										{#if myDeviceId === message.author}
+											<div
+												class="self-end max-w-[85%]"
+												data-message-hash={hash}
+											>
+												<MessageFromMe
+													{message}
+													{position}
+													{myDeviceId}
+													{chatId}
+													searchQuery=""
+													onToggleReaction={() => {}}
+												/>
+											</div>
+										{:else}
+											{@const author = Object.values(members).find(m =>
+												m.deviceIds.includes(message.author),
+											)}
+											<div
+												class="row items-end gap-2 self-start max-w-[85%]"
+												data-message-hash={hash}
+												use:readMessageOnObserve={readHashes?.has(hash)
+													? null
+													: hash}
+											>
+												{#if position === 'last' || position === 'single'}
+													<Avatar
+														image={author?.profile?.avatar}
+														initials={author?.profile?.name.slice(0, 2)}
+														style="--size: 2rem"
+													/>
+												{:else}
+													<div class="shrink-0" style="width: 2rem"></div>
+												{/if}
+												<MessageFromOthers
+													{message}
+													{position}
+													{myDeviceId}
+													{chatId}
+													searchQuery=""
+													onToggleReaction={() => {}}
+													sender={(position === 'first' ||
+														position === 'single') &&
+													author?.profile?.name
+														? {
+																name: author.profile.name,
+																color: senderColor(message.author),
+															}
+														: undefined}
+												/>
+											</div>
+										{/if}
+									{/each}
+								</div>
+							{/each}
+						{/each}
+					{/await}
+				{/await}
+			</div>
 		</div>
 	</ReverseScrollPage>
 

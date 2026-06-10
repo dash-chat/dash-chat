@@ -7,6 +7,7 @@ export class GroupChatPage extends TestPage {
 	page = this.agent.$(tid('group-chat-page'));
 	back = this.agent.$(tid('group-chat-back'));
 	infoLink = this.agent.$(tid('group-chat-info-link'));
+	headerName = this.agent.$(tid('group-chat-header-name'));
 	messages = this.agent.$(tid('group-chat-messages'));
 	messageInput = this.agent.$(tid('message-input-textarea'));
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
