@@ -64,3 +64,12 @@
 		{@render children?.()}
 	</wa-avatar>
 </span>
+
+<style>
+	/* Signal-like initials proportions: larger and semibold relative to the
+	   circle (webawesome's default is 0.4 and inherited weight). */
+	wa-avatar {
+		font-size: calc(var(--size, 3rem) * 0.45);
+		font-weight: 600;
+	}
+</style>
