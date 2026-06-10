@@ -6,7 +6,9 @@
 	--color-brand-primary: #007aff;
 	--color-brand-red: #ff0000;
 	--color-brand-green: #00ff00;
+
 	--color-desktop-sidebar-bg: #f5f4f7;
+	--color-desktop-main-bg: #ffffff;
 	--background-color: var(--color-md-light-surface);
 
 	--text-sm: 1rem; /* default: 0.875rem */
@@ -16,6 +18,7 @@
 :where(.dark) {
 	--background-color: var(--color-md-dark-surface);
 	--color-desktop-sidebar-bg: var(--color-md-dark-surface-2);
+	--color-desktop-main-bg: var(--color-md-dark-surface);
 }
 
 .wide-layout {

@@ -90,14 +90,10 @@
 		min-width: 0;
 		position: relative;
 		overflow: hidden;
-		background-color: var(--color-md-light-surface);
+		background-color: var(--color-desktop-main-bg);
 	}
 
 	.desktop-content-settings :global(.k-navbar:not(:has(.k-navbar-back-link))) {
 		padding-inline-start: 12px;
-	}
-
-	:global(.dark) .desktop-content {
-		background-color: var(--color-md-dark-surface);
 	}
 </style>
