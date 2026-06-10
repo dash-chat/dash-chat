@@ -194,8 +194,18 @@
 	<PreviewToolbar />
 {/if}
 
-<KonstaProvider {theme} dark={effectiveDark}>
-	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
+<KonstaProvider
+	{theme}
+	dark={effectiveDark}
+	iosHoverHighlight={!isWideScreen.value}
+>
+	<App
+		safeAreas
+		{theme}
+		class="k-{theme}"
+		dark={effectiveDark}
+		iosHoverHighlight={!isWideScreen.value}
+	>
 		<SplashscreenPrompt>
 			{#key currentLocale}
 				{#if isWideScreen.value}

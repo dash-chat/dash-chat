@@ -142,6 +142,53 @@ li.plain span {
 	display: none;
 }
 
+/* Desktop: flatten Konsta 5's iOS liquid-glass (translucent fills, inset glass
+   shadows, backdrop blur) to solid surfaces with plain shadows. Colors are
+   var-driven so redefining the tokens is enough; shadows must be overridden
+   per-class because Tailwind inlines --shadow-* theme values into utilities. */
+.wide-layout {
+	--color-ios-light-glass: #ffffff;
+	--color-ios-dark-glass: var(--color-ios-dark-surface-1);
+}
+.wide-layout :is(.shadow-ios-light-glass, .shadow-ios-dark-glass) {
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+.wide-layout.dark :is(.shadow-ios-light-glass, .shadow-ios-dark-glass) {
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.wide-layout :is(.shadow-ios-light-glass-fab, .shadow-ios-dark-glass-fab) {
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.wide-layout :is(.shadow-ios-light-glass-thumb, .shadow-ios-dark-glass-thumb) {
+	box-shadow: none;
+	background-color: rgba(0, 0, 0, 0.06);
+}
+.wide-layout.dark :is(.shadow-ios-light-glass-thumb, .shadow-ios-dark-glass-thumb) {
+	background-color: rgba(255, 255, 255, 0.1);
+}
+.wide-layout :is(.bg-ios-light-glass, .bg-ios-dark-glass),
+.wide-layout .k-navbar [class*='backdrop-blur'] {
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+}
+
+/* Desktop: navbar buttons are bare icons with a hover tint (Signal-style),
+   not floating glass capsules. */
+.wide-layout .k-navbar :is(.bg-ios-light-glass, .bg-ios-dark-glass) {
+	background-color: transparent;
+	box-shadow: none;
+}
+.wide-layout .k-ios .k-navbar .k-link {
+	border-radius: 9999px;
+	transition: background-color 150ms;
+}
+.wide-layout .k-ios .k-navbar .k-link:hover {
+	background-color: rgba(0, 0, 0, 0.06);
+}
+.wide-layout.dark .k-ios .k-navbar .k-link:hover {
+	background-color: rgba(255, 255, 255, 0.1);
+}
+
 .icon-only-card {
 	border-radius: 50%;
 	margin: 0;
