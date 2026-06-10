@@ -139,6 +139,7 @@ pub fn run() {
                 }
                 // macOS fires Reopen when the dock icon is clicked. The window is destroyed while
                 // the mailbox runs in the background, so rebuild it here.
+                #[cfg(target_os = "macos")]
                 tauri::RunEvent::Reopen { .. } => {
                     if let Err(err) = tray::show_or_create_main_window(app_handle) {
                         log::error!("Failed to show/create main window on reopen: {err:?}");
