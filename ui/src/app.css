@@ -15,7 +15,7 @@
 	--text-sm--line-height: 1.45rem; /* optional, default: 1.25rem */
 }
 
-:where(.dark) {
+:root.dark {
 	--background-color: var(--color-md-dark-surface);
 	--color-desktop-sidebar-bg: var(--color-md-dark-surface-2);
 	--color-desktop-main-bg: var(--color-md-dark-surface);
