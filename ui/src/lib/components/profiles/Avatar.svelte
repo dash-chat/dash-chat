@@ -24,7 +24,7 @@
 		image?: string | undefined;
 		initials?: string | undefined;
 		alt?: string | undefined;
-		size?: number | undefined;
+		size?: number | string | undefined;
 		style?: string | undefined;
 		id?: string | undefined;
 		children?: Snippet | undefined;
@@ -37,11 +37,18 @@
 	const avatarInitials = $derived(
 		textAvatarData?.text || initials || undefined,
 	);
-	const baseStyle = $derived(
+	const sizeValue = $derived(
 		size !== undefined
+			? typeof size === 'number'
+				? `${size}px`
+				: size
+			: undefined,
+	);
+	const baseStyle = $derived(
+		sizeValue !== undefined
 			? style
-				? `--size: ${size}px; ${style}`
-				: `--size: ${size}px;`
+				? `--size: ${sizeValue}; ${style}`
+				: `--size: ${sizeValue};`
 			: style,
 	);
 	const avatarStyle = $derived.by(() => {

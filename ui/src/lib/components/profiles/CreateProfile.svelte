@@ -144,11 +144,7 @@
 					onclick={openPicker}
 				>
 					{#if avatar}
-						<Avatar
-							image={avatar}
-							alt="Avatar"
-							style="--size: {avatarSize}px"
-						/>
+						<Avatar image={avatar} alt="Avatar" size={avatarSize} />
 					{:else}
 						<Button
 							rounded

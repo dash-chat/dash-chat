@@ -159,7 +159,7 @@
 							<Avatar
 								image={info.image}
 								initials={info.name.slice(0, 2)}
-								style="--size: 2.5rem"
+								size="2.5rem"
 							/>
 							<span>{info.name}</span>
 						</Link>
@@ -265,7 +265,7 @@
 														<Avatar
 															image={author?.profile?.avatar}
 															initials={author?.profile?.name.slice(0, 2)}
-															style="--size: 2rem"
+															size="2rem"
 														/>
 													{:else}
 														<div class="shrink-0" style="width: 2rem"></div>

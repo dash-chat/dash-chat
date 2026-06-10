@@ -130,7 +130,7 @@
 					<Avatar
 						image={info.image}
 						initials={info.name.slice(0, 2)}
-						style="--size: 2.5rem"
+						size="2.5rem"
 					/>
 					<span>{info.name}</span>
 				</div>
@@ -157,7 +157,7 @@
 						<Avatar
 							image={info.image}
 							initials={info.name.slice(0, 2)}
-							style="--size: 5rem"
+							size="5rem"
 						>
 							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
 						</Avatar>

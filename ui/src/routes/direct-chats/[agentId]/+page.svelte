@@ -431,7 +431,7 @@
 												class="flex w-full min-w-0 flex-row items-center gap-2"
 											>
 												<span class="shrink-0">
-													<Avatar waitingForProfile style="--size: 2.5rem" />
+													<Avatar waitingForProfile size="2.5rem" />
 												</span>
 												<span class="quiet flex-1 min-w-0 truncate">
 													{m.waitingForProfile()}
