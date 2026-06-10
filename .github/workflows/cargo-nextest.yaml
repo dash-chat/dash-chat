@@ -1,4 +1,4 @@
-name: "cargo test"
+name: "cargo nextest"
 on:
   push:
     branches: [ main, develop ]
@@ -6,7 +6,7 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  cargo-test:
+  cargo-nextest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,5 +34,8 @@ jobs:
         with:
           cache-on-failure: true
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Test
-        run: cargo test
+        run: cargo nextest run

@@ -1,5 +1,10 @@
 set working-directory := '..'
 
+# run the full rust test suite with cargo nextest
+[default]
+default *ARGS:
+    cargo nextest run {{ARGS}}
+
 # run integration tests for the dashchat-node crate
 dashchat-node *ARGS:
     # config file is in .config/nextest.toml

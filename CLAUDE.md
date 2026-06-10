@@ -95,7 +95,7 @@ pnpm start
 ### Development Tasks
 ```bash
 # Run Rust tests
-cargo test
+cargo nextest run
 # or
 pnpm test
 
@@ -395,7 +395,7 @@ Execute all CI commands inside of the default nix shell with `nix develop`.
 
 ### Rust Tests
 ```bash
-cargo test
+cargo nextest run
 ```
 
 Run tests from workspace root. Tests use tokio async runtime.
