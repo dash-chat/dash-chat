@@ -79,11 +79,7 @@
 
 		{#snippet right()}
 			{#if isIosTheme}
-				<Link
-					onClick={handleAction}
-					data-testid={actionTestId}
-					class={actionDisabled ? 'ios-right-disabled' : ''}
-				>
+				<Link onClick={handleAction} data-testid={actionTestId}>
 					{actionLabel}
 				</Link>
 			{/if}

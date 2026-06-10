@@ -28,14 +28,12 @@
 		($contacts ?? []).filter(([agentId]) => !($members && agentId in $members)),
 	);
 	let filteredContacts = $state<typeof nonMemberContacts>([]);
+	let searchQuery = $state('');
 
 	const noDataMessage = $derived.by(() => {
 		if (loading) return '';
 		if (($contacts ?? []).length === 0) return m.noContactsYet();
-		if (
-			filteredContacts.length === 0 &&
-			filteredContacts.length !== nonMemberContacts.length
-		)
+		if (filteredContacts.length === 0 && searchQuery.length > 0)
 			return m.noContactsMatchFilter();
 		if (filteredContacts.length === 0) return m.allContactsAlreadyInGroup();
 		return '';
@@ -54,12 +52,13 @@
 	onAction={addMembers}
 	actionDisabled={selectedContacts.length === 0}
 	onBack={() => goto(`/group-chat/${chatId}/info`)}
-	constrainedWidth={true}
+	constrainedWidth
 	backTestId="add-members-back"
 	actionTestId="add-members-add-btn"
 >
 	{#snippet subnavbar()}
 		<ContactSearchNav
+			bind:searchQuery
 			bind:filteredContacts
 			{selectedContacts}
 			contacts={nonMemberContacts}
