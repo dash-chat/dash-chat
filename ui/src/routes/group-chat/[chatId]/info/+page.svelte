@@ -15,6 +15,7 @@
 		mdiAccountGroup,
 		mdiDelete,
 		mdiKeyVariant,
+		mdiPencil,
 		mdiPlusCircle,
 	} from '@mdi/js';
 	import {
@@ -27,6 +28,7 @@
 		Sheet,
 		BlockTitle,
 		useTheme,
+		Link,
 	} from 'konsta/svelte';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -134,7 +136,7 @@
 				</div>
 			{/snippet}
 
-			<!-- {#snippet right()}
+			{#snippet right()}
 				<Link
 					href={`/group-chat/${chatId}/info/edit`}
 					iconOnly={theme === 'material'}
@@ -145,7 +147,7 @@
 						{m.edit()}
 					{/if}
 				</Link>
-			{/snippet} -->
+			{/snippet}
 		</Navbar>
 
 		{#await $me then me}

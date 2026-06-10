@@ -5,11 +5,7 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type {
-		ContactsStore,
-		ChatsStore,
-		VerifyingKey,
-	} from 'dash-chat-stores';
+	import type { ChatsStore } from 'dash-chat-stores';
 	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
 	import {
 		Page,
