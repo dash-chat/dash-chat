@@ -110,6 +110,45 @@ export interface ReadMessagesStore {
 	markAsRead(messageHashes: Hash[]): Promise<void>;
 }
 
+export type GroupControlEvent =
+	| {
+			kind: 'group_created';
+			isMine: boolean;
+			iAmInitialMember: boolean;
+			creatorName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_added';
+			isMine: boolean;
+			addedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_removed';
+			isMine: boolean;
+			removedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_promoted';
+			promotedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_demoted';
+			demotedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  };
+
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
@@ -119,35 +158,7 @@ export type ChatSummaryLastEvent =
 	  }
 	| { kind: 'contact_request'; timestamp: number }
 	| { kind: 'contact_added'; timestamp: number }
-	| {
-			kind: 'group_created';
-			isMine: boolean;
-			creatorName: string;
-			timestamp: number;
-	  }
-	| {
-			kind: 'group_member_added';
-			isMine: boolean;
-			addedByMe: boolean;
-			memberName: string;
-			adminName: string;
-			timestamp: number;
-	  }
-	| { kind: 'group_member_removed'; timestamp: number }
-	| {
-			kind: 'group_member_promoted';
-			promotedByMe: boolean;
-			memberName: string;
-			adminName: string;
-			timestamp: number;
-	  }
-	| {
-			kind: 'group_member_demoted';
-			demotedByMe: boolean;
-			memberName: string;
-			adminName: string;
-			timestamp: number;
-	  };
+	| GroupControlEvent;
 
 export interface ChatSummary {
 	type: 'GroupChat' | 'DirectChat';
