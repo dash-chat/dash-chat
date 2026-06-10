@@ -1,6 +1,6 @@
 use sonix_i18n::t;
-use tauri::menu::{CheckMenuItem, Menu, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Runtime};
+use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{AppHandle, Manager, Runtime};
 
 pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let local_mailbox_enabled = crate::settings::load_mailbox_enabled(app_handle);
@@ -15,8 +15,21 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
     )?;
     let mailbox_toggle_handle = mailbox_toggle.clone();
 
+    let quit = MenuItem::with_id(
+        app_handle,
+        "menu-quit",
+        t!("menuQuit"),
+        true,
+        Some("CmdOrCtrl+Q"),
+    )?;
+
     app_handle.on_menu_event(
         move |app_handle, menu_event| match menu_event.id().as_ref() {
+            "menu-quit" => {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.close();
+                }
+            }
             "toggle-local-mailbox" => match mailbox_toggle_handle.is_checked() {
                 Ok(enabled) => {
                     let app_handle = app_handle.clone();
@@ -48,16 +61,11 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
         &[
             &mailbox_toggle,
             &PredefinedMenuItem::close_window(app_handle, None)?,
+            &PredefinedMenuItem::separator(app_handle)?,
+            &quit,
         ],
     )?;
 
-    // The Edit submenu is macOS-only: WKWebView only routes Cmd+A / Cmd+C / etc.
-    // into focused inputs when those shortcuts are bound through the
-    // application menu. On Linux/Windows the webview already handles these
-    // accelerators natively, and muda's predefined items don't dispatch a
-    // click into the webview — so a menu entry there would be inert when
-    // clicked.
-    #[cfg(target_os = "macos")]
     let edit_submenu = Submenu::with_items(
         app_handle,
         t!("menuEdit"),
@@ -74,8 +82,17 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
         ],
     )?;
 
-    #[cfg(target_os = "macos")]
-    return Menu::with_items(app_handle, &[&file_submenu, &edit_submenu]);
-    #[cfg(not(target_os = "macos"))]
-    Menu::with_items(app_handle, &[&file_submenu])
+    // The Edit submenu is macOS-only: WKWebView only routes Cmd+A / Cmd+C / etc.
+    // into focused inputs when those shortcuts are bound through the
+    // application menu. On Linux/Windows the webview already handles these
+    // accelerators natively, and muda's predefined items don't dispatch a
+    // click into the webview — so a menu entry there would be inert when
+    // clicked.
+    let submenus: &[&dyn IsMenuItem<R>] = if cfg!(target_os = "macos") {
+        &[&file_submenu]
+    } else {
+        &[&file_submenu, &edit_submenu]
+    };
+
+    Menu::with_items(app_handle, submenus)
 }

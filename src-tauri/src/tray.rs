@@ -34,7 +34,7 @@ pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
                 }
             }
             "quit" => {
-                confirm_quit_and_exit(app);
+                quit_from_tray(app);
             }
             _ => {}
         })
@@ -55,6 +55,30 @@ pub fn hide_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
         tray.set_visible(false)?;
     }
     Ok(())
+}
+
+/// Handle the tray's "Quit" item. Always disables the local message server (in
+/// settings). If a window is visible, leave it open; otherwise terminate the app.
+fn quit_from_tray(app: &AppHandle<impl Runtime>) {
+    use std::sync::atomic::Ordering;
+
+    let window_visible = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(err) =
+            crate::mailbox::server::set_local_mailbox_server_enabled(&app, false).await
+        {
+            log::error!("Failed to stop local mailbox: {err:?}");
+        }
+        if !window_visible {
+            crate::FORCE_QUIT.store(true, Ordering::Relaxed);
+            app.exit(0);
+        }
+    });
 }
 
 /// Show a quit-confirmation dialog on a background thread.
