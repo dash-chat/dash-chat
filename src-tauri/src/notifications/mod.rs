@@ -226,6 +226,7 @@ async fn chat_message_notification(
         notification_data.group = Some("dashchat.chats".to_string());
         notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
             sender_id: sender_id_hex.clone(),
+            conversation_title: None,
         });
     }
 
@@ -236,6 +237,7 @@ async fn chat_message_notification(
     {
         notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
             sender_id: sender_id_hex,
+            conversation_title: None,
         });
     }
 
