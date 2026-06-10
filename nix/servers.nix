@@ -6,6 +6,10 @@ let
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDTE+RwRfcG3UNTOZwGmQOKd5R+9jN0adH4BIaZvmWjO guillem.cordoba@gmail.com";
     guillemslaptop =
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO8DVpvRgQ90MyMyiuNdvyMNAio9n2o/+57MyhZS2A5A guillem.cordoba@gmail.com";
+    jade =
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOllETiFdOEe8vGdr3CDiYJmWBQEz7j+2yyUfLFOt80+ jade@thirdfish";
+    michael =
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDZRMwISzYZ0Tm+GC7Iwqxa+lk0/J1Qo353eCsPnxcJ8 michael@loom";
   };
 
   sshModule = {
@@ -48,7 +52,7 @@ let
         wants = [ "network-online.target" ];
         serviceConfig = {
           ExecStart =
-            "${mailbox}/bin/mailbox-server --addr 0.0.0.0:80 --push-notifications-url https://push-notifications-server.production.dash-chat.dash-chat.garnix.me";
+            "${mailbox}/bin/mailbox-server --addr 0.0.0.0:80 --push-notifications-url http://push-notifications.darksoil.studio";
           Restart = "always";
         };
       };
