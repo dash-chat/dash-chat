@@ -109,15 +109,15 @@
 					type="text"
 					bind:value={name}
 					data-testid="edit-name-name"
-					label={theme === 'material' ? m.name() : ''}
-					placeholder={theme === 'ios' ? m.name() : ''}
+					label={theme === 'material' ? m.nameRequired() : ''}
+					placeholder={theme === 'ios' ? m.nameRequired() : ''}
 				/>
 				<ListInput
 					type="text"
 					bind:value={surname}
 					data-testid="edit-name-surname"
-					label={theme === 'material' ? m.surname() : ''}
-					placeholder={theme === 'ios' ? m.surname() : ''}
+					label={theme === 'material' ? m.surnameOptional() : ''}
+					placeholder={theme === 'ios' ? m.surnameOptional() : ''}
 				/>
 			</List>
 		</div>
