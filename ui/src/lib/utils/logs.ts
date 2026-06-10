@@ -40,6 +40,7 @@ export function forwardConsoleToTauriLog(): void {
 		// asset protocol doesn't set an ETag. Caching still works via
 		// IndexedDB; the warning is purely a freshness-check hint.
 		'emoji-picker-element is more efficient if the dataSource server exposes an ETag header.',
+		"Couldn't find callback id",
 	];
 	const isIgnoredWarning = (args: unknown[]) =>
 		typeof args[0] === 'string' &&
