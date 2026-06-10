@@ -6,7 +6,8 @@ export const TEXT_AVATAR_TEXT_COLOR = '#831843';
 
 export const DEFAULT_TEXT_AVATAR_COLOR = '#fce7f3';
 
-export const TEXT_AVATAR_COLORS = [
+// The greys stay pickable in the editor but are never auto-assigned.
+const ASSIGNABLE_COLORS = [
 	'#ddd6fe',
 	'#bfdbfe',
 	'#cffafe',
@@ -17,14 +18,24 @@ export const TEXT_AVATAR_COLORS = [
 	'#fecaca',
 	'#fef08a',
 	'#d9f99d',
-	'#e5e7eb',
-	'#d1d5db',
 ];
+
+export const TEXT_AVATAR_COLORS = [...ASSIGNABLE_COLORS, '#e5e7eb', '#d1d5db'];
 
 /** Stable text-avatar color for a user or chat, hashed from its id so every
  * device assigns the same color without coordination. */
 export function defaultAvatarColor(seed: string): string {
-	return TEXT_AVATAR_COLORS[hashCode(seed) % TEXT_AVATAR_COLORS.length];
+	return ASSIGNABLE_COLORS[hashCode(seed) % ASSIGNABLE_COLORS.length];
+}
+
+/** Display name from the raw profile fields, like [fullName] but usable
+ * before a Profile exists. */
+export function joinName(
+	name: string | undefined,
+	surname: string | undefined,
+): string | undefined {
+	if (!name) return undefined;
+	return surname ? `${name} ${surname}` : name;
 }
 
 /** Initials for a display name, following Signal's convention: the first
@@ -52,7 +63,7 @@ export function editorPrefill(
 	surname: string | undefined,
 	seed: string | undefined,
 ): TextAvatarData {
-	const displayName = surname ? `${name} ${surname}` : name;
+	const displayName = joinName(name, surname) ?? '';
 	const text = abbreviateName(displayName).toUpperCase();
 	return new TextAvatarData(
 		defaultAvatarColor(seed || displayName),
