@@ -138,6 +138,19 @@ li.plain span {
 	background-color: transparent !important;
 }
 
+/*
+	Desktop only: chat window background is plain white (light) / black
+	(dark) instead of Konsta's tinted iOS surface. Scoped to `.wide-layout`
+	(toggled on <html> by the layout effect) so the mobile look is unchanged.
+*/
+.wide-layout .reverse-scroll-host {
+	background-color: #ffffff;
+}
+.wide-layout.dark .reverse-scroll-host,
+.dark .wide-layout .reverse-scroll-host {
+	background-color: #000000;
+}
+
 .k-toolbar.transparent .bg-gradient-to-t {
 	display: none;
 }
