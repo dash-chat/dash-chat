@@ -21,6 +21,7 @@
 	import DayTag from '$lib/components/DayTag.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
+	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import MessageInput from '$lib/components/MessageInput.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
@@ -90,8 +91,9 @@
 		) {
 			for (const day of messagesSetsInDays) {
 				for (const messageSet of day.eventsSets) {
-					for (const [hash, message] of messageSet) {
-						if (message.author !== deviceId && !readHashes.has(hash)) {
+					for (const [hash, item] of messageSet) {
+						if (item.kind !== 'message') continue;
+						if (item.message.author !== deviceId && !readHashes.has(hash)) {
 							capturedUnreadHash = hash;
 							break;
 						}
@@ -109,9 +111,14 @@
 		let found = false;
 		for (const day of messagesSetsInDays) {
 			for (const messageSet of day.eventsSets) {
-				for (const [hash, message] of messageSet) {
+				for (const [hash, item] of messageSet) {
 					if (hash === capturedUnreadHash) found = true;
-					if (found && message.author !== deviceId) count++;
+					if (
+						found &&
+						item.kind === 'message' &&
+						item.message.author !== deviceId
+					)
+						count++;
 				}
 			}
 		}
@@ -215,7 +222,7 @@
 
 							{#each messageSetInDay.eventsSets as messageSet}
 								<div class="column" style="gap: 1px">
-									{#each messageSet as [hash, message], i (hash)}
+									{#each messageSet as [hash, item], i (hash)}
 										{#if unreadDivider.hash === hash}
 											<div
 												class="unread-divider"
@@ -224,58 +231,63 @@
 												{m.unreadMessages({ count: unreadDivider.count })}
 											</div>
 										{/if}
-										{@const position = messagePosition(messageSet.length, i)}
-										{#if myDeviceId === message.author}
-											<div
-												class="self-end max-w-[85%]"
-												data-message-hash={hash}
-											>
-												<MessageFromMe
-													{message}
-													{position}
-													{myDeviceId}
-													{chatId}
-													searchQuery=""
-													onToggleReaction={() => {}}
-												/>
-											</div>
+										{#if item.kind === 'control'}
+											<SystemMessage event={item.event} />
 										{:else}
-											{@const author = Object.values(members).find(m =>
-												m.deviceIds.includes(message.author),
-											)}
-											<div
-												class="row items-end gap-2 self-start max-w-[85%]"
-												data-message-hash={hash}
-												use:readMessageOnObserve={readHashes?.has(hash)
-													? null
-													: hash}
-											>
-												{#if position === 'last' || position === 'single'}
-													<Avatar
-														image={author?.profile?.avatar}
-														initials={author?.profile?.name.slice(0, 2)}
-														style="--size: 2rem"
+											{@const message = item.message}
+											{@const position = messagePosition(messageSet.length, i)}
+											{#if myDeviceId === message.author}
+												<div
+													class="self-end max-w-[85%]"
+													data-message-hash={hash}
+												>
+													<MessageFromMe
+														{message}
+														{position}
+														{myDeviceId}
+														{chatId}
+														searchQuery=""
+														onToggleReaction={() => {}}
 													/>
-												{:else}
-													<div class="shrink-0" style="width: 2rem"></div>
-												{/if}
-												<MessageFromOthers
-													{message}
-													{position}
-													{myDeviceId}
-													{chatId}
-													searchQuery=""
-													onToggleReaction={() => {}}
-													sender={(position === 'first' ||
-														position === 'single') &&
-													author?.profile?.name
-														? {
-																name: author.profile.name,
-																color: senderColor(message.author),
-															}
-														: undefined}
-												/>
-											</div>
+												</div>
+											{:else}
+												{@const author = Object.values(members).find(m =>
+													m.deviceIds.includes(message.author),
+												)}
+												<div
+													class="row items-end gap-2 self-start max-w-[85%]"
+													data-message-hash={hash}
+													use:readMessageOnObserve={readHashes?.has(hash)
+														? null
+														: hash}
+												>
+													{#if position === 'last' || position === 'single'}
+														<Avatar
+															image={author?.profile?.avatar}
+															initials={author?.profile?.name.slice(0, 2)}
+															style="--size: 2rem"
+														/>
+													{:else}
+														<div class="shrink-0" style="width: 2rem"></div>
+													{/if}
+													<MessageFromOthers
+														{message}
+														{position}
+														{myDeviceId}
+														{chatId}
+														searchQuery=""
+														onToggleReaction={() => {}}
+														sender={(position === 'first' ||
+															position === 'single') &&
+														author?.profile?.name
+															? {
+																	name: author.profile.name,
+																	color: senderColor(message.author),
+																}
+															: undefined}
+													/>
+												</div>
+											{/if}
 										{/if}
 									{/each}
 								</div>
