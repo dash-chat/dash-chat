@@ -52,7 +52,7 @@
 				<EditableAvatar
 					image={myProfile?.avatar}
 					initials={myProfile?.name.slice(0, 2)}
-					editUrl="/settings/profile/edit-photo"
+					onEdit={() => goto('/settings/profile/edit-photo')}
 					class="mt-2 mb-4"
 				/>
 

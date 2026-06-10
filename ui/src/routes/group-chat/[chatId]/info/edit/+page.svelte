@@ -81,7 +81,7 @@
 			<EditableAvatar
 				image={info.image}
 				initials={info.name?.slice(0, 2)}
-				editUrl={`/group-chat/${chatId}/info/edit/edit-photo`}
+				onEdit={() => goto(`/group-chat/${chatId}/info/edit/edit-photo`)}
 			/>
 
 			<!-- <div class="column items-center">
