@@ -87,7 +87,7 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
     }
     builder = builder.sound(data.sound.unwrap_or_else(|| "default".to_string()));
     if let Some(style) = data.conversation_style {
-        builder = builder.conversation_style(style.sender_id);
+        builder = builder.conversation_style(style);
     }
     builder.show()?;
     Ok(())
@@ -226,6 +226,7 @@ async fn chat_message_notification(
         notification_data.group = Some("dashchat.chats".to_string());
         notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
             sender_id: sender_id_hex.clone(),
+            conversation_title: None,
         });
     }
 
@@ -236,6 +237,7 @@ async fn chat_message_notification(
     {
         notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
             sender_id: sender_id_hex,
+            conversation_title: None,
         });
     }
 
@@ -288,7 +290,7 @@ async fn auth_control_op_notification(
         // creating a new group with us in it. Distinguish by checking whether
         // the topic matches the deterministic direct-chat topic with the
         // sender.
-        GroupAction::Create { .. } => {
+        GroupAction::Create { initial_members } => {
             let is_direct_chat = sender_agent_id
                 .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == topic)
                 .unwrap_or(false);
@@ -300,6 +302,9 @@ async fn auth_control_op_notification(
                 let route = sender_agent_id.map(|aid| format!("/direct-chats/{}", aid.to_hex()));
                 (title, None, route)
             } else {
+                if !initial_members.iter().any(|(m, _)| target_is_me(m)) {
+                    return None;
+                }
                 let body = match &sender_name {
                     Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
                     None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),

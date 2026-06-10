@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { getContext } from 'svelte';
-	import type { ContactsStore, Profile, VerifyingKey } from 'dash-chat-stores';
+	import type { ContactsStore, VerifyingKey } from 'dash-chat-stores';
 	import { useReactiveValue } from '$lib/stores/use-signal';
-	import { BlockTitle, Searchbar } from 'konsta/svelte';
-	import StepPage from './StepPage.svelte';
-	import ContactsChipList from '$lib/components/contacts/ContactsChipList.svelte';
+	import { BlockTitle } from 'konsta/svelte';
+	import FormPage from '$lib/components/layout/FormPage.svelte';
+	import ContactSearchNav from '$lib/components/contacts/ContactSearchNav.svelte';
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
 
 	interface Props {
@@ -21,9 +21,10 @@
 	const resolvedContacts = $derived($contacts ?? []);
 
 	let searchQuery = $state('');
+	let filteredContacts = $state<typeof resolvedContacts>([]);
 </script>
 
-<StepPage
+<FormPage
 	title={selectedContacts.length === 0
 		? m.newGroup()
 		: m.membersCount({ count: selectedContacts.length })}
@@ -32,45 +33,30 @@
 	onAction={onNext}
 	navbarTestId="new-group-members-navbar"
 	actionTestId="new-group-next"
+	constrainedWidth
 >
 	{#snippet subnavbar()}
-		<div class="column gap-4">
-			<Searchbar
-				clearButton
-				placeholder={m.searchByName()}
-				value={searchQuery}
-				class="!mx-0 py-0 !w-full"
-				onInput={e => {
-					searchQuery = (e.target as HTMLInputElement).value;
-				}}
-				onClear={() => {
-					searchQuery = '';
-				}}
-			/>
-
-			<ContactsChipList
-				contacts={resolvedContacts.filter(([key]) =>
-					selectedContacts.includes(key),
-				)}
-				onRemove={key => {
-					selectedContacts = selectedContacts.filter(c => c !== key);
-				}}
-			/>
-		</div>
+		<ContactSearchNav
+			bind:searchQuery
+			bind:filteredContacts
+			{selectedContacts}
+			contacts={resolvedContacts}
+			onRemove={key => {
+				selectedContacts = selectedContacts.filter(c => c !== key);
+			}}
+		/>
 	{/snippet}
 
 	<div class="column" style="flex: 1">
 		<BlockTitle>{m.contacts()}</BlockTitle>
 
 		<SelectableContactList
-			contacts={resolvedContacts.filter(([, profile]) =>
-				profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
-			)}
+			contacts={filteredContacts}
 			{loading}
-			noDataMessage={searchQuery
+			noDataMessage={searchQuery.length > 0
 				? m.noContactsMatchFilter()
 				: m.noContactsYet()}
 			bind:selectedContacts
 		/>
 	</div>
-</StepPage>
+</FormPage>

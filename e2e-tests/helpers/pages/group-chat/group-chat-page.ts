@@ -7,6 +7,7 @@ export class GroupChatPage extends TestPage {
 	page = this.agent.$(tid('group-chat-page'));
 	back = this.agent.$(tid('group-chat-back'));
 	infoLink = this.agent.$(tid('group-chat-info-link'));
+	headerName = this.agent.$(tid('group-chat-header-name'));
 	messages = this.agent.$(tid('group-chat-messages'));
 	messageInput = this.agent.$(tid('message-input-textarea'));
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
@@ -85,6 +86,39 @@ export class GroupChatPage extends TestPage {
 					text,
 				),
 			{ timeout, timeoutMsg: `Message "${text}" not found` },
+		);
+	}
+
+	systemMessage(
+		kind:
+			| 'group_created'
+			| 'group_member_added'
+			| 'group_member_removed'
+			| 'group_member_promoted'
+			| 'group_member_demoted',
+	) {
+		return this.agent.$(tid(`group-chat-system-message-${kind}`));
+	}
+
+	async messageBubbleWithText(text: string) {
+		const hash = await this.agent.execute(
+			(messagesSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return wrapper.getAttribute('data-message-hash');
+					}
+				}
+				return null;
+			},
+			tid('group-chat-messages'),
+			text,
+		);
+		if (!hash) return null;
+		return this.agent.$(
+			`${tid('group-chat-messages')} [data-message-hash="${hash}"]`,
 		);
 	}
 
