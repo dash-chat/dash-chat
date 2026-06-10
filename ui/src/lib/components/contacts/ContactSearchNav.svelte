@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import type { VerifyingKey, Profile } from 'dash-chat-stores';
+	import { type VerifyingKey, type Profile, fullName } from 'dash-chat-stores';
 	import { Searchbar } from 'konsta/svelte';
 	import ContactsChipList from './ContactsChipList.svelte';
 
@@ -22,7 +22,7 @@
 
 	$effect(() => {
 		filteredContacts = contacts.filter(([, profile]) =>
-			profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
+			fullName(profile).toLowerCase().includes(searchQuery.toLowerCase()),
 		);
 	});
 </script>
