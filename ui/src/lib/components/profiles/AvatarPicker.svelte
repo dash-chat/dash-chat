@@ -34,7 +34,7 @@
 	$effect(() => {
 		inModalState = view === 'text';
 	});
-	let avatarFilePicker: HTMLInputElement;
+	let avatarFilePicker: HTMLInputElement = $state()!;
 
 	const defaultAvatars = [
 		'🐸',
