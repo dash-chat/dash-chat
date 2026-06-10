@@ -5,10 +5,11 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type {
-		ContactsStore,
-		ChatsStore,
-		VerifyingKey,
+	import {
+		fullName,
+		type ContactsStore,
+		type ChatsStore,
+		type VerifyingKey,
 	} from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
@@ -127,7 +128,8 @@
 				>
 					<Avatar
 						image={info.image}
-						initials={info.name.slice(0, 2)}
+						name={info.name}
+						colorSeed={chatId}
 						style="--size: 2.5rem"
 					/>
 					<span>{info.name}</span>
@@ -200,7 +202,8 @@
 									{#snippet media()}
 										<Avatar
 											image={member.profile?.avatar}
-											initials={member.profile?.name.slice(0, 2)}
+											name={member.profile && fullName(member.profile)}
+											colorSeed={actorId}
 											style="--size: 32px;"
 										/>
 									{/snippet}
@@ -223,7 +226,8 @@
 									>
 										<Avatar
 											image={member.profile?.avatar}
-											initials={member.profile?.name.slice(0, 2)}
+											name={member.profile && fullName(member.profile)}
+											colorSeed={actorId}
 											style="--size: 32px;"
 										/>
 										<span class="font-semibold">{member.profile?.name}</span>

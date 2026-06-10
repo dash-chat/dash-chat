@@ -2,15 +2,19 @@
 	import { fullName, type Profile } from 'dash-chat-stores';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 
-	let { profile, nameTestId }: { profile: Profile; nameTestId?: string } =
-		$props();
+	let {
+		profile,
+		colorSeed,
+		nameTestId,
+	}: { profile: Profile; colorSeed?: string; nameTestId?: string } = $props();
 </script>
 
 <span class="flex w-full min-w-0 flex-row items-center gap-2">
 	<span class="shrink-0">
 		<Avatar
 			image={profile.avatar}
-			initials={profile.name.slice(0, 2)}
+			name={fullName(profile)}
+			{colorSeed}
 			style="--size: 2.5rem"
 		/>
 	</span>

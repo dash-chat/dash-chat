@@ -3,7 +3,7 @@
 	import { fullName, type ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		mdiAccountCircleOutline,
 		mdiBellOutline,
@@ -45,6 +45,7 @@
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const myAgentId = useReactiveValue(contactsStore.myAgentId);
 	const theme = $derived(useTheme());
 
 	const isActive = (path: string) => page.url.pathname.startsWith(path);
@@ -83,7 +84,8 @@
 				{#snippet media()}
 					<Avatar
 						image={myProfile?.avatar}
-						initials={myProfile?.name.slice(0, 2)}
+						name={myProfile && fullName(myProfile)}
+						colorSeed={$myAgentId}
 						style={isWideScreen.value || theme === 'ios'
 							? '--size: 64px'
 							: '--size: 64px; margin-inline-start: 16px'}

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Profile, VerifyingKey } from 'dash-chat-stores';
+	import { fullName, type Profile, type VerifyingKey } from 'dash-chat-stores';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { List, ListItem, Checkbox, Preloader, useTheme } from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -40,7 +40,8 @@
 					{#snippet media()}
 						<Avatar
 							image={profile.avatar}
-							initials={profile.name.slice(0, 2)}
+							name={fullName(profile)}
+							colorSeed={verifyingKey}
 						/>
 					{/snippet}
 

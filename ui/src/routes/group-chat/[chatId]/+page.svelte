@@ -4,11 +4,12 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type {
-		ChatsStore,
-		ContactsStore,
-		DeviceId,
-		Hash,
+	import {
+		fullName,
+		type ChatsStore,
+		type ContactsStore,
+		type DeviceId,
+		type Hash,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
@@ -158,7 +159,8 @@
 						>
 							<Avatar
 								image={info.image}
-								initials={info.name.slice(0, 2)}
+								name={info.name}
+								colorSeed={chatId}
 								style="--size: 2.5rem"
 							/>
 							<span>{info.name}</span>
@@ -183,7 +185,8 @@
 							<div class="column items-center gap-3 px-8 pb-6 -mt-10">
 								<Avatar
 									image={info.image}
-									initials={info.name.slice(0, 2)}
+									name={info.name}
+									colorSeed={chatId}
 									style="--size: 80px"
 								/>
 								<span
@@ -264,7 +267,8 @@
 													{#if position === 'last' || position === 'single'}
 														<Avatar
 															image={author?.profile?.avatar}
-															initials={author?.profile?.name.slice(0, 2)}
+															name={author?.profile && fullName(author.profile)}
+															colorSeed={author?.agentId}
 															style="--size: 2rem"
 														/>
 													{:else}
