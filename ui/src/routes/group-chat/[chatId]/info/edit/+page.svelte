@@ -6,7 +6,6 @@
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { ChatsStore } from 'dash-chat-stores';
-	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
 	import {
 		Page,
 		Navbar,
@@ -21,6 +20,7 @@
 	import Form from '$lib/components/form/Form.svelte';
 	import Container from '$lib/components/layout_helpers/Container.svelte';
 	import EditableAvatar from '$lib/components/profiles/EditableAvatar.svelte';
+	import EditingPhotoPage from './EditingPhotoPage.svelte';
 
 	let chatId = page.params.chatId!;
 
@@ -46,6 +46,23 @@
 	const theme = $derived(useTheme());
 	const saveDisabled = $derived(name.trim() === '');
 
+	let editingPhoto = $state(false);
+	let imageBeforeEdit = $state<string | undefined>(undefined);
+
+	function startEditPhoto() {
+		imageBeforeEdit = image;
+		editingPhoto = true;
+	}
+
+	function cancelEditPhoto() {
+		image = imageBeforeEdit;
+		editingPhoto = false;
+	}
+
+	function confirmEditPhoto() {
+		editingPhoto = false;
+	}
+
 	async function save() {
 		if (saveDisabled) return;
 		await store.setInfo({
@@ -57,59 +74,62 @@
 	}
 </script>
 
-<Page>
-	<Navbar
-		title={m.editGroup()}
-		titleClass="opacity1"
-		transparent={true}
-		rightClass={saveDisabled ? 'ios-right-disabled' : ''}
-	>
-		{#snippet left()}
-			<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}/info`)} />
-		{/snippet}
-		{#snippet right()}
-			{#if isIos}
-				<Link onClick={save}>
-					{m.save()}
-				</Link>
-			{/if}
-		{/snippet}
-	</Navbar>
+{#if editingPhoto}
+	<EditingPhotoPage
+		bind:avatar={image}
+		onConfirm={confirmEditPhoto}
+		onCancel={cancelEditPhoto}
+	/>
+{:else}
+	<Page>
+		<Navbar
+			title={m.editGroup()}
+			titleClass="opacity1"
+			transparent={true}
+			rightClass={saveDisabled ? 'ios-right-disabled' : ''}
+		>
+			{#snippet left()}
+				<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}/info`)} />
+			{/snippet}
+			{#snippet right()}
+				{#if isIos}
+					<Link onClick={save}>
+						{m.save()}
+					</Link>
+				{/if}
+			{/snippet}
+		</Navbar>
 
-	{#await $info then info}
-		<Container class="pt-2">
-			<EditableAvatar
-				image={info.image}
-				initials={info.name?.slice(0, 2)}
-				onEdit={() => goto(`/group-chat/${chatId}/info/edit/edit-photo`)}
-			/>
-
-			<!-- <div class="column items-center">
-				<SelectAvatar defaultValue={info.image} bind:value={image} size={64}
-				></SelectAvatar>
-			</div> -->
-
-			<Form>
-				<FormInput type="text" bind:value={name} label={m.name()} />
-
-				<FormInput
-					type="textarea"
-					inputStyle={{ 'min-height': '2em' }}
-					bind:value={description}
-					label={m.description()}
+		{#await $info then info}
+			<Container class="pt-2">
+				<EditableAvatar
+					{image}
+					initials={info.name?.slice(0, 2)}
+					onEdit={startEditPhoto}
 				/>
-			</Form>
-		</Container>
 
-		{#if !isIos}
-			<Button
-				onClick={save}
-				class="fixed-action-btn"
-				rounded
-				disabled={saveDisabled}
-			>
-				{m.save()}
-			</Button>
-		{/if}
-	{/await}
-</Page>
+				<Form>
+					<FormInput type="text" bind:value={name} label={m.name()} />
+
+					<FormInput
+						type="textarea"
+						inputStyle={{ 'min-height': '2em' }}
+						bind:value={description}
+						label={m.description()}
+					/>
+				</Form>
+			</Container>
+
+			{#if !isIos}
+				<Button
+					onClick={save}
+					class="fixed-action-btn"
+					rounded
+					disabled={saveDisabled}
+				>
+					{m.save()}
+				</Button>
+			{/if}
+		{/await}
+	</Page>
+{/if}
