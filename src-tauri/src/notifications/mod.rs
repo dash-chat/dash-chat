@@ -87,7 +87,7 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
     }
     builder = builder.sound(data.sound.unwrap_or_else(|| "default".to_string()));
     if let Some(style) = data.conversation_style {
-        builder = builder.conversation_style(style.sender_id);
+        builder = builder.conversation_style(style);
     }
     builder.show()?;
     Ok(())
@@ -226,6 +226,7 @@ async fn chat_message_notification(
         notification_data.group = Some("dashchat.chats".to_string());
         notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
             sender_id: sender_id_hex.clone(),
+            conversation_title: None,
         });
     }
 
@@ -236,6 +237,7 @@ async fn chat_message_notification(
     {
         notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
             sender_id: sender_id_hex,
+            conversation_title: None,
         });
     }
 
