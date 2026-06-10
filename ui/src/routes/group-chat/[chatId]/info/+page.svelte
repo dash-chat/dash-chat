@@ -154,7 +154,11 @@
 			<div class="column" style="flex: 1">
 				<div class="column center-in-desktop gap-8 p-2">
 					<div class="column" style="align-items: center; gap: 1rem">
-						<Avatar image={info.image} style="--size: 5rem">
+						<Avatar
+							image={info.image}
+							initials={info.name.slice(0, 2)}
+							style="--size: 5rem"
+						>
 							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
 						</Avatar>
 
