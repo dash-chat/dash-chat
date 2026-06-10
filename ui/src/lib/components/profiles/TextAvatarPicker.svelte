@@ -13,23 +13,11 @@
 	} from 'konsta/svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { TextAvatarData } from './text-avatar-data-url';
-	import { TEXT_AVATAR_TEXT_COLOR } from './Avatar.svelte';
-
-	const defaultColor = '#fce7f3';
-	const colors = [
-		'#ddd6fe',
-		'#bfdbfe',
-		'#cffafe',
-		'#bbf7d0',
-		'#e9d5ff',
-		'#fbcfe8',
-		defaultColor,
-		'#fecaca',
-		'#fef08a',
-		'#d9f99d',
-		'#e5e7eb',
-		'#d1d5db',
-	];
+	import {
+		DEFAULT_TEXT_AVATAR_COLOR,
+		TEXT_AVATAR_COLORS,
+		TEXT_AVATAR_TEXT_COLOR,
+	} from './avatar-helpers';
 
 	let {
 		existingAvatar,
@@ -44,7 +32,8 @@
 	} = $props();
 
 	const initializeTextAvatar = (avatar?: string) =>
-		TextAvatarData.deserialize(avatar) ?? new TextAvatarData(defaultColor, '');
+		TextAvatarData.deserialize(avatar) ??
+		new TextAvatarData(DEFAULT_TEXT_AVATAR_COLOR, '');
 
 	// svelte-ignore state_referenced_locally
 	let currentTextAvatar = $state(initializeTextAvatar(existingAvatar));
@@ -164,7 +153,7 @@
 
 {#if activeTab === 'color'}
 	<div class="grid grid-cols-4 gap-4 px-6 py-6 justify-items-center">
-		{#each colors as color}
+		{#each TEXT_AVATAR_COLORS as color}
 			<button
 				class="w-[72px] h-[72px] rounded-full border-[3px] cursor-pointer transition-transform duration-200 hover:scale-105 active:scale-95 {currentTextAvatar.color ===
 				color

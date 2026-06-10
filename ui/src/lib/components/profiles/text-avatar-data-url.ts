@@ -16,6 +16,10 @@ export class TextAvatarData {
 		);
 	}
 
+	static isValidText(text: string): boolean {
+		return TEXT_REGEX.test(text);
+	}
+
 	sanitizedHexColor(): string {
 		// Ensure the color is a valid hex code and sanitize it
 		if (COLOR_REGEX.test(this.color)) {

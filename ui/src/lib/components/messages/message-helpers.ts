@@ -1,3 +1,5 @@
+import { hashCode } from '$lib/utils/hash';
+
 export type MessagePosition = 'first' | 'middle' | 'last' | 'single';
 
 export function messagePosition(
@@ -13,11 +15,7 @@ export function messagePosition(
 const SENDER_COLOR_COUNT = 12;
 
 export function senderColor(authorId: string): string {
-	let hash = 0;
-	for (let i = 0; i < authorId.length; i++) {
-		hash = (hash * 31 + authorId.charCodeAt(i)) >>> 0;
-	}
-	return `var(--sender-color-${hash % SENDER_COLOR_COUNT})`;
+	return `var(--sender-color-${hashCode(authorId) % SENDER_COLOR_COUNT})`;
 }
 
 function escapeHtml(text: string): string {

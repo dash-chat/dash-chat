@@ -1,13 +1,10 @@
-<script module lang="ts">
-	export const TEXT_AVATAR_TEXT_COLOR = '#831843';
-</script>
-
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { mdiAccountQuestion } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { TextAvatarData } from './text-avatar-data-url';
+	import { TEXT_AVATAR_TEXT_COLOR } from './avatar-helpers';
 	import type { Snippet } from 'svelte';
 
 	let {
