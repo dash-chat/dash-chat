@@ -202,6 +202,7 @@
 				onClick={openTextEditor}
 				class="icon-only"
 				style="font-size: 20px; font-weight: 600"
+				data-testid="edit-photo-text"
 			>
 				Aa
 			</Button>

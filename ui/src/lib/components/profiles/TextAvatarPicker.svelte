@@ -85,6 +85,7 @@
 <input
 	type="text"
 	class="absolute opacity-0 pointer-events-none"
+	data-testid="text-avatar-input"
 	bind:this={hiddenInput}
 	value={currentTextAvatar.text}
 	oninput={handleTextInput}
@@ -123,6 +124,7 @@
 		onclick={selectTextTab}
 		type="button"
 		aria-label={m.editAvatarText()}
+		data-testid="text-avatar-preview"
 	>
 		{#if activeTab === 'text'}
 			<span
