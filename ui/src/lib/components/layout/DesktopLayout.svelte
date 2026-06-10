@@ -81,7 +81,7 @@
 		border-inline-end: 1px solid var(--k-hairline-color);
 		overflow-y: auto;
 		overflow-x: hidden;
-		background-color: rgb(245, 244, 247);
+		background-color: var(--desktop-sidebar-bg);
 	}
 
 	.desktop-content {
@@ -96,9 +96,6 @@
 		padding-inline-start: 12px;
 	}
 
-	:global(.dark) .desktop-sidebar {
-		background-color: var(--color-md-dark-surface-2);
-	}
 	:global(.dark) .desktop-content {
 		background-color: var(--color-md-dark-surface);
 	}

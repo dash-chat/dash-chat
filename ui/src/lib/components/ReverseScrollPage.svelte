@@ -292,6 +292,7 @@
 	});
 </script>
 
+<!-- `.reverse-scroll-host` is also a styling hook in app.css for the desktop chat background. -->
 <Page {...pageProps} class="reverse-scroll-host">
 	{@render navbar?.()}
 	<!--
