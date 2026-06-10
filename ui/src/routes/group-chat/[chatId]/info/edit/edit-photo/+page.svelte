@@ -51,16 +51,14 @@
 			style="height: 100%; align-items: center; justify-content: center"
 		></div>
 	{:then}
-		<div class="column" style="flex: 1; overflow-y: auto;">
-			<AvatarPicker
-				bind:avatar
-				bind:inModalState
-				onClose={() => goto(backUrl)}
-				onSave={save}
-				saveLabel={m.save()}
-				saveDisabled={!hasChanges}
-			/>
-		</div>
+		<AvatarPicker
+			bind:avatar
+			bind:inModalState
+			onClose={() => goto(backUrl)}
+			onSave={save}
+			saveLabel={m.save()}
+			saveDisabled={!hasChanges}
+		/>
 
 		{#if !inModalState && !isIos}
 			<Button
