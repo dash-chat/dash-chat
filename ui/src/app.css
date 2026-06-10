@@ -142,6 +142,18 @@ li.plain span {
 	display: none;
 }
 
+/*
+	Message bubble text: nudge the body weight up so it reads closer to
+	Signal. SF Pro is a variable font, so the smaller 425 step lands as a
+	subtle bump on mobile. Desktop gets a clean Medium (500).
+*/
+.message {
+	font-weight: 425;
+}
+.wide-layout .message {
+	font-weight: 500;
+}
+
 .icon-only-card {
 	border-radius: 50%;
 	margin: 0;
