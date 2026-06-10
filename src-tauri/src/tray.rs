@@ -3,7 +3,7 @@ use tauri::image::Image;
 use tauri::tray::TrayIconBuilder;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
-    AppHandle, Manager, Runtime, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Manager, Runtime, WebviewWindowBuilder,
 };
 
 const TRAY_ID: &str = "dash-chat-tray";
@@ -83,10 +83,14 @@ pub fn show_or_create_main_window<R: Runtime>(app: &AppHandle<R>) -> anyhow::Res
         window.show()?;
         window.set_focus()?;
     } else {
-        WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-            .title("Dash Chat")
-            .inner_size(800.0, 600.0)
-            .build()?;
+        let config = app.config();
+        let window_config = config
+            .app
+            .windows
+            .iter()
+            .find(|w| w.label == "main")
+            .ok_or_else(|| anyhow::anyhow!("no 'main' window defined in tauri.conf.json"))?;
+        WebviewWindowBuilder::from_config(app, window_config)?.build()?;
     }
     Ok(())
 }

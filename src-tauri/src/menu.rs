@@ -1,6 +1,6 @@
 use sonix_i18n::t;
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 
 pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let local_mailbox_enabled = crate::settings::load_mailbox_enabled(app_handle);
@@ -17,11 +17,6 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R
 
     app_handle.on_menu_event(
         move |app_handle, menu_event| match menu_event.id().as_ref() {
-            "menu-quit" => {
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.close();
-                }
-            }
             "toggle-local-mailbox" => match mailbox_toggle_handle.is_checked() {
                 Ok(enabled) => {
                     let app_handle = app_handle.clone();
