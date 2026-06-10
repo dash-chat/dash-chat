@@ -207,7 +207,7 @@
 										<Avatar
 											image={member.profile?.avatar}
 											initials={member.profile?.name.slice(0, 2)}
-											style="--size: 32px;"
+											size={32}
 										/>
 									{/snippet}
 
@@ -230,7 +230,7 @@
 										<Avatar
 											image={member.profile?.avatar}
 											initials={member.profile?.name.slice(0, 2)}
-											style="--size: 32px;"
+											size={32}
 										/>
 										<span class="font-semibold">{member.profile?.name}</span>
 									</div>

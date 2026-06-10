@@ -23,7 +23,7 @@
 			<Avatar
 				image={profile.avatar}
 				initials={profile.name.slice(0, 2)}
-				style="--size: 200px;"
+				size={200}
 			/>
 		</div>
 

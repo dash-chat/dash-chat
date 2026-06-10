@@ -82,7 +82,7 @@
 				<Avatar
 					image={info.image}
 					initials={info.name?.slice(0, 2)}
-					style="--size: 100px;"
+					size={100}
 				/>
 
 				<Button

@@ -15,6 +15,7 @@
 		image,
 		initials,
 		alt,
+		size,
 		style,
 		id,
 		children,
@@ -23,6 +24,7 @@
 		image?: string | undefined;
 		initials?: string | undefined;
 		alt?: string | undefined;
+		size?: number | undefined;
 		style?: string | undefined;
 		id?: string | undefined;
 		children?: Snippet | undefined;
@@ -35,13 +37,20 @@
 	const avatarInitials = $derived(
 		textAvatarData?.text || initials || undefined,
 	);
+	const baseStyle = $derived(
+		size !== undefined
+			? style
+				? `--size: ${size}px; ${style}`
+				: `--size: ${size}px;`
+			: style,
+	);
 	const avatarStyle = $derived.by(() => {
 		if (!textAvatarData) {
-			return style;
+			return baseStyle;
 		}
 
 		const textAvatarStyle = `background-color: ${textAvatarData.sanitizedHexColor()}; color: ${TEXT_AVATAR_TEXT_COLOR};`;
-		return style ? `${style}; ${textAvatarStyle}` : textAvatarStyle;
+		return baseStyle ? `${baseStyle}; ${textAvatarStyle}` : textAvatarStyle;
 	});
 </script>
 

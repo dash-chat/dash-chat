@@ -184,7 +184,7 @@
 								<Avatar
 									image={info.image}
 									initials={info.name.slice(0, 2)}
-									style="--size: 80px"
+									size={80}
 								/>
 								<span
 									class="text-2xl font-semibold break-words text-center"
