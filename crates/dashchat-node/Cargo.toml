@@ -12,16 +12,13 @@ serde_json = "1"
 mailbox-client = { workspace = true }
 mailbox-server = { workspace = true }
 
+p2panda = { workspace = true, features = ["test_utils"] }
 p2panda-auth = { workspace = true }
 p2panda-core = { workspace = true }
-p2panda-encryption = { workspace = true }
-p2panda-discovery = { workspace = true }
-p2panda-net = { workspace = true }
 p2panda-store = { workspace = true }
-p2panda-stream = { workspace = true }
-p2panda-sync = { workspace = true }
 p2panda-spaces = { workspace = true }
 
+aliased = { workspace = true }
 anyhow = "1.0.95"
 dashchat-compat = { workspace = true }
 ed25519-dalek = { workspace = true }
@@ -30,7 +27,6 @@ async-trait = "0.1.85"
 derive_more = { version = "1.0.0", features = ["full"] }
 futures = "0.3"
 tokio = { version = "1.43.0", features = ["fs"] }
-named-id = { git = "https://github.com/maackle/named-id.git" }
 base64 = "0.22"
 blake3 = "1.8.2"
 chrono = { version = "0.4.42", features = ["serde"] }

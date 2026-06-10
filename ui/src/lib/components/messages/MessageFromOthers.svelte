@@ -20,6 +20,7 @@
 		searchQuery,
 		onToggleReaction,
 		chatId,
+		sender,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -27,6 +28,7 @@
 		chatId: ChatId;
 		searchQuery: string;
 		onToggleReaction: (emoji: string) => void;
+		sender?: { name: string; color: string };
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -60,6 +62,15 @@
 	contentWrapPadding="p-2"
 	class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 >
+	{#if sender}
+		<div
+			class="mx-1 mb-0.5 text-sm font-semibold text-start"
+			style="color: {sender.color}"
+			data-testid="group-message-sender-name"
+		>
+			{sender.name}
+		</div>
+	{/if}
 	{#if message.content.media}
 		<MessageAttachment media={message.content.media} />
 	{/if}
@@ -87,7 +98,6 @@
 
 <style>
 	:global(.others-message) {
-		align-self: start;
 		margin: 0;
 		min-width: 0;
 		overflow-wrap: anywhere;
@@ -104,7 +114,7 @@
 	}
 
 	:global(.others-message.offline-message) {
-		border: 2px dashed color-mix(in srgb, var(--color-brand-primary), black 35%);
+		border: 3px dashed rgb(255, 182, 193);
 		background-clip: padding-box;
 	}
 	:global(.others-message.offline-message > div) {

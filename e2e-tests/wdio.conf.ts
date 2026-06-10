@@ -4,17 +4,28 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
-import { allocateDriverPorts, allocatePort } from './helpers/allocate-port';
+import { allocateDriverPorts, allocatePort } from './setup/allocate-port';
 import {
 	killAndWait,
 	killAllE2EProcesses,
 	killLeftoverMailboxServers,
 	killPortHolders,
-} from './helpers/cleanup';
-import { waitForPortFree, waitForPortListening } from './helpers/wait-for-port';
+} from './setup/cleanup';
+import { waitForPortFree, waitForPortListening } from './setup/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
+
+function getSpecFileRetries(): number {
+	const rawRetries = process.env.E2E_SPEC_FILE_RETRIES ?? '1';
+	const retries = Number.parseInt(rawRetries, 10);
+	if (Number.isNaN(retries) || retries < 0) {
+		throw new Error(
+			`E2E_SPEC_FILE_RETRIES must be a non-negative integer, got ${rawRetries}`,
+		);
+	}
+	return retries;
+}
 
 const { port1, nativePort1, port2, nativePort2 } = allocateDriverPorts();
 const ALL_PORTS = [port1, nativePort1, port2, nativePort2];
@@ -46,7 +57,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	specs: ['./specs/**/*.spec.ts'],
 	exclude: ['./specs/compat-*.spec.ts'],
 	maxInstances: 1,
-	specFileRetries: 1,
+	specFileRetries: getSpecFileRetries(),
 
 	capabilities: {
 		agent1: {
@@ -54,7 +65,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			capabilities: {
 				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
 				'tauri:options': {
-					application: path.join(__dirname, 'scripts', 'launch-agent1.sh'),
+					application: path.join(__dirname, 'setup', 'launch-agent1.sh'),
 				},
 			} as WebdriverIO.Capabilities,
 		},
@@ -63,7 +74,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			capabilities: {
 				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
 				'tauri:options': {
-					application: path.join(__dirname, 'scripts', 'launch-agent2.sh'),
+					application: path.join(__dirname, 'setup', 'launch-agent2.sh'),
 				},
 			} as WebdriverIO.Capabilities,
 		},

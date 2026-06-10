@@ -5,7 +5,11 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { ContactsStore, ChatsStore, PublicKey } from 'dash-chat-stores';
+	import type {
+		ContactsStore,
+		ChatsStore,
+		VerifyingKey,
+	} from 'dash-chat-stores';
 	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
 	import {
 		Page,
@@ -26,30 +30,42 @@
 	const store = chatsStore.groupChats(chatId);
 	const info = useReactivePromise(store.info);
 
-	let avatar = $state<string | undefined>(undefined);
+	let image = $state<string | undefined>(undefined);
 	let name = $state<string>('');
 	let description = $state<string>('');
 
 	let initialized = false;
-	info.subscribe(i => {
-		i.then(info => {
+	info.subscribe(d => {
+		d.then(info => {
 			if (!initialized) {
 				initialized = true;
-				avatar = info?.avatar;
+				image = info?.image;
 				name = info?.name || '';
 				description = info?.description || '';
 			}
 		});
 	});
 	const theme = $derived(useTheme());
+	const saveDisabled = $derived(name.trim() === '');
 
 	async function save() {
+		if (saveDisabled) return;
+		await store.setInfo({
+			name: name.trim(),
+			description: description.trim() || undefined,
+			image,
+		});
 		goto(`/group-chat/${chatId}/info`);
 	}
 </script>
 
 <Page>
-	<Navbar title={m.editGroup()} titleClass="opacity1" transparent={true}>
+	<Navbar
+		title={m.editGroup()}
+		titleClass="opacity1"
+		transparent={true}
+		rightClass={saveDisabled ? 'ios-right-disabled' : ''}
+	>
 		{#snippet left()}
 			<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}/info`)} />
 		{/snippet}
@@ -66,7 +82,7 @@
 		<div class="column">
 			<div class="column center-in-desktop">
 				<div class="mt-4">
-					<SelectAvatar defaultValue={info.avatar} bind:value={avatar} size={64}
+					<SelectAvatar defaultValue={info.image} bind:value={image} size={64}
 					></SelectAvatar>
 				</div>
 
@@ -90,7 +106,12 @@
 		</div>
 
 		{#if !isIos}
-			<Button onClick={save} class="fixed-action-btn" rounded>
+			<Button
+				onClick={save}
+				class="fixed-action-btn"
+				rounded
+				disabled={saveDisabled}
+			>
 				{m.save()}
 			</Button>
 		{/if}

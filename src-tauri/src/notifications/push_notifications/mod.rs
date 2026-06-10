@@ -5,7 +5,7 @@ use anyhow::Context;
 use dashchat_node::Node;
 use dashchat_utils::SingletonTaskWithRetries;
 use push_notifications_client::client::PushNotificationsClient;
-use push_notifications_client::types::{FcmToken, PublicKey, TopicId as PushTopicId};
+use push_notifications_client::types::{FcmToken, TopicId as PushTopicId, VerifyingKey};
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
@@ -17,8 +17,7 @@ mod receive_push_notification;
 #[cfg(target_os = "android")]
 mod android;
 
-const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str =
-    "https://push-notifications-server.production.dash-chat.dash-chat.garnix.me";
+const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str = "http://push-notifications.darksoil.studio";
 
 /// Returns the push notifications server URL to use.
 ///
@@ -111,7 +110,7 @@ pub fn setup_push_notifications(
 /// If they're not, unregister the FCM token from the server
 async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Result<()> {
     let node = handle.state::<Node>();
-    let public_key = PublicKey::from(node.device_id().to_string());
+    let verifying_key = VerifyingKey::from(node.device_id().to_string());
     let client = handle.state::<PushNotificationsClient>();
 
     if are_notifications_enabled(&handle) {
@@ -121,14 +120,14 @@ async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Re
             .register_for_push_notifications()
             .context("register_for_push_notifications failed")?;
         client
-            .register_fcm_token(public_key.clone(), FcmToken::from(token.clone()))
+            .register_fcm_token(verifying_key.clone(), FcmToken::from(token.clone()))
             .await
             .context("register_fcm_token failed")?;
         log::info!("Successfully registered FCM token.");
     } else {
         log::info!("Notifications are disabled: unregistering FCM token.");
         client
-            .unregister_fcm_token(public_key.clone())
+            .unregister_fcm_token(verifying_key.clone())
             .await
             .context("unregister_fcm_token failed")?;
         log::info!("Successfully unregistered FCM token.");
@@ -140,14 +139,14 @@ async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Re
 /// If they're not, remove all topic subscriptions from it.
 async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     let node = app_handle.state::<Node>();
-    let public_key = PublicKey::from(node.device_id().to_string());
+    let verifying_key = VerifyingKey::from(node.device_id().to_string());
 
     let topic_ids = if are_notifications_enabled(&app_handle) {
         let topic_ids: HashSet<PushTopicId> = node
             .subscribed_topics()
             .await?
             .into_iter()
-            .map(|t| PushTopicId::from(hex::encode(&*t)))
+            .map(|t| PushTopicId::from(t.to_hex()))
             .collect();
         topic_ids
     } else {
@@ -161,7 +160,7 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let client = app_handle.state::<PushNotificationsClient>();
     client
-        .update_topic_subscriptions(public_key, topic_ids)
+        .update_topic_subscriptions(verifying_key, topic_ids)
         .await?;
 
     Ok(())
@@ -177,7 +176,7 @@ async fn subscribe_to_topics(
     }
 
     let node = app_handle.state::<Node>();
-    let public_key = PublicKey::from(node.device_id().to_string());
+    let verifying_key = VerifyingKey::from(node.device_id().to_string());
 
     let client = app_handle.state::<PushNotificationsClient>();
 
@@ -187,7 +186,7 @@ async fn subscribe_to_topics(
     );
 
     client
-        .add_topic_subscriptions(public_key, topic_ids)
+        .add_topic_subscriptions(verifying_key, topic_ids)
         .await?;
 
     Ok(())
@@ -202,7 +201,7 @@ fn spawn_topic_subscription_loop(
 ) {
     tauri::async_runtime::spawn(async move {
         while let Some(topic_id) = topic_subscribed_rx.recv().await {
-            let hex_topic = PushTopicId::from(hex::encode(&*topic_id));
+            let hex_topic = PushTopicId::from(topic_id.to_hex());
             if let Err(err) = subscribe_to_topics(&app_handle, [hex_topic].into()).await {
                 log::error!("Failed to subscribe to topic: {err:?}");
                 sync_topic_subscriptions_task.trigger();

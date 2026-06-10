@@ -3,17 +3,28 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { allocateDriverPorts } from '../helpers/allocate-port';
+import { allocateDriverPorts } from '../setup/allocate-port';
 import {
 	killAndWait,
 	killAllE2EProcesses,
 	killPortHolders,
-} from '../helpers/cleanup';
-import { waitForPortFree, waitForPortListening } from '../helpers/wait-for-port';
+} from '../setup/cleanup';
+import { waitForPortFree, waitForPortListening } from '../setup/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..');
 const ROOT = path.resolve(__dirname, '../..');
+
+function getSpecFileRetries(): number {
+	const rawRetries = process.env.E2E_SPEC_FILE_RETRIES ?? '1';
+	const retries = Number.parseInt(rawRetries, 10);
+	if (Number.isNaN(retries) || retries < 0) {
+		throw new Error(
+			`E2E_SPEC_FILE_RETRIES must be a non-negative integer, got ${rawRetries}`,
+		);
+	}
+	return retries;
+}
 
 const phase = process.env.COMPAT_PHASE;
 if (!phase || !['setup', 'verify'].includes(phase)) {
@@ -55,7 +66,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 	specs: [specFile],
 	maxInstances: 1,
-	specFileRetries: 1,
+	specFileRetries: getSpecFileRetries(),
 
 	capabilities: {
 		agent1: {

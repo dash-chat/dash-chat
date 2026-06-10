@@ -1,14 +1,15 @@
-use p2panda_auth::{Access, group::GroupCrdtState, processor::GroupsOperation};
-use p2panda_core::{Hash, Operation, PublicKey};
+use p2panda::{Hash, VerifyingKey};
+use p2panda_auth::Access;
+use p2panda_auth::group::GroupCrdtState;
+use p2panda_auth::processor::GroupsOperation;
 use p2panda_store::{SqliteStore, Transaction, groups::GroupsStore};
 
-use crate::{topic::TopicId, *};
+use crate::{ChatId, ChatMember, Topic, TopicId};
 
-type GroupState = GroupCrdtState<PublicKey, Hash, GroupsOperation, ()>;
-type GroupsProcessor = p2panda_auth::processor::GroupsProcessor<Extensions, TopicId>;
+type GroupState = GroupCrdtState<VerifyingKey, Hash, GroupsOperation, ()>;
 
-// /// Singleton context for group state (only one needed globally)
-// const GROUPS_CONTEXT: TopicId = TopicId::new([0; 32]);
+/// Singleton groups state id.
+pub(crate) const GROUPS_STATE_ID: u32 = 0;
 
 #[derive(Clone)]
 pub struct GroupStore {
@@ -20,23 +21,16 @@ impl GroupStore {
         Self { db: sqlite }
     }
 
-    pub async fn heads(&self, topic: TopicId) -> anyhow::Result<Vec<Hash>> {
-        let auth = self.auth_state(topic).await?;
-        Ok(auth.heads())
-    }
-
-    pub async fn process(&self, operation: &Operation<Extensions>) -> anyhow::Result<()> {
-        // TODO: when device groups come online, this needs to be update to use the singleton
-        //       GROUPS_CONTEXT, with filtered heads.
-        let context = operation.header.extensions.topic;
-        GroupsProcessor::process(&context, &self.db, operation).await?;
-        Ok(())
+    pub async fn heads(&self, topic_id: TopicId) -> anyhow::Result<Vec<Hash>> {
+        let group_id = Topic::from_topic_id(topic_id)?.to_group_pubkey()?;
+        let auth = self.auth_state().await?;
+        Ok(auth.heads_filtered(&[group_id]))
     }
 
     pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(ChatMember, Access)>> {
         let group_id = topic.to_group_pubkey()?;
         Ok(self
-            .auth_state(*topic)
+            .auth_state()
             .await?
             .inner
             .members(group_id)
@@ -45,9 +39,13 @@ impl GroupStore {
             .collect())
     }
 
-    async fn auth_state(&self, topic: TopicId) -> anyhow::Result<GroupState> {
+    async fn auth_state(&self) -> anyhow::Result<GroupState> {
         // TODO: use transactions properly!
         let _txn = self.db.begin().await?;
-        Ok(self.db.get_state(&topic).await?.unwrap_or_default())
+        Ok(self
+            .db
+            .get_groups_state(&GROUPS_STATE_ID)
+            .await?
+            .unwrap_or_default())
     }
 }

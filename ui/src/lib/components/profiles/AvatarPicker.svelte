@@ -130,7 +130,7 @@
 			{/snippet}
 			{#snippet right()}
 				{#if isIos && onSave}
-					<Link onClick={onSave} data-testid="edit-photo-save-link">
+					<Link onClick={onSave} data-testid="edit-photo-save-btn">
 						{saveLabel || m.save()}
 					</Link>
 				{/if}

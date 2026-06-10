@@ -1,6 +1,5 @@
-use derive_more::{Deref, From};
-use named_id::RenameAll;
-use p2panda_core::PublicKey;
+use derive_more::{Deref, From, derive::Display};
+use p2panda::VerifyingKey;
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize};
 use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
@@ -10,6 +9,7 @@ use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentVal
     Clone,
     Copy,
     Debug,
+    Display,
     PartialEq,
     Eq,
     PartialOrd,
@@ -19,15 +19,22 @@ use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentVal
     Deserialize,
     From,
     Deref,
-    RenameAll,
 )]
-pub struct DeviceId(PublicKey);
+pub struct DeviceId(VerifyingKey);
+
+impl std::str::FromStr for DeviceId {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(DeviceId::from(VerifyingKey::from_str(s)?))
+    }
+}
 
 /// The ID for an "agent" which may control multiple devices.
 #[derive(
     Clone,
     Copy,
     Debug,
+    Display,
     PartialEq,
     Eq,
     PartialOrd,
@@ -37,7 +44,6 @@ pub struct DeviceId(PublicKey);
     Deserialize,
     From,
     Deref,
-    RenameAll,
 )]
 pub struct AgentId(ActorId);
 
@@ -68,7 +74,7 @@ impl sqlx::Decode<'_, Sqlite> for DeviceId {
     fn decode(value: <Sqlite as sqlx::Database>::ValueRef<'_>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as sqlx::Decode<Sqlite>>::decode(value)?;
         let arr: [u8; 32] = bytes.try_into().map_err(|_| "DeviceId is not 32 bytes")?;
-        Ok(DeviceId::from(PublicKey::from_bytes(&arr)?))
+        Ok(DeviceId::from(VerifyingKey::from_bytes(&arr)?))
     }
 }
 

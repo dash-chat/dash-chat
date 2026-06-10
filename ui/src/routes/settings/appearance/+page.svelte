@@ -47,7 +47,7 @@
 
 		{#snippet right()}
 			{#if setup && isIos}
-				<Link onClick={() => goto('/')} data-testid="appearance-done-link">
+				<Link onClick={() => goto('/')} data-testid="appearance-done-btn">
 					{m.done()}
 				</Link>
 			{/if}

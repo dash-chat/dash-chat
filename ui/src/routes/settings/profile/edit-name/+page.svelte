@@ -91,7 +91,7 @@
 
 			{#snippet right()}
 				{#if isIos}
-					<Link onClick={save} data-testid="edit-name-save-link">
+					<Link onClick={save} data-testid="edit-name-save-btn">
 						{m.save()}
 					</Link>
 				{/if}

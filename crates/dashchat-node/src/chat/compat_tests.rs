@@ -1,17 +1,16 @@
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use dashchat_compat::{VersionConvert, VersionConvertError};
 
     use mailbox_client::mem::MemMailbox;
+    use maplit::btreeset;
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
 
     use crate::{
         ShareIntent,
         chat::*,
         compat::Capabilities,
-        testing::{ClusterConfig, TestNode, TestNodeConfig, consistency},
+        testing::{PollConfig, TestNode, TestNodeConfig},
     };
 
     #[test]
@@ -114,6 +113,7 @@ mod tests {
         let bobbi_config = TestNodeConfig::default();
         alice_config.node_config.capabilities = Capabilities::zero();
 
+        let poll = PollConfig::default();
         let mailbox = MemMailbox::new();
         let alice = TestNode::new(alice_config, "alice")
             .await
@@ -135,7 +135,7 @@ mod tests {
 
         let topic = alice.direct_chat_topic(bobbi.agent_id());
 
-        consistency([&alice, &bobbi], &[topic.into()], &ClusterConfig::default())
+        poll.consistency([&alice, &bobbi], &[topic.into()])
             .await
             .unwrap();
 
@@ -154,6 +154,20 @@ mod tests {
             .unwrap();
         assert_eq!(alice_bobbi_caps, Capabilities::current());
         assert_eq!(bobbi_alice_caps, Capabilities::zero());
+
+        poll.consistency([&alice, &bobbi], &[topic.into()])
+            .await
+            .unwrap();
+
+        let alice_members = alice.get_group_members(topic).await.unwrap();
+        let bobbi_members = bobbi.get_group_members(topic).await.unwrap();
+        let expected_members = btreeset![
+            (alice.device_id(), p2panda_auth::Access::write()),
+            (bobbi.device_id(), p2panda_auth::Access::write())
+        ];
+
+        assert_eq!(alice_members, expected_members);
+        assert_eq!(bobbi_members, expected_members);
 
         // Both nodes return zero capabilities because alice is the limiting factor.
         let alice_caps = alice
@@ -181,19 +195,15 @@ mod tests {
             .await
             .unwrap();
 
-        crate::testing::wait_for(
-            Duration::from_millis(100),
-            Duration::from_secs(5),
-            || async {
-                let ma = alice.get_messages(chat).await.unwrap();
-                let mb = bobbi.get_messages(chat).await.unwrap();
-                if ma.len() == 2 && mb.len() == 2 {
-                    Ok(())
-                } else {
-                    Err("messages not received")
-                }
-            },
-        )
+        poll.wait_for(|| async {
+            let ma = alice.get_messages(chat).await.unwrap();
+            let mb = bobbi.get_messages(chat).await.unwrap();
+            if ma.len() == 2 && mb.len() == 2 {
+                Ok(())
+            } else {
+                Err("messages not received")
+            }
+        })
         .await
         .unwrap();
 

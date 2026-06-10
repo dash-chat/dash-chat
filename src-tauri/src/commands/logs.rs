@@ -1,12 +1,16 @@
-use dashchat_node::{topic::TopicId, DeviceId, Header, Node, Payload, Topic};
-use p2panda_core::{cbor::decode_cbor, Body, Hash, PublicKey, Timestamp};
+use dashchat_node::{DeviceId, Node, Payload, Topic};
+use p2panda::operation::{Header, LogId};
+use p2panda::{Hash, VerifyingKey};
+use p2panda_auth::processor::GroupsArgs;
+use p2panda_core::cbor::decode_cbor;
+use p2panda_core::Timestamp;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tauri::State;
 
 /// Serialize a `Timestamp` (microseconds) as milliseconds since the UNIX epoch
 /// so JS can pass it straight to `new Date(ms)`.
 fn serialize_timestamp_as_millis<S: Serializer>(ts: &Timestamp, s: S) -> Result<S::Ok, S::Error> {
-    s.serialize_u64(ts.as_micros() / 1_000)
+    s.serialize_u64(u64::from(*ts) / 1_000)
 }
 
 fn deserialize_timestamp_from_millis<'de, D: Deserializer<'de>>(
@@ -33,7 +37,7 @@ pub struct SimplifiedOperation {
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct SimplifiedHeader {
     /// Author of this operation.
-    public_key: PublicKey,
+    verifying_key: VerifyingKey,
 
     /// Milliseconds since the UNIX epoch when the operation was created.
     #[serde(
@@ -56,18 +60,34 @@ pub struct SimplifiedHeader {
     previous: Vec<Hash>,
 
     topic_id: Topic,
+
+    /// p2panda-auth group-control extension, when this operation is a group action
+    /// (Create / Add / Remove / Promote / Demote) rather than a chat payload.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth: Option<GroupsArgs>,
 }
 
-impl From<Header> for SimplifiedHeader {
-    fn from(header: Header) -> SimplifiedHeader {
-        let previous = header.extensions.dependencies();
+impl SimplifiedHeader {
+    /// Convert a p2panda::Header into a SimplifiedHeader.
+    ///
+    /// As a p2panda::Header does not contain the raw topic (only the hashed representation in the
+    /// form of a LogId) we need to pass this in as a separate argument.
+    pub fn from_header(topic: Topic, header: Header) -> Self {
+        // Only operations contain groups args in their extension have dependency requirements.
+        let previous = header
+            .extensions
+            .groups_args
+            .as_ref()
+            .map(|args| args.dependencies.clone())
+            .unwrap_or_default();
         SimplifiedHeader {
-            public_key: header.public_key,
+            verifying_key: header.verifying_key,
             timestamp: header.timestamp,
             seq_num: header.seq_num,
             backlink: header.backlink,
             previous,
-            topic_id: Topic::untyped(*header.extensions.topic),
+            topic_id: topic,
+            auth: header.extensions.groups_args.clone(),
         }
     }
 }
@@ -106,9 +126,10 @@ impl From<Header> for SimplifiedHeader {
 // }
 
 pub fn simplify(
+    topic: Topic,
     hash: Hash,
     header: Header,
-    body: Option<Body>,
+    body: Option<p2panda_core::Body>,
 ) -> anyhow::Result<SimplifiedOperation> {
     let body: Option<serde_json::Value> = match body {
         Some(b) => {
@@ -144,7 +165,7 @@ pub fn simplify(
 
     let operation = SimplifiedOperation {
         hash,
-        header: SimplifiedHeader::from(header),
+        header: SimplifiedHeader::from_header(topic, header),
         body,
     };
 
@@ -159,13 +180,13 @@ pub async fn get_log(
 ) -> Result<Vec<SimplifiedOperation>, String> {
     let log = node
         .op_store
-        .get_log(&author, &TopicId::from(topic_id), None)
+        .get_log(&author, &LogId::from(topic_id), None)
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
 
     let simplified_log = log
         .into_iter()
-        .map(|op| simplify(op.hash, op.header, op.body))
+        .map(|op| simplify(topic_id, op.hash, op.header, op.body))
         .collect::<anyhow::Result<Vec<SimplifiedOperation>>>()
         .map_err(|err| format!("{err:?}"))?;
 
@@ -179,7 +200,7 @@ pub async fn get_authors(
 ) -> Result<std::collections::HashSet<DeviceId>, String> {
     let authors = node
         .op_store
-        .get_authors(TopicId::from(topic_id))
+        .get_authors(LogId::from(topic_id))
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
     Ok(authors)

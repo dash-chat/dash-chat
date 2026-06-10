@@ -79,8 +79,7 @@ where
             let author = op.author();
             let seq_num = op.seq_num();
             let topic = op.topic();
-            #[cfg(feature = "named-id")]
-            tracing::info!(topic = ?topic.renamed(), hash = ?op.hash().renamed(), "publishing mailbox operation");
+            tracing::info!(topic = ?topic, hash = ?op.hash(), "publishing mailbox operation");
             store
                 .entry(topic)
                 .or_default()
@@ -145,11 +144,10 @@ where
                 }
             }
 
-            #[cfg(feature = "named-id")]
             tracing::info!(
-                topic = ?topic.renamed(),
+                topic = ?topic,
                 num = new.len(),
-                hashes = ?new.iter().map(|op: &Item| op.hash().renamed()).collect::<Vec<_>>(),
+                hashes = ?new.iter().map(|op: &Item| op.hash()).collect::<Vec<_>>(),
                 "fetching mailbox operations"
             );
 

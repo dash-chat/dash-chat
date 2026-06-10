@@ -2,7 +2,7 @@
 	"compilerOptions": {
 		"target": "ES2020",
 		"module": "ES2020",
-		"moduleResolution": "node",
+		"moduleResolution": "bundler",
 		"esModuleInterop": true,
 		"skipLibCheck": true,
 		"strict": true,
@@ -13,10 +13,11 @@
 			"webdriverio",
 			"expect-webdriverio"
 		],
-		"outDir": "dist"
+		"noEmit": true
 	},
 	"include": [
 		"specs/**/*.ts",
+		"setup/**/*.ts",
 		"helpers/**/*.ts",
 		"wdio.conf.ts",
 		"compat/wdio.compat.ts",

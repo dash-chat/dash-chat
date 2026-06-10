@@ -11,41 +11,32 @@ resolver = "2"
 
 [workspace.dependencies]
 
+aliased = "0.1.0"
 ciborium = "0.2.2"
 ed25519-dalek = "2.2"
 derive_more = { version = "2.1.1", features = ["full"] }
-named-id = { git = "https://github.com/maackle/named-id.git" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 dashchat-compat = { path = "crates/dashchat-compat" }
-mailbox-client = { path = "crates/mailbox-client", features = ["named-id"] }
+mailbox-client = { path = "crates/mailbox-client" }
 mailbox-server = { path = "crates/mailbox-server" }
 
-p2panda-auth = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
+p2panda = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e" }
+p2panda-auth = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e", features = [
   "processor",
 ] }
-p2panda-core = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-encryption = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-discovery = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-net = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-store = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
+p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e" }
+p2panda-store = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e", features = [
   "sqlite",
 ] }
-p2panda-stream = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-sync = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat" }
-p2panda-spaces = { git = "https://github.com/maackle/p2panda.git", branch = "dashchat", features = [
+p2panda-spaces = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e", features = [
   "test_utils",
 ] }
 
-
-# [patch."https://github.com/maackle/p2panda.git"]
-# p2panda-auth = { path = "/home/michael/gitfork/p2panda/p2panda-auth" }
-# p2panda-core = { path = "/home/michael/gitfork/p2panda/p2panda-core" }
-# p2panda-encryption = { path = "/home/michael/gitfork/p2panda/p2panda-encryption" }
-# p2panda-discovery = { path = "/home/michael/gitfork/p2panda/p2panda-discovery" }
-# p2panda-net = { path = "/home/michael/gitfork/p2panda/p2panda-net" }
-# p2panda-store = { path = "/home/michael/gitfork/p2panda/p2panda-store" }
-# p2panda-stream = { path = "/home/michael/gitfork/p2panda/p2panda-stream" }
-# p2panda-sync = { path = "/home/michael/gitfork/p2panda/p2panda-sync" }
-# p2panda-spaces = { path = "/home/michael/gitfork/p2panda/p2panda-spaces" }
+# [patch."https://github.com/p2panda/p2panda"]
+# p2panda = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+# p2panda-auth = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+# p2panda-core = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+# p2panda-store = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }
+# p2panda-spaces = { git = "https://github.com/maackle/p2panda", branch = "dashchat" }

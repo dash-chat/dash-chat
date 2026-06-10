@@ -99,7 +99,7 @@
 							>
 						{/if}
 					{:else}
-						<Avatar style="--size: 80px;" />
+						<Avatar waitingForProfile style="--size: 80px;" />
 						<span class="quiet text-xl">{m.waitingForProfile()}</span>
 					{/if}
 				</div>

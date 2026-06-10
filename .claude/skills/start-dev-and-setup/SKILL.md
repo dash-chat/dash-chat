@@ -20,22 +20,25 @@ Use `webview_execute_js` for ALL interactions. These tools do NOT work:
 
 ## Key patterns
 
-- **`webview_execute_js` timeout is ~10s**: The entire async chain in a single call must complete within ~10s. Keep individual `waitFor` timeouts to 8s max. Chain multiple steps only when the total is safely under 10s.
-- **`nextTick` after `typeInto`**: Svelte needs one animation frame after synthetic input before a click will register. Always `await t.nextTick()` between `typeInto` and `click`. This is already built into `createProfile()` and `sendMessage()`.
-- **QR code uses `.value` property**: The `wa-qr-code` web component exposes the contact code as a JS `.value` property, NOT an HTML attribute. `getContactCode()` may return `null` briefly after navigating — poll in a loop with 50ms interval.
+- **`webview_execute_js` timeout is ~10s**: The entire async chain in a single call must complete within ~10s. Keep individual `waitFor` timeouts to 8s max.
+- **Animation frame after typing**: Svelte needs one animation frame after a synthetic `input` event before a follow-up click registers. The `typeInto` helper below awaits an animation frame already.
+- **QR code uses `.value` property**: The `wa-qr-code` web component exposes the contact code as a JS `.value` property, NOT an HTML attribute. It may be `null` briefly after navigating — poll until it appears.
 - **Chain everything**: Combine sequential steps into a single JS call. Maximize parallelism between agents.
 - **No intermediate screenshots**: If a call returns successfully, the step worked. Only screenshot if something fails.
 
-## Test utilities
+## `window.__test` (registered by `ui/tests/setup-utils.ts`)
 
-In dev mode, `window.__test` exposes:
+The dev/e2e bridge exposes a deliberately small set of helpers — DOM-side primitives that can't be expressed as page-object clicks. There are **no high-level flow helpers** here; flows are scripted inline below.
 
-- **Helpers**: `waitFor(sel, timeout?)`, `waitForText(sel, text, timeout?)`, `typeInto(sel, val)`, `click(sel)`, `nextTick()`
-- **Flows**: `createProfile(name, surname)`, `navigateToAddContact()`, `getContactCode()`, `addContact(code)`, `sendMessage(text)`, `waitForMessage(text)`
+| Helper | Purpose |
+|---|---|
+| `goto(path)` | SvelteKit `goto()` — programmatic navigation (escape hatch). |
+| `setLocale(locale)` | Switch UI locale; triggers a full reload. |
+| `tr(key)` | Resolve a paraglide message key in the current locale. |
+| `hasText(selector, text)` | `querySelector(sel)?.textContent?.includes(text)` predicate. |
+| `simulateUpdate(state)` | Fire the updater-banner state event. |
 
-Polling intervals: `waitFor` polls every 50ms, `waitForText` every 100ms. Default timeout is 15s.
-
-Source: `ui/tests/` — `helpers.ts`, `setup-utils.ts`, `selectors.ts`, `flows/*.ts`, `pages/*.ts`
+For everything else (clicking buttons, typing into inputs, waiting for elements), use the inline `waitFor` / `typeInto` snippets below or the canonical selectors in `e2e-tests/helpers/selectors.ts` and the page-object files under `e2e-tests/helpers/pages/`.
 
 ---
 
@@ -52,55 +55,82 @@ driver_session(action: start, port: <agent2-port>)
 
 ## Round 2: Create profile + navigate + get code (2 parallel calls)
 
-Run on **both agents simultaneously**. Each call creates the profile, waits for home, navigates to add-contact, polls for the QR code, and returns it:
+Run on **both agents simultaneously**. The inline `waitFor`/`typeInto` helpers stand in for the removed `window.__test.createProfile` / `navigateToAddContact` / `getContactCode` flows.
 
 **Agent 1:**
 ```js
 (async () => {
-  const t = window.__test;
-  await t.createProfile('Alice', 'Test');
-  await t.navigateToAddContact();
-  while (!t.getContactCode()) await new Promise(r => setTimeout(r, 50));
-  return t.getContactCode();
+  const waitFor = async (sel, timeout = 8000) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      const el = document.querySelector(sel);
+      if (el) return el;
+      await new Promise(r => setTimeout(r, 50));
+    }
+    throw new Error(`waitFor timed out: ${sel}`);
+  };
+  const typeInto = async (sel, val) => {
+    const el = await waitFor(sel);
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, val);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => requestAnimationFrame(r));
+  };
+  await typeInto('[data-testid="create-profile-name"] input', 'Alice');
+  await typeInto('[data-testid="create-profile-surname"] input', 'Test');
+  (await waitFor('[data-testid="create-profile-create-btn"]')).click();
+  await waitFor('[data-testid="all-chats-empty"]');
+  (await waitFor('[data-testid="home-new-message-btn"]')).click();
+  (await waitFor('[data-testid="new-message-add-contact"] a')).click();
+  await waitFor('[data-testid="add-contact-code-input"]');
+  const qr = await waitFor('wa-qr-code');
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    if (qr.value) return qr.value;
+    await new Promise(r => setTimeout(r, 50));
+  }
+  throw new Error('contact code never appeared');
 })()
 ```
 
-**Agent 2:**
-```js
-(async () => {
-  const t = window.__test;
-  await t.createProfile('Bob', 'Tester');
-  await t.navigateToAddContact();
-  while (!t.getContactCode()) await new Promise(r => setTimeout(r, 50));
-  return t.getContactCode();
-})()
-```
+**Agent 2:** same as above with `'Bob'` / `'Tester'`.
 
 Save returned strings as `agent1Code` and `agent2Code`.
 
 ## Round 3: Exchange contacts + send messages (2 parallel calls)
 
-Run on **both agents simultaneously**. Each adds the other's code and sends a message:
+Run on **both agents simultaneously**. Each agent types the peer's code, waits for the direct-chat page, then types and sends a greeting.
 
 **Agent 1:**
 ```js
 (async () => {
-  const t = window.__test;
-  await t.addContact('<agent2Code>');
-  await t.sendMessage('Hello from Alice!');
+  const waitFor = async (sel, timeout = 8000) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      const el = document.querySelector(sel);
+      if (el) return el;
+      await new Promise(r => setTimeout(r, 50));
+    }
+    throw new Error(`waitFor timed out: ${sel}`);
+  };
+  const typeInto = async (sel, val) => {
+    const el = await waitFor(sel);
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, val);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => requestAnimationFrame(r));
+  };
+  await typeInto('[data-testid="add-contact-code-input"] input', '<agent2Code>');
+  await waitFor('[data-testid="direct-chat-page"]');
+  await typeInto('[data-testid="message-input-textarea"] textarea', 'Hello from Alice!');
+  (await waitFor('[data-testid="message-input-send"]')).click();
   return 'sent';
 })()
 ```
 
-**Agent 2:**
-```js
-(async () => {
-  const t = window.__test;
-  await t.addContact('<agent1Code>');
-  await t.sendMessage('Hello from Bob!');
-  return 'sent';
-})()
-```
+**Agent 2:** same with `<agent1Code>` and `'Hello from Bob!'`.
 
 Both returning `'sent'` confirms: profiles created, contacts exchanged, messages delivered. No screenshot needed.
 

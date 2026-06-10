@@ -18,7 +18,7 @@ export class DirectChatClient implements IDirectChatClient {
 	}
 
 	async sendMessage(chatId: ChatId, content: MessageContent): Promise<void> {
-		return invoke('direct_chat_send_message', {
+		return invoke('send_message', {
 			chatId,
 			content,
 		});
@@ -32,7 +32,7 @@ export class DirectChatClient implements IDirectChatClient {
 	}
 
 	async sendReaction(chatId: ChatId, content: ChatReaction): Promise<void> {
-		return invoke('direct_chat_send_reaction', {
+		return invoke('send_reaction', {
 			chatId,
 			content,
 		});

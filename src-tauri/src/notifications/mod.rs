@@ -5,7 +5,8 @@ pub mod push_notifications;
 pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
-use dashchat_node::{topic::TopicId, DeviceId, Header, Node, Payload, Topic};
+use dashchat_node::{DeviceId, Node, Payload, Topic, TopicId};
+use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionState};
 
@@ -48,12 +49,12 @@ pub(crate) async fn show_sync_notification(
     }
 
     let node = app_handle.state::<Node>();
-    let topic_id = notification.header.extensions.topic;
+    let topic = *notification.topic;
     let data = build_notification_data(
         &node,
-        topic_id,
+        topic.into(),
         &notification.header,
-        Some(&notification.payload),
+        notification.payload.as_ref(),
     )
     .await;
 
@@ -75,14 +76,18 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
     if let Some(icon) = data.icon {
         builder = builder.icon(icon);
     }
+    if let Some(bytes) = data.large_icon_bytes {
+        builder = builder.large_icon_bytes(bytes);
+    }
     if let Some(group) = data.group {
         builder = builder.group(group);
     }
     if let Some(route) = data.route {
         builder = builder.route(route);
     }
-    if data.messaging_style {
-        builder = builder.messaging_style();
+    builder = builder.sound(data.sound.unwrap_or_else(|| "default".to_string()));
+    if let Some(style) = data.conversation_style {
+        builder = builder.conversation_style(style);
     }
     builder.show()?;
     Ok(())
@@ -96,11 +101,11 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
 /// variant we don't surface, etc.).
 pub async fn build_notification_data(
     node: &Node,
-    topic_id: TopicId,
+    topic: TopicId,
     header: &Header,
     payload: Option<&Payload>,
 ) -> Option<NotificationData> {
-    let sender_device_id = DeviceId::from(header.public_key);
+    let sender_device_id = DeviceId::from(header.verifying_key);
     if sender_device_id == node.device_id() {
         return None;
     }
@@ -114,12 +119,20 @@ pub async fn build_notification_data(
     };
 
     let Some(payload) = payload else {
-        return Some(auth_control_op_notification(node, sender_device_id, id).await);
+        #[cfg(mobile)]
+        {
+            return auth_control_op_notification(node, header, topic, sender_device_id, id).await;
+        }
+        #[cfg(not(mobile))]
+        {
+            let _ = (header, sender_device_id, id);
+            return None;
+        }
     };
 
     match payload {
         Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
-            Some(chat_message_notification(node, topic_id, sender_device_id, content, id).await)
+            Some(chat_message_notification(node, topic, sender_device_id, content, id).await)
         }
         Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { code, profile }) => {
             Some(NotificationData {
@@ -127,7 +140,7 @@ pub async fn build_notification_data(
                 title: Some(sonix_i18n::t!("newContactRequest")),
                 body: Some(profile.name.clone()),
                 icon: Some("ic_stat_icon".to_string()),
-                group: Some(hex::encode(&*topic_id)),
+                group: Some(topic.to_hex()),
                 route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
                 ..Default::default()
             })
@@ -138,7 +151,7 @@ pub async fn build_notification_data(
 
 async fn chat_message_notification(
     node: &Node,
-    topic_id: TopicId,
+    topic: TopicId,
     sender_device_id: DeviceId,
     content: &dashchat_node::ChatMessageContent,
     id: i32,
@@ -151,24 +164,24 @@ async fn chat_message_notification(
         }
     };
 
-    let sender_name = if let Some(agent_id) = sender_agent_id {
-        node.local_store
-            .get_profile(agent_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|profile| profile.name)
+    let sender_profile = if let Some(agent_id) = sender_agent_id {
+        node.local_store.get_profile(agent_id).await.ok().flatten()
     } else {
         None
     };
 
+    let sender_name = sender_profile.as_ref().map(|p| p.name.clone());
+    let sender_avatar = sender_profile
+        .and_then(|p| p.avatar)
+        .filter(|s| s.starts_with("data:image/"));
+
     let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
 
     let direct_chat_agent_id = sender_agent_id
-        .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic_id);
+        .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic);
     let chat_route = match direct_chat_agent_id {
-        Some(agent_id) => format!("/direct-chats/{}", agent_id.to_hex()),
-        None => format!("/group-chat/{}", hex::encode(&*topic_id)),
+        Some(agent_id) => format!("/direct-chats/{}", agent_id),
+        None => format!("/group-chat/{}", topic),
     };
     let message_text: &str = content.message();
     let body_text = match message_text.char_indices().nth(200) {
@@ -182,57 +195,81 @@ async fn chat_message_notification(
         title: Some(title),
         body: Some(body_text),
         icon: Some("ic_stat_icon".to_string()),
-        group: Some(hex::encode(&*topic_id)),
+        large_icon_bytes: sender_avatar,
+        group: Some(topic.to_hex()),
         route: Some(chat_route),
         ..Default::default()
     };
 
-    // Android-only: collapse direct-chat messages into one MessagingStyle thread.
-    // The id must be stable per conversation so MessagingStyle accumulates the
-    // messages onto the same notification instead of stacking new ones.
+    // Android-only: collapse messages from the same conversation into one
+    // MessagingStyle thread. The id must be stable per conversation so
+    // MessagingStyle accumulates the messages onto the same notification
+    // instead of stacking new ones. `sender_id` keeps each `Person` distinct
+    // within group threads so different senders don't collapse into one.
     //
-    // TODO: XOR the truncated topic id with a node-specific secret before
-    // using it as the notification id. As-is, the first 4 bytes of the topic
+    // TODO: XOR the truncated log id with a node-specific secret before
+    // using it as the notification id. As-is, the first 4 bytes of the log
     // id are public-derivable, so an adversary could mine a contact whose
-    // topic id shares a 4-byte LE prefix with an existing conversation and
+    // log id shares a 4-byte LE prefix with an existing conversation and
     // get their messages collapsed into the wrong MessagingStyle thread.
+    #[cfg(mobile)]
+    let sender_id_hex = sender_agent_id.map(|aid| aid.to_hex());
+
     #[cfg(target_os = "android")]
-    if direct_chat_agent_id.is_some() {
-        match stable_notification_id(&*topic_id) {
+    {
+        match stable_notification_id(topic.as_bytes()) {
             Ok(id) => notification_data.id = id,
             Err(err) => log::error!(
-                "Failed to derive Android MessagingStyle id from topic, falling back to random: {err:?}"
+                "Failed to derive Android MessagingStyle id from log id, falling back to random: {err:?}"
             ),
         }
         notification_data.group = Some("dashchat.chats".to_string());
-        notification_data.messaging_style = true;
+        notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
+            sender_id: sender_id_hex.clone(),
+            conversation_title: None,
+        });
+    }
+
+    // iOS Communication Notifications: the NSE reads `conversation_style.sender_id`
+    // (via the `notification_conversation_sender_id` FFI accessor) to give each
+    // sender within a group thread its own `INPersonHandle.value`.
+    #[cfg(target_os = "ios")]
+    {
+        notification_data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
+            sender_id: sender_id_hex,
+            conversation_title: None,
+        });
     }
 
     notification_data
 }
 
 /// Build the user-facing notification for a body-less p2panda auth/control op
-/// (GroupControl: Create/Add/Remove). These carry their data in the header's
-/// auth extension and have no body to decode.
+/// (GroupControl: Create/Add/Remove/Promote/Demote). These carry their data in
+/// the header's auth extension and have no body to decode. Returns `None` to
+/// suppress the notification (e.g. a group action targeting someone else).
 ///
-/// Today this fires for *every* body-less op the NSE sees, and we surface them
-/// all as "contact request accepted" — the most common case (the auth Create
-/// the acceptor authors on a new direct chat space). It will misrepresent
-/// future group `Add`/`Remove` operations.
-///
-/// TODO: once Apple grants the
-/// `com.apple.developer.usernotifications.filtering` entitlement
-/// (https://developer.apple.com/contact/request/notification-service), delete
-/// this helper. The caller should return `None` for body-less ops, the NSE
-/// should call `contentHandler(UNMutableNotificationContent())`, and any cases
-/// that DO warrant a notification (real contact-request acceptance, group
-/// member changes) should be implemented by inspecting the auth extension —
-/// distinguishing Create from Add/Remove — instead of this catch-all.
+/// Mobile-only: on desktop we don't surface these as system notifications —
+/// the chat-list row already reflects the auth event reactively.
+#[cfg(mobile)]
 async fn auth_control_op_notification(
     node: &Node,
+    header: &Header,
+    topic: TopicId,
     sender_device_id: DeviceId,
     id: i32,
-) -> NotificationData {
+) -> Option<NotificationData> {
+    type GroupAction = p2panda_auth::group::GroupAction<p2panda_core::VerifyingKey>;
+
+    let action = &header.extensions.groups_args.as_ref()?.action;
+
+    let target_is_me = |member: &p2panda_auth::group::GroupMember<p2panda_core::VerifyingKey>| {
+        matches!(
+            member,
+            p2panda_auth::group::GroupMember::Individual(pk) if DeviceId::from(*pk) == node.device_id()
+        )
+    };
+
     let sender_agent_id = node.lookup_contact(sender_device_id).await.ok().flatten();
     let sender_name = match sender_agent_id {
         Some(agent_id) => node
@@ -244,19 +281,91 @@ async fn auth_control_op_notification(
             .map(|profile| profile.name),
         None => None,
     };
-    let title = match &sender_name {
-        Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
-        None => sonix_i18n::t!("contactRequestAcceptedNoName"),
+
+    let group_route = Some(format!("/group-chat/{}", topic.to_hex()));
+
+    let (title, body, route) = match action {
+        // A Create can mean either: (a) the acceptor authoring a new
+        // direct-chat space when they accept a contact request, or (b) someone
+        // creating a new group with us in it. Distinguish by checking whether
+        // the topic matches the deterministic direct-chat topic with the
+        // sender.
+        GroupAction::Create { initial_members } => {
+            let is_direct_chat = sender_agent_id
+                .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == topic)
+                .unwrap_or(false);
+            if is_direct_chat {
+                let title = match &sender_name {
+                    Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
+                    None => sonix_i18n::t!("contactRequestAcceptedNoName"),
+                };
+                let route = sender_agent_id.map(|aid| format!("/direct-chats/{}", aid.to_hex()));
+                (title, None, route)
+            } else {
+                if !initial_members.iter().any(|(m, _)| target_is_me(m)) {
+                    return None;
+                }
+                let body = match &sender_name {
+                    Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
+                    None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
+                };
+                // TODO: replace with the real group name once group naming lands;
+                // the UI currently hardcodes "mygroup" too (see GroupChatStore.info).
+                ("mygroup".to_string(), Some(body), group_route)
+            }
+        }
+        GroupAction::Add { member, .. } => {
+            if !target_is_me(&member) {
+                return None;
+            }
+            let body = match &sender_name {
+                Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
+                None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
+            };
+            // TODO: replace with the real group name once group naming lands;
+            // the UI currently hardcodes "mygroup" too (see GroupChatStore.info).
+            ("mygroup".to_string(), Some(body), group_route)
+        }
+        GroupAction::Remove { member } => {
+            if !target_is_me(&member) {
+                return None;
+            }
+            let title = match &sender_name {
+                Some(name) => sonix_i18n::t!("someoneRemovedYouFromTheGroup", { "name": name }),
+                None => sonix_i18n::t!("someoneRemovedYouFromTheGroupNoName"),
+            };
+            (title, None, group_route)
+        }
+        GroupAction::Promote { member, .. } => {
+            if !target_is_me(&member) {
+                return None;
+            }
+            let title = match &sender_name {
+                Some(name) => sonix_i18n::t!("someoneMadeYouAnAdmin", { "name": name }),
+                None => sonix_i18n::t!("someoneMadeYouAnAdminNoName"),
+            };
+            (title, None, group_route)
+        }
+        GroupAction::Demote { member, .. } => {
+            if !target_is_me(&member) {
+                return None;
+            }
+            let title = match &sender_name {
+                Some(name) => sonix_i18n::t!("someoneRevokedAdminFromYou", { "name": name }),
+                None => sonix_i18n::t!("someoneRevokedAdminFromYouNoName"),
+            };
+            (title, None, group_route)
+        }
     };
-    let route = sender_agent_id.map(|aid| format!("/direct-chats/{}", aid.to_hex()));
-    NotificationData {
+
+    Some(NotificationData {
         id,
         title: Some(title),
-        body: None,
+        body,
         icon: Some("ic_stat_icon".to_string()),
         route,
         ..Default::default()
-    }
+    })
 }
 
 #[cfg(mobile)]

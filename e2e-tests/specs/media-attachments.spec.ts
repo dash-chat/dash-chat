@@ -1,14 +1,11 @@
 /**
  * Media attachments E2E — verifies that photos and files can be attached to a
- * message, sent, and rendered on both ends. Mirrors the structure of
- * `full-flow.spec.ts`.
+ * message, sent, and rendered on both ends, and that the 16 MiB size cap is
+ * enforced.
  */
 
-import {
-	type Agent,
-	exchangeContacts,
-	setupAgent,
-} from '../helpers/setup-agents';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { type Agent, setupAgent } from '../setup/setup-agents';
 
 describe('Media attachments', () => {
 	let agent1: Agent;
@@ -19,25 +16,20 @@ describe('Media attachments', () => {
 			setupAgent('agent1'),
 			setupAgent('agent2'),
 		]);
-		await agent1.createProfile('Alice', 'Media');
-		await agent2.createProfile('Bob', 'Media');
+		await agent1.createProfilePage.createProfile('Alice', 'Media');
+		await agent2.createProfilePage.createProfile('Bob', 'Media');
 		await exchangeContacts(agent1, agent2);
 	});
 
 	it('sends a single photo from Alice and renders on both ends', async () => {
-		await agent1.openDirectChat('Bob Media');
-		await agent1.attachPhotos(1);
-		await agent1.sendComposer();
-		await agent1.waitForPhotoMessage();
-
-		await agent2.openDirectChat('Alice Media');
-		await agent2.waitForPhotoMessage();
+		await agent1.directChatPage.attachPhotos(1);
+		await agent1.directChatPage.sendComposer();
+		await agent1.directChatPage.waitForPhotoMessage();
+		await agent2.directChatPage.waitForPhotoMessage();
 	});
 
 	it('sends multiple photos with a caption', async () => {
-		await agent1.sendMessage(''); // ensure composer is empty (no-op send)
-		await agent1.attachPhotos(3);
-		// Caption goes via the same textarea path as plain text.
+		await agent1.directChatPage.attachPhotos(3);
 		await agent1.execute(() => {
 			const ta = document.querySelector(
 				'[data-testid="message-input-textarea"]',
@@ -49,45 +41,33 @@ describe('Media attachments', () => {
 			setter.call(ta, 'three pics');
 			ta.dispatchEvent(new Event('input', { bubbles: true }));
 		});
-		await agent1.sendComposer();
-		await agent1.waitForMessage('three pics');
-		await agent2.waitForMessage('three pics');
+		await agent1.directChatPage.sendComposer();
+		await agent1.directChatPage.waitForMessage('three pics');
+		await agent2.directChatPage.waitForMessage('three pics');
 	});
 
 	it('sends a file attachment and renders on both ends', async () => {
-		await agent1.attachFile('e2e-notes.txt', 'hello from e2e', 'text/plain');
-		await agent1.sendComposer();
-		await agent1.waitForFileMessage('e2e-notes.txt');
-		await agent2.waitForFileMessage('e2e-notes.txt');
+		await agent1.directChatPage.attachFile(
+			'e2e-notes.txt',
+			'hello from e2e',
+			'text/plain',
+		);
+		await agent1.directChatPage.sendComposer();
+		await agent1.directChatPage.waitForFileMessage('e2e-notes.txt');
+		await agent2.directChatPage.waitForFileMessage('e2e-notes.txt');
 	});
 
 	it('rejects an attachment that exceeds the 16 MiB cap', async () => {
 		const OVER_LIMIT = 16 * 1024 * 1024 + 1;
-		await agent1.attachFileOfSize(OVER_LIMIT, 'too-big.bin');
-		const toast = await agent1.execute(async (): Promise<string> => {
-			const captured = window.__test.captureNextToastMessage(10_000);
-			(
-				document.querySelector(
-					'[data-testid="message-input-send"]',
-				) as HTMLButtonElement
-			).click();
-			return await captured;
-		});
-		if (!toast.toLowerCase().includes('too large')) {
-			throw new Error(`Unexpected toast: ${toast}`);
+		await agent1.directChatPage.attachFileOfSize(OVER_LIMIT, 'too-big.bin');
+		await agent1.directChatPage.sendComposer();
+
+		await agent1.toast.expectMessageContaining('too large');
+
+		// Draft survives the rejection so the user can remove the file.
+		if (!(await agent1.directChatPage.hasMediaPreview())) {
+			throw new Error('Draft was cleared after rejection');
 		}
-		// Draft should still be present so the user can remove the file.
-		const previewPresent = await agent1.execute(
-			() =>
-				!!document.querySelector('[data-testid="message-input-media-preview"]'),
-		);
-		if (!previewPresent) throw new Error('Draft was cleared after rejection');
-		// Clean up so subsequent tests start with an empty composer.
-		await agent1.execute(() => {
-			const btn = document.querySelector(
-				'[data-testid="message-input-media-preview"] button',
-			) as HTMLButtonElement | null;
-			btn?.click();
-		});
+		await agent1.directChatPage.removeDraft();
 	});
 });

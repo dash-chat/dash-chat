@@ -1,4 +1,4 @@
-import type { Hash, PublicKey } from './types';
+import type { Hash, VerifyingKey } from './types';
 
 export interface SimplifiedOperation<B> {
 	hash: Hash;
@@ -8,7 +8,7 @@ export interface SimplifiedOperation<B> {
 
 export interface SimplifiedHeader {
 	/// Author of this operation.
-	public_key: PublicKey;
+	verifying_key: VerifyingKey;
 
 	/// Milliseconds since the Unix epoch (suitable for `new Date(ms)`).
 	timestamp: number;
@@ -28,6 +28,28 @@ export interface SimplifiedHeader {
 
 	topic_id: Hash;
 
-	/// Custom meta data.
-	// extensions: E>, | undefined
+	/// p2panda-auth group-control extension. Present on operations that author a group action
+	/// (Create / Add / Remove / Promote / Demote) instead of a chat payload body.
+	auth?: GroupsArgs;
+}
+
+export type AuthGroupMember =
+	| { Individual: VerifyingKey }
+	| { Group: VerifyingKey };
+
+/// `Access<()>` from p2panda-auth. The chat-list summary only inspects the action discriminant,
+/// so the inner shape is opaque here.
+export type GroupAccess = unknown;
+
+export type GroupAction =
+	| { Create: { initial_members: Array<[AuthGroupMember, GroupAccess]> } }
+	| { Add: { member: AuthGroupMember; access: GroupAccess } }
+	| { Remove: { member: AuthGroupMember } }
+	| { Promote: { member: AuthGroupMember; access: GroupAccess } }
+	| { Demote: { member: AuthGroupMember; access: GroupAccess } };
+
+export interface GroupsArgs {
+	group_id: VerifyingKey;
+	action: GroupAction;
+	dependencies: Hash[];
 }

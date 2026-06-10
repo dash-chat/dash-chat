@@ -5,35 +5,29 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { ContactsStore, ChatsStore, PublicKey } from 'dash-chat-stores';
+	import type {
+		ContactsStore,
+		ChatsStore,
+		VerifyingKey,
+	} from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
 		mdiAccountGroup,
-		mdiClose,
 		mdiDelete,
-		mdiExport,
 		mdiKeyVariant,
-		mdiPencil,
 		mdiPlusCircle,
 	} from '@mdi/js';
 	import {
 		Page,
 		Navbar,
 		NavbarBackLink,
-		Button,
-		Card,
-		Link,
 		List,
 		ListItem,
 		Chip,
-		Dialog,
-		DialogButton,
 		Sheet,
-		ActionsButton,
 		BlockTitle,
 		useTheme,
 	} from 'konsta/svelte';
-	import Layout from '../../../+layout.svelte';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { page } from '$app/state';
@@ -52,75 +46,78 @@
 		'demote' | 'promote' | 'remove' | 'leave' | 'delete' | null
 	>(null);
 	let dialogActorId = $state<string | null>(null);
-	let loading = $state(false);
+	// let loading = $state(false);
 	const theme = $derived(useTheme());
 
-	async function handleDemote(actorId: string) {
-		loading = true;
-		try {
-			await groupChatStore.client.demoteFromAdministrator(chatId, actorId);
-			dialogType = null;
-			dialogActorId = null;
-		} catch (e) {
-			console.error(e);
-		}
-		loading = false;
-	}
+	// async function handleDemote(actorId: string) {
+	// 	loading = true;
+	// 	try {
+	// 		await groupChatStore.client.demoteFromAdministrator(chatId, actorId);
+	// 		dialogType = null;
+	// 		dialogActorId = null;
+	// 	} catch (e) {
+	// 		console.error(e);
+	// 	}
+	// 	loading = false;
+	// }
 
-	async function handlePromote(actorId: string) {
-		loading = true;
-		try {
-			await groupChatStore.client.promoteToAdministrator(chatId, actorId);
-			dialogType = null;
-			dialogActorId = null;
-		} catch (e) {
-			console.error(e);
-		}
-		loading = false;
-	}
+	// async function handlePromote(actorId: string) {
+	// 	loading = true;
+	// 	try {
+	// 		await groupChatStore.client.promoteToAdministrator(chatId, actorId);
+	// 		dialogType = null;
+	// 		dialogActorId = null;
+	// 	} catch (e) {
+	// 		console.error(e);
+	// 	}
+	// 	loading = false;
+	// }
 
-	async function handleRemove(actorId: string) {
-		loading = true;
-		try {
-			await groupChatStore.client.removeMember(chatId, actorId);
-			dialogType = null;
-			dialogActorId = null;
-		} catch (e) {
-			console.error(e);
-		}
-		loading = false;
-	}
+	// async function handleRemove(actorId: string) {
+	// 	loading = true;
+	// 	try {
+	// 		await groupChatStore.client.removeMember(chatId, actorId);
+	// 		dialogType = null;
+	// 		dialogActorId = null;
+	// 	} catch (e) {
+	// 		console.error(e);
+	// 	}
+	// 	loading = false;
+	// }
 
-	async function handleLeaveGroup() {
-		loading = true;
-		try {
-			await groupChatStore.client.leaveGroup();
-			dialogType = null;
-			goto('/');
-		} catch (e) {
-			console.error(e);
-		}
-		loading = false;
-	}
+	// async function handleLeaveGroup() {
+	// 	loading = true;
+	// 	try {
+	// 		await groupChatStore.client.leaveGroup();
+	// 		dialogType = null;
+	// 		goto('/');
+	// 	} catch (e) {
+	// 		console.error(e);
+	// 	}
+	// 	loading = false;
+	// }
 
-	async function handleDeleteGroup() {
-		loading = true;
-		try {
-			await groupChatStore.client.deleteGroup();
-			dialogType = null;
-			goto('/');
-		} catch (e) {
-			console.error(e);
-		}
-		loading = false;
-	}
+	// async function handleDeleteGroup() {
+	// 	loading = true;
+	// 	try {
+	// 		await groupChatStore.client.deleteGroup();
+	// 		dialogType = null;
+	// 		goto('/');
+	// 	} catch (e) {
+	// 		console.error(e);
+	// 	}
+	// 	loading = false;
+	// }
 </script>
 
 <Page>
 	{#await $info then info}
 		<Navbar transparent={true}>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}`)} />
+				<NavbarBackLink
+					data-testid="group-info-back"
+					onClick={() => goto(`/group-chat/${chatId}`)}
+				/>
 			{/snippet}
 
 			{#snippet title()}
@@ -129,7 +126,7 @@
 					style="display: flex; justify-content: start; align-items: center; flex: 1"
 				>
 					<Avatar
-						image={info.avatar}
+						image={info.image}
 						initials={info.name.slice(0, 2)}
 						style="--size: 2.5rem"
 					/>
@@ -137,7 +134,7 @@
 				</div>
 			{/snippet}
 
-			{#snippet right()}
+			<!-- {#snippet right()}
 				<Link
 					href={`/group-chat/${chatId}/info/edit`}
 					iconOnly={theme === 'material'}
@@ -148,14 +145,14 @@
 						{m.edit()}
 					{/if}
 				</Link>
-			{/snippet}
+			{/snippet} -->
 		</Navbar>
 
 		{#await $me then me}
 			<div class="column" style="flex: 1">
 				<div class="column center-in-desktop gap-8 p-2">
 					<div class="column" style="align-items: center; gap: 1rem">
-						<Avatar image={info.avatar} style="--size: 5rem">
+						<Avatar image={info.image} style="--size: 5rem">
 							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
 						</Avatar>
 
@@ -183,6 +180,7 @@
 										href: `/group-chat/${chatId}/info/add-members`,
 									}}
 									title={m.addMembers()}
+									data-testid="group-info-add-members"
 								>
 									{#snippet media()}
 										<wa-icon
@@ -194,12 +192,11 @@
 							{/if}
 
 							{#each Object.entries(members) as [actorId, member]}
-								<ListItem
-									link
-									chevron={false}
-									title={member.profile?.name}
+								<!--
+								  For member actions, put back:
 									onclick={() => (sheetOpenFor = actorId)}
-								>
+							  -->
+								<ListItem link chevron={false} title={member.profile?.name}>
 									{#snippet media()}
 										<Avatar
 											image={member.profile?.avatar}
@@ -293,7 +290,7 @@
 							{/each}
 						</List>
 
-						<List
+						<!-- <List
 							nested
 							strongIos
 							inset={isWideScreen.value || theme === 'ios'}
@@ -328,14 +325,14 @@
 									<wa-icon class="big" src={wrapPathInSvg(mdiClose)}></wa-icon>
 								{/snippet}
 							</ListItem>
-						</List>
+						</List> -->
 					{/await}
 				</div>
 			</div>
 		{/await}
 
 		<!-- Dialogs -->
-		<Dialog
+		<!-- <Dialog
 			opened={dialogType === 'demote' && dialogActorId !== null}
 			onBackdropClick={() => {
 				dialogType = null;
@@ -361,9 +358,9 @@
 					{loading ? '...' : m.demote()}
 				</DialogButton>
 			{/snippet}
-		</Dialog>
+		</Dialog> -->
 
-		<Dialog
+		<!-- <Dialog
 			opened={dialogType === 'promote' && dialogActorId !== null}
 			onBackdropClick={() => {
 				dialogType = null;
@@ -389,9 +386,9 @@
 					{loading ? '...' : m.promote()}
 				</DialogButton>
 			{/snippet}
-		</Dialog>
+		</Dialog> -->
 
-		<Dialog
+		<!-- <Dialog
 			opened={dialogType === 'remove' && dialogActorId !== null}
 			onBackdropClick={() => {
 				dialogType = null;
@@ -417,9 +414,9 @@
 					{loading ? '...' : m.remove()}
 				</DialogButton>
 			{/snippet}
-		</Dialog>
+		</Dialog> -->
 
-		<Dialog
+		<!-- <Dialog
 			opened={dialogType === 'leave'}
 			onBackdropClick={() => (dialogType = null)}
 			title={m.leaveGroup()}
@@ -433,9 +430,9 @@
 					{loading ? '...' : m.leave()}
 				</DialogButton>
 			{/snippet}
-		</Dialog>
+		</Dialog> -->
 
-		<Dialog
+		<!-- <Dialog
 			opened={dialogType === 'delete'}
 			onBackdropClick={() => (dialogType = null)}
 			title={m.deleteGroup()}
@@ -449,7 +446,7 @@
 					{loading ? '...' : m.delete()}
 				</DialogButton>
 			{/snippet}
-		</Dialog>
+		</Dialog> -->
 	{/await}
 </Page>
 

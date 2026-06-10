@@ -84,9 +84,17 @@ export function summarizeMessageContent(content: {
 export type AnnouncementPayload =
 	| { type: 'SetProfile'; payload: Profile }
 	| { type: 'SetCapabilities'; payload: unknown };
+export interface GroupInfo {
+	name: string;
+	description: string | undefined;
+	image: string | undefined;
+}
+
 export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
-	| { type: 'Reaction'; payload: ChatReaction };
+	| { type: 'Reaction'; payload: ChatReaction }
+	| { type: 'JoinGroup'; payload: { chat_id: string } }
+	| { type: 'GroupInfo'; payload: GroupInfo };
 
 export interface InboxTopic {
 	expires_at: number;
@@ -140,7 +148,7 @@ export type MessageId = string;
 // export interface Message {
 // 	id: MessageId;
 // 	content: MessageContent;
-// 	author: PublicKey;
+// 	author: VerifyingKey;
 // 	timestamp: number;
 // }
 
@@ -148,14 +156,61 @@ export interface ReadMessagesStore {
 	markAsRead(messageHashes: Hash[]): Promise<void>;
 }
 
+export type GroupControlEvent =
+	| {
+			kind: 'group_created';
+			isMine: boolean;
+			iAmInitialMember: boolean;
+			creatorName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_added';
+			isMine: boolean;
+			addedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_removed';
+			isMine: boolean;
+			removedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_promoted';
+			promotedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  }
+	| {
+			kind: 'group_member_demoted';
+			demotedByMe: boolean;
+			memberName: string | undefined;
+			adminName: string | undefined;
+			timestamp: number;
+	  };
+
+export type ChatSummaryLastEvent =
+	| {
+			kind: 'message';
+			text: string;
+			authorName?: string;
+			timestamp: number;
+	  }
+	| { kind: 'contact_request'; timestamp: number }
+	| { kind: 'contact_added'; timestamp: number }
+	| GroupControlEvent;
+
 export interface ChatSummary {
-	type: 'GroupChat' | 'DirectChat' | 'ContactRequest';
+	type: 'GroupChat' | 'DirectChat';
 	chatId: TopicId;
 	unreadMessages: number;
 	name: string;
 	avatar: string | undefined;
-	lastEvent: {
-		summary: string;
-		timestamp: number;
-	};
+	lastEvent: ChatSummaryLastEvent;
 }

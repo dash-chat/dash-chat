@@ -1,5 +1,3 @@
-#![feature(bool_to_result)]
-
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
@@ -12,7 +10,6 @@ async fn test_mailbox_late_join_mem() {
             "dashchat=info",
             "p2panda_stream=warn",
             "p2panda_auth=warn",
-            "p2panda_encryption=warn",
             "p2panda_spaces=warn",
             "named_id=warn",
         ],
@@ -31,7 +28,6 @@ async fn test_mailbox_late_join_toy() {
             "mailbox_server=info",
             "p2panda_stream=warn",
             "p2panda_auth=warn",
-            "p2panda_encryption=warn",
             "p2panda_spaces=warn",
             "named_id=warn",
         ],
@@ -54,6 +50,7 @@ async fn mailbox_late_join(
     alice_mailbox: impl MailboxClient<MailboxOperation>,
     bobbi_mailbox: impl MailboxClient<MailboxOperation>,
 ) {
+    let poll = PollConfig::default();
     let mut config = NodeConfig::testing();
     config.mailboxes_config.active_interval = Duration::from_millis(1000);
     config.mailboxes_config.between_polls_delay = Duration::from_millis(100);
@@ -95,15 +92,12 @@ async fn mailbox_late_join(
 
     println!("=== added mailboxes ===");
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            (alice.get_messages(chat).await.unwrap().len() == 2
-                && bobbi.get_messages(chat).await.unwrap().len() == 2)
-                .ok_or("message not received")
-        },
-    )
+    poll.wait_for(|| async {
+        (alice.get_messages(chat).await.unwrap().len() == 2
+            && bobbi.get_messages(chat).await.unwrap().len() == 2)
+            .then_some(())
+            .ok_or("message not received")
+    })
     .await
     .unwrap();
 }
@@ -116,13 +110,13 @@ async fn test_mailbox_restart_relay() {
             "mailbox_server=info",
             "p2panda_stream=warn",
             "p2panda_auth=warn",
-            "p2panda_encryption=warn",
             "p2panda_spaces=warn",
             "named_id=warn",
         ],
         true,
     );
 
+    let poll = PollConfig::default();
     let mut config = NodeConfig::testing();
     config.mailboxes_config.active_interval = Duration::from_millis(1000);
     config.mailboxes_config.between_polls_delay = Duration::from_millis(100);
@@ -166,14 +160,11 @@ async fn test_mailbox_restart_relay() {
     alice.send_message(chat, "Hello 1".into()).await.unwrap();
     alice.send_message(chat, "Hello 2".into()).await.unwrap();
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async {
-            (bobbi.get_messages(chat).await.unwrap().len() == 2)
-                .ok_or("bobbi hasn't received both messages yet")
-        },
-    )
+    poll.wait_for(|| async {
+        (bobbi.get_messages(chat).await.unwrap().len() == 2)
+            .then_some(())
+            .ok_or("bobbi hasn't received both messages yet")
+    })
     .await
     .unwrap();
 
@@ -210,18 +201,14 @@ async fn test_mailbox_restart_relay() {
     alice.send_message(chat, "Hello 3".into()).await.unwrap();
     alice.send_message(chat, "Hello 4".into()).await.unwrap();
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(10),
-        || async {
-            let msgs = bobbi.get_messages(chat).await.unwrap();
-            (msgs.len() == 4).ok_or(format!(
-                "expected 4 messages, got {} ({:?})",
-                msgs.len(),
-                msgs
-            ))
-        },
-    )
+    poll.wait_for(|| async {
+        let msgs = bobbi.get_messages(chat).await.unwrap();
+        (msgs.len() == 4).then_some(()).ok_or(format!(
+            "expected 4 messages, got {} ({:?})",
+            msgs.len(),
+            msgs
+        ))
+    })
     .await
     .unwrap();
 }
@@ -234,7 +221,6 @@ async fn test_multiple_mailboxes_group_pivot() {
             "dashchat=info",
             "p2panda_stream=warn",
             "p2panda_auth=warn",
-            "p2panda_encryption=warn",
             "p2panda_spaces=warn",
             "named_id=warn",
         ],

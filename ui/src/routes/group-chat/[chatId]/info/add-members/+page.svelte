@@ -1,108 +1,79 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiAccountMultiplePlus, mdiAccountPlus } from '@mdi/js';
-	import type { ContactsStore, PublicKey } from 'dash-chat-stores';
+	import type {
+		ChatsStore,
+		ContactsStore,
+		VerifyingKey,
+	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import {
-		Page,
-		Navbar,
-		NavbarBackLink,
-		BlockTitle,
-		List,
-		ListItem,
-		Button,
-		Link,
-		Preloader,
-		Checkbox,
-	} from 'konsta/svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import ProfileAvatar from '$lib/components/profiles/ProfileAvatar.svelte';
-	import { isIos } from '$lib/utils/environment';
+	import { BlockTitle } from 'konsta/svelte';
+	import { useReactiveValue } from '$lib/stores/use-signal';
+	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
+	import FormPage from '$lib/components/layout/FormPage.svelte';
 	import { page } from '$app/state';
+	import ContactSearchNav from '$lib/components/contacts/ContactSearchNav.svelte';
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	let selectedContacts = $state<PublicKey[]>([]);
+	const chatsStore: ChatsStore = getContext('chats-store');
+	let selectedContacts = $state<VerifyingKey[]>([]);
 
-	const contacts = useReactivePromise(contactsStore.profilesForAllContacts);
+	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
+	const groupChatStore = chatsStore.groupChats(chatId);
+	const members = useReactiveValue(groupChatStore.allMembers);
+	const loading = $derived($contacts === undefined || $members === undefined);
+
+	const nonMemberContacts = $derived(
+		($contacts ?? []).filter(([agentId]) => !($members && agentId in $members)),
+	);
+	let filteredContacts = $state<typeof nonMemberContacts>([]);
+	let searchQuery = $state('');
+
+	const noDataMessage = $derived.by(() => {
+		if (loading) return '';
+		if (($contacts ?? []).length === 0) return m.noContactsYet();
+		if (filteredContacts.length === 0 && searchQuery.length > 0)
+			return m.noContactsMatchFilter();
+		if (filteredContacts.length === 0) return m.allContactsAlreadyInGroup();
+		return '';
+	});
 
 	async function addMembers() {
+		const store = chatsStore.groupChats(chatId);
+		await store.addMembers(selectedContacts);
 		goto(`/group-chat/${chatId}/info`);
 	}
 </script>
 
-<Page>
-	<Navbar
-		title={m.addMembers()}
-		titleClass="opacity1"
-		transparent={true}
-		rightClass={selectedContacts.length === 0 ? 'ios-right-disabled' : ''}
-	>
-		{#snippet left()}
-			<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}/info`)} />
-		{/snippet}
-		{#snippet right()}
-			{#if isIos}
-				<Link onClick={addMembers}>
-					{m.add()}
-				</Link>
-			{/if}
-		{/snippet}
-	</Navbar>
+<FormPage
+	title={m.addMembers()}
+	actionLabel={m.add()}
+	onAction={addMembers}
+	actionDisabled={selectedContacts.length === 0}
+	onBack={() => goto(`/group-chat/${chatId}/info`)}
+	constrainedWidth
+	backTestId="add-members-back"
+	actionTestId="add-members-add-btn"
+>
+	{#snippet subnavbar()}
+		<ContactSearchNav
+			bind:searchQuery
+			bind:filteredContacts
+			{selectedContacts}
+			contacts={nonMemberContacts}
+			onRemove={key => {
+				selectedContacts = selectedContacts.filter(c => c !== key);
+			}}
+		/>
+	{/snippet}
 
-	{#await $contacts}
-		<div
-			class="column"
-			style="height: 100%; align-items: center; justify-content: center"
-		>
-			<Preloader />
-		</div>
-	{:then contacts}
-		<div class="column">
-			<div class="center-in-desktop">
-				<BlockTitle>{m.contacts()}</BlockTitle>
-				<List strongIos inset>
-					{#each contacts as [publicKey, profile]}
-						<ListItem label title={profile.name}>
-							{#snippet media()}
-								<ProfileAvatar chatActorId={publicKey}></ProfileAvatar>
-							{/snippet}
+	<BlockTitle>{m.contacts()}</BlockTitle>
 
-							{#snippet after()}
-								<Checkbox
-									checked={selectedContacts.includes(publicKey)}
-									onChange={e => {
-										const target = e.target as HTMLInputElement;
-										if (target.checked) {
-											selectedContacts = [...selectedContacts, publicKey];
-										} else {
-											selectedContacts = selectedContacts.filter(
-												c => c !== publicKey,
-											);
-										}
-									}}
-								/>
-							{/snippet}
-						</ListItem>
-					{:else}
-						<ListItem title={m.noContactsYet()} />
-					{/each}
-				</List>
-			</div>
-		</div>
-
-		{#if !isIos}
-			<Button
-				onClick={addMembers}
-				class="fixed-action-btn"
-				rounded
-				disabled={selectedContacts.length === 0}
-			>
-				{m.add()}
-			</Button>
-		{/if}
-	{/await}
-</Page>
+	<SelectableContactList
+		contacts={filteredContacts}
+		{loading}
+		{noDataMessage}
+		bind:selectedContacts
+	/>
+</FormPage>

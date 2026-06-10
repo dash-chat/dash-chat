@@ -6,14 +6,12 @@
  * verify phase can check everything persisted correctly.
  */
 
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-	type Agent,
-	exchangeContacts,
-	setupAgent,
-} from '../helpers/setup-agents';
+
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { type Agent, setupAgent } from '../setup/setup-agents';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -38,8 +36,8 @@ describe('Compat setup — create data with old version', () => {
 	});
 
 	it('creates profiles on both agents', async () => {
-		await agent1.createProfile(ALICE_NAME, ALICE_SURNAME);
-		await agent2.createProfile(BOB_NAME, BOB_SURNAME);
+		await agent1.createProfilePage.createProfile(ALICE_NAME, ALICE_SURNAME);
+		await agent2.createProfilePage.createProfile(BOB_NAME, BOB_SURNAME);
 	});
 
 	it('exchanges contact codes between agents', async () => {
@@ -47,13 +45,13 @@ describe('Compat setup — create data with old version', () => {
 	});
 
 	it('sends a message from Alice to Bob', async () => {
-		await agent1.sendMessage(MSG_ALICE);
-		await agent2.waitForMessage(MSG_ALICE);
+		await agent1.directChatPage.sendMessage(MSG_ALICE);
+		await agent2.directChatPage.waitForMessage(MSG_ALICE);
 	});
 
 	it('sends a reply from Bob to Alice', async () => {
-		await agent2.sendMessage(MSG_BOB);
-		await agent1.waitForMessage(MSG_BOB);
+		await agent2.directChatPage.sendMessage(MSG_BOB);
+		await agent1.directChatPage.waitForMessage(MSG_BOB);
 	});
 
 	it('saves test state for verify phase', () => {

@@ -32,8 +32,10 @@
 use std::marker::PhantomData;
 
 use crate::AgentId;
-use named_id::*;
 
+use aliased::Aliasing;
+use p2panda::operation::LogId;
+use p2panda::{SigningKey, VerifyingKey};
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
@@ -53,7 +55,6 @@ pub trait TopicKind:
     + Ord
     + std::fmt::Display
     + std::fmt::Debug
-    + Rename
     + 'static
 {
 }
@@ -87,7 +88,6 @@ pub mod kind {
                 Hash,
                 Serialize,
                 Deserialize,
-                RenameNone,
                 derive_more::Display,
                 derive_more::Debug,
             )]
@@ -115,90 +115,35 @@ pub mod kind {
     topic_kind_no_auto_register!(Inbox);
 }
 
-#[derive(
-    Copy,
-    Clone,
-    Hash,
-    Eq,
-    PartialEq,
-    PartialOrd,
-    Ord,
-    derive_more::Deref,
-    derive_more::Display,
-    derive_more::Debug,
-    derive_more::From,
-)]
-#[display("{}", hex::encode(self.0))]
-#[debug("{}", self)]
-pub struct TopicId([u8; 32]);
-
-impl TopicId {
-    pub const fn new(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-}
-
-// Hex-string serialization for human-readable formats (e.g. JSON, where map
-// keys must be strings); raw byte array for binary formats (e.g. CBOR on disk).
-impl Serialize for TopicId {
-    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
-        if ser.is_human_readable() {
-            hex::encode(self.0).serialize(ser)
-        } else {
-            self.0.serialize(ser)
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for TopicId {
-    fn deserialize<D: serde::Deserializer<'de>>(deser: D) -> Result<Self, D::Error> {
-        if deser.is_human_readable() {
-            let s = String::deserialize(deser)?;
-            let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
-            let arr: [u8; 32] = bytes
-                .try_into()
-                .map_err(|_| serde::de::Error::custom("TopicId hex must decode to 32 bytes"))?;
-            Ok(TopicId(arr))
-        } else {
-            <[u8; 32]>::deserialize(deser).map(TopicId)
-        }
-    }
-}
-
-pub type LogId = TopicId;
-
-impl p2panda_spaces::traits::SpaceId for TopicId {}
-
-pub type DashChatTopicId = TopicId;
+pub type TopicId = p2panda::Topic;
 
 // -- SQLite encoding for TopicId --
 
-impl sqlx::Type<Sqlite> for TopicId {
+impl sqlx::Type<Sqlite> for Topic {
     fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {
         <Vec<u8> as sqlx::Type<Sqlite>>::type_info()
     }
 }
 
-impl sqlx::Encode<'_, Sqlite> for TopicId {
+impl<K: TopicKind> sqlx::Encode<'_, Sqlite> for Topic<K> {
     fn encode_by_ref(&self, buf: &mut Vec<SqliteArgumentValue<'_>>) -> Result<IsNull, BoxDynError> {
-        <Vec<u8> as sqlx::Encode<Sqlite>>::encode(self.0.to_vec(), buf)
+        <Vec<u8> as sqlx::Encode<Sqlite>>::encode(self.to_vec(), buf)
     }
 }
 
-impl sqlx::Decode<'_, Sqlite> for TopicId {
+impl sqlx::Decode<'_, Sqlite> for Topic<kind::Untyped> {
     fn decode(value: <Sqlite as sqlx::Database>::ValueRef<'_>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as sqlx::Decode<Sqlite>>::decode(value)?;
-        let arr: [u8; 32] = bytes.try_into().map_err(|_| "TopicId is not 32 bytes")?;
-        Ok(TopicId(arr))
+        let arr: [u8; 32] = bytes.try_into().map_err(|_| "Topic is not 32 bytes")?;
+        Ok(Topic::new(arr))
     }
 }
 
-impl Nameable for TopicId {
-    fn shortener(&self) -> Option<Shortener> {
-        Some(Shortener {
-            length: 4,
-            prefix: "L",
-        })
+// conversion traits for p2panda core types.
+
+impl<K: TopicKind> From<Topic<K>> for LogId {
+    fn from(value: Topic<K>) -> Self {
+        LogId::from_topic(value.into())
     }
 }
 
@@ -210,12 +155,11 @@ impl Nameable for TopicId {
     PartialEq,
     PartialOrd,
     Ord,
-    named_id::RenameAll,
     derive_more::Deref,
     derive_more::Display,
     derive_more::Debug,
 )]
-#[display("{}", hex::encode(self.id.0))]
+#[display("{}", self.id.to_hex())]
 #[debug("{}", self)]
 pub struct Topic<K: TopicKind = kind::Untyped> {
     #[deref]
@@ -229,31 +173,44 @@ impl<K: TopicKind> p2panda_spaces::traits::SpaceId for Topic<K> {}
 impl<K: TopicKind> Topic<K> {
     pub(crate) fn new(id: [u8; 32]) -> Self {
         Self {
-            id: TopicId(id),
+            id: TopicId::from(id),
             kind: PhantomData::<K>,
         }
     }
 
-    pub fn with_name(self, name: &str) -> Self {
-        self.id.with_name(name);
-        self
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        self.id.as_bytes()
     }
 
-    #[deprecated(note = "refactor so this is impossible")]
-    pub fn recast<K2: TopicKind>(self) -> Topic<K2> {
-        Topic::new(self.id.0)
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.id.as_bytes().to_vec()
+    }
+
+    pub fn alias_named(self, name: &str) -> Self {
+        self.id.alias_named(name);
+        LogId::from_topic(self.id).alias_named(name);
+        self
+    }
+}
+
+impl std::str::FromStr for Topic<kind::Untyped> {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(TopicId::from_str(s)?.into())
     }
 }
 
 impl Topic<kind::Announcements> {
     pub fn announcements(agent_id: AgentId) -> Self {
-        Self::new(*agent_id.as_bytes())
+        let t = Self::new(*agent_id.as_bytes());
+        t.alias_named(&format!("announcements({:?})", agent_id.aliased()));
+        t
     }
 }
 
 impl Topic<kind::Chat> {
     pub fn random() -> Self {
-        let pk = p2panda_core::PrivateKey::new().public_key();
+        let pk = SigningKey::generate().verifying_key();
         Self::new(*pk.as_bytes())
     }
 
@@ -266,12 +223,20 @@ impl Topic<kind::Chat> {
         Self::new(*pk.as_bytes())
     }
 
-    pub fn from_group_pubkey(pubkey: p2panda_core::PublicKey) -> Self {
+    pub fn from_group_pubkey(pubkey: VerifyingKey) -> Self {
         Self::new(*pubkey.as_bytes())
     }
 
-    pub fn to_group_pubkey(self) -> anyhow::Result<p2panda_core::PublicKey> {
-        Ok(p2panda_core::PublicKey::from_bytes(&self.id.0)?)
+    /// Instantiate a chat topic from a TopicId.
+    ///
+    /// This can fail if the topic id bytes do not actually represent a valid Ed25519 public key.
+    pub fn from_topic_id(topic_id: TopicId) -> anyhow::Result<Self> {
+        let verifying_key = VerifyingKey::from_bytes(topic_id.as_bytes())?;
+        Ok(Self::new(*verifying_key.as_bytes()))
+    }
+
+    pub fn to_group_pubkey(self) -> anyhow::Result<VerifyingKey> {
+        Ok(VerifyingKey::from_bytes(self.as_bytes())?)
     }
 }
 
@@ -291,17 +256,27 @@ impl Topic<kind::DeviceGroup> {
 }
 
 impl Topic<kind::Untyped> {
-    pub fn untyped(id: [u8; 32]) -> Self {
-        Self {
-            id: TopicId(id),
-            kind: PhantomData,
-        }
+    /// Declare the actual type of an Untyped topic.
+    ///
+    /// This performs no validation of the underlying bytes against `K`'s
+    /// invariants. For kinds whose bytes must form a valid Ed25519 public key
+    /// (e.g. [`kind::Chat`]), prefer the fallible constructors
+    /// ([`Topic::<kind::Chat>::from_topic_id`]) so downstream code that relies
+    /// on that invariant can't be handed a malformed topic.
+    pub fn upcast<K: TopicKind>(self) -> Topic<K> {
+        Topic::new(*self.id.as_bytes())
     }
 }
 
 impl<K: TopicKind> From<Topic<K>> for TopicId {
     fn from(topic: Topic<K>) -> Self {
-        Self(topic.id.0)
+        topic.id
+    }
+}
+
+impl From<TopicId> for Topic<kind::Untyped> {
+    fn from(id: TopicId) -> Self {
+        Topic::new(*id.as_bytes())
     }
 }
 
@@ -318,22 +293,9 @@ impl TryFrom<String> for Topic {
     }
 }
 
-impl std::str::FromStr for Topic {
-    type Err = anyhow::Error;
-
-    fn from_str(topic: &str) -> Result<Self, Self::Err> {
-        // maybe base64?
-        Ok(Self::new(
-            hex::decode(topic)?
-                .try_into()
-                .map_err(|e| anyhow::anyhow!("Invalid Topic: {e:?}"))?,
-        ))
-    }
-}
-
 impl<K: TopicKind> Serialize for Topic<K> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(&hex::encode(&self.id.0))
+        serializer.collect_str(&hex::encode(self.id.as_bytes()))
     }
 }
 
@@ -345,7 +307,7 @@ fn to_fixed_size_array<T>(v: Vec<T>) -> Result<[T; 32], String> {
         Ok(ba) => ba,
         Err(o) => Err(format!(
             "Expected a Vec of length {} but it was {}",
-            4,
+            32,
             o.len()
         ))?,
     };
@@ -376,5 +338,59 @@ impl<'de, K: TopicKind> Deserialize<'de> for Topic<K> {
         deserializer.deserialize_str(Vis {
             phantom_data: PhantomData::<K>,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use mailbox_client::toy;
+
+    const TOPIC_BYTES: [u8; 32] = [0xab; 32];
+    const TOPIC_HEX: &str = "abababababababababababababababababababababababababababababababab";
+
+    #[test]
+    fn upcast_preserves_bytes() {
+        let untyped = Topic::<kind::Untyped>::new(TOPIC_BYTES);
+        let chat: Topic<kind::Chat> = untyped.upcast();
+        assert_eq!(chat.as_bytes(), &TOPIC_BYTES);
+    }
+
+    #[test]
+    fn serializes_to_quoted_hex_string() {
+        let topic = Topic::<kind::Untyped>::new(TOPIC_BYTES);
+        assert_eq!(
+            serde_json::to_string(&topic).unwrap(),
+            format!("\"{}\"", TOPIC_HEX)
+        );
+    }
+
+    /// The toy mailbox client uses topic/author ids as HTTP map keys by JSON-
+    /// serializing them and stripping the surrounding quotes (`stringify`),
+    /// reversing that to decode (`unstringify`). That only works if the type's
+    /// `Serialize` impl emits a single JSON string. These tests pin that wire
+    /// format for the real `TopicId` and `DeviceId` so a future `Serialize`
+    /// change (e.g. emitting a byte array) can't silently corrupt mailbox keys.
+    /// See `ToyItemTraits` in `mailbox-client`.
+    #[test]
+    fn topic_id_stringifies_to_bare_hex_for_mailbox_key() {
+        let topic: TopicId = Topic::<kind::Untyped>::new(TOPIC_BYTES).into();
+        let key = toy::stringify(topic);
+        assert_eq!(key, TOPIC_HEX);
+        assert!(!key.contains('"'));
+        assert_eq!(toy::unstringify::<TopicId>(&key).unwrap(), topic);
+    }
+
+    #[test]
+    fn device_id_stringifies_to_bare_hex_for_mailbox_key() {
+        let device_id = crate::DeviceId::from(SigningKey::from_bytes(&[0xcd; 32]).verifying_key());
+        let key = toy::stringify(device_id);
+        assert_eq!(key, hex::encode(device_id.as_bytes()));
+        assert!(!key.contains('"'));
+        assert_eq!(
+            toy::unstringify::<crate::DeviceId>(&key).unwrap(),
+            device_id
+        );
     }
 }

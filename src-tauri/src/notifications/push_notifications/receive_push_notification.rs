@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
-use dashchat_node::{AsBody, Payload};
+use dashchat_node::{AsBody, Payload, TopicId};
 #[cfg(target_os = "android")]
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
+use p2panda::operation::LogId;
 #[cfg(target_os = "android")]
 use tauri::Manager;
 use tauri_plugin_notification::*;
@@ -103,7 +104,7 @@ async fn handle_push_notification(
     notification: NotificationData,
     app_data_root: PathBuf,
 ) -> anyhow::Result<Option<NotificationData>> {
-    // Title = topic ID (hex), Body = operation ID ("author_hex:seq_num")
+    // Title = log ID (hex), Body = operation ID ("author_hex:seq_num")
     let topic_hex = notification
         .title
         .as_deref()
@@ -122,14 +123,14 @@ async fn handle_push_notification(
         .context("failed to hex-decode author")?
         .try_into()
         .map_err(|_| anyhow!("author bytes are not 32 bytes long"))?;
-    let public_key = p2panda_core::PublicKey::from_bytes(&author_bytes)
+    let verifying_key = p2panda_core::VerifyingKey::from_bytes(&author_bytes)
         .context("failed to construct public key")?;
 
     let topic_bytes: [u8; 32] = hex::decode(topic_hex)
-        .context("failed to hex-decode topic")?
+        .context("failed to hex-decode log")?
         .try_into()
-        .map_err(|_| anyhow!("topic bytes are not 32 bytes long"))?;
-    let topic_id = dashchat_node::topic::TopicId::from(topic_bytes);
+        .map_err(|_| anyhow!("topic_id bytes are not 32 bytes long"))?;
+    let topic_id = TopicId::try_from(topic_bytes)?;
 
     let filesystem = FileSystem::from_app_root_dir(app_data_root)?;
     let app_data_dir = filesystem.app_data_dir();
@@ -152,7 +153,7 @@ async fn handle_push_notification(
     // Poll for the operation to arrive (up to 15 seconds)
     // PERF: consider adding the ability for the op store to notify when an op is stored,
     //     instead of polling
-    let device_id = dashchat_node::DeviceId::from(public_key);
+    let device_id = dashchat_node::DeviceId::from(verifying_key);
     // `get_log`'s `from` is exclusive (maps to p2panda's `after`), so subtract 1
     // to include seq_num itself. seq_num == 0 → None means "from the start".
     let from = seq_num.checked_sub(1);
@@ -160,7 +161,7 @@ async fn handle_push_notification(
     for _ in 0..75 {
         let log = node
             .op_store
-            .get_log(&device_id, &topic_id, from)
+            .get_log(&device_id, &LogId::from_topic(topic_id), from)
             .await
             .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
         if let Some(first) = log.into_iter().next() {
@@ -172,7 +173,7 @@ async fn handle_push_notification(
 
     let Some(operation) = entry else {
         log::warn!(
-            "Operation {op_id} in topic {topic_hex} not found after polling, showing generic notification"
+            "Operation {op_id} in log {topic_hex} not found after polling, showing generic notification"
         );
         return Ok(Some(notifications::new_message_generic_notification()));
     };

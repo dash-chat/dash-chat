@@ -17,14 +17,14 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"[0-9a-fA-F]{40,}",
         // Base64 blobs (40+ chars)
         r"[A-Za-z0-9+/]{40,}={0,2}",
-        // DeviceId and AgentId wrappers (must precede bare PublicKey/Hash patterns)
+        // DeviceId and AgentId wrappers (must precede bare VerifyingKey/Hash patterns)
         r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
-        // Debug-formatted byte arrays: PublicKey([1, 2, ...]), Hash([...]), Signature([...])
-        r"(PublicKey|Hash|Signature)\(\[[\d, ]+\]\)",
+        // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...])
+        r"(VerifyingKey|Hash|Signature)\(\[[\d, ]+\]\)",
         // Timestamps (seconds or microseconds since epoch, 10+ digits)
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
-        // Debug format: name/surname/about fields with quoted values
-        r#"(name|surname|about):\s*(Some\()?"[^"]*"(\))?"#,
+        // Debug format: name/surname/about/description fields with quoted values
+        r#"(name|surname|about|description):\s*(Some\()?"[^"]*"(\))?"#,
         // Debug format: ChatMessageContent("...") — legacy bare form, kept
         // in case rotating log buffers still contain entries from older builds.
         r#"ChatMessageContent\("[^"]*"\)"#,
@@ -43,8 +43,8 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // here; this entry documents the intent.
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
-        // JSON format: "name":"...", "surname":"...", "about":"..."
-        r#""(name|surname|about)"\s*:\s*"[^"]*""#,
+        // JSON format: "name":"...", "surname":"...", "about":"...", "description":"..."
+        r#""(name|surname|about|description)"\s*:\s*"[^"]*""#,
         // JSON format: "content":"..."
         r#""content"\s*:\s*"[^"]*""#,
         // JSON format: "emoji":"..."
@@ -181,8 +181,8 @@ mod tests {
     }
 
     #[test]
-    fn redacts_public_key_byte_array() {
-        let input = "got PublicKey([32, 145, 78, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]) from peer";
+    fn redacts_verifying_key_byte_array() {
+        let input = "got VerifyingKey([32, 145, 78, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]) from peer";
         assert_eq!(redact(input), "got [REDACTED] from peer");
     }
 
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn redacts_device_id() {
-        let input = "from DeviceId(PublicKey([32, 145, 78, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]))";
+        let input = "from DeviceId(VerifyingKey([32, 145, 78, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]))";
         assert_eq!(redact(input), "from [REDACTED]");
     }
 
@@ -256,6 +256,29 @@ mod tests {
         assert!(
             !result.contains("Hello world"),
             "about not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_group_info_debug() {
+        let input =
+            r#"GroupInfo { name: "Family", description: Some("Secret plan"), image: None }"#;
+        let result = redact(input);
+        assert!(!result.contains("Family"), "name not redacted: {result}");
+        assert!(
+            !result.contains("Secret plan"),
+            "description not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_group_info_json() {
+        let input = r#"{"name":"Family","description":"Secret plan","image":null}"#;
+        let result = redact(input);
+        assert!(!result.contains("Family"), "name not redacted: {result}");
+        assert!(
+            !result.contains("Secret plan"),
+            "description not redacted: {result}"
         );
     }
 
@@ -494,7 +517,7 @@ mod tests {
 
     #[test]
     fn redacts_full_notification_log_line() {
-        let input = r#"2024-02-15 INFO Received notification: Chat(Message(ChatMessageContent("hey there"))) from DeviceId(PublicKey([32, 145, 78, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]))"#;
+        let input = r#"2024-02-15 INFO Received notification: Chat(Message(ChatMessageContent("hey there"))) from DeviceId(VerifyingKey([32, 145, 78, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]))"#;
         let result = redact(input);
         assert!(
             !result.contains("hey there"),
