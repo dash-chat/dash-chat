@@ -36,12 +36,12 @@
 	);
 
 	const noDataMessage = $derived(() => {
-		if (loading) return 'xxx';
+		if (loading) return '';
 		if (($contacts ?? []).length === 0) return m.noContactsYet();
 		if (filteredContacts.length === 0 && searchQuery)
 			return m.noContactsMatchFilter();
 		if (filteredContacts.length === 0) return m.allContactsAlreadyInGroup();
-		return 'yyy';
+		return '';
 	});
 
 	async function addMembers() {
