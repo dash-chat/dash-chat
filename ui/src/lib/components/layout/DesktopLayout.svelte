@@ -82,7 +82,7 @@
 		border-inline-end: 1px solid var(--k-hairline-color);
 		overflow-y: auto;
 		overflow-x: hidden;
-		background-color: var(--color-md-light-surface-2);
+		background-color: var(--color-desktop-sidebar-bg);
 	}
 
 	.desktop-content {
@@ -90,17 +90,10 @@
 		min-width: 0;
 		position: relative;
 		overflow: hidden;
-		background-color: var(--color-md-light-surface);
+		background-color: var(--color-desktop-main-bg);
 	}
 
 	.desktop-content-settings :global(.k-navbar:not(:has(.k-navbar-back-link))) {
 		padding-inline-start: 12px;
-	}
-
-	:global(.dark) .desktop-sidebar {
-		background-color: var(--color-md-dark-surface-2);
-	}
-	:global(.dark) .desktop-content {
-		background-color: var(--color-md-dark-surface);
 	}
 </style>

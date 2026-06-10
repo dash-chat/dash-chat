@@ -6,8 +6,19 @@
 	--color-brand-primary: #007aff;
 	--color-brand-red: #ff0000;
 	--color-brand-green: #00ff00;
+
+	--color-desktop-sidebar-bg: #f5f4f7;
+	--color-desktop-main-bg: #ffffff;
+	--background-color: var(--color-md-light-surface);
+
 	--text-sm: 1rem; /* default: 0.875rem */
 	--text-sm--line-height: 1.45rem; /* optional, default: 1.25rem */
+}
+
+:root.dark {
+	--background-color: var(--color-md-dark-surface);
+	--color-desktop-sidebar-bg: var(--color-md-dark-surface-2);
+	--color-desktop-main-bg: var(--color-md-dark-surface);
 }
 
 .wide-layout {
@@ -22,13 +33,7 @@ html {
 
 body {
 	display: flex;
-	--background-color: var(--color-md-light-surface);
-	/* background-color: var(--background-color); */
 	background-color: transparent !important;
-}
-
-:where(.dark) body {
-	--background-color: var(--color-md-dark-surface);
 }
 
 .column {
@@ -135,6 +140,13 @@ li.plain span {
 }
 
 .transparent.k-page {
+	background-color: transparent !important;
+}
+
+/* Konsta pages paint their own surface background, which hides the
+   --color-desktop-main-bg set on the desktop content panel. On wide layout,
+   let pages be transparent so the desktop main background shows through. */
+.wide-layout .k-page {
 	background-color: transparent !important;
 }
 
