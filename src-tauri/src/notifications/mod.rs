@@ -5,7 +5,7 @@ pub mod push_notifications;
 pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
-use dashchat_node::{topic::TopicId, DeviceId, Node, Payload, Topic};
+use dashchat_node::{DeviceId, Node, Payload, Topic, TopicId};
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionState};
@@ -49,10 +49,10 @@ pub(crate) async fn show_sync_notification(
     }
 
     let node = app_handle.state::<Node>();
-    let topic_id = notification.header.extensions.log_id.into();
+    let topic = *notification.topic;
     let data = build_notification_data(
         &node,
-        topic_id,
+        topic.into(),
         &notification.header,
         notification.payload.as_ref(),
     )
@@ -101,7 +101,7 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
 /// variant we don't surface, etc.).
 pub async fn build_notification_data(
     node: &Node,
-    topic_id: TopicId,
+    topic: TopicId,
     header: &Header,
     payload: Option<&Payload>,
 ) -> Option<NotificationData> {
@@ -121,7 +121,7 @@ pub async fn build_notification_data(
     let Some(payload) = payload else {
         #[cfg(mobile)]
         {
-            return auth_control_op_notification(node, header, sender_device_id, id).await;
+            return auth_control_op_notification(node, header, topic, sender_device_id, id).await;
         }
         #[cfg(not(mobile))]
         {
@@ -132,7 +132,7 @@ pub async fn build_notification_data(
 
     match payload {
         Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
-            Some(chat_message_notification(node, topic_id, sender_device_id, content, id).await)
+            Some(chat_message_notification(node, topic, sender_device_id, content, id).await)
         }
         Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { code, profile }) => {
             Some(NotificationData {
@@ -140,7 +140,7 @@ pub async fn build_notification_data(
                 title: Some(sonix_i18n::t!("newContactRequest")),
                 body: Some(profile.name.clone()),
                 icon: Some("ic_stat_icon".to_string()),
-                group: Some(hex::encode(&*topic_id)),
+                group: Some(topic.to_hex()),
                 route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
                 ..Default::default()
             })
@@ -151,7 +151,7 @@ pub async fn build_notification_data(
 
 async fn chat_message_notification(
     node: &Node,
-    topic_id: TopicId,
+    topic: TopicId,
     sender_device_id: DeviceId,
     content: &dashchat_node::ChatMessageContent,
     id: i32,
@@ -178,10 +178,10 @@ async fn chat_message_notification(
     let title = sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"));
 
     let direct_chat_agent_id = sender_agent_id
-        .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic_id);
+        .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic);
     let chat_route = match direct_chat_agent_id {
-        Some(agent_id) => format!("/direct-chats/{}", agent_id.to_hex()),
-        None => format!("/group-chat/{}", hex::encode(&*topic_id)),
+        Some(agent_id) => format!("/direct-chats/{}", agent_id),
+        None => format!("/group-chat/{}", topic),
     };
     let message_text: &str = content.message();
     let body_text = match message_text.char_indices().nth(200) {
@@ -196,7 +196,7 @@ async fn chat_message_notification(
         body: Some(body_text),
         icon: Some("ic_stat_icon".to_string()),
         large_icon_bytes: sender_avatar,
-        group: Some(hex::encode(&*topic_id)),
+        group: Some(topic.to_hex()),
         route: Some(chat_route),
         ..Default::default()
     };
@@ -207,20 +207,20 @@ async fn chat_message_notification(
     // instead of stacking new ones. `sender_id` keeps each `Person` distinct
     // within group threads so different senders don't collapse into one.
     //
-    // TODO: XOR the truncated topic id with a node-specific secret before
-    // using it as the notification id. As-is, the first 4 bytes of the topic
+    // TODO: XOR the truncated log id with a node-specific secret before
+    // using it as the notification id. As-is, the first 4 bytes of the log
     // id are public-derivable, so an adversary could mine a contact whose
-    // topic id shares a 4-byte LE prefix with an existing conversation and
+    // log id shares a 4-byte LE prefix with an existing conversation and
     // get their messages collapsed into the wrong MessagingStyle thread.
     #[cfg(mobile)]
     let sender_id_hex = sender_agent_id.map(|aid| aid.to_hex());
 
     #[cfg(target_os = "android")]
     {
-        match stable_notification_id(&*topic_id) {
+        match stable_notification_id(topic.as_bytes()) {
             Ok(id) => notification_data.id = id,
             Err(err) => log::error!(
-                "Failed to derive Android MessagingStyle id from topic, falling back to random: {err:?}"
+                "Failed to derive Android MessagingStyle id from log id, falling back to random: {err:?}"
             ),
         }
         notification_data.group = Some("dashchat.chats".to_string());
@@ -255,6 +255,7 @@ async fn chat_message_notification(
 async fn auth_control_op_notification(
     node: &Node,
     header: &Header,
+    topic: TopicId,
     sender_device_id: DeviceId,
     id: i32,
 ) -> Option<NotificationData> {
@@ -280,9 +281,8 @@ async fn auth_control_op_notification(
             .map(|profile| profile.name),
         None => None,
     };
-    let topic_id = TopicId::from(header.extensions.log_id);
 
-    let group_route = Some(format!("/group-chat/{}", hex::encode(&*topic_id)));
+    let group_route = Some(format!("/group-chat/{}", topic.to_hex()));
 
     let (title, body, route) = match action {
         // A Create can mean either: (a) the acceptor authoring a new
@@ -292,7 +292,7 @@ async fn auth_control_op_notification(
         // sender.
         GroupAction::Create { initial_members } => {
             let is_direct_chat = sender_agent_id
-                .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == topic_id)
+                .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == topic)
                 .unwrap_or(false);
             if is_direct_chat {
                 let title = match &sender_name {
