@@ -32,7 +32,7 @@ export interface IContactsClient {
 
 	activeInboxTopics(): Promise<TopicId[]>;
 
-	// getContacts(): Promise<Array<PublicKey>>;
+	// getContacts(): Promise<Array<VerifyingKey>>;
 
 	// Add contact
 	addContact(code: ContactCode): Promise<void>;
@@ -107,7 +107,7 @@ export class ContactsClient implements IContactsClient {
 		]);
 	}
 
-	// getContacts(): Promise<Array<PublicKey>> {
+	// getContacts(): Promise<Array<VerifyingKey>> {
 	// 	return invoke('get_contacts');
 	// }
 

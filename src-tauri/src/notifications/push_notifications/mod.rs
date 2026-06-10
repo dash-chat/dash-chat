@@ -5,7 +5,7 @@ use anyhow::Context;
 use dashchat_node::Node;
 use dashchat_utils::SingletonTaskWithRetries;
 use push_notifications_client::client::PushNotificationsClient;
-use push_notifications_client::types::{FcmToken, PublicKey, TopicId as PushTopicId};
+use push_notifications_client::types::{FcmToken, TopicId as PushTopicId, VerifyingKey};
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
@@ -111,7 +111,7 @@ pub fn setup_push_notifications(
 /// If they're not, unregister the FCM token from the server
 async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Result<()> {
     let node = handle.state::<Node>();
-    let public_key = PublicKey::from(node.device_id().to_string());
+    let verifying_key = VerifyingKey::from(node.device_id().to_string());
     let client = handle.state::<PushNotificationsClient>();
 
     if are_notifications_enabled(&handle) {
@@ -121,14 +121,14 @@ async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Re
             .register_for_push_notifications()
             .context("register_for_push_notifications failed")?;
         client
-            .register_fcm_token(public_key.clone(), FcmToken::from(token.clone()))
+            .register_fcm_token(verifying_key.clone(), FcmToken::from(token.clone()))
             .await
             .context("register_fcm_token failed")?;
         log::info!("Successfully registered FCM token.");
     } else {
         log::info!("Notifications are disabled: unregistering FCM token.");
         client
-            .unregister_fcm_token(public_key.clone())
+            .unregister_fcm_token(verifying_key.clone())
             .await
             .context("unregister_fcm_token failed")?;
         log::info!("Successfully unregistered FCM token.");
@@ -140,7 +140,7 @@ async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Re
 /// If they're not, remove all topic subscriptions from it.
 async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     let node = app_handle.state::<Node>();
-    let public_key = PublicKey::from(node.device_id().to_string());
+    let verifying_key = VerifyingKey::from(node.device_id().to_string());
 
     let topic_ids = if are_notifications_enabled(&app_handle) {
         let topic_ids: HashSet<PushTopicId> = node
@@ -161,7 +161,7 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let client = app_handle.state::<PushNotificationsClient>();
     client
-        .update_topic_subscriptions(public_key, topic_ids)
+        .update_topic_subscriptions(verifying_key, topic_ids)
         .await?;
 
     Ok(())
@@ -177,7 +177,7 @@ async fn subscribe_to_topics(
     }
 
     let node = app_handle.state::<Node>();
-    let public_key = PublicKey::from(node.device_id().to_string());
+    let verifying_key = VerifyingKey::from(node.device_id().to_string());
 
     let client = app_handle.state::<PushNotificationsClient>();
 
@@ -187,7 +187,7 @@ async fn subscribe_to_topics(
     );
 
     client
-        .add_topic_subscriptions(public_key, topic_ids)
+        .add_topic_subscriptions(verifying_key, topic_ids)
         .await?;
 
     Ok(())

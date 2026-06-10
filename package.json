@@ -5,7 +5,6 @@
 		"start": "mprocs",
 		"dev": "concurrently --kill-others-on-fail \"pnpm -F dash-chat-stores dev\" \"pnpm -F ui dev\"",
 		"prepare": "pnpm -F dash-chat-stores build",
-		"test": "cargo test",
 		"tauri": "tauri"
 	},
 	"devDependencies": {

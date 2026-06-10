@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use named_id::RenameAll;
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -22,7 +21,7 @@ use crate::{AgentId, DeviceId, Topic, topic::kind};
 ///
 /// When adding a contact, no groups are joined, it's only for the purpose of exchanging
 /// pubkeys and key bundles, so that chat groups can be joined in the future.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 // #[serde(into = "String", try_from = "String")]
 pub struct QrCode {
     /// Pubkey of this node: allows adding this node to groups.
@@ -38,16 +37,15 @@ pub struct QrCode {
     pub share_intent: ShareIntent,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShareIntent {
     AddDevice,
     AddContact,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct InboxTopic {
     // NOTE: order of these fields matters! expires_at, then topic.
-    #[named_id(skip)]
     /// Expiry date must be within the valid range expressible by DateTime::from_timestamp_nanos
     pub expires_at: DateTime<Utc>,
     pub topic: Topic<kind::Inbox>,
@@ -96,14 +94,14 @@ impl TryFrom<String> for QrCode {
 #[cfg(test)]
 mod tests {
 
-    use p2panda_core::PublicKey;
+    use p2panda::VerifyingKey;
     use p2panda_spaces::ActorId;
 
     use super::*;
 
     #[test]
     fn test_contact_roundtrip() {
-        let pubkey = PublicKey::from_bytes(&[11; 32]).unwrap();
+        let pubkey = VerifyingKey::from_bytes(&[11; 32]).unwrap();
         let agent_id = AgentId::from(ActorId::from_bytes(&[22; 32]).unwrap());
         let contact = QrCode {
             device_pubkey: DeviceId::from(pubkey),

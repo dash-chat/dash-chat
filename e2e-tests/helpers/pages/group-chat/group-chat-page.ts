@@ -100,6 +100,28 @@ export class GroupChatPage extends TestPage {
 		return this.agent.$(tid(`group-chat-system-message-${kind}`));
 	}
 
+	async messageBubbleWithText(text: string) {
+		const hash = await this.agent.execute(
+			(messagesSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return wrapper.getAttribute('data-message-hash');
+					}
+				}
+				return null;
+			},
+			tid('group-chat-messages'),
+			text,
+		);
+		if (!hash) return null;
+		return this.agent.$(
+			`${tid('group-chat-messages')} [data-message-hash="${hash}"]`,
+		);
+	}
+
 	async getAuthorInitials(messageText: string): Promise<string | null> {
 		return this.agent.execute(
 			(sel: string, t: string) => {

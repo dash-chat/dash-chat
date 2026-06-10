@@ -5,7 +5,8 @@ pub mod push_notifications;
 pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
-use dashchat_node::{topic::TopicId, DeviceId, Header, Node, Payload, Topic};
+use dashchat_node::{topic::TopicId, DeviceId, Node, Payload, Topic};
+use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionState};
 
@@ -48,7 +49,7 @@ pub(crate) async fn show_sync_notification(
     }
 
     let node = app_handle.state::<Node>();
-    let topic_id = notification.header.extensions.topic;
+    let topic_id = notification.header.extensions.log_id.into();
     let data = build_notification_data(
         &node,
         topic_id,
@@ -104,7 +105,7 @@ pub async fn build_notification_data(
     header: &Header,
     payload: Option<&Payload>,
 ) -> Option<NotificationData> {
-    let sender_device_id = DeviceId::from(header.public_key);
+    let sender_device_id = DeviceId::from(header.verifying_key);
     if sender_device_id == node.device_id() {
         return None;
     }
@@ -272,9 +273,11 @@ async fn auth_control_op_notification(
     sender_device_id: DeviceId,
     id: i32,
 ) -> Option<NotificationData> {
-    let action = &header.extensions.auth.as_ref()?.action;
+    type GroupAction = p2panda_auth::group::GroupAction<p2panda_core::VerifyingKey>;
 
-    let target_is_me = |member: &p2panda_auth::group::GroupMember<p2panda_core::PublicKey>| {
+    let action = &header.extensions.groups_args.as_ref()?.action;
+
+    let target_is_me = |member: &p2panda_auth::group::GroupMember<p2panda_core::VerifyingKey>| {
         matches!(
             member,
             p2panda_auth::group::GroupMember::Individual(pk) if DeviceId::from(*pk) == node.device_id()
@@ -292,23 +295,19 @@ async fn auth_control_op_notification(
             .map(|profile| profile.name),
         None => None,
     };
+    let topic_id = TopicId::from(header.extensions.log_id);
 
-    let group_route = Some(format!(
-        "/group-chat/{}",
-        hex::encode(&*header.extensions.topic)
-    ));
+    let group_route = Some(format!("/group-chat/{}", hex::encode(&*topic_id)));
 
     let (title, body, route) = match action {
-        // Two distinct cases share this variant: the acceptor authoring the
-        // Create on a new direct-chat space (contact-request accepted), and a
-        // peer creating a group with us in `initial_members` (group invite).
-        // Discriminate by topic id — a direct-chat topic is deterministic from
-        // the two agent ids.
-        p2panda_auth::group::GroupAction::Create { initial_members } => {
+        // A Create can mean either: (a) the acceptor authoring a new
+        // direct-chat space when they accept a contact request, or (b) someone
+        // creating a new group with us in it. Distinguish by checking whether
+        // the topic matches the deterministic direct-chat topic with the
+        // sender.
+        GroupAction::Create { initial_members } => {
             let is_direct_chat = sender_agent_id
-                .map(|agent_id| {
-                    *Topic::direct_chat([node.agent_id(), agent_id]) == header.extensions.topic
-                })
+                .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == topic_id)
                 .unwrap_or(false);
             if is_direct_chat {
                 let title = match &sender_name {
@@ -333,8 +332,8 @@ async fn auth_control_op_notification(
                 )
             }
         }
-        p2panda_auth::group::GroupAction::Add { member, .. } => {
-            if !target_is_me(member) {
+        GroupAction::Add { member, .. } => {
+            if !target_is_me(&member) {
                 return None;
             }
             let body = match &sender_name {
@@ -347,8 +346,8 @@ async fn auth_control_op_notification(
                 group_route,
             )
         }
-        p2panda_auth::group::GroupAction::Remove { member } => {
-            if !target_is_me(member) {
+        GroupAction::Remove { member } => {
+            if !target_is_me(&member) {
                 return None;
             }
             let title = match &sender_name {
@@ -357,8 +356,8 @@ async fn auth_control_op_notification(
             };
             (title, None, group_route)
         }
-        p2panda_auth::group::GroupAction::Promote { member, .. } => {
-            if !target_is_me(member) {
+        GroupAction::Promote { member, .. } => {
+            if !target_is_me(&member) {
                 return None;
             }
             let title = match &sender_name {
@@ -367,8 +366,8 @@ async fn auth_control_op_notification(
             };
             (title, None, group_route)
         }
-        p2panda_auth::group::GroupAction::Demote { member, .. } => {
-            if !target_is_me(member) {
+        GroupAction::Demote { member, .. } => {
+            if !target_is_me(&member) {
                 return None;
             }
             let title = match &sender_name {

@@ -6,13 +6,13 @@ import { Message } from '../direct-chats/direct-chat-store';
 import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { AgentId, DeviceId, Hash, PublicKey } from '../p2panda/types';
+import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
 import {
 	ChatId,
 	ChatSummary,
 	ChatSummaryLastEvent,
 	GroupControlEvent,
-	GroupDetails,
+	GroupInfo,
 	MessageContent,
 	Payload,
 	ReadMessagesStore,
@@ -48,17 +48,17 @@ export class GroupChatStore implements ReadMessagesStore {
 		});
 	}
 
-	details = reactive(async () => {
+	info = reactive(async () => {
 		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
 
 		let latest:
-			| { details: GroupDetails; timestamp: number; seqNum: number }
+			| { info: GroupInfo; timestamp: number; seqNum: number }
 			| undefined;
 		for (const operations of Object.values(logs)) {
 			for (const operation of operations) {
 				const body = operation.body;
 				if (body?.type !== 'Chat') continue;
-				if (body.payload.type !== 'GroupDetails') continue;
+				if (body.payload.type !== 'GroupInfo') continue;
 				const timestamp = operation.header.timestamp;
 				const seqNum = operation.header.seq_num;
 				if (
@@ -66,17 +66,17 @@ export class GroupChatStore implements ReadMessagesStore {
 					timestamp > latest.timestamp ||
 					(timestamp === latest.timestamp && seqNum > latest.seqNum)
 				) {
-					latest = { details: body.payload.payload, timestamp, seqNum };
+					latest = { info: body.payload.payload, timestamp, seqNum };
 				}
 			}
 		}
 
-		const details: GroupDetails = latest?.details ?? {
+		const info: GroupInfo = latest?.info ?? {
 			name: '',
 			description: undefined,
 			image: undefined,
 		};
-		return details;
+		return info;
 	});
 
 	messages = reactive(async () => {
@@ -171,7 +171,7 @@ export class GroupChatStore implements ReadMessagesStore {
 		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
 		const opAuthorByHash: Record<Hash, DeviceId> = {};
 		for (const ops of Object.values(logs)) {
-			for (const op of ops) opAuthorByHash[op.hash] = op.header.public_key;
+			for (const op of ops) opAuthorByHash[op.hash] = op.header.verifying_key;
 		}
 
 		for (const [hash, event] of Object.entries(controlEvents)) {
@@ -319,14 +319,14 @@ export class GroupChatStore implements ReadMessagesStore {
 	summary = reactive(async (): Promise<ChatSummary | undefined> => {
 		const last = await this.lastEvent();
 		if (!last) return undefined;
-		const details = await this.details();
+		const info = await this.info();
 		const unread = await this.unreadCount();
 
 		return {
 			type: 'GroupChat',
 			chatId: this.chatId,
-			name: details.name,
-			avatar: details.image,
+			name: info.name,
+			avatar: info.image,
 			lastEvent: last,
 			unreadMessages: unread,
 		};
@@ -334,15 +334,15 @@ export class GroupChatStore implements ReadMessagesStore {
 
 	/// Actions
 
-	async addMembers(members: PublicKey[]) {
+	async addMembers(members: VerifyingKey[]) {
 		await Promise.all(
 			members.map(member => this.client.addMember(this.chatId, member)),
 		);
 		this.membersVersion.value++;
 	}
 
-	async setDetails(details: GroupDetails): Promise<void> {
-		await this.client.setDetails(this.chatId, details);
+	async setInfo(info: GroupInfo): Promise<void> {
+		await this.client.setInfo(this.chatId, info);
 	}
 
 	async markAsRead(messageHashes: Hash[]): Promise<void> {
@@ -356,7 +356,7 @@ export class GroupChatStore implements ReadMessagesStore {
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== this.chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
-				if (op.header.public_key !== myDeviceId) return false;
+				if (op.header.verifying_key !== myDeviceId) return false;
 				if (getMessageText(op.body.payload.payload) !== text) return false;
 				return true;
 			}),
@@ -385,7 +385,7 @@ function buildGroupControlEvent(
 	const action = op.header.auth?.action;
 	if (!action) return undefined;
 	const ts = op.header.timestamp;
-	const actorDeviceId = op.header.public_key;
+	const actorDeviceId = op.header.verifying_key;
 	const actorIsMe = actorDeviceId === myDeviceId;
 
 	if ('Create' in action) {

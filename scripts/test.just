@@ -1,8 +1,14 @@
 set working-directory := '..'
 
+# run the full rust test suite with cargo nextest
+[default]
+default *ARGS:
+    cargo nextest run {{ARGS}}
+
 # run integration tests for the dashchat-node crate
-dashchat-node:
-    cd crates/dashchat-node && cargo nextest run
+dashchat-node *ARGS:
+    # config file is in .config/nextest.toml
+    cd crates/dashchat-node && cargo nextest run {{ARGS}}
 
 # build the Tauri binary used by the e2e tests
 e2e-build:

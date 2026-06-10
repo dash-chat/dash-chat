@@ -153,12 +153,12 @@ curl -X POST http://localhost:3000/blobs/get \
 
 **Integration tests:**
 ```bash
-cargo test --test integration_test
+cargo nextest run --test integration_test
 ```
 
 **Stress tests:**
 ```bash
-cargo test --test stress_test -- --nocapture
+cargo nextest run --test stress_test --no-capture
 ```
 
 The stress tests include:

@@ -11,8 +11,8 @@ pub(crate) async fn register_fcm_token(
     req.validate()?;
     state
         .db
-        .store_fcm_token(&req.public_key, &req.fcm_token)
+        .store_fcm_token(&req.verifying_key, &req.fcm_token)
         .await?;
-    tracing::info!(public_key = %req.public_key, "stored FCM token");
+    tracing::info!(verifying_key = %req.verifying_key, "stored FCM token");
     Ok(StatusCode::NO_CONTENT)
 }

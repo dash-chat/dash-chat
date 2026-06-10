@@ -1,7 +1,8 @@
-use named_id::{RenameAll, RenameNone};
+use p2panda::operation::Header;
+use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::{group::GroupAction, processor::GroupsArgs};
-use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
-use p2panda_core::{Body, Extension, Hash, PruneFlag, PublicKey};
+use p2panda_core::cbor::{decode_cbor, encode_cbor, DecodeError, EncodeError};
+use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
 use std::collections::BTreeMap;
@@ -9,34 +10,9 @@ use std::collections::BTreeMap;
 use crate::chat::ChatId;
 use crate::compat::Capabilities;
 use crate::contact::QrCode;
-use crate::topic::TopicId;
-use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, DeviceId, Topic};
+use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, DeviceId};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Extensions {
-    pub topic: TopicId,
-    pub auth: Option<GroupsArgs>,
-}
-
-impl Extensions {
-    pub fn topic(&self) -> Topic<crate::topic::kind::Untyped> {
-        Topic::untyped(*self.topic)
-    }
-
-    pub fn dependencies(&self) -> Vec<Hash> {
-        self.auth
-            .as_ref()
-            .map_or(vec![], |auth| auth.dependencies.clone())
-    }
-}
-
-impl Extension<GroupsArgs> for Extensions {
-    fn extract(header: &Header) -> Option<GroupsArgs> {
-        header.extensions.auth.clone()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
 pub struct Profile {
     pub name: String,
     #[serde(default)]
@@ -46,7 +22,7 @@ pub struct Profile {
     pub about: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum AnnouncementsPayload {
     SetProfile(Profile),
@@ -57,29 +33,28 @@ pub enum AnnouncementsPayload {
     /// is the infimum of the capabilities of all devices in the agent's device group.
     /// Only when the agent updates all of their devices to a higher capability set,
     /// should they advertise the new capability set.
-    #[named_id(skip)]
     SetCapabilities {
         /// The new capabilities.
         capabilities: Capabilities,
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum InboxPayload {
     /// Invites the recipient to add the sender as a contact.
     ContactRequest { code: QrCode, profile: Profile },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, RenameNone)]
-pub struct GroupDetails {
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroupInfo {
     pub name: String,
     pub description: Option<String>,
     pub image: Option<String>,
 }
 
 // TODO: consolidate into something else
-#[derive(Clone, Debug, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum ChatPayload {
     /// Instructs the recipient to subscribe to the group chat topic.
@@ -102,7 +77,8 @@ pub enum ChatPayload {
 
     Reaction(ChatReaction),
 
-    GroupDetails(GroupDetails),
+    GroupInfo(GroupInfo),
+
     /// Used to tell other group members about agents they may not know about
     /// (typically because they aren't contacts), so they can subscribe to those
     /// agents' announcements topics and see their profiles. The inviter publishes
@@ -127,13 +103,13 @@ pub enum ChatPayload {
     },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, RenameNone)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReadMessagesPayload {
     pub chat_id: ChatId,
     pub message_hashes: Vec<Hash>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
     AddContact(QrCode),
@@ -141,7 +117,7 @@ pub enum DeviceGroupPayload {
     ReadMessages(ReadMessagesPayload),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, RenameAll)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum Payload {
     /// Pushing data out to my contacts.
@@ -156,37 +132,20 @@ pub enum Payload {
     /// Data only seen within your private device group.
     /// No other person sees these.
     DeviceGroup(DeviceGroupPayload),
-}
 
-#[derive(Clone, Debug, Serialize, Deserialize, RenameAll, derive_more::From)]
-#[serde(tag = "type", content = "payload")]
-pub enum DashAction {
-    Payload(Payload),
-    #[named_id(skip)]
+    // @TODO: this will be removed once spaces is integrated into p2panda node as they will move
+    // onto the provided extension type.
+    /// Groups control message.
     GroupControl(GroupsArgs),
 }
 
-impl DashAction {
-    pub fn try_into_body(&self) -> Result<Option<Body>, EncodeError> {
-        Ok(match self {
-            DashAction::Payload(payload) => Some(payload.try_into_body()?),
-            DashAction::GroupControl(_) => None,
-        })
-    }
-
-    pub fn extract_auth_extension(&self) -> Option<GroupsArgs> {
-        match self {
-            DashAction::GroupControl(auth) => Some(auth.clone()),
-            _ => None,
-        }
-    }
-
-    pub fn group_action(
+impl Payload {
+    pub fn group_control(
         group_id: ChatId,
-        action: GroupAction<PublicKey, ()>,
+        action: GroupAction<VerifyingKey, ()>,
         dependencies: Vec<Hash>,
     ) -> anyhow::Result<Self> {
-        Ok(DashAction::GroupControl(GroupsArgs {
+        Ok(Payload::GroupControl(GroupsArgs {
             group_id: group_id.to_group_pubkey()?,
             action,
             dependencies,
@@ -196,21 +155,6 @@ impl DashAction {
 
 impl Cbor for Payload {}
 impl AsBody for Payload {}
-
-pub type Header = p2panda_core::Header<Extensions>;
-pub type Operation = p2panda_core::Operation<Extensions>;
-
-impl Extension<TopicId> for Extensions {
-    fn extract(header: &Header) -> Option<TopicId> {
-        Some(header.extensions.topic.clone())
-    }
-}
-
-impl Extension<PruneFlag> for Extensions {
-    fn extract(_header: &Header) -> Option<PruneFlag> {
-        Some(PruneFlag::new(false))
-    }
-}
 
 pub fn encode_gossip_message(header: &Header, body: Option<&Body>) -> Result<Vec<u8>, EncodeError> {
     encode_cbor(&(header.to_bytes(), body.map(|body| body.to_bytes())))
@@ -225,7 +169,7 @@ mod sqlx_impls {
     use super::Profile;
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
     use sqlx::*;
-    use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
+    use sqlx::{encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue, Sqlite};
 
     impl sqlx::Type<Sqlite> for Profile {
         fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {

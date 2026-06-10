@@ -13,8 +13,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    nixos-generators.url = "github:nix-community/nixos-generators";
-
     tauri-driver.url = "github:dash-chat/tauri-driver";
 
     tauri-plugin-holochain.url =
@@ -38,6 +36,7 @@
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         ./nix/servers.nix
+        ./nix/digital-ocean.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix
         ./crates/push-notifications-server/default.nix

@@ -6,7 +6,7 @@ use futures::StreamExt;
 
 use push_notifications_client::requests::NotifyTopicsRequest;
 use push_notifications_client::types::{
-    FcmToken, OperationId, PublicKey, PushNotification, TopicId,
+    FcmToken, OperationId, PushNotification, TopicId, VerifyingKey,
 };
 
 use crate::{AppState, error::AppError, fcm_client::SendResult};
@@ -26,7 +26,7 @@ pub(crate) async fn notify_topics(
     let topic_subscribers = state.db.get_subscribers_for_topics(&topic_ids).await?;
 
     // Batch-fetch FCM tokens for all unique subscribers in a single query
-    let all_subscribers: Vec<PublicKey> = topic_subscribers
+    let all_subscribers: Vec<VerifyingKey> = topic_subscribers
         .values()
         .flatten()
         .cloned()
@@ -71,9 +71,9 @@ pub(crate) async fn notify_topics(
 fn notify_topic(
     state: &AppState,
     topic_id: &TopicId,
-    ops: &HashMap<OperationId, PublicKey>,
-    subscribers: Option<&Vec<PublicKey>>,
-    fcm_tokens: &HashMap<PublicKey, FcmToken>,
+    ops: &HashMap<OperationId, VerifyingKey>,
+    subscribers: Option<&Vec<VerifyingKey>>,
+    fcm_tokens: &HashMap<VerifyingKey, FcmToken>,
 ) -> Vec<impl Future<Output = ()>> {
     let Some(subscribers) = subscribers else {
         return Vec::new();
@@ -90,15 +90,15 @@ fn notify_topic(
             body: op_id.to_string(),
         };
 
-        for public_key in subscribers {
+        for verifying_key in subscribers {
             // Don't notify the author of their own operation.
-            if public_key == author {
+            if verifying_key == author {
                 continue;
             }
-            if let Some(fcm_token) = fcm_tokens.get(public_key) {
+            if let Some(fcm_token) = fcm_tokens.get(verifying_key) {
                 tasks.push(send_notification(
                     state.clone(),
-                    public_key.clone(),
+                    verifying_key.clone(),
                     fcm_token.clone(),
                     notification.clone(),
                 ));
@@ -111,7 +111,7 @@ fn notify_topic(
 
 async fn send_notification(
     state: AppState,
-    public_key: PublicKey,
+    verifying_key: VerifyingKey,
     fcm_token: FcmToken,
     notification: PushNotification,
 ) {
@@ -122,13 +122,13 @@ async fn send_notification(
     {
         SendResult::Ok => {}
         SendResult::InvalidToken => {
-            tracing::info!(public_key = %public_key, "FCM token is invalid, removing");
-            if let Err(e) = state.db.remove_fcm_token(&public_key).await {
-                tracing::warn!(public_key = %public_key, "failed to remove invalid FCM token: {e:#}");
+            tracing::info!(verifying_key = %verifying_key, "FCM token is invalid, removing");
+            if let Err(e) = state.db.remove_fcm_token(&verifying_key).await {
+                tracing::warn!(verifying_key = %verifying_key, "failed to remove invalid FCM token: {e:#}");
             }
         }
         SendResult::Error(e) => {
-            tracing::warn!(public_key = %public_key, "failed to send FCM notification: {e}");
+            tracing::warn!(verifying_key = %verifying_key, "failed to send FCM notification: {e}");
         }
     }
 }

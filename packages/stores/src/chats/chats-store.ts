@@ -13,7 +13,7 @@ import {
 } from '../group-chats/group-chat-client';
 import { GroupChatStore } from '../group-chats/group-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
-import { AgentId, PublicKey } from '../p2panda/types';
+import { AgentId, VerifyingKey } from '../p2panda/types';
 import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
 import { type IChatsClient } from './chats-client';
@@ -47,7 +47,7 @@ export class ChatsStore {
 		}
 	});
 
-	async createGroup(initialMembers: PublicKey[]): Promise<GroupChatStore> {
+	async createGroup(initialMembers: VerifyingKey[]): Promise<GroupChatStore> {
 		const chatId = await this.client.createGroup(initialMembers);
 		this.groupChatVersion.value++;
 		return this.groupChats(chatId);
