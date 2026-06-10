@@ -143,6 +143,13 @@ li.plain span {
 	background-color: transparent !important;
 }
 
+/* Konsta pages paint their own surface background, which hides the
+   --color-desktop-main-bg set on the desktop content panel. On wide layout,
+   let pages be transparent so the desktop main background shows through. */
+.wide-layout .k-page {
+	background-color: transparent !important;
+}
+
 .k-toolbar.transparent .bg-gradient-to-t {
 	display: none;
 }
