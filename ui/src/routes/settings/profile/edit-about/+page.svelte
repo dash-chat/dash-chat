@@ -21,7 +21,7 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import FormInput from '$lib/components/form/FormInput.svelte';
 	import Form from '$lib/components/form/Form.svelte';
-	import Container from '$lib/components/layout/Container.svelte';
+	import Container from '$lib/components/layout_helpers/Container.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let name = $state<string>('');

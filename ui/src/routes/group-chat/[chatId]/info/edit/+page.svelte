@@ -11,18 +11,16 @@
 		Page,
 		Navbar,
 		NavbarBackLink,
-		ListInput,
-		List,
 		Button,
 		Link,
 		useTheme,
 	} from 'konsta/svelte';
-	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { page } from '$app/state';
 	import FormInput from '$lib/components/form/FormInput.svelte';
 	import Form from '$lib/components/form/Form.svelte';
-	import Container from '$lib/components/layout/Container.svelte';
+	import Container from '$lib/components/layout_helpers/Container.svelte';
+
 	let chatId = page.params.chatId!;
 
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -78,8 +76,8 @@
 	</Navbar>
 
 	{#await $info then info}
-		<Container>
-			<div class="mt-4">
+		<Container class="pt-2">
+			<div class="column items-center">
 				<SelectAvatar defaultValue={info.image} bind:value={image} size={64}
 				></SelectAvatar>
 			</div>

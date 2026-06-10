@@ -17,7 +17,7 @@
 	import FormInput from '$lib/components/form/FormInput.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos } from '$lib/utils/environment';
-	import Container from '$lib/components/layout/Container.svelte';
+	import Container from '$lib/components/layout_helpers/Container.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let name = $state<string>('');
