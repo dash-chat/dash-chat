@@ -17,8 +17,6 @@
 		Preloader,
 		Searchbar,
 		useTheme,
-		Link,
-		Button,
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -33,6 +31,8 @@
 	const isAddContact = $derived(
 		page.url.pathname === '/new-message/add-contact',
 	);
+
+	const isNewGroup = $derived(page.url.pathname === '/new-group');
 
 	let searchQuery = $state('');
 </script>
@@ -78,6 +78,7 @@
 		>
 			<ListItem
 				link
+				class={isNewGroup ? 'active' : ''}
 				linkProps={{ href: '/new-group' }}
 				title={m.newGroup()}
 				chevron={false}
