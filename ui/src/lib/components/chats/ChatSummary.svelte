@@ -35,35 +35,37 @@
 		<Avatar image={summary.avatar} initials={summary.name.slice(0, 2)} />
 	{/snippet}
 	{#snippet after()}
-		{#if beforeYesterday(summary.lastEvent.timestamp)}
-			<wa-format-date
-				weekday="short"
-				date={new Date(summary.lastEvent.timestamp)}
-			></wa-format-date>
-		{:else if inYesterday(summary.lastEvent.timestamp)}
-			{m.yesterday().toLocaleLowerCase()}
-		{:else if lessThanAMinuteAgo(summary.lastEvent.timestamp)}
-			{m.now()}
-		{:else if moreThanAnHourAgo(summary.lastEvent.timestamp)}
-			<wa-format-date
-				hour="numeric"
-				minute="numeric"
-				hour-format="24"
-				date={new Date(summary.lastEvent.timestamp)}
-			></wa-format-date>
-		{:else}
-			<wa-relative-time
-				sync
-				style="text-align: end"
-				format="narrow"
-				date={new Date(summary.lastEvent.timestamp)}
-			>
-			</wa-relative-time>
-		{/if}
+		<span class="text-xs">
+			{#if beforeYesterday(summary.lastEvent.timestamp)}
+				<wa-format-date
+					weekday="short"
+					date={new Date(summary.lastEvent.timestamp)}
+				></wa-format-date>
+			{:else if inYesterday(summary.lastEvent.timestamp)}
+				{m.yesterday().toLocaleLowerCase()}
+			{:else if lessThanAMinuteAgo(summary.lastEvent.timestamp)}
+				{m.now()}
+			{:else if moreThanAnHourAgo(summary.lastEvent.timestamp)}
+				<wa-format-date
+					hour="numeric"
+					minute="numeric"
+					hour-format="24"
+					date={new Date(summary.lastEvent.timestamp)}
+				></wa-format-date>
+			{:else}
+				<wa-relative-time
+					sync
+					style="text-align: end"
+					format="narrow"
+					date={new Date(summary.lastEvent.timestamp)}
+				>
+				</wa-relative-time>
+			{/if}
+		</span>
 	{/snippet}
 	{#snippet subtitle()}
 		<div class="row items-center">
-			<span class="flex-1 min-w-0 truncate">
+			<span class="flex-1 min-w-0 truncate text-black/70 dark:text-white/70">
 				{#if summary.lastEvent.kind === 'contact_request'}
 					{m.messageRequest()}
 				{:else if summary.lastEvent.kind === 'contact_added'}
