@@ -4,7 +4,7 @@
 	import type { ContactsStore, Profile, VerifyingKey } from 'dash-chat-stores';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { BlockTitle } from 'konsta/svelte';
-	import FormPage from '../../lib/components/layout/FormPage.svelte';
+	import FormPage from '$lib/components/layout/FormPage.svelte';
 	import ContactSearchNav from '$lib/components/contacts/ContactSearchNav.svelte';
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
 
