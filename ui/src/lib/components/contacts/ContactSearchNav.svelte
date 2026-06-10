@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import type { PublicKey, Profile } from 'dash-chat-stores';
+	import type { VerifyingKey, Profile } from 'dash-chat-stores';
 	import { Searchbar } from 'konsta/svelte';
 	import ContactsChipList from './ContactsChipList.svelte';
 
 	interface Props {
 		searchQuery: string;
-		selectedContacts: PublicKey[];
-		contacts: [PublicKey, Profile][];
-		onRemove: (key: PublicKey) => void;
+		selectedContacts: VerifyingKey[];
+		contacts: [VerifyingKey, Profile][];
+		onRemove: (key: VerifyingKey) => void;
 	}
 
 	let {
