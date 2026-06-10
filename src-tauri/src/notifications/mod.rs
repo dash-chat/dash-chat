@@ -242,18 +242,18 @@ async fn chat_message_notification(
 }
 
 /// Resolves the latest group name for `topic_id`, falling back to a localized
-/// "New group" placeholder when there's no `GroupDetails` op yet or the name is
+/// "New group" placeholder when there's no `GroupInfo` op yet or the name is
 /// empty. Used in chat-message notifications (as the MessagingStyle conversation
 /// title) and in auth-control notifications (as the title for group
 /// invites/adds). Mobile-only: desktop notifications use neither MessagingStyle
 /// nor the auth-control variant.
 #[cfg(mobile)]
 async fn group_title(node: &Node, topic_id: TopicId) -> String {
-    match node.get_group_details(topic_id).await {
-        Ok(Some(details)) if !details.name.is_empty() => details.name,
+    match node.get_group_info(topic_id).await {
+        Ok(Some(info)) if !info.name.is_empty() => info.name,
         Ok(_) => sonix_i18n::t!("newGroup"),
         Err(err) => {
-            log::error!("Failed to look up group details for notification: {err:?}");
+            log::error!("Failed to look up group info for notification: {err:?}");
             sonix_i18n::t!("newGroup")
         }
     }

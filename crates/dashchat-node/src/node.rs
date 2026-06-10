@@ -15,7 +15,7 @@ use anyhow::Result;
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use p2panda::network::MdnsDiscoveryMode;
-use p2panda::operation::{Header, Operation};
+use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
@@ -33,7 +33,8 @@ use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, P
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
-    AgentId, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId, DirectChatId,
+    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
+    DirectChatId,
 };
 
 pub use app_processing::Notification;
@@ -675,20 +676,21 @@ impl Node {
         Ok(header)
     }
 
-    /// Returns the most recent `GroupDetails` payload in this topic's logs, or
+    /// Returns the most recent `GroupInfo` payload in this topic's logs, or
     /// `None` if no member has authored one yet. "Most recent" is
     /// `(timestamp, seq_num)` across all author logs — matches the resolution
-    /// in `GroupChatStore.details` on the frontend.
-    pub async fn get_group_details(
+    /// in `GroupChatStore.info` on the frontend.
+    pub async fn get_group_info(
         &self,
         topic_id: TopicId,
-    ) -> anyhow::Result<Option<crate::GroupDetails>> {
-        let authors = self.op_store.get_authors(topic_id).await?;
-        let mut latest: Option<(Header, crate::GroupDetails)> = None;
+    ) -> anyhow::Result<Option<crate::GroupInfo>> {
+        let log_id = LogId::from(topic_id);
+        let authors = self.op_store.get_authors(log_id).await?;
+        let mut latest: Option<(Header, crate::GroupInfo)> = None;
         for author in authors {
-            for op in self.op_store.get_log(&author, &topic_id, None).await? {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
                 let Some(body) = op.body else { continue };
-                let Ok(Payload::Chat(ChatPayload::GroupDetails(details))) =
+                let Ok(Payload::Chat(ChatPayload::GroupInfo(info))) =
                     Payload::try_from_body(&body)
                 else {
                     continue;
@@ -701,7 +703,7 @@ impl Node {
                     }
                 };
                 if is_later {
-                    latest = Some((op.header, details));
+                    latest = Some((op.header, info));
                 }
             }
         }
