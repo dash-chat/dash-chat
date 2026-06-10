@@ -80,7 +80,7 @@
 		{#snippet right()}
 			{#if isIosTheme}
 				<Link
-					onClick={onAction}
+					onClick={handleAction}
 					data-testid={actionTestId}
 					class={actionDisabled ? 'ios-right-disabled' : ''}
 				>
@@ -102,7 +102,7 @@
 
 	{#if !isIosTheme}
 		<Button
-			onClick={onAction}
+			onClick={handleAction}
 			data-testid={actionTestId}
 			class="fixed-action-btn"
 			rounded
