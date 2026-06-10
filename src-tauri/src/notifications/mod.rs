@@ -325,11 +325,7 @@ async fn auth_control_op_notification(
                     Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
                     None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
                 };
-                (
-                    group_title(node, header.extensions.topic).await,
-                    Some(body),
-                    group_route,
-                )
+                (group_title(node, topic_id).await, Some(body), group_route)
             }
         }
         GroupAction::Add { member, .. } => {
@@ -340,11 +336,7 @@ async fn auth_control_op_notification(
                 Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
                 None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
             };
-            (
-                group_title(node, header.extensions.topic).await,
-                Some(body),
-                group_route,
-            )
+            (group_title(node, topic_id).await, Some(body), group_route)
         }
         GroupAction::Remove { member } => {
             if !target_is_me(&member) {

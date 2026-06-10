@@ -1,8 +1,8 @@
 use p2panda::operation::Header;
 use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::{group::GroupAction, processor::GroupsArgs};
-use p2panda_core::cbor::{decode_cbor, encode_cbor, DecodeError, EncodeError};
 use p2panda_core::Body;
+use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 
 use std::collections::BTreeMap;
@@ -169,7 +169,7 @@ mod sqlx_impls {
     use super::Profile;
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
     use sqlx::*;
-    use sqlx::{encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue, Sqlite};
+    use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
 
     impl sqlx::Type<Sqlite> for Profile {
         fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {

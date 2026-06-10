@@ -690,8 +690,7 @@ impl Node {
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
                 let Some(body) = op.body else { continue };
-                let Ok(Payload::Chat(ChatPayload::GroupInfo(info))) =
-                    Payload::try_from_body(&body)
+                let Ok(Payload::Chat(ChatPayload::GroupInfo(info))) = Payload::try_from_body(&body)
                 else {
                     continue;
                 };
