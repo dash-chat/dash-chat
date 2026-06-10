@@ -684,7 +684,7 @@ impl Node {
         &self,
         topic_id: TopicId,
     ) -> anyhow::Result<Option<crate::GroupInfo>> {
-        let log_id = LogId::from(topic_id);
+        let log_id = LogId::from_topic(topic_id);
         let authors = self.op_store.get_authors(log_id).await?;
         let mut latest: Option<(Header, crate::GroupInfo)> = None;
         for author in authors {
