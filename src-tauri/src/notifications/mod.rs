@@ -87,7 +87,7 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
     }
     builder = builder.sound(data.sound.unwrap_or_else(|| "default".to_string()));
     if let Some(style) = data.conversation_style {
-        builder = builder.conversation_style(style.sender_id);
+        builder = builder.conversation_style(style);
     }
     builder.show()?;
     Ok(())

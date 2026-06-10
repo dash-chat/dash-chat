@@ -2046,7 +2046,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccc2776f0c61eca1ca32528f85548abd1a4be8fb53d1b21c013e4f18da1e7090"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -3910,7 +3910,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -8984,16 +8984,6 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
-dependencies = [
- "libc",
- "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "socket2"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
@@ -9934,7 +9924,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification"
 version = "2.3.3"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#6d8519f28c8a02aebd236e9ab1b4fcba8a7cd42f"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#fbc217dd6b68a47219471edc2f7fe52aae268d80"
 dependencies = [
  "log",
  "notify-rust",
@@ -9955,7 +9945,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-macros"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#6d8519f28c8a02aebd236e9ab1b4fcba8a7cd42f"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#fbc217dd6b68a47219471edc2f7fe52aae268d80"
 dependencies = [
  "jni 0.21.1",
  "libc",
@@ -9969,7 +9959,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-models"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#6d8519f28c8a02aebd236e9ab1b4fcba8a7cd42f"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#fbc217dd6b68a47219471edc2f7fe52aae268d80"
 dependencies = [
  "rand 0.8.6",
  "serde",
