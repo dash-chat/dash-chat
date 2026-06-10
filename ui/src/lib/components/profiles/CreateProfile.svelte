@@ -2,6 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { getContext } from 'svelte';
 	import type { ContactsStore, Error, SettingsStore } from 'dash-chat-stores';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import AvatarPicker from './AvatarPicker.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
@@ -23,6 +24,7 @@
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const settingsStore: SettingsStore = getContext('settings-store');
+	const myAgentId = useReactiveValue(contactsStore.myAgentId);
 	let name = $state<string | undefined>(undefined);
 	let surname = $state<string | undefined>(undefined);
 	let avatar = $state<string | undefined>(undefined);
@@ -96,6 +98,9 @@
 			<AvatarPicker
 				bind:avatar={pickerAvatar}
 				bind:inModalState={textEditorOpen}
+				{name}
+				{surname}
+				colorSeed={$myAgentId}
 				onClose={closePicker}
 				onSave={selectAvatar}
 				saveLabel={m.save()}

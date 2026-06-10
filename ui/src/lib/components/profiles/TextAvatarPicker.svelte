@@ -21,11 +21,13 @@
 
 	let {
 		existingAvatar,
+		prefill,
 		onSelect,
 		onClose,
 		focusInput = $bindable(),
 	}: {
 		existingAvatar?: string | undefined;
+		prefill?: TextAvatarData | undefined;
 		onSelect?: (avatar: string | undefined) => void;
 		onClose?: () => void;
 		focusInput?: () => void;
@@ -33,6 +35,7 @@
 
 	const initializeTextAvatar = (avatar?: string) =>
 		TextAvatarData.deserialize(avatar) ??
+		prefill ??
 		new TextAvatarData(DEFAULT_TEXT_AVATAR_COLOR, '');
 
 	// svelte-ignore state_referenced_locally

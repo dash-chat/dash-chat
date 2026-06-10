@@ -9,9 +9,13 @@
 	import { resizeAndExport } from '$lib/utils/image';
 	import { isMobile, isIos } from '$lib/utils/environment';
 	import Avatar from './Avatar.svelte';
+	import { editorPrefill } from './avatar-helpers';
 
 	let {
 		avatar = $bindable(),
+		name,
+		surname,
+		colorSeed,
 		inModalState = $bindable(false),
 		onSelect,
 		onClose,
@@ -20,6 +24,9 @@
 		saveDisabled = false,
 	}: {
 		avatar?: string | undefined;
+		name?: string | undefined;
+		surname?: string | undefined;
+		colorSeed?: string | undefined;
 		inModalState?: boolean;
 		onSelect?: () => void;
 		onClose?: () => void;
@@ -27,6 +34,8 @@
 		saveLabel?: string;
 		saveDisabled?: boolean;
 	} = $props();
+
+	const displayName = $derived(name && surname ? `${name} ${surname}` : name);
 
 	let view = $state<'picker' | 'text'>('picker');
 	$effect(() => {
@@ -141,7 +150,12 @@
 	<!-- Avatar preview with remove button -->
 	<div class="column" style="align-items: center; padding: 16px 0 24px;">
 		<div style="position: relative; display: inline-block;">
-			<Avatar style="--size: 140px" image={avatar} />
+			<Avatar
+				style="--size: 140px"
+				image={avatar}
+				name={displayName}
+				{colorSeed}
+			/>
 			{#if avatar}
 				<button
 					class="absolute top-2 end-2 w-10 h-10 rounded-[10px] bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center transition-colors duration-200 hover:bg-gray-100 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
@@ -212,6 +226,7 @@
 {:else}
 	<TextAvatarPicker
 		existingAvatar={avatar}
+		prefill={editorPrefill(name ?? '', surname, colorSeed)}
 		bind:focusInput={focusTextAvatarInput}
 		onSelect={nextAvatar => {
 			avatar = nextAvatar;

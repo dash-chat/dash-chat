@@ -47,10 +47,15 @@ function firstGrapheme(word: string): string {
 /** Initial editor state for a user with no stored avatar: their assigned
  * color and initials. Initials that can't be stored as a text avatar
  * (non-ASCII) are left empty rather than producing an unsaveable state. */
-export function editorPrefill(name: string, seed?: string): TextAvatarData {
-	const text = abbreviateName(name).toUpperCase();
+export function editorPrefill(
+	name: string,
+	surname: string | undefined,
+	seed: string | undefined,
+): TextAvatarData {
+	const displayName = surname ? `${name} ${surname}` : name;
+	const text = abbreviateName(displayName).toUpperCase();
 	return new TextAvatarData(
-		defaultAvatarColor(seed || name),
+		defaultAvatarColor(seed || displayName),
 		TextAvatarData.isValidText(text) ? text : '',
 	);
 }
