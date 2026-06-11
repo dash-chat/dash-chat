@@ -36,6 +36,7 @@
 	import { page } from '$app/state';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
+	import ActionList from '$lib/components/navigation/ActionList.svelte';
 	let chatId = page.params.chatId!;
 
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -303,12 +304,7 @@
 							{/each}
 						</List>
 
-						<List
-							nested
-							strongIos
-							inset={isWideScreen.value || theme === 'ios'}
-							class="z-1"
-						>
+						<ActionList>
 							<ListAction
 								title={m.leaveGroup()}
 								actionType="danger"
@@ -322,7 +318,7 @@
 								icon={mdiClose}
 								onClick={() => (dialogType = 'delete')}
 							/> -->
-						</List>
+						</ActionList>
 					{/await}
 				</div>
 			</div>
