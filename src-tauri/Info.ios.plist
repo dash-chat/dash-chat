@@ -3,6 +3,6 @@
 <plist version="1.0">
   <dict>
     <key>NSCameraUsageDescription</key>
-    <string>Dash Chat uses the camera to scan another person's QR code when you add them as a contact. For example, when a friend shows you their contact QR code, you point the camera at it to connect with them.</string>
+    <string>Dash Chat uses the camera to scan a contact's QR code when you add them as a contact.</string>
   </dict>
 </plist>

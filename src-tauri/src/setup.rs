@@ -52,9 +52,13 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     #[cfg(not(mobile))]
     {
-        app_handle.set_menu(crate::menu::build_menu(&app_handle)?)?;
+        app_handle.on_menu_event(crate::menu::handle_menu_event);
+        crate::menu::install_menu(&app_handle)?;
         app_handle.manage(crate::mailbox::server::LocalMailboxMutex::default());
         crate::tray::setup_tray(&app_handle)?;
+
+        #[cfg(target_os = "macos")]
+        crate::macos::install_termination_guard();
 
         // Hide the main window when launched with --minimized (autostart)
         if std::env::args().any(|a| a == "--minimized") {
