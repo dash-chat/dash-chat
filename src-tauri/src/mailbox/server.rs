@@ -147,23 +147,9 @@ pub async fn set_local_mailbox_server_enabled<R: Runtime>(
     }
 
     // Keep the app menu's checkbox in sync.
-    sync_menu_toggle(handle, enabled);
+    crate::menu::set_mailbox_toggle_checked(handle, enabled);
 
     Ok(())
-}
-
-/// Update the "toggle-local-mailbox" CheckMenuItem in the app menu, if present.
-fn sync_menu_toggle<R: Runtime>(handle: &AppHandle<R>, enabled: bool) {
-    let Some(menu) = handle.menu() else { return };
-    for item in menu.items().unwrap_or_default() {
-        if let Some(submenu) = item.as_submenu() {
-            if let Some(toggle) = submenu.get("toggle-local-mailbox") {
-                if let Some(check) = toggle.as_check_menuitem() {
-                    let _ = check.set_checked(enabled);
-                }
-            }
-        }
-    }
 }
 
 /// Show or clear a badge on the dock/taskbar icon to indicate the mailbox is running.
