@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { m } from '$lib/paraglide/messages.js';
+	import { deleteGroup, m } from '$lib/paraglide/messages.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
@@ -14,6 +14,7 @@
 	import {
 		mdiAccountGroup,
 		mdiDelete,
+		mdiExport,
 		mdiKeyVariant,
 		mdiPencil,
 		mdiPlusCircle,
@@ -34,6 +35,7 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { page } from '$app/state';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	let chatId = page.params.chatId!;
 
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -301,42 +303,26 @@
 							{/each}
 						</List>
 
-						<!-- <List
+						<List
 							nested
 							strongIos
 							inset={isWideScreen.value || theme === 'ios'}
 							class="z-1"
 						>
-							<ListItem
+							<ListAction
 								title={m.leaveGroup()}
-								link
-								chevron={false}
+								actionType="danger"
+								icon={mdiExport}
 								onClick={() => (dialogType = 'leave')}
-								colors={{
-									primaryTextIos: 'text-red-500',
-									primaryTextMaterial: 'text-red-600',
-								}}
-							>
-								{#snippet media()}
-									<wa-icon class="big" src={wrapPathInSvg(mdiExport)}></wa-icon>
-								{/snippet}
-							</ListItem>
+							/>
 
-							<ListItem
+							<!-- <ListAction
 								title={m.deleteGroup()}
-								link
-								chevron={false}
+								actionType="danger"
+								icon={mdiClose}
 								onClick={() => (dialogType = 'delete')}
-								colors={{
-									primaryTextIos: 'text-red-500',
-									primaryTextMaterial: 'text-red-600',
-								}}
-							>
-								{#snippet media()}
-									<wa-icon class="big" src={wrapPathInSvg(mdiClose)}></wa-icon>
-								{/snippet}
-							</ListItem>
-						</List> -->
+							/> -->
+						</List>
 					{/await}
 				</div>
 			</div>
