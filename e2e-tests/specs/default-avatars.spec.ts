@@ -9,7 +9,8 @@ describe('Default avatars', () => {
 
 	before(async () => {
 		agent = await setupAgent('agent1');
-		await agent.createProfilePage.createProfile('Avatar', 'Tester');
+		// Lower-cased on purpose: the initials must come out upper-cased.
+		await agent.createProfilePage.createProfile('avatar', 'tester');
 		await agent.homePage.ready();
 	});
 

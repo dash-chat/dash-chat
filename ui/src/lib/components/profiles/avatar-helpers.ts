@@ -38,17 +38,22 @@ export function joinName(
 	return surname ? `${name} ${surname}` : name;
 }
 
-/** Initials for a display name, following Signal's convention: the first
- * grapheme of the first word plus the first grapheme of the second word. */
+/** Initials for a display name: the first grapheme of the first word plus
+ * the first grapheme of the second word (Signal's convention), upper-cased
+ * to match the stored text-avatar format. */
 export function abbreviateName(name: string): string {
 	const words = name.split(/\s+/).filter(word => word.length > 0);
-	return words.slice(0, 2).map(firstGrapheme).join('');
+	return words.slice(0, 2).map(firstGrapheme).join('').toUpperCase();
 }
 
+const segmenter =
+	typeof Intl !== 'undefined' && Intl.Segmenter
+		? new Intl.Segmenter()
+		: undefined;
+
 function firstGrapheme(word: string): string {
-	if (typeof Intl !== 'undefined' && Intl.Segmenter) {
-		const segments = new Intl.Segmenter().segment(word);
-		for (const segment of segments) {
+	if (segmenter) {
+		for (const segment of segmenter.segment(word)) {
 			return segment.segment;
 		}
 	}
@@ -64,7 +69,7 @@ export function editorPrefill(
 	seed: string | undefined,
 ): TextAvatarData {
 	const displayName = joinName(name, surname) ?? '';
-	const text = abbreviateName(displayName).toUpperCase();
+	const text = abbreviateName(displayName);
 	return new TextAvatarData(
 		defaultAvatarColor(seed || displayName),
 		TextAvatarData.isValidText(text) ? text : '',
