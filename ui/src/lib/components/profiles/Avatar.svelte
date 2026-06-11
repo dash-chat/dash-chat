@@ -89,4 +89,9 @@
 		font-size: calc(var(--size, 3rem) * 0.45);
 		font-weight: 600;
 	}
+
+	/* webawesome force-uppercases initials; Signal preserves the name's case. */
+	wa-avatar::part(initials) {
+		text-transform: none;
+	}
 </style>

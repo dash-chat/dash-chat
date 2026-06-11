@@ -38,12 +38,12 @@ export function joinName(
 	return surname ? `${name} ${surname}` : name;
 }
 
-/** Initials for a display name: the first grapheme of the first word plus
- * the first grapheme of the second word (Signal's convention), upper-cased
- * to match the stored text-avatar format. */
+/** Initials for a display name, following Signal's convention: the first
+ * grapheme of the first word plus the first grapheme of the second word,
+ * preserving the name's case. */
 export function abbreviateName(name: string): string {
 	const words = name.split(/\s+/).filter(word => word.length > 0);
-	return words.slice(0, 2).map(firstGrapheme).join('').toUpperCase();
+	return words.slice(0, 2).map(firstGrapheme).join('');
 }
 
 const segmenter =
@@ -69,7 +69,8 @@ export function editorPrefill(
 	seed: string | undefined,
 ): TextAvatarData {
 	const displayName = joinName(name, surname) ?? '';
-	const text = abbreviateName(displayName);
+	// The stored format only accepts upper-case, unlike the virtual default.
+	const text = abbreviateName(displayName).toUpperCase();
 	return new TextAvatarData(
 		defaultAvatarColor(seed || displayName),
 		TextAvatarData.isValidText(text) ? text : '',
