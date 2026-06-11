@@ -83,6 +83,8 @@ pub fn show_or_create_main_window<R: Runtime>(app: &AppHandle<R>) -> anyhow::Res
         window.show()?;
         window.set_focus()?;
     } else {
+        // A fresh menu instance is required for the new window; see install_menu.
+        crate::menu::install_menu(app)?;
         let config = app.config();
         let window_config = config
             .app
