@@ -26,7 +26,7 @@
 					<Avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
-						style="--size: 42px"
+						size={42}
 					/>
 				</Link>
 			{/await}

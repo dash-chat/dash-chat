@@ -227,8 +227,6 @@
 	"menuPaste": "Paste",
 	"menuSelectAll": "Select All",
 	"menuOpenLogsFolder": "Open Logs Folder",
-	"quitConfirmTitle": "Quit Dash Chat?",
-	"quitConfirmMessage": "The Local Message Server is running. Are you sure you want to quit?",
 
 	"offlineFunctionality": "Offline functionality",
 	"localMessageServer": "Local Message Server",

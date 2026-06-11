@@ -73,7 +73,7 @@
 						<Avatar
 							image={profile.avatar}
 							initials={profile.name.slice(0, 2)}
-							style="--size: 80px;"
+							size={80}
 						/>
 
 						<div
@@ -99,7 +99,7 @@
 							>
 						{/if}
 					{:else}
-						<Avatar waitingForProfile style="--size: 80px;" />
+						<Avatar waitingForProfile size={80} />
 						<span class="quiet text-xl">{m.waitingForProfile()}</span>
 					{/if}
 				</div>

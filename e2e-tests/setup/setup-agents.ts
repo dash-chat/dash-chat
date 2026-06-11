@@ -14,6 +14,7 @@ import { ChatSettingsPage } from '../helpers/pages/direct-chats/chat-settings-pa
 import { DirectChatPage } from '../helpers/pages/direct-chats/direct-chat-page';
 import { AddMembersPage } from '../helpers/pages/group-chat/add-members-page';
 import { GroupChatPage } from '../helpers/pages/group-chat/group-chat-page';
+import { GroupInfoEditPage } from '../helpers/pages/group-chat/group-info-edit-page';
 import { GroupInfoPage } from '../helpers/pages/group-chat/group-info-page';
 import { HomePage } from '../helpers/pages/home-page';
 import { NewGroupPage } from '../helpers/pages/new-group/new-group-page';
@@ -45,6 +46,7 @@ export type Agent = WebdriverIO.Browser & {
 	editPhotoPage: EditPhotoPage;
 	addMembersPage: AddMembersPage;
 	groupChatPage: GroupChatPage;
+	groupInfoEditPage: GroupInfoEditPage;
 	groupInfoPage: GroupInfoPage;
 	helpPage: HelpPage;
 	homePage: HomePage;
@@ -88,6 +90,7 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	agent.editPhotoPage = new EditPhotoPage(b);
 	agent.addMembersPage = new AddMembersPage(b);
 	agent.groupChatPage = new GroupChatPage(b);
+	agent.groupInfoEditPage = new GroupInfoEditPage(b);
 	agent.groupInfoPage = new GroupInfoPage(b);
 	agent.helpPage = new HelpPage(b);
 	agent.homePage = new HomePage(b);
