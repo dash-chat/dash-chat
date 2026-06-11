@@ -138,6 +138,7 @@
 
 			{#snippet right()}
 				<Link
+					data-testid="group-info-edit-link"
 					href={`/group-chat/${chatId}/info/edit`}
 					iconOnly={theme === 'material'}
 				>

@@ -93,7 +93,7 @@
 			{/snippet}
 			{#snippet right()}
 				{#if isIos}
-					<Link onClick={save}>
+					<Link data-testid="group-info-edit-save-btn" onClick={save}>
 						{m.save()}
 					</Link>
 				{/if}
@@ -109,7 +109,12 @@
 				/>
 
 				<Form>
-					<FormInput type="text" bind:value={name} label={m.name()} />
+					<FormInput
+						data-testid="group-info-edit-name"
+						type="text"
+						bind:value={name}
+						label={m.name()}
+					/>
 
 					<FormInput
 						type="textarea"
@@ -122,6 +127,7 @@
 
 			{#if !isIos}
 				<Button
+					data-testid="group-info-edit-save-btn"
 					onClick={save}
 					class="fixed-action-btn"
 					rounded
