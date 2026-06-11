@@ -9,6 +9,7 @@
 	import { Page, Navbar, NavbarBackLink, Button, Link } from 'konsta/svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { page } from '$app/state';
+	import { showToast } from '$lib/utils/toasts';
 	import FormInput from '$lib/components/form/FormInput.svelte';
 	import Form from '$lib/components/form/Form.svelte';
 	import Container from '$lib/components/layout_helpers/Container.svelte';
@@ -59,12 +60,17 @@
 
 	async function save() {
 		if (saveDisabled) return;
-		await store.setInfo({
-			name: name.trim(),
-			description: description.trim() || undefined,
-			image,
-		});
-		goto(`/group-chat/${chatId}/info`);
+		try {
+			await store.setInfo({
+				name: name.trim(),
+				description: description.trim() || undefined,
+				image,
+			});
+			goto(`/group-chat/${chatId}/info`);
+		} catch (e) {
+			console.error(e);
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
 	}
 </script>
 
