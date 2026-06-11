@@ -13,8 +13,8 @@ mod push 'scripts/push.just'
 # ios development
 mod ios 'scripts/ios.just'
 
-# build digital ocean droplet images
-mod droplet 'scripts/droplet.just'
+# build docker droplet
+mod docker 'scripts/docker.just'
 
 # build dash chat as a binary
 build:
