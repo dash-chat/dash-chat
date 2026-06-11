@@ -133,7 +133,6 @@
 
 			<!-- Preset options -->
 			<List
-				class="center-in-desktop"
 				inset={isWideScreen.value || theme === 'ios'}
 				strongIos
 				nested={theme === 'material'}
