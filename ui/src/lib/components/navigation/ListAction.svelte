@@ -9,6 +9,8 @@
 		actionType?: ActionType;
 		onClick?: () => void;
 		icon?: string;
+		href?: string;
+		'data-testid'?: string;
 	};
 
 	const actionColors = {
@@ -23,7 +25,14 @@
 		},
 	};
 
-	let { title, actionType = 'normal', onClick, icon }: Props = $props();
+	let {
+		title,
+		actionType = 'normal',
+		onClick,
+		icon,
+		href,
+		'data-testid': testId,
+	}: Props = $props();
 </script>
 
 <ListItem
@@ -31,6 +40,8 @@
 	link
 	chevron={false}
 	{onClick}
+	linkProps={href ? { href } : undefined}
+	data-testid={testId}
 	colors={actionColors[actionType]}
 >
 	{#snippet media()}

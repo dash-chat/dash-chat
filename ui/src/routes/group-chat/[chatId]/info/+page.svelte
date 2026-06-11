@@ -181,28 +181,14 @@
 								count: Object.keys(members).length,
 							})}</BlockTitle
 						>
-						<List
-							nested
-							strongIos
-							inset={isWideScreen.value || theme === 'ios'}
-						>
+						<ActionList>
 							{#if me.admin}
-								<ListItem
-									link
-									chevron={false}
-									linkProps={{
-										href: `/group-chat/${chatId}/info/add-members`,
-									}}
+								<ListAction
 									title={m.addMembers()}
+									icon={mdiPlusCircle}
+									href={`/group-chat/${chatId}/info/add-members`}
 									data-testid="group-info-add-members"
-								>
-									{#snippet media()}
-										<wa-icon
-											style="font-size: 2rem;"
-											src={wrapPathInSvg(mdiPlusCircle)}
-										></wa-icon>
-									{/snippet}
-								</ListItem>
+								/>
 							{/if}
 
 							{#each Object.entries(members) as [actorId, member]}
@@ -243,66 +229,44 @@
 										<span class="font-semibold">{member.profile?.name}</span>
 									</div>
 
-									<List
-										nested
-										strongIos
-										inset={isWideScreen.value || theme === 'ios'}
-										class="mb-2"
-									>
+									<ActionList>
 										{#if me.admin}
 											{#if member.admin}
-												<ListItem
-													link
-													chevron={false}
+												<ListAction
 													title={m.demoteFromAdministrator()}
 													onClick={() => {
 														dialogType = 'demote';
 														dialogActorId = actorId;
 														sheetOpenFor = null;
 													}}
-												>
-													{#snippet media()}
-														<wa-icon src={wrapPathInSvg(mdiKeyVariant)}
-														></wa-icon>
-													{/snippet}
-												</ListItem>
+													icon={mdiKeyVariant}
+												/>
 											{:else}
-												<ListItem
-													link
-													chevron={false}
+												<ListAction
 													title={m.promoteToAdministrator()}
 													onClick={() => {
 														dialogType = 'promote';
 														dialogActorId = actorId;
 														sheetOpenFor = null;
 													}}
-												>
-													{#snippet media()}
-														<wa-icon src={wrapPathInSvg(mdiKeyVariant)}
-														></wa-icon>
-													{/snippet}
-												</ListItem>
+													icon={mdiKeyVariant}
+												/>
 											{/if}
 
-											<ListItem
-												link
-												chevron={false}
+											<ListAction
 												title={m.removeMember()}
 												onClick={() => {
 													dialogType = 'remove';
 													dialogActorId = actorId;
 													sheetOpenFor = null;
 												}}
-											>
-												{#snippet media()}
-													<wa-icon src={wrapPathInSvg(mdiDelete)}></wa-icon>
-												{/snippet}
-											</ListItem>
+												icon={mdiDelete}
+											/>
 										{/if}
-									</List>
+									</ActionList>
 								</Sheet>
 							{/each}
-						</List>
+						</ActionList>
 
 						<ActionList>
 							<ListAction
