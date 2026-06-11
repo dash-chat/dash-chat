@@ -272,5 +272,7 @@
     "connectionStatusLocalDescription_other": "Sinu seadmes pole internetiühendust, aga kohalikust võrgust me leidsime {{count}} kohalikku sõnumiserverit. Sõnumid sünkroonitakse nendega.",
     "connectionStatusLocalAriaLabel": "Ühenduse olek: ühendatud kohaliku sõnumiserveriga. Üksikasjade vaatamiseks klõpsa.",
     "groupNameRequired": "Grupi nimi (vajalik)",
-    "groupAvatar": "Grupi tunnuspilt"
+    "groupAvatar": "Grupi tunnuspilt",
+    "youRemovedMember": "Sa eemaldasid kasutaja {{name}}.",
+    "memberRemovedFromGroupBy": "{{admin}} eemaldas kasutaja {{name}}."
 }
