@@ -41,6 +41,15 @@
 		});
 	});
 
+	function saveDisabled(
+		profile: { name: string; surname?: string } | undefined,
+	) {
+		return (
+			name.trim() === '' ||
+			(profile?.name === name && profile?.surname === surname)
+		);
+	}
+
 	async function save() {
 		try {
 			await contactsStore.client.setProfile({
@@ -78,9 +87,7 @@
 			title={m.editName()}
 			titleClass="opacity1"
 			transparent={true}
-			rightClass={myProfile?.name === name && myProfile?.surname === surname
-				? 'ios-right-disabled'
-				: ''}
+			rightClass={saveDisabled(myProfile) ? 'ios-right-disabled' : ''}
 		>
 			{#snippet left()}
 				<NavbarBackLink
@@ -128,7 +135,7 @@
 				class="fixed-action-btn"
 				rounded
 				data-testid="edit-name-save-btn"
-				disabled={myProfile?.name === name && myProfile?.surname === surname}
+				disabled={saveDisabled(myProfile)}
 			>
 				{m.save()}
 			</Button>
