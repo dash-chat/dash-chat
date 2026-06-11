@@ -90,8 +90,13 @@
 		font-weight: 600;
 	}
 
-	/* webawesome force-uppercases initials; Signal preserves the name's case. */
+	/* webawesome force-uppercases initials; Signal preserves the name's case.
+	   text-box trims the ascent/descent whitespace so every avatar shares the
+	   same cap-to-baseline box, then the translate sets it slightly below
+	   center. */
 	wa-avatar::part(initials) {
 		text-transform: none;
+		text-box: trim-both cap alphabetic;
+		translate: 0 0.05em;
 	}
 </style>
