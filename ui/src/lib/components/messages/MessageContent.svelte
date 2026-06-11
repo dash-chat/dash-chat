@@ -12,12 +12,15 @@
 		searchQuery: string;
 		metadata?: Snippet;
 	} = $props();
+
+	let metadataWidth = $state(0);
 </script>
 
 <div class="relative mx-1">
 	{#if metadata}
 		<div
 			class="absolute bottom-0 end-0 flex items-center gap-1 whitespace-nowrap select-none"
+			bind:clientWidth={metadataWidth}
 		>
 			{@render metadata()}
 		</div>
@@ -29,13 +32,11 @@
 					searchQuery,
 				)}{:else}{content}{/if}</span
 		>
-		<!-- Invisible twin of the metadata: reserves exactly the space the
-		     absolutely-positioned copy needs in the bottom-end corner, since
+		<!-- Reserves the metadata's space in the bottom-end corner, since
 		     wrapped text cannot be made to avoid an absolute box via CSS. -->
 		{#if metadata}<span
-				aria-hidden="true"
-				class="invisible ms-2.5 inline-flex items-center gap-1 whitespace-nowrap select-none"
-				>{@render metadata()}</span
-			>{/if}
+				class="ms-2.5 inline-block"
+				style="width: {metadataWidth}px"
+			></span>{/if}
 	</div>
 </div>
