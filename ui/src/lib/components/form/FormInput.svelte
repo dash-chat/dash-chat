@@ -19,5 +19,6 @@
 <ListInput
 	label={theme === 'material' ? label : ''}
 	placeholder={theme === 'ios' ? label : ''}
+	bind:value
 	{...rest}
 />

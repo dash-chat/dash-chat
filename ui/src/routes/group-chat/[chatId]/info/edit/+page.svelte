@@ -2,18 +2,11 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { ChatsStore } from 'dash-chat-stores';
-	import {
-		Page,
-		Navbar,
-		NavbarBackLink,
-		Button,
-		Link,
-		useTheme,
-	} from 'konsta/svelte';
+	import { Page, Navbar, NavbarBackLink, Button, Link } from 'konsta/svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { page } from '$app/state';
 	import FormInput from '$lib/components/form/FormInput.svelte';
@@ -27,23 +20,24 @@
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
 	const info = useReactivePromise(store.info);
+	const infoValue = useReactiveValue(store.info);
 
 	let image = $state<string | undefined>(undefined);
 	let name = $state<string>('');
 	let description = $state<string>('');
 
 	let initialized = false;
-	info.subscribe(d => {
-		d.then(info => {
-			if (!initialized) {
-				initialized = true;
-				image = info?.image;
-				name = info?.name || '';
-				description = info?.description || '';
-			}
-		});
+
+	$effect(() => {
+		const i = $infoValue;
+		if (i && !initialized) {
+			initialized = true;
+			image = i.image;
+			name = i.name || '';
+			description = i.description || '';
+		}
 	});
-	const theme = $derived(useTheme());
+
 	const saveDisabled = $derived(name.trim() === '');
 
 	let editingPhoto = $state(false);
