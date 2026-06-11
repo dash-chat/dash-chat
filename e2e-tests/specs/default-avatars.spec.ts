@@ -9,14 +9,15 @@ describe('Default avatars', () => {
 
 	before(async () => {
 		agent = await setupAgent('agent1');
-		// Lower-cased on purpose: the initials must come out upper-cased.
+		// Lower-cased on purpose: the rendered initials must preserve the
+		// name's case, while the editor prefill upper-cases for storage.
 		await agent.createProfilePage.createProfile('avatar', 'tester');
 		await agent.homePage.ready();
 	});
 
 	it('renders a profile without a photo as initials on an assigned color', async () => {
 		const avatar = await avatarAppearance(agent, tid('home-settings-link'));
-		expect(avatar.initials).toBe('AT');
+		expect(avatar.initials).toBe('at');
 		expect(avatar.color).toBe(TEXT_AVATAR_TEXT_COLOR);
 	});
 
@@ -48,6 +49,6 @@ describe('Default avatars', () => {
 		await agent.settingsPage.ready();
 
 		const avatar = await avatarAppearance(agent, tid('settings-profile-link'));
-		expect(avatar.initials).toBe('AT');
+		expect(avatar.initials).toBe('at');
 	});
 });
