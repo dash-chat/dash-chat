@@ -90,8 +90,11 @@
 		font-weight: 600;
 	}
 
-	/* webawesome force-uppercases initials; Signal preserves the name's case. */
+	/* webawesome force-uppercases initials; Signal preserves the name's case.
+	   text-box trims the ascent/descent whitespace so the glyphs sit at the
+	   circle's optical center instead of riding high on the baseline. */
 	wa-avatar::part(initials) {
 		text-transform: none;
+		text-box: trim-both cap alphabetic;
 	}
 </style>
