@@ -8,26 +8,16 @@ mod settings;
 mod setup;
 mod utils;
 
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(desktop)]
 mod menu;
 #[cfg(desktop)]
 mod tray;
 
-/// When set to `true`, the run-loop's `ExitRequested` handler will no longer
-/// call `api.prevent_exit()`, allowing the app to shut down gracefully
-/// (running all destructors) even when local-mailbox mode is active.
-#[cfg(desktop)]
-pub(crate) static FORCE_QUIT: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
 /// Global AppHandle so that code running outside the normal Tauri lifecycle
 /// (e.g. Android's `receive_push_notification`) can query window state.
 pub(crate) static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
-
-/// Prevents multiple quit-confirmation dialogs from stacking up.
-#[cfg(desktop)]
-pub(crate) static QUIT_DIALOG_OPEN: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -127,37 +117,35 @@ pub fn run() {
             result?;
             Ok(())
         })
-        .on_window_event(|window, event| {
-            #[cfg(mobile)]
-            let _ = (window, event); // unused on mobile; used in the cfg(desktop) block below
-            #[cfg(desktop)]
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                use tauri::Manager;
-                // When the local mailbox is running, hide the window instead of closing
-                // so the app keeps running in the background with the tray icon.
-                if settings::load_mailbox_enabled(window.app_handle())
-                    && !FORCE_QUIT.load(std::sync::atomic::Ordering::Relaxed)
-                {
-                    api.prevent_close();
-                    let _ = window.hide();
-                }
-            }
-        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             #[cfg(mobile)]
             let _ = (app_handle, event); // unused on mobile; used in the cfg(desktop) block below
             #[cfg(desktop)]
-            if let tauri::RunEvent::ExitRequested { api, .. } = event {
-                // When the local mailbox is running and quit is requested (Cmd+Q, dock Quit),
-                // prevent exit and show a confirmation dialog.
-                if settings::load_mailbox_enabled(app_handle)
-                    && !FORCE_QUIT.load(std::sync::atomic::Ordering::Relaxed)
-                {
-                    api.prevent_exit();
-                    tray::confirm_quit_and_exit(app_handle);
+            match event {
+                tauri::RunEvent::ExitRequested { api, .. } => {
+                    use tauri::Manager;
+                    // When the local mailbox is running, an OS-level quit (closing the window,
+                    // Cmd+Q, dock Quit) should not terminate the app — close any open window to
+                    // free the webview and keep the mailbox server running in the tray. The tray
+                    // "Quit" item is the only path that exits.
+                    if settings::load_mailbox_enabled(app_handle) {
+                        api.prevent_exit();
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.close();
+                        }
+                    }
                 }
+                // macOS fires Reopen when the dock icon is clicked. The window is destroyed while
+                // the mailbox runs in the background, so rebuild it here.
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => {
+                    if let Err(err) = tray::show_or_create_main_window(app_handle) {
+                        log::error!("Failed to show/create main window on reopen: {err:?}");
+                    }
+                }
+                _ => {}
             }
         });
 }
