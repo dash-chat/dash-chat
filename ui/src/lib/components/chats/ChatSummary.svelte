@@ -33,7 +33,11 @@
 	data-testid="all-chats-row"
 >
 	{#snippet media()}
-		<Avatar image={summary.avatar} initials={summary.name.slice(0, 2)} />
+		<Avatar
+			image={summary.avatar}
+			name={summary.name}
+			colorSeed={summary.chatId}
+		/>
 	{/snippet}
 	{#snippet after()}
 		<span class="text-xs">

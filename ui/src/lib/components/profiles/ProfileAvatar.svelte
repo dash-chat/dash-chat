@@ -1,5 +1,9 @@
 <script lang="ts">
-	import type { ContactsStore, VerifyingKey } from 'dash-chat-stores';
+	import {
+		fullName,
+		type ContactsStore,
+		type VerifyingKey,
+	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { Preloader } from 'konsta/svelte';
@@ -22,5 +26,9 @@
 		<Preloader />
 	</div>
 {:then profile}
-	<Avatar image={profile?.avatar} initials={profile?.name.slice(0, 2)} />
+	<Avatar
+		image={profile?.avatar}
+		name={profile && fullName(profile)}
+		colorSeed={chatActorId}
+	/>
 {/await}
