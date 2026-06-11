@@ -104,7 +104,7 @@ async fn handle_push_notification(
     notification: NotificationData,
     app_data_root: PathBuf,
 ) -> anyhow::Result<Option<NotificationData>> {
-    // Title = log ID (hex), Body = operation ID ("author_hex:seq_num")
+    // Title = topic ID (hex), Body = operation ID ("author_hex:seq_num")
     let topic_hex = notification
         .title
         .as_deref()

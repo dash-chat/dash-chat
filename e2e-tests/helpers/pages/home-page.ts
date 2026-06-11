@@ -26,7 +26,9 @@ export class HomePage extends TestPage {
 	}
 
 	async isLoaded(): Promise<boolean> {
-		return (await this.chatList.isExisting()) || (await this.emptyState.isExisting());
+		return (
+			(await this.chatList.isExisting()) || (await this.emptyState.isExisting())
+		);
 	}
 
 	/** Chat-list entry whose link text contains `contactName`. */
@@ -41,18 +43,20 @@ export class HomePage extends TestPage {
 	/** Full visible text of the first chat-list row containing `name`. */
 	async chatRowText(name: string): Promise<string> {
 		await this.chatListItem(name).waitForExist();
-		return this.agent.execute((sel: string, nameArg: string) => {
-			const rows = Array.from(
-				document.querySelectorAll<HTMLElement>(sel),
-			);
-			const row = rows.find(r => r.innerText.includes(nameArg));
-			return row?.innerText ?? '';
-		}, tid('all-chats-row'), name);
+		return this.agent.execute(
+			(sel: string, nameArg: string) => {
+				const rows = Array.from(document.querySelectorAll<HTMLElement>(sel));
+				const row = rows.find(r => r.innerText.includes(nameArg));
+				return row?.innerText ?? '';
+			},
+			tid('all-chats-row'),
+			name,
+		);
 	}
 
 	/** Open a chat by contact name and wait for the direct-chat page. */
 	async openChat(contactName: string): Promise<void> {
-		await this.chatList.waitForExist();
+		await this.chatListItem(contactName).waitForExist();
 		await this.chatListItem(contactName).click();
 		await this.agent.$(tid('direct-chat-messages')).waitForExist();
 	}
@@ -96,9 +100,7 @@ export class HomePage extends TestPage {
 				if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
 					const text = el.textContent?.substring(0, 60).trim();
 					if (text)
-						issues.push(
-							`Overflow in <${el.tagName.toLowerCase()}>: "${text}"`,
-						);
+						issues.push(`Overflow in <${el.tagName.toLowerCase()}>: "${text}"`);
 				}
 			});
 			return issues.slice(0, 10);
