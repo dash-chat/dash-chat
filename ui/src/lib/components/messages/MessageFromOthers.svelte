@@ -6,7 +6,8 @@
 		MailboxTrackerStore,
 		Message,
 	} from 'dash-chat-stores';
-	import { highlightMatch, type MessagePosition } from './message-helpers';
+	import type { MessagePosition } from './message-helpers';
+	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
@@ -70,19 +71,11 @@
 			{sender.name}
 		</div>
 	{/if}
-	<div class="row gap-2 mx-1" style="align-items: end">
-		<span class="flex-1">
-			{#if searchQuery}
-				{@html highlightMatch(message.content, searchQuery)}
-			{:else}
-				{message.content}
-			{/if}
-		</span>
-
-		{#if isLast}
+	<MessageContent content={message.content} {searchQuery} {isLast}>
+		{#snippet metadata()}
 			<MessageTimestamp timestamp={message.timestamp} class="quiet" />
-		{/if}
-	</div>
+		{/snippet}
+	</MessageContent>
 </Card>
 {#if Object.keys(message.reactions).length}
 	<div class="flex justify-end -mt-1.5 mb-0.5 px-1">

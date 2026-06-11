@@ -6,7 +6,8 @@
 		MailboxTrackerStore,
 		Message,
 	} from 'dash-chat-stores';
-	import { highlightMatch, type MessagePosition } from './message-helpers';
+	import type { MessagePosition } from './message-helpers';
+	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
@@ -60,27 +61,17 @@
 	contentWrapPadding="p-2"
 	class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 >
-	<div class="row gap-2 mx-1" style="align-items: end">
-		<span class="flex-1">
-			{#if searchQuery}
-				{@html highlightMatch(message.content, searchQuery)}
-			{:else}
-				{message.content}
-			{/if}
-		</span>
+	<MessageContent content={message.content} {searchQuery} {isLast}>
+		{#snippet metadata()}
+			<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
 
-		{#if isLast}
-			<div class="flex items-center gap-1">
-				<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
-
-				<MessageStatusIndicator
-					{chatId}
-					author={message.author}
-					seq={message.seqNum}
-				/>
-			</div>
-		{/if}
-	</div>
+			<MessageStatusIndicator
+				{chatId}
+				author={message.author}
+				seq={message.seqNum}
+			/>
+		{/snippet}
+	</MessageContent>
 </Card>
 {#if Object.keys(message.reactions).length}
 	<div class="flex -mt-1.5 mb-0.5 px-1">
