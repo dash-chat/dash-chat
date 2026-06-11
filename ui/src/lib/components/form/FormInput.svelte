@@ -1,17 +1,13 @@
 <script lang="ts">
+	import { type ComponentProps } from 'svelte';
 	import { ListInput, useTheme } from 'konsta/svelte';
 
-	type OwnProps = { label?: string; value?: string };
-	type PassthroughProps = Omit<
-		Record<string, unknown>,
-		'label' | 'placeholder'
-	>;
+	type Props = Omit<ComponentProps<ListInput>, 'label' | 'value'> & {
+		label?: string;
+		value?: string;
+	};
 
-	let {
-		label,
-		value = $bindable(),
-		...rest
-	}: OwnProps & PassthroughProps = $props();
+	let { label, value = $bindable(), ...rest }: Props = $props();
 
 	const theme = $derived(useTheme());
 </script>
