@@ -31,4 +31,11 @@ describe('Group details spec', () => {
 			),
 		);
 	});
+
+	it('Hides the edit details link from non-admins', async () => {
+		await agent2.groupChatPage.infoLink.click();
+		await agent2.groupInfoPage.ready();
+
+		await expect(agent2.groupInfoPage.editLink).not.toBeDisplayed();
+	});
 });

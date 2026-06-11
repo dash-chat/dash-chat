@@ -137,17 +137,21 @@
 			{/snippet}
 
 			{#snippet right()}
-				<Link
-					data-testid="group-info-edit-link"
-					href={`/group-chat/${chatId}/info/edit`}
-					iconOnly={theme === 'material'}
-				>
-					{#if theme === 'material'}
-						<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
-					{:else}
-						{m.edit()}
+				{#await $me then me}
+					{#if me.admin}
+						<Link
+							data-testid="group-info-edit-link"
+							href={`/group-chat/${chatId}/info/edit`}
+							iconOnly={theme === 'material'}
+						>
+							{#if theme === 'material'}
+								<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
+							{:else}
+								{m.edit()}
+							{/if}
+						</Link>
 					{/if}
-				</Link>
+				{/await}
 			{/snippet}
 		</Navbar>
 
