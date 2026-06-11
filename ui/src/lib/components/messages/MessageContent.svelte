@@ -6,26 +6,22 @@
 	let {
 		content,
 		searchQuery,
-		isLast,
 		metadata,
 	}: {
 		content: string;
 		searchQuery: string;
-		isLast: boolean;
-		metadata: Snippet;
+		metadata?: Snippet;
 	} = $props();
-
-	const METADATA_SPACING = 10;
-	let measuredMetadataWidth = $state(0);
-	let metadataWidth = $state(0);
-	// Never shrink, so the text doesn't reflow when the metadata narrows.
-	$effect(() => {
-		if (measuredMetadataWidth > metadataWidth)
-			metadataWidth = Math.ceil(measuredMetadataWidth);
-	});
 </script>
 
-<div class="mx-1">
+<div class="relative mx-1">
+	{#if metadata}
+		<div
+			class="absolute bottom-0 end-0 flex items-center gap-1 whitespace-nowrap select-none"
+		>
+			{@render metadata()}
+		</div>
+	{/if}
 	<div class="max-w-full" use:shrinkToWidestLine>
 		<span class="whitespace-pre-wrap"
 			>{#if searchQuery}{@html highlightMatch(
@@ -33,17 +29,13 @@
 					searchQuery,
 				)}{:else}{content}{/if}</span
 		>
-		{#if isLast}<span
-				class="inline-block"
-				style="width: {metadataWidth + METADATA_SPACING}px"
-			></span>{/if}
+		<!-- Invisible twin of the metadata: reserves exactly the space the
+		     absolutely-positioned copy needs in the bottom-end corner, since
+		     wrapped text cannot be made to avoid an absolute box via CSS. -->
+		{#if metadata}<span
+				aria-hidden="true"
+				class="invisible ms-2.5 inline-flex items-center gap-1 whitespace-nowrap select-none"
+				>{@render metadata()}</span
+			>{/if}
 	</div>
-	{#if isLast}
-		<div
-			class="relative float-end -mt-3.5 flex items-center gap-1 whitespace-nowrap select-none"
-			bind:clientWidth={measuredMetadataWidth}
-		>
-			{@render metadata()}
-		</div>
-	{/if}
 </div>

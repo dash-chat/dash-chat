@@ -56,22 +56,26 @@
 	);
 </script>
 
+{#snippet metadata()}
+	<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
+
+	<MessageStatusIndicator
+		{chatId}
+		author={message.author}
+		seq={message.seqNum}
+	/>
+{/snippet}
+
 <Card
 	raised
 	contentWrapPadding="p-2"
 	class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 >
-	<MessageContent content={message.content} {searchQuery} {isLast}>
-		{#snippet metadata()}
-			<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
-
-			<MessageStatusIndicator
-				{chatId}
-				author={message.author}
-				seq={message.seqNum}
-			/>
-		{/snippet}
-	</MessageContent>
+	<MessageContent
+		content={message.content}
+		{searchQuery}
+		metadata={isLast ? metadata : undefined}
+	/>
 </Card>
 {#if Object.keys(message.reactions).length}
 	<div class="flex -mt-1.5 mb-0.5 px-1">

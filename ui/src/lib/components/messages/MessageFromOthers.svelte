@@ -57,6 +57,10 @@
 	);
 </script>
 
+{#snippet metadata()}
+	<MessageTimestamp timestamp={message.timestamp} class="quiet" />
+{/snippet}
+
 <Card
 	raised
 	contentWrapPadding="p-2"
@@ -71,11 +75,11 @@
 			{sender.name}
 		</div>
 	{/if}
-	<MessageContent content={message.content} {searchQuery} {isLast}>
-		{#snippet metadata()}
-			<MessageTimestamp timestamp={message.timestamp} class="quiet" />
-		{/snippet}
-	</MessageContent>
+	<MessageContent
+		content={message.content}
+		{searchQuery}
+		metadata={isLast ? metadata : undefined}
+	/>
 </Card>
 {#if Object.keys(message.reactions).length}
 	<div class="flex justify-end -mt-1.5 mb-0.5 px-1">
