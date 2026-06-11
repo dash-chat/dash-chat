@@ -143,6 +143,39 @@ jobs:
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
 
+  release-docker-images:
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [mailbox-server, push-notifications-server]
+
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nix
+        uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          nix_path: nixpkgs=channel:nixos-25.11
+
+      - name: Log in to the github container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push docker image
+        run: |
+          script=$(nix build .#${{ matrix.server }}-docker --accept-flake-config --print-out-paths --no-link)
+          "$script" | docker load
+          version=$(jq -r .version src-tauri/tauri.conf.json)
+          docker push ghcr.io/dash-chat/${{ matrix.server }}:$version
+
   release-tauri-android-app:
     needs: create-release-draft
     permissions: write-all
