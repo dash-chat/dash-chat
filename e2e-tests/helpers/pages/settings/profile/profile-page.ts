@@ -3,7 +3,7 @@ import { TestPage } from '../../test-page';
 
 export class ProfilePage extends TestPage {
 	back = this.agent.$(tid('profile-back'));
-	editPhoto = this.agent.$(tid('profile-edit-photo'));
+	editPhoto = this.agent.$(tid('edit-photo'));
 	editName = this.agent.$(tid('profile-edit-name'));
 	editAbout = this.agent.$(tid('profile-edit-about'));
 	qrLink = this.agent.$(tid('profile-qr-link'));
