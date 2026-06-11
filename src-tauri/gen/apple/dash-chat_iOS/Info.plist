@@ -41,9 +41,9 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Read QR codes</string>
+	<string>Dash Chat uses the camera to scan another person's QR code when you add them as a contact. For example, when a friend shows you their contact QR code, you point the camera at it to connect with them.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Dash Chat discovers and syncs with mailboxes on your local network so you can exchange messages without internet access.</string>
+	<string>Dash Chat discovers and syncs with Local Message Servers on your local network so you can exchange messages without internet access.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_dashchat._tcp</string>
