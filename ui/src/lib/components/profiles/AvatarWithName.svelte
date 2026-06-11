@@ -11,7 +11,7 @@
 		<Avatar
 			image={profile.avatar}
 			initials={profile.name.slice(0, 2)}
-			style="--size: 2.5rem"
+			size="2.5rem"
 		/>
 	</span>
 	<span class="flex-1 min-w-0 truncate" data-testid={nameTestId}
