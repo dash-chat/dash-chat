@@ -210,7 +210,7 @@ async fn chat_message_notification(
     {
         let conversation_title = match direct_chat_agent_id {
             Some(_) => None,
-            None => Some(group_title(node, topic_id).await),
+            None => Some(group_title(node, topic).await),
         };
         data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
             sender_id: sender_agent_id.map(|agent_id| agent_id.to_hex()),
@@ -229,10 +229,10 @@ async fn chat_message_notification(
     // their messages collapsed into the wrong MessagingStyle thread.
     #[cfg(target_os = "android")]
     {
-        match stable_notification_id(&*topic_id) {
+        match stable_notification_id(topic.as_bytes()) {
             Ok(id) => data.id = id,
             Err(err) => log::error!(
-                "Failed to derive Android MessagingStyle id from log id, falling back to random: {err:?}"
+                "Failed to derive Android MessagingStyle id from topic, falling back to random: {err:?}"
             ),
         }
         data.group = Some("dashchat.chats".to_string());
@@ -325,7 +325,7 @@ async fn auth_control_op_notification(
                     Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
                     None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
                 };
-                (group_title(node, topic_id).await, Some(body), group_route)
+                (group_title(node, topic).await, Some(body), group_route)
             }
         }
         GroupAction::Add { member, .. } => {
@@ -336,7 +336,7 @@ async fn auth_control_op_notification(
                 Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
                 None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
             };
-            (group_title(node, topic_id).await, Some(body), group_route)
+            (group_title(node, topic).await, Some(body), group_route)
         }
         GroupAction::Remove { member } => {
             if !target_is_me(&member) {
