@@ -65,55 +65,53 @@
 		txt: 'text/plain',
 	};
 
-	function mimeForPath(path: string): string {
-		const ext = path.split('.').pop()?.toLowerCase() ?? '';
+	function mimeForName(name: string): string {
+		const ext = name.split('.').pop()?.toLowerCase() ?? '';
 		return MIME_BY_EXTENSION[ext] ?? 'application/octet-stream';
 	}
 
-	async function readDroppedPaths(paths: string[]): Promise<File[]> {
-		const { readFile } = await import('@tauri-apps/plugin-fs');
-		const files = await Promise.all(
-			paths.map(async path => {
-				try {
-					const bytes = await readFile(path);
-					const name = path.split(/[\\/]/).pop() ?? path;
-					return new File([new Uint8Array(bytes)], name, {
-						type: mimeForPath(path),
-					});
-				} catch (e) {
-					console.error('Failed to read dropped file', path, e);
-					return undefined;
-				}
-			}),
-		);
-		return files.filter((f): f is File => f !== undefined);
+	interface DroppedFile {
+		name: string;
+		data: number[];
 	}
 
+	// Native drops: the webview only tracks the overlay state from the
+	// drag-drop event; the dropped files' bytes arrive from the Rust side
+	// (`media_drop.rs`), which reads the paths so the webview needs no
+	// filesystem read capability.
 	$effect(() => {
 		if (!isTauriEnv()) return;
-		let unlisten: (() => void) | undefined;
+		const unlisteners: (() => void)[] = [];
 		let cancelled = false;
+		const register = (u: () => void) => {
+			if (cancelled) u();
+			else unlisteners.push(u);
+		};
 		import('@tauri-apps/api/webview').then(({ getCurrentWebview }) =>
 			getCurrentWebview()
-				.onDragDropEvent(async event => {
+				.onDragDropEvent(event => {
 					if (event.payload.type === 'enter' || event.payload.type === 'over') {
 						tauriDragging = true;
-					} else if (event.payload.type === 'leave') {
+					} else {
 						tauriDragging = false;
-					} else if (event.payload.type === 'drop') {
-						tauriDragging = false;
-						const files = await readDroppedPaths(event.payload.paths);
-						if (files.length > 0) onFiles(files);
 					}
 				})
-				.then(u => {
-					if (cancelled) u();
-					else unlisten = u;
-				}),
+				.then(register),
+		);
+		import('@tauri-apps/api/event').then(({ listen }) =>
+			listen<DroppedFile[]>('media://files-dropped', event => {
+				const files = event.payload.map(
+					f =>
+						new File([new Uint8Array(f.data)], f.name, {
+							type: mimeForName(f.name),
+						}),
+				);
+				if (files.length > 0) onFiles(files);
+			}).then(register),
 		);
 		return () => {
 			cancelled = true;
-			unlisten?.();
+			unlisteners.forEach(u => u());
 		};
 	});
 </script>

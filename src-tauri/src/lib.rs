@@ -3,6 +3,7 @@ mod device_info;
 mod filesystem;
 mod i18n;
 mod mailbox;
+mod media_drop;
 mod notifications;
 mod settings;
 mod setup;
@@ -108,6 +109,7 @@ pub fn run() {
         .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
+        .on_window_event(media_drop::handle_window_event)
         .setup(move |app| {
             let handle = app.handle().clone();
 

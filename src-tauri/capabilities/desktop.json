@@ -8,11 +8,6 @@
 		"updater:default",
 		"mcp-bridge:default",
 		"dialog:allow-save",
-		"fs:allow-write-file",
-		"fs:allow-read-file",
-		{
-			"identifier": "fs:scope",
-			"allow": [{ "path": "**" }]
-		}
+		"fs:allow-write-file"
 	]
 }

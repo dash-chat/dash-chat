@@ -15,9 +15,14 @@
 
 	const content = $derived(lightbox.content);
 
+	// Derive from the photos array, not `content`: navigation replaces the
+	// content object (new index) but keeps the same photos array, and URLs
+	// must stay stable across navigation.
+	const photos = $derived(content?.photos);
+
 	// Own object URLs — independent of the bubble's, revoked on change/close.
 	const photoUrls = $derived.by(() =>
-		content ? content.photos.map(p => bytesToBlobUrl(p.data, p.mime_type)) : [],
+		photos ? photos.map(p => bytesToBlobUrl(p.data, p.mime_type)) : [],
 	);
 
 	$effect(() => {
