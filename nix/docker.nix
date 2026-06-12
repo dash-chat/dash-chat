@@ -15,7 +15,9 @@
           name = "ghcr.io/dash-chat/${name}";
           tag = appVersion;
           config = {
-            Cmd = [ "${package}/bin/${name}" "--addr" "0.0.0.0:80" ]
+            # Entrypoint (not Cmd) so environment-specific args can be
+            # appended at deploy time: docker run <image> <extra args>.
+            Entrypoint = [ "${package}/bin/${name}" "--addr" "0.0.0.0:80" ]
               ++ cmdArgs;
             Env =
               [ "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" ];
@@ -32,12 +34,7 @@
         mailbox-server-docker = mkServerImage {
           name = "mailbox-server";
           package = self'.packages.mailbox-server;
-          cmdArgs = [
-            "--db-path"
-            "/var/lib/mailbox-server/mailbox.redb"
-            "--push-notifications-url"
-            "http://push-notifications.darksoil.studio"
-          ];
+          cmdArgs = [ "--db-path" "/var/lib/mailbox-server/mailbox.redb" ];
         };
 
         push-notifications-server-docker = mkServerImage {
