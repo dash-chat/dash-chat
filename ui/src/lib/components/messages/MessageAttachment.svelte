@@ -42,6 +42,8 @@
 	// Build object URLs once per Media instance. Minting and revoking live
 	// in the same pre-effect (not a $derived) so the URLs can never leak if
 	// a derived were to re-evaluate independently of its consumer.
+	// The keyed {#each (photoUrls[i])} below relies on the pre-effect
+	// repopulating photoUrls before the DOM updates.
 	let photoUrls = $state<string[]>([]);
 
 	$effect.pre(() => {

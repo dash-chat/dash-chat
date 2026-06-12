@@ -11,7 +11,7 @@
 	} from '@mdi/js';
 	import { useTheme } from 'konsta/svelte';
 	import { isIos, isMobile } from '$lib/utils/environment';
-	import { type DraftMedia, revokeDraft } from '$lib/types/media';
+	import { type DraftMedia, PHOTO_ACCEPT, revokeDraft } from '$lib/types/media';
 	import { stageFiles } from '$lib/utils/stage-files';
 	import StagedAttachments from '$lib/components/StagedAttachments.svelte';
 
@@ -130,7 +130,7 @@
 	>
 		<input
 			type="file"
-			accept="image/*"
+			accept={PHOTO_ACCEPT}
 			multiple
 			bind:this={photoPicker}
 			class="hidden"

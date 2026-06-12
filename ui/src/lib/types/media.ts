@@ -49,6 +49,10 @@ const PHOTO_TYPES = new Set([
 	'image/gif',
 ]);
 
+/** `accept` value for photo pickers, kept in sync with the photo path so a
+ * "Photos" pick can't surface file-attachment error toasts. */
+export const PHOTO_ACCEPT = [...PHOTO_TYPES].join(',');
+
 function isVisualFile(file: File): boolean {
 	return PHOTO_TYPES.has(file.type);
 }
