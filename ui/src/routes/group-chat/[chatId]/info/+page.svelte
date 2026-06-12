@@ -97,6 +97,7 @@
 					? m.errorLeavingGroupOnlyAdmin()
 					: m.errorLeavingGroup();
 
+			dialogType = null;
 			return {
 				success: false as const,
 				error: errorMessage,

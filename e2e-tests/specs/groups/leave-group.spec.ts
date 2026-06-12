@@ -65,6 +65,11 @@ describe('Leaving group', () => {
 		await expect(agent1.groupInfoPage.leaveButton).not.toBeDisplayed();
 		const membersList = agent1.$(tid('group-info-members'));
 		await expect(membersList.$('=Alice')).not.toBeExisting();
+
+		await agent1.groupInfoPage.back.click();
+		await agent1.groupChatPage.ready();
+		await agent1.groupChatPage.back.click();
+		await agent1.homePage.ready();
 	});
 
 	it('creator cant leave a group with another member but no other admins', async () => {
