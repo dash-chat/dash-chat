@@ -12,6 +12,7 @@
 		title: string;
 		cancelText?: string;
 		confirmText: string;
+		confirmTestId?: string;
 	};
 
 	let {
@@ -21,6 +22,7 @@
 		title,
 		cancelText = m.cancel(),
 		confirmText,
+		confirmTestId,
 	}: Props = $props();
 
 	let loading = $state(false);
@@ -44,7 +46,12 @@
 		<DialogButton onClick={onCancel} disabled={loading}>
 			{cancelText}
 		</DialogButton>
-		<DialogButton strong onClick={handleConfirm} disabled={loading}>
+		<DialogButton
+			strong
+			onClick={handleConfirm}
+			disabled={loading}
+			data-testid={confirmTestId}
+		>
 			{confirmText}
 			{#if loading}
 				<Preloader class="w-4 h-4 ml-2" />

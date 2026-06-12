@@ -271,6 +271,7 @@
 								actionType="danger"
 								icon={mdiExport}
 								onClick={() => (dialogType = 'leave')}
+								data-testid="group-info-leave"
 							/>
 
 							<!-- <ListAction
@@ -376,6 +377,7 @@
 			onConfirm={handleLeaveGroup}
 			title={m.leaveGroup()}
 			confirmText={m.leave()}
+			confirmTestId="group-info-leave-confirm"
 		></ActionDialog>
 
 		<!-- <Dialog
