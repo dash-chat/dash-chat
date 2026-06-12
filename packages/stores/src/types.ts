@@ -78,9 +78,9 @@ export function summarizeMessageContent(content: {
 }): string {
 	if (content.message) return content.message;
 	if (!content.media) return '';
-	if (content.media.kind === 'file') return `📎 ${content.media.file.name}`;
+	if (content.media.kind === 'file') return content.media.file.name;
 	const n = content.media.photos.length;
-	return n > 1 ? `📷 ${n} photos` : '📷 Photo';
+	return n > 1 ? `${n} photos` : 'Photo';
 }
 
 export type AnnouncementPayload =
