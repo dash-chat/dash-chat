@@ -78,6 +78,7 @@
 	"youAddedMember": "You added {{name}}.",
 	"someoneAddedYouToTheGroup": "{{name}} added you to the group.",
 	"someoneAddedYouToTheGroupNoName": "You were added to a group.",
+	"youLeftTheGroup": "You left the group.",
 	"someoneRemovedYouFromTheGroup": "{{name}} removed you from the group.",
 	"someoneRemovedYouFromTheGroupNoName": "You were removed from a group.",
 	"someoneMadeYouAnAdmin": "{{name}} made you an admin.",
