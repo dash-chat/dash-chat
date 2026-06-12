@@ -62,7 +62,10 @@
 	class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 >
 	{#if message.content.media}
-		<MessageAttachment media={message.content.media} />
+		<MessageAttachment
+			media={message.content.media}
+			withContentBelow={!!message.content.message || isLast}
+		/>
 	{/if}
 	{#if message.content.message || isLast}
 		<div class="row gap-2 mx-1" style="align-items: end">

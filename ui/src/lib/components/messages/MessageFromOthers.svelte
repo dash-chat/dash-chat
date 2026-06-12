@@ -72,7 +72,11 @@
 		</div>
 	{/if}
 	{#if message.content.media}
-		<MessageAttachment media={message.content.media} />
+		<MessageAttachment
+			media={message.content.media}
+			withContentAbove={!!sender}
+			withContentBelow={!!message.content.message || isLast}
+		/>
 	{/if}
 	{#if message.content.message || isLast}
 		<div class="row gap-2 mx-1" style="align-items: end">

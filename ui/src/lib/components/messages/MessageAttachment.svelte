@@ -1,19 +1,29 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import type { FileAttachment, Media, Photo } from 'dash-chat-stores';
-	import { mdiDownload, mdiFile } from '@mdi/js';
-	import { wrapPathInSvg } from '$lib/utils/icon';
+	import type { Media } from 'dash-chat-stores';
 	import {
-		asUint8Array,
 		byteLengthOf,
 		bytesToBlobUrl,
 		formatFileSize,
 	} from '$lib/types/media';
-	import { isTauriEnv } from '$lib/utils/environment';
-	import { m } from '$lib/paraglide/messages.js';
-	import { showToast } from '$lib/utils/toasts';
+	import { getTimelineImageDimensions, gridConfig } from './photo-grid';
+	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
+	import { saveAttachment } from '$lib/utils/save-file';
 
-	let { media }: { media: Media } = $props();
+	interface Props {
+		media: Media;
+		/** True when the bubble renders content (e.g. a sender header) above
+		 * the media, squaring the media's top corners. */
+		withContentAbove?: boolean;
+		/** True when the bubble renders content (caption or timestamp row)
+		 * below the media, squaring the media's bottom corners. */
+		withContentBelow?: boolean;
+	}
+
+	let {
+		media,
+		withContentAbove = false,
+		withContentBelow = false,
+	}: Props = $props();
 
 	// Build object URLs once per Media instance and revoke on teardown.
 	const photoUrls = $derived.by(() =>
@@ -28,153 +38,179 @@
 		return () => urls.forEach(u => URL.revokeObjectURL(u));
 	});
 
-	function totalSize(photos: Photo[]): number {
-		return photos.reduce((n, p) => n + byteLengthOf(p.data), 0);
-	}
-	void totalSize; // reserved for future use (e.g. size badge)
+	// Lone images render at Signal's timeline size for their natural aspect
+	// ratio; until decode (local bytes, effectively instant) use the minimum.
+	let singleDims = $state({ width: 200, height: 50 });
 
-	async function saveFile(file: FileAttachment): Promise<void> {
-		try {
-			if (isTauriEnv()) {
-				const [{ save }, { writeFile }, { downloadDir, join }] =
-					await Promise.all([
-						import('@tauri-apps/plugin-dialog'),
-						import('@tauri-apps/plugin-fs'),
-						import('@tauri-apps/api/path'),
-					]);
-				let defaultPath = file.name;
-				try {
-					defaultPath = await join(await downloadDir(), file.name);
-				} catch {
-					// downloadDir may not exist on some platforms; fall back to bare name
-				}
-				const path = await save({ title: m.saveFile(), defaultPath });
-				if (!path) return;
-				await writeFile(path, asUint8Array(file.data));
-				showToast(m.fileSaved());
-			} else {
-				const url = bytesToBlobUrl(file.data, file.mime_type);
-				const a = document.createElement('a');
-				a.href = url;
-				a.download = file.name;
-				a.click();
-				URL.revokeObjectURL(url);
-			}
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
+	function onSingleLoad(event: Event) {
+		const img = event.currentTarget as HTMLImageElement;
+		singleDims = getTimelineImageDimensions(
+			img.naturalWidth,
+			img.naturalHeight,
+		);
 	}
-
-	// Number of photos to actually render in the grid (others become an
-	// overlay count on the last visible photo).
-	const MAX_PHOTO_CELLS = 4;
 </script>
 
 {#if media.kind === 'photos'}
 	{@const photos = media.photos}
-	{@const n = photos.length}
-	{@const cells = Math.min(n, MAX_PHOTO_CELLS)}
-	{@const overflow = n - cells}
-	<div
-		class="attachment-photos"
-		class:photos-1={cells === 1}
-		class:photos-2={cells === 2}
-		class:photos-3={cells === 3}
-		class:photos-4={cells === 4}
-		data-testid="message-attachment-photos"
-	>
-		{#each photos.slice(0, cells) as photo, i (photoUrls[i])}
-			<div
-				class="photo-cell"
-				class:photo-cell-overlay={i === cells - 1 && overflow > 0}
-			>
-				<img src={photoUrls[i]} alt={photo.name} loading="lazy" />
-				{#if i === cells - 1 && overflow > 0}
-					<div class="photo-overlay">+{overflow}</div>
-				{/if}
-			</div>
-		{/each}
-	</div>
+	{#if photos.length === 1}
+		<div
+			class="attachment-photos single"
+			class:with-content-above={withContentAbove}
+			class:with-content-below={withContentBelow}
+			style="width: {singleDims.width}px; height: {singleDims.height}px"
+			data-testid="message-attachment-photos"
+		>
+			<img src={photoUrls[0]} alt={photos[0].name} onload={onSingleLoad} />
+		</div>
+	{:else}
+		{@const cfg = gridConfig(photos.length)}
+		{@const overflow = photos.length - cfg.visibleCells}
+		<div
+			class="attachment-photos multi cells-{cfg.visibleCells}"
+			class:with-content-above={withContentAbove}
+			class:with-content-below={withContentBelow}
+			style="aspect-ratio: {cfg.aspectRatio}"
+			data-testid="message-attachment-photos"
+		>
+			{#each photos.slice(0, cfg.visibleCells) as photo, i (photoUrls[i])}
+				<div class="photo-cell">
+					<img src={photoUrls[i]} alt={photo.name} loading="lazy" />
+					{#if i === cfg.visibleCells - 1 && overflow > 0}
+						<div class="photo-overlay">+{overflow}</div>
+					{/if}
+				</div>
+			{/each}
+		</div>
+	{/if}
 {:else}
 	{@const file = media.file}
 	<button
 		type="button"
 		class="attachment-file"
 		data-testid="message-attachment-file"
-		onclick={() => saveFile(file)}
+		onclick={() => saveAttachment(file)}
 	>
-		<wa-icon src={wrapPathInSvg(mdiFile)} class="attachment-file-icon"
-		></wa-icon>
+		<div class="attachment-file-icon">
+			<ExtensionSheet name={file.name} />
+		</div>
 		<div class="attachment-file-info">
 			<span class="attachment-file-name">{file.name}</span>
 			<span class="attachment-file-size"
 				>{formatFileSize(byteLengthOf(file.data))}</span
 			>
 		</div>
-		<wa-icon src={wrapPathInSvg(mdiDownload)} class="attachment-file-download"
-		></wa-icon>
 	</button>
 {/if}
 
 <style>
 	.attachment-photos {
-		display: grid;
-		gap: 2px;
+		position: relative;
 		/* Pull to bubble edge; the bubble's inner padding wraps text-only
 		 * messages but media should be edge-to-edge. The corner radius is
-		 * inherited so the grid matches the bubble's border. */
-		margin: calc(-1 * var(--bubble-padding, 0.5rem))
-			calc(-1 * var(--bubble-padding, 0.5rem)) 4px;
+		 * inherited so the media matches the bubble's border. */
+		margin: calc(-1 * var(--bubble-padding, 0.5rem));
+		max-width: calc(100% + 2 * var(--bubble-padding, 0.5rem));
 		border-radius: inherit;
 		overflow: hidden;
-		/* Give multi-cell grids a useful width even when the bubble's text
-		 * content would otherwise shrink it. */
-		min-width: 240px;
 	}
 
-	.photos-1 {
-		grid-template-columns: 1fr;
-		min-width: 0;
+	/* Hairline border so near-white images don't bleed into the bubble. */
+	.attachment-photos::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+		pointer-events: none;
 	}
-	.photos-2 {
+
+	.attachment-photos.with-content-above {
+		margin-top: 0;
+		border-start-start-radius: 0;
+		border-start-end-radius: 0;
+	}
+
+	.attachment-photos.with-content-below {
+		margin-bottom: 4px;
+		border-end-start-radius: 0;
+		border-end-end-radius: 0;
+	}
+
+	/* Plate behind transparent images. */
+	.single {
+		background: white;
+	}
+	:global(.dark) .single {
+		background: black;
+	}
+
+	.single img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	.multi {
+		display: grid;
+		gap: 1px;
+		width: 300px;
+	}
+
+	.cells-2 {
 		grid-template-columns: 1fr 1fr;
 	}
-	.photos-3 {
-		grid-template-columns: 1fr 1fr;
+
+	.cells-3 {
+		grid-template-columns: 2fr 1fr;
+		grid-template-rows: 1fr 1fr;
 		grid-template-areas:
-			'a a'
-			'b c';
+			'a b'
+			'a c';
 	}
-	.photos-3 .photo-cell:nth-child(1) {
+	.cells-3 .photo-cell:nth-child(1) {
 		grid-area: a;
 	}
-	.photos-3 .photo-cell:nth-child(2) {
+	.cells-3 .photo-cell:nth-child(2) {
 		grid-area: b;
 	}
-	.photos-3 .photo-cell:nth-child(3) {
+	.cells-3 .photo-cell:nth-child(3) {
 		grid-area: c;
 	}
-	.photos-4 {
+
+	.cells-4 {
 		grid-template-columns: 1fr 1fr;
 		grid-template-rows: 1fr 1fr;
+	}
+
+	.cells-5 {
+		grid-template-columns: repeat(6, 1fr);
+		grid-template-rows: 3fr 2fr;
+		grid-template-areas:
+			'a a a b b b'
+			'c c d d e e';
+	}
+	.cells-5 .photo-cell:nth-child(1) {
+		grid-area: a;
+	}
+	.cells-5 .photo-cell:nth-child(2) {
+		grid-area: b;
+	}
+	.cells-5 .photo-cell:nth-child(3) {
+		grid-area: c;
+	}
+	.cells-5 .photo-cell:nth-child(4) {
+		grid-area: d;
+	}
+	.cells-5 .photo-cell:nth-child(5) {
+		grid-area: e;
 	}
 
 	.photo-cell {
 		position: relative;
 		overflow: hidden;
-		aspect-ratio: 1;
-		background: rgba(0, 0, 0, 0.05);
-	}
-	/* Single-photo bubbles use the image's natural aspect ratio (capped by
-	 * max-height) rather than forcing a square crop. The image drives the
-	 * height; width fills the bubble so a 200×150 photo doesn't collapse
-	 * to thumbnail size. */
-	.photos-1 .photo-cell {
-		aspect-ratio: auto;
-		background: transparent;
-	}
-	.photos-3 .photo-cell:nth-child(1) {
-		aspect-ratio: 2 / 1;
+		background: rgba(128, 128, 128, 0.08);
 	}
 
 	.photo-cell img {
@@ -182,12 +218,6 @@
 		height: 100%;
 		object-fit: cover;
 		display: block;
-	}
-	.photos-1 .photo-cell img {
-		height: auto;
-		max-width: 100%;
-		max-height: 320px;
-		object-fit: cover;
 	}
 
 	.photo-overlay {
@@ -205,7 +235,6 @@
 	.attachment-file {
 		display: flex;
 		align-items: center;
-		gap: 10px;
 		width: 100%;
 		padding: 8px 10px;
 		margin: -4px 0 6px;
@@ -229,11 +258,14 @@
 		background: rgba(0, 0, 0, 0.1);
 	}
 
-	.attachment-file :global(.attachment-file-icon) {
-		width: 28px;
-		height: 28px;
-		opacity: 0.85;
+	.attachment-file-icon {
+		width: 36px;
+		height: 40px;
 		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-inline-end: 0.75rem;
 	}
 
 	.attachment-file-info {
@@ -255,12 +287,5 @@
 	.attachment-file-size {
 		font-size: 12px;
 		opacity: 0.7;
-	}
-
-	.attachment-file :global(.attachment-file-download) {
-		width: 20px;
-		height: 20px;
-		opacity: 0.7;
-		flex-shrink: 0;
 	}
 </style>
