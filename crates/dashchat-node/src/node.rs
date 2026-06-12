@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 
 use crate::compat::Capabilities;
-use crate::error::{AddContactError, Error, ShutdownError};
+use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
 use crate::filesystem::Filesystem;
 use crate::node::actor::{Actor, Command};
 use aliased::Aliasing;
@@ -518,11 +518,11 @@ impl Node {
         &self,
         chat_id: ChatId,
         member: VerifyingKey,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), RemoveGroupMemberError> {
         // TODO: this should use a transaction, but the race is not a big deal here
         let member_id = DeviceId::from(member);
         if !self.has_other_admins(chat_id, member_id).await? {
-            anyhow::bail!("cannot remove the only admin from a group that still has members");
+            return Err(RemoveGroupMemberError::LastAdmin);
         }
 
         let deps = self.group_store.heads(*chat_id).await?;

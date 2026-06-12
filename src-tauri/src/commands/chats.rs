@@ -146,5 +146,5 @@ pub async fn leave_group(chat_id: ChatId, node: State<'_, Node>) -> Result<(), S
     let my_device_id = node.device_id();
     node.remove_group_member(chat_id, *my_device_id)
         .await
-        .map_err(|e| format!("Failed to leave group: {e:?}"))
+        .map_err(|e| format!("{e:?}"))
 }
