@@ -28,11 +28,60 @@ export interface DraftPhoto {
 	previewUrl: string;
 }
 
-export function makeDraftPhotos(files: FileList | File[]): DraftMedia {
-	const arr = Array.from(files);
+export const MAX_STAGED_PHOTOS = 32;
+
+export type IngestError = 'tooMany' | 'filesWithPhotos' | 'oneFileAtATime';
+
+export interface IngestResult {
+	media: DraftMedia | undefined;
+	error?: IngestError;
+}
+
+function isVisualFile(file: File): boolean {
+	return file.type.startsWith('image/') || file.type.startsWith('video/');
+}
+
+/**
+ * Add `files` to the current draft following Signal's mixing rules: photos
+ * and videos append (up to `MAX_STAGED_PHOTOS`, accepting a partial batch),
+ * a non-visual file can only be staged alone, and nothing can be added once
+ * a file is staged. On a rule violation the current draft is returned
+ * unchanged alongside the error. Accepted files get fresh object URLs;
+ * existing draft items keep theirs.
+ */
+export function ingestFiles(
+	current: DraftMedia | undefined,
+	files: File[],
+): IngestResult {
+	if (files.length === 0) return { media: current };
+	if (current?.kind === 'file') {
+		return { media: current, error: 'oneFileAtATime' };
+	}
+	const visual = files.filter(isVisualFile);
+	const nonVisual = files.filter(f => !isVisualFile(f));
+	if (nonVisual.length > 0) {
+		if (current || visual.length > 0) {
+			return { media: current, error: 'filesWithPhotos' };
+		}
+		if (nonVisual.length > 1) {
+			return { media: current, error: 'oneFileAtATime' };
+		}
+		return { media: { kind: 'file', file: nonVisual[0] } };
+	}
+	const existing = current?.kind === 'photos' ? current.items : [];
+	const room = MAX_STAGED_PHOTOS - existing.length;
+	if (room <= 0) return { media: current, error: 'tooMany' };
+	const accepted = visual.slice(0, room);
+	const items = [
+		...existing,
+		...accepted.map(file => ({
+			file,
+			previewUrl: URL.createObjectURL(file),
+		})),
+	];
 	return {
-		kind: 'photos',
-		items: arr.map(file => ({ file, previewUrl: URL.createObjectURL(file) })),
+		media: { kind: 'photos', items },
+		error: visual.length > room ? 'tooMany' : undefined,
 	};
 }
 
@@ -88,6 +137,16 @@ function totalMediaBytes(media: Media): number {
 		return media.photos.reduce((sum, p) => sum + byteLengthOf(p.data), 0);
 	}
 	return byteLengthOf(media.file.data);
+}
+
+/** Uppercase extension for a filename, max 4 chars; '' when there is none. */
+export function fileExtension(name: string): string {
+	const dot = name.lastIndexOf('.');
+	if (dot <= 0 || dot === name.length - 1) return '';
+	return name
+		.slice(dot + 1)
+		.toUpperCase()
+		.slice(0, 4);
 }
 
 export function formatFileSize(bytes: number): string {

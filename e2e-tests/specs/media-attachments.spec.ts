@@ -70,4 +70,58 @@ describe('Media attachments', () => {
 		}
 		await agent1.directChatPage.removeDraft();
 	});
+
+	it('appends photos picked separately instead of replacing', async () => {
+		await agent1.directChatPage.attachPhotos(1);
+		await agent1.directChatPage.attachPhotos(2);
+		await agent1.directChatPage.expectStagedPhotoCount(3);
+		await agent1.directChatPage.sendComposer();
+		await agent1.directChatPage.waitForPhotoMessage();
+	});
+
+	it('rejects a file while photos are staged', async () => {
+		await agent1.directChatPage.attachPhotos(1);
+		await agent1.directChatPage.attachFile('mix.txt', 'mix', 'text/plain');
+		await agent1.toast.expectMessageContaining('along with files');
+		await agent1.directChatPage.expectStagedPhotoCount(1);
+		await agent1.directChatPage.removeDraft();
+	});
+
+	it('rejects adding photos while a file is staged', async () => {
+		await agent1.directChatPage.attachFile('only.txt', 'only', 'text/plain');
+		await agent1.directChatPage.attachPhotos(1);
+		await agent1.toast.expectMessageContaining('one file at a time');
+		await agent1.directChatPage.expectStagedPhotoCount(0);
+		await agent1.directChatPage.removeDraft();
+	});
+
+	it('removes a single staged photo and clears all staged photos', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.attachPhotos(3);
+		await composer.expectStagedPhotoCount(3);
+		await composer.removeAttachmentButton(1).click();
+		await composer.expectStagedPhotoCount(2);
+		await composer.clearAttachments.click();
+		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
+			timeoutMsg: 'Preview still present after clear all',
+		});
+	});
+
+	it('caps staged photos at 32 with partial accept', async () => {
+		await agent1.directChatPage.attachPhotos(30);
+		await agent1.directChatPage.expectStagedPhotoCount(30);
+		await agent1.directChatPage.attachPhotos(5);
+		await agent1.toast.expectMessageContaining('cannot add any more');
+		await agent1.directChatPage.expectStagedPhotoCount(32);
+		await agent1.directChatPage.attachPhotos(1);
+		await agent1.toast.expectMessageContaining('cannot add any more');
+		await agent1.directChatPage.expectStagedPhotoCount(32);
+
+		// Leave and re-enter the chat to discard the bulky draft without
+		// sending 32 photos through the network.
+		await agent1.directChatPage.back.click();
+		await agent1.homePage.ready();
+		await agent1.homePage.openChat('Bob');
+		await agent1.directChatPage.ready();
+	});
 });

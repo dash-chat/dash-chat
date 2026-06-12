@@ -142,6 +142,8 @@
 	"attachFile": "File",
 	"attachMenu": "Attach",
 	"removeAttachment": "Remove",
+	"addMoreAttachments": "Add another attachment",
+	"removeAllAttachments": "Remove all attachments",
 	"saveFile": "Save file",
 	"fileSaved": "File saved",
 
@@ -199,6 +201,9 @@
 	"errorNoQrCodeInImage": "No QR code found in the selected image.",
 	"errorUnexpected": "An unexpected error occurred.",
 	"errorAttachmentTooLarge": "Attachment is too large. Maximum total size per message is {{max}}.",
+	"errorTooManyAttachments": "You cannot add any more attachments to this message.",
+	"errorFilesWithPhotos": "You can't select photos and videos along with files.",
+	"errorOneFileAtATime": "You can only select one file at a time.",
 	"errorApplyStyle": "Failed to apply style. Please try again.",
 	"errorSendErrorReport": "Failed to send error report. Please try again.",
 

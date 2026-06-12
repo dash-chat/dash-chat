@@ -8,16 +8,12 @@
 		mdiPlus,
 		mdiImage,
 		mdiFile,
-		mdiClose,
 	} from '@mdi/js';
 	import { useTheme } from 'konsta/svelte';
 	import { isIos, isMobile } from '$lib/utils/environment';
-	import {
-		type DraftMedia,
-		makeDraftPhotos,
-		revokeDraft,
-		formatFileSize,
-	} from '$lib/types/media';
+	import { type DraftMedia, revokeDraft } from '$lib/types/media';
+	import { stageFiles } from '$lib/utils/stage-files';
+	import StagedAttachments from '$lib/components/StagedAttachments.svelte';
 
 	interface Props {
 		value?: string;
@@ -85,16 +81,14 @@
 
 	function onPhotosPicked() {
 		if (!photoPicker.files || photoPicker.files.length === 0) return;
-		if (media) revokeDraft(media);
-		onMediaChange?.(makeDraftPhotos(photoPicker.files));
+		onMediaChange?.(stageFiles(media, photoPicker.files));
 		photoPicker.value = '';
 		attachMenuOpen = false;
 	}
 
 	function onFilePicked() {
 		if (!filePicker.files || !filePicker.files[0]) return;
-		if (media) revokeDraft(media);
-		onMediaChange?.({ kind: 'file', file: filePicker.files[0] });
+		onMediaChange?.(stageFiles(media, filePicker.files));
 		filePicker.value = '';
 		attachMenuOpen = false;
 	}
@@ -145,44 +139,13 @@
 		/>
 
 		{#if media}
-			<div class="media-preview" data-testid="message-input-media-preview">
-				{#if media.kind === 'photos'}
-					<div class="photo-row">
-						{#each media.items as photo, i (photo.previewUrl)}
-							<div class="photo-thumb">
-								<img src={photo.previewUrl} alt={photo.file.name} />
-								<button
-									type="button"
-									class="thumb-remove"
-									aria-label={m.removeAttachment()}
-									onclick={() => removePhoto(i)}
-								>
-									<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
-								</button>
-							</div>
-						{/each}
-					</div>
-				{:else}
-					<div class="file-pill">
-						<wa-icon src={wrapPathInSvg(mdiFile)} class="file-pill-icon"
-						></wa-icon>
-						<div class="file-pill-info">
-							<span class="file-pill-name">{media.file.name}</span>
-							<span class="file-pill-size"
-								>{formatFileSize(media.file.size)}</span
-							>
-						</div>
-						<button
-							type="button"
-							class="thumb-remove"
-							aria-label={m.removeAttachment()}
-							onclick={removeMedia}
-						>
-							<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
-						</button>
-					</div>
-				{/if}
-			</div>
+			<StagedAttachments
+				{media}
+				onRemovePhoto={removePhoto}
+				onRemoveFile={removeMedia}
+				onAddMore={() => photoPicker.click()}
+				onClearAll={removeMedia}
+			/>
 		{/if}
 
 		<div class="row gap-2" style="align-items: flex-end; margin: 0 auto">
@@ -460,95 +423,5 @@
 		width: 22px;
 		height: 22px;
 		opacity: 0.75;
-	}
-
-	/* Media preview */
-	.media-preview {
-		padding: 8px 8px 4px;
-	}
-
-	.photo-row {
-		display: flex;
-		gap: 6px;
-		overflow-x: auto;
-		padding-bottom: 4px;
-	}
-
-	.photo-thumb {
-		position: relative;
-		flex-shrink: 0;
-		width: 72px;
-		height: 72px;
-		border-radius: 8px;
-		overflow: hidden;
-	}
-
-	.photo-thumb img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		display: block;
-	}
-
-	.thumb-remove {
-		position: absolute;
-		top: -6px;
-		inset-inline-end: -6px;
-		width: 22px;
-		height: 22px;
-		border-radius: 50%;
-		border: none;
-		background: rgba(0, 0, 0, 0.65);
-		color: white;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		padding: 0;
-	}
-
-	.thumb-remove :global(wa-icon) {
-		width: 14px;
-		height: 14px;
-	}
-
-	.file-pill {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 10px 14px;
-		border-radius: 12px;
-		background: rgba(128, 128, 128, 0.12);
-		position: relative;
-	}
-
-	.file-pill :global(.file-pill-icon) {
-		width: 28px;
-		height: 28px;
-		opacity: 0.65;
-		flex-shrink: 0;
-	}
-
-	.file-pill-info {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 1px;
-	}
-
-	.file-pill-name {
-		font-size: 14px;
-		font-weight: 500;
-		color: var(--k-text-color);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.file-pill-size {
-		font-size: 12px;
-		color: var(--k-text-color);
-		opacity: 0.6;
 	}
 </style>
