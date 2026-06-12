@@ -138,7 +138,7 @@
 	"contactRequestAccepted": "{{name}} has accepted your contact request",
 	"contactRequestAcceptedNoName": "Your contact request was accepted",
 	"typeMessage": "Type a message...",
-	"attachPhotos": "Photos & video",
+	"attachPhotos": "Photos",
 	"attachFile": "File",
 	"attachMenu": "Attach",
 	"removeAttachment": "Remove",

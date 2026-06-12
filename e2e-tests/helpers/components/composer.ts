@@ -178,9 +178,26 @@ export class Composer {
 		await this.mediaPreview.waitForExist({ timeout: 5_000 });
 	}
 
-	/** Click send. Composer must already have content (text and/or media). */
+	/** Send the composer content. The send button only renders on mobile
+	 * user agents, so on desktop (CI) dispatch Enter on the textarea the way
+	 * a desktop user sends. Composer must already have content. */
 	async send(): Promise<void> {
-		await this.sendButton.click();
+		if (await this.sendButton.isExisting()) {
+			await this.sendButton.click();
+			return;
+		}
+		await this.agent.execute((sel: string) => {
+			const el = document.querySelector(sel) as HTMLTextAreaElement;
+			el.focus();
+			el.dispatchEvent(
+				new KeyboardEvent('keydown', {
+					key: 'Enter',
+					code: 'Enter',
+					bubbles: true,
+					cancelable: true,
+				}),
+			);
+		}, tid('message-input-textarea'));
 	}
 
 	/** Remove the currently-attached draft via the preview's remove button. */

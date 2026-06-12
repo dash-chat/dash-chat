@@ -130,7 +130,7 @@
 	>
 		<input
 			type="file"
-			accept="image/*,video/*"
+			accept="image/*"
 			multiple
 			bind:this={photoPicker}
 			class="hidden"

@@ -37,14 +37,16 @@ export interface IngestResult {
 	error?: IngestError;
 }
 
+// Videos are excluded until they render as <video> in bubbles/lightbox;
+// for now they stage and send as file attachments instead.
 function isVisualFile(file: File): boolean {
-	return file.type.startsWith('image/') || file.type.startsWith('video/');
+	return file.type.startsWith('image/');
 }
 
 /**
  * Add `files` to the current draft following Signal's mixing rules: photos
- * and videos append (up to `MAX_STAGED_PHOTOS`, accepting a partial batch),
- * a non-visual file can only be staged alone, and nothing can be added once
+ * append (up to `MAX_STAGED_PHOTOS`, accepting a partial batch), a
+ * non-image file can only be staged alone, and nothing can be added once
  * a file is staged. On a rule violation the current draft is returned
  * unchanged alongside the error. Accepted files get fresh object URLs;
  * existing draft items keep theirs.

@@ -50,6 +50,7 @@ async function drawToJpegBlob(
 		const canvas = new OffscreenCanvas(width, height);
 		const ctx = canvas.getContext('2d');
 		if (!ctx) return null;
+		fillJpegBackground(ctx, width, height);
 		ctx.drawImage(bitmap, 0, 0, width, height);
 		return await canvas.convertToBlob({
 			type: 'image/jpeg',
@@ -61,10 +62,22 @@ async function drawToJpegBlob(
 	canvas.height = height;
 	const ctx = canvas.getContext('2d');
 	if (!ctx) return null;
+	fillJpegBackground(ctx, width, height);
 	ctx.drawImage(bitmap, 0, 0, width, height);
 	return await new Promise<Blob | null>(resolve =>
 		canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY),
 	);
+}
+
+/** JPEG has no alpha channel; without a fill, transparent pixels flatten to
+ * the canvas's transparent-black default. */
+function fillJpegBackground(
+	ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
+	width: number,
+	height: number,
+): void {
+	ctx.fillStyle = 'white';
+	ctx.fillRect(0, 0, width, height);
 }
 
 function replaceExtension(name: string, ext: string): string {
