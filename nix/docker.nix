@@ -52,6 +52,8 @@
           cmdArgs = [
             "--db-path"
             "/var/lib/mailbox-server/mailbox.redb"
+            "--push-notifications-url"
+            "http://push-notifications.darksoil.studio"
           ];
         };
 
