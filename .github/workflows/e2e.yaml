@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
 
 jobs:
   e2e:
@@ -59,11 +60,20 @@ jobs:
       - name: Build Tauri app (debug, no-bundle)
         run: pnpm tauri build --debug --no-bundle --features e2e-tests
 
+      # Pre-build so the `cargo run -p mailbox-server` in wdio's onPrepare
+      # doesn't compile it while the first specs are already running.
+      - name: Build mailbox server
+        run: cargo build -p mailbox-server
+
       - name: Make launch scripts executable
         run: chmod +x e2e-tests/setup/*.sh
 
+      # dbus-run-session gives the apps a working session bus. Without it,
+      # GLib falls back to the runner's systemd user bus, where activating
+      # org.freedesktop.portal.Desktop hangs (headless), stalling every app
+      # launch ~30s before window creation plus ~5s in the theme query.
       - name: Run E2E tests
-        run: set -o pipefail && xvfb-run pnpm test 2>&1 | tee e2e-output.log
+        run: set -o pipefail && dbus-run-session -- xvfb-run pnpm test 2>&1 | tee e2e-output.log
         working-directory: e2e-tests
 
       - name: Upload test logs on failure
