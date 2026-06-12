@@ -3,15 +3,13 @@
 
 #![cfg(test)]
 
-use dashchat_node::{testing::*, *};
+use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
 use mailbox_client::mem::MemMailbox;
 
 use maplit::btreemap;
 use p2panda::network::MdnsDiscoveryMode;
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_direct_chat() {
-    dashchat_node::util::setup_aliases();
+fn setup() {
     dashchat_node::testing::setup_tracing(
         &[
             "dashchat=info",
@@ -22,23 +20,27 @@ async fn test_direct_chat() {
         ],
         true,
     );
+}
+
+async fn make_node(mailbox: &MemMailbox<MailboxOperation>, name: &str) -> TestNode {
+    let result = TestNode::new(NodeConfig::testing(), name)
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    println!("Node {}: {}", name, result.device_id());
+    result
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_direct_chat() {
+    setup();
 
     let poll = PollConfig::default();
     let mailbox = MemMailbox::new();
-    let alice = TestNode::new(NodeConfig::testing(), "alice")
-        .await
-        .add_mailbox_client(mailbox.client())
-        .await;
-    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
-        .await
-        .add_mailbox_client(mailbox.client())
-        .await;
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
 
     introduce_and_wait([&alice, &bobbi]).await;
-
-    println!("nodes:");
-    println!("alice: {}", alice.device_id());
-    println!("bobbi: {}", bobbi.device_id());
 
     alice
         .behavior()
@@ -126,38 +128,15 @@ async fn test_p2p_direct_chat() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_group_chat() {
-    dashchat_node::testing::setup_tracing(
-        &[
-            "dashchat=info",
-            "p2panda_stream=warn",
-            "p2panda_auth=warn",
-            "p2panda_spaces=warn",
-            "named_id=warn",
-        ],
-        true,
-    );
+    setup();
 
     let poll = PollConfig::default();
     let mailbox = MemMailbox::new();
-    let alice = TestNode::new(NodeConfig::testing(), "alice")
-        .await
-        .add_mailbox_client(mailbox.client())
-        .await;
-    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
-        .await
-        .add_mailbox_client(mailbox.client())
-        .await;
-    let cammy = TestNode::new(NodeConfig::testing(), "cammy")
-        .await
-        .add_mailbox_client(mailbox.client())
-        .await;
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+    let cammy = make_node(&mailbox, "cammy").await;
 
     introduce_and_wait([&alice, &bobbi, &cammy]).await;
-
-    println!("nodes:");
-    println!("alice: {}", alice.device_id());
-    println!("bobbi: {}", bobbi.device_id());
-    println!("cammy: {}", cammy.device_id());
 
     alice
         .behavior()
@@ -312,28 +291,12 @@ async fn test_group_chat() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_remove_group_member() {
-    dashchat_node::util::setup_aliases();
-    dashchat_node::testing::setup_tracing(
-        &[
-            "dashchat=info",
-            "p2panda_stream=warn",
-            "p2panda_auth=warn",
-            "p2panda_spaces=warn",
-            "named_id=warn",
-        ],
-        true,
-    );
+    setup();
 
     let poll = PollConfig::default();
     let mailbox = MemMailbox::new();
-    let alice = TestNode::new(NodeConfig::testing(), "alice")
-        .await
-        .add_mailbox_client(mailbox.client())
-        .await;
-    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
-        .await
-        .add_mailbox_client(mailbox.client())
-        .await;
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
 
     introduce_and_wait([&alice, &bobbi]).await;
 
