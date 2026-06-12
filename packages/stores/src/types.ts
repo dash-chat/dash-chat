@@ -69,6 +69,24 @@ export function getMessageMedia(
 }
 
 /**
+ * Cheap structural comparison used to match a just-sent message against the
+ * operation that confirms it — media-only messages all have empty text, so
+ * text alone cannot disambiguate them. Compares kind plus photo count or
+ * file name; byte contents are deliberately not compared (sent media holds
+ * `Uint8Array`s while logged operations hold `number[]`s).
+ */
+export function sameMediaShape(a: Media | null, b: Media | null): boolean {
+	if (a === null || b === null) return a === b;
+	if (a.kind === 'photos' && b.kind === 'photos') {
+		return a.photos.length === b.photos.length;
+	}
+	if (a.kind === 'file' && b.kind === 'file') {
+		return a.file.name === b.file.name;
+	}
+	return false;
+}
+
+/**
  * Short single-line description of a message for chat list previews. Falls
  * back to a media descriptor when the text is empty.
  */

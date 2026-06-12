@@ -23,7 +23,10 @@ mod watermarks_table;
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
 
-const MAX_PAYLOAD_SIZE: usize = 16 * 1024 * 1024; // 16 MB
+// Must comfortably exceed the UI's 16 MiB per-message attachment cap: blobs
+// arrive base64-encoded in a JSON body (~1.33x the raw bytes, plus operation
+// envelope overhead), and one store request can batch several operations.
+const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
 pub use blob::Blob;
 pub use blobs_table::{BlobsKey, BlobsKeyError, BlobsKeyPrefix, BLOBS_TABLE};

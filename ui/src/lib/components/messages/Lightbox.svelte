@@ -25,6 +25,7 @@
 		return () => urls.forEach(u => URL.revokeObjectURL(u));
 	});
 
+	let rootEl: HTMLElement | undefined = $state();
 	let stageEl: HTMLElement | undefined = $state();
 	let closeButton: HTMLButtonElement | undefined = $state();
 
@@ -62,6 +63,25 @@
 		if (event.target === stageEl && !zoomed) lightbox.close();
 	}
 
+	function trapFocus(event: KeyboardEvent) {
+		if (!rootEl) return;
+		const focusables = Array.from(
+			rootEl.querySelectorAll<HTMLElement>('button'),
+		);
+		if (focusables.length === 0) return;
+		const first = focusables[0];
+		const last = focusables[focusables.length - 1];
+		const active = document.activeElement;
+		const inside = active instanceof HTMLElement && rootEl.contains(active);
+		if (event.shiftKey && (!inside || active === first)) {
+			event.preventDefault();
+			last.focus();
+		} else if (!event.shiftKey && (!inside || active === last)) {
+			event.preventDefault();
+			first.focus();
+		}
+	}
+
 	function onKeydown(event: KeyboardEvent) {
 		if (!content) return;
 		if (event.key === 'Escape') {
@@ -77,6 +97,8 @@
 		} else if (event.key === 'ArrowRight') {
 			event.preventDefault();
 			lightbox.next();
+		} else if (event.key === 'Tab') {
+			trapFocus(event);
 		}
 	}
 </script>
@@ -85,7 +107,14 @@
 
 {#if content}
 	{@const photo = content.photos[content.index]}
-	<div class="lightbox" data-testid="lightbox">
+	<div
+		class="lightbox"
+		role="dialog"
+		aria-modal="true"
+		aria-label={photo.name}
+		bind:this={rootEl}
+		data-testid="lightbox"
+	>
 		<div class="lightbox-header" class:faded={zoomed}>
 			<div class="lightbox-header-info">
 				<span class="lightbox-sender">{content.senderName}</span>

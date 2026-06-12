@@ -15,6 +15,7 @@ import {
 	ReadMessagesStore,
 	getMessageMedia,
 	getMessageText,
+	sameMediaShape,
 	summarizeMessageContent,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
@@ -163,6 +164,10 @@ export class DirectChatStore implements ReadMessagesStore {
 				if (op.body?.payload.type !== 'Message') return false;
 				if (op.header.verifying_key !== myDeviceId) return false;
 				if (getMessageText(op.body.payload.payload) !== input.message)
+					return false;
+				if (
+					!sameMediaShape(getMessageMedia(op.body.payload.payload), input.media)
+				)
 					return false;
 				return true;
 			}),
