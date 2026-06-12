@@ -171,6 +171,11 @@ export class DirectChatPage extends TestPage {
 		await this.composer.expectStagedPhotoCount(expected);
 	}
 
+	/** First clickable photo cell of the first photo message in the chat. */
+	photoCellButton() {
+		return this.messages.$(`${tid('message-attachment-photos')} button`);
+	}
+
 	/** Wait until a rendered (loaded) photo attachment appears in the chat. */
 	async waitForPhotoMessage(timeout = 25_000): Promise<void> {
 		await waitForPhotoMessageIn(

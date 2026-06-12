@@ -297,6 +297,7 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
+														senderName={author?.profile?.name ?? ''}
 														onToggleReaction={() => {}}
 														sender={(position === 'first' ||
 															position === 'single') &&

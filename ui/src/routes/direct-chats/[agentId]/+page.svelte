@@ -647,6 +647,7 @@
 																	{myDeviceId}
 																	{chatId}
 																	searchQuery={searchMode ? searchQuery : ''}
+																	senderName={profile ? fullName(profile) : ''}
 																	onToggleReaction={emoji =>
 																		toggleReaction(message, emoji, myDeviceId)}
 																/>

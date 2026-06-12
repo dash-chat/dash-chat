@@ -11,6 +11,7 @@
 	import Reactions from './Reactions.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import MessageAttachment from './MessageAttachment.svelte';
+	import { m } from '$lib/paraglide/messages.js';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 
@@ -65,6 +66,8 @@
 		<MessageAttachment
 			media={message.content.media}
 			withContentBelow={!!message.content.message || isLast}
+			senderName={m.you()}
+			timestamp={message.timestamp}
 		/>
 	{/if}
 	{#if message.content.message || isLast}

@@ -8,6 +8,7 @@
 	import { getTimelineImageDimensions, gridConfig } from './photo-grid';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import { saveAttachment } from '$lib/utils/save-file';
+	import { lightbox } from '$lib/stores/lightbox.svelte';
 
 	interface Props {
 		media: Media;
@@ -17,13 +18,26 @@
 		/** True when the bubble renders content (caption or timestamp row)
 		 * below the media, squaring the media's bottom corners. */
 		withContentBelow?: boolean;
+		/** Display name of the message author, shown in the lightbox header. */
+		senderName?: string;
+		timestamp?: number;
 	}
 
 	let {
 		media,
 		withContentAbove = false,
 		withContentBelow = false,
+		senderName = '',
+		timestamp = 0,
 	}: Props = $props();
+
+	function openLightbox(index: number, event: MouseEvent) {
+		if (media.kind !== 'photos') return;
+		lightbox.open(
+			{ photos: media.photos, index, senderName, timestamp },
+			event.currentTarget as HTMLElement,
+		);
+	}
 
 	// Build object URLs once per Media instance and revoke on teardown.
 	const photoUrls = $derived.by(() =>
@@ -61,7 +75,13 @@
 			style="width: {singleDims.width}px; height: {singleDims.height}px"
 			data-testid="message-attachment-photos"
 		>
-			<img src={photoUrls[0]} alt={photos[0].name} onload={onSingleLoad} />
+			<button
+				type="button"
+				class="photo-cell"
+				onclick={e => openLightbox(0, e)}
+			>
+				<img src={photoUrls[0]} alt={photos[0].name} onload={onSingleLoad} />
+			</button>
 		</div>
 	{:else}
 		{@const cfg = gridConfig(photos.length)}
@@ -74,12 +94,16 @@
 			data-testid="message-attachment-photos"
 		>
 			{#each photos.slice(0, cfg.visibleCells) as photo, i (photoUrls[i])}
-				<div class="photo-cell">
+				<button
+					type="button"
+					class="photo-cell"
+					onclick={e => openLightbox(i, e)}
+				>
 					<img src={photoUrls[i]} alt={photo.name} loading="lazy" />
 					{#if i === cfg.visibleCells - 1 && overflow > 0}
 						<div class="photo-overlay">+{overflow}</div>
 					{/if}
-				</div>
+				</button>
 			{/each}
 		</div>
 	{/if}
@@ -145,11 +169,10 @@
 		background: black;
 	}
 
-	.single img {
+	.single .photo-cell {
 		width: 100%;
 		height: 100%;
-		object-fit: cover;
-		display: block;
+		background: transparent;
 	}
 
 	.multi {
@@ -211,6 +234,10 @@
 		position: relative;
 		overflow: hidden;
 		background: rgba(128, 128, 128, 0.08);
+		border: none;
+		padding: 0;
+		display: block;
+		cursor: pointer;
 	}
 
 	.photo-cell img {

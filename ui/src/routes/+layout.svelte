@@ -35,6 +35,7 @@
 
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
 	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
+	import Lightbox from '$lib/components/messages/Lightbox.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
@@ -209,6 +210,7 @@
 				{/if}
 			{/key}
 		</SplashscreenPrompt>
+		<Lightbox />
 		<ToastManager />
 	</App>
 </KonstaProvider>

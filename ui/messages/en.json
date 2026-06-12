@@ -146,6 +146,10 @@
 	"removeAllAttachments": "Remove all attachments",
 	"saveFile": "Save file",
 	"fileSaved": "File saved",
+	"you": "You",
+	"previousPhoto": "Previous photo",
+	"nextPhoto": "Next photo",
+	"closeLightbox": "Close",
 
 	"nameThisGroup": "Name this group",
 	"newGroup": "New group",

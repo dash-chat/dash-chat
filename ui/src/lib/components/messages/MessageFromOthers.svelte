@@ -21,6 +21,7 @@
 		onToggleReaction,
 		chatId,
 		sender,
+		senderName = '',
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -29,6 +30,9 @@
 		searchQuery: string;
 		onToggleReaction: (emoji: string) => void;
 		sender?: { name: string; color: string };
+		/** Author display name for the lightbox header; `sender` is only set
+		 * on position-first group bubbles, so it can't serve that role. */
+		senderName?: string;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -76,6 +80,8 @@
 			media={message.content.media}
 			withContentAbove={!!sender}
 			withContentBelow={!!message.content.message || isLast}
+			{senderName}
+			timestamp={message.timestamp}
 		/>
 	{/if}
 	{#if message.content.message || isLast}

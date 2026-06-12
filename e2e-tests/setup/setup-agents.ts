@@ -6,6 +6,7 @@
  * small set of agent-level helpers that proxy to the browser-side test
  * registry (`agent.tr`, `agent.goto`, `agent.setLocale`, …).
  */
+import { Lightbox } from '../helpers/components/lightbox';
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { Toast } from '../helpers/components/toast';
 import { UpdaterBanner } from '../helpers/components/updater-banner';
@@ -50,6 +51,7 @@ export type Agent = WebdriverIO.Browser & {
 	groupInfoPage: GroupInfoPage;
 	helpPage: HelpPage;
 	homePage: HomePage;
+	lightbox: Lightbox;
 	newGroupPage: NewGroupPage;
 	newMessagePage: NewMessagePage;
 	notificationsPage: NotificationsPage;
@@ -94,6 +96,7 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	agent.groupInfoPage = new GroupInfoPage(b);
 	agent.helpPage = new HelpPage(b);
 	agent.homePage = new HomePage(b);
+	agent.lightbox = new Lightbox(b);
 	agent.newGroupPage = new NewGroupPage(b);
 	agent.newMessagePage = new NewMessagePage(b);
 	agent.notificationsPage = new NotificationsPage(b);
