@@ -1,27 +1,35 @@
-import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
+import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import {
+	createGroup,
+	exchangeContactsAndCreateGroup,
+} from '../../helpers/flows/exchange-contacts-and-create-group';
 import { tid } from '../../helpers/selectors';
 import { type Agent, setupAgent } from '../../setup/setup-agents';
 
 describe('Leaving group', () => {
 	let agent1: Agent;
+	let agent2: Agent;
 
 	before(async () => {
-		agent1 = await setupAgent('agent1');
+		[agent1, agent2] = await Promise.all([
+			setupAgent('agent1'),
+			setupAgent('agent2'),
+		]);
+
 		await agent1.enablePreviewFeatures();
+		await agent2.enablePreviewFeatures();
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
+		await agent2.createProfilePage.createProfile('Bob', 'Test');
+
+		await exchangeContacts(agent1, agent2);
+		await agent1.directChatPage.back.click();
+		await agent2.directChatPage.back.click();
+		await agent1.homePage.ready();
+		await agent2.homePage.ready();
 	});
 
 	it('creator can leave a group they created alone', async () => {
-		await agent1.homePage.newMessageButton.click();
-		await agent1.newMessagePage.ready();
-		await agent1.newMessagePage.newGroup.click();
-
-		await agent1.newGroupPage.addMembersStep.ready();
-		await agent1.newGroupPage.addMembersStep.nextButton.click();
-
-		await agent1.newGroupPage.groupInfoStep.ready();
-		await agent1.newGroupPage.groupInfoStep.setName('Solo Group');
-		await agent1.newGroupPage.groupInfoStep.createButton.click();
+		await createGroup(agent1, 'Solo Group', null);
 
 		await agent1.groupChatPage.ready();
 		await agent1.groupChatPage.infoLink.click();
@@ -58,23 +66,21 @@ describe('Leaving group', () => {
 		const membersList = agent1.$(tid('group-info-members'));
 		await expect(membersList.$('=Alice')).not.toBeExisting();
 	});
-});
 
-it('creator cant leave a group with another member but no other admins', async () => {
-	const agent1 = await setupAgent('agent1');
-	const agent2 = await setupAgent('agent2');
-	await exchangeContactsAndCreateGroup(agent1, agent2);
+	it('creator cant leave a group with another member but no other admins', async () => {
+		await createGroup(agent1, 'Two member group', 'Bob');
 
-	await agent1.groupChatPage.infoLink.click();
-	await agent1.groupInfoPage.ready();
+		await agent1.groupChatPage.infoLink.click();
+		await agent1.groupInfoPage.ready();
 
-	await agent1.groupInfoPage.leaveButton.click();
-	await agent1.groupInfoPage.leaveConfirmButton.waitForExist();
-	await agent1.groupInfoPage.leaveConfirmButton.click();
+		await agent1.groupInfoPage.leaveButton.click();
+		await agent1.groupInfoPage.leaveConfirmButton.waitForExist();
+		await agent1.groupInfoPage.leaveConfirmButton.click();
 
-	const expectedText = await agent1.tr('errorLeavingGroupOnlyAdmin');
-	await agent1.toast.expectMessage(expectedText);
+		const expectedText = await agent1.tr('errorLeavingGroupOnlyAdmin');
+		await agent1.toast.expectMessage(expectedText);
 
-	// Confirm we are still on the group info page (leave was blocked)
-	await agent1.groupInfoPage.ready();
+		// Confirm we are still on the group info page (leave was blocked)
+		await agent1.groupInfoPage.ready();
+	});
 });
