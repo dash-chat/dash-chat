@@ -309,3 +309,88 @@ async fn test_group_chat() {
     let alice_members = alice.get_group_members(chat_id).await.unwrap();
     assert_eq!(alice_members, expected_members);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_remove_group_member() {
+    dashchat_node::util::setup_aliases();
+    dashchat_node::testing::setup_tracing(
+        &[
+            "dashchat=info",
+            "p2panda_stream=warn",
+            "p2panda_auth=warn",
+            "p2panda_spaces=warn",
+            "named_id=warn",
+        ],
+        true,
+    );
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let alice = TestNode::new(NodeConfig::testing(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    introduce_and_wait([&alice, &bobbi]).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    // alice removes herself from the group
+    alice
+        .remove_group_member(chat_id, *alice.device_id())
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let expected_members = maplit::btreeset![(bobbi.device_id(), p2panda_auth::Access::write()),];
+
+    let result = poll
+        .wait_for(|| async {
+            let members = [
+                alice.get_group_members(chat_id).await.unwrap(),
+                bobbi.get_group_members(chat_id).await.unwrap(),
+            ];
+            members
+                .iter()
+                .all(|m| *m == expected_members)
+                .then_some(())
+                .ok_or(members)
+        })
+        .await;
+
+    if let Err(members) = result {
+        panic!(
+            "memberships are not consistent after removal: {:#?}",
+            members
+        );
+    }
+}
