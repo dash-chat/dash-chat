@@ -11,19 +11,40 @@ use p2panda::network::MdnsDiscoveryMode;
 use p2panda_auth::Access;
 use std::collections::BTreeSet;
 
+fn format_members(members: &BTreeSet<(DeviceId, Access)>, labels: &[(&DeviceId, &str)]) -> String {
+    let entries: Vec<String> = members
+        .iter()
+        .map(|(id, access)| {
+            let name = labels
+                .iter()
+                .find(|(did, _)| *did == id)
+                .map(|(_, name)| *name)
+                .unwrap_or("unknown");
+            let level = format!("{:?}", access.level).to_lowercase();
+            format!("{name}:{level}")
+        })
+        .collect();
+    format!("{{{}}}", entries.join(", "))
+}
+
 async fn assert_group_members(
     poll: &PollConfig,
-    nodes: &[&TestNode],
+    nodes: &[(&TestNode, &str)],
     chat_id: ChatId,
     expected: BTreeSet<(DeviceId, Access)>,
-    panic_msg: &str,
 ) {
+    let label_ids: Vec<(DeviceId, &str)> = nodes
+        .iter()
+        .map(|(n, name)| (n.device_id(), *name))
+        .collect();
+    let labels: Vec<(&DeviceId, &str)> = label_ids.iter().map(|(id, name)| (id, *name)).collect();
+
     let result = poll
         .wait_for(|| async {
             let members: Vec<_> = futures::future::join_all(
                 nodes
                     .iter()
-                    .map(|n| async { n.get_group_members(chat_id).await.unwrap() }),
+                    .map(|(n, _)| async { n.get_group_members(chat_id).await.unwrap() }),
             )
             .await;
             members
@@ -35,7 +56,16 @@ async fn assert_group_members(
         .await;
 
     if let Err(members) = result {
-        panic!("{}: {:#?}", panic_msg, members);
+        let expected_str = format_members(&expected, &labels);
+        let actual_strs: Vec<String> = nodes
+            .iter()
+            .zip(members.iter())
+            .map(|((_, name), m)| format!("{name}: {}", format_members(m, &labels)))
+            .collect();
+        panic!(
+            "Expected group members {expected_str}, but was:\n  {}",
+            actual_strs.join("\n  ")
+        );
     }
 }
 
@@ -233,10 +263,9 @@ async fn test_group_chat() {
 
     assert_group_members(
         &poll,
-        &[&alice, &bobbi, &cammy],
+        &[(&alice, "alice"), (&bobbi, "bobbi"), (&cammy, "cammy")],
         chat_id,
         expected_members.clone(),
-        "memberships are not consistent",
     )
     .await;
 
@@ -310,7 +339,35 @@ async fn test_group_chat() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_remove_group_member() {
+async fn test_admin_removes_themself_when_they_are_the_only_member() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let alice = make_node(&mailbox, "alice").await;
+
+    let chat_id = alice
+        .create_group(btreemap! {})
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    alice
+        .remove_group_member(chat_id, *alice.device_id())
+        .await
+        .unwrap();
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice")],
+        chat_id,
+        btreeset![],
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_non_admin_removes_themself() {
     setup();
 
     let poll = PollConfig::default();
@@ -344,9 +401,9 @@ async fn test_remove_group_member() {
         .await
         .unwrap();
 
-    // alice removes herself from the group
-    alice
-        .remove_group_member(chat_id, *alice.device_id())
+    // bobbi removes herself from the group
+    bobbi
+        .remove_group_member(chat_id, *bobbi.device_id())
         .await
         .unwrap();
 
@@ -356,10 +413,9 @@ async fn test_remove_group_member() {
 
     assert_group_members(
         &poll,
-        &[&alice, &bobbi],
+        &[(&alice, "alice"), (&bobbi, "bobbi")],
         chat_id,
-        btreeset![(bobbi.device_id(), Access::write())],
-        "memberships are not consistent after removal",
+        btreeset![(alice.device_id(), Access::manage())],
     )
     .await;
 }
