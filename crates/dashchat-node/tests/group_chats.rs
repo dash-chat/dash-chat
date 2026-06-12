@@ -414,6 +414,38 @@ async fn test_admin_removes_themself_there_is_another_admin() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_admin_cant_remove_themself_when_they_are_the_only_admin() {
+    setup();
+
+    let mailbox = MemMailbox::new();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    introduce_and_wait([&alice, &bobbi]).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    let result = alice.remove_group_member(chat_id, *alice.device_id()).await;
+
+    assert!(
+        result.is_err(),
+        "expected error when last admin tries to remove themselves, but got ok"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_non_admin_removes_themself() {
     setup();
 
