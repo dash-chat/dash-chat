@@ -3,7 +3,6 @@
  * message, sent, and rendered on both ends, and that the 16 MiB size cap is
  * enforced.
  */
-
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgent } from '../setup/setup-agents';
 
@@ -76,6 +75,13 @@ describe('Media attachments', () => {
 		await agent1.directChatPage.attachPhotos(2);
 		await agent1.directChatPage.expectStagedPhotoCount(3);
 		await agent1.directChatPage.sendComposer();
+		// waitForPhotoMessage matches photos from earlier tests instantly, so
+		// wait for the staging strip to clear — that marks send completion and
+		// keeps the next test from racing the in-flight draft.
+		await agent1.waitUntil(
+			async () => !(await agent1.directChatPage.hasMediaPreview()),
+			{ timeoutMsg: 'Draft still staged after send completed' },
+		);
 		await agent1.directChatPage.waitForPhotoMessage();
 	});
 

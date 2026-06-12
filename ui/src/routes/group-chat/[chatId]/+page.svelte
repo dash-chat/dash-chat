@@ -76,9 +76,13 @@
 		try {
 			const media = draft ? await draftToMedia(draft) : null;
 			await store.sendMessage({ message, media });
-			messageText = '';
-			messageMedia = undefined;
-			if (draft) revokeDraft(draft);
+			// Only clear what this send actually consumed: the user may have
+			// typed or staged new attachments while the send was confirming.
+			if (messageText === message) messageText = '';
+			if (messageMedia === draft) {
+				messageMedia = undefined;
+				if (draft) revokeDraft(draft);
+			}
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
 			setTimeout(() => reverseScrollPage?.scrollToBottom());

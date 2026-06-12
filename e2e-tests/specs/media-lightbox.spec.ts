@@ -2,7 +2,6 @@
  * Lightbox E2E — opening photos from a message bubble, navigating between
  * them (buttons, keyboard, filmstrip), and closing with focus restored.
  */
-
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgent } from '../setup/setup-agents';
 
@@ -22,6 +21,16 @@ describe('Photo lightbox', () => {
 		await agent1.directChatPage.composer.attachPhotos(3);
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.waitForPhotoMessage();
+	});
+
+	afterEach(async () => {
+		// Keep tests independent: a failed assertion mid-test can leave the
+		// lightbox open (possibly zoomed — first Escape only exits zoom).
+		for (const agent of [agent1, agent2]) {
+			for (let i = 0; i < 2 && (await agent.lightbox.isOpen()); i++) {
+				await agent.lightbox.pressKey('Escape');
+			}
+		}
 	});
 
 	it('opens the clicked photo and closes with the close button', async () => {
@@ -84,9 +93,7 @@ describe('Photo lightbox', () => {
 		});
 		const focusRestored = await agent1.execute(() => {
 			const active = document.activeElement;
-			return !!active?.closest(
-				'[data-testid="message-attachment-photos"]',
-			);
+			return !!active?.closest('[data-testid="message-attachment-photos"]');
 		});
 		if (!focusRestored) {
 			throw new Error('Focus was not restored to the photo cell');
