@@ -31,6 +31,14 @@
 	} from '$lib/components/messages/message-helpers';
 	import { showToast } from '$lib/utils/toasts';
 	import { m } from '$lib/paraglide/messages';
+	import {
+		type DraftMedia,
+		draftToMedia,
+		revokeDraft,
+		AttachmentTooLargeError,
+		formatFileSize,
+		MAX_MESSAGE_BYTES,
+	} from '$lib/types/media';
 
 	let chatId = page.params.chatId!;
 
@@ -50,6 +58,7 @@
 	const unreadCount = useReactivePromise(store.unreadCount);
 
 	let messageText = $state('');
+	let messageMedia: DraftMedia | undefined = $state(undefined);
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
 	let reverseScrollPage: ReturnType<typeof ReverseScrollPage> | undefined =
@@ -60,17 +69,29 @@
 
 	async function sendMessage() {
 		const message = messageText;
-		if (!message || message.trim() === '') return;
-		messageText = '';
+		const draft = messageMedia;
+		if ((!message || message.trim() === '') && !draft) return;
 		try {
-			await store.sendMessage({ message, media: null });
+			const media = draft ? await draftToMedia(draft) : null;
+			await store.sendMessage({ message, media });
+			messageText = '';
+			messageMedia = undefined;
+			if (draft) revokeDraft(draft);
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
 			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		} catch (e) {
+			if (e instanceof AttachmentTooLargeError) {
+				showToast(
+					m.errorAttachmentTooLarge({
+						max: formatFileSize(MAX_MESSAGE_BYTES),
+					}),
+					'error',
+				);
+				return;
+			}
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to send group message', e);
-			messageText = message;
 		}
 	}
 
@@ -316,6 +337,11 @@
 		class:bg-md-light-surface={theme === 'material'}
 		class:dark:bg-md-dark-surface={theme === 'material'}
 	>
-		<MessageInput bind:value={messageText} onSend={sendMessage} />
+		<MessageInput
+			bind:value={messageText}
+			media={messageMedia}
+			onSend={sendMessage}
+			onMediaChange={media => (messageMedia = media)}
+		/>
 	</div>
 </div>

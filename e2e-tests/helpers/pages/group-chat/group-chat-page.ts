@@ -1,3 +1,8 @@
+import {
+	Composer,
+	waitForFileMessageIn,
+	waitForPhotoMessageIn,
+} from '../../components/composer';
 import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
@@ -10,6 +15,7 @@ export class GroupChatPage extends TestPage {
 	headerName = this.agent.$(tid('group-chat-header-name'));
 	messages = this.agent.$(tid('group-chat-messages'));
 	messageInput = this.agent.$(tid('message-input-textarea'));
+	composer = new Composer(this.agent);
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scrollBottom = this.agent.$(tid('chat-scroll-bottom'));
 	unreadBadge = this.agent.$(tid('chat-unread-badge'));
@@ -86,6 +92,21 @@ export class GroupChatPage extends TestPage {
 					text,
 				),
 			{ timeout, timeoutMsg: `Message "${text}" not found` },
+		);
+	}
+
+	/** Wait until a rendered (loaded) photo attachment appears in the chat. */
+	async waitForPhotoMessage(timeout = 25_000): Promise<void> {
+		await waitForPhotoMessageIn(this.agent, tid('group-chat-messages'), timeout);
+	}
+
+	/** Wait until a file attachment with the given filename appears. */
+	async waitForFileMessage(name: string, timeout = 25_000): Promise<void> {
+		await waitForFileMessageIn(
+			this.agent,
+			tid('group-chat-messages'),
+			name,
+			timeout,
 		);
 	}
 
