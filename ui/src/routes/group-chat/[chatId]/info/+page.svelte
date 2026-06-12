@@ -266,6 +266,7 @@
 								{/each}
 							</ActionList>
 
+						{#if me.member}
 							<ActionList>
 								<ListAction
 									title={m.leaveGroup()}
@@ -282,6 +283,7 @@
 								onClick={() => (dialogType = 'delete')}
 							/> -->
 							</ActionList>
+						{/if}
 						</div>
 					{/await}
 				</div>
