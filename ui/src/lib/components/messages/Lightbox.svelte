@@ -21,12 +21,14 @@
 	const photos = $derived(content?.photos);
 
 	// Own object URLs — independent of the bubble's, revoked on change/close.
-	const photoUrls = $derived.by(() =>
-		photos ? photos.map(p => bytesToBlobUrl(p.data, p.mime_type)) : [],
-	);
+	// Minted and revoked in the same pre-effect; see MessageAttachment.
+	let photoUrls = $state<string[]>([]);
 
-	$effect(() => {
-		const urls = photoUrls;
+	$effect.pre(() => {
+		const urls = photos
+			? photos.map(p => bytesToBlobUrl(p.data, p.mime_type))
+			: [];
+		photoUrls = urls;
 		return () => urls.forEach(u => URL.revokeObjectURL(u));
 	});
 

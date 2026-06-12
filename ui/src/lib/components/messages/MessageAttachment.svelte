@@ -39,16 +39,17 @@
 		);
 	}
 
-	// Build object URLs once per Media instance and revoke on teardown.
-	const photoUrls = $derived.by(() =>
-		media.kind === 'photos'
-			? media.photos.map(p => bytesToBlobUrl(p.data, p.mime_type))
-			: [],
-	);
+	// Build object URLs once per Media instance. Minting and revoking live
+	// in the same pre-effect (not a $derived) so the URLs can never leak if
+	// a derived were to re-evaluate independently of its consumer.
+	let photoUrls = $state<string[]>([]);
 
-	$effect(() => {
-		// Capture for cleanup so we revoke exactly what we created.
-		const urls = photoUrls;
+	$effect.pre(() => {
+		const urls =
+			media.kind === 'photos'
+				? media.photos.map(p => bytesToBlobUrl(p.data, p.mime_type))
+				: [];
+		photoUrls = urls;
 		return () => urls.forEach(u => URL.revokeObjectURL(u));
 	});
 
