@@ -9,17 +9,23 @@ import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import {
 	ChatReaction,
 	ChatSummary,
+	Media,
 	MessageContent,
 	Payload,
 	ReadMessagesStore,
+	getMessageMedia,
 	getMessageText,
+	summarizeMessageContent,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IDirectChatClient } from './direct-chat-client';
 
 export interface Message {
 	hash: string;
-	content: string;
+	content: {
+		message: string;
+		media: Media | null;
+	};
 	timestamp: number;
 	author: DeviceId;
 	seqNum: number;
@@ -61,7 +67,10 @@ export class DirectChatStore implements ReadMessagesStore {
 					if (body.payload.type === 'Message') {
 						messages[operation.hash] = {
 							hash: operation.hash,
-							content: getMessageText(body.payload.payload),
+							content: {
+								message: getMessageText(body.payload.payload),
+								media: getMessageMedia(body.payload.payload),
+							},
 							author,
 							seqNum: operation.header.seq_num,
 							timestamp: operation.header.timestamp,
@@ -140,16 +149,21 @@ export class DirectChatStore implements ReadMessagesStore {
 		});
 	}
 
-	async sendMessage(text: string) {
+	async sendMessage(input: { message: string; media: Media | null }) {
 		const chatId = await this.chatId();
 		const myDeviceId = await this.contactsStore.myDeviceId();
-		const content: MessageContent = { v: '1', message: text, media: null };
+		const content: MessageContent = {
+			v: '1',
+			message: input.message,
+			media: input.media,
+		};
 		await Promise.all([
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
 				if (op.header.verifying_key !== myDeviceId) return false;
-				if (getMessageText(op.body.payload.payload) !== text) return false;
+				if (getMessageText(op.body.payload.payload) !== input.message)
+					return false;
 				return true;
 			}),
 			this.client.sendMessage(chatId, content),
@@ -201,7 +215,7 @@ export class DirectChatStore implements ReadMessagesStore {
 		const lastEvent: ChatSummary['lastEvent'] = message
 			? {
 					kind: 'message',
-					text: message.content,
+					text: summarizeMessageContent(message.content),
 					timestamp: message.timestamp,
 				}
 			: {

@@ -52,6 +52,14 @@
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
 	import MessageInput from '$lib/components/MessageInput.svelte';
+	import {
+		type DraftMedia,
+		draftToMedia,
+		revokeDraft,
+		AttachmentTooLargeError,
+		formatFileSize,
+		MAX_MESSAGE_BYTES,
+	} from '$lib/types/media';
 	import { condenseReactions } from '$lib/utils/emojis';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
@@ -125,6 +133,7 @@
 	}
 
 	let messageText = $state('');
+	let messageMedia: DraftMedia | undefined = $state(undefined);
 	let showQuickBar = $state(false);
 	let showFullPicker = $state(false);
 	let emojiTargetedMessage: Message | undefined = $state(undefined);
@@ -163,12 +172,16 @@
 
 	async function sendMessage() {
 		const message = messageText;
+		const draft = messageMedia;
 
-		if (!message || message.trim() === '') return;
+		if ((!message || message.trim() === '') && !draft) return;
 
 		try {
-			await store.sendMessage(message);
+			const media = draft ? await draftToMedia(draft) : null;
+			await store.sendMessage({ message, media });
 			messageText = '';
+			messageMedia = undefined;
+			if (draft) revokeDraft(draft);
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
 			// Defer the scroll one macrotask: store.sendMessage resolves once
@@ -181,6 +194,15 @@
 			// hidden behind the input bar.
 			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		} catch (e) {
+			if (e instanceof AttachmentTooLargeError) {
+				showToast(
+					m.errorAttachmentTooLarge({
+						max: formatFileSize(MAX_MESSAGE_BYTES),
+					}),
+					'error',
+				);
+				return;
+			}
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
@@ -876,6 +898,8 @@
 					{:else}
 						<MessageInput
 							bind:value={messageText}
+							media={messageMedia}
+							onMediaChange={m => (messageMedia = m)}
 							onSend={sendMessage}
 							onEmojiClick={() => (showFullPicker = true)}
 						/>

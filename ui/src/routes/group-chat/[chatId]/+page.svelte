@@ -59,18 +59,18 @@
 	let unreadDividerCaptured = false;
 
 	async function sendMessage() {
-		const text = messageText;
-		if (!text || text.trim() === '') return;
+		const message = messageText;
+		if (!message || message.trim() === '') return;
 		messageText = '';
 		try {
-			await store.sendMessage(text);
+			await store.sendMessage({ message, media: null });
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
 			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to send group message', e);
-			messageText = text;
+			messageText = message;
 		}
 	}
 

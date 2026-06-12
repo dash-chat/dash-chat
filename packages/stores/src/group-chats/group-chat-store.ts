@@ -13,10 +13,13 @@ import {
 	ChatSummaryLastEvent,
 	GroupControlEvent,
 	GroupInfo,
+	Media,
 	MessageContent,
 	Payload,
 	ReadMessagesStore,
+	getMessageMedia,
 	getMessageText,
+	summarizeMessageContent,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IGroupChatClient } from './group-chat-client';
@@ -91,7 +94,10 @@ export class GroupChatStore implements ReadMessagesStore {
 					if (body.payload.type === 'Message') {
 						messages[operation.hash] = {
 							hash: operation.hash,
-							content: getMessageText(body.payload.payload),
+							content: {
+								message: getMessageText(body.payload.payload),
+								media: getMessageMedia(body.payload.payload),
+							},
 							author,
 							seqNum: operation.header.seq_num,
 							timestamp: operation.header.timestamp,
@@ -226,7 +232,7 @@ export class GroupChatStore implements ReadMessagesStore {
 		const messageEvent: ChatSummaryLastEvent | undefined = lastMessage
 			? {
 					kind: 'message',
-					text: lastMessage.content,
+					text: summarizeMessageContent(lastMessage.content),
 					authorName: await this.nameForDevice(lastMessage.author),
 					timestamp: lastMessage.timestamp,
 				}
@@ -349,15 +355,20 @@ export class GroupChatStore implements ReadMessagesStore {
 		await this.client.markMessagesRead(this.chatId, messageHashes);
 	}
 
-	async sendMessage(text: string) {
+	async sendMessage(input: { message: string; media: Media | null }) {
 		const myDeviceId = await this.contactsStore.myDeviceId();
-		const content: MessageContent = { v: '1', message: text, media: null };
+		const content: MessageContent = {
+			v: '1',
+			message: input.message,
+			media: input.media,
+		};
 		await Promise.all([
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== this.chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
 				if (op.header.verifying_key !== myDeviceId) return false;
-				if (getMessageText(op.body.payload.payload) !== text) return false;
+				if (getMessageText(op.body.payload.payload) !== input.message)
+					return false;
 				return true;
 			}),
 			this.client.sendMessage(this.chatId, content),
