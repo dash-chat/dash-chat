@@ -520,6 +520,11 @@ impl Node {
         member: VerifyingKey,
     ) -> anyhow::Result<()> {
         // TODO: this should use a transaction, but the race is not a big deal here
+        let member_id = DeviceId::from(member);
+        if !self.has_other_admins(chat_id, member_id).await? {
+            anyhow::bail!("cannot remove the only admin from a group that still has members");
+        }
+
         let deps = self.group_store.heads(*chat_id).await?;
         self.publish(
             chat_id,
@@ -548,6 +553,17 @@ impl Node {
             .map(|(m, a)| (DeviceId::from(m), a))
             .collect();
         Ok(members)
+    }
+
+    async fn has_other_admins(&self, chat_id: ChatId, exclude: DeviceId) -> anyhow::Result<bool> {
+        let members = self.get_group_members(chat_id).await?;
+        let is_admin = members
+            .iter()
+            .any(|(m, a)| *m == exclude && *a == p2panda_auth::Access::manage());
+        let has_others = members
+            .iter()
+            .any(|(m, a)| *m != exclude && *a == p2panda_auth::Access::manage());
+        Ok(!is_admin || has_others || members.len() <= 1)
     }
 
     /// "Joining" a chat means subscribing to messages for that chat.
