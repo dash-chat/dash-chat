@@ -34,13 +34,14 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // ChatMessageContentV1 { message: "...", media: ... }. Use \b so we
         // don't match substrings inside identifiers.
         r#"\bmessage:\s*"[^"]*""#,
-        // Debug format: media attachment byte arrays — `data: [1, 2, 3, ...]`
-        // inside Photo { ... } / FileAttachment { ... }. Strips the bytes so
-        // attachment content never leaves the device in a log report.
+        // Media attachment byte arrays in Debug (`data: [1, 2, ...]`) and
+        // JSON (`"data":[1,2,...]`) form, inside Photo/FileAttachment.
+        // Strips the bytes so attachment content never leaves the device in
+        // a log report. Attachment filenames need no patterns of their own:
+        // the Debug `name:` and JSON "name" patterns above already cover
+        // them.
         r#"\bdata:\s*\[[\d,\s]*\]"#,
-        // Debug format: attachment filename — `name: "foo.jpg"` inside
-        // Photo/FileAttachment. The bare `name:` pattern above also matches
-        // here; this entry documents the intent.
+        r#""data"\s*:\s*\[[\d,\s]*\]"#,
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
         // JSON format: "name":"...", "surname":"...", "about":"...", "description":"..."
@@ -350,6 +351,20 @@ mod tests {
         assert!(
             !result.contains("secret message"),
             "message not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_media_bytes_json() {
+        let input = r#"{"photos":[{"data":[137, 80, 78, 71],"name":"private.jpg","mime_type":"image/jpeg"}]}"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("137, 80, 78, 71"),
+            "photo bytes leaked: {result}"
+        );
+        assert!(
+            !result.contains("private.jpg"),
+            "photo name leaked: {result}"
         );
     }
 
