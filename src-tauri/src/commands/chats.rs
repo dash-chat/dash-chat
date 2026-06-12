@@ -1,4 +1,7 @@
-use dashchat_node::{AgentId, ChatId, ChatMessageContent, ChatReaction, DeviceId, GroupInfo, Node};
+use dashchat_node::{
+    AgentId, ChatId, ChatMessageContent, ChatReaction, DeviceId, GroupInfo, Node,
+    RemoveGroupMemberError,
+};
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
@@ -142,9 +145,12 @@ pub async fn get_group_members(
 }
 
 #[tauri::command]
-pub async fn leave_group(chat_id: ChatId, node: State<'_, Node>) -> Result<(), String> {
+pub async fn leave_group(
+    chat_id: ChatId,
+    node: State<'_, Node>,
+) -> Result<(), RemoveGroupMemberError> {
     let my_device_id = node.device_id();
     node.remove_group_member(chat_id, *my_device_id)
         .await
-        .map_err(|e| format!("{e:?}"))
+        .map_err(RemoveGroupMemberError::from)
 }

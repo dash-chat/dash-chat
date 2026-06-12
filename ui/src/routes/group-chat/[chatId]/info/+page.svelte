@@ -92,9 +92,14 @@
 			return { success: true as const };
 		} catch (e) {
 			console.error(e);
+			const errorMessage =
+				(e as { kind?: string }).kind === 'LastAdmin'
+					? m.errorLeavingGroupOnlyAdmin()
+					: m.errorLeavingGroup();
+
 			return {
 				success: false as const,
-				error: m.errorLeavingGroup(),
+				error: errorMessage,
 			};
 		}
 	}
@@ -266,24 +271,24 @@
 								{/each}
 							</ActionList>
 
-						{#if me.member}
-							<ActionList>
-								<ListAction
-									title={m.leaveGroup()}
-									actionType="danger"
-									icon={mdiExport}
-									onClick={() => (dialogType = 'leave')}
-									data-testid="group-info-leave"
-								/>
+							{#if me.member}
+								<ActionList>
+									<ListAction
+										title={m.leaveGroup()}
+										actionType="danger"
+										icon={mdiExport}
+										onClick={() => (dialogType = 'leave')}
+										data-testid="group-info-leave"
+									/>
 
-								<!-- <ListAction
+									<!-- <ListAction
 								title={m.deleteGroup()}
 								actionType="danger"
 								icon={mdiClose}
 								onClick={() => (dialogType = 'delete')}
 							/> -->
-							</ActionList>
-						{/if}
+								</ActionList>
+							{/if}
 						</div>
 					{/await}
 				</div>

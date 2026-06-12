@@ -1,3 +1,4 @@
+import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
 import { tid } from '../../helpers/selectors';
 import { type Agent, setupAgent } from '../../setup/setup-agents';
 
@@ -57,4 +58,23 @@ describe('Leaving group', () => {
 		const membersList = agent1.$(tid('group-info-members'));
 		await expect(membersList.$('=Alice')).not.toBeExisting();
 	});
+});
+
+it('creator cant leave a group with another member but no other admins', async () => {
+	const agent1 = await setupAgent('agent1');
+	const agent2 = await setupAgent('agent2');
+	await exchangeContactsAndCreateGroup(agent1, agent2);
+
+	await agent1.groupChatPage.infoLink.click();
+	await agent1.groupInfoPage.ready();
+
+	await agent1.groupInfoPage.leaveButton.click();
+	await agent1.groupInfoPage.leaveConfirmButton.waitForExist();
+	await agent1.groupInfoPage.leaveConfirmButton.click();
+
+	const expectedText = await agent1.tr('errorLeavingGroupOnlyAdmin');
+	await agent1.toast.expectMessage(expectedText);
+
+	// Confirm we are still on the group info page (leave was blocked)
+	await agent1.groupInfoPage.ready();
 });
