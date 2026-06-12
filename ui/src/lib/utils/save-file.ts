@@ -36,7 +36,8 @@ export async function saveAttachment(
 			a.href = url;
 			a.download = file.name;
 			a.click();
-			URL.revokeObjectURL(url);
+			// Revoking synchronously can race the download start.
+			setTimeout(() => URL.revokeObjectURL(url), 0);
 		}
 	} catch (e) {
 		showToast(m.errorUnexpected(), 'unexpected', e);

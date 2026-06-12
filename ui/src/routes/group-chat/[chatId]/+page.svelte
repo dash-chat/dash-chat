@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { getContext } from 'svelte';
+	import { getContext, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type {
 		ChatsStore,
@@ -96,6 +96,12 @@
 			console.error('Failed to send group message', e);
 		}
 	}
+
+	// Free staged-attachment object URLs when leaving the chat without
+	// sending; nothing else revokes them.
+	onDestroy(() => {
+		if (messageMedia) revokeDraft(messageMedia);
+	});
 
 	const theme = $derived(useTheme());
 

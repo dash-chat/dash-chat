@@ -37,10 +37,22 @@ export interface IngestResult {
 	error?: IngestError;
 }
 
-// Videos are excluded until they render as <video> in bubbles/lightbox;
-// for now they stage and send as file attachments instead.
+// Only image types that decode in every supported webview may enter the
+// photo path; anything else (videos until <video> rendering exists, and
+// formats with patchy decoder support like HEIC/TIFF) stages and sends as
+// a file attachment instead of producing a broken <img> on the recipient.
+const PHOTO_TYPES = new Set([
+	'image/jpeg',
+	'image/png',
+	'image/webp',
+	'image/gif',
+	'image/avif',
+	'image/bmp',
+	'image/svg+xml',
+]);
+
 function isVisualFile(file: File): boolean {
-	return file.type.startsWith('image/');
+	return PHOTO_TYPES.has(file.type);
 }
 
 /**

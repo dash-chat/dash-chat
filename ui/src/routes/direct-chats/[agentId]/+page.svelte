@@ -4,7 +4,7 @@
 	import 'emoji-picker-element';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { getContext, onMount, tick } from 'svelte';
+	import { getContext, onDestroy, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
@@ -208,6 +208,12 @@
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
+
+	// Free staged-attachment object URLs when leaving the chat without
+	// sending; nothing else revokes them.
+	onDestroy(() => {
+		if (messageMedia) revokeDraft(messageMedia);
+	});
 
 	onMount(() => {
 		if (page.url.searchParams.has('search')) {
