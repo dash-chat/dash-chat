@@ -1,15 +1,11 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { deleteGroup, m } from '$lib/paraglide/messages.js';
+	import { m } from '$lib/paraglide/messages.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type {
-		ContactsStore,
-		ChatsStore,
-		VerifyingKey,
-	} from 'dash-chat-stores';
+	import type { ChatsStore } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
 		mdiAccountGroup,
@@ -23,7 +19,6 @@
 		Page,
 		Navbar,
 		NavbarBackLink,
-		List,
 		ListItem,
 		Chip,
 		Sheet,
@@ -32,11 +27,11 @@
 		Link,
 	} from 'konsta/svelte';
 
-	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { page } from '$app/state';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import ActionList from '$lib/components/navigation/ActionList.svelte';
+	import ActionDialog from '$lib/components/navigation/ActionDialog.svelte';
 	let chatId = page.params.chatId!;
 
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -51,7 +46,6 @@
 		'demote' | 'promote' | 'remove' | 'leave' | 'delete' | null
 	>(null);
 	let dialogActorId = $state<string | null>(null);
-	// let loading = $state(false);
 	const theme = $derived(useTheme());
 
 	// async function handleDemote(actorId: string) {
@@ -90,17 +84,20 @@
 	// 	loading = false;
 	// }
 
-	// async function handleLeaveGroup() {
-	// 	loading = true;
-	// 	try {
-	// 		await groupChatStore.client.leaveGroup();
-	// 		dialogType = null;
-	// 		goto('/');
-	// 	} catch (e) {
-	// 		console.error(e);
-	// 	}
-	// 	loading = false;
-	// }
+	async function handleLeaveGroup() {
+		loading = true;
+		try {
+			// Wait for 5 second to simulate the leave group process, you can replace this with the actual leave group logic
+			await new Promise(resolve => setTimeout(resolve, 5000));
+
+			// await groupChatStore.client.leaveGroup();
+			// dialogType = null;
+			// goto('/');
+		} catch (e) {
+			console.error(e);
+		}
+		loading = false;
+	}
 
 	// async function handleDeleteGroup() {
 	// 	loading = true;
@@ -373,21 +370,13 @@
 			{/snippet}
 		</Dialog> -->
 
-		<!-- <Dialog
+		<ActionDialog
 			opened={dialogType === 'leave'}
-			onBackdropClick={() => (dialogType = null)}
+			onCancel={() => (dialogType = null)}
+			onConfirm={handleLeaveGroup}
 			title={m.leaveGroup()}
-		>
-			<span>{m.areYouSureLeaveGroup()}</span>
-			{#snippet buttons()}
-				<DialogButton onClick={() => (dialogType = null)}
-					>{m.cancel()}</DialogButton
-				>
-				<DialogButton strong onClick={handleLeaveGroup} disabled={loading}>
-					{loading ? '...' : m.leave()}
-				</DialogButton>
-			{/snippet}
-		</Dialog> -->
+			confirmText={m.leave()}
+		></ActionDialog>
 
 		<!-- <Dialog
 			opened={dialogType === 'delete'}
