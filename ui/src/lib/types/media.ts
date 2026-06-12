@@ -37,18 +37,16 @@ export interface IngestResult {
 	error?: IngestError;
 }
 
-// Only image types that decode in every supported webview may enter the
+// Only raster types that decode in every supported webview may enter the
 // photo path; anything else (videos until <video> rendering exists, and
-// formats with patchy decoder support like HEIC/TIFF) stages and sends as
-// a file attachment instead of producing a broken <img> on the recipient.
+// formats with patchy decoder support like HEIC/AVIF/TIFF) stages and
+// sends as a file attachment instead of producing a broken <img> on the
+// recipient.
 const PHOTO_TYPES = new Set([
 	'image/jpeg',
 	'image/png',
 	'image/webp',
 	'image/gif',
-	'image/avif',
-	'image/bmp',
-	'image/svg+xml',
 ]);
 
 function isVisualFile(file: File): boolean {
