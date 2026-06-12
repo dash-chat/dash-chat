@@ -15,7 +15,7 @@ let
   };
 
   push_notifications_server_module = {
-    systemd.services.push-notifications =
+    systemd.services.push-notifications-server =
       let
         push = self.outputs.packages."x86_64-linux".push-notifications-server;
       in
@@ -26,9 +26,9 @@ let
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
         serviceConfig = {
-          ExecStart = "${push}/bin/push-notifications-server --addr 0.0.0.0:80 --service-account-key /var/lib/push-notifications/service-account-key.json --db-path /var/lib/push-notifications/push-notifications.sqlite";
+          ExecStart = "${push}/bin/push-notifications-server --addr 0.0.0.0:80 --service-account-key /var/lib/push-notifications-server/service-account-key.json --db-path /var/lib/push-notifications-server/push-notifications.sqlite";
           Restart = "always";
-          StateDirectory = "push-notifications";
+          StateDirectory = "push-notifications-server";
         };
       };
     networking.firewall = {
@@ -38,7 +38,7 @@ let
   };
 
   mailbox_server_module = {
-    systemd.services.mailbox =
+    systemd.services.mailbox-server =
       let
         mailbox = self.outputs.packages."x86_64-linux".mailbox-server;
       in
@@ -49,8 +49,9 @@ let
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
         serviceConfig = {
-          ExecStart = "${mailbox}/bin/mailbox-server --addr 0.0.0.0:80 --push-notifications-url http://push-notifications.darksoil.studio";
+          ExecStart = "${mailbox}/bin/mailbox-server --addr 0.0.0.0:80 --db-path /var/lib/mailbox-server/mailbox.redb --push-notifications-url http://push-notifications.darksoil.studio";
           Restart = "always";
+          StateDirectory = "mailbox-server";
         };
       };
     networking.firewall = {

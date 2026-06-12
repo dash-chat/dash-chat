@@ -24,7 +24,7 @@
 	"setProfileExplanation": "Profiles are visible to your contacts, groups, and anyone that has your contact code.",
 	"profile": "Profile",
 	"nameRequired": "Name (required)",
-	"surnameOptional": "Surname (optional)",
+	"surnameOptional": "Last name (optional)",
 	"editName": "Edit name",
 	"addAvatarImage": "Add avatar image",
 	"editPhoto": "Edit photo",

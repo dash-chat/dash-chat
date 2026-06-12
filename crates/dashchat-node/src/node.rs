@@ -15,7 +15,7 @@ use anyhow::Result;
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use p2panda::network::MdnsDiscoveryMode;
-use p2panda::operation::{Header, Operation};
+use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
@@ -33,7 +33,8 @@ use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, P
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
-    AgentId, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId, DirectChatId,
+    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
+    DirectChatId,
 };
 
 pub use app_processing::Notification;
@@ -57,6 +58,13 @@ pub struct NodeConfig {
 }
 
 impl NodeConfig {
+    /// Disable p2p features and only use mailbox-based communication.
+    pub fn no_p2p(mut self) -> Self {
+        self.mdns_mode = MdnsDiscoveryMode::Disabled;
+        self.relay_url = None;
+        self
+    }
+
     #[cfg(feature = "testing")]
     pub fn testing() -> Self {
         use crate::compat::Capabilities;
@@ -673,6 +681,39 @@ impl Node {
             .await?;
 
         Ok(header)
+    }
+
+    /// Returns the most recent `GroupInfo` payload in this topic's logs, or
+    /// `None` if no member has authored one yet. "Most recent" is
+    /// `(timestamp, seq_num)` across all author logs — matches the resolution
+    /// in `GroupChatStore.info` on the frontend.
+    pub async fn get_group_info(
+        &self,
+        topic_id: TopicId,
+    ) -> anyhow::Result<Option<crate::GroupInfo>> {
+        let log_id = LogId::from_topic(topic_id);
+        let authors = self.op_store.get_authors(log_id).await?;
+        let mut latest: Option<(Header, crate::GroupInfo)> = None;
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body else { continue };
+                let Ok(Payload::Chat(ChatPayload::GroupInfo(info))) = Payload::try_from_body(&body)
+                else {
+                    continue;
+                };
+                let is_later = match &latest {
+                    None => true,
+                    Some((h, _)) => {
+                        op.header.timestamp > h.timestamp
+                            || (op.header.timestamp == h.timestamp && op.header.seq_num > h.seq_num)
+                    }
+                };
+                if is_later {
+                    latest = Some((op.header, info));
+                }
+            }
+        }
+        Ok(latest.map(|(_, d)| d))
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.

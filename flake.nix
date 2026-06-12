@@ -37,6 +37,7 @@
       imports = [
         ./nix/servers.nix
         ./nix/digital-ocean.nix
+        ./nix/docker.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix
         ./crates/push-notifications-server/default.nix
@@ -70,6 +71,7 @@
             pkgs."nodejs_${nodeVersion}"
             pkgs.pnpm
             pkgs.cargo-nextest
+            pkgs.doctl
             inputs'.tauri-driver.packages.tauri-driver
           ];
         in rec {

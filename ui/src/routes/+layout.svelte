@@ -42,7 +42,7 @@
 	import { useReactivePromise, useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
-	import { isIos, isMac, isMobile, isTauriEnv } from '$lib/utils/environment';
+	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
 	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 
 	import { m } from '$lib/paraglide/messages.js';
@@ -154,7 +154,7 @@
 
 	const isDark = useSignal(settingsStore.isDark);
 
-	let theme: 'ios' | 'material' = $state(isIos || isMac ? 'ios' : 'material');
+	let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
 
 	let darkOverride: boolean | null = $state(null);
 	const effectiveDark = $derived(darkOverride ?? !!$isDark);
