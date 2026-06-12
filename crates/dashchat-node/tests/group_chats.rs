@@ -6,8 +6,38 @@
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
 use mailbox_client::mem::MemMailbox;
 
-use maplit::btreemap;
+use maplit::{btreemap, btreeset};
 use p2panda::network::MdnsDiscoveryMode;
+use p2panda_auth::Access;
+use std::collections::BTreeSet;
+
+async fn assert_group_members(
+    poll: &PollConfig,
+    nodes: &[&TestNode],
+    chat_id: ChatId,
+    expected: BTreeSet<(DeviceId, Access)>,
+    panic_msg: &str,
+) {
+    let result = poll
+        .wait_for(|| async {
+            let members: Vec<_> = futures::future::join_all(
+                nodes
+                    .iter()
+                    .map(|n| async { n.get_group_members(chat_id).await.unwrap() }),
+            )
+            .await;
+            members
+                .iter()
+                .all(|m| *m == expected)
+                .then_some(())
+                .ok_or_else(|| members.clone())
+        })
+        .await;
+
+    if let Err(members) = result {
+        panic!("{}: {:#?}", panic_msg, members);
+    }
+}
 
 fn setup() {
     dashchat_node::testing::setup_tracing(
@@ -195,30 +225,20 @@ async fn test_group_chat() {
     .await
     .unwrap();
 
-    let expected_members = maplit::btreeset![
-        (alice.device_id(), p2panda_auth::Access::manage()),
-        (bobbi.device_id(), p2panda_auth::Access::manage()),
-        (cammy.device_id(), p2panda_auth::Access::write()),
+    let expected_members = btreeset![
+        (alice.device_id(), Access::manage()),
+        (bobbi.device_id(), Access::manage()),
+        (cammy.device_id(), Access::write()),
     ];
 
-    let result = poll
-        .wait_for(|| async {
-            let members = [
-                alice.get_group_members(chat_id).await.unwrap(),
-                bobbi.get_group_members(chat_id).await.unwrap(),
-                cammy.get_group_members(chat_id).await.unwrap(),
-            ];
-            members
-                .iter()
-                .all(|m| *m == expected_members)
-                .then_some(())
-                .ok_or(members)
-        })
-        .await;
-
-    if let Err(members) = result {
-        panic!("memberships are not consistent: {:#?}", members);
-    }
+    assert_group_members(
+        &poll,
+        &[&alice, &bobbi, &cammy],
+        chat_id,
+        expected_members.clone(),
+        "memberships are not consistent",
+    )
+    .await;
 
     let alice_messages = alice.get_messages(chat_id).await.unwrap();
     let bobbi_messages = bobbi.get_messages(chat_id).await.unwrap();
@@ -334,26 +354,12 @@ async fn test_remove_group_member() {
         .await
         .unwrap();
 
-    let expected_members = maplit::btreeset![(bobbi.device_id(), p2panda_auth::Access::write()),];
-
-    let result = poll
-        .wait_for(|| async {
-            let members = [
-                alice.get_group_members(chat_id).await.unwrap(),
-                bobbi.get_group_members(chat_id).await.unwrap(),
-            ];
-            members
-                .iter()
-                .all(|m| *m == expected_members)
-                .then_some(())
-                .ok_or(members)
-        })
-        .await;
-
-    if let Err(members) = result {
-        panic!(
-            "memberships are not consistent after removal: {:#?}",
-            members
-        );
-    }
+    assert_group_members(
+        &poll,
+        &[&alice, &bobbi],
+        chat_id,
+        btreeset![(bobbi.device_id(), Access::write())],
+        "memberships are not consistent after removal",
+    )
+    .await;
 }
