@@ -4,6 +4,10 @@ set working-directory := '..'
 create server version region='nyc1' size='s-1vcpu-2gb':
     #!/usr/bin/env bash
     set -euo pipefail
+    if ! docker manifest inspect ghcr.io/dash-chat/{{server}}:{{version}} > /dev/null; then
+        echo "ghcr.io/dash-chat/{{server}}:{{version}} not found in the registry (run: just docker push {{server}})" >&2
+        exit 1
+    fi
     ssh_keys=$(doctl compute ssh-key list --format ID --no-header | paste -sd,)
     doctl compute droplet create "{{server}}-{{replace(version, '.', '-')}}" \
         --image ubuntu-24-04-x64 \
