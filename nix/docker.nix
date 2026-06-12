@@ -32,7 +32,12 @@
         mailbox-server-docker = mkServerImage {
           name = "mailbox-server";
           package = self'.packages.mailbox-server;
-          cmdArgs = [ "--db-path" "/var/lib/mailbox-server/mailbox.redb" ];
+          cmdArgs = [
+            "--db-path"
+            "/var/lib/mailbox-server/mailbox.redb"
+            "--push-notifications-url"
+            "http://push-notifications.darksoil.studio"
+          ];
         };
 
         push-notifications-server-docker = mkServerImage {
