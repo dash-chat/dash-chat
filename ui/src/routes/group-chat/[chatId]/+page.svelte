@@ -23,6 +23,8 @@
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import MessageInput from '$lib/components/MessageInput.svelte';
+	import MediaDropOverlay from '$lib/components/MediaDropOverlay.svelte';
+	import { stageFiles } from '$lib/utils/stage-files';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import {
@@ -338,6 +340,9 @@
 		class:bg-md-light-surface={theme === 'material'}
 		class:dark:bg-md-dark-surface={theme === 'material'}
 	>
+		<MediaDropOverlay
+			onFiles={files => (messageMedia = stageFiles(messageMedia, files))}
+		/>
 		<MessageInput
 			bind:value={messageText}
 			media={messageMedia}

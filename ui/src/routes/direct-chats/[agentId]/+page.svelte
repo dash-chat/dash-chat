@@ -52,6 +52,8 @@
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
 	import MessageInput from '$lib/components/MessageInput.svelte';
+	import MediaDropOverlay from '$lib/components/MediaDropOverlay.svelte';
+	import { stageFiles } from '$lib/utils/stage-files';
 	import {
 		type DraftMedia,
 		draftToMedia,
@@ -897,6 +899,10 @@
 							</div>
 						</div>
 					{:else}
+						<MediaDropOverlay
+							onFiles={files =>
+								(messageMedia = stageFiles(messageMedia, files))}
+						/>
 						<MessageInput
 							bind:value={messageText}
 							media={messageMedia}

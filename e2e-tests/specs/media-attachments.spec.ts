@@ -107,6 +107,25 @@ describe('Media attachments', () => {
 		});
 	});
 
+	it('stages a pasted image', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pastePhotos(1);
+		await composer.expectStagedPhotoCount(1);
+		await composer.removeDraft();
+	});
+
+	it('stages dropped images, appending to the draft', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.dropPhotos(2);
+		await composer.expectStagedPhotoCount(2);
+		await composer.pastePhotos(1);
+		await composer.expectStagedPhotoCount(3);
+		await composer.clearAttachments.click();
+		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
+			timeoutMsg: 'Preview still present after clear all',
+		});
+	});
+
 	it('caps staged photos at 32 with partial accept', async () => {
 		await agent1.directChatPage.attachPhotos(30);
 		await agent1.directChatPage.expectStagedPhotoCount(30);

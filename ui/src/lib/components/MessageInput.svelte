@@ -93,6 +93,13 @@
 		attachMenuOpen = false;
 	}
 
+	function onPaste(event: ClipboardEvent) {
+		const files = event.clipboardData?.files;
+		if (!files || files.length === 0) return;
+		event.preventDefault();
+		onMediaChange?.(stageFiles(media, files));
+	}
+
 	function removeMedia() {
 		if (media) revokeDraft(media);
 		onMediaChange?.(undefined);
@@ -230,6 +237,7 @@
 					rows="1"
 					onkeydown={handleKeydown}
 					oninput={handleInput}
+					onpaste={onPaste}
 				></textarea>
 			</div>
 

@@ -27,9 +27,63 @@ function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
 }
 
+export interface TestFileSpec {
+	name: string;
+	mimeType: string;
+	bytes: number[];
+}
+
+function specsToDataTransfer(specs: TestFileSpec[]): DataTransfer {
+	const dt = new DataTransfer();
+	for (const spec of specs) {
+		dt.items.add(
+			new File([new Uint8Array(spec.bytes)], spec.name, {
+				type: spec.mimeType,
+			}),
+		);
+	}
+	return dt;
+}
+
+/**
+ * Dispatch a synthetic paste of the given files onto the composer textarea.
+ * WebKit drops constructor-init clipboardData, so it is attached via
+ * defineProperty.
+ */
+function pasteFiles(specs: TestFileSpec[]) {
+	const textarea = document.querySelector(
+		'[data-testid="message-input-textarea"]',
+	);
+	if (!textarea) throw new Error('Composer textarea not found');
+	const event = new ClipboardEvent('paste', {
+		bubbles: true,
+		cancelable: true,
+	});
+	Object.defineProperty(event, 'clipboardData', {
+		value: specsToDataTransfer(specs),
+	});
+	textarea.dispatchEvent(event);
+}
+
+/**
+ * Dispatch a synthetic drop of the given files on the window, exercising the
+ * MediaDropOverlay HTML5 pipeline. See `pasteFiles` for the defineProperty
+ * rationale.
+ */
+function dropFiles(specs: TestFileSpec[]) {
+	const dt = specsToDataTransfer(specs);
+	for (const type of ['dragenter', 'drop'] as const) {
+		const event = new DragEvent(type, { bubbles: true, cancelable: true });
+		Object.defineProperty(event, 'dataTransfer', { value: dt });
+		window.dispatchEvent(event);
+	}
+}
+
 export const testUtils = {
 	simulateUpdate,
 	hasText,
+	pasteFiles,
+	dropFiles,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(

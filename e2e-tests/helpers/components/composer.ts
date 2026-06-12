@@ -144,6 +144,40 @@ export class Composer {
 		await this.mediaPreview.waitForExist({ timeout: 5_000 });
 	}
 
+	/** Paste `count` synthesized PNGs into the composer textarea. */
+	async pastePhotos(count = 1): Promise<void> {
+		await this.agent.execute(
+			(pngBytes: number[], n: number) => {
+				const specs = Array.from({ length: n }, (_, i) => ({
+					name: `pasted-${i + 1}.png`,
+					mimeType: 'image/png',
+					bytes: pngBytes,
+				}));
+				window.__test.pasteFiles(specs);
+			},
+			TINY_PNG,
+			count,
+		);
+		await this.mediaPreview.waitForExist({ timeout: 5_000 });
+	}
+
+	/** Drop `count` synthesized PNGs onto the window (HTML5 drop pipeline). */
+	async dropPhotos(count = 1): Promise<void> {
+		await this.agent.execute(
+			(pngBytes: number[], n: number) => {
+				const specs = Array.from({ length: n }, (_, i) => ({
+					name: `dropped-${i + 1}.png`,
+					mimeType: 'image/png',
+					bytes: pngBytes,
+				}));
+				window.__test.dropFiles(specs);
+			},
+			TINY_PNG,
+			count,
+		);
+		await this.mediaPreview.waitForExist({ timeout: 5_000 });
+	}
+
 	/** Click send. Composer must already have content (text and/or media). */
 	async send(): Promise<void> {
 		await this.sendButton.click();
