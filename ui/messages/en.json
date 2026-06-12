@@ -184,7 +184,6 @@
 	"areYouSureDeleteAccount": "Are you sure you want to delete your account?",
 	"accountDeleted": "Account deleted successfully.",
 	"errorDeleteAccount": "Failed to delete account. Please try again.",
-
 	"errorCreateContactCode": "Failed to create contact code. Please try again.",
 	"errorAddContact": "Failed to add contact. Please try again.",
 	"errorAddContactProfileRequired": "Please create your profile before adding contacts.",
@@ -194,7 +193,7 @@
 	"errorUnexpected": "An unexpected error occurred.",
 	"errorApplyStyle": "Failed to apply style. Please try again.",
 	"errorSendErrorReport": "Failed to send error report. Please try again.",
-
+	"errorLeavingGroup": "Failed to leave group. Please try again.",
 	"mute": "Mute",
 	"search": "Search",
 	"searchByName": "Search by name",

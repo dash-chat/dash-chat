@@ -85,18 +85,18 @@
 	// }
 
 	async function handleLeaveGroup() {
-		loading = true;
 		try {
-			// Wait for 5 second to simulate the leave group process, you can replace this with the actual leave group logic
-			await new Promise(resolve => setTimeout(resolve, 5000));
-
-			// await groupChatStore.client.leaveGroup();
-			// dialogType = null;
-			// goto('/');
+			await groupChatStore.client.leaveGroup();
+			goto('/');
+			dialogType = null;
+			return { success: true as const };
 		} catch (e) {
 			console.error(e);
+			return {
+				success: false as const,
+				error: m.errorLeavingGroup(),
+			};
 		}
-		loading = false;
 	}
 
 	// async function handleDeleteGroup() {

@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { Dialog, DialogButton, List, Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
+	import { showToast } from '$lib/utils/toasts';
+
+	type ActionResult = { success: true } | { success: false; error: string };
 
 	type Props = {
 		opened: boolean;
 		onCancel: () => void;
-		onConfirm: () => Promise<void>;
+		onConfirm: () => Promise<ActionResult>;
 		title: string;
 		cancelText?: string;
 		confirmText: string;
@@ -25,7 +28,10 @@
 	async function handleConfirm() {
 		loading = true;
 		try {
-			await onConfirm();
+			const result = await onConfirm();
+			if (!result.success) {
+				showToast(result.error, 'error');
+			}
 		} finally {
 			loading = false;
 		}
