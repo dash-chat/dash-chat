@@ -71,6 +71,7 @@
             pkgs."nodejs_${nodeVersion}"
             pkgs.pnpm
             pkgs.cargo-nextest
+            pkgs.doctl
             inputs'.tauri-driver.packages.tauri-driver
           ];
         in rec {
