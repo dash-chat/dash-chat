@@ -91,10 +91,12 @@
 	}
 
 	/* webawesome force-uppercases initials; Signal preserves the name's case.
-	   text-box trims the ascent/descent whitespace so the glyphs sit at the
-	   circle's optical center instead of riding high on the baseline. */
+	   text-box trims the ascent/descent whitespace so every avatar shares the
+	   same cap-to-baseline box, then the translate sets it slightly below
+	   center. */
 	wa-avatar::part(initials) {
 		text-transform: none;
 		text-box: trim-both cap alphabetic;
+		translate: 0 0.05em;
 	}
 </style>
