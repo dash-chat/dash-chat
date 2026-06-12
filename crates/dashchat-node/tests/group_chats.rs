@@ -357,11 +357,58 @@ async fn test_admin_removes_themself_when_they_are_the_only_member() {
         .await
         .unwrap();
 
+    assert_group_members(&poll, &[(&alice, "alice")], chat_id, btreeset![]).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_admin_removes_themself_there_is_another_admin() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    introduce_and_wait([&alice, &bobbi]).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    bobbi
+        .remove_group_member(chat_id, *bobbi.device_id())
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
     assert_group_members(
         &poll,
-        &[(&alice, "alice")],
+        &[(&alice, "alice"), (&bobbi, "bobbi")],
         chat_id,
-        btreeset![],
+        btreeset![(alice.device_id(), Access::manage())],
     )
     .await;
 }
