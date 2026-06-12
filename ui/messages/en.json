@@ -138,6 +138,7 @@
 	"contactRequestAccepted": "{{name}} has accepted your contact request",
 	"contactRequestAcceptedNoName": "Your contact request was accepted",
 	"typeMessage": "Type a message...",
+	"youAreNoLongerAMember": "You are no longer a member of this group.",
 
 	"nameThisGroup": "Name this group",
 	"newGroup": "New group",
@@ -168,7 +169,6 @@
 	"delete": "Delete",
 	"areYouSureDeleteGroup": "Are you sure you want to delete this group?",
 	"editGroup": "Edit group",
-
 	"settings": "Settings",
 	"appearance": "Appearance",
 	"colorScheme": "Color scheme",

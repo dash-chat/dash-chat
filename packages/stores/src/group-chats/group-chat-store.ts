@@ -30,6 +30,7 @@ export interface GroupMemberWithProfile {
 	deviceIds: DeviceId[];
 	profile: Profile | undefined;
 	admin: boolean;
+	member: boolean;
 }
 
 export class GroupChatStore implements ReadMessagesStore {
@@ -252,6 +253,7 @@ export class GroupChatStore implements ReadMessagesStore {
 			myAgentId,
 			entry?.deviceIds ?? [],
 			entry?.isAdmin ?? false,
+			entry !== undefined,
 		);
 	});
 
@@ -259,7 +261,12 @@ export class GroupChatStore implements ReadMessagesStore {
 		const data = await this.membersData();
 		const entries = await Promise.all(
 			data.map(async ({ agentId, deviceIds, isAdmin }) => {
-				const member = await this.buildMember(agentId, deviceIds, isAdmin);
+				const member = await this.buildMember(
+					agentId,
+					deviceIds,
+					isAdmin,
+					true,
+				);
 				return [agentId, member] as const;
 			}),
 		);
@@ -270,13 +277,19 @@ export class GroupChatStore implements ReadMessagesStore {
 	});
 
 	private buildMember = reactive(
-		async (agentId: AgentId, deviceIds: DeviceId[], admin: boolean) => {
+		async (
+			agentId: AgentId,
+			deviceIds: DeviceId[],
+			admin: boolean,
+			member: boolean,
+		) => {
 			const profile = await this.contactsStore.profiles(agentId);
 			return {
 				agentId,
 				deviceIds,
 				profile,
 				admin,
+				member,
 			} satisfies GroupMemberWithProfile;
 		},
 	);
