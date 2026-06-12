@@ -1,3 +1,4 @@
+import { tid } from '../../helpers/selectors';
 import { type Agent, setupAgent } from '../../setup/setup-agents';
 
 describe('Leaving group', () => {
@@ -30,6 +31,30 @@ describe('Leaving group', () => {
 		await agent1.groupInfoPage.leaveConfirmButton.click();
 
 		await agent1.homePage.ready();
-		await expect(agent1.homePage.chatListItem('Solo Group')).not.toBeExisting();
+
+		// Group remains in chat list
+		await expect(agent1.homePage.chatListItem('Solo Group')).toBeExisting();
+
+		// Navigate back into the group
+		await agent1.homePage.chatListItem('Solo Group').click();
+		await agent1.groupChatPage.ready();
+
+		// Message input is disabled (no longer a member)
+		await expect(agent1.groupChatPage.messageInput).not.toBeEnabled();
+
+		// System message records the departure
+		const systemMessage = agent1.$(
+			'[data-testid="group-chat-system-message-group_member_removed"]',
+		);
+		await expect(systemMessage).toBeExisting();
+		const expectedText = await agent1.tr('youLeftTheGroup');
+		await expect(systemMessage).toHaveText(expectedText);
+
+		// Leave button is gone — already left, and Alice no longer in members list
+		await agent1.groupChatPage.infoLink.click();
+		await agent1.groupInfoPage.ready();
+		await expect(agent1.groupInfoPage.leaveButton).not.toBeDisplayed();
+		const membersList = agent1.$(tid('group-info-members'));
+		await expect(membersList.$('=Alice')).not.toBeExisting();
 	});
 });
