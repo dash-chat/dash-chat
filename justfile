@@ -20,16 +20,12 @@ mod droplet 'scripts/droplet.just'
 mod docker 'scripts/docker.just'
 
 # build dash chat as a binary
-build:
-    pnpm tauri build --no-bundle
+build env='production':
+    MAILBOX_URL=https://mailbox.{{env}}.darksoil.studio PUSH_NOTIFICATIONS_SERVER_URL=https://push-notifications.{{env}}.darksoil.studio pnpm tauri build --no-bundle
 
 # build dash chat as an installer (AppImage on linux)
 bundle:
     pnpm tauri build
-
-# build dash chat as an installer pointed at the staging servers
-bundle env:
-    MAILBOX_URL=https://mailbox.{{env}}.darksoil.studio PUSH_NOTIFICATIONS_SERVER_URL=https://push-notifications.{{env}}.darksoil.studio pnpm tauri build
 
 # cut a new release (e.g. just release 0.11.0)
 release version env='':
