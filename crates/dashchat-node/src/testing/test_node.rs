@@ -355,7 +355,7 @@ impl ConsistencyReport {
     fn op_line((hash, header): (p2panda::Hash, Header)) -> String {
         format!(
             "{:32?} {:3} {:32?}",
-            TopicId::from(header.extensions.log_id).aliased(),
+            header.extensions.log_id.aliased(),
             header.seq_num,
             hash.aliased()
         )

@@ -7,19 +7,18 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import {
 		Button,
-		Card,
 		Link,
 		Navbar,
 		NavbarBackLink,
 		Page,
 		Preloader,
-		ListInput,
-		List,
 		useTheme,
 	} from 'konsta/svelte';
+	import Form from '$lib/components/form/Form.svelte';
+	import FormInput from '$lib/components/form/FormInput.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos } from '$lib/utils/environment';
-	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import Container from '$lib/components/layout_helpers/Container.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let name = $state<string>('');
@@ -71,6 +70,7 @@
 			}
 		}
 	}
+
 	const theme = $derived(useTheme());
 </script>
 
@@ -105,29 +105,24 @@
 			{/snippet}
 		</Navbar>
 
-		<div class="column">
-			<List
-				class="center-in-desktop"
-				inset={isWideScreen.value || theme === 'ios'}
-				strongIos
-				nested={theme === 'material'}
-			>
-				<ListInput
+		<Container>
+			<Form>
+				<FormInput
 					type="text"
 					bind:value={name}
 					data-testid="edit-name-name"
 					label={theme === 'material' ? m.nameRequired() : ''}
 					placeholder={theme === 'ios' ? m.nameRequired() : ''}
 				/>
-				<ListInput
+				<FormInput
 					type="text"
 					bind:value={surname}
 					data-testid="edit-name-surname"
 					label={theme === 'material' ? m.surnameOptional() : ''}
 					placeholder={theme === 'ios' ? m.surnameOptional() : ''}
 				/>
-			</List>
-		</div>
+			</Form>
+		</Container>
 
 		{#if !isIos}
 			<Button

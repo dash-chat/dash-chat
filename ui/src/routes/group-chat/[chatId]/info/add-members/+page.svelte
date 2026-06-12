@@ -7,18 +7,12 @@
 	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import {
-		Page,
-		Navbar,
-		NavbarBackLink,
-		BlockTitle,
-		Button,
-		Link,
-	} from 'konsta/svelte';
+	import { BlockTitle } from 'konsta/svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
-	import { isIos } from '$lib/utils/environment';
+	import FormPage from '$lib/components/layout/FormPage.svelte';
 	import { page } from '$app/state';
+	import ContactSearchNav from '$lib/components/contacts/ContactSearchNav.svelte';
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -28,10 +22,22 @@
 	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
 	const groupChatStore = chatsStore.groupChats(chatId);
 	const members = useReactiveValue(groupChatStore.allMembers);
+	const loading = $derived($contacts === undefined || $members === undefined);
 
 	const nonMemberContacts = $derived(
 		($contacts ?? []).filter(([agentId]) => !($members && agentId in $members)),
 	);
+	let filteredContacts = $state<typeof nonMemberContacts>([]);
+	let searchQuery = $state('');
+
+	const noDataMessage = $derived.by(() => {
+		if (loading) return '';
+		if (($contacts ?? []).length === 0) return m.noContactsYet();
+		if (filteredContacts.length === 0 && searchQuery.length > 0)
+			return m.noContactsMatchFilter();
+		if (filteredContacts.length === 0) return m.allContactsAlreadyInGroup();
+		return '';
+	});
 
 	async function addMembers() {
 		const store = chatsStore.groupChats(chatId);
@@ -40,52 +46,34 @@
 	}
 </script>
 
-<Page>
-	<Navbar
-		title={m.addMembers()}
-		titleClass="opacity1"
-		transparent={true}
-		rightClass={selectedContacts.length === 0 ? 'ios-right-disabled' : ''}
-	>
-		{#snippet left()}
-			<NavbarBackLink
-				data-testid="add-members-back"
-				onClick={() => goto(`/group-chat/${chatId}/info`)}
-			/>
-		{/snippet}
-		{#snippet right()}
-			{#if isIos}
-				<Link onClick={addMembers} data-testid="add-members-add-btn">
-					{m.add()}
-				</Link>
-			{/if}
-		{/snippet}
-	</Navbar>
+<FormPage
+	title={m.addMembers()}
+	actionLabel={m.add()}
+	onAction={addMembers}
+	actionDisabled={selectedContacts.length === 0}
+	onBack={() => goto(`/group-chat/${chatId}/info`)}
+	constrainedWidth
+	backTestId="add-members-back"
+	actionTestId="add-members-add-btn"
+>
+	{#snippet subnavbar()}
+		<ContactSearchNav
+			bind:searchQuery
+			bind:filteredContacts
+			{selectedContacts}
+			contacts={nonMemberContacts}
+			onRemove={key => {
+				selectedContacts = selectedContacts.filter(c => c !== key);
+			}}
+		/>
+	{/snippet}
 
-	<div class="column">
-		<div class="center-in-desktop">
-			<BlockTitle>{m.contacts()}</BlockTitle>
+	<BlockTitle>{m.contacts()}</BlockTitle>
 
-			<SelectableContactList
-				contacts={nonMemberContacts}
-				loading={$contacts === undefined || $members === undefined}
-				noDataMessage={($contacts ?? []).length === 0
-					? m.noContactsYet()
-					: m.allContactsAlreadyInGroup()}
-				bind:selectedContacts
-			/>
-		</div>
-	</div>
-
-	{#if !isIos}
-		<Button
-			onClick={addMembers}
-			class="fixed-action-btn"
-			rounded
-			disabled={selectedContacts.length === 0}
-			data-testid="add-members-add-btn"
-		>
-			{m.add()}
-		</Button>
-	{/if}
-</Page>
+	<SelectableContactList
+		contacts={filteredContacts}
+		{loading}
+		{noDataMessage}
+		bind:selectedContacts
+	/>
+</FormPage>

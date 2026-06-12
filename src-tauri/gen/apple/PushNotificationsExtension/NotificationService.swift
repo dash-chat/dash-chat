@@ -5,8 +5,8 @@
 //  Created by Guillem Córdoba on 12/12/23.
 //
 
-import UserNotifications
 import Intents
+import UserNotifications
 import os
 
 private let log = Logger(
@@ -104,6 +104,8 @@ class NotificationService: UNNotificationServiceExtension {
         let route = notification_route(n).asString()
         let largeIconBytes = notification_large_icon_bytes(n).asString()
         let conversationSenderId = notification_conversation_sender_id(n).asString()
+        let conversationTitle = notification_conversation_title(n).asString()
+
         notification_destroy(n)
         log.info("decoded title=\(title ?? "<nil>", privacy: .private) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .private) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
         if (title == nil || title!.isEmpty) && (body == nil || body!.isEmpty) {
@@ -138,13 +140,15 @@ class NotificationService: UNNotificationServiceExtension {
             // Prefer the explicit sender id (so group senders don't collapse
             // into one INPerson); fall back to route for direct chats.
             let personHandle: String = (conversationSenderId?.isEmpty == false) ? conversationSenderId! : route
+            let groupName: String? = (conversationTitle?.isEmpty == false) ? conversationTitle : nil
             if let communicationContent = self.communicationNotificationContent(
                 from: bestAttemptContent,
                 senderHandle: personHandle,
                 conversationId: route,
                 displayName: title,
                 body: body,
-                avatarData: avatarData
+                avatarData: avatarData,
+                conversationTitle: groupName
             ) {
                 log.info("delivering Communication Notification")
                 self.deliver(communicationContent)
@@ -174,7 +178,8 @@ class NotificationService: UNNotificationServiceExtension {
         conversationId: String,
         displayName: String,
         body: String,
-        avatarData: Data
+        avatarData: Data,
+        conversationTitle: String?
     ) -> UNNotificationContent? {
         let avatar = INImage(imageData: avatarData)
         let handle = INPersonHandle(value: senderHandle, type: .unknown)
@@ -187,11 +192,14 @@ class NotificationService: UNNotificationServiceExtension {
             customIdentifier: senderHandle
         )
 
+        let speakableGroupName: INSpeakableString? = conversationTitle.map {
+            INSpeakableString(spokenPhrase: $0)
+        }
         let intent = INSendMessageIntent(
             recipients: nil,
             outgoingMessageType: .outgoingMessageText,
             content: body,
-            speakableGroupName: nil,
+            speakableGroupName: speakableGroupName,
             conversationIdentifier: conversationId,
             serviceName: "Dash Chat",
             sender: sender,

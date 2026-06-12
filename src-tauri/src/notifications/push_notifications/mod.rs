@@ -17,8 +17,7 @@ mod receive_push_notification;
 #[cfg(target_os = "android")]
 mod android;
 
-const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str =
-    "https://push-notifications-server.production.dash-chat.dash-chat.garnix.me";
+const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str = "http://push-notifications.darksoil.studio";
 
 /// Returns the push notifications server URL to use.
 ///
@@ -147,7 +146,7 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
             .subscribed_topics()
             .await?
             .into_iter()
-            .map(|t| PushTopicId::from(hex::encode(&*t)))
+            .map(|t| PushTopicId::from(t.to_hex()))
             .collect();
         topic_ids
     } else {
@@ -202,7 +201,7 @@ fn spawn_topic_subscription_loop(
 ) {
     tauri::async_runtime::spawn(async move {
         while let Some(topic_id) = topic_subscribed_rx.recv().await {
-            let hex_topic = PushTopicId::from(hex::encode(&*topic_id));
+            let hex_topic = PushTopicId::from(topic_id.to_hex());
             if let Err(err) = subscribe_to_topics(&app_handle, [hex_topic].into()).await {
                 log::error!("Failed to subscribe to topic: {err:?}");
                 sync_topic_subscriptions_task.trigger();

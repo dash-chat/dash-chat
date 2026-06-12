@@ -13,6 +13,9 @@ mod push 'scripts/push.just'
 # ios development
 mod ios 'scripts/ios.just'
 
+# build docker droplet
+mod docker 'scripts/docker.just'
+
 # build dash chat as a binary
 build:
     pnpm tauri build --no-bundle

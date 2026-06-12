@@ -46,6 +46,19 @@ Screenshots are named descriptively with sequence prefixes (e.g., `01-chat-list-
 
 Please read this coding style carefully and take it into account when planning or coding:
 
+- Never make assumptions about undocumented APIs or configurations.
+- Ask clarifying questions if a task's requirements are ambiguous.
+- Modify only the minimum necessary lines of code to achieve the goal.
+- Avoid refactoring adjacent or unrelated files unless explicitly asked.
+- Match existing style, even if you would write it differently.
+- Do not write speculative helper functions or complex abstractions.
+- Prioritize simple, readable code over clever or DRY patterns.
+- Establish clear test or verification criteria before writing any code.
+- Run local tests or build steps to verify your changes actually work before completion.
+- When a function/component gets too long or mixes high-level and low-level code, extract the lower-level part into a well-named helper that's a meaningful reusable unit — then use it at every site that needs it, not just the one you split it from.
+- Each function/component should do one thing at a single level of abstraction: the caller says *what*, the helper handles *how*.
+- A component must render correctly wherever it's placed and never alter its parent's UI — no outer margin on its root (margins leak outward); use padding for internal spacing instead.
+- Spacing *between* children belongs to the parent (use `gap`); the child owns its internal layout, the parent owns where the child sits.
 - Try to remain as simple as possible with your implementations.
 - Try to reuse types and functions across the project rather than reimplement them.
 - Don't use `any` or `unknown` typescript types. Instead, try to understand the actual typescript types and use them to infer the appropriate data structures and algorithms to use.
@@ -95,7 +108,7 @@ pnpm start
 ### Development Tasks
 ```bash
 # Run Rust tests
-cargo test
+cargo nextest run
 # or
 pnpm test
 
@@ -140,7 +153,7 @@ This is a pnpm workspace with multiple packages:
 
 ### Backend Architecture (Rust)
 
-The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tauri`) and several library/binary crates under `crates/`. All p2panda dependencies come from a custom fork at `https://github.com/maackle/p2panda.git` (branch `dashchat`).
+The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tauri`) and several library/binary crates under `crates/`.
 
 **dashchat-node** is the p2p core. It owns the `Node`, which manages p2panda topics and spaces — the distributed structures that organize conversations, device groups, contact lists, and profile announcements — and runs p2panda's discovery, networking, sync, encryption, and group-auth layers on top of a local SQLite operation store. Each topic is an append-only log; CRDT semantics resolve concurrent writes. The Node exposes a subscription/notification interface that the host layer consumes for real-time UI updates, and integrates the mailbox client so messages keep flowing when peers are offline.
 
@@ -395,7 +408,7 @@ Execute all CI commands inside of the default nix shell with `nix develop`.
 
 ### Rust Tests
 ```bash
-cargo test
+cargo nextest run
 ```
 
 Run tests from workspace root. Tests use tokio async runtime.
@@ -474,13 +487,6 @@ cd e2e-tests && bash compat/run.sh v0.10.0 v0.10.1
 4. If something looks off, fix it and re-verify.
 5. When done, kill all background dev processes (Tauri agents, mailbox server, stores watcher) to free up ports and resources.
 
-## Platform Support
-
-- **Desktop**: Linux, macOS, Windows (via Tauri)
-- **Mobile**: Android and iOS support
-  - Android-specific: barcode scanner, push notifications
-  - iOS-specific: barcode scanner, push notifications, safe area insets
-
 ### Mobile Virtual Keyboard Handling
 
 The `tauri-plugin-virtual-keyboard-padding` plugin is registered under `#[cfg(mobile)]` in `src-tauri/src/lib.rs` to fix native-vs-webview keyboard behavior that Tauri does not handle out of the box ([tauri-apps/tauri#10631](https://github.com/tauri-apps/tauri/issues/10631)). On **iOS** WKWebView leaves a scrollable gap behind the keyboard and shows a "Done" input-accessory toolbar; on **Android** the WebView is obscured by the IME instead of being pushed above it. The plugin makes focused inputs remain visible on both platforms and gives the webview a stable, non-scrolling viewport while the keyboard is open.
@@ -520,7 +526,6 @@ Testing keyboard behavior and UI interactions in the iOS simulator has inherent 
 ## Important Notes
 
 - **Log redaction**: The `get_redacted_log` command in `src-tauri/src/commands/logs.rs` strips sensitive data from log files before they are sent as error report attachments. This includes: hex strings, base64 blobs, public key byte arrays, hashes, signatures, device/agent IDs, timestamps, profile fields (name, surname, about), chat message content, and reactions. **When adding any new feature that introduces private or user-generated data, you must also update the redaction patterns in `get_redacted_log` to ensure that data never leaves the device in error reports.**
-- **P2panda fork**: This project uses a custom fork of p2panda. Do not update p2panda dependencies without checking compatibility.
 - **Rust edition**: Uses Rust edition 2021 (src-tauri) and 2024 (dashchat-node)
 - **Rust toolchain**: Pinned to stable 1.94.0 via `rust-toolchain.toml` (mobile variants: `rust-toolchain.ios.toml`, `rust-toolchain.android.toml`).
 - **Mobile vs Desktop**: Code paths differ for mobile/desktop (check `#[cfg(mobile)]` and `#[cfg(not(mobile))]`)

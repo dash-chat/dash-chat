@@ -14,11 +14,14 @@
 	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { mdiAccountGroup } from '@mdi/js';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
+	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import MessageInput from '$lib/components/MessageInput.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
@@ -88,8 +91,9 @@
 		) {
 			for (const day of messagesSetsInDays) {
 				for (const messageSet of day.eventsSets) {
-					for (const [hash, message] of messageSet) {
-						if (message.author !== deviceId && !readHashes.has(hash)) {
+					for (const [hash, item] of messageSet) {
+						if (item.kind !== 'message') continue;
+						if (item.message.author !== deviceId && !readHashes.has(hash)) {
 							capturedUnreadHash = hash;
 							break;
 						}
@@ -107,9 +111,14 @@
 		let found = false;
 		for (const day of messagesSetsInDays) {
 			for (const messageSet of day.eventsSets) {
-				for (const [hash, message] of messageSet) {
+				for (const [hash, item] of messageSet) {
 					if (hash === capturedUnreadHash) found = true;
-					if (found && message.author !== deviceId) count++;
+					if (
+						found &&
+						item.kind === 'message' &&
+						item.message.author !== deviceId
+					)
+						count++;
 				}
 			}
 		}
@@ -150,7 +159,7 @@
 							<Avatar
 								image={info.image}
 								initials={info.name.slice(0, 2)}
-								style="--size: 2.5rem"
+								size="2.5rem"
 							/>
 							<span>{info.name}</span>
 						</Link>
@@ -163,90 +172,130 @@
 			</Navbar>
 		{/snippet}
 
-		<div
-			class="column m-2 gap-1"
-			style={`padding-bottom: ${bottomBarHeight}px`}
-			data-testid="group-chat-messages"
-		>
-			{#await $readMessageHashes then readHashes}
-				{#await Promise.all( [$myDeviceId, $messageSets, $allMembers], ) then [myDeviceId, messageSetsInDays, members]}
-					{@const unreadDivider = getUnreadDividerInfo(
-						messageSetsInDays,
-						readHashes,
-						myDeviceId,
-					)}
-					{#each messageSetsInDays as messageSetInDay}
-						<div class="self-center z-10">
-							<DayTag class="quiet" day={messageSetInDay.day} />
-						</div>
-
-						{#each messageSetInDay.eventsSets as messageSet}
-							<div class="column" style="gap: 1px">
-								{#each messageSet as [hash, message], i (hash)}
-									{#if unreadDivider.hash === hash}
-										<div
-											class="unread-divider"
-											data-testid="group-chat-unread-divider"
-										>
-											{m.unreadMessages({ count: unreadDivider.count })}
-										</div>
-									{/if}
-									{@const position = messagePosition(messageSet.length, i)}
-									{#if myDeviceId === message.author}
-										<div class="self-end max-w-[85%]" data-message-hash={hash}>
-											<MessageFromMe
-												{message}
-												{position}
-												{myDeviceId}
-												{chatId}
-												searchQuery=""
-												onToggleReaction={() => {}}
-											/>
-										</div>
-									{:else}
-										{@const author = Object.values(members).find(m =>
-											m.deviceIds.includes(message.author),
-										)}
-										<div
-											class="row items-end gap-2 self-start max-w-[85%]"
-											data-message-hash={hash}
-											use:readMessageOnObserve={readHashes?.has(hash)
-												? null
-												: hash}
-										>
-											{#if position === 'last' || position === 'single'}
-												<Avatar
-													image={author?.profile?.avatar}
-													initials={author?.profile?.name.slice(0, 2)}
-													style="--size: 2rem"
-												/>
-											{:else}
-												<div class="shrink-0" style="width: 2rem"></div>
-											{/if}
-											<MessageFromOthers
-												{message}
-												{position}
-												{myDeviceId}
-												{chatId}
-												searchQuery=""
-												onToggleReaction={() => {}}
-												sender={(position === 'first' ||
-													position === 'single') &&
-												author?.profile?.name
-													? {
-															name: author.profile.name,
-															color: senderColor(message.author),
-														}
-													: undefined}
-											/>
-										</div>
-									{/if}
-								{/each}
+		<div class="column" style={`padding-bottom: ${bottomBarHeight}px`}>
+			<div class="mt-16 mb-6 px-4" data-testid="group-chat-header">
+				{#await Promise.all([$info, $allMembers]) then [info, members]}
+					<div class="column items-center">
+						<div
+							class="outline-card"
+							style="border-radius: 2rem; min-width: 250px"
+						>
+							<div class="column items-center gap-3 px-8 pb-6 -mt-10">
+								<Avatar
+									image={info.image}
+									initials={info.name.slice(0, 2)}
+									size={80}
+								/>
+								<span
+									class="text-2xl font-semibold break-words text-center"
+									data-testid="group-chat-header-name"
+								>
+									{info.name}
+								</span>
+								<div class="flex items-center gap-1.5 quiet text-sm">
+									<wa-icon
+										class="small-icon"
+										src={wrapPathInSvg(mdiAccountGroup)}
+									></wa-icon>
+									<span>
+										{m.membersCount({ count: Object.keys(members).length })}
+									</span>
+								</div>
 							</div>
-						{/each}
-					{/each}
+						</div>
+					</div>
 				{/await}
-			{/await}
+			</div>
+
+			<div class="column m-2 gap-1" data-testid="group-chat-messages">
+				{#await $readMessageHashes then readHashes}
+					{#await Promise.all( [$myDeviceId, $messageSets, $allMembers], ) then [myDeviceId, messageSetsInDays, members]}
+						{@const unreadDivider = getUnreadDividerInfo(
+							messageSetsInDays,
+							readHashes,
+							myDeviceId,
+						)}
+						{#each messageSetsInDays as messageSetInDay}
+							<div class="self-center z-10">
+								<DayTag class="quiet" day={messageSetInDay.day} />
+							</div>
+
+							{#each messageSetInDay.eventsSets as messageSet}
+								<div class="column" style="gap: 1px">
+									{#each messageSet as [hash, item], i (hash)}
+										{#if unreadDivider.hash === hash}
+											<div
+												class="unread-divider"
+												data-testid="group-chat-unread-divider"
+											>
+												{m.unreadMessages({ count: unreadDivider.count })}
+											</div>
+										{/if}
+										{#if item.kind === 'control'}
+											<SystemMessage event={item.event} />
+										{:else}
+											{@const message = item.message}
+											{@const position = messagePosition(messageSet.length, i)}
+											{#if myDeviceId === message.author}
+												<div
+													class="self-end max-w-[85%]"
+													data-message-hash={hash}
+												>
+													<MessageFromMe
+														{message}
+														{position}
+														{myDeviceId}
+														{chatId}
+														searchQuery=""
+														onToggleReaction={() => {}}
+													/>
+												</div>
+											{:else}
+												{@const author = Object.values(members).find(m =>
+													m.deviceIds.includes(message.author),
+												)}
+												<div
+													class="row items-end gap-2 self-start max-w-[85%]"
+													data-message-hash={hash}
+													use:readMessageOnObserve={readHashes?.has(hash)
+														? null
+														: hash}
+												>
+													{#if position === 'last' || position === 'single'}
+														<Avatar
+															image={author?.profile?.avatar}
+															initials={author?.profile?.name.slice(0, 2)}
+															size="2rem"
+														/>
+													{:else}
+														<div class="shrink-0" style="width: 2rem"></div>
+													{/if}
+													<MessageFromOthers
+														{message}
+														{position}
+														{myDeviceId}
+														{chatId}
+														searchQuery=""
+														onToggleReaction={() => {}}
+														sender={(position === 'first' ||
+															position === 'single') &&
+														author?.profile?.name
+															? {
+																	name: author.profile.name,
+																	color: senderColor(message.author),
+																}
+															: undefined}
+													/>
+												</div>
+											{/if}
+										{/if}
+									{/each}
+								</div>
+							{/each}
+						{/each}
+					{/await}
+				{/await}
+			</div>
 		</div>
 	</ReverseScrollPage>
 

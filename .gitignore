@@ -49,3 +49,5 @@ signal-reference
 
 # Development environment log files
 *.log
+.do-image-*
+*.qcow2
