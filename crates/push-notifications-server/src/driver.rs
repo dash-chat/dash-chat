@@ -7,16 +7,9 @@ use push_notifications_client::types::{FcmToken, TopicId, VerifyingKey};
 
 #[async_trait::async_trait]
 pub trait Driver: Send + Sync + 'static {
-    async fn store_fcm_token(
-        &self,
-        verifying_key: &VerifyingKey,
-        fcm_token: &FcmToken,
-    ) -> anyhow::Result<()>;
+    async fn store_fcm_token(&self, verifying_key: &VerifyingKey, fcm_token: &FcmToken) -> anyhow::Result<()>;
 
-    async fn get_fcm_tokens(
-        &self,
-        verifying_keys: &[VerifyingKey],
-    ) -> anyhow::Result<HashMap<VerifyingKey, FcmToken>>;
+    async fn get_fcm_tokens(&self, verifying_keys: &[VerifyingKey]) -> anyhow::Result<HashMap<VerifyingKey, FcmToken>>;
 
     async fn remove_fcm_token(&self, verifying_key: &VerifyingKey) -> anyhow::Result<()>;
 

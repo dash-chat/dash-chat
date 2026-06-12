@@ -102,10 +102,7 @@ where
 
     /// Subscribe to per-mailbox sync watermarks. Lazily creates the watch on
     /// first call, seeded from persisted state.
-    pub async fn sync_state(
-        &self,
-        mailbox: &MailboxId,
-    ) -> anyhow::Result<watch::Receiver<MailboxSyncState<T, A>>> {
+    pub async fn sync_state(&self, mailbox: &MailboxId) -> anyhow::Result<watch::Receiver<MailboxSyncState<T, A>>> {
         let mut per_mailbox = self.per_mailbox.lock().await;
         if let Some(tx) = per_mailbox.get(mailbox) {
             return Ok(tx.subscribe());
@@ -120,11 +117,7 @@ where
     /// a single SQL statement (multi-row INSERT with upsert). Updates the
     /// per-mailbox sync-state watch (if subscribed) and the all-ids watch
     /// when a new mailbox is observed.
-    pub async fn record_synced(
-        &self,
-        mailbox: &MailboxId,
-        entries: &[(T, A, u64)],
-    ) -> anyhow::Result<()> {
+    pub async fn record_synced(&self, mailbox: &MailboxId, entries: &[(T, A, u64)]) -> anyhow::Result<()> {
         if entries.is_empty() {
             return Ok(());
         }
@@ -173,8 +166,7 @@ where
             }
         }
 
-        self.all_ids_tx
-            .send_if_modified(|ids| ids.insert(mailbox.clone()));
+        self.all_ids_tx.send_if_modified(|ids| ids.insert(mailbox.clone()));
 
         let per_mailbox = self.per_mailbox.lock().await;
         if let Some(tx) = per_mailbox.get(mailbox) {
@@ -201,12 +193,7 @@ where
         Ok(())
     }
 
-    pub async fn get_synced(
-        &self,
-        mailbox: &MailboxId,
-        topic: &T,
-        author: &A,
-    ) -> anyhow::Result<Option<u64>> {
+    pub async fn get_synced(&self, mailbox: &MailboxId, topic: &T, author: &A) -> anyhow::Result<Option<u64>> {
         let topic_bytes = encode(topic)?;
         let author_bytes = encode(author)?;
         match &self.inner {
@@ -224,20 +211,13 @@ where
             }
             SyncBackend::Mem(rows) => {
                 let rows = rows.lock().await;
-                Ok(rows
-                    .rows
-                    .get(&(mailbox.clone(), topic_bytes, author_bytes))
-                    .copied())
+                Ok(rows.rows.get(&(mailbox.clone(), topic_bytes, author_bytes)).copied())
             }
         }
     }
 
     /// All `(mailbox_id, seq)` entries for the given (topic, author).
-    pub async fn get_synced_for_log(
-        &self,
-        topic: &T,
-        author: &A,
-    ) -> anyhow::Result<BTreeMap<MailboxId, u64>> {
+    pub async fn get_synced_for_log(&self, topic: &T, author: &A) -> anyhow::Result<BTreeMap<MailboxId, u64>> {
         let topic_bytes = encode(topic)?;
         let author_bytes = encode(author)?;
         match &self.inner {
@@ -265,10 +245,7 @@ where
     }
 
     /// All `topic -> author -> seq` entries for the given mailbox.
-    pub async fn get_all_for_mailbox(
-        &self,
-        mailbox: &MailboxId,
-    ) -> anyhow::Result<MailboxSyncState<T, A>> {
+    pub async fn get_all_for_mailbox(&self, mailbox: &MailboxId) -> anyhow::Result<MailboxSyncState<T, A>> {
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
                 let rows: Vec<(Vec<u8>, Vec<u8>, i64)> = sqlx::query_as(
@@ -362,10 +339,7 @@ mod tests {
     async fn round_trip_impl(b: Backend) {
         let (_dir, store) = open(b).await;
         let mailbox = "mb1".to_string();
-        store
-            .record_synced(&mailbox, &[(7u8, 'a', 3)])
-            .await
-            .unwrap();
+        store.record_synced(&mailbox, &[(7u8, 'a', 3)]).await.unwrap();
         let got = store.get_synced(&mailbox, &7u8, &'a').await.unwrap();
         assert_eq!(got, Some(3));
     }
@@ -402,14 +376,8 @@ mod tests {
 
     async fn multi_mailbox_impl(b: Backend) {
         let (_dir, store) = open(b).await;
-        store
-            .record_synced(&"mb1".into(), &[(7u8, 'a', 1)])
-            .await
-            .unwrap();
-        store
-            .record_synced(&"mb2".into(), &[(7u8, 'a', 5)])
-            .await
-            .unwrap();
+        store.record_synced(&"mb1".into(), &[(7u8, 'a', 1)]).await.unwrap();
+        store.record_synced(&"mb2".into(), &[(7u8, 'a', 5)]).await.unwrap();
         let for_log = store.get_synced_for_log(&7u8, &'a').await.unwrap();
         assert_eq!(for_log.get("mb1"), Some(&1));
         assert_eq!(for_log.get("mb2"), Some(&5));
@@ -427,22 +395,10 @@ mod tests {
 
     async fn get_all_for_mailbox_impl(b: Backend) {
         let (_dir, store) = open(b).await;
-        store
-            .record_synced(&"mb1".into(), &[(7u8, 'a', 1)])
-            .await
-            .unwrap();
-        store
-            .record_synced(&"mb1".into(), &[(7u8, 'b', 2)])
-            .await
-            .unwrap();
-        store
-            .record_synced(&"mb1".into(), &[(8u8, 'a', 3)])
-            .await
-            .unwrap();
-        store
-            .record_synced(&"mb2".into(), &[(7u8, 'a', 99)])
-            .await
-            .unwrap();
+        store.record_synced(&"mb1".into(), &[(7u8, 'a', 1)]).await.unwrap();
+        store.record_synced(&"mb1".into(), &[(7u8, 'b', 2)]).await.unwrap();
+        store.record_synced(&"mb1".into(), &[(8u8, 'a', 3)]).await.unwrap();
+        store.record_synced(&"mb2".into(), &[(7u8, 'a', 99)]).await.unwrap();
         let all = store.get_all_for_mailbox(&"mb1".into()).await.unwrap();
         assert_eq!(all.values().map(|m| m.len()).sum::<usize>(), 3);
         assert_eq!(all.get(&7u8).and_then(|m| m.get(&'a')), Some(&1));
@@ -462,23 +418,11 @@ mod tests {
 
     async fn drop_mailbox_impl(b: Backend) {
         let (_dir, store) = open(b).await;
-        store
-            .record_synced(&"mb1".into(), &[(7u8, 'a', 1)])
-            .await
-            .unwrap();
-        store
-            .record_synced(&"mb2".into(), &[(7u8, 'a', 2)])
-            .await
-            .unwrap();
+        store.record_synced(&"mb1".into(), &[(7u8, 'a', 1)]).await.unwrap();
+        store.record_synced(&"mb2".into(), &[(7u8, 'a', 2)]).await.unwrap();
         store.drop_mailbox(&"mb1".into()).await.unwrap();
-        assert_eq!(
-            store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
-            None
-        );
-        assert_eq!(
-            store.get_synced(&"mb2".into(), &7u8, &'a').await.unwrap(),
-            Some(2)
-        );
+        assert_eq!(store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(), None);
+        assert_eq!(store.get_synced(&"mb2".into(), &7u8, &'a').await.unwrap(), Some(2));
     }
 
     #[tokio::test]
@@ -497,58 +441,27 @@ mod tests {
         let path = dir.path().join("sync_state.db");
 
         {
-            let store: MailboxSyncTracker<u8, char> =
-                MailboxSyncTracker::open(&path).await.unwrap();
-            store
-                .record_synced(&"mb1".into(), &[(7u8, 'a', 3)])
-                .await
-                .unwrap();
-            store
-                .record_synced(&"mb1".into(), &[(7u8, 'b', 4)])
-                .await
-                .unwrap();
-            store
-                .record_synced(&"mb2".into(), &[(8u8, 'c', 5)])
-                .await
-                .unwrap();
+            let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::open(&path).await.unwrap();
+            store.record_synced(&"mb1".into(), &[(7u8, 'a', 3)]).await.unwrap();
+            store.record_synced(&"mb1".into(), &[(7u8, 'b', 4)]).await.unwrap();
+            store.record_synced(&"mb2".into(), &[(8u8, 'c', 5)]).await.unwrap();
             store.close().await;
         }
 
         let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::open(&path).await.unwrap();
-        assert_eq!(
-            store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
-            Some(3),
-        );
-        assert_eq!(
-            store.get_synced(&"mb1".into(), &7u8, &'b').await.unwrap(),
-            Some(4),
-        );
-        assert_eq!(
-            store.get_synced(&"mb2".into(), &8u8, &'c').await.unwrap(),
-            Some(5),
-        );
+        assert_eq!(store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(), Some(3),);
+        assert_eq!(store.get_synced(&"mb1".into(), &7u8, &'b').await.unwrap(), Some(4),);
+        assert_eq!(store.get_synced(&"mb2".into(), &8u8, &'c').await.unwrap(), Some(5),);
 
         let all = store.get_all_for_mailbox(&"mb1".into()).await.unwrap();
         assert_eq!(all.values().map(|m| m.len()).sum::<usize>(), 2);
         assert_eq!(all.get(&7u8).and_then(|m| m.get(&'a')), Some(&3));
         assert_eq!(all.get(&7u8).and_then(|m| m.get(&'b')), Some(&4));
 
-        store
-            .record_synced(&"mb1".into(), &[(7u8, 'a', 2)])
-            .await
-            .unwrap();
-        assert_eq!(
-            store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
-            Some(3),
-        );
-        store
-            .record_synced(&"mb1".into(), &[(7u8, 'a', 10)])
-            .await
-            .unwrap();
-        assert_eq!(
-            store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
-            Some(10),
-        );
+        store.record_synced(&"mb1".into(), &[(7u8, 'a', 2)]).await.unwrap();
+        assert_eq!(store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(), Some(3),);
+        store.record_synced(&"mb1".into(), &[(7u8, 'a', 10)]).await.unwrap();
+        assert_eq!(store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(), Some(10),);
 
         let ids = store.all_mailbox_ids().borrow().clone();
         assert!(ids.contains("mb1"));
@@ -561,25 +474,16 @@ mod tests {
         let mut rx = store.all_mailbox_ids();
         assert!(rx.borrow().is_empty());
 
-        store
-            .record_synced(&"mb1".into(), &[(7u8, 'a', 1)])
-            .await
-            .unwrap();
+        store.record_synced(&"mb1".into(), &[(7u8, 'a', 1)]).await.unwrap();
         rx.changed().await.unwrap();
         assert!(rx.borrow().contains("mb1"));
 
-        store
-            .record_synced(&"mb2".into(), &[(7u8, 'a', 1)])
-            .await
-            .unwrap();
+        store.record_synced(&"mb2".into(), &[(7u8, 'a', 1)]).await.unwrap();
         rx.changed().await.unwrap();
         assert!(rx.borrow().contains("mb2"));
 
         // Re-recording for an existing mailbox should NOT bump the watch.
-        store
-            .record_synced(&"mb1".into(), &[(7u8, 'a', 2)])
-            .await
-            .unwrap();
+        store.record_synced(&"mb1".into(), &[(7u8, 'a', 2)]).await.unwrap();
         assert!(!rx.has_changed().unwrap());
 
         store.drop_mailbox(&"mb1".into()).await.unwrap();
@@ -594,10 +498,7 @@ mod tests {
         let mut rx = store.sync_state(&"mb1".into()).await.unwrap();
         assert!(rx.borrow().is_empty());
 
-        store
-            .record_synced(&"mb1".into(), &[(7u8, 'a', 3)])
-            .await
-            .unwrap();
+        store.record_synced(&"mb1".into(), &[(7u8, 'a', 3)]).await.unwrap();
         rx.changed().await.unwrap();
         assert_eq!(rx.borrow().get(&7u8).and_then(|m| m.get(&'a')), Some(&3));
 

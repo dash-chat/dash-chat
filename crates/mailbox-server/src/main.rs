@@ -23,23 +23,14 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "mailbox_server=debug".into()),
-        )
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "mailbox_server=debug".into()))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     let args = Args::parse();
 
     let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
-    spawn_server(
-        args.db_path.into(),
-        args.addr,
-        args.push_notifications_url,
-        signal,
-    )
-    .await?;
+    spawn_server(args.db_path.into(), args.addr, args.push_notifications_url, signal).await?;
 
     Ok(())
 }

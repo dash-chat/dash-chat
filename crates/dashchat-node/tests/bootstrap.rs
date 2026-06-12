@@ -46,10 +46,7 @@ async fn test_mailbox_bootstrap() {
 
     tracing::info!(topic = ?direct_chat_topic.aliased(), "direct chat id");
 
-    alice
-        .send_message(direct_chat_topic, "Hello".into())
-        .await
-        .unwrap();
+    alice.send_message(direct_chat_topic, "Hello".into()).await.unwrap();
 
     poll.consistency([&alice, &bobbi], &[direct_chat_topic.into()])
         .await
@@ -59,8 +56,5 @@ async fn test_mailbox_bootstrap() {
     let bobbi_messages = bobbi.get_messages(direct_chat_topic).await.unwrap();
 
     assert_eq!(alice_messages, bobbi_messages);
-    assert_eq!(
-        bobbi_messages.first().map(|m| m.content.clone()),
-        Some("Hello".into())
-    );
+    assert_eq!(bobbi_messages.first().map(|m| m.content.clone()), Some("Hello".into()));
 }

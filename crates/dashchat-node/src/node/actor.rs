@@ -9,8 +9,8 @@ use p2panda::network::NetworkError;
 use p2panda::node::CreateStreamError;
 use p2panda::operation::{Extensions, LogId, Operation};
 use p2panda::streams::{
-    ExternalStreamFuture, ImportError, ProcessedOperation, PublishError, PublishFuture, Source,
-    StreamEvent, StreamPublisher, StreamSubscription,
+    ExternalStreamFuture, ImportError, ProcessedOperation, PublishError, PublishFuture, Source, StreamEvent,
+    StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use thiserror::Error;
@@ -230,11 +230,7 @@ impl Actor {
         Ok(import_fut)
     }
 
-    async fn handle_publish(
-        &mut self,
-        topic: Topic,
-        payload: Payload,
-    ) -> Result<ProcessFuture, NodeActorError> {
+    async fn handle_publish(&mut self, topic: Topic, payload: Payload) -> Result<ProcessFuture, NodeActorError> {
         // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
         let tx = match self.tx_map.get(&topic) {
             Some(tx) => tx.clone(),
@@ -262,11 +258,7 @@ impl Actor {
         Ok(process_fut)
     }
 
-    async fn handle_register_bootstrap(
-        &self,
-        node_id: NodeId,
-        relay_url: RelayUrl,
-    ) -> Result<(), NodeActorError> {
+    async fn handle_register_bootstrap(&self, node_id: NodeId, relay_url: RelayUrl) -> Result<(), NodeActorError> {
         self.inner.insert_bootstrap(node_id, relay_url).await?;
         Ok(())
     }
@@ -312,10 +304,7 @@ impl Actor {
         Ok(())
     }
 
-    async fn process_groups_control(
-        &self,
-        operation: &ProcessedOperation<Payload>,
-    ) -> Result<(), ProcessorError> {
+    async fn process_groups_control(&self, operation: &ProcessedOperation<Payload>) -> Result<(), ProcessorError> {
         let topic = operation.topic();
         let header = operation.processed().header().to_owned();
         let body = operation.processed().body().cloned();
@@ -420,11 +409,7 @@ mod tests {
         Payload::Chat(ChatPayload::Message(ChatMessageContent::text_only(message)))
     }
 
-    async fn groups_control(
-        store: &SqliteStore,
-        group_id: VerifyingKey,
-        action: GroupAction<VerifyingKey>,
-    ) -> Payload {
+    async fn groups_control(store: &SqliteStore, group_id: VerifyingKey, action: GroupAction<VerifyingKey>) -> Payload {
         let groups_y: GroupsState = tx_unwrap!(store, { store.get_groups_state(&0).await })
             .unwrap()
             .unwrap_or_default();
@@ -446,16 +431,8 @@ mod tests {
         let topic_a = Topic::random();
         let topic_b = Topic::random();
 
-        let alice = Node::builder()
-            .network_id(network_id.into())
-            .spawn()
-            .await
-            .unwrap();
-        let bobbi = Node::builder()
-            .network_id(network_id.into())
-            .spawn()
-            .await
-            .unwrap();
+        let alice = Node::builder().network_id(network_id.into()).spawn().await.unwrap();
+        let bobbi = Node::builder().network_id(network_id.into()).spawn().await.unwrap();
 
         let (alice_actor, alice_events_rx) = Actor::new(alice);
         let alice_actor_tx = alice_actor.spawn().await.unwrap();
@@ -487,10 +464,7 @@ mod tests {
         let topic_b_message = chat("hey from topic b!");
 
         let mut processed_futures = vec![];
-        for (topic, payload) in [
-            (topic_a, topic_a_message.clone()),
-            (topic_b, topic_b_message.clone()),
-        ] {
+        for (topic, payload) in [(topic_a, topic_a_message.clone()), (topic_b, topic_b_message.clone())] {
             let (reply_tx, reply_rx) = oneshot::channel();
             alice_actor_tx
                 .send(Command::Publish {
@@ -536,16 +510,8 @@ mod tests {
         let network_id = Topic::random();
         let topic = Topic::random();
 
-        let alice = Node::builder()
-            .network_id(network_id.into())
-            .spawn()
-            .await
-            .unwrap();
-        let bobbi = Node::builder()
-            .network_id(network_id.into())
-            .spawn()
-            .await
-            .unwrap();
+        let alice = Node::builder().network_id(network_id.into()).spawn().await.unwrap();
+        let bobbi = Node::builder().network_id(network_id.into()).spawn().await.unwrap();
 
         let alice_store = alice.store();
         let bobbi_store = bobbi.store();

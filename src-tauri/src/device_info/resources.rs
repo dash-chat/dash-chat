@@ -35,11 +35,9 @@ pub fn spawn_sysinfo_logger() {
             };
             let cpu = system.global_cpu_usage();
 
-            let mem_crossed_threshold =
-                last_logged_mem_pct.map_or(true, |last| (mem_pct - last).abs() > MEM_DELTA_PP);
+            let mem_crossed_threshold = last_logged_mem_pct.map_or(true, |last| (mem_pct - last).abs() > MEM_DELTA_PP);
             let cpu_crossed_threshold = last_logged_cpu_pct.is_some_and(|last| {
-                (cpu > CPU_THRESHOLD_PCT) != (last > CPU_THRESHOLD_PCT)
-                    || (cpu - last).abs() > CPU_DELTA_PP
+                (cpu > CPU_THRESHOLD_PCT) != (last > CPU_THRESHOLD_PCT) || (cpu - last).abs() > CPU_DELTA_PP
             });
             if !mem_crossed_threshold && !cpu_crossed_threshold {
                 continue;

@@ -67,9 +67,7 @@ fn quit_from_tray(app: &AppHandle<impl Runtime>) {
 
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(err) =
-            crate::mailbox::server::set_local_mailbox_server_enabled(&app, false).await
-        {
+        if let Err(err) = crate::mailbox::server::set_local_mailbox_server_enabled(&app, false).await {
             log::error!("Failed to stop local mailbox: {err:?}");
         }
         if !window_visible {

@@ -80,8 +80,8 @@ pub(crate) fn set_setting<R: Runtime>(
         obj.insert(key.clone(), value.clone());
     }
 
-    let settings = serde_json::from_value::<Settings>(current)
-        .map_err(|err| anyhow!("Invalid setting {key}: {err}"))?;
+    let settings =
+        serde_json::from_value::<Settings>(current).map_err(|err| anyhow!("Invalid setting {key}: {err}"))?;
 
     save_settings(&handle, &settings);
     handle.emit(format!("settings://updated-{key}").as_str(), value)?;

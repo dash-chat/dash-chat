@@ -5,9 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::compat::Capabilities;
 
-#[derive(
-    Clone, Debug, PartialEq, Eq, Serialize, Deserialize, derive_more::From, derive_more::Deref,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, derive_more::From, derive_more::Deref)]
 pub struct ChatMessageContentV0(String);
 
 /// Placeholder for future message versions.
@@ -101,12 +99,10 @@ impl VersionConvert for ChatMessageContent {
                 }
             }
 
-            (Compat::Unversioned(v0), 1) => Ok(Compat::Versioned(ChatMessageContentV::V1(
-                ChatMessageContentV1 {
-                    message: v0.0.clone(),
-                    media: None,
-                },
-            ))
+            (Compat::Unversioned(v0), 1) => Ok(Compat::Versioned(ChatMessageContentV::V1(ChatMessageContentV1 {
+                message: v0.0.clone(),
+                media: None,
+            }))
             .into()),
 
             (Compat::Versioned(ChatMessageContentV::V1(_)), 1) => Ok(self.clone()),

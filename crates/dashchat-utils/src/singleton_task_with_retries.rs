@@ -39,9 +39,7 @@ impl SingletonTaskWithRetries {
         F: Fn() -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<T, E>> + Send,
     {
-        let inner = Arc::new(Inner {
-            notify: Notify::new(),
-        });
+        let inner = Arc::new(Inner { notify: Notify::new() });
 
         let state = inner.clone();
         let label = label.into();
@@ -75,9 +73,7 @@ impl SingletonTaskWithRetries {
                             let exhausted = max_attempts.is_some_and(|max| attempt >= max);
 
                             if exhausted {
-                                log::warn!(
-                                    "{label} failed after {attempt} attempts, giving up: {e}",
-                                );
+                                log::warn!("{label} failed after {attempt} attempts, giving up: {e}",);
                                 break;
                             }
 

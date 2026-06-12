@@ -3,11 +3,7 @@ use tauri::AppHandle;
 pub fn log_build_info(handle: &AppHandle) {
     let pkg = handle.package_info();
 
-    let build_profile = if cfg!(debug_assertions) {
-        "debug"
-    } else {
-        "release"
-    };
+    let build_profile = if cfg!(debug_assertions) { "debug" } else { "release" };
     let features = active_features();
     let features_str = if features.is_empty() {
         "none".to_string()

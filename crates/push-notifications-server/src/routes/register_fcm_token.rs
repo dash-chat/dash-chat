@@ -9,10 +9,7 @@ pub(crate) async fn register_fcm_token(
     Json(req): Json<RegisterFcmTokenRequest>,
 ) -> Result<StatusCode, AppError> {
     req.validate()?;
-    state
-        .db
-        .store_fcm_token(&req.verifying_key, &req.fcm_token)
-        .await?;
+    state.db.store_fcm_token(&req.verifying_key, &req.fcm_token).await?;
     tracing::info!(verifying_key = %req.verifying_key, "stored FCM token");
     Ok(StatusCode::NO_CONTENT)
 }

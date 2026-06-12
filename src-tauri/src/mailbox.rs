@@ -24,9 +24,7 @@ pub mod server;
 pub fn default_mailbox_url() -> String {
     if let Ok(url) = std::env::var("MAILBOX_URL") {
         if !(url.starts_with("http://") || url.starts_with("https://")) {
-            log::error!(
-                "MAILBOX_URL env var is not a valid URL: {url}, falling back to next option"
-            );
+            log::error!("MAILBOX_URL env var is not a valid URL: {url}, falling back to next option");
         } else {
             return url;
         }
@@ -64,14 +62,10 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
         while let Some(event) = watcher.next().await {
             match event {
                 Ok(if_watch::IfEvent::Up(net)) => {
-                    log::info!(
-                        "Mailbox browse interface watcher: up {net}, refreshing mDNS browse"
-                    );
+                    log::info!("Mailbox browse interface watcher: up {net}, refreshing mDNS browse");
                 }
                 Ok(if_watch::IfEvent::Down(net)) => {
-                    log::info!(
-                        "Mailbox browse interface watcher: down {net}, refreshing mDNS browse"
-                    );
+                    log::info!("Mailbox browse interface watcher: down {net}, refreshing mDNS browse");
                 }
                 Err(err) => {
                     log::warn!("Mailbox browse interface watcher error: {err:?}");
@@ -107,10 +101,7 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     Ok(())
 }
 
-async fn handle_browse_events(
-    node: dashchat_node::Node,
-    receiver: mdns_sd::Receiver<mdns_sd::ServiceEvent>,
-) {
+async fn handle_browse_events(node: dashchat_node::Node, receiver: mdns_sd::Receiver<mdns_sd::ServiceEvent>) {
     while let Ok(event) = receiver.recv_async().await {
         match event {
             mdns_sd::ServiceEvent::ServiceResolved(resolved) => {
@@ -122,8 +113,7 @@ async fn handle_browse_events(
                 // it appends a ` (N)` uniqueness counter. Both are noise from
                 // the application's perspective — what we want is the stable
                 // node identifier the announcer chose.
-                let mailbox_id =
-                    instance_name_from_fullname(&resolved.fullname, &resolved.ty_domain);
+                let mailbox_id = instance_name_from_fullname(&resolved.fullname, &resolved.ty_domain);
                 let port = resolved.port;
                 let node = node.clone();
 
@@ -158,9 +148,7 @@ async fn handle_browse_events(
                             url.clone(),
                         ))
                         .await;
-                    log::info!(
-                        "*** Registered local mailbox client via mdns: {mailbox_id} ({url}) ***",
-                    );
+                    log::info!("*** Registered local mailbox client via mdns: {mailbox_id} ({url}) ***",);
                 });
             }
             mdns_sd::ServiceEvent::ServiceRemoved(ty_domain, fullname) => {
@@ -196,9 +184,7 @@ async fn pick_reachable_host(resolved: &mdns_sd::ResolvedService, port: u16) -> 
         mdns_sd::ScopedIp::V4(ip) => Some(std::net::IpAddr::V4(*ip.addr())),
         // Link-local IPv6 (fe80::/10) needs a `%ifN` zone identifier to route;
         // the announcer's interface index isn't usable from here, so skip it.
-        mdns_sd::ScopedIp::V6(ip) if !ip.addr().is_unicast_link_local() => {
-            Some(std::net::IpAddr::V6(*ip.addr()))
-        }
+        mdns_sd::ScopedIp::V6(ip) if !ip.addr().is_unicast_link_local() => Some(std::net::IpAddr::V6(*ip.addr())),
         _ => None,
     });
     let (loopback, routable): (Vec<_>, Vec<_>) = ips.partition(|ip| ip.is_loopback());

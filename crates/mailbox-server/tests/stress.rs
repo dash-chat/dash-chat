@@ -1,7 +1,5 @@
 use futures::future::join_all;
-use mailbox_server::{
-    test_utils::create_test_server, Author, GetBlobsResponse, SequenceNumber, TopicId,
-};
+use mailbox_server::{test_utils::create_test_server, Author, GetBlobsResponse, SequenceNumber, TopicId};
 use serde_json::json;
 use serial_test::serial;
 use std::collections::BTreeMap;
@@ -11,11 +9,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 // Helper to create a simple store request with a single message
-fn create_store_request(
-    topic_id: &str,
-    message: &[u8],
-    seq_num: SequenceNumber,
-) -> serde_json::Value {
+fn create_store_request(topic_id: &str, message: &[u8], seq_num: SequenceNumber) -> serde_json::Value {
     let message_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, message);
     json!({
         "blobs": {
@@ -83,11 +77,7 @@ async fn stress_test_concurrent_writes() {
         get_response.assert_status_ok();
         let body: GetBlobsResponse = get_response.json();
         let topic_authors = &body.blobs_by_topic[&format!("stress-topic-{}", topic_idx)];
-        let total_messages: u64 = topic_authors
-            .blobs
-            .values()
-            .map(|author| author.len() as u64)
-            .sum();
+        let total_messages: u64 = topic_authors.blobs.values().map(|author| author.len() as u64).sum();
 
         assert_eq!(total_messages, num_concurrent_writes / num_topics);
     }
@@ -111,11 +101,7 @@ async fn stress_test_concurrent_reads() {
 
             server
                 .post("/blobs/store")
-                .json(&create_store_request(
-                    &topic_id,
-                    message.as_bytes(),
-                    msg_idx,
-                ))
+                .json(&create_store_request(&topic_id, message.as_bytes(), msg_idx))
                 .await
                 .assert_status(axum::http::StatusCode::CREATED);
         }
@@ -144,11 +130,7 @@ async fn stress_test_concurrent_reads() {
             response.assert_status_ok();
             let body: GetBlobsResponse = response.json();
             let topic_authors = &body.blobs_by_topic[&topic_id_clone];
-            let total_messages: u64 = topic_authors
-                .blobs
-                .values()
-                .map(|author| author.len() as u64)
-                .sum();
+            let total_messages: u64 = topic_authors.blobs.values().map(|author| author.len() as u64).sum();
             assert_eq!(total_messages, messages_per_topic);
         };
         tasks.push(task);
@@ -280,11 +262,7 @@ async fn stress_test_large_messages() {
         response.assert_status_ok();
         let body: GetBlobsResponse = response.json();
         let topic_authors = &body.blobs_by_topic[&topic_id];
-        let total_messages: u64 = topic_authors
-            .blobs
-            .values()
-            .map(|author| author.len() as u64)
-            .sum();
+        let total_messages: u64 = topic_authors.blobs.values().map(|author| author.len() as u64).sum();
         assert_eq!(total_messages, num_large_messages as u64 / 5);
     }
 }
@@ -305,11 +283,7 @@ async fn stress_test_many_topics() {
 
             server
                 .post("/blobs/store")
-                .json(&create_store_request(
-                    &topic_id,
-                    message.as_bytes(),
-                    msg_idx,
-                ))
+                .json(&create_store_request(&topic_id, message.as_bytes(), msg_idx))
                 .await
                 .assert_status(axum::http::StatusCode::CREATED);
         }
@@ -346,11 +320,7 @@ async fn stress_test_many_topics() {
     assert_eq!(body.blobs_by_topic.len(), 100);
     for topic_id in &topic_ids {
         let topic_authors = &body.blobs_by_topic[topic_id];
-        let total_messages: u64 = topic_authors
-            .blobs
-            .values()
-            .map(|author| author.len() as u64)
-            .sum();
+        let total_messages: u64 = topic_authors.blobs.values().map(|author| author.len() as u64).sum();
         assert_eq!(total_messages, messages_per_topic);
     }
 
@@ -401,10 +371,6 @@ async fn stress_test_rapid_sequential_writes() {
     response.assert_status_ok();
     let body: GetBlobsResponse = response.json();
     let topic_authors = &body.blobs_by_topic[topic_id];
-    let total_messages: u64 = topic_authors
-        .blobs
-        .values()
-        .map(|author| author.len() as u64)
-        .sum();
+    let total_messages: u64 = topic_authors.blobs.values().map(|author| author.len() as u64).sum();
     assert_eq!(total_messages, num_messages);
 }

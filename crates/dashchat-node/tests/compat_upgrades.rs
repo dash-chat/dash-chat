@@ -72,17 +72,9 @@ async fn direct_chat_capability_upgrade() {
 
     // Wait for bobbi to learn alice's updated capabilities via the mailbox.
     poll.wait_for(|| async {
-        let caps = bobbi
-            .local_store
-            .get_capabilities(bobbi.device_id())
-            .await
-            .unwrap();
+        let caps = bobbi.local_store.get_capabilities(bobbi.device_id()).await.unwrap();
         // Also verify alice still sees bobbi as zero
-        let alice_sees_bobbi = alice
-            .local_store
-            .get_capabilities(bobbi.device_id())
-            .await
-            .unwrap();
+        let alice_sees_bobbi = alice.local_store.get_capabilities(bobbi.device_id()).await.unwrap();
         if caps.is_some() && alice_sees_bobbi == Some(Capabilities::zero()) {
             Ok(())
         } else {
@@ -154,11 +146,7 @@ async fn direct_chat_capability_upgrade() {
 
     // Wait for alice to learn bobbi's updated capabilities.
     poll.wait_for(|| async {
-        let caps = alice
-            .local_store
-            .get_capabilities(bobbi.device_id())
-            .await
-            .unwrap();
+        let caps = alice.local_store.get_capabilities(bobbi.device_id()).await.unwrap();
         if caps == Some(Capabilities::current()) {
             Ok(())
         } else {
@@ -254,10 +242,7 @@ async fn group_chat_capability_upgrade() {
         .await
         .unwrap();
 
-    println!(
-        "### {:3.1?} alice creating group with alice and bobbi",
-        start.elapsed()
-    );
+    println!("### {:3.1?} alice creating group with alice and bobbi", start.elapsed());
 
     let chat_id = alice
         .create_group(btreemap! {
@@ -268,15 +253,9 @@ async fn group_chat_capability_upgrade() {
 
     println!("### {:3.1?} bobbi accepting", start.elapsed());
 
-    bobbi
-        .behavior()
-        .accept_next_group_invitation()
-        .await
-        .unwrap();
+    bobbi.behavior().accept_next_group_invitation().await.unwrap();
 
-    poll.consistency([&alice, &bobbi], &[chat_id.into()])
-        .await
-        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat_id.into()]).await.unwrap();
 
     println!("### {:3.1?} bobbi adding cammy", start.elapsed());
 
@@ -289,11 +268,7 @@ async fn group_chat_capability_upgrade() {
 
     println!("### {:3.1?} cammy accepting", start.elapsed());
 
-    cammy
-        .behavior()
-        .accept_next_group_invitation()
-        .await
-        .unwrap();
+    cammy.behavior().accept_next_group_invitation().await.unwrap();
 
     poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
         .await
@@ -329,10 +304,7 @@ async fn group_chat_capability_upgrade() {
     println!("### {:3.1?} alice getting zero-msg-1", start.elapsed());
 
     let msgs = alice.get_messages(chat_id).await.unwrap();
-    assert_eq!(
-        msgs[0].content,
-        ChatMessageContent::unversioned("zero-msg-1")
-    );
+    assert_eq!(msgs[0].content, ChatMessageContent::unversioned("zero-msg-1"));
 
     println!("### {:3.1?} alice upgrading", start.elapsed());
 
@@ -374,19 +346,9 @@ async fn group_chat_capability_upgrade() {
     // Cammy knows bobbi, so when bobbi propagates alice's capability to the group,
     // the group infimum will still be zero (cammy is still zero).
     poll.wait_for(|| async {
-        let bobbi_sees_alice = bobbi
-            .local_store
-            .get_capabilities(alice.device_id())
-            .await
-            .unwrap();
-        let cammy_sees_bobbi = cammy
-            .local_store
-            .get_capabilities(bobbi.device_id())
-            .await
-            .unwrap();
-        if bobbi_sees_alice == Some(Capabilities::current())
-            && cammy_sees_bobbi == Some(Capabilities::current())
-        {
+        let bobbi_sees_alice = bobbi.local_store.get_capabilities(alice.device_id()).await.unwrap();
+        let cammy_sees_bobbi = cammy.local_store.get_capabilities(bobbi.device_id()).await.unwrap();
+        if bobbi_sees_alice == Some(Capabilities::current()) && cammy_sees_bobbi == Some(Capabilities::current()) {
             Ok(())
         } else {
             Err("waiting for capabilities to propagate after alice and bobbi upgrade")
@@ -395,10 +357,7 @@ async fn group_chat_capability_upgrade() {
     .await
     .unwrap();
 
-    println!(
-        "### {:3.1?} bobbi getting group capabilities",
-        start.elapsed()
-    );
+    println!("### {:3.1?} bobbi getting group capabilities", start.elapsed());
 
     // Bobbi knows both alice and cammy, so bobbi's group capability is the true infimum.
     let (bobbi_group_caps, _) = bobbi.get_group_capabilities(chat_id).await.unwrap();
@@ -408,10 +367,7 @@ async fn group_chat_capability_upgrade() {
         "bobbi's view of group should still be zero while cammy hasn't upgraded"
     );
 
-    println!(
-        "### {:3.1?} bobbi sending still-zero-msg-2",
-        start.elapsed()
-    );
+    println!("### {:3.1?} bobbi sending still-zero-msg-2", start.elapsed());
 
     // Bobbi sends (bobbi has full visibility of all members' capabilities).
     bobbi
@@ -437,10 +393,7 @@ async fn group_chat_capability_upgrade() {
     .unwrap();
 
     let msgs = bobbi.get_messages(chat_id).await.unwrap();
-    assert_eq!(
-        msgs[1].content,
-        ChatMessageContent::unversioned("still-zero-msg-2")
-    );
+    assert_eq!(msgs[1].content, ChatMessageContent::unversioned("still-zero-msg-2"));
 
     println!("### {:3.1?} cammy upgrading", start.elapsed());
 
@@ -460,11 +413,7 @@ async fn group_chat_capability_upgrade() {
 
     // Wait for bobbi to learn cammy's updated capabilities (bobbi knows cammy).
     poll.wait_for(|| async {
-        let bobbi_sees_cammy = bobbi
-            .local_store
-            .get_capabilities(cammy.device_id())
-            .await
-            .unwrap();
+        let bobbi_sees_cammy = bobbi.local_store.get_capabilities(cammy.device_id()).await.unwrap();
         if bobbi_sees_cammy == Some(Capabilities::current()) {
             Ok(())
         } else {
@@ -537,19 +486,11 @@ async fn group_chat_capability_upgrade() {
 
     println!("### {:3.1?} danae accepting", start.elapsed());
 
-    danae
-        .behavior()
-        .accept_next_group_invitation()
-        .await
-        .unwrap();
+    danae.behavior().accept_next_group_invitation().await.unwrap();
 
     // Wait for bobbi to learn danae's capabilities (danae contacted bobbi, so bobbi knows danae).
     poll.wait_for(|| async {
-        let bobbi_sees_danae = bobbi
-            .local_store
-            .get_capabilities(danae.device_id())
-            .await
-            .unwrap();
+        let bobbi_sees_danae = bobbi.local_store.get_capabilities(danae.device_id()).await.unwrap();
         if bobbi_sees_danae == Some(Capabilities::zero()) {
             Ok(())
         } else {
@@ -572,10 +513,7 @@ async fn group_chat_capability_upgrade() {
         "bobbi's view of group should revert to zero after danae (zero capability) joins"
     );
 
-    println!(
-        "### {:3.1?} bobbi sending back-to-zero-msg-4",
-        start.elapsed()
-    );
+    println!("### {:3.1?} bobbi sending back-to-zero-msg-4", start.elapsed());
 
     // Bobbi sends (bobbi has full visibility of all members' capabilities).
     bobbi
@@ -599,8 +537,5 @@ async fn group_chat_capability_upgrade() {
     .await
     .unwrap();
     let msgs = bobbi.get_messages(chat_id).await.unwrap();
-    assert_eq!(
-        msgs[3].content,
-        ChatMessageContent::unversioned("back-to-zero-msg-4")
-    );
+    assert_eq!(msgs[3].content, ChatMessageContent::unversioned("back-to-zero-msg-4"));
 }

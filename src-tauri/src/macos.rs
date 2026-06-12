@@ -5,11 +5,7 @@ use objc2::{class, msg_send, sel};
 const NS_TERMINATE_CANCEL: usize = 0;
 const NS_TERMINATE_NOW: usize = 1;
 
-extern "C" fn application_should_terminate(
-    _this: *mut AnyObject,
-    _cmd: Sel,
-    _sender: *mut AnyObject,
-) -> usize {
+extern "C" fn application_should_terminate(_this: *mut AnyObject, _cmd: Sel, _sender: *mut AnyObject) -> usize {
     use tauri::Manager;
 
     let Some(app_handle) = crate::APP_HANDLE.get() else {
@@ -47,8 +43,7 @@ pub fn install_termination_guard() {
             return;
         };
         let class = delegate.class() as *const AnyClass as *mut AnyClass;
-        let imp: extern "C" fn(*mut AnyObject, Sel, *mut AnyObject) -> usize =
-            application_should_terminate;
+        let imp: extern "C" fn(*mut AnyObject, Sel, *mut AnyObject) -> usize = application_should_terminate;
         let added = class_addMethod(
             class,
             sel!(applicationShouldTerminate:),
@@ -56,9 +51,7 @@ pub fn install_termination_guard() {
             c"Q@:@".as_ptr(),
         );
         if !added.as_bool() {
-            log::warn!(
-                "applicationShouldTerminate: already defined on the delegate; quit guard not applied"
-            );
+            log::warn!("applicationShouldTerminate: already defined on the delegate; quit guard not applied");
         }
     }
 }

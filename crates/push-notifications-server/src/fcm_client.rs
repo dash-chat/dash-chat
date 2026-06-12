@@ -27,11 +27,7 @@ pub enum SendResult {
 pub trait Fcm: Send + Sync + 'static {
     async fn validate(&self) -> Result<()>;
 
-    async fn send_push_notification(
-        &self,
-        token: &str,
-        notification: &PushNotification,
-    ) -> SendResult;
+    async fn send_push_notification(&self, token: &str, notification: &PushNotification) -> SendResult;
 }
 
 pub struct RealFcmClient {
@@ -69,46 +65,27 @@ impl Fcm for RealFcmClient {
         let mut message = Message::default();
 
         let mut data = HashMap::new();
-        data.insert(
-            "title".to_string(),
-            Value::String("Dash Chat test notification".into()),
-        );
-        data.insert(
-            "body".to_string(),
-            Value::String("Validating FCM credentials".into()),
-        );
+        data.insert("title".to_string(), Value::String("Dash Chat test notification".into()));
+        data.insert("body".to_string(), Value::String("Validating FCM credentials".into()));
         message.data = Some(data);
         message.topic = Some("test".into());
 
-        self.client
-            .send(&message)
-            .await
-            .context("FCM validation failed")?;
+        self.client.send(&message).await.context("FCM validation failed")?;
 
         Ok(())
     }
 
-    async fn send_push_notification(
-        &self,
-        token: &str,
-        notification: &PushNotification,
-    ) -> SendResult {
+    async fn send_push_notification(&self, token: &str, notification: &PushNotification) -> SendResult {
         let mut message = Message::default();
 
         let mut data = HashMap::new();
-        data.insert(
-            "title".to_string(),
-            Value::String(notification.title.clone()),
-        );
+        data.insert("title".to_string(), Value::String(notification.title.clone()));
         data.insert("body".to_string(), Value::String(notification.body.clone()));
         message.data = Some(data.clone());
 
         let mut apns_config = ApnsConfig::default();
         let mut alert_data = Map::new();
-        alert_data.insert(
-            "title".to_string(),
-            Value::String(notification.title.clone()),
-        );
+        alert_data.insert("title".to_string(), Value::String(notification.title.clone()));
         alert_data.insert("body".to_string(), Value::String(notification.body.clone()));
         let mut aps_data = Map::new();
         aps_data.insert("alert".to_string(), Value::Object(alert_data));
@@ -118,10 +95,7 @@ impl Fcm for RealFcmClient {
         // notification plugin surfaces as `group` on tap — the client uses that to
         // navigate to the correct chat. Title carries the topic id by convention
         // (see notify_topic.rs).
-        aps_data.insert(
-            "thread-id".to_string(),
-            Value::String(notification.title.clone()),
-        );
+        aps_data.insert("thread-id".to_string(), Value::String(notification.title.clone()));
         let mut apns_data = HashMap::new();
         apns_data.insert("aps".to_string(), Value::Object(aps_data));
         apns_config.payload = Some(apns_data);

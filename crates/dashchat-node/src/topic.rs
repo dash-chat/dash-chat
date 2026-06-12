@@ -148,16 +148,7 @@ impl<K: TopicKind> From<Topic<K>> for LogId {
 }
 
 #[derive(
-    Copy,
-    Clone,
-    Hash,
-    Eq,
-    PartialEq,
-    PartialOrd,
-    Ord,
-    derive_more::Deref,
-    derive_more::Display,
-    derive_more::Debug,
+    Copy, Clone, Hash, Eq, PartialEq, PartialOrd, Ord, derive_more::Deref, derive_more::Display, derive_more::Debug,
 )]
 #[display("{}", self.id.to_hex())]
 #[debug("{}", self)]
@@ -305,11 +296,7 @@ fn to_fixed_size_array<T>(v: Vec<T>) -> Result<[T; 32], String> {
     let boxed_slice = v.into_boxed_slice();
     let boxed_array: Box<[T; 32]> = match boxed_slice.try_into() {
         Ok(ba) => ba,
-        Err(o) => Err(format!(
-            "Expected a Vec of length {} but it was {}",
-            32,
-            o.len()
-        ))?,
+        Err(o) => Err(format!("Expected a Vec of length {} but it was {}", 32, o.len()))?,
     };
     Ok(*boxed_array)
 }
@@ -328,8 +315,7 @@ impl<'de, K: TopicKind> Deserialize<'de> for Topic<K> {
 
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
                 let bytes: Vec<u8> = hex::decode(v).map_err(serde::de::Error::custom)?;
-                let byte_array: [u8; 32] =
-                    to_fixed_size_array(bytes).map_err(serde::de::Error::custom)?;
+                let byte_array: [u8; 32] = to_fixed_size_array(bytes).map_err(serde::de::Error::custom)?;
 
                 let topic_id: Topic<K> = Topic::new(byte_array);
                 Ok(topic_id)
@@ -360,10 +346,7 @@ mod tests {
     #[test]
     fn serializes_to_quoted_hex_string() {
         let topic = Topic::<kind::Untyped>::new(TOPIC_BYTES);
-        assert_eq!(
-            serde_json::to_string(&topic).unwrap(),
-            format!("\"{}\"", TOPIC_HEX)
-        );
+        assert_eq!(serde_json::to_string(&topic).unwrap(), format!("\"{}\"", TOPIC_HEX));
     }
 
     /// The toy mailbox client uses topic/author ids as HTTP map keys by JSON-
@@ -388,9 +371,6 @@ mod tests {
         let key = toy::stringify(device_id);
         assert_eq!(key, hex::encode(device_id.as_bytes()));
         assert!(!key.contains('"'));
-        assert_eq!(
-            toy::unstringify::<crate::DeviceId>(&key).unwrap(),
-            device_id
-        );
+        assert_eq!(toy::unstringify::<crate::DeviceId>(&key).unwrap(), device_id);
     }
 }

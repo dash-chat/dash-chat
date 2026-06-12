@@ -107,14 +107,7 @@ mod tests {
     /// watermark indicating the mailbox holds at least the sent operation.
     #[tokio::test(flavor = "multi_thread")]
     async fn sync_state_records_watermarks() {
-        dashchat_node::testing::setup_tracing(
-            &[
-                "dashchat=info",
-                "mailbox_client=info",
-                "p2panda_stream=warn",
-            ],
-            true,
-        );
+        dashchat_node::testing::setup_tracing(&["dashchat=info", "mailbox_client=info", "p2panda_stream=warn"], true);
 
         let mb = MemMailbox::new();
         let config = NodeConfig::testing();

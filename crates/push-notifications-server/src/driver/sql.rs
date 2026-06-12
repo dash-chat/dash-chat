@@ -48,12 +48,10 @@ impl SqlDriver {
         .await
         .context("failed to create topic_subscribers table")?;
 
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_topic_subscribers_pubkey ON topic_subscribers (verifying_key)",
-        )
-        .execute(&pool)
-        .await
-        .context("failed to create verifying_key index on topic_subscribers")?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_topic_subscribers_pubkey ON topic_subscribers (verifying_key)")
+            .execute(&pool)
+            .await
+            .context("failed to create verifying_key index on topic_subscribers")?;
 
         Ok(Self { pool })
     }
@@ -61,10 +59,7 @@ impl SqlDriver {
 
 /// Build a batch INSERT query: `INSERT INTO topic_subscribers (topic_id, verifying_key) VALUES ($1, $2), ($3, $4), ... ON CONFLICT DO NOTHING`
 /// Returns the query string and a flat list of bind values (topic_id, verifying_key pairs).
-fn build_batch_insert(
-    verifying_key: &VerifyingKey,
-    topic_ids: &HashSet<TopicId>,
-) -> (String, Vec<String>) {
+fn build_batch_insert(verifying_key: &VerifyingKey, topic_ids: &HashSet<TopicId>) -> (String, Vec<String>) {
     let mut placeholders = Vec::with_capacity(topic_ids.len());
     let mut binds = Vec::with_capacity(topic_ids.len() * 2);
     for (i, topic_id) in topic_ids.iter().enumerate() {
@@ -82,11 +77,7 @@ fn build_batch_insert(
 
 #[async_trait::async_trait]
 impl Driver for SqlDriver {
-    async fn store_fcm_token(
-        &self,
-        verifying_key: &VerifyingKey,
-        fcm_token: &FcmToken,
-    ) -> Result<()> {
+    async fn store_fcm_token(&self, verifying_key: &VerifyingKey, fcm_token: &FcmToken) -> Result<()> {
         sqlx::query(
             "INSERT INTO fcm_tokens (verifying_key, fcm_token) VALUES ($1, $2)
              ON CONFLICT (verifying_key) DO UPDATE SET fcm_token = $2",
@@ -99,10 +90,7 @@ impl Driver for SqlDriver {
         Ok(())
     }
 
-    async fn get_fcm_tokens(
-        &self,
-        verifying_keys: &[VerifyingKey],
-    ) -> Result<HashMap<VerifyingKey, FcmToken>> {
+    async fn get_fcm_tokens(&self, verifying_keys: &[VerifyingKey]) -> Result<HashMap<VerifyingKey, FcmToken>> {
         if verifying_keys.is_empty() {
             return Ok(HashMap::new());
         }
@@ -120,10 +108,7 @@ impl Driver for SqlDriver {
         for pk in verifying_keys {
             q = q.bind(pk.as_str());
         }
-        let rows = q
-            .fetch_all(&self.pool)
-            .await
-            .context("failed to get FCM tokens")?;
+        let rows = q.fetch_all(&self.pool).await.context("failed to get FCM tokens")?;
 
         Ok(rows
             .into_iter()
@@ -145,11 +130,7 @@ impl Driver for SqlDriver {
         Ok(())
     }
 
-    async fn add_topic_subscriptions(
-        &self,
-        verifying_key: &VerifyingKey,
-        topic_ids: &HashSet<TopicId>,
-    ) -> Result<()> {
+    async fn add_topic_subscriptions(&self, verifying_key: &VerifyingKey, topic_ids: &HashSet<TopicId>) -> Result<()> {
         if topic_ids.is_empty() {
             return Ok(());
         }
@@ -158,9 +139,7 @@ impl Driver for SqlDriver {
         for val in &binds {
             q = q.bind(val);
         }
-        q.execute(&self.pool)
-            .await
-            .context("failed to subscribe to topics")?;
+        q.execute(&self.pool).await.context("failed to subscribe to topics")?;
         Ok(())
     }
 
@@ -212,10 +191,7 @@ impl Driver for SqlDriver {
         for tid in topic_ids {
             q = q.bind(tid.as_str());
         }
-        let rows = q
-            .fetch_all(&self.pool)
-            .await
-            .context("failed to get subscribers")?;
+        let rows = q.fetch_all(&self.pool).await.context("failed to get subscribers")?;
 
         let mut result: HashMap<TopicId, Vec<VerifyingKey>> = HashMap::new();
         for row in rows {
@@ -231,11 +207,7 @@ impl Driver for SqlDriver {
         verifying_key: &VerifyingKey,
         topic_ids: &HashSet<TopicId>,
     ) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("failed to begin transaction")?;
+        let mut tx = self.pool.begin().await.context("failed to begin transaction")?;
 
         // Remove all existing subscriptions for this key
         sqlx::query("DELETE FROM topic_subscribers WHERE verifying_key = $1")
@@ -251,9 +223,7 @@ impl Driver for SqlDriver {
             for val in &binds {
                 q = q.bind(val);
             }
-            q.execute(&mut *tx)
-                .await
-                .context("failed to insert subscriptions")?;
+            q.execute(&mut *tx).await.context("failed to insert subscriptions")?;
         }
 
         tx.commit().await.context("failed to commit transaction")?;

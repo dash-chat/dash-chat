@@ -42,8 +42,7 @@ pub fn receive_push_notification(
         .get()
         .and_then(|h| h.try_state::<dashchat_node::Node>())
     {
-        node.mailboxes
-            .wakeup(crate::mailbox::PRODUCTION_MAILBOX_ID.to_string());
+        node.mailboxes.wakeup(crate::mailbox::PRODUCTION_MAILBOX_ID.to_string());
         log::info!("Push arrived while main app is alive; deferring to sync pipeline");
         return None;
     }
@@ -73,9 +72,7 @@ pub fn receive_push_notification(
                         data
                     );
                 } else {
-                    log::info!(
-                        "Successfully processed push notification, no actual notification needs to be shown.",
-                    );
+                    log::info!("Successfully processed push notification, no actual notification needs to be shown.",);
                     // On iOS, alert notifications must be shown. If we return None here,
                     // iOS will display a notification with title = topic_id, and body = author:seq_num
                     // Show a generic notification instead
@@ -105,26 +102,18 @@ async fn handle_push_notification(
     app_data_root: PathBuf,
 ) -> anyhow::Result<Option<NotificationData>> {
     // Title = topic ID (hex), Body = operation ID ("author_hex:seq_num")
-    let topic_hex = notification
-        .title
-        .as_deref()
-        .context("notification has no title")?;
-    let op_id = notification
-        .body
-        .as_deref()
-        .context("notification has no body")?;
+    let topic_hex = notification.title.as_deref().context("notification has no title")?;
+    let op_id = notification.body.as_deref().context("notification has no body")?;
 
-    let (author_hex, seq_str) = op_id
-        .split_once(':')
-        .context("op_id missing ':' separator")?;
+    let (author_hex, seq_str) = op_id.split_once(':').context("op_id missing ':' separator")?;
     let seq_num: u64 = seq_str.parse().context("failed to parse seq_num")?;
 
     let author_bytes: [u8; 32] = hex::decode(author_hex)
         .context("failed to hex-decode author")?
         .try_into()
         .map_err(|_| anyhow!("author bytes are not 32 bytes long"))?;
-    let verifying_key = p2panda_core::VerifyingKey::from_bytes(&author_bytes)
-        .context("failed to construct public key")?;
+    let verifying_key =
+        p2panda_core::VerifyingKey::from_bytes(&author_bytes).context("failed to construct public key")?;
 
     let topic_bytes: [u8; 32] = hex::decode(topic_hex)
         .context("failed to hex-decode log")?
@@ -147,8 +136,7 @@ async fn handle_push_notification(
     log::info!("dashchat node built successfully.");
 
     // Trigger a mailbox sync to fetch the new operation
-    node.mailboxes
-        .wakeup(crate::mailbox::PRODUCTION_MAILBOX_ID.to_string());
+    node.mailboxes.wakeup(crate::mailbox::PRODUCTION_MAILBOX_ID.to_string());
 
     // Poll for the operation to arrive (up to 15 seconds)
     // PERF: consider adding the ability for the op store to notify when an op is stored,
@@ -172,17 +160,14 @@ async fn handle_push_notification(
     }
 
     let Some(operation) = entry else {
-        log::warn!(
-            "Operation {op_id} in log {topic_hex} not found after polling, showing generic notification"
-        );
+        log::warn!("Operation {op_id} in log {topic_hex} not found after polling, showing generic notification");
         return Ok(Some(notifications::new_message_generic_notification()));
     };
 
-    let notified_operations_store = crate::notifications::NotifiedOperationsStore::open(
-        &filesystem.notified_operations_db_path(),
-    )
-    .await
-    .context("failed to open notified operations store")?;
+    let notified_operations_store =
+        crate::notifications::NotifiedOperationsStore::open(&filesystem.notified_operations_db_path())
+            .await
+            .context("failed to open notified operations store")?;
     match notified_operations_store
         .record_notified_operation(operation.header.hash())
         .await
@@ -199,7 +184,9 @@ async fn handle_push_notification(
                 return Ok(None);
             }
             #[cfg(target_os = "ios")]
-            log::info!("op {op_id} was already notified by the main app; building the same notification so iOS dedups by id");
+            log::info!(
+                "op {op_id} was already notified by the main app; building the same notification so iOS dedups by id"
+            );
         }
         Ok(true) => {}
         Err(err) => {
@@ -208,20 +195,9 @@ async fn handle_push_notification(
     }
 
     let payload = match operation.body.as_ref() {
-        Some(body) => Some(
-            Payload::try_from_body(body)
-                .map_err(|err| anyhow!("failed to decode payload: {err:?}"))?,
-        ),
+        Some(body) => Some(Payload::try_from_body(body).map_err(|err| anyhow!("failed to decode payload: {err:?}"))?),
         None => None,
     };
 
-    Ok(
-        notifications::build_notification_data(
-            &node,
-            topic_id,
-            &operation.header,
-            payload.as_ref(),
-        )
-        .await,
-    )
+    Ok(notifications::build_notification_data(&node, topic_id, &operation.header, payload.as_ref()).await)
 }

@@ -22,10 +22,8 @@ impl<Item: MailboxItem> MemMailboxClient<Item> {
     }
 }
 
-pub type MemMailboxLogs<Item> = HashMap<
-    <Item as MailboxItem>::Topic,
-    HashMap<<Item as MailboxItem>::Author, BTreeMap<u64, Item>>,
->;
+pub type MemMailboxLogs<Item> =
+    HashMap<<Item as MailboxItem>::Topic, HashMap<<Item as MailboxItem>::Author, BTreeMap<u64, Item>>>;
 
 #[derive(Clone)]
 pub struct MemMailbox<Item: MailboxItem> {
@@ -113,10 +111,7 @@ where
 
                 match (mailbox_slots, provided_height) {
                     (Some(mailbox_slots), Some(provided_height)) => {
-                        let last_seq = mailbox_slots
-                            .last_key_value()
-                            .map(|(seq, _)| *seq)
-                            .unwrap_or(0);
+                        let last_seq = mailbox_slots.last_key_value().map(|(seq, _)| *seq).unwrap_or(0);
 
                         let max = provided_height.max(last_seq);
                         for i in 0..=max {
@@ -151,13 +146,7 @@ where
                 "fetching mailbox operations"
             );
 
-            response.insert(
-                topic,
-                FetchTopicResponse {
-                    items: new,
-                    missing,
-                },
-            );
+            response.insert(topic, FetchTopicResponse { items: new, missing });
         }
 
         Ok(FetchResponse(response))

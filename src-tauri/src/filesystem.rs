@@ -35,10 +35,7 @@ pub fn init_data_dir() {
             }
         }
         if !found {
-            eprintln!(
-                "WARNING: could not find an available agent slot in {}",
-                base.display()
-            );
+            eprintln!("WARNING: could not find an available agent slot in {}", base.display());
         }
     }
 

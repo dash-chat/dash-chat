@@ -56,9 +56,7 @@ pub fn compute_initial_watermarks(db: &Database) -> Result<(), Box<dyn std::erro
 /// Computes the highest contiguous sequence number from a set of sequences.
 /// Returns None if sequence 0 is not present.
 /// Returns Some(n) where n is the highest value such that 0..=n are all present.
-pub fn compute_contiguous_watermark(
-    sequences: &BTreeSet<SequenceNumber>,
-) -> Option<SequenceNumber> {
+pub fn compute_contiguous_watermark(sequences: &BTreeSet<SequenceNumber>) -> Option<SequenceNumber> {
     if !sequences.contains(&0) {
         return None;
     }

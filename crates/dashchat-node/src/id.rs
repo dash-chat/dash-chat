@@ -5,21 +5,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
 
 /// The ID tied to a particular device.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Display,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    From,
-    Deref,
-)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, From, Deref)]
 pub struct DeviceId(VerifyingKey);
 
 impl std::str::FromStr for DeviceId {
@@ -30,21 +16,7 @@ impl std::str::FromStr for DeviceId {
 }
 
 /// The ID for an "agent" which may control multiple devices.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Display,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    From,
-    Deref,
-)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, From, Deref)]
 pub struct AgentId(ActorId);
 
 impl AgentId {

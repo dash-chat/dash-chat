@@ -35,10 +35,7 @@ impl OpStore {
             .await
             .map_err(|e| anyhow::anyhow!("failed to connect to sqlite at '{path:?}': {e}"))?;
 
-        if p2panda_store::sqlite::run_pending_migrations(&pool)
-            .await
-            .is_err()
-        {
+        if p2panda_store::sqlite::run_pending_migrations(&pool).await.is_err() {
             pool.close().await;
             panic!("Database migration failed");
         }
@@ -91,10 +88,7 @@ impl OpStore {
     }
 
     /// Get the "height" of each log, which is actually the highest sequence number of the log.
-    pub async fn get_log_heights(
-        &self,
-        log_id: &LogId,
-    ) -> Result<BTreeMap<DeviceId, SeqNum>, anyhow::Error> {
+    pub async fn get_log_heights(&self, log_id: &LogId) -> Result<BTreeMap<DeviceId, SeqNum>, anyhow::Error> {
         let log_id: LogId = log_id.to_owned().into();
         queries::get_log_heights_by_author(&self.store, &log_id).await
     }
@@ -171,9 +165,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
             .store
             .get_log_entries(author, &log_id, from, None)
             .await
-            .map_err(|err| {
-                anyhow::anyhow!("failed to get log for {author:?}: {log_id:?}: {err}")
-            })?;
+            .map_err(|err| anyhow::anyhow!("failed to get log for {author:?}: {log_id:?}: {err}"))?;
 
         Ok(log.map(|log| {
             log.into_iter()

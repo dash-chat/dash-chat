@@ -38,10 +38,7 @@ async fn store_and_get_fcm_token() {
         .unwrap();
 
     let tokens = db.get_fcm_tokens(&[alice.clone()]).await.unwrap();
-    assert_eq!(
-        tokens.get(&alice),
-        Some(&FcmToken::from("tok-1".to_string()))
-    );
+    assert_eq!(tokens.get(&alice), Some(&FcmToken::from("tok-1".to_string())));
 }
 
 #[tokio::test]
@@ -66,10 +63,7 @@ async fn store_fcm_token_overwrites() {
         .unwrap();
 
     let tokens = db.get_fcm_tokens(&[alice.clone()]).await.unwrap();
-    assert_eq!(
-        tokens.get(&alice),
-        Some(&FcmToken::from("tok-2".to_string()))
-    );
+    assert_eq!(tokens.get(&alice), Some(&FcmToken::from("tok-2".to_string())));
 }
 
 #[tokio::test]
@@ -133,10 +127,7 @@ async fn get_subscribers_empty_topic() {
     let db = create_driver().await;
     let t = topic(99);
 
-    let subs = db
-        .get_subscribers_for_topics(&[t.clone()].into())
-        .await
-        .unwrap();
+    let subs = db.get_subscribers_for_topics(&[t.clone()].into()).await.unwrap();
     assert!(subs.get(&t).unwrap_or(&vec![]).is_empty());
 }
 
@@ -208,12 +199,9 @@ async fn set_subscriptions_replaces_all() {
     let t3 = topic(3);
     let t4 = topic(4);
 
-    db.add_topic_subscriptions(
-        &alice,
-        &[t1.clone(), t2.clone(), t3.clone()].into_iter().collect(),
-    )
-    .await
-    .unwrap();
+    db.add_topic_subscriptions(&alice, &[t1.clone(), t2.clone(), t3.clone()].into_iter().collect())
+        .await
+        .unwrap();
 
     db.update_topic_subscriptions(&alice, &[t2.clone(), t4.clone()].into_iter().collect())
         .await
@@ -240,9 +228,7 @@ async fn set_subscriptions_empty_clears_all() {
         .await
         .unwrap();
 
-    db.update_topic_subscriptions(&alice, &HashSet::new())
-        .await
-        .unwrap();
+    db.update_topic_subscriptions(&alice, &HashSet::new()).await.unwrap();
 
     let subs = db
         .get_subscribers_for_topics(&[t1.clone(), t2.clone()].into())

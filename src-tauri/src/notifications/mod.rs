@@ -15,29 +15,20 @@ use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionSta
 /// `Granted` so this collapses to the settings check.
 pub(crate) fn are_notifications_enabled(handle: &AppHandle) -> bool {
     crate::settings::load_settings(handle).notifications_enabled
-        && matches!(
-            handle.notification().permission_state(),
-            Ok(PermissionState::Granted)
-        )
+        && matches!(handle.notification().permission_state(), Ok(PermissionState::Granted))
 }
 
 /// Show a system notification for an operation that arrived through the
 /// sync pipeline (local mailbox server, p2p sync). Mirrors the push-path
 /// behavior: same `NotificationData` shape, stable op-hash id,
 /// foreground-suppression handled by the plugin.
-pub(crate) async fn show_sync_notification(
-    app_handle: &AppHandle,
-    notification: &dashchat_node::Notification,
-) {
+pub(crate) async fn show_sync_notification(app_handle: &AppHandle, notification: &dashchat_node::Notification) {
     if !are_notifications_enabled(app_handle) {
         return;
     }
 
     let store = app_handle.state::<NotifiedOperationsStore>();
-    match store
-        .record_notified_operation(notification.header.hash())
-        .await
-    {
+    match store.record_notified_operation(notification.header.hash()).await {
         Ok(false) => {
             log::debug!("Skipping sync notification: op already notified");
             return;
@@ -50,13 +41,7 @@ pub(crate) async fn show_sync_notification(
 
     let node = app_handle.state::<Node>();
     let topic = *notification.topic;
-    let data = build_notification_data(
-        &node,
-        topic.into(),
-        &notification.header,
-        notification.payload.as_ref(),
-    )
-    .await;
+    let data = build_notification_data(&node, topic.into(), &notification.header, notification.payload.as_ref()).await;
 
     let Some(data) = data else { return };
 
@@ -134,17 +119,15 @@ pub async fn build_notification_data(
         Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
             Some(chat_message_notification(node, topic, sender_device_id, content, id).await)
         }
-        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { code, profile }) => {
-            Some(NotificationData {
-                id,
-                title: Some(sonix_i18n::t!("newContactRequest")),
-                body: Some(profile.name.clone()),
-                icon: Some("ic_stat_icon".to_string()),
-                group: Some(topic.to_hex()),
-                route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
-                ..Default::default()
-            })
-        }
+        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { code, profile }) => Some(NotificationData {
+            id,
+            title: Some(sonix_i18n::t!("newContactRequest")),
+            body: Some(profile.name.clone()),
+            icon: Some("ic_stat_icon".to_string()),
+            group: Some(topic.to_hex()),
+            route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
+            ..Default::default()
+        }),
         _ => None,
     }
 }
@@ -175,8 +158,8 @@ async fn chat_message_notification(
         .and_then(|p| p.avatar)
         .filter(|s| s.starts_with("data:image/"));
 
-    let direct_chat_agent_id = sender_agent_id
-        .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic);
+    let direct_chat_agent_id =
+        sender_agent_id.filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic);
     let chat_route = match direct_chat_agent_id {
         Some(agent_id) => format!("/direct-chats/{}", agent_id),
         None => format!("/group-chat/{}", topic),
@@ -231,9 +214,9 @@ async fn chat_message_notification(
     {
         match stable_notification_id(topic.as_bytes()) {
             Ok(id) => data.id = id,
-            Err(err) => log::error!(
-                "Failed to derive Android MessagingStyle id from topic, falling back to random: {err:?}"
-            ),
+            Err(err) => {
+                log::error!("Failed to derive Android MessagingStyle id from topic, falling back to random: {err:?}")
+            }
         }
         data.group = Some("dashchat.chats".to_string());
     }
@@ -314,8 +297,7 @@ async fn auth_control_op_notification(
                     Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
                     None => sonix_i18n::t!("contactRequestAcceptedNoName"),
                 };
-                let route =
-                    sender_agent_id.map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()));
+                let route = sender_agent_id.map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()));
                 (title, None, route)
             } else {
                 if !initial_members.iter().any(|(m, _)| target_is_me(m)) {

@@ -1,6 +1,4 @@
-use dashchat_node::{
-    topic::kind::Inbox, AddContactError, AgentId, DeviceId, Error, Node, QrCode, ShareIntent, Topic,
-};
+use dashchat_node::{topic::kind::Inbox, AddContactError, AgentId, DeviceId, Error, Node, QrCode, ShareIntent, Topic};
 use std::collections::BTreeSet;
 use tauri::State;
 
@@ -20,10 +18,7 @@ pub fn my_device_id(node: State<'_, Node>) -> DeviceId {
 }
 
 #[tauri::command]
-pub async fn add_contact(
-    contact_code: QrCode,
-    node: State<'_, Node>,
-) -> Result<(), AddContactError> {
+pub async fn add_contact(contact_code: QrCode, node: State<'_, Node>) -> Result<(), AddContactError> {
     node.add_contact(contact_code).await?;
     Ok(())
 }

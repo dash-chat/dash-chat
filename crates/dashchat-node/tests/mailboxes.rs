@@ -59,10 +59,7 @@ async fn mailbox_late_join(
     let alice = TestNode::new(config.clone(), "alice").await;
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
-    let qr = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
+    let qr = alice.new_qr_code(ShareIntent::AddContact, true).await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
     alice.add_mailbox_client(alice_mailbox).await;
@@ -93,8 +90,7 @@ async fn mailbox_late_join(
     println!("=== added mailboxes ===");
 
     poll.wait_for(|| async {
-        (alice.get_messages(chat).await.unwrap().len() == 2
-            && bobbi.get_messages(chat).await.unwrap().len() == 2)
+        (alice.get_messages(chat).await.unwrap().len() == 2 && bobbi.get_messages(chat).await.unwrap().len() == 2)
             .then_some(())
             .ok_or("message not received")
     })
@@ -134,23 +130,14 @@ async fn test_mailbox_restart_relay() {
     let alice_agent_id = alice.agent_id();
     let bobbi_agent_id = bobbi.agent_id();
 
-    let qr = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
+    let qr = alice.new_qr_code(ShareIntent::AddContact, true).await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
     alice
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
-            "mailbox-1".into(),
-            &url,
-        ))
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new("mailbox-1".into(), &url))
         .await;
     bobbi
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
-            "mailbox-1".into(),
-            &url,
-        ))
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new("mailbox-1".into(), &url))
         .await;
 
     alice.behavior().accept_next_contact().await.unwrap();
@@ -182,16 +169,10 @@ async fn test_mailbox_restart_relay() {
 
     // Add fresh mailbox clients
     alice
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
-            "mailbox-1".into(),
-            &url,
-        ))
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new("mailbox-1".into(), &url))
         .await;
     bobbi
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
-            "mailbox-1".into(),
-            &url,
-        ))
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new("mailbox-1".into(), &url))
         .await;
 
     // === Phase 3: Post-restart — send more messages and verify all are received ===
@@ -203,11 +184,9 @@ async fn test_mailbox_restart_relay() {
 
     poll.wait_for(|| async {
         let msgs = bobbi.get_messages(chat).await.unwrap();
-        (msgs.len() == 4).then_some(()).ok_or(format!(
-            "expected 4 messages, got {} ({:?})",
-            msgs.len(),
-            msgs
-        ))
+        (msgs.len() == 4)
+            .then_some(())
+            .ok_or(format!("expected 4 messages, got {} ({:?})", msgs.len(), msgs))
     })
     .await
     .unwrap();

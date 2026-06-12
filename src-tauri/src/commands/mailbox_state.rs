@@ -10,9 +10,7 @@ async fn forward<T>(mut rx: watch::Receiver<T>, on_event: Channel<T>) -> Result<
 where
     T: Serialize + Clone + Send + Sync + 'static,
 {
-    on_event
-        .send(rx.borrow().clone())
-        .map_err(|e| e.to_string())?;
+    on_event.send(rx.borrow().clone()).map_err(|e| e.to_string())?;
     tokio::spawn(async move {
         while rx.changed().await.is_ok() {
             let value = rx.borrow().clone();

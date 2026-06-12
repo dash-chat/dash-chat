@@ -25,10 +25,7 @@ impl Node {
     ///
     /// Note that some topics are excluded from automatic registration, such as inbox topics.
     /// They have to be registered separately with extra context.
-    pub(crate) async fn register_topic<K: AutoRegisteredTopic>(
-        &self,
-        topic: Topic<K>,
-    ) -> anyhow::Result<()> {
+    pub(crate) async fn register_topic<K: AutoRegisteredTopic>(&self, topic: Topic<K>) -> anyhow::Result<()> {
         self.local_store.register_topic_as_subscribed(topic).await?;
         self.initialize_topic(*topic).await?;
 
@@ -216,11 +213,7 @@ impl Node {
         handle
     }
 
-    async fn process_groups(
-        &self,
-        operation: &ProcessedOperation<Payload>,
-        source: &Source,
-    ) -> anyhow::Result<()> {
+    async fn process_groups(&self, operation: &ProcessedOperation<Payload>, source: &Source) -> anyhow::Result<()> {
         self.register_bootstrap(operation, source).await?;
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
@@ -253,16 +246,13 @@ impl Node {
         //
         // @TODO: this requires a reliable way to know the agent id from the device id
         // even if they're not a contact.
-        let known = self
-            .local_store
-            .lookup_contacts(member_device_ids.iter())
-            .await?;
+        let known = self.local_store.lookup_contacts(member_device_ids.iter()).await?;
 
         for agent_id in known.into_values() {
             let topic = Topic::announcements(agent_id);
-            self.initialize_topic(*topic).await.map_err(|err| {
-                anyhow::anyhow!("failed to subscribe to topic for group member: {err}")
-            })?;
+            self.initialize_topic(*topic)
+                .await
+                .map_err(|err| anyhow::anyhow!("failed to subscribe to topic for group member: {err}"))?;
         }
 
         // Notify the frontend so it refetches the chat log and observes the new
@@ -271,23 +261,14 @@ impl Node {
         //
         // @TODO: once group control messages are properly ordered we could send a
         // membership diff here instead of relying on the frontend to refetch.
-        let dashchat_topic =
-            crate::Topic::<crate::topic::kind::Untyped>::new(*operation.topic().as_bytes());
-        self.notify_payload(
-            dashchat_topic,
-            &operation.processed().header(),
-            operation.message(),
-        )
-        .await?;
+        let dashchat_topic = crate::Topic::<crate::topic::kind::Untyped>::new(*operation.topic().as_bytes());
+        self.notify_payload(dashchat_topic, &operation.processed().header(), operation.message())
+            .await?;
 
         Ok(())
     }
 
-    async fn process_app(
-        &self,
-        operation: &ProcessedOperation<Payload>,
-        source: &Source,
-    ) -> anyhow::Result<()> {
+    async fn process_app(&self, operation: &ProcessedOperation<Payload>, source: &Source) -> anyhow::Result<()> {
         self.register_bootstrap(operation, source).await?;
 
         let hash = operation.id();
@@ -306,11 +287,7 @@ impl Node {
                     "received IntroduceAgents message"
                 );
                 for (device_id, agent_id) in agents {
-                    if let Err(err) = self
-                        .local_store
-                        .save_agent_mapping(*device_id, *agent_id)
-                        .await
-                    {
+                    if let Err(err) = self.local_store.save_agent_mapping(*device_id, *agent_id).await {
                         tracing::warn!(
                             ?err,
                             device_id = ?device_id.aliased(),
@@ -340,10 +317,7 @@ impl Node {
 
             Payload::Inbox(invitation) => {
                 let active_topics = self.local_store.get_active_inbox_topics().await?;
-                if !active_topics
-                    .iter()
-                    .any(|it| *it.topic == TopicId::from(topic))
-                {
+                if !active_topics.iter().any(|it| *it.topic == TopicId::from(topic)) {
                     // not for me, ignore
                     return Ok(());
                 }
@@ -354,26 +328,20 @@ impl Node {
                 }
             }
 
-            Payload::Chat(
-                ChatPayload::Message(_) | ChatPayload::Reaction(_) | ChatPayload::GroupInfo(_),
-            ) => {
+            Payload::Chat(ChatPayload::Message(_) | ChatPayload::Reaction(_) | ChatPayload::GroupInfo(_)) => {
                 // Nothing to do.
             }
 
             Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
                 // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
+                let agent_id = AgentId::from(
+                    crate::ActorId::from_bytes(topic.as_bytes())
+                        .map_err(|e| anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}"))?,
+                );
 
                 tracing::info!(me = ?self.agent_id().aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
 
-                if let Err(err) = self
-                    .local_store
-                    .save_profile(agent_id, profile.clone())
-                    .await
-                {
+                if let Err(err) = self.local_store.save_profile(agent_id, profile.clone()).await {
                     tracing::warn!(?err, "failed to save profile from SetProfile");
                 }
             }
@@ -382,15 +350,11 @@ impl Node {
                 // Save the device_id -> agent_id mapping so group members can look each other up.
 
                 // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
-                if let Err(err) = self
-                    .local_store
-                    .save_agent_mapping(device_id, agent_id)
-                    .await
-                {
+                let agent_id = AgentId::from(
+                    crate::ActorId::from_bytes(topic.as_bytes())
+                        .map_err(|e| anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}"))?,
+                );
+                if let Err(err) = self.local_store.save_agent_mapping(device_id, agent_id).await {
                     tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
                 }
 
@@ -425,11 +389,7 @@ impl Node {
         Ok(())
     }
 
-    async fn register_bootstrap(
-        &self,
-        operation: &ProcessedOperation<Payload>,
-        source: &Source,
-    ) -> anyhow::Result<()> {
+    async fn register_bootstrap(&self, operation: &ProcessedOperation<Payload>, source: &Source) -> anyhow::Result<()> {
         // Dash Chat relies on mailbox servers for discovering bootstrap
         // nodes over the internet. Any operations we're sent from an
         // external stream is assumed to come from a mailbox, and we
@@ -469,12 +429,7 @@ impl Node {
         Ok(())
     }
 
-    pub async fn notify_payload(
-        &self,
-        topic: Topic,
-        header: &Header,
-        payload: &Payload,
-    ) -> anyhow::Result<()> {
+    pub async fn notify_payload(&self, topic: Topic, header: &Header, payload: &Payload) -> anyhow::Result<()> {
         if let Some((notification_tx, payload)) = self.notification_tx.clone().zip(Some(payload)) {
             notification_tx
                 .send(Notification {

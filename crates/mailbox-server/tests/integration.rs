@@ -18,8 +18,7 @@ async fn test_store_and_retrieve_single_message() {
     let (server, _temp_file) = create_test_server();
 
     let message_data = b"Hello, World!";
-    let message_b64 =
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, message_data);
+    let message_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, message_data);
 
     let store_response = server
         .post("/blobs/store")

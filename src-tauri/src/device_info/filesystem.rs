@@ -13,8 +13,5 @@ pub fn log_filesystem_paths(handle: &AppHandle) {
     log::info!("Logs dir: {}", fs.logs_dir().display());
     log::info!("Settings path: {}", fs.settings_path().display());
     #[cfg(desktop)]
-    log::info!(
-        "Local mailbox db path: {}",
-        fs.local_mailbox_db_path().display(),
-    );
+    log::info!("Local mailbox db path: {}", fs.local_mailbox_db_path().display(),);
 }

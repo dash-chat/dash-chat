@@ -135,9 +135,7 @@ mod tests {
 
         let topic = alice.direct_chat_topic(bobbi.agent_id());
 
-        poll.consistency([&alice, &bobbi], &[topic.into()])
-            .await
-            .unwrap();
+        poll.consistency([&alice, &bobbi], &[topic.into()]).await.unwrap();
 
         // Both nodes see each others' capabilities
         let alice_bobbi_caps = alice
@@ -155,9 +153,7 @@ mod tests {
         assert_eq!(alice_bobbi_caps, Capabilities::current());
         assert_eq!(bobbi_alice_caps, Capabilities::zero());
 
-        poll.consistency([&alice, &bobbi], &[topic.into()])
-            .await
-            .unwrap();
+        poll.consistency([&alice, &bobbi], &[topic.into()]).await.unwrap();
 
         let alice_members = alice.get_group_members(topic).await.unwrap();
         let bobbi_members = bobbi.get_group_members(topic).await.unwrap();
@@ -170,18 +166,8 @@ mod tests {
         assert_eq!(bobbi_members, expected_members);
 
         // Both nodes return zero capabilities because alice is the limiting factor.
-        let alice_caps = alice
-            .get_group_capabilities(topic)
-            .await
-            .unwrap()
-            .0
-            .unwrap();
-        let bobbi_caps = bobbi
-            .get_group_capabilities(topic)
-            .await
-            .unwrap()
-            .0
-            .unwrap();
+        let alice_caps = alice.get_group_capabilities(topic).await.unwrap().0.unwrap();
+        let bobbi_caps = bobbi.get_group_capabilities(topic).await.unwrap().0.unwrap();
         assert_eq!(alice_caps, Capabilities::zero());
         assert_eq!(bobbi_caps, Capabilities::zero());
 
@@ -212,10 +198,7 @@ mod tests {
         let messages_bobbi = bobbi.get_messages(chat).await.unwrap();
         assert_eq!(messages_alice, messages_bobbi);
         assert_eq!(
-            messages_alice
-                .into_iter()
-                .map(|m| m.content)
-                .collect::<Vec<_>>(),
+            messages_alice.into_iter().map(|m| m.content).collect::<Vec<_>>(),
             vec![
                 ChatMessageContent::unversioned("Hello"),
                 ChatMessageContent::unversioned("Hello back"),

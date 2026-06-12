@@ -32,10 +32,7 @@ use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
-use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId,
-};
+use crate::{AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId, DirectChatId};
 
 pub use app_processing::Notification;
 
@@ -193,18 +190,10 @@ impl Node {
         // === mailboxes === //
 
         let sync_tracker = std::sync::Arc::new(
-            mailbox_client::sync_tracker::MailboxSyncTracker::open(
-                filesystem.mailbox_sync_tracker_path(),
-            )
-            .await?,
+            mailbox_client::sync_tracker::MailboxSyncTracker::open(filesystem.mailbox_sync_tracker_path()).await?,
         );
 
-        let mailboxes = Mailboxes::spawn(
-            op_store.clone(),
-            sync_tracker,
-            config.mailboxes_config.clone(),
-        )
-        .await?;
+        let mailboxes = Mailboxes::spawn(op_store.clone(), sync_tracker, config.mailboxes_config.clone()).await?;
 
         // === node === //
 
@@ -227,8 +216,7 @@ impl Node {
 
         // === application processor task === //
 
-        let processor_handle =
-            node.spawn_application_processor_task(events_rx, processor_cancel_rx);
+        let processor_handle = node.spawn_application_processor_task(events_rx, processor_cancel_rx);
         node.processor_handle.lock().await.replace(processor_handle);
 
         // === topics === //
@@ -237,8 +225,7 @@ impl Node {
 
         // === announce === //
 
-        node.announce_device_capabilities(node.config.capabilities)
-            .await?;
+        node.announce_device_capabilities(node.config.capabilities).await?;
 
         Ok(node)
     }
@@ -256,15 +243,10 @@ impl Node {
 
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
-    pub async fn new_qr_code(
-        &self,
-        share_intent: ShareIntent,
-        inbox: bool,
-    ) -> Result<QrCode, crate::Error> {
+    pub async fn new_qr_code(&self, share_intent: ShareIntent, inbox: bool) -> Result<QrCode, crate::Error> {
         let inbox_topic = if inbox {
             let inbox_topic = InboxTopic {
-                topic: Topic::inbox()
-                    .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
+                topic: Topic::inbox().alias_named(&format!("inbox({:?})", self.device_id().aliased())),
                 expires_at: Utc::now() + self.config.contact_code_expiry,
             };
             self.initialize_topic(*inbox_topic.topic)
@@ -378,10 +360,7 @@ impl Node {
             .filter_map(|did| match contacts.get(did) {
                 Some(agent) => Some((*did, *agent)),
                 None => {
-                    tracing::warn!(
-                        "Contact not found (when creating group): {:?}",
-                        did.aliased()
-                    );
+                    tracing::warn!("Contact not found (when creating group): {:?}", did.aliased());
                     None
                 }
             })
@@ -413,8 +392,7 @@ impl Node {
         // creator's contacts), so we publish them here.
         let mut introduced_agents = device_to_agent.clone();
         introduced_agents.insert(self.device_id(), self.agent_id());
-        self.introduce_agents_to_group(chat_id, introduced_agents)
-            .await?;
+        self.introduce_agents_to_group(chat_id, introduced_agents).await?;
 
         self.local_store.save_group_chat_subscribed(chat_id).await?;
         self.initialize_topic(*chat_id).await?;
@@ -498,11 +476,8 @@ impl Node {
             // Tell existing group members about the new member's agent_id so
             // they can subscribe to its announcements topic and see its profile,
             // even before the new member has come online to announce itself.
-            self.introduce_agents_to_group(
-                chat_id,
-                BTreeMap::from([(DeviceId::from(member), agent_id)]),
-            )
-            .await?;
+            self.introduce_agents_to_group(chat_id, BTreeMap::from([(DeviceId::from(member), agent_id)]))
+                .await?;
             self.invite_to_group(chat_id, agent_id).await?;
         } else {
             tracing::warn!(
@@ -514,11 +489,7 @@ impl Node {
         Ok(())
     }
 
-    pub async fn remove_group_member(
-        &self,
-        chat_id: ChatId,
-        member: VerifyingKey,
-    ) -> anyhow::Result<()> {
+    pub async fn remove_group_member(&self, chat_id: ChatId, member: VerifyingKey) -> anyhow::Result<()> {
         // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads(*chat_id).await?;
         self.publish(
@@ -536,10 +507,7 @@ impl Node {
         Ok(())
     }
 
-    pub async fn get_group_members(
-        &self,
-        chat_id: ChatId,
-    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+    pub async fn get_group_members(&self, chat_id: ChatId) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
         let members = self
             .group_store
             .members(chat_id)
@@ -582,9 +550,7 @@ impl Node {
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        self.local_store
-            .lookup_contact_by_device_id(device_id)
-            .await
+        self.local_store.lookup_contact_by_device_id(device_id).await
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
@@ -623,45 +589,29 @@ impl Node {
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn send_message(
-        &self,
-        topic: impl Into<ChatId>,
-        message: ChatMessageContent,
-    ) -> anyhow::Result<Header> {
+    pub async fn send_message(&self, topic: impl Into<ChatId>, message: ChatMessageContent) -> anyhow::Result<Header> {
         let topic = topic.into();
 
         let (capabilities, num_agents) = self.get_group_capabilities(topic).await?;
-        let capabilities = capabilities.ok_or(anyhow::anyhow!(
-            "no capabilities found for chat: {:?}",
-            topic.aliased()
-        ))?;
+        let capabilities =
+            capabilities.ok_or(anyhow::anyhow!("no capabilities found for chat: {:?}", topic.aliased()))?;
 
         // NOTE: we may need logic for an agent to re-send a downgraded message if they later discover
         //       intended recipients who don't have the proper capabilities for receiving this message
         if num_agents == 1 {
-            tracing::warn!(
-                "sending message to group without knowing any other members' capabilities",
-            );
+            tracing::warn!("sending message to group without knowing any other members' capabilities",);
         }
         let message = message.to_version(&capabilities)?;
 
         let header = self
-            .publish(
-                topic,
-                Payload::Chat(ChatPayload::Message(message.clone())),
-                None,
-            )
+            .publish(topic, Payload::Chat(ChatPayload::Message(message.clone())), None)
             .await?;
 
         Ok(header)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn add_reaction(
-        &self,
-        topic: impl Into<ChatId>,
-        reaction: ChatReaction,
-    ) -> anyhow::Result<Header> {
+    pub async fn add_reaction(&self, topic: impl Into<ChatId>, reaction: ChatReaction) -> anyhow::Result<Header> {
         let topic = topic.into();
         let header = self
             .publish(topic, Payload::Chat(ChatPayload::Reaction(reaction)), None)
@@ -671,11 +621,7 @@ impl Node {
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn set_group_info(
-        &self,
-        chat_id: ChatId,
-        info: crate::GroupInfo,
-    ) -> anyhow::Result<Header> {
+    pub async fn set_group_info(&self, chat_id: ChatId, info: crate::GroupInfo) -> anyhow::Result<Header> {
         let header = self
             .publish(chat_id, Payload::Chat(ChatPayload::GroupInfo(info)), None)
             .await?;
@@ -687,18 +633,14 @@ impl Node {
     /// `None` if no member has authored one yet. "Most recent" is
     /// `(timestamp, seq_num)` across all author logs — matches the resolution
     /// in `GroupChatStore.info` on the frontend.
-    pub async fn get_group_info(
-        &self,
-        topic_id: TopicId,
-    ) -> anyhow::Result<Option<crate::GroupInfo>> {
+    pub async fn get_group_info(&self, topic_id: TopicId) -> anyhow::Result<Option<crate::GroupInfo>> {
         let log_id = LogId::from_topic(topic_id);
         let authors = self.op_store.get_authors(log_id).await?;
         let mut latest: Option<(Header, crate::GroupInfo)> = None;
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
                 let Some(body) = op.body else { continue };
-                let Ok(Payload::Chat(ChatPayload::GroupInfo(info))) = Payload::try_from_body(&body)
-                else {
+                let Ok(Payload::Chat(ChatPayload::GroupInfo(info))) = Payload::try_from_body(&body) else {
                     continue;
                 };
                 let is_later = match &latest {
@@ -730,10 +672,7 @@ impl Node {
         reply_rx.await?;
 
         if let Err(err) = self.processor_cancel_tx.send(()).await {
-            tracing::warn!(
-                "failed to send cancel signal to application processor: {}",
-                err
-            );
+            tracing::warn!("failed to send cancel signal to application processor: {}", err);
             return Err(ShutdownError::ActorShutdown(Box::new(err)));
         }
 
@@ -850,10 +789,7 @@ impl Node {
             self.publish(
                 inbox_topic.topic,
                 Payload::Inbox(InboxPayload::ContactRequest { code, profile }),
-                Some(&format!(
-                    "add_contact/contact_request({:?})",
-                    agent.aliased()
-                )),
+                Some(&format!("add_contact/contact_request({:?})", agent.aliased())),
             )
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?;
@@ -895,11 +831,7 @@ impl Node {
 
     /// Mark messages as read by storing a ReadMessages operation in the device group topic.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn mark_messages_read(
-        &self,
-        chat_id: ChatId,
-        message_hashes: Vec<Hash>,
-    ) -> Result<(), Error> {
+    pub async fn mark_messages_read(&self, chat_id: ChatId, message_hashes: Vec<Hash>) -> Result<(), Error> {
         use crate::payload::ReadMessagesPayload;
 
         self.publish(
@@ -918,8 +850,7 @@ impl Node {
 
     async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
         self.initialize_topic(
-            *Topic::announcements(self.agent_id())
-                .alias_named(&format!("announce({:?})", self.agent_id().aliased())),
+            *Topic::announcements(self.agent_id()).alias_named(&format!("announce({:?})", self.agent_id().aliased())),
         )
         .await?;
 
@@ -939,16 +870,12 @@ impl Node {
 
         // @TODO: I had to add this so that the device group topic is subscribed to when we later
         // attempt to publish operations to it.
-        self.initialize_topic(self.device_group_topic().into())
-            .await?;
+        self.initialize_topic(self.device_group_topic().into()).await?;
 
         Ok(())
     }
 
-    pub async fn announce_device_capabilities(
-        &self,
-        capabilities: Capabilities,
-    ) -> anyhow::Result<()> {
+    pub async fn announce_device_capabilities(&self, capabilities: Capabilities) -> anyhow::Result<()> {
         let announcements = Topic::announcements(self.agent_id());
         let latest_capability = self.local_store.get_capabilities(self.device_id()).await?;
 
@@ -957,10 +884,7 @@ impl Node {
             self.publish(
                 announcements,
                 Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }),
-                Some(&format!(
-                    "set_device_capabilities({:?})",
-                    self.device_id().aliased()
-                )),
+                Some(&format!("set_device_capabilities({:?})", self.device_id().aliased())),
             )
             .await?;
         }
@@ -971,10 +895,7 @@ impl Node {
     /// Find the infimum of the capabilities of all other members of the group with read access or above.
     ///
     /// This is dependent on eventual consistency, and as other members join, the capabilities may change.
-    pub async fn get_group_capabilities(
-        &self,
-        topic: ChatId,
-    ) -> anyhow::Result<(Option<Capabilities>, usize)> {
+    pub async fn get_group_capabilities(&self, topic: ChatId) -> anyhow::Result<(Option<Capabilities>, usize)> {
         let members = self.group_store.members(topic).await?;
         let mut devices = members
             .iter()

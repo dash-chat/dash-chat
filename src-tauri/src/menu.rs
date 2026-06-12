@@ -1,7 +1,5 @@
 use sonix_i18n::t;
-use tauri::menu::{
-    CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuItemKind, PredefinedMenuItem, Submenu,
-};
+use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuItemKind, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Runtime};
 
 const MAILBOX_TOGGLE_ID: &str = "toggle-local-mailbox";
@@ -23,8 +21,7 @@ pub fn handle_menu_event<R: Runtime>(app_handle: &AppHandle<R>, menu_event: Menu
     if menu_event.id().as_ref() != MAILBOX_TOGGLE_ID {
         return;
     }
-    let Some(toggle) = find_menu_item(app_handle, MAILBOX_TOGGLE_ID)
-        .and_then(|item| item.as_check_menuitem().cloned())
+    let Some(toggle) = find_menu_item(app_handle, MAILBOX_TOGGLE_ID).and_then(|item| item.as_check_menuitem().cloned())
     else {
         return;
     };
@@ -32,10 +29,7 @@ pub fn handle_menu_event<R: Runtime>(app_handle: &AppHandle<R>, menu_event: Menu
         Ok(enabled) => {
             let app_handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(err) =
-                    crate::mailbox::server::set_local_mailbox_server_enabled(&app_handle, enabled)
-                        .await
-                {
+                if let Err(err) = crate::mailbox::server::set_local_mailbox_server_enabled(&app_handle, enabled).await {
                     log::error!("Failed to toggle local mailbox: {err:?}");
                     let _ = toggle.set_checked(!enabled);
                 }

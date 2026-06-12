@@ -43,10 +43,7 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     /// in the `min_heights` list will have their *entire* log returned, including if `min_heights` is empty.
     /// This is so that the mailbox is used for author discovery as well.
     /// The intention is that all data is encrypted and only decipherable by valid recipients.
-    async fn fetch(
-        &self,
-        request: FetchRequest<Item>,
-    ) -> Result<FetchResponse<Item>, anyhow::Error>;
+    async fn fetch(&self, request: FetchRequest<Item>) -> Result<FetchResponse<Item>, anyhow::Error>;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -80,21 +77,11 @@ pub trait ItemTraits:
 }
 
 impl<T> ItemTraits for T where
-    T: Copy
-        + Eq
-        + Ord
-        + std::hash::Hash
-        + std::fmt::Debug
-        + Serialize
-        + DeserializeOwned
-        + Send
-        + Sync
+    T: Copy + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync
 {
 }
 
-pub trait MailboxItem:
-    Clone + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync + 'static
-{
+pub trait MailboxItem: Clone + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync + 'static {
     type Hash: ItemTraits;
     type Author: ItemTraits;
     type Topic: ItemTraits;

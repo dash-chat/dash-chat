@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AppState, Author, Blob, BlobsKey, BlobsKeyPrefix, SequenceNumber, TopicId, WatermarksKey,
-    BLOBS_TABLE, WATERMARKS_TABLE,
+    AppState, Author, Blob, BlobsKey, BlobsKeyPrefix, SequenceNumber, TopicId, WatermarksKey, BLOBS_TABLE,
+    WATERMARKS_TABLE,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -38,25 +38,16 @@ pub async fn get_blobs_for_topics(
         .await
         .map_err(|e| {
             tracing::error!("Task join error: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            )
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
         })?
         .map(Json)
         .map_err(|e| {
             tracing::error!("{}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            )
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
         })
 }
 
-fn get_blobs_for_topics_inner(
-    db: &Database,
-    request: &GetBlobsRequest,
-) -> Result<GetBlobsResponse, String> {
+fn get_blobs_for_topics_inner(db: &Database, request: &GetBlobsRequest) -> Result<GetBlobsResponse, String> {
     let mut blobs_by_topic: BTreeMap<TopicId, GetBlobsForTopicResponse> = BTreeMap::new();
 
     let read_txn = db
@@ -75,8 +66,7 @@ fn get_blobs_for_topics_inner(
         let mut topic_authors: BTreeMap<Author, BTreeMap<SequenceNumber, Blob>> = BTreeMap::new();
         // Track which sequences we have stored for each requested author
         // (used to avoid reporting as missing sequences we actually have)
-        let mut stored_seqs_per_author: BTreeMap<Author, BTreeSet<SequenceNumber>> =
-            BTreeMap::new();
+        let mut stored_seqs_per_author: BTreeMap<Author, BTreeSet<SequenceNumber>> = BTreeMap::new();
 
         // Use prefix-based range query to only iterate over blobs for this topic
         let prefix = BlobsKeyPrefix::Topic(topic_id.clone());
@@ -122,8 +112,7 @@ fn get_blobs_for_topics_inner(
         // Calculate missing blobs using watermarks and stored sequences
         let mut missing: BTreeMap<Author, Vec<SequenceNumber>> = BTreeMap::new();
         for (author, client_max_seq) in requested_authors {
-            let watermarks_key =
-                WatermarksKey::new(topic_id.clone(), author.clone()).map_err(|e| e.to_string())?;
+            let watermarks_key = WatermarksKey::new(topic_id.clone(), author.clone()).map_err(|e| e.to_string())?;
 
             // Get watermark for this topic:author
             let server_watermark = watermarks_table

@@ -40,11 +40,7 @@ fn start_mailbox_server(
     let (db, temp_file) = create_test_db();
     let push_client = PushNotificationsClient::new(push_url).unwrap();
     let push_tasks = Arc::new(tokio::sync::Mutex::new(tokio::task::JoinSet::new()));
-    let app = mailbox_server::create_app(
-        Arc::new(db),
-        Some(Arc::new(push_client)),
-        push_tasks.clone(),
-    );
+    let app = mailbox_server::create_app(Arc::new(db), Some(Arc::new(push_client)), push_tasks.clone());
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),
         ..TestServerConfig::default()
@@ -76,13 +72,10 @@ async fn drain_push_tasks(push_tasks: &Arc<tokio::sync::Mutex<tokio::task::JoinS
 /// Full integration test: subscribe → store blobs → push notification sent.
 #[tokio::test]
 async fn mailbox_store_triggers_push_notification() {
-    let verifying_key = VerifyingKey::from(
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
-    );
+    let verifying_key =
+        VerifyingKey::from("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string());
     let fcm_token = FcmToken::from("fcm-token-xyz".to_string());
-    let topic_id = TopicId::from(
-        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
-    );
+    let topic_id = TopicId::from("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string());
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));
@@ -122,10 +115,7 @@ async fn mailbox_store_triggers_push_notification() {
     // Mailbox server connected to the push server
     let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url);
 
-    let blob_data = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
-        b"encrypted-message-payload",
-    );
+    let blob_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"encrypted-message-payload");
 
     let resp = mailbox
         .post("/blobs/store")
@@ -156,8 +146,7 @@ async fn mailbox_store_no_subscribers_no_push() {
     let push_url = start_push_server(mock_fcm).await;
     let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url);
 
-    let blob_data =
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"some-data");
+    let blob_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"some-data");
 
     let resp = mailbox
         .post("/blobs/store")
@@ -181,13 +170,10 @@ async fn mailbox_store_no_subscribers_no_push() {
 /// (watermark doesn't advance on duplicate data).
 #[tokio::test]
 async fn mailbox_store_duplicate_blob_no_second_push() {
-    let verifying_key = VerifyingKey::from(
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
-    );
+    let verifying_key =
+        VerifyingKey::from("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string());
     let fcm_token = FcmToken::from("fcm-token-xyz".to_string());
-    let topic_id = TopicId::from(
-        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string(),
-    );
+    let topic_id = TopicId::from("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string());
 
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));
@@ -222,10 +208,7 @@ async fn mailbox_store_duplicate_blob_no_second_push() {
 
     let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url);
 
-    let blob_data = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
-        b"message-content",
-    );
+    let blob_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"message-content");
 
     let store_body = json!({
         "blobs": {

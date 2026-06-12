@@ -141,12 +141,10 @@ pub fn get_redacted_log(app_handle: AppHandle) -> Result<String, String> {
         .path()
         .app_cache_dir()
         .map_err(|e| format!("Failed to resolve cache dir: {e:?}"))?;
-    std::fs::create_dir_all(&cache_dir)
-        .map_err(|e| format!("Failed to create cache dir: {e:?}"))?;
+    std::fs::create_dir_all(&cache_dir).map_err(|e| format!("Failed to create cache dir: {e:?}"))?;
 
     let redacted_path = cache_dir.join("redacted-log.txt");
-    std::fs::write(&redacted_path, redacted.as_bytes())
-        .map_err(|e| format!("Failed to write redacted log: {e:?}"))?;
+    std::fs::write(&redacted_path, redacted.as_bytes()).map_err(|e| format!("Failed to write redacted log: {e:?}"))?;
 
     Ok(redacted_path.to_string_lossy().into_owned())
 }
@@ -229,15 +227,11 @@ mod tests {
 
     #[test]
     fn redacts_profile_name_debug() {
-        let input =
-            r#"Profile { name: "Alice", surname: Some("Smith"), about: Some("Hello world") }"#;
+        let input = r#"Profile { name: "Alice", surname: Some("Smith"), about: Some("Hello world") }"#;
         let result = redact(input);
         assert!(!result.contains("Alice"), "name not redacted: {result}");
         assert!(!result.contains("Smith"), "surname not redacted: {result}");
-        assert!(
-            !result.contains("Hello world"),
-            "about not redacted: {result}"
-        );
+        assert!(!result.contains("Hello world"), "about not redacted: {result}");
     }
 
     #[test]
@@ -246,22 +240,15 @@ mod tests {
         let result = redact(input);
         assert!(!result.contains("Alice"), "name not redacted: {result}");
         assert!(!result.contains("Smith"), "surname not redacted: {result}");
-        assert!(
-            !result.contains("Hello world"),
-            "about not redacted: {result}"
-        );
+        assert!(!result.contains("Hello world"), "about not redacted: {result}");
     }
 
     #[test]
     fn redacts_group_info_debug() {
-        let input =
-            r#"GroupInfo { name: "Family", description: Some("Secret plan"), image: None }"#;
+        let input = r#"GroupInfo { name: "Family", description: Some("Secret plan"), image: None }"#;
         let result = redact(input);
         assert!(!result.contains("Family"), "name not redacted: {result}");
-        assert!(
-            !result.contains("Secret plan"),
-            "description not redacted: {result}"
-        );
+        assert!(!result.contains("Secret plan"), "description not redacted: {result}");
     }
 
     #[test]
@@ -269,20 +256,14 @@ mod tests {
         let input = r#"{"name":"Family","description":"Secret plan","image":null}"#;
         let result = redact(input);
         assert!(!result.contains("Family"), "name not redacted: {result}");
-        assert!(
-            !result.contains("Secret plan"),
-            "description not redacted: {result}"
-        );
+        assert!(!result.contains("Secret plan"), "description not redacted: {result}");
     }
 
     #[test]
     fn redacts_chat_message_debug() {
         let input = r#"ChatMessageContent("secret message here")"#;
         let result = redact(input);
-        assert!(
-            !result.contains("secret message"),
-            "message not redacted: {result}"
-        );
+        assert!(!result.contains("secret message"), "message not redacted: {result}");
     }
 
     #[test]
@@ -290,31 +271,23 @@ mod tests {
         // Compat<…V0, …V> Debug for the V0 branch:
         let input = r#"ChatMessageContent(Unversioned(ChatMessageContentV0("secret v0 body")))"#;
         let result = redact(input);
-        assert!(
-            !result.contains("secret v0 body"),
-            "v0 message not redacted: {result}"
-        );
+        assert!(!result.contains("secret v0 body"), "v0 message not redacted: {result}");
     }
 
     #[test]
     fn redacts_chat_message_debug_v1_wrapped() {
         // Compat<…V0, …V> Debug for the V1 branch:
-        let input = r#"ChatMessageContent(Versioned(V1(ChatMessageContentV1 { message: "secret v1 body", media: None })))"#;
+        let input =
+            r#"ChatMessageContent(Versioned(V1(ChatMessageContentV1 { message: "secret v1 body", media: None })))"#;
         let result = redact(input);
-        assert!(
-            !result.contains("secret v1 body"),
-            "v1 message not redacted: {result}"
-        );
+        assert!(!result.contains("secret v1 body"), "v1 message not redacted: {result}");
     }
 
     #[test]
     fn redacts_chat_message_json() {
         let input = r#""content":"secret message here""#;
         let result = redact(input);
-        assert!(
-            !result.contains("secret message"),
-            "message not redacted: {result}"
-        );
+        assert!(!result.contains("secret message"), "message not redacted: {result}");
     }
 
     #[test]
@@ -333,14 +306,8 @@ mod tests {
     fn redacts_hostname_line() {
         let input = "Hostname: Alices-MacBook-Pro.local";
         let result = redact(input);
-        assert!(
-            !result.contains("Alices"),
-            "hostname not redacted: {result}"
-        );
-        assert!(
-            !result.contains("MacBook-Pro"),
-            "hostname not redacted: {result}"
-        );
+        assert!(!result.contains("Alices"), "hostname not redacted: {result}");
+        assert!(!result.contains("MacBook-Pro"), "hostname not redacted: {result}");
         assert_eq!(result, "[REDACTED]");
     }
 
@@ -357,10 +324,7 @@ mod tests {
         let input = "App root dir: /Users/alice/Library/Application Support/dash-chat";
         let result = redact(input);
         assert!(!result.contains("alice"), "username not redacted: {result}");
-        assert_eq!(
-            result,
-            "App root dir: [REDACTED]/Library/Application Support/dash-chat",
-        );
+        assert_eq!(result, "App root dir: [REDACTED]/Library/Application Support/dash-chat",);
     }
 
     #[test]
@@ -368,10 +332,7 @@ mod tests {
         let input = "Logs dir: C:\\Users\\alice\\AppData\\Roaming\\dash-chat\\logs";
         let result = redact(input);
         assert!(!result.contains("alice"), "username not redacted: {result}");
-        assert_eq!(
-            result,
-            "Logs dir: C:[REDACTED]\\AppData\\Roaming\\dash-chat\\logs",
-        );
+        assert_eq!(result, "Logs dir: C:[REDACTED]\\AppData\\Roaming\\dash-chat\\logs",);
     }
 
     #[test]
@@ -414,10 +375,7 @@ mod tests {
         let tail = "line_a\nline_b\nline_c\n";
         std::fs::write(&path, format!("{padding}{tail}")).unwrap();
         let result = read_concat_tail(&[path], 30).unwrap();
-        assert!(
-            !result.contains('x'),
-            "padding should be truncated: {result}"
-        );
+        assert!(!result.contains('x'), "padding should be truncated: {result}");
         assert!(result.contains("line_b"), "should contain line_b: {result}");
         assert!(result.contains("line_c"), "should contain line_c: {result}");
         std::fs::remove_dir_all(&dir).unwrap();
@@ -483,10 +441,7 @@ mod tests {
     fn redacts_full_notification_log_line() {
         let input = r#"2024-02-15 INFO Received notification: Chat(Message(ChatMessageContent("hey there"))) from DeviceId(VerifyingKey([32, 145, 78, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]))"#;
         let result = redact(input);
-        assert!(
-            !result.contains("hey there"),
-            "message not redacted: {result}"
-        );
+        assert!(!result.contains("hey there"), "message not redacted: {result}");
         assert!(!result.contains("32, 145"), "key not redacted: {result}");
     }
 }

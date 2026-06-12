@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    notify_topics_subscribers::notify_topics_subscribers, AppState, Author, Blob, BlobsKey,
-    BlobsKeyPrefix, SequenceNumber, TopicId, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE,
+    notify_topics_subscribers::notify_topics_subscribers, AppState, Author, Blob, BlobsKey, BlobsKeyPrefix,
+    SequenceNumber, TopicId, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -21,23 +21,16 @@ pub async fn store_blobs(
     // Use spawn_blocking because redb's begin_write() is a blocking call that waits
     // for exclusive write access. Running this directly in async context would block
     // tokio worker threads and cause deadlocks under concurrent load.
-    let topics_with_new_blobs =
-        tokio::task::spawn_blocking(move || store_blobs_inner(&db, &payload))
-            .await
-            .map_err(|e| {
-                tracing::error!("Task join error: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal server error".to_string(),
-                )
-            })?
-            .map_err(|e| {
-                tracing::error!("{}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal server error".to_string(),
-                )
-            })?;
+    let topics_with_new_blobs = tokio::task::spawn_blocking(move || store_blobs_inner(&db, &payload))
+        .await
+        .map_err(|e| {
+            tracing::error!("Task join error: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+        })?
+        .map_err(|e| {
+            tracing::error!("{}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+        })?;
 
     notify_topics_subscribers(&state, topics_with_new_blobs).await;
 
@@ -69,8 +62,7 @@ fn store_blobs_inner(
 
         for (topic_id, authors) in &request.blobs {
             for (author, sequences) in authors {
-                let watermarks_key = WatermarksKey::new(topic_id.clone(), author.clone())
-                    .map_err(|e| e.to_string())?;
+                let watermarks_key = WatermarksKey::new(topic_id.clone(), author.clone()).map_err(|e| e.to_string())?;
 
                 // Get current watermark for this topic:author
                 let current_watermark = watermarks_table
@@ -82,8 +74,8 @@ fn store_blobs_inner(
                 let mut stored_seqs: BTreeSet<SequenceNumber> = BTreeSet::new();
 
                 for (seq_num, blob) in sequences {
-                    let key = BlobsKey::new_now(topic_id.clone(), author.clone(), *seq_num)
-                        .map_err(|e| e.to_string())?;
+                    let key =
+                        BlobsKey::new_now(topic_id.clone(), author.clone(), *seq_num).map_err(|e| e.to_string())?;
 
                     blobs_table
                         .insert(&key, blob.as_slice())
@@ -93,13 +85,8 @@ fn store_blobs_inner(
                 }
 
                 // Update watermark for this topic:author
-                let new_watermark = compute_new_watermark(
-                    &blobs_table,
-                    topic_id,
-                    author,
-                    current_watermark,
-                    &stored_seqs,
-                )?;
+                let new_watermark =
+                    compute_new_watermark(&blobs_table, topic_id, author, current_watermark, &stored_seqs)?;
 
                 if let Some(wm) = new_watermark {
                     // Only update if watermark changed or was newly established
@@ -114,8 +101,7 @@ fn store_blobs_inner(
                             current_watermark,
                             wm
                         );
-                        let topic_entry =
-                            topics_with_new_blobs.entry(topic_id.clone()).or_default();
+                        let topic_entry = topics_with_new_blobs.entry(topic_id.clone()).or_default();
                         for seq in &stored_seqs {
                             topic_entry.insert(format!("{}:{}", author, seq), author.clone());
                         }
@@ -168,9 +154,7 @@ fn compute_new_watermark(
         let next_seq = watermark.map_or(0, |w| w + 1);
 
         // First check new sequences (cheaper), then existing blobs
-        if new_sequences.contains(&next_seq)
-            || blob_exists(blobs_table, topic_id, author, next_seq)?
-        {
+        if new_sequences.contains(&next_seq) || blob_exists(blobs_table, topic_id, author, next_seq)? {
             watermark = Some(next_seq);
         } else {
             break;

@@ -34,12 +34,7 @@ pub struct DummyStore;
 
 #[async_trait::async_trait]
 impl MailboxStore<Msg> for DummyStore {
-    async fn get_log(
-        &self,
-        _author: &char,
-        _topic: &u8,
-        _from: u64,
-    ) -> Result<Option<Vec<Msg>>, anyhow::Error> {
+    async fn get_log(&self, _author: &char, _topic: &u8, _from: u64) -> Result<Option<Vec<Msg>>, anyhow::Error> {
         Ok(None)
     }
     async fn get_log_heights(&self, _topic: &u8) -> Result<Vec<(char, u64)>, anyhow::Error> {

@@ -33,9 +33,7 @@ fn validate_hex32(value: &str, field: &str) -> Result<(), ValidationError> {
         )));
     }
     if !value.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(ValidationError(format!(
-            "{field} must contain only hex characters"
-        )));
+        return Err(ValidationError(format!("{field} must contain only hex characters")));
     }
     Ok(())
 }

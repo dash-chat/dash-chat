@@ -5,9 +5,7 @@ use axum::{Json, extract::State, http::StatusCode};
 use futures::StreamExt;
 
 use push_notifications_client::requests::NotifyTopicsRequest;
-use push_notifications_client::types::{
-    FcmToken, OperationId, PushNotification, TopicId, VerifyingKey,
-};
+use push_notifications_client::types::{FcmToken, OperationId, PushNotification, TopicId, VerifyingKey};
 
 use crate::{AppState, error::AppError, fcm_client::SendResult};
 
@@ -39,15 +37,7 @@ pub(crate) async fn notify_topics(
     let tasks: Vec<_> = req
         .topics_to_notify
         .iter()
-        .flat_map(|(topic_id, ops)| {
-            notify_topic(
-                &state,
-                topic_id,
-                ops,
-                topic_subscribers.get(topic_id),
-                &fcm_tokens,
-            )
-        })
+        .flat_map(|(topic_id, ops)| notify_topic(&state, topic_id, ops, topic_subscribers.get(topic_id), &fcm_tokens))
         .collect();
 
     if tasks.is_empty() {
@@ -115,11 +105,7 @@ async fn send_notification(
     fcm_token: FcmToken,
     notification: PushNotification,
 ) {
-    match state
-        .fcm
-        .send_push_notification(&fcm_token, &notification)
-        .await
-    {
+    match state.fcm.send_push_notification(&fcm_token, &notification).await {
         SendResult::Ok => {}
         SendResult::InvalidToken => {
             tracing::info!(verifying_key = %verifying_key, "FCM token is invalid, removing");

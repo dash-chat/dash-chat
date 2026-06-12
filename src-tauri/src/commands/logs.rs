@@ -13,9 +13,7 @@ fn serialize_timestamp_as_millis<S: Serializer>(ts: &Timestamp, s: S) -> Result<
     s.serialize_u64(u64::from(*ts) / 1_000)
 }
 
-fn deserialize_timestamp_from_millis<'de, D: Deserializer<'de>>(
-    d: D,
-) -> Result<Timestamp, D::Error> {
+fn deserialize_timestamp_from_millis<'de, D: Deserializer<'de>>(d: D) -> Result<Timestamp, D::Error> {
     let millis = u64::deserialize(d)?;
     Ok(Timestamp::new(millis * 1_000))
 }

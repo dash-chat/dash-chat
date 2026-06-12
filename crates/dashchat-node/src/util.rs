@@ -35,10 +35,7 @@ pub(crate) struct CancelAndWait<R> {
 }
 
 impl<R> CancelAndWait<R> {
-    pub fn new(
-        handle: tokio::task::JoinHandle<R>,
-        token: tokio_util::sync::CancellationToken,
-    ) -> Self {
+    pub fn new(handle: tokio::task::JoinHandle<R>, token: tokio_util::sync::CancellationToken) -> Self {
         Self {
             handle: std::sync::Arc::new(tokio::sync::Mutex::new(Some(handle))),
             token,

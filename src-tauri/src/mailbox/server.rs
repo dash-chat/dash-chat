@@ -37,9 +37,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
 
     let daemon: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
     let port = free_port()?;
-    let mdns_fullname = Arc::new(StdMutex::new(register_mdns_with_retry(
-        &daemon, port, &device_id, 3,
-    )?));
+    let mdns_fullname = Arc::new(StdMutex::new(register_mdns_with_retry(&daemon, port, &device_id, 3)?));
 
     // Bind dual-stack so peers can reach us over both the IPv4 and IPv6
     // addresses the mDNS record auto-announces. A `::` socket accepts IPv4
@@ -97,11 +95,7 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
     if let Err(err) = state.server.await {
         log::error!("Local mailbox server task ended unexpectedly: {err}");
     }
-    let fullname = state
-        .mdns_fullname
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .clone();
+    let fullname = state.mdns_fullname.lock().unwrap_or_else(|p| p.into_inner()).clone();
     if let Err(e) = handle.state::<ServiceDaemon>().unregister(&fullname) {
         log::error!("Failed to unregister MDNS service: {e:?}");
     }
@@ -112,10 +106,7 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
 
 /// Start/stop the mailbox server, persist the setting, toggle OS autostart,
 /// sync the app menu checkbox, and update the tray/badge.
-pub async fn set_local_mailbox_server_enabled<R: Runtime>(
-    handle: &AppHandle<R>,
-    enabled: bool,
-) -> anyhow::Result<()> {
+pub async fn set_local_mailbox_server_enabled<R: Runtime>(handle: &AppHandle<R>, enabled: bool) -> anyhow::Result<()> {
     use tauri_plugin_autostart::ManagerExt;
 
     // Start/stop first — only persist if the operation succeeds.
@@ -287,12 +278,7 @@ async fn debounce_reannounce_burst(
 /// Returns the fullname that is now registered with the daemon, or `None` if
 /// the re-register failed (in which case the previous `fullname` is no longer
 /// registered either — the unregister already ran).
-fn reannounce_mdns(
-    daemon: &ServiceDaemon,
-    fullname: &str,
-    port: u16,
-    device_id: &DeviceId,
-) -> Option<String> {
+fn reannounce_mdns(daemon: &ServiceDaemon, fullname: &str, port: u16, device_id: &DeviceId) -> Option<String> {
     let _ = daemon.unregister(fullname);
     let service = match mdns_service_info(port, device_id) {
         Ok(service) => service,
@@ -322,13 +308,5 @@ fn mdns_service_info(port: u16, device_id: &DeviceId) -> anyhow::Result<ServiceI
     // instance's address cache entry to overwrite another's in the resolver.
     let host_name = format!("{instance_name}.local.");
 
-    Ok(ServiceInfo::new(
-        super::MDNS_SERVICE_TYPE,
-        &instance_name,
-        &host_name,
-        "",
-        port,
-        vec![],
-    )?
-    .enable_addr_auto())
+    Ok(ServiceInfo::new(super::MDNS_SERVICE_TYPE, &instance_name, &host_name, "", port, vec![])?.enable_addr_auto())
 }

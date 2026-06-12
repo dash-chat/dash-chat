@@ -5,8 +5,8 @@ use axum_test::TestServer;
 use mockall::predicate::*;
 
 use push_notifications_client::requests::{
-    AddTopicSubscriptionsRequest, NotifyTopicsRequest, RegisterFcmTokenRequest,
-    RemoveTopicSubscriptionsRequest, UnregisterFcmTokenRequest, UpdateTopicSubscriptionsRequest,
+    AddTopicSubscriptionsRequest, NotifyTopicsRequest, RegisterFcmTokenRequest, RemoveTopicSubscriptionsRequest,
+    UnregisterFcmTokenRequest, UpdateTopicSubscriptionsRequest,
 };
 use push_notifications_client::types::{FcmToken, OperationId, TopicId, VerifyingKey};
 use push_notifications_server::build;
@@ -29,9 +29,7 @@ async fn notify_topic_sends_to_subscribers() {
         .withf(|token, notif| token == "test-fcm-token" && notif.body == "test-op")
         .returning(|_, _| SendResult::Ok);
 
-    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
-        .await
-        .unwrap();
+    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm)).await.unwrap();
 
     let server = TestServer::new(app).unwrap();
 
@@ -84,9 +82,7 @@ async fn notify_topic_skips_author() {
         .withf(|token, _| token == "other-token")
         .returning(|_, _| SendResult::Ok);
 
-    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
-        .await
-        .unwrap();
+    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm)).await.unwrap();
     let server = TestServer::new(app).unwrap();
 
     // Both devices register tokens and subscribe to the topic.
@@ -129,9 +125,7 @@ async fn notify_topic_skips_unsubscribed() {
     mock_fcm.expect_validate().once().returning(|| Ok(()));
     // No send_push_notification calls expected
 
-    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
-        .await
-        .unwrap();
+    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm)).await.unwrap();
 
     let server = TestServer::new(app).unwrap();
 
@@ -150,11 +144,7 @@ async fn notify_topic_skips_unsubscribed() {
     let response = server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(
-                topic_id,
-                [(OperationId::from("test-op".to_string()), author)].into(),
-            )]
-            .into(),
+            topics_to_notify: [(topic_id, [(OperationId::from("test-op".to_string()), author)].into())].into(),
         })
         .await;
     response.assert_status(StatusCode::NO_CONTENT);
@@ -172,9 +162,7 @@ async fn unsubscribe_prevents_notification() {
     mock_fcm.expect_validate().once().returning(|| Ok(()));
     // No send expected after unsubscribe
 
-    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
-        .await
-        .unwrap();
+    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm)).await.unwrap();
     let server = TestServer::new(app).unwrap();
 
     // Register + subscribe
@@ -211,11 +199,7 @@ async fn unsubscribe_prevents_notification() {
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(
-                topic_id,
-                [(OperationId::from("op-1".to_string()), author)].into(),
-            )]
-            .into(),
+            topics_to_notify: [(topic_id, [(OperationId::from("op-1".to_string()), author)].into())].into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -239,9 +223,7 @@ async fn update_subscriptions_replaces_and_notifies_correctly() {
         .withf(|token, notif| token == "test-fcm-token" && notif.title == "dd".repeat(32))
         .returning(|_, _| SendResult::Ok);
 
-    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
-        .await
-        .unwrap();
+    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm)).await.unwrap();
     let server = TestServer::new(app).unwrap();
 
     // Register token
@@ -292,11 +274,7 @@ async fn update_subscriptions_replaces_and_notifies_correctly() {
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(
-                topic_b,
-                [(OperationId::from("op-2".to_string()), author)].into(),
-            )]
-            .into(),
+            topics_to_notify: [(topic_b, [(OperationId::from("op-2".to_string()), author)].into())].into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -345,11 +323,7 @@ async fn fcm_transient_failure_does_not_remove_token() {
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(
-                topic_id,
-                [(OperationId::from("op-1".to_string()), author)].into(),
-            )]
-            .into(),
+            topics_to_notify: [(topic_id, [(OperationId::from("op-1".to_string()), author)].into())].into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -383,11 +357,7 @@ async fn notify_subscriber_without_token_does_not_fail() {
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(
-                topic_id,
-                [(OperationId::from("op-1".to_string()), author)].into(),
-            )]
-            .into(),
+            topics_to_notify: [(topic_id, [(OperationId::from("op-1".to_string()), author)].into())].into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -409,9 +379,7 @@ async fn invalid_token_is_removed() {
 
     let db = Arc::new(MemDb::new());
 
-    db.store_fcm_token(&verifying_key, &fcm_token)
-        .await
-        .unwrap();
+    db.store_fcm_token(&verifying_key, &fcm_token).await.unwrap();
     db.add_topic_subscriptions(&verifying_key, &[topic_id.clone()].into())
         .await
         .unwrap();
@@ -424,11 +392,7 @@ async fn invalid_token_is_removed() {
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(
-                topic_id,
-                [(OperationId::from("op-1".to_string()), author)].into(),
-            )]
-            .into(),
+            topics_to_notify: [(topic_id, [(OperationId::from("op-1".to_string()), author)].into())].into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -491,11 +455,7 @@ async fn unregister_fcm_token_prevents_notification() {
     server
         .post("/notify-topic")
         .json(&NotifyTopicsRequest {
-            topics_to_notify: [(
-                topic_id,
-                [(OperationId::from("op-1".to_string()), author)].into(),
-            )]
-            .into(),
+            topics_to_notify: [(topic_id, [(OperationId::from("op-1".to_string()), author)].into())].into(),
         })
         .await
         .assert_status(StatusCode::NO_CONTENT);
@@ -508,9 +468,7 @@ async fn unregister_fcm_token_is_idempotent() {
     let mut mock_fcm = MockFcm::new();
     mock_fcm.expect_validate().once().returning(|| Ok(()));
 
-    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm))
-        .await
-        .unwrap();
+    let app = build(Arc::new(MemDb::new()), Arc::new(mock_fcm)).await.unwrap();
     let server = TestServer::new(app).unwrap();
 
     // Unregister a token that was never registered — should succeed

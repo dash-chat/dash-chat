@@ -43,8 +43,7 @@ impl Behavior {
                     hash = ?n.header.hash(),
                     "checking for contact invitation"
                 );
-                let Some(Payload::Inbox(InboxPayload::ContactRequest { code, .. })) = &n.payload
-                else {
+                let Some(Payload::Inbox(InboxPayload::ContactRequest { code, .. })) = &n.payload else {
                     return None;
                 };
                 Some(code.clone())
@@ -60,10 +59,7 @@ impl Behavior {
     // NOTE: we technically want to wait for the *last* capabilities announcement.
     //       this is an approximation, assuming that this signals the entire announcement topic being synced.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
-    pub async fn await_first_capabilities(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<Capabilities> {
+    pub async fn await_first_capabilities(&self, device_id: DeviceId) -> anyhow::Result<Capabilities> {
         let mut watcher = self.watcher.lock().await;
         watcher
             .watch_mapped(Duration::from_secs(15), |n: &Notification| {
@@ -71,9 +67,9 @@ impl Behavior {
                     return None;
                 }
                 match n.payload {
-                    Some(Payload::Announcements(AnnouncementsPayload::SetCapabilities {
-                        capabilities,
-                    })) => Some(capabilities),
+                    Some(Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities })) => {
+                        Some(capabilities)
+                    }
                     _ => None,
                 }
             })

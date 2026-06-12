@@ -11,8 +11,7 @@ fn main() {
     // fall through to the production URLs at runtime.
     if tauri_build::is_dev() {
         let mailbox_port = std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
-        let push_port =
-            std::env::var("PUSH_NOTIFICATIONS_SERVER_PORT").unwrap_or_else(|_| "3001".to_string());
+        let push_port = std::env::var("PUSH_NOTIFICATIONS_SERVER_PORT").unwrap_or_else(|_| "3001".to_string());
 
         // When not cross-compiling (host == target), the binary runs on the same
         // machine as the dev servers, so localhost works. When cross-compiling

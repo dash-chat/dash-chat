@@ -34,10 +34,7 @@ async fn test_reject_contact_request() {
     introduce_and_wait([&alice, &bobbi]).await;
 
     // Alice generates a QR code with inbox
-    let qr = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
+    let qr = alice.new_qr_code(ShareIntent::AddContact, true).await.unwrap();
 
     // Bobbi scans the QR code and sends a contact request to Alice's inbox
     bobbi.add_contact(qr).await.unwrap();
@@ -60,10 +57,7 @@ async fn test_reject_contact_request() {
     assert_eq!(received_qr.agent_id, bobbi.agent_id());
 
     // Alice rejects the contact request instead of accepting it
-    alice
-        .reject_contact_request(bobbi.agent_id())
-        .await
-        .unwrap();
+    alice.reject_contact_request(bobbi.agent_id()).await.unwrap();
 
     // Verify the rejection was recorded
     let rejected = alice.get_rejected_contact_requests().await.unwrap();
@@ -94,28 +88,16 @@ async fn test_reject_multiple_contact_requests() {
     println!("### {:3.1?} alice creating QR codes", start.elapsed());
 
     // Alice generates QR codes for both Bobbi and Carol
-    let qr_for_bobbi = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
-    let qr_for_carol = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
+    let qr_for_bobbi = alice.new_qr_code(ShareIntent::AddContact, true).await.unwrap();
+    let qr_for_carol = alice.new_qr_code(ShareIntent::AddContact, true).await.unwrap();
 
-    println!(
-        "### {:3.1?} bobbi and carol scanning QR codes",
-        start.elapsed()
-    );
+    println!("### {:3.1?} bobbi and carol scanning QR codes", start.elapsed());
 
     // Both send contact requests
     bobbi.add_contact(qr_for_bobbi).await.unwrap();
     carol.add_contact(qr_for_carol).await.unwrap();
 
-    println!(
-        "### {:3.1?} alice waiting for contact requests",
-        start.elapsed()
-    );
+    println!("### {:3.1?} alice waiting for contact requests", start.elapsed());
 
     // Wait for both contact requests
     let mut received_agents = Vec::new();
@@ -125,8 +107,7 @@ async fn test_reject_multiple_contact_requests() {
             .lock()
             .await
             .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-                let Some(Payload::Inbox(InboxPayload::ContactRequest { code, .. })) = &n.payload
-                else {
+                let Some(Payload::Inbox(InboxPayload::ContactRequest { code, .. })) = &n.payload else {
                     return None;
                 };
                 Some(code.agent_id)
@@ -143,10 +124,7 @@ async fn test_reject_multiple_contact_requests() {
     println!("### {:3.1?} alice rejecting first contact", start.elapsed());
 
     // Alice rejects first contact but accepts the second
-    alice
-        .reject_contact_request(received_agents[0])
-        .await
-        .unwrap();
+    alice.reject_contact_request(received_agents[0]).await.unwrap();
 
     println!(
         "### {:3.1?} alice verifying first contact was rejected",

@@ -28,9 +28,7 @@ const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str = "http://push-notification
 fn push_notifications_url() -> String {
     if let Ok(url) = std::env::var("PUSH_NOTIFICATIONS_SERVER_URL") {
         if !(url.starts_with("http://") || url.starts_with("https://")) {
-            log::error!(
-                "PUSH_NOTIFICATIONS_SERVER_URL env var is not a valid URL: {url}, falling back to next option"
-            );
+            log::error!("PUSH_NOTIFICATIONS_SERVER_URL env var is not a valid URL: {url}, falling back to next option");
         } else {
             return url;
         }
@@ -159,18 +157,13 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     );
 
     let client = app_handle.state::<PushNotificationsClient>();
-    client
-        .update_topic_subscriptions(verifying_key, topic_ids)
-        .await?;
+    client.update_topic_subscriptions(verifying_key, topic_ids).await?;
 
     Ok(())
 }
 
 /// Subscribe the current device to push notifications for the given topics.
-async fn subscribe_to_topics(
-    app_handle: &AppHandle,
-    topic_ids: HashSet<PushTopicId>,
-) -> anyhow::Result<()> {
+async fn subscribe_to_topics(app_handle: &AppHandle, topic_ids: HashSet<PushTopicId>) -> anyhow::Result<()> {
     if topic_ids.is_empty() {
         return Ok(());
     }
@@ -185,9 +178,7 @@ async fn subscribe_to_topics(
         topic_ids.len()
     );
 
-    client
-        .add_topic_subscriptions(verifying_key, topic_ids)
-        .await?;
+    client.add_topic_subscriptions(verifying_key, topic_ids).await?;
 
     Ok(())
 }

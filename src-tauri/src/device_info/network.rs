@@ -6,10 +6,7 @@ pub fn log_network_interfaces() {
             .map(|n| n.addr().to_string())
             .chain(iface.ipv6.iter().map(|n| n.addr().to_string()))
             .collect();
-        let mac = iface
-            .mac_addr
-            .map(|m| m.to_string())
-            .unwrap_or_else(|| "?".to_string());
+        let mac = iface.mac_addr.map(|m| m.to_string()).unwrap_or_else(|| "?".to_string());
         log::info!(
             "Network interface: {} (mac {}, state {:?}, mtu {:?}) -> [{}]",
             iface.name,

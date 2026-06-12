@@ -29,18 +29,17 @@ async fn send_push_notifications(
     push_client: Arc<PushNotificationsClient>,
     topics_with_new_blobs: BTreeMap<TopicId, BTreeMap<String, Author>>,
 ) {
-    let topics_to_notify: HashMap<PushTopicId, HashMap<OperationId, VerifyingKey>> =
-        topics_with_new_blobs
-            .into_iter()
-            .map(|(topic, ops)| {
-                let topic = PushTopicId::from(topic);
-                let ops = ops
-                    .into_iter()
-                    .map(|(op_id, author)| (OperationId::from(op_id), VerifyingKey::from(author)))
-                    .collect();
-                (topic, ops)
-            })
-            .collect();
+    let topics_to_notify: HashMap<PushTopicId, HashMap<OperationId, VerifyingKey>> = topics_with_new_blobs
+        .into_iter()
+        .map(|(topic, ops)| {
+            let topic = PushTopicId::from(topic);
+            let ops = ops
+                .into_iter()
+                .map(|(op_id, author)| (OperationId::from(op_id), VerifyingKey::from(author)))
+                .collect();
+            (topic, ops)
+        })
+        .collect();
 
     if let Err(e) = dashchat_utils::retry_with_backoff(
         Some(5),

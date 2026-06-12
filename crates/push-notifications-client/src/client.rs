@@ -29,11 +29,7 @@ impl PushNotificationsClient {
         Ok(Self { base_url, http })
     }
 
-    pub async fn register_fcm_token(
-        &self,
-        verifying_key: VerifyingKey,
-        fcm_token: FcmToken,
-    ) -> anyhow::Result<()> {
+    pub async fn register_fcm_token(&self, verifying_key: VerifyingKey, fcm_token: FcmToken) -> anyhow::Result<()> {
         let resp = self
             .http
             .post(format!("{}/fcm-tokens/register", self.base_url))

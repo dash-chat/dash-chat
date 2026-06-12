@@ -118,8 +118,7 @@ impl Key for WatermarksKey {
 // Watermarks table: tracks highest contiguous sequence number per topic:author
 // Key format: topic_id + 0x00 + author (binary format for direct byte comparison)
 // Value: highest contiguous sequence number (0..=watermark are all present)
-pub const WATERMARKS_TABLE: TableDefinition<WatermarksKey, u64> =
-    TableDefinition::new("watermarks");
+pub const WATERMARKS_TABLE: TableDefinition<WatermarksKey, u64> = TableDefinition::new("watermarks");
 
 #[cfg(test)]
 mod tests {

@@ -101,12 +101,7 @@ async fn test_profiles_sync_between_contacts() {
         .unwrap();
 
     alice
-        .add_contact(
-            bobbi
-                .new_qr_code(ShareIntent::AddContact, true)
-                .await
-                .unwrap(),
-        )
+        .add_contact(bobbi.new_qr_code(ShareIntent::AddContact, true).await.unwrap())
         .await
         .unwrap();
 
@@ -116,11 +111,7 @@ async fn test_profiles_sync_between_contacts() {
     poll.wait_for(|| async {
         bobbi
             .op_store
-            .get_log(
-                &alice.device_id(),
-                &Topic::announcements(alice.agent_id()).into(),
-                None,
-            )
+            .get_log(&alice.device_id(), &Topic::announcements(alice.agent_id()).into(), None)
             .await
             .map_err(|_| "failed to get log")?
             .iter()

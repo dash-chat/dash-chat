@@ -78,18 +78,11 @@ where
         } else {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            Err(anyhow::anyhow!(
-                "Failed to store blobs: {} - {}",
-                status,
-                body
-            ))
+            Err(anyhow::anyhow!("Failed to store blobs: {} - {}", status, body))
         }
     }
 
-    async fn fetch(
-        &self,
-        request: FetchRequest<Item>,
-    ) -> Result<FetchResponse<Item>, anyhow::Error> {
+    async fn fetch(&self, request: FetchRequest<Item>) -> Result<FetchResponse<Item>, anyhow::Error> {
         // Convert FetchRequest to GetBlobsRequest
         let mut topics: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
 
@@ -115,11 +108,7 @@ where
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!(
-                "Failed to fetch blobs: {} - {}",
-                status,
-                body
-            ));
+            return Err(anyhow::anyhow!("Failed to fetch blobs: {} - {}", status, body));
         }
 
         let response = response.json::<GetBlobsResponse>().await?;
@@ -193,8 +182,7 @@ pub fn stringify(value: impl Serialize) -> String {
 }
 
 pub fn unstringify<T: DeserializeOwned>(s: &str) -> Result<T, anyhow::Error> {
-    serde_json::from_str(&format!("\"{}\"", s))
-        .map_err(|e| anyhow::anyhow!("Failed to unstringify: {}", e))
+    serde_json::from_str(&format!("\"{}\"", s)).map_err(|e| anyhow::anyhow!("Failed to unstringify: {}", e))
 }
 
 #[cfg(test)]

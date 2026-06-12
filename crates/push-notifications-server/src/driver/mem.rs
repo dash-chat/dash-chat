@@ -22,11 +22,7 @@ impl MemDb {
 
 #[async_trait::async_trait]
 impl Driver for MemDb {
-    async fn store_fcm_token(
-        &self,
-        verifying_key: &VerifyingKey,
-        fcm_token: &FcmToken,
-    ) -> Result<()> {
+    async fn store_fcm_token(&self, verifying_key: &VerifyingKey, fcm_token: &FcmToken) -> Result<()> {
         self.tokens
             .lock()
             .await
@@ -34,10 +30,7 @@ impl Driver for MemDb {
         Ok(())
     }
 
-    async fn get_fcm_tokens(
-        &self,
-        verifying_keys: &[VerifyingKey],
-    ) -> Result<HashMap<VerifyingKey, FcmToken>> {
+    async fn get_fcm_tokens(&self, verifying_keys: &[VerifyingKey]) -> Result<HashMap<VerifyingKey, FcmToken>> {
         let tokens = self.tokens.lock().await;
         Ok(verifying_keys
             .iter()
@@ -50,16 +43,10 @@ impl Driver for MemDb {
         Ok(())
     }
 
-    async fn add_topic_subscriptions(
-        &self,
-        verifying_key: &VerifyingKey,
-        topic_ids: &HashSet<TopicId>,
-    ) -> Result<()> {
+    async fn add_topic_subscriptions(&self, verifying_key: &VerifyingKey, topic_ids: &HashSet<TopicId>) -> Result<()> {
         let mut subs = self.subscriptions.lock().await;
         for topic_id in topic_ids {
-            subs.entry(topic_id.clone())
-                .or_default()
-                .insert(verifying_key.clone());
+            subs.entry(topic_id.clone()).or_default().insert(verifying_key.clone());
         }
         Ok(())
     }
@@ -89,10 +76,7 @@ impl Driver for MemDb {
         Ok(topic_ids
             .iter()
             .map(|tid| {
-                let subscribers = subs
-                    .get(tid)
-                    .map(|s| s.iter().cloned().collect())
-                    .unwrap_or_default();
+                let subscribers = subs.get(tid).map(|s| s.iter().cloned().collect()).unwrap_or_default();
                 (tid.clone(), subscribers)
             })
             .collect())
@@ -117,9 +101,7 @@ impl Driver for MemDb {
 
         // Add verifying_key to all new topics
         for topic_id in topic_ids {
-            subs.entry(topic_id.clone())
-                .or_default()
-                .insert(verifying_key.clone());
+            subs.entry(topic_id.clone()).or_default().insert(verifying_key.clone());
         }
 
         Ok(())

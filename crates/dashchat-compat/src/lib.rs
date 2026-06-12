@@ -256,9 +256,6 @@ mod tests {
         // Should fail to deserialize as TestCompat since version "999" is unknown
         // and the map with "v" key won't match BareString either
         let result: Result<TestCompat, _> = decode_cbor(bytes.as_slice());
-        assert!(
-            result.is_err(),
-            "expected error for unknown version, got: {result:?}"
-        );
+        assert!(result.is_err(), "expected error for unknown version, got: {result:?}");
     }
 }

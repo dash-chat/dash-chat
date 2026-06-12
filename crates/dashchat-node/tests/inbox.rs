@@ -47,10 +47,7 @@ async fn test_inbox_2() {
 
     tracing::info!(topic = ?direct_chat_topic.aliased(), "direct chat id");
 
-    alice
-        .send_message(direct_chat_topic, "Hello".into())
-        .await
-        .unwrap();
+    alice.send_message(direct_chat_topic, "Hello".into()).await.unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -83,8 +80,5 @@ async fn test_p2p_inbox_2() {
 
     tracing::info!(topic = ?direct_chat_topic.aliased(), "direct chat id");
 
-    alice
-        .send_message(direct_chat_topic, "Hello".into())
-        .await
-        .unwrap();
+    alice.send_message(direct_chat_topic, "Hello".into()).await.unwrap();
 }

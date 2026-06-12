@@ -38,12 +38,7 @@ pub struct BlobsKey {
 
 impl BlobsKey {
     /// Creates a new BlobsKey with validation
-    pub fn new(
-        topic_id: String,
-        author: String,
-        sequence_number: u64,
-        uuid: Uuid,
-    ) -> Result<Self, BlobsKeyError> {
+    pub fn new(topic_id: String, author: String, sequence_number: u64, uuid: Uuid) -> Result<Self, BlobsKeyError> {
         if topic_id.contains(':') || topic_id.contains('\0') {
             return Err(BlobsKeyError::InvalidTopicId(topic_id));
         }
@@ -59,11 +54,7 @@ impl BlobsKey {
     }
 
     /// Creates a new BlobsKey with a fresh UUID v7 timestamp
-    pub fn new_now(
-        topic_id: String,
-        author: String,
-        sequence_number: u64,
-    ) -> Result<Self, BlobsKeyError> {
+    pub fn new_now(topic_id: String, author: String, sequence_number: u64) -> Result<Self, BlobsKeyError> {
         Self::new(topic_id, author, sequence_number, Uuid::now_v7())
     }
 
@@ -79,12 +70,11 @@ impl BlobsKey {
 
         let topic_id = parts[0].to_string();
         let author = parts[1].to_string();
-        let sequence_number = parts[2].parse::<u64>().map_err(|e| {
-            BlobsKeyError::ParseError(format!("Invalid sequence number '{}': {}", parts[2], e))
-        })?;
-        let uuid = Uuid::parse_str(parts[3]).map_err(|e| {
-            BlobsKeyError::ParseError(format!("Invalid UUID '{}': {}", parts[3], e))
-        })?;
+        let sequence_number = parts[2]
+            .parse::<u64>()
+            .map_err(|e| BlobsKeyError::ParseError(format!("Invalid sequence number '{}': {}", parts[2], e)))?;
+        let uuid = Uuid::parse_str(parts[3])
+            .map_err(|e| BlobsKeyError::ParseError(format!("Invalid UUID '{}': {}", parts[3], e)))?;
 
         Ok(Self {
             topic_id,
@@ -170,8 +160,7 @@ impl Value for BlobsKey {
     where
         Self: 'b,
     {
-        let mut bytes =
-            Vec::with_capacity(value.topic_id.len() + 1 + value.author.len() + 1 + 8 + 16);
+        let mut bytes = Vec::with_capacity(value.topic_id.len() + 1 + value.author.len() + 1 + 8 + 16);
         bytes.extend_from_slice(value.topic_id.as_bytes());
         bytes.push(0);
         bytes.extend_from_slice(value.author.as_bytes());
@@ -345,9 +334,7 @@ mod tests {
 
     #[test]
     fn test_prefix_range_topic() {
-        let prefix = BlobsKeyPrefix::Topic(
-            "d8883c1402ed3c078953620a5bf2afc8fafca9601186e7133ca6b1bf72c35cfb".into(),
-        );
+        let prefix = BlobsKeyPrefix::Topic("d8883c1402ed3c078953620a5bf2afc8fafca9601186e7133ca6b1bf72c35cfb".into());
         let start = prefix.range_start();
         let end = prefix.range_end();
 

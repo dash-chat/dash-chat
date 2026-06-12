@@ -42,10 +42,6 @@ impl GroupStore {
     async fn auth_state(&self) -> anyhow::Result<GroupState> {
         // TODO: use transactions properly!
         let _txn = self.db.begin().await?;
-        Ok(self
-            .db
-            .get_groups_state(&GROUPS_STATE_ID)
-            .await?
-            .unwrap_or_default())
+        Ok(self.db.get_groups_state(&GROUPS_STATE_ID).await?.unwrap_or_default())
     }
 }

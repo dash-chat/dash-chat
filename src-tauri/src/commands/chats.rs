@@ -13,10 +13,7 @@ pub struct GroupMember {
 }
 
 #[tauri::command]
-pub async fn create_group(
-    initial_members: Vec<AgentId>,
-    node: State<'_, Node>,
-) -> Result<ChatId, String> {
+pub async fn create_group(initial_members: Vec<AgentId>, node: State<'_, Node>) -> Result<ChatId, String> {
     let mut members = std::collections::BTreeMap::new();
     for agent_id in initial_members {
         let device_id = node
@@ -33,11 +30,7 @@ pub async fn create_group(
 }
 
 #[tauri::command]
-pub async fn set_group_info(
-    chat_id: ChatId,
-    info: GroupInfo,
-    node: State<'_, Node>,
-) -> Result<(), String> {
+pub async fn set_group_info(chat_id: ChatId, info: GroupInfo, node: State<'_, Node>) -> Result<(), String> {
     node.set_group_info(chat_id, info)
         .await
         .map_err(|e| format!("Failed to set group info: {e:?}"))?;
@@ -45,11 +38,7 @@ pub async fn set_group_info(
 }
 
 #[tauri::command]
-pub async fn add_group_member(
-    chat_id: ChatId,
-    agent_id: AgentId,
-    node: State<'_, Node>,
-) -> Result<(), String> {
+pub async fn add_group_member(chat_id: ChatId, agent_id: AgentId, node: State<'_, Node>) -> Result<(), String> {
     let device_id = node
         .local_store
         .lookup_contact_by_agent_id(agent_id)
@@ -62,11 +51,7 @@ pub async fn add_group_member(
 }
 
 #[tauri::command]
-pub async fn send_message(
-    chat_id: ChatId,
-    content: ChatMessageContent,
-    node: State<'_, Node>,
-) -> Result<(), String> {
+pub async fn send_message(chat_id: ChatId, content: ChatMessageContent, node: State<'_, Node>) -> Result<(), String> {
     node.send_message(chat_id, content)
         .await
         .map_err(|err| format!("{err:?}"))?;
@@ -74,11 +59,7 @@ pub async fn send_message(
 }
 
 #[tauri::command]
-pub async fn send_reaction(
-    chat_id: ChatId,
-    content: ChatReaction,
-    node: State<'_, Node>,
-) -> Result<(), String> {
+pub async fn send_reaction(chat_id: ChatId, content: ChatReaction, node: State<'_, Node>) -> Result<(), String> {
     node.add_reaction(chat_id, content)
         .await
         .map_err(|err| format!("{err:?}"))?;
@@ -104,18 +85,14 @@ pub async fn get_group_chats(node: State<'_, Node>) -> Result<Vec<ChatId>, Strin
 }
 
 #[tauri::command]
-pub async fn get_group_members(
-    chat_id: ChatId,
-    node: State<'_, Node>,
-) -> Result<Vec<GroupMember>, String> {
+pub async fn get_group_members(chat_id: ChatId, node: State<'_, Node>) -> Result<Vec<GroupMember>, String> {
     let members = node
         .get_group_members(chat_id)
         .await
         .map_err(|e| format!("Failed to get group members: {e:?}"))?;
     let my_device_id = node.device_id();
     let my_agent_id = node.agent_id();
-    let mut grouped: std::collections::BTreeMap<AgentId, GroupMember> =
-        std::collections::BTreeMap::new();
+    let mut grouped: std::collections::BTreeMap<AgentId, GroupMember> = std::collections::BTreeMap::new();
     for (device_id, access) in members {
         let agent_id = if device_id == my_device_id {
             my_agent_id
@@ -124,10 +101,7 @@ pub async fn get_group_members(
                 .lookup_contact_by_device_id(device_id)
                 .await
                 .map_err(|e| format!("Failed to lookup contact: {e:?}"))?
-                .unwrap_or_else(|| {
-                    AgentId::from_bytes(device_id.as_bytes())
-                        .expect("DeviceId is a valid 32-byte key")
-                })
+                .unwrap_or_else(|| AgentId::from_bytes(device_id.as_bytes()).expect("DeviceId is a valid 32-byte key"))
         };
         let is_admin = access.level >= AccessLevel::Manage;
         let entry = grouped.entry(agent_id).or_insert_with(|| GroupMember {

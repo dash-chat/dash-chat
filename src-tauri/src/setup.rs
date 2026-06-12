@@ -24,10 +24,8 @@ pub(crate) async fn build_node(
     let node = Node::new(data_path, config, notification_tx, topic_subscribed_tx).await?;
 
     let mailbox_url = crate::mailbox::default_mailbox_url();
-    let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
-        crate::mailbox::PRODUCTION_MAILBOX_ID.to_string(),
-        mailbox_url,
-    );
+    let mailbox_client =
+        mailbox_client::toy::ToyMailboxClient::new(crate::mailbox::PRODUCTION_MAILBOX_ID.to_string(), mailbox_url);
     node.mailboxes.register(mailbox_client).await;
 
     Ok(node)
@@ -46,8 +44,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     let local_data_path = fs.app_data_dir().clone();
 
     let notified_operations_store =
-        crate::notifications::NotifiedOperationsStore::open(&fs.notified_operations_db_path())
-            .await?;
+        crate::notifications::NotifiedOperationsStore::open(&fs.notified_operations_db_path()).await?;
     app_handle.manage(notified_operations_store);
 
     #[cfg(not(mobile))]
@@ -87,10 +84,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     #[cfg(mobile)]
     {
-        crate::notifications::push_notifications::setup_push_notifications(
-            app_handle.clone(),
-            topic_subscribed_rx,
-        )?;
+        crate::notifications::push_notifications::setup_push_notifications(app_handle.clone(), topic_subscribed_rx)?;
     }
 
     crate::mailbox::spawn_local_mailbox_mdns_discovery(&app_handle, node)?;
@@ -121,9 +115,7 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
             // This is the default formatter for desktop, also use it in mobile platforms to record time
             // in the log file, as the logcat timestamp does not get included there
             .format(move |out, message, record| {
-                let format = time::macros::format_description!(
-                    "[[[year]-[month]-[day]][[[hour]:[minute]:[second]]"
-                );
+                let format = time::macros::format_description!("[[[year]-[month]-[day]][[[hour]:[minute]:[second]]");
                 let args = if let (Some(file), Some(line)) = (record.file(), record.line()) {
                     format_args!(
                         "{}[{} {}:{}][{}] {}",

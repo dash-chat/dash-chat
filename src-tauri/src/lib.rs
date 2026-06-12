@@ -46,17 +46,15 @@ pub fn run() {
             builder = builder.plugin(tauri_plugin_mcp_bridge::init());
         } else {
             builder = builder
-                .plugin(tauri_plugin_single_instance::init(
-                    move |app, _argv, _cwd| {
-                        use tauri::Manager;
+                .plugin(tauri_plugin_single_instance::init(move |app, _argv, _cwd| {
+                    use tauri::Manager;
 
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.set_focus();
-                        } else if let Err(err) = tray::show_or_create_main_window(app) {
-                            log::error!("Failed to show/create main window: {err:?}");
-                        }
-                    },
-                ))
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.set_focus();
+                    } else if let Err(err) = tray::show_or_create_main_window(app) {
+                        log::error!("Failed to show/create main window: {err:?}");
+                    }
+                }))
                 .plugin(tauri_plugin_autostart::init(
                     tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                     Some(vec!["--minimized"]),

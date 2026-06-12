@@ -13,9 +13,8 @@ use tokio::sync::{Mutex, mpsc::Receiver};
 use mailbox_client::MailboxClient;
 
 use crate::{
-    AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
-    filesystem::Filesystem, mailbox::MailboxOperation, node::Node, stores::LocalStore,
-    testing::behavior::Behavior, topic::TopicId,
+    AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile, filesystem::Filesystem,
+    mailbox::MailboxOperation, node::Node, stores::LocalStore, testing::behavior::Behavior, topic::TopicId,
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::Debug)]
@@ -37,23 +36,16 @@ impl TestNode {
         let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
 
         let filesystem = Filesystem::new(dir.path().to_path_buf());
-        let local_store = LocalStore::new(filesystem.local_store_path())
-            .await
-            .unwrap();
+        let local_store = LocalStore::new(filesystem.local_store_path()).await.unwrap();
         if config.use_named_id {
             local_store.device_id().await.unwrap().alias_named(name);
             local_store.agent_id().await.unwrap().alias_named(name);
         }
         drop(local_store);
 
-        let node = Node::new(
-            dir.path().into(),
-            config.node_config,
-            Some(notification_tx),
-            None,
-        )
-        .await
-        .unwrap();
+        let node = Node::new(dir.path().into(), config.node_config, Some(notification_tx), None)
+            .await
+            .unwrap();
         if config.create_profile {
             node.set_profile(Profile {
                 name: name.to_string(),
@@ -84,9 +76,7 @@ impl TestNode {
         let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
 
         let filesystem = Filesystem::new(store_dir.path().to_path_buf());
-        let local_store = LocalStore::new(filesystem.local_store_path())
-            .await
-            .unwrap();
+        let local_store = LocalStore::new(filesystem.local_store_path()).await.unwrap();
         local_store.device_id().await.unwrap().alias_named(name);
         local_store.agent_id().await.unwrap().alias_named(name);
         drop(local_store);
@@ -145,9 +135,7 @@ impl TestNode {
             .await?
             .into_iter()
             .filter_map(|(_, payload)| match payload {
-                Some(Payload::DeviceGroup(DeviceGroupPayload::RejectContactRequest(agent_id))) => {
-                    Some(agent_id)
-                }
+                Some(Payload::DeviceGroup(DeviceGroupPayload::RejectContactRequest(agent_id))) => Some(agent_id),
                 _ => None,
             })
             .collect();
@@ -300,10 +288,7 @@ impl PollConfig {
                 }
             }
         }
-        tracing::info!(
-            "=== wait_for_resetting() success after {:?} ===",
-            start.elapsed()
-        );
+        tracing::info!("=== wait_for_resetting() success after {:?} ===", start.elapsed());
         Ok(())
     }
 }
@@ -326,12 +311,9 @@ impl ConsistencyReport {
         for (node, hashes) in hashes.iter() {
             let mut headers = vec![];
             for hash in hashes {
-                let op = OperationStore::<Operation, p2panda::Hash, LogId>::get_operation(
-                    &node.op_store.store,
-                    hash,
-                )
-                .await?
-                .unwrap();
+                let op = OperationStore::<Operation, p2panda::Hash, LogId>::get_operation(&node.op_store.store, hash)
+                    .await?
+                    .unwrap();
                 headers.push((*hash, op.header));
             }
             headers.sort_by_key(|op| Self::op_line(op.clone()));
@@ -343,10 +325,7 @@ impl ConsistencyReport {
     pub fn passes(&self) -> bool {
         let mut digests = HashSet::new();
         for (_, headers) in self.ops.iter() {
-            let hashes = headers
-                .iter()
-                .map(|(hash, _)| hash)
-                .collect::<BTreeSet<_>>();
+            let hashes = headers.iter().map(|(hash, _)| hash).collect::<BTreeSet<_>>();
             digests.insert(hashes);
         }
         digests.len() <= 1
@@ -376,11 +355,12 @@ impl std::fmt::Debug for ConsistencyReport {
 
 impl PartialEq for ConsistencyReport {
     fn eq(&self, other: &Self) -> bool {
-        self.ops.iter().zip(other.ops.iter()).all(
-            |((left_node, left_ops), (right_node, right_ops))| {
+        self.ops
+            .iter()
+            .zip(other.ops.iter())
+            .all(|((left_node, left_ops), (right_node, right_ops))| {
                 left_node.device_id() == right_node.device_id() && left_ops == right_ops
-            },
-        )
+            })
     }
 }
 
@@ -412,11 +392,7 @@ impl<T: std::fmt::Debug> Watcher<T> {
         }
     }
 
-    pub async fn watch_for(
-        &mut self,
-        timeout: tokio::time::Duration,
-        f: impl Fn(&T) -> bool,
-    ) -> anyhow::Result<T> {
+    pub async fn watch_for(&mut self, timeout: tokio::time::Duration, f: impl Fn(&T) -> bool) -> anyhow::Result<T> {
         let timeout = tokio::time::sleep(timeout);
         tokio::pin!(timeout);
 

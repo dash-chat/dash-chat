@@ -178,10 +178,7 @@ mod sqlx_impls {
     }
 
     impl sqlx::Encode<'_, Sqlite> for Profile {
-        fn encode_by_ref(
-            &self,
-            buf: &mut Vec<SqliteArgumentValue<'_>>,
-        ) -> Result<IsNull, BoxDynError> {
+        fn encode_by_ref(&self, buf: &mut Vec<SqliteArgumentValue<'_>>) -> Result<IsNull, BoxDynError> {
             let bytes = encode_cbor(self)?;
             <Vec<u8> as sqlx::Encode<Sqlite>>::encode(bytes, buf)
         }

@@ -67,14 +67,10 @@ async fn main() -> Result<()> {
 
     let addr = &cli.addr;
 
-    tracing::info!(
-        "loading FCM credentials from {}",
-        cli.service_account_key.display()
-    );
+    tracing::info!("loading FCM credentials from {}", cli.service_account_key.display());
 
-    let key_json: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&cli.service_account_key)?)
-            .context("failed to parse service account key JSON")?;
+    let key_json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&cli.service_account_key)?)
+        .context("failed to parse service account key JSON")?;
 
     let project_id = key_json["project_id"]
         .as_str()

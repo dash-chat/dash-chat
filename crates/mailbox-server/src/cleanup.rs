@@ -92,27 +92,21 @@ mod tests {
         let old_time = std::time::SystemTime::now() - Duration::from_secs(8 * 24 * 60 * 60);
         let old_uuid = uuid::Uuid::new_v7(uuid::Timestamp::from_unix(
             uuid::NoContext,
-            old_time
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            old_time.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
             0,
         ));
         let old_key = BlobsKey::new("test-topic".into(), "log-1".into(), 0, old_uuid).unwrap();
 
         // Insert a recent message (1 day ago)
         let recent_uuid = uuid::Uuid::now_v7();
-        let recent_key =
-            BlobsKey::new("test-topic".into(), "log-1".into(), 1, recent_uuid).unwrap();
+        let recent_key = BlobsKey::new("test-topic".into(), "log-1".into(), 1, recent_uuid).unwrap();
 
         {
             let write_txn = db.begin_write().unwrap();
             {
                 let mut table = write_txn.open_table(BLOBS_TABLE).unwrap();
                 table.insert(&old_key, b"old message".as_slice()).unwrap();
-                table
-                    .insert(&recent_key, b"recent message".as_slice())
-                    .unwrap();
+                table.insert(&recent_key, b"recent message".as_slice()).unwrap();
             }
             write_txn.commit().unwrap();
         }

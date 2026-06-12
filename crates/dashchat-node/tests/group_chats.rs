@@ -76,10 +76,7 @@ async fn test_direct_chat() {
     let bobbi_messages = bobbi.get_messages(chat_id).await.unwrap();
 
     assert_eq!(alice_messages, bobbi_messages);
-    assert_eq!(
-        bobbi_messages.first().map(|m| m.content.clone()),
-        Some("Hello".into())
-    );
+    assert_eq!(bobbi_messages.first().map(|m| m.content.clone()), Some("Hello".into()));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -180,26 +177,16 @@ async fn test_group_chat() {
 
     alice.send_message(chat_id, "Hello".into()).await.unwrap();
 
-    bobbi
-        .behavior()
-        .accept_next_group_invitation()
-        .await
-        .unwrap();
+    bobbi.behavior().accept_next_group_invitation().await.unwrap();
 
-    poll.consistency([&alice, &bobbi], &[chat_id.into()])
-        .await
-        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat_id.into()]).await.unwrap();
 
     bobbi
         .add_group_member(chat_id, *cammy.device_id(), p2panda_auth::Access::write())
         .await
         .unwrap();
 
-    cammy
-        .behavior()
-        .accept_next_group_invitation()
-        .await
-        .unwrap();
+    cammy.behavior().accept_next_group_invitation().await.unwrap();
 
     poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
         .await
@@ -255,10 +242,7 @@ async fn test_group_chat() {
 
     assert_eq!(alice_messages, bobbi_messages);
     assert_eq!(alice_messages, cammy_messages);
-    assert_eq!(
-        bobbi_messages.first().map(|m| m.content.clone()),
-        Some("Hello".into())
-    );
+    assert_eq!(bobbi_messages.first().map(|m| m.content.clone()), Some("Hello".into()));
 
     // Ensure that the two members who aren't contacts can see each others' profiles.
 
@@ -272,11 +256,7 @@ async fn test_group_chat() {
     .await
     .unwrap();
 
-    let alice_profile = cammy
-        .local_store
-        .get_profile(alice.agent_id())
-        .await
-        .unwrap();
+    let alice_profile = cammy.local_store.get_profile(alice.agent_id()).await.unwrap();
     assert_eq!(
         alice_profile,
         Some(Profile {
@@ -287,11 +267,7 @@ async fn test_group_chat() {
         })
     );
 
-    let cammy_profile = alice
-        .local_store
-        .get_profile(cammy.agent_id())
-        .await
-        .unwrap();
+    let cammy_profile = alice.local_store.get_profile(cammy.agent_id()).await.unwrap();
     assert_eq!(
         cammy_profile,
         Some(Profile {

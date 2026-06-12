@@ -44,8 +44,7 @@ pub async fn dump_logs(db: &SqliteStore) -> Result<Vec<(DeviceId, LogId, SeqNum)
     let mut result = Vec::new();
 
     for row in rows {
-        let verifying_key =
-            VerifyingKey::from_bytes(&hex::decode(&row.verifying_key)?.try_into().unwrap())?;
+        let verifying_key = VerifyingKey::from_bytes(&hex::decode(&row.verifying_key)?.try_into().unwrap())?;
         let log_id: LogId = p2panda_core::cbor::decode_cbor(&*row.log_id)?;
         let seq_num = row.seq_num.parse::<u64>()?;
         result.push((DeviceId::from(verifying_key), log_id, seq_num));
@@ -83,13 +82,9 @@ pub(super) async fn get_log_heights_by_author(
     let mut log_heights = BTreeMap::new();
 
     for row in rows {
-        let LogHeightRow {
-            verifying_key,
-            seq_num,
-        } = row;
+        let LogHeightRow { verifying_key, seq_num } = row;
 
-        let verifying_key =
-            VerifyingKey::from_bytes(&hex::decode(&verifying_key)?.try_into().unwrap())?;
+        let verifying_key = VerifyingKey::from_bytes(&hex::decode(&verifying_key)?.try_into().unwrap())?;
         log_heights.insert(DeviceId::from(verifying_key), seq_num.parse::<u64>()?);
     }
 
@@ -109,9 +104,7 @@ mod tests {
         let node = TestNode::new(NodeConfig::default(), "test_node").await;
 
         let log_id = LogId::from(Topic::announcements(node.agent_id()));
-        let log_heights = get_log_heights_by_author(&node.op_store.store, &log_id)
-            .await
-            .unwrap();
+        let log_heights = get_log_heights_by_author(&node.op_store.store, &log_id).await.unwrap();
         assert_eq!(log_heights, btreemap! { node.device_id() => 1 });
     }
 }

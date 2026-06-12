@@ -38,28 +38,22 @@ impl NotifiedOperationsStore {
     /// Records that the operation identified by `hash` has had a notification
     /// surfaced. Returns `true` iff this call inserted a new row (caller
     /// should proceed to show); `false` means another path already showed it.
-    pub async fn record_notified_operation(
-        &self,
-        hash: p2panda_core::Hash,
-    ) -> anyhow::Result<bool> {
+    pub async fn record_notified_operation(&self, hash: p2panda_core::Hash) -> anyhow::Result<bool> {
         let now_nanos: i64 = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
-        let result = sqlx::query(
-            "INSERT OR IGNORE INTO notified_operations (hash, notified_at_nanos) VALUES (?, ?)",
-        )
-        .bind(hash.as_bytes().to_vec())
-        .bind(now_nanos)
-        .execute(&self.pool)
-        .await?;
+        let result = sqlx::query("INSERT OR IGNORE INTO notified_operations (hash, notified_at_nanos) VALUES (?, ?)")
+            .bind(hash.as_bytes().to_vec())
+            .bind(now_nanos)
+            .execute(&self.pool)
+            .await?;
         Ok(result.rows_affected() == 1)
     }
 
     #[allow(dead_code)]
     pub async fn has_notified_operation(&self, hash: p2panda_core::Hash) -> anyhow::Result<bool> {
-        let row: Option<(i64,)> =
-            sqlx::query_as("SELECT notified_at_nanos FROM notified_operations WHERE hash = ?")
-                .bind(hash.as_bytes().to_vec())
-                .fetch_optional(&self.pool)
-                .await?;
+        let row: Option<(i64,)> = sqlx::query_as("SELECT notified_at_nanos FROM notified_operations WHERE hash = ?")
+            .bind(hash.as_bytes().to_vec())
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(row.is_some())
     }
 }

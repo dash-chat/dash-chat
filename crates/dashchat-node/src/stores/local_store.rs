@@ -89,11 +89,10 @@ impl LocalStore {
     /// If the database is not initialized, initialize with random keys
     async fn ensure_initialized(&self) -> anyhow::Result<()> {
         let mut tx = self.pool.begin().await?;
-        let existing: Option<(Vec<u8>,)> =
-            sqlx::query_as("SELECT value FROM identity WHERE key = ?")
-                .bind(PRIVATE_KEY_KEY)
-                .fetch_optional(&mut *tx)
-                .await?;
+        let existing: Option<(Vec<u8>,)> = sqlx::query_as("SELECT value FROM identity WHERE key = ?")
+            .bind(PRIVATE_KEY_KEY)
+            .fetch_optional(&mut *tx)
+            .await?;
         if existing.is_none() {
             let private_key = SigningKey::generate();
             let agent_id = AgentId::from(ActorId::from(SigningKey::generate().verifying_key()));
@@ -137,15 +136,11 @@ impl LocalStore {
         Ok(agent_ids)
     }
 
-    pub async fn lookup_contact_by_device_id(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<Option<AgentId>> {
-        let row: Option<(AgentId,)> =
-            sqlx::query_as("SELECT agent_id FROM devices WHERE device_id = ?")
-                .bind(device_id)
-                .fetch_optional(&self.pool)
-                .await?;
+    pub async fn lookup_contact_by_device_id(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
+        let row: Option<(AgentId,)> = sqlx::query_as("SELECT agent_id FROM devices WHERE device_id = ?")
+            .bind(device_id)
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(row.map(|(id,)| id))
     }
 
@@ -153,15 +148,11 @@ impl LocalStore {
     ///
     /// This is temporary, and will not be needed once device gropus are
     /// implemented and [ChatMember] becomes [AgentId].
-    pub async fn lookup_contact_by_agent_id(
-        &self,
-        agent_id: AgentId,
-    ) -> anyhow::Result<Option<DeviceId>> {
-        let row: Option<(DeviceId,)> =
-            sqlx::query_as("SELECT device_id FROM devices WHERE agent_id = ?")
-                .bind(agent_id)
-                .fetch_optional(&self.pool)
-                .await?;
+    pub async fn lookup_contact_by_agent_id(&self, agent_id: AgentId) -> anyhow::Result<Option<DeviceId>> {
+        let row: Option<(DeviceId,)> = sqlx::query_as("SELECT device_id FROM devices WHERE agent_id = ?")
+            .bind(agent_id)
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(row.map(|(id,)| id))
     }
 
@@ -182,8 +173,7 @@ impl LocalStore {
             .take(device_ids.len())
             .collect::<Vec<_>>()
             .join(", ");
-        let sql =
-            format!("SELECT device_id, agent_id FROM devices WHERE device_id IN ({placeholders})");
+        let sql = format!("SELECT device_id, agent_id FROM devices WHERE device_id IN ({placeholders})");
         let mut q = sqlx::query_as::<_, (DeviceId, AgentId)>(&sql);
         for id in device_ids {
             q = q.bind(*id);
@@ -192,15 +182,10 @@ impl LocalStore {
     }
 
     pub async fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
-        self.save_agent_mapping(contact.device_pubkey, contact.agent_id)
-            .await
+        self.save_agent_mapping(contact.device_pubkey, contact.agent_id).await
     }
 
-    pub async fn save_agent_mapping(
-        &self,
-        device_id: DeviceId,
-        agent_id: AgentId,
-    ) -> anyhow::Result<()> {
+    pub async fn save_agent_mapping(&self, device_id: DeviceId, agent_id: AgentId) -> anyhow::Result<()> {
         sqlx::query("INSERT OR IGNORE INTO devices (device_id, agent_id) VALUES (?, ?)")
             .bind(device_id)
             .bind(agent_id)
@@ -214,11 +199,7 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn save_capabilities(
-        &self,
-        device_id: DeviceId,
-        capabilities: Capabilities,
-    ) -> anyhow::Result<()> {
+    pub async fn save_capabilities(&self, device_id: DeviceId, capabilities: Capabilities) -> anyhow::Result<()> {
         sqlx::query("UPDATE devices SET capabilities = ? WHERE device_id = ?")
             .bind(capabilities)
             .bind(device_id)
@@ -236,10 +217,7 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn get_capabilities(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<Option<Capabilities>> {
+    pub async fn get_capabilities(&self, device_id: DeviceId) -> anyhow::Result<Option<Capabilities>> {
         let row: Option<(Option<Capabilities>,)> =
             sqlx::query_as("SELECT capabilities FROM devices WHERE device_id = ?")
                 .bind(device_id)
@@ -249,18 +227,14 @@ impl LocalStore {
     }
 
     pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
-        let row: Option<(Option<Profile>,)> =
-            sqlx::query_as("SELECT profile FROM agents WHERE agent_id = ?")
-                .bind(agent_id)
-                .fetch_optional(&self.pool)
-                .await?;
+        let row: Option<(Option<Profile>,)> = sqlx::query_as("SELECT profile FROM agents WHERE agent_id = ?")
+            .bind(agent_id)
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(row.and_then(|(profile,)| profile))
     }
 
-    pub async fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
-        &self,
-        topic: Topic<K>,
-    ) -> anyhow::Result<()> {
+    pub async fn register_topic_as_subscribed<K: AutoRegisteredTopic>(&self, topic: Topic<K>) -> anyhow::Result<()> {
         sqlx::query("INSERT OR IGNORE INTO subscribed_topics (topic_id) VALUES (?)")
             .bind(topic.to_vec())
             .execute(&self.pool)
@@ -268,10 +242,7 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn register_topic_as_unsubscribed<K: AutoRegisteredTopic>(
-        &self,
-        topic: Topic<K>,
-    ) -> anyhow::Result<()> {
+    pub async fn register_topic_as_unsubscribed<K: AutoRegisteredTopic>(&self, topic: Topic<K>) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM subscribed_topics WHERE topic_id = ?")
             .bind(topic.to_vec())
             .execute(&self.pool)
@@ -308,10 +279,9 @@ impl LocalStore {
     }
 
     pub async fn get_active_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
-        let rows: Vec<(Topic, i64)> =
-            sqlx::query_as("SELECT topic_id, expires_at_nanos FROM active_inboxes")
-                .fetch_all(&self.pool)
-                .await?;
+        let rows: Vec<(Topic, i64)> = sqlx::query_as("SELECT topic_id, expires_at_nanos FROM active_inboxes")
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows
             .into_iter()
             .map(|(topic, nanos)| InboxTopic {
@@ -322,25 +292,16 @@ impl LocalStore {
     }
 
     pub async fn add_active_inbox_topic(&self, inbox_topic: InboxTopic) -> anyhow::Result<()> {
-        let nanos = inbox_topic
-            .expires_at
-            .timestamp_nanos_opt()
-            .unwrap_or(0)
-            .max(0);
-        sqlx::query(
-            "INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos) VALUES (?, ?)",
-        )
-        .bind(inbox_topic.topic.to_vec())
-        .bind(nanos)
-        .execute(&self.pool)
-        .await?;
+        let nanos = inbox_topic.expires_at.timestamp_nanos_opt().unwrap_or(0).max(0);
+        sqlx::query("INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos) VALUES (?, ?)")
+            .bind(inbox_topic.topic.to_vec())
+            .bind(nanos)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    pub async fn prune_expired_active_inbox_topics(
-        &self,
-        expires_at: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
+    pub async fn prune_expired_active_inbox_topics(&self, expires_at: DateTime<Utc>) -> anyhow::Result<()> {
         let nanos = expires_at.timestamp_nanos_opt().unwrap_or(0).max(0);
         sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ?")
             .bind(nanos)
@@ -389,19 +350,13 @@ mod tests {
         let private_key = store.private_key().await.unwrap();
         let agent_id = store.agent_id().await.unwrap();
         store.ensure_initialized().await.unwrap();
-        assert_eq!(
-            store.private_key().await.unwrap().as_bytes(),
-            private_key.as_bytes()
-        );
+        assert_eq!(store.private_key().await.unwrap().as_bytes(), private_key.as_bytes());
         assert_eq!(store.agent_id().await.unwrap(), agent_id);
 
         drop(store);
 
         let store = LocalStore::new(path).await.unwrap();
-        assert_eq!(
-            store.private_key().await.unwrap().as_bytes(),
-            private_key.as_bytes()
-        );
+        assert_eq!(store.private_key().await.unwrap().as_bytes(), private_key.as_bytes());
         assert_eq!(store.agent_id().await.unwrap(), agent_id);
     }
 
@@ -444,10 +399,7 @@ mod tests {
         let loaded_topics = store.get_active_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
 
-        store
-            .prune_expired_active_inbox_topics(more_valid)
-            .await
-            .unwrap();
+        store.prune_expired_active_inbox_topics(more_valid).await.unwrap();
         topics.pop_first().unwrap();
 
         let loaded_topics = store.get_active_inbox_topics().await.unwrap();

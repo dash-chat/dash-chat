@@ -157,13 +157,11 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     }
 
     fn record_success(&self, config: &MailboxesConfig) {
-        self.connection_state
-            .send_modify(|t| t.record_success(config));
+        self.connection_state.send_modify(|t| t.record_success(config));
     }
 
     fn record_error(&self, config: &MailboxesConfig, err: String) {
-        self.connection_state
-            .send_modify(|t| t.record_error(config, err));
+        self.connection_state.send_modify(|t| t.record_error(config, err));
     }
 
     fn reschedule(&self, config: &MailboxesConfig) {
@@ -287,10 +285,7 @@ where
         _ = self.trigger.try_send(Some(id));
     }
 
-    pub async fn subscribe(
-        &self,
-        topic: Item::Topic,
-    ) -> Result<Option<mpsc::Receiver<Item>>, anyhow::Error> {
+    pub async fn subscribe(&self, topic: Item::Topic) -> Result<Option<mpsc::Receiver<Item>>, anyhow::Error> {
         tracing::info!(topic = ?topic, "subscribing to topic");
 
         let mut tt = self.topics.lock().await;
@@ -378,11 +373,7 @@ where
             .unwrap();
 
         let next = tracked.connection_state().borrow().next_poll;
-        let wait = if next <= now {
-            Duration::ZERO
-        } else {
-            next - now
-        };
+        let wait = if next <= now { Duration::ZERO } else { next - now };
 
         Some((id.clone(), wait))
     }
@@ -442,8 +433,7 @@ where
         let mut request = BTreeMap::new();
         let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, u64>> = BTreeMap::new();
         for topic in topics {
-            let heights =
-                BTreeMap::from_iter(self.store.get_log_heights(&topic).await?.into_iter());
+            let heights = BTreeMap::from_iter(self.store.get_log_heights(&topic).await?.into_iter());
             sent_heights.insert(topic, heights.clone());
             request.insert(topic, heights);
         }
@@ -458,11 +448,7 @@ where
             if items.is_empty() && missing.is_empty() {
                 tracing::trace!(topic = ?topic, "Syncing with mailbox: nothing to do");
             } else {
-                tracing::info!(
-                    items = items.len(),
-                    missing = missing.len(),
-                    "fetched operations"
-                );
+                tracing::info!(items = items.len(), missing = missing.len(), "fetched operations");
             }
 
             // Sync watermark inference for authors we sent heights for:
@@ -570,10 +556,7 @@ mod tests {
         async fn publish(&self, _ops: Vec<Msg>) -> Result<(), anyhow::Error> {
             Ok(())
         }
-        async fn fetch(
-            &self,
-            _request: FetchRequest<Msg>,
-        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+        async fn fetch(&self, _request: FetchRequest<Msg>) -> Result<FetchResponse<Msg>, anyhow::Error> {
             self.poll_count.fetch_add(1, Ordering::Relaxed);
             if self.should_fail {
                 Err(anyhow::anyhow!("simulated failure"))
@@ -782,10 +765,7 @@ mod tests {
         tokio::time::advance(Duration::from_secs(3)).await;
 
         let (_found_id, wait) = mgr.find_next_due().await.unwrap();
-        assert_eq!(
-            wait,
-            config.active_interval + delay - Duration::from_secs(3)
-        );
+        assert_eq!(wait, config.active_interval + delay - Duration::from_secs(3));
     }
 
     #[tokio::test(start_paused = true)]
@@ -853,10 +833,7 @@ mod tests {
         }
 
         // Advance past interval + delay
-        tokio::time::advance(
-            config.active_interval + config.between_polls_delay + Duration::from_secs(1),
-        )
-        .await;
+        tokio::time::advance(config.active_interval + config.between_polls_delay + Duration::from_secs(1)).await;
 
         let (_found_id, wait) = mgr.find_next_due().await.unwrap();
         assert_eq!(wait, Duration::ZERO);
@@ -1159,10 +1136,7 @@ mod tests {
         async fn publish(&self, _ops: Vec<Msg>) -> Result<(), anyhow::Error> {
             Ok(())
         }
-        async fn fetch(
-            &self,
-            _request: FetchRequest<Msg>,
-        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+        async fn fetch(&self, _request: FetchRequest<Msg>) -> Result<FetchResponse<Msg>, anyhow::Error> {
             self.poll_count.fetch_add(1, Ordering::Relaxed);
             Err(anyhow::anyhow!("simulated failure"))
         }
@@ -1286,18 +1260,9 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(60)).await;
         tokio::task::yield_now().await;
 
-        let active_polls: Vec<u32> = active_counts
-            .iter()
-            .map(|c| c.load(Ordering::Relaxed))
-            .collect();
-        let degraded_polls: Vec<u32> = degraded_counts
-            .iter()
-            .map(|c| c.load(Ordering::Relaxed))
-            .collect();
-        let stopped_polls: Vec<u32> = stopped_counts
-            .iter()
-            .map(|c| c.load(Ordering::Relaxed))
-            .collect();
+        let active_polls: Vec<u32> = active_counts.iter().map(|c| c.load(Ordering::Relaxed)).collect();
+        let degraded_polls: Vec<u32> = degraded_counts.iter().map(|c| c.load(Ordering::Relaxed)).collect();
+        let stopped_polls: Vec<u32> = stopped_counts.iter().map(|c| c.load(Ordering::Relaxed)).collect();
 
         let avg_active = active_polls.iter().sum::<u32>() as f64 / active_polls.len() as f64;
         let avg_degraded = degraded_polls.iter().sum::<u32>() as f64 / degraded_polls.len() as f64;
@@ -1327,12 +1292,8 @@ mod tests {
         let ratio_active_stopped = avg_active / avg_stopped;
         let ratio_active_degraded = avg_active / avg_degraded;
 
-        eprintln!(
-            "ratio active/stopped:  {ratio_active_stopped:.2}  (expected {expected_active_stopped:.2})"
-        );
-        eprintln!(
-            "ratio active/degraded: {ratio_active_degraded:.2}  (expected {expected_active_degraded:.2})"
-        );
+        eprintln!("ratio active/stopped:  {ratio_active_stopped:.2}  (expected {expected_active_stopped:.2})");
+        eprintln!("ratio active/degraded: {ratio_active_degraded:.2}  (expected {expected_active_degraded:.2})");
 
         let tolerance = 0.3;
         assert!(

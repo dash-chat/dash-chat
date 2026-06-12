@@ -1,6 +1,4 @@
-use mailbox_server::{
-    cleanup_old_messages, BlobsKey, GetBlobsResponse, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE,
-};
+use mailbox_server::{cleanup_old_messages, BlobsKey, GetBlobsResponse, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE};
 use redb::{ReadableDatabase, ReadableTable};
 use std::time::Duration;
 
@@ -23,10 +21,7 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     let old_time = std::time::SystemTime::now() - Duration::from_secs(8 * 24 * 60 * 60);
     let old_uuid = uuid::Uuid::new_v7(uuid::Timestamp::from_unix(
         uuid::NoContext,
-        old_time
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
+        old_time.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
         0,
     ));
 
@@ -39,18 +34,14 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
             // Insert old blobs (seq 0, 1, 2)
             for seq in 0..=2 {
                 let key = BlobsKey::new(topic.into(), author.into(), seq, old_uuid).unwrap();
-                blobs
-                    .insert(&key, format!("old message {}", seq).as_bytes())
-                    .unwrap();
+                blobs.insert(&key, format!("old message {}", seq).as_bytes()).unwrap();
             }
 
             // Insert new blobs (seq 3, 4, 5) with current UUID
             let new_uuid = uuid::Uuid::now_v7();
             for seq in 3..=5 {
                 let key = BlobsKey::new(topic.into(), author.into(), seq, new_uuid).unwrap();
-                blobs
-                    .insert(&key, format!("new message {}", seq).as_bytes())
-                    .unwrap();
+                blobs.insert(&key, format!("new message {}", seq).as_bytes()).unwrap();
             }
 
             // Set watermark to 5 (sequences 0-5 are contiguous)
@@ -130,11 +121,7 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
 
     // Blobs should be empty - client already has up to 5, no new blobs to send
     assert!(
-        topic_response.blobs.is_empty()
-            || topic_response
-                .blobs
-                .get("author-1")
-                .map_or(true, |b| b.is_empty()),
+        topic_response.blobs.is_empty() || topic_response.blobs.get("author-1").map_or(true, |b| b.is_empty()),
         "No blobs should be returned - client already has everything. Got: {:?}",
         topic_response.blobs
     );
