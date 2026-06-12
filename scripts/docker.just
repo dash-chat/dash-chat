@@ -12,3 +12,7 @@ build server:
     set -euo pipefail
     script=$(nix build .#{{server}}-docker --print-out-paths --no-link)
     "$script" | docker load
+
+# push a server image to the github container registry (requires docker login ghcr.io) (e.g. just docker push mailbox-server 0.18.6)
+push server version:
+    docker push ghcr.io/dash-chat/{{server}}:{{version}}
