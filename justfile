@@ -1,3 +1,5 @@
+set dotenv-filename := x'.env.${ENV:-development}'
+
 # start two dash chat instances connected to a local mailbox server
 mod dev 'scripts/dev.just'
 
@@ -20,16 +22,16 @@ mod droplet 'scripts/droplet.just'
 mod docker 'scripts/docker.just'
 
 # build dash chat as a binary
-build env='production':
-    MAILBOX_URL=https://mailbox.{{env}}.darksoil.studio PUSH_NOTIFICATIONS_SERVER_URL=https://push-notifications.{{env}}.darksoil.studio pnpm tauri build --no-bundle
+build:
+    pnpm tauri build --no-bundle
 
 # build dash chat as an installer (AppImage on linux)
 bundle:
     pnpm tauri build
 
 # cut a new release (e.g. just release 0.11.0)
-release version env='':
-    ./scripts/release.sh {{version}} {{env}}
+release version:
+    ./scripts/release.sh {{version}}
 
 # format both UI and rust files
 format:

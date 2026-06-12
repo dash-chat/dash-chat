@@ -2,29 +2,27 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 <version> [staging]"
+  echo "Usage: ENV=[staging|production] $0 <version>"
   echo ""
   echo "  version   Semver version string (e.g. 0.11.0). The 'v' prefix is added automatically for the git tag."
-  echo "  staging   Optional. Tag as v{version}-staging and skip the public site update."
   echo ""
   echo "Example: $0 0.11.0"
-  echo "Example: $0 0.11.0 staging"
+  echo "Example: ENV=staging $0 0.11.0"
   exit 1
 }
 
-if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+if [ $# -ne 1 ]; then
   usage
 fi
 
 VERSION="$1"
-ENV="${2:-}"
-if [ "$ENV" = "staging" ]; then
+if [ "${ENV:-}" = "staging" ]; then
   TAG="v${VERSION}-staging"
-elif [ -n "$ENV" ]; then
-  echo "Error: Unknown environment '$ENV'. Only 'staging' is supported."
-  exit 1
-else
+elif [ -z "${ENV:-}" ] || [ "$ENV" = "production" ]; then
   TAG="v${VERSION}"
+else
+  echo "Error: Unknown environment '$ENV'. Only 'staging' or 'production' are supported."
+  exit 1
 fi
 
 # Validate semver format (basic check)
