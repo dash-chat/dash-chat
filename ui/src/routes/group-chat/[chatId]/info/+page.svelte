@@ -86,7 +86,7 @@
 
 	async function handleLeaveGroup() {
 		try {
-			await groupChatStore.client.leaveGroup();
+			await groupChatStore.client.leaveGroup(chatId);
 			goto('/');
 			dialogType = null;
 			return { success: true as const };

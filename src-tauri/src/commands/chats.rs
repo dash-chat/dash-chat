@@ -140,3 +140,11 @@ pub async fn get_group_members(
     }
     Ok(grouped.into_values().collect())
 }
+
+#[tauri::command]
+pub async fn leave_group(chat_id: ChatId, node: State<'_, Node>) -> Result<(), String> {
+    let my_device_id = node.device_id();
+    node.remove_group_member(chat_id, *my_device_id)
+        .await
+        .map_err(|e| format!("Failed to leave group: {e:?}"))
+}
