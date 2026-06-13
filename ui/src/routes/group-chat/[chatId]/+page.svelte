@@ -11,7 +11,14 @@
 		Hash,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
-	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
+	import {
+		Navbar,
+		NavbarBackLink,
+		Link,
+		Sheet,
+		Block,
+		useTheme,
+	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -23,6 +30,7 @@
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import MessageInput from '$lib/components/MessageInput.svelte';
+	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import MediaDropOverlay from '$lib/components/MediaDropOverlay.svelte';
 	import { stageFiles } from '$lib/utils/stage-files';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
@@ -61,6 +69,7 @@
 
 	let messageText = $state('');
 	let messageMedia: DraftMedia | undefined = $state(undefined);
+	let showEmojiPicker = $state(false);
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
 	let reverseScrollPage: ReturnType<typeof ReverseScrollPage> | undefined =
@@ -358,6 +367,24 @@
 			media={messageMedia}
 			onSend={sendMessage}
 			onMediaChange={media => (messageMedia = media)}
+			onEmojiClick={() => (showEmojiPicker = true)}
 		/>
+		<Sheet
+			class="pb-safe text-lg"
+			opened={showEmojiPicker}
+			onBackdropClick={() => (showEmojiPicker = false)}
+		>
+			<div class="flex flex-col items-center">
+				<div class="sheet-handle"></div>
+			</div>
+			<Block>
+				<EmojiPickerWrapper
+					onEmojiSelected={emoji => {
+						messageText += emoji;
+						showEmojiPicker = false;
+					}}
+				/>
+			</Block>
+		</Sheet>
 	</div>
 </div>

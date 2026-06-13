@@ -123,11 +123,7 @@
 	ontouchstart={keepKeyboardOpen}
 	onpointerdown={keepKeyboardOpen}
 >
-	<div
-		class="message-input-bar m-2 pb-safe"
-		class:bg-md-light-surface={theme === 'material'}
-		class:dark:bg-md-dark-surface={theme === 'material'}
-	>
+	<div class="message-input-bar m-2 pb-safe">
 		<input
 			type="file"
 			accept={PHOTO_ACCEPT}
@@ -156,6 +152,36 @@
 		{/if}
 
 		<div class="row gap-2" style="align-items: flex-end; margin: 0 auto">
+			{#if onEmojiClick && !isIos}
+				<button
+					type="button"
+					class="icon-button emoji-btn"
+					onclick={onEmojiClick}
+					aria-label="Emoji"
+					data-testid="message-input-emoji"
+				>
+					<wa-icon src={wrapPathInSvg(mdiEmoticonHappyOutline)}></wa-icon>
+				</button>
+			{/if}
+
+			<div
+				class={theme === 'ios'
+					? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+					: 'input-container bg-gray-100 dark:bg-gray-800'}
+			>
+				<textarea
+					class="message-textarea"
+					data-testid="message-input-textarea"
+					{placeholder}
+					bind:value
+					bind:this={textarea}
+					rows="1"
+					onkeydown={handleKeydown}
+					oninput={handleInput}
+					onpaste={onPaste}
+				></textarea>
+			</div>
+
 			<div class="attach-wrapper">
 				<button
 					type="button"
@@ -207,40 +233,6 @@
 				{/if}
 			</div>
 
-			<div
-				class={theme === 'ios'
-					? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-					: 'input-container bg-white dark:bg-gray-800'}
-				style="padding-left: 8px"
-			>
-				{#if onEmojiClick && !isIos}
-					<button
-						type="button"
-						class="icon-button emoji-btn"
-						onclick={onEmojiClick}
-						aria-label="Emoji"
-						data-testid="message-input-emoji"
-					>
-						<wa-icon
-							style="font-size: 26px"
-							src={wrapPathInSvg(mdiEmoticonHappyOutline)}
-						></wa-icon>
-					</button>
-				{/if}
-
-				<textarea
-					class="message-textarea"
-					data-testid="message-input-textarea"
-					{placeholder}
-					bind:value
-					bind:this={textarea}
-					rows="1"
-					onkeydown={handleKeydown}
-					oninput={handleInput}
-					onpaste={onPaste}
-				></textarea>
-			</div>
-
 			{#if isMobile}
 				<button
 					type="button"
@@ -277,8 +269,8 @@
 
 	.icon-button {
 		flex-shrink: 0;
-		width: 28px;
-		height: 28px;
+		width: 34px;
+		height: 34px;
 		border: none;
 		background: transparent;
 		border-radius: 50%;
@@ -287,14 +279,10 @@
 		justify-content: center;
 		cursor: pointer;
 		color: var(--k-text-color);
-		opacity: 0.5;
-		transition:
-			opacity 0.15s ease,
-			background-color 0.15s ease;
+		transition: background-color 0.15s ease;
 	}
 
 	.icon-button:hover {
-		opacity: 0.8;
 		background: rgba(128, 128, 128, 0.1);
 	}
 
@@ -312,7 +300,7 @@
 		color: var(--k-text-color);
 		font-family: inherit;
 		min-height: 28px;
-		padding: 8px;
+		padding: 8px 12px;
 		max-height: 100px;
 		overflow-y: auto;
 	}
@@ -361,30 +349,27 @@
 	}
 
 	/* Icon sizing */
-	.icon-button :global(wa-icon),
-	.send-button :global(wa-icon) {
-		width: 22px;
-		height: 22px;
+	.icon-button :global(wa-icon) {
+		width: 20px;
+		height: 20px;
 	}
 
 	.send-button :global(wa-icon) {
+		width: 22px;
+		height: 22px;
 		margin-inline-start: 2px; /* Optical centering for send arrow */
+	}
+
+	/* Emoji + attach buttons hug the bottom as the textarea grows. */
+	.emoji-btn,
+	.attach-wrapper {
+		align-self: flex-end;
+		margin-bottom: 4px;
 	}
 
 	/* Attach button + popover */
 	.attach-wrapper {
 		position: relative;
-		align-self: flex-end;
-		margin-bottom: 4px;
-	}
-
-	.attach-button {
-		width: 40px;
-		height: 40px;
-		opacity: 0.6;
-	}
-	.attach-button:hover {
-		opacity: 0.85;
 	}
 
 	.attach-scrim {
@@ -396,9 +381,9 @@
 	.attach-menu {
 		position: absolute;
 		bottom: calc(100% + 8px);
-		inset-inline-start: 0;
+		inset-inline-end: 0;
 		z-index: 20;
-		min-width: 200px;
+		min-width: 180px;
 		border-radius: 14px;
 		padding: 6px 0;
 		background: var(--k-bars-bg-color, white);
@@ -412,13 +397,13 @@
 	.attach-menu-item {
 		display: flex;
 		align-items: center;
-		gap: 12px;
+		gap: 10px;
 		width: 100%;
-		padding: 10px 16px;
+		padding: 8px 14px;
 		border: none;
 		background: transparent;
 		cursor: pointer;
-		font-size: 15px;
+		font-size: 14px;
 		color: var(--k-text-color);
 		transition: background-color 0.1s ease;
 	}
@@ -428,8 +413,8 @@
 	}
 
 	.attach-menu-item :global(wa-icon) {
-		width: 22px;
-		height: 22px;
+		width: 18px;
+		height: 18px;
 		opacity: 0.75;
 	}
 </style>
