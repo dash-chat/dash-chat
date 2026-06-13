@@ -81,6 +81,35 @@ export class DirectChatPage extends TestPage {
 		}, tid('message-status'));
 	}
 
+	/**
+	 * Inspect how the bubble text containing `text` is rendered: its computed
+	 * `white-space` and how many line boxes it occupies. Used to assert that
+	 * embedded newlines (Shift+Enter) are preserved rather than collapsed.
+	 */
+	renderedMessageLineInfo(
+		text: string,
+	): Promise<{ whiteSpace: string; lineBoxes: number } | null> {
+		return this.agent.execute(
+			(sel: string, t: string) => {
+				const container = document.querySelector(sel);
+				if (!container) return null;
+				const spans = Array.from(
+					container.querySelectorAll<HTMLElement>('span.flex-1'),
+				);
+				const span = spans.find(s => (s.textContent ?? '').includes(t));
+				if (!span) return null;
+				const range = document.createRange();
+				range.selectNodeContents(span);
+				return {
+					whiteSpace: getComputedStyle(span).whiteSpace,
+					lineBoxes: range.getClientRects().length,
+				};
+			},
+			tid('direct-chat-messages'),
+			text,
+		);
+	}
+
 	scrollBottomButtonVisible(): Promise<boolean> {
 		return this.scrollBottom.isExisting();
 	}

@@ -32,4 +32,14 @@ describe('Full messaging flow', () => {
 		await agent2.directChatPage.waitForMessage('Hello from Bob!');
 		await agent1.directChatPage.waitForMessage('Hello from Bob!');
 	});
+
+	it('preserves line breaks in a multi-line message', async () => {
+		await agent1.directChatPage.sendMessage('first line\nsecond line');
+		await agent1.directChatPage.waitForMessage('second line');
+		const info =
+			await agent1.directChatPage.renderedMessageLineInfo('first line');
+		expect(info).not.toBe(null);
+		expect(info!.whiteSpace).toBe('pre-wrap');
+		expect(info!.lineBoxes).toBeGreaterThanOrEqual(2);
+	});
 });

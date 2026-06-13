@@ -72,7 +72,7 @@
 	{/if}
 	{#if message.content.message || isLast}
 		<div class="row gap-2 mx-1" style="align-items: end">
-			<span class="flex-1">
+			<span class="flex-1 whitespace-pre-wrap">
 				{#if searchQuery}
 					{@html highlightMatch(message.content.message, searchQuery)}
 				{:else}
