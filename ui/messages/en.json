@@ -138,6 +138,7 @@
 	"contactRequestAccepted": "{{name}} has accepted your contact request",
 	"contactRequestAcceptedNoName": "Your contact request was accepted",
 	"typeMessage": "Type a message...",
+	"readMore": "Read more",
 	"attachPhotos": "Photos",
 	"attachFile": "File",
 	"attachMenu": "Attach",

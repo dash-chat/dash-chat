@@ -31,6 +31,7 @@ export class DirectChatPage extends TestPage {
 	messageStatus = this.agent.$(tid('message-status'));
 	sendButton = this.agent.$(tid('message-input-send'));
 	mediaPreview = this.agent.$(tid('message-input-media-preview'));
+	readMore = this.agent.$(tid('message-read-more'));
 	composer = new Composer(this.agent);
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
@@ -105,6 +106,16 @@ export class DirectChatPage extends TestPage {
 					lineBoxes: range.getClientRects().length,
 				};
 			},
+			tid('direct-chat-messages'),
+			text,
+		);
+	}
+
+	/** Whether the rendered message area currently contains `text`. */
+	messageAreaContains(text: string): Promise<boolean> {
+		return this.agent.execute(
+			(sel: string, t: string) =>
+				document.querySelector(sel)?.textContent?.includes(t) ?? false,
 			tid('direct-chat-messages'),
 			text,
 		);
