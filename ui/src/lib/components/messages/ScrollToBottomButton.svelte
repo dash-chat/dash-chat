@@ -45,7 +45,11 @@
 	data-testid="chat-scroll-bottom"
 >
 	{#if unreadCount > 0}
-		<Badge class="absolute -top-1 -end-1" data-testid="chat-unread-badge">
+		<Badge
+			class="absolute -top-1 -end-1"
+			colors={{ bg: 'bg-brand-iris' }}
+			data-testid="chat-unread-badge"
+		>
 			{unreadCount > 99 ? '99+' : unreadCount}
 		</Badge>
 	{/if}

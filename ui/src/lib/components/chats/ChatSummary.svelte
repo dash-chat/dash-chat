@@ -83,7 +83,7 @@
 				{/if}
 			</span>
 			{#if summary.unreadMessages !== 0}
-				<Badge>{summary.unreadMessages}</Badge>
+				<Badge colors={{ bg: 'bg-brand-iris' }}>{summary.unreadMessages}</Badge>
 			{/if}
 		</div>
 	{/snippet}

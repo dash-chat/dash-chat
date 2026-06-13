@@ -19,10 +19,19 @@
 </script>
 
 <div class="flex flex-col relative h-full">
-	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
+	<Navbar
+		title={m.chats()}
+		titleClass="opacity1 !text-[17px] !font-bold"
+		transparent={true}
+	>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
-				<Link iconOnly href="/settings" data-testid="home-settings-link">
+				<Link
+					iconOnly
+					href="/settings"
+					class="rounded-full hover:bg-black/[.06] dark:hover:bg-white/10 [--k-touch-ripple-color:transparent]"
+					data-testid="home-settings-link"
+				>
 					<Avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
@@ -35,6 +44,7 @@
 		{#snippet right()}
 			<Link
 				iconOnly
+				class="rounded-full hover:bg-black/[.06] dark:hover:bg-white/10 [--k-touch-ripple-color:transparent]"
 				onClick={() => {
 					pushState('', { sidebarPanel: 'new-message' });
 				}}
