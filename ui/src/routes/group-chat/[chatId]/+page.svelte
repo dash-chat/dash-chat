@@ -170,6 +170,9 @@
 </script>
 
 <div class="absolute inset-0" data-testid="group-chat-page">
+	<MediaDropOverlay
+		onFiles={files => (messageMedia = stageFiles(messageMedia, files))}
+	/>
 	<ReverseScrollPage
 		bind:this={reverseScrollPage}
 		bind:isAtBottom
@@ -359,9 +362,6 @@
 		class:bg-md-light-surface={theme === 'material'}
 		class:dark:bg-md-dark-surface={theme === 'material'}
 	>
-		<MediaDropOverlay
-			onFiles={files => (messageMedia = stageFiles(messageMedia, files))}
-		/>
 		<MessageInput
 			bind:value={messageText}
 			media={messageMedia}

@@ -401,6 +401,9 @@
 	class="absolute inset-0"
 	data-testid="direct-chat-page"
 >
+	<MediaDropOverlay
+		onFiles={files => (messageMedia = stageFiles(messageMedia, files))}
+	/>
 	{#await $myDeviceId then myDeviceId}
 		{#await $peerProfile then profile}
 			{#await $contactRequest then contactRequest}
@@ -909,10 +912,6 @@
 							</div>
 						</div>
 					{:else}
-						<MediaDropOverlay
-							onFiles={files =>
-								(messageMedia = stageFiles(messageMedia, files))}
-						/>
 						<MessageInput
 							bind:value={messageText}
 							media={messageMedia}

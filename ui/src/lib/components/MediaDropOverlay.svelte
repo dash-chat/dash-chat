@@ -133,7 +133,7 @@
 
 <style>
 	.drop-overlay {
-		position: fixed;
+		position: absolute;
 		inset: 0;
 		z-index: 30;
 		background: rgba(0, 0, 0, 0.4);
