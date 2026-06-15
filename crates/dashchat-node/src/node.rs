@@ -103,6 +103,21 @@ impl Default for NodeConfig {
 pub type DashResolver = StrongRemove<VerifyingKey, Hash, Operation, ()>;
 
 #[derive(Clone)]
+pub struct BlobSync {
+    pub blobs: iroh_blobs::BlobsProtocol,
+}
+
+impl BlobSync {
+    pub async fn new(endpoint: p2panda::Endpoint, root: PathBuf) -> Result<Self> {
+        let store = iroh_blobs::store::fs::FsStore::load(root).await?;
+        let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        endpoint.accept(iroh_blobs::ALPN, blobs.clone()).await?;
+
+        Ok(Self { blobs })
+    }
+}
+
+#[derive(Clone)]
 pub struct Node {
     pub op_store: OpStore,
 
@@ -127,6 +142,7 @@ pub struct Node {
     node_keys: NodeKeys,
 
     filesystem: Filesystem,
+    blob_sync: BlobSync,
 }
 
 impl Node {
@@ -177,6 +193,7 @@ impl Node {
         // @TODO: the store() method is behind the "test_utils" feature flag, if we actually do
         // need access to the store then we should make this method public.
         let store = p2panda_node.store();
+        let endpoint = p2panda_node.endpoint();
 
         // Spawn node actor.
         let (node_actor, events_rx) = Actor::new(p2panda_node);
@@ -189,6 +206,10 @@ impl Node {
         // p2panda or finding alternative routes to achieve the same queries.
         let group_store = GroupStore::new(store.clone());
         let op_store = OpStore::from_sqlite(store.clone());
+
+        // === blob sync === //
+
+        let blob_sync = BlobSync::new(endpoint, filesystem.blobs_store_path()).await?;
 
         // === mailboxes === //
 
@@ -223,6 +244,7 @@ impl Node {
             processor_cancel_tx,
             processor_handle: Default::default(),
             registered_bootstraps: Default::default(),
+            blob_sync,
         };
 
         // === application processor task === //

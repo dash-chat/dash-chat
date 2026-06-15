@@ -25,6 +25,10 @@ impl Filesystem {
         self.0.join("opstore.db")
     }
 
+    pub fn blobs_store_path(&self) -> PathBuf {
+        self.0.join("iroh-blobs")
+    }
+
     pub fn mailbox_sync_tracker_path(&self) -> PathBuf {
         self.0.join("mailbox_tracker.db")
     }
