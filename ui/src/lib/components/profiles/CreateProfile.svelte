@@ -95,19 +95,17 @@
 
 <Page>
 	{#if showPicker}
-		<div class="column" style="flex: 1; overflow-y: auto">
-			<AvatarPicker
-				bind:avatar={pickerAvatar}
-				bind:inModalState={textEditorOpen}
-				{name}
-				{surname}
-				colorSeed={$myAgentId}
-				onClose={closePicker}
-				onSave={selectAvatar}
-				saveLabel={m.save()}
-				saveDisabled={!pickerHasChanges}
-			/>
-		</div>
+		<AvatarPicker
+			bind:avatar={pickerAvatar}
+			bind:inModalState={textEditorOpen}
+			{name}
+			{surname}
+			colorSeed={$myAgentId}
+			onClose={closePicker}
+			onSave={selectAvatar}
+			saveLabel={m.save()}
+			saveDisabled={!pickerHasChanges}
+		/>
 
 		{#if !textEditorOpen && !isIos}
 			<Button
@@ -155,7 +153,7 @@
 							name={joinName(name, surname)}
 							colorSeed={$myAgentId}
 							alt="Avatar"
-							style="--size: {avatarSize}px"
+							size={avatarSize}
 						/>
 					{:else}
 						<Button

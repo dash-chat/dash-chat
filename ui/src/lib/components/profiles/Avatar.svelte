@@ -17,6 +17,7 @@
 		name,
 		colorSeed,
 		alt,
+		size,
 		style,
 		id,
 		children,
@@ -26,6 +27,7 @@
 		name?: string | undefined;
 		colorSeed?: string | undefined;
 		alt?: string | undefined;
+		size?: number | string | undefined;
 		style?: string | undefined;
 		id?: string | undefined;
 		children?: Snippet | undefined;
@@ -34,6 +36,7 @@
 	const avatarImage = $derived(
 		image?.startsWith('data:image') ? image : undefined,
 	);
+
 	// A profile with no avatar gets a virtual text avatar, like Signal: its
 	// initials on a stable color from the text-avatar palette. Never
 	// serialized, so initials the stored format rejects still render.
@@ -52,13 +55,29 @@
 		}
 		return TextAvatarData.deserialize(image);
 	});
+
+	const sizeValue = $derived(
+		size !== undefined
+			? typeof size === 'number'
+				? `${size}px`
+				: size
+			: undefined,
+	);
+	const baseStyle = $derived(
+		sizeValue !== undefined
+			? style
+				? `--size: ${sizeValue}; ${style}`
+				: `--size: ${sizeValue};`
+			: style,
+	);
+
 	const avatarStyle = $derived.by(() => {
 		if (!textAvatarData) {
-			return style;
+			return baseStyle;
 		}
 
 		const textAvatarStyle = `background-color: ${textAvatarData.sanitizedHexColor()}; color: ${TEXT_AVATAR_TEXT_COLOR};`;
-		return style ? `${style}; ${textAvatarStyle}` : textAvatarStyle;
+		return baseStyle ? `${baseStyle}; ${textAvatarStyle}` : textAvatarStyle;
 	});
 </script>
 

@@ -5,7 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button, Page, Preloader } from 'konsta/svelte';
+	import { Button, Page } from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos } from '$lib/utils/environment';
 	import AvatarPicker from '$lib/components/profiles/AvatarPicker.svelte';
@@ -16,22 +16,22 @@
 	let surname = $state<string | undefined>(undefined);
 	let about = $state<string | undefined>(undefined);
 
-	const myProfile = useReactivePromise(contactsStore.myProfile);
 	const myAgentId = useReactiveValue(contactsStore.myAgentId);
+	const myProfile = useReactiveValue(contactsStore.myProfile);
+
 	let originalAvatar = $state<string | undefined>(undefined);
 
 	let initialized = false;
 	$effect(() => {
-		$myProfile.then(profile => {
-			if (!initialized) {
-				initialized = true;
-				name = profile?.name || '';
-				originalAvatar = profile?.avatar;
-				avatar = profile?.avatar;
-				surname = profile?.surname;
-				about = profile?.about;
-			}
-		});
+		const profile = $myProfile;
+		if (profile && !initialized) {
+			initialized = true;
+			name = profile.name || '';
+			originalAvatar = profile.avatar;
+			avatar = profile.avatar;
+			surname = profile.surname;
+			about = profile.about;
+		}
 	});
 
 	async function save() {
@@ -61,40 +61,29 @@
 </script>
 
 <Page>
-	{#await $myProfile}
-		<div
-			class="column"
-			style="height: 100%; align-items: center; justify-content: center"
-		>
-			<Preloader />
-		</div>
-	{:then myProfile}
-		<div class="column" style="flex: 1; overflow-y: auto;">
-			<AvatarPicker
-				bind:avatar
-				bind:inModalState
+	<AvatarPicker
+		loading={$myProfile === undefined}
+		bind:avatar
+		bind:inModalState
 				{name}
 				{surname}
 				colorSeed={$myAgentId}
-				onClose={() => goto('/settings/profile')}
-				onSave={save}
-				saveLabel={m.save()}
-				saveDisabled={!hasChanges}
-			/>
-		</div>
+		onClose={() => goto('/settings/profile')}
+		onSave={save}
+		saveLabel={m.save()}
+		saveDisabled={!hasChanges}
+	/>
 
-		{#if !inModalState && !isIos}
-			<!-- Save button -->
-			<Button
-				rounded
-				tonal
-				disabled={!hasChanges}
-				onClick={save}
-				class="fixed-action-btn"
-				data-testid="edit-photo-save-btn"
-			>
-				{m.save()}
-			</Button>
-		{/if}
-	{/await}
+	{#if !inModalState && !isIos}
+		<Button
+			rounded
+			tonal
+			disabled={!hasChanges}
+			onClick={save}
+			class="fixed-action-btn"
+			data-testid="edit-photo-save-btn"
+		>
+			{m.save()}
+		</Button>
+	{/if}
 </Page>

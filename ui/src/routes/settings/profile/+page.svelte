@@ -10,7 +10,6 @@
 	import { fullName } from 'dash-chat-stores';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
-		Button,
 		List,
 		ListItem,
 		Navbar,
@@ -19,7 +18,7 @@
 		Preloader,
 		useTheme,
 	} from 'konsta/svelte';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import EditableAvatar from '$lib/components/profiles/EditableAvatar.svelte';
 	import TitleTruncatedListItem from '$lib/components/TitleTruncatedListItem.svelte';
 
 	const theme = $derived(useTheme());
@@ -51,23 +50,13 @@
 	{:then myProfile}
 		<div class="column" style="flex: 1">
 			<div class="column center-in-desktop">
-				<div class="column mt-2 mb-4 gap-2" style="align-items: center">
-					<Avatar
-						image={myProfile?.avatar}
-						name={myProfile && fullName(myProfile)}
-						colorSeed={$myAgentId}
-						style="--size: 100px;"
-					/>
-
-					<Button
-						tonal
-						style="width: auto"
-						rounded
-						small
-						onClick={() => goto('/settings/profile/edit-photo')}
-						data-testid="profile-edit-photo">{m.editPhoto()}</Button
-					>
-				</div>
+				<EditableAvatar
+					image={myProfile?.avatar}
+					name={myProfile && fullName(myProfile)}
+					colorSeed={$myAgentId}
+					onEdit={() => goto('/settings/profile/edit-photo')}
+					class="mt-2 mb-4"
+				/>
 
 				<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
 					<TitleTruncatedListItem

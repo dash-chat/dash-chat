@@ -52,9 +52,13 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     #[cfg(not(mobile))]
     {
-        app_handle.set_menu(crate::menu::build_menu(&app_handle)?)?;
+        app_handle.on_menu_event(crate::menu::handle_menu_event);
+        crate::menu::install_menu(&app_handle)?;
         app_handle.manage(crate::mailbox::server::LocalMailboxMutex::default());
         crate::tray::setup_tray(&app_handle)?;
+
+        #[cfg(target_os = "macos")]
+        crate::macos::install_termination_guard();
 
         // Hide the main window when launched with --minimized (autostart)
         if std::env::args().any(|a| a == "--minimized") {
@@ -120,16 +124,32 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
                 let format = time::macros::format_description!(
                     "[[[year]-[month]-[day]][[[hour]:[minute]:[second]]"
                 );
-                out.finish(format_args!(
-                    "{}[{}][{}] {}",
-                    tauri_plugin_log::TimezoneStrategy::UseUtc
-                        .get_now()
-                        .format(&format)
-                        .unwrap(),
-                    record.target(),
-                    record.level(),
-                    message
-                ))
+                let args = if let (Some(file), Some(line)) = (record.file(), record.line()) {
+                    format_args!(
+                        "{}[{} {}:{}][{}] {}",
+                        tauri_plugin_log::TimezoneStrategy::UseUtc
+                            .get_now()
+                            .format(&format)
+                            .unwrap(),
+                        record.target(),
+                        file.to_string(),
+                        line.to_string(),
+                        record.level(),
+                        message
+                    )
+                } else {
+                    format_args!(
+                        "{}[{}][{}] {}",
+                        tauri_plugin_log::TimezoneStrategy::UseUtc
+                            .get_now()
+                            .format(&format)
+                            .unwrap(),
+                        record.target(),
+                        record.level(),
+                        message
+                    )
+                };
+                out.finish(args)
             })
             .clear_targets()
             .max_file_size(5 * 1024 * 1024)

@@ -161,7 +161,7 @@
 								image={info.image}
 								name={info.name}
 								colorSeed={chatId}
-								style="--size: 2.5rem"
+								size="2.5rem"
 							/>
 							<span>{info.name}</span>
 						</Link>
@@ -187,7 +187,7 @@
 									image={info.image}
 									name={info.name}
 									colorSeed={chatId}
-									style="--size: 80px"
+									size={80}
 								/>
 								<span
 									class="text-2xl font-semibold break-words text-center"
@@ -269,7 +269,7 @@
 															image={author?.profile?.avatar}
 															name={author?.profile && fullName(author.profile)}
 															colorSeed={author?.agentId}
-															style="--size: 2rem"
+															size="2rem"
 														/>
 													{:else}
 														<div class="shrink-0" style="width: 2rem"></div>

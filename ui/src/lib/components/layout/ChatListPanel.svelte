@@ -28,7 +28,7 @@
 						image={myProfile?.avatar}
 						name={myProfile && fullName(myProfile)}
 						colorSeed={$myAgentId}
-						style="--size: 42px"
+						size={42}
 					/>
 				</Link>
 			{/await}

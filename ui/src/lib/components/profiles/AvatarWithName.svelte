@@ -15,7 +15,7 @@
 			image={profile.avatar}
 			name={fullName(profile)}
 			{colorSeed}
-			style="--size: 2.5rem"
+			size="2.5rem"
 		/>
 	</span>
 	<span class="flex-1 min-w-0 truncate" data-testid={nameTestId}

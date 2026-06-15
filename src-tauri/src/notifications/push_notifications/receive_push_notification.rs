@@ -7,8 +7,6 @@ use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
 use p2panda::operation::LogId;
-#[cfg(target_os = "android")]
-use tauri::Manager;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
@@ -23,44 +21,37 @@ static ANDROID_LOGS_ONCE: std::sync::Once = std::sync::Once::new();
 #[cfg(target_os = "ios")]
 static IOS_LOGGER_ONCE: std::sync::Once = std::sync::Once::new();
 
-/// Entry point called by Android's FirebaseMessagingService when a push notification arrives.
-///
-/// This runs outside the normal app lifecycle — no AppHandle or managed state is available.
-/// We create a temporary Node to access the local database, trigger a mailbox sync to fetch
-/// the operation referenced by the push, then format a user-facing notification.
+/// Entry point called by the FirebaseMessagingService when a push notification arrives.
+/// Fetches the operation referenced by the push and builds a user-facing notification, dedup'd
+/// against the main app's sync pipeline. Android may freeze the process once this returns.
 #[tauri_plugin_notification::receive_push_notification]
 pub fn receive_push_notification(
     notification: NotificationData,
     context: ReceivePushNotificationContext,
 ) -> Option<NotificationData> {
-    // When the main app is already alive its sync pipeline will handle this op via `show_sync_notification`.
-    // All we need to do is poke the live node so its mailbox sync picks up the op promptly.
-    //
-    // iOS doesn't hit this branch because the NSE runs in a separate process where `APP_HANDLE` is never set.
+    // iOS never sets `APP_HANDLE` because the NSE runs in a separate process.
     #[cfg(target_os = "android")]
-    if let Some(node) = crate::APP_HANDLE
-        .get()
-        .and_then(|h| h.try_state::<dashchat_node::Node>())
-    {
-        node.mailboxes
-            .wakeup(crate::mailbox::PRODUCTION_MAILBOX_ID.to_string());
-        log::info!("Push arrived while main app is alive; deferring to sync pipeline");
-        return None;
+    let main_app_alive = crate::APP_HANDLE.get().is_some();
+    #[cfg(not(target_os = "android"))]
+    let main_app_alive = false;
+
+    if main_app_alive {
+        log::info!("Push arrived while main app is alive; fetching via the live node");
+    } else {
+        crate::utils::install_crypto_provider();
+
+        #[cfg(target_os = "android")]
+        ANDROID_LOGS_ONCE.call_once(|| unsafe {
+            setup_android_logs();
+        });
+        #[cfg(target_os = "ios")]
+        IOS_LOGGER_ONCE.call_once(|| {
+            let _ = oslog::OsLogger::new("studio.darksoil.dashchat.PushNotificationsExtension")
+                .level_filter(log::LevelFilter::Debug)
+                .init();
+        });
+        crate::i18n::init_i18n();
     }
-
-    crate::utils::install_crypto_provider();
-
-    #[cfg(target_os = "android")]
-    ANDROID_LOGS_ONCE.call_once(|| unsafe {
-        setup_android_logs();
-    });
-    #[cfg(target_os = "ios")]
-    IOS_LOGGER_ONCE.call_once(|| {
-        let _ = oslog::OsLogger::new("studio.darksoil.dashchat.PushNotificationsExtension")
-            .level_filter(log::LevelFilter::Debug)
-            .init();
-    });
-    crate::i18n::init_i18n();
 
     log::info!("Received push notification: {notification:?}");
 
@@ -104,7 +95,7 @@ async fn handle_push_notification(
     notification: NotificationData,
     app_data_root: PathBuf,
 ) -> anyhow::Result<Option<NotificationData>> {
-    // Title = log ID (hex), Body = operation ID ("author_hex:seq_num")
+    // Title = topic ID (hex), Body = operation ID ("author_hex:seq_num")
     let topic_hex = notification
         .title
         .as_deref()

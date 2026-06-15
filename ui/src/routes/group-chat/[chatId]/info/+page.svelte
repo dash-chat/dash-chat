@@ -16,6 +16,7 @@
 		mdiAccountGroup,
 		mdiDelete,
 		mdiKeyVariant,
+		mdiPencil,
 		mdiPlusCircle,
 	} from '@mdi/js';
 	import {
@@ -28,6 +29,7 @@
 		Sheet,
 		BlockTitle,
 		useTheme,
+		Link,
 	} from 'konsta/svelte';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -130,31 +132,40 @@
 						image={info.image}
 						name={info.name}
 						colorSeed={chatId}
-						style="--size: 2.5rem"
+						size="2.5rem"
 					/>
 					<span>{info.name}</span>
 				</div>
 			{/snippet}
 
-			<!-- {#snippet right()}
-				<Link
-					href={`/group-chat/${chatId}/info/edit`}
-					iconOnly={theme === 'material'}
-				>
-					{#if theme === 'material'}
-						<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
-					{:else}
-						{m.edit()}
+			{#snippet right()}
+				{#await $me then me}
+					{#if me.admin}
+						<Link
+							data-testid="group-info-edit-link"
+							href={`/group-chat/${chatId}/info/edit`}
+							iconOnly={theme === 'material'}
+						>
+							{#if theme === 'material'}
+								<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
+							{:else}
+								{m.edit()}
+							{/if}
+						</Link>
 					{/if}
-				</Link>
-			{/snippet} -->
+				{/await}
+			{/snippet}
 		</Navbar>
 
 		{#await $me then me}
 			<div class="column" style="flex: 1">
 				<div class="column center-in-desktop gap-8 p-2">
 					<div class="column" style="align-items: center; gap: 1rem">
-						<Avatar image={info.image} style="--size: 5rem">
+						<Avatar
+							image={info.image}
+							initials={info.name.slice(0, 2)}
+							size="5rem"
+						>
 							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
 						</Avatar>
 
@@ -204,7 +215,7 @@
 											image={member.profile?.avatar}
 											name={member.profile && fullName(member.profile)}
 											colorSeed={actorId}
-											style="--size: 32px;"
+											size={32}
 										/>
 									{/snippet}
 
@@ -228,7 +239,7 @@
 											image={member.profile?.avatar}
 											name={member.profile && fullName(member.profile)}
 											colorSeed={actorId}
-											style="--size: 32px;"
+											size={32}
 										/>
 										<span class="font-semibold">{member.profile?.name}</span>
 									</div>

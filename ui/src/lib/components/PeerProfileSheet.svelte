@@ -25,7 +25,7 @@
 				image={profile.avatar}
 				name={fullName(profile)}
 				{colorSeed}
-				style="--size: 200px;"
+				size={200}
 			/>
 		</div>
 
