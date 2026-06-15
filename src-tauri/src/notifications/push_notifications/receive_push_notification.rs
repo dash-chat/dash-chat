@@ -55,40 +55,70 @@ pub fn receive_push_notification(
 
     log::info!("Received push notification: {notification:?}");
 
-    tauri::async_runtime::block_on(async move {
-        match handle_push_notification(notification, context.data_dir).await {
-            Ok(result) => {
-                if let Some(data) = &result {
-                    log::info!(
-                        "Successfully processed push notification, showing notification: {:?}.",
-                        data
-                    );
-                } else {
-                    log::info!(
-                        "Successfully processed push notification, no actual notification needs to be shown.",
-                    );
-                    // On iOS, alert notifications must be shown. If we return None here,
-                    // iOS will display a notification with title = topic_id, and body = author:seq_num
-                    // Show a generic notification instead
-                    // TODO: apply for the exception to Apple that allows apps to not need to show a notification
-                    // https://developer.apple.com/contact/request/notification-service
-                    #[cfg(target_os = "ios")]
-                    return Some(notifications::synced_generic_notification());
-                }
-                result
-            }
-            Err(err) => {
-                log::error!("Failed to handle push notification: {err:?}");
-                // On iOS, returning None here would let iOS fall back to the
-                // raw APNS payload (topic_id as title, author:seq as body).
-                // Show a generic fallback so the user sees something readable.
+    // The iOS Notification Service Extension's main thread has a ~1 MB stack —
+    // too small for the deeply-nested node-init future (iroh + sqlx + encryption
+    // polled inline by `block_on`), which overruns the stack guard page and
+    // crashes with EXC_BAD_ACCESS/SIGBUS. Run the work on a thread with a large
+    // stack. Android's handler thread has ample stack, so it runs inline.
+    #[cfg(target_os = "ios")]
+    {
+        let data_dir = context.data_dir;
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                tauri::async_runtime::block_on(
+                    handle_push_notifications_with_fallback_messages(notification, data_dir),
+                )
+            })
+            .expect("failed to spawn push-notification worker thread")
+            .join()
+            .expect("push-notification worker thread panicked")
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
+            notification,
+            context.data_dir,
+        ))
+    }
+}
+
+async fn handle_push_notifications_with_fallback_messages(
+    notification: NotificationData,
+    data_dir: PathBuf,
+) -> Option<NotificationData> {
+    match handle_push_notification(notification, data_dir).await {
+        Ok(result) => {
+            if let Some(data) = &result {
+                log::info!(
+                    "Successfully processed push notification, showing notification: {:?}.",
+                    data
+                );
+            } else {
+                log::info!(
+                    "Successfully processed push notification, no actual notification needs to be shown.",
+                );
+                // On iOS, alert notifications must be shown. If we return None here,
+                // iOS will display a notification with title = topic_id, and body = author:seq_num
+                // Show a generic notification instead
+                // TODO: apply for the exception to Apple that allows apps to not need to show a notification
+                // https://developer.apple.com/contact/request/notification-service
                 #[cfg(target_os = "ios")]
-                return Some(notifications::may_have_new_messages_generic_notification());
-                #[cfg(not(target_os = "ios"))]
-                None
+                return Some(notifications::synced_generic_notification());
             }
+            result
         }
-    })
+        Err(err) => {
+            log::error!("Failed to handle push notification: {err:?}");
+            // On iOS, returning None here would let iOS fall back to the
+            // raw APNS payload (topic_id as title, author:seq as body).
+            // Show a generic fallback so the user sees something readable.
+            #[cfg(target_os = "ios")]
+            return Some(notifications::may_have_new_messages_generic_notification());
+            #[cfg(not(target_os = "ios"))]
+            None
+        }
+    }
 }
 
 async fn handle_push_notification(
