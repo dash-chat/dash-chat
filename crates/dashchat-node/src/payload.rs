@@ -78,6 +78,7 @@ pub enum ChatPayload {
     Reaction(ChatReaction),
 
     GroupInfo(GroupInfo),
+
     /// Used to tell other group members about agents they may not know about
     /// (typically because they aren't contacts), so they can subscribe to those
     /// agents' announcements topics and see their profiles. The inviter publishes

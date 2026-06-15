@@ -3,7 +3,7 @@ use tauri::image::Image;
 use tauri::tray::TrayIconBuilder;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
-    AppHandle, Manager, Runtime, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Manager, Runtime, WebviewWindowBuilder,
 };
 
 const TRAY_ID: &str = "dash-chat-tray";
@@ -34,7 +34,7 @@ pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
                 }
             }
             "quit" => {
-                confirm_quit_and_exit(app);
+                quit_from_tray(app);
             }
             _ => {}
         })
@@ -57,40 +57,22 @@ pub fn hide_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Show a quit-confirmation dialog on a background thread.
-/// If the user confirms, the local mailbox is stopped and the app exits.
-/// Guards against multiple simultaneous dialogs via `QUIT_DIALOG_OPEN`.
-pub fn confirm_quit_and_exit(app: &AppHandle<impl Runtime>) {
-    use std::sync::atomic::Ordering;
-    // Prevent stacking multiple dialogs
-    if crate::QUIT_DIALOG_OPEN.swap(true, Ordering::Relaxed) {
-        return;
-    }
+/// Handle the tray's "Quit" item. Always disables the local message server (in
+/// settings). If a window is visible, leave it open; otherwise terminate the app.
+fn quit_from_tray(app: &AppHandle<impl Runtime>) {
+    let window_visible = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+
     let app = app.clone();
-    std::thread::spawn(move || {
-        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-        let confirmed = app
-            .dialog()
-            .message(sonix_i18n::t!("quitConfirmMessage"))
-            .title(sonix_i18n::t!("quitConfirmTitle"))
-            .kind(MessageDialogKind::Warning)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                sonix_i18n::t!("trayQuit").to_string(),
-                sonix_i18n::t!("cancel").to_string(),
-            ))
-            .blocking_show();
-        crate::QUIT_DIALOG_OPEN.store(false, Ordering::Relaxed);
-        if confirmed {
-            tauri::async_runtime::block_on(async {
-                let _ = crate::mailbox::server::stop_local_mailbox(&app).await;
-            });
-            // Disable autostart so the app doesn't relaunch after quit,
-            // but keep the mailbox-enabled setting so it starts on next manual launch.
-            if !tauri::is_dev() {
-                use tauri_plugin_autostart::ManagerExt;
-                let _ = app.autolaunch().disable();
-            }
-            crate::FORCE_QUIT.store(true, Ordering::Relaxed);
+    tauri::async_runtime::spawn(async move {
+        if let Err(err) =
+            crate::mailbox::server::set_local_mailbox_server_enabled(&app, false).await
+        {
+            log::error!("Failed to stop local mailbox: {err:?}");
+        }
+        if !window_visible {
             app.exit(0);
         }
     });
@@ -101,10 +83,16 @@ pub fn show_or_create_main_window<R: Runtime>(app: &AppHandle<R>) -> anyhow::Res
         window.show()?;
         window.set_focus()?;
     } else {
-        WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-            .title("Dash Chat")
-            .inner_size(800.0, 600.0)
-            .build()?;
+        // A fresh menu instance is required for the new window; see install_menu.
+        crate::menu::install_menu(app)?;
+        let config = app.config();
+        let window_config = config
+            .app
+            .windows
+            .iter()
+            .find(|w| w.label == "main")
+            .ok_or_else(|| anyhow::anyhow!("no 'main' window defined in tauri.conf.json"))?;
+        WebviewWindowBuilder::from_config(app, window_config)?.build()?;
     }
     Ok(())
 }

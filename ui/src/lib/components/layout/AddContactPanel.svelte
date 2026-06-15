@@ -261,6 +261,7 @@
 								<List
 									nested
 									strongIos
+									outline
 									inset={isWideScreen.value || theme === 'ios'}
 								>
 									<ListInput
