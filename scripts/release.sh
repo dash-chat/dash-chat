@@ -2,11 +2,12 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 <version>"
+  echo "Usage: ENV=[staging|production] $0 <version>"
   echo ""
   echo "  version   Semver version string (e.g. 0.11.0). The 'v' prefix is added automatically for the git tag."
   echo ""
   echo "Example: $0 0.11.0"
+  echo "Example: ENV=staging $0 0.11.0"
   exit 1
 }
 
@@ -15,7 +16,14 @@ if [ $# -ne 1 ]; then
 fi
 
 VERSION="$1"
-TAG="v${VERSION}"
+if [ "${ENV:-}" = "staging" ]; then
+  TAG="v${VERSION}-staging"
+elif [ -z "${ENV:-}" ] || [ "$ENV" = "production" ]; then
+  TAG="v${VERSION}"
+else
+  echo "Error: Unknown environment '$ENV'. Only 'staging' or 'production' are supported."
+  exit 1
+fi
 
 # Validate semver format (basic check)
 if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -60,20 +68,20 @@ echo "  Updated $TAURI_CONF"
 sed -i "0,/^version = \"[^\"]*\"/s//version = \"$VERSION\"/" "$CARGO_TOML"
 echo "  Updated $CARGO_TOML"
 
-# 3. Update site download links
-OLD_URL_PATTERN='releases/download/v[0-9]\+\.[0-9]\+\.[0-9]\+'
-NEW_URL_PATTERN="releases/download/$TAG"
-sed -i "s|$OLD_URL_PATTERN|$NEW_URL_PATTERN|g" "$SITE_INDEX"
+# 3. Update site download links (production only — staging builds aren't on the public site)
+if [ "$ENV" != "staging" ]; then
+  OLD_URL_PATTERN='releases/download/v[0-9]\+\.[0-9]\+\.[0-9]\+'
+  NEW_URL_PATTERN="releases/download/v${VERSION}"
+  sed -i "s|$OLD_URL_PATTERN|$NEW_URL_PATTERN|g" "$SITE_INDEX"
 
-# Update filenames in download URLs (Dash.Chat_X.Y.Z_...)
-OLD_FILE_PATTERN='Dash\.Chat_[0-9]\+\.[0-9]\+\.[0-9]\+'
-NEW_FILE_PATTERN="Dash.Chat_$VERSION"
-sed -i "s|$OLD_FILE_PATTERN|$NEW_FILE_PATTERN|g" "$SITE_INDEX"
+  OLD_FILE_PATTERN='Dash\.Chat_[0-9]\+\.[0-9]\+\.[0-9]\+'
+  NEW_FILE_PATTERN="Dash.Chat_$VERSION"
+  sed -i "s|$OLD_FILE_PATTERN|$NEW_FILE_PATTERN|g" "$SITE_INDEX"
 
-# Update nix command version
-sed -i "s|darksoil-studio/dash-chat/v[0-9]\+\.[0-9]\+\.[0-9]\+|darksoil-studio/dash-chat/$TAG|g" "$SITE_INDEX"
+  sed -i "s|darksoil-studio/dash-chat/v[0-9]\+\.[0-9]\+\.[0-9]\+|darksoil-studio/dash-chat/v${VERSION}|g" "$SITE_INDEX"
 
-echo "  Updated $SITE_INDEX"
+  echo "  Updated $SITE_INDEX"
+fi
 
 # 4. Update iOS Info.plist (CFBundleShortVersionString and CFBundleVersion)
 sed -i "/<key>CFBundleShortVersionString<\/key>/{ n; s|<string>[^<]*</string>|<string>$VERSION</string>| }" "$IOS_PLIST"
@@ -85,7 +93,11 @@ echo "  Updated $IOS_PLIST"
 echo "  Updated Cargo.lock"
 
 # 6. Commit, tag, and push
-git -C "$ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$SITE_INDEX" "$IOS_PLIST" "$ROOT/Cargo.lock"
+if [ "$ENV" = "staging" ]; then
+  git -C "$ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$IOS_PLIST" "$ROOT/Cargo.lock"
+else
+  git -C "$ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$SITE_INDEX" "$IOS_PLIST" "$ROOT/Cargo.lock"
+fi
 if git -C "$ROOT" diff --cached --quiet; then
   echo "  No changes to commit (version files already up to date)"
 else

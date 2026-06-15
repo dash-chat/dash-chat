@@ -8,6 +8,9 @@ mod settings;
 mod setup;
 mod utils;
 
+#[cfg(target_os = "android")]
+mod android_init;
+
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(desktop)]
