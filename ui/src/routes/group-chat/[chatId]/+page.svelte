@@ -161,6 +161,7 @@
 								image={info.image}
 								name={info.name}
 								colorSeed={chatId}
+								group
 								size="2.5rem"
 							/>
 							<span>{info.name}</span>
@@ -187,6 +188,7 @@
 									image={info.image}
 									name={info.name}
 									colorSeed={chatId}
+									group
 									size={80}
 								/>
 								<span

@@ -38,12 +38,24 @@ export function joinName(
 	return surname ? `${name} ${surname}` : name;
 }
 
-/** Initials for a display name, following Signal's convention: the first
- * grapheme of the first word plus the first grapheme of the second word,
- * preserving the name's case. */
+/** Initials for a display name, matching Signal's `getInitials`: strip
+ * everything that isn't a letter or separator, then take the first grapheme of
+ * the first word plus the first grapheme of the last word (just the first
+ * grapheme for a single-word name), preserving the name's case. A cleaned name
+ * that is already a two-letter all-caps abbreviation is returned as-is. */
 export function abbreviateName(name: string): string {
-	const words = name.split(/\s+/).filter(word => word.length > 0);
-	return words.slice(0, 2).map(firstGrapheme).join('');
+	const cleaned = name
+		.replace(/[^\p{L}\p{Z}]+/gu, '')
+		.replace(/\p{Z}+/gu, ' ')
+		.trim();
+	if (!cleaned) return '';
+	if (cleaned.length === 2 && cleaned === cleaned.toUpperCase()) {
+		return cleaned;
+	}
+	const words = cleaned.split(' ');
+	return words.length === 1
+		? firstGrapheme(words[0])
+		: firstGrapheme(words[0]) + firstGrapheme(words[words.length - 1]);
 }
 
 const segmenter =
@@ -75,4 +87,71 @@ export function editorPrefill(
 		defaultAvatarColor(seed || displayName),
 		TextAvatarData.isValidText(text) ? text : '',
 	);
+}
+
+export interface InitialsLayout {
+	/** Font size in px, shrunk from the base 0.45·diameter if the label is too
+	 * wide/tall to keep Signal's ~10% margin. */
+	fontSizePx: number;
+	/** Vertical nudge in px (positive = down) that recentres the measured ink
+	 * box, given that `text-box: trim-both cap alphabetic` parks the baseline
+	 * half a cap-height below the circle's centre. */
+	translateYPx: number;
+}
+
+const layoutCache = new Map<string, InitialsLayout>();
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+
+function measureContext(): CanvasRenderingContext2D | null {
+	if (measureCtx === undefined) {
+		measureCtx =
+			typeof document !== 'undefined'
+				? document.createElement('canvas').getContext('2d')
+				: null;
+	}
+	return measureCtx;
+}
+
+/** Lay out a text avatar's initials like Signal's `AvatarBuilder`: measure the
+ * real ink box, scale the label down so its larger axis fits within 0.8 of the
+ * diameter (Signal's 10%-per-side margin), and report the vertical offset that
+ * centres the measured box. Content-aware, so caps, lower-case, CJK and
+ * descenders all land on the circle's true centre. */
+export function measureInitialsLayout(
+	text: string,
+	diameterPx: number,
+	fontFamily: string,
+	fontWeight = 500,
+): InitialsLayout {
+	const baseFontPx = diameterPx * 0.45;
+	const fallback: InitialsLayout = { fontSizePx: baseFontPx, translateYPx: 0 };
+	const ctx = measureContext();
+	if (!ctx || !text || diameterPx <= 0) {
+		return fallback;
+	}
+
+	const key = `${fontWeight}|${diameterPx}|${fontFamily}|${text}`;
+	const cached = layoutCache.get(key);
+	if (cached) return cached;
+
+	ctx.font = `${fontWeight} ${baseFontPx}px ${fontFamily}`;
+	const base = ctx.measureText(text);
+	const inkWidth = base.actualBoundingBoxLeft + base.actualBoundingBoxRight;
+	const inkHeight =
+		base.actualBoundingBoxAscent + base.actualBoundingBoxDescent;
+	const largerAxis = Math.max(inkWidth, inkHeight);
+	const scale =
+		largerAxis > 0 ? Math.min(1, (diameterPx * 0.8) / largerAxis) : 1;
+	const fontSizePx = baseFontPx * scale;
+
+	ctx.font = `${fontWeight} ${fontSizePx}px ${fontFamily}`;
+	const capHeight = ctx.measureText('H').actualBoundingBoxAscent;
+	const ink = ctx.measureText(text);
+	const inkCentreBelowBaseline =
+		(ink.actualBoundingBoxDescent - ink.actualBoundingBoxAscent) / 2;
+	const translateYPx = -(capHeight / 2 + inkCentreBelowBaseline);
+
+	const layout: InitialsLayout = { fontSizePx, translateYPx };
+	layoutCache.set(key, layout);
+	return layout;
 }

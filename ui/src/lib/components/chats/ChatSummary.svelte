@@ -37,6 +37,7 @@
 			image={summary.avatar}
 			name={summary.name}
 			colorSeed={summary.chatId}
+			group={summary.type === 'GroupChat'}
 		/>
 	{/snippet}
 	{#snippet after()}

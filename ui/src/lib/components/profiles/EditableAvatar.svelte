@@ -7,15 +7,23 @@
 		image?: string;
 		name?: string;
 		colorSeed?: string;
+		group?: boolean;
 		onEdit: () => void;
 		class?: string;
 	}
 
-	let { image, name, colorSeed, onEdit, class: className }: Props = $props();
+	let {
+		image,
+		name,
+		colorSeed,
+		group = false,
+		onEdit,
+		class: className,
+	}: Props = $props();
 </script>
 
 <div class="column gap-2 items-center {className ?? ''}">
-	<Avatar {image} {name} {colorSeed} size={100} />
+	<Avatar {image} {name} {colorSeed} {group} size={100} />
 	<Button
 		tonal
 		style="width: auto"
