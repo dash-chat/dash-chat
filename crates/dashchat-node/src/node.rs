@@ -34,7 +34,7 @@ use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId,
+    DirectChatId, FileAttachment, MediaData, MediaMetaCollection, MediaMetaItem, MediaMetaKind,
 };
 
 pub use app_processing::Notification;
@@ -648,6 +648,22 @@ impl Node {
     pub async fn send_message(
         &self,
         topic: impl Into<ChatId>,
+        message: impl Into<String>,
+        media: Option<MediaData>,
+    ) -> anyhow::Result<Header> {
+        let meta = if let Some(media) = media {
+            Some(self.store_media(media).await?)
+        } else {
+            None
+        };
+        let message = ChatMessageContent::new(message, meta);
+        self.send_message_raw(topic, message).await
+    }
+
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn send_message_raw(
+        &self,
+        topic: impl Into<ChatId>,
         message: ChatMessageContent,
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
@@ -1023,5 +1039,77 @@ impl Node {
         let num = caps.len();
 
         Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
+    }
+
+    pub async fn store_media(&self, media: MediaData) -> anyhow::Result<MediaMetaCollection> {
+        let mut items = vec![];
+        match media {
+            MediaData::Photos { photos } => {
+                for photo in photos {
+                    let size = photo.data.len();
+                    let tag = self.blob_sync.blobs.add_bytes(photo.data).await?;
+                    items.push(MediaMetaItem {
+                        name: photo.name,
+                        mime_type: photo.mime_type,
+                        size,
+                        hash: tag.hash,
+                        kind: MediaMetaKind::Photo,
+                    });
+                }
+            }
+            MediaData::File { file } => {
+                let size = file.data.len();
+                let tag = self.blob_sync.blobs.add_bytes(file.data).await?;
+                items.push(MediaMetaItem {
+                    name: file.name,
+                    mime_type: file.mime_type,
+                    size,
+                    hash: tag.hash,
+                    kind: MediaMetaKind::File,
+                });
+            }
+        }
+        Ok(MediaMetaCollection::from(items))
+    }
+
+    pub async fn load_media(&self, meta: Vec<MediaMetaItem>) -> anyhow::Result<MediaData> {
+        let mut items = vec![];
+        for item in meta {
+            let data = self.blob_sync.blobs.get_bytes(item.hash).await?;
+            items.push((item, data));
+        }
+
+        let (photos, mut other): (Vec<_>, Vec<_>) = items
+            .into_iter()
+            .partition(|(item, _)| item.kind == MediaMetaKind::Photo);
+
+        if other.len() > 1 {
+            return Err(anyhow::anyhow!(
+                "multiple files are not supported. photos: {photos:?}, other: {other:?}",
+            ));
+        } else if photos.len() >= 1 && other.len() == 1 {
+            return Err(anyhow::anyhow!(
+                "photos and other media in the same message are not supported. photos: {photos:?}, other: {other:?}",
+            ));
+        } else if other.len() == 1 {
+            let (item, data) = other.pop().unwrap();
+            return Ok(MediaData::File {
+                file: FileAttachment {
+                    data: data.to_vec(),
+                    name: item.name,
+                    mime_type: item.mime_type,
+                },
+            });
+        } else {
+            let photos = photos
+                .into_iter()
+                .map(|(item, data)| crate::chat::Photo {
+                    data: data.to_vec(),
+                    name: item.name,
+                    mime_type: item.mime_type,
+                })
+                .collect();
+            return Ok(MediaData::Photos { photos });
+        }
     }
 }

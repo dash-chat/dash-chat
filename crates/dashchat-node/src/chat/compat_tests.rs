@@ -35,10 +35,10 @@ mod tests {
     fn chat_message_getters() {
         let v0 = ChatMessageContent::unversioned("hello");
         assert_eq!(v0.message(), "hello");
-        assert!(v0.media().is_none());
+        assert!(v0.media_meta().is_none());
         let v1 = ChatMessageContent::text_only("world");
         assert_eq!(v1.message(), "world");
-        assert!(v1.media().is_none());
+        assert!(v1.media_meta().is_none());
     }
 
     #[test]
@@ -54,12 +54,12 @@ mod tests {
         let c = Capabilities { messaging: 1 };
         let v1 = v0.to_version(&c).unwrap();
         assert_eq!(v1.message(), "hello");
-        assert!(v1.media().is_none());
+        assert!(v1.media_meta().is_none());
     }
 
     #[test]
     fn version_convert_v1_to_v0_lossy() {
-        let v1_empty = ChatMessageContent::new("anything", Media::Photos { photos: vec![] });
+        let v1_empty = ChatMessageContent::new("anything", Some(MediaMetaCollection::from(vec![])));
         let result = v1_empty.to_version(&Capabilities::zero());
         assert_eq!(result, Err(VersionConvertError::Lossy));
     }
@@ -187,11 +187,11 @@ mod tests {
 
         let chat = alice.direct_chat_topic(bobbi.agent_id());
         alice
-            .send_message(chat, ChatMessageContent::unversioned("Hello"))
+            .send_message_raw(chat, ChatMessageContent::unversioned("Hello"))
             .await
             .unwrap();
         bobbi
-            .send_message(chat, ChatMessageContent::text_only("Hello back"))
+            .send_message_raw(chat, ChatMessageContent::text_only("Hello back"))
             .await
             .unwrap();
 

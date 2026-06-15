@@ -83,7 +83,7 @@ mod tests {
         let chat = alice.direct_chat_topic(bobbi.agent_id());
         alice.register_topic(chat).await.unwrap();
 
-        alice.send_message(chat, "Hello".into()).await.unwrap();
+        alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
         println!("=== adding mailboxes ===");
         bobbi.add_mailbox_client(mb.client()).await;
@@ -130,7 +130,10 @@ mod tests {
         bobbi.add_mailbox_client(mb.client()).await;
         bobbi.register_topic(chat_id).await.unwrap();
 
-        alice.send_message(chat_id, "Hello".into()).await.unwrap();
+        alice
+            .send_message_raw(chat_id, "Hello".into())
+            .await
+            .unwrap();
 
         poll.wait_for(|| async {
             if bobbi.get_messages(chat_id).await.unwrap().len() == 1 {

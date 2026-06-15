@@ -23,16 +23,19 @@ export interface ChatReaction {
  * `Vec<u8>` arrives as `number[]`; in-process callers may also construct
  * these with a `Uint8Array`. Helpers in `ui/src/lib/types/media.ts`
  * (`asUint8Array`, `byteLengthOf`, `bytesToBlobUrl`) accept either form.
+ * 
+ * If the `data` field is empty, that indicates that the bytes have not
+ * yet been fetched, and a loading/missing data state is shown.
  */
 export interface Photo {
-	data: Uint8Array | number[];
+	data?: Uint8Array | number[];
 	name: string;
 	mime_type: string;
 }
 
 /** A non-image file attachment. See `Photo` for the `data` shape. */
 export interface FileAttachment {
-	data: Uint8Array | number[];
+	data?: Uint8Array | number[];
 	name: string;
 	mime_type: string;
 }

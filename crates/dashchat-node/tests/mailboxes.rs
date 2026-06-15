@@ -82,11 +82,11 @@ async fn mailbox_late_join(
     //     .unwrap();
 
     let chat = alice.direct_chat_topic(bobbi.agent_id());
-    alice.send_message(chat, "Hello".into()).await.unwrap();
+    alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
     // Introduce delay to let the first message be stored and force missing synchronization with the second one
 
-    alice.send_message(chat, "Hello2".into()).await.unwrap();
+    alice.send_message_raw(chat, "Hello2".into()).await.unwrap();
 
     println!("=== adding mailboxes ===");
 
@@ -157,8 +157,14 @@ async fn test_mailbox_restart_relay() {
 
     let chat = alice.direct_chat_topic(bobbi.agent_id());
 
-    alice.send_message(chat, "Hello 1".into()).await.unwrap();
-    alice.send_message(chat, "Hello 2".into()).await.unwrap();
+    alice
+        .send_message_raw(chat, "Hello 1".into())
+        .await
+        .unwrap();
+    alice
+        .send_message_raw(chat, "Hello 2".into())
+        .await
+        .unwrap();
 
     poll.wait_for(|| async {
         (bobbi.get_messages(chat).await.unwrap().len() == 2)
@@ -198,8 +204,14 @@ async fn test_mailbox_restart_relay() {
 
     let chat = alice.direct_chat_topic(bobbi_agent_id);
 
-    alice.send_message(chat, "Hello 3".into()).await.unwrap();
-    alice.send_message(chat, "Hello 4".into()).await.unwrap();
+    alice
+        .send_message_raw(chat, "Hello 3".into())
+        .await
+        .unwrap();
+    alice
+        .send_message_raw(chat, "Hello 4".into())
+        .await
+        .unwrap();
 
     poll.wait_for(|| async {
         let msgs = bobbi.get_messages(chat).await.unwrap();

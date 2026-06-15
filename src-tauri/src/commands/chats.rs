@@ -1,4 +1,4 @@
-use dashchat_node::{AgentId, ChatId, ChatMessageContent, ChatReaction, DeviceId, GroupInfo, Node};
+use dashchat_node::{AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, MediaData, Node};
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
@@ -64,10 +64,11 @@ pub async fn add_group_member(
 #[tauri::command]
 pub async fn send_message(
     chat_id: ChatId,
-    content: ChatMessageContent,
+    message: String,
+    media: Option<MediaData>,
     node: State<'_, Node>,
 ) -> Result<(), String> {
-    node.send_message(chat_id, content)
+    node.send_message(chat_id, message, media)
         .await
         .map_err(|err| format!("{err:?}"))?;
     Ok(())

@@ -23,7 +23,7 @@ pub enum ChatMessageContentV {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ChatMessageContentV1 {
     pub message: String,
-    pub media: Option<Media>,
+    pub media: Option<MediaMetaCollection>,
 }
 
 /// A photo attachment. `data` is the raw bytes of the encoded image (JPEG,
@@ -47,22 +47,40 @@ pub struct FileAttachment {
 /// or a single file — not both — matching Signal's UX.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind")]
-pub enum Media {
+pub enum MediaData {
     #[serde(rename = "photos")]
     Photos { photos: Vec<Photo> },
     #[serde(rename = "file")]
     File { file: FileAttachment },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From)]
+pub struct MediaMetaCollection(Vec<MediaMetaItem>);
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From)]
+pub struct MediaMetaItem {
+    pub name: String,
+    pub mime_type: String,
+    pub size: usize,
+    pub kind: MediaMetaKind,
+    pub hash: iroh_blobs::Hash,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum MediaMetaKind {
+    Photo,
+    File,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Deref, From)]
 pub struct ChatMessageContent(dashchat_compat::Compat<ChatMessageContentV0, ChatMessageContentV>);
 
 impl ChatMessageContent {
-    pub fn new(message: impl Into<String>, media: Media) -> Self {
+    pub fn new(message: impl Into<String>, media: Option<MediaMetaCollection>) -> Self {
         Self(dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(
             ChatMessageContentV1 {
                 message: message.into(),
-                media: Some(media),
+                media,
             },
         )))
     }
@@ -83,7 +101,7 @@ impl ChatMessageContent {
         }
     }
 
-    pub fn media(&self) -> Option<&Media> {
+    pub fn media_meta(&self) -> Option<&MediaMetaCollection> {
         match &self.0 {
             dashchat_compat::Compat::Unversioned(_) => None,
             dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => v1.media.as_ref(),
@@ -106,7 +124,7 @@ impl From<&str> for ChatMessageContent {
 
 impl PartialOrd for ChatMessageContent {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (self.message(), self.media()).partial_cmp(&(other.message(), other.media()))
+        (self.message(), self.media_meta()).partial_cmp(&(other.message(), other.media_meta()))
     }
 }
 
