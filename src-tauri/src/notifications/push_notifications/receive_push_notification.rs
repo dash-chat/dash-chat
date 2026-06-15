@@ -66,9 +66,10 @@ pub fn receive_push_notification(
         std::thread::Builder::new()
             .stack_size(16 * 1024 * 1024)
             .spawn(move || {
-                tauri::async_runtime::block_on(
-                    handle_push_notifications_with_fallback_messages(notification, data_dir),
-                )
+                tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
+                    notification,
+                    data_dir,
+                ))
             })
             .expect("failed to spawn push-notification worker thread")
             .join()
