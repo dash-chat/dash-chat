@@ -32,7 +32,13 @@ E2E_DIR="$ROOT/e2e-tests"
 
 maybe_xvfb() {
     if [ -z "${DISPLAY:-}" ] && command -v xvfb-run &>/dev/null; then
-        xvfb-run "$@"
+        # dbus-run-session avoids ~35s/launch stalls on headless CI where
+        # xdg-desktop-portal activation hangs on the systemd user bus.
+        if command -v dbus-run-session &>/dev/null; then
+            dbus-run-session -- xvfb-run "$@"
+        else
+            xvfb-run "$@"
+        fi
     else
         "$@"
     fi

@@ -1,11 +1,11 @@
 {
 	"productName": "Dash Chat",
-	"version": "0.17.1",
+	"version": "0.19.0",
 	"identifier": "studio.darksoil.dashchat",
 	"build": {
 		"beforeDevCommand": "pnpm dev",
 		"beforeBuildCommand": "pnpm -F dash-chat-stores build && pnpm -F ui build",
-		"beforeBundleCommand": "./scripts/build-assets-car.sh",
+		"beforeBundleCommand": "bash scripts/build-assets-car.sh",
 		"devUrl": "http://localhost:1420",
 		"frontendDist": "../ui/build"
 	},
