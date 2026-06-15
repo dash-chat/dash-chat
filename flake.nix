@@ -35,7 +35,6 @@
     inputs:
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
-        ./nix/digital-ocean.nix
         ./nix/docker.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix

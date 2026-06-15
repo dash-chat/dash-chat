@@ -28,7 +28,7 @@ create server version region='nyc1' size='s-1vcpu-2gb':
     runcmd:
       - mkdir -p /data /caddy
       - docker network create dash
-      - docker run -d --name {{server}} --restart unless-stopped --network dash -v /data:/var/lib/{{server}} ghcr.io/dash-chat/{{server}}:{{version}} $server_args
+      - docker run -d --name {{server}} --restart unless-stopped --ulimit nofile=65536:65536 --network dash -v /data:/var/lib/{{server}} ghcr.io/dash-chat/{{server}}:{{version}} $server_args
       - docker run -d --name caddy --restart unless-stopped --network dash -p 80:80 -p 443:443 -v /caddy:/data caddy:2 caddy reverse-proxy --from {{replace(server, '-server', '')}}.$domain_suffix --to {{server}}:80" \
         --wait \
         --format Name,PublicIPv4,Region
