@@ -261,13 +261,13 @@
 								<List
 									nested
 									strongIos
-									outline
 									inset={isWideScreen.value || theme === 'ios'}
 								>
 									<ListInput
 										floatingLabel
 										label={m.enterYourContactsCode()}
 										type="text"
+										outline
 										data-testid="add-contact-code-input"
 										onInput={async (e: Event) => {
 											const target = e.target as HTMLInputElement;
