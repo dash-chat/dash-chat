@@ -65,9 +65,9 @@
 		loading={$myProfile === undefined}
 		bind:avatar
 		bind:inModalState
-				{name}
-				{surname}
-				colorSeed={$myAgentId}
+		{name}
+		{surname}
+		colorSeed={$myAgentId}
 		onClose={() => goto('/settings/profile')}
 		onSave={save}
 		saveLabel={m.save()}
