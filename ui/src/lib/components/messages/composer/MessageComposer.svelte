@@ -14,8 +14,8 @@
 	import type { MessagesStore } from 'dash-chat-stores';
 	import { stageFiles } from '$lib/utils/stage-files';
 	import { showToast } from '$lib/utils/toasts';
-	import MediaDropOverlay from '$lib/components/MediaDropOverlay.svelte';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
+	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
