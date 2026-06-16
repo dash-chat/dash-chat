@@ -23,7 +23,6 @@
 	nested
 	strongIos
 	inset={isWideScreen.value || theme === 'ios'}
-	class="z-1 {className}"
 	data-testid={dataTestId}
 >
 	{@render children()}
