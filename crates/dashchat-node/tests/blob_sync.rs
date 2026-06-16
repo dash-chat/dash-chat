@@ -30,9 +30,6 @@ async fn media_blob_syncs_between_nodes() {
         .add_mailbox_client(mailbox.client())
         .await;
 
-    println!("alice: {}", alice.device_id());
-    println!("bobbi: {}", bobbi.device_id());
-
     alice
         .behavior()
         .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)

@@ -1,7 +1,8 @@
 use derive_more::derive::Constructor;
 use futures::Stream;
-use iroh_blobs::api::downloader::{Downloader, Shuffled};
+use iroh_blobs::protocol::GetRequest;
 use mailbox_client::manager::Mailboxes;
+use p2panda::NodeId;
 use p2panda::operation::{LogId, Operation};
 use std::{
     collections::HashSet,
@@ -43,7 +44,7 @@ pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
     pub fetch_pool: BlobFetchPool,
     pub sources: MixedSourceLookup,
-    downloader: Downloader,
+    endpoint: p2panda::Endpoint,
 }
 
 impl BlobSync {
@@ -56,13 +57,12 @@ impl BlobSync {
         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
         let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
         endpoint.accept(iroh_blobs::ALPN, blobs.clone()).await?;
-        let downloader = blobs.downloader(&endpoint.endpoint().await?);
 
         Ok(Self {
             blobs,
             fetch_pool: blob_fetch,
             sources,
-            downloader,
+            endpoint,
         })
     }
 
@@ -100,19 +100,53 @@ impl BlobSync {
             return true;
         }
 
-        let Ok(sources) = self.sources.sources(log_id).await else {
-            return false;
+        let sources = match self.sources.sources(log_id).await {
+            Ok(sources) => sources,
+            Err(err) => {
+                tracing::warn!(%hash, ?err, "blob source lookup failed");
+                return false;
+            }
         };
 
         if sources.is_empty() {
             return false;
         }
 
-        let download = self.downloader.download(hash, Shuffled::new(sources));
-        matches!(
-            tokio::time::timeout(attempt_timeout, download).await,
-            Ok(Ok(()))
-        )
+        match tokio::time::timeout(attempt_timeout, self.download_from_any(hash, sources)).await {
+            Ok(downloaded) => downloaded,
+            Err(_) => {
+                tracing::warn!(%hash, "blob download timed out");
+                false
+            }
+        }
+    }
+
+    /// Try each source in turn until one serves the blob.
+    async fn download_from_any(&self, hash: iroh_blobs::Hash, sources: Vec<NodeId>) -> bool {
+        for source in sources {
+            match self.download_from(source, hash).await {
+                Ok(()) => return true,
+                Err(err) => {
+                    tracing::debug!(%hash, %source, ?err, "blob download from source failed");
+                }
+            }
+        }
+        false
+    }
+
+    /// Connect to a single source and fetch the blob into the local store.
+    ///
+    /// The connection is opened through the p2panda endpoint so that the ALPN
+    /// is mixed with our network id the same way the serving side registered it
+    /// — iroh-blobs' own `Downloader` dials the bare ALPN and would be rejected.
+    async fn download_from(&self, source: NodeId, hash: iroh_blobs::Hash) -> anyhow::Result<()> {
+        let conn = self.endpoint.connect(source, iroh_blobs::ALPN).await?;
+        self.blobs
+            .remote()
+            .execute_get(conn, GetRequest::all(hash))
+            .complete()
+            .await?;
+        Ok(())
     }
 }
 
@@ -257,14 +291,14 @@ pub struct MixedSourceLookup {
 }
 
 impl MixedSourceLookup {
-    pub async fn sources(&self, log_id: LogId) -> anyhow::Result<Vec<iroh::EndpointId>> {
+    pub async fn sources(&self, log_id: LogId) -> anyhow::Result<Vec<NodeId>> {
         let sources = self
             .op_store
             .get_authors(log_id)
             .await?
             .into_iter()
-            .map(|author| iroh::EndpointId::from_bytes(author.as_bytes()))
-            .collect::<Result<Vec<iroh::EndpointId>, _>>()?;
+            .map(|author| *author)
+            .collect();
         // sources.extend(self.mailboxes.get_sources(log_id).await?);
         Ok(sources)
     }
