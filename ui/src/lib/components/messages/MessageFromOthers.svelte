@@ -8,7 +8,7 @@
 		type Message,
 		type Profile,
 	} from 'dash-chat-stores';
-	import { senderColor, type MessagePosition } from './message-helpers';
+	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
@@ -74,20 +74,11 @@
 	contentWrapPadding="p-2"
 	class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 >
-	{#if showSenderName}
-		<div
-			class="mx-1 mb-0.5 text-sm font-semibold text-start"
-			style="color: {senderColor(message.author)}"
-			data-testid="group-message-sender-name"
-		>
-			{senderDisplayName}
-		</div>
-	{/if}
 	<MessageContent
 		{message}
 		{searchQuery}
 		senderName={senderDisplayName}
-		withContentAbove={showSenderName}
+		{showSenderName}
 		metadata={isLast ? metadata : undefined}
 	/>
 </Card>

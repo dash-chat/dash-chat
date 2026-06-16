@@ -12,24 +12,12 @@
 
 	interface Props {
 		media: Media;
-		/** True when the bubble renders content (e.g. a sender header) above
-		 * the media, squaring the media's top corners. */
-		withContentAbove?: boolean;
-		/** True when the bubble renders content (caption or timestamp row)
-		 * below the media, squaring the media's bottom corners. */
-		withContentBelow?: boolean;
 		/** Display name of the message author, shown in the lightbox header. */
 		senderName?: string;
 		timestamp?: number;
 	}
 
-	let {
-		media,
-		withContentAbove = false,
-		withContentBelow = false,
-		senderName = '',
-		timestamp = 0,
-	}: Props = $props();
+	let { media, senderName = '', timestamp = 0 }: Props = $props();
 
 	function openLightbox(index: number, event: MouseEvent) {
 		if (media.kind !== 'photos') return;
@@ -73,8 +61,6 @@
 	{#if photos.length === 1}
 		<div
 			class="attachment-photos single"
-			class:with-content-above={withContentAbove}
-			class:with-content-below={withContentBelow}
 			style="width: {singleDims.width}px; height: {singleDims.height}px"
 			data-testid="message-attachment-photos"
 		>
@@ -91,8 +77,6 @@
 		{@const overflow = photos.length - cfg.visibleCells}
 		<div
 			class="attachment-photos multi cells-{cfg.visibleCells}"
-			class:with-content-above={withContentAbove}
-			class:with-content-below={withContentBelow}
 			style="aspect-ratio: {cfg.aspectRatio}"
 			data-testid="message-attachment-photos"
 		>
@@ -133,35 +117,7 @@
 <style>
 	.attachment-photos {
 		position: relative;
-		/* Pull to bubble edge; the bubble's inner padding wraps text-only
-		 * messages but media should be edge-to-edge. The corner radius is
-		 * inherited so the media matches the bubble's border. */
-		margin: calc(-1 * var(--bubble-padding, 0.5rem));
-		max-width: calc(100% + 2 * var(--bubble-padding, 0.5rem));
-		border-radius: inherit;
-		overflow: hidden;
-	}
-
-	/* Hairline border so near-white images don't bleed into the bubble. */
-	.attachment-photos::after {
-		content: '';
-		position: absolute;
-		inset: 0;
-		border-radius: inherit;
-		box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
-		pointer-events: none;
-	}
-
-	.attachment-photos.with-content-above {
-		margin-top: 0;
-		border-start-start-radius: 0;
-		border-start-end-radius: 0;
-	}
-
-	.attachment-photos.with-content-below {
-		margin-bottom: 4px;
-		border-end-start-radius: 0;
-		border-end-end-radius: 0;
+		max-width: 100%;
 	}
 
 	/* Plate behind transparent images. */
@@ -186,6 +142,7 @@
 
 	.cells-2 {
 		grid-template-columns: 1fr 1fr;
+		grid-template-rows: 1fr;
 	}
 
 	.cells-3 {
@@ -236,6 +193,7 @@
 	.photo-cell {
 		position: relative;
 		overflow: hidden;
+		height: 100%;
 		background: rgba(128, 128, 128, 0.08);
 		border: none;
 		padding: 0;
@@ -267,7 +225,6 @@
 		align-items: center;
 		width: 100%;
 		padding: 8px 10px;
-		margin: -4px 0 6px;
 		border: none;
 		border-radius: 10px;
 		background: rgba(255, 255, 255, 0.18);
