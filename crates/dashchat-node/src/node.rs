@@ -43,6 +43,13 @@ pub use app_processing::Notification;
 
 const NETWORK_ID: &'static str = "dash-chat";
 
+/// Number of blob downloads attempted concurrently by the fetch loop.
+const BLOB_FETCH_CONCURRENCY: usize = 4;
+/// How long a single blob download is given before the loop moves on to the next.
+const BLOB_FETCH_ATTEMPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// Minimum delay between passes over the fetch stack when items remain outstanding.
+const BLOB_FETCH_PASS_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
 pub static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
     "https://euc1-1.relay.n0.iroh-canary.iroh.link"
         .parse()
@@ -130,6 +137,7 @@ pub struct Node {
 
     filesystem: Filesystem,
     blob_sync: BlobSync,
+    blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl Node {
@@ -242,6 +250,7 @@ impl Node {
             processor_handle: Default::default(),
             registered_bootstraps: Default::default(),
             blob_sync,
+            blob_fetch_handle: Default::default(),
         };
 
         // === application processor task === //
@@ -249,6 +258,18 @@ impl Node {
         let processor_handle =
             node.spawn_application_processor_task(events_rx, processor_cancel_rx);
         node.processor_handle.lock().await.replace(processor_handle);
+
+        // === blob fetch loop === //
+
+        let blob_fetch_handle = node.blob_sync.spawn_fetch_loop(
+            BLOB_FETCH_CONCURRENCY,
+            BLOB_FETCH_ATTEMPT_TIMEOUT,
+            BLOB_FETCH_PASS_INTERVAL,
+        );
+        node.blob_fetch_handle
+            .lock()
+            .await
+            .replace(blob_fetch_handle);
 
         // === topics === //
 
@@ -774,6 +795,10 @@ impl Node {
 
         if let Some(handle) = self.processor_handle.lock().await.take() {
             let _ = handle.await;
+        }
+
+        if let Some(handle) = self.blob_fetch_handle.lock().await.take() {
+            handle.abort();
         }
 
         // Close pools last. SqlitePool clones share underlying state, so closing
