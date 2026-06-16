@@ -358,7 +358,7 @@ impl Node {
                 if let Some(media) = m.media_meta() {
                     for item in media.iter() {
                         // TODO: can we have a p2panda stream of operations?
-                        self.blob_sync.fetch_pool.insert(item.hash).await;
+                        self.blob_sync.fetch_pool.add(item.hash).await;
                     }
                 }
             }

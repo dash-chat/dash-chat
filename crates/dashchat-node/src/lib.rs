@@ -1,3 +1,4 @@
+pub mod blob_sync;
 mod chat;
 mod contact;
 mod error;

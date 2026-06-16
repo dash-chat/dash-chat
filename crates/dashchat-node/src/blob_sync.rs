@@ -1,19 +1,43 @@
 use futures::Stream;
 use p2panda::operation::Operation;
-use std::collections::HashSet;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 
 use crate::{AsBody, ChatPayload, Payload};
 
+#[derive(Clone)]
+pub struct BlobSync {
+    pub blobs: iroh_blobs::BlobsProtocol,
+    pub fetch_pool: BlobFetchPool,
+}
+
+impl BlobSync {
+    pub async fn new(
+        endpoint: p2panda::Endpoint,
+        root: PathBuf,
+        blob_fetch: BlobFetchPool,
+    ) -> anyhow::Result<Self> {
+        let store = iroh_blobs::store::fs::FsStore::load(root).await?;
+        let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        endpoint.accept(iroh_blobs::ALPN, blobs.clone()).await?;
+
+        Ok(Self {
+            blobs,
+            fetch_pool: blob_fetch,
+        })
+    }
+}
+
 #[derive(Clone, Default)]
-pub struct BlobFetchPool(Arc<Mutex<HashSet<iroh_blobs::Hash>>>);
+pub struct BlobFetchPool {
+    stack: Arc<Mutex<Vec<iroh_blobs::Hash>>>,
+}
 
 impl BlobFetchPool {
-    pub async fn insert(&self, hash: iroh_blobs::Hash) {
-        let mut s = self.0.lock().await;
-        s.insert(hash);
+    pub async fn add(&self, hash: iroh_blobs::Hash) {
+        let mut s = self.stack.lock().await;
+        s.push(hash);
     }
 
     // TODO: can we just have a p2panda stream of all past and future operations?
@@ -21,7 +45,7 @@ impl BlobFetchPool {
         ops: impl Stream<Item = Result<Operation, anyhow::Error>> + '_,
     ) -> anyhow::Result<Self> {
         let store = Self::default();
-        let mut s = store.0.lock().await;
+        let mut s = store.stack.lock().await;
         tokio::pin!(ops);
         while let Some(op) = ops.try_next().await? {
             let Some(body) = op.body else {
@@ -32,7 +56,7 @@ impl BlobFetchPool {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     if let Some(media) = m.media_meta() {
                         for item in media {
-                            s.insert(item.hash);
+                            s.push(item.hash);
                         }
                     }
                 }

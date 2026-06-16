@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 
+use crate::blob_sync::{BlobFetchPool, BlobSync};
 use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, ShutdownError};
 use crate::filesystem::Filesystem;
@@ -30,7 +31,7 @@ use crate::chat::ChatMessageContent;
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
-use crate::stores::{BlobFetchPool, GroupStore, LocalStore, NodeKeys, OpStore};
+use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
@@ -102,29 +103,6 @@ impl Default for NodeConfig {
 }
 
 pub type DashResolver = StrongRemove<VerifyingKey, Hash, Operation, ()>;
-
-#[derive(Clone)]
-pub struct BlobSync {
-    pub blobs: iroh_blobs::BlobsProtocol,
-    pub fetch_pool: BlobFetchPool,
-}
-
-impl BlobSync {
-    pub async fn new(
-        endpoint: p2panda::Endpoint,
-        root: PathBuf,
-        blob_fetch: BlobFetchPool,
-    ) -> Result<Self> {
-        let store = iroh_blobs::store::fs::FsStore::load(root).await?;
-        let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
-        endpoint.accept(iroh_blobs::ALPN, blobs.clone()).await?;
-
-        Ok(Self {
-            blobs,
-            fetch_pool: blob_fetch,
-        })
-    }
-}
 
 #[derive(Clone)]
 pub struct Node {
