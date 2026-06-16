@@ -43,6 +43,8 @@ describe('Removing group members', () => {
 		await agent1.groupInfoPage.removeMemberConfirmButton.click();
 
 		// Bob should no longer appear in the members list
-		await expect(agent1.groupInfoPage.memberItem('Bob')).not.toBeExisting();
+		await agent1.groupInfoPage
+			.memberItem('Bob')
+			.waitForExist({ reverse: true });
 	});
 });
