@@ -86,7 +86,13 @@ impl NodeConfig {
             // to effect expected behavior of existing tests.
             mdns_mode: MdnsDiscoveryMode::Disabled,
             relay_url: None,
-            blob_fetch: BlobFetchConfig::default(),
+            // Retry blob downloads quickly so tests don't wait on the
+            // production-scale pass interval.
+            blob_fetch: BlobFetchConfig {
+                pass_interval: std::time::Duration::from_secs(2),
+                attempt_timeout: std::time::Duration::from_secs(10),
+                ..BlobFetchConfig::default()
+            },
         }
     }
 }
