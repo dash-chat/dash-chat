@@ -84,6 +84,28 @@
 	// 	loading = false;
 	// }
 
+	async function handleRemove() {
+		if (!dialogActorId) {
+			return {
+				success: false as const,
+				error: m.errorUnexpected(),
+			};
+		}
+
+		try {
+			// await groupChatStore.client.removeMember(chatId, dialogActorId);
+			dialogType = null;
+			dialogActorId = null;
+			return { success: true as const };
+		} catch (e) {
+			console.error(e);
+			return {
+				success: false as const,
+				error: m.errorUnexpected(),
+			};
+		}
+	}
+
 	async function handleLeaveGroup() {
 		try {
 			await chatsStore.leaveGroup(chatId);
@@ -367,33 +389,18 @@
 			{/snippet}
 		</Dialog> -->
 
-		<!-- <Dialog
+		<ActionDialog
 			opened={dialogType === 'remove' && dialogActorId !== null}
-			onBackdropClick={() => {
+			onCancel={() => {
 				dialogType = null;
 				dialogActorId = null;
 			}}
+			onConfirm={handleRemove}
 			title={m.removeMember()}
+			confirmText={m.remove()}
 		>
 			<span>{m.areYouSureRemoveMember()}</span>
-			{#snippet buttons()}
-				<DialogButton
-					onClick={() => {
-						dialogType = null;
-						dialogActorId = null;
-					}}
-				>
-					{m.cancel()}
-				</DialogButton>
-				<DialogButton
-					strong
-					onClick={() => dialogActorId && handleRemove(dialogActorId)}
-					disabled={loading}
-				>
-					{loading ? '...' : m.remove()}
-				</DialogButton>
-			{/snippet}
-		</Dialog> -->
+		</ActionDialog>
 
 		<ActionDialog
 			opened={dialogType === 'leave'}
