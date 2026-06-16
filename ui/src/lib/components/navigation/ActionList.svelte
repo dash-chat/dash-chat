@@ -4,7 +4,17 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import type { Snippet } from 'svelte';
 
-	let { children }: { children: Snippet; class?: string } = $props();
+	type Props = {
+		children: Snippet;
+		class?: string;
+		'data-testid'?: string;
+	};
+
+	let {
+		children,
+		class: className,
+		'data-testid': dataTestId,
+	}: Props = $props();
 
 	const theme = useTheme();
 </script>
@@ -13,7 +23,8 @@
 	nested
 	strongIos
 	inset={isWideScreen.value || theme === 'ios'}
-	class="z-1"
+	class="z-1 {className}"
+	data-testid={dataTestId}
 >
 	{@render children()}
 </List>

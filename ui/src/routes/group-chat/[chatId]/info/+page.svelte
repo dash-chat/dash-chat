@@ -179,118 +179,116 @@
 					</div>
 
 					{#await $members then members}
-						<div data-testid="group-info-members">
-							<BlockTitle>
-								{m.membersCount({
-									count: Object.keys(members).length,
-								})}</BlockTitle
-							>
-							<ActionList>
-								{#if me.admin}
-									<ListAction
-										title={m.addMembers()}
-										icon={mdiPlusCircle}
-										href={`/group-chat/${chatId}/info/add-members`}
-										data-testid="group-info-add-members"
-									/>
-								{/if}
+						<BlockTitle>
+							{m.membersCount({
+								count: Object.keys(members).length,
+							})}</BlockTitle
+						>
+						<ActionList data-testid="group-info-members">
+							{#if me.admin}
+								<ListAction
+									title={m.addMembers()}
+									icon={mdiPlusCircle}
+									href={`/group-chat/${chatId}/info/add-members`}
+									data-testid="group-info-add-members"
+								/>
+							{/if}
 
-								{#each Object.entries(members) as [actorId, member]}
-									<!--
+							{#each Object.entries(members) as [actorId, member]}
+								<!--
 								  For member actions, put back:
 									onclick={() => (sheetOpenFor = actorId)}
 							  -->
-									<ListItem link chevron={false} title={member.profile?.name}>
-										{#snippet media()}
-											<Avatar
-												image={member.profile?.avatar}
-												initials={member.profile?.name.slice(0, 2)}
-												size={32}
-											/>
-										{/snippet}
+								<ListItem link chevron={false} title={member.profile?.name}>
+									{#snippet media()}
+										<Avatar
+											image={member.profile?.avatar}
+											initials={member.profile?.name.slice(0, 2)}
+											size={32}
+										/>
+									{/snippet}
 
-										{#snippet after()}
-											{#if member.admin}
-												<Chip>{m.administrator()}</Chip>
-											{/if}
-										{/snippet}
-									</ListItem>
+									{#snippet after()}
+										{#if member.admin}
+											<Chip>{m.administrator()}</Chip>
+										{/if}
+									{/snippet}
+								</ListItem>
 
-									<Sheet
-										class="pb-safe"
-										opened={sheetOpenFor === actorId}
-										onBackdropClick={() => (sheetOpenFor = null)}
+								<Sheet
+									class="pb-safe"
+									opened={sheetOpenFor === actorId}
+									onBackdropClick={() => (sheetOpenFor = null)}
+								>
+									<div
+										class="flex-col gap-4 py-4"
+										style="display: flex; align-items: center;"
 									>
-										<div
-											class="flex-col gap-4 py-4"
-											style="display: flex; align-items: center;"
-										>
-											<Avatar
-												image={member.profile?.avatar}
-												initials={member.profile?.name.slice(0, 2)}
-												size={32}
-											/>
-											<span class="font-semibold">{member.profile?.name}</span>
-										</div>
+										<Avatar
+											image={member.profile?.avatar}
+											initials={member.profile?.name.slice(0, 2)}
+											size={32}
+										/>
+										<span class="font-semibold">{member.profile?.name}</span>
+									</div>
 
-										<ActionList>
-											{#if me.admin}
-												{#if member.admin}
-													<ListAction
-														title={m.demoteFromAdministrator()}
-														onClick={() => {
-															dialogType = 'demote';
-															dialogActorId = actorId;
-															sheetOpenFor = null;
-														}}
-														icon={mdiKeyVariant}
-													/>
-												{:else}
-													<ListAction
-														title={m.promoteToAdministrator()}
-														onClick={() => {
-															dialogType = 'promote';
-															dialogActorId = actorId;
-															sheetOpenFor = null;
-														}}
-														icon={mdiKeyVariant}
-													/>
-												{/if}
-
+									<ActionList>
+										{#if me.admin}
+											{#if member.admin}
 												<ListAction
-													title={m.removeMember()}
+													title={m.demoteFromAdministrator()}
 													onClick={() => {
-														dialogType = 'remove';
+														dialogType = 'demote';
 														dialogActorId = actorId;
 														sheetOpenFor = null;
 													}}
-													icon={mdiDelete}
+													icon={mdiKeyVariant}
+												/>
+											{:else}
+												<ListAction
+													title={m.promoteToAdministrator()}
+													onClick={() => {
+														dialogType = 'promote';
+														dialogActorId = actorId;
+														sheetOpenFor = null;
+													}}
+													icon={mdiKeyVariant}
 												/>
 											{/if}
-										</ActionList>
-									</Sheet>
-								{/each}
-							</ActionList>
 
-							{#if me.member}
-								<ActionList>
-									<ListAction
-										title={m.leaveGroup()}
-										actionType="danger"
-										icon={mdiExport}
-										onClick={() => (dialogType = 'leave')}
-										data-testid="group-info-leave"
-									/>
+											<ListAction
+												title={m.removeMember()}
+												onClick={() => {
+													dialogType = 'remove';
+													dialogActorId = actorId;
+													sheetOpenFor = null;
+												}}
+												icon={mdiDelete}
+											/>
+										{/if}
+									</ActionList>
+								</Sheet>
+							{/each}
+						</ActionList>
 
-									<!-- <ListAction
+						{#if me.member}
+							<ActionList>
+								<ListAction
+									title={m.leaveGroup()}
+									actionType="danger"
+									icon={mdiExport}
+									onClick={() => (dialogType = 'leave')}
+									data-testid="group-info-leave"
+								/>
+
+								<!-- <ListAction
 								title={m.deleteGroup()}
 								actionType="danger"
 								icon={mdiClose}
 								onClick={() => (dialogType = 'delete')}
 							/> -->
-								</ActionList>
-							{/if}
-						</div>
+							</ActionList>
+						{/if}
 					{/await}
 				</div>
 			</div>
