@@ -292,6 +292,7 @@ impl Node {
 
         let hash = operation.id();
         let topic = operation.topic();
+        let log_id = LogId::from_topic(topic);
         let device_id = DeviceId::from(operation.author());
         let payload = operation.message();
 
@@ -358,7 +359,7 @@ impl Node {
                 if let Some(media) = m.media_meta() {
                     for item in media.iter() {
                         // TODO: can we have a p2panda stream of operations?
-                        self.blob_sync.fetch_pool.add(item.hash).await;
+                        self.blob_sync.fetch_pool.add(log_id, item.hash).await;
                     }
                 }
             }

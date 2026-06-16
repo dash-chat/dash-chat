@@ -194,12 +194,6 @@ impl Node {
         let group_store = GroupStore::new(store.clone());
         let op_store = OpStore::from_sqlite(store.clone());
 
-        // === blob sync === //
-
-        let blob_fetch =
-            BlobFetchPool::from_ops(op_store.get_all_operations_not_fully_sorted()).await?;
-        let blob_sync = BlobSync::new(endpoint, filesystem.blobs_store_path(), blob_fetch).await?;
-
         // === mailboxes === //
 
         let sync_tracker = std::sync::Arc::new(
@@ -213,6 +207,20 @@ impl Node {
             op_store.clone(),
             sync_tracker,
             config.mailboxes_config.clone(),
+        )
+        .await?;
+
+        // === blob sync === //
+
+        let source_lookup =
+            crate::blob_sync::MixedSourceLookup::new(op_store.clone(), mailboxes.clone());
+        let blob_fetch =
+            BlobFetchPool::from_ops(op_store.get_all_operations_not_fully_sorted()).await?;
+        let blob_sync = BlobSync::new(
+            endpoint,
+            filesystem.blobs_store_path(),
+            blob_fetch,
+            source_lookup,
         )
         .await?;
 
