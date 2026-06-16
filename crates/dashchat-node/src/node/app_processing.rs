@@ -306,11 +306,7 @@ impl Node {
                     "received IntroduceAgents message"
                 );
                 for (device_id, agent_id) in agents {
-                    if let Err(err) = self
-                        .local_store
-                        .save_agent_mapping(*device_id, *agent_id)
-                        .await
-                    {
+                    if let Err(err) = self.reducer.save_agent_mapping(*device_id, *agent_id).await {
                         tracing::warn!(
                             ?err,
                             device_id = ?device_id.aliased(),
@@ -339,7 +335,7 @@ impl Node {
             }
 
             Payload::Inbox(invitation) => {
-                let active_topics = self.local_store.get_active_inbox_topics().await?;
+                let active_topics = self.reducer.get_active_inbox_topics().await?;
                 if !active_topics
                     .iter()
                     .any(|it| *it.topic == TopicId::from(topic))
@@ -369,11 +365,7 @@ impl Node {
 
                 tracing::info!(me = ?self.agent_id().aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
 
-                if let Err(err) = self
-                    .local_store
-                    .save_profile(agent_id, profile.clone())
-                    .await
-                {
+                if let Err(err) = self.reducer.save_profile(agent_id, profile.clone()).await {
                     tracing::warn!(?err, "failed to save profile from SetProfile");
                 }
             }
@@ -386,16 +378,12 @@ impl Node {
                     AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
                         anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
                     })?);
-                if let Err(err) = self
-                    .local_store
-                    .save_agent_mapping(device_id, agent_id)
-                    .await
-                {
+                if let Err(err) = self.reducer.save_agent_mapping(device_id, agent_id).await {
                     tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
                 }
 
                 if let Err(err) = self
-                    .local_store
+                    .reducer
                     .save_capabilities(device_id, capabilities.clone())
                     .await
                 {

@@ -30,7 +30,7 @@ use crate::chat::ChatMessageContent;
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
-use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
+use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore, Reducer};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
@@ -123,6 +123,7 @@ pub struct Node {
     registered_bootstraps: Arc<Mutex<HashSet<(NodeId, RelayUrl)>>>,
 
     pub local_store: LocalStore,
+    pub reducer: Reducer,
     group_store: GroupStore,
     node_keys: NodeKeys,
 
@@ -189,6 +190,7 @@ impl Node {
         // p2panda or finding alternative routes to achieve the same queries.
         let group_store = GroupStore::new(store.clone());
         let op_store = OpStore::from_sqlite(store.clone());
+        let reducer = Reducer::from_op_store(op_store.clone());
 
         // === mailboxes === //
 
@@ -214,7 +216,8 @@ impl Node {
             mailboxes,
             config,
             filesystem,
-            local_store: local_store.clone(),
+            local_store,
+            reducer,
             group_store,
             node_keys,
             notification_tx,
