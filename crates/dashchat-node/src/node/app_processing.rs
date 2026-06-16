@@ -357,7 +357,8 @@ impl Node {
             Payload::Chat(ChatPayload::Message(m)) => {
                 if let Some(media) = m.media_meta() {
                     for item in media.iter() {
-                        todo!("process")
+                        // TODO: can we have a p2panda stream of operations?
+                        self.blob_sync.fetch_pool.insert(item.hash).await;
                     }
                 }
             }

@@ -30,7 +30,7 @@ use crate::chat::ChatMessageContent;
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
-use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
+use crate::stores::{BlobFetchPool, GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
@@ -106,15 +106,23 @@ pub type DashResolver = StrongRemove<VerifyingKey, Hash, Operation, ()>;
 #[derive(Clone)]
 pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
+    pub fetch_pool: BlobFetchPool,
 }
 
 impl BlobSync {
-    pub async fn new(endpoint: p2panda::Endpoint, root: PathBuf) -> Result<Self> {
+    pub async fn new(
+        endpoint: p2panda::Endpoint,
+        root: PathBuf,
+        blob_fetch: BlobFetchPool,
+    ) -> Result<Self> {
         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
         let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
         endpoint.accept(iroh_blobs::ALPN, blobs.clone()).await?;
 
-        Ok(Self { blobs })
+        Ok(Self {
+            blobs,
+            fetch_pool: blob_fetch,
+        })
     }
 }
 
@@ -210,7 +218,9 @@ impl Node {
 
         // === blob sync === //
 
-        let blob_sync = BlobSync::new(endpoint, filesystem.blobs_store_path()).await?;
+        let blob_fetch =
+            BlobFetchPool::from_ops(op_store.get_all_operations_not_fully_sorted()).await?;
+        let blob_sync = BlobSync::new(endpoint, filesystem.blobs_store_path(), blob_fetch).await?;
 
         // === mailboxes === //
 

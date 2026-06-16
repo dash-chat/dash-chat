@@ -90,6 +90,12 @@ impl OpStore {
         Ok(log)
     }
 
+    pub fn get_all_operations_not_fully_sorted(
+        &self,
+    ) -> impl futures::Stream<Item = Result<Operation, anyhow::Error>> + '_ {
+        queries::get_all_operations_not_fully_sorted(&self.store)
+    }
+
     /// Get the "height" of each log, which is actually the highest sequence number of the log.
     pub async fn get_log_heights(
         &self,
