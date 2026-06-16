@@ -22,15 +22,15 @@ dashchat-compat = { path = "crates/dashchat-compat" }
 mailbox-client = { path = "crates/mailbox-client" }
 mailbox-server = { path = "crates/mailbox-server" }
 
-p2panda = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e" }
-p2panda-auth = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e", features = [
+p2panda = { git = "https://github.com/p2panda/p2panda", rev = "92e7782106bdda108cc5e11acfc78ba111a43c57" }
+p2panda-auth = { git = "https://github.com/p2panda/p2panda", rev = "92e7782106bdda108cc5e11acfc78ba111a43c57", features = [
   "processor",
 ] }
-p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e" }
-p2panda-store = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e", features = [
+p2panda-core = { git = "https://github.com/p2panda/p2panda", rev = "92e7782106bdda108cc5e11acfc78ba111a43c57" }
+p2panda-store = { git = "https://github.com/p2panda/p2panda", rev = "92e7782106bdda108cc5e11acfc78ba111a43c57", features = [
   "sqlite",
 ] }
-p2panda-spaces = { git = "https://github.com/p2panda/p2panda", rev = "eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e", features = [
+p2panda-spaces = { git = "https://github.com/p2panda/p2panda", rev = "92e7782106bdda108cc5e11acfc78ba111a43c57", features = [
   "test_utils",
 ] }
 

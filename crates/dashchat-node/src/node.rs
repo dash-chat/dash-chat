@@ -521,7 +521,9 @@ impl Node {
     ) -> Result<(), RemoveGroupMemberError> {
         // TODO: this should use a transaction, but the race is not a big deal here
         let member_id = DeviceId::from(member);
-        if !self.has_other_admins(chat_id, member_id).await? {
+        if !self.has_other_admins(chat_id, member_id).await?
+            && !self.is_only_member(chat_id, member_id).await?
+        {
             return Err(RemoveGroupMemberError::LastAdmin);
         }
 
@@ -555,6 +557,16 @@ impl Node {
         Ok(members)
     }
 
+    async fn is_only_member(&self, chat_id: ChatId, member: DeviceId) -> anyhow::Result<bool> {
+        let found_other_member = self
+            .get_group_members(chat_id)
+            .await?
+            .iter()
+            .any(|(m, _)| *m != member);
+
+        Ok(!found_other_member)
+    }
+
     async fn has_other_admins(&self, chat_id: ChatId, exclude: DeviceId) -> anyhow::Result<bool> {
         let result = self
             .get_group_members(chat_id)
@@ -563,6 +575,7 @@ impl Node {
             .any(|(member, access)| {
                 *access == p2panda_auth::Access::manage() && *member != exclude
             });
+
         Ok(result)
     }
 
