@@ -12,7 +12,7 @@ import {
 	Media,
 	MessageContent,
 	Payload,
-	ReadMessagesStore,
+	MessagesStore,
 	getMessageMedia,
 	getMessageText,
 	sameMediaShape,
@@ -34,7 +34,7 @@ export interface Message {
 }
 
 // Store tied to a specific direct chat
-export class DirectChatStore implements ReadMessagesStore {
+export class DirectChatStore implements MessagesStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
@@ -150,7 +150,10 @@ export class DirectChatStore implements ReadMessagesStore {
 		});
 	}
 
-	async sendMessage(input: { message: string; media: Media | null }) {
+	async sendMessage(input: {
+		message: string;
+		media: Media | null;
+	}): Promise<Hash> {
 		const chatId = await this.chatId();
 		const myDeviceId = await this.contactsStore.myDeviceId();
 		const content: MessageContent = {
@@ -158,7 +161,7 @@ export class DirectChatStore implements ReadMessagesStore {
 			message: input.message,
 			media: input.media,
 		};
-		await Promise.all([
+		const [op] = await Promise.all([
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
@@ -173,6 +176,7 @@ export class DirectChatStore implements ReadMessagesStore {
 			}),
 			this.client.sendMessage(chatId, content),
 		]);
+		return op.hash;
 	}
 
 	readMessageHashes = reactive(async () => {

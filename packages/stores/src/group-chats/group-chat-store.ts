@@ -16,7 +16,7 @@ import {
 	Media,
 	MessageContent,
 	Payload,
-	ReadMessagesStore,
+	MessagesStore,
 	getMessageMedia,
 	getMessageText,
 	sameMediaShape,
@@ -36,7 +36,7 @@ export interface GroupMemberWithProfile {
 	admin: boolean;
 }
 
-export class GroupChatStore implements ReadMessagesStore {
+export class GroupChatStore implements MessagesStore {
 	private membersVersion = signal(0);
 
 	constructor(
@@ -356,14 +356,17 @@ export class GroupChatStore implements ReadMessagesStore {
 		await this.client.markMessagesRead(this.chatId, messageHashes);
 	}
 
-	async sendMessage(input: { message: string; media: Media | null }) {
+	async sendMessage(input: {
+		message: string;
+		media: Media | null;
+	}): Promise<Hash> {
 		const myDeviceId = await this.contactsStore.myDeviceId();
 		const content: MessageContent = {
 			v: '1',
 			message: input.message,
 			media: input.media,
 		};
-		await Promise.all([
+		const [op] = await Promise.all([
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== this.chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
@@ -378,6 +381,7 @@ export class GroupChatStore implements ReadMessagesStore {
 			}),
 			this.client.sendMessage(this.chatId, content),
 		]);
+		return op.hash;
 	}
 }
 

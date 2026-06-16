@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { getContext, onDestroy } from 'svelte';
+	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type {
 		ChatsStore,
@@ -22,22 +22,11 @@
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
-	import MessageInput from '$lib/components/MessageInput.svelte';
-	import MediaDropOverlay from '$lib/components/MediaDropOverlay.svelte';
-	import { stageFiles } from '$lib/utils/stage-files';
+	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { messagePosition } from '$lib/components/messages/message-helpers';
-	import { showToast } from '$lib/utils/toasts';
 	import { m } from '$lib/paraglide/messages';
-	import {
-		type DraftMedia,
-		draftToMedia,
-		revokeDraft,
-		AttachmentTooLargeError,
-		formatFileSize,
-		MAX_MESSAGE_BYTES,
-	} from '$lib/types/media';
 
 	let chatId = page.params.chatId!;
 
@@ -56,8 +45,6 @@
 	const readMessageHashes = useReactivePromise(store.readMessageHashes);
 	const unreadCount = useReactivePromise(store.unreadCount);
 
-	let messageText = $state('');
-	let messageMedia: DraftMedia | undefined = $state(undefined);
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
 	let reverseScrollPage: ReturnType<typeof ReverseScrollPage> | undefined =
@@ -66,43 +53,11 @@
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
-	async function sendMessage() {
-		const message = messageText;
-		const draft = messageMedia;
-		if ((!message || message.trim() === '') && !draft) return;
-		try {
-			const media = draft ? await draftToMedia(draft) : null;
-			await store.sendMessage({ message, media });
-			// Only clear what this send actually consumed: the user may have
-			// typed or staged new attachments while the send was confirming.
-			if (messageText === message) messageText = '';
-			if (messageMedia === draft) {
-				messageMedia = undefined;
-				if (draft) revokeDraft(draft);
-			}
-			capturedUnreadHash = null;
-			unreadDividerCaptured = false;
-			setTimeout(() => reverseScrollPage?.scrollToBottom());
-		} catch (e) {
-			if (e instanceof AttachmentTooLargeError) {
-				showToast(
-					m.errorAttachmentTooLarge({
-						max: formatFileSize(MAX_MESSAGE_BYTES),
-					}),
-					'error',
-				);
-				return;
-			}
-			showToast(m.errorUnexpected(), 'unexpected', e);
-			console.error('Failed to send group message', e);
-		}
+	function onMessageSent() {
+		capturedUnreadHash = null;
+		unreadDividerCaptured = false;
+		setTimeout(() => reverseScrollPage?.scrollToBottom());
 	}
-
-	// Free staged-attachment object URLs when leaving the chat without
-	// sending; nothing else revokes them.
-	onDestroy(() => {
-		if (messageMedia) revokeDraft(messageMedia);
-	});
 
 	const theme = $derived(useTheme());
 
@@ -341,14 +296,6 @@
 		class:bg-md-light-surface={theme === 'material'}
 		class:dark:bg-md-dark-surface={theme === 'material'}
 	>
-		<MediaDropOverlay
-			onFiles={files => (messageMedia = stageFiles(messageMedia, files))}
-		/>
-		<MessageInput
-			bind:value={messageText}
-			media={messageMedia}
-			onSend={sendMessage}
-			onMediaChange={media => (messageMedia = media)}
-		/>
+		<MessageComposer {store} onSent={onMessageSent} />
 	</div>
 </div>

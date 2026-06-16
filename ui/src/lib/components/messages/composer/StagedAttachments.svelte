@@ -3,82 +3,117 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiPlus } from '@mdi/js';
-	import { type DraftMedia, MAX_STAGED_PHOTOS } from '$lib/types/media';
+	import {
+		type DraftMedia,
+		MAX_STAGED_PHOTOS,
+		PHOTO_ACCEPT,
+		revokeDraft,
+	} from '$lib/types/media';
+	import { stageFiles } from '$lib/utils/stage-files';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 
 	interface Props {
-		media: DraftMedia;
-		onRemovePhoto: (index: number) => void;
-		onRemoveFile: () => void;
-		onAddMore: () => void;
-		onClearAll: () => void;
+		media: DraftMedia | undefined;
 	}
 
-	let { media, onRemovePhoto, onRemoveFile, onAddMore, onClearAll }: Props =
-		$props();
+	let { media = $bindable() }: Props = $props();
 
-	const count = $derived(media.kind === 'photos' ? media.items.length : 1);
+	const count = $derived(media?.kind === 'photos' ? media.items.length : 1);
+
+	let photoPicker: HTMLInputElement;
+
+	function onPhotosPicked() {
+		if (!photoPicker.files || photoPicker.files.length === 0) return;
+		media = stageFiles(media, photoPicker.files);
+		photoPicker.value = '';
+	}
+
+	function clear() {
+		if (media) revokeDraft(media);
+		media = undefined;
+	}
+
+	function removePhoto(index: number) {
+		if (!media || media.kind !== 'photos') return;
+		const removed = media.items[index];
+		URL.revokeObjectURL(removed.previewUrl);
+		const remaining = media.items.filter((_, i) => i !== index);
+		media =
+			remaining.length > 0 ? { kind: 'photos', items: remaining } : undefined;
+	}
 </script>
 
-<div class="staged-attachments" data-testid="message-input-media-preview">
-	{#if count > 1}
-		<div class="staged-header">
-			<button
-				type="button"
-				class="clear-all"
-				data-testid="message-input-clear-attachments"
-				onclick={onClearAll}
-			>
-				{m.removeAllAttachments()}
-			</button>
-		</div>
-	{/if}
-	<div class="staged-rail">
-		{#if media.kind === 'photos'}
-			{#each media.items as photo, i (photo.previewUrl)}
-				<div class="staged-thumb">
-					<img src={photo.previewUrl} alt={photo.file.name} />
+<input
+	type="file"
+	accept={PHOTO_ACCEPT}
+	multiple
+	bind:this={photoPicker}
+	class="hidden"
+	data-testid="message-input-add-more-picker"
+	onchange={onPhotosPicked}
+/>
+
+{#if media}
+	<div class="staged-attachments" data-testid="message-input-media-preview">
+		{#if count > 1}
+			<div class="staged-header">
+				<button
+					type="button"
+					class="clear-all"
+					data-testid="message-input-clear-attachments"
+					onclick={clear}
+				>
+					{m.removeAllAttachments()}
+				</button>
+			</div>
+		{/if}
+		<div class="staged-rail">
+			{#if media.kind === 'photos'}
+				{#each media.items as photo, i (photo.previewUrl)}
+					<div class="staged-thumb">
+						<img src={photo.previewUrl} alt={photo.file.name} />
+						<div class="thumb-gradient"></div>
+						<button
+							type="button"
+							class="thumb-remove"
+							data-testid="message-input-remove-attachment-{i}"
+							aria-label={m.removeAttachment()}
+							onclick={() => removePhoto(i)}
+						>
+							<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
+						</button>
+					</div>
+				{/each}
+				{#if media.items.length < MAX_STAGED_PHOTOS}
+					<button
+						type="button"
+						class="add-more"
+						data-testid="message-input-add-more"
+						aria-label={m.addMoreAttachments()}
+						onclick={() => photoPicker.click()}
+					>
+						<wa-icon src={wrapPathInSvg(mdiPlus)}></wa-icon>
+					</button>
+				{/if}
+			{:else}
+				<div class="staged-thumb staged-file">
+					<ExtensionSheet name={media.file.name} />
+					<span class="staged-file-name">{media.file.name}</span>
 					<div class="thumb-gradient"></div>
 					<button
 						type="button"
 						class="thumb-remove"
-						data-testid="message-input-remove-attachment-{i}"
+						data-testid="message-input-remove-attachment-0"
 						aria-label={m.removeAttachment()}
-						onclick={() => onRemovePhoto(i)}
+						onclick={clear}
 					>
 						<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
 					</button>
 				</div>
-			{/each}
-			{#if media.items.length < MAX_STAGED_PHOTOS}
-				<button
-					type="button"
-					class="add-more"
-					data-testid="message-input-add-more"
-					aria-label={m.addMoreAttachments()}
-					onclick={onAddMore}
-				>
-					<wa-icon src={wrapPathInSvg(mdiPlus)}></wa-icon>
-				</button>
 			{/if}
-		{:else}
-			<div class="staged-thumb staged-file">
-				<ExtensionSheet name={media.file.name} />
-				<span class="staged-file-name">{media.file.name}</span>
-				<div class="thumb-gradient"></div>
-				<button
-					type="button"
-					class="thumb-remove"
-					data-testid="message-input-remove-attachment-0"
-					aria-label={m.removeAttachment()}
-					onclick={onRemoveFile}
-				>
-					<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
-				</button>
-			</div>
-		{/if}
+		</div>
 	</div>
-</div>
+{/if}
 
 <style>
 	.staged-attachments {
