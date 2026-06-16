@@ -5,19 +5,14 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type {
-		ContactsStore,
-		ChatsStore,
-		VerifyingKey,
+	import {
+		fullName,
+		type ContactsStore,
+		type ChatsStore,
+		type VerifyingKey,
 	} from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import {
-		mdiAccountGroup,
-		mdiDelete,
-		mdiKeyVariant,
-		mdiPencil,
-		mdiPlusCircle,
-	} from '@mdi/js';
+	import { mdiDelete, mdiKeyVariant, mdiPencil, mdiPlusCircle } from '@mdi/js';
 	import {
 		Page,
 		Navbar,
@@ -129,7 +124,9 @@
 				>
 					<Avatar
 						image={info.image}
-						initials={info.name.slice(0, 2)}
+						name={info.name}
+						colorSeed={chatId}
+						group
 						size="2.5rem"
 					/>
 					<span>{info.name}</span>
@@ -161,11 +158,11 @@
 					<div class="column" style="align-items: center; gap: 1rem">
 						<Avatar
 							image={info.image}
-							initials={info.name.slice(0, 2)}
+							name={info.name}
+							colorSeed={chatId}
+							group
 							size="5rem"
-						>
-							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
-						</Avatar>
+						/>
 
 						<span class="text-xl font-semibold">{info.name}</span>
 
@@ -211,7 +208,8 @@
 									{#snippet media()}
 										<Avatar
 											image={member.profile?.avatar}
-											initials={member.profile?.name.slice(0, 2)}
+											name={member.profile && fullName(member.profile)}
+											colorSeed={actorId}
 											size={32}
 										/>
 									{/snippet}
@@ -234,7 +232,8 @@
 									>
 										<Avatar
 											image={member.profile?.avatar}
-											initials={member.profile?.name.slice(0, 2)}
+											name={member.profile && fullName(member.profile)}
+											colorSeed={actorId}
 											size={32}
 										/>
 										<span class="font-semibold">{member.profile?.name}</span>

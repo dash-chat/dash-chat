@@ -2,7 +2,9 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { getContext } from 'svelte';
 	import type { ContactsStore, Error, SettingsStore } from 'dash-chat-stores';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import AvatarPicker from './AvatarPicker.svelte';
+	import { joinName } from './avatar-helpers';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMobile } from '$lib/utils/environment';
@@ -23,6 +25,7 @@
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const settingsStore: SettingsStore = getContext('settings-store');
+	const myAgentId = useReactiveValue(contactsStore.myAgentId);
 	let name = $state<string | undefined>(undefined);
 	let surname = $state<string | undefined>(undefined);
 	let avatar = $state<string | undefined>(undefined);
@@ -95,6 +98,9 @@
 		<AvatarPicker
 			bind:avatar={pickerAvatar}
 			bind:inModalState={textEditorOpen}
+			{name}
+			{surname}
+			colorSeed={$myAgentId}
 			onClose={closePicker}
 			onSave={selectAvatar}
 			saveLabel={m.save()}
@@ -141,8 +147,14 @@
 					style="height: 100%; position: relative; align-self: center; cursor: pointer"
 					onclick={openPicker}
 				>
-					{#if avatar}
-						<Avatar image={avatar} alt="Avatar" size={avatarSize} />
+					{#if avatar || name?.trim()}
+						<Avatar
+							image={avatar}
+							name={joinName(name, surname)}
+							colorSeed={$myAgentId}
+							alt="Avatar"
+							size={avatarSize}
+						/>
 					{:else}
 						<Button
 							rounded

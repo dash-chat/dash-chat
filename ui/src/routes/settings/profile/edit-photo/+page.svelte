@@ -3,7 +3,7 @@
 	import type { Error } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Button, Page } from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
@@ -16,7 +16,9 @@
 	let surname = $state<string | undefined>(undefined);
 	let about = $state<string | undefined>(undefined);
 
+	const myAgentId = useReactiveValue(contactsStore.myAgentId);
 	const myProfile = useReactiveValue(contactsStore.myProfile);
+
 	let originalAvatar = $state<string | undefined>(undefined);
 
 	let initialized = false;
@@ -63,6 +65,9 @@
 		loading={$myProfile === undefined}
 		bind:avatar
 		bind:inModalState
+		{name}
+		{surname}
+		colorSeed={$myAgentId}
 		onClose={() => goto('/settings/profile')}
 		onSave={save}
 		saveLabel={m.save()}

@@ -104,7 +104,9 @@
 			<Container class="pt-2">
 				<EditableAvatar
 					{image}
-					initials={info.name?.slice(0, 2)}
+					name={info.name}
+					colorSeed={chatId}
+					group
 					onEdit={startEditPhoto}
 				/>
 

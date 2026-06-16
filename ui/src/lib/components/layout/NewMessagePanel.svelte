@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiAccountMultiplePlus, mdiAccountPlus } from '@mdi/js';
-	import type { ContactsStore } from 'dash-chat-stores';
+	import { fullName, type ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
@@ -133,7 +133,8 @@
 							{#snippet media()}
 								<Avatar
 									image={profile.avatar}
-									initials={profile.name.slice(0, 2)}
+									name={fullName(profile)}
+									colorSeed={actorId}
 								/>
 							{/snippet}
 						</TitleTruncatedListItem>

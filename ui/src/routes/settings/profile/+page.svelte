@@ -3,7 +3,7 @@
 	import type { ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { mdiAccount, mdiInformationOutline, mdiQrcode } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
@@ -25,6 +25,7 @@
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const myAgentId = useReactiveValue(contactsStore.myAgentId);
 </script>
 
 <Page>
@@ -51,7 +52,8 @@
 			<div class="column center-in-desktop">
 				<EditableAvatar
 					image={myProfile?.avatar}
-					initials={myProfile?.name.slice(0, 2)}
+					name={myProfile && fullName(myProfile)}
+					colorSeed={$myAgentId}
 					onEdit={() => goto('/settings/profile/edit-photo')}
 					class="mt-2 mb-4"
 				/>

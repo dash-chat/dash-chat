@@ -1,8 +1,12 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import type { ChatsStore, ContactsStore } from 'dash-chat-stores';
+	import {
+		fullName,
+		type ChatsStore,
+		type ContactsStore,
+	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
@@ -19,6 +23,7 @@
 	let getStartedVisible = $state(true);
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const myAgentId = useReactiveValue(contactsStore.myAgentId);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
@@ -31,7 +36,8 @@
 				<Link iconOnly href="/settings" data-testid="home-settings-link">
 					<Avatar
 						image={myProfile?.avatar}
-						initials={myProfile?.name.slice(0, 2)}
+						name={myProfile && fullName(myProfile)}
+						colorSeed={$myAgentId}
 						size={42}
 					/>
 				</Link>

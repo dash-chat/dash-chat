@@ -424,6 +424,7 @@
 										{#if profile}
 											<AvatarWithName
 												{profile}
+												colorSeed={agentId}
 												nameTestId="direct-chat-peer-name"
 											/>
 										{:else}
@@ -471,7 +472,8 @@
 										>
 											<Avatar
 												image={profile.avatar}
-												initials={profile.name.slice(0, 2)}
+												name={fullName(profile)}
+												colorSeed={agentId}
 												size={80}
 											/>
 											<div class="flex items-center gap-1 max-w-full">
@@ -751,6 +753,7 @@
 						opened={showPeerProfile}
 						onClose={() => (showPeerProfile = false)}
 						{profile}
+						colorSeed={agentId}
 					/>
 				</ReverseScrollPage>
 

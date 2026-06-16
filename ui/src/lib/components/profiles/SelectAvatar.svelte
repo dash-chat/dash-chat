@@ -58,7 +58,7 @@
 		onclick={() => avatarFilePicker.click()}
 		onkeydown={onActivate(() => avatarFilePicker.click())}
 	>
-		<Avatar id="avatar" image={value} alt="Avatar" initials="" {size} />
+		<Avatar id="avatar" image={value} alt="Avatar" {size} />
 	</div>
 {:else if defaultValue}
 	<div
@@ -73,7 +73,6 @@
 			id="avatar"
 			image={defaultValue}
 			alt="Avatar"
-			initials=""
 			style="--size: {size}px"
 		/>
 	</div>

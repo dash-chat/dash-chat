@@ -72,7 +72,8 @@
 					{#if profile}
 						<Avatar
 							image={profile.avatar}
-							initials={profile.name.slice(0, 2)}
+							name={fullName(profile)}
+							colorSeed={agentId}
 							size={80}
 						/>
 
@@ -181,6 +182,7 @@
 				opened={showPeerProfile}
 				onClose={() => (showPeerProfile = false)}
 				{profile}
+				colorSeed={agentId}
 			/>
 		{/if}
 	{/await}

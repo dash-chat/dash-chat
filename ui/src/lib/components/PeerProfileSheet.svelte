@@ -12,9 +12,10 @@
 		opened: boolean;
 		onClose: () => void;
 		profile: Profile | null | undefined;
+		colorSeed?: string;
 	}
 
-	let { opened, onClose, profile }: Props = $props();
+	let { opened, onClose, profile, colorSeed }: Props = $props();
 </script>
 
 {#snippet profileContent()}
@@ -22,7 +23,8 @@
 		<div class="shrink-0">
 			<Avatar
 				image={profile.avatar}
-				initials={profile.name.slice(0, 2)}
+				name={fullName(profile)}
+				{colorSeed}
 				size={200}
 			/>
 		</div>
