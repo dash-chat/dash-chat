@@ -126,19 +126,25 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="lightbox"
+	class="fixed inset-0 z-30 flex flex-col bg-black"
 	role="dialog"
 	aria-modal="true"
 	aria-label={photo.name}
 	bind:this={rootEl}
 	data-testid="lightbox"
 >
-	<div class="lightbox-header" class:faded={zoomed}>
-		<div class="lightbox-header-info">
-			<span class="lightbox-sender">{senderName}</span>
+	<div
+		class="lightbox-header flex h-[52px] shrink-0 items-center justify-between px-3"
+		class:faded={zoomed}
+	>
+		<div class="flex min-w-0 flex-col">
+			<span
+				class="overflow-hidden text-[13px] font-bold text-ellipsis whitespace-nowrap text-white"
+				>{senderName}</span
+			>
 			<MessageTimestamp {timestamp} class="lightbox-time" />
 		</div>
-		<div class="lightbox-header-actions">
+		<div class="flex items-center gap-2">
 			<button
 				type="button"
 				class="lightbox-button"
@@ -164,14 +170,14 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="lightbox-stage"
+		class="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
 		bind:this={stageEl}
 		onclick={onStageClick}
 		ondblclick={onStageDoubleClick}
 		onmousemove={onStageMouseMove}
 	>
 		<img
-			class="lightbox-image"
+			class="lightbox-image max-h-full max-w-full object-contain"
 			class:zoomed
 			style="transform-origin: {originX}% {originY}%"
 			src={photoUrls[index]}
@@ -207,20 +213,24 @@
 
 	{#if photos.length > 1}
 		<div
-			class="lightbox-filmstrip"
+			class="lightbox-filmstrip flex shrink-0 justify-center gap-2 overflow-x-auto px-3 py-2.5"
 			class:faded={zoomed}
 			data-testid="lightbox-filmstrip"
 		>
 			{#each photos as p, i (photoUrls[i])}
 				<button
 					type="button"
-					class="lightbox-thumb"
+					class="lightbox-thumb h-11 w-11 shrink-0 overflow-hidden p-0"
 					class:selected={i === index}
 					data-testid="lightbox-thumb-{i}"
 					aria-label={p.name}
 					onclick={() => select(i)}
 				>
-					<img src={photoUrls[i]} alt={p.name} />
+					<img
+						src={photoUrls[i]}
+						alt={p.name}
+						class="block h-full w-full object-cover"
+					/>
 				</button>
 			{/each}
 		</div>
@@ -228,49 +238,13 @@
 </div>
 
 <style>
-	.lightbox {
-		position: fixed;
-		inset: 0;
-		z-index: 30;
-		background: black;
-		display: flex;
-		flex-direction: column;
-	}
-
 	.lightbox-header {
-		flex-shrink: 0;
-		height: 52px;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding-inline: 12px;
 		transition: opacity 0.15s ease;
-	}
-
-	.lightbox-header-info {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-	}
-
-	.lightbox-sender {
-		color: white;
-		font-size: 13px;
-		font-weight: 700;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
 	}
 
 	.lightbox-header :global(.lightbox-time) {
 		color: #b8b8b8;
 		font-size: 11px;
-	}
-
-	.lightbox-header-actions {
-		display: flex;
-		align-items: center;
-		gap: 8px;
 	}
 
 	.lightbox-button {
@@ -294,19 +268,7 @@
 		height: 24px;
 	}
 
-	.lightbox-stage {
-		flex: 1;
-		min-height: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		overflow: hidden;
-	}
-
 	.lightbox-image {
-		max-width: 100%;
-		max-height: 100%;
-		object-fit: contain;
 		transition: transform 0.15s ease;
 	}
 	.lightbox-image.zoomed {
@@ -338,23 +300,12 @@
 	}
 
 	.lightbox-filmstrip {
-		flex-shrink: 0;
-		display: flex;
-		justify-content: center;
-		gap: 8px;
-		padding: 10px 12px;
-		overflow-x: auto;
 		transition: opacity 0.15s ease;
 	}
 
 	.lightbox-thumb {
-		flex-shrink: 0;
-		width: 44px;
-		height: 44px;
-		padding: 0;
 		border: none;
 		border-radius: 6px;
-		overflow: hidden;
 		cursor: pointer;
 		background: transparent;
 		opacity: 0.7;
@@ -367,12 +318,6 @@
 		opacity: 1;
 		outline: 2px solid white;
 		outline-offset: -2px;
-	}
-	.lightbox-thumb img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		display: block;
 	}
 
 	.faded {
