@@ -55,7 +55,6 @@ export class ChatsStore {
 
 	async leaveGroup(chatId: ChatId): Promise<void> {
 		await this.groupChats(chatId).client.leaveGroup(chatId);
-		this.groupChatVersion.value++;
 	}
 
 	groupChats = memo(
