@@ -13,60 +13,20 @@
 
 <button
 	type="button"
-	class="attachment-file"
+	class="flex w-full cursor-pointer items-center border-none bg-transparent px-1 py-0.5 text-start text-inherit"
 	data-testid="message-attachment-file"
 	onclick={() => saveAttachment(file)}
 >
-	<div class="attachment-file-icon">
+	<div class="me-2.5 flex shrink-0 items-center justify-center">
 		<ExtensionSheet name={file.name} />
 	</div>
-	<div class="attachment-file-info">
-		<span class="attachment-file-name">{file.name}</span>
-		<span class="attachment-file-size"
+	<div class="flex min-w-0 flex-1 flex-col gap-px">
+		<span
+			class="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap"
+			>{file.name}</span
+		>
+		<span class="text-xs opacity-70"
 			>{formatFileSize(byteLengthOf(file.data))}</span
 		>
 	</div>
 </button>
-
-<style>
-	.attachment-file {
-		display: flex;
-		align-items: center;
-		width: 100%;
-		padding: 2px 4px;
-		border: none;
-		background: transparent;
-		cursor: pointer;
-		text-align: start;
-		color: inherit;
-	}
-
-	.attachment-file-icon {
-		flex-shrink: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		margin-inline-end: 0.625rem;
-	}
-
-	.attachment-file-info {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 1px;
-	}
-
-	.attachment-file-name {
-		font-size: 14px;
-		font-weight: 500;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.attachment-file-size {
-		font-size: 12px;
-		opacity: 0.7;
-	}
-</style>
