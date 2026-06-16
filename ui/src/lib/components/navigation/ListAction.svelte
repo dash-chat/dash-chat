@@ -46,7 +46,7 @@
 >
 	{#snippet media()}
 		{#if icon}
-			<wa-icon class="big" src={wrapPathInSvg(icon)}></wa-icon>
+			<wa-icon src={wrapPathInSvg(icon)}></wa-icon>
 		{/if}
 	{/snippet}
 </ListItem>
