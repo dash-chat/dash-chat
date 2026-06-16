@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { isTauriEnv } from '$lib/utils/environment';
+	import { getCurrentWebview } from '@tauri-apps/api/webview';
+	import { listen } from '@tauri-apps/api/event';
 
 	interface Props {
 		onFiles: (files: File[]) => void;
@@ -87,28 +89,24 @@
 			if (cancelled) u();
 			else unlisteners.push(u);
 		};
-		import('@tauri-apps/api/webview').then(({ getCurrentWebview }) =>
-			getCurrentWebview()
-				.onDragDropEvent(event => {
-					if (event.payload.type === 'enter' || event.payload.type === 'over') {
-						tauriDragging = true;
-					} else {
-						tauriDragging = false;
-					}
-				})
-				.then(register),
-		);
-		import('@tauri-apps/api/event').then(({ listen }) =>
-			listen<DroppedFile[]>('media://files-dropped', event => {
-				const files = event.payload.map(
-					f =>
-						new File([new Uint8Array(f.data)], f.name, {
-							type: mimeForName(f.name),
-						}),
-				);
-				if (files.length > 0) onFiles(files);
-			}).then(register),
-		);
+		getCurrentWebview()
+			.onDragDropEvent(event => {
+				if (event.payload.type === 'enter' || event.payload.type === 'over') {
+					tauriDragging = true;
+				} else {
+					tauriDragging = false;
+				}
+			})
+			.then(register);
+		listen<DroppedFile[]>('media://files-dropped', event => {
+			const files = event.payload.map(
+				f =>
+					new File([new Uint8Array(f.data)], f.name, {
+						type: mimeForName(f.name),
+					}),
+			);
+			if (files.length > 0) onFiles(files);
+		}).then(register);
 		return () => {
 			cancelled = true;
 			unlisteners.forEach(u => u());
