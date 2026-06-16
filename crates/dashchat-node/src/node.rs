@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 
-use crate::blob_sync::{BlobFetchPool, BlobSync};
+use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync};
 use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, ShutdownError};
 use crate::filesystem::Filesystem;
@@ -43,13 +43,6 @@ pub use app_processing::Notification;
 
 const NETWORK_ID: &'static str = "dash-chat";
 
-/// Number of blob downloads attempted concurrently by the fetch loop.
-const BLOB_FETCH_CONCURRENCY: usize = 4;
-/// How long a single blob download is given before the loop moves on to the next.
-const BLOB_FETCH_ATTEMPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-/// Minimum delay between passes over the fetch stack when items remain outstanding.
-const BLOB_FETCH_PASS_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
-
 pub static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
     "https://euc1-1.relay.n0.iroh-canary.iroh.link"
         .parse()
@@ -64,6 +57,7 @@ pub struct NodeConfig {
     pub network_id: NetworkId,
     pub mdns_mode: MdnsDiscoveryMode,
     pub relay_url: Option<RelayUrl>,
+    pub blob_fetch: BlobFetchConfig,
 }
 
 impl NodeConfig {
@@ -92,6 +86,7 @@ impl NodeConfig {
             // to effect expected behavior of existing tests.
             mdns_mode: MdnsDiscoveryMode::Disabled,
             relay_url: None,
+            blob_fetch: BlobFetchConfig::default(),
         }
     }
 }
@@ -105,6 +100,7 @@ impl Default for NodeConfig {
             network_id: Hash::digest(NETWORK_ID.as_bytes()).into(),
             mdns_mode: MdnsDiscoveryMode::Active,
             relay_url: Some(RELAY_URL.clone()),
+            blob_fetch: BlobFetchConfig::default(),
         }
     }
 }
@@ -261,11 +257,9 @@ impl Node {
 
         // === blob fetch loop === //
 
-        let blob_fetch_handle = node.blob_sync.spawn_fetch_loop(
-            BLOB_FETCH_CONCURRENCY,
-            BLOB_FETCH_ATTEMPT_TIMEOUT,
-            BLOB_FETCH_PASS_INTERVAL,
-        );
+        let blob_fetch_handle = node
+            .blob_sync
+            .spawn_fetch_loop(node.config.blob_fetch.clone());
         node.blob_fetch_handle
             .lock()
             .await
