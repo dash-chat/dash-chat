@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use dashchat_node::{testing::*, *};
 use mailbox_client::mem::MemMailbox;
+use p2panda::network::MdnsDiscoveryMode;
 
 /// A chat message with a photo attachment created by one node should be
 /// loadable by the recipient node: the op carrying the media metadata syncs
@@ -13,18 +14,24 @@ async fn media_blob_syncs_between_nodes() {
 
     let poll = PollConfig {
         poll_interval: Duration::from_millis(250),
-        poll_timeout: Duration::from_secs(60),
+        poll_timeout: Duration::from_secs(10),
     };
 
+    let mut config = NodeConfig::testing();
+    config.mdns_mode = MdnsDiscoveryMode::Active;
+
     let mailbox = MemMailbox::new();
-    let alice = TestNode::new(NodeConfig::testing(), "alice")
+    let alice = TestNode::new(config.clone(), "alice")
         .await
         .add_mailbox_client(mailbox.client())
         .await;
-    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
+    let bobbi = TestNode::new(config.clone(), "bobbi")
         .await
         .add_mailbox_client(mailbox.client())
         .await;
+
+    println!("alice: {}", alice.device_id());
+    println!("bobbi: {}", bobbi.device_id());
 
     alice
         .behavior()
@@ -78,7 +85,7 @@ async fn media_blob_syncs_between_nodes() {
             .load_media(meta.clone())
             .await
             .map(|_| ())
-            .map_err(|err| format!("blob not downloaded yet: {err}"))
+            .map_err(|err| format!("blob not downloaded yet: {err:?}"))
     })
     .await
     .unwrap();

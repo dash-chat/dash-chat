@@ -78,10 +78,14 @@ impl BlobSync {
     pub fn spawn_fetch_loop(&self, config: BlobFetchConfig) -> JoinHandle<()> {
         let this = self.clone();
         let pool = self.fetch_pool.clone();
-        tokio::spawn(fetch_loop(pool, config, move |log_id, hash, attempt_timeout| {
-            let this = this.clone();
-            async move { this.try_fetch(log_id, hash, attempt_timeout).await }
-        }))
+        tokio::spawn(fetch_loop(
+            pool,
+            config,
+            move |log_id, hash, attempt_timeout| {
+                let this = this.clone();
+                async move { this.try_fetch(log_id, hash, attempt_timeout).await }
+            },
+        ))
     }
 
     /// Attempt to fetch a single blob, returning `true` when it is present in
@@ -99,12 +103,16 @@ impl BlobSync {
         let Ok(sources) = self.sources.sources(log_id).await else {
             return false;
         };
+
         if sources.is_empty() {
             return false;
         }
 
         let download = self.downloader.download(hash, Shuffled::new(sources));
-        matches!(tokio::time::timeout(attempt_timeout, download).await, Ok(Ok(())))
+        matches!(
+            tokio::time::timeout(attempt_timeout, download).await,
+            Ok(Ok(()))
+        )
     }
 }
 
@@ -407,7 +415,10 @@ mod tests {
         let woke_early = times
             .iter()
             .any(|(h, at)| *h == hash(2) && *at < Duration::from_secs(30));
-        assert!(woke_early, "expected hash(2) to be fetched early, got {times:?}");
+        assert!(
+            woke_early,
+            "expected hash(2) to be fetched early, got {times:?}"
+        );
         handle.abort();
     }
 

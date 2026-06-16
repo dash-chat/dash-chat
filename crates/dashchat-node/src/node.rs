@@ -12,7 +12,7 @@ use crate::error::{AddContactError, Error, ShutdownError};
 use crate::filesystem::Filesystem;
 use crate::node::actor::{Actor, Command};
 use aliased::Aliasing;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use p2panda::network::MdnsDiscoveryMode;
@@ -1106,7 +1106,12 @@ impl Node {
     pub async fn load_media(&self, meta: Vec<MediaMetaItem>) -> anyhow::Result<MediaAttachment> {
         let mut items = vec![];
         for item in meta {
-            let data = self.blob_sync.blobs.get_bytes(item.hash).await?;
+            let data = self
+                .blob_sync
+                .blobs
+                .get_bytes(item.hash)
+                .await
+                .context(format!("failed to load blob: {item:?}"))?;
             items.push((item, data));
         }
 
