@@ -19,6 +19,8 @@
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
+	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
+	import MediaMenu from '$lib/components/messages/composer/MediaMenu.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 
 	interface Props {
@@ -43,6 +45,8 @@
 	let hasContent = $derived(value.trim().length > 0 || media !== undefined);
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
+	let showMediaPanel = $state(false);
+	let showMediaMenu = $state(false);
 
 	function triggerSend() {
 		if (!hasContent) return;
@@ -109,15 +113,14 @@
 	onpointerdown={keepKeyboardOpen}
 >
 	<div
-		class="message-input-bar m-2 pb-safe"
+		class="message-input-bar m-2"
+		class:pb-safe={!(isMobile && showMediaPanel)}
 		class:bg-md-light-surface={theme === 'material'}
 		class:dark:bg-md-dark-surface={theme === 'material'}
 	>
 		<StagedAttachments bind:media />
 
 		<div class="row gap-2" style="align-items: flex-end; margin: 0 auto">
-			<AttachButton onFiles={files => (media = stageFiles(media, files))} />
-
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="input-container flex min-h-[42px] min-w-0 flex-1 items-center ps-2 {theme ===
@@ -133,14 +136,49 @@
 					onSend={triggerSend}
 					onEmojiClick={() => (showEmojiPicker = true)}
 				/>
+				{#if isMobile && hasContent}
+					<AttachButton
+						testid="message-input-attach-inline"
+						class="me-1 mb-1 h-8 w-8 self-end"
+						expanded={showMediaPanel}
+						onClick={() => (showMediaPanel = !showMediaPanel)}
+					/>
+				{/if}
 			</div>
 
 			{#if isMobile}
-				<SendButton disabled={!hasContent} onClick={triggerSend} />
+				{#if hasContent}
+					<SendButton disabled={!hasContent} onClick={triggerSend} />
+				{:else}
+					<AttachButton
+						class="h-[42px] w-[42px]"
+						expanded={showMediaPanel}
+						onClick={() => (showMediaPanel = !showMediaPanel)}
+					/>
+				{/if}
+			{:else}
+				<AttachButton
+					class="mb-1 h-10 w-10 self-end"
+					expanded={showMediaMenu}
+					onClick={() => (showMediaMenu = !showMediaMenu)}
+				/>
 			{/if}
 		</div>
 	</div>
 </div>
+
+{#if isMobile}
+	<MediaPanel
+		bind:opened={showMediaPanel}
+		onFiles={files => (media = stageFiles(media, files))}
+	/>
+{:else}
+	<MediaMenu
+		bind:opened={showMediaMenu}
+		target="[data-testid='message-input-attach']"
+		onFiles={files => (media = stageFiles(media, files))}
+	/>
+{/if}
 
 <Sheet
 	class="pb-safe text-lg"

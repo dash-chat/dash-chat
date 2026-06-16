@@ -1,67 +1,20 @@
 import { tid } from '../selectors';
 
 const TINY_PNG = [
-	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-	0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-	0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-	0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-	0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-	0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49,
+	0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06,
+	0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44,
+	0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d,
+	0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42,
+	0x60, 0x82,
 ];
-
-/** Wait until a rendered (loaded) photo attachment appears in the given
- * message list. */
-export async function waitForPhotoMessageIn(
-	agent: WebdriverIO.Browser,
-	messagesSelector: string,
-	timeout = 25_000,
-): Promise<void> {
-	await agent.waitUntil(
-		async () =>
-			agent.execute(
-				(messagesSel: string, photosSel: string) => {
-					const img = document
-						.querySelector(messagesSel)
-						?.querySelector(`${photosSel} img`) as HTMLImageElement | null;
-					return !!img && img.complete && img.naturalWidth > 0;
-				},
-				messagesSelector,
-				tid('message-attachment-photos'),
-			),
-		{ timeout, timeoutMsg: 'Photo message not found' },
-	);
-}
-
-/** Wait until a file attachment with the given filename appears in the given
- * message list. */
-export async function waitForFileMessageIn(
-	agent: WebdriverIO.Browser,
-	messagesSelector: string,
-	name: string,
-	timeout = 25_000,
-): Promise<void> {
-	await agent.waitUntil(
-		async () =>
-			agent.execute(
-				(messagesSel: string, fileSel: string, n: string) => {
-					const root = document.querySelector(messagesSel);
-					const files = root?.querySelectorAll(fileSel) ?? [];
-					return Array.from(files).some(f => f.textContent?.includes(n));
-				},
-				messagesSelector,
-				tid('message-attachment-file'),
-				name,
-			),
-		{ timeout, timeoutMsg: `File message "${name}" not found` },
-	);
-}
 
 /** The shared message composer (text area + attachments) used by both
  * direct and group chats. */
 export class Composer {
 	constructor(private agent: WebdriverIO.Browser) {}
 
-	textarea = this.agent.$(tid('message-input-textarea'));
+	messageInput = this.agent.$(tid('message-input-textarea'));
 	sendButton = this.agent.$(tid('message-input-send'));
 	mediaPreview = this.agent.$(tid('message-input-media-preview'));
 	clearAttachments = this.agent.$(tid('message-input-clear-attachments'));
@@ -72,13 +25,15 @@ export class Composer {
 	}
 
 	/**
-	 * Attach `count` photos (synthesized 1×1 PNGs) to the composer. The hidden
-	 * file input is populated via DataTransfer + a synthetic change event, the
-	 * same trick add-contact uses for QR uploads.
+	 * Attach `count` photos (synthesized 1×1 PNGs) to the composer, named after
+	 * `label` (`${label}-1.png`, …) so a specific send can later be matched with
+	 * `waitForPhotoMessage(label)`. The hidden file input is populated via
+	 * DataTransfer + a synthetic change event, the same trick add-contact uses
+	 * for QR uploads.
 	 */
-	async attachPhotos(count = 1): Promise<void> {
+	async attachPhotos(label: string, count = 1): Promise<void> {
 		await this.agent.execute(
-			(pngBytes: number[], n: number) => {
+			(pngBytes: number[], n: number, name: string) => {
 				const input = document.querySelector(
 					'[data-testid="message-input-photo-picker"]',
 				) as HTMLInputElement;
@@ -88,7 +43,7 @@ export class Composer {
 						type: 'image/png',
 					});
 					dt.items.add(
-						new File([blob], `photo-${i}.png`, { type: 'image/png' }),
+						new File([blob], `${name}-${i}.png`, { type: 'image/png' }),
 					);
 				}
 				input.files = dt.files;
@@ -96,6 +51,7 @@ export class Composer {
 			},
 			TINY_PNG,
 			count,
+			label,
 		);
 		await this.mediaPreview.waitForExist({ timeout: 5_000 });
 	}

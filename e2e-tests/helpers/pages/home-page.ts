@@ -10,43 +10,19 @@ const GET_STARTED_CARD_IDS = [
 
 type GetStartedCardId = (typeof GET_STARTED_CARD_IDS)[number];
 
-// The chat list lives inside an `{#await}` block that re-renders whenever the
-// summaries re-resolve (e.g. while stores hydrate on a cold start with
-// existing chats). A remount invalidates previously resolved element handles,
-// and wry reports that as a generic error WebdriverIO won't auto-refetch from
-// — so these accessors are getters that build a fresh element chain on every
-// access instead of caching one handle for the page object's lifetime.
 export class HomePage extends TestPage {
-	get settingsLink() {
-		return this.agent.$(tid('home-settings-link'));
-	}
-	get newMessageButton() {
-		return this.agent.$(tid('home-new-message-btn'));
-	}
-	get firstChatTooltip() {
-		return this.agent.$(tid('first-chat-tooltip'));
-	}
-	get chatList() {
-		return this.agent.$(tid('all-chats-list'));
-	}
-	get chatRow() {
-		return this.agent.$(tid('all-chats-row'));
-	}
-	get emptyState() {
-		return this.agent.$(tid('all-chats-empty'));
-	}
+	settingsLink = this.agent.$(tid('home-settings-link'));
+	newMessageButton = this.agent.$(tid('home-new-message-btn'));
+	firstChatTooltip = this.agent.$(tid('first-chat-tooltip'));
+	chatList = this.agent.$(tid('all-chats-list'));
+	chatRow = this.agent.$(tid('all-chats-row'));
+	emptyState = this.agent.$(tid('all-chats-empty'));
 
 	async ready() {
-		await this.agent.waitUntil(
-			async () => {
-				try {
-					return await this.isLoaded();
-				} catch {
-					return false;
-				}
-			},
-			{ timeoutMsg: 'Home page (chat list or empty state) did not appear' },
-		);
+		await Promise.race([
+			this.chatList.waitForExist(),
+			this.emptyState.waitForExist(),
+		]);
 	}
 
 	async isLoaded(): Promise<boolean> {
@@ -60,12 +36,8 @@ export class HomePage extends TestPage {
 		return this.chatList.$(`a*=${contactName}`);
 	}
 
-	async hasChatListItem(contactName: string): Promise<boolean> {
-		try {
-			return await this.chatListItem(contactName).isExisting();
-		} catch {
-			return false;
-		}
+	hasChatListItem(contactName: string) {
+		return this.chatListItem(contactName).isExisting();
 	}
 
 	/** Full visible text of the first chat-list row containing `name`. */
@@ -84,16 +56,8 @@ export class HomePage extends TestPage {
 
 	/** Open a chat by contact name and wait for the direct-chat page. */
 	async openChat(contactName: string): Promise<void> {
-		await this.agent.waitUntil(() => this.hasChatListItem(contactName), {
-			timeoutMsg: `Chat list item "${contactName}" did not appear`,
-		});
-		try {
-			await this.chatListItem(contactName).click();
-		} catch {
-			// The list can remount between the existence check and the click
-			// (summaries re-resolving); one fresh retry is enough.
-			await this.chatListItem(contactName).click();
-		}
+		await this.chatListItem(contactName).waitForExist();
+		await this.chatListItem(contactName).click();
 		await this.agent.$(tid('direct-chat-messages')).waitForExist();
 	}
 

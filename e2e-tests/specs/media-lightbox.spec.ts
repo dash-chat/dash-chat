@@ -18,9 +18,9 @@ describe('Photo lightbox', () => {
 		await agent2.createProfilePage.createProfile('Bob', 'Lightbox');
 		await exchangeContacts(agent1, agent2);
 
-		await agent1.directChatPage.composer.attachPhotos(3);
+		await agent1.directChatPage.composer.attachPhotos('lightbox', 3);
 		await agent1.directChatPage.composer.send();
-		await agent1.directChatPage.waitForPhotoMessage();
+		await agent1.directChatPage.messages.waitForPhotoMessage('lightbox');
 	});
 
 	afterEach(async () => {
@@ -34,7 +34,7 @@ describe('Photo lightbox', () => {
 	});
 
 	it('opens the clicked photo and closes with the close button', async () => {
-		await agent1.directChatPage.photoCellButton().click();
+		await agent1.directChatPage.messages.photoCellButton().click();
 		await agent1.lightbox.root.waitForExist();
 		await agent1.lightbox.close.click();
 		await agent1.waitUntil(async () => !(await agent1.lightbox.isOpen()), {
@@ -43,7 +43,7 @@ describe('Photo lightbox', () => {
 	});
 
 	it('navigates with arrows, keyboard, and filmstrip', async () => {
-		await agent1.directChatPage.photoCellButton().click();
+		await agent1.directChatPage.messages.photoCellButton().click();
 		await agent1.lightbox.root.waitForExist();
 
 		const first = await agent1.lightbox.imageSrc();
@@ -85,7 +85,7 @@ describe('Photo lightbox', () => {
 	});
 
 	it('restores focus to the triggering photo on close', async () => {
-		await agent1.directChatPage.photoCellButton().click();
+		await agent1.directChatPage.messages.photoCellButton().click();
 		await agent1.lightbox.root.waitForExist();
 		await agent1.lightbox.pressKey('Escape');
 		await agent1.waitUntil(async () => !(await agent1.lightbox.isOpen()), {
@@ -101,8 +101,8 @@ describe('Photo lightbox', () => {
 	});
 
 	it('opens on the receiving side too', async () => {
-		await agent2.directChatPage.waitForPhotoMessage();
-		await agent2.directChatPage.photoCellButton().click();
+		await agent2.directChatPage.messages.waitForPhotoMessage('lightbox');
+		await agent2.directChatPage.messages.photoCellButton().click();
 		await agent2.lightbox.root.waitForExist();
 		await agent2.lightbox.close.click();
 	});
