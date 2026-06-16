@@ -1,4 +1,6 @@
+import { avatarAppearance } from '../../helpers/components/avatar';
 import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
+import { tid } from '../../helpers/selectors';
 import { type Agent, setupAgent } from '../../setup/setup-agents';
 
 describe('Group details spec', () => {
@@ -11,6 +13,12 @@ describe('Group details spec', () => {
 			setupAgent('agent2'),
 		]);
 		await exchangeContactsAndCreateGroup(agent1, agent2);
+	});
+
+	it('Renders a group glyph, not initials, when the group has no photo', async () => {
+		await agent1.groupChatPage.headerName.waitForExist();
+		const avatar = await avatarAppearance(agent1, tid('group-chat-header'));
+		expect(avatar.glyph).toBe(true);
 	});
 
 	it('Shows a new name to all members if the admin changes it', async () => {
