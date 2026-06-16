@@ -167,11 +167,11 @@
 		</div>
 	</div>
 
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+	<button
+		type="button"
+		class="flex min-h-0 flex-1 cursor-default items-center justify-center overflow-hidden border-none bg-transparent p-0"
 		bind:this={stageEl}
+		aria-label={m.closeLightbox()}
 		onclick={onStageClick}
 		ondblclick={onStageDoubleClick}
 		onmousemove={onStageMouseMove}
@@ -184,7 +184,7 @@
 			alt={photo.name}
 			data-testid="lightbox-image"
 		/>
-	</div>
+	</button>
 
 	{#if index > 0}
 		<button
