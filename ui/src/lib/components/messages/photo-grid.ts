@@ -22,21 +22,3 @@ export function getTimelineImageDimensions(
 	);
 	return { width, height };
 }
-
-export interface GridConfig {
-	visibleCells: number;
-	/** CSS aspect-ratio of the whole grid envelope. */
-	aspectRatio: string;
-}
-
-/**
- * Signal's multi-photo grid shapes at a 300px-wide envelope:
- * 2 → 300×150, 3 → 300×200 (one 200² + two 100²), 4 → 2×2 of 150²,
- * 5+ → 300×250 (two 150² over three 100²) with a +N scrim on the 5th cell.
- */
-export function gridConfig(count: number): GridConfig {
-	if (count <= 2) return { visibleCells: count, aspectRatio: '2 / 1' };
-	if (count === 3) return { visibleCells: 3, aspectRatio: '3 / 2' };
-	if (count === 4) return { visibleCells: 4, aspectRatio: '1 / 1' };
-	return { visibleCells: 5, aspectRatio: '6 / 5' };
-}

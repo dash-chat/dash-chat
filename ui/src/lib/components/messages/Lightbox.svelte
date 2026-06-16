@@ -33,7 +33,7 @@
 	const photo = $derived(photos[index]);
 
 	// Own object URLs — minted and revoked in the same pre-effect; see
-	// MessageAttachment.
+	// PhotosAttachment.
 	let photoUrls = $state<string[]>([]);
 
 	$effect.pre(() => {

@@ -3,7 +3,8 @@
 	import type { Message } from 'dash-chat-stores';
 	import { highlightMatch, senderColor } from './message-helpers';
 	import { shrinkToWidestLine } from '$lib/actions/shrink-to-widest-line';
-	import MessageAttachment from './MessageAttachment.svelte';
+	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
+	import FileAttachment from './attachments/FileAttachment.svelte';
 
 	let {
 		message,
@@ -37,16 +38,20 @@
 		{senderName}
 	</div>
 {/if}
-{#if media}
-	<div
-		class="media"
-		class:photos={media.kind === 'photos'}
-		class:file={media.kind === 'file'}
-	>
-		<MessageAttachment {media} {senderName} timestamp={message.timestamp} />
+{#if media?.kind === 'photos'}
+	<div class="media photos">
+		<PhotosAttachment
+			photos={media.photos}
+			{senderName}
+			timestamp={message.timestamp}
+		/>
 		{#if isPhotoOnly && metadata}
 			<div class="photo-meta">{@render metadata()}</div>
 		{/if}
+	</div>
+{:else if media?.kind === 'file'}
+	<div class="media file">
+		<FileAttachment file={media.file} />
 	</div>
 {/if}
 {#if hasText || (metadata && !isPhotoOnly)}
@@ -112,7 +117,11 @@
 		margin-bottom: 4px;
 	}
 	.media.file {
-		margin: -4px 0 6px;
+		margin: 0 0 4px;
+	}
+	/* Space the file row away from the sender-name header above it in groups. */
+	.sender-name + .media.file {
+		margin-top: 6px;
 	}
 
 	/* Image-only bubbles bleed to the bottom edge with the timestamp overlaid

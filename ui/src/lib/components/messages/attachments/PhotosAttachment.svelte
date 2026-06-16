@@ -1,0 +1,218 @@
+<script lang="ts">
+	import type { Photo } from 'dash-chat-stores';
+	import { bytesToBlobUrl } from '$lib/types/media';
+	import { getTimelineImageDimensions } from '../photo-grid';
+	import Lightbox from '../Lightbox.svelte';
+
+	interface Props {
+		photos: Photo[];
+		/** Display name of the message author, shown in the lightbox header. */
+		senderName?: string;
+		timestamp?: number;
+	}
+
+	let { photos, senderName = '', timestamp = 0 }: Props = $props();
+
+	// `null` while closed; the triggering element is remembered so focus can be
+	// restored to it on close.
+	let lightboxIndex = $state<number | null>(null);
+	let lightboxTrigger: HTMLElement | undefined;
+
+	function openLightbox(index: number, event: MouseEvent) {
+		lightboxTrigger = event.currentTarget as HTMLElement;
+		lightboxIndex = index;
+	}
+
+	function closeLightbox() {
+		lightboxIndex = null;
+		lightboxTrigger?.focus();
+		lightboxTrigger = undefined;
+	}
+
+	// Build object URLs once per photos instance. Minting and revoking live
+	// in the same pre-effect (not a $derived) so the URLs can never leak if
+	// a derived were to re-evaluate independently of its consumer.
+	// The keyed {#each (photoUrls[i])} below relies on the pre-effect
+	// repopulating photoUrls before the DOM updates.
+	let photoUrls = $state<string[]>([]);
+
+	$effect.pre(() => {
+		const urls = photos.map(p => bytesToBlobUrl(p.data, p.mime_type));
+		photoUrls = urls;
+		return () => urls.forEach(u => URL.revokeObjectURL(u));
+	});
+
+	// Lone images render at Signal's timeline size for their natural aspect
+	// ratio; until decode (local bytes, effectively instant) use the minimum.
+	let singleDims = $state({ width: 200, height: 50 });
+
+	function onSingleLoad(event: Event) {
+		const img = event.currentTarget as HTMLImageElement;
+		singleDims = getTimelineImageDimensions(
+			img.naturalWidth,
+			img.naturalHeight,
+		);
+	}
+</script>
+
+{#if photos.length === 1}
+	<div
+		class="attachment-photos single"
+		style="width: {singleDims.width}px; height: {singleDims.height}px"
+		data-testid="message-attachment-photos"
+	>
+		<button type="button" class="photo-cell" onclick={e => openLightbox(0, e)}>
+			<img src={photoUrls[0]} alt={photos[0].name} onload={onSingleLoad} />
+		</button>
+	</div>
+{:else}
+	<div class="attachment-photos multi" data-testid="message-attachment-photos">
+		{#each photos as photo, i (photoUrls[i])}
+			<button
+				type="button"
+				class="photo-cell"
+				onclick={e => openLightbox(i, e)}
+			>
+				<img src={photoUrls[i]} alt={photo.name} loading="lazy" />
+				<!-- Visible (via CSS) only on the 5th cell when more photos
+				     follow; the layout/overflow is driven entirely by CSS. -->
+				<div class="photo-overlay">+{photos.length - 5}</div>
+			</button>
+		{/each}
+	</div>
+{/if}
+
+{#if lightboxIndex !== null}
+	<Lightbox
+		{photos}
+		index={lightboxIndex}
+		{senderName}
+		{timestamp}
+		onClose={closeLightbox}
+	/>
+{/if}
+
+<style>
+	.attachment-photos {
+		position: relative;
+		max-width: 100%;
+		background: white;
+	}
+
+	/* Plate behind transparent images. */
+	:global(.dark) .attachment-photos {
+		background: black;
+	}
+
+	.single .photo-cell {
+		width: 100%;
+		height: 100%;
+	}
+
+	/*
+		Signal's multi-photo collages at a 300px-wide envelope. The layout is
+		picked purely in CSS from the number of cells (no JS): each `:has()`
+		quantity query matches an exact count, except the 5+ rule which also
+		hides the 6th-and-later cells and reveals the +N scrim on the 5th.
+	*/
+	.multi {
+		display: grid;
+		gap: 1px;
+		width: 300px;
+	}
+
+	/* 2 → side by side */
+	.multi:has(.photo-cell:nth-child(2):last-child) {
+		aspect-ratio: 2 / 1;
+		grid-template-columns: 1fr 1fr;
+		grid-template-rows: 1fr;
+	}
+
+	/* 3 → one tall on the start, two stacked on the end */
+	.multi:has(.photo-cell:nth-child(3):last-child) {
+		aspect-ratio: 3 / 2;
+		grid-template-columns: 2fr 1fr;
+		grid-template-rows: 1fr 1fr;
+		grid-template-areas:
+			'a b'
+			'a c';
+	}
+	.multi:has(.photo-cell:nth-child(3):last-child) .photo-cell:nth-child(1) {
+		grid-area: a;
+	}
+	.multi:has(.photo-cell:nth-child(3):last-child) .photo-cell:nth-child(2) {
+		grid-area: b;
+	}
+	.multi:has(.photo-cell:nth-child(3):last-child) .photo-cell:nth-child(3) {
+		grid-area: c;
+	}
+
+	/* 4 → 2×2 */
+	.multi:has(.photo-cell:nth-child(4):last-child) {
+		aspect-ratio: 1 / 1;
+		grid-template-columns: 1fr 1fr;
+		grid-template-rows: 1fr 1fr;
+	}
+
+	/* 5+ → two over three, extras hidden behind a +N scrim on the 5th */
+	.multi:has(.photo-cell:nth-child(5)) {
+		aspect-ratio: 6 / 5;
+		grid-template-columns: repeat(6, 1fr);
+		grid-template-rows: 3fr 2fr;
+		grid-template-areas:
+			'a a a b b b'
+			'c c d d e e';
+	}
+	.multi:has(.photo-cell:nth-child(5)) .photo-cell:nth-child(1) {
+		grid-area: a;
+	}
+	.multi:has(.photo-cell:nth-child(5)) .photo-cell:nth-child(2) {
+		grid-area: b;
+	}
+	.multi:has(.photo-cell:nth-child(5)) .photo-cell:nth-child(3) {
+		grid-area: c;
+	}
+	.multi:has(.photo-cell:nth-child(5)) .photo-cell:nth-child(4) {
+		grid-area: d;
+	}
+	.multi:has(.photo-cell:nth-child(5)) .photo-cell:nth-child(5) {
+		grid-area: e;
+	}
+	.multi .photo-cell:nth-child(n + 6) {
+		display: none;
+	}
+
+	.photo-cell {
+		position: relative;
+		overflow: hidden;
+		height: 100%;
+		background: rgba(128, 128, 128, 0.08);
+		border: none;
+		padding: 0;
+		display: block;
+		cursor: pointer;
+	}
+
+	.photo-cell img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	.photo-overlay {
+		display: none;
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.5);
+		color: white;
+		align-items: center;
+		justify-content: center;
+		font-size: 24px;
+		font-weight: 600;
+	}
+	/* Only the 5th cell shows the scrim, and only when more photos follow. */
+	.photo-cell:nth-child(5):not(:last-child) .photo-overlay {
+		display: flex;
+	}
+</style>
