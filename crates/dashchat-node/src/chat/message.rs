@@ -47,15 +47,14 @@ pub struct FileAttachment {
 /// or a single file — not both — matching Signal's UX.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind")]
-pub enum MediaData {
+pub enum MediaAttachment {
     #[serde(rename = "photos")]
     Photos { photos: Vec<Photo> },
     #[serde(rename = "file")]
     File { file: FileAttachment },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From)]
-pub struct MediaMetaCollection(Vec<MediaMetaItem>);
+pub type MediaMetaCollection = Vec<MediaMetaItem>;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From)]
 pub struct MediaMetaItem {
@@ -66,6 +65,9 @@ pub struct MediaMetaItem {
     // Serialize as a CBOR byte string. `iroh_blobs::Hash`'s own non-human-readable
     // impl encodes a 32-element array, which serde's untagged-enum buffering (used
     // by `dashchat_compat::Compat`) cannot reconstruct from CBOR.
+    //
+    // TODO: consider reworking Compat to remove this complexity, since we're
+    //       not really getting what we want from Compat anyway.
     #[serde(with = "hash_bytes")]
     pub hash: iroh_blobs::Hash,
 }

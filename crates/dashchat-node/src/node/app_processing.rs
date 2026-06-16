@@ -354,9 +354,15 @@ impl Node {
                 }
             }
 
-            Payload::Chat(
-                ChatPayload::Message(_) | ChatPayload::Reaction(_) | ChatPayload::GroupInfo(_),
-            ) => {
+            Payload::Chat(ChatPayload::Message(m)) => {
+                if let Some(media) = m.media_meta() {
+                    for item in media.iter() {
+                        todo!("process")
+                    }
+                }
+            }
+
+            Payload::Chat(ChatPayload::Reaction(_) | ChatPayload::GroupInfo(_)) => {
                 // Nothing to do.
             }
 

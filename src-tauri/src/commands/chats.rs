@@ -1,4 +1,4 @@
-use dashchat_node::{AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, MediaData, Node};
+use dashchat_node::{AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, MediaAttachment, Node};
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
@@ -65,7 +65,7 @@ pub async fn add_group_member(
 pub async fn send_message(
     chat_id: ChatId,
     message: String,
-    media: Option<MediaData>,
+    media: Option<MediaAttachment>,
     node: State<'_, Node>,
 ) -> Result<(), String> {
     node.send_message(chat_id, message, media)
