@@ -38,6 +38,22 @@ pub enum AddContactError {
     Common(#[from] Error),
 }
 
+#[derive(Debug, Error, Serialize)]
+#[serde(tag = "kind", content = "message")]
+pub enum RemoveGroupMemberError {
+    #[error("cannot remove the only admin from a group that still has members")]
+    LastAdmin,
+
+    #[error("Failed to remove group member: {0}")]
+    InternalServerError(String),
+}
+
+impl From<anyhow::Error> for RemoveGroupMemberError {
+    fn from(e: anyhow::Error) -> Self {
+        RemoveGroupMemberError::InternalServerError(e.to_string())
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ShutdownError {
     #[error("Error sending shutting signal to node actor: {0:?}")]

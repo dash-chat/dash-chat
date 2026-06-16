@@ -46,6 +46,7 @@
 	const messageSets = useReactivePromise(store.messageSets);
 	const info = useReactivePromise(store.info);
 	const allMembers = useReactivePromise(store.allMembers);
+	const me = useReactivePromise(store.me);
 	const readMessageHashes = useReactivePromise(store.readMessageHashes);
 	const unreadCount = useReactivePromise(store.unreadCount);
 
@@ -316,6 +317,13 @@
 		class:bg-md-light-surface={theme === 'material'}
 		class:dark:bg-md-dark-surface={theme === 'material'}
 	>
-		<MessageInput bind:value={messageText} onSend={sendMessage} />
+		{#await $me then me}
+			<MessageInput
+				bind:value={messageText}
+				onSend={sendMessage}
+				disabled={!me.member}
+				placeholder={me.member ? m.typeMessage() : m.youAreNoLongerAMember()}
+			/>
+		{/await}
 	</div>
 </div>

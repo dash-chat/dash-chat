@@ -9,6 +9,7 @@
 	interface Props {
 		value?: string;
 		placeholder?: string;
+		disabled?: boolean;
 		onSend?: () => void;
 		onEmojiClick?: () => void;
 	}
@@ -16,6 +17,7 @@
 	let {
 		value = $bindable(''),
 		placeholder = m.typeMessage(),
+		disabled = false,
 		onSend,
 		onEmojiClick,
 	}: Props = $props();
@@ -100,6 +102,7 @@
 					class="message-textarea"
 					data-testid="message-input-textarea"
 					{placeholder}
+					{disabled}
 					bind:value
 					bind:this={textarea}
 					rows="1"

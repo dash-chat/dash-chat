@@ -6679,7 +6679,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
+source = "git+https://github.com/p2panda/p2panda?rev=92e7782106bdda108cc5e11acfc78ba111a43c57#92e7782106bdda108cc5e11acfc78ba111a43c57"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -6700,7 +6700,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
+source = "git+https://github.com/p2panda/p2panda?rev=92e7782106bdda108cc5e11acfc78ba111a43c57#92e7782106bdda108cc5e11acfc78ba111a43c57"
 dependencies = [
  "p2panda-core",
  "p2panda-store",
@@ -6717,7 +6717,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
+source = "git+https://github.com/p2panda/p2panda?rev=92e7782106bdda108cc5e11acfc78ba111a43c57#92e7782106bdda108cc5e11acfc78ba111a43c57"
 dependencies = [
  "blake3",
  "ciborium",
@@ -6732,7 +6732,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
+source = "git+https://github.com/p2panda/p2panda?rev=92e7782106bdda108cc5e11acfc78ba111a43c57#92e7782106bdda108cc5e11acfc78ba111a43c57"
 dependencies = [
  "blake3",
  "futures-util",
@@ -6747,7 +6747,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
+source = "git+https://github.com/p2panda/p2panda?rev=92e7782106bdda108cc5e11acfc78ba111a43c57#92e7782106bdda108cc5e11acfc78ba111a43c57"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -6770,7 +6770,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
+source = "git+https://github.com/p2panda/p2panda?rev=92e7782106bdda108cc5e11acfc78ba111a43c57#92e7782106bdda108cc5e11acfc78ba111a43c57"
 dependencies = [
  "ciborium",
  "futures-channel",
@@ -6798,7 +6798,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
+source = "git+https://github.com/p2panda/p2panda?rev=92e7782106bdda108cc5e11acfc78ba111a43c57#92e7782106bdda108cc5e11acfc78ba111a43c57"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -6812,7 +6812,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
+source = "git+https://github.com/p2panda/p2panda?rev=92e7782106bdda108cc5e11acfc78ba111a43c57#92e7782106bdda108cc5e11acfc78ba111a43c57"
 dependencies = [
  "p2panda-core",
  "rand 0.10.1",
@@ -6826,7 +6826,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
+source = "git+https://github.com/p2panda/p2panda?rev=92e7782106bdda108cc5e11acfc78ba111a43c57#92e7782106bdda108cc5e11acfc78ba111a43c57"
 dependencies = [
  "futures-core",
  "p2panda-core",
@@ -6839,7 +6839,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.6.1"
-source = "git+https://github.com/p2panda/p2panda?rev=eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e#eecfe643bb924ccc3a27bb2cb2ccb4b0a022215e"
+source = "git+https://github.com/p2panda/p2panda?rev=92e7782106bdda108cc5e11acfc78ba111a43c57#92e7782106bdda108cc5e11acfc78ba111a43c57"
 dependencies = [
  "futures",
  "futures-util",

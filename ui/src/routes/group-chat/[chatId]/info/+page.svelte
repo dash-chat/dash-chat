@@ -5,15 +5,12 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type {
-		ContactsStore,
-		ChatsStore,
-		VerifyingKey,
-	} from 'dash-chat-stores';
+	import type { ChatsStore } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
 		mdiAccountGroup,
 		mdiDelete,
+		mdiExport,
 		mdiKeyVariant,
 		mdiPencil,
 		mdiPlusCircle,
@@ -22,7 +19,6 @@
 		Page,
 		Navbar,
 		NavbarBackLink,
-		List,
 		ListItem,
 		Chip,
 		Sheet,
@@ -31,9 +27,11 @@
 		Link,
 	} from 'konsta/svelte';
 
-	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { page } from '$app/state';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import ListAction from '$lib/components/navigation/ListAction.svelte';
+	import ActionList from '$lib/components/navigation/ActionList.svelte';
+	import ActionDialog from '$lib/components/navigation/ActionDialog.svelte';
 	let chatId = page.params.chatId!;
 
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -48,7 +46,6 @@
 		'demote' | 'promote' | 'remove' | 'leave' | 'delete' | null
 	>(null);
 	let dialogActorId = $state<string | null>(null);
-	// let loading = $state(false);
 	const theme = $derived(useTheme());
 
 	// async function handleDemote(actorId: string) {
@@ -87,17 +84,26 @@
 	// 	loading = false;
 	// }
 
-	// async function handleLeaveGroup() {
-	// 	loading = true;
-	// 	try {
-	// 		await groupChatStore.client.leaveGroup();
-	// 		dialogType = null;
-	// 		goto('/');
-	// 	} catch (e) {
-	// 		console.error(e);
-	// 	}
-	// 	loading = false;
-	// }
+	async function handleLeaveGroup() {
+		try {
+			await chatsStore.leaveGroup(chatId);
+			goto('/');
+			dialogType = null;
+			return { success: true as const };
+		} catch (e) {
+			console.error(e);
+			const errorMessage =
+				(e as { kind?: string }).kind === 'LastAdmin'
+					? m.errorLeavingGroupOnlyAdmin()
+					: m.errorLeavingGroup();
+
+			dialogType = null;
+			return {
+				success: false as const,
+				error: errorMessage,
+			};
+		}
+	}
 
 	// async function handleDeleteGroup() {
 	// 	loading = true;
@@ -178,28 +184,14 @@
 								count: Object.keys(members).length,
 							})}</BlockTitle
 						>
-						<List
-							nested
-							strongIos
-							inset={isWideScreen.value || theme === 'ios'}
-						>
+						<ActionList data-testid="group-info-members">
 							{#if me.admin}
-								<ListItem
-									link
-									chevron={false}
-									linkProps={{
-										href: `/group-chat/${chatId}/info/add-members`,
-									}}
+								<ListAction
 									title={m.addMembers()}
+									icon={mdiPlusCircle}
+									href={`/group-chat/${chatId}/info/add-members`}
 									data-testid="group-info-add-members"
-								>
-									{#snippet media()}
-										<wa-icon
-											style="font-size: 2rem;"
-											src={wrapPathInSvg(mdiPlusCircle)}
-										></wa-icon>
-									{/snippet}
-								</ListItem>
+								/>
 							{/if}
 
 							{#each Object.entries(members) as [actorId, member]}
@@ -240,103 +232,63 @@
 										<span class="font-semibold">{member.profile?.name}</span>
 									</div>
 
-									<List
-										nested
-										strongIos
-										inset={isWideScreen.value || theme === 'ios'}
-										class="mb-2"
-									>
+									<ActionList>
 										{#if me.admin}
 											{#if member.admin}
-												<ListItem
-													link
-													chevron={false}
+												<ListAction
 													title={m.demoteFromAdministrator()}
 													onClick={() => {
 														dialogType = 'demote';
 														dialogActorId = actorId;
 														sheetOpenFor = null;
 													}}
-												>
-													{#snippet media()}
-														<wa-icon src={wrapPathInSvg(mdiKeyVariant)}
-														></wa-icon>
-													{/snippet}
-												</ListItem>
+													icon={mdiKeyVariant}
+												/>
 											{:else}
-												<ListItem
-													link
-													chevron={false}
+												<ListAction
 													title={m.promoteToAdministrator()}
 													onClick={() => {
 														dialogType = 'promote';
 														dialogActorId = actorId;
 														sheetOpenFor = null;
 													}}
-												>
-													{#snippet media()}
-														<wa-icon src={wrapPathInSvg(mdiKeyVariant)}
-														></wa-icon>
-													{/snippet}
-												</ListItem>
+													icon={mdiKeyVariant}
+												/>
 											{/if}
 
-											<ListItem
-												link
-												chevron={false}
+											<ListAction
 												title={m.removeMember()}
 												onClick={() => {
 													dialogType = 'remove';
 													dialogActorId = actorId;
 													sheetOpenFor = null;
 												}}
-											>
-												{#snippet media()}
-													<wa-icon src={wrapPathInSvg(mdiDelete)}></wa-icon>
-												{/snippet}
-											</ListItem>
+												icon={mdiDelete}
+											/>
 										{/if}
-									</List>
+									</ActionList>
 								</Sheet>
 							{/each}
-						</List>
+						</ActionList>
 
-						<!-- <List
-							nested
-							strongIos
-							inset={isWideScreen.value || theme === 'ios'}
-							class="z-1"
-						>
-							<ListItem
-								title={m.leaveGroup()}
-								link
-								chevron={false}
-								onClick={() => (dialogType = 'leave')}
-								colors={{
-									primaryTextIos: 'text-red-500',
-									primaryTextMaterial: 'text-red-600',
-								}}
-							>
-								{#snippet media()}
-									<wa-icon class="big" src={wrapPathInSvg(mdiExport)}></wa-icon>
-								{/snippet}
-							</ListItem>
+						{#if me.member}
+							<ActionList>
+								<ListAction
+									title={m.leaveGroup()}
+									actionType="danger"
+									icon={mdiExport}
+									onClick={() => (dialogType = 'leave')}
+									data-testid="group-info-leave"
+								/>
 
-							<ListItem
+								<!-- <ListAction
 								title={m.deleteGroup()}
-								link
-								chevron={false}
+								actionType="danger"
+								icon={mdiClose}
 								onClick={() => (dialogType = 'delete')}
-								colors={{
-									primaryTextIos: 'text-red-500',
-									primaryTextMaterial: 'text-red-600',
-								}}
-							>
-								{#snippet media()}
-									<wa-icon class="big" src={wrapPathInSvg(mdiClose)}></wa-icon>
-								{/snippet}
-							</ListItem>
-						</List> -->
+							/> -->
+							</ActionList>
+						{/if}
 					{/await}
 				</div>
 			</div>
@@ -427,21 +379,16 @@
 			{/snippet}
 		</Dialog> -->
 
-		<!-- <Dialog
+		<ActionDialog
 			opened={dialogType === 'leave'}
-			onBackdropClick={() => (dialogType = null)}
+			onCancel={() => (dialogType = null)}
+			onConfirm={handleLeaveGroup}
 			title={m.leaveGroup()}
+			confirmText={m.leave()}
+			confirmTestId="group-info-leave-confirm"
 		>
 			<span>{m.areYouSureLeaveGroup()}</span>
-			{#snippet buttons()}
-				<DialogButton onClick={() => (dialogType = null)}
-					>{m.cancel()}</DialogButton
-				>
-				<DialogButton strong onClick={handleLeaveGroup} disabled={loading}>
-					{loading ? '...' : m.leave()}
-				</DialogButton>
-			{/snippet}
-		</Dialog> -->
+		</ActionDialog>
 
 		<!-- <Dialog
 			opened={dialogType === 'delete'}

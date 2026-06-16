@@ -20,5 +20,8 @@
 		"ui/build": true,
 		"*.log": true
 	},
-	"tailwindCSS.lint.suggestCanonicalClasses": "ignore"
+	"tailwindCSS.lint.suggestCanonicalClasses": "ignore",
+	"chat.tools.terminal.autoApprove": {
+		"cargo test": true
+	}
 }
