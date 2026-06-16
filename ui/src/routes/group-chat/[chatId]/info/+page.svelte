@@ -221,6 +221,7 @@
 									link
 									chevron={false}
 									title={member.profile?.name}
+									data-testid={`group-info-member-${member.profile?.name}`}
 									onclick={me.admin
 										? () => (sheetOpenFor = actorId)
 										: undefined}
@@ -321,6 +322,7 @@
 													sheetOpenFor = null;
 												}}
 												icon={mdiDelete}
+												data-testid="group-info-remove-member"
 											/>
 										{/if}
 									{/if}
@@ -398,6 +400,7 @@
 			onConfirm={handleRemove}
 			title={m.removeMember()}
 			confirmText={m.remove()}
+			confirmTestId="group-info-remove-member-confirm"
 		>
 			<span>{m.areYouSureRemoveMember()}</span>
 		</ActionDialog>
