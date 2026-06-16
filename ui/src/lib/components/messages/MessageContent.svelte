@@ -52,7 +52,8 @@
 			<!-- Reserves the metadata's space in the bottom-end corner, since
 			     wrapped text cannot be made to avoid an absolute box via CSS. -->
 			{#if metadata}
-				<span class="ms-2.5 inline-block" style="width: {metadataWidth}px"></span>
+				<span class="ms-2.5 inline-block" style="width: {metadataWidth}px"
+				></span>
 			{/if}
 		</div>
 	</div>
