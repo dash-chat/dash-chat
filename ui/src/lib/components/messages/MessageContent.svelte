@@ -16,7 +16,7 @@
 	let metadataWidth = $state(0);
 </script>
 
-<div class="relative mx-1">
+<div class="relative px-1">
 	{#if metadata}
 		<div
 			class="absolute bottom-0 end-0 flex items-center gap-1 whitespace-nowrap select-none"
