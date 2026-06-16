@@ -6,10 +6,10 @@
 		MailboxTrackerStore,
 		Message,
 	} from 'dash-chat-stores';
-	import { highlightMatch, type MessagePosition } from './message-helpers';
+	import type { MessagePosition } from './message-helpers';
+	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
-	import MessageAttachment from './MessageAttachment.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 
@@ -61,6 +61,10 @@
 	);
 </script>
 
+{#snippet metadata()}
+	<MessageTimestamp timestamp={message.timestamp} class="quiet" />
+{/snippet}
+
 <Card
 	raised
 	contentWrapPadding="p-2"
@@ -75,30 +79,13 @@
 			{sender.name}
 		</div>
 	{/if}
-	{#if message.content.media}
-		<MessageAttachment
-			media={message.content.media}
-			withContentAbove={!!sender}
-			withContentBelow={!!message.content.message || isLast}
-			{senderName}
-			timestamp={message.timestamp}
-		/>
-	{/if}
-	{#if message.content.message || isLast}
-		<div class="row gap-2 mx-1" style="align-items: end">
-			<span class="flex-1">
-				{#if searchQuery}
-					{@html highlightMatch(message.content.message, searchQuery)}
-				{:else}
-					{message.content.message}
-				{/if}
-			</span>
-
-			{#if isLast}
-				<MessageTimestamp timestamp={message.timestamp} class="quiet" />
-			{/if}
-		</div>
-	{/if}
+	<MessageContent
+		{message}
+		{searchQuery}
+		{senderName}
+		withContentAbove={!!sender}
+		metadata={isLast ? metadata : undefined}
+	/>
 </Card>
 {#if Object.keys(message.reactions).length}
 	<div class="flex justify-end -mt-1.5 mb-0.5 px-1">

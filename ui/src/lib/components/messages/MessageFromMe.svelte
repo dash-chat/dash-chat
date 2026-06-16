@@ -6,11 +6,11 @@
 		MailboxTrackerStore,
 		Message,
 	} from 'dash-chat-stores';
-	import { highlightMatch, type MessagePosition } from './message-helpers';
+	import type { MessagePosition } from './message-helpers';
+	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
-	import MessageAttachment from './MessageAttachment.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
@@ -57,42 +57,27 @@
 	);
 </script>
 
+{#snippet metadata()}
+	<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
+
+	<MessageStatusIndicator
+		{chatId}
+		author={message.author}
+		seq={message.seqNum}
+	/>
+{/snippet}
+
 <Card
 	raised
 	contentWrapPadding="p-2"
 	class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 >
-	{#if message.content.media}
-		<MessageAttachment
-			media={message.content.media}
-			withContentBelow={!!message.content.message || isLast}
-			senderName={m.you()}
-			timestamp={message.timestamp}
-		/>
-	{/if}
-	{#if message.content.message || isLast}
-		<div class="row gap-2 mx-1" style="align-items: end">
-			<span class="flex-1">
-				{#if searchQuery}
-					{@html highlightMatch(message.content.message, searchQuery)}
-				{:else}
-					{message.content.message}
-				{/if}
-			</span>
-
-			{#if isLast}
-				<div class="flex items-center gap-1">
-					<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
-
-					<MessageStatusIndicator
-						{chatId}
-						author={message.author}
-						seq={message.seqNum}
-					/>
-				</div>
-			{/if}
-		</div>
-	{/if}
+	<MessageContent
+		{message}
+		{searchQuery}
+		senderName={m.you()}
+		metadata={isLast ? metadata : undefined}
+	/>
 </Card>
 {#if Object.keys(message.reactions).length}
 	<div class="flex -mt-1.5 mb-0.5 px-1">

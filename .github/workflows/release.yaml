@@ -1,8 +1,9 @@
-name: "release-tauri-app"
+name: "release"
 on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-staging'
 
 jobs:
   create-release-draft:
@@ -24,7 +25,7 @@ jobs:
         with:
           draft: true
           prerelease: true
-          name: Dash Chat v${{ steps.version.outputs.value }}
+          name: Dash Chat v${{ steps.version.outputs.value }}${{ contains(github.ref_name, '-staging') && ' (staging)' || '' }}
           body: See the assets to download this version and install.
 
   release-tauri-app:
@@ -33,9 +34,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest' # for Arm based macs (M1 and above).
+          - platform: 'macos-26' # for Arm based macs (M1 and above).
             args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest' # for Intel based macs.
+          - platform: 'macos-26' # for Intel based macs.
             args: '--target x86_64-apple-darwin'
           - platform: 'ubuntu-22.04' # for Tauri v1 you could replace this with ubuntu-20.04.
             args: ' -b appimage'
@@ -77,6 +78,21 @@ jobs:
         if: startsWith(matrix.platform, 'macos')
         run: rm -f /opt/homebrew/bin/cargo /opt/homebrew/bin/rustc /opt/homebrew/bin/rustup /opt/homebrew/bin/rustup-init
 
+      # Icon Composer (.icon) sources require Xcode 26+'s actool to compile
+      # into Assets.car; the default Xcode 16 emits only a partial-info.plist.
+      - name: Select Xcode 26 (macOS)
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          XCODE_APP=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [[ -z "$XCODE_APP" ]]; then
+            echo "No Xcode 26.x found on runner" >&2
+            ls /Applications | grep -i xcode >&2 || true
+            exit 1
+          fi
+          echo "Selecting $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
       - name: install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -108,6 +124,12 @@ jobs:
             libsoup-3.0 \
             webkit2gtk-4.1
 
+      - name: Set staging server URLs
+        if: contains(github.ref_name, '-staging')
+        run: |
+          echo "MAILBOX_URL=https://mailbox.staging.darksoil.studio" >> $GITHUB_ENV
+          echo "PUSH_NOTIFICATIONS_SERVER_URL=https://push-notifications.staging.darksoil.studio" >> $GITHUB_ENV
+
       - name: build the app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -129,6 +151,7 @@ jobs:
           args: ${{ matrix.args }}
 
   release-docker-images:
+    if: ${{ !contains(github.ref_name, '-staging') }}
     permissions:
       contents: read
       packages: write
@@ -247,6 +270,12 @@ jobs:
           EOF
 
           echo "Generated tauri.properties with version $VERSION and versionCode $VERSION_CODE"
+
+      - name: Set staging server URLs
+        if: contains(github.ref_name, '-staging')
+        run: |
+          echo "MAILBOX_URL=https://mailbox.staging.darksoil.studio" >> $GITHUB_ENV
+          echo "PUSH_NOTIFICATIONS_SERVER_URL=https://push-notifications.staging.darksoil.studio" >> $GITHUB_ENV
 
       - name: Install and Build 🔧
         run: pnpm install && pnpm tauri android build --aab --apk

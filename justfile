@@ -1,3 +1,5 @@
+set dotenv-filename := x'.env.${ENV:-development}'
+
 # start two dash chat instances connected to a local mailbox server
 mod dev 'scripts/dev.just'
 
@@ -13,7 +15,10 @@ mod push 'scripts/push.just'
 # ios development
 mod ios 'scripts/ios.just'
 
-# build docker droplet
+# build digital ocean droplet images and create droplets
+mod droplet 'scripts/droplet.just'
+
+# build docker images for the mailbox and push notifications servers
 mod docker 'scripts/docker.just'
 
 # build dash chat as a binary
