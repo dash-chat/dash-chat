@@ -93,7 +93,7 @@
 		}
 
 		try {
-			// await groupChatStore.client.removeMember(chatId, dialogActorId);
+			await groupChatStore.client.removeMember(chatId, dialogActorId);
 			dialogType = null;
 			dialogActorId = null;
 			return { success: true as const };
