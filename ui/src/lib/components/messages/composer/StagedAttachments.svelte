@@ -61,9 +61,10 @@
 					type="button"
 					class="clear-all"
 					data-testid="message-input-clear-attachments"
+					aria-label={m.removeAllAttachments()}
 					onclick={clear}
 				>
-					{m.removeAllAttachments()}
+					<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
 				</button>
 			</div>
 		{/if}
@@ -127,12 +128,23 @@
 	}
 
 	.clear-all {
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		border: none;
 		background: transparent;
 		cursor: pointer;
-		font-size: 13px;
-		padding: 2px 4px;
-		color: var(--k-theme-color, #3b82f6);
+		padding: 2px;
+		color: var(--k-text-color);
+		opacity: 0.6;
+		transition: opacity 0.15s ease;
+	}
+	.clear-all:hover {
+		opacity: 1;
+	}
+	.clear-all :global(wa-icon) {
+		width: 20px;
+		height: 20px;
 	}
 
 	.staged-rail {
