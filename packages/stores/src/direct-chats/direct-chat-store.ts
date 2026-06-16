@@ -10,7 +10,7 @@ import {
 	ChatReaction,
 	ChatSummary,
 	Media,
-	MessageContent,
+	OutgoingMedia,
 	Payload,
 	ReadMessagesStore,
 	getMessageMedia,
@@ -150,14 +150,9 @@ export class DirectChatStore implements ReadMessagesStore {
 		});
 	}
 
-	async sendMessage(input: { message: string; media: Media | null }) {
+	async sendMessage(input: { message: string; media: OutgoingMedia | null }) {
 		const chatId = await this.chatId();
 		const myDeviceId = await this.contactsStore.myDeviceId();
-		const content: MessageContent = {
-			v: '1',
-			message: input.message,
-			media: input.media,
-		};
 		await Promise.all([
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== chatId) return false;
@@ -171,7 +166,7 @@ export class DirectChatStore implements ReadMessagesStore {
 					return false;
 				return true;
 			}),
-			this.client.sendMessage(chatId, content),
+			this.client.sendMessage(chatId, input.message, input.media),
 		]);
 	}
 

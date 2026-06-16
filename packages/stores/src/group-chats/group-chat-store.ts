@@ -13,8 +13,7 @@ import {
 	ChatSummaryLastEvent,
 	GroupControlEvent,
 	GroupInfo,
-	Media,
-	MessageContent,
+	OutgoingMedia,
 	Payload,
 	ReadMessagesStore,
 	getMessageMedia,
@@ -356,13 +355,8 @@ export class GroupChatStore implements ReadMessagesStore {
 		await this.client.markMessagesRead(this.chatId, messageHashes);
 	}
 
-	async sendMessage(input: { message: string; media: Media | null }) {
+	async sendMessage(input: { message: string; media: OutgoingMedia | null }) {
 		const myDeviceId = await this.contactsStore.myDeviceId();
-		const content: MessageContent = {
-			v: '1',
-			message: input.message,
-			media: input.media,
-		};
 		await Promise.all([
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== this.chatId) return false;
@@ -376,7 +370,7 @@ export class GroupChatStore implements ReadMessagesStore {
 					return false;
 				return true;
 			}),
-			this.client.sendMessage(this.chatId, content),
+			this.client.sendMessage(this.chatId, input.message, input.media),
 		]);
 	}
 }

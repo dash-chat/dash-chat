@@ -2062,6 +2062,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.9.4",
  "serde",
+ "serde_bytes",
  "serde_json",
  "sqlx",
  "tempfile",

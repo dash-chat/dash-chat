@@ -9,7 +9,7 @@
 		mdiTrayArrowDown,
 	} from '@mdi/js';
 	import { lightbox } from '$lib/stores/lightbox.svelte';
-	import { bytesToBlobUrl } from '$lib/types/media';
+	import { mediaSrc } from '$lib/types/media';
 	import { saveAttachment } from '$lib/utils/save-file';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
@@ -20,17 +20,8 @@
 	// must stay stable across navigation.
 	const photos = $derived(content?.photos);
 
-	// Own object URLs — independent of the bubble's, revoked on change/close.
-	// Minted and revoked in the same pre-effect; see MessageAttachment.
-	let photoUrls = $state<string[]>([]);
-
-	$effect.pre(() => {
-		const urls = photos
-			? photos.map(p => bytesToBlobUrl(p.data, p.mime_type))
-			: [];
-		photoUrls = urls;
-		return () => urls.forEach(u => URL.revokeObjectURL(u));
-	});
+	// Stable `irohblob://` URLs served from the node's local blob store.
+	const photoUrls = $derived(photos ? photos.map(mediaSrc) : []);
 
 	let rootEl: HTMLElement | undefined = $state();
 	let stageEl: HTMLElement | undefined = $state();

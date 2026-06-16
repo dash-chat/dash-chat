@@ -1072,6 +1072,15 @@ impl Node {
         Ok(MediaMetaCollection::from(items))
     }
 
+    /// Load the raw bytes of a single blob by its hash from the local blob store.
+    ///
+    /// Used by the `blob://` URI scheme handler to serve media to the webview.
+    pub async fn load_blob(&self, hash: &str) -> anyhow::Result<Vec<u8>> {
+        let hash: iroh_blobs::Hash = hash.parse()?;
+        let data = self.blob_sync.blobs.get_bytes(hash).await?;
+        Ok(data.to_vec())
+    }
+
     pub async fn load_media(&self, meta: Vec<MediaMetaItem>) -> anyhow::Result<MediaData> {
         let mut items = vec![];
         for item in meta {

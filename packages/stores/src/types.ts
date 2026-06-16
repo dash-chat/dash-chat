@@ -19,34 +19,107 @@ export interface ChatReaction {
 }
 
 /**
- * `data` carries raw bytes — NOT base64. On the wire (Tauri JSON IPC) a
- * `Vec<u8>` arrives as `number[]`; in-process callers may also construct
- * these with a `Uint8Array`. Helpers in `ui/src/lib/types/media.ts`
- * (`asUint8Array`, `byteLengthOf`, `bytesToBlobUrl`) accept either form.
- * 
- * If the `data` field is empty, that indicates that the bytes have not
- * yet been fetched, and a loading/missing data state is shown.
+ * A renderable photo attachment. Carries only the blob `hash` and metadata —
+ * never the raw bytes. The bytes live in the iroh-blobs store and are loaded
+ * lazily via the `irohblob://` URI scheme (see `mediaSrc` / `loadMediaBytes`).
  */
 export interface Photo {
-	data?: Uint8Array | number[];
+	/** Blob hash of the stored bytes. */
+	hash: Hash;
+	/** Encoded size in bytes, from the stored metadata. */
+	size: number;
 	name: string;
 	mime_type: string;
 }
 
-/** A non-image file attachment. See `Photo` for the `data` shape. */
+/** A renderable non-image file attachment. See `Photo` — hash + metadata only. */
 export interface FileAttachment {
-	data?: Uint8Array | number[];
+	hash: Hash;
+	size: number;
 	name: string;
 	mime_type: string;
 }
 
 /**
- * Media attached to a chat message. A message has either a set of photos
- * or a single file — not both. Matches `dashchat_node::Media`.
+ * Renderable media attached to a chat message. A message has either a set of
+ * photos or a single file — not both. Built from a log's `MediaMetaCollection`
+ * via `mediaMetaToMedia`; carries hashes, not bytes.
  */
 export type Media =
 	| { kind: 'photos'; photos: Photo[] }
 	| { kind: 'file'; file: FileAttachment };
+
+/**
+ * Raw bytes leaving the composer for the backend to store. `data` carries raw
+ * bytes — NOT base64; in-process it is a `Uint8Array`, and over Tauri JSON IPC
+ * a `Vec<u8>` arrives as `number[]`. This is the *only* media shape that holds
+ * bytes: once `store_media` has stored them, all reads go through `irohblob://`.
+ * Mirrors `dashchat_node::MediaData`.
+ */
+export type OutgoingMedia =
+	| { kind: 'photos'; photos: OutgoingPhoto[] }
+	| { kind: 'file'; file: OutgoingFile };
+
+export interface OutgoingPhoto {
+	data: Uint8Array | number[];
+	name: string;
+	mime_type: string;
+}
+
+export interface OutgoingFile {
+	data: Uint8Array | number[];
+	name: string;
+	mime_type: string;
+}
+
+export type MediaMetaKind = 'Photo' | 'File';
+
+/**
+ * Metadata for a single stored blob. A message log carries these in place of
+ * the raw bytes; the bytes live in the iroh-blobs store and are fetched lazily
+ * via the `irohblob://` URI scheme. Matches `dashchat_node::MediaMetaItem`.
+ */
+export interface MediaMetaItem {
+	name: string;
+	mime_type: string;
+	size: number;
+	kind: MediaMetaKind;
+	hash: Hash;
+}
+
+/** Matches `dashchat_node::MediaMetaCollection`, which serializes as a flat array. */
+export type MediaMetaCollection = MediaMetaItem[];
+
+/**
+ * Convert the blob metadata stored in a message log into the renderable
+ * `Media` shape. Mirrors `Node::load_media`: a lone file becomes a `file`
+ * attachment, otherwise the items become `photos`. The resulting photos/file
+ * carry only a `hash` (no bytes).
+ */
+export function mediaMetaToMedia(
+	meta: MediaMetaCollection | null | undefined,
+): Media | null {
+	if (!meta || meta.length === 0) return null;
+	const file = meta.find(item => item.kind === 'File');
+	if (file) {
+		return {
+			kind: 'file',
+			file: {
+				name: file.name,
+				mime_type: file.mime_type,
+				size: file.size,
+				hash: file.hash,
+			},
+		};
+	}
+	const photos: Photo[] = meta.map(item => ({
+		name: item.name,
+		mime_type: item.mime_type,
+		size: item.size,
+		hash: item.hash,
+	}));
+	return { kind: 'photos', photos };
+}
 
 /**
  * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
@@ -57,7 +130,10 @@ export type Media =
 export type MessageContentV1 = {
 	v: '1';
 	message: string;
-	media: Media | null;
+	/** Stored/wire form: a flat `MediaMetaCollection` (bytes live in the blob
+	 * store, fetched lazily via `irohblob://`). `getMessageMedia` turns this
+	 * into the renderable `Media`. */
+	media: MediaMetaCollection | null;
 };
 export type MessageContent = MessageContentV1;
 
@@ -68,17 +144,21 @@ export function getMessageText(content: MessageContent | string): string {
 export function getMessageMedia(
 	content: MessageContent | string,
 ): Media | null {
-	return typeof content === 'string' ? null : content.media;
+	if (typeof content === 'string') return null;
+	return mediaMetaToMedia(content.media);
 }
 
 /**
  * Cheap structural comparison used to match a just-sent message against the
  * operation that confirms it — media-only messages all have empty text, so
  * text alone cannot disambiguate them. Compares kind plus photo count or
- * file name; byte contents are deliberately not compared (sent media holds
- * `Uint8Array`s while logged operations hold `number[]`s).
+ * file name; byte contents are deliberately not compared (the sent side holds
+ * `OutgoingMedia` bytes while the logged side is hash-only `Media`).
  */
-export function sameMediaShape(a: Media | null, b: Media | null): boolean {
+export function sameMediaShape(
+	a: Media | OutgoingMedia | null,
+	b: Media | OutgoingMedia | null,
+): boolean {
 	if (a === null || b === null) return a === b;
 	if (a.kind === 'photos' && b.kind === 'photos') {
 		return a.photos.length === b.photos.length;

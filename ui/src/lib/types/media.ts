@@ -1,5 +1,13 @@
 import { compressImage } from '$lib/utils/compress';
-import type { FileAttachment, Media, Photo } from 'dash-chat-stores';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import type {
+	FileAttachment,
+	Hash,
+	OutgoingFile,
+	OutgoingMedia,
+	OutgoingPhoto,
+	Photo,
+} from 'dash-chat-stores';
 
 export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 
@@ -117,7 +125,7 @@ async function fileToBytes(file: File): Promise<Uint8Array> {
  * Compresses images first, then enforces a total-size cap; throws
  * `AttachmentTooLargeError` if the post-compression payload still exceeds it.
  */
-export async function draftToMedia(draft: DraftMedia): Promise<Media> {
+export async function draftToMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	const media = await buildMedia(draft);
 	const total = totalMediaBytes(media);
 	if (total > MAX_MESSAGE_BYTES) {
@@ -126,9 +134,9 @@ export async function draftToMedia(draft: DraftMedia): Promise<Media> {
 	return media;
 }
 
-async function buildMedia(draft: DraftMedia): Promise<Media> {
+async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	if (draft.kind === 'photos') {
-		const photos: Photo[] = await Promise.all(
+		const photos: OutgoingPhoto[] = await Promise.all(
 			draft.items.map(async ({ file }) => {
 				const compressed = await compressImage(file);
 				return {
@@ -140,7 +148,7 @@ async function buildMedia(draft: DraftMedia): Promise<Media> {
 		);
 		return { kind: 'photos', photos };
 	}
-	const file: FileAttachment = {
+	const file: OutgoingFile = {
 		data: await fileToBytes(draft.file),
 		name: draft.file.name,
 		mime_type: draft.file.type || 'application/octet-stream',
@@ -148,7 +156,7 @@ async function buildMedia(draft: DraftMedia): Promise<Media> {
 	return { kind: 'file', file };
 }
 
-function totalMediaBytes(media: Media): number {
+function totalMediaBytes(media: OutgoingMedia): number {
 	if (media.kind === 'photos') {
 		return media.photos.reduce((sum, p) => sum + byteLengthOf(p.data), 0);
 	}
@@ -173,34 +181,36 @@ export function formatFileSize(bytes: number): string {
 	return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-/**
- * Normalize bytes coming from Tauri IPC. The Rust side sends `Vec<u8>`, which
- * Tauri's default JSON serialization delivers as a plain `number[]` — not a
- * `Uint8Array`. Coerce here so downstream code can rely on `Uint8Array`.
- */
-export function asUint8Array(
-	data: Uint8Array | ArrayBuffer | number[],
-): Uint8Array {
-	if (data instanceof Uint8Array) return data;
-	if (data instanceof ArrayBuffer) return new Uint8Array(data);
-	return new Uint8Array(data);
-}
-
-/**
- * Wrap raw bytes into a Blob URL. Accepts either `Uint8Array` (in-process)
- * or `number[]` (fresh from Tauri JSON IPC). Caller is responsible for
- * revoking via `URL.revokeObjectURL` (Svelte: use `$effect` cleanup).
- */
-export function bytesToBlobUrl(
-	data: Uint8Array | number[],
-	mimeType: string,
-): string {
-	return URL.createObjectURL(
-		new Blob([asUint8Array(data)], { type: mimeType }),
-	);
-}
-
 /** Size in bytes of either an in-process `Uint8Array` or an IPC number array. */
 export function byteLengthOf(data: Uint8Array | number[]): number {
 	return data instanceof Uint8Array ? data.byteLength : data.length;
+}
+
+/** Webview URL that the `irohblob://` URI scheme handler serves the blob's
+ * bytes from. The handler reads the blob from the node's local store. */
+export function blobUrl(hash: Hash): string {
+	return convertFileSrc(hash, 'irohblob');
+}
+
+/**
+ * Source URL for rendering a media item: the `irohblob://` URL its bytes are
+ * served from. The handler reads the blob from the node's local store; the
+ * webview caches the response (hashes are content-addressed, so immutable).
+ */
+export function mediaSrc(item: Photo | FileAttachment): string {
+	return blobUrl(item.hash);
+}
+
+/** Display size of a media item, from its stored metadata. */
+export function mediaSize(item: Photo | FileAttachment): number {
+	return item.size;
+}
+
+/** Raw bytes of a media item, fetched from the `irohblob://` scheme. */
+export async function loadMediaBytes(
+	item: Photo | FileAttachment,
+): Promise<Uint8Array> {
+	const res = await fetch(blobUrl(item.hash));
+	if (!res.ok) throw new Error(`failed to load blob ${item.hash}`);
+	return new Uint8Array(await res.arrayBuffer());
 }

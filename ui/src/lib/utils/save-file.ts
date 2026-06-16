@@ -1,5 +1,5 @@
 import { m } from '$lib/paraglide/messages.js';
-import { asUint8Array, bytesToBlobUrl } from '$lib/types/media';
+import { loadMediaBytes } from '$lib/types/media';
 import { isMobile, isTauriEnv } from '$lib/utils/environment';
 import { showToast } from '$lib/utils/toasts';
 import type { FileAttachment, Photo } from 'dash-chat-stores';
@@ -34,7 +34,7 @@ async function shareAttachmentOnMobile(
 	// never escape the share directory.
 	const name = file.name.split(/[\\/]/).pop() || 'attachment';
 	const path = await join(shareDir, name);
-	await writeFile(path, asUint8Array(file.data));
+	await writeFile(path, await loadMediaBytes(file));
 	try {
 		await shareFile(`file://${path}`, {
 			mimeType: file.mime_type,
@@ -73,10 +73,13 @@ export async function saveAttachment(
 			}
 			const path = await save({ title: m.saveFile(), defaultPath });
 			if (!path) return;
-			await writeFile(path, asUint8Array(file.data));
+			await writeFile(path, await loadMediaBytes(file));
 			showToast(m.fileSaved());
 		} else {
-			const url = bytesToBlobUrl(file.data, file.mime_type);
+			const bytes = await loadMediaBytes(file);
+			const url = URL.createObjectURL(
+				new Blob([bytes], { type: file.mime_type }),
+			);
 			const a = document.createElement('a');
 			a.href = url;
 			a.download = file.name;

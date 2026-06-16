@@ -1,10 +1,6 @@
 <script lang="ts">
 	import type { Media } from 'dash-chat-stores';
-	import {
-		byteLengthOf,
-		bytesToBlobUrl,
-		formatFileSize,
-	} from '$lib/types/media';
+	import { formatFileSize, mediaSize, mediaSrc } from '$lib/types/media';
 	import { getTimelineImageDimensions, gridConfig } from './photo-grid';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import { saveAttachment } from '$lib/utils/save-file';
@@ -39,21 +35,11 @@
 		);
 	}
 
-	// Build object URLs once per Media instance. Minting and revoking live
-	// in the same pre-effect (not a $derived) so the URLs can never leak if
-	// a derived were to re-evaluate independently of its consumer.
-	// The keyed {#each (photoUrls[i])} below relies on the pre-effect
-	// repopulating photoUrls before the DOM updates.
-	let photoUrls = $state<string[]>([]);
-
-	$effect.pre(() => {
-		const urls =
-			media.kind === 'photos'
-				? media.photos.map(p => bytesToBlobUrl(p.data, p.mime_type))
-				: [];
-		photoUrls = urls;
-		return () => urls.forEach(u => URL.revokeObjectURL(u));
-	});
+	// Stable `irohblob://` URLs served from the node's local blob store; the
+	// webview caches them (content-addressed hashes are immutable).
+	const photoUrls = $derived(
+		media.kind === 'photos' ? media.photos.map(mediaSrc) : [],
+	);
 
 	// Lone images render at Signal's timeline size for their natural aspect
 	// ratio; until decode (local bytes, effectively instant) use the minimum.
@@ -123,8 +109,7 @@
 		</div>
 		<div class="attachment-file-info">
 			<span class="attachment-file-name">{file.name}</span>
-			<span class="attachment-file-size"
-				>{formatFileSize(byteLengthOf(file.data))}</span
+			<span class="attachment-file-size">{formatFileSize(mediaSize(file))}</span
 			>
 		</div>
 	</button>
