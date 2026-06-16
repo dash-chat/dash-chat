@@ -14,7 +14,7 @@
 
 <button
 	type="button"
-	class="send-button"
+	class="send-button flex h-[42px] w-[42px] shrink-0 items-center justify-center p-0"
 	data-testid="message-input-send"
 	class:enabled={!disabled}
 	onclick={onClick}
@@ -26,16 +26,9 @@
 
 <style>
 	.send-button {
-		flex-shrink: 0;
-		width: 42px;
-		height: 42px;
 		border: none;
 		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
 		cursor: pointer;
-		padding: 0;
 		background: rgba(128, 128, 128, 0.15);
 		color: var(--k-text-color);
 		opacity: 0.4;

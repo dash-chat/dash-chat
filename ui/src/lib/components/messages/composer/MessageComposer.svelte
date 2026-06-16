@@ -120,10 +120,10 @@
 
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class={theme === 'ios'
-					? 'input-container bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-					: 'input-container bg-white dark:bg-gray-800'}
-				style="padding-inline-start: 8px"
+				class="input-container flex min-h-[42px] min-w-0 flex-1 items-center ps-2 {theme ===
+				'ios'
+					? 'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+					: 'bg-white dark:bg-gray-800'}"
 				onpaste={onPaste}
 			>
 				<MessageInput
@@ -162,11 +162,6 @@
 
 <style>
 	.input-container {
-		flex: 1;
-		display: flex;
-		align-items: center;
-		min-width: 0;
-		min-height: 42px;
 		border: 1px solid var(--k-hairline-color);
 		border-radius: 22px;
 		transition: border-color 0.15s ease;

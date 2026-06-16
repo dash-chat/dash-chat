@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import type { FileAttachment } from 'dash-chat-stores';
 	import { byteLengthOf, formatFileSize } from '$lib/types/media';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
@@ -6,9 +7,12 @@
 
 	interface Props {
 		file: FileAttachment;
+		/** Timestamp / receipts rendered inline at the end of the row, Signal-style
+		 * (only on a file-only message; a captioned file shows them below). */
+		metadata?: Snippet;
 	}
 
-	let { file }: Props = $props();
+	let { file, metadata }: Props = $props();
 </script>
 
 <button
@@ -29,4 +33,11 @@
 			>{formatFileSize(byteLengthOf(file.data))}</span
 		>
 	</div>
+	{#if metadata}
+		<div
+			class="ms-2 flex shrink-0 items-center gap-1 self-end whitespace-nowrap select-none"
+		>
+			{@render metadata()}
+		</div>
+	{/if}
 </button>

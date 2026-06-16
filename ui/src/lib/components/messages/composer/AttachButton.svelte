@@ -49,10 +49,10 @@
 	onchange={onFilePicked}
 />
 
-<div class="attach-wrapper">
+<div class="relative mb-1 self-end">
 	<button
 		type="button"
-		class="icon-button attach-button"
+		class="icon-button attach-button flex h-10 w-10 shrink-0 items-center justify-center"
 		data-testid="message-input-attach"
 		aria-label={m.attachMenu()}
 		aria-expanded={open}
@@ -63,18 +63,18 @@
 	{#if open}
 		<button
 			type="button"
-			class="attach-scrim"
+			class="fixed inset-0 z-10 cursor-default border-none bg-transparent"
 			aria-label={m.close()}
 			onclick={() => (open = false)}
 		></button>
 		<div
-			class="attach-menu"
+			class="attach-menu absolute bottom-[calc(100%_+_8px)] start-0 z-20 min-w-[200px] py-1.5"
 			class:attach-menu-ios={theme === 'ios'}
 			data-testid="message-input-attach-menu"
 		>
 			<button
 				type="button"
-				class="attach-menu-item"
+				class="attach-menu-item flex w-full items-center gap-3 px-4 py-2.5"
 				data-testid="message-input-attach-photos"
 				onclick={() => {
 					open = false;
@@ -86,7 +86,7 @@
 			</button>
 			<button
 				type="button"
-				class="attach-menu-item"
+				class="attach-menu-item flex w-full items-center gap-3 px-4 py-2.5"
 				data-testid="message-input-attach-file"
 				onclick={() => {
 					open = false;
@@ -102,13 +102,9 @@
 
 <style>
 	.icon-button {
-		flex-shrink: 0;
 		border: none;
 		background: transparent;
 		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
 		cursor: pointer;
 		color: var(--k-text-color);
 		transition:
@@ -125,15 +121,7 @@
 		height: 22px;
 	}
 
-	.attach-wrapper {
-		position: relative;
-		align-self: flex-end;
-		margin-bottom: 4px;
-	}
-
 	.attach-button {
-		width: 40px;
-		height: 40px;
 		opacity: 0.6;
 	}
 	.attach-button:hover {
@@ -141,23 +129,8 @@
 		background: rgba(128, 128, 128, 0.1);
 	}
 
-	.attach-scrim {
-		position: fixed;
-		inset: 0;
-		z-index: 10;
-		border: none;
-		background: transparent;
-		cursor: default;
-	}
-
 	.attach-menu {
-		position: absolute;
-		bottom: calc(100% + 8px);
-		inset-inline-start: 0;
-		z-index: 20;
-		min-width: 200px;
 		border-radius: 14px;
-		padding: 6px 0;
 		background: var(--k-bars-bg-color, white);
 		border: 1px solid var(--k-hairline-color);
 		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
@@ -167,11 +140,6 @@
 	}
 
 	.attach-menu-item {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		width: 100%;
-		padding: 10px 16px;
 		border: none;
 		background: transparent;
 		cursor: pointer;

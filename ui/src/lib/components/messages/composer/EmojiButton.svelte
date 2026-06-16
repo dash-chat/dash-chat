@@ -13,7 +13,7 @@
 
 <button
 	type="button"
-	class="icon-button emoji-btn"
+	class="icon-button emoji-btn flex h-7 w-7 shrink-0 items-center justify-center"
 	onclick={onClick}
 	aria-label={m.emoji()}
 	data-testid="message-input-emoji"
@@ -24,15 +24,9 @@
 
 <style>
 	.icon-button {
-		flex-shrink: 0;
-		width: 28px;
-		height: 28px;
 		border: none;
 		background: transparent;
 		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
 		cursor: pointer;
 		color: var(--k-text-color);
 		opacity: 0.5;

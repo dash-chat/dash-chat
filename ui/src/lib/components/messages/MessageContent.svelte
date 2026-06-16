@@ -25,6 +25,7 @@
 	const media = $derived(message.content.media);
 	const hasText = $derived(!!message.content.message);
 	const isPhotoOnly = $derived(media?.kind === 'photos' && !hasText);
+	const isFileOnly = $derived(media?.kind === 'file' && !hasText);
 
 	let metadataWidth = $state(0);
 </script>
@@ -46,15 +47,22 @@
 			timestamp={message.timestamp}
 		/>
 		{#if isPhotoOnly && metadata}
-			<div class="photo-meta">{@render metadata()}</div>
+			<div
+				class="photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 px-2 pt-4 pb-1"
+			>
+				{@render metadata()}
+			</div>
 		{/if}
 	</div>
 {:else if media?.kind === 'file'}
 	<div class="media file">
-		<FileAttachment file={media.file} />
+		<FileAttachment
+			file={media.file}
+			metadata={isFileOnly ? metadata : undefined}
+		/>
 	</div>
 {/if}
-{#if hasText || (metadata && !isPhotoOnly)}
+{#if hasText || (metadata && !isPhotoOnly && !isFileOnly)}
 	<div class="caption relative px-1">
 		{#if metadata}
 			<div
@@ -116,8 +124,9 @@
 	.media.photos:has(+ .caption) {
 		margin-bottom: 4px;
 	}
-	.media.file {
-		margin: 0 0 4px;
+	/* Leave a gap before a caption below the file. */
+	.media.file:has(+ .caption) {
+		margin-bottom: 4px;
 	}
 	/* Space the file row away from the sender-name header above it in groups. */
 	.sender-name + .media.file {
@@ -127,17 +136,8 @@
 	/* Image-only bubbles bleed to the bottom edge with the timestamp overlaid
 	 * on a gradient scrim, matching Signal. */
 	.photo-meta {
-		position: absolute;
-		inset-inline: 0;
-		bottom: 0;
-		display: flex;
-		justify-content: flex-end;
-		align-items: center;
-		gap: 4px;
-		padding: 16px 8px 4px;
 		color: rgba(255, 255, 255, 0.95);
 		background: linear-gradient(to top, rgba(0, 0, 0, 0.45), transparent);
-		pointer-events: none;
 	}
 
 	.photo-meta :global(.quiet),
