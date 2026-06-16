@@ -556,14 +556,14 @@ impl Node {
     }
 
     async fn has_other_admins(&self, chat_id: ChatId, exclude: DeviceId) -> anyhow::Result<bool> {
-        let members = self.get_group_members(chat_id).await?;
-        let is_admin = members
+        let result = self
+            .get_group_members(chat_id)
+            .await?
             .iter()
-            .any(|(m, a)| *m == exclude && *a == p2panda_auth::Access::manage());
-        let has_others = members
-            .iter()
-            .any(|(m, a)| *m != exclude && *a == p2panda_auth::Access::manage());
-        Ok(!is_admin || has_others || members.len() <= 1)
+            .any(|(member, access)| {
+                *access == p2panda_auth::Access::manage() && *member != exclude
+            });
+        Ok(result)
     }
 
     /// "Joining" a chat means subscribing to messages for that chat.

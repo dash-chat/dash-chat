@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { Dialog, DialogButton, List, Preloader } from 'konsta/svelte';
+	import { Dialog, DialogButton, Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
+	import type { Snippet } from 'svelte';
 
 	type ActionResult = { success: true } | { success: false; error: string };
 
@@ -10,6 +11,7 @@
 		onCancel: () => void;
 		onConfirm: () => Promise<ActionResult>;
 		title: string;
+		children: Snippet;
 		cancelText?: string;
 		confirmText: string;
 		confirmTestId?: string;
@@ -20,6 +22,7 @@
 		onCancel,
 		onConfirm,
 		title,
+		children,
 		cancelText = m.cancel(),
 		confirmText,
 		confirmTestId,
@@ -41,7 +44,7 @@
 </script>
 
 <Dialog {opened} onBackdropClick={onCancel} {title}>
-	<span>{m.areYouSureLeaveGroup()}</span>
+	{@render children()}
 	{#snippet buttons()}
 		<DialogButton onClick={onCancel} disabled={loading}>
 			{cancelText}

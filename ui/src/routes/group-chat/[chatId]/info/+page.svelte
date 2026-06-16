@@ -386,7 +386,9 @@
 			title={m.leaveGroup()}
 			confirmText={m.leave()}
 			confirmTestId="group-info-leave-confirm"
-		></ActionDialog>
+		>
+			<span>{m.areYouSureLeaveGroup()}</span>
+		</ActionDialog>
 
 		<!-- <Dialog
 			opened={dialogType === 'delete'}
