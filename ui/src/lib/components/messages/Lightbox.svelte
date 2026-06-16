@@ -8,26 +8,36 @@
 		mdiClose,
 		mdiTrayArrowDown,
 	} from '@mdi/js';
-	import { lightbox } from '$lib/stores/lightbox.svelte';
+	import type { Photo } from 'dash-chat-stores';
 	import { bytesToBlobUrl } from '$lib/types/media';
 	import { saveAttachment } from '$lib/utils/save-file';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
-	const content = $derived(lightbox.content);
+	interface Props {
+		photos: Photo[];
+		/** Index of the currently shown photo; updated as the user navigates. */
+		index?: number;
+		senderName: string;
+		timestamp: number;
+		onClose: () => void;
+	}
 
-	// Derive from the photos array, not `content`: navigation replaces the
-	// content object (new index) but keeps the same photos array, and URLs
-	// must stay stable across navigation.
-	const photos = $derived(content?.photos);
+	let {
+		photos,
+		index = $bindable(0),
+		senderName,
+		timestamp,
+		onClose,
+	}: Props = $props();
 
-	// Own object URLs — independent of the bubble's, revoked on change/close.
-	// Minted and revoked in the same pre-effect; see MessageAttachment.
+	const photo = $derived(photos[index]);
+
+	// Own object URLs — minted and revoked in the same pre-effect; see
+	// MessageAttachment.
 	let photoUrls = $state<string[]>([]);
 
 	$effect.pre(() => {
-		const urls = photos
-			? photos.map(p => bytesToBlobUrl(p.data, p.mime_type))
-			: [];
+		const urls = photos.map(p => bytesToBlobUrl(p.data, p.mime_type));
 		photoUrls = urls;
 		return () => urls.forEach(u => URL.revokeObjectURL(u));
 	});
@@ -40,14 +50,18 @@
 	let originX = $state(50);
 	let originY = $state(50);
 
-	// Reset zoom when switching photos or reopening.
+	function select(i: number) {
+		index = Math.max(0, Math.min(photos.length - 1, i));
+	}
+
+	// Reset zoom when switching photos.
 	$effect(() => {
-		void content?.index;
+		void index;
 		zoomed = false;
 	});
 
 	$effect(() => {
-		if (content) closeButton?.focus();
+		closeButton?.focus();
 	});
 
 	function updateOrigin(event: MouseEvent) {
@@ -67,7 +81,7 @@
 	}
 
 	function onStageClick(event: MouseEvent) {
-		if (event.target === stageEl && !zoomed) lightbox.close();
+		if (event.target === stageEl && !zoomed) onClose();
 	}
 
 	function trapFocus(event: KeyboardEvent) {
@@ -90,20 +104,19 @@
 	}
 
 	function onKeydown(event: KeyboardEvent) {
-		if (!content) return;
 		if (event.key === 'Escape') {
 			event.preventDefault();
 			if (zoomed) {
 				zoomed = false;
 			} else {
-				lightbox.close();
+				onClose();
 			}
 		} else if (event.key === 'ArrowLeft') {
 			event.preventDefault();
-			lightbox.prev();
+			select(index - 1);
 		} else if (event.key === 'ArrowRight') {
 			event.preventDefault();
-			lightbox.next();
+			select(index + 1);
 		} else if (event.key === 'Tab') {
 			trapFocus(event);
 		}
@@ -112,110 +125,107 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-{#if content}
-	{@const photo = content.photos[content.index]}
-	<div
-		class="lightbox"
-		role="dialog"
-		aria-modal="true"
-		aria-label={photo.name}
-		bind:this={rootEl}
-		data-testid="lightbox"
-	>
-		<div class="lightbox-header" class:faded={zoomed}>
-			<div class="lightbox-header-info">
-				<span class="lightbox-sender">{content.senderName}</span>
-				<MessageTimestamp timestamp={content.timestamp} class="lightbox-time" />
-			</div>
-			<div class="lightbox-header-actions">
-				<button
-					type="button"
-					class="lightbox-button"
-					data-testid="lightbox-save"
-					aria-label={m.saveFile()}
-					onclick={() => saveAttachment(photo)}
-				>
-					<wa-icon src={wrapPathInSvg(mdiTrayArrowDown)}></wa-icon>
-				</button>
-				<button
-					type="button"
-					class="lightbox-button"
-					data-testid="lightbox-close"
-					aria-label={m.closeLightbox()}
-					bind:this={closeButton}
-					onclick={() => lightbox.close()}
-				>
-					<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
-				</button>
-			</div>
+<div
+	class="lightbox"
+	role="dialog"
+	aria-modal="true"
+	aria-label={photo.name}
+	bind:this={rootEl}
+	data-testid="lightbox"
+>
+	<div class="lightbox-header" class:faded={zoomed}>
+		<div class="lightbox-header-info">
+			<span class="lightbox-sender">{senderName}</span>
+			<MessageTimestamp {timestamp} class="lightbox-time" />
 		</div>
-
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="lightbox-stage"
-			bind:this={stageEl}
-			onclick={onStageClick}
-			ondblclick={onStageDoubleClick}
-			onmousemove={onStageMouseMove}
-		>
-			<img
-				class="lightbox-image"
-				class:zoomed
-				style="transform-origin: {originX}% {originY}%"
-				src={photoUrls[content.index]}
-				alt={photo.name}
-				data-testid="lightbox-image"
-			/>
-		</div>
-
-		{#if content.index > 0}
+		<div class="lightbox-header-actions">
 			<button
 				type="button"
-				class="lightbox-button lightbox-nav lightbox-prev"
-				class:faded={zoomed}
-				data-testid="lightbox-prev"
-				aria-label={m.previousPhoto()}
-				onclick={() => lightbox.prev()}
+				class="lightbox-button"
+				data-testid="lightbox-save"
+				aria-label={m.saveFile()}
+				onclick={() => saveAttachment(photo)}
 			>
-				<wa-icon src={wrapPathInSvg(mdiChevronLeft)}></wa-icon>
+				<wa-icon src={wrapPathInSvg(mdiTrayArrowDown)}></wa-icon>
 			</button>
-		{/if}
-		{#if content.index < content.photos.length - 1}
 			<button
 				type="button"
-				class="lightbox-button lightbox-nav lightbox-next"
-				class:faded={zoomed}
-				data-testid="lightbox-next"
-				aria-label={m.nextPhoto()}
-				onclick={() => lightbox.next()}
+				class="lightbox-button"
+				data-testid="lightbox-close"
+				aria-label={m.closeLightbox()}
+				bind:this={closeButton}
+				onclick={onClose}
 			>
-				<wa-icon src={wrapPathInSvg(mdiChevronRight)}></wa-icon>
+				<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
 			</button>
-		{/if}
-
-		{#if content.photos.length > 1}
-			<div
-				class="lightbox-filmstrip"
-				class:faded={zoomed}
-				data-testid="lightbox-filmstrip"
-			>
-				{#each content.photos as p, i (photoUrls[i])}
-					<button
-						type="button"
-						class="lightbox-thumb"
-						class:selected={i === content.index}
-						data-testid="lightbox-thumb-{i}"
-						aria-label={p.name}
-						onclick={() => lightbox.select(i)}
-					>
-						<img src={photoUrls[i]} alt={p.name} />
-					</button>
-				{/each}
-			</div>
-		{/if}
+		</div>
 	</div>
-{/if}
+
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="lightbox-stage"
+		bind:this={stageEl}
+		onclick={onStageClick}
+		ondblclick={onStageDoubleClick}
+		onmousemove={onStageMouseMove}
+	>
+		<img
+			class="lightbox-image"
+			class:zoomed
+			style="transform-origin: {originX}% {originY}%"
+			src={photoUrls[index]}
+			alt={photo.name}
+			data-testid="lightbox-image"
+		/>
+	</div>
+
+	{#if index > 0}
+		<button
+			type="button"
+			class="lightbox-button lightbox-nav lightbox-prev"
+			class:faded={zoomed}
+			data-testid="lightbox-prev"
+			aria-label={m.previousPhoto()}
+			onclick={() => select(index - 1)}
+		>
+			<wa-icon src={wrapPathInSvg(mdiChevronLeft)}></wa-icon>
+		</button>
+	{/if}
+	{#if index < photos.length - 1}
+		<button
+			type="button"
+			class="lightbox-button lightbox-nav lightbox-next"
+			class:faded={zoomed}
+			data-testid="lightbox-next"
+			aria-label={m.nextPhoto()}
+			onclick={() => select(index + 1)}
+		>
+			<wa-icon src={wrapPathInSvg(mdiChevronRight)}></wa-icon>
+		</button>
+	{/if}
+
+	{#if photos.length > 1}
+		<div
+			class="lightbox-filmstrip"
+			class:faded={zoomed}
+			data-testid="lightbox-filmstrip"
+		>
+			{#each photos as p, i (photoUrls[i])}
+				<button
+					type="button"
+					class="lightbox-thumb"
+					class:selected={i === index}
+					data-testid="lightbox-thumb-{i}"
+					aria-label={p.name}
+					onclick={() => select(i)}
+				>
+					<img src={photoUrls[i]} alt={p.name} />
+				</button>
+			{/each}
+		</div>
+	{/if}
+</div>
 
 <style>
 	.lightbox {

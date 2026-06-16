@@ -8,7 +8,7 @@
 	import { getTimelineImageDimensions, gridConfig } from './photo-grid';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import { saveAttachment } from '$lib/utils/save-file';
-	import { lightbox } from '$lib/stores/lightbox.svelte';
+	import Lightbox from './Lightbox.svelte';
 
 	interface Props {
 		media: Media;
@@ -19,12 +19,21 @@
 
 	let { media, senderName = '', timestamp = 0 }: Props = $props();
 
+	// `null` while closed; the triggering element is remembered so focus can be
+	// restored to it on close.
+	let lightboxIndex = $state<number | null>(null);
+	let lightboxTrigger: HTMLElement | undefined;
+
 	function openLightbox(index: number, event: MouseEvent) {
 		if (media.kind !== 'photos') return;
-		lightbox.open(
-			{ photos: media.photos, index, senderName, timestamp },
-			event.currentTarget as HTMLElement,
-		);
+		lightboxTrigger = event.currentTarget as HTMLElement;
+		lightboxIndex = index;
+	}
+
+	function closeLightbox() {
+		lightboxIndex = null;
+		lightboxTrigger?.focus();
+		lightboxTrigger = undefined;
 	}
 
 	// Build object URLs once per Media instance. Minting and revoking live
@@ -114,17 +123,25 @@
 	</button>
 {/if}
 
+{#if lightboxIndex !== null && media.kind === 'photos'}
+	<Lightbox
+		photos={media.photos}
+		index={lightboxIndex}
+		{senderName}
+		{timestamp}
+		onClose={closeLightbox}
+	/>
+{/if}
+
 <style>
 	.attachment-photos {
 		position: relative;
 		max-width: 100%;
+		background: white;
 	}
 
 	/* Plate behind transparent images. */
-	.single {
-		background: white;
-	}
-	:global(.dark) .single {
+	:global(.dark) .attachment-photos {
 		background: black;
 	}
 
