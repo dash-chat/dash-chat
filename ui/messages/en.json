@@ -229,6 +229,7 @@
 
 	"unreadMessages_one": "{{count}} unread message",
 	"unreadMessages_other": "{{count}} unread messages",
+	"unknownSender": "Unknown sender",
 	"selectAChat": "Select a chat to start messaging.",
 
 	"trayTitle": "DashChat Local Message Server",

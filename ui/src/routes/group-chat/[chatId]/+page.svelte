@@ -27,10 +27,7 @@
 	import { stageFiles } from '$lib/utils/stage-files';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import {
-		messagePosition,
-		senderColor,
-	} from '$lib/components/messages/message-helpers';
+	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import { showToast } from '$lib/utils/toasts';
 	import { m } from '$lib/paraglide/messages';
 	import {
@@ -309,16 +306,10 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
-														senderName={author?.profile?.name ?? ''}
 														onToggleReaction={() => {}}
-														sender={(position === 'first' ||
-															position === 'single') &&
-														author?.profile?.name
-															? {
-																	name: author.profile.name,
-																	color: senderColor(message.author),
-																}
-															: undefined}
+														sender={author?.profile}
+														showSenderName={position === 'first' ||
+															position === 'single'}
 													/>
 												</div>
 											{/if}

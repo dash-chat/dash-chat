@@ -1,17 +1,20 @@
 <script lang="ts">
 	import { Card } from 'konsta/svelte';
-	import type {
-		ChatId,
-		DeviceId,
-		MailboxTrackerStore,
-		Message,
+	import {
+		fullName,
+		type ChatId,
+		type DeviceId,
+		type MailboxTrackerStore,
+		type Message,
+		type Profile,
 	} from 'dash-chat-stores';
-	import type { MessagePosition } from './message-helpers';
+	import { senderColor, type MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	let {
 		message,
@@ -21,7 +24,7 @@
 		onToggleReaction,
 		chatId,
 		sender,
-		senderName = '',
+		showSenderName = false,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -29,13 +32,14 @@
 		chatId: ChatId;
 		searchQuery: string;
 		onToggleReaction: (emoji: string) => void;
-		sender?: { name: string; color: string };
-		/** Author display name for the lightbox header; `sender` is only set
-		 * on position-first group bubbles, so it can't serve that role. */
-		senderName?: string;
+		sender: Profile | undefined;
+		showSenderName?: boolean;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
+	const senderDisplayName = $derived(
+		sender && sender.name ? fullName(sender) : m.unknownSender(),
+	);
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
@@ -70,20 +74,20 @@
 	contentWrapPadding="p-2"
 	class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 >
-	{#if sender}
+	{#if showSenderName}
 		<div
 			class="mx-1 mb-0.5 text-sm font-semibold text-start"
-			style="color: {sender.color}"
+			style="color: {senderColor(message.author)}"
 			data-testid="group-message-sender-name"
 		>
-			{sender.name}
+			{senderDisplayName}
 		</div>
 	{/if}
 	<MessageContent
 		{message}
 		{searchQuery}
-		{senderName}
-		withContentAbove={!!sender}
+		senderName={senderDisplayName}
+		withContentAbove={showSenderName}
 		metadata={isLast ? metadata : undefined}
 	/>
 </Card>
