@@ -54,7 +54,7 @@
 		>
 			{confirmText}
 			{#if loading}
-				<Preloader class="w-4 h-4 ml-2" />
+				<Preloader class="w-4 h-4 ms-2" />
 			{/if}
 		</DialogButton>
 	{/snippet}
