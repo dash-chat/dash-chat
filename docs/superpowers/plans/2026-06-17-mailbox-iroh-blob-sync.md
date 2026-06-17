@@ -369,16 +369,38 @@ struct HealthResponse {
 }
 ```
 
-Change `health_check` to read the id from state:
+Change `health_check` to read the id from state, encoded as a `MailboxId` (base64url, no pad — see the encoding helper below):
 ```rust
 async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
-        endpoint_id: state.blob_sync.endpoint_id().to_string(),
+        endpoint_id: crate::encode_mailbox_id(state.blob_sync.endpoint_id()),
     })
 }
 ```
 (Recall `health_check` currently takes no args; add the `State` extractor and keep the `get(health_check)` route.)
+
+**Canonical `MailboxId` encoding (base64url, no pad).** The `MailboxId` is the mailbox's iroh `EndpointId` (32 bytes) encoded as URL-safe base64 without padding — 43 chars, which fits a single mDNS DNS label (63-byte limit) and is identical in the cloud `/health` and local mDNS paths. Add to `crates/mailbox-server/src/lib.rs` (and re-export):
+
+```rust
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+
+/// Encode an iroh EndpointId as the canonical MailboxId string (base64url, no pad).
+pub fn encode_mailbox_id(id: iroh::EndpointId) -> String {
+    URL_SAFE_NO_PAD.encode(id.as_bytes())
+}
+
+/// Parse a MailboxId string back into an iroh EndpointId.
+pub fn decode_mailbox_id(s: &str) -> anyhow::Result<iroh::EndpointId> {
+    let bytes = URL_SAFE_NO_PAD.decode(s)?;
+    let arr: [u8; 32] = bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("MailboxId is not 32 bytes"))?;
+    Ok(iroh::EndpointId::from_bytes(&arr)?)
+}
+```
+`base64` is already a dependency of `mailbox-server` (used by `Blip`'s base64 serde). Confirm `id.as_bytes()` is the 32-byte form for this iroh version (adjust to `id.to_bytes()` if needed). The node-side parse helper in Task 6 (`parse_endpoint_id`) must use this same `decode_mailbox_id` logic — prefer importing `mailbox_server::decode_mailbox_id` rather than duplicating it.
 
 In `spawn_server`, after `let db_arc = Arc::new(db);`, build the blob sync:
 ```rust
@@ -972,7 +994,7 @@ In `crates/mailbox-client/src/manager.rs`, add to `impl Mailboxes`:
             .collect::<anyhow::Result<Vec<_>>>()
     }
 ```
-Add a free helper `fn parse_endpoint_id(id: &MailboxId) -> anyhow::Result<iroh::EndpointId>` that parses the hex MailboxId (`id.parse::<iroh::EndpointId>()` — confirm the `FromStr`/`from_str` form for this iroh version; EndpointId is a 64-char hex string). Add `iroh` to `mailbox-client/Cargo.toml` if not already present (it now is, from Task 5).
+For `parse_endpoint_id`, reuse the canonical `MailboxId` codec from Task 3: `mailbox_server::decode_mailbox_id(id)` (base64url no-pad → `EndpointId`). Add `mailbox-server` as a (non-dev) dependency of `mailbox-client` if not already linked, OR — to avoid that dependency direction — move `encode_mailbox_id`/`decode_mailbox_id` into `mailbox-client/src/lib.rs` (where `MailboxId` is defined) and have `mailbox-server` re-export them from there. **Prefer the latter**: the codec belongs with the `MailboxId` type in `mailbox-client`. Update Task 3's `encode_mailbox_id` call in `health_check` to `mailbox_client::encode_mailbox_id(...)` accordingly. `iroh` is already a dep of `mailbox-client` (from Task 5).
 
 In `crates/dashchat-node/src/blob_sync.rs::MixedSourceLookup::sources`, change the signature to take `&Item::Topic`-equivalent and un-comment:
 ```rust
@@ -989,9 +1011,9 @@ In `crates/dashchat-node/tests/mailboxes.rs`, pass the test node's `endpoint_id(
 - [ ] **Step 7: Make the MailboxId equal the mailbox's EndpointId (mDNS + cloud)**
 
 - Cloud: wherever `ToyMailboxClient::new(PRODUCTION_MAILBOX_ID, PRODUCTION_MAILBOX_URL, ...)` is built (`src-tauri/src/setup.rs`), fetch the mailbox's EndpointId from its `/health` endpoint (now includes `endpoint_id`) and use that hex string as the `MailboxId` instead of the hardcoded `PRODUCTION_MAILBOX_ID`. Add a small `reqwest` GET to `/health` during registration.
-- Local/mDNS: in `src-tauri/src/mailbox/server.rs::mdns_service_info`, set the instance name to the mailbox server's EndpointId hex (the local mailbox server must expose its EndpointId to the tauri layer — read it from the spawned server, e.g. return it from `start_local_mailbox` or query `/health`). In `src-tauri/src/mailbox.rs::handle_browse_events`, the `mailbox_id` derived from the fullname is then already the EndpointId. See Open Risk.
+- Local/mDNS: in `src-tauri/src/mailbox/server.rs::mdns_service_info`, set the instance name to the mailbox server's `MailboxId` — i.e. `encode_mailbox_id(endpoint_id)` (base64url, 43 chars, fits the single DNS label). The local mailbox server must expose its EndpointId to the tauri layer — read it from the spawned server (return it from `start_local_mailbox`) or query `/health`. In `src-tauri/src/mailbox.rs::handle_browse_events`, the `mailbox_id` derived from the fullname is then already the canonical `MailboxId`, so no extra decoding is needed at registration; `ToyMailboxClient::new` receives it as-is.
 
-This step is the largest behavioral change in Phase 5; if the mDNS EndpointId carrier proves awkward within a single label, fall back to publishing the EndpointId in an mDNS TXT property and reading it in `ServiceResolved`.
+This step is the largest behavioral change in Phase 5.
 
 - [ ] **Step 8: Build everything**
 
@@ -1177,5 +1199,5 @@ Expected: PASS. Also run `cargo build --workspace` to confirm `src-tauri` compil
 
 ## Notes / Open Risk (carried from the design doc)
 
-- **mDNS EndpointId carrier (Task 6, Step 7):** switching `MailboxId` to the iroh EndpointId means the local mDNS announce side must publish it and the browse side consume it. The EndpointId is 64 hex chars — fits a single DNS label (63-byte limit is tight; 64 chars EXCEEDS it). **Therefore prefer an mDNS TXT property** (e.g. `endpoint_id=<hex>`) over the instance name for the local case, and read it in `ServiceResolved`. Resolve the exact mechanism here; the cloud case uses `/health`.
+- **mDNS EndpointId carrier (Task 6, Step 7) — RESOLVED:** the `MailboxId` is the EndpointId encoded as URL-safe base64 no-pad (43 chars), which fits a single mDNS DNS label (63-byte limit). So it goes straight in the mDNS instance name — no TXT property needed. The cloud case reads the same encoding from `/health`. The canonical codec (`encode_mailbox_id`/`decode_mailbox_id`) lives in `mailbox-client` alongside the `MailboxId` type.
 - **iroh API surface:** several calls (`Endpoint::builder().secret_key().discovery_n0().bind()`, `endpoint.id()`/`.node_id()`, `SecretKey::generate`/`from_bytes`/`public`, `EndpointId::from_str`, `accept_unmixed` vs. a `Router`) must be confirmed against iroh `1.0.0-rc.1` / iroh-blobs `0.102.0`. The node's working `crates/dashchat-node/src/blob_sync.rs` is the authoritative reference for the iroh-blobs download/serve calls.
