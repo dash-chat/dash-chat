@@ -41,6 +41,9 @@ describe('Removing group members', () => {
 		// Confirm in the dialog
 		await agent1.groupInfoPage.removeMemberConfirmButton.waitForExist();
 		await agent1.groupInfoPage.removeMemberConfirmButton.click();
+		await agent1.groupInfoPage.back.click();
+		await agent1.groupChatPage.ready();
+		await agent1.groupChatPage.back.click();
 
 		// Bob should no longer appear in the members list
 		await agent1.groupInfoPage
@@ -63,5 +66,30 @@ describe('Removing group members', () => {
 
 		// Message input is disabled (no longer a member)
 		await expect(agent2.groupChatPage.messageInput).not.toBeEnabled();
+
+		agent2.groupChatPage.back.click();
+	});
+
+	it('non-admin cannot remove another member', async () => {
+		await createGroup(agent1, 'Test Group 2', 'Bob');
+
+		// Bob navigates to the group
+		await agent2.homePage.ready();
+		await agent2.homePage.chatListItem('Test Group 2').waitForExist();
+		await agent2.homePage.chatListItem('Test Group 2').click();
+		await agent2.groupChatPage.ready();
+		await agent2.groupChatPage.infoLink.click();
+		await agent2.groupInfoPage.ready();
+
+		// Non-admins see member items without an onclick handler — clicking does nothing
+		await agent2.groupInfoPage.memberItem('Alice').waitForExist();
+		await agent2.groupInfoPage.memberItem('Alice').click();
+
+		// The remove member button should not appear
+		await expect(agent2.groupInfoPage.removeMemberButton).not.toBeExisting();
+
+		await agent2.groupInfoPage.back.click();
+		await agent2.groupChatPage.ready();
+		await agent2.groupChatPage.back.click();
 	});
 });
