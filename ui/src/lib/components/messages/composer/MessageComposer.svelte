@@ -13,6 +13,7 @@
 	} from '$lib/types/media';
 	import type { MessagesStore } from 'dash-chat-stores';
 	import { stageFiles } from '$lib/utils/stage-files';
+	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
@@ -83,12 +84,6 @@
 		}
 	}
 
-	function keepKeyboardOpen(event: Event) {
-		if (!(event.target instanceof HTMLTextAreaElement)) {
-			event.preventDefault();
-		}
-	}
-
 	function onPaste(event: ClipboardEvent) {
 		const files = event.clipboardData?.files;
 		if (!files || files.length === 0) return;
@@ -105,13 +100,7 @@
 
 <MediaDropOverlay onFiles={files => (media = stageFiles(media, files))} />
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-	style="display: flow-root"
-	onmousedown={keepKeyboardOpen}
-	ontouchstart={keepKeyboardOpen}
-	onpointerdown={keepKeyboardOpen}
->
+<div style="display: flow-root" use:keepKeyboardOpen>
 	<div
 		class="message-input-bar m-2"
 		class:pb-safe={!(isMobile && showMediaPanel)}
@@ -120,8 +109,20 @@
 	>
 		<StagedAttachments bind:media />
 
-		<div class="row gap-2" style="align-items: flex-end; margin: 0 auto">
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="row gap-2" style="align-items: center; margin: 0 auto">
+			{#if isMobile}
+				<AttachButton
+					class="h-10 w-10"
+					expanded={showMediaPanel}
+					onClick={() => (showMediaPanel = !showMediaPanel)}
+				/>
+			{:else}
+				<AttachButton
+					class="h-10 w-10"
+					expanded={showMediaMenu}
+					onClick={() => (showMediaMenu = !showMediaMenu)}
+				/>
+			{/if}
 			<div
 				class="input-container flex min-h-[42px] min-w-0 flex-1 items-center ps-2 {theme ===
 				'ios'
@@ -136,32 +137,10 @@
 					onSend={triggerSend}
 					onEmojiClick={() => (showEmojiPicker = true)}
 				/>
-				{#if isMobile && hasContent}
-					<AttachButton
-						testid="message-input-attach-inline"
-						class="me-1 mb-1 h-8 w-8 self-end"
-						expanded={showMediaPanel}
-						onClick={() => (showMediaPanel = !showMediaPanel)}
-					/>
-				{/if}
 			</div>
 
 			{#if isMobile}
-				{#if hasContent}
-					<SendButton disabled={!hasContent} onClick={triggerSend} />
-				{:else}
-					<AttachButton
-						class="h-[42px] w-[42px]"
-						expanded={showMediaPanel}
-						onClick={() => (showMediaPanel = !showMediaPanel)}
-					/>
-				{/if}
-			{:else}
-				<AttachButton
-					class="mb-1 h-10 w-10 self-end"
-					expanded={showMediaMenu}
-					onClick={() => (showMediaMenu = !showMediaMenu)}
-				/>
+				<SendButton disabled={!hasContent} onClick={triggerSend} />
 			{/if}
 		</div>
 	</div>

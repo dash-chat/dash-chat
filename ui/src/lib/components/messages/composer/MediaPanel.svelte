@@ -50,7 +50,7 @@
 
 {#if opened}
 	<div
-		class="pb-safe flex gap-5 px-5 pt-4 pb-4"
+		class="pb-safe flex gap-5 px-5 pt-4 pb-4" style="justify-content: space-evenly"
 		data-testid="message-input-media-panel"
 	>
 		<LabelledIconButton
