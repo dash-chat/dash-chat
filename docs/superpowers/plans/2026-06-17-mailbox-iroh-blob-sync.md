@@ -18,6 +18,7 @@
 - The `signature` field on the request is an opaque `Vec<u8>` placeholder — carried, never validated.
 - Rename is a full `s/blob/blip/` across mailbox crates INCLUDING wire (HTTP routes, JSON field names) and disk (redb table name). Acceptable break: pre-alpha.
 - Write very few comments (see CLAUDE.md). No `left`/`right` CSS (not relevant here — backend only).
+- The fetch-loop control logic is shared: it lives once in `dashchat-utils` behind the `FetchStack` trait (Task 4) and is consumed by both `dashchat-node` and `mailbox-server`. Do NOT reintroduce a second copy of `fetch_loop`/`run_fetch_pass` in either consumer.
 - Commit after each task.
 
 ---
@@ -473,47 +474,187 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ---
 
-## Phase 3 — Server fetch loop
+## Phase 3 — Shared fetch loop + server fetch pool
 
-### Task 4: Add the `Hash → set<EndpointId>` fetch pool and loop
+The fetch-loop control logic (bounded concurrency, pass interval, wake-on-add, per-pass tried-set) is identical for nodes and mailboxes; only the pool storage and source resolution differ. Extract the loop into the existing `dashchat-utils` grab-bag crate behind a `FetchStack` trait — it needs no iroh/p2panda types, only tokio + the trait — then migrate the node to it (Task 4) and implement the trait for the mailbox's `hash → set<EndpointId>` pool (Task 5).
+
+### Task 4: Extract the generic fetch loop into `dashchat-utils` and migrate the node
 
 **Files:**
-- Modify: `crates/mailbox-server/src/blob_sync.rs` (add the pool, loop, `try_fetch`, `spawn_fetch_loop`; store the pool on `BlobSync`)
+- Create: `crates/dashchat-utils/src/fetch_loop.rs`
+- Modify: `crates/dashchat-utils/src/lib.rs` (declare + re-export), `crates/dashchat-utils/Cargo.toml` (add `async-trait`)
+- Modify: `crates/dashchat-node/src/blob_sync.rs` (impl `FetchStack` for the existing `BlobFetchPool`; delete the local `fetch_loop`/`run_fetch_pass`/`BlobFetchConfig`; move the loop unit tests out; call the shared loop)
+- Modify: `crates/dashchat-node/src/node.rs` only if it names `BlobFetchConfig` directly (kept working via a re-export alias — see Interfaces)
 
 **Interfaces:**
-- Consumes: `BlobSync` (Task 3).
-- Produces:
-  - `pub struct BlobFetchConfig { pub concurrency: usize, pub attempt_timeout: std::time::Duration, pub pass_interval: std::time::Duration }` with `Default`.
-  - `#[derive(Clone, Default)] pub struct BlobFetchPool` with:
-    - `pub async fn add_source(&self, hash: iroh_blobs::Hash, source: iroh::EndpointId)`
-    - `async fn is_empty(&self) -> bool`
-    - `async fn next_untried(&self, tried: &std::collections::HashSet<iroh_blobs::Hash>) -> Option<(iroh_blobs::Hash, Vec<iroh::EndpointId>)>`
-    - `async fn remove(&self, hash: iroh_blobs::Hash)`
-  - `BlobSync.fetch_pool: BlobFetchPool` (public).
-  - `pub fn BlobSync::spawn_fetch_loop(&self, config: BlobFetchConfig) -> tokio::task::JoinHandle<()>`
+- Consumes: nothing new.
+- Produces (in `dashchat_utils`):
+  - `pub struct FetchConfig { pub concurrency: usize, pub attempt_timeout: Duration, pub pass_interval: Duration }` with `Default` (4 / 30s / 60s).
+  - `#[async_trait] pub trait FetchStack: Clone + Send + Sync + 'static { type Item: Clone + Send + 'static; type Key: Copy + Eq + std::hash::Hash + Send; fn key(item: &Self::Item) -> Self::Key; async fn is_empty(&self) -> bool; async fn next_untried(&self, tried: &HashSet<Self::Key>) -> Option<Self::Item>; async fn remove(&self, item: &Self::Item); async fn wait_for_add(&self); }`
+  - `pub async fn fetch_loop<P: FetchStack, F, Fut>(pool: P, config: FetchConfig, fetch: F) where F: Fn(P::Item, Duration) -> Fut + Clone + Send + 'static, Fut: Future<Output = bool> + Send + 'static`
+- The node adds `pub use dashchat_utils::FetchConfig as BlobFetchConfig;` in `crates/dashchat-node/src/blob_sync.rs` so `NodeConfig.blob_fetch: BlobFetchConfig` and every `config.blob_fetch` keep compiling unchanged.
 
-This mirrors `crates/dashchat-node/src/blob_sync.rs`, but the pool maps `hash → set of sources` (deduped per your design) instead of a `Vec<(LogId, Hash)>` stack.
+- [ ] **Step 1: Add `async-trait` to dashchat-utils and write `fetch_loop.rs` with failing tests**
 
-- [ ] **Step 1: Write the failing unit tests for the pool + loop**
+In `crates/dashchat-utils/Cargo.toml` add to `[dependencies]`: `async-trait = "0.1"` (match the version `mailbox-client` already uses — check `grep async-trait crates/mailbox-client/Cargo.toml`). The `tokio` features already include `time`, `sync`, `rt`; add `macros` and `rt-multi-thread` to `[dev-dependencies].tokio` if not present (needed for the `#[tokio::test]` macros below).
 
-Append to `crates/mailbox-server/src/blob_sync.rs`'s `tests` module (add imports at top of the module):
+Create `crates/dashchat-utils/src/fetch_loop.rs`:
 
 ```rust
-    use std::collections::HashSet;
+use std::collections::HashSet;
+use std::hash::Hash;
+use std::time::{Duration, Instant};
+
+use tokio::task::JoinSet;
+
+#[derive(Clone, Debug)]
+pub struct FetchConfig {
+    pub concurrency: usize,
+    pub attempt_timeout: Duration,
+    pub pass_interval: Duration,
+}
+
+impl Default for FetchConfig {
+    fn default() -> Self {
+        Self {
+            concurrency: 4,
+            attempt_timeout: Duration::from_secs(30),
+            pass_interval: Duration::from_secs(60),
+        }
+    }
+}
+
+/// A pool of work items the fetch loop drains. Implementors own the storage and
+/// the wake signal; the loop is otherwise generic.
+#[async_trait::async_trait]
+pub trait FetchStack: Clone + Send + Sync + 'static {
+    type Item: Clone + Send + 'static;
+    type Key: Copy + Eq + Hash + Send;
+
+    /// The per-pass dedup key for an item (the loop never re-attempts an item
+    /// whose key it already tried this pass).
+    fn key(item: &Self::Item) -> Self::Key;
+    async fn is_empty(&self) -> bool;
+    /// The next item whose key is not in `tried`, or `None` if all are tried.
+    async fn next_untried(&self, tried: &HashSet<Self::Key>) -> Option<Self::Item>;
+    async fn remove(&self, item: &Self::Item);
+    /// Resolves when an item is added, so the loop can wake early.
+    async fn wait_for_add(&self);
+}
+
+/// Drain `pool` until cancelled. Each pass walks the stack with up to
+/// `config.concurrency` fetches in flight, giving each item `attempt_timeout`.
+/// An item for which `fetch` returns `true` is removed. With items still
+/// outstanding the loop waits up to `pass_interval` since the pass began before
+/// retrying, but a newly added item wakes it early; with an empty pool it parks.
+pub async fn fetch_loop<P, F, Fut>(pool: P, config: FetchConfig, fetch: F)
+where
+    P: FetchStack,
+    F: Fn(P::Item, Duration) -> Fut + Clone + Send + 'static,
+    Fut: std::future::Future<Output = bool> + Send + 'static,
+{
+    let concurrency = config.concurrency.max(1);
+    loop {
+        let pass_start = Instant::now();
+        run_fetch_pass(&pool, concurrency, config.attempt_timeout, &fetch).await;
+
+        if pool.is_empty().await {
+            pool.wait_for_add().await;
+            continue;
+        }
+        let elapsed = pass_start.elapsed();
+        if elapsed < config.pass_interval {
+            tokio::select! {
+                _ = tokio::time::sleep(config.pass_interval - elapsed) => {}
+                _ = pool.wait_for_add() => {}
+            }
+        }
+    }
+}
+
+async fn run_fetch_pass<P, F, Fut>(
+    pool: &P,
+    concurrency: usize,
+    attempt_timeout: Duration,
+    fetch: &F,
+) where
+    P: FetchStack,
+    F: Fn(P::Item, Duration) -> Fut + Clone + Send + 'static,
+    Fut: std::future::Future<Output = bool> + Send + 'static,
+{
+    let mut tried: HashSet<P::Key> = HashSet::new();
+    let mut in_flight: JoinSet<Option<P::Item>> = JoinSet::new();
+    loop {
+        while in_flight.len() < concurrency {
+            let Some(item) = pool.next_untried(&tried).await else {
+                break;
+            };
+            tried.insert(P::key(&item));
+            let fetch = fetch.clone();
+            in_flight.spawn(async move {
+                fetch(item.clone(), attempt_timeout).await.then_some(item)
+            });
+        }
+        let Some(joined) = in_flight.join_next().await else {
+            break;
+        };
+        if let Ok(Some(item)) = joined {
+            pool.remove(&item).await;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
-    use std::time::Duration;
-    use tokio::sync::Mutex;
+    use tokio::sync::{Mutex, Notify, Semaphore};
 
-    fn hash(n: u8) -> iroh_blobs::Hash {
-        iroh_blobs::Hash::new([n; 32])
+    /// Minimal FetchStack whose items are `u8` ids (also their own key).
+    #[derive(Clone, Default)]
+    struct TestStack {
+        items: Arc<Mutex<Vec<u8>>>,
+        added: Arc<Notify>,
+    }
+    impl TestStack {
+        async fn add(&self, n: u8) {
+            self.items.lock().await.push(n);
+            self.added.notify_one();
+        }
+        async fn len(&self) -> usize {
+            self.items.lock().await.len()
+        }
+    }
+    #[async_trait::async_trait]
+    impl FetchStack for TestStack {
+        type Item = u8;
+        type Key = u8;
+        fn key(item: &u8) -> u8 {
+            *item
+        }
+        async fn is_empty(&self) -> bool {
+            self.items.lock().await.is_empty()
+        }
+        async fn next_untried(&self, tried: &HashSet<u8>) -> Option<u8> {
+            self.items
+                .lock()
+                .await
+                .iter()
+                .rev()
+                .find(|n| !tried.contains(*n))
+                .copied()
+        }
+        async fn remove(&self, item: &u8) {
+            self.items.lock().await.retain(|n| n != item);
+        }
+        async fn wait_for_add(&self) {
+            self.added.notified().await;
+        }
     }
 
-    fn endpoint_id(n: u8) -> iroh::EndpointId {
-        iroh::SecretKey::from_bytes(&[n; 32]).public()
-    }
-
-    fn fetch_config() -> BlobFetchConfig {
-        BlobFetchConfig {
+    fn config() -> FetchConfig {
+        FetchConfig {
             concurrency: 2,
             attempt_timeout: Duration::from_secs(5),
             pass_interval: Duration::from_secs(60),
@@ -527,6 +668,272 @@ Append to `crates/mailbox-server/src/blob_sync.rs`'s `tests` module (add imports
     }
 
     #[tokio::test(start_paused = true)]
+    async fn empty_pool_parks_until_an_item_is_added() {
+        let pool = TestStack::default();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let handle = {
+            let calls = calls.clone();
+            tokio::spawn(fetch_loop(pool.clone(), config(), move |n, _t| {
+                let calls = calls.clone();
+                async move {
+                    calls.lock().await.push(n);
+                    true
+                }
+            }))
+        };
+        settle().await;
+        assert!(calls.lock().await.is_empty());
+        pool.add(1).await;
+        settle().await;
+        assert_eq!(calls.lock().await.as_slice(), &[1]);
+        assert!(pool.is_empty().await);
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn one_pass_drains_all_succeeding_items() {
+        let pool = TestStack::default();
+        for n in 1..=3 {
+            pool.add(n).await;
+        }
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let handle = {
+            let calls = calls.clone();
+            tokio::spawn(fetch_loop(pool.clone(), config(), move |n, _t| {
+                let calls = calls.clone();
+                async move {
+                    calls.lock().await.push(n);
+                    true
+                }
+            }))
+        };
+        settle().await;
+        assert!(pool.is_empty().await);
+        let fetched: HashSet<u8> = calls.lock().await.iter().copied().collect();
+        assert_eq!(fetched, HashSet::from([1, 2, 3]));
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn failing_item_is_retried_about_one_interval_later() {
+        let pool = TestStack::default();
+        let times = Arc::new(Mutex::new(Vec::new()));
+        let start = tokio::time::Instant::now();
+        let handle = {
+            let times = times.clone();
+            tokio::spawn(fetch_loop(pool.clone(), config(), move |_n, _t| {
+                let times = times.clone();
+                async move {
+                    times.lock().await.push(start.elapsed());
+                    false
+                }
+            }))
+        };
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        pool.add(1).await;
+        tokio::time::sleep(Duration::from_secs(61)).await;
+        let times = times.lock().await.clone();
+        assert_eq!(times.len(), 2);
+        let gap = times[1] - times[0];
+        assert!(
+            gap >= Duration::from_secs(59) && gap <= Duration::from_secs(61),
+            "expected ~60s between passes, got {gap:?}"
+        );
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn adding_an_item_wakes_the_loop_before_the_interval() {
+        let pool = TestStack::default();
+        pool.add(1).await;
+        let times = Arc::new(Mutex::new(Vec::new()));
+        let start = tokio::time::Instant::now();
+        let handle = {
+            let times = times.clone();
+            tokio::spawn(fetch_loop(pool.clone(), config(), move |n, _t| {
+                let times = times.clone();
+                async move {
+                    times.lock().await.push((n, start.elapsed()));
+                    false
+                }
+            }))
+        };
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        pool.add(2).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let times = times.lock().await.clone();
+        let woke_early = times
+            .iter()
+            .any(|(n, at)| *n == 2 && *at < Duration::from_secs(30));
+        assert!(woke_early, "expected item 2 fetched early, got {times:?}");
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn never_exceeds_the_concurrency_limit() {
+        let pool = TestStack::default();
+        for n in 1..=4 {
+            pool.add(n).await;
+        }
+        let gate = Arc::new(Semaphore::new(0));
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let max_in_flight = Arc::new(AtomicUsize::new(0));
+        let handle = {
+            let gate = gate.clone();
+            let in_flight = in_flight.clone();
+            let max_in_flight = max_in_flight.clone();
+            tokio::spawn(fetch_loop(pool.clone(), config(), move |_n, _t| {
+                let gate = gate.clone();
+                let in_flight = in_flight.clone();
+                let max_in_flight = max_in_flight.clone();
+                async move {
+                    let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                    max_in_flight.fetch_max(now, Ordering::SeqCst);
+                    gate.acquire().await.unwrap().forget();
+                    in_flight.fetch_sub(1, Ordering::SeqCst);
+                    true
+                }
+            }))
+        };
+        settle().await;
+        assert_eq!(in_flight.load(Ordering::SeqCst), 2);
+        assert_eq!(max_in_flight.load(Ordering::SeqCst), 2);
+        assert_eq!(pool.len().await, 4);
+        gate.add_permits(2);
+        settle().await;
+        assert_eq!(max_in_flight.load(Ordering::SeqCst), 2);
+        assert_eq!(pool.len().await, 2);
+        gate.add_permits(2);
+        settle().await;
+        assert_eq!(max_in_flight.load(Ordering::SeqCst), 2);
+        assert!(pool.is_empty().await);
+        handle.abort();
+    }
+}
+```
+
+These five tests are the node's existing loop tests (`crates/dashchat-node/src/blob_sync.rs`, the `tests` module fns `empty_pool_parks_until_a_hash_is_added`, `one_pass_drains_all_succeeding_items`, `failing_item_is_retried_about_one_interval_later`, `adding_a_hash_wakes_the_loop_before_the_interval`, `never_exceeds_the_concurrency_limit`) re-expressed against the generic `TestStack` — they are deleted from the node in Step 5. Add `mod fetch_loop;` and `pub use fetch_loop::{fetch_loop, FetchConfig, FetchStack};` to `crates/dashchat-utils/src/lib.rs`.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `cargo nextest run -p dashchat-utils fetch_loop`
+Expected: FAIL to COMPILE first (symbols undefined) — that counts as the failing state; once the code above compiles, the tests pass. (If you prefer a red-then-green within compilation, temporarily stub `fetch_loop` with `todo!()`, confirm the tests fail, then paste the real body.)
+
+- [ ] **Step 3: Build dashchat-utils**
+
+Run: `cargo build -p dashchat-utils`
+Expected: PASS.
+
+- [ ] **Step 4: Run the shared tests**
+
+Run: `cargo nextest run -p dashchat-utils fetch_loop`
+Expected: PASS (all five).
+
+- [ ] **Step 5: Migrate the node to the shared loop**
+
+In `crates/dashchat-node/Cargo.toml` ensure `dashchat-utils = { path = "../dashchat-utils" }` is a dependency (add if absent).
+
+In `crates/dashchat-node/src/blob_sync.rs`:
+1. Delete the local `BlobFetchConfig` struct + its `Default` impl, and the free fns `fetch_loop` and `run_fetch_pass` (the whole loop machinery now lives in `dashchat-utils`).
+2. Delete the five loop unit tests listed in Step 1 from the `tests` module (they moved). Keep any pool-specific tests.
+3. Add at the top: `pub use dashchat_utils::FetchConfig as BlobFetchConfig;` and `use dashchat_utils::FetchStack;`.
+4. Implement `FetchStack` for the existing `BlobFetchPool` (`Item = (LogId, iroh_blobs::Hash)`, `Key = iroh_blobs::Hash`), delegating to its existing inherent methods:
+
+```rust
+#[async_trait::async_trait]
+impl FetchStack for BlobFetchPool {
+    type Item = (LogId, iroh_blobs::Hash);
+    type Key = iroh_blobs::Hash;
+
+    fn key(item: &Self::Item) -> Self::Key {
+        item.1
+    }
+    async fn is_empty(&self) -> bool {
+        self.stack.lock().await.is_empty()
+    }
+    async fn next_untried(
+        &self,
+        tried: &std::collections::HashSet<iroh_blobs::Hash>,
+    ) -> Option<Self::Item> {
+        let stack = self.stack.lock().await;
+        stack.iter().rev().find(|(_, hash)| !tried.contains(hash)).copied()
+    }
+    async fn remove(&self, item: &Self::Item) {
+        self.stack.lock().await.retain(|entry| entry != item);
+    }
+    async fn wait_for_add(&self) {
+        self.added.notified().await;
+    }
+}
+```
+(The pool's inherent `is_empty`/`next_untried`/`remove` may now be redundant — remove the ones nothing else calls; keep `add` and `from_ops`. `async-trait` is already a node dependency.)
+
+5. Change `BlobSync::spawn_fetch_loop` to call the shared loop, destructuring the item:
+
+```rust
+    pub fn spawn_fetch_loop(&self, config: BlobFetchConfig) -> JoinHandle<()> {
+        let this = self.clone();
+        let pool = self.fetch_pool.clone();
+        tokio::spawn(dashchat_utils::fetch_loop(
+            pool,
+            config,
+            move |(log_id, hash), attempt_timeout| {
+                let this = this.clone();
+                async move { this.try_fetch(log_id, hash, attempt_timeout).await }
+            },
+        ))
+    }
+```
+`try_fetch` keeps its current `(LogId, Hash, Duration)` signature.
+
+- [ ] **Step 6: Build + run the node's blob_sync tests and the existing integration test**
+
+Run: `cargo nextest run -p dashchat-node blob_sync && cargo nextest run -p dashchat-node media_blob_syncs_between_nodes`
+Expected: PASS. (The node behaves identically; the loop just lives elsewhere now.)
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "refactor: extract generic fetch loop into dashchat-utils
+
+Moves the blob fetch-loop control logic behind a FetchStack trait in
+dashchat-utils and migrates dashchat-node onto it, so the mailbox server
+can reuse the same loop without depending on dashchat-node's Payload.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
+
+### Task 5: Implement the mailbox's `hash → set<EndpointId>` pool on `FetchStack`
+
+**Files:**
+- Modify: `crates/mailbox-server/src/blob_sync.rs` (add `BlobFetchPool`, impl `FetchStack`, `try_fetch`, `spawn_fetch_loop`; store the pool on `BlobSync`)
+- Modify: `crates/mailbox-server/Cargo.toml` (add `dashchat-utils`, `async-trait`)
+- Modify: `crates/mailbox-server/src/lib.rs` (spawn the loop in `spawn_server`, export the pool)
+
+**Interfaces:**
+- Consumes: `BlobSync` (Task 3); `dashchat_utils::{FetchConfig, FetchStack, fetch_loop}` (Task 4).
+- Produces:
+  - `#[derive(Clone, Default)] pub struct BlobFetchPool` with inherent `pub async fn add_source(&self, hash: iroh_blobs::Hash, source: iroh::EndpointId)`, `pub(crate) async fn is_empty(&self) -> bool`, `pub(crate) async fn next_untried(&self, tried: &HashSet<iroh_blobs::Hash>) -> Option<(iroh_blobs::Hash, Vec<iroh::EndpointId>)>`, `pub(crate) async fn remove(&self, hash: iroh_blobs::Hash)`.
+  - `impl FetchStack for BlobFetchPool` (`Item = (iroh_blobs::Hash, Vec<iroh::EndpointId>)`, `Key = iroh_blobs::Hash`).
+  - `BlobSync.fetch_pool: BlobFetchPool` + `pub fn fetch_pool(&self) -> &BlobFetchPool`.
+  - `pub fn BlobSync::spawn_fetch_loop(&self, config: FetchConfig) -> tokio::task::JoinHandle<()>`.
+
+- [ ] **Step 1: Add deps and write the failing pool test**
+
+In `crates/mailbox-server/Cargo.toml` `[dependencies]` add `dashchat-utils = { path = "../dashchat-utils" }` and `async-trait = "0.1"` (match the workspace version). Append to `crates/mailbox-server/src/blob_sync.rs`'s `tests` module:
+
+```rust
+    use std::collections::HashSet;
+
+    fn hash(n: u8) -> iroh_blobs::Hash {
+        iroh_blobs::Hash::new([n; 32])
+    }
+    fn endpoint_id(n: u8) -> iroh::EndpointId {
+        iroh::SecretKey::from_bytes(&[n; 32]).public()
+    }
+
+    #[tokio::test]
     async fn pool_dedupes_sources_per_hash() {
         let pool = BlobFetchPool::default();
         pool.add_source(hash(1), endpoint_id(10)).await;
@@ -538,90 +945,36 @@ Append to `crates/mailbox-server/src/blob_sync.rs`'s `tests` module (add imports
         assert_eq!(sources.len(), 2);
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn empty_pool_parks_until_a_hash_is_added() {
+    #[tokio::test]
+    async fn pool_remove_drops_the_hash() {
         let pool = BlobFetchPool::default();
-        let calls = Arc::new(Mutex::new(Vec::new()));
-        let handle = {
-            let calls = calls.clone();
-            tokio::spawn(fetch_loop(pool.clone(), fetch_config(), move |h, _srcs, _t| {
-                let calls = calls.clone();
-                async move {
-                    calls.lock().await.push(h);
-                    true
-                }
-            }))
-        };
-        settle().await;
-        assert!(calls.lock().await.is_empty());
         pool.add_source(hash(1), endpoint_id(1)).await;
-        settle().await;
-        assert_eq!(calls.lock().await.as_slice(), &[hash(1)]);
+        pool.remove(hash(1)).await;
         assert!(pool.is_empty().await);
-        handle.abort();
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn one_pass_drains_all_succeeding_items() {
-        let pool = BlobFetchPool::default();
-        for n in 1..=3 {
-            pool.add_source(hash(n), endpoint_id(n)).await;
-        }
-        let calls = Arc::new(Mutex::new(Vec::new()));
-        let handle = {
-            let calls = calls.clone();
-            tokio::spawn(fetch_loop(pool.clone(), fetch_config(), move |h, _s, _t| {
-                let calls = calls.clone();
-                async move {
-                    calls.lock().await.push(h);
-                    true
-                }
-            }))
-        };
-        settle().await;
-        assert!(pool.is_empty().await);
-        let fetched: HashSet<_> = calls.lock().await.iter().copied().collect();
-        assert_eq!(fetched, HashSet::from([hash(1), hash(2), hash(3)]));
-        handle.abort();
     }
 ```
 
-NOTE: if `iroh::SecretKey::from_bytes` / `.public()` differ for this version, adjust `endpoint_id(n)` to produce a distinct deterministic `EndpointId`.
+NOTE: if `iroh::SecretKey::from_bytes` / `.public()` differ for this iroh version, adjust `endpoint_id(n)` to yield distinct deterministic `EndpointId`s. The loop behavior itself is already covered by `dashchat-utils` (Task 4) — do not re-test it here.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 2: Run the test to verify it fails**
 
 Run: `cargo nextest run -p mailbox-server blob_sync`
-Expected: FAIL (pool/loop symbols undefined).
+Expected: FAIL (pool symbols undefined).
 
-- [ ] **Step 3: Implement the config, pool, and loop**
+- [ ] **Step 3: Implement the pool, its `FetchStack` impl, and `try_fetch` / `spawn_fetch_loop`**
 
-Add to `crates/mailbox-server/src/blob_sync.rs` (top-level), modeled directly on the node's file. Use `BTreeMap<Hash, BTreeSet<EndpointId>>` so iteration order is deterministic:
+Add to `crates/mailbox-server/src/blob_sync.rs`. Use `BTreeMap<Hash, BTreeSet<EndpointId>>` for deterministic iteration:
 
 ```rust
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use dashchat_utils::{fetch_loop, FetchConfig, FetchStack};
 use iroh_blobs::api::downloader::Shuffled;
 use iroh_blobs::protocol::GetRequest;
 use tokio::sync::{Mutex, Notify};
-use tokio::task::{JoinHandle, JoinSet};
-
-#[derive(Clone, Debug)]
-pub struct BlobFetchConfig {
-    pub concurrency: usize,
-    pub attempt_timeout: Duration,
-    pub pass_interval: Duration,
-}
-
-impl Default for BlobFetchConfig {
-    fn default() -> Self {
-        Self {
-            concurrency: 4,
-            attempt_timeout: Duration::from_secs(30),
-            pass_interval: Duration::from_secs(60),
-        }
-    }
-}
+use tokio::task::JoinHandle;
 
 #[derive(Clone, Default)]
 pub struct BlobFetchPool {
@@ -634,12 +987,10 @@ impl BlobFetchPool {
         self.sources.lock().await.entry(hash).or_default().insert(source);
         self.added.notify_one();
     }
-
-    async fn is_empty(&self) -> bool {
+    pub(crate) async fn is_empty(&self) -> bool {
         self.sources.lock().await.is_empty()
     }
-
-    async fn next_untried(
+    pub(crate) async fn next_untried(
         &self,
         tried: &HashSet<iroh_blobs::Hash>,
     ) -> Option<(iroh_blobs::Hash, Vec<iroh::EndpointId>)> {
@@ -648,76 +999,42 @@ impl BlobFetchPool {
             .find(|(hash, _)| !tried.contains(*hash))
             .map(|(hash, sources)| (*hash, sources.iter().copied().collect()))
     }
-
-    async fn remove(&self, hash: iroh_blobs::Hash) {
+    pub(crate) async fn remove(&self, hash: iroh_blobs::Hash) {
         self.sources.lock().await.remove(&hash);
     }
 }
 
-async fn fetch_loop<F, Fut>(pool: BlobFetchPool, config: BlobFetchConfig, fetch: F)
-where
-    F: Fn(iroh_blobs::Hash, Vec<iroh::EndpointId>, Duration) -> Fut + Clone + Send + 'static,
-    Fut: std::future::Future<Output = bool> + Send + 'static,
-{
-    let concurrency = config.concurrency.max(1);
-    loop {
-        let pass_start = Instant::now();
-        run_fetch_pass(&pool, concurrency, config.attempt_timeout, &fetch).await;
+#[async_trait::async_trait]
+impl FetchStack for BlobFetchPool {
+    type Item = (iroh_blobs::Hash, Vec<iroh::EndpointId>);
+    type Key = iroh_blobs::Hash;
 
-        if pool.is_empty().await {
-            pool.added.notified().await;
-            continue;
-        }
-        let elapsed = pass_start.elapsed();
-        if elapsed < config.pass_interval {
-            tokio::select! {
-                _ = tokio::time::sleep(config.pass_interval - elapsed) => {}
-                _ = pool.added.notified() => {}
-            }
-        }
+    fn key(item: &Self::Item) -> Self::Key {
+        item.0
     }
-}
-
-async fn run_fetch_pass<F, Fut>(
-    pool: &BlobFetchPool,
-    concurrency: usize,
-    attempt_timeout: Duration,
-    fetch: &F,
-) where
-    F: Fn(iroh_blobs::Hash, Vec<iroh::EndpointId>, Duration) -> Fut + Clone + Send + 'static,
-    Fut: std::future::Future<Output = bool> + Send + 'static,
-{
-    let mut tried: HashSet<iroh_blobs::Hash> = HashSet::new();
-    let mut in_flight: JoinSet<Option<iroh_blobs::Hash>> = JoinSet::new();
-    loop {
-        while in_flight.len() < concurrency {
-            let Some((hash, sources)) = pool.next_untried(&tried).await else {
-                break;
-            };
-            tried.insert(hash);
-            let fetch = fetch.clone();
-            in_flight.spawn(async move {
-                fetch(hash, sources, attempt_timeout).await.then_some(hash)
-            });
-        }
-        let Some(joined) = in_flight.join_next().await else {
-            break;
-        };
-        if let Ok(Some(hash)) = joined {
-            pool.remove(hash).await;
-        }
+    async fn is_empty(&self) -> bool {
+        BlobFetchPool::is_empty(self).await
+    }
+    async fn next_untried(&self, tried: &HashSet<iroh_blobs::Hash>) -> Option<Self::Item> {
+        BlobFetchPool::next_untried(self, tried).await
+    }
+    async fn remove(&self, item: &Self::Item) {
+        BlobFetchPool::remove(self, item.0).await;
+    }
+    async fn wait_for_add(&self) {
+        self.added.notified().await;
     }
 }
 ```
 
-Add `fetch_pool: BlobFetchPool` to the `BlobSync` struct and initialize it (`fetch_pool: BlobFetchPool::default()`) in `BlobSync::new`. Add the spawn + try_fetch methods:
+Add `fetch_pool: BlobFetchPool` to the `BlobSync` struct, initialize it (`fetch_pool: BlobFetchPool::default()`) in `BlobSync::new`, and add `pub fn fetch_pool(&self) -> &BlobFetchPool { &self.fetch_pool }`. Add the spawn + try_fetch methods:
 
 ```rust
 impl BlobSync {
-    pub fn spawn_fetch_loop(&self, config: BlobFetchConfig) -> JoinHandle<()> {
+    pub fn spawn_fetch_loop(&self, config: FetchConfig) -> JoinHandle<()> {
         let this = self.clone();
         let pool = self.fetch_pool.clone();
-        tokio::spawn(fetch_loop(pool, config, move |hash, sources, timeout| {
+        tokio::spawn(fetch_loop(pool, config, move |(hash, sources), timeout| {
             let this = this.clone();
             async move { this.try_fetch(hash, sources, timeout).await }
         }))
@@ -756,21 +1073,21 @@ impl BlobSync {
 }
 ```
 
-Match `self.blobs.has(...)`, `Shuffled`, `GetRequest::all`, and `downloader.download` to the node's working usage in `crates/dashchat-node/src/blob_sync.rs` (lines 96-136) — they are the same iroh-blobs version, so the calls should be identical.
+Match `self.blobs.has(...)`, `Shuffled`, `GetRequest::all`, and `downloader.download` to the node's working usage in `crates/dashchat-node/src/blob_sync.rs` (the `try_fetch` body there) — same iroh-blobs version, identical calls.
 
-- [ ] **Step 4: Run the tests**
+- [ ] **Step 4: Run the pool tests**
 
 Run: `cargo nextest run -p mailbox-server blob_sync`
-Expected: PASS (all three loop tests + the dedupe test).
+Expected: PASS (both pool tests).
 
 - [ ] **Step 5: Spawn the fetch loop in `spawn_server`**
 
-In `crates/mailbox-server/src/lib.rs::spawn_server`, after building `blob_sync` and before/after `create_app`, spawn the loop and keep the handle so it is aborted on shutdown:
+In `crates/mailbox-server/src/lib.rs::spawn_server`, after building `blob_sync`, spawn the loop and keep the handle so it is aborted on shutdown:
 
 ```rust
-    let blob_fetch_handle = blob_sync.spawn_fetch_loop(BlobFetchConfig::default());
+    let blob_fetch_handle = blob_sync.spawn_fetch_loop(dashchat_utils::FetchConfig::default());
 ```
-Add `use crate::blob_sync::BlobFetchConfig;` (or `pub use` it from lib). At the existing graceful-shutdown tail (next to `cleanup_task.abort();`), add `blob_fetch_handle.abort();`. Export the config: `pub use blob_sync::{BlobSync, BlobFetchConfig, BlobFetchPool};`.
+At the existing graceful-shutdown tail (next to `cleanup_task.abort();`), add `blob_fetch_handle.abort();`. Export the pool: `pub use blob_sync::{BlobSync, BlobFetchPool};` (FetchConfig comes from `dashchat_utils`).
 
 - [ ] **Step 6: Build + full server tests**
 
@@ -781,7 +1098,7 @@ Expected: PASS.
 
 ```bash
 git add -A
-git commit -m "feat(mailbox): add hash->sources blob fetch loop
+git commit -m "feat(mailbox): hash->sources fetch pool on shared FetchStack loop
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
@@ -790,14 +1107,14 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ## Phase 4 — Request API: clients announce hashes + source
 
-### Task 5: Extend `StoreBlipsRequest` and record sources in the store handler
+### Task 6: Extend `StoreBlipsRequest` and record sources in the store handler
 
 **Files:**
 - Modify: `crates/mailbox-server/src/store_blips.rs` (add fields to `StoreBlipsRequest`, record sources after a successful store)
 - Modify: `crates/mailbox-client/src/toy.rs` (send the new fields)
 
 **Interfaces:**
-- Consumes: `BlobFetchPool::add_source` (Task 4), `AppState.blob_sync` (Task 3).
+- Consumes: `BlobFetchPool::add_source` (Task 5), `AppState.blob_sync` (Task 3).
 - Produces: `StoreBlipsRequest { blips, blob_hashes: Vec<iroh_blobs::Hash>, sender_pubkey: iroh::EndpointId, signature: Vec<u8> }`.
 
 - [ ] **Step 1: Write the failing test: storing records sources into the fetch pool**
@@ -872,7 +1189,7 @@ Expected: PASS.
 In `crates/mailbox-client/src/toy.rs::publish`, the client builds a `StoreBlipsRequest`. The `MailboxClient` trait does not currently expose the node's own pubkey or per-op blob hashes, so thread them in:
 
 - The toy client needs its own `EndpointId`. Add a field `sender_pubkey: iroh::EndpointId` to `ToyMailboxClient` and a constructor param. Update `ToyMailboxClient::new(id: MailboxId, base_url: impl Into<String>, sender_pubkey: iroh::EndpointId)`.
-- The blob hashes come from the ops being published. `MailboxItem` exposes `hash()` (the op hash), not media blob hashes. Add a method to the `MailboxItem` trait: `fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> { Vec::new() }` (default empty), and override it in `dashchat-node`'s `MailboxOperation` impl to extract media hashes from the body. See Task 6.
+- The blob hashes come from the ops being published. `MailboxItem` exposes `hash()` (the op hash), not media blob hashes. Add a method to the `MailboxItem` trait: `fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> { Vec::new() }` (default empty), and override it in `dashchat-node`'s `MailboxOperation` impl to extract media hashes from the body. See Task 7.
 
 For now in `publish`, collect hashes across the ops and set the fields:
 ```rust
@@ -887,10 +1204,10 @@ For now in `publish`, collect hashes across the ops and set the fields:
 ```
 (Note `ops` is consumed by the existing loop; compute `blob_hashes` before the loop, or clone the needed data.)
 
-- [ ] **Step 6: Build (expect mem.rs / callers to break — fixed in Task 6)**
+- [ ] **Step 6: Build (add the `blob_hashes` trait default so callers compile)**
 
 Run: `cargo build -p mailbox-server -p mailbox-client`
-Expected: may FAIL on `blob_hashes()` trait method until Task 6 adds the default. If so, add the default method now to `MailboxItem` in `crates/mailbox-client/src/lib.rs`:
+Expected: may FAIL on the `blob_hashes()` trait method until the default exists. Add the default method now to `MailboxItem` in `crates/mailbox-client/src/lib.rs` (the `MailboxOperation` override lands in Task 7):
 ```rust
     fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
         Vec::new()
@@ -911,7 +1228,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ## Phase 5 — Node-side: MailboxId = EndpointId, sources, blob hashes
 
-### Task 6: `MailboxOperation::blob_hashes`, mailbox as a blob source, EndpointId as MailboxId
+### Task 7: `MailboxOperation::blob_hashes`, mailbox as a blob source, EndpointId as MailboxId
 
 **Files:**
 - Modify: `crates/dashchat-node/src/mailbox.rs` (impl `blob_hashes` on `MailboxOperation`)
@@ -994,7 +1311,7 @@ In `crates/mailbox-client/src/manager.rs`, add to `impl Mailboxes`:
             .collect::<anyhow::Result<Vec<_>>>()
     }
 ```
-For `parse_endpoint_id`, reuse the canonical `MailboxId` codec from Task 3: `mailbox_server::decode_mailbox_id(id)` (base64url no-pad → `EndpointId`). Add `mailbox-server` as a (non-dev) dependency of `mailbox-client` if not already linked, OR — to avoid that dependency direction — move `encode_mailbox_id`/`decode_mailbox_id` into `mailbox-client/src/lib.rs` (where `MailboxId` is defined) and have `mailbox-server` re-export them from there. **Prefer the latter**: the codec belongs with the `MailboxId` type in `mailbox-client`. Update Task 3's `encode_mailbox_id` call in `health_check` to `mailbox_client::encode_mailbox_id(...)` accordingly. `iroh` is already a dep of `mailbox-client` (from Task 5).
+For `parse_endpoint_id`, reuse the canonical `MailboxId` codec from Task 3: `mailbox_server::decode_mailbox_id(id)` (base64url no-pad → `EndpointId`). Add `mailbox-server` as a (non-dev) dependency of `mailbox-client` if not already linked, OR — to avoid that dependency direction — move `encode_mailbox_id`/`decode_mailbox_id` into `mailbox-client/src/lib.rs` (where `MailboxId` is defined) and have `mailbox-server` re-export them from there. **Prefer the latter**: the codec belongs with the `MailboxId` type in `mailbox-client`. Update Task 3's `encode_mailbox_id` call in `health_check` to `mailbox_client::encode_mailbox_id(...)` accordingly. `iroh` is already a dep of `mailbox-client` (from Task 6).
 
 In `crates/dashchat-node/src/blob_sync.rs::MixedSourceLookup::sources`, change the signature to take `&Item::Topic`-equivalent and un-comment:
 ```rust
@@ -1038,7 +1355,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ## Phase 6 — End-to-end integration test
 
-### Task 7: Staged-online mailbox blob relay test
+### Task 8: Staged-online mailbox blob relay test
 
 **Files:**
 - Create: `crates/dashchat-node/tests/mailbox_blob_sync.rs`
@@ -1199,5 +1516,5 @@ Expected: PASS. Also run `cargo build --workspace` to confirm `src-tauri` compil
 
 ## Notes / Open Risk (carried from the design doc)
 
-- **mDNS EndpointId carrier (Task 6, Step 7) — RESOLVED:** the `MailboxId` is the EndpointId encoded as URL-safe base64 no-pad (43 chars), which fits a single mDNS DNS label (63-byte limit). So it goes straight in the mDNS instance name — no TXT property needed. The cloud case reads the same encoding from `/health`. The canonical codec (`encode_mailbox_id`/`decode_mailbox_id`) lives in `mailbox-client` alongside the `MailboxId` type.
+- **mDNS EndpointId carrier (Task 7, Step 7) — RESOLVED:** the `MailboxId` is the EndpointId encoded as URL-safe base64 no-pad (43 chars), which fits a single mDNS DNS label (63-byte limit). So it goes straight in the mDNS instance name — no TXT property needed. The cloud case reads the same encoding from `/health`. The canonical codec (`encode_mailbox_id`/`decode_mailbox_id`) lives in `mailbox-client` alongside the `MailboxId` type.
 - **iroh API surface:** several calls (`Endpoint::builder().secret_key().discovery_n0().bind()`, `endpoint.id()`/`.node_id()`, `SecretKey::generate`/`from_bytes`/`public`, `EndpointId::from_str`, `accept_unmixed` vs. a `Router`) must be confirmed against iroh `1.0.0-rc.1` / iroh-blobs `0.102.0`. The node's working `crates/dashchat-node/src/blob_sync.rs` is the authoritative reference for the iroh-blobs download/serve calls.
