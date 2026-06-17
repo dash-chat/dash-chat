@@ -171,21 +171,22 @@
 			messageText = '';
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
-			// Defer the scroll one macrotask: store.sendMessage resolves once
-			// the operation is confirmed in the local log, but signalium still
-			// needs a turn for its subscriber chain to push the new message
-			// through messagesSets and Svelte to render the bubble. tick() only
-			// flushes pending Svelte updates synchronously, so it isn't enough
-			// here. Without this, scrollToBottom fires against the old layout
-			// and `overflow-anchor: none` leaves the just-rendered bubble
-			// hidden behind the input bar.
-			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
 
+	// When an own message bubble is created after the initial render (i.e. one we
+	// just sent), scroll it into view. Firing on the element's mount means the
+	// bubble already exists, so there's no race with it rendering. Messages
+	// present on first render are skipped — the chat already opens at the bottom.
+	let hydrated = $state(false);
+	const scrollToBottomOnMount: Action<HTMLElement> = () => {
+		if (hydrated) reverseScrollPage?.scrollToBottom();
+	};
+
 	onMount(() => {
+		hydrated = true;
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
@@ -593,6 +594,7 @@
 																onLongPress: e =>
 																	showQuickReactionBar(e, message),
 															}}
+															use:scrollToBottomOnMount
 														>
 															{#await $chatId then chatId}
 																<MessageFromMe

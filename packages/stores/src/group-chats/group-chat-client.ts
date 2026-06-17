@@ -17,7 +17,7 @@ export interface IGroupChatClient {
 	promoteToAdministrator(chatId: ChatId, member: AgentId): Promise<void>;
 	demoteFromAdministrator(chatId: ChatId, member: AgentId): Promise<void>;
 
-	sendMessage(chatId: ChatId, content: MessageContent): Promise<void>;
+	sendMessage(chatId: ChatId, content: MessageContent): Promise<Hash>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
 
 	setInfo(chatId: ChatId, info: GroupInfo): Promise<void>;
@@ -38,7 +38,7 @@ export class GroupChatClient implements IGroupChatClient {
 		await invoke('remove_group_member', { chatId, agentId: member });
 	}
 
-	sendMessage(chatId: ChatId, content: MessageContent): Promise<void> {
+	sendMessage(chatId: ChatId, content: MessageContent): Promise<Hash> {
 		return invoke('send_message', { chatId, content });
 	}
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void> {
