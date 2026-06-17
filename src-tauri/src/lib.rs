@@ -3,6 +3,7 @@ mod device_info;
 mod filesystem;
 mod i18n;
 mod mailbox;
+#[cfg(desktop)]
 mod media_drop;
 mod notifications;
 mod settings;
@@ -70,7 +71,7 @@ pub fn run() {
         }
     }
 
-    builder
+    let builder = builder
         .invoke_handler(tauri::generate_handler![
             device_info::display::log_webview_info,
             commands::logs::get_log,
@@ -113,8 +114,12 @@ pub fn run() {
         .plugin(tauri_plugin_sharekit::init())
         .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_os::init())
-        .on_window_event(media_drop::handle_window_event)
+        .plugin(tauri_plugin_os::init());
+
+    #[cfg(desktop)]
+    let builder = builder.on_window_event(media_drop::handle_window_event);
+
+    builder
         .setup(move |app| {
             let handle = app.handle().clone();
 
