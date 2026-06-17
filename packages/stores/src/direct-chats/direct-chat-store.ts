@@ -14,7 +14,6 @@ import {
 	Payload,
 	getMessageMedia,
 	getMessageText,
-	sameMediaShape,
 	summarizeMessageContent,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
