@@ -13,6 +13,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod blip;
 mod blips_table;
+mod server_key;
 mod cleanup;
 mod get_blips;
 mod notify_topics_subscribers;
@@ -34,6 +35,7 @@ pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
 pub use get_blips::{get_blips_for_topics, GetBlipsRequest, GetBlipsResponse, GetBlipsForTopicResponse};
 pub use store_blips::{store_blips, StoreBlipsRequest};
 pub use watermark::compute_initial_watermarks;
+pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
 pub type TopicId = String;
@@ -116,6 +118,7 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
     {
         let _blips_table = write_txn.open_table(BLIPS_TABLE)?;
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE)?;
+        let _server_key_table = write_txn.open_table(SERVER_KEY_TABLE)?;
     }
     write_txn.commit()?;
 
