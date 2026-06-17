@@ -75,11 +75,7 @@
 		}
 	}
 
-	// Scroll the message we just sent into view once its bubble mounts. Firing on
-	// the element's mount means the bubble already exists, so there's no race with
-	// it rendering. Scoping to the hash returned by sendMessage ensures we only
-	// scroll for our own just-sent message, not for messages already on screen or
-	// arriving from elsewhere.
+	// Scroll the message we just sent into view once its bubble mounts.
 	let pendingScrollHash: Hash | null = $state(null);
 	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
 		if (hash === pendingScrollHash) {
