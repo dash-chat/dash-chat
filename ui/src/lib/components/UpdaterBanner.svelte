@@ -134,7 +134,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="flex items-center gap-3 bg-blue-500 px-4 py-3 text-white cursor-pointer"
+		class="flex items-center gap-3 bg-brand-primary px-4 py-3 text-white cursor-pointer"
 		onclick={handleBannerClick}
 		data-testid="updater-banner"
 	>
