@@ -1,48 +1,12 @@
 use std::path::PathBuf;
-use std::sync::OnceLock;
 use tauri::{AppHandle, Manager, Runtime};
 
 const DATABASE_VERSION: &str = "0.4";
 
-/// Hold the lock file handle for the lifetime of the process so the exclusive
-/// lock is never released while the app is running.
-static DATA_DIR_LOCK: OnceLock<std::fs::File> = OnceLock::new();
-
-/// In dev mode, if DATA_DIR is not already set, auto-select the first available
-/// `.dbs/dev/agent-N` directory (using an exclusive file lock to detect running instances).
-///
-/// Then, if DATA_DIR is set (either externally or by auto-detection), isolate
-/// XDG directories to prevent WebKitGTK SQLite lock conflicts between instances.
+/// When `DATA_DIR` is set, isolate the XDG directories under it so concurrently
+/// running desktop instances don't share WebKitGTK's SQLite databases (which
+/// would otherwise conflict on their exclusive locks).
 pub fn init_data_dir() {
-    if std::env::var("DATA_DIR").is_err() && tauri::is_dev() && cfg!(not(mobile)) {
-        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let base = project_root.join(".dbs/dev");
-
-        let mut found = false;
-        for n in 1..=100 {
-            let dir = base.join(format!("agent-{n}"));
-            std::fs::create_dir_all(&dir).ok();
-            let lock_path = dir.join(".lock");
-
-            if let Ok(file) = std::fs::File::create(&lock_path) {
-                use fs2::FileExt;
-                if file.try_lock_exclusive().is_ok() {
-                    std::env::set_var("DATA_DIR", &dir);
-                    let _ = DATA_DIR_LOCK.set(file);
-                    found = true;
-                    break;
-                }
-            }
-        }
-        if !found {
-            eprintln!(
-                "WARNING: could not find an available agent slot in {}",
-                base.display()
-            );
-        }
-    }
-
-    // Isolate XDG/WebKitGTK data directories per instance.
     if let Ok(data_dir) = std::env::var("DATA_DIR") {
         let data_dir = std::path::Path::new(&data_dir);
         std::env::set_var("XDG_DATA_HOME", data_dir.join(".local/share"));

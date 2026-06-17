@@ -754,11 +754,10 @@
 				<div
 					bind:clientHeight={bottomBarHeight}
 					class="absolute bottom-0 inset-x-0 z-10"
-					class:bg-md-light-surface={theme === 'material'}
-					class:dark:bg-md-dark-surface={theme === 'material'}
+					class:bg-page-surface={theme === 'material'}
 				>
 					{#if searchMode}
-						<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
+						<div class="pb-safe bg-page-surface">
 							<div
 								class="mx-4 border-t border-gray-300 dark:border-gray-600"
 								style="margin: 0 auto"
@@ -811,7 +810,7 @@
 							</div>
 						</div>
 					{:else if contactRequest}
-						<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
+						<div class="pb-safe bg-page-surface">
 							<div
 								class="mx-4 border-t border-gray-300 dark:border-gray-600"
 								style="margin: 0 auto"
