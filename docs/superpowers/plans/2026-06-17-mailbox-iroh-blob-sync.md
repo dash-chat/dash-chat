@@ -27,17 +27,16 @@
 
 This phase is a pure rename with **no behavior change**. The existing test suite must stay green. It is mechanical but touches wire + disk names.
 
-### Task 1: Rename `blob` → `blip` across mailbox crates and consumers
+### Task 1: Rename `blob` → `blip` in the mailbox crates only
+
+**CRITICAL SCOPE WARNING — two senses of "blob".** This rename applies ONLY to the *mailbox encrypted-log-item* concept, which lives entirely in `crates/mailbox-server` and (via consumption of its types) in `crates/mailbox-client/src/toy.rs`. The words `blob`/`Blob` ALSO appear in `crates/dashchat-node` and `src-tauri` referring to a completely different, unrelated concept: **iroh blobs** (the media-sync feature this whole project builds on — `BlobSync`, `blob_sync.rs`, `blobs_store_path`, `MediaMeta` hashes, `src-tauri/src/blob_protocol.rs`). Those MUST stay named "blob". **Do NOT run the rename over `dashchat-node` or `src-tauri`.** Verified: `dashchat-node` does not reference `mailbox_server` at all, and the only out-of-`mailbox-server` consumer of the mailbox `Blob`/`StoreBlobsRequest`/`GetBlobsRequest`/`GetBlobsResponse` types is `crates/mailbox-client/src/toy.rs`. Neither `mailbox-server` nor `mailbox-client` depends on `iroh`/`iroh_blobs` yet at this point, so a blanket `s/blob/blip/` confined to those two crates is safe and complete.
 
 **Files (all under repo root):**
 - Rename: `crates/mailbox-server/src/blob.rs` → `crates/mailbox-server/src/blip.rs`
 - Rename: `crates/mailbox-server/src/blobs_table.rs` → `crates/mailbox-server/src/blips_table.rs`
 - Rename: `crates/mailbox-server/src/store_blobs.rs` → `crates/mailbox-server/src/store_blips.rs`
 - Rename: `crates/mailbox-server/src/get_blobs.rs` → `crates/mailbox-server/src/get_blips.rs`
-- Modify: `crates/mailbox-server/src/lib.rs`, `crates/mailbox-server/src/watermark.rs`, `crates/mailbox-server/src/cleanup.rs`, `crates/mailbox-server/src/watermarks_table.rs`, `crates/mailbox-server/src/notify_topics_subscribers.rs`, `crates/mailbox-server/src/test_utils.rs`
-- Modify tests: `crates/mailbox-server/tests/integration.rs`, `tests/cleanup.rs`, `tests/watermark.rs`, `tests/stress.rs`, `tests/push_integration.rs`
-- Modify: `crates/mailbox-client/src/toy.rs`, `crates/mailbox-client/src/mem.rs` (only if it references server types — verify)
-- Modify any `dashchat-node` / `src-tauri` files that import the renamed server types (find via grep).
+- Modify: every remaining `.rs` under `crates/mailbox-server/` (src + tests) and `crates/mailbox-client/` that contains a `blob`/`Blob`/`BLOB` token.
 
 **Interfaces:**
 - Produces: `Blip`, `BlipsKey`, `BlipsKeyPrefix`, `BlipsKeyError`, `BLIPS_TABLE`, `StoreBlipsRequest`, `GetBlipsRequest`, `GetBlipsResponse`, `GetBlipsForTopicResponse`, `store_blips`, `get_blips_for_topics`, routes `/blips/store` and `/blips/get`, redb table name string `"blips"`.
@@ -58,14 +57,13 @@ git mv get_blobs.rs get_blips.rs
 cd -
 ```
 
-- [ ] **Step 3: Apply the mechanical identifier rename across the mailbox crates and consumers**
+- [ ] **Step 3: Apply the mechanical identifier rename — confined to the two mailbox crates**
 
-Run this from the repo root. It rewrites identifiers, the redb table string, and the route paths in one pass. The ordering matters: do the longer/compound identifiers implicitly via the generic `Blob`/`blob` substitutions (Rust is case-sensitive, so `Blob`→`Blip` and `blob`→`blip` cover `BlobsKey`→`BlipsKey`, `blobs_by_topic`→`blips_by_topic`, etc.).
+Run from the repo root. The scope is `crates/mailbox-server` and `crates/mailbox-client` ONLY (NOT `dashchat-node`, NOT `src-tauri`). Case-sensitive substitutions cover the compound identifiers (`Blob`→`Blip` handles `BlobsKey`→`BlipsKey`, etc.).
 
 ```bash
-# Limit scope to the two mailbox crates plus known consumers.
 FILES=$(grep -rIl --include='*.rs' -e 'blob' -e 'Blob' -e 'BLOB' \
-  crates/mailbox-server crates/mailbox-client crates/dashchat-node src-tauri)
+  crates/mailbox-server crates/mailbox-client)
 
 for f in $FILES; do
   sed -i \
@@ -78,19 +76,25 @@ done
 
 This also renames the route strings (`"/blobs/store"`→`"/blips/store"`), the redb table name (`TableDefinition::new("blobs")`→`"blips"`), module declarations (`mod blob;`→`mod blip;`), and base64 helper module names. That is intended.
 
-- [ ] **Step 4: Verify no `blob`/`Blob` tokens remain in the renamed scope**
+- [ ] **Step 4: Verify no `blob` tokens remain in the two mailbox crates, and that NOTHING outside them changed**
 
-Run:
 ```bash
+# (a) the mailbox crates must be fully renamed:
 grep -rIn --include='*.rs' -e 'blob' -e 'Blob' -e 'BLOB' \
-  crates/mailbox-server crates/mailbox-client crates/dashchat-node src-tauri
+  crates/mailbox-server crates/mailbox-client
+# Expected: NO output.
+
+# (b) nothing outside the two mailbox crates may have changed:
+git status --porcelain | grep -vE '^.. crates/mailbox-(server|client)/' || true
+# Expected: NO output. If dashchat-node or src-tauri appear here, the sed
+# escaped its scope — revert those files (git checkout -- <path>) before
+# continuing; their 'blob' is the iroh sense and must not be renamed.
 ```
-Expected: NO output. If any remain, they are either (a) legitimately iroh-blob references you are about to add later (there should be none yet in this phase) or (b) a missed spot — fix by editing the file directly. At this phase the answer must be empty.
 
 - [ ] **Step 5: Build**
 
 Run: `cargo build -p mailbox-server -p mailbox-client -p dashchat-node`
-Expected: PASS. If `src-tauri` references server types, also `cargo build -p dashchat` (the tauri crate) — fix any stragglers the sed missed (e.g. a doc comment that the grep flagged).
+Expected: PASS. `dashchat-node` and `src-tauri` are unchanged but still depend on `mailbox-client`; building them confirms the rename didn't alter `mailbox-client`'s public surface that they use (`ToyMailboxClient::new`, `MailboxItem`, etc. — none of which change in this task).
 
 - [ ] **Step 6: Run the full affected test suite**
 
@@ -104,9 +108,10 @@ git add -A
 git commit -m "refactor(mailbox): rename blob -> blip to free 'blob' for iroh
 
 Renames the mailbox encrypted-log-item concept from 'blob' to 'blip'
-across mailbox-server, mailbox-client and consumers, including HTTP
-route paths, JSON field names, and the redb table name. No behavior
-change. Frees 'blob' for the upcoming iroh-blobs sense.
+across mailbox-server and mailbox-client (including HTTP route paths,
+JSON field names, and the redb table name). No behavior change. Frees
+'blob' for the upcoming iroh-blobs sense. The iroh-blob code in
+dashchat-node/src-tauri is intentionally left untouched.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
