@@ -31,7 +31,7 @@ const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 pub use blip::Blip;
 pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
-pub use get_blips::{get_blips_for_topics, GetBlipsRequest, GetBlipsResponse};
+pub use get_blips::{get_blips_for_topics, GetBlipsRequest, GetBlipsResponse, GetBlipsForTopicResponse};
 pub use store_blips::{store_blips, StoreBlipsRequest};
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};

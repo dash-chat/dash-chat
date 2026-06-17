@@ -18,8 +18,8 @@ use crate::MailboxId;
 
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
         mailbox_id TEXT NOT NULL,
-        topic      BLIP NOT NULL,
-        author     BLIP NOT NULL,
+        topic      BLOB NOT NULL,
+        author     BLOB NOT NULL,
         seq_num    INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (mailbox_id, topic, author)
