@@ -144,14 +144,16 @@
 			{/if}
 		</div>
 	</div>
+
+	{#if isMobile}
+		<MediaPanel
+			bind:opened={showMediaPanel}
+			onFiles={files => (media = stageFiles(media, files))}
+		/>
+	{/if}
 </div>
 
-{#if isMobile}
-	<MediaPanel
-		bind:opened={showMediaPanel}
-		onFiles={files => (media = stageFiles(media, files))}
-	/>
-{:else}
+{#if !isMobile}
 	<MediaMenu
 		bind:opened={showMediaMenu}
 		target="[data-testid='message-input-attach']"

@@ -1,28 +1,23 @@
 import type { Action } from 'svelte/action';
 
-const INTERACTIVE =
-	'button, a, input, textarea, label, select, [role="button"]';
-
-/** Keep the mobile keyboard open by preventing taps on the composer's
- * non-interactive chrome from stealing focus from the textarea. Taps on
- * interactive controls (buttons, the textarea, …) are left untouched — on
- * touch, calling preventDefault on their pointer-down would also cancel the
- * synthesized click. */
+/** Keep the mobile keyboard open by preventing taps anywhere in the composer
+ * (buttons, chrome, the attachment panel) from moving focus off the textarea.
+ *
+ * Only `mousedown` is intercepted: preventing its default stops the focus
+ * change while still letting the synthesized `click` fire, so buttons keep
+ * working — including on touch. Preventing `touchstart`/`pointerdown` instead
+ * would also cancel the tap's click, which is why they are deliberately left
+ * alone. Taps on the textarea itself are passed through so it can focus. */
 export const keepKeyboardOpen: Action<HTMLElement> = node => {
 	function handle(event: Event) {
-		const target = event.target;
-		if (target instanceof Element && target.closest(INTERACTIVE)) return;
-		event.preventDefault();
+		if (!(event.target instanceof HTMLTextAreaElement)) {
+			event.preventDefault();
+		}
 	}
-	const options = { passive: false };
-	node.addEventListener('mousedown', handle, options);
-	node.addEventListener('touchstart', handle, options);
-	node.addEventListener('pointerdown', handle, options);
+	node.addEventListener('mousedown', handle);
 	return {
 		destroy() {
 			node.removeEventListener('mousedown', handle);
-			node.removeEventListener('touchstart', handle);
-			node.removeEventListener('pointerdown', handle);
 		},
 	};
 };
