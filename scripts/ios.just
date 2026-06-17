@@ -5,9 +5,15 @@ set working-directory := '..'
 # macOS builds because apple-sys/bindgen picks it up and targets iPhone.
 export IPHONEOS_DEPLOYMENT_TARGET := "14.0"
 
-# run the app in development mode
+# run the app in development mode, pointing the app at UI_PORT if it is set
 dev:
-    pnpm tauri ios dev --host
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "${UI_PORT:-}" ]; then
+        pnpm tauri ios dev --host --config "{\"build\":{\"devUrl\":\"http://localhost:$UI_PORT\"}}"
+    else
+        pnpm tauri ios dev --host
+    fi
 
 # run the app in an iPhone simulator
 dev-sim device="iPhone 16":
