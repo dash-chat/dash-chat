@@ -54,12 +54,12 @@
 />
 
 {#if media}
-	<div class="px-2 pt-2 pb-1" data-testid="message-input-media-preview">
+	<div class="pt-2" data-testid="message-input-media-preview">
 		{#if count > 1}
-			<div class="flex justify-end pb-1">
+			<div class="flex justify-end pb-2 pe-2">
 				<button
 					type="button"
-					class="clear-all flex items-center justify-center p-0.5"
+					class="clear-all flex items-center justify-center"
 					data-testid="message-input-clear-attachments"
 					aria-label={m.removeAllAttachments()}
 					onclick={clear}
@@ -68,7 +68,7 @@
 				</button>
 			</div>
 		{/if}
-		<div class="flex max-h-[142px] gap-2 overflow-x-auto pb-1">
+		<div class="flex max-h-[142px] gap-2 overflow-x-auto px-2">
 			{#if media.kind === 'photos'}
 				{#each media.items as photo, i (photo.previewUrl)}
 					<div
@@ -138,6 +138,7 @@
 		color: var(--k-text-color);
 		opacity: 0.6;
 		transition: opacity 0.15s ease;
+		height: auto
 	}
 	.clear-all:hover {
 		opacity: 1;

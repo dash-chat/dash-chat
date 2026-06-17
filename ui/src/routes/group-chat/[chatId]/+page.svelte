@@ -314,7 +314,7 @@
 				<MessageComposer {store} onSent={onMessageSent} />
 			{:else}
 				<div
-					class="pb-safe quiet px-6 py-4 text-center text-sm"
+					class="pb-safe-4 quiet px-6 pt-4 text-center text-sm"
 					data-testid="group-chat-not-member"
 				>
 					{m.youAreNoLongerAMember()}

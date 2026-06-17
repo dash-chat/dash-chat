@@ -102,14 +102,12 @@
 
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<div
-		class="message-input-bar m-2"
+		class="message-input-bar"
 		class:pb-safe={!(isMobile && showMediaPanel)}
-		class:bg-md-light-surface={theme === 'material'}
-		class:dark:bg-md-dark-surface={theme === 'material'}
 	>
 		<StagedAttachments bind:media />
 
-		<div class="row gap-2" style="align-items: center; margin: 0 auto">
+		<div class="m-2 row gap-2" style="align-items: center;">
 			{#if isMobile}
 				<AttachButton
 					class="h-10 w-10"
