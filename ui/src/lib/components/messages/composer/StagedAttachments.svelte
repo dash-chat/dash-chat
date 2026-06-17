@@ -138,7 +138,7 @@
 		color: var(--k-text-color);
 		opacity: 0.6;
 		transition: opacity 0.15s ease;
-		height: auto
+		height: auto;
 	}
 	.clear-all:hover {
 		opacity: 1;

@@ -101,10 +101,7 @@
 <MediaDropOverlay onFiles={files => (media = stageFiles(media, files))} />
 
 <div style="display: flow-root" use:keepKeyboardOpen>
-	<div
-		class="message-input-bar"
-		class:pb-safe={!(isMobile && showMediaPanel)}
-	>
+	<div class="message-input-bar" class:pb-safe={!(isMobile && showMediaPanel)}>
 		<StagedAttachments bind:media />
 
 		<div class="m-2 row gap-2" style="align-items: center;">
