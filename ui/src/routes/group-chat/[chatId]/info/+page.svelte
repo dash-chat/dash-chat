@@ -311,7 +311,7 @@
 												actionType="danger"
 												icon={mdiExport}
 												onClick={() => (dialogType = 'leave')}
-												data-testid="group-info-leave"
+												data-testid="group-info-leave-self"
 											/>
 										{:else}
 											<ListAction

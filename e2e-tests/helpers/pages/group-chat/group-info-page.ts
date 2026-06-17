@@ -6,6 +6,7 @@ export class GroupInfoPage extends TestPage {
 	addMembersLink = this.agent.$(tid('group-info-add-members'));
 	editLink = this.agent.$(tid('group-info-edit-link'));
 	leaveButton = this.agent.$(tid('group-info-leave'));
+	leaveSelfButton = this.agent.$(tid('group-info-leave-self'));
 	leaveConfirmButton = this.agent.$(tid('group-info-leave-confirm'));
 	removeMemberButton = this.agent.$(tid('group-info-remove-member'));
 	removeMemberConfirmButton = this.agent.$(
