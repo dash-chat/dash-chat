@@ -167,7 +167,7 @@
 		if (!message || message.trim() === '') return;
 
 		try {
-			await store.sendMessage(message);
+			pendingScrollHash = await store.sendMessage(message);
 			messageText = '';
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
@@ -176,17 +176,20 @@
 		}
 	}
 
-	// When an own message bubble is created after the initial render (i.e. one we
-	// just sent), scroll it into view. Firing on the element's mount means the
-	// bubble already exists, so there's no race with it rendering. Messages
-	// present on first render are skipped — the chat already opens at the bottom.
-	let hydrated = $state(false);
-	const scrollToBottomOnMount: Action<HTMLElement> = () => {
-		if (hydrated) reverseScrollPage?.scrollToBottom();
+	// Scroll the message we just sent into view once its bubble mounts. Firing on
+	// the element's mount means the bubble already exists, so there's no race with
+	// it rendering. Scoping to the hash returned by sendMessage ensures we only
+	// scroll for our own just-sent message, not for messages already on screen or
+	// arriving from elsewhere.
+	let pendingScrollHash: Hash | null = $state(null);
+	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
+		if (hash === pendingScrollHash) {
+			pendingScrollHash = null;
+			reverseScrollPage?.scrollToBottom();
+		}
 	};
 
 	onMount(() => {
-		hydrated = true;
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
@@ -594,7 +597,7 @@
 																onLongPress: e =>
 																	showQuickReactionBar(e, message),
 															}}
-															use:scrollToBottomOnMount
+															use:scrollToBottomOnMount={hash}
 														>
 															{#await $chatId then chatId}
 																<MessageFromMe
