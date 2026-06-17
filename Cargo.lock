@@ -4076,7 +4076,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -4182,7 +4182,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "system-configuration 0.7.0",
  "tokio",
  "tower-service",
@@ -6021,7 +6021,7 @@ dependencies = [
  "pin-project-lite",
  "rustc-hash 2.1.2",
  "rustls 0.23.40",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -6066,7 +6066,7 @@ checksum = "b3c1520eacd33fd6b009e2e70116b05508ade51db5e0d315ff8bf6b702148c2b"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -6963,7 +6963,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#880a732ed6a44d3373d56fee92c7432b2a482105"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#54bc36fee81770970673ff45875ff392918cd587"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -6984,7 +6984,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#880a732ed6a44d3373d56fee92c7432b2a482105"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#54bc36fee81770970673ff45875ff392918cd587"
 dependencies = [
  "p2panda-core",
  "p2panda-store",
@@ -7001,7 +7001,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#880a732ed6a44d3373d56fee92c7432b2a482105"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#54bc36fee81770970673ff45875ff392918cd587"
 dependencies = [
  "blake3",
  "ciborium",
@@ -7016,7 +7016,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#880a732ed6a44d3373d56fee92c7432b2a482105"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#54bc36fee81770970673ff45875ff392918cd587"
 dependencies = [
  "blake3",
  "futures-util",
@@ -7031,7 +7031,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#880a732ed6a44d3373d56fee92c7432b2a482105"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#54bc36fee81770970673ff45875ff392918cd587"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -7054,7 +7054,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#880a732ed6a44d3373d56fee92c7432b2a482105"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#54bc36fee81770970673ff45875ff392918cd587"
 dependencies = [
  "ciborium",
  "futures-channel",
@@ -7082,7 +7082,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#880a732ed6a44d3373d56fee92c7432b2a482105"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#54bc36fee81770970673ff45875ff392918cd587"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -7096,7 +7096,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#880a732ed6a44d3373d56fee92c7432b2a482105"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#54bc36fee81770970673ff45875ff392918cd587"
 dependencies = [
  "p2panda-core",
  "rand 0.10.1",
@@ -7110,7 +7110,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#880a732ed6a44d3373d56fee92c7432b2a482105"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#54bc36fee81770970673ff45875ff392918cd587"
 dependencies = [
  "futures-core",
  "p2panda-core",
@@ -7123,7 +7123,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#880a732ed6a44d3373d56fee92c7432b2a482105"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#54bc36fee81770970673ff45875ff392918cd587"
 dependencies = [
  "futures",
  "futures-util",
@@ -9382,16 +9382,6 @@ checksum = "9f7916fc008ca5542385b89a3d3ce689953c143e9304a9bf8beec1de48994c0d"
 dependencies = [
  "libc",
  "winapi",
-]
-
-[[package]]
-name = "socket2"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
-dependencies = [
- "libc",
- "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11975,7 +11965,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
