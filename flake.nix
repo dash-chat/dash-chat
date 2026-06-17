@@ -8,11 +8,6 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     crane.url = "github:ipetkov/crane";
 
-    garnix-lib = {
-      url = "github:garnix-io/garnix-lib";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     tauri-driver.url = "github:dash-chat/tauri-driver";
 
     tauri-plugin-holochain.url = "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
@@ -20,12 +15,12 @@
 
   nixConfig = {
     extra-substituters = [
-      "https://cache.garnix.io"
+      "https://dash-chat.cachix.org"
       "https://holochain-ci.cachix.org"
       "https://darksoil-studio.cachix.org"
     ];
     extra-trusted-public-keys = [
-      "cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g="
+      "dash-chat.cachix.org-1:oAsoaEZ7e4UJlveRXF45MJ1P+Tf3OKFN5QkB8BuPaiM="
       "holochain-ci.cachix.org-1:5IUSkZc0aoRS53rfkvH9Kid40NpyjwCMCzwRTXy+QN8="
       "darksoil-studio.cachix.org-1:UEi+aujy44s41XL/pscLw37KEVpTEIn8N/kn7jO8rkc="
     ];

@@ -92,6 +92,8 @@ pub fn run() {
             commands::chats::create_group,
             commands::chats::set_group_info,
             commands::chats::add_group_member,
+            commands::chats::remove_group_member,
+            commands::chats::leave_group,
             commands::chats::get_group_chats,
             commands::chats::get_group_members,
             commands::settings::get_settings,

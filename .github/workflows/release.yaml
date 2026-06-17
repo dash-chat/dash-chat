@@ -170,6 +170,11 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           nix_path: nixpkgs=channel:nixos-25.11
 
+      - uses: cachix/cachix-action@v15
+        with:
+          name: dash-chat
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
       - name: Log in to the github container registry
         uses: docker/login-action@v3
         with:
@@ -224,6 +229,11 @@ jobs:
       - uses: cachix/cachix-action@v15
         with:
           name: darksoil-studio
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: dash-chat
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Load nix dev shell environment
         uses: nicknovitski/nix-develop@v1

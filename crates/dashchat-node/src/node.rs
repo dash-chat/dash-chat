@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 
 use crate::compat::Capabilities;
-use crate::error::{AddContactError, Error, ShutdownError};
+use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
 use crate::filesystem::Filesystem;
 use crate::node::actor::{Actor, Command};
 use aliased::Aliasing;
@@ -518,8 +518,15 @@ impl Node {
         &self,
         chat_id: ChatId,
         member: VerifyingKey,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), RemoveGroupMemberError> {
         // TODO: this should use a transaction, but the race is not a big deal here
+        let member_id = DeviceId::from(member);
+        if !self.has_other_admins(chat_id, member_id).await?
+            && !self.is_only_member(chat_id, member_id).await?
+        {
+            return Err(RemoveGroupMemberError::LastAdmin);
+        }
+
         let deps = self.group_store.heads(*chat_id).await?;
         self.publish(
             chat_id,
@@ -548,6 +555,28 @@ impl Node {
             .map(|(m, a)| (DeviceId::from(m), a))
             .collect();
         Ok(members)
+    }
+
+    async fn is_only_member(&self, chat_id: ChatId, member: DeviceId) -> anyhow::Result<bool> {
+        let found_other_member = self
+            .get_group_members(chat_id)
+            .await?
+            .iter()
+            .any(|(m, _)| *m != member);
+
+        Ok(!found_other_member)
+    }
+
+    async fn has_other_admins(&self, chat_id: ChatId, exclude: DeviceId) -> anyhow::Result<bool> {
+        let result = self
+            .get_group_members(chat_id)
+            .await?
+            .iter()
+            .any(|(member, access)| {
+                *access == p2panda_auth::Access::manage() && *member != exclude
+            });
+
+        Ok(result)
     }
 
     /// "Joining" a chat means subscribing to messages for that chat.

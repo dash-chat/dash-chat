@@ -42,6 +42,7 @@
 	const messageSets = useReactivePromise(store.messageSets);
 	const info = useReactivePromise(store.info);
 	const allMembers = useReactivePromise(store.allMembers);
+	const me = useReactivePromise(store.me);
 	const readMessageHashes = useReactivePromise(store.readMessageHashes);
 	const unreadCount = useReactivePromise(store.unreadCount);
 
@@ -296,6 +297,17 @@
 		class:bg-md-light-surface={theme === 'material'}
 		class:dark:bg-md-dark-surface={theme === 'material'}
 	>
-		<MessageComposer {store} onSent={onMessageSent} />
+		{#await $me then me}
+			{#if me.member}
+				<MessageComposer {store} onSent={onMessageSent} />
+			{:else}
+				<div
+					class="pb-safe quiet px-6 py-4 text-center text-sm"
+					data-testid="group-chat-not-member"
+				>
+					{m.youAreNoLongerAMember()}
+				</div>
+			{/if}
+		{/await}
 	</div>
 </div>

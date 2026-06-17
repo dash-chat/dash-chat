@@ -53,6 +53,10 @@ export class ChatsStore {
 		return this.groupChats(chatId);
 	}
 
+	async leaveGroup(chatId: ChatId): Promise<void> {
+		await this.groupChats(chatId).client.leaveGroup(chatId);
+	}
+
 	groupChats = memo(
 		(chatId: ChatId) =>
 			new GroupChatStore(
