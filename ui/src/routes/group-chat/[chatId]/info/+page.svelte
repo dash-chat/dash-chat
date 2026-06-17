@@ -305,7 +305,7 @@
 											/>
 										{/if} -->
 
-										{#if sheetOpenFor == me.agentId}
+										{#if sheetOpenFor === me.agentId}
 											<ListAction
 												title={m.leaveGroup()}
 												actionType="danger"

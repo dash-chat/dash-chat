@@ -24,6 +24,7 @@
 	strongIos
 	inset={isWideScreen.value || theme === 'ios'}
 	data-testid={dataTestId}
+	class={className}
 >
 	{@render children()}
 </List>
