@@ -1,8 +1,8 @@
 procs:
   agent1:
-    shell: pnpm tauri dev
+    shell: just dev tauri
   agent2:
-    shell: pnpm tauri dev
+    shell: just dev tauri
     autostart: false
   mailbox-server:
     shell: cargo run -p mailbox-server -- --db-path "$PWD/.dbs/dev/mailbox-server/mailbox.db" --addr 0.0.0.0:3000 --push-notifications-url http://localhost:3001

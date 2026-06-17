@@ -13,6 +13,7 @@
 		"concurrently": "^9.2.1",
 		"eslint": "^9.36.0",
 		"eslint-config-prettier": "^9.1.2",
+		"get-port-cli": "^3.0.0",
 		"mprocs": "^0.8.3",
 		"prettier": "^3.6.2",
 		"prettier-plugin-svelte": "^3.5.1",
