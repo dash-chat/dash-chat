@@ -31,7 +31,7 @@ pub mod test_utils;
 // envelope overhead), and one store request can batch several operations.
 const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
-pub use blob_sync::BlobSync;
+pub use blob_sync::{BlobSync, BlobFetchPool};
 pub use blip::Blip;
 pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
@@ -98,6 +98,7 @@ pub async fn spawn_server(
     let blobs_root = db_path_blobs_dir(&db_path);
     let blob_sync = BlobSync::new(secret_key, blobs_root).await?;
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
+    let blob_fetch_handle = blob_sync.spawn_fetch_loop(dashchat_utils::FetchConfig::default());
 
     let push_client = match push_notifications_url {
         Some(url) => {
@@ -126,6 +127,7 @@ pub async fn spawn_server(
     while tasks.join_next().await.is_some() {}
 
     cleanup_task.abort();
+    blob_fetch_handle.abort();
     tracing::info!("Mailbox server gracefully shut down");
 
     Ok(())
