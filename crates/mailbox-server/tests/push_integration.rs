@@ -30,7 +30,7 @@ async fn start_push_server(mock_fcm: MockFcm) -> String {
 
 /// Creates a mailbox TestServer connected to the given push notifications URL.
 /// Returns the push_tasks handle so tests can await completion instead of sleeping.
-fn start_mailbox_server(
+async fn start_mailbox_server(
     push_url: String,
 ) -> (
     TestServer,
@@ -40,10 +40,12 @@ fn start_mailbox_server(
     let (db, temp_file) = create_test_db();
     let push_client = PushNotificationsClient::new(push_url).unwrap();
     let push_tasks = Arc::new(tokio::sync::Mutex::new(tokio::task::JoinSet::new()));
+    let blob_sync = mailbox_server::test_utils::test_blob_sync().await;
     let app = mailbox_server::create_app(
         Arc::new(db),
         Some(Arc::new(push_client)),
         push_tasks.clone(),
+        blob_sync,
     );
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),
@@ -120,7 +122,7 @@ async fn mailbox_store_triggers_push_notification() {
     assert_eq!(resp.status(), 204);
 
     // Mailbox server connected to the push server
-    let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url);
+    let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url).await;
 
     let blip_data = base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,
@@ -154,7 +156,7 @@ async fn mailbox_store_no_subscribers_no_push() {
     // No send expected
 
     let push_url = start_push_server(mock_fcm).await;
-    let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url);
+    let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url).await;
 
     let blip_data =
         base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"some-data");
@@ -220,7 +222,7 @@ async fn mailbox_store_duplicate_blip_no_second_push() {
         .await
         .unwrap();
 
-    let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url);
+    let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url).await;
 
     let blip_data = base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,

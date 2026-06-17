@@ -3,7 +3,7 @@ use serde_json::json;
 
 #[tokio::test]
 async fn test_watermark_contiguous_store() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     // Store contiguous sequences 0, 1, 2
     server
@@ -48,7 +48,7 @@ async fn test_watermark_contiguous_store() {
 
 #[tokio::test]
 async fn test_watermark_with_gap_does_not_advance() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     // Store sequences with a gap: 0, 1, 3, 4 (missing 2)
     server
@@ -94,7 +94,7 @@ async fn test_watermark_with_gap_does_not_advance() {
 
 #[tokio::test]
 async fn test_watermark_gap_fill_extends_watermark() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     // First store sequences with gap: 0, 1, 3, 4
     server
@@ -155,7 +155,7 @@ async fn test_watermark_gap_fill_extends_watermark() {
 
 #[tokio::test]
 async fn test_watermark_no_seq_zero() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     // Store sequences without 0: 1, 2, 3
     server
@@ -200,7 +200,7 @@ async fn test_watermark_no_seq_zero() {
 
 #[tokio::test]
 async fn test_watermark_independent_per_log() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     // Store different sequences for different logs
     // log-a: 0, 1, 2 (contiguous, watermark = 2)

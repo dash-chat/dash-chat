@@ -32,7 +32,7 @@ fn create_store_request(
 #[tokio::test]
 #[serial]
 async fn stress_test_concurrent_writes() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
     let server = Arc::new(server);
 
     let num_concurrent_writes = 600;
@@ -97,7 +97,7 @@ async fn stress_test_concurrent_writes() {
 #[tokio::test]
 #[serial]
 async fn stress_test_concurrent_reads() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
     let server = Arc::new(server);
 
     // Pre-populate with messages
@@ -168,7 +168,7 @@ async fn stress_test_concurrent_reads() {
 
 #[tokio::test]
 async fn stress_test_mixed_read_write_operations() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
     let server = Arc::new(server);
 
     let num_operations = 200;
@@ -226,7 +226,7 @@ async fn stress_test_mixed_read_write_operations() {
 
 #[tokio::test]
 async fn stress_test_large_messages() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
     let server = Arc::new(server);
 
     let num_large_messages: usize = 50;
@@ -291,7 +291,7 @@ async fn stress_test_large_messages() {
 
 #[tokio::test]
 async fn stress_test_many_topics() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     let num_topics = 1000;
     let messages_per_topic = 5;
@@ -362,7 +362,7 @@ async fn stress_test_many_topics() {
 
 #[tokio::test]
 async fn stress_test_rapid_sequential_writes() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     let num_messages = 500;
     let topic_id = "rapid-sequential-topic";

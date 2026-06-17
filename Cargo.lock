@@ -5389,12 +5389,15 @@ dependencies = [
 name = "mailbox-server"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
  "axum-test",
  "base64 0.22.1",
  "clap",
  "dashchat-utils",
  "futures",
+ "iroh",
+ "iroh-blobs",
  "mailbox-server",
  "push-notifications-client",
  "push-notifications-server",

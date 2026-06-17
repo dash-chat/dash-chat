@@ -3,19 +3,21 @@ use serde_json::json;
 
 #[tokio::test]
 async fn test_health_check() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     let response = server.get("/health").await;
 
     response.assert_status_ok();
-    response.assert_json(&json!({
-        "status": "ok"
-    }));
+    let body: serde_json::Value = response.json();
+    assert_eq!(body["status"], "ok");
+    assert!(body["endpoint_id"].is_string(), "endpoint_id should be a string");
+    let id = body["endpoint_id"].as_str().unwrap();
+    assert_eq!(id.len(), 43, "base64url no-pad endpoint_id should be 43 chars");
 }
 
 #[tokio::test]
 async fn test_store_and_retrieve_single_message() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     let message_data = b"Hello, World!";
     let message_b64 =
@@ -63,7 +65,7 @@ async fn test_store_and_retrieve_single_message() {
 
 #[tokio::test]
 async fn test_store_and_retrieve_multiple_messages_same_topic() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     server
         .post("/blips/store")
@@ -106,7 +108,7 @@ async fn test_store_and_retrieve_multiple_messages_same_topic() {
 
 #[tokio::test]
 async fn test_retrieve_messages_from_multiple_topics() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     let topic1_msg = b"Topic 1 message";
     let topic2_msg = b"Topic 2 message";
@@ -165,7 +167,7 @@ async fn test_retrieve_messages_from_multiple_topics() {
 
 #[tokio::test]
 async fn test_retrieve_empty_topic() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     let get_response = server
         .post("/blips/get")
@@ -189,7 +191,7 @@ async fn test_retrieve_empty_topic() {
 
 #[tokio::test]
 async fn test_topic_isolation() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     server
         .post("/blips/store")
@@ -230,7 +232,7 @@ async fn test_topic_isolation() {
 
 #[tokio::test]
 async fn test_sequence_number_filtering() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     // Store messages with sequence numbers 0, 1, 2, 3, 4
     server
@@ -289,7 +291,7 @@ async fn test_sequence_number_filtering() {
 
 #[tokio::test]
 async fn test_get_returns_all_authors_for_topic() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     // Store messages in multiple authors for the same topic
     server
@@ -370,7 +372,7 @@ async fn test_get_returns_all_authors_for_topic() {
 
 #[tokio::test]
 async fn test_missing_blips_server_behind() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     // Store only messages 0-2 on server
     server
@@ -422,7 +424,7 @@ async fn test_missing_blips_server_behind() {
 
 #[tokio::test]
 async fn test_missing_blips_server_has_nothing() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     // Don't store any blips
 
@@ -455,7 +457,7 @@ async fn test_missing_blips_server_has_nothing() {
 
 #[tokio::test]
 async fn test_missing_blips_multiple_authors() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     // Store blips for author-a (0-1) but nothing for author-b
     server
@@ -505,7 +507,7 @@ async fn test_missing_blips_multiple_authors() {
 
 #[tokio::test]
 async fn test_no_missing_when_server_is_ahead() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     // Store messages 0-5
     server

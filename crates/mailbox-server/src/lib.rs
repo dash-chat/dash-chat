@@ -1,8 +1,9 @@
 use axum::{
-    extract::DefaultBodyLimit,
+    extract::{DefaultBodyLimit, State},
     routing::{get, post},
     Json, Router,
 };
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use push_notifications_client::client::PushNotificationsClient;
 use redb::Database;
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,7 @@ use std::{future::Future, path::PathBuf};
 use tokio::task::JoinSet;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
+mod blob_sync;
 mod blip;
 mod blips_table;
 mod server_key;
@@ -29,6 +31,7 @@ pub mod test_utils;
 // envelope overhead), and one store request can batch several operations.
 const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
+pub use blob_sync::BlobSync;
 pub use blip::Blip;
 pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
@@ -42,16 +45,40 @@ pub type TopicId = String;
 pub type Author = String;
 pub type SequenceNumber = u64;
 
+/// Encode an iroh EndpointId as the canonical MailboxId string (base64url, no pad).
+pub fn encode_mailbox_id(id: iroh::EndpointId) -> String {
+    URL_SAFE_NO_PAD.encode(id.as_bytes())
+}
+
+/// Parse a MailboxId string back into an iroh EndpointId.
+pub fn decode_mailbox_id(s: &str) -> anyhow::Result<iroh::EndpointId> {
+    let bytes = URL_SAFE_NO_PAD.decode(s)?;
+    let arr: [u8; 32] = bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("MailboxId is not 32 bytes"))?;
+    Ok(iroh::EndpointId::from_bytes(&arr)?)
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<Database>,
     pub push_client: Option<Arc<PushNotificationsClient>>,
     pub push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
+    pub blob_sync: BlobSync,
 }
 
 #[derive(Serialize, Deserialize)]
 struct HealthResponse {
     status: String,
+    endpoint_id: String,
+}
+
+fn db_path_blobs_dir(db_path: &std::path::Path) -> std::path::PathBuf {
+    db_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("mailbox_blobs")
 }
 
 pub async fn spawn_server(
@@ -60,12 +87,17 @@ pub async fn spawn_server(
     push_notifications_url: Option<String>,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let db = init_db(db_path)?;
+    let db = init_db(db_path.clone())?;
     let db_arc = Arc::new(db);
 
     // Spawn background cleanup task
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
+
+    let secret_key = load_or_create_secret_key(&db_arc).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let blobs_root = db_path_blobs_dir(&db_path);
+    let blob_sync = BlobSync::new(secret_key, blobs_root).await?;
+    tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
 
     let push_client = match push_notifications_url {
         Some(url) => {
@@ -76,7 +108,7 @@ pub async fn spawn_server(
     };
 
     let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
-    let app = create_app(db_arc, push_client, Arc::clone(&push_tasks));
+    let app = create_app(db_arc, push_client, Arc::clone(&push_tasks), blob_sync);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let addr = listener.local_addr()?;
@@ -99,9 +131,10 @@ pub async fn spawn_server(
     Ok(())
 }
 
-async fn health_check() -> Json<HealthResponse> {
+async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
+        endpoint_id: encode_mailbox_id(state.blob_sync.endpoint_id()),
     })
 }
 
@@ -134,11 +167,13 @@ pub fn create_app(
     db: Arc<Database>,
     push_client: Option<Arc<PushNotificationsClient>>,
     push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
+    blob_sync: BlobSync,
 ) -> Router {
     let state = AppState {
         db,
         push_client,
         push_tasks,
+        blob_sync,
     };
 
     Router::new()
