@@ -24,13 +24,38 @@ pub(crate) async fn build_node(
     let node = Node::new(data_path, config, notification_tx, topic_subscribed_tx).await?;
 
     let mailbox_url = crate::mailbox::default_mailbox_url();
+    let mailbox_id = fetch_mailbox_id(&mailbox_url)
+        .await
+        .unwrap_or_else(|err| {
+            log::warn!("Failed to fetch mailbox id from {mailbox_url}/health: {err:?}. Falling back to hardcoded id.");
+            crate::mailbox::PRODUCTION_MAILBOX_ID.to_string()
+        });
     let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
-        crate::mailbox::PRODUCTION_MAILBOX_ID.to_string(),
+        mailbox_id,
         mailbox_url,
+        node.endpoint_id(),
     );
     node.mailboxes.register(mailbox_client).await;
 
     Ok(node)
+}
+
+/// Fetch the canonical MailboxId from the mailbox server's /health endpoint.
+/// Returns the `endpoint_id` field which is the base64url-no-pad EndpointId.
+async fn fetch_mailbox_id(base_url: &str) -> anyhow::Result<mailbox_client::MailboxId> {
+    #[derive(serde::Deserialize)]
+    struct HealthResponse {
+        endpoint_id: String,
+    }
+    let url = format!("{}/health", base_url.trim_end_matches('/'));
+    let resp = mailbox_client::HTTP_CLIENT
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<HealthResponse>()
+        .await?;
+    Ok(resp.endpoint_id)
 }
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {

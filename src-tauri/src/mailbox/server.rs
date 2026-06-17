@@ -310,12 +310,14 @@ fn reannounce_mdns(
 }
 
 fn mdns_service_info(port: u16, device_id: &DeviceId) -> anyhow::Result<ServiceInfo> {
-    // Derive a stable instance name from the device id so peers can keep using
-    // the same MailboxId across restarts. The instance name lives in a single
-    // DNS label (63-byte limit); 32 hex chars (16 bytes of public key) is plenty
-    // for collision resistance on a local network.
-    let mut instance_name = device_id.to_string();
-    instance_name.truncate(32);
+    // Use the base64url-no-pad encoding of the device's 32-byte public key
+    // (43 chars, fits a single DNS label) as the instance name so the mDNS
+    // instance name IS the canonical MailboxId. This matches
+    // mailbox_server::encode_mailbox_id which does the same encoding over the
+    // same bytes (DeviceId bytes == iroh EndpointId bytes).
+    use base64::Engine as _;
+    let instance_name =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(device_id.as_bytes());
 
     // Per-device hostname so the A/AAAA owner-name doesn't collide with every
     // other Dash Chat instance on the LAN. A shared hostname can cause one

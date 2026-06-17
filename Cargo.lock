@@ -1956,6 +1956,7 @@ dependencies = [
  "anyhow",
  "app_dirs2",
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "dashchat-node",
  "dashchat-utils",

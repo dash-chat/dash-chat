@@ -156,6 +156,7 @@ async fn handle_browse_events(
                         .register(mailbox_client::toy::ToyMailboxClient::new(
                             mailbox_id.clone(),
                             url.clone(),
+                            node.endpoint_id(),
                         ))
                         .await;
                     log::info!(

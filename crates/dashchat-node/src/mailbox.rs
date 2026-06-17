@@ -3,7 +3,7 @@ use p2panda::operation::{Header, Operation};
 use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
-use crate::{DeviceId, TopicId};
+use crate::{AsBody, DeviceId, TopicId};
 use mailbox_client::MailboxItem;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -35,6 +35,22 @@ impl MailboxItem for MailboxOperation {
     fn topic(&self) -> TopicId {
         self.topic
     }
+
+    fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
+        let Some(body) = &self.body else {
+            return Vec::new();
+        };
+        let Ok(payload) = crate::Payload::try_from_body(body) else {
+            return Vec::new();
+        };
+        match payload {
+            crate::Payload::Chat(crate::ChatPayload::Message(m)) => m
+                .media_meta()
+                .map(|items| items.iter().map(|item| item.hash).collect())
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        }
+    }
 }
 
 impl From<MailboxOperation> for Operation {
@@ -52,7 +68,64 @@ impl From<MailboxOperation> for Operation {
 mod tests {
 
     use crate::{testing::*, *};
-    use mailbox_client::{MailboxClient, mem::MemMailbox};
+    use mailbox_client::{MailboxClient, MailboxItem as _, mem::MemMailbox};
+
+    fn make_header(topic: TopicId) -> p2panda::operation::Header {
+        use p2panda::operation::{Extensions, LogId};
+        use p2panda_core::PruneFlag;
+        let signing_key = p2panda::SigningKey::from_bytes(&[0u8; 32]);
+        p2panda::operation::Header {
+            version: 1,
+            verifying_key: signing_key.verifying_key(),
+            signature: None,
+            payload_size: 0,
+            payload_hash: None,
+            timestamp: p2panda_core::Timestamp::new(0),
+            seq_num: 0,
+            backlink: None,
+            extensions: Extensions {
+                log_id: LogId::from_topic(topic),
+                prune_flag: PruneFlag::default(),
+                groups_args: None,
+                version: 1,
+            },
+        }
+    }
+
+    #[test]
+    fn mailbox_operation_exposes_media_blob_hashes() {
+        let topic = TopicId::random();
+        let media_hash = iroh_blobs::Hash::new([42u8; 32]);
+
+        let content = ChatMessageContent::new(
+            "hello",
+            Some(vec![MediaMetaItem {
+                name: "photo.jpg".into(),
+                mime_type: "image/jpeg".into(),
+                size: 1024,
+                kind: MediaMetaKind::Photo,
+                hash: media_hash,
+            }]),
+        );
+        let payload = Payload::Chat(ChatPayload::Message(content));
+        let body = payload.try_into_body().unwrap();
+
+        let op = super::MailboxOperation {
+            topic,
+            header: make_header(topic),
+            body: Some(body),
+        };
+
+        let hashes = op.blob_hashes();
+        assert_eq!(hashes, vec![media_hash]);
+    }
+
+    #[test]
+    fn mailbox_operation_no_body_returns_empty_hashes() {
+        let topic = TopicId::random();
+        let op = super::MailboxOperation { topic, header: make_header(topic), body: None };
+        assert_eq!(op.blob_hashes(), Vec::<iroh_blobs::Hash>::new());
+    }
 
     /// Very simple test which circumvents the contact adding system:
     /// - alice sends a message to a direct chat topic

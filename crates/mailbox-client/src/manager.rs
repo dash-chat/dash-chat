@@ -278,6 +278,18 @@ where
         self.topics.lock().await.keys().cloned().collect()
     }
 
+    /// Returns the iroh EndpointIds of mailboxes currently tracking `topic`.
+    pub async fn get_sources(&self, topic: &Item::Topic) -> anyhow::Result<Vec<iroh::EndpointId>> {
+        if !self.topics.lock().await.contains_key(topic) {
+            return Ok(Vec::new());
+        }
+        let ids: Vec<MailboxId> = self.mailboxes.lock().await.keys().cloned().collect();
+        Ok(ids
+            .into_iter()
+            .filter_map(|id| mailbox_server::decode_mailbox_id(&id).ok())
+            .collect())
+    }
+
     pub fn trigger_sync(&self) {
         _ = self.trigger.try_send(None);
     }

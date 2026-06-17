@@ -39,9 +39,12 @@ async fn test_mailbox_late_join_toy() {
     let url = server.server_address().unwrap().to_string();
     let url = url.trim_end_matches('/').to_string();
 
-    // Create clients pointing to the same server
-    let alice_mailbox = ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url);
-    let bobbi_mailbox = ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url);
+    // Create clients pointing to the same server. The sender_pubkey is a
+    // per-client identity used for blob upload attribution; a fresh random
+    // key per client is sufficient for tests.
+    let dummy_key = || iroh::SecretKey::generate().public();
+    let alice_mailbox = ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
+    let bobbi_mailbox = ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
 
     mailbox_late_join(alice_mailbox, bobbi_mailbox).await;
 }
@@ -140,16 +143,19 @@ async fn test_mailbox_restart_relay() {
         .unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
+    let dummy_key = || iroh::SecretKey::generate().public();
     alice
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
             "mailbox-1".into(),
             &url,
+            dummy_key(),
         ))
         .await;
     bobbi
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
             "mailbox-1".into(),
             &url,
+            dummy_key(),
         ))
         .await;
 
@@ -191,12 +197,14 @@ async fn test_mailbox_restart_relay() {
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
             "mailbox-1".into(),
             &url,
+            dummy_key(),
         ))
         .await;
     bobbi
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
             "mailbox-1".into(),
             &url,
+            dummy_key(),
         ))
         .await;
 

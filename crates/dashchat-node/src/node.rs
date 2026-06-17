@@ -224,8 +224,13 @@ impl Node {
 
         let source_lookup =
             crate::blob_sync::MixedSourceLookup::new(op_store.clone(), mailboxes.clone());
+        // LogId = blake3(topic.as_bytes()) is one-way; the op-store does not
+        // persist TopicId alongside each operation, so we cannot recover it
+        // here. Startup hydration skips entries whose topic is unknown. Blobs
+        // that were not yet downloaded at shutdown will be re-queued when the
+        // next matching operation arrives via the live path.
         let blob_fetch =
-            BlobFetchPool::from_ops(op_store.get_all_operations_not_fully_sorted()).await?;
+            BlobFetchPool::from_ops(op_store.get_all_operations_not_fully_sorted(), |_| None).await?;
         let blob_sync = BlobSync::new(
             endpoint,
             filesystem.blobs_store_path(),
@@ -333,6 +338,11 @@ impl Node {
 
     pub fn device_id(&self) -> DeviceId {
         self.node_keys.device_id()
+    }
+
+    pub fn endpoint_id(&self) -> iroh::EndpointId {
+        iroh::EndpointId::from_bytes(self.device_id().as_bytes())
+            .expect("device id is a valid endpoint id")
     }
 
     pub fn device_group_topic(&self) -> DeviceGroupId {

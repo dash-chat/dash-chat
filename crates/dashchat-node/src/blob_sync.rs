@@ -20,7 +20,7 @@ use dashchat_utils::FetchStack;
 
 pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 
-use crate::{AsBody, ChatPayload, Payload, mailbox::MailboxOperation, stores::OpStore};
+use crate::{AsBody, ChatPayload, Payload, TopicId, mailbox::MailboxOperation, stores::OpStore};
 
 #[derive(Clone)]
 pub struct BlobSync {
@@ -60,9 +60,9 @@ impl BlobSync {
         tokio::spawn(dashchat_utils::fetch_loop(
             pool,
             config,
-            move |(log_id, hash), attempt_timeout| {
+            move |(topic, hash), attempt_timeout| {
                 let this = this.clone();
-                async move { this.try_fetch(log_id, hash, attempt_timeout).await }
+                async move { this.try_fetch(topic, hash, attempt_timeout).await }
             },
         ))
     }
@@ -71,7 +71,7 @@ impl BlobSync {
     /// the local store afterwards (already cached or newly downloaded).
     async fn try_fetch(
         &self,
-        log_id: LogId,
+        topic: TopicId,
         hash: iroh_blobs::Hash,
         attempt_timeout: Duration,
     ) -> bool {
@@ -79,7 +79,7 @@ impl BlobSync {
             return true;
         }
 
-        let sources = match self.sources.sources(log_id).await {
+        let sources = match self.sources.sources(topic).await {
             Ok(sources) => sources,
             Err(err) => {
                 tracing::warn!(%hash, ?err, "blob source lookup failed");
@@ -114,13 +114,13 @@ impl BlobSync {
 
 #[derive(Clone, Default)]
 pub struct BlobFetchPool {
-    stack: Arc<Mutex<Vec<(LogId, iroh_blobs::Hash)>>>,
+    stack: Arc<Mutex<Vec<(TopicId, iroh_blobs::Hash)>>>,
     added: Arc<Notify>,
 }
 
 #[async_trait::async_trait]
 impl FetchStack for BlobFetchPool {
-    type Item = (LogId, iroh_blobs::Hash);
+    type Item = (TopicId, iroh_blobs::Hash);
     type Key = iroh_blobs::Hash;
 
     fn key(item: &Self::Item) -> Self::Key {
@@ -145,14 +145,20 @@ impl FetchStack for BlobFetchPool {
 }
 
 impl BlobFetchPool {
-    pub async fn add(&self, log_id: LogId, hash: iroh_blobs::Hash) {
-        self.stack.lock().await.push((log_id, hash));
+    pub async fn add(&self, topic: TopicId, hash: iroh_blobs::Hash) {
+        self.stack.lock().await.push((topic, hash));
         self.added.notify_one();
     }
 
-    // TODO: can we just have a p2panda stream of all past and future operations?
+    /// Build a fetch pool from a stream of stored operations.
+    ///
+    /// The `topic_for_log_id` closure maps each operation's log_id back to a
+    /// `TopicId`. `LogId = blake3(topic.as_bytes())` is one-way, so callers
+    /// must supply this mapping from their own store. Returns `None` to skip
+    /// an operation whose topic cannot be recovered.
     pub async fn from_ops(
         ops: impl Stream<Item = Result<Operation, anyhow::Error>> + '_,
+        topic_for_log_id: impl Fn(&LogId) -> Option<TopicId>,
     ) -> anyhow::Result<Self> {
         let store = Self::default();
         let mut s = store.stack.lock().await;
@@ -165,8 +171,11 @@ impl BlobFetchPool {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     if let Some(media) = m.media_meta() {
+                        let Some(topic) = topic_for_log_id(&op.header.extensions.log_id) else {
+                            continue;
+                        };
                         for item in media {
-                            s.push((op.header.extensions.log_id, item.hash));
+                            s.push((topic, item.hash));
                         }
                     }
                 }
@@ -185,15 +194,16 @@ pub struct MixedSourceLookup {
 }
 
 impl MixedSourceLookup {
-    pub async fn sources(&self, log_id: LogId) -> anyhow::Result<Vec<iroh::EndpointId>> {
-        let sources = self
+    pub async fn sources(&self, topic: TopicId) -> anyhow::Result<Vec<iroh::EndpointId>> {
+        let log_id = LogId::from_topic(topic);
+        let mut sources = self
             .op_store
             .get_authors(log_id)
             .await?
             .into_iter()
             .map(|author| iroh::EndpointId::from_bytes(author.as_bytes()))
             .collect::<Result<Vec<iroh::EndpointId>, _>>()?;
-        // sources.extend(self.mailboxes.get_sources(log_id).await?);
+        sources.extend(self.mailboxes.get_sources(&topic).await?);
         Ok(sources)
     }
 }
