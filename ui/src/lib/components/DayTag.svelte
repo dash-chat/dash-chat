@@ -31,13 +31,9 @@
 
 <style>
 	.day-tag {
-		background-color: var(--k-color-md-light-surface);
+		background-color: var(--color-page-surface);
 		padding: 4px 12px;
 		border-radius: 12px;
 		font-size: 0.85rem;
-	}
-
-	:global(.dark) .day-tag {
-		background-color: var(--k-color-md-dark-surface);
 	}
 </style>
