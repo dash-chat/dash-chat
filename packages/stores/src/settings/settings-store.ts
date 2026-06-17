@@ -4,6 +4,9 @@ import type { ISettingsClient, Settings } from './settings-client.js';
 
 export type ColorScheme = 'light' | 'dark' | 'system';
 
+/** Default QR color — mirrors the brand primary (`--color-brand-primary`). */
+export const DEFAULT_QR_COLOR = '#6e7bff';
+
 export class SettingsStore {
 	private systemDarkSignal = signal<boolean>(false);
 
@@ -43,7 +46,7 @@ export class SettingsStore {
 
 	qrColor = reactive(async () => {
 		const settings = await this.settings();
-		return settings.qr_color || '#007aff';
+		return settings.qr_color || DEFAULT_QR_COLOR;
 	});
 
 	localMailboxEnabled = reactive(async () => {

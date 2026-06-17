@@ -5,6 +5,7 @@
 		decodeContactCode,
 		encodeContactCode,
 		fullName,
+		DEFAULT_QR_COLOR,
 		type ContactsStore,
 		type SettingsStore,
 	} from 'dash-chat-stores';
@@ -100,7 +101,7 @@
 
 	const qrColor = useReactivePromise(settingsStore.qrColor);
 	let colorPickerOpen = $state(false);
-	let colorForPicker = $state('#007aff');
+	let colorForPicker = $state(DEFAULT_QR_COLOR);
 
 	async function getMyName(): Promise<string> {
 		const profile = await contactsStore.myProfile();
@@ -126,7 +127,7 @@
 	async function saveCode(code: string, color: string) {
 		try {
 			const name = await getMyName();
-			await saveQrCode(code, color ?? '#007aff', name);
+			await saveQrCode(code, color ?? DEFAULT_QR_COLOR, name);
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
