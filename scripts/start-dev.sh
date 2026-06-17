@@ -45,14 +45,14 @@ echo "MAILBOX_PID=$!"
 
 # Tauri agent 1 (beforeDevCommand runs pnpm dev: stores watcher + Vite)
 export UI_PORT
-DATA_DIR="$DEV_DBS_PATH/agent-1" MAILBOX_PORT="$MAILBOX_PORT" \
+DATA_DIR="$DEV_DBS_PATH/agent-1" MAILBOX_URL="http://localhost:$MAILBOX_PORT" \
   pnpm tauri dev --config "{\"build\":{\"devUrl\":\"http://localhost:$UI_PORT\"}}" \
   > "$LOGS_DIR/agent1.log" 2>&1 &
 PIDS+=($!)
 echo "AGENT1_PID=$!"
 
 # Tauri agent 2 (skip beforeDevCommand since UI dev server is already running)
-DATA_DIR="$DEV_DBS_PATH/agent-2" MAILBOX_PORT="$MAILBOX_PORT" \
+DATA_DIR="$DEV_DBS_PATH/agent-2" MAILBOX_URL="http://localhost:$MAILBOX_PORT" \
   pnpm tauri dev --config "{\"build\":{\"beforeDevCommand\":\"\",\"devUrl\":\"http://localhost:$UI_PORT\"}}" \
   > "$LOGS_DIR/agent2.log" 2>&1 &
 PIDS+=($!)
