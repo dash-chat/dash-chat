@@ -35,7 +35,7 @@ async fn test_mailbox_late_join_toy() {
     );
 
     // Start a test mailbox server
-    let (server, _temp_file) = mailbox_server::test_utils::create_test_server();
+    let (server, _temp_file) = mailbox_server::test_utils::create_test_server().await;
     let url = server.server_address().unwrap().to_string();
     let url = url.trim_end_matches('/').to_string();
 
@@ -122,7 +122,7 @@ async fn test_mailbox_restart_relay() {
     config.mailboxes_config.between_polls_delay = Duration::from_millis(100);
 
     // Start a test mailbox server
-    let (server, _temp_file) = mailbox_server::test_utils::create_test_server();
+    let (server, _temp_file) = mailbox_server::test_utils::create_test_server().await;
     let url = server.server_address().unwrap().to_string();
     let url = url.trim_end_matches('/').to_string();
 

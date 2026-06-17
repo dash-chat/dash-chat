@@ -8,6 +8,8 @@ use iroh_blobs::api::downloader::Downloader;
 pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
     pub endpoint: iroh::Endpoint,
+    // Used by the blob fetch loop added in a subsequent change.
+    #[allow(dead_code)]
     downloader: Downloader,
     _router: Router,
 }
