@@ -16,6 +16,7 @@ export class GroupChatPage extends TestPage {
 		'group-chat-unread-divider',
 	);
 	composer = new Composer(this.agent);
+	notMemberNotice = this.agent.$(tid('group-chat-not-member'));
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'group-chat-scroll');
 

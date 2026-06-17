@@ -64,8 +64,9 @@ describe('Removing group members', () => {
 		});
 		await expect(systemMessage).toHaveText(expectedText);
 
-		// Message input is disabled (no longer a member)
-		await expect(agent2.groupChatPage.messageInput).not.toBeEnabled();
+		// Composer is replaced by a notice (no longer a member)
+		await expect(agent2.groupChatPage.notMemberNotice).toBeExisting();
+		await expect(agent2.groupChatPage.composer.messageInput).not.toBeExisting();
 
 		agent2.groupChatPage.back.click();
 	});
