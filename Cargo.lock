@@ -2043,6 +2043,7 @@ dependencies = [
  "chrono",
  "dashchat-compat",
  "dashchat-node",
+ "dashchat-utils",
  "derive_more 1.0.0",
  "ed25519-dalek 2.2.0",
  "futures",
@@ -2078,6 +2079,7 @@ dependencies = [
 name = "dashchat-utils"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "log",
  "tokio",
 ]
@@ -5370,6 +5372,8 @@ dependencies = [
  "ciborium",
  "derive_more 1.0.0",
  "hex",
+ "iroh",
+ "iroh-blobs",
  "mailbox-server",
  "nanoid 0.5.0",
  "once_cell",
@@ -5390,6 +5394,7 @@ name = "mailbox-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "axum-test",
  "base64 0.22.1",

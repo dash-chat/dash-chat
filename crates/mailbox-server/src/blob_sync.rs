@@ -65,7 +65,7 @@ impl FetchStack for BlobFetchPool {
 pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
     pub endpoint: iroh::Endpoint,
-    pub fetch_pool: BlobFetchPool,
+    pub(crate) fetch_pool: BlobFetchPool,
     downloader: Downloader,
     _router: Router,
 }
@@ -99,6 +99,11 @@ impl BlobSync {
 
     pub fn fetch_pool(&self) -> &BlobFetchPool {
         &self.fetch_pool
+    }
+
+    #[cfg(test)]
+    pub fn fetch_pool_for_test(&self) -> BlobFetchPool {
+        self.fetch_pool.clone()
     }
 
     pub fn spawn_fetch_loop(&self, config: FetchConfig) -> JoinHandle<()> {

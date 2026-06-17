@@ -21,14 +21,16 @@ impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {
 pub struct ToyMailboxClient<Item: MailboxItem> {
     id: MailboxId,
     base_url: String,
+    sender_pubkey: iroh::EndpointId,
     phantom: std::marker::PhantomData<Item>,
 }
 
 impl<Item: MailboxItem> ToyMailboxClient<Item> {
-    pub fn new(id: MailboxId, base_url: impl Into<String>) -> Self {
+    pub fn new(id: MailboxId, base_url: impl Into<String>, sender_pubkey: iroh::EndpointId) -> Self {
         Self {
             id,
             base_url: base_url.into(),
+            sender_pubkey,
             phantom: std::marker::PhantomData,
         }
     }
@@ -49,6 +51,9 @@ where
             return Ok(());
         }
 
+        let blob_hashes: Vec<iroh_blobs::Hash> =
+            ops.iter().flat_map(|op| op.blob_hashes()).collect();
+
         // Group operations by topic -> author -> seq_num
         let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blip>>> = BTreeMap::new();
 
@@ -66,7 +71,12 @@ where
                 .insert(seq_num, blip);
         }
 
-        let request = StoreBlipsRequest { blips };
+        let request = StoreBlipsRequest {
+            blips,
+            blob_hashes,
+            sender_pubkey: Some(self.sender_pubkey),
+            signature: Vec::new(),
+        };
         let response = HTTP_CLIENT
             .post(format!("{}/blips/store", self.base_url))
             .json(&request)
