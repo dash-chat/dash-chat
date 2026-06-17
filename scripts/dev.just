@@ -3,7 +3,11 @@ set working-directory := '..'
 # start two dash chat instances connected to a local mailbox server
 [default]
 dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
     pnpm install
+    export UI_PORT=$(pnpm exec get-port)
+    echo "UI_PORT=$UI_PORT"
     pnpm exec mprocs
 
 # start a single tauri instance, pointing the app at UI_PORT if it is set
