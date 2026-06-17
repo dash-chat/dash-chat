@@ -145,6 +145,23 @@ pub async fn get_group_members(
 }
 
 #[tauri::command]
+pub async fn remove_group_member(
+    chat_id: ChatId,
+    agent_id: AgentId,
+    node: State<'_, Node>,
+) -> Result<(), String> {
+    let device_id = node
+        .local_store
+        .lookup_contact_by_agent_id(agent_id)
+        .await
+        .map_err(|e| format!("{e:?}"))?
+        .ok_or_else(|| format!("No device found for agent {:?}", agent_id))?;
+    node.remove_group_member(chat_id, *device_id)
+        .await
+        .map_err(|e| format!("{e:?}"))
+}
+
+#[tauri::command]
 pub async fn leave_group(
     chat_id: ChatId,
     node: State<'_, Node>,

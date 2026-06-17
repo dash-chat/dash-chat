@@ -1,8 +1,5 @@
 import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
-import {
-	createGroup,
-	exchangeContactsAndCreateGroup,
-} from '../../helpers/flows/exchange-contacts-and-create-group';
+import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
 import { tid } from '../../helpers/selectors';
 import { type Agent, setupAgent } from '../../setup/setup-agents';
 

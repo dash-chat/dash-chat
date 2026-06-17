@@ -498,3 +498,121 @@ async fn test_non_admin_removes_themself() {
     )
     .await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_admin_removes_non_admin() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    introduce_and_wait([&alice, &bobbi]).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    alice
+        .remove_group_member(chat_id, *bobbi.device_id())
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&bobbi, "bobbi")],
+        chat_id,
+        btreeset![(alice.device_id(), Access::manage())],
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_non_admin_cannot_remove_admin() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let alice = make_node(&mailbox, "alice").await;
+    let andi = make_node(&mailbox, "andi").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    introduce_and_wait([&alice, &andi, &bobbi]).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&andi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *andi.device_id() => p2panda_auth::Access::manage(),
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    andi.behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &andi, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let result = bobbi.remove_group_member(chat_id, *alice.device_id()).await;
+    assert!(
+        matches!(result, Ok(())),
+        "Expected remove call to return OK, because this should enque an operation that will be resolved later, but got error: {result:?}"
+    );
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&andi, "andi"), (&bobbi, "bobbi")],
+        chat_id,
+        btreeset![
+            (alice.device_id(), Access::manage()),
+            (andi.device_id(), Access::manage()),
+            (bobbi.device_id(), Access::write()),
+        ],
+    )
+    .await;
+}
