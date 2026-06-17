@@ -19,7 +19,9 @@ export class MockGroupChatClient implements IGroupChatClient {
 		_chatId: ChatId,
 		_member: AgentId,
 	): Promise<void> {}
-	async sendMessage(_chatId: ChatId, _content: MessageContent): Promise<void> {}
+	async sendMessage(_chatId: ChatId, _content: MessageContent): Promise<Hash> {
+		return '';
+	}
 	async markMessagesRead(
 		_chatId: ChatId,
 		_messageHashes: Hash[],

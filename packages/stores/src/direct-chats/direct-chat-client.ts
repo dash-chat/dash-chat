@@ -5,7 +5,7 @@ import { ChatId, ChatReaction, MessageContent } from '../types';
 
 export interface IDirectChatClient {
 	chatId(peer: AgentId): Promise<ChatId>;
-	sendMessage(chatId: ChatId, content: MessageContent): Promise<void>;
+	sendMessage(chatId: ChatId, content: MessageContent): Promise<Hash>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
 	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void>;
 }
@@ -17,7 +17,7 @@ export class DirectChatClient implements IDirectChatClient {
 		});
 	}
 
-	async sendMessage(chatId: ChatId, content: MessageContent): Promise<void> {
+	async sendMessage(chatId: ChatId, content: MessageContent): Promise<Hash> {
 		return invoke('send_message', {
 			chatId,
 			content,

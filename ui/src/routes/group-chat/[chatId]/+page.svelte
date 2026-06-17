@@ -2,7 +2,8 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { getContext } from 'svelte';
+	import { getContext, onMount } from 'svelte';
+	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
 	import type {
 		ChatsStore,
@@ -57,8 +58,19 @@
 	function onMessageSent() {
 		capturedUnreadHash = null;
 		unreadDividerCaptured = false;
-		setTimeout(() => reverseScrollPage?.scrollToBottom());
 	}
+
+	// When an own message bubble is created after the initial render (i.e. one we
+	// just sent), scroll it into view. Firing on the element's mount means the
+	// bubble already exists, so there's no race with it rendering. Messages
+	// present on first render are skipped — the chat already opens at the bottom.
+	let hydrated = $state(false);
+	onMount(() => {
+		hydrated = true;
+	});
+	const scrollToBottomOnMount: Action<HTMLElement> = () => {
+		if (hydrated) reverseScrollPage?.scrollToBottom();
+	};
 
 	const theme = $derived(useTheme());
 
@@ -226,6 +238,7 @@
 												<div
 													class="self-end max-w-[85%]"
 													data-message-hash={hash}
+													use:scrollToBottomOnMount
 												>
 													<MessageFromMe
 														{message}

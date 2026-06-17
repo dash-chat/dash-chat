@@ -1,8 +1,14 @@
 set working-directory := '..'
 
-# run the app in development mode
+# run the app in development mode, pointing the app at UI_PORT if it is set
 dev:
-    nix develop git+file:.#androidDev --command pnpm tauri android dev
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "${UI_PORT:-}" ]; then
+        nix develop git+file:.#androidDev --command pnpm tauri android dev --config "{\"build\":{\"devUrl\":\"http://localhost:$UI_PORT\"}}"
+    else
+        nix develop git+file:.#androidDev --command pnpm tauri android dev
+    fi
 
 # install the android app via adb
 install:

@@ -59,7 +59,7 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 	}
 
 	async create<T>(topicId: TopicId, body: T, timestamp?: number) {
-		this.createSync(topicId, body, timestamp);
+		return this.createSync(topicId, body, timestamp);
 	}
 
 	/** Synchronous version of create — used by seedDemoData to write all data before stores read. */
@@ -102,6 +102,8 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 			author: this._myPubKey,
 			operation,
 		});
+
+		return headerHash;
 	}
 
 	onNewOperation(
