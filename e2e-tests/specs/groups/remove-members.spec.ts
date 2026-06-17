@@ -46,5 +46,22 @@ describe('Removing group members', () => {
 		await agent1.groupInfoPage
 			.memberItem('Bob')
 			.waitForExist({ reverse: true });
+
+		// From bob's point of view, check that they have been removed and see the system message about it
+		await agent2.homePage.ready();
+		await agent2.homePage.chatListItem('Test Group').click();
+		await agent2.groupChatPage.ready();
+
+		const systemMessage = agent2.$(
+			'[data-testid="group-chat-system-message-group_member_removed"]',
+		);
+		await expect(systemMessage).toBeExisting();
+		const expectedText = await agent2.tr('someoneRemovedYouFromTheGroup', {
+			name: 'Alice Test',
+		});
+		await expect(systemMessage).toHaveText(expectedText);
+
+		// Message input is disabled (no longer a member)
+		await expect(agent2.groupChatPage.messageInput).not.toBeEnabled();
 	});
 });
