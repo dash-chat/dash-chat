@@ -173,7 +173,9 @@ impl BlobFetchPool {
             let Some(body) = op.body else {
                 continue;
             };
-            let payload = Payload::try_from_body(&body)?;
+            let Ok(payload) = Payload::try_from_body(&body) else {
+                continue;
+            };
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     if let Some(media) = m.media_meta() {
