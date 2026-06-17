@@ -63,19 +63,19 @@ describe('Compat verify — check data with current version', () => {
 
 	it('old messages are still visible after upgrade', async () => {
 		await agent1.homePage.openChat(state.bobName);
-		await agent1.directChatPage.waitForMessage(state.msgAlice);
-		await agent1.directChatPage.waitForMessage(state.msgBob);
+		await agent1.directChatPage.messages.waitForMessage(state.msgAlice);
+		await agent1.directChatPage.messages.waitForMessage(state.msgBob);
 
 		await agent2.homePage.openChat(state.aliceName);
-		await agent2.directChatPage.waitForMessage(state.msgAlice);
-		await agent2.directChatPage.waitForMessage(state.msgBob);
+		await agent2.directChatPage.messages.waitForMessage(state.msgAlice);
+		await agent2.directChatPage.messages.waitForMessage(state.msgBob);
 	});
 
 	it('can send new messages after upgrade', async () => {
 		await agent1.directChatPage.sendMessage(NEW_MSG_ALICE);
-		await agent2.directChatPage.waitForMessage(NEW_MSG_ALICE);
+		await agent2.directChatPage.messages.waitForMessage(NEW_MSG_ALICE);
 
 		await agent2.directChatPage.sendMessage(NEW_MSG_BOB);
-		await agent1.directChatPage.waitForMessage(NEW_MSG_BOB);
+		await agent1.directChatPage.messages.waitForMessage(NEW_MSG_BOB);
 	});
 });

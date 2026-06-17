@@ -7,8 +7,6 @@ use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
 use p2panda::operation::LogId;
-#[cfg(target_os = "android")]
-use tauri::Manager;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
@@ -23,81 +21,105 @@ static ANDROID_LOGS_ONCE: std::sync::Once = std::sync::Once::new();
 #[cfg(target_os = "ios")]
 static IOS_LOGGER_ONCE: std::sync::Once = std::sync::Once::new();
 
-/// Entry point called by Android's FirebaseMessagingService when a push notification arrives.
-///
-/// This runs outside the normal app lifecycle — no AppHandle or managed state is available.
-/// We create a temporary Node to access the local database, trigger a mailbox sync to fetch
-/// the operation referenced by the push, then format a user-facing notification.
+/// Entry point called by the FirebaseMessagingService when a push notification arrives.
+/// Fetches the operation referenced by the push and builds a user-facing notification, dedup'd
+/// against the main app's sync pipeline. Android may freeze the process once this returns.
 #[tauri_plugin_notification::receive_push_notification]
 pub fn receive_push_notification(
     notification: NotificationData,
     context: ReceivePushNotificationContext,
 ) -> Option<NotificationData> {
-    // When the main app is already alive its sync pipeline will handle this op via `show_sync_notification`.
-    // All we need to do is poke the live node so its mailbox sync picks up the op promptly.
-    //
-    // iOS doesn't hit this branch because the NSE runs in a separate process where `APP_HANDLE` is never set.
+    // iOS never sets `APP_HANDLE` because the NSE runs in a separate process.
     #[cfg(target_os = "android")]
-    if let Some(node) = crate::APP_HANDLE
-        .get()
-        .and_then(|h| h.try_state::<dashchat_node::Node>())
-    {
-        node.mailboxes
-            .wakeup(crate::mailbox::PRODUCTION_MAILBOX_ID.to_string());
-        log::info!("Push arrived while main app is alive; deferring to sync pipeline");
-        return None;
+    let main_app_alive = crate::APP_HANDLE.get().is_some();
+    #[cfg(not(target_os = "android"))]
+    let main_app_alive = false;
+
+    if main_app_alive {
+        log::info!("Push arrived while main app is alive; fetching via the live node");
+    } else {
+        crate::utils::install_crypto_provider();
+
+        #[cfg(target_os = "android")]
+        ANDROID_LOGS_ONCE.call_once(|| unsafe {
+            setup_android_logs();
+        });
+        #[cfg(target_os = "ios")]
+        IOS_LOGGER_ONCE.call_once(|| {
+            let _ = oslog::OsLogger::new("studio.darksoil.dashchat.PushNotificationsExtension")
+                .level_filter(log::LevelFilter::Debug)
+                .init();
+        });
+        crate::i18n::init_i18n();
     }
-
-    crate::utils::install_crypto_provider();
-
-    #[cfg(target_os = "android")]
-    ANDROID_LOGS_ONCE.call_once(|| unsafe {
-        setup_android_logs();
-    });
-    #[cfg(target_os = "ios")]
-    IOS_LOGGER_ONCE.call_once(|| {
-        let _ = oslog::OsLogger::new("studio.darksoil.dashchat.PushNotificationsExtension")
-            .level_filter(log::LevelFilter::Debug)
-            .init();
-    });
-    crate::i18n::init_i18n();
 
     log::info!("Received push notification: {notification:?}");
 
-    tauri::async_runtime::block_on(async move {
-        match handle_push_notification(notification, context.data_dir).await {
-            Ok(result) => {
-                if let Some(data) = &result {
-                    log::info!(
-                        "Successfully processed push notification, showing notification: {:?}.",
-                        data
-                    );
-                } else {
-                    log::info!(
-                        "Successfully processed push notification, no actual notification needs to be shown.",
-                    );
-                    // On iOS, alert notifications must be shown. If we return None here,
-                    // iOS will display a notification with title = topic_id, and body = author:seq_num
-                    // Show a generic notification instead
-                    // TODO: apply for the exception to Apple that allows apps to not need to show a notification
-                    // https://developer.apple.com/contact/request/notification-service
-                    #[cfg(target_os = "ios")]
-                    return Some(notifications::synced_generic_notification());
-                }
-                result
-            }
-            Err(err) => {
-                log::error!("Failed to handle push notification: {err:?}");
-                // On iOS, returning None here would let iOS fall back to the
-                // raw APNS payload (topic_id as title, author:seq as body).
-                // Show a generic fallback so the user sees something readable.
+    // The iOS Notification Service Extension's main thread has a ~1 MB stack —
+    // too small for the deeply-nested node-init future (iroh + sqlx + encryption
+    // polled inline by `block_on`), which overruns the stack guard page and
+    // crashes with EXC_BAD_ACCESS/SIGBUS. Run the work on a thread with a large
+    // stack. Android's handler thread has ample stack, so it runs inline.
+    #[cfg(target_os = "ios")]
+    {
+        let data_dir = context.data_dir;
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
+                    notification,
+                    data_dir,
+                ))
+            })
+            .expect("failed to spawn push-notification worker thread")
+            .join()
+            .expect("push-notification worker thread panicked")
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
+            notification,
+            context.data_dir,
+        ))
+    }
+}
+
+async fn handle_push_notifications_with_fallback_messages(
+    notification: NotificationData,
+    data_dir: PathBuf,
+) -> Option<NotificationData> {
+    match handle_push_notification(notification, data_dir).await {
+        Ok(result) => {
+            if let Some(data) = &result {
+                log::info!(
+                    "Successfully processed push notification, showing notification: {:?}.",
+                    data
+                );
+            } else {
+                log::info!(
+                    "Successfully processed push notification, no actual notification needs to be shown.",
+                );
+                // On iOS, alert notifications must be shown. If we return None here,
+                // iOS will display a notification with title = topic_id, and body = author:seq_num
+                // Show a generic notification instead
+                // TODO: apply for the exception to Apple that allows apps to not need to show a notification
+                // https://developer.apple.com/contact/request/notification-service
                 #[cfg(target_os = "ios")]
-                return Some(notifications::may_have_new_messages_generic_notification());
-                #[cfg(not(target_os = "ios"))]
-                None
+                return Some(notifications::synced_generic_notification());
             }
+            result
         }
-    })
+        Err(err) => {
+            log::error!("Failed to handle push notification: {err:?}");
+            // On iOS, returning None here would let iOS fall back to the
+            // raw APNS payload (topic_id as title, author:seq as body).
+            // Show a generic fallback so the user sees something readable.
+            #[cfg(target_os = "ios")]
+            return Some(notifications::may_have_new_messages_generic_notification());
+            #[cfg(not(target_os = "ios"))]
+            None
+        }
+    }
 }
 
 async fn handle_push_notification(

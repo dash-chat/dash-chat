@@ -255,8 +255,14 @@ export type MessageId = string;
 // 	timestamp: number;
 // }
 
-export interface ReadMessagesStore {
+export interface MessagesStore {
 	markAsRead(messageHashes: Hash[]): Promise<void>;
+	/** Sends the message and resolves with the operation id of the created
+	 * message once it is confirmed in the local log. */
+	sendMessage(input: {
+		message: string;
+		media: OutgoingMedia | null;
+	}): Promise<Hash>;
 }
 
 export type GroupControlEvent =

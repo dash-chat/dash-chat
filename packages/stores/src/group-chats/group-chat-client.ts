@@ -26,7 +26,7 @@ export interface IGroupChatClient {
 
 	setInfo(chatId: ChatId, info: GroupInfo): Promise<void>;
 
-	leaveGroup(): Promise<void>;
+	leaveGroup(chatId: ChatId): Promise<void>;
 	deleteGroup(): Promise<void>;
 }
 
@@ -38,7 +38,9 @@ export class GroupChatClient implements IGroupChatClient {
 	async addMember(chatId: ChatId, member: AgentId): Promise<void> {
 		await invoke('add_group_member', { chatId, agentId: member });
 	}
-	async removeMember(chatId: ChatId, member: AgentId): Promise<void> {}
+	async removeMember(chatId: ChatId, member: AgentId): Promise<void> {
+		await invoke('remove_group_member', { chatId, agentId: member });
+	}
 
 	sendMessage(
 		chatId: ChatId,
@@ -66,7 +68,9 @@ export class GroupChatClient implements IGroupChatClient {
 		member: AgentId,
 	): Promise<void> {}
 
-	async leaveGroup(): Promise<void> {}
+	async leaveGroup(chatId: ChatId): Promise<void> {
+		await invoke('leave_group', { chatId });
+	}
 
 	async deleteGroup(): Promise<void> {}
 }

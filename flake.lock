@@ -84,26 +84,6 @@
         "type": "github"
       }
     },
-    "garnix-lib": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1758561011,
-        "narHash": "sha256-yYXd4qOH22Oe5PaaoGms0imXYweQeEeme+VUoMm4zwY=",
-        "owner": "garnix-io",
-        "repo": "garnix-lib",
-        "rev": "fbd9865a68c8f7f4bd9d4e136f27be04098fe1ee",
-        "type": "github"
-      },
-      "original": {
-        "owner": "garnix-io",
-        "repo": "garnix-lib",
-        "type": "github"
-      }
-    },
     "hc-scaffold": {
       "flake": false,
       "locked": {
@@ -351,7 +331,6 @@
       "inputs": {
         "crane": "crane",
         "flake-parts": "flake-parts",
-        "garnix-lib": "garnix-lib",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay",
         "tauri-driver": "tauri-driver",

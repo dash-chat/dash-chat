@@ -3,8 +3,8 @@ import { reactive, signal } from 'signalium';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
-import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
+import { waitForOperation } from '../p2panda/logs-client';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
 import {
@@ -14,8 +14,8 @@ import {
 	GroupControlEvent,
 	GroupInfo,
 	OutgoingMedia,
+	MessagesStore,
 	Payload,
-	ReadMessagesStore,
 	getMessageMedia,
 	getMessageText,
 	sameMediaShape,
@@ -33,9 +33,10 @@ export interface GroupMemberWithProfile {
 	deviceIds: DeviceId[];
 	profile: Profile | undefined;
 	admin: boolean;
+	member: boolean;
 }
 
-export class GroupChatStore implements ReadMessagesStore {
+export class GroupChatStore implements MessagesStore {
 	private membersVersion = signal(0);
 
 	constructor(
@@ -258,6 +259,7 @@ export class GroupChatStore implements ReadMessagesStore {
 			myAgentId,
 			entry?.deviceIds ?? [],
 			entry?.isAdmin ?? false,
+			entry !== undefined,
 		);
 	});
 
@@ -265,7 +267,12 @@ export class GroupChatStore implements ReadMessagesStore {
 		const data = await this.membersData();
 		const entries = await Promise.all(
 			data.map(async ({ agentId, deviceIds, isAdmin }) => {
-				const member = await this.buildMember(agentId, deviceIds, isAdmin);
+				const member = await this.buildMember(
+					agentId,
+					deviceIds,
+					isAdmin,
+					true,
+				);
 				return [agentId, member] as const;
 			}),
 		);
@@ -276,13 +283,19 @@ export class GroupChatStore implements ReadMessagesStore {
 	});
 
 	private buildMember = reactive(
-		async (agentId: AgentId, deviceIds: DeviceId[], admin: boolean) => {
+		async (
+			agentId: AgentId,
+			deviceIds: DeviceId[],
+			admin: boolean,
+			member: boolean,
+		) => {
 			const profile = await this.contactsStore.profiles(agentId);
 			return {
 				agentId,
 				deviceIds,
 				profile,
 				admin,
+				member,
 			} satisfies GroupMemberWithProfile;
 		},
 	);
@@ -355,9 +368,12 @@ export class GroupChatStore implements ReadMessagesStore {
 		await this.client.markMessagesRead(this.chatId, messageHashes);
 	}
 
-	async sendMessage(input: { message: string; media: OutgoingMedia | null }) {
+	async sendMessage(input: {
+		message: string;
+		media: OutgoingMedia | null;
+	}): Promise<Hash> {
 		const myDeviceId = await this.contactsStore.myDeviceId();
-		await Promise.all([
+		const [op] = await Promise.all([
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== this.chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
@@ -365,13 +381,17 @@ export class GroupChatStore implements ReadMessagesStore {
 				if (getMessageText(op.body.payload.payload) !== input.message)
 					return false;
 				if (
-					!sameMediaShape(getMessageMedia(op.body.payload.payload), input.media)
+					!sameMediaShape(
+						getMessageMedia(op.body.payload.payload),
+						input.media,
+					)
 				)
 					return false;
 				return true;
 			}),
 			this.client.sendMessage(this.chatId, input.message, input.media),
 		]);
+		return op.hash;
 	}
 }
 

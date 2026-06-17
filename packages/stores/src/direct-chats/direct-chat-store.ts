@@ -2,8 +2,8 @@ import { reactive } from 'signalium';
 
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
-import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
+import { waitForOperation } from '../p2panda/logs-client';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import {
@@ -11,8 +11,8 @@ import {
 	ChatSummary,
 	Media,
 	OutgoingMedia,
+	MessagesStore,
 	Payload,
-	ReadMessagesStore,
 	getMessageMedia,
 	getMessageText,
 	sameMediaShape,
@@ -34,7 +34,7 @@ export interface Message {
 }
 
 // Store tied to a specific direct chat
-export class DirectChatStore implements ReadMessagesStore {
+export class DirectChatStore implements MessagesStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
@@ -150,10 +150,13 @@ export class DirectChatStore implements ReadMessagesStore {
 		});
 	}
 
-	async sendMessage(input: { message: string; media: OutgoingMedia | null }) {
+	async sendMessage(input: {
+		message: string;
+		media: OutgoingMedia | null;
+	}): Promise<Hash> {
 		const chatId = await this.chatId();
 		const myDeviceId = await this.contactsStore.myDeviceId();
-		await Promise.all([
+		const [op] = await Promise.all([
 			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
 				if (topicId !== chatId) return false;
 				if (op.body?.payload.type !== 'Message') return false;
@@ -161,13 +164,17 @@ export class DirectChatStore implements ReadMessagesStore {
 				if (getMessageText(op.body.payload.payload) !== input.message)
 					return false;
 				if (
-					!sameMediaShape(getMessageMedia(op.body.payload.payload), input.media)
+					!sameMediaShape(
+						getMessageMedia(op.body.payload.payload),
+						input.media,
+					)
 				)
 					return false;
 				return true;
 			}),
 			this.client.sendMessage(chatId, input.message, input.media),
 		]);
+		return op.hash;
 	}
 
 	readMessageHashes = reactive(async () => {

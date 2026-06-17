@@ -8,20 +8,30 @@
 		mdiClose,
 		mdiTrayArrowDown,
 	} from '@mdi/js';
-	import { lightbox } from '$lib/stores/lightbox.svelte';
+	import type { Photo } from 'dash-chat-stores';
 	import { mediaSrc } from '$lib/types/media';
 	import { saveAttachment } from '$lib/utils/save-file';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
-	const content = $derived(lightbox.content);
+	interface Props {
+		photos: Photo[];
+		/** Index of the currently shown photo; updated as the user navigates. */
+		index?: number;
+		senderName: string;
+		timestamp: number;
+		onClose: () => void;
+	}
 
-	// Derive from the photos array, not `content`: navigation replaces the
-	// content object (new index) but keeps the same photos array, and URLs
-	// must stay stable across navigation.
-	const photos = $derived(content?.photos);
+	let {
+		photos,
+		index = $bindable(0),
+		senderName,
+		timestamp,
+		onClose,
+	}: Props = $props();
 
-	// Stable `irohblob://` URLs served from the node's local blob store.
-	const photoUrls = $derived(photos ? photos.map(mediaSrc) : []);
+	const photo = $derived(photos[index]);
+	const photoUrls = $derived(photos.map(mediaSrc));
 
 	let rootEl: HTMLElement | undefined = $state();
 	let stageEl: HTMLElement | undefined = $state();
@@ -31,14 +41,18 @@
 	let originX = $state(50);
 	let originY = $state(50);
 
-	// Reset zoom when switching photos or reopening.
+	function select(i: number) {
+		index = Math.max(0, Math.min(photos.length - 1, i));
+	}
+
+	// Reset zoom when switching photos.
 	$effect(() => {
-		void content?.index;
+		void index;
 		zoomed = false;
 	});
 
 	$effect(() => {
-		if (content) closeButton?.focus();
+		closeButton?.focus();
 	});
 
 	function updateOrigin(event: MouseEvent) {
@@ -58,7 +72,7 @@
 	}
 
 	function onStageClick(event: MouseEvent) {
-		if (event.target === stageEl && !zoomed) lightbox.close();
+		if (event.target === stageEl && !zoomed) onClose();
 	}
 
 	function trapFocus(event: KeyboardEvent) {
@@ -81,20 +95,19 @@
 	}
 
 	function onKeydown(event: KeyboardEvent) {
-		if (!content) return;
 		if (event.key === 'Escape') {
 			event.preventDefault();
 			if (zoomed) {
 				zoomed = false;
 			} else {
-				lightbox.close();
+				onClose();
 			}
 		} else if (event.key === 'ArrowLeft') {
 			event.preventDefault();
-			lightbox.prev();
+			select(index - 1);
 		} else if (event.key === 'ArrowRight') {
 			event.preventDefault();
-			lightbox.next();
+			select(index + 1);
 		} else if (event.key === 'Tab') {
 			trapFocus(event);
 		}
@@ -103,155 +116,126 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-{#if content}
-	{@const photo = content.photos[content.index]}
+<div
+	class="fixed inset-0 z-30 flex flex-col bg-black"
+	role="dialog"
+	aria-modal="true"
+	aria-label={photo.name}
+	bind:this={rootEl}
+	data-testid="lightbox"
+>
 	<div
-		class="lightbox"
-		role="dialog"
-		aria-modal="true"
-		aria-label={photo.name}
-		bind:this={rootEl}
-		data-testid="lightbox"
+		class="lightbox-header flex h-[52px] shrink-0 items-center justify-between px-3"
+		class:faded={zoomed}
 	>
-		<div class="lightbox-header" class:faded={zoomed}>
-			<div class="lightbox-header-info">
-				<span class="lightbox-sender">{content.senderName}</span>
-				<MessageTimestamp timestamp={content.timestamp} class="lightbox-time" />
-			</div>
-			<div class="lightbox-header-actions">
-				<button
-					type="button"
-					class="lightbox-button"
-					data-testid="lightbox-save"
-					aria-label={m.saveFile()}
-					onclick={() => saveAttachment(photo)}
-				>
-					<wa-icon src={wrapPathInSvg(mdiTrayArrowDown)}></wa-icon>
-				</button>
-				<button
-					type="button"
-					class="lightbox-button"
-					data-testid="lightbox-close"
-					aria-label={m.closeLightbox()}
-					bind:this={closeButton}
-					onclick={() => lightbox.close()}
-				>
-					<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
-				</button>
-			</div>
+		<div class="flex min-w-0 flex-col">
+			<span
+				class="overflow-hidden text-[13px] font-bold text-ellipsis whitespace-nowrap text-white"
+				>{senderName}</span
+			>
+			<MessageTimestamp {timestamp} class="lightbox-time" />
 		</div>
-
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="lightbox-stage"
-			bind:this={stageEl}
-			onclick={onStageClick}
-			ondblclick={onStageDoubleClick}
-			onmousemove={onStageMouseMove}
-		>
-			<img
-				class="lightbox-image"
-				class:zoomed
-				style="transform-origin: {originX}% {originY}%"
-				src={photoUrls[content.index]}
-				alt={photo.name}
-				data-testid="lightbox-image"
-			/>
-		</div>
-
-		{#if content.index > 0}
+		<div class="flex items-center gap-2">
 			<button
 				type="button"
-				class="lightbox-button lightbox-nav lightbox-prev"
-				class:faded={zoomed}
-				data-testid="lightbox-prev"
-				aria-label={m.previousPhoto()}
-				onclick={() => lightbox.prev()}
+				class="lightbox-button"
+				data-testid="lightbox-save"
+				aria-label={m.saveFile()}
+				onclick={() => saveAttachment(photo)}
 			>
-				<wa-icon src={wrapPathInSvg(mdiChevronLeft)}></wa-icon>
+				<wa-icon src={wrapPathInSvg(mdiTrayArrowDown)}></wa-icon>
 			</button>
-		{/if}
-		{#if content.index < content.photos.length - 1}
 			<button
 				type="button"
-				class="lightbox-button lightbox-nav lightbox-next"
-				class:faded={zoomed}
-				data-testid="lightbox-next"
-				aria-label={m.nextPhoto()}
-				onclick={() => lightbox.next()}
+				class="lightbox-button"
+				data-testid="lightbox-close"
+				aria-label={m.closeLightbox()}
+				bind:this={closeButton}
+				onclick={onClose}
 			>
-				<wa-icon src={wrapPathInSvg(mdiChevronRight)}></wa-icon>
+				<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
 			</button>
-		{/if}
-
-		{#if content.photos.length > 1}
-			<div
-				class="lightbox-filmstrip"
-				class:faded={zoomed}
-				data-testid="lightbox-filmstrip"
-			>
-				{#each content.photos as p, i (photoUrls[i])}
-					<button
-						type="button"
-						class="lightbox-thumb"
-						class:selected={i === content.index}
-						data-testid="lightbox-thumb-{i}"
-						aria-label={p.name}
-						onclick={() => lightbox.select(i)}
-					>
-						<img src={photoUrls[i]} alt={p.name} />
-					</button>
-				{/each}
-			</div>
-		{/if}
+		</div>
 	</div>
-{/if}
+
+	<button
+		type="button"
+		class="flex min-h-0 flex-1 cursor-default items-center justify-center overflow-hidden border-none bg-transparent p-0"
+		bind:this={stageEl}
+		aria-label={m.closeLightbox()}
+		onclick={onStageClick}
+		ondblclick={onStageDoubleClick}
+		onmousemove={onStageMouseMove}
+	>
+		<img
+			class="lightbox-image max-h-full max-w-full object-contain"
+			class:zoomed
+			style="transform-origin: {originX}% {originY}%"
+			src={photoUrls[index]}
+			alt={photo.name}
+			data-testid="lightbox-image"
+		/>
+	</button>
+
+	{#if index > 0}
+		<button
+			type="button"
+			class="lightbox-button lightbox-nav lightbox-prev"
+			class:faded={zoomed}
+			data-testid="lightbox-prev"
+			aria-label={m.previousPhoto()}
+			onclick={() => select(index - 1)}
+		>
+			<wa-icon src={wrapPathInSvg(mdiChevronLeft)}></wa-icon>
+		</button>
+	{/if}
+	{#if index < photos.length - 1}
+		<button
+			type="button"
+			class="lightbox-button lightbox-nav lightbox-next"
+			class:faded={zoomed}
+			data-testid="lightbox-next"
+			aria-label={m.nextPhoto()}
+			onclick={() => select(index + 1)}
+		>
+			<wa-icon src={wrapPathInSvg(mdiChevronRight)}></wa-icon>
+		</button>
+	{/if}
+
+	{#if photos.length > 1}
+		<div
+			class="lightbox-filmstrip flex shrink-0 justify-center gap-2 overflow-x-auto px-3 py-2.5"
+			class:faded={zoomed}
+			data-testid="lightbox-filmstrip"
+		>
+			{#each photos as p, i (photoUrls[i])}
+				<button
+					type="button"
+					class="lightbox-thumb h-11 w-11 shrink-0 overflow-hidden p-0"
+					class:selected={i === index}
+					data-testid="lightbox-thumb-{i}"
+					aria-label={p.name}
+					onclick={() => select(i)}
+				>
+					<img
+						src={photoUrls[i]}
+						alt={p.name}
+						class="block h-full w-full object-cover"
+					/>
+				</button>
+			{/each}
+		</div>
+	{/if}
+</div>
 
 <style>
-	.lightbox {
-		position: fixed;
-		inset: 0;
-		z-index: 30;
-		background: black;
-		display: flex;
-		flex-direction: column;
-	}
-
 	.lightbox-header {
-		flex-shrink: 0;
-		height: 52px;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding-inline: 12px;
 		transition: opacity 0.15s ease;
-	}
-
-	.lightbox-header-info {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-	}
-
-	.lightbox-sender {
-		color: white;
-		font-size: 13px;
-		font-weight: 700;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
 	}
 
 	.lightbox-header :global(.lightbox-time) {
 		color: #b8b8b8;
 		font-size: 11px;
-	}
-
-	.lightbox-header-actions {
-		display: flex;
-		align-items: center;
-		gap: 8px;
 	}
 
 	.lightbox-button {
@@ -275,19 +259,7 @@
 		height: 24px;
 	}
 
-	.lightbox-stage {
-		flex: 1;
-		min-height: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		overflow: hidden;
-	}
-
 	.lightbox-image {
-		max-width: 100%;
-		max-height: 100%;
-		object-fit: contain;
 		transition: transform 0.15s ease;
 	}
 	.lightbox-image.zoomed {
@@ -319,23 +291,12 @@
 	}
 
 	.lightbox-filmstrip {
-		flex-shrink: 0;
-		display: flex;
-		justify-content: center;
-		gap: 8px;
-		padding: 10px 12px;
-		overflow-x: auto;
 		transition: opacity 0.15s ease;
 	}
 
 	.lightbox-thumb {
-		flex-shrink: 0;
-		width: 44px;
-		height: 44px;
-		padding: 0;
 		border: none;
 		border-radius: 6px;
-		overflow: hidden;
 		cursor: pointer;
 		background: transparent;
 		opacity: 0.7;
@@ -348,12 +309,6 @@
 		opacity: 1;
 		outline: 2px solid white;
 		outline-offset: -2px;
-	}
-	.lightbox-thumb img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		display: block;
 	}
 
 	.faded {

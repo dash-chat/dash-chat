@@ -2,6 +2,10 @@ import { m } from '$lib/paraglide/messages.js';
 import { loadMediaBytes } from '$lib/types/media';
 import { isMobile, isTauriEnv } from '$lib/utils/environment';
 import { showToast } from '$lib/utils/toasts';
+import { shareFile } from '@choochmeque/tauri-plugin-sharekit-api';
+import { appCacheDir, downloadDir, join } from '@tauri-apps/api/path';
+import { save } from '@tauri-apps/plugin-dialog';
+import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
 import type { FileAttachment, Photo } from 'dash-chat-stores';
 
 function isShareCancelled(error: unknown): boolean {
@@ -22,12 +26,6 @@ function isShareCancelled(error: unknown): boolean {
 async function shareAttachmentOnMobile(
 	file: FileAttachment | Photo,
 ): Promise<void> {
-	const [{ shareFile }, { appCacheDir, join }, { mkdir, writeFile }] =
-		await Promise.all([
-			import('@choochmeque/tauri-plugin-sharekit-api'),
-			import('@tauri-apps/api/path'),
-			import('@tauri-apps/plugin-fs'),
-		]);
 	const shareDir = await join(await appCacheDir(), 'share');
 	await mkdir(shareDir, { recursive: true });
 	// The attachment name comes from a peer; keep only a basename so it can
@@ -59,12 +57,6 @@ export async function saveAttachment(
 		if (isTauriEnv() && isMobile) {
 			await shareAttachmentOnMobile(file);
 		} else if (isTauriEnv()) {
-			const [{ save }, { writeFile }, { downloadDir, join }] =
-				await Promise.all([
-					import('@tauri-apps/plugin-dialog'),
-					import('@tauri-apps/plugin-fs'),
-					import('@tauri-apps/api/path'),
-				]);
 			let defaultPath = file.name;
 			try {
 				defaultPath = await join(await downloadDir(), file.name);

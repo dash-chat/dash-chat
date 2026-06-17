@@ -70,7 +70,7 @@ describe('Group chat list last-event summary', () => {
 		await agent1.homePage.chatListItem('mygroup').click();
 		await agent1.groupChatPage.ready();
 		await agent1.groupChatPage.sendMessage('Hello group!');
-		await agent1.groupChatPage.waitForMessage('Hello group!');
+		await agent1.groupChatPage.messages.waitForMessage('Hello group!');
 		await agent1.groupChatPage.back.click();
 		await agent1.homePage.ready();
 
@@ -81,7 +81,7 @@ describe('Group chat list last-event summary', () => {
 
 		await agent2.homePage.chatListItem('mygroup').click();
 		await agent2.groupChatPage.ready();
-		await agent2.groupChatPage.waitForMessage('Hello group!');
+		await agent2.groupChatPage.messages.waitForMessage('Hello group!');
 		await agent2.groupChatPage.back.click();
 		await agent2.homePage.ready();
 

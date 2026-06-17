@@ -13,7 +13,7 @@
 	} = $props();
 </script>
 
-<div class={`text-xs ${className}`}>
+<span class={`text-xs/none ${className}`}>
 	{#if lessThanAMinuteAgo(timestamp)}
 		<span>{m.now()}</span>
 	{:else if moreThanAnHourAgo(timestamp)}
@@ -27,4 +27,4 @@
 		<wa-relative-time sync format="narrow" date={new Date(timestamp)}
 		></wa-relative-time>
 	{/if}
-</div>
+</span>

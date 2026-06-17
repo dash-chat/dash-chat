@@ -9,6 +9,7 @@
 
 	--color-desktop-sidebar-bg: #f5f4f7;
 	--color-desktop-main-bg: #ffffff;
+	--color-page-surface: var(--color-md-light-surface);
 	--background-color: var(--color-md-light-surface);
 
 	--text-sm: 1rem; /* default: 0.875rem */
@@ -19,6 +20,11 @@
 	--background-color: var(--color-md-dark-surface);
 	--color-desktop-sidebar-bg: var(--color-md-dark-surface-2);
 	--color-desktop-main-bg: var(--color-md-dark-surface);
+	--color-page-surface: var(--color-md-dark-surface);
+}
+
+:root.wide-layout {
+	--color-page-surface: var(--color-desktop-main-bg);
 }
 
 .wide-layout {

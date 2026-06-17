@@ -2,7 +2,6 @@
  * Group media E2E — verifies that photo and file attachments work in group
  * chats the same way they do in direct chats.
  */
-
 import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { type Agent, setupAgent } from '../../setup/setup-agents';
 
@@ -44,12 +43,12 @@ describe('Group media attachments', () => {
 	});
 
 	it('sends photos with a caption to the group', async () => {
-		await agent1.groupChatPage.composer.attachPhotos(2);
+		await agent1.groupChatPage.composer.attachPhotos('group', 2);
 		await agent1.groupChatPage.composer.expectStagedPhotoCount(2);
 		await agent1.groupChatPage.sendMessage('group pics');
-		await agent1.groupChatPage.waitForPhotoMessage();
-		await agent2.groupChatPage.waitForMessage('group pics');
-		await agent2.groupChatPage.waitForPhotoMessage();
+		await agent1.groupChatPage.messages.waitForPhotoMessage('group');
+		await agent2.groupChatPage.messages.waitForMessage('group pics');
+		await agent2.groupChatPage.messages.waitForPhotoMessage('group');
 	});
 
 	it('sends a file attachment to the group', async () => {
@@ -59,7 +58,7 @@ describe('Group media attachments', () => {
 			'text/plain',
 		);
 		await agent2.groupChatPage.composer.send();
-		await agent2.groupChatPage.waitForFileMessage('group-notes.txt');
-		await agent1.groupChatPage.waitForFileMessage('group-notes.txt');
+		await agent2.groupChatPage.messages.waitForFileMessage('group-notes.txt');
+		await agent1.groupChatPage.messages.waitForFileMessage('group-notes.txt');
 	});
 });

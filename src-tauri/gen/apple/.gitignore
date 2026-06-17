@@ -1,3 +1,4 @@
 xcuserdata/
 build/
 Externals/
+.xcode.env.local

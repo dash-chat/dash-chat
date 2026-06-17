@@ -29,6 +29,11 @@ jobs:
         with:
           name: darksoil-studio
 
+      - uses: cachix/cachix-action@v15
+        with:
+          name: dash-chat
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
       - name: Install and Build 🔧
         run: |
           nix develop --accept-flake-config --command bash -c "pnpm install && pnpm -F site build"

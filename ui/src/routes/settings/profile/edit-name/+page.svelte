@@ -12,6 +12,7 @@
 		NavbarBackLink,
 		Page,
 		Preloader,
+		useTheme,
 	} from 'konsta/svelte';
 	import Form from '$lib/components/form/Form.svelte';
 	import FormInput from '$lib/components/form/FormInput.svelte';
@@ -39,6 +40,15 @@
 		});
 	});
 
+	function saveDisabled(
+		profile: { name: string; surname?: string } | undefined,
+	) {
+		return (
+			name.trim() === '' ||
+			(profile?.name === name && profile?.surname === surname)
+		);
+	}
+
 	async function save() {
 		try {
 			await contactsStore.client.setProfile({
@@ -60,6 +70,8 @@
 			}
 		}
 	}
+
+	const theme = $derived(useTheme());
 </script>
 
 <Page>
@@ -75,9 +87,7 @@
 			title={m.editName()}
 			titleClass="opacity1"
 			transparent={true}
-			rightClass={myProfile?.name === name && myProfile?.surname === surname
-				? 'ios-right-disabled'
-				: ''}
+			rightClass={saveDisabled(myProfile) ? 'ios-right-disabled' : ''}
 		>
 			{#snippet left()}
 				<NavbarBackLink
@@ -101,13 +111,15 @@
 					type="text"
 					bind:value={name}
 					data-testid="edit-name-name"
-					label={m.name()}
+					label={theme === 'material' ? m.nameRequired() : ''}
+					placeholder={theme === 'ios' ? m.nameRequired() : ''}
 				/>
 				<FormInput
 					type="text"
 					bind:value={surname}
 					data-testid="edit-name-surname"
-					label={m.surname()}
+					label={theme === 'material' ? m.surnameOptional() : ''}
+					placeholder={theme === 'ios' ? m.surnameOptional() : ''}
 				/>
 			</Form>
 		</Container>
@@ -118,7 +130,7 @@
 				class="fixed-action-btn"
 				rounded
 				data-testid="edit-name-save-btn"
-				disabled={myProfile?.name === name && myProfile?.surname === surname}
+				disabled={saveDisabled(myProfile)}
 			>
 				{m.save()}
 			</Button>

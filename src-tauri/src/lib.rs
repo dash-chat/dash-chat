@@ -4,11 +4,15 @@ mod device_info;
 mod filesystem;
 mod i18n;
 mod mailbox;
+#[cfg(desktop)]
 mod media_drop;
 mod notifications;
 mod settings;
 mod setup;
 mod utils;
+
+#[cfg(target_os = "android")]
+mod android_init;
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -68,7 +72,7 @@ pub fn run() {
         }
     }
 
-    builder
+    let builder = builder
         .register_asynchronous_uri_scheme_protocol("irohblob", blob_protocol::handle)
         .invoke_handler(tauri::generate_handler![
             device_info::display::log_webview_info,
@@ -91,6 +95,8 @@ pub fn run() {
             commands::chats::create_group,
             commands::chats::set_group_info,
             commands::chats::add_group_member,
+            commands::chats::remove_group_member,
+            commands::chats::leave_group,
             commands::chats::get_group_chats,
             commands::chats::get_group_members,
             commands::settings::get_settings,
@@ -110,8 +116,12 @@ pub fn run() {
         .plugin(tauri_plugin_sharekit::init())
         .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_os::init())
-        .on_window_event(media_drop::handle_window_event)
+        .plugin(tauri_plugin_os::init());
+
+    #[cfg(desktop)]
+    let builder = builder.on_window_event(media_drop::handle_window_event);
+
+    builder
         .setup(move |app| {
             let handle = app.handle().clone();
 

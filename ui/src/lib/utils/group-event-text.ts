@@ -28,6 +28,9 @@ export function groupEventText(event: GroupControlEvent): string {
 				name: event.memberName || m.someone(),
 			});
 		case 'group_member_removed':
+			if (event.isMine && event.removedByMe) {
+				return m.youLeftTheGroup();
+			}
 			if (event.isMine) {
 				return m.someoneRemovedYouFromTheGroup({
 					name: event.adminName || m.someone(),

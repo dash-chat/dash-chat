@@ -3,15 +3,73 @@
 
 #![cfg(test)]
 
-use dashchat_node::{testing::*, *};
+use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
 use mailbox_client::mem::MemMailbox;
 
-use maplit::btreemap;
+use maplit::{btreemap, btreeset};
 use p2panda::network::MdnsDiscoveryMode;
+use p2panda_auth::Access;
+use std::collections::BTreeSet;
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_direct_chat() {
-    dashchat_node::util::setup_aliases();
+fn format_members(members: &BTreeSet<(DeviceId, Access)>, labels: &[(&DeviceId, &str)]) -> String {
+    let entries: Vec<String> = members
+        .iter()
+        .map(|(id, access)| {
+            let name = labels
+                .iter()
+                .find(|(did, _)| *did == id)
+                .map(|(_, name)| *name)
+                .unwrap_or("unknown");
+            let level = format!("{:?}", access.level).to_lowercase();
+            format!("{name}:{level}")
+        })
+        .collect();
+    format!("{{{}}}", entries.join(", "))
+}
+
+async fn assert_group_members(
+    poll: &PollConfig,
+    nodes: &[(&TestNode, &str)],
+    chat_id: ChatId,
+    expected: BTreeSet<(DeviceId, Access)>,
+) {
+    let label_ids: Vec<(DeviceId, &str)> = nodes
+        .iter()
+        .map(|(n, name)| (n.device_id(), *name))
+        .collect();
+    let labels: Vec<(&DeviceId, &str)> = label_ids.iter().map(|(id, name)| (id, *name)).collect();
+
+    let result = poll
+        .wait_for(|| async {
+            let members: Vec<_> = futures::future::join_all(
+                nodes
+                    .iter()
+                    .map(|(n, _)| async { n.get_group_members(chat_id).await.unwrap() }),
+            )
+            .await;
+            members
+                .iter()
+                .all(|m| *m == expected)
+                .then_some(())
+                .ok_or_else(|| members.clone())
+        })
+        .await;
+
+    if let Err(members) = result {
+        let expected_str = format_members(&expected, &labels);
+        let actual_strs: Vec<String> = nodes
+            .iter()
+            .zip(members.iter())
+            .map(|((_, name), m)| format!("{name}: {}", format_members(m, &labels)))
+            .collect();
+        panic!(
+            "Expected group members {expected_str}, but was:\n  {}",
+            actual_strs.join("\n  ")
+        );
+    }
+}
+
+fn setup() {
     dashchat_node::testing::setup_tracing(
         &[
             "dashchat=info",
@@ -22,23 +80,27 @@ async fn test_direct_chat() {
         ],
         true,
     );
+}
+
+async fn make_node(mailbox: &MemMailbox<MailboxOperation>, name: &str) -> TestNode {
+    let result = TestNode::new(NodeConfig::testing(), name)
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    println!("Node {}: {}", name, result.device_id());
+    result
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_direct_chat() {
+    setup();
 
     let poll = PollConfig::default();
     let mailbox = MemMailbox::new();
-    let alice = TestNode::new(NodeConfig::testing(), "alice")
-        .await
-        .add_mailbox_client(mailbox.client())
-        .await;
-    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
-        .await
-        .add_mailbox_client(mailbox.client())
-        .await;
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
 
     introduce_and_wait([&alice, &bobbi]).await;
-
-    println!("nodes:");
-    println!("alice: {}", alice.device_id());
-    println!("bobbi: {}", bobbi.device_id());
 
     alice
         .behavior()
@@ -132,38 +194,15 @@ async fn test_p2p_direct_chat() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_group_chat() {
-    dashchat_node::testing::setup_tracing(
-        &[
-            "dashchat=info",
-            "p2panda_stream=warn",
-            "p2panda_auth=warn",
-            "p2panda_spaces=warn",
-            "named_id=warn",
-        ],
-        true,
-    );
+    setup();
 
     let poll = PollConfig::default();
     let mailbox = MemMailbox::new();
-    let alice = TestNode::new(NodeConfig::testing(), "alice")
-        .await
-        .add_mailbox_client(mailbox.client())
-        .await;
-    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
-        .await
-        .add_mailbox_client(mailbox.client())
-        .await;
-    let cammy = TestNode::new(NodeConfig::testing(), "cammy")
-        .await
-        .add_mailbox_client(mailbox.client())
-        .await;
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+    let cammy = make_node(&mailbox, "cammy").await;
 
     introduce_and_wait([&alice, &bobbi, &cammy]).await;
-
-    println!("nodes:");
-    println!("alice: {}", alice.device_id());
-    println!("bobbi: {}", bobbi.device_id());
-    println!("cammy: {}", cammy.device_id());
 
     alice
         .behavior()
@@ -225,30 +264,19 @@ async fn test_group_chat() {
     .await
     .unwrap();
 
-    let expected_members = maplit::btreeset![
-        (alice.device_id(), p2panda_auth::Access::manage()),
-        (bobbi.device_id(), p2panda_auth::Access::manage()),
-        (cammy.device_id(), p2panda_auth::Access::write()),
+    let expected_members = btreeset![
+        (alice.device_id(), Access::manage()),
+        (bobbi.device_id(), Access::manage()),
+        (cammy.device_id(), Access::write()),
     ];
 
-    let result = poll
-        .wait_for(|| async {
-            let members = [
-                alice.get_group_members(chat_id).await.unwrap(),
-                bobbi.get_group_members(chat_id).await.unwrap(),
-                cammy.get_group_members(chat_id).await.unwrap(),
-            ];
-            members
-                .iter()
-                .all(|m| *m == expected_members)
-                .then_some(())
-                .ok_or(members)
-        })
-        .await;
-
-    if let Err(members) = result {
-        panic!("memberships are not consistent: {:#?}", members);
-    }
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&bobbi, "bobbi"), (&cammy, "cammy")],
+        chat_id,
+        expected_members.clone(),
+    )
+    .await;
 
     let alice_messages = alice.get_messages(chat_id).await.unwrap();
     let bobbi_messages = bobbi.get_messages(chat_id).await.unwrap();
@@ -317,4 +345,283 @@ async fn test_group_chat() {
     let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir).await;
     let alice_members = alice.get_group_members(chat_id).await.unwrap();
     assert_eq!(alice_members, expected_members);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_admin_removes_themself_when_they_are_the_only_member() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let alice = make_node(&mailbox, "alice").await;
+
+    let chat_id = alice
+        .create_group(btreemap! {})
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    alice
+        .remove_group_member(chat_id, *alice.device_id())
+        .await
+        .unwrap_or_else(|err| panic!("Failed with: {err}"));
+
+    assert_group_members(&poll, &[(&alice, "alice")], chat_id, btreeset![]).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_admin_removes_themself_there_is_another_admin() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    introduce_and_wait([&alice, &bobbi]).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    bobbi
+        .remove_group_member(chat_id, *bobbi.device_id())
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&bobbi, "bobbi")],
+        chat_id,
+        btreeset![(alice.device_id(), Access::manage())],
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_admin_cant_remove_themself_when_they_are_the_only_admin() {
+    setup();
+
+    let mailbox = MemMailbox::new();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    introduce_and_wait([&alice, &bobbi]).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    let result = alice.remove_group_member(chat_id, *alice.device_id()).await;
+
+    assert!(
+        result.is_err(),
+        "expected error when last admin tries to remove themselves, but got ok"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_non_admin_removes_themself() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    introduce_and_wait([&alice, &bobbi]).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    // bobbi removes herself from the group
+    bobbi
+        .remove_group_member(chat_id, *bobbi.device_id())
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&bobbi, "bobbi")],
+        chat_id,
+        btreeset![(alice.device_id(), Access::manage())],
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_admin_removes_non_admin() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    introduce_and_wait([&alice, &bobbi]).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    alice
+        .remove_group_member(chat_id, *bobbi.device_id())
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&bobbi, "bobbi")],
+        chat_id,
+        btreeset![(alice.device_id(), Access::manage())],
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_non_admin_cannot_remove_admin() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let alice = make_node(&mailbox, "alice").await;
+    let andi = make_node(&mailbox, "andi").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    introduce_and_wait([&alice, &andi, &bobbi]).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&andi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *andi.device_id() => p2panda_auth::Access::manage(),
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    andi.behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &andi, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let result = bobbi.remove_group_member(chat_id, *alice.device_id()).await;
+    assert!(
+        matches!(result, Ok(())),
+        "Expected remove call to return OK, because this should enque an operation that will be resolved later, but got error: {result:?}"
+    );
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&andi, "andi"), (&bobbi, "bobbi")],
+        chat_id,
+        btreeset![
+            (alice.device_id(), Access::manage()),
+            (andi.device_id(), Access::manage()),
+            (bobbi.device_id(), Access::write()),
+        ],
+    )
+    .await;
 }
