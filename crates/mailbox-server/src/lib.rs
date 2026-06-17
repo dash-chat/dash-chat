@@ -11,28 +11,28 @@ use std::{future::Future, path::PathBuf};
 use tokio::task::JoinSet;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
-mod blob;
-mod blobs_table;
+mod blip;
+mod blips_table;
 mod cleanup;
-mod get_blobs;
+mod get_blips;
 mod notify_topics_subscribers;
-mod store_blobs;
+mod store_blips;
 mod watermark;
 mod watermarks_table;
 
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
 
-// Must comfortably exceed the UI's 16 MiB per-message attachment cap: blobs
+// Must comfortably exceed the UI's 16 MiB per-message attachment cap: blips
 // arrive base64-encoded in a JSON body (~1.33x the raw bytes, plus operation
 // envelope overhead), and one store request can batch several operations.
 const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
-pub use blob::Blob;
-pub use blobs_table::{BlobsKey, BlobsKeyError, BlobsKeyPrefix, BLOBS_TABLE};
+pub use blip::Blip;
+pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
-pub use get_blobs::{get_blobs_for_topics, GetBlobsRequest, GetBlobsResponse};
-pub use store_blobs::{store_blobs, StoreBlobsRequest};
+pub use get_blips::{get_blips_for_topics, GetBlipsRequest, GetBlipsResponse};
+pub use store_blips::{store_blips, StoreBlipsRequest};
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
@@ -114,12 +114,12 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
 
     let write_txn = db.begin_write()?;
     {
-        let _blobs_table = write_txn.open_table(BLOBS_TABLE)?;
+        let _blips_table = write_txn.open_table(BLIPS_TABLE)?;
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE)?;
     }
     write_txn.commit()?;
 
-    // Compute initial watermarks from existing blobs
+    // Compute initial watermarks from existing blips
     compute_initial_watermarks(&db)?;
 
     tracing::info!("Database initialized successfully");
@@ -140,8 +140,8 @@ pub fn create_app(
 
     Router::new()
         .route("/health", get(health_check))
-        .route("/blobs/store", post(store_blobs))
-        .route("/blobs/get", post(get_blobs_for_topics))
+        .route("/blips/store", post(store_blips))
+        .route("/blips/get", post(get_blips_for_topics))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))

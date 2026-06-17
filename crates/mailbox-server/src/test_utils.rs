@@ -5,7 +5,7 @@ use redb::Database;
 use tempfile::NamedTempFile;
 use tokio::task::JoinSet;
 
-use crate::{create_app, BLOBS_TABLE, WATERMARKS_TABLE};
+use crate::{create_app, BLIPS_TABLE, WATERMARKS_TABLE};
 
 pub fn create_test_db() -> (Database, NamedTempFile) {
     let temp_file = NamedTempFile::new().unwrap();
@@ -13,7 +13,7 @@ pub fn create_test_db() -> (Database, NamedTempFile) {
 
     let write_txn = db.begin_write().unwrap();
     {
-        let _blobs_table = write_txn.open_table(BLOBS_TABLE).unwrap();
+        let _blips_table = write_txn.open_table(BLIPS_TABLE).unwrap();
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE).unwrap();
     }
     write_txn.commit().unwrap();

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use mailbox_server::{Blob, GetBlobsRequest, GetBlobsResponse, StoreBlobsRequest};
+use mailbox_server::{Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest};
 
 use super::*;
 
@@ -50,25 +50,25 @@ where
         }
 
         // Group operations by topic -> author -> seq_num
-        let mut blobs: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blob>>> = BTreeMap::new();
+        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blip>>> = BTreeMap::new();
 
         for op in ops {
             let topic_id = Self::encode_topic_id(&op.topic());
             let log_id = Self::device_id_to_log_id(&op.author());
             let seq_num = op.seq_num();
-            let blob = Self::serialize_operation(&op)?;
+            let blip = Self::serialize_operation(&op)?;
 
-            blobs
+            blips
                 .entry(topic_id)
                 .or_default()
                 .entry(log_id)
                 .or_default()
-                .insert(seq_num, blob);
+                .insert(seq_num, blip);
         }
 
-        let request = StoreBlobsRequest { blobs };
+        let request = StoreBlipsRequest { blips };
         let response = HTTP_CLIENT
-            .post(format!("{}/blobs/store", self.base_url))
+            .post(format!("{}/blips/store", self.base_url))
             .json(&request)
             .send()
             .await?;
@@ -79,7 +79,7 @@ where
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             Err(anyhow::anyhow!(
-                "Failed to store blobs: {} - {}",
+                "Failed to store blips: {} - {}",
                 status,
                 body
             ))
@@ -90,7 +90,7 @@ where
         &self,
         request: FetchRequest<Item>,
     ) -> Result<FetchResponse<Item>, anyhow::Error> {
-        // Convert FetchRequest to GetBlobsRequest
+        // Convert FetchRequest to GetBlipsRequest
         let mut topics: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
 
         for (log_id, authors) in request.0.iter() {
@@ -105,9 +105,9 @@ where
             topics.insert(topic_id, log_map);
         }
 
-        let get_request = GetBlobsRequest { topics };
+        let get_request = GetBlipsRequest { topics };
         let response = HTTP_CLIENT
-            .post(format!("{}/blobs/get", self.base_url))
+            .post(format!("{}/blips/get", self.base_url))
             .json(&get_request)
             .send()
             .await?;
@@ -116,25 +116,25 @@ where
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!(
-                "Failed to fetch blobs: {} - {}",
+                "Failed to fetch blips: {} - {}",
                 status,
                 body
             ));
         }
 
-        let response = response.json::<GetBlobsResponse>().await?;
+        let response = response.json::<GetBlipsResponse>().await?;
 
-        // Convert GetBlobsResponse to FetchResponse
+        // Convert GetBlipsResponse to FetchResponse
         let mut result: BTreeMap<Item::Topic, FetchTopicResponse<Item>> = BTreeMap::new();
 
-        for (topic_id_str, topic_response) in response.blobs_by_topic {
+        for (topic_id_str, topic_response) in response.blips_by_topic {
             let log_id = Self::log_id_from_string(&topic_id_str)?;
 
-            // Deserialize blobs to operations
+            // Deserialize blips to operations
             let mut items = Vec::new();
-            for (_author_str, seq_blobs) in topic_response.blobs {
-                for (_seq, blob) in seq_blobs {
-                    items.push(Self::deserialize_operation(&blob)?);
+            for (_author_str, seq_blips) in topic_response.blips {
+                for (_seq, blip) in seq_blips {
+                    items.push(Self::deserialize_operation(&blip)?);
                 }
             }
 
@@ -175,13 +175,13 @@ where
         Ok(author)
     }
 
-    fn serialize_operation(item: &Item) -> Result<Blob, anyhow::Error> {
+    fn serialize_operation(item: &Item) -> Result<Blip, anyhow::Error> {
         let bytes = p2panda_core::cbor::encode_cbor(item)?;
-        Ok(Blob::new(bytes))
+        Ok(Blip::new(bytes))
     }
 
-    fn deserialize_operation(blob: &Blob) -> Result<Item, anyhow::Error> {
-        Ok(p2panda_core::cbor::decode_cbor(blob.as_slice())?)
+    fn deserialize_operation(blip: &Blip) -> Result<Item, anyhow::Error> {
+        Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
     }
 }
 

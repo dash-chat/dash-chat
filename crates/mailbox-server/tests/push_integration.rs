@@ -73,7 +73,7 @@ async fn drain_push_tasks(push_tasks: &Arc<tokio::sync::Mutex<tokio::task::JoinS
     }
 }
 
-/// Full integration test: subscribe → store blobs → push notification sent.
+/// Full integration test: subscribe → store blips → push notification sent.
 #[tokio::test]
 async fn mailbox_store_triggers_push_notification() {
     let verifying_key = VerifyingKey::from(
@@ -122,18 +122,18 @@ async fn mailbox_store_triggers_push_notification() {
     // Mailbox server connected to the push server
     let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url);
 
-    let blob_data = base64::Engine::encode(
+    let blip_data = base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,
         b"encrypted-message-payload",
     );
 
     let resp = mailbox
-        .post("/blobs/store")
+        .post("/blips/store")
         .json(&json!({
-            "blobs": {
+            "blips": {
                 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
                     "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
-                        "0": blob_data
+                        "0": blip_data
                     }
                 }
             }
@@ -146,7 +146,7 @@ async fn mailbox_store_triggers_push_notification() {
     // MockFcm panics on drop if expect_send_push_notification wasn't called exactly once
 }
 
-/// Storing a blob for a topic with no subscribers should not trigger any FCM call.
+/// Storing a blip for a topic with no subscribers should not trigger any FCM call.
 #[tokio::test]
 async fn mailbox_store_no_subscribers_no_push() {
     let mut mock_fcm = MockFcm::new();
@@ -156,16 +156,16 @@ async fn mailbox_store_no_subscribers_no_push() {
     let push_url = start_push_server(mock_fcm).await;
     let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url);
 
-    let blob_data =
+    let blip_data =
         base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"some-data");
 
     let resp = mailbox
-        .post("/blobs/store")
+        .post("/blips/store")
         .json(&json!({
-            "blobs": {
+            "blips": {
                 "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd": {
                     "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
-                        "0": blob_data
+                        "0": blip_data
                     }
                 }
             }
@@ -177,10 +177,10 @@ async fn mailbox_store_no_subscribers_no_push() {
     // MockFcm panics on drop if send_push_notification was called unexpectedly
 }
 
-/// Storing the same blob twice should only trigger a push notification the first time
+/// Storing the same blip twice should only trigger a push notification the first time
 /// (watermark doesn't advance on duplicate data).
 #[tokio::test]
-async fn mailbox_store_duplicate_blob_no_second_push() {
+async fn mailbox_store_duplicate_blip_no_second_push() {
     let verifying_key = VerifyingKey::from(
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
     );
@@ -222,28 +222,28 @@ async fn mailbox_store_duplicate_blob_no_second_push() {
 
     let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url);
 
-    let blob_data = base64::Engine::encode(
+    let blip_data = base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,
         b"message-content",
     );
 
     let store_body = json!({
-        "blobs": {
+        "blips": {
             "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": {
                 "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
-                    "0": blob_data
+                    "0": blip_data
                 }
             }
         }
     });
 
     // First store — should trigger push
-    let resp = mailbox.post("/blobs/store").json(&store_body).await;
+    let resp = mailbox.post("/blips/store").json(&store_body).await;
     resp.assert_status(StatusCode::CREATED);
     drain_push_tasks(&push_tasks).await;
 
     // Second store with same data — watermark won't advance, no push
-    let resp = mailbox.post("/blobs/store").json(&store_body).await;
+    let resp = mailbox.post("/blips/store").json(&store_body).await;
     resp.assert_status(StatusCode::CREATED);
     drain_push_tasks(&push_tasks).await;
 

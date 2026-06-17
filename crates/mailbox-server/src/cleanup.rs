@@ -2,7 +2,7 @@ use redb::{Database, ReadableTable};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::{BlobsKey, BLOBS_TABLE};
+use crate::{BlipsKey, BLIPS_TABLE};
 
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60); // 5 minutes
 const MESSAGE_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60); // 7 days
@@ -37,17 +37,17 @@ pub async fn cleanup_old_messages(db: &Database) -> Result<(), Box<dyn std::erro
     let mut deleted_count = 0;
 
     {
-        let mut table = write_txn.open_table(BLOBS_TABLE)?;
+        let mut table = write_txn.open_table(BLIPS_TABLE)?;
 
         // Collect keys to delete
-        let mut keys_to_delete: Vec<BlobsKey> = Vec::new();
+        let mut keys_to_delete: Vec<BlipsKey> = Vec::new();
 
         for entry in table.iter()? {
             let (key, _value) = entry?;
-            let blob_key: BlobsKey = key.value();
+            let blip_key: BlipsKey = key.value();
 
-            if blob_key.uuid < cutoff_uuid {
-                keys_to_delete.push(blob_key);
+            if blip_key.uuid < cutoff_uuid {
+                keys_to_delete.push(blip_key);
             }
         }
 
@@ -77,7 +77,7 @@ mod tests {
 
         let write_txn = db.begin_write().unwrap();
         {
-            let _table = write_txn.open_table(BLOBS_TABLE).unwrap();
+            let _table = write_txn.open_table(BLIPS_TABLE).unwrap();
         }
         write_txn.commit().unwrap();
 
@@ -98,17 +98,17 @@ mod tests {
                 .as_secs(),
             0,
         ));
-        let old_key = BlobsKey::new("test-topic".into(), "log-1".into(), 0, old_uuid).unwrap();
+        let old_key = BlipsKey::new("test-topic".into(), "log-1".into(), 0, old_uuid).unwrap();
 
         // Insert a recent message (1 day ago)
         let recent_uuid = uuid::Uuid::now_v7();
         let recent_key =
-            BlobsKey::new("test-topic".into(), "log-1".into(), 1, recent_uuid).unwrap();
+            BlipsKey::new("test-topic".into(), "log-1".into(), 1, recent_uuid).unwrap();
 
         {
             let write_txn = db.begin_write().unwrap();
             {
-                let mut table = write_txn.open_table(BLOBS_TABLE).unwrap();
+                let mut table = write_txn.open_table(BLIPS_TABLE).unwrap();
                 table.insert(&old_key, b"old message".as_slice()).unwrap();
                 table
                     .insert(&recent_key, b"recent message".as_slice())
@@ -120,7 +120,7 @@ mod tests {
         // Verify both messages exist
         {
             let read_txn = db.begin_read().unwrap();
-            let table = read_txn.open_table(BLOBS_TABLE).unwrap();
+            let table = read_txn.open_table(BLIPS_TABLE).unwrap();
             assert!(table.get(&old_key).unwrap().is_some());
             assert!(table.get(&recent_key).unwrap().is_some());
         }
@@ -131,7 +131,7 @@ mod tests {
         // Verify old message is deleted and recent message remains
         {
             let read_txn = db.begin_read().unwrap();
-            let table = read_txn.open_table(BLOBS_TABLE).unwrap();
+            let table = read_txn.open_table(BLIPS_TABLE).unwrap();
             assert!(table.get(&old_key).unwrap().is_none());
             assert!(table.get(&recent_key).unwrap().is_some());
         }

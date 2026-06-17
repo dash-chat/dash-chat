@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-/// A blob of binary data that serializes/deserializes as base64
+/// A blip of binary data that serializes/deserializes as base64
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Blob(#[serde(with = "base64_serde")] Vec<u8>);
+pub struct Blip(#[serde(with = "base64_serde")] Vec<u8>);
 
-impl Blob {
+impl Blip {
     pub fn new(data: Vec<u8>) -> Self {
         Self(data)
     }
@@ -19,13 +19,13 @@ impl Blob {
     }
 }
 
-impl From<Vec<u8>> for Blob {
+impl From<Vec<u8>> for Blip {
     fn from(data: Vec<u8>) -> Self {
         Self(data)
     }
 }
 
-impl AsRef<[u8]> for Blob {
+impl AsRef<[u8]> for Blip {
     fn as_ref(&self) -> &[u8] {
         &self.0
     }
