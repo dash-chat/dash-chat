@@ -114,12 +114,14 @@ pub fn run() {
         .plugin(tauri_plugin_sharekit::init())
         .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_os::init());
-
-    #[cfg(desktop)]
-    let builder = builder.on_window_event(media_drop::handle_window_event);
-
-    builder
+        .plugin(tauri_plugin_os::init())
+        .on_window_event(|window, event| match event {
+            #[cfg(desktop)]
+            tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {
+                media_drop::handle_drop_event(window, paths)
+            }
+            _ => {}
+        })
         .setup(move |app| {
             let handle = app.handle().clone();
 

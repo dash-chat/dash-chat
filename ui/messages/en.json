@@ -30,6 +30,7 @@
 	"addAvatarImage": "Add avatar image",
 	"editPhoto": "Edit photo",
 	"photo": "Photo",
+	"photosCount": "{{count}} photos",
 	"camera": "Camera",
 	"text": "Text",
 	"avatarText": "Avatar text",

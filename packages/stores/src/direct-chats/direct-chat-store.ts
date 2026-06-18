@@ -13,8 +13,6 @@ import {
 	MessagesStore,
 	Payload,
 	getMessageMedia,
-	getMessageText,
-	summarizeMessageContent,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IDirectChatClient } from './direct-chat-client';
@@ -67,7 +65,7 @@ export class DirectChatStore implements MessagesStore {
 						messages[operation.hash] = {
 							hash: operation.hash,
 							content: {
-								message: getMessageText(body.payload.payload),
+								message: body.payload.payload.message,
 								media: getMessageMedia(body.payload.payload),
 							},
 							author,
@@ -144,7 +142,7 @@ export class DirectChatStore implements MessagesStore {
 			const chatId = await this.chatId();
 			if (topicId !== chatId) return;
 			if (op.body?.payload.type !== 'Message') return;
-			handler(op, getMessageText(op.body.payload.payload));
+			handler(op, op.body.payload.payload.message);
 		});
 	}
 
@@ -208,7 +206,7 @@ export class DirectChatStore implements MessagesStore {
 		const lastEvent: ChatSummary['lastEvent'] = message
 			? {
 					kind: 'message',
-					text: summarizeMessageContent(message.content),
+					content: message.content,
 					timestamp: message.timestamp,
 				}
 			: {

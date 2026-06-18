@@ -1,4 +1,5 @@
 import { tid } from '../selectors';
+import { Lightbox } from './lightbox';
 
 /** Driver for a chat's rendered message list — the messages themselves plus the
  * scroll-to-bottom button and unread affordances around them. Constructed with
@@ -22,6 +23,8 @@ export class Messages {
 	readonly unreadDivider;
 	scrollBottom = this.agent.$(tid('chat-scroll-bottom'));
 	unreadBadge = this.agent.$(tid('chat-unread-badge'));
+	/** The photo viewer opened by clicking a photo in this message list. */
+	lightbox = new Lightbox(this.agent);
 
 	async unreadBadgeText(): Promise<string | null> {
 		if (!(await this.unreadBadge.isExisting())) return null;

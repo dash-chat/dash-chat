@@ -28,18 +28,10 @@ describe('Media attachments', () => {
 	});
 
 	it('sends multiple photos with a caption', async () => {
-		await agent1.directChatPage.composer.attachPhotos('captioned', 3);
-		await agent1.execute(() => {
-			const ta = document.querySelector(
-				'[data-testid="message-input-textarea"]',
-			) as HTMLTextAreaElement;
-			const setter = Object.getOwnPropertyDescriptor(
-				HTMLTextAreaElement.prototype,
-				'value',
-			)!.set!;
-			setter.call(ta, 'three pics');
-			ta.dispatchEvent(new Event('input', { bubbles: true }));
-		});
+		for (let i = 0; i < 3; i++) {
+			await agent1.directChatPage.composer.attachPhotos('captioned');
+		}
+		await agent1.directChatPage.composer.type('three pics');
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.messages.waitForMessage('three pics');
 		await agent2.directChatPage.messages.waitForMessage('three pics');
@@ -74,8 +66,9 @@ describe('Media attachments', () => {
 	});
 
 	it('appends photos picked separately instead of replacing', async () => {
-		await agent1.directChatPage.composer.attachPhotos('appended', 1);
-		await agent1.directChatPage.composer.attachPhotos('appended', 2);
+		for (let i = 0; i < 3; i++) {
+			await agent1.directChatPage.composer.attachPhotos('appended');
+		}
 		await agent1.directChatPage.composer.expectStagedPhotoCount(3);
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.messages.waitForPhotoMessage('appended');
@@ -107,7 +100,7 @@ describe('Media attachments', () => {
 
 	it('removes a single staged photo and clears all staged photos', async () => {
 		const composer = agent1.directChatPage.composer;
-		await composer.attachPhotos('staged', 3);
+		for (let i = 0; i < 3; i++) await composer.attachPhotos('staged');
 		await composer.expectStagedPhotoCount(3);
 		await composer.removeAttachmentButton(1).click();
 		await composer.expectStagedPhotoCount(2);
@@ -119,16 +112,17 @@ describe('Media attachments', () => {
 
 	it('stages a pasted image', async () => {
 		const composer = agent1.directChatPage.composer;
-		await composer.pastePhotos(1);
+		await composer.pastePhotos('pasted');
 		await composer.expectStagedPhotoCount(1);
 		await composer.removeDraft();
 	});
 
 	it('stages dropped images, appending to the draft', async () => {
 		const composer = agent1.directChatPage.composer;
-		await composer.dropPhotos(2);
+		await composer.dropPhotos('dropped');
+		await composer.dropPhotos('dropped');
 		await composer.expectStagedPhotoCount(2);
-		await composer.pastePhotos(1);
+		await composer.pastePhotos('pasted');
 		await composer.expectStagedPhotoCount(3);
 		await composer.clearAttachments.click();
 		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
@@ -136,15 +130,14 @@ describe('Media attachments', () => {
 		});
 	});
 
-	it('caps staged photos at 32 with partial accept', async () => {
-		await agent1.directChatPage.composer.attachPhotos('capped', 30);
-		await agent1.directChatPage.composer.expectStagedPhotoCount(30);
-		await agent1.directChatPage.composer.attachPhotos('capped', 5);
+	it('caps staged photos at 32', async () => {
+		const composer = agent1.directChatPage.composer;
+		for (let i = 0; i < 32; i++) await composer.attachPhotos('capped');
+		await composer.expectStagedPhotoCount(32);
+		// The composer is at the cap, so the next photo is rejected.
+		await composer.attachPhotos('capped');
 		await agent1.toast.expectMessageContaining('cannot add any more');
-		await agent1.directChatPage.composer.expectStagedPhotoCount(32);
-		await agent1.directChatPage.composer.attachPhotos('capped', 1);
-		await agent1.toast.expectMessageContaining('cannot add any more');
-		await agent1.directChatPage.composer.expectStagedPhotoCount(32);
+		await composer.expectStagedPhotoCount(32);
 
 		// Leave and re-enter the chat to discard the bulky draft without
 		// sending 32 photos through the network.

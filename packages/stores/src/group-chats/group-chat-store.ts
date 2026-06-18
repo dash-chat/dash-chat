@@ -17,8 +17,6 @@ import {
 	MessagesStore,
 	Payload,
 	getMessageMedia,
-	getMessageText,
-	summarizeMessageContent,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IGroupChatClient } from './group-chat-client';
@@ -95,7 +93,7 @@ export class GroupChatStore implements MessagesStore {
 						messages[operation.hash] = {
 							hash: operation.hash,
 							content: {
-								message: getMessageText(body.payload.payload),
+								message: body.payload.payload.message,
 								media: getMessageMedia(body.payload.payload),
 							},
 							author,
@@ -232,7 +230,7 @@ export class GroupChatStore implements MessagesStore {
 		const messageEvent: ChatSummaryLastEvent | undefined = lastMessage
 			? {
 					kind: 'message',
-					text: summarizeMessageContent(lastMessage.content),
+					content: lastMessage.content,
 					authorName: await this.nameForDevice(lastMessage.author),
 					timestamp: lastMessage.timestamp,
 				}

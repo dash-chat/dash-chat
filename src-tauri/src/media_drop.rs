@@ -1,5 +1,7 @@
+use std::path::PathBuf;
+
 use serde::Serialize;
-use tauri::{Emitter, Runtime, Window, WindowEvent};
+use tauri::{Emitter, Runtime, Window};
 
 /// Hard ceiling for reading a dropped file into memory. The UI enforces its
 /// own 16 MiB per-message cap at send time, so oversized-but-plausible files
@@ -17,10 +19,7 @@ pub struct DroppedFile {
 
 /// Reads files from native drag-drop events and forwards their contents to
 /// the webview as a `media://files-dropped` event.
-pub fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
-    let WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event else {
-        return;
-    };
+pub fn handle_drop_event<R: Runtime>(window: &Window<R>, paths: &Vec<PathBuf>) {
     let files: Vec<DroppedFile> = paths.iter().filter_map(|path| read_dropped(path)).collect();
     if files.is_empty() {
         return;

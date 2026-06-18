@@ -9,7 +9,7 @@
 		mdiTrayArrowDown,
 	} from '@mdi/js';
 	import type { Photo } from 'dash-chat-stores';
-	import { bytesToBlobUrl } from '$lib/types/media';
+	import { objectUrl } from '$lib/actions/object-url';
 	import { saveAttachment } from '$lib/utils/save-file';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
@@ -31,16 +31,6 @@
 	}: Props = $props();
 
 	const photo = $derived(photos[index]);
-
-	// Own object URLs — minted and revoked in the same pre-effect; see
-	// PhotosAttachment.
-	let photoUrls = $state<string[]>([]);
-
-	$effect.pre(() => {
-		const urls = photos.map(p => bytesToBlobUrl(p.data, p.mime_type));
-		photoUrls = urls;
-		return () => urls.forEach(u => URL.revokeObjectURL(u));
-	});
 
 	let rootEl: HTMLElement | undefined = $state();
 	let stageEl: HTMLElement | undefined = $state();
@@ -180,7 +170,7 @@
 			class="lightbox-image max-h-full max-w-full object-contain"
 			class:zoomed
 			style="transform-origin: {originX}% {originY}%"
-			src={photoUrls[index]}
+			use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
 			alt={photo.name}
 			data-testid="lightbox-image"
 		/>
@@ -217,7 +207,7 @@
 			class:faded={zoomed}
 			data-testid="lightbox-filmstrip"
 		>
-			{#each photos as p, i (photoUrls[i])}
+			{#each photos as p, i (i)}
 				<button
 					type="button"
 					class="lightbox-thumb h-11 w-11 shrink-0 overflow-hidden p-0"
@@ -227,7 +217,7 @@
 					onclick={() => select(i)}
 				>
 					<img
-						src={photoUrls[i]}
+						use:objectUrl={{ data: p.data, mimeType: p.mime_type }}
 						alt={p.name}
 						class="block h-full w-full object-cover"
 					/>

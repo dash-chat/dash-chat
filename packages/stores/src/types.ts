@@ -56,10 +56,6 @@ export type MessageContentV1 = {
 };
 export type MessageContent = MessageContentV1;
 
-export function getMessageText(content: MessageContent): string {
-	return content.message;
-}
-
 export function getMessageMedia(content: MessageContent): Media | null {
 	if (!content.media) return null;
 	const media = content.media;
@@ -75,21 +71,6 @@ export function getMessageMedia(content: MessageContent): Media | null {
 		kind: 'file',
 		file: { ...media.file, data: new Uint8Array(media.file.data) },
 	};
-}
-
-/**
- * Short single-line description of a message for chat list previews. Falls
- * back to a media descriptor when the text is empty.
- */
-export function summarizeMessageContent(content: {
-	message: string;
-	media: Media | null;
-}): string {
-	if (content.message) return content.message;
-	if (!content.media) return '';
-	if (content.media.kind === 'file') return content.media.file.name;
-	const n = content.media.photos.length;
-	return n > 1 ? `${n} photos` : 'Photo';
 }
 
 export type AnnouncementPayload =
@@ -212,7 +193,7 @@ export type GroupControlEvent =
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
-			text: string;
+			content: { message: string; media: Media | null };
 			authorName?: string;
 			timestamp: number;
 	  }

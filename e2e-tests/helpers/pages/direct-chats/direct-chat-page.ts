@@ -19,10 +19,7 @@ export class DirectChatPage extends TestPage {
 	rejectButton = this.agent.$(tid('direct-chat-reject-btn'));
 	acceptConfirm = this.agent.$(tid('direct-chat-accept-confirm'));
 	rejectConfirm = this.agent.$(tid('direct-chat-reject-confirm'));
-	emojiButton = this.agent.$(tid('message-input-emoji'));
 	messageStatus = this.agent.$(tid('message-status'));
-	sendButton = this.agent.$(tid('message-input-send'));
-	mediaPreview = this.agent.$(tid('message-input-media-preview'));
 	messages = new Messages(
 		this.agent,
 		'direct-chat-messages',

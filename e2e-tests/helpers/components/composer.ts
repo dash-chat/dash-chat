@@ -25,32 +25,26 @@ export class Composer {
 	}
 
 	/**
-	 * Attach `count` photos (synthesized 1×1 PNGs) to the composer, named after
-	 * `label` (`${label}-1.png`, …) so a specific send can later be matched with
-	 * `waitForPhotoMessage(label)`. The hidden file input is populated via
-	 * DataTransfer + a synthetic change event, the same trick add-contact uses
-	 * for QR uploads.
+	 * Attach a single synthesized 1×1 PNG named `${label}.png` so the send can
+	 * later be matched with `waitForPhotoMessage(label)`. The hidden file input
+	 * is populated via DataTransfer + a synthetic change event, the same trick
+	 * add-contact uses for QR uploads.
 	 */
-	async attachPhotos(label: string, count = 1): Promise<void> {
+	async attachPhotos(label: string): Promise<void> {
 		await this.agent.execute(
-			(pngBytes: number[], n: number, name: string) => {
+			(pngBytes: number[], name: string) => {
 				const input = document.querySelector(
 					'[data-testid="message-input-photo-picker"]',
 				) as HTMLInputElement;
 				const dt = new DataTransfer();
-				for (let i = 1; i <= n; i++) {
-					const blob = new Blob([new Uint8Array(pngBytes)], {
-						type: 'image/png',
-					});
-					dt.items.add(
-						new File([blob], `${name}-${i}.png`, { type: 'image/png' }),
-					);
-				}
+				const blob = new Blob([new Uint8Array(pngBytes)], {
+					type: 'image/png',
+				});
+				dt.items.add(new File([blob], `${name}.png`, { type: 'image/png' }));
 				input.files = dt.files;
 				input.dispatchEvent(new Event('change', { bubbles: true }));
 			},
 			TINY_PNG,
-			count,
 			label,
 		);
 		await this.mediaPreview.waitForExist({ timeout: 5_000 });
@@ -100,38 +94,50 @@ export class Composer {
 		await this.mediaPreview.waitForExist({ timeout: 5_000 });
 	}
 
-	/** Paste `count` synthesized PNGs into the composer textarea. */
-	async pastePhotos(count = 1): Promise<void> {
+	/** Paste a single synthesized PNG named `${label}.png` into the composer. */
+	async pastePhotos(label: string): Promise<void> {
 		await this.agent.execute(
-			(pngBytes: number[], n: number) => {
-				const specs = Array.from({ length: n }, (_, i) => ({
-					name: `pasted-${i + 1}.png`,
-					mimeType: 'image/png',
-					bytes: pngBytes,
-				}));
-				window.__test.pasteFiles(specs);
+			(pngBytes: number[], name: string) => {
+				window.__test.pasteFiles([
+					{ name: `${name}.png`, mimeType: 'image/png', bytes: pngBytes },
+				]);
 			},
 			TINY_PNG,
-			count,
+			label,
 		);
 		await this.mediaPreview.waitForExist({ timeout: 5_000 });
 	}
 
-	/** Drop `count` synthesized PNGs onto the window (HTML5 drop pipeline). */
-	async dropPhotos(count = 1): Promise<void> {
+	/** Drop a single synthesized PNG named `${label}.png` onto the window. */
+	async dropPhotos(label: string): Promise<void> {
 		await this.agent.execute(
-			(pngBytes: number[], n: number) => {
-				const specs = Array.from({ length: n }, (_, i) => ({
-					name: `dropped-${i + 1}.png`,
-					mimeType: 'image/png',
-					bytes: pngBytes,
-				}));
-				window.__test.dropFiles(specs);
+			(pngBytes: number[], name: string) => {
+				window.__test.dropFiles([
+					{ name: `${name}.png`, mimeType: 'image/png', bytes: pngBytes },
+				]);
 			},
 			TINY_PNG,
-			count,
+			label,
 		);
 		await this.mediaPreview.waitForExist({ timeout: 5_000 });
+	}
+
+	/** Type `text` into the composer textarea without sending. */
+	async type(text: string): Promise<void> {
+		await this.agent.execute(
+			(sel: string, val: string) => {
+				const el = document.querySelector(sel) as HTMLTextAreaElement;
+				const setter = Object.getOwnPropertyDescriptor(
+					HTMLTextAreaElement.prototype,
+					'value',
+				)!.set!;
+				setter.call(el, val);
+				el.dispatchEvent(new Event('input', { bubbles: true }));
+				el.dispatchEvent(new Event('change', { bubbles: true }));
+			},
+			tid('message-input-textarea'),
+			text,
+		);
 	}
 
 	/** Send the composer content. The send button only renders on mobile
