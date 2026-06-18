@@ -5,7 +5,6 @@
 		decodeContactCode,
 		encodeContactCode,
 		fullName,
-		DEFAULT_QR_COLOR,
 		type ContactsStore,
 		type SettingsStore,
 	} from 'dash-chat-stores';
@@ -31,6 +30,7 @@
 	import { goto } from '$app/navigation';
 	import { showToast } from '$lib/utils/toasts';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
+	import { defaultQrColor } from '$lib/utils/qrcode';
 	import SelectColor from './SelectColor.svelte';
 	import MyQrCodeCard from '$lib/components/contacts/MyQrCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
@@ -101,7 +101,7 @@
 
 	const qrColor = useReactivePromise(settingsStore.qrColor);
 	let colorPickerOpen = $state(false);
-	let colorForPicker = $state(DEFAULT_QR_COLOR);
+	let colorForPicker = $state(defaultQrColor());
 
 	async function getMyName(): Promise<string> {
 		const profile = await contactsStore.myProfile();
@@ -111,7 +111,7 @@
 	async function shareCode(code: string) {
 		try {
 			const name = await getMyName();
-			const color = await settingsStore.qrColor();
+			const color = (await settingsStore.qrColor()) ?? defaultQrColor();
 			await shareQrCode(code, color, name);
 		} catch (e) {
 			console.error(e);
@@ -120,14 +120,14 @@
 	}
 
 	async function openColorPicker() {
-		colorForPicker = await settingsStore.qrColor();
+		colorForPicker = (await settingsStore.qrColor()) ?? defaultQrColor();
 		colorPickerOpen = true;
 	}
 
 	async function saveCode(code: string, color: string) {
 		try {
 			const name = await getMyName();
-			await saveQrCode(code, color ?? DEFAULT_QR_COLOR, name);
+			await saveQrCode(code, color ?? defaultQrColor(), name);
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
@@ -241,7 +241,8 @@
 					<Preloader />
 				</div>
 			{:then code}
-				{#await $qrColor then color}
+				{#await $qrColor then savedColor}
+					{@const color = savedColor ?? defaultQrColor()}
 					<div class="column" style="flex:1">
 						<div class="column center-in-desktop gap-4 mx-4 mt-4">
 							<MyQrCodeCard {code} {color} />

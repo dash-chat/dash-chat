@@ -7,6 +7,13 @@ import {
 } from '@tauri-apps/plugin-barcode-scanner';
 import jsQR from 'jsqr';
 
+import { cssColor } from './colors';
+
+/** The brand primary colour — the default QR colour, defined once in `app.css`. */
+export function defaultQrColor(): string {
+	return cssColor('--color-brand-primary');
+}
+
 export type ScanQrFromImageErrorKind =
 	| 'NoQrCodeFound'
 	| 'LoadImageFailed'

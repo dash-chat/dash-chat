@@ -6,7 +6,8 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { writeText } from '$lib/utils/clipboard';
 	import { showToast } from '$lib/utils/toasts';
-	import { DEFAULT_QR_COLOR, type SettingsStore } from 'dash-chat-stores';
+	import { type SettingsStore } from 'dash-chat-stores';
+	import { defaultQrColor } from '$lib/utils/qrcode';
 	import {
 		Page,
 		Navbar,
@@ -32,7 +33,7 @@
 	const settingsStore: SettingsStore = getContext('settings-store');
 
 	const qrColors = [
-		DEFAULT_QR_COLOR,
+		defaultQrColor(),
 		'#ffffff',
 		'#8e8e93',
 		'#a2845e',
