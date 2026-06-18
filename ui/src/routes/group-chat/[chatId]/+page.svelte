@@ -80,7 +80,7 @@
 	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
 		if (hash === justSentMessageHash) {
 			justSentMessageHash = null;
-			reverseScrollPage?.scrollToBottom();
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		}
 	};
 
