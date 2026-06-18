@@ -4,6 +4,7 @@
 
 @theme {
 	--color-brand-primary: #007aff;
+	--color-brand-iris: #6e7bff;
 	--color-brand-red: #ff0000;
 	--color-brand-green: #00ff00;
 
@@ -165,13 +166,14 @@ li.plain span {
 /*
 	Message bubble text: nudge the body weight up so it reads closer to
 	Signal. SF Pro is a variable font, so the smaller 425 step lands as a
-	subtle bump on mobile. Desktop gets a clean Medium (500).
+	subtle bump on mobile. Desktop renders denser at standard density, so it
+	reads better at a regular 400.
 */
 .message {
 	font-weight: 425;
 }
 .wide-layout .message {
-	font-weight: 500;
+	font-weight: 400;
 }
 
 .icon-only-card {
@@ -288,6 +290,24 @@ emoji-picker {
 
 :where(.dark) .k-list-item.active > a {
 	background-color: var(--color-gray-700);
+}
+
+/* Signal-style instant row hover on pointer devices; touch devices keep the
+   tap/active feedback (and the Material ripple). Excludes the selected row so
+   .active stays prominent. The ripple reads var(--k-touch-ripple-color), so
+   neutralizing it to transparent suppresses the desktop ripple via Konsta's
+   own hook — no override of the ripple element itself. */
+@media (hover: hover) {
+	.k-list-item > a {
+		transition: none;
+		--k-touch-ripple-color: transparent;
+	}
+	.k-list-item:not(.active) > a:hover {
+		background-color: var(--color-gray-100);
+	}
+	:where(.dark) .k-list-item:not(.active) > a:hover {
+		background-color: var(--color-gray-800);
+	}
 }
 
 .k-list.rounded-2xl a.cursor-pointer {

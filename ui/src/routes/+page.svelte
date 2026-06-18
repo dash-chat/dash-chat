@@ -25,10 +25,19 @@
 </script>
 
 <Page>
-	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
+	<Navbar
+		title={m.chats()}
+		titleClass="opacity1 !text-[17px] !font-bold"
+		transparent={true}
+	>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
-				<Link iconOnly href="/settings" data-testid="home-settings-link">
+				<Link
+					iconOnly
+					href="/settings"
+					class="rounded-full hover:bg-black/[.06] dark:hover:bg-white/10 [--k-touch-ripple-color:transparent]"
+					data-testid="home-settings-link"
+				>
 					<Avatar
 						image={myProfile?.avatar}
 						initials={myProfile?.name.slice(0, 2)}
@@ -40,7 +49,12 @@
 
 		{#snippet right()}
 			{#if theme === 'ios'}
-				<Link iconOnly href="/new-message" data-testid="home-new-message-btn">
+				<Link
+					iconOnly
+					href="/new-message"
+					class="rounded-full hover:bg-black/[.06] dark:hover:bg-white/10 [--k-touch-ripple-color:transparent]"
+					data-testid="home-new-message-btn"
+				>
 					<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
 				</Link>
 				{#if !isWideScreen.value}
@@ -78,6 +92,7 @@
 				{/await}
 				<Fab
 					class="z-20 me-4 pointer-events-auto"
+					colors={{ bgMaterial: 'bg-brand-iris', textMaterial: 'text-white' }}
 					style="align-self: end;"
 					onClick={() => goto('/new-message')}
 					data-testid="home-new-message-btn"
