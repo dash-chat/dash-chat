@@ -90,6 +90,7 @@ impl OpStore {
         Ok(log)
     }
 
+    #[deprecated = "will be replace by proper use of p2panda-streams"]
     pub fn get_all_operations_not_fully_sorted(
         &self,
     ) -> impl futures::Stream<Item = Result<Operation, anyhow::Error>> + '_ {
