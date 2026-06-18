@@ -141,7 +141,7 @@
 	}
 
 	.input-container:focus-within {
-		border-color: var(--k-theme-color, #3b82f6);
+		border-color: var(--color-brand-primary);
 	}
 
 	.icon-button {
@@ -216,7 +216,7 @@
 	}
 
 	.send-button.active {
-		background: var(--k-theme-color, #3b82f6);
+		background: var(--color-brand-primary);
 		color: white;
 		opacity: 1;
 	}
