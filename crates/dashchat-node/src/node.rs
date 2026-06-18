@@ -345,6 +345,19 @@ impl Node {
             .expect("device id is a valid endpoint id")
     }
 
+    /// The node's iroh-blobs protocol handle, sharing its blob store. An
+    /// in-process mailbox uses this so relayed blobs land in—and are served
+    /// from—the same store on the same endpoint as the node.
+    pub fn blobs(&self) -> iroh_blobs::BlobsProtocol {
+        self.blob_sync.blobs.clone()
+    }
+
+    /// The node's blob downloader, for an in-process mailbox to fetch blobs
+    /// into the shared store over the node's endpoint.
+    pub fn blob_downloader(&self) -> iroh_blobs::api::downloader::Downloader {
+        self.blob_sync.downloader()
+    }
+
     pub fn device_group_topic(&self) -> DeviceGroupId {
         Topic::device_group(self.agent_id()).into()
     }

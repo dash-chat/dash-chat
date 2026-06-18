@@ -64,10 +64,15 @@ impl FetchStack for BlobFetchPool {
 #[derive(Clone)]
 pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
-    pub endpoint: iroh::Endpoint,
     pub(crate) fetch_pool: BlobFetchPool,
     downloader: Downloader,
-    _router: Router,
+    endpoint_id: iroh::EndpointId,
+    fetch_config: FetchConfig,
+    /// Held only when this BlobSync owns its iroh endpoint (standalone server).
+    /// `None` when sharing an in-process node's endpoint, in which case the
+    /// node keeps the endpoint, router, and blob store alive.
+    _endpoint: Option<iroh::Endpoint>,
+    _router: Option<Router>,
 }
 
 impl BlobSync {
@@ -83,18 +88,52 @@ impl BlobSync {
             .accept(iroh_blobs::ALPN, blobs.clone())
             .spawn();
         let downloader = Downloader::new(&store, &endpoint);
+        let endpoint_id = endpoint.id();
 
         Ok(Self {
             blobs,
-            endpoint,
             fetch_pool: BlobFetchPool::default(),
             downloader,
-            _router: router,
+            endpoint_id,
+            fetch_config: FetchConfig::default(),
+            _endpoint: Some(endpoint),
+            _router: Some(router),
         })
     }
 
+    /// Build a mailbox BlobSync that shares an existing iroh endpoint and blob
+    /// store (the in-process node's) instead of creating its own. Relayed blobs
+    /// land in the shared store and are served by the node's existing protocol,
+    /// so the mailbox's EndpointId is the node's EndpointId.
+    pub fn shared(
+        blobs: iroh_blobs::BlobsProtocol,
+        downloader: Downloader,
+        endpoint_id: iroh::EndpointId,
+    ) -> Self {
+        Self {
+            blobs,
+            fetch_pool: BlobFetchPool::default(),
+            downloader,
+            endpoint_id,
+            fetch_config: FetchConfig::default(),
+            _endpoint: None,
+            _router: None,
+        }
+    }
+
+    /// Override the fetch loop's cadence (concurrency, attempt timeout, retry
+    /// interval). Used by `spawn_server` when it spawns the loop.
+    pub fn with_fetch_config(mut self, config: FetchConfig) -> Self {
+        self.fetch_config = config;
+        self
+    }
+
+    pub(crate) fn fetch_config(&self) -> FetchConfig {
+        self.fetch_config.clone()
+    }
+
     pub fn endpoint_id(&self) -> iroh::EndpointId {
-        self.endpoint.id()
+        self.endpoint_id
     }
 
     pub fn fetch_pool(&self) -> &BlobFetchPool {

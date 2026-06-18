@@ -32,6 +32,7 @@ pub mod test_utils;
 const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
 pub use blob_sync::{BlobSync, BlobFetchPool};
+pub use dashchat_utils::FetchConfig;
 pub use blip::Blip;
 pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
@@ -85,6 +86,7 @@ pub async fn spawn_server(
     db_path: PathBuf,
     addr: String,
     push_notifications_url: Option<String>,
+    blob_sync: Option<BlobSync>,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = init_db(db_path.clone())?;
@@ -94,11 +96,17 @@ pub async fn spawn_server(
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
 
-    let secret_key = load_or_create_secret_key(&db_arc).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-    let blobs_root = db_path_blobs_dir(&db_path);
-    let blob_sync = BlobSync::new(secret_key, blobs_root).await?;
+    let blob_sync = match blob_sync {
+        Some(blob_sync) => blob_sync,
+        None => {
+            let secret_key = load_or_create_secret_key(&db_arc)
+                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            let blobs_root = db_path_blobs_dir(&db_path);
+            BlobSync::new(secret_key, blobs_root).await?
+        }
+    };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
-    let blob_fetch_handle = blob_sync.spawn_fetch_loop(dashchat_utils::FetchConfig::default());
+    let blob_fetch_handle = blob_sync.spawn_fetch_loop(blob_sync.fetch_config());
 
     let push_client = match push_notifications_url {
         Some(url) => {

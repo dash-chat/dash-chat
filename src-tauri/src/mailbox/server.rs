@@ -29,7 +29,15 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         return Ok(());
     }
 
-    let device_id = handle.state::<Node>().device_id();
+    let node = handle.state::<Node>();
+    let device_id = node.device_id();
+
+    // The in-process mailbox shares the node's iroh endpoint and blob store, so
+    // its EndpointId equals the node's device id and relayed blobs are served
+    // from the same store on the same endpoint. The mDNS instance name below
+    // therefore encodes the device id and resolves to this shared endpoint.
+    let blob_sync =
+        mailbox_server::BlobSync::shared(node.blobs(), node.blob_downloader(), node.endpoint_id());
 
     let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel();
     let stop_signal_rx = stop_signal_rx.map(|f| f.expect("failed to listen for event"));
@@ -47,7 +55,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     // defaults off (macOS, Linux).
     let addr = format!("[::]:{port}");
     let server = tokio::spawn(async move {
-        match mailbox_server::spawn_server(path, addr, None, stop_signal_rx).await {
+        match mailbox_server::spawn_server(path, addr, None, Some(blob_sync), stop_signal_rx).await {
             Ok(_) => (),
             Err(e) => log::error!("Failed to start local mailbox: {e:?}"),
         }

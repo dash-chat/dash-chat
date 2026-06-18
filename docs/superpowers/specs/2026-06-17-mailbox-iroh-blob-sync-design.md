@@ -67,6 +67,19 @@ On startup, `mailbox_server::spawn_server`:
    health endpoint for the cloud case, and the mDNS announcement for the local
    case).
 
+**In-process (local LAN) mailbox shares the node's endpoint and blob store.**
+When a mailbox runs in-process inside a Dash Chat node (the desktop LAN case),
+it does **not** create its own iroh endpoint, key, router, or blob store.
+Instead `spawn_server` accepts an optional pre-built `BlobSync`; the host passes
+one built via `BlobSync::shared(node_blobs, node_downloader, node_endpoint_id)`,
+reusing the node's `BlobsProtocol` (and thus its blob store), `Downloader`, and
+`EndpointId`. Consequences: the mailbox's `MailboxId` is exactly the node's
+`EndpointId` (so the mDNS instance name, which encodes the node's device id, is
+correct by construction); relayed blobs the mailbox fetches land in the node's
+store and are served by the node's existing blobs protocol on its existing
+endpoint. The standalone/cloud server still loads-or-generates its own key and
+builds its own endpoint+store (the `None` branch of `spawn_server`).
+
 A new module `crates/mailbox-server/src/blob_sync.rs` holds a **minimal,
 payload-agnostic fetch loop** (deliberately duplicated from the node's rather
 than shared, to avoid coupling the server to `dashchat-node`'s `Payload`):
@@ -194,11 +207,13 @@ blob sync can occur; the mailbox is provably the relay.
    + un-comment in `MixedSourceLookup::sources`.
 6. **End-to-end integration test** (staged-online model above).
 
-## Open risk
+## Open risk — RESOLVED
 
-The mDNS announcement currently derives the local mailbox's instance name from
-the device id (`src-tauri/src/mailbox/server.rs::mdns_service_info`). Switching
-`MailboxId` to the iroh `EndpointId` means the announce side must publish the
-endpoint id and the browse side (`src-tauri/src/mailbox.rs`) must consume it as
-the id. Resolve the exact carrier (instance name vs. TXT record) during phase 5;
-the EndpointId is 32 bytes / 64 hex chars, which fits a single DNS label.
+The mDNS announcement derives the local mailbox's instance name from the device
+id (`src-tauri/src/mailbox/server.rs::mdns_service_info`). This is **correct**
+because the in-process mailbox shares the node's iroh endpoint (see "In-process
+(local LAN) mailbox shares the node's endpoint and blob store" above): the
+mailbox's `EndpointId` *is* the node's device id, so encoding the device id as
+the instance name yields the canonical `MailboxId` that resolves to the shared
+endpoint. The carrier is the mDNS instance name (base64url-no-pad, 43 chars,
+fits a single DNS label). The cloud case reads the same encoding from `/health`.
