@@ -39,7 +39,16 @@ pub fn run() {
         builder = builder
             .plugin(tauri_plugin_virtual_keyboard_padding::init())
             .plugin(tauri_plugin_barcode_scanner::init())
+            .plugin(tauri_plugin_view::init())
             .plugin(tauri_plugin_system_bars_styles::init());
+    }
+    #[cfg(target_os = "android")]
+    {
+        builder = builder.plugin(tauri_plugin_android_fs::init());
+    }
+    #[cfg(target_os = "ios")]
+    {
+        builder = builder.plugin(tauri_plugin_ios_photos::init());
     }
     #[cfg(not(mobile))]
     {
@@ -71,7 +80,7 @@ pub fn run() {
         }
     }
 
-    let builder = builder
+    builder
         .invoke_handler(tauri::generate_handler![
             device_info::display::log_webview_info,
             commands::logs::get_log,

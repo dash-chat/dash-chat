@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { FileAttachment } from 'dash-chat-stores';
-	import { formatFileSize, saveAttachment } from '$lib/utils/media';
+	import { formatFileSize, saveFileAttachment } from '$lib/utils/media';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
@@ -17,7 +17,7 @@
 
 	async function handleSave() {
 		try {
-			if (await saveAttachment(file)) showToast(m.fileSaved());
+			if (await saveFileAttachment(file)) showToast(m.fileSaved());
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error(e);

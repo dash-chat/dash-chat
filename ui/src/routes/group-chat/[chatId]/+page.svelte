@@ -28,7 +28,6 @@
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import { m } from '$lib/paraglide/messages';
-	import MessageContent from '$lib/components/messages/MessageContent.svelte';
 
 	let chatId = page.params.chatId!;
 

@@ -1,10 +1,8 @@
 import { tid } from '../selectors';
 import { Lightbox } from './lightbox';
 
-/** Driver for a chat's rendered message list — the messages themselves plus the
- * scroll-to-bottom button and unread affordances around them. Constructed with
- * the page-specific messages and unread-divider testids; both direct and group
- * chats use it. */
+// Driver for a chat's rendered message list — the messages themselves plus the
+// scroll-to-bottom button and unread affordances around them.
 export class Messages {
 	constructor(
 		private agent: WebdriverIO.Browser,
@@ -91,9 +89,9 @@ export class Messages {
 		);
 	}
 
-	/** First clickable photo cell of the first photo message in the list. */
-	photoCellButton() {
-		return this.root.$(`${tid('message-attachment-photos')} button`);
+	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
+	photoCellButton(index: number) {
+		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
 	}
 
 	/** True if the unread divider precedes (in DOM order) the message wrapper containing `text`. */

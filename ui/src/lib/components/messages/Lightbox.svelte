@@ -10,8 +10,9 @@
 	} from '@mdi/js';
 	import type { Photo } from 'dash-chat-stores';
 	import { objectUrl } from '$lib/actions/object-url';
-	import { saveAttachment } from '$lib/utils/media';
+	import { savePhoto } from '$lib/utils/media';
 	import { showToast } from '$lib/utils/toasts';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
 	interface Props {
@@ -35,7 +36,6 @@
 
 	let rootEl: HTMLElement | undefined = $state();
 	let stageEl: HTMLElement | undefined = $state();
-	let closeButton: HTMLButtonElement | undefined = $state();
 
 	let zoomed = $state(false);
 	let originX = $state(50);
@@ -47,7 +47,7 @@
 
 	async function handleSave() {
 		try {
-			if (await saveAttachment(photo)) showToast(m.fileSaved());
+			if (await savePhoto(photo)) showToast(m.mediaSaved());
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error(e);
@@ -61,7 +61,9 @@
 	});
 
 	$effect(() => {
-		closeButton?.focus();
+		rootEl
+			?.querySelector<HTMLButtonElement>('[data-testid="lightbox-close"]')
+			?.focus();
 	});
 
 	function updateOrigin(event: MouseEvent) {
@@ -145,25 +147,20 @@
 			<MessageTimestamp {timestamp} class="lightbox-time" />
 		</div>
 		<div class="flex items-center gap-2">
-			<button
-				type="button"
-				class="lightbox-button"
-				data-testid="lightbox-save"
-				aria-label={m.saveFile()}
-				onclick={handleSave}
-			>
-				<wa-icon src={wrapPathInSvg(mdiTrayArrowDown)}></wa-icon>
-			</button>
-			<button
-				type="button"
-				class="lightbox-button"
-				data-testid="lightbox-close"
-				aria-label={m.closeLightbox()}
-				bind:this={closeButton}
-				onclick={onClose}
-			>
-				<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
-			</button>
+			<IconButton
+				variant="overlay"
+				icon={mdiTrayArrowDown}
+				onClick={handleSave}
+				label={m.saveFile()}
+				testid="lightbox-save"
+			/>
+			<IconButton
+				variant="overlay"
+				icon={mdiClose}
+				onClick={onClose}
+				label={m.closeLightbox()}
+				testid="lightbox-close"
+			/>
 		</div>
 	</div>
 
@@ -186,29 +183,31 @@
 		/>
 	</button>
 
+	<!-- Physical left/right positioning: photo navigation keeps reading order
+	     even in RTL, matching platform image-viewer conventions. -->
 	{#if index > 0}
-		<button
-			type="button"
-			class="lightbox-button lightbox-nav lightbox-prev"
-			class:faded={zoomed}
-			data-testid="lightbox-prev"
-			aria-label={m.previousPhoto()}
-			onclick={() => select(index - 1)}
-		>
-			<wa-icon src={wrapPathInSvg(mdiChevronLeft)}></wa-icon>
-		</button>
+		<IconButton
+			variant="overlay"
+			icon={mdiChevronLeft}
+			onClick={() => select(index - 1)}
+			label={m.previousPhoto()}
+			testid="lightbox-prev"
+			class="absolute top-1/2 left-3 -translate-y-1/2 !bg-white/10 hover:!bg-white/20 {zoomed
+				? '!opacity-0 pointer-events-none'
+				: ''}"
+		/>
 	{/if}
 	{#if index < photos.length - 1}
-		<button
-			type="button"
-			class="lightbox-button lightbox-nav lightbox-next"
-			class:faded={zoomed}
-			data-testid="lightbox-next"
-			aria-label={m.nextPhoto()}
-			onclick={() => select(index + 1)}
-		>
-			<wa-icon src={wrapPathInSvg(mdiChevronRight)}></wa-icon>
-		</button>
+		<IconButton
+			variant="overlay"
+			icon={mdiChevronRight}
+			onClick={() => select(index + 1)}
+			label={m.nextPhoto()}
+			testid="lightbox-next"
+			class="absolute top-1/2 right-3 -translate-y-1/2 !bg-white/10 hover:!bg-white/20 {zoomed
+				? '!opacity-0 pointer-events-none'
+				: ''}"
+		/>
 	{/if}
 
 	{#if photos.length > 1}
@@ -249,27 +248,6 @@
 		font-size: 11px;
 	}
 
-	.lightbox-button {
-		border: none;
-		background: transparent;
-		color: white;
-		cursor: pointer;
-		padding: 6px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 6px;
-		opacity: 0.85;
-		transition: opacity 0.15s ease;
-	}
-	.lightbox-button:hover {
-		opacity: 1;
-	}
-	.lightbox-button :global(wa-icon) {
-		width: 24px;
-		height: 24px;
-	}
-
 	.lightbox-image {
 		transition: transform 0.15s ease;
 	}
@@ -279,26 +257,6 @@
 	}
 	.lightbox-image:not(.zoomed) {
 		cursor: zoom-in;
-	}
-
-	/* Physical positioning: photo navigation keeps reading order even in
-	 * RTL, matching platform image-viewer conventions. */
-	.lightbox-nav {
-		position: absolute;
-		top: 50%;
-		transform: translateY(-50%);
-		background: rgba(255, 255, 255, 0.12);
-		border-radius: 50%;
-		padding: 8px;
-	}
-	.lightbox-nav:hover {
-		background: rgba(255, 255, 255, 0.22);
-	}
-	.lightbox-prev {
-		left: 12px;
-	}
-	.lightbox-next {
-		right: 12px;
 	}
 
 	.lightbox-filmstrip {

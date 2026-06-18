@@ -65,7 +65,6 @@
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
-	import MessageContent from '$lib/components/messages/MessageContent.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');

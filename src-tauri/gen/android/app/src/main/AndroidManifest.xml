@@ -3,6 +3,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Saving downloaded photos to the shared gallery on Android 9 and below
+         (Android 10+ uses scoped storage / MediaStore and needs no permission). -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
@@ -52,4 +57,8 @@
             android:resource="@xml/file_paths" />
         </provider>
     </application>
+    <!-- ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
 </manifest>

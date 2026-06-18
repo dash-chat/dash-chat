@@ -11,6 +11,7 @@
 	import { objectUrl } from '$lib/actions/object-url';
 	import { pickFiles } from '$lib/utils/files';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import StagedThumb from './StagedThumb.svelte';
 
 	interface Props {
@@ -47,15 +48,13 @@
 	<div class="pt-2" data-testid="message-input-media-preview">
 		{#if showClearAll}
 			<div class="flex justify-end pb-2 pe-2">
-				<button
-					type="button"
-					class="clear-all flex items-center justify-center"
-					data-testid="message-input-clear-attachments"
-					aria-label={m.removeAllAttachments()}
-					onclick={clear}
-				>
-					<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
-				</button>
+				<IconButton
+					icon={mdiClose}
+					onClick={clear}
+					label={m.removeAllAttachments()}
+					testid="message-input-clear-attachments"
+					iconClass="text-xl"
+				/>
 			</div>
 		{/if}
 		<div class="flex max-h-[142px] gap-2 overflow-x-auto px-2">
@@ -100,23 +99,6 @@
 {/if}
 
 <style>
-	.clear-all {
-		border: none;
-		background: transparent;
-		cursor: pointer;
-		color: var(--k-text-color);
-		opacity: 0.6;
-		transition: opacity 0.15s ease;
-		height: auto;
-	}
-	.clear-all:hover {
-		opacity: 1;
-	}
-	.clear-all :global(wa-icon) {
-		width: 20px;
-		height: 20px;
-	}
-
 	.add-more {
 		border-radius: 4px;
 		border: 2px dashed var(--k-hairline-color, rgba(128, 128, 128, 0.4));

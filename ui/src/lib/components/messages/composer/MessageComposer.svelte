@@ -48,13 +48,8 @@
 	let showMediaPanel = $state(false);
 	let showMediaMenu = $state(false);
 
-	function triggerSend() {
-		if (!hasContent) return;
-		void send();
-		messageInput?.reset();
-	}
-
 	async function send() {
+		if (!hasContent) return;
 		const message = value;
 		const draft = media;
 		try {
@@ -66,6 +61,7 @@
 			if (media === draft) {
 				media = undefined;
 			}
+			messageInput?.reset();
 			onSent?.(hash);
 		} catch (e) {
 			if (e instanceof AttachmentTooLargeError) {
@@ -106,7 +102,7 @@
 <MediaDropOverlay onFiles={stage} />
 
 <div style="display: flow-root" use:keepKeyboardOpen>
-	<div class="message-input-bar" class:pb-safe={!(isMobile && showMediaPanel)}>
+	<div class="message-input-bar" class:pb-safe={!showMediaPanel}>
 		<StagedAttachments bind:media onFiles={stage} />
 
 		<div class="m-2 row gap-2" style="align-items: center;">
@@ -134,13 +130,13 @@
 					bind:this={messageInput}
 					bind:value
 					{placeholder}
-					onSend={triggerSend}
+					onSend={send}
 					onEmojiClick={() => (showEmojiPicker = true)}
 				/>
 			</div>
 
 			{#if isMobile}
-				<SendButton disabled={!hasContent} onClick={triggerSend} />
+				<SendButton disabled={!hasContent} onClick={send} />
 			{/if}
 		</div>
 	</div>

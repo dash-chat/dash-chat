@@ -35,7 +35,7 @@ describe('Photo lightbox', () => {
 	});
 
 	it('opens the clicked photo and closes with the close button', async () => {
-		await agent1.directChatPage.messages.photoCellButton().click();
+		await agent1.directChatPage.messages.photoCellButton(0).click();
 		await agent1.directChatPage.messages.lightbox.root.waitForExist();
 		await agent1.directChatPage.messages.lightbox.close.click();
 		await agent1.waitUntil(
@@ -44,7 +44,7 @@ describe('Photo lightbox', () => {
 	});
 
 	it('navigates with arrows, keyboard, and filmstrip', async () => {
-		await agent1.directChatPage.messages.photoCellButton().click();
+		await agent1.directChatPage.messages.photoCellButton(0).click();
 		await agent1.directChatPage.messages.lightbox.root.waitForExist();
 
 		const first = await agent1.directChatPage.messages.lightbox.imageSrc();
@@ -87,7 +87,7 @@ describe('Photo lightbox', () => {
 
 	it('opens on the receiving side too', async () => {
 		await agent2.directChatPage.messages.waitForPhotoMessage('lightbox');
-		await agent2.directChatPage.messages.photoCellButton().click();
+		await agent2.directChatPage.messages.photoCellButton(0).click();
 		await agent2.directChatPage.messages.lightbox.root.waitForExist();
 		await agent2.directChatPage.messages.lightbox.close.click();
 	});

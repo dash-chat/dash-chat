@@ -1,7 +1,8 @@
 import { m } from '$lib/paraglide/messages.js';
 import { compressImage } from '$lib/utils/compress';
 import { isMobile, isTauriEnv } from '$lib/utils/environment';
-import { saveFile, shareFile } from '$lib/utils/files';
+import { saveFile } from '$lib/utils/files';
+import { saveAndOpenFile, savePhotoToGallery } from '$lib/utils/gallery';
 import { downloadDir } from '@tauri-apps/api/path';
 import type { FileAttachment, Media, Photo } from 'dash-chat-stores';
 
@@ -155,18 +156,38 @@ export function formatFileSize(bytes: number): string {
 }
 
 /**
- * Save an attachment: native save dialog on desktop Tauri, system share sheet
- * on mobile, anchor-download fallback in the browser. Returns `true` when the
- * file was written to disk via the desktop dialog (so the caller can confirm
- * with a toast), and `false` otherwise. Throws on unexpected failure.
+ * Save a photo: straight to the device gallery on mobile (Pictures via
+ * MediaStore on Android, the photo library on iOS), a native save dialog on
+ * desktop Tauri, or an anchor-download in the browser. Returns `true` when it
+ * was saved (so the caller can confirm with a toast) and `false` when the user
+ * cancelled the desktop dialog. Throws on unexpected failure.
  */
-export async function saveAttachment(
-	file: FileAttachment | Photo,
+export async function savePhoto(photo: Photo): Promise<boolean> {
+	if (isTauriEnv() && isMobile) {
+		await savePhotoToGallery(photo);
+		return true;
+	}
+	return saveToDisk(photo);
+}
+
+/**
+ * Save a file attachment: saved to the app storage and opened with the system
+ * handler on mobile, a native save dialog on desktop Tauri, or an
+ * anchor-download in the browser. Returns `true` only when written via the
+ * desktop dialog (so the caller can confirm with a toast). Throws on
+ * unexpected failure.
+ */
+export async function saveFileAttachment(
+	file: FileAttachment,
 ): Promise<boolean> {
 	if (isTauriEnv() && isMobile) {
-		await shareFile(file.data, file.name, file.mime_type);
+		await saveAndOpenFile(file);
 		return false;
 	}
+	return saveToDisk(file);
+}
+
+async function saveToDisk(file: FileAttachment | Photo): Promise<boolean> {
 	return saveFile(
 		file.data,
 		await downloadDir().catch(() => ''),
