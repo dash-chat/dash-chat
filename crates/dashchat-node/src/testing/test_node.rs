@@ -154,18 +154,9 @@ impl TestNode {
         Ok(ids)
     }
 
-    pub async fn subscribed_topics(&self) -> BTreeSet<TopicId> {
-        let mailbox_topics = self.mailboxes.subscribed_topics().await;
-        mailbox_topics
-
-        // self.node
-        //     .initialized_topics
-        //     .read()
-        //     .await
-        //     .keys()
-        //     .cloned()
-        //     .chain(mailbox_topics)
-        //     .collect::<BTreeSet<_>>()
+    pub async fn subscribed_log_ids(&self) -> BTreeSet<LogId> {
+        let mailbox_log_ids = self.mailboxes.subscribed_log_ids().await;
+        mailbox_log_ids
     }
 }
 

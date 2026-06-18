@@ -1,16 +1,13 @@
 use p2panda::Hash;
-use p2panda::operation::{Header, Operation};
+use p2panda::operation::{Header, LogId, Operation};
 use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
-use crate::{DeviceId, TopicId};
+use crate::DeviceId;
 use mailbox_client::MailboxItem;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MailboxOperation {
-    // @TODO: topic is only represented on an operation in it's hashed form. We can't derive it
-    // from the header so we add it here as an own field on mailbox operation.
-    pub topic: TopicId,
     pub header: Header,
     pub body: Option<Body>,
 }
@@ -18,7 +15,7 @@ pub struct MailboxOperation {
 impl MailboxItem for MailboxOperation {
     type Hash = Hash;
     type Author = DeviceId;
-    type Topic = TopicId;
+    type LogId = LogId;
 
     fn hash(&self) -> Hash {
         self.header.hash()
@@ -32,8 +29,8 @@ impl MailboxItem for MailboxOperation {
         self.header.seq_num
     }
 
-    fn topic(&self) -> TopicId {
-        self.topic
+    fn log_id(&self) -> LogId {
+        self.header.extensions.log_id
     }
 }
 
@@ -53,6 +50,7 @@ mod tests {
 
     use crate::{testing::*, *};
     use mailbox_client::{MailboxClient, mem::MemMailbox};
+    use p2panda::operation::LogId;
 
     /// Very simple test which circumvents the contact adding system:
     /// - alice sends a message to a direct chat topic
@@ -123,17 +121,21 @@ mod tests {
         let alice = TestNode::new(config.clone(), "alice").await;
         let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
-        let chat_id = alice.direct_chat_topic(bobbi.agent_id());
-        alice.register_topic(chat_id).await.unwrap();
+        let chat_topic = alice.direct_chat_topic(bobbi.agent_id());
+        let chat_log_id = LogId::from_topic(*chat_topic);
+        alice.register_topic(chat_topic).await.unwrap();
 
         alice.add_mailbox_client(mb.client()).await;
         bobbi.add_mailbox_client(mb.client()).await;
-        bobbi.register_topic(chat_id).await.unwrap();
+        bobbi.register_topic(chat_topic).await.unwrap();
 
-        alice.send_message(chat_id, "Hello".into()).await.unwrap();
+        alice
+            .send_message(chat_topic, "Hello".into())
+            .await
+            .unwrap();
 
         poll.wait_for(|| async {
-            if bobbi.get_messages(chat_id).await.unwrap().len() == 1 {
+            if bobbi.get_messages(chat_topic).await.unwrap().len() == 1 {
                 Ok(())
             } else {
                 Err("message not received")
@@ -162,12 +164,12 @@ mod tests {
         poll.wait_for(|| async {
             let alice_seq = alice_sync
                 .borrow()
-                .get(&*chat_id)
+                .get(&chat_log_id)
                 .and_then(|m| m.get(&alice_device))
                 .copied();
             let bobbi_seq = bobbi_sync
                 .borrow()
-                .get(&*chat_id)
+                .get(&chat_log_id)
                 .and_then(|m| m.get(&alice_device))
                 .copied();
             if alice_seq == Some(0) && bobbi_seq == Some(0) {

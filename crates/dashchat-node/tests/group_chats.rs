@@ -7,7 +7,7 @@ use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
 use mailbox_client::mem::MemMailbox;
 
 use maplit::{btreemap, btreeset};
-use p2panda::network::MdnsDiscoveryMode;
+use p2panda::{network::MdnsDiscoveryMode, operation::LogId};
 use p2panda_auth::Access;
 use std::collections::BTreeSet;
 
@@ -109,10 +109,11 @@ async fn test_direct_chat() {
         .unwrap();
 
     let chat_id = alice.direct_chat_topic(bobbi.agent_id());
+    let chat_log_id = LogId::from_topic(*chat_id);
     assert_eq!(chat_id, bobbi.direct_chat_topic(alice.agent_id()));
 
-    assert!(alice.subscribed_topics().await.contains(&chat_id));
-    assert!(bobbi.subscribed_topics().await.contains(&chat_id));
+    assert!(alice.subscribed_log_ids().await.contains(&chat_log_id));
+    assert!(bobbi.subscribed_log_ids().await.contains(&chat_log_id));
 
     alice.send_message(chat_id, "Hello".into()).await.unwrap();
 
@@ -168,10 +169,11 @@ async fn test_p2p_direct_chat() {
         .unwrap();
 
     let chat_id = alice.direct_chat_topic(bobbi.agent_id());
+    let chat_log_id = LogId::from_topic(*chat_id);
     assert_eq!(chat_id, bobbi.direct_chat_topic(alice.agent_id()));
 
-    assert!(alice.subscribed_topics().await.contains(&chat_id));
-    assert!(bobbi.subscribed_topics().await.contains(&chat_id));
+    assert!(alice.subscribed_log_ids().await.contains(&chat_log_id));
+    assert!(bobbi.subscribed_log_ids().await.contains(&chat_log_id));
 
     let message = "Hello";
     alice.send_message(chat_id, "Hello".into()).await.unwrap();

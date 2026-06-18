@@ -13,17 +13,17 @@ use tokio::sync::RwLock;
 #[derive(Clone)]
 pub struct MemMailboxClient<Item: MailboxItem> {
     mailbox: MemMailbox<Item>,
-    subscribed_topics: Arc<RwLock<BTreeSet<Item::Topic>>>,
+    subscribed_topics: Arc<RwLock<BTreeSet<Item::LogId>>>,
 }
 
 impl<Item: MailboxItem> MemMailboxClient<Item> {
-    pub async fn subscribed_topics(&self) -> BTreeSet<Item::Topic> {
+    pub async fn subscribed_topics(&self) -> BTreeSet<Item::LogId> {
         self.subscribed_topics.read().await.clone()
     }
 }
 
 pub type MemMailboxLogs<Item> = HashMap<
-    <Item as MailboxItem>::Topic,
+    <Item as MailboxItem>::LogId,
     HashMap<<Item as MailboxItem>::Author, BTreeMap<u64, Item>>,
 >;
 
@@ -48,7 +48,7 @@ impl<Item: MailboxItem> MemMailbox<Item> {
         }
     }
 
-    pub async fn log_heights(&self) -> BTreeMap<Item::Topic, BTreeMap<Item::Author, u64>> {
+    pub async fn log_heights(&self) -> BTreeMap<Item::LogId, BTreeMap<Item::Author, u64>> {
         let ops = self.ops.read().await;
         let mut log_heights = BTreeMap::new();
         for (topic, ops) in ops.iter() {
@@ -65,7 +65,7 @@ impl<Item: MailboxItem> MemMailbox<Item> {
 #[async_trait::async_trait]
 impl<Item: MailboxItem> MailboxClient<Item> for MemMailboxClient<Item>
 where
-    Item::Topic: OptionalItemTraits,
+    Item::LogId: OptionalItemTraits,
     Item::Hash: OptionalItemTraits,
 {
     fn id(&self) -> MailboxId {
@@ -78,10 +78,10 @@ where
         for op in ops {
             let author = op.author();
             let seq_num = op.seq_num();
-            let topic = op.topic();
-            tracing::info!(topic = ?topic, hash = ?op.hash(), "publishing mailbox operation");
+            let log_id = op.log_id();
+            tracing::info!(log_id = ?log_id, hash = ?op.hash(), "publishing mailbox operation");
             store
-                .entry(topic)
+                .entry(log_id)
                 .or_default()
                 .entry(author)
                 .or_default()
@@ -193,7 +193,11 @@ mod tests {
     }
 
     fn m(topic: MsgTopic, author: char, seq: u64) -> Msg {
-        Msg { topic, author, seq }
+        Msg {
+            log_id: topic,
+            author,
+            seq,
+        }
     }
 
     fn mm(topic: MsgTopic, author: char, r: std::ops::Range<u64>) -> Vec<Msg> {

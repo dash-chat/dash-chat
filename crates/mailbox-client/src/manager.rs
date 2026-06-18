@@ -183,9 +183,9 @@ where
 {
     mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<TrackedMailbox<Item>>>>>,
     active_mailbox_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
-    topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
+    log_subscriptions: Arc<Mutex<HashMap<Item::LogId, mpsc::Sender<Item>>>>,
     store: Store,
-    sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+    sync_tracker: Arc<MailboxSyncTracker<Item::LogId, Item::Author>>,
     config: MailboxesConfig,
     trigger: mpsc::Sender<Option<MailboxId>>,
 }
@@ -194,11 +194,11 @@ impl<Item, Store> Mailboxes<Item, Store>
 where
     Item: MailboxItem,
     Store: MailboxStore<Item>,
-    Item::Topic: OptionalItemTraits,
+    Item::LogId: OptionalItemTraits,
 {
     fn new(
         store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        sync_tracker: Arc<MailboxSyncTracker<Item::LogId, Item::Author>>,
         config: MailboxesConfig,
         trigger: mpsc::Sender<Option<MailboxId>>,
     ) -> Self {
@@ -206,7 +206,7 @@ where
         Self {
             mailboxes: Arc::new(Mutex::new(Default::default())),
             active_mailbox_ids_tx,
-            topics: Arc::new(Mutex::new(Default::default())),
+            log_subscriptions: Arc::new(Mutex::new(Default::default())),
             store,
             sync_tracker,
             config,
@@ -220,7 +220,7 @@ where
     }
 
     /// Persistent, watch-based view over every mailbox we've ever recorded sync state for.
-    pub fn sync_tracker(&self) -> &Arc<MailboxSyncTracker<Item::Topic, Item::Author>> {
+    pub fn sync_tracker(&self) -> &Arc<MailboxSyncTracker<Item::LogId, Item::Author>> {
         &self.sync_tracker
     }
 
@@ -274,8 +274,13 @@ where
         self.active_mailbox_ids_tx.send_replace(ids);
     }
 
-    pub async fn subscribed_topics(&self) -> BTreeSet<Item::Topic> {
-        self.topics.lock().await.keys().cloned().collect()
+    pub async fn subscribed_log_ids(&self) -> BTreeSet<Item::LogId> {
+        self.log_subscriptions
+            .lock()
+            .await
+            .keys()
+            .cloned()
+            .collect()
     }
 
     pub fn trigger_sync(&self) {
@@ -289,11 +294,11 @@ where
 
     pub async fn subscribe(
         &self,
-        topic: Item::Topic,
+        topic: Item::LogId,
     ) -> Result<Option<mpsc::Receiver<Item>>, anyhow::Error> {
         tracing::info!(topic = ?topic, "subscribing to topic");
 
-        let mut tt = self.topics.lock().await;
+        let mut tt = self.log_subscriptions.lock().await;
         if tt.contains_key(&topic) {
             return Ok(None);
         }
@@ -302,15 +307,15 @@ where
         Ok(Some(rx))
     }
 
-    pub async fn unsubscribe(&self, topic: Item::Topic) -> Result<(), anyhow::Error> {
+    pub async fn unsubscribe(&self, topic: Item::LogId) -> Result<(), anyhow::Error> {
         tracing::info!(topic = ?topic, "unsubscribing from topic");
-        self.topics.lock().await.remove(&topic);
+        self.log_subscriptions.lock().await.remove(&topic);
         Ok(())
     }
 
     pub async fn spawn(
         store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        sync_tracker: Arc<MailboxSyncTracker<Item::LogId, Item::Author>>,
         config: MailboxesConfig,
     ) -> Result<Self, anyhow::Error> {
         let (trigger_tx, mut trigger_rx) = mpsc::channel::<Option<MailboxId>>(1);
@@ -403,16 +408,16 @@ where
             }
         };
 
-        let topics = self.subscribed_topics().await;
-        if topics.is_empty() {
-            tracing::trace!("no topics subscribed, skipping poll for {id}");
+        let log_ids = self.subscribed_log_ids().await;
+        if log_ids.is_empty() {
+            tracing::trace!("no logs subscribed, skipping poll for {id}");
             tracked_mailbox.reschedule(&self.config);
             return;
         }
 
         tracing::debug!("polling mailbox {id}");
         let client = tracked_mailbox.client().await;
-        let result = self.sync_topics(topics.into_iter(), &client).await;
+        let result = self.sync_logs(log_ids.into_iter(), &client).await;
 
         match result {
             Ok(()) => tracked_mailbox.record_success(&self.config),
@@ -434,29 +439,29 @@ where
     /// Immediately sync the given topics with the given mailbox:
     /// - Ensure all items held by the mailbox are fetched
     /// - Publish any items that the mailbox is missing to the mailbox
-    async fn sync_topics(
+    async fn sync_logs(
         &self,
-        topics: impl Iterator<Item = Item::Topic>,
+        log_ids: impl Iterator<Item = Item::LogId>,
         mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<()> {
         let mut request = BTreeMap::new();
-        let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, u64>> = BTreeMap::new();
-        for topic in topics {
+        let mut sent_heights: BTreeMap<Item::LogId, BTreeMap<Item::Author, u64>> = BTreeMap::new();
+        for log_id in log_ids {
             let heights =
-                BTreeMap::from_iter(self.store.get_log_heights(&topic).await?.into_iter());
-            sent_heights.insert(topic, heights.clone());
-            request.insert(topic, heights);
+                BTreeMap::from_iter(self.store.get_log_heights(&log_id).await?.into_iter());
+            sent_heights.insert(log_id, heights.clone());
+            request.insert(log_id, heights);
         }
 
         let FetchResponse(response) = mailbox.fetch(FetchRequest(request)).await?;
 
         let mut ops_to_publish: Vec<Item> = vec![];
-        let mut acks: Vec<(Item::Topic, Item::Author, u64)> = vec![];
+        let mut acks: Vec<(Item::LogId, Item::Author, u64)> = vec![];
 
-        for (topic, response) in response.into_iter() {
+        for (log_id, response) in response.into_iter() {
             let FetchTopicResponse { items, missing } = response;
             if items.is_empty() && missing.is_empty() {
-                tracing::trace!(topic = ?topic, "Syncing with mailbox: nothing to do");
+                tracing::trace!(log_id = ?log_id, "Syncing with mailbox: nothing to do");
             } else {
                 tracing::info!(
                     items = items.len(),
@@ -468,21 +473,21 @@ where
             // Sync watermark inference for authors we sent heights for:
             // if the server returned no `missing` entries for an author, it has the log
             // contiguously up to at least the height we sent.
-            if let Some(heights) = sent_heights.get(&topic) {
+            if let Some(heights) = sent_heights.get(&log_id) {
                 for (author, height) in heights {
                     if !missing.contains_key(author) {
-                        acks.push((topic, *author, *height));
+                        acks.push((log_id, *author, *height));
                     }
                 }
             }
 
             // Each received item is one the mailbox already has.
             for item in &items {
-                acks.push((item.topic(), item.author(), item.seq_num()));
+                acks.push((item.log_id(), item.author(), item.seq_num()));
             }
 
-            let Some(sender) = self.topics.lock().await.get(&topic).cloned() else {
-                tracing::warn!(topic = ?topic, "no sender for topic");
+            let Some(sender) = self.log_subscriptions.lock().await.get(&log_id).cloned() else {
+                tracing::warn!(log_id = ?log_id, "no sender for log");
                 continue;
             };
 
@@ -496,11 +501,11 @@ where
                 };
                 let Some(log) = self
                     .store
-                    .get_log(&author, &topic, *lowest)
+                    .get_log(&author, &log_id, *lowest)
                     .await
-                    .map_err(|err| anyhow::anyhow!("failed to get log for {topic:?}: {err}"))?
+                    .map_err(|err| anyhow::anyhow!("failed to get log for {log_id:?}: {err}"))?
                 else {
-                    tracing::error!(author = ?author, topic = ?topic, lowest = ?lowest, "no log found");
+                    tracing::error!(author = ?author, log_id = ?log_id, lowest = ?lowest, "no log found");
                     continue;
                 };
 
@@ -517,9 +522,9 @@ where
         }
 
         // For ops we successfully publish, the mailbox now has at least their seq_num.
-        let publish_acks: Vec<(Item::Topic, Item::Author, u64)> = ops_to_publish
+        let publish_acks: Vec<(Item::LogId, Item::Author, u64)> = ops_to_publish
             .iter()
-            .map(|op| (op.topic(), op.author(), op.seq_num()))
+            .map(|op| (op.log_id(), op.author(), op.seq_num()))
             .collect();
 
         mailbox.publish(ops_to_publish).await?;

@@ -78,9 +78,9 @@ impl Node {
 
     /// Import external operation stream from a mailbox.
     async fn import_mailbox_stream(&self, topic: TopicId) -> anyhow::Result<()> {
-        debug!(topic = ?topic.aliased(), "import mailbox stream");
-
-        let Some(mailbox_rx) = self.mailboxes.subscribe(topic.into()).await? else {
+        let log_id = LogId::from_topic(topic);
+        debug!(topic = ?topic.aliased(), log_id = ?log_id.aliased(), "import mailbox stream");
+        let Some(mailbox_rx) = self.mailboxes.subscribe(log_id).await? else {
             tracing::warn!("topic already initialized, skipping");
             return Ok(());
         };
