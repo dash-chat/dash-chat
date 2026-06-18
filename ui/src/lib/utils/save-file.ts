@@ -1,5 +1,4 @@
 import { m } from '$lib/paraglide/messages.js';
-import { bytesToBlobUrl } from '$lib/types/media';
 import { isMobile, isTauriEnv } from '$lib/utils/environment';
 import { showToast } from '$lib/utils/toasts';
 import { shareFile } from '@choochmeque/tauri-plugin-sharekit-api';
@@ -68,7 +67,9 @@ export async function saveAttachment(
 			await writeFile(path, file.data);
 			showToast(m.fileSaved());
 		} else {
-			const url = bytesToBlobUrl(file.data, file.mime_type);
+			const url = URL.createObjectURL(
+				new Blob([file.data], { type: file.mime_type }),
+			);
 			const a = document.createElement('a');
 			a.href = url;
 			a.download = file.name;

@@ -7,8 +7,8 @@
 		type DraftMedia,
 		MAX_STAGED_PHOTOS,
 		PHOTO_ACCEPT,
-		revokeDraft,
 	} from '$lib/types/media';
+	import { objectUrl } from '$lib/actions/object-url';
 	import { stageFiles } from '$lib/utils/stage-files';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 
@@ -29,14 +29,11 @@
 	}
 
 	function clear() {
-		if (media) revokeDraft(media);
 		media = undefined;
 	}
 
 	function removePhoto(index: number) {
 		if (!media || media.kind !== 'photos') return;
-		const removed = media.items[index];
-		URL.revokeObjectURL(removed.previewUrl);
 		const remaining = media.items.filter((_, i) => i !== index);
 		media =
 			remaining.length > 0 ? { kind: 'photos', items: remaining } : undefined;
@@ -70,13 +67,13 @@
 		{/if}
 		<div class="flex max-h-[142px] gap-2 overflow-x-auto px-2">
 			{#if media.kind === 'photos'}
-				{#each media.items as photo, i (photo.previewUrl)}
+				{#each media.items as photo, i (photo)}
 					<div
 						class="staged-thumb relative h-[120px] w-[120px] shrink-0 overflow-hidden"
 					>
 						<img
-							src={photo.previewUrl}
-							alt={photo.file.name}
+							use:objectUrl={photo}
+							alt={photo.name}
 							class="block h-full w-full object-cover"
 						/>
 						<div

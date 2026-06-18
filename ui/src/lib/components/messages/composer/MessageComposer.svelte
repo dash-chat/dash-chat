@@ -1,11 +1,9 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { Sheet, Block, useTheme } from 'konsta/svelte';
-	import { onDestroy } from 'svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import {
 		type DraftMedia,
-		revokeDraft,
 		draftToMedia,
 		AttachmentTooLargeError,
 		formatFileSize,
@@ -66,7 +64,6 @@
 			if (value === message) value = '';
 			if (media === draft) {
 				media = undefined;
-				if (draft) revokeDraft(draft);
 			}
 			onSent?.(hash);
 		} catch (e) {
@@ -90,12 +87,6 @@
 		event.preventDefault();
 		media = stageFiles(media, files);
 	}
-
-	// Free staged-attachment object URLs when leaving the chat without
-	// sending; nothing else revokes them.
-	onDestroy(() => {
-		if (media) revokeDraft(media);
-	});
 </script>
 
 <MediaDropOverlay onFiles={files => (media = stageFiles(media, files))} />

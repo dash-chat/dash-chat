@@ -15,18 +15,13 @@ export class AttachmentTooLargeError extends Error {
 }
 
 /**
- * Draft media held in the composer before sending. Holds raw `File` refs so
- * the UI can render previews without copying bytes; `previewUrl` is an object
- * URL the caller must revoke when discarding.
+ * Draft media held in the composer before sending — raw `File` refs. Previews
+ * derive their object URL via the `objectUrl` action on the `<img>`, so the
+ * draft carries no URLs that need revoking.
  */
 export type DraftMedia =
-	| { kind: 'photos'; items: DraftPhoto[] }
+	| { kind: 'photos'; items: File[] }
 	| { kind: 'file'; file: File };
-
-export interface DraftPhoto {
-	file: File;
-	previewUrl: string;
-}
 
 export const MAX_STAGED_PHOTOS = 32;
 
@@ -88,23 +83,11 @@ export function ingestFiles(
 	const room = MAX_STAGED_PHOTOS - existing.length;
 	if (room <= 0) return { media: current, error: 'tooMany' };
 	const accepted = visual.slice(0, room);
-	const items = [
-		...existing,
-		...accepted.map(file => ({
-			file,
-			previewUrl: URL.createObjectURL(file),
-		})),
-	];
+	const items = [...existing, ...accepted];
 	return {
 		media: { kind: 'photos', items },
 		error: visual.length > room ? 'tooMany' : undefined,
 	};
-}
-
-export function revokeDraft(draft: DraftMedia): void {
-	if (draft.kind === 'photos') {
-		for (const p of draft.items) URL.revokeObjectURL(p.previewUrl);
-	}
 }
 
 /** Read a `File` as a `Uint8Array`. Raw bytes — no base64. */
@@ -129,7 +112,7 @@ export async function draftToMedia(draft: DraftMedia): Promise<Media> {
 async function buildMedia(draft: DraftMedia): Promise<Media> {
 	if (draft.kind === 'photos') {
 		const photos: Photo[] = await Promise.all(
-			draft.items.map(async ({ file }) => {
+			draft.items.map(async file => {
 				const compressed = await compressImage(file);
 				return {
 					data: await fileToBytes(compressed),
@@ -171,12 +154,4 @@ export function formatFileSize(bytes: number): string {
 	if (bytes < 1024 * 1024 * 1024)
 		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-/**
- * Wrap attachment bytes into a Blob URL. The caller is responsible for revoking
- * it via `URL.revokeObjectURL` (Svelte: use `$effect` cleanup).
- */
-export function bytesToBlobUrl(data: Uint8Array, mimeType: string): string {
-	return URL.createObjectURL(new Blob([data], { type: mimeType }));
 }
