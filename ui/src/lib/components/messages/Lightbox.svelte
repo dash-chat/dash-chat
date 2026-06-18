@@ -128,7 +128,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="fixed inset-0 z-30 flex flex-col bg-black"
+	class="fixed inset-0 z-30 flex flex-col bg-black text-white"
 	role="dialog"
 	aria-modal="true"
 	aria-label={photo.name}
@@ -148,18 +148,18 @@
 		</div>
 		<div class="flex items-center gap-2">
 			<IconButton
-				variant="overlay"
 				icon={mdiTrayArrowDown}
 				onClick={handleSave}
 				label={m.saveFile()}
 				testid="lightbox-save"
+				class="!p-2 opacity-85 hover:opacity-100"
 			/>
 			<IconButton
-				variant="overlay"
 				icon={mdiClose}
 				onClick={onClose}
 				label={m.closeLightbox()}
 				testid="lightbox-close"
+				class="!p-2 opacity-85 hover:opacity-100"
 			/>
 		</div>
 	</div>
@@ -187,24 +187,22 @@
 	     even in RTL, matching platform image-viewer conventions. -->
 	{#if index > 0}
 		<IconButton
-			variant="overlay"
 			icon={mdiChevronLeft}
 			onClick={() => select(index - 1)}
 			label={m.previousPhoto()}
 			testid="lightbox-prev"
-			class="absolute top-1/2 left-3 -translate-y-1/2 !bg-white/10 hover:!bg-white/20 {zoomed
+			class="absolute top-1/2 left-3 -translate-y-1/2 !bg-white/10 !p-2 opacity-85 hover:!bg-white/20 hover:opacity-100 {zoomed
 				? '!opacity-0 pointer-events-none'
 				: ''}"
 		/>
 	{/if}
 	{#if index < photos.length - 1}
 		<IconButton
-			variant="overlay"
 			icon={mdiChevronRight}
 			onClick={() => select(index + 1)}
 			label={m.nextPhoto()}
 			testid="lightbox-next"
-			class="absolute top-1/2 right-3 -translate-y-1/2 !bg-white/10 hover:!bg-white/20 {zoomed
+			class="absolute top-1/2 right-3 -translate-y-1/2 !bg-white/10 !p-2 opacity-85 hover:!bg-white/20 hover:opacity-100 {zoomed
 				? '!opacity-0 pointer-events-none'
 				: ''}"
 		/>
