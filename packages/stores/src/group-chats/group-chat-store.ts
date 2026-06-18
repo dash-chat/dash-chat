@@ -3,7 +3,6 @@ import { reactive, signal } from 'signalium';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
-import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
@@ -363,18 +362,9 @@ export class GroupChatStore implements ReadMessagesStore {
 	}
 
 	async sendMessage(text: string) {
-		const myDeviceId = await this.contactsStore.myDeviceId();
 		const content: MessageContent = { v: '1', message: text, media: null };
-		await Promise.all([
-			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
-				if (topicId !== this.chatId) return false;
-				if (op.body?.payload.type !== 'Message') return false;
-				if (op.header.verifying_key !== myDeviceId) return false;
-				if (getMessageText(op.body.payload.payload) !== text) return false;
-				return true;
-			}),
-			this.client.sendMessage(this.chatId, content),
-		]);
+		const hash = await this.client.sendMessage(this.chatId, content);
+		return hash;
 	}
 }
 

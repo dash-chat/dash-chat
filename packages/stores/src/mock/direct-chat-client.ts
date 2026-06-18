@@ -13,8 +13,8 @@ export class MockDirectChatClient implements IDirectChatClient {
 		return hash([this.agentId, peer].sort().join(':'));
 	}
 
-	async sendMessage(chatId: ChatId, content: MessageContent): Promise<void> {
-		await this.logsClient.create(chatId, {
+	async sendMessage(chatId: ChatId, content: MessageContent): Promise<Hash> {
+		return this.logsClient.create(chatId, {
 			type: 'Chat',
 			payload: { type: 'Message', payload: content },
 		});
