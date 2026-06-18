@@ -73,8 +73,7 @@
 >
 	<div
 		class="message-input-bar m-2 pb-safe"
-		class:bg-md-light-surface={theme === 'material'}
-		class:dark:bg-md-dark-surface={theme === 'material'}
+		class:bg-page-surface={theme === 'material'}
 	>
 		<div class="row gap-2" style="align-items: flex-end; margin: 0 auto">
 			<div
