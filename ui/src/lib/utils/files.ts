@@ -24,10 +24,12 @@ export async function saveFile(
 ): Promise<boolean> {
 	if (isTauriEnv()) {
 		let defaultPath = fileName;
-		try {
-			defaultPath = await join(folder, fileName);
-		} catch {
-			// folder may not exist on some platforms; fall back to bare name
+		if (folder) {
+			try {
+				defaultPath = await join(folder, fileName);
+			} catch {
+				// folder may not exist on some platforms; fall back to bare name
+			}
 		}
 		const path = await save({ title, defaultPath, filters });
 		if (!path) return false;

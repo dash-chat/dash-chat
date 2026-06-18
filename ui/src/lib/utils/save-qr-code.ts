@@ -144,7 +144,7 @@ export async function saveQrCode(
 	const bytes = await renderQrImage(code, qrColor, name);
 	await saveFile(
 		bytes,
-		await downloadDir(),
+		await downloadDir().catch(() => ''),
 		'dashchat-qr-code.png',
 		'image/png',
 		'Save QR Code',

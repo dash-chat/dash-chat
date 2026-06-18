@@ -169,7 +169,7 @@ export async function saveAttachment(
 	}
 	return saveFile(
 		file.data,
-		await downloadDir(),
+		await downloadDir().catch(() => ''),
 		file.name,
 		file.mime_type,
 		m.saveFile(),

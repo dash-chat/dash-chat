@@ -213,7 +213,7 @@
 
 	{#if photos.length > 1}
 		<div
-			class="lightbox-filmstrip flex shrink-0 justify-center gap-2 overflow-x-auto px-3 py-2.5"
+			class="lightbox-filmstrip flex shrink-0 justify-center gap-2 overflow-x-auto px-3 pt-2.5"
 			class:faded={zoomed}
 			data-testid="lightbox-filmstrip"
 		>
@@ -302,6 +302,7 @@
 	}
 
 	.lightbox-filmstrip {
+		padding-bottom: calc(0.625rem + env(safe-area-inset-bottom, 0px));
 		transition: opacity 0.15s ease;
 	}
 
