@@ -1,40 +1,40 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(node -e *)",
-      "Bash(mktemp *)",
-      "Bash(mkdir *)",
-      "Bash(pnpm *)",
-      "Bash(cargo *)",
-      "Bash(grep *)",
-      "Bash(AGENT=*)",
-      "Bash(UI_PORT=*)",
-      "Bash(MAILBOX_URL=*)",
-      "Bash(DEV_DBS_PATH=*)",
-      "Bash(bash scripts/start-dev.sh)",
-      "mcp__tauri__driver_session",
-      "mcp__tauri__webview_screenshot",
-      "mcp__tauri__webview_dom_snapshot",
-      "mcp__tauri__webview_find_element",
-      "mcp__tauri__webview_execute_js",
-      "mcp__tauri__webview_wait_for",
-      "mcp__tauri__webview_interact",
-      "mcp__tauri__webview_keyboard",
-      "mcp__tauri__webview_get_styles",
-      "mcp__tauri__read_logs",
-      "mcp__tauri__manage_window",
-      "mcp__tauri__ipc_execute_command",
-      "mcp__tauri__ipc_monitor",
-      "mcp__tauri__ipc_get_captured"
-    ]
-  },
-  "enabledPlugins": {
-    "typescript-lsp@claude-plugins-official": true,
-    "rust-analyzer-lsp@claude-plugins-official": true,
-    "code-simplifier@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true,
-    "superpowers@claude-plugins-official": true,
-    "claude-code-setup@claude-plugins-official": true,
-    "claude-md-management@claude-plugins-official": true
-  },
+	"permissions": {
+		"allow": [
+			"Bash(node -e *)",
+			"Bash(mktemp *)",
+			"Bash(mkdir *)",
+			"Bash(pnpm *)",
+			"Bash(cargo *)",
+			"Bash(grep *)",
+			"Bash(AGENT=*)",
+			"Bash(UI_PORT=*)",
+			"Bash(MAILBOX_URL=*)",
+			"Bash(DEV_DBS_PATH=*)",
+			"Bash(bash scripts/start-dev.sh)",
+			"mcp__tauri__driver_session",
+			"mcp__tauri__webview_screenshot",
+			"mcp__tauri__webview_dom_snapshot",
+			"mcp__tauri__webview_find_element",
+			"mcp__tauri__webview_execute_js",
+			"mcp__tauri__webview_wait_for",
+			"mcp__tauri__webview_interact",
+			"mcp__tauri__webview_keyboard",
+			"mcp__tauri__webview_get_styles",
+			"mcp__tauri__read_logs",
+			"mcp__tauri__manage_window",
+			"mcp__tauri__ipc_execute_command",
+			"mcp__tauri__ipc_monitor",
+			"mcp__tauri__ipc_get_captured"
+		]
+	},
+	"enabledPlugins": {
+		"typescript-lsp@claude-plugins-official": true,
+		"rust-analyzer-lsp@claude-plugins-official": true,
+		"code-simplifier@claude-plugins-official": true,
+		"code-review@claude-plugins-official": true,
+		"superpowers@claude-plugins-official": true,
+		"claude-code-setup@claude-plugins-official": true,
+		"claude-md-management@claude-plugins-official": true
+	}
 }
