@@ -67,6 +67,7 @@ pub struct BlobSync {
     pub(crate) fetch_pool: BlobFetchPool,
     downloader: Downloader,
     endpoint_id: iroh::EndpointId,
+    fetch_config: FetchConfig,
     /// Held only when this BlobSync owns its iroh endpoint (standalone server).
     /// `None` when sharing an in-process node's endpoint, in which case the
     /// node keeps the endpoint, router, and blob store alive.
@@ -94,6 +95,7 @@ impl BlobSync {
             fetch_pool: BlobFetchPool::default(),
             downloader,
             endpoint_id,
+            fetch_config: FetchConfig::default(),
             _endpoint: Some(endpoint),
             _router: Some(router),
         })
@@ -113,9 +115,21 @@ impl BlobSync {
             fetch_pool: BlobFetchPool::default(),
             downloader,
             endpoint_id,
+            fetch_config: FetchConfig::default(),
             _endpoint: None,
             _router: None,
         }
+    }
+
+    /// Override the fetch loop's cadence (concurrency, attempt timeout, retry
+    /// interval). Used by `spawn_server` when it spawns the loop.
+    pub fn with_fetch_config(mut self, config: FetchConfig) -> Self {
+        self.fetch_config = config;
+        self
+    }
+
+    pub(crate) fn fetch_config(&self) -> FetchConfig {
+        self.fetch_config.clone()
     }
 
     pub fn endpoint_id(&self) -> iroh::EndpointId {

@@ -32,6 +32,7 @@ pub mod test_utils;
 const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
 pub use blob_sync::{BlobSync, BlobFetchPool};
+pub use dashchat_utils::FetchConfig;
 pub use blip::Blip;
 pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
@@ -105,7 +106,7 @@ pub async fn spawn_server(
         }
     };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
-    let blob_fetch_handle = blob_sync.spawn_fetch_loop(dashchat_utils::FetchConfig::default());
+    let blob_fetch_handle = blob_sync.spawn_fetch_loop(blob_sync.fetch_config());
 
     let push_client = match push_notifications_url {
         Some(url) => {
