@@ -25,29 +25,12 @@ export class Composer {
 	}
 
 	/**
-	 * Attach a single synthesized 1×1 PNG named `${label}.png` so the send can
-	 * later be matched with `waitForPhotoMessage(label)`. The hidden file input
-	 * is populated via DataTransfer + a synthetic change event, the same trick
-	 * add-contact uses for QR uploads.
+	 * Stage a single synthesized 1×1 PNG named `${label}.png` so a later send can
+	 * be matched with `waitForPhotoMessage(label)`. Injected through the paste
+	 * pipeline — the native file picker can't be driven headlessly.
 	 */
 	async attachPhotos(label: string): Promise<void> {
-		await this.agent.execute(
-			(pngBytes: number[], name: string) => {
-				const input = document.querySelector(
-					'[data-testid="message-input-photo-picker"]',
-				) as HTMLInputElement;
-				const dt = new DataTransfer();
-				const blob = new Blob([new Uint8Array(pngBytes)], {
-					type: 'image/png',
-				});
-				dt.items.add(new File([blob], `${name}.png`, { type: 'image/png' }));
-				input.files = dt.files;
-				input.dispatchEvent(new Event('change', { bubbles: true }));
-			},
-			TINY_PNG,
-			label,
-		);
-		await this.mediaPreview.waitForExist({ timeout: 5_000 });
+		await this.pastePhotos(label);
 	}
 
 	/** Attach a single non-image file to the composer. */
@@ -58,13 +41,8 @@ export class Composer {
 	): Promise<void> {
 		await this.agent.execute(
 			(n: string, c: string, m: string) => {
-				const input = document.querySelector(
-					'[data-testid="message-input-file-picker"]',
-				) as HTMLInputElement;
-				const dt = new DataTransfer();
-				dt.items.add(new File([new Blob([c], { type: m })], n, { type: m }));
-				input.files = dt.files;
-				input.dispatchEvent(new Event('change', { bubbles: true }));
+				const bytes = Array.from(new TextEncoder().encode(c));
+				window.__test.pasteFiles([{ name: n, mimeType: m, bytes }]);
 			},
 			name,
 			contents,
@@ -77,16 +55,9 @@ export class Composer {
 	async attachFileOfSize(sizeBytes: number, name = 'big.bin'): Promise<void> {
 		await this.agent.execute(
 			(size: number, n: string) => {
-				const input = document.querySelector(
-					'[data-testid="message-input-file-picker"]',
-				) as HTMLInputElement;
-				const dt = new DataTransfer();
-				const blob = new Blob([new Uint8Array(size)], {
-					type: 'application/octet-stream',
-				});
-				dt.items.add(new File([blob], n, { type: 'application/octet-stream' }));
-				input.files = dt.files;
-				input.dispatchEvent(new Event('change', { bubbles: true }));
+				window.__test.pasteFiles([
+					{ name: n, mimeType: 'application/octet-stream', size },
+				]);
 			},
 			sizeBytes,
 			name,

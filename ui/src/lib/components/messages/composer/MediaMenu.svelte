@@ -4,7 +4,8 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiImage, mdiFile } from '@mdi/js';
-	import { PHOTO_ACCEPT } from '$lib/types/media';
+	import { PHOTO_ACCEPT } from '$lib/utils/media';
+	import { pickFiles } from '$lib/utils/files';
 
 	interface Props {
 		opened: boolean;
@@ -15,42 +16,12 @@
 
 	let { opened = $bindable(false), onFiles, target }: Props = $props();
 
-	let photoPicker: HTMLInputElement;
-	let filePicker: HTMLInputElement;
-
-	function onPhotosPicked() {
-		if (photoPicker.files && photoPicker.files.length > 0) {
-			onFiles(photoPicker.files);
-		}
-		photoPicker.value = '';
+	async function pick(accept: string | undefined, multiple: boolean) {
 		opened = false;
-	}
-
-	function onFilePicked() {
-		if (filePicker.files && filePicker.files.length > 0) {
-			onFiles(filePicker.files);
-		}
-		filePicker.value = '';
-		opened = false;
+		const files = await pickFiles({ accept, multiple });
+		if (files && files.length > 0) onFiles(files);
 	}
 </script>
-
-<input
-	type="file"
-	accept={PHOTO_ACCEPT}
-	multiple
-	bind:this={photoPicker}
-	class="hidden"
-	data-testid="message-input-photo-picker"
-	onchange={onPhotosPicked}
-/>
-<input
-	type="file"
-	bind:this={filePicker}
-	class="hidden"
-	data-testid="message-input-file-picker"
-	onchange={onFilePicked}
-/>
 
 <Popover
 	{opened}
@@ -64,10 +35,7 @@
 			chevron={false}
 			title={m.attachPhotos()}
 			data-testid="message-input-attach-photos"
-			onClick={() => {
-				opened = false;
-				photoPicker.click();
-			}}
+			onClick={() => pick(PHOTO_ACCEPT, true)}
 		>
 			{#snippet media()}
 				<wa-icon style="width: 24px; height: 24px" src={wrapPathInSvg(mdiImage)}
@@ -79,10 +47,7 @@
 			chevron={false}
 			title={m.attachFile()}
 			data-testid="message-input-attach-file"
-			onClick={() => {
-				opened = false;
-				filePicker.click();
-			}}
+			onClick={() => pick(undefined, false)}
 		>
 			{#snippet media()}
 				<wa-icon style="width: 24px; height: 24px" src={wrapPathInSvg(mdiFile)}

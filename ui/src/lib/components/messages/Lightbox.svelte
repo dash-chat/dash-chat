@@ -10,7 +10,8 @@
 	} from '@mdi/js';
 	import type { Photo } from 'dash-chat-stores';
 	import { objectUrl } from '$lib/actions/object-url';
-	import { saveAttachment } from '$lib/utils/save-file';
+	import { saveAttachment } from '$lib/utils/media';
+	import { showToast } from '$lib/utils/toasts';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
 	interface Props {
@@ -42,6 +43,15 @@
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
+	}
+
+	async function handleSave() {
+		try {
+			if (await saveAttachment(photo)) showToast(m.fileSaved());
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error(e);
+		}
 	}
 
 	// Reset zoom when switching photos.
@@ -124,7 +134,7 @@
 	data-testid="lightbox"
 >
 	<div
-		class="lightbox-header flex h-[52px] shrink-0 items-center justify-between px-3"
+		class="lightbox-header flex shrink-0 items-center justify-between px-3"
 		class:faded={zoomed}
 	>
 		<div class="flex min-w-0 flex-col">
@@ -140,7 +150,7 @@
 				class="lightbox-button"
 				data-testid="lightbox-save"
 				aria-label={m.saveFile()}
-				onclick={() => saveAttachment(photo)}
+				onclick={handleSave}
 			>
 				<wa-icon src={wrapPathInSvg(mdiTrayArrowDown)}></wa-icon>
 			</button>
@@ -229,6 +239,8 @@
 
 <style>
 	.lightbox-header {
+		height: calc(52px + env(safe-area-inset-top, 0px));
+		padding-top: env(safe-area-inset-top, 0px);
 		transition: opacity 0.15s ease;
 	}
 

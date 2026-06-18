@@ -1,4 +1,8 @@
+import { m } from '$lib/paraglide/messages.js';
 import { compressImage } from '$lib/utils/compress';
+import { isMobile, isTauriEnv } from '$lib/utils/environment';
+import { saveFile, shareFile } from '$lib/utils/files';
+import { downloadDir } from '@tauri-apps/api/path';
 import type { FileAttachment, Media, Photo } from 'dash-chat-stores';
 
 export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
@@ -57,8 +61,7 @@ function isVisualFile(file: File): boolean {
  * append (up to `MAX_STAGED_PHOTOS`, accepting a partial batch), a
  * non-image file can only be staged alone, and nothing can be added once
  * a file is staged. On a rule violation the current draft is returned
- * unchanged alongside the error. Accepted files get fresh object URLs;
- * existing draft items keep theirs.
+ * unchanged alongside the error.
  */
 export function ingestFiles(
 	current: DraftMedia | undefined,
@@ -90,11 +93,6 @@ export function ingestFiles(
 	};
 }
 
-/** Read a `File` as a `Uint8Array`. Raw bytes — no base64. */
-async function fileToBytes(file: File): Promise<Uint8Array> {
-	return new Uint8Array(await file.arrayBuffer());
-}
-
 /**
  * Convert composer-side draft to the wire-format `Media` for sending.
  * Compresses images first, then enforces a total-size cap; throws
@@ -115,7 +113,7 @@ async function buildMedia(draft: DraftMedia): Promise<Media> {
 			draft.items.map(async file => {
 				const compressed = await compressImage(file);
 				return {
-					data: await fileToBytes(compressed),
+					data: new Uint8Array(await compressed.arrayBuffer()),
 					name: compressed.name,
 					mime_type: compressed.type || 'application/octet-stream',
 				};
@@ -124,7 +122,7 @@ async function buildMedia(draft: DraftMedia): Promise<Media> {
 		return { kind: 'photos', photos };
 	}
 	const file: FileAttachment = {
-		data: await fileToBytes(draft.file),
+		data: new Uint8Array(await draft.file.arrayBuffer()),
 		name: draft.file.name,
 		mime_type: draft.file.type || 'application/octet-stream',
 	};
@@ -154,4 +152,26 @@ export function formatFileSize(bytes: number): string {
 	if (bytes < 1024 * 1024 * 1024)
 		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+/**
+ * Save an attachment: native save dialog on desktop Tauri, system share sheet
+ * on mobile, anchor-download fallback in the browser. Returns `true` when the
+ * file was written to disk via the desktop dialog (so the caller can confirm
+ * with a toast), and `false` otherwise. Throws on unexpected failure.
+ */
+export async function saveAttachment(
+	file: FileAttachment | Photo,
+): Promise<boolean> {
+	if (isTauriEnv() && isMobile) {
+		await shareFile(file.data, file.name, file.mime_type);
+		return false;
+	}
+	return saveFile(
+		file.data,
+		await downloadDir(),
+		file.name,
+		file.mime_type,
+		m.saveFile(),
+	);
 }

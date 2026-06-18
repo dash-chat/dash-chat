@@ -4,13 +4,14 @@
 	import { isMobile } from '$lib/utils/environment';
 	import {
 		type DraftMedia,
+		type IngestError,
 		draftToMedia,
+		ingestFiles,
 		AttachmentTooLargeError,
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
-	} from '$lib/types/media';
+	} from '$lib/utils/media';
 	import type { Hash, MessagesStore } from 'dash-chat-stores';
-	import { stageFiles } from '$lib/utils/stage-files';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
@@ -81,19 +82,32 @@
 		}
 	}
 
+	const ingestErrorMessages: Record<IngestError, () => string> = {
+		tooMany: () => m.errorTooManyAttachments(),
+		filesWithPhotos: () => m.errorFilesWithPhotos(),
+		oneFileAtATime: () => m.errorOneFileAtATime(),
+	};
+
+	/** Add files to the draft, toasting if a Signal mixing rule was violated. */
+	function stage(files: FileList | File[]) {
+		const result = ingestFiles(media, Array.from(files));
+		if (result.error) showToast(ingestErrorMessages[result.error](), 'error');
+		media = result.media;
+	}
+
 	function onPaste(event: ClipboardEvent) {
 		const files = event.clipboardData?.files;
 		if (!files || files.length === 0) return;
 		event.preventDefault();
-		media = stageFiles(media, files);
+		stage(files);
 	}
 </script>
 
-<MediaDropOverlay onFiles={files => (media = stageFiles(media, files))} />
+<MediaDropOverlay onFiles={stage} />
 
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<div class="message-input-bar" class:pb-safe={!(isMobile && showMediaPanel)}>
-		<StagedAttachments bind:media />
+		<StagedAttachments bind:media onFiles={stage} />
 
 		<div class="m-2 row gap-2" style="align-items: center;">
 			{#if isMobile}
@@ -132,10 +146,7 @@
 	</div>
 
 	{#if isMobile}
-		<MediaPanel
-			bind:opened={showMediaPanel}
-			onFiles={files => (media = stageFiles(media, files))}
-		/>
+		<MediaPanel bind:opened={showMediaPanel} onFiles={stage} />
 	{/if}
 </div>
 
@@ -143,7 +154,7 @@
 	<MediaMenu
 		bind:opened={showMediaMenu}
 		target="[data-testid='message-input-attach']"
-		onFiles={files => (media = stageFiles(media, files))}
+		onFiles={stage}
 	/>
 {/if}
 

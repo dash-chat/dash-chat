@@ -58,6 +58,7 @@
 			await settingsStore.setQrColor(selectedColor);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error(e);
 		}
 		onClose();
 	}

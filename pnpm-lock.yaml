@@ -227,6 +227,9 @@ importers:
       emoji-picker-element:
         specifier: ^1.29.0
         version: 1.29.0
+      image-blob-reduce:
+        specifier: ^5.0.0
+        version: 5.0.0
       jsqr:
         specifier: ^1.4.0
         version: 1.4.0
@@ -2901,6 +2904,9 @@ packages:
   globrex@0.1.2:
     resolution: {integrity: sha512-uHJgbwAMwNFf5mLst7IWLNg14x1CkeqglJb/K3doi4dw6q2IvAAmM/Y81kevy83wP+Sst+nutFTYOGg3d1lsxg==}
 
+  glur@2.0.0:
+    resolution: {integrity: sha512-ZgJCXwuaQo4vnYG+VqtNIYV9kpNC/V/mafp0UcOMiLN/7eQVjCU+RDBLIwWXlmvwYMLFDf0IJrV/4qnM5VinCA==}
+
   gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
@@ -3006,6 +3012,9 @@ packages:
   ignore@7.0.5:
     resolution: {integrity: sha512-Hs59xBNfUIunMFgWAbGX5cq6893IbWg4KnrjbYwX3tx0ztorVgTDA6B2sxf8ejHJ4wz8BqGUMYlnzNBer5NvGg==}
     engines: {node: '>= 4'}
+
+  image-blob-reduce@5.0.0:
+    resolution: {integrity: sha512-z0RNX2f2qKaUO2pLDMEnufN6xiOM2ZGD7/u2ZFwDJ2z5SpV0yIv1KfWMNCZHck3e5hAM+ONKUycYt3wOlXiKyg==}
 
   immediate@3.0.6:
     resolution: {integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==}
@@ -3515,6 +3524,9 @@ packages:
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
+  multimath@3.0.0:
+    resolution: {integrity: sha512-U+s5xgbW55w5sbT9PeaJdEuxH5zL7wLwvp0MOJxXS8WhWDYnsTPIF3faeAltxkPNa+dDXmXs6gIiEpcCeE1YCA==}
+
   mute-stream@2.0.0:
     resolution: {integrity: sha512-WWdIxpyjEn+FhQJQQv9aQAYlHoNVdzIzUySNV1gHUPDSdZJ3yZn7pAAbQcV7B56Mvu881q9FZV+0Vx2xC44VWA==}
     engines: {node: ^18.17.0 || >=20.5.0}
@@ -3693,6 +3705,9 @@ packages:
 
   periscopic@3.1.0:
     resolution: {integrity: sha512-vKiQ8RRtkl9P+r/+oefh25C3fhybptkHKCZSPlcXiJux2tJF55GnEj3BVn4A5gKfq9NWWXXrxkHBwVPUfH0opw==}
+
+  pica@10.0.1:
+    resolution: {integrity: sha512-JMM/roFvU59XVD+LQjvTPNKlIKii49flilnUOQltO2OKWKliRZ7r2u+2wMVnxgfneZgeKhOVpP+GhihhyYjGUg==}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -4725,7 +4740,7 @@ snapshots:
       '@babel/types': 7.29.0
       '@jridgewell/remapping': 2.3.5
       convert-source-map: 2.0.0
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       gensync: 1.0.0-beta.2
       json5: 2.2.3
       semver: 6.3.1
@@ -4979,7 +4994,7 @@ snapshots:
       '@babel/parser': 7.29.0
       '@babel/template': 7.28.6
       '@babel/types': 7.29.0
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
 
@@ -5818,7 +5833,7 @@ snapshots:
   '@sveltejs/vite-plugin-svelte-inspector@4.0.1(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.49.2)(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)))(svelte@5.49.2)(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))':
     dependencies:
       '@sveltejs/vite-plugin-svelte': 5.1.1(svelte@5.49.2)(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       svelte: 5.49.2
       vite: 6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
     transitivePeerDependencies:
@@ -5827,7 +5842,7 @@ snapshots:
   '@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.49.2)(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))':
     dependencies:
       '@sveltejs/vite-plugin-svelte-inspector': 4.0.1(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.49.2)(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)))(svelte@5.49.2)(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       deepmerge: 4.3.1
       kleur: 4.1.5
       magic-string: 0.30.19
@@ -6821,6 +6836,10 @@ snapshots:
     dependencies:
       ms: 2.1.3
 
+  debug@4.4.3:
+    dependencies:
+      ms: 2.1.3
+
   debug@4.4.3(supports-color@8.1.1):
     dependencies:
       ms: 2.1.3
@@ -7424,6 +7443,8 @@ snapshots:
 
   globrex@0.1.2: {}
 
+  glur@2.0.0: {}
+
   gopd@1.2.0: {}
 
   graceful-fs@4.2.11: {}
@@ -7535,6 +7556,10 @@ snapshots:
   ignore@5.3.2: {}
 
   ignore@7.0.5: {}
+
+  image-blob-reduce@5.0.0:
+    dependencies:
+      pica: 10.0.1
 
   immediate@3.0.6: {}
 
@@ -7998,6 +8023,10 @@ snapshots:
 
   ms@2.1.3: {}
 
+  multimath@3.0.0:
+    dependencies:
+      glur: 2.0.0
+
   mute-stream@2.0.0: {}
 
   nanoassert@1.1.0: {}
@@ -8176,6 +8205,11 @@ snapshots:
       '@types/estree': 1.0.8
       estree-walker: 3.0.3
       is-reference: 3.0.3
+
+  pica@10.0.1:
+    dependencies:
+      glur: 2.0.0
+      multimath: 3.0.0
 
   picocolors@1.1.1: {}
 

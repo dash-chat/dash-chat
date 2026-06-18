@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiImage, mdiFile } from '@mdi/js';
-	import { PHOTO_ACCEPT } from '$lib/types/media';
+	import { PHOTO_ACCEPT } from '$lib/utils/media';
+	import { pickFiles } from '$lib/utils/files';
 	import LabelledIconButton from '$lib/components/contacts/LabelledIconButton.svelte';
 
 	interface Props {
@@ -11,42 +12,12 @@
 
 	let { opened = $bindable(false), onFiles }: Props = $props();
 
-	let photoPicker: HTMLInputElement;
-	let filePicker: HTMLInputElement;
-
-	function onPhotosPicked() {
-		if (photoPicker.files && photoPicker.files.length > 0) {
-			onFiles(photoPicker.files);
-		}
-		photoPicker.value = '';
+	async function pick(accept: string | undefined, multiple: boolean) {
 		opened = false;
-	}
-
-	function onFilePicked() {
-		if (filePicker.files && filePicker.files.length > 0) {
-			onFiles(filePicker.files);
-		}
-		filePicker.value = '';
-		opened = false;
+		const files = await pickFiles({ accept, multiple });
+		if (files && files.length > 0) onFiles(files);
 	}
 </script>
-
-<input
-	type="file"
-	accept={PHOTO_ACCEPT}
-	multiple
-	bind:this={photoPicker}
-	class="hidden"
-	data-testid="message-input-photo-picker"
-	onchange={onPhotosPicked}
-/>
-<input
-	type="file"
-	bind:this={filePicker}
-	class="hidden"
-	data-testid="message-input-file-picker"
-	onchange={onFilePicked}
-/>
 
 {#if opened}
 	<div
@@ -58,13 +29,13 @@
 			label={m.gallery()}
 			icon={mdiImage}
 			testId="message-input-attach-photos"
-			onClick={() => photoPicker.click()}
+			onClick={() => pick(PHOTO_ACCEPT, true)}
 		/>
 		<LabelledIconButton
 			label={m.attachFile()}
 			icon={mdiFile}
 			testId="message-input-attach-file"
-			onClick={() => filePicker.click()}
+			onClick={() => pick(undefined, false)}
 		/>
 	</div>
 {/if}
