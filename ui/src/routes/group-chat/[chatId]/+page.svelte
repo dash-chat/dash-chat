@@ -65,7 +65,7 @@
 		if (!text || text.trim() === '') return;
 		messageText = '';
 		try {
-			pendingScrollHash = await store.sendMessage(text);
+			justSentMessageHash = await store.sendMessage(text);
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
 		} catch (e) {
@@ -76,10 +76,10 @@
 	}
 
 	// Scroll the message we just sent into view once its bubble mounts.
-	let pendingScrollHash: Hash | null = $state(null);
+	let justSentMessageHash: Hash | null = $state(null);
 	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
-		if (hash === pendingScrollHash) {
-			pendingScrollHash = null;
+		if (hash === justSentMessageHash) {
+			justSentMessageHash = null;
 			reverseScrollPage?.scrollToBottom();
 		}
 	};
