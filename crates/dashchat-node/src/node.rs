@@ -230,7 +230,8 @@ impl Node {
         // that were not yet downloaded at shutdown will be re-queued when the
         // next matching operation arrives via the live path.
         let blob_fetch =
-            BlobFetchPool::from_ops(op_store.get_all_operations_not_fully_sorted(), |_| None).await?;
+            BlobFetchPool::from_ops(op_store.get_all_operations_not_fully_sorted(), |_| None)
+                .await?;
         let blob_sync = BlobSync::new(
             endpoint,
             filesystem.blobs_store_path(),
@@ -340,11 +341,13 @@ impl Node {
         self.node_keys.device_id()
     }
 
+    #[cfg(feature = "testing")]
     pub fn endpoint_id(&self) -> iroh::EndpointId {
         iroh::EndpointId::from_bytes(self.device_id().as_bytes())
             .expect("device id is a valid endpoint id")
     }
 
+    #[cfg(feature = "testing")]
     /// The node's iroh-blobs protocol handle, sharing its blob store. An
     /// in-process mailbox uses this so relayed blobs land in—and are served
     /// from—the same store on the same endpoint as the node.
@@ -352,6 +355,7 @@ impl Node {
         self.blob_sync.blobs.clone()
     }
 
+    #[cfg(feature = "testing")]
     /// The node's blob downloader, for an in-process mailbox to fetch blobs
     /// into the shared store over the node's endpoint.
     pub fn blob_downloader(&self) -> iroh_blobs::api::downloader::Downloader {

@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use dashchat_node::{testing::*, *};
 use mailbox_client::mem::MemMailbox;
 use p2panda::network::MdnsDiscoveryMode;
@@ -12,11 +10,7 @@ use p2panda::network::MdnsDiscoveryMode;
 async fn media_blob_syncs_between_nodes() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
 
-    let poll = PollConfig {
-        poll_interval: Duration::from_millis(250),
-        poll_timeout: Duration::from_secs(10),
-    };
-
+    let poll = PollConfig::default();
     let mut config = NodeConfig::testing();
     config.mdns_mode = MdnsDiscoveryMode::Active;
 

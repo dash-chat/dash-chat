@@ -43,8 +43,10 @@ async fn test_mailbox_late_join_toy() {
     // per-client identity used for blob upload attribution; a fresh random
     // key per client is sufficient for tests.
     let dummy_key = || iroh::SecretKey::generate().public();
-    let alice_mailbox = ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
-    let bobbi_mailbox = ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
+    let alice_mailbox =
+        ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
+    let bobbi_mailbox =
+        ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
 
     mailbox_late_join(alice_mailbox, bobbi_mailbox).await;
 }
@@ -54,9 +56,7 @@ async fn mailbox_late_join(
     bobbi_mailbox: impl MailboxClient<MailboxOperation>,
 ) {
     let poll = PollConfig::default();
-    let mut config = NodeConfig::testing();
-    config.mailboxes_config.active_interval = Duration::from_millis(1000);
-    config.mailboxes_config.between_polls_delay = Duration::from_millis(100);
+    let config = NodeConfig::testing();
 
     // Start with no mailbox
     let alice = TestNode::new(config.clone(), "alice").await;

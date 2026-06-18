@@ -28,18 +28,10 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
         true,
     );
 
-    // Generous per-phase timeout: the relay shares no chat topic with Alice or
-    // Bobbi, so it resolves their addresses lazily over mDNS, which can take a
-    // few seconds before a blob fetch lands.
-    let poll = PollConfig {
-        poll_interval: Duration::from_millis(250),
-        poll_timeout: Duration::from_secs(30),
-    };
+    let poll = PollConfig::default();
 
     let mut config = NodeConfig::testing();
     config.mdns_mode = MdnsDiscoveryMode::Active;
-    config.mailboxes_config.active_interval = Duration::from_millis(1000);
-    config.mailboxes_config.between_polls_delay = Duration::from_millis(100);
 
     // Always-on relay node hosting an in-process mailbox that shares its iroh
     // endpoint + blob store. Because the mailbox rides the relay node's p2panda
@@ -71,10 +63,11 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     });
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let server = tokio::spawn(async move {
-        if let Err(e) = mailbox_server::spawn_server(db_path, addr, None, Some(blob_sync), async move {
-            let _ = stop_rx.await;
-        })
-        .await
+        if let Err(e) =
+            mailbox_server::spawn_server(db_path, addr, None, Some(blob_sync), async move {
+                let _ = stop_rx.await;
+            })
+            .await
         {
             panic!("mailbox server failed: {e:?}");
         }

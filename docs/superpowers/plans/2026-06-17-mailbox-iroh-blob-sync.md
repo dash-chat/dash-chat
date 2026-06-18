@@ -1417,10 +1417,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
         }],
     };
 
-    let poll = PollConfig {
-        poll_interval: Duration::from_millis(250),
-        poll_timeout: Duration::from_secs(30),
-    };
+    let poll = PollConfig::default();
 
     // Create Bobbi's identity up front (on a shared store path) so Alice can
     // derive the direct-chat topic to his agent id without him being online,

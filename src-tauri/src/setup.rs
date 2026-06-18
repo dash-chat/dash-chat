@@ -14,8 +14,6 @@ pub(crate) async fn build_node(
 ) -> anyhow::Result<Node> {
     let config = if cfg!(feature = "e2e-tests") {
         let mut config = dashchat_node::NodeConfig::default();
-        config.mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
-        config.mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
         config.mdns_mode = p2panda::network::MdnsDiscoveryMode::Disabled;
         config
     } else {
@@ -30,11 +28,8 @@ pub(crate) async fn build_node(
             log::warn!("Failed to fetch mailbox id from {mailbox_url}/health: {err:?}. Falling back to hardcoded id.");
             crate::mailbox::PRODUCTION_MAILBOX_ID.to_string()
         });
-    let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
-        mailbox_id,
-        mailbox_url,
-        node.endpoint_id(),
-    );
+    let mailbox_client =
+        mailbox_client::toy::ToyMailboxClient::new(mailbox_id, mailbox_url, node.endpoint_id());
     node.mailboxes.register(mailbox_client).await;
 
     Ok(node)
