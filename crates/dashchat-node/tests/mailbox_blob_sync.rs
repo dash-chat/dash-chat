@@ -42,37 +42,25 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
 
     let mailbox_dir = tempfile::tempdir().unwrap();
     let db_path = mailbox_dir.path().join("mailbox.redb");
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    let addr = format!("127.0.0.1:{port}");
-    let url = format!("http://{addr}");
 
     // The relay shares no chat topic with Alice, so it discovers her address
     // lazily over mDNS rather than via an active gossip connection; retry the
     // blob fetch on a short interval so a pass lands once her address resolves.
-    let blob_sync = mailbox_server::BlobSync::shared(
+    let server = mailbox_local_server::spawn_local_mailbox_server(
+        db_path,
         relay.blobs(),
         relay.blob_downloader(),
         relay.endpoint_id(),
+        Some(mailbox_server::FetchConfig {
+            concurrency: 4,
+            attempt_timeout: Duration::from_secs(10),
+            pass_interval: Duration::from_secs(2),
+        }),
     )
-    .with_fetch_config(mailbox_server::FetchConfig {
-        concurrency: 4,
-        attempt_timeout: Duration::from_secs(10),
-        pass_interval: Duration::from_secs(2),
-    });
-    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-    let server = tokio::spawn(async move {
-        if let Err(e) =
-            mailbox_server::spawn_server(db_path, addr, None, Some(blob_sync), async move {
-                let _ = stop_rx.await;
-            })
-            .await
-        {
-            panic!("mailbox server failed: {e:?}");
-        }
-    });
-    wait_for_mailbox_health(&url).await;
+    .await
+    .unwrap();
+    let url = server.url.clone();
+    mailbox_client::toy::wait_for_mailbox_health(&url).await;
 
     // Alice and Bobbi, both pointing their toy mailbox client at the relay's
     // mailbox, using their own EndpointId as the blob-upload sender pubkey.
@@ -196,21 +184,5 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     assert_eq!(photos.len(), 1);
     assert_eq!(photos[0].data, photo_bytes);
 
-    let _ = stop_tx.send(());
-    let _ = server.await;
-}
-
-/// Poll the mailbox `/health` endpoint until it responds, confirming the server
-/// is listening before clients try to use it.
-async fn wait_for_mailbox_health(url: &str) {
-    let health = format!("{url}/health");
-    for _ in 0..100 {
-        if let Ok(resp) = mailbox_client::HTTP_CLIENT.get(&health).send().await {
-            if resp.status().is_success() {
-                return;
-            }
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    panic!("mailbox /health never became ready at {health}");
+    server.stop().await;
 }

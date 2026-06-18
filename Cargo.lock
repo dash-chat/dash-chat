@@ -1956,7 +1956,6 @@ dependencies = [
  "anyhow",
  "app_dirs2",
  "async-trait",
- "base64 0.22.1",
  "chrono",
  "dashchat-node",
  "dashchat-utils",
@@ -1971,6 +1970,7 @@ dependencies = [
  "libc",
  "log",
  "mailbox-client",
+ "mailbox-local-server",
  "mailbox-server",
  "mdns-sd",
  "nanoid 0.5.0",
@@ -2053,6 +2053,7 @@ dependencies = [
  "iroh-blobs",
  "itertools 0.14.0",
  "mailbox-client",
+ "mailbox-local-server",
  "mailbox-server",
  "maplit",
  "nanoid 0.4.0",
@@ -5365,6 +5366,21 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "mailbox-local-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "if-watch",
+ "iroh",
+ "iroh-blobs",
+ "log",
+ "mailbox-server",
+ "mdns-sd",
+ "tokio",
 ]
 
 [[package]]

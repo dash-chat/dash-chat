@@ -1152,7 +1152,7 @@ impl Node {
 
     /// Load the raw bytes of a single blob by its hash from the local blob store.
     ///
-    /// Used by the `blob://` URI scheme handler to serve media to the webview.
+    /// Used by the `irohblob://` URI scheme handler to serve media to the webview.
     pub async fn load_blob(&self, hash: &str) -> anyhow::Result<Vec<u8>> {
         let hash: iroh_blobs::Hash = hash.parse()?;
         let data = self.blob_sync.blobs.get_bytes(hash).await?;

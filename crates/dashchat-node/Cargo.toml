@@ -50,6 +50,7 @@ nanoid = { version = "0.4", optional = true }
 [dev-dependencies]
 dashchat-node = { path = ".", features = ["testing"] }
 mailbox-server = { path = "../mailbox-server", features = ["test_utils"] }
+mailbox-local-server = { workspace = true }
 itertools = "0.14.0"
 maplit = "1.0"
 pretty_assertions = "1.4.1"

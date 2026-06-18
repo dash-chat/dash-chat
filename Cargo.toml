@@ -21,6 +21,7 @@ serde_json = "1"
 dashchat-compat = { path = "crates/dashchat-compat" }
 mailbox-client = { path = "crates/mailbox-client" }
 mailbox-server = { path = "crates/mailbox-server" }
+mailbox-local-server = { path = "crates/mailbox-local-server" }
 
 p2panda = { git = "https://github.com/maackle/p2panda", branch = "add-groups-to-node-extensions" }
 p2panda-auth = { git = "https://github.com/maackle/p2panda", branch = "add-groups-to-node-extensions", features = [
