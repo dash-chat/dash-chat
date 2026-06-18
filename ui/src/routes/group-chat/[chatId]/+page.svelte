@@ -3,6 +3,7 @@
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
+	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
 	import type {
 		ChatsStore,
@@ -64,16 +65,24 @@
 		if (!text || text.trim() === '') return;
 		messageText = '';
 		try {
-			await store.sendMessage(text);
+			justSentMessageHash = await store.sendMessage(text);
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
-			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to send group message', e);
 			messageText = text;
 		}
 	}
+
+	// Scroll the message we just sent into view once its bubble mounts.
+	let justSentMessageHash: Hash | null = $state(null);
+	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
+		if (hash === justSentMessageHash) {
+			justSentMessageHash = null;
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		}
+	};
 
 	const theme = $derived(useTheme());
 
@@ -241,6 +250,7 @@
 												<div
 													class="self-end max-w-[85%]"
 													data-message-hash={hash}
+													use:scrollToBottomOnMount={hash}
 												>
 													<MessageFromMe
 														{message}

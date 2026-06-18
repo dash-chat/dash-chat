@@ -167,23 +167,23 @@
 		if (!message || message.trim() === '') return;
 
 		try {
-			await store.sendMessage(message);
+			justSentMessageHash = await store.sendMessage(message);
 			messageText = '';
 			capturedUnreadHash = null;
 			unreadDividerCaptured = false;
-			// Defer the scroll one macrotask: store.sendMessage resolves once
-			// the operation is confirmed in the local log, but signalium still
-			// needs a turn for its subscriber chain to push the new message
-			// through messagesSets and Svelte to render the bubble. tick() only
-			// flushes pending Svelte updates synchronously, so it isn't enough
-			// here. Without this, scrollToBottom fires against the old layout
-			// and `overflow-anchor: none` leaves the just-rendered bubble
-			// hidden behind the input bar.
-			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
+
+	// Scroll the message we just sent into view once its bubble mounts.
+	let justSentMessageHash: Hash | null = $state(null);
+	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
+		if (hash === justSentMessageHash) {
+			justSentMessageHash = null;
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		}
+	};
 
 	onMount(() => {
 		if (page.url.searchParams.has('search')) {
@@ -593,6 +593,7 @@
 																onLongPress: e =>
 																	showQuickReactionBar(e, message),
 															}}
+															use:scrollToBottomOnMount={hash}
 														>
 															{#await $chatId then chatId}
 																<MessageFromMe

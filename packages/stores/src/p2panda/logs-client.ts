@@ -1,7 +1,7 @@
 import type { UnsubscribeFunction } from 'emittery';
 
 import type { SimplifiedOperation } from './simplified-types';
-import type { TopicId, VerifyingKey } from './types';
+import type { Hash, TopicId, VerifyingKey } from './types';
 
 export interface LogsClient<PAYLOAD> {
 	getAuthorsForTopic(topicId: TopicId): Promise<VerifyingKey[]>;
