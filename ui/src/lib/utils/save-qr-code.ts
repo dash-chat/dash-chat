@@ -1,12 +1,13 @@
 import { m } from '$lib/paraglide/messages.js';
 import { isTauriEnv } from '$lib/utils/environment';
+import { defaultQrColor } from '$lib/utils/qrcode';
 import QrCreator from 'qr-creator';
 
 const FONT_FAMILY = "-apple-system, 'Segoe UI', Roboto, sans-serif";
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const SHARE_CANCELLED_ERROR_MESSAGE = 'Share cancelled';
 
-function sanitizeHexColor(color: string, fallback = '#007aff'): string {
+function sanitizeHexColor(color: string, fallback = defaultQrColor()): string {
 	return HEX_COLOR_RE.test(color) ? color : fallback;
 }
 

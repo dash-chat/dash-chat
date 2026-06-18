@@ -46,7 +46,7 @@
 
 <style>
 	:root {
-		--tooltip-bg: #2c6bed;
+		--tooltip-bg: var(--color-brand-primary);
 	}
 	.tooltip-bg {
 		background-color: var(--tooltip-bg);
