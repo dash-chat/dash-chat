@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// A blip of binary data that serializes/deserializes as base64
+/// A (small) chunk of binary data that serializes/deserializes as base64
+///
+/// In Dash Chat, "blips" correspond to encrypted log operation,
+/// as opposed to a "blobs" which are large binary objects like media files.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Blip(#[serde(with = "base64_serde")] Vec<u8>);

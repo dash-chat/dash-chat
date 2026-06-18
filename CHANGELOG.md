@@ -10,3 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - This changelog
+
+### Changed
+
+- The term "blob" in mailbox code (used to refer to encrypted log items) is now renamed to "blip" to free the word "blob" for the canonical meaning of large binary objects.
+- Chat messages can now refer to media blobs by hash, rather than storing the media inline into the payload. These blobs are fetched in a separate loop, allowing for logs to stay small and quickly synced, and for the larger blobs to be fetched on demand, cached, and separately managed.
