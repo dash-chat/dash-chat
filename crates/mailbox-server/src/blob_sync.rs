@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use dashchat_utils::{fetch_loop, FetchConfig, FetchStack};
+use dashchat_utils::{fetch_loop, FetchConfig, FetchPool};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
@@ -40,7 +40,7 @@ impl BlobFetchPool {
 }
 
 #[async_trait::async_trait]
-impl FetchStack for BlobFetchPool {
+impl FetchPool for BlobFetchPool {
     type Item = (iroh_blobs::Hash, Vec<iroh::EndpointId>);
     type Key = iroh_blobs::Hash;
 

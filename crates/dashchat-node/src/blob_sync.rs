@@ -1,27 +1,25 @@
+//! Manages syncing blobs referenced in logs over iroh-blobs
+
 use derive_more::derive::Constructor;
 use futures::Stream;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
 use iroh_blobs::protocol::GetRequest;
 use mailbox_client::manager::Mailboxes;
 use p2panda::operation::{LogId, Operation};
-use std::{
-    collections::HashSet,
-    path::PathBuf,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
 use tokio::{
     sync::{Mutex, Notify},
     task::JoinHandle,
 };
 use tokio_stream::StreamExt;
 
-use dashchat_utils::FetchStack;
+use dashchat_utils::FetchPool;
 
 pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 
 use crate::{AsBody, ChatPayload, Payload, TopicId, mailbox::MailboxOperation, stores::OpStore};
 
+/// Manages syncing blobs referenced in logs over iroh-blobs
 #[derive(Clone)]
 pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
@@ -125,7 +123,7 @@ pub struct BlobFetchPool {
 }
 
 #[async_trait::async_trait]
-impl FetchStack for BlobFetchPool {
+impl FetchPool for BlobFetchPool {
     type Item = (TopicId, iroh_blobs::Hash);
     type Key = iroh_blobs::Hash;
 
@@ -135,12 +133,13 @@ impl FetchStack for BlobFetchPool {
     async fn is_empty(&self) -> bool {
         self.stack.lock().await.is_empty()
     }
-    async fn next_untried(
-        &self,
-        tried: &HashSet<iroh_blobs::Hash>,
-    ) -> Option<Self::Item> {
+    async fn next_untried(&self, tried: &HashSet<iroh_blobs::Hash>) -> Option<Self::Item> {
         let stack = self.stack.lock().await;
-        stack.iter().rev().find(|(_, hash)| !tried.contains(hash)).copied()
+        stack
+            .iter()
+            .rev()
+            .find(|(_, hash)| !tried.contains(hash))
+            .copied()
     }
     async fn remove(&self, item: &Self::Item) {
         self.stack.lock().await.retain(|entry| entry != item);

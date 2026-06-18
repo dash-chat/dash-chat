@@ -24,7 +24,7 @@ impl Default for FetchConfig {
 /// A pool of work items the fetch loop drains. Implementors own the storage and
 /// the wake signal; the loop is otherwise generic.
 #[async_trait::async_trait]
-pub trait FetchStack: Clone + Send + Sync + 'static {
+pub trait FetchPool: Clone + Send + Sync + 'static {
     type Item: Clone + Send + 'static;
     type Key: Copy + Eq + Hash + Send;
 
@@ -46,7 +46,7 @@ pub trait FetchStack: Clone + Send + Sync + 'static {
 /// retrying, but a newly added item wakes it early; with an empty pool it parks.
 pub async fn fetch_loop<P, F, Fut>(pool: P, config: FetchConfig, fetch: F)
 where
-    P: FetchStack,
+    P: FetchPool,
     F: Fn(P::Item, Duration) -> Fut + Clone + Send + 'static,
     Fut: std::future::Future<Output = bool> + Send + 'static,
 {
@@ -75,7 +75,7 @@ async fn run_fetch_pass<P, F, Fut>(
     attempt_timeout: Duration,
     fetch: &F,
 ) where
-    P: FetchStack,
+    P: FetchPool,
     F: Fn(P::Item, Duration) -> Fut + Clone + Send + 'static,
     Fut: std::future::Future<Output = bool> + Send + 'static,
 {
@@ -88,9 +88,8 @@ async fn run_fetch_pass<P, F, Fut>(
             };
             tried.insert(P::key(&item));
             let fetch = fetch.clone();
-            in_flight.spawn(async move {
-                fetch(item.clone(), attempt_timeout).await.then_some(item)
-            });
+            in_flight
+                .spawn(async move { fetch(item.clone(), attempt_timeout).await.then_some(item) });
         }
         let Some(joined) = in_flight.join_next().await else {
             break;
@@ -108,13 +107,13 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::{Mutex, Notify, Semaphore};
 
-    /// Minimal FetchStack whose items are `u8` ids (also their own key).
+    /// Minimal FetchPool whose items are `u8` ids (also their own key).
     #[derive(Clone, Default)]
-    struct TestStack {
+    struct TestPool {
         items: Arc<Mutex<Vec<u8>>>,
         added: Arc<Notify>,
     }
-    impl TestStack {
+    impl TestPool {
         async fn add(&self, n: u8) {
             self.items.lock().await.push(n);
             self.added.notify_one();
@@ -124,7 +123,7 @@ mod tests {
         }
     }
     #[async_trait::async_trait]
-    impl FetchStack for TestStack {
+    impl FetchPool for TestPool {
         type Item = u8;
         type Key = u8;
         fn key(item: &u8) -> u8 {
@@ -166,7 +165,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn empty_pool_parks_until_an_item_is_added() {
-        let pool = TestStack::default();
+        let pool = TestPool::default();
         let calls = Arc::new(Mutex::new(Vec::new()));
         let handle = {
             let calls = calls.clone();
@@ -189,7 +188,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn one_pass_drains_all_succeeding_items() {
-        let pool = TestStack::default();
+        let pool = TestPool::default();
         for n in 1..=3 {
             pool.add(n).await;
         }
@@ -213,7 +212,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn failing_item_is_retried_about_one_interval_later() {
-        let pool = TestStack::default();
+        let pool = TestPool::default();
         let times = Arc::new(Mutex::new(Vec::new()));
         let start = tokio::time::Instant::now();
         let handle = {
@@ -241,7 +240,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn adding_an_item_wakes_the_loop_before_the_interval() {
-        let pool = TestStack::default();
+        let pool = TestPool::default();
         pool.add(1).await;
         let times = Arc::new(Mutex::new(Vec::new()));
         let start = tokio::time::Instant::now();
@@ -268,7 +267,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn never_exceeds_the_concurrency_limit() {
-        let pool = TestStack::default();
+        let pool = TestPool::default();
         for n in 1..=4 {
             pool.add(n).await;
         }

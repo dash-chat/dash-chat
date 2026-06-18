@@ -18,7 +18,7 @@
 - The `signature` field on the request is an opaque `Vec<u8>` placeholder — carried, never validated.
 - Rename is a full `s/blob/blip/` across mailbox crates INCLUDING wire (HTTP routes, JSON field names) and disk (redb table name). Acceptable break: pre-alpha.
 - Write very few comments (see CLAUDE.md). No `left`/`right` CSS (not relevant here — backend only).
-- The fetch-loop control logic is shared: it lives once in `dashchat-utils` behind the `FetchStack` trait (Task 4) and is consumed by both `dashchat-node` and `mailbox-server`. Do NOT reintroduce a second copy of `fetch_loop`/`run_fetch_pass` in either consumer.
+- The fetch-loop control logic is shared: it lives once in `dashchat-utils` behind the `FetchPool` trait (Task 4) and is consumed by both `dashchat-node` and `mailbox-server`. Do NOT reintroduce a second copy of `fetch_loop`/`run_fetch_pass` in either consumer.
 - Commit after each task.
 
 ---
@@ -481,22 +481,22 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ## Phase 3 — Shared fetch loop + server fetch pool
 
-The fetch-loop control logic (bounded concurrency, pass interval, wake-on-add, per-pass tried-set) is identical for nodes and mailboxes; only the pool storage and source resolution differ. Extract the loop into the existing `dashchat-utils` grab-bag crate behind a `FetchStack` trait — it needs no iroh/p2panda types, only tokio + the trait — then migrate the node to it (Task 4) and implement the trait for the mailbox's `hash → set<EndpointId>` pool (Task 5).
+The fetch-loop control logic (bounded concurrency, pass interval, wake-on-add, per-pass tried-set) is identical for nodes and mailboxes; only the pool storage and source resolution differ. Extract the loop into the existing `dashchat-utils` grab-bag crate behind a `FetchPool` trait — it needs no iroh/p2panda types, only tokio + the trait — then migrate the node to it (Task 4) and implement the trait for the mailbox's `hash → set<EndpointId>` pool (Task 5).
 
 ### Task 4: Extract the generic fetch loop into `dashchat-utils` and migrate the node
 
 **Files:**
 - Create: `crates/dashchat-utils/src/fetch_loop.rs`
 - Modify: `crates/dashchat-utils/src/lib.rs` (declare + re-export), `crates/dashchat-utils/Cargo.toml` (add `async-trait`)
-- Modify: `crates/dashchat-node/src/blob_sync.rs` (impl `FetchStack` for the existing `BlobFetchPool`; delete the local `fetch_loop`/`run_fetch_pass`/`BlobFetchConfig`; move the loop unit tests out; call the shared loop)
+- Modify: `crates/dashchat-node/src/blob_sync.rs` (impl `FetchPool` for the existing `BlobFetchPool`; delete the local `fetch_loop`/`run_fetch_pass`/`BlobFetchConfig`; move the loop unit tests out; call the shared loop)
 - Modify: `crates/dashchat-node/src/node.rs` only if it names `BlobFetchConfig` directly (kept working via a re-export alias — see Interfaces)
 
 **Interfaces:**
 - Consumes: nothing new.
 - Produces (in `dashchat_utils`):
   - `pub struct FetchConfig { pub concurrency: usize, pub attempt_timeout: Duration, pub pass_interval: Duration }` with `Default` (4 / 30s / 60s).
-  - `#[async_trait] pub trait FetchStack: Clone + Send + Sync + 'static { type Item: Clone + Send + 'static; type Key: Copy + Eq + std::hash::Hash + Send; fn key(item: &Self::Item) -> Self::Key; async fn is_empty(&self) -> bool; async fn next_untried(&self, tried: &HashSet<Self::Key>) -> Option<Self::Item>; async fn remove(&self, item: &Self::Item); async fn wait_for_add(&self); }`
-  - `pub async fn fetch_loop<P: FetchStack, F, Fut>(pool: P, config: FetchConfig, fetch: F) where F: Fn(P::Item, Duration) -> Fut + Clone + Send + 'static, Fut: Future<Output = bool> + Send + 'static`
+  - `#[async_trait] pub trait FetchPool: Clone + Send + Sync + 'static { type Item: Clone + Send + 'static; type Key: Copy + Eq + std::hash::Hash + Send; fn key(item: &Self::Item) -> Self::Key; async fn is_empty(&self) -> bool; async fn next_untried(&self, tried: &HashSet<Self::Key>) -> Option<Self::Item>; async fn remove(&self, item: &Self::Item); async fn wait_for_add(&self); }`
+  - `pub async fn fetch_loop<P: FetchPool, F, Fut>(pool: P, config: FetchConfig, fetch: F) where F: Fn(P::Item, Duration) -> Fut + Clone + Send + 'static, Fut: Future<Output = bool> + Send + 'static`
 - The node adds `pub use dashchat_utils::FetchConfig as BlobFetchConfig;` in `crates/dashchat-node/src/blob_sync.rs` so `NodeConfig.blob_fetch: BlobFetchConfig` and every `config.blob_fetch` keep compiling unchanged.
 
 - [ ] **Step 1: Add `async-trait` to dashchat-utils and write `fetch_loop.rs` with failing tests**
@@ -532,7 +532,7 @@ impl Default for FetchConfig {
 /// A pool of work items the fetch loop drains. Implementors own the storage and
 /// the wake signal; the loop is otherwise generic.
 #[async_trait::async_trait]
-pub trait FetchStack: Clone + Send + Sync + 'static {
+pub trait FetchPool: Clone + Send + Sync + 'static {
     type Item: Clone + Send + 'static;
     type Key: Copy + Eq + Hash + Send;
 
@@ -554,7 +554,7 @@ pub trait FetchStack: Clone + Send + Sync + 'static {
 /// retrying, but a newly added item wakes it early; with an empty pool it parks.
 pub async fn fetch_loop<P, F, Fut>(pool: P, config: FetchConfig, fetch: F)
 where
-    P: FetchStack,
+    P: FetchPool,
     F: Fn(P::Item, Duration) -> Fut + Clone + Send + 'static,
     Fut: std::future::Future<Output = bool> + Send + 'static,
 {
@@ -583,7 +583,7 @@ async fn run_fetch_pass<P, F, Fut>(
     attempt_timeout: Duration,
     fetch: &F,
 ) where
-    P: FetchStack,
+    P: FetchPool,
     F: Fn(P::Item, Duration) -> Fut + Clone + Send + 'static,
     Fut: std::future::Future<Output = bool> + Send + 'static,
 {
@@ -616,13 +616,13 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::{Mutex, Notify, Semaphore};
 
-    /// Minimal FetchStack whose items are `u8` ids (also their own key).
+    /// Minimal FetchPool whose items are `u8` ids (also their own key).
     #[derive(Clone, Default)]
-    struct TestStack {
+    struct TestPool {
         items: Arc<Mutex<Vec<u8>>>,
         added: Arc<Notify>,
     }
-    impl TestStack {
+    impl TestPool {
         async fn add(&self, n: u8) {
             self.items.lock().await.push(n);
             self.added.notify_one();
@@ -632,7 +632,7 @@ mod tests {
         }
     }
     #[async_trait::async_trait]
-    impl FetchStack for TestStack {
+    impl FetchPool for TestPool {
         type Item = u8;
         type Key = u8;
         fn key(item: &u8) -> u8 {
@@ -674,7 +674,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn empty_pool_parks_until_an_item_is_added() {
-        let pool = TestStack::default();
+        let pool = TestPool::default();
         let calls = Arc::new(Mutex::new(Vec::new()));
         let handle = {
             let calls = calls.clone();
@@ -697,7 +697,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn one_pass_drains_all_succeeding_items() {
-        let pool = TestStack::default();
+        let pool = TestPool::default();
         for n in 1..=3 {
             pool.add(n).await;
         }
@@ -721,7 +721,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn failing_item_is_retried_about_one_interval_later() {
-        let pool = TestStack::default();
+        let pool = TestPool::default();
         let times = Arc::new(Mutex::new(Vec::new()));
         let start = tokio::time::Instant::now();
         let handle = {
@@ -749,7 +749,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn adding_an_item_wakes_the_loop_before_the_interval() {
-        let pool = TestStack::default();
+        let pool = TestPool::default();
         pool.add(1).await;
         let times = Arc::new(Mutex::new(Vec::new()));
         let start = tokio::time::Instant::now();
@@ -776,7 +776,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn never_exceeds_the_concurrency_limit() {
-        let pool = TestStack::default();
+        let pool = TestPool::default();
         for n in 1..=4 {
             pool.add(n).await;
         }
@@ -817,7 +817,7 @@ mod tests {
 }
 ```
 
-These five tests are the node's existing loop tests (`crates/dashchat-node/src/blob_sync.rs`, the `tests` module fns `empty_pool_parks_until_a_hash_is_added`, `one_pass_drains_all_succeeding_items`, `failing_item_is_retried_about_one_interval_later`, `adding_a_hash_wakes_the_loop_before_the_interval`, `never_exceeds_the_concurrency_limit`) re-expressed against the generic `TestStack` — they are deleted from the node in Step 5. Add `mod fetch_loop;` and `pub use fetch_loop::{fetch_loop, FetchConfig, FetchStack};` to `crates/dashchat-utils/src/lib.rs`.
+These five tests are the node's existing loop tests (`crates/dashchat-node/src/blob_sync.rs`, the `tests` module fns `empty_pool_parks_until_a_hash_is_added`, `one_pass_drains_all_succeeding_items`, `failing_item_is_retried_about_one_interval_later`, `adding_a_hash_wakes_the_loop_before_the_interval`, `never_exceeds_the_concurrency_limit`) re-expressed against the generic `TestPool` — they are deleted from the node in Step 5. Add `mod fetch_loop;` and `pub use fetch_loop::{fetch_loop, FetchConfig, FetchPool};` to `crates/dashchat-utils/src/lib.rs`.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -841,12 +841,12 @@ In `crates/dashchat-node/Cargo.toml` ensure `dashchat-utils = { path = "../dashc
 In `crates/dashchat-node/src/blob_sync.rs`:
 1. Delete the local `BlobFetchConfig` struct + its `Default` impl, and the free fns `fetch_loop` and `run_fetch_pass` (the whole loop machinery now lives in `dashchat-utils`).
 2. Delete the five loop unit tests listed in Step 1 from the `tests` module (they moved). Keep any pool-specific tests.
-3. Add at the top: `pub use dashchat_utils::FetchConfig as BlobFetchConfig;` and `use dashchat_utils::FetchStack;`.
-4. Implement `FetchStack` for the existing `BlobFetchPool` (`Item = (LogId, iroh_blobs::Hash)`, `Key = iroh_blobs::Hash`), delegating to its existing inherent methods:
+3. Add at the top: `pub use dashchat_utils::FetchConfig as BlobFetchConfig;` and `use dashchat_utils::FetchPool;`.
+4. Implement `FetchPool` for the existing `BlobFetchPool` (`Item = (LogId, iroh_blobs::Hash)`, `Key = iroh_blobs::Hash`), delegating to its existing inherent methods:
 
 ```rust
 #[async_trait::async_trait]
-impl FetchStack for BlobFetchPool {
+impl FetchPool for BlobFetchPool {
     type Item = (LogId, iroh_blobs::Hash);
     type Key = iroh_blobs::Hash;
 
@@ -902,25 +902,25 @@ Expected: PASS. (The node behaves identically; the loop just lives elsewhere now
 git add -A
 git commit -m "refactor: extract generic fetch loop into dashchat-utils
 
-Moves the blob fetch-loop control logic behind a FetchStack trait in
+Moves the blob fetch-loop control logic behind a FetchPool trait in
 dashchat-utils and migrates dashchat-node onto it, so the mailbox server
 can reuse the same loop without depending on dashchat-node's Payload.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
-### Task 5: Implement the mailbox's `hash → set<EndpointId>` pool on `FetchStack`
+### Task 5: Implement the mailbox's `hash → set<EndpointId>` pool on `FetchPool`
 
 **Files:**
-- Modify: `crates/mailbox-server/src/blob_sync.rs` (add `BlobFetchPool`, impl `FetchStack`, `try_fetch`, `spawn_fetch_loop`; store the pool on `BlobSync`)
+- Modify: `crates/mailbox-server/src/blob_sync.rs` (add `BlobFetchPool`, impl `FetchPool`, `try_fetch`, `spawn_fetch_loop`; store the pool on `BlobSync`)
 - Modify: `crates/mailbox-server/Cargo.toml` (add `dashchat-utils`, `async-trait`)
 - Modify: `crates/mailbox-server/src/lib.rs` (spawn the loop in `spawn_server`, export the pool)
 
 **Interfaces:**
-- Consumes: `BlobSync` (Task 3); `dashchat_utils::{FetchConfig, FetchStack, fetch_loop}` (Task 4).
+- Consumes: `BlobSync` (Task 3); `dashchat_utils::{FetchConfig, FetchPool, fetch_loop}` (Task 4).
 - Produces:
   - `#[derive(Clone, Default)] pub struct BlobFetchPool` with inherent `pub async fn add_source(&self, hash: iroh_blobs::Hash, source: iroh::EndpointId)`, `pub(crate) async fn is_empty(&self) -> bool`, `pub(crate) async fn next_untried(&self, tried: &HashSet<iroh_blobs::Hash>) -> Option<(iroh_blobs::Hash, Vec<iroh::EndpointId>)>`, `pub(crate) async fn remove(&self, hash: iroh_blobs::Hash)`.
-  - `impl FetchStack for BlobFetchPool` (`Item = (iroh_blobs::Hash, Vec<iroh::EndpointId>)`, `Key = iroh_blobs::Hash`).
+  - `impl FetchPool for BlobFetchPool` (`Item = (iroh_blobs::Hash, Vec<iroh::EndpointId>)`, `Key = iroh_blobs::Hash`).
   - `BlobSync.fetch_pool: BlobFetchPool` + `pub fn fetch_pool(&self) -> &BlobFetchPool`.
   - `pub fn BlobSync::spawn_fetch_loop(&self, config: FetchConfig) -> tokio::task::JoinHandle<()>`.
 
@@ -966,7 +966,7 @@ NOTE: if `iroh::SecretKey::from_bytes` / `.public()` differ for this iroh versio
 Run: `cargo nextest run -p mailbox-server blob_sync`
 Expected: FAIL (pool symbols undefined).
 
-- [ ] **Step 3: Implement the pool, its `FetchStack` impl, and `try_fetch` / `spawn_fetch_loop`**
+- [ ] **Step 3: Implement the pool, its `FetchPool` impl, and `try_fetch` / `spawn_fetch_loop`**
 
 Add to `crates/mailbox-server/src/blob_sync.rs`. Use `BTreeMap<Hash, BTreeSet<EndpointId>>` for deterministic iteration:
 
@@ -975,7 +975,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
-use dashchat_utils::{fetch_loop, FetchConfig, FetchStack};
+use dashchat_utils::{fetch_loop, FetchConfig, FetchPool};
 use iroh_blobs::api::downloader::Shuffled;
 use iroh_blobs::protocol::GetRequest;
 use tokio::sync::{Mutex, Notify};
@@ -1010,7 +1010,7 @@ impl BlobFetchPool {
 }
 
 #[async_trait::async_trait]
-impl FetchStack for BlobFetchPool {
+impl FetchPool for BlobFetchPool {
     type Item = (iroh_blobs::Hash, Vec<iroh::EndpointId>);
     type Key = iroh_blobs::Hash;
 
@@ -1103,7 +1103,7 @@ Expected: PASS.
 
 ```bash
 git add -A
-git commit -m "feat(mailbox): hash->sources fetch pool on shared FetchStack loop
+git commit -m "feat(mailbox): hash->sources fetch pool on shared FetchPool loop
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
