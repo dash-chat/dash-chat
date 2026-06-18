@@ -58,6 +58,8 @@ export const shrinkToWidestLine: Action<HTMLElement> = node => {
 		childList: true,
 		subtree: true,
 		characterData: true,
+		attributes: true,
+		attributeFilter: ['style'],
 	});
 	window.addEventListener('resize', onWindowResize);
 	document.fonts.ready.then(fit);
