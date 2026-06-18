@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 
-use dashchat_node::{topic::TopicId, DeviceId, Node};
+use dashchat_node::{DeviceId, Node};
 use mailbox_client::{manager::MailboxConnectionState, sync_tracker::MailboxSyncState, MailboxId};
+use p2panda::operation::LogId;
 use serde::Serialize;
 use tauri::{ipc::Channel, State};
 use tokio::sync::watch;
@@ -57,7 +58,7 @@ pub async fn mailbox_subscribe_connection_state(
 #[tauri::command]
 pub async fn mailbox_subscribe_sync_state(
     mailbox_id: MailboxId,
-    on_event: Channel<MailboxSyncState<TopicId, DeviceId>>,
+    on_event: Channel<MailboxSyncState<LogId, DeviceId>>,
     node: State<'_, Node>,
 ) -> Result<(), String> {
     let rx = node

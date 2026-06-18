@@ -7,7 +7,7 @@ import {
 	type MailboxSyncState,
 	PRODUCTION_MAILBOX_ID,
 } from '../mailbox-tracker/types';
-import type { DeviceId, TopicId } from '../p2panda/types';
+import type { DeviceId, LogId } from '../p2panda/types';
 
 const syncedToInfinity: MailboxSyncState = new Proxy({} as MailboxSyncState, {
 	get: () =>
@@ -48,7 +48,7 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 
 	syncStateForLog = reactive(
 		async (
-			_topicId: TopicId,
+			_logId: LogId,
 			_author: DeviceId,
 		): Promise<Record<MailboxId, number>> => ({
 			[PRODUCTION_MAILBOX_ID]: Number.MAX_SAFE_INTEGER,
@@ -57,7 +57,7 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 
 	syncedMailboxesForOp = reactive(
 		async (
-			_topicId: TopicId,
+			_logId: LogId,
 			_author: DeviceId,
 			_seq: number,
 		): Promise<MailboxId[]> => [PRODUCTION_MAILBOX_ID],
