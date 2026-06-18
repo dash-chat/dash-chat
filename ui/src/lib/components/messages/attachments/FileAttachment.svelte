@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { FileAttachment } from 'dash-chat-stores';
-	import { byteLengthOf, formatFileSize } from '$lib/types/media';
+	import { formatFileSize } from '$lib/types/media';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import { saveAttachment } from '$lib/utils/save-file';
 
@@ -30,7 +30,7 @@
 			>{file.name}</span
 		>
 		<span class="text-xs opacity-70"
-			>{formatFileSize(byteLengthOf(file.data))}</span
+			>{formatFileSize(file.data.byteLength)}</span
 		>
 	</div>
 	{#if metadata}

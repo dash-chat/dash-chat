@@ -150,9 +150,9 @@ async function buildMedia(draft: DraftMedia): Promise<Media> {
 
 function totalMediaBytes(media: Media): number {
 	if (media.kind === 'photos') {
-		return media.photos.reduce((sum, p) => sum + byteLengthOf(p.data), 0);
+		return media.photos.reduce((sum, p) => sum + p.data.byteLength, 0);
 	}
-	return byteLengthOf(media.file.data);
+	return media.file.data.byteLength;
 }
 
 /** Uppercase extension for a filename, max 4 chars; '' when there is none. */
@@ -174,33 +174,9 @@ export function formatFileSize(bytes: number): string {
 }
 
 /**
- * Normalize bytes coming from Tauri IPC. The Rust side sends `Vec<u8>`, which
- * Tauri's default JSON serialization delivers as a plain `number[]` — not a
- * `Uint8Array`. Coerce here so downstream code can rely on `Uint8Array`.
+ * Wrap attachment bytes into a Blob URL. The caller is responsible for revoking
+ * it via `URL.revokeObjectURL` (Svelte: use `$effect` cleanup).
  */
-export function asUint8Array(
-	data: Uint8Array | ArrayBuffer | number[],
-): Uint8Array {
-	if (data instanceof Uint8Array) return data;
-	if (data instanceof ArrayBuffer) return new Uint8Array(data);
-	return new Uint8Array(data);
-}
-
-/**
- * Wrap raw bytes into a Blob URL. Accepts either `Uint8Array` (in-process)
- * or `number[]` (fresh from Tauri JSON IPC). Caller is responsible for
- * revoking via `URL.revokeObjectURL` (Svelte: use `$effect` cleanup).
- */
-export function bytesToBlobUrl(
-	data: Uint8Array | number[],
-	mimeType: string,
-): string {
-	return URL.createObjectURL(
-		new Blob([asUint8Array(data)], { type: mimeType }),
-	);
-}
-
-/** Size in bytes of either an in-process `Uint8Array` or an IPC number array. */
-export function byteLengthOf(data: Uint8Array | number[]): number {
-	return data instanceof Uint8Array ? data.byteLength : data.length;
+export function bytesToBlobUrl(data: Uint8Array, mimeType: string): string {
+	return URL.createObjectURL(new Blob([data], { type: mimeType }));
 }
