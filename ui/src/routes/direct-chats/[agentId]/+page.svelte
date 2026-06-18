@@ -65,6 +65,7 @@
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
+	import MessageContent from '$lib/components/messages/MessageContent.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -160,22 +161,22 @@
 		$state();
 	let parentDivEl: HTMLDivElement | null = $state(null);
 
-	function onMessageSent() {
+	// Scroll the message we just sent into view once its bubble mounts.
+	let justSentMessageHash: Hash | null = $state(null);
+	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
+		if (hash === justSentMessageHash) {
+			justSentMessageHash = null;
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		}
+	};
+
+	function onMessageSent(messageHash: Hash) {
+		justSentMessageHash = messageHash;
 		capturedUnreadHash = null;
 		unreadDividerCaptured = false;
 	}
 
-	// When an own message bubble is created after the initial render (i.e. one we
-	// just sent), scroll it into view. Firing on the element's mount means the
-	// bubble already exists, so there's no race with it rendering. Messages
-	// present on first render are skipped — the chat already opens at the bottom.
-	let hydrated = $state(false);
-	const scrollToBottomOnMount: Action<HTMLElement> = () => {
-		if (hydrated) reverseScrollPage?.scrollToBottom();
-	};
-
 	onMount(() => {
-		hydrated = true;
 		if (page.url.searchParams.has('search')) {
 			goto(`/direct-chats/${agentId}`, { replaceState: true });
 		}
@@ -583,7 +584,7 @@
 																onLongPress: e =>
 																	showQuickReactionBar(e, message),
 															}}
-															use:scrollToBottomOnMount
+															use:scrollToBottomOnMount={hash}
 														>
 															{#await $chatId then chatId}
 																<MessageFromMe

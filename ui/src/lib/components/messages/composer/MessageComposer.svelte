@@ -11,7 +11,7 @@
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
 	} from '$lib/types/media';
-	import type { MessagesStore } from 'dash-chat-stores';
+	import type { Hash, MessagesStore } from 'dash-chat-stores';
 	import { stageFiles } from '$lib/utils/stage-files';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
@@ -30,7 +30,7 @@
 		/** The direct- or group-chat store the composer persists messages to. */
 		store: MessagesStore;
 		/** Called after a message is successfully sent (e.g. to scroll the chat). */
-		onSent?: () => void;
+		onSent?: (messageHash: Hash) => void;
 	}
 
 	let {
@@ -60,7 +60,7 @@
 		const draft = media;
 		try {
 			const wireMedia = draft ? await draftToMedia(draft) : null;
-			await store.sendMessage({ message, media: wireMedia });
+			const hash = await store.sendMessage({ message, media: wireMedia });
 			// Only clear what this send actually consumed: the user may have
 			// typed or staged new attachments while the send was confirming.
 			if (value === message) value = '';
@@ -68,7 +68,7 @@
 				media = undefined;
 				if (draft) revokeDraft(draft);
 			}
-			onSent?.();
+			onSent?.(hash);
 		} catch (e) {
 			if (e instanceof AttachmentTooLargeError) {
 				showToast(
@@ -182,6 +182,6 @@
 	}
 
 	.input-container:focus-within {
-		border-color: var(--k-theme-color, #3b82f6);
+		border-color: var(--color-brand-primary);
 	}
 </style>

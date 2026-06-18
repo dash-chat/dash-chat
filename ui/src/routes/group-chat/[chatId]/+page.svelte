@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { getContext, onMount } from 'svelte';
+	import { getContext } from 'svelte';
 	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
 	import type {
@@ -28,6 +28,7 @@
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import { m } from '$lib/paraglide/messages';
+	import MessageContent from '$lib/components/messages/MessageContent.svelte';
 
 	let chatId = page.params.chatId!;
 
@@ -55,22 +56,20 @@
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
-	function onMessageSent() {
+	// Scroll the message we just sent into view once its bubble mounts.
+	let justSentMessageHash: Hash | null = $state(null);
+	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
+		if (hash === justSentMessageHash) {
+			justSentMessageHash = null;
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		}
+	};
+
+	function onMessageSent(messageHash: Hash) {
+		justSentMessageHash = messageHash;
 		capturedUnreadHash = null;
 		unreadDividerCaptured = false;
 	}
-
-	// When an own message bubble is created after the initial render (i.e. one we
-	// just sent), scroll it into view. Firing on the element's mount means the
-	// bubble already exists, so there's no race with it rendering. Messages
-	// present on first render are skipped — the chat already opens at the bottom.
-	let hydrated = $state(false);
-	onMount(() => {
-		hydrated = true;
-	});
-	const scrollToBottomOnMount: Action<HTMLElement> = () => {
-		if (hydrated) reverseScrollPage?.scrollToBottom();
-	};
 
 	const theme = $derived(useTheme());
 
@@ -238,7 +237,7 @@
 												<div
 													class="self-end max-w-[85%]"
 													data-message-hash={hash}
-													use:scrollToBottomOnMount
+													use:scrollToBottomOnMount={hash}
 												>
 													<MessageFromMe
 														{message}
