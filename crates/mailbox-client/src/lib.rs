@@ -51,14 +51,14 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(bound(deserialize = "Item: DeserializeOwned"))]
-pub struct FetchRequest<Item: MailboxItem>(pub BTreeMap<Item::LogId, FetchTopicRequest<Item>>);
+pub struct FetchRequest<Item: MailboxItem>(pub BTreeMap<Item::Topic, FetchTopicRequest<Item>>);
 
 pub type FetchTopicRequest<Item> = BTreeMap<<Item as MailboxItem>::Author, u64>;
 
 /// Returned by the `fetch` method.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(bound(deserialize = "Item: DeserializeOwned"))]
-pub struct FetchResponse<Item: MailboxItem>(pub BTreeMap<Item::LogId, FetchTopicResponse<Item>>);
+pub struct FetchResponse<Item: MailboxItem>(pub BTreeMap<Item::Topic, FetchTopicResponse<Item>>);
 
 /// Returned by the `fetch` method.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -97,12 +97,12 @@ pub trait MailboxItem:
 {
     type Hash: ItemTraits;
     type Author: ItemTraits;
-    type LogId: ItemTraits;
+    type Topic: ItemTraits;
 
     fn seq_num(&self) -> SeqNum;
     fn hash(&self) -> Self::Hash;
     fn author(&self) -> Self::Author;
-    fn log_id(&self) -> Self::LogId;
+    fn topic(&self) -> Self::Topic;
 }
 
 /// Extra traits for ItemTraits which are feature-dependent.

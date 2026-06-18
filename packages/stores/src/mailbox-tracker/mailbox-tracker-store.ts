@@ -1,7 +1,7 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { ReactivePromise, reactive, relay } from 'signalium';
 
-import type { DeviceId, LogId, TopicId } from '../p2panda/types';
+import type { DeviceId, TopicId } from '../p2panda/types';
 import { unregisterChannel } from '../utils/tauri-channel';
 import {
 	type MailboxConnectionState,
@@ -126,18 +126,18 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 			}),
 	);
 
-	/// Per-(log, author) view across every mailbox we've ever synced with.
+	/// Per-(topic, author) view across every mailbox we've ever synced with.
 	/// Recomputes when `allMailboxIds` or any per-mailbox `syncState` changes.
 	syncStateForLog = reactive(
 		async (
-			logId: LogId,
+			topicId: TopicId,
 			author: DeviceId,
 		): Promise<Record<MailboxId, number>> => {
 			const ids = await this.allMailboxIds();
 			const out: Record<MailboxId, number> = {};
 			for (const id of ids) {
 				const sync = await this.syncState(id);
-				const seq = sync[logId]?.[author];
+				const seq = sync[topicId]?.[author];
 				if (seq !== undefined) {
 					out[id] = seq;
 				}
@@ -146,14 +146,14 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 		},
 	);
 
-	/// IDs of mailboxes that have synced at least up to `seq` for the (log, author) log.
+	/// IDs of mailboxes that have synced at least up to `seq` for the (topic, author) log.
 	syncedMailboxesForOp = reactive(
 		async (
-			logId: LogId,
+			topicId: TopicId,
 			author: DeviceId,
 			seq: number,
 		): Promise<MailboxId[]> => {
-			const map = await this.syncStateForLog(logId, author);
+			const map = await this.syncStateForLog(topicId, author);
 			return Object.entries(map)
 				.filter(([, mailboxSeq]) => mailboxSeq >= seq)
 				.map(([mailboxId]) => mailboxId);
@@ -161,9 +161,9 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 	);
 
 	syncStatusForOp = reactive(
-		async (logId: LogId, author: DeviceId, seq: number) => {
+		async (topicId: TopicId, author: DeviceId, seq: number) => {
 			const syncedMailboxes = await this.syncedMailboxesForOp(
-				logId,
+				topicId,
 				author,
 				seq,
 			);

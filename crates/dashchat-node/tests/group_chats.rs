@@ -112,8 +112,8 @@ async fn test_direct_chat() {
     let chat_log_id = LogId::from_topic(*chat_id);
     assert_eq!(chat_id, bobbi.direct_chat_topic(alice.agent_id()));
 
-    assert!(alice.subscribed_log_ids().await.contains(&chat_log_id));
-    assert!(bobbi.subscribed_log_ids().await.contains(&chat_log_id));
+    assert!(alice.subscribed_topics().await.contains(&chat_log_id));
+    assert!(bobbi.subscribed_topics().await.contains(&chat_log_id));
 
     alice.send_message(chat_id, "Hello".into()).await.unwrap();
 
@@ -172,8 +172,8 @@ async fn test_p2p_direct_chat() {
     let chat_log_id = LogId::from_topic(*chat_id);
     assert_eq!(chat_id, bobbi.direct_chat_topic(alice.agent_id()));
 
-    assert!(alice.subscribed_log_ids().await.contains(&chat_log_id));
-    assert!(bobbi.subscribed_log_ids().await.contains(&chat_log_id));
+    assert!(alice.subscribed_topics().await.contains(&chat_log_id));
+    assert!(bobbi.subscribed_topics().await.contains(&chat_log_id));
 
     let message = "Hello";
     alice.send_message(chat_id, "Hello".into()).await.unwrap();

@@ -162,17 +162,15 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
     async fn get_log(
         &self,
         author: &DeviceId,
-        log_id: &LogId,
+        topic: &LogId,
         from: u64,
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
         let from = if from == 0 { None } else { Some(from - 1) };
         let log = self
             .store
-            .get_log_entries(author, log_id, from, None)
+            .get_log_entries(author, topic, from, None)
             .await
-            .map_err(|err| {
-                anyhow::anyhow!("failed to get log for {author:?}: {log_id:?}: {err}")
-            })?;
+            .map_err(|err| anyhow::anyhow!("failed to get log for {author:?}: {topic:?}: {err}"))?;
 
         Ok(log.map(|log| {
             log.into_iter()
@@ -184,8 +182,8 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         }))
     }
 
-    async fn get_log_heights(&self, log_id: &LogId) -> anyhow::Result<Vec<(DeviceId, u64)>> {
-        Ok(OpStore::get_log_heights(self, log_id)
+    async fn get_log_heights(&self, topic: &LogId) -> anyhow::Result<Vec<(DeviceId, u64)>> {
+        Ok(OpStore::get_log_heights(self, topic)
             .await?
             .into_iter()
             .collect())

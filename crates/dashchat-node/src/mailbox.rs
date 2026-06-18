@@ -15,7 +15,11 @@ pub struct MailboxOperation {
 impl MailboxItem for MailboxOperation {
     type Hash = Hash;
     type Author = DeviceId;
-    type LogId = LogId;
+    // The mailbox/push abstraction speaks in terms of "topics", but the concrete
+    // key is the derived `LogId` (a digest of the topic) carried in the header,
+    // not the raw topic. We can recover it from the header, so no separate field
+    // is needed on `MailboxOperation`.
+    type Topic = LogId;
 
     fn hash(&self) -> Hash {
         self.header.hash()
@@ -29,7 +33,7 @@ impl MailboxItem for MailboxOperation {
         self.header.seq_num
     }
 
-    fn log_id(&self) -> LogId {
+    fn topic(&self) -> LogId {
         self.header.extensions.log_id
     }
 }

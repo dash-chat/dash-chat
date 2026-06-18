@@ -37,7 +37,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
 #[async_trait::async_trait]
 impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item>
 where
-    Item::LogId: ToyItemTraits,
+    Item::Topic: ToyItemTraits,
     Item::Author: ToyItemTraits,
 {
     fn id(&self) -> MailboxId {
@@ -53,15 +53,15 @@ where
         let mut blobs: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blob>>> = BTreeMap::new();
 
         for op in ops {
-            let log_id = Self::encode_log_id(&op.log_id());
-            let author_id = Self::device_id_to_log_id(&op.author());
+            let topic_id = Self::encode_topic_id(&op.topic());
+            let log_id = Self::device_id_to_log_id(&op.author());
             let seq_num = op.seq_num();
             let blob = Self::serialize_operation(&op)?;
 
             blobs
-                .entry(log_id)
+                .entry(topic_id)
                 .or_default()
-                .entry(author_id)
+                .entry(log_id)
                 .or_default()
                 .insert(seq_num, blob);
         }
@@ -94,15 +94,15 @@ where
         let mut topics: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
 
         for (log_id, authors) in request.0.iter() {
-            let log_id = Self::encode_log_id(log_id);
+            let topic_id = Self::encode_topic_id(log_id);
             let mut log_map: BTreeMap<String, u64> = BTreeMap::new();
 
             for (device_id, height) in authors.iter() {
-                let server_author_id = Self::device_id_to_log_id(device_id);
-                log_map.insert(server_author_id, *height);
+                let server_log_id = Self::device_id_to_log_id(device_id);
+                log_map.insert(server_log_id, *height);
             }
 
-            topics.insert(log_id, log_map);
+            topics.insert(topic_id, log_map);
         }
 
         let get_request = GetBlobsRequest { topics };
@@ -125,7 +125,7 @@ where
         let response = response.json::<GetBlobsResponse>().await?;
 
         // Convert GetBlobsResponse to FetchResponse
-        let mut result: BTreeMap<Item::LogId, FetchTopicResponse<Item>> = BTreeMap::new();
+        let mut result: BTreeMap<Item::Topic, FetchTopicResponse<Item>> = BTreeMap::new();
 
         for (topic_id_str, topic_response) in response.blobs_by_topic {
             let log_id = Self::log_id_from_string(&topic_id_str)?;
@@ -154,20 +154,20 @@ where
 
 impl<Item: MailboxItem> ToyMailboxClient<Item>
 where
-    Item::LogId: ToyItemTraits,
+    Item::Topic: ToyItemTraits,
     Item::Author: ToyItemTraits,
 {
-    fn encode_log_id(log_id: &Item::LogId) -> String {
-        stringify(log_id)
+    fn encode_topic_id(topic_id: &Item::Topic) -> String {
+        stringify(topic_id)
     }
 
     fn device_id_to_log_id(device_id: &Item::Author) -> String {
         stringify(device_id)
     }
 
-    fn log_id_from_string(s: &str) -> Result<Item::LogId, anyhow::Error> {
-        let log_id: Item::LogId = unstringify(s)?;
-        Ok(log_id)
+    fn log_id_from_string(s: &str) -> Result<Item::Topic, anyhow::Error> {
+        let topic: Item::Topic = unstringify(s)?;
+        Ok(topic)
     }
 
     fn device_id_from_string(s: &str) -> Result<Item::Author, anyhow::Error> {

@@ -382,6 +382,22 @@ mod tests {
         assert_eq!(toy::unstringify::<TopicId>(&key).unwrap(), topic);
     }
 
+    /// The mailbox/push key is the derived `LogId` (`MailboxOperation::topic()`),
+    /// not the raw `TopicId`. The toy client stringifies it the same way, so the
+    /// same single-JSON-string contract must hold for `LogId`.
+    #[test]
+    fn log_id_stringifies_to_bare_hex_for_mailbox_key() {
+        let topic = Topic::<kind::Untyped>::new(TOPIC_BYTES);
+        let log_id = LogId::from_topic(topic.into());
+        // The log id is a digest of the topic, so its hex differs from the topic's.
+        assert_ne!(log_id.to_hex(), TOPIC_HEX);
+
+        let key = toy::stringify(log_id);
+        assert_eq!(key, log_id.to_hex());
+        assert!(!key.contains('"'));
+        assert_eq!(toy::unstringify::<LogId>(&key).unwrap(), log_id);
+    }
+
     #[test]
     fn device_id_stringifies_to_bare_hex_for_mailbox_key() {
         let device_id = crate::DeviceId::from(SigningKey::from_bytes(&[0xcd; 32]).verifying_key());

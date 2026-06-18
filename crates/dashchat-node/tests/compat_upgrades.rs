@@ -301,9 +301,9 @@ async fn group_chat_capability_upgrade() {
         .await
         .unwrap();
 
-    assert!(alice.subscribed_log_ids().await.contains(&chat_log_id));
-    assert!(bobbi.subscribed_log_ids().await.contains(&chat_log_id));
-    assert!(cammy.subscribed_log_ids().await.contains(&chat_log_id));
+    assert!(alice.subscribed_topics().await.contains(&chat_log_id));
+    assert!(bobbi.subscribed_topics().await.contains(&chat_log_id));
+    assert!(cammy.subscribed_topics().await.contains(&chat_log_id));
 
     println!("### {:3.1?} alice sending zero-msg-1", start.elapsed());
 
