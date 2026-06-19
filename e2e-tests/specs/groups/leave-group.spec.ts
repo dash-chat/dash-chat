@@ -45,8 +45,9 @@ describe('Leaving group', () => {
 		await agent1.homePage.chatListItem('Solo Group').click();
 		await agent1.groupChatPage.ready();
 
-		// Message input is disabled (no longer a member)
-		await expect(agent1.groupChatPage.messageInput).not.toBeEnabled();
+		// Composer is replaced by a notice (no longer a member)
+		await expect(agent1.groupChatPage.notMemberNotice).toBeExisting();
+		await expect(agent1.groupChatPage.composer.messageInput).not.toBeExisting();
 
 		// System message records the departure
 		const systemMessage = agent1.$(

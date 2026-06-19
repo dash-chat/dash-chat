@@ -9,4 +9,9 @@ export class Toast {
 	async expectMessage(message: string): Promise<void> {
 		await expect(this.root).toHaveText(message);
 	}
+
+	/** Wait for a toast whose text contains `substring`. */
+	async expectMessageContaining(substring: string): Promise<void> {
+		await expect(this.root).toHaveText(expect.stringContaining(substring));
+	}
 }

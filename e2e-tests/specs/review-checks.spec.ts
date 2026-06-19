@@ -34,15 +34,15 @@ describe('Review checks', function () {
 		await exchangeContacts(agent1, agent2);
 
 		await Promise.all([
-			agent1.directChatPage.messageInput.waitForExist(),
-			agent2.directChatPage.messageInput.waitForExist(),
+			agent1.directChatPage.composer.messageInput.waitForExist(),
+			agent2.directChatPage.composer.messageInput.waitForExist(),
 		]);
 
 		await agent1.directChatPage.sendMessage('Hello from Alice!');
-		await agent2.directChatPage.waitForMessage('Hello from Alice!');
+		await agent2.directChatPage.messages.waitForMessage('Hello from Alice!');
 
 		await agent2.directChatPage.sendMessage('Hello from Bob!');
-		await agent1.directChatPage.waitForMessage('Hello from Bob!');
+		await agent1.directChatPage.messages.waitForMessage('Hello from Bob!');
 
 		await reloadToHome(agent1);
 	});

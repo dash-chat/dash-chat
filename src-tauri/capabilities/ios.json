@@ -1,0 +1,7 @@
+{
+	"$schema": "../gen/schemas/mobile-schema.json",
+	"identifier": "ios-capability",
+	"windows": ["main"],
+	"platforms": ["iOS"],
+	"permissions": ["ios-photos:default"]
+}

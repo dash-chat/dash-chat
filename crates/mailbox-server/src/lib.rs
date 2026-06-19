@@ -1,4 +1,5 @@
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{get, post},
     Json, Router,
 };
@@ -21,6 +22,11 @@ mod watermarks_table;
 
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
+
+// Must comfortably exceed the UI's 16 MiB per-message attachment cap: blobs
+// arrive base64-encoded in a JSON body (~1.33x the raw bytes, plus operation
+// envelope overhead), and one store request can batch several operations.
+const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
 pub use blob::Blob;
 pub use blobs_table::{BlobsKey, BlobsKeyError, BlobsKeyPrefix, BLOBS_TABLE};
@@ -138,5 +144,6 @@ pub fn create_app(
         .route("/blobs/get", post(get_blobs_for_topics))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
+        .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))
         .with_state(state)
 }

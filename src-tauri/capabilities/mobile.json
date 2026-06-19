@@ -14,6 +14,7 @@
 		"notification:allow-is-permission-granted",
 		"notification:allow-request-permission",
 		"deep-link:default",
-		"deep-link:allow-register"
+		"deep-link:allow-register",
+		"view:allow-view"
 	]
 }

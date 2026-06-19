@@ -35,9 +35,9 @@ describe('Group chat inline system messages', () => {
 
 	it('renders regular chat bubbles separately from system messages', async () => {
 		await agent1.groupChatPage.sendMessage('Hi everyone');
-		await agent1.groupChatPage.waitForMessage('Hi everyone');
+		await agent1.groupChatPage.messages.waitForMessage('Hi everyone');
 
-		const bubble = await agent1.groupChatPage.messageBubbleWithText(
+		const bubble = await agent1.groupChatPage.messages.messageBubbleWithText(
 			'Hi everyone',
 		);
 		expect(bubble).not.toBeNull();

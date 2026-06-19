@@ -4,5 +4,9 @@
 <dict>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Dash Chat needs access to your photo library to save photos you download from chats.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Dash Chat saves photos you download from chats to your photo library.</string>
 </dict>
 </plist>

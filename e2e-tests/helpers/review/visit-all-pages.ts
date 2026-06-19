@@ -229,7 +229,7 @@ export async function visitChatPages(
 	if (!(await firstChat.isExisting())) return summarize(pages);
 
 	await firstChat.click();
-	await agent.directChatPage.messages.waitForExist();
+	await agent.directChatPage.messages.root.waitForExist();
 	pages.push(await runCheck(agent, 'direct-chat', co));
 	await breathe();
 
