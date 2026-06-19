@@ -123,7 +123,11 @@ mod tests {
     #[test]
     fn mailbox_operation_no_body_returns_empty_hashes() {
         let topic = TopicId::random();
-        let op = super::MailboxOperation { topic, header: make_header(topic), body: None };
+        let op = super::MailboxOperation {
+            topic,
+            header: make_header(topic),
+            body: None,
+        };
         assert_eq!(op.blob_hashes(), Vec::<iroh_blobs::Hash>::new());
     }
 

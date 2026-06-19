@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    notify_topics_subscribers::notify_topics_subscribers, AppState, Author, Blip, BlobSync,
-    BlipsKey, BlipsKeyPrefix, SequenceNumber, TopicId, WatermarksKey, BLIPS_TABLE, WATERMARKS_TABLE,
+    notify_topics_subscribers::notify_topics_subscribers, AppState, Author, Blip, BlipsKey,
+    BlipsKeyPrefix, BlobSync, SequenceNumber, TopicId, WatermarksKey, BLIPS_TABLE,
+    WATERMARKS_TABLE,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -228,14 +229,20 @@ mod tests {
     async fn store_records_blob_sources() {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
-        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf()).await.unwrap();
+        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf())
+            .await
+            .unwrap();
         let source = iroh::SecretKey::from_bytes(&[7; 32]).public();
         let h = iroh_blobs::Hash::new([9; 32]);
 
         record_blob_sources(&blob_sync, &[h], source).await;
 
         let tried = HashSet::new();
-        let (got, sources) = blob_sync.fetch_pool_for_test().next_untried(&tried).await.unwrap();
+        let (got, sources) = blob_sync
+            .fetch_pool_for_test()
+            .next_untried(&tried)
+            .await
+            .unwrap();
         assert_eq!(got, h);
         assert!(sources.contains(&source));
     }

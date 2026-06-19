@@ -12,13 +12,13 @@ use std::{future::Future, path::PathBuf};
 use tokio::task::JoinSet;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
-mod blob_sync;
 mod blip;
 mod blips_table;
-mod server_key;
+mod blob_sync;
 mod cleanup;
 mod get_blips;
 mod notify_topics_subscribers;
+mod server_key;
 mod store_blips;
 mod watermark;
 mod watermarks_table;
@@ -31,15 +31,17 @@ pub mod test_utils;
 // envelope overhead), and one store request can batch several operations.
 const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
-pub use blob_sync::{BlobSync, BlobFetchPool};
-pub use dashchat_utils::FetchConfig;
 pub use blip::Blip;
 pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
+pub use blob_sync::{BlobFetchPool, BlobSync};
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
-pub use get_blips::{get_blips_for_topics, GetBlipsRequest, GetBlipsResponse, GetBlipsForTopicResponse};
+pub use dashchat_utils::FetchConfig;
+pub use get_blips::{
+    get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
+};
+pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest};
 pub use watermark::compute_initial_watermarks;
-pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
 pub type TopicId = String;

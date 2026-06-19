@@ -10,9 +10,16 @@ async fn test_health_check() {
     response.assert_status_ok();
     let body: serde_json::Value = response.json();
     assert_eq!(body["status"], "ok");
-    assert!(body["endpoint_id"].is_string(), "endpoint_id should be a string");
+    assert!(
+        body["endpoint_id"].is_string(),
+        "endpoint_id should be a string"
+    );
     let id = body["endpoint_id"].as_str().unwrap();
-    assert_eq!(id.len(), 43, "base64url no-pad endpoint_id should be 43 chars");
+    assert_eq!(
+        id.len(),
+        43,
+        "base64url no-pad endpoint_id should be 43 chars"
+    );
 }
 
 #[tokio::test]

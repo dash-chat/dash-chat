@@ -19,7 +19,12 @@ pub struct BlobFetchPool {
 
 impl BlobFetchPool {
     pub async fn add_source(&self, hash: iroh_blobs::Hash, source: iroh::EndpointId) {
-        self.sources.lock().await.entry(hash).or_default().insert(source);
+        self.sources
+            .lock()
+            .await
+            .entry(hash)
+            .or_default()
+            .insert(source);
         self.added.notify_one();
     }
     pub(crate) async fn is_empty(&self) -> bool {

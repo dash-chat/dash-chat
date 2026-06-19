@@ -1,7 +1,11 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { FileAttachment } from 'dash-chat-stores';
-	import { formatFileSize, mediaSize, saveFileAttachment } from '$lib/utils/media';
+	import {
+		formatFileSize,
+		mediaSize,
+		saveFileAttachment,
+	} from '$lib/utils/media';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';

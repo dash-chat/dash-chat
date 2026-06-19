@@ -34,11 +34,7 @@
 <div class="attachment-photos" data-testid="message-attachment-photos">
 	{#each photos as photo, i (i)}
 		<button type="button" class="photo-cell" onclick={e => openLightbox(i, e)}>
-			<img
-				src={mediaSrc(photo)}
-				alt={photo.name}
-				loading="lazy"
-			/>
+			<img src={mediaSrc(photo)} alt={photo.name} loading="lazy" />
 			{#if i === 4 && photos.length > 5}
 				<div class="photo-overlay">+{photos.length - 5}</div>
 			{/if}
