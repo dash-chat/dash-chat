@@ -156,6 +156,7 @@
 	"previousPhoto": "Previous photo",
 	"nextPhoto": "Next photo",
 	"closeLightbox": "Close",
+	"imageLoadFailedRetry": "Image failed to load. Tap to retry.",
 
 	"nameThisGroup": "Name this group",
 	"newGroup": "New group",
