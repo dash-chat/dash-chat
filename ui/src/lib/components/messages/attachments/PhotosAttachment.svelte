@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Photo } from 'dash-chat-stores';
-	import { mediaSrc } from '$lib/utils/media';
+	import BlobImage from '$lib/components/BlobImage.svelte';
 	import Lightbox from '../Lightbox.svelte';
 
 	interface Props {
@@ -27,14 +27,12 @@
 		lightboxTrigger?.focus();
 		lightboxTrigger = undefined;
 	}
-
-	const photoUrls = $derived(photos.map(mediaSrc));
 </script>
 
 <div class="attachment-photos" data-testid="message-attachment-photos">
 	{#each photos as photo, i (i)}
 		<button type="button" class="photo-cell" onclick={e => openLightbox(i, e)}>
-			<img src={mediaSrc(photo)} alt={photo.name} loading="lazy" />
+			<BlobImage item={photo} alt={photo.name} />
 			{#if i === 4 && photos.length > 5}
 				<div class="photo-overlay">+{photos.length - 5}</div>
 			{/if}
@@ -78,7 +76,7 @@
 	.attachment-photos:has(.photo-cell:only-child) {
 		width: fit-content;
 	}
-	.photo-cell:only-child img {
+	.photo-cell:only-child :global(img) {
 		width: auto;
 		height: auto;
 		min-width: 200px;
@@ -86,6 +84,11 @@
 		min-height: 50px;
 		max-height: 450px;
 		object-fit: contain;
+	}
+
+	.attachment-photos:has(.photo-cell:only-child) .photo-cell {
+		min-width: 200px;
+		min-height: 50px;
 	}
 
 	/* 2+ → a 300px-wide collage grid */
@@ -170,7 +173,7 @@
 		cursor: pointer;
 	}
 
-	.photo-cell img {
+	.photo-cell :global(img) {
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
