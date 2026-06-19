@@ -4,6 +4,7 @@
  * enforced.
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { tid } from '../helpers/selectors';
 import { type Agent, setupAgent } from '../setup/setup-agents';
 
 describe('Media attachments', () => {
@@ -145,5 +146,32 @@ describe('Media attachments', () => {
 		await agent1.homePage.ready();
 		await agent1.homePage.openChat('Bob');
 		await agent1.directChatPage.ready();
+	});
+
+	it('shows a retry control and recovers after a failed image load', async () => {
+		await agent1.directChatPage.composer.attachPhotos('retry-blob');
+		await agent1.directChatPage.composer.send();
+		await agent1.directChatPage.messages.waitForPhotoMessage('retry-blob');
+		await agent2.directChatPage.messages.waitForPhotoMessage('retry-blob');
+
+		// Read the exact alt off the rendered img so forceBlobError matches precisely.
+		const exactAlt = await agent2.execute((photosSel: string) => {
+			const img = document.querySelector(
+				`${photosSel} img`,
+			) as HTMLImageElement | null;
+			return img?.alt ?? null;
+		}, tid('message-attachment-photos'));
+		if (!exactAlt) throw new Error('Could not read alt from blob-image img');
+
+		await agent2.execute((alt: string) => {
+			window.__test.forceBlobError(alt);
+		}, exactAlt);
+
+		const retry = agent2.$(tid('blob-image-retry'));
+		await retry.waitForDisplayed();
+
+		// The blob is present locally so retry loads the image again.
+		await retry.click();
+		await agent2.directChatPage.messages.waitForPhotoMessage('retry-blob');
 	});
 });
