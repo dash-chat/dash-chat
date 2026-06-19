@@ -386,6 +386,7 @@
 											placeholder={m.searchMessages()}
 											bind:value={searchQuery}
 											use:focusOnMount
+											data-testid="direct-chat-search-input"
 										/>
 									</div>
 								{/snippet}

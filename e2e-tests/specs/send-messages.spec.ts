@@ -44,4 +44,20 @@ describe('Full messaging flow', () => {
 		await agent1.directChatPage.readMore.click();
 		await agent1.directChatPage.messages.waitForMessage('TAIL_MARKER');
 	});
+
+	it('finds a search match hidden in a truncated message tail', async () => {
+		const long = `${'C'.repeat(900)} HIDDEN_NEEDLE ${'D'.repeat(100)}`;
+		await agent1.directChatPage.sendMessage(long);
+		await agent1.directChatPage.readMore.waitForExist();
+		expect(
+			await agent1.directChatPage.messages.messageAreaContains('HIDDEN_NEEDLE'),
+		).toBe(false);
+
+		await agent1.directChatPage.settingsLink.click();
+		await agent1.chatSettingsPage.ready();
+		await agent1.chatSettingsPage.searchButton.click();
+		await agent1.directChatPage.searchFor('HIDDEN_NEEDLE');
+
+		await agent1.directChatPage.messages.waitForMessage('HIDDEN_NEEDLE');
+	});
 });

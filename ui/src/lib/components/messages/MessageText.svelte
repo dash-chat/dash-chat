@@ -1,3 +1,7 @@
+<script module lang="ts">
+	const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+</script>
+
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { highlightMatch } from './message-helpers';
@@ -14,18 +18,29 @@
 	const INCREMENT_COUNT = 3000;
 	const BUFFER = 100;
 
-	const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-
 	let displayLimit = $state(INITIAL_LENGTH);
 
+	// Only used to size the truncation cut; the rendered text stays verbatim so
+	// intentional trailing newlines are preserved under whitespace-pre-wrap.
 	const trimmed = $derived(text.trimEnd());
 	const graphemes = $derived(
 		Array.from(segmenter.segment(trimmed), s => s.segment),
 	);
-	// Keep the whole message when only a short tail (<= BUFFER) would be hidden.
-	const truncated = $derived(graphemes.length > displayLimit + BUFFER);
+	// Reveal the whole message while searching so a match in the hidden tail
+	// is in the DOM to be found, scrolled to, and highlighted.
+	const matchesSearch = $derived(
+		!!searchQuery && text.toLowerCase().includes(searchQuery.toLowerCase()),
+	);
+	// Grapheme count never exceeds UTF-16 length, so skip the segmentation pass
+	// entirely for short messages. Keep the whole message when only a short tail
+	// (<= BUFFER) would be hidden.
+	const truncated = $derived(
+		!matchesSearch &&
+			trimmed.length > displayLimit + BUFFER &&
+			graphemes.length > displayLimit + BUFFER,
+	);
 	const shown = $derived(
-		truncated ? graphemes.slice(0, displayLimit).join('') : trimmed,
+		truncated ? graphemes.slice(0, displayLimit).join('') : text,
 	);
 
 	function expand() {
