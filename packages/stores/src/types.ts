@@ -56,7 +56,23 @@ export type MessageContentV1 = {
 };
 export type MessageContent = MessageContentV1;
 
+// Keyed on the `content` object, which `logs-store` keeps referentially stable
+// across recomputes (it reuses operation objects, only appending new ones), so
+// the materialized `Uint8Array` stays identity-stable too. That lets the
+// `objectUrl` action short-circuit and avoid reloading every image whenever a
+// new operation rebuilds the messages reactive.
+const mediaCache = new WeakMap<MessageContent, Media | null>();
+
 export function getMessageMedia(content: MessageContent): Media | null {
+	const cached = mediaCache.get(content);
+	if (cached !== undefined) return cached;
+
+	const result = materializeMessageMedia(content);
+	mediaCache.set(content, result);
+	return result;
+}
+
+function materializeMessageMedia(content: MessageContent): Media | null {
 	if (!content.media) return null;
 	const media = content.media;
 	// The Tauri JSON IPC delivers `Vec<u8>` as `number[]`; rebuild it as a
