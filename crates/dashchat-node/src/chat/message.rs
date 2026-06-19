@@ -1,4 +1,4 @@
-use dashchat_compat::{Compat, VersionConvert, VersionConvertError};
+use dashchat_compat::{CapabilityVersion, Compat, VersionConvert, VersionConvertError};
 use derive_more::derive::{Deref, From};
 use p2panda::Hash;
 use serde::{Deserialize, Serialize};
@@ -43,8 +43,20 @@ pub struct FileAttachment {
     pub mime_type: String,
 }
 
-/// Media attached to a chat message. A message has either a set of photos
-/// or a single file — not both — matching Signal's UX.
+/// A voice note. `data` is a self-contained audio file (16 kHz mono 16-bit
+/// WAV, `audio/wav`); `mime_type` identifies the encoding so the format can
+/// change without a wire break. `waveform` holds downsampled, peak-normalized
+/// amplitude bars (`0..=255`) for the scrubber UI.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct VoiceNote {
+    pub data: Vec<u8>,
+    pub mime_type: String,
+    pub duration_ms: u32,
+    pub waveform: Vec<u8>,
+}
+
+/// Media attached to a chat message. A message has either a set of photos, a
+/// single file, or a voice note — never a combination — matching Signal's UX.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Media {
@@ -52,6 +64,20 @@ pub enum Media {
     Photos { photos: Vec<Photo> },
     #[serde(rename = "file")]
     File { file: FileAttachment },
+    #[serde(rename = "voice")]
+    Voice { voice: VoiceNote },
+}
+
+impl Media {
+    /// The minimum `messaging` capability version a peer needs to deserialize
+    /// this media variant. Voice notes were added in messaging v2; photos and
+    /// files exist since v1.
+    fn min_messaging_version(&self) -> CapabilityVersion {
+        match self {
+            Media::Voice { .. } => 2,
+            Media::Photos { .. } | Media::File { .. } => 1,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Deref, From)]
@@ -115,10 +141,15 @@ impl VersionConvert for ChatMessageContent {
 
     // TODO: just take Capabilities?
     fn to_version(&self, target: &Capabilities) -> Result<Self, VersionConvertError> {
-        match (&**self, target.messaging) {
-            (Compat::Unversioned(_), 0) => Ok(self.clone()),
-
-            (Compat::Versioned(ChatMessageContentV::V1(v1)), 0) => {
+        let target = target.messaging;
+        // Versions above what we currently advertise are unknown (and can't
+        // occur in practice, since the negotiated target is an infimum with
+        // our own `current()`).
+        let known = (1..=Capabilities::current().messaging).contains(&target);
+        match &**self {
+            // messaging 0 only understands the bare V0 string; any media is lost.
+            Compat::Unversioned(_) if target == 0 => Ok(self.clone()),
+            Compat::Versioned(ChatMessageContentV::V1(v1)) if target == 0 => {
                 if v1.media.is_some() {
                     Err(VersionConvertError::Lossy)
                 } else {
@@ -126,15 +157,21 @@ impl VersionConvert for ChatMessageContent {
                 }
             }
 
-            (Compat::Unversioned(v0), 1) => Ok(Compat::Versioned(ChatMessageContentV::V1(
+            // messaging 1..=current understands V1; gate each media variant on
+            // the minimum version the peer needs to deserialize it.
+            Compat::Unversioned(v0) if known => Ok(Compat::Versioned(ChatMessageContentV::V1(
                 ChatMessageContentV1 {
                     message: v0.0.clone(),
                     media: None,
                 },
             ))
             .into()),
-
-            (Compat::Versioned(ChatMessageContentV::V1(_)), 1) => Ok(self.clone()),
+            Compat::Versioned(ChatMessageContentV::V1(v1)) if known => match &v1.media {
+                Some(media) if media.min_messaging_version() > target => {
+                    Err(VersionConvertError::Lossy)
+                }
+                _ => Ok(self.clone()),
+            },
 
             _ => Err(VersionConvertError::UnknownVersion),
         }

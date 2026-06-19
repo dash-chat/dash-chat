@@ -65,6 +65,17 @@ export class Composer {
 		await this.mediaPreview.waitForExist({ timeout: 5_000 });
 	}
 
+	/**
+	 * Stage a synthetic voice note in the composer. Microphone capture isn't
+	 * available in the WebKitGTK harness, so this injects a ready-made WAV draft
+	 * via `window.__test.injectVoiceNote` instead of driving the recorder.
+	 */
+	async recordVoiceNote(durationMs = 3000): Promise<void> {
+		await this.agent.execute((ms: number) => {
+			window.__test.injectVoiceNote(ms);
+		}, durationMs);
+	}
+
 	/** Paste a single synthesized PNG named `${label}.png` into the composer. */
 	async pastePhotos(label: string): Promise<void> {
 		await this.agent.execute(

@@ -4,15 +4,15 @@ import type { Action } from 'svelte/action';
 type ObjectUrlSource = Blob | { data: Uint8Array; mimeType: string };
 
 /**
- * Point an `<img>` at a `blob:` URL built from its source, revoking the URL
- * when the source changes or the element is destroyed so object URLs can't
- * leak. The URL is only rebuilt when the underlying bytes/blob actually change,
- * so unrelated re-renders don't reload the image.
+ * Point an `<img>` or `<audio>` element at a `blob:` URL built from its source,
+ * revoking the URL when the source changes or the element is destroyed so
+ * object URLs can't leak. The URL is only rebuilt when the underlying
+ * bytes/blob actually change, so unrelated re-renders don't reload the media.
  */
-export const objectUrl: Action<HTMLImageElement, ObjectUrlSource> = (
-	node,
-	source,
-) => {
+export const objectUrl: Action<
+	HTMLImageElement | HTMLAudioElement,
+	ObjectUrlSource
+> = (node, source) => {
 	let url = '';
 	let current: Blob | Uint8Array | null = null;
 

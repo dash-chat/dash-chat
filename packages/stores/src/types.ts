@@ -38,12 +38,26 @@ export interface FileAttachment {
 }
 
 /**
- * Media attached to a chat message. A message has either a set of photos
- * or a single file — not both. Matches `dashchat_node::Media`.
+ * A voice note. `data` is a self-contained audio file (16 kHz mono WAV); see
+ * `Photo` for the `data`/`waveform` byte shape. `waveform` holds downsampled,
+ * peak-normalized amplitude bars (0..=255) for the scrubber UI.
+ */
+export interface VoiceNote {
+	data: Uint8Array;
+	mime_type: string;
+	duration_ms: number;
+	waveform: Uint8Array;
+}
+
+/**
+ * Media attached to a chat message. A message has either a set of photos, a
+ * single file, or a voice note — never a combination. Matches
+ * `dashchat_node::Media`.
  */
 export type Media =
 	| { kind: 'photos'; photos: Photo[] }
-	| { kind: 'file'; file: FileAttachment };
+	| { kind: 'file'; file: FileAttachment }
+	| { kind: 'voice'; voice: VoiceNote };
 
 /**
  * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
@@ -81,6 +95,16 @@ function materializeMessageMedia(content: MessageContent): Media | null {
 		return {
 			kind: 'photos',
 			photos: media.photos.map(p => ({ ...p, data: new Uint8Array(p.data) })),
+		};
+	}
+	if (media.kind === 'voice') {
+		return {
+			kind: 'voice',
+			voice: {
+				...media.voice,
+				data: new Uint8Array(media.voice.data),
+				waveform: new Uint8Array(media.voice.waveform),
+			},
 		};
 	}
 	return {

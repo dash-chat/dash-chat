@@ -17,6 +17,8 @@
 		"deep-link:allow-register",
 		"view:allow-view",
 		"dialog:allow-open",
-		"fs:allow-appcache-read-recursive"
+		"fs:allow-appcache-read-recursive",
+		"media-toolkit:default",
+		"media-toolkit:allow-convert"
 	]
 }

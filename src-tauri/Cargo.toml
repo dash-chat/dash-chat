@@ -30,6 +30,7 @@ tauri-plugin-sharekit = "0.3"
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
+tauri-plugin-audio-recorder = "0.1"
 
 tauri-plugin-virtual-keyboard-padding = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding", branch = "main" }
 tauri-plugin-mailto = { git = "https://github.com/dash-chat/tauri-plugin-mailto", branch = "main" }
@@ -92,6 +93,9 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tauri-plugin-barcode-scanner = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "fix/barcode-scanner-ios" }
 tauri-plugin-system-bars-styles = { git = "https://github.com/dash-chat/tauri-plugin-system-bars-styles", branch = "main" }
 tauri-plugin-view = "0.0.5"
+# Mobile records M4A/AAC; this normalizes it to WAV. Desktop records WAV
+# directly, so this (FFmpeg-backed) plugin is excluded from desktop builds.
+tauri-plugin-media-toolkit = "0.1"
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"

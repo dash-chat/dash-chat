@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { Sheet, Block, useTheme } from 'konsta/svelte';
+	import { onMount } from 'svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import {
 		type DraftMedia,
@@ -11,6 +12,7 @@
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
 	} from '$lib/utils/media';
+	import VoiceRecordButton from '$lib/components/messages/composer/voice/VoiceRecordButton.svelte';
 	import type { Hash, MessagesStore } from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
@@ -97,6 +99,25 @@
 		event.preventDefault();
 		stage(files);
 	}
+
+	// Test-only: stage a synthetic voice note (the native recorder can't capture
+	// in the headless e2e harness). See `window.__test.injectVoiceNote`.
+	onMount(() => {
+		const handler = (event: Event) => {
+			const detail = (event as CustomEvent).detail;
+			media = {
+				kind: 'voice',
+				voice: {
+					bytes: new Uint8Array(detail.bytes),
+					mimeType: 'audio/wav',
+					durationMs: detail.durationMs,
+					waveform: new Uint8Array(detail.waveform),
+				},
+			};
+		};
+		window.addEventListener('test-inject-voice-note', handler);
+		return () => window.removeEventListener('test-inject-voice-note', handler);
+	});
 </script>
 
 <MediaDropOverlay onFiles={stage} />
@@ -105,7 +126,7 @@
 	<div class="message-input-bar" class:pb-safe={!showMediaPanel}>
 		<StagedAttachments bind:media onFiles={stage} />
 
-		<div class="m-2 row gap-2" style="align-items: center;">
+		<div class="m-2 row relative gap-2" style="align-items: center;">
 			{#if isMobile}
 				<AttachButton
 					class="h-10 w-10"
@@ -135,8 +156,17 @@
 				/>
 			</div>
 
-			{#if isMobile}
-				<SendButton disabled={!hasContent} onClick={send} />
+			{#if hasContent}
+				{#if isMobile}
+					<SendButton disabled={!hasContent} onClick={send} />
+				{/if}
+			{:else}
+				<VoiceRecordButton
+					onRecorded={draft => {
+						media = { kind: 'voice', voice: draft };
+						void send();
+					}}
+				/>
 			{/if}
 		</div>
 	</div>

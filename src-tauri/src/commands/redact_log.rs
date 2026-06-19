@@ -345,6 +345,19 @@ mod tests {
     }
 
     #[test]
+    fn redacts_chat_message_media_voice() {
+        let input = r#"ChatMessageContentV1 { message: "", media: Some(Voice { voice: VoiceNote { data: [255, 251, 144, 0, 7, 8], mime_type: "audio/wav", duration_ms: 4200, waveform: [0, 128, 255] } }) }"#;
+        let result = redact(input);
+        // The recorded audio bytes are private and must be stripped. The
+        // waveform is lossy downsampled amplitude (not recoverable audio), so
+        // it is left readable for debugging.
+        assert!(
+            !result.contains("255, 251, 144"),
+            "voice bytes leaked: {result}"
+        );
+    }
+
+    #[test]
     fn redacts_chat_message_json() {
         let input = r#""content":"secret message here""#;
         let result = redact(input);

@@ -6,6 +6,17 @@ import { saveAndOpenFile, savePhotoToGallery } from '$lib/utils/gallery';
 import { downloadDir } from '@tauri-apps/api/path';
 import type { FileAttachment, Media, Photo } from 'dash-chat-stores';
 
+/**
+ * Draft voice note held in the composer before sending. `bytes` is the
+ * recorded WAV; `waveform` is the precomputed amplitude bars (0..=255).
+ */
+export interface DraftVoiceNote {
+	bytes: Uint8Array;
+	mimeType: string;
+	durationMs: number;
+	waveform: Uint8Array;
+}
+
 export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 
 export class AttachmentTooLargeError extends Error {
@@ -26,7 +37,8 @@ export class AttachmentTooLargeError extends Error {
  */
 export type DraftMedia =
 	| { kind: 'photos'; items: File[] }
-	| { kind: 'file'; file: File };
+	| { kind: 'file'; file: File }
+	| { kind: 'voice'; voice: DraftVoiceNote };
 
 export const MAX_STAGED_PHOTOS = 32;
 
@@ -122,6 +134,17 @@ async function buildMedia(draft: DraftMedia): Promise<Media> {
 		);
 		return { kind: 'photos', photos };
 	}
+	if (draft.kind === 'voice') {
+		return {
+			kind: 'voice',
+			voice: {
+				data: draft.voice.bytes,
+				mime_type: draft.voice.mimeType,
+				duration_ms: draft.voice.durationMs,
+				waveform: draft.voice.waveform,
+			},
+		};
+	}
 	const file: FileAttachment = {
 		data: new Uint8Array(await draft.file.arrayBuffer()),
 		name: draft.file.name,
@@ -133,6 +156,9 @@ async function buildMedia(draft: DraftMedia): Promise<Media> {
 function totalMediaBytes(media: Media): number {
 	if (media.kind === 'photos') {
 		return media.photos.reduce((sum, p) => sum + p.data.byteLength, 0);
+	}
+	if (media.kind === 'voice') {
+		return media.voice.data.byteLength;
 	}
 	return media.file.data.byteLength;
 }

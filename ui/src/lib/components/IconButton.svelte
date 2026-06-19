@@ -2,10 +2,18 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { Button } from 'konsta/svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import type { HTMLButtonAttributes } from 'svelte/elements';
 
-	interface Props {
+	/** Pointer handlers forwarded to the underlying button — lets an icon button
+	 * drive press-and-hold gestures (e.g. the voice recorder). */
+	type PointerProps = Pick<
+		HTMLButtonAttributes,
+		'onpointerdown' | 'onpointermove' | 'onpointerup' | 'onpointercancel'
+	>;
+
+	interface Props extends PointerProps {
 		icon: string;
-		onClick: () => void;
+		onClick?: () => void;
 		label: string;
 		testid?: string;
 		expanded?: boolean;
@@ -21,6 +29,7 @@
 		expanded,
 		iconClass = 'text-2xl',
 		class: className = '',
+		...rest
 	}: Props = $props();
 </script>
 
@@ -28,6 +37,7 @@
 	clear
 	inline
 	{onClick}
+	{...rest}
 	aria-label={label}
 	aria-expanded={expanded}
 	data-testid={testid}

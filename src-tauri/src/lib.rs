@@ -40,7 +40,8 @@ pub fn run() {
             .plugin(tauri_plugin_virtual_keyboard_padding::init())
             .plugin(tauri_plugin_barcode_scanner::init())
             .plugin(tauri_plugin_view::init())
-            .plugin(tauri_plugin_system_bars_styles::init());
+            .plugin(tauri_plugin_system_bars_styles::init())
+            .plugin(tauri_plugin_media_toolkit::init());
     }
     #[cfg(target_os = "android")]
     {
@@ -124,6 +125,7 @@ pub fn run() {
         .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_audio_recorder::init())
         .on_window_event(|window, event| match event {
             #[cfg(desktop)]
             tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {

@@ -15,7 +15,11 @@
 		"sharekit:allow-share-text",
 		"sharekit:allow-share-file",
 		"fs:allow-appcache-write-recursive",
+		"fs:allow-appcache-read-recursive",
+		"fs:allow-appcache-write",
+		"fs:allow-appcache-read",
 		"mailto:default",
-		"core:path:default"
+		"core:path:default",
+		"audio-recorder:default"
 	]
 }

@@ -71,6 +71,46 @@ mod tests {
         assert_eq!(result, Err(VersionConvertError::UnknownVersion));
     }
 
+    fn voice_message() -> ChatMessageContent {
+        ChatMessageContent::new(
+            "",
+            Media::Voice {
+                voice: VoiceNote {
+                    data: vec![1, 2, 3],
+                    mime_type: "audio/wav".to_string(),
+                    duration_ms: 1000,
+                    waveform: vec![0, 128, 255],
+                },
+            },
+        )
+    }
+
+    #[test]
+    fn version_convert_voice_to_messaging_2_ok() {
+        let voice = voice_message();
+        let result = voice.to_version(&Capabilities { messaging: 2 }).unwrap();
+        assert_eq!(result, voice);
+    }
+
+    #[test]
+    fn version_convert_voice_to_messaging_1_lossy() {
+        let result = voice_message().to_version(&Capabilities { messaging: 1 });
+        assert_eq!(result, Err(VersionConvertError::Lossy));
+    }
+
+    #[test]
+    fn version_convert_voice_to_messaging_0_lossy() {
+        let result = voice_message().to_version(&Capabilities::zero());
+        assert_eq!(result, Err(VersionConvertError::Lossy));
+    }
+
+    #[test]
+    fn version_convert_photos_to_messaging_2_ok() {
+        let photos = ChatMessageContent::new("caption", Media::Photos { photos: vec![] });
+        let result = photos.to_version(&Capabilities { messaging: 2 }).unwrap();
+        assert_eq!(result, photos);
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn get_set_capabilities() {
         dashchat_node::testing::setup_tracing(&["dashchat=warn"], true);

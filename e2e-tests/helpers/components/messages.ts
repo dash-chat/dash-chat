@@ -22,6 +22,8 @@ export class Messages {
 	readonly unreadDivider;
 	scrollBottom = this.agent.$(tid('chat-scroll-bottom'));
 	unreadBadge = this.agent.$(tid('chat-unread-badge'));
+	/** Play/pause toggle on the first voice-note attachment in the list. */
+	voicePlayButton = this.agent.$(tid('voice-play-button'));
 	/** The photo viewer opened by clicking a photo in this message list. */
 	lightbox = new Lightbox(this.agent);
 
@@ -99,6 +101,32 @@ export class Messages {
 	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
 	photoCellButton(index: number) {
 		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
+	}
+
+	/** Wait until a voice-note attachment (play button + waveform) appears. */
+	async waitForVoiceMessage(timeout = SYNC_TIMEOUT): Promise<void> {
+		await this.agent.waitUntil(
+			async () =>
+				this.agent.execute(
+					(messagesSel: string, voiceSel: string) =>
+						(document.querySelector(messagesSel)?.querySelectorAll(voiceSel)
+							.length ?? 0) > 0,
+					this.messagesSelector,
+					tid('message-attachment-voice'),
+				),
+			{ timeout, timeoutMsg: 'Voice message not found' },
+		);
+	}
+
+	/** Number of voice-note attachments currently rendered in the list. */
+	async voiceMessageCount(): Promise<number> {
+		return this.agent.execute(
+			(messagesSel: string, voiceSel: string) =>
+				document.querySelector(messagesSel)?.querySelectorAll(voiceSel)
+					.length ?? 0,
+			this.messagesSelector,
+			tid('message-attachment-voice'),
+		);
 	}
 
 	/** True if the unread divider precedes (in DOM order) the message wrapper containing `text`. */
