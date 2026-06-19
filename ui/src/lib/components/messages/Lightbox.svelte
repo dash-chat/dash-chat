@@ -1,7 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
 		mdiChevronLeft,
 		mdiChevronRight,
@@ -9,8 +8,7 @@
 		mdiTrayArrowDown,
 	} from '@mdi/js';
 	import type { Photo } from 'dash-chat-stores';
-	import { objectUrl } from '$lib/actions/object-url';
-	import { savePhoto } from '$lib/utils/media';
+	import { mediaSrc, savePhoto } from '$lib/utils/media';
 	import { showToast } from '$lib/utils/toasts';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
@@ -33,7 +31,6 @@
 	}: Props = $props();
 
 	const photo = $derived(photos[index]);
-	const photoUrls = $derived(photos.map(mediaSrc));
 
 	let rootEl: HTMLElement | undefined = $state();
 	let stageEl: HTMLElement | undefined = $state();
@@ -178,7 +175,7 @@
 			class="lightbox-image max-h-full max-w-full object-contain"
 			class:zoomed
 			style="transform-origin: {originX}% {originY}%"
-			use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
+			src={mediaSrc(photo)}
 			alt={photo.name}
 			data-testid="lightbox-image"
 		/>
@@ -225,7 +222,7 @@
 					onclick={() => select(i)}
 				>
 					<img
-						use:objectUrl={{ data: p.data, mimeType: p.mime_type }}
+						src={mediaSrc(p)}
 						alt={p.name}
 						class="block h-full w-full object-cover"
 					/>

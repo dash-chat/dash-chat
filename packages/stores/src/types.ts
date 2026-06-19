@@ -61,13 +61,13 @@ export type OutgoingMedia =
 	| { kind: 'file'; file: OutgoingFile };
 
 export interface OutgoingPhoto {
-	data: Uint8Array | number[];
+	data: Uint8Array;
 	name: string;
 	mime_type: string;
 }
 
 export interface OutgoingFile {
-	data: Uint8Array | number[];
+	data: Uint8Array;
 	name: string;
 	mime_type: string;
 }

@@ -190,7 +190,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -201,7 +201,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -923,9 +923,9 @@ dependencies = [
 
 [[package]]
 name = "bitvec"
-version = "1.0.1"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bc2832c24239b0141d5674bb9174f9d68a8b5b3f2753311927c172ca46f7e9c"
+checksum = "ddcec3d12c579d40898fe0a9a358a803c23e9c52ca3c425707f81c9436211837"
 dependencies = [
  "funty",
  "radium",
@@ -1021,9 +1021,9 @@ dependencies = [
 
 [[package]]
 name = "borsh"
-version = "1.6.1"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfd1e3f8955a5d7de9fab72fc8373fade9fb8a703968cb200ae3dc6cf08e185a"
+checksum = "2f3f6da4992df95bbcd9af42a6c7dcb994498fc9048230405f3b36ff7cd3f145"
 dependencies = [
  "borsh-derive",
  "bytes",
@@ -1032,9 +1032,9 @@ dependencies = [
 
 [[package]]
 name = "borsh-derive"
-version = "1.6.1"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfcfdc083699101d5a7965e49925975f2f55060f94f9a05e7187be95d530ca59"
+checksum = "3ae8fb4fb5740e4b2c4884ff95f5f32f5e8479db1e8fd8eb49ddbe09eb09bb7c"
 dependencies = [
  "once_cell",
  "proc-macro-crate 3.5.0",
@@ -1150,9 +1150,9 @@ checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
 
 [[package]]
 name = "bytes"
-version = "1.11.1"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
+checksum = "8ae3f5d315924270530207e2a68396c3cc547f6dca3fbdca317cfb1a51edb593"
 dependencies = [
  "serde",
 ]
@@ -1190,9 +1190,9 @@ dependencies = [
 
 [[package]]
 name = "camino"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e629a66d692cb9ff1a1c664e41771b3dcaf961985a9774c0eb0bd1b51cf60a48"
+checksum = "b4ce8d3bd5823c7504d3f579f13e7b2f3da252fcb938c594d5680ee508bf846f"
 dependencies = [
  "serde_core",
 ]
@@ -1232,9 +1232,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.64"
+version = "1.2.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dad887fd958be91b5098c0248def011f4523ab786cd411be668777e55063501f"
+checksum = "e228eec9be7c17ccb640b59b36a5cd805ea2a564a4c5e162c2f659fea30d3b96"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1951,7 +1951,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.19.0"
+version = "0.19.1"
 dependencies = [
  "anyhow",
  "app_dirs2",
@@ -1994,12 +1994,14 @@ dependencies = [
  "sysinfo",
  "tauri",
  "tauri-build",
+ "tauri-plugin-android-fs",
  "tauri-plugin-autostart",
  "tauri-plugin-barcode-scanner",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-deep-link",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
+ "tauri-plugin-ios-photos",
  "tauri-plugin-keepawake",
  "tauri-plugin-log",
  "tauri-plugin-mailto",
@@ -2011,6 +2013,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-system-bars-styles",
  "tauri-plugin-updater",
+ "tauri-plugin-view",
  "tauri-plugin-virtual-keyboard-padding",
  "tempfile",
  "time",
@@ -2136,7 +2139,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccc2776f0c61eca1ca32528f85548abd1a4be8fb53d1b21c013e4f18da1e7090"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -2410,7 +2413,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2797,7 +2800,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3416,8 +3419,8 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.1.3",
- "windows-result 0.3.4",
+ "windows-link 0.2.1",
+ "windows-result 0.4.1",
 ]
 
 [[package]]
@@ -4173,12 +4176,12 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "system-configuration 0.7.0",
  "tokio",
  "tower-service",
  "tracing",
- "windows-registry 0.5.3",
+ "windows-registry 0.6.1",
 ]
 
 [[package]]
@@ -4193,7 +4196,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -5626,7 +5629,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.18",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6023,7 +6026,7 @@ dependencies = [
  "pin-project-lite",
  "rustc-hash 2.1.2",
  "rustls 0.23.40",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -6068,7 +6071,7 @@ checksum = "b3c1520eacd33fd6b009e2e70116b05508ade51db5e0d315ff8bf6b702148c2b"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -6111,7 +6114,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6237,7 +6240,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 1.3.1",
+ "proc-macro-crate 3.5.0",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -6924,7 +6927,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.45.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8219,14 +8222,14 @@ dependencies = [
 
 [[package]]
 name = "reflink-copy"
-version = "0.1.29"
+version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13362233b147e57674c37b802d216b7c5e3dcccbed8967c84f0d8d223868ae27"
+checksum = "d9dd7ab4af0363d5ccfd2838d782a28196cf32a5cc2e4fe3c5dc83f2be588b8b"
 dependencies = [
  "cfg-if",
  "libc",
  "rustix 1.1.4",
- "windows 0.61.3",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -8621,7 +8624,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8726,7 +8729,7 @@ dependencies = [
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8932,7 +8935,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b55fb86dfd3a2f5f76ea78310a88f96c4ea21a3031f8d212443d56123fd0521"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9393,7 +9396,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9840,6 +9843,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sync_async"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b815ef8e053247ad785b136d233ee9c9872eeda5319f2719d57cac88270c3dd9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
+]
+
+[[package]]
 name = "sync_wrapper"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10154,6 +10168,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-android-fs"
+version = "28.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "badb5867fb688175adb5acd928db4d6f05e3aa0e9eff1e21118ede8e69c3cac5"
+dependencies = [
+ "base64 0.22.1",
+ "glob",
+ "percent-encoding",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "sync_async",
+ "tauri",
+ "tauri-plugin",
+ "tauri-plugin-fs",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "tauri-plugin-autostart"
 version = "2.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10259,6 +10292,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-ios-photos"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74040430925537ccad4b3130b95426305166b987150cc37b3ce65e2c3de19385"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "tauri-plugin-keepawake"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10339,7 +10384,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification"
 version = "2.3.3"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#cc25813f0a83b8749572a167ee66af68a99c59aa"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#72a84dd39d4916a82f68b6ad5c1995a0b8a0be4e"
 dependencies = [
  "log",
  "ndk-context",
@@ -10361,7 +10406,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-macros"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#cc25813f0a83b8749572a167ee66af68a99c59aa"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#72a84dd39d4916a82f68b6ad5c1995a0b8a0be4e"
 dependencies = [
  "jni 0.21.1",
  "libc",
@@ -10375,7 +10420,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-models"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#cc25813f0a83b8749572a167ee66af68a99c59aa"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?branch=push-notifications#72a84dd39d4916a82f68b6ad5c1995a0b8a0be4e"
 dependencies = [
  "rand 0.8.6",
  "serde",
@@ -10494,6 +10539,18 @@ dependencies = [
  "url",
  "windows-sys 0.60.2",
  "zip",
+]
+
+[[package]]
+name = "tauri-plugin-view"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f64bec97e043cedc718dd7a5040c40bdb36ccbdbfeefdd9aacd1026c17f71275"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -10629,7 +10686,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11205,7 +11262,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.18",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11286,7 +11343,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset 0.9.1",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11695,9 +11752,9 @@ dependencies = [
 
 [[package]]
 name = "wayland-protocols"
-version = "0.32.12"
+version = "0.32.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "563a85523cade2429938e790815fd7319062103b9f4a2dc806e9b53b95982d8f"
+checksum = "23d0c813de3daa2ed6520af85a3bd49b0e722a3078506899aa9686fea58dc4b6"
 dependencies = [
  "bitflags 2.13.0",
  "wayland-backend",
@@ -11760,9 +11817,9 @@ dependencies = [
 
 [[package]]
 name = "web_atoms"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7cff6eef815df1834fd250e3a2ff436044d82a9f1bc1980ca1dbdf07effc538"
+checksum = "075474b12bcb3d2e3d4546580e9de478eeeead668a1761e2a8860c836b7ef297"
 dependencies = [
  "phf",
  "phf_codegen",
@@ -11924,7 +11981,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -12582,8 +12639,8 @@ dependencies = [
  "log",
  "serde",
  "thiserror 2.0.18",
- "windows 0.61.3",
- "windows-core 0.61.2",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -13185,3 +13242,53 @@ dependencies = [
  "syn 2.0.118",
  "winnow 1.0.3",
 ]
+
+[[patch.unused]]
+name = "p2panda"
+version = "0.6.1"
+source = "git+https://github.com/guillemcordoba/p2panda?branch=dashchat#0e467129c6617ef69b369c74810a4b620772db5b"
+
+[[patch.unused]]
+name = "p2panda-auth"
+version = "0.6.1"
+source = "git+https://github.com/guillemcordoba/p2panda?branch=dashchat#0e467129c6617ef69b369c74810a4b620772db5b"
+
+[[patch.unused]]
+name = "p2panda-core"
+version = "0.6.1"
+source = "git+https://github.com/guillemcordoba/p2panda?branch=dashchat#0e467129c6617ef69b369c74810a4b620772db5b"
+
+[[patch.unused]]
+name = "p2panda-discovery"
+version = "0.6.1"
+source = "git+https://github.com/guillemcordoba/p2panda?branch=dashchat#0e467129c6617ef69b369c74810a4b620772db5b"
+
+[[patch.unused]]
+name = "p2panda-encryption"
+version = "0.6.1"
+source = "git+https://github.com/guillemcordoba/p2panda?branch=dashchat#0e467129c6617ef69b369c74810a4b620772db5b"
+
+[[patch.unused]]
+name = "p2panda-net"
+version = "0.6.1"
+source = "git+https://github.com/guillemcordoba/p2panda?branch=dashchat#0e467129c6617ef69b369c74810a4b620772db5b"
+
+[[patch.unused]]
+name = "p2panda-spaces"
+version = "0.6.1"
+source = "git+https://github.com/guillemcordoba/p2panda?branch=dashchat#0e467129c6617ef69b369c74810a4b620772db5b"
+
+[[patch.unused]]
+name = "p2panda-store"
+version = "0.6.1"
+source = "git+https://github.com/guillemcordoba/p2panda?branch=dashchat#0e467129c6617ef69b369c74810a4b620772db5b"
+
+[[patch.unused]]
+name = "p2panda-stream"
+version = "0.6.1"
+source = "git+https://github.com/guillemcordoba/p2panda?branch=dashchat#0e467129c6617ef69b369c74810a4b620772db5b"
+
+[[patch.unused]]
+name = "p2panda-sync"
+version = "0.6.1"
+source = "git+https://github.com/guillemcordoba/p2panda?branch=dashchat#0e467129c6617ef69b369c74810a4b620772db5b"

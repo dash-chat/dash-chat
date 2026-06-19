@@ -138,7 +138,7 @@ export async function draftToMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	if (draft.kind === 'photos') {
 		const photos: OutgoingPhoto[] = await Promise.all(
-			draft.items.map(async ({ file }) => {
+			draft.items.map(async file => {
 				const compressed = await compressImage(file);
 				return {
 					data: new Uint8Array(await compressed.arrayBuffer()),

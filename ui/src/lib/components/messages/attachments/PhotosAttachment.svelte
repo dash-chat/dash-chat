@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { Photo } from 'dash-chat-stores';
-	import { mediaSrc } from '$lib/types/media';
-	import { objectUrl } from '$lib/actions/object-url';
+	import { mediaSrc } from '$lib/utils/media';
 	import Lightbox from '../Lightbox.svelte';
 
 	interface Props {
@@ -36,7 +35,7 @@
 	{#each photos as photo, i (i)}
 		<button type="button" class="photo-cell" onclick={e => openLightbox(i, e)}>
 			<img
-				use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
+				src={mediaSrc(photo)}
 				alt={photo.name}
 				loading="lazy"
 			/>

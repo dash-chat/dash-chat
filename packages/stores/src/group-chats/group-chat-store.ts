@@ -3,7 +3,6 @@ import { reactive, signal } from 'signalium';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
-import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
@@ -16,7 +15,7 @@ import {
 	MessagesStore,
 	OutgoingMedia,
 	Payload,
-	getMessageMedia,
+	mediaMetaToMedia,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IGroupChatClient } from './group-chat-client';
@@ -94,7 +93,7 @@ export class GroupChatStore implements MessagesStore {
 							hash: operation.hash,
 							content: {
 								message: body.payload.payload.message,
-								media: getMessageMedia(body.payload.payload),
+								media: mediaMetaToMedia(body.payload.payload.media),
 							},
 							author,
 							seqNum: operation.header.seq_num,

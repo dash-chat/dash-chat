@@ -13,7 +13,7 @@ import {
 	MessagesStore,
 	OutgoingMedia,
 	Payload,
-	getMessageMedia,
+	mediaMetaToMedia,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IDirectChatClient } from './direct-chat-client';
@@ -67,7 +67,7 @@ export class DirectChatStore implements MessagesStore {
 							hash: operation.hash,
 							content: {
 								message: body.payload.payload.message,
-								media: getMessageMedia(body.payload.payload),
+								media: mediaMetaToMedia(body.payload.payload.media),
 							},
 							author,
 							seqNum: operation.header.seq_num,
