@@ -221,8 +221,12 @@ impl Node {
 
         // === blob sync === //
 
-        let source_lookup =
-            crate::blob_sync::MixedSourceLookup::new(op_store.clone(), mailboxes.clone());
+        let self_endpoint = iroh::EndpointId::from_bytes(node_keys.device_id().as_bytes())?;
+        let source_lookup = crate::blob_sync::MixedSourceLookup::new(
+            op_store.clone(),
+            mailboxes.clone(),
+            self_endpoint,
+        );
         // LogId = blake3(topic.as_bytes()) is one-way; the op-store does not
         // persist TopicId alongside each operation, so we cannot recover it
         // here. Startup hydration skips entries whose topic is unknown. Blobs
@@ -1151,10 +1155,12 @@ impl Node {
 
     /// Load the raw bytes of a single blob by its hash from the local blob store.
     ///
-    /// With `timeout: Some(d)` the call polls the local store until the blob is
-    /// present or `d` elapses, giving the background fetch loop a window to land
-    /// a blob that has not been downloaded yet. `None` reads once and errors
-    /// immediately if the blob is absent.
+    /// With `timeout: Some(d)` the call triggers an immediate on-demand download
+    /// (rather than waiting for the background fetch loop's next pass, which can
+    /// be up to a minute away) and polls the local store until the blob is
+    /// present or `d` elapses. This is what makes a user-driven retry actually
+    /// re-attempt the fetch. `None` reads once and errors immediately if the
+    /// blob is absent.
     ///
     /// Used by the `irohblob://` URI scheme handler to serve media to the webview.
     pub async fn load_blob(
@@ -1166,6 +1172,17 @@ impl Node {
         let Some(timeout) = timeout else {
             return Ok(self.blob_sync.blobs.get_bytes(hash).await?.to_vec());
         };
+
+        if !self.blob_sync.blobs.has(hash).await.unwrap_or(false) {
+            // Kick the download in the background so the poll below can still
+            // observe the blob arriving via any path (this fetch, the
+            // background loop, or a mailbox relay) rather than blocking on one.
+            let blob_sync = self.blob_sync.clone();
+            tokio::spawn(async move {
+                blob_sync.fetch_now(hash, timeout).await;
+            });
+        }
+
         let deadline = std::time::Instant::now() + timeout;
         loop {
             if self.blob_sync.blobs.has(hash).await.unwrap_or(false) {

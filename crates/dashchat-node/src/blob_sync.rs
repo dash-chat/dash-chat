@@ -114,6 +114,20 @@ impl BlobSync {
             }
         }
     }
+
+    /// Trigger an immediate download attempt for `hash`, bypassing the
+    /// background loop's pass interval (up to a minute away). Tries every topic
+    /// the pool associates with the hash. Returns `true` once the blob is
+    /// present locally. Concurrent downloads of the same hash are coalesced by
+    /// the iroh-blobs downloader, so racing the background loop is safe.
+    pub async fn fetch_now(&self, hash: iroh_blobs::Hash, attempt_timeout: Duration) -> bool {
+        for topic in self.fetch_pool.topics_for(hash).await {
+            if self.try_fetch(topic, hash, attempt_timeout).await {
+                return true;
+            }
+        }
+        self.blobs.has(hash).await.unwrap_or(false)
+    }
 }
 
 #[derive(Clone, Default)]
@@ -153,6 +167,18 @@ impl BlobFetchPool {
     pub async fn add(&self, topic: TopicId, hash: iroh_blobs::Hash) {
         self.stack.lock().await.push((topic, hash));
         self.added.notify_one();
+    }
+
+    /// Topics the pool currently associates with `hash`, used to resolve blob
+    /// sources for an on-demand fetch.
+    pub async fn topics_for(&self, hash: iroh_blobs::Hash) -> Vec<TopicId> {
+        self.stack
+            .lock()
+            .await
+            .iter()
+            .filter(|(_, h)| *h == hash)
+            .map(|(topic, _)| *topic)
+            .collect()
     }
 
     /// Build a fetch pool from a stream of stored operations.
@@ -198,6 +224,7 @@ impl BlobFetchPool {
 pub struct MixedSourceLookup {
     op_store: OpStore,
     mailboxes: Mailboxes<MailboxOperation, OpStore>,
+    self_endpoint: iroh::EndpointId,
 }
 
 impl MixedSourceLookup {
@@ -211,6 +238,11 @@ impl MixedSourceLookup {
             .map(|author| iroh::EndpointId::from_bytes(author.as_bytes()))
             .collect::<Result<Vec<iroh::EndpointId>, _>>()?;
         sources.extend(self.mailboxes.get_sources(&topic).await?);
+        // Never dial ourselves (we already early-return when the blob is local),
+        // and dedupe so a provider isn't dialed twice — redundant dials churn
+        // iroh connection paths.
+        let mut seen = HashSet::new();
+        sources.retain(|id| *id != self.self_endpoint && seen.insert(*id));
         Ok(sources)
     }
 }
