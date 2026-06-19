@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Photo } from 'dash-chat-stores';
-	import { bytesToBlobUrl } from '$lib/types/media';
+	import { objectUrl } from '$lib/actions/object-url';
 	import Lightbox from '../Lightbox.svelte';
 
 	interface Props {
@@ -27,25 +27,16 @@
 		lightboxTrigger?.focus();
 		lightboxTrigger = undefined;
 	}
-
-	// Build object URLs once per photos instance. Minting and revoking live
-	// in the same pre-effect (not a $derived) so the URLs can never leak if
-	// a derived were to re-evaluate independently of its consumer.
-	// The keyed {#each (photoUrls[i])} below relies on the pre-effect
-	// repopulating photoUrls before the DOM updates.
-	let photoUrls = $state<string[]>([]);
-
-	$effect.pre(() => {
-		const urls = photos.map(p => bytesToBlobUrl(p.data, p.mime_type));
-		photoUrls = urls;
-		return () => urls.forEach(u => URL.revokeObjectURL(u));
-	});
 </script>
 
 <div class="attachment-photos" data-testid="message-attachment-photos">
-	{#each photos as photo, i (photoUrls[i])}
+	{#each photos as photo, i (i)}
 		<button type="button" class="photo-cell" onclick={e => openLightbox(i, e)}>
-			<img src={photoUrls[i]} alt={photo.name} loading="lazy" />
+			<img
+				use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
+				alt={photo.name}
+				loading="lazy"
+			/>
 			{#if i === 4 && photos.length > 5}
 				<div class="photo-overlay">+{photos.length - 5}</div>
 			{/if}

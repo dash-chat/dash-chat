@@ -1,33 +1,29 @@
 use std::net::UdpSocket;
 
 fn main() {
-    println!("cargo:rerun-if-env-changed=MAILBOX_PORT");
-    println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_PORT");
-
     capture_git_commit();
 
-    // Bake the dev server URLs (using the compile host's local IP) into debug
-    // builds so mobile devices on the same LAN can reach them. Release builds
-    // fall through to the production URLs at runtime.
-    if tauri_build::is_dev() {
+    // Mobile devices run on a different machine than the dev servers and can't
+    // read the dev shell's runtime env, so bake the dev-server URLs (the compile
+    // host's LAN IP) into debug cross-compiled builds. Desktop dev reads
+    // MAILBOX_URL / PUSH_NOTIFICATIONS_SERVER_URL from the runtime env instead
+    // (set by `just dev`), and release builds fall through to the production URLs.
+    let cross_compiling = std::env::var("HOST") != std::env::var("TARGET");
+    if tauri_build::is_dev() && cross_compiling {
+        println!("cargo:rerun-if-env-changed=MAILBOX_PORT");
+        println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_PORT");
+
         let mailbox_port = std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
         let push_port =
             std::env::var("PUSH_NOTIFICATIONS_SERVER_PORT").unwrap_or_else(|_| "3001".to_string());
 
-        // When not cross-compiling (host == target), the binary runs on the same
-        // machine as the dev servers, so localhost works. When cross-compiling
-        // (e.g. iOS/Android), use the host's LAN IP so the device can reach them.
-        let host = if std::env::var("HOST") == std::env::var("TARGET") {
+        let host = local_ip().unwrap_or_else(|| {
+            println!(
+                "cargo:warning=Could not detect local IP; falling back to 127.0.0.1. \
+                 Mobile devices will not be able to reach the dev servers."
+            );
             "127.0.0.1".to_string()
-        } else {
-            local_ip().unwrap_or_else(|| {
-                println!(
-                    "cargo:warning=Could not detect local IP; falling back to 127.0.0.1. \
-                     Mobile devices will not be able to reach the dev servers."
-                );
-                "127.0.0.1".to_string()
-            })
-        };
+        });
 
         println!("cargo:rustc-env=MAILBOX_URL=http://{host}:{mailbox_port}");
         println!("cargo:rustc-env=PUSH_NOTIFICATIONS_SERVER_URL=http://{host}:{push_port}");

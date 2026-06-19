@@ -6,6 +6,7 @@
  * and the transparent navbar's opacity transitions on scroll.
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { UI_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgent } from '../setup/setup-agents';
 
 describe('Chat scroll behavior', () => {
@@ -34,7 +35,10 @@ describe('Chat scroll behavior', () => {
 		let overflow = await agent1.directChatPage.scroll.overflow();
 		while (overflow < REQUIRED_OVERFLOW && i < MAX_FILLER) {
 			await agent1.directChatPage.sendMessage(`filler ${i}`);
-			await agent1.directChatPage.messages.waitForMessage(`filler ${i}`, 10_000);
+			await agent1.directChatPage.messages.waitForMessage(
+				`filler ${i}`,
+				UI_TIMEOUT,
+			);
 			overflow = await agent1.directChatPage.scroll.overflow();
 			i++;
 		}
@@ -49,7 +53,9 @@ describe('Chat scroll behavior', () => {
 		expect(await agent1.directChatPage.scroll.isAtBottom()).toBe(false);
 
 		await agent1.directChatPage.sendMessage('self-send after scroll up');
-		await agent1.directChatPage.messages.waitForMessage('self-send after scroll up');
+		await agent1.directChatPage.messages.waitForMessage(
+			'self-send after scroll up',
+		);
 
 		await agent1.waitUntil(async () =>
 			agent1.directChatPage.scroll.isAtBottom(),
@@ -70,21 +76,30 @@ describe('Chat scroll behavior', () => {
 		expect(await agent1.directChatPage.scroll.isAtBottom()).toBe(false);
 
 		await agent2.directChatPage.sendMessage('peer while scrolled up');
-		await agent1.directChatPage.messages.waitForMessage('peer while scrolled up');
+		await agent1.directChatPage.messages.waitForMessage(
+			'peer while scrolled up',
+		);
 
 		expect(await agent1.directChatPage.scroll.isAtBottom()).toBe(false);
-		expect(await agent1.directChatPage.messages.scrollBottom.isExisting()).toBe(true);
+		expect(await agent1.directChatPage.messages.scrollBottom.isExisting()).toBe(
+			true,
+		);
 		expect(await agent1.directChatPage.messages.unreadBadgeText()).toBeTruthy();
 	});
 
 	it('clicking scroll-to-bottom returns to bottom and clears unread badge', async () => {
 		await agent1.directChatPage.scroll.scrollUp();
 		await agent2.directChatPage.sendMessage('unread badge precondition');
-		await agent1.directChatPage.messages.waitForMessage('unread badge precondition');
-		await agent1.waitUntil(
-			async () => (await agent1.directChatPage.messages.unreadBadgeText()) !== null,
+		await agent1.directChatPage.messages.waitForMessage(
+			'unread badge precondition',
 		);
-		expect(await agent1.directChatPage.messages.scrollBottom.isExisting()).toBe(true);
+		await agent1.waitUntil(
+			async () =>
+				(await agent1.directChatPage.messages.unreadBadgeText()) !== null,
+		);
+		expect(await agent1.directChatPage.messages.scrollBottom.isExisting()).toBe(
+			true,
+		);
 
 		await agent1.directChatPage.messages.scrollBottom.click();
 
@@ -92,17 +107,21 @@ describe('Chat scroll behavior', () => {
 			agent1.directChatPage.scroll.isAtBottom(),
 		);
 		await agent1.waitUntil(
-			async () => (await agent1.directChatPage.messages.unreadBadgeText()) === null,
+			async () =>
+				(await agent1.directChatPage.messages.unreadBadgeText()) === null,
 		);
 	});
 
 	it('hides the scroll-to-bottom button once the user scrolls back down', async () => {
 		await agent1.directChatPage.scroll.scrollUp();
-		expect(await agent1.directChatPage.messages.scrollBottom.isExisting()).toBe(true);
+		expect(await agent1.directChatPage.messages.scrollBottom.isExisting()).toBe(
+			true,
+		);
 
 		await agent1.directChatPage.scroll.scrollToBottom();
 		await agent1.waitUntil(
-			async () => !(await agent1.directChatPage.messages.scrollBottom.isExisting()),
+			async () =>
+				!(await agent1.directChatPage.messages.scrollBottom.isExisting()),
 		);
 	});
 

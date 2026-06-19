@@ -2,7 +2,7 @@
  * Group media E2E — verifies that photo and file attachments work in group
  * chats the same way they do in direct chats.
  */
-import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
 import { type Agent, setupAgent } from '../../setup/setup-agents';
 
 describe('Group media attachments', () => {
@@ -14,36 +14,18 @@ describe('Group media attachments', () => {
 			setupAgent('agent1'),
 			setupAgent('agent2'),
 		]);
-		await agent1.enablePreviewFeatures();
-		await agent2.enablePreviewFeatures();
-		await agent1.createProfilePage.createProfile('Alice', 'Media');
-		await agent2.createProfilePage.createProfile('Bob', 'Media');
-		await exchangeContacts(agent1, agent2);
-		await agent1.directChatPage.back.click();
-		await agent2.directChatPage.back.click();
-		await agent1.homePage.ready();
-		await agent2.homePage.ready();
+		await exchangeContactsAndCreateGroup(agent1, agent2);
 
-		await agent1.homePage.newMessageButton.click();
-		await agent1.newMessagePage.ready();
-		await agent1.newMessagePage.newGroup.click();
-
-		await agent1.newGroupPage.addMembersStep.ready();
-		await agent1.newGroupPage.addMembersStep.addContactByName('Bob');
-		await agent1.newGroupPage.addMembersStep.nextButton.click();
-
-		await agent1.newGroupPage.groupInfoStep.ready();
-		await agent1.newGroupPage.groupInfoStep.setName('mediagroup');
-		await agent1.newGroupPage.groupInfoStep.createButton.click();
-		await agent1.groupChatPage.ready();
-
-		await agent2.homePage.chatListItem('mediagroup').waitForExist();
-		await agent2.homePage.chatListItem('mediagroup').click();
+		// The flow leaves agent2 on the home page; open the group so it can
+		// receive the media sent below.
+		await agent2.homePage.chatListItem('mygroup').waitForExist();
+		await agent2.homePage.chatListItem('mygroup').click();
 		await agent2.groupChatPage.ready();
 	});
 
 	it('sends photos with a caption to the group', async () => {
-		await agent1.groupChatPage.composer.attachPhotos('group', 2);
+		await agent1.groupChatPage.composer.attachPhotos('group');
+		await agent1.groupChatPage.composer.attachPhotos('group');
 		await agent1.groupChatPage.composer.expectStagedPhotoCount(2);
 		await agent1.groupChatPage.sendMessage('group pics');
 		await agent1.groupChatPage.messages.waitForPhotoMessage('group');

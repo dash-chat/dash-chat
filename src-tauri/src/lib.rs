@@ -3,6 +3,7 @@ mod device_info;
 mod filesystem;
 mod i18n;
 mod mailbox;
+#[cfg(desktop)]
 mod media_drop;
 mod notifications;
 mod settings;
@@ -38,7 +39,16 @@ pub fn run() {
         builder = builder
             .plugin(tauri_plugin_virtual_keyboard_padding::init())
             .plugin(tauri_plugin_barcode_scanner::init())
+            .plugin(tauri_plugin_view::init())
             .plugin(tauri_plugin_system_bars_styles::init());
+    }
+    #[cfg(target_os = "android")]
+    {
+        builder = builder.plugin(tauri_plugin_android_fs::init());
+    }
+    #[cfg(target_os = "ios")]
+    {
+        builder = builder.plugin(tauri_plugin_ios_photos::init());
     }
     #[cfg(not(mobile))]
     {
@@ -114,7 +124,13 @@ pub fn run() {
         .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
-        .on_window_event(media_drop::handle_window_event)
+        .on_window_event(|window, event| match event {
+            #[cfg(desktop)]
+            tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {
+                media_drop::handle_drop_event(window, paths)
+            }
+            _ => {}
+        })
         .setup(move |app| {
             let handle = app.handle().clone();
 

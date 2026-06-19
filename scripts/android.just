@@ -1,14 +1,9 @@
 set working-directory := '..'
 
-# run the app in development mode, pointing the app at UI_PORT if it is set
+# run the app in development mode. --host makes Tauri set TAURI_DEV_HOST and
+# serve the dev URL on the LAN IP so a physical device can reach Vite + HMR.
 dev:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ -n "${UI_PORT:-}" ]; then
-        nix develop git+file:.#androidDev --command pnpm tauri android dev --config "{\"build\":{\"devUrl\":\"http://localhost:$UI_PORT\"}}"
-    else
-        nix develop git+file:.#androidDev --command pnpm tauri android dev
-    fi
+    nix develop git+file:.#androidDev --command pnpm tauri android dev --host
 
 # install the android app via adb
 install:

@@ -7,6 +7,7 @@
 	import { writeText } from '$lib/utils/clipboard';
 	import { showToast } from '$lib/utils/toasts';
 	import { type SettingsStore } from 'dash-chat-stores';
+	import { defaultQrColor } from '$lib/utils/qrcode';
 	import {
 		Page,
 		Navbar,
@@ -32,7 +33,7 @@
 	const settingsStore: SettingsStore = getContext('settings-store');
 
 	const qrColors = [
-		'#007aff',
+		defaultQrColor(),
 		'#ffffff',
 		'#8e8e93',
 		'#a2845e',
@@ -57,6 +58,7 @@
 			await settingsStore.setQrColor(selectedColor);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error(e);
 		}
 		onClose();
 	}

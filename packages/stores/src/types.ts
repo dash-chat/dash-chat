@@ -19,20 +19,20 @@ export interface ChatReaction {
 }
 
 /**
- * `data` carries raw bytes — NOT base64. On the wire (Tauri JSON IPC) a
- * `Vec<u8>` arrives as `number[]`; in-process callers may also construct
- * these with a `Uint8Array`. Helpers in `ui/src/lib/types/media.ts`
- * (`asUint8Array`, `byteLengthOf`, `bytesToBlobUrl`) accept either form.
+ * `data` is the raw attachment bytes. The Rust side holds a `Vec<u8>`, which
+ * the Tauri JSON IPC delivers to the webview as a `number[]`; `getMessageMedia`
+ * materializes that into a `Uint8Array` at the boundary, so every consumer (and
+ * the send path, which builds `Uint8Array` directly) works with `Uint8Array`.
  */
 export interface Photo {
-	data: Uint8Array | number[];
+	data: Uint8Array;
 	name: string;
 	mime_type: string;
 }
 
 /** A non-image file attachment. See `Photo` for the `data` shape. */
 export interface FileAttachment {
-	data: Uint8Array | number[];
+	data: Uint8Array;
 	name: string;
 	mime_type: string;
 }
@@ -48,8 +48,6 @@ export type Media =
 /**
  * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
  * `crates/dashchat-node/src/chat/message.rs`. Sent messages are always V1.
- * Stored payloads may also appear as a bare string (V0/Unversioned); see
- * `getMessageText` for reading either form.
  */
 export type MessageContentV1 = {
 	v: '1';
@@ -58,47 +56,37 @@ export type MessageContentV1 = {
 };
 export type MessageContent = MessageContentV1;
 
-export function getMessageText(content: MessageContent | string): string {
-	return typeof content === 'string' ? content : content.message;
+// Keyed on the `content` object, which `logs-store` keeps referentially stable
+// across recomputes (it reuses operation objects, only appending new ones), so
+// the materialized `Uint8Array` stays identity-stable too. That lets the
+// `objectUrl` action short-circuit and avoid reloading every image whenever a
+// new operation rebuilds the messages reactive.
+const mediaCache = new WeakMap<MessageContent, Media | null>();
+
+export function getMessageMedia(content: MessageContent): Media | null {
+	const cached = mediaCache.get(content);
+	if (cached !== undefined) return cached;
+
+	const result = materializeMessageMedia(content);
+	mediaCache.set(content, result);
+	return result;
 }
 
-export function getMessageMedia(
-	content: MessageContent | string,
-): Media | null {
-	return typeof content === 'string' ? null : content.media;
-}
-
-/**
- * Cheap structural comparison used to match a just-sent message against the
- * operation that confirms it — media-only messages all have empty text, so
- * text alone cannot disambiguate them. Compares kind plus photo count or
- * file name; byte contents are deliberately not compared (sent media holds
- * `Uint8Array`s while logged operations hold `number[]`s).
- */
-export function sameMediaShape(a: Media | null, b: Media | null): boolean {
-	if (a === null || b === null) return a === b;
-	if (a.kind === 'photos' && b.kind === 'photos') {
-		return a.photos.length === b.photos.length;
+function materializeMessageMedia(content: MessageContent): Media | null {
+	if (!content.media) return null;
+	const media = content.media;
+	// The Tauri JSON IPC delivers `Vec<u8>` as `number[]`; rebuild it as a
+	// `Uint8Array` here so consumers never deal with the raw wire form.
+	if (media.kind === 'photos') {
+		return {
+			kind: 'photos',
+			photos: media.photos.map(p => ({ ...p, data: new Uint8Array(p.data) })),
+		};
 	}
-	if (a.kind === 'file' && b.kind === 'file') {
-		return a.file.name === b.file.name;
-	}
-	return false;
-}
-
-/**
- * Short single-line description of a message for chat list previews. Falls
- * back to a media descriptor when the text is empty.
- */
-export function summarizeMessageContent(content: {
-	message: string;
-	media: Media | null;
-}): string {
-	if (content.message) return content.message;
-	if (!content.media) return '';
-	if (content.media.kind === 'file') return content.media.file.name;
-	const n = content.media.photos.length;
-	return n > 1 ? `${n} photos` : 'Photo';
+	return {
+		kind: 'file',
+		file: { ...media.file, data: new Uint8Array(media.file.data) },
+	};
 }
 
 export type AnnouncementPayload =
@@ -221,7 +209,7 @@ export type GroupControlEvent =
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
-			text: string;
+			content: { message: string; media: Media | null };
 			authorName?: string;
 			timestamp: number;
 	  }

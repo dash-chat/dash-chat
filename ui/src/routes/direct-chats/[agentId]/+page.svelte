@@ -160,18 +160,19 @@
 		$state();
 	let parentDivEl: HTMLDivElement | null = $state(null);
 
-	function onMessageSent() {
+	// Scroll the message we just sent into view once its bubble mounts.
+	let justSentMessageHash: Hash | null = $state(null);
+	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
+		if (hash === justSentMessageHash) {
+			justSentMessageHash = null;
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		}
+	};
+
+	function onMessageSent(messageHash: Hash) {
+		justSentMessageHash = messageHash;
 		capturedUnreadHash = null;
 		unreadDividerCaptured = false;
-		// Defer the scroll one macrotask: store.sendMessage resolves once
-		// the operation is confirmed in the local log, but signalium still
-		// needs a turn for its subscriber chain to push the new message
-		// through messagesSets and Svelte to render the bubble. tick() only
-		// flushes pending Svelte updates synchronously, so it isn't enough
-		// here. Without this, scrollToBottom fires against the old layout
-		// and `overflow-anchor: none` leaves the just-rendered bubble
-		// hidden behind the input bar.
-		setTimeout(() => reverseScrollPage?.scrollToBottom());
 	}
 
 	onMount(() => {
@@ -582,6 +583,7 @@
 																onLongPress: e =>
 																	showQuickReactionBar(e, message),
 															}}
+															use:scrollToBottomOnMount={hash}
 														>
 															{#await $chatId then chatId}
 																<MessageFromMe
@@ -752,11 +754,10 @@
 				<div
 					bind:clientHeight={bottomBarHeight}
 					class="absolute bottom-0 inset-x-0 z-10"
-					class:bg-md-light-surface={theme === 'material'}
-					class:dark:bg-md-dark-surface={theme === 'material'}
+					class:bg-page-surface={theme === 'material'}
 				>
 					{#if searchMode}
-						<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
+						<div class="pb-safe bg-page-surface">
 							<div
 								class="mx-4 border-t border-gray-300 dark:border-gray-600"
 								style="margin: 0 auto"
@@ -809,7 +810,7 @@
 							</div>
 						</div>
 					{:else if contactRequest}
-						<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
+						<div class="pb-safe bg-page-surface">
 							<div
 								class="mx-4 border-t border-gray-300 dark:border-gray-600"
 								style="margin: 0 auto"

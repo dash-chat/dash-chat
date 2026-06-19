@@ -30,17 +30,19 @@ function hasText(selector: string, text: string): boolean {
 export interface TestFileSpec {
 	name: string;
 	mimeType: string;
-	bytes: number[];
+	/** Raw bytes. Omit and pass `size` for a large zero-filled file so a huge
+	 * array doesn't have to cross the WebDriver bridge. */
+	bytes?: number[];
+	size?: number;
 }
 
 function specsToDataTransfer(specs: TestFileSpec[]): DataTransfer {
 	const dt = new DataTransfer();
 	for (const spec of specs) {
-		dt.items.add(
-			new File([new Uint8Array(spec.bytes)], spec.name, {
-				type: spec.mimeType,
-			}),
-		);
+		const data = spec.bytes
+			? new Uint8Array(spec.bytes)
+			: new Uint8Array(spec.size ?? 0);
+		dt.items.add(new File([data], spec.name, { type: spec.mimeType }));
 	}
 	return dt;
 }

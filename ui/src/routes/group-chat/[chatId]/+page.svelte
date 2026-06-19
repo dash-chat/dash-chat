@@ -3,6 +3,7 @@
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
+	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
 	import type {
 		ChatsStore,
@@ -54,10 +55,19 @@
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
-	function onMessageSent() {
+	// Scroll the message we just sent into view once its bubble mounts.
+	let justSentMessageHash: Hash | null = $state(null);
+	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
+		if (hash === justSentMessageHash) {
+			justSentMessageHash = null;
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		}
+	};
+
+	function onMessageSent(messageHash: Hash) {
+		justSentMessageHash = messageHash;
 		capturedUnreadHash = null;
 		unreadDividerCaptured = false;
-		setTimeout(() => reverseScrollPage?.scrollToBottom());
 	}
 
 	const theme = $derived(useTheme());
@@ -226,6 +236,7 @@
 												<div
 													class="self-end max-w-[85%]"
 													data-message-hash={hash}
+													use:scrollToBottomOnMount={hash}
 												>
 													<MessageFromMe
 														{message}
@@ -294,15 +305,14 @@
 	<div
 		bind:clientHeight={bottomBarHeight}
 		class="absolute bottom-0 inset-x-0 z-20"
-		class:bg-md-light-surface={theme === 'material'}
-		class:dark:bg-md-dark-surface={theme === 'material'}
+		class:bg-page-surface={theme === 'material'}
 	>
 		{#await $me then me}
 			{#if me.member}
 				<MessageComposer {store} onSent={onMessageSent} />
 			{:else}
 				<div
-					class="pb-safe quiet px-6 py-4 text-center text-sm"
+					class="pb-safe-4 quiet px-6 pt-4 text-center text-sm"
 					data-testid="group-chat-not-member"
 				>
 					{m.youAreNoLongerAMember()}

@@ -16,6 +16,17 @@ export class Lightbox {
 		return this.agent.$(tid(`lightbox-thumb-${index}`));
 	}
 
+	/** Index of the currently active photo (based on the selected filmstrip thumb). */
+	async activeIndex(): Promise<number> {
+		const thumbs = await this.agent.$$(tid('lightbox-filmstrip') + ' button');
+		const resolved = await thumbs;
+		for (let i = 0; i < (await resolved.length); i++) {
+			const cls = await resolved[i].getAttribute('class');
+			if (cls?.includes('selected')) return i;
+		}
+		return -1;
+	}
+
 	async isOpen(): Promise<boolean> {
 		return this.root.isExisting();
 	}

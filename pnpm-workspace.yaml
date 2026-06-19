@@ -3,6 +3,11 @@ packages:
   - packages/*
   - e2e-tests
 
+# Verify node_modules against the lockfile before `pnpm run`/`pnpm exec` and
+# auto-install only when it is stale, so `just dev` installs new deps yet skips
+# the install when everything is already up to date.
+verifyDepsBeforeRun: install
+
 allowBuilds:
   edgedriver: true
   esbuild: true

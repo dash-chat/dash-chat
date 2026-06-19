@@ -9,6 +9,9 @@ mod android 'scripts/android.just'
 # running tests
 mod test 'scripts/test.just'
 
+# mailbox server
+mod mailbox 'scripts/mailbox.just'
+
 # push notifications
 mod push 'scripts/push.just'
 
