@@ -4,10 +4,11 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
+import { UI_TIMEOUT } from './helpers/timeouts';
 import { allocateDriverPorts, allocatePort } from './setup/allocate-port';
 import {
-	killAndWait,
 	killAllE2EProcesses,
+	killAndWait,
 	killLeftoverMailboxServers,
 	killPortHolders,
 } from './setup/cleanup';
@@ -81,7 +82,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	},
 
 	logLevel: 'warn',
-	waitforTimeout: 10_000,
+	waitforTimeout: UI_TIMEOUT,
 
 	framework: 'mocha',
 	mochaOpts: {
