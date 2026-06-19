@@ -14,6 +14,8 @@ import type { FileAttachment, Photo } from 'dash-chat-stores';
 import { AndroidFs, AndroidPublicImageDir } from 'tauri-plugin-android-fs-api';
 import { view } from 'tauri-plugin-view-api';
 
+import { loadMediaBytes } from './media';
+
 const GALLERY_ALBUM = 'Dash Chat';
 
 /** Drop any directory components from a peer-supplied name so it can never
@@ -75,7 +77,8 @@ async function getOrCreateAlbum(title: string): Promise<string> {
  * Mobile-only; the caller handles desktop/browser saving.
  */
 export async function saveAndOpenFile(file: FileAttachment): Promise<void> {
+	const data = await loadMediaBytes(file);
 	const path = await join(await appCacheDir(), basename(file.name));
-	await writeFile(path, file.data);
+	await writeFile(path, data);
 	await view(path);
 }
