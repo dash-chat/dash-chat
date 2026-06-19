@@ -37,6 +37,7 @@ pub fn handle<R: Runtime>(
                 tauri::http::Response::builder()
                     .status(tauri::http::StatusCode::NOT_FOUND)
                     .header("Access-Control-Allow-Origin", "*")
+                    .header("Cache-Control", "no-store")
                     .body(Vec::new())
                     .expect("valid response")
             }
@@ -49,5 +50,6 @@ async fn load<R: Runtime>(app: &tauri::AppHandle<R>, hash: &str) -> anyhow::Resu
     let node = app
         .try_state::<Node>()
         .ok_or_else(|| anyhow::anyhow!("node not yet initialized"))?;
-    node.load_blob(hash).await
+    node.load_blob(hash, Some(std::time::Duration::from_secs(10)))
+        .await
 }
