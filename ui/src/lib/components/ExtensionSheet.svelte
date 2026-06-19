@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { fileExtension } from '$lib/types/media';
+	import { fileExtension } from '$lib/utils/media';
 
 	let {
 		name,

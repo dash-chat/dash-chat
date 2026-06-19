@@ -11,6 +11,7 @@ pub(crate) async fn build_node(
     data_path: PathBuf,
     notification_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::Notification>>,
     topic_subscribed_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::topic::TopicId>>,
+    no_p2p: bool,
 ) -> anyhow::Result<Node> {
     let config = if cfg!(feature = "e2e-tests") {
         let mut config = dashchat_node::NodeConfig::default();
@@ -19,6 +20,13 @@ pub(crate) async fn build_node(
     } else {
         dashchat_node::NodeConfig::default()
     };
+    // The iOS push extension shares the device identity and database with the
+    // main app but runs as a separate process. When the app is in the
+    // foreground both nodes connect to the relay with the same endpoint id,
+    // which continuously tears down the extension's sync sessions and cancels
+    // in-flight ingest transactions — poisoning the shared SQLite store. The
+    // extension only needs the mailbox to fetch the operation, so disable p2p.
+    let config = if no_p2p { config.no_p2p() } else { config };
     let node = Node::new(data_path, config, notification_tx, topic_subscribed_tx).await?;
 
     let mailbox_url = crate::mailbox::default_mailbox_url();
@@ -100,6 +108,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         Some(topic_subscribed_tx),
         #[cfg(not(mobile))]
         None,
+        false,
     )
     .await?;
 
@@ -182,6 +191,10 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
             ])
             .build(),
     )?;
+
+    // Now that the log plugin is registered, route panics through it.
+    crate::utils::install_panic_hook();
+
     Ok(())
 }
 

@@ -3,8 +3,8 @@ import { reactive, signal } from 'signalium';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
-import { LogsStore } from '../p2panda/logs-store';
 import { waitForOperation } from '../p2panda/logs-client';
+import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
 import {
@@ -13,13 +13,10 @@ import {
 	ChatSummaryLastEvent,
 	GroupControlEvent,
 	GroupInfo,
-	OutgoingMedia,
 	MessagesStore,
+	OutgoingMedia,
 	Payload,
 	getMessageMedia,
-	getMessageText,
-	sameMediaShape,
-	summarizeMessageContent,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IGroupChatClient } from './group-chat-client';
@@ -96,7 +93,7 @@ export class GroupChatStore implements MessagesStore {
 						messages[operation.hash] = {
 							hash: operation.hash,
 							content: {
-								message: getMessageText(body.payload.payload),
+								message: body.payload.payload.message,
 								media: getMessageMedia(body.payload.payload),
 							},
 							author,
@@ -233,7 +230,7 @@ export class GroupChatStore implements MessagesStore {
 		const messageEvent: ChatSummaryLastEvent | undefined = lastMessage
 			? {
 					kind: 'message',
-					text: summarizeMessageContent(lastMessage.content),
+					content: lastMessage.content,
 					authorName: await this.nameForDevice(lastMessage.author),
 					timestamp: lastMessage.timestamp,
 				}
@@ -372,26 +369,7 @@ export class GroupChatStore implements MessagesStore {
 		message: string;
 		media: OutgoingMedia | null;
 	}): Promise<Hash> {
-		const myDeviceId = await this.contactsStore.myDeviceId();
-		const [op] = await Promise.all([
-			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
-				if (topicId !== this.chatId) return false;
-				if (op.body?.payload.type !== 'Message') return false;
-				if (op.header.verifying_key !== myDeviceId) return false;
-				if (getMessageText(op.body.payload.payload) !== input.message)
-					return false;
-				if (
-					!sameMediaShape(
-						getMessageMedia(op.body.payload.payload),
-						input.media,
-					)
-				)
-					return false;
-				return true;
-			}),
-			this.client.sendMessage(this.chatId, input.message, input.media),
-		]);
-		return op.hash;
+		return this.client.sendMessage(this.chatId, input.message, input.media);
 	}
 }
 

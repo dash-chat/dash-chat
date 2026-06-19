@@ -43,7 +43,7 @@
 	}
 
 	.send-button.enabled {
-		background: var(--k-theme-color, #3b82f6);
+		background: var(--color-brand-primary);
 		color: white;
 		opacity: 1;
 	}

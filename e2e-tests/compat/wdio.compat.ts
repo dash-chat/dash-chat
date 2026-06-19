@@ -3,10 +3,12 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
+
+import { UI_TIMEOUT } from '../helpers/timeouts';
 import { allocateDriverPorts } from '../setup/allocate-port';
 import {
-	killAndWait,
 	killAllE2EProcesses,
+	killAndWait,
 	killPortHolders,
 } from '../setup/cleanup';
 import { waitForPortFree, waitForPortListening } from '../setup/wait-for-port';
@@ -72,7 +74,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		agent1: {
 			port: port1,
 			capabilities: {
-				'platformName': process.platform === 'darwin' ? 'mac' : process.platform,
+				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
 				'tauri:options': {
 					application: path.join(__dirname, 'scripts', 'launch-agent1.sh'),
 				},
@@ -81,7 +83,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		agent2: {
 			port: port2,
 			capabilities: {
-				'platformName': process.platform === 'darwin' ? 'mac' : process.platform,
+				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
 				'tauri:options': {
 					application: path.join(__dirname, 'scripts', 'launch-agent2.sh'),
 				},
@@ -90,7 +92,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	},
 
 	logLevel: 'warn',
-	waitforTimeout: 30_000,
+	waitforTimeout: UI_TIMEOUT,
 
 	framework: 'mocha',
 	mochaOpts: {
@@ -119,7 +121,11 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		if (phase === 'setup') {
 			for (const agent of ['agent-1', 'agent-2']) {
 				const agentDir = path.join(ROOT, '.dbs', 'compat', agent);
-				try { rmSync(agentDir, { recursive: true, force: true }); } catch { /* ignore */ }
+				try {
+					rmSync(agentDir, { recursive: true, force: true });
+				} catch {
+					/* ignore */
+				}
 			}
 		}
 

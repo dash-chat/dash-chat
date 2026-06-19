@@ -23,7 +23,19 @@
 	--color-page-surface: var(--color-md-dark-surface);
 }
 
+.k-ios {
+	--color-page-surface: var(--color-ios-light-surface);
+}
+
+:root.dark .k-ios {
+	--color-page-surface: var(--color-ios-dark-surface);
+}
+
 :root.wide-layout {
+	--color-page-surface: var(--color-desktop-main-bg);
+}
+
+:root.wide-layout .k-ios {
 	--color-page-surface: var(--color-desktop-main-bg);
 }
 

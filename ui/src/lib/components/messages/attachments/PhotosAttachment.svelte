@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Photo } from 'dash-chat-stores';
 	import { mediaSrc } from '$lib/types/media';
+	import { objectUrl } from '$lib/actions/object-url';
 	import Lightbox from '../Lightbox.svelte';
 
 	interface Props {
@@ -32,9 +33,13 @@
 </script>
 
 <div class="attachment-photos" data-testid="message-attachment-photos">
-	{#each photos as photo, i (photoUrls[i])}
+	{#each photos as photo, i (i)}
 		<button type="button" class="photo-cell" onclick={e => openLightbox(i, e)}>
-			<img src={photoUrls[i]} alt={photo.name} loading="lazy" />
+			<img
+				use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
+				alt={photo.name}
+				loading="lazy"
+			/>
 			{#if i === 4 && photos.length > 5}
 				<div class="photo-overlay">+{photos.length - 5}</div>
 			{/if}

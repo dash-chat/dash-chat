@@ -1,9 +1,10 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { FileAttachment } from 'dash-chat-stores';
-	import { formatFileSize, mediaSize } from '$lib/types/media';
+	import { formatFileSize, mediaSize, saveFileAttachment } from '$lib/utils/media';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
-	import { saveAttachment } from '$lib/utils/save-file';
+	import { m } from '$lib/paraglide/messages.js';
+	import { showToast } from '$lib/utils/toasts';
 
 	interface Props {
 		file: FileAttachment;
@@ -13,13 +14,22 @@
 	}
 
 	let { file, metadata }: Props = $props();
+
+	async function handleSave() {
+		try {
+			if (await saveFileAttachment(file)) showToast(m.fileSaved());
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error(e);
+		}
+	}
 </script>
 
 <button
 	type="button"
 	class="flex w-full cursor-pointer items-center border-none bg-transparent px-1 py-0.5 text-start text-inherit"
 	data-testid="message-attachment-file"
-	onclick={() => saveAttachment(file)}
+	onclick={handleSave}
 >
 	<div class="me-2.5 flex shrink-0 items-center justify-center">
 		<ExtensionSheet name={file.name} />

@@ -15,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.19.0</string>
+	<string>0.19.1</string>
 	<key>CFBundleVersion</key>
-	<string>0.19.0</string>
+	<string>0.19.1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -58,18 +58,11 @@
 	<false/>
 	<key>FirebaseDataCollectionDefaultEnabled</key>
 	<false/>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>dash-chat</string>
-			</array>
-			<key>CFBundleURLName</key>
-			<string>dash-chat</string>
-		</dict>
-	</array>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Dash Chat saves photos you download from chats to your photo library.</string>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Dash Chat needs access to your photo library to save photos you download from chats.</string>
 </dict>
 </plist>

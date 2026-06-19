@@ -124,8 +124,6 @@ export function mediaMetaToMedia(
 /**
  * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
  * `crates/dashchat-node/src/chat/message.rs`. Sent messages are always V1.
- * Stored payloads may also appear as a bare string (V0/Unversioned); see
- * `getMessageText` for reading either form.
  */
 export type MessageContentV1 = {
 	v: '1';
@@ -136,53 +134,6 @@ export type MessageContentV1 = {
 	media: MediaMetaCollection | null;
 };
 export type MessageContent = MessageContentV1;
-
-export function getMessageText(content: MessageContent | string): string {
-	return typeof content === 'string' ? content : content.message;
-}
-
-export function getMessageMedia(
-	content: MessageContent | string,
-): Media | null {
-	if (typeof content === 'string') return null;
-	return mediaMetaToMedia(content.media);
-}
-
-/**
- * Cheap structural comparison used to match a just-sent message against the
- * operation that confirms it — media-only messages all have empty text, so
- * text alone cannot disambiguate them. Compares kind plus photo count or
- * file name; byte contents are deliberately not compared (the sent side holds
- * `OutgoingMedia` bytes while the logged side is hash-only `Media`).
- */
-export function sameMediaShape(
-	a: Media | OutgoingMedia | null,
-	b: Media | OutgoingMedia | null,
-): boolean {
-	if (a === null || b === null) return a === b;
-	if (a.kind === 'photos' && b.kind === 'photos') {
-		return a.photos.length === b.photos.length;
-	}
-	if (a.kind === 'file' && b.kind === 'file') {
-		return a.file.name === b.file.name;
-	}
-	return false;
-}
-
-/**
- * Short single-line description of a message for chat list previews. Falls
- * back to a media descriptor when the text is empty.
- */
-export function summarizeMessageContent(content: {
-	message: string;
-	media: Media | null;
-}): string {
-	if (content.message) return content.message;
-	if (!content.media) return '';
-	if (content.media.kind === 'file') return content.media.file.name;
-	const n = content.media.photos.length;
-	return n > 1 ? `${n} photos` : 'Photo';
-}
 
 export type AnnouncementPayload =
 	| { type: 'SetProfile'; payload: Profile }
@@ -307,7 +258,7 @@ export type GroupControlEvent =
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
-			text: string;
+			content: { message: string; media: Media | null };
 			authorName?: string;
 			timestamp: number;
 	  }

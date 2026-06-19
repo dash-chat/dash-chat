@@ -1,5 +1,10 @@
+import { m } from '$lib/paraglide/messages.js';
 import { compressImage } from '$lib/utils/compress';
+import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
+import { pickFiles, pickNativeFiles, saveFile } from '$lib/utils/files';
+import { saveAndOpenFile, savePhotoToGallery } from '$lib/utils/gallery';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { downloadDir } from '@tauri-apps/api/path';
 import type {
 	FileAttachment,
 	Hash,
@@ -23,18 +28,13 @@ export class AttachmentTooLargeError extends Error {
 }
 
 /**
- * Draft media held in the composer before sending. Holds raw `File` refs so
- * the UI can render previews without copying bytes; `previewUrl` is an object
- * URL the caller must revoke when discarding.
+ * Draft media held in the composer before sending — raw `File` refs. Previews
+ * derive their object URL via the `objectUrl` action on the `<img>`, so the
+ * draft carries no URLs that need revoking.
  */
 export type DraftMedia =
-	| { kind: 'photos'; items: DraftPhoto[] }
+	| { kind: 'photos'; items: File[] }
 	| { kind: 'file'; file: File };
-
-export interface DraftPhoto {
-	file: File;
-	previewUrl: string;
-}
 
 export const MAX_STAGED_PHOTOS = 32;
 
@@ -61,6 +61,25 @@ const PHOTO_TYPES = new Set([
  * "Photos" pick can't surface file-attachment error toasts. */
 export const PHOTO_ACCEPT = [...PHOTO_TYPES].join(',');
 
+/**
+ * Pick media for the composer. On iOS the native picker opens the photo library
+ * (PHPickerViewController) or the document browser directly; a web `<input
+ * type=file>` would instead show a Photo Library / Take Photo / Choose File
+ * action sheet. Everywhere else the web input already opens the right picker, so
+ * it keeps using it. Resolves with the chosen files, or `null` if dismissed.
+ */
+export async function pickMedia(
+	mode: 'image' | 'document',
+	multiple: boolean,
+): Promise<File[] | null> {
+	if (isIos && isTauriEnv()) {
+		return pickNativeFiles({ mode, multiple });
+	}
+	const accept = mode === 'image' ? PHOTO_ACCEPT : undefined;
+	const list = await pickFiles({ accept, multiple });
+	return list ? Array.from(list) : null;
+}
+
 function isVisualFile(file: File): boolean {
 	return PHOTO_TYPES.has(file.type);
 }
@@ -70,8 +89,7 @@ function isVisualFile(file: File): boolean {
  * append (up to `MAX_STAGED_PHOTOS`, accepting a partial batch), a
  * non-image file can only be staged alone, and nothing can be added once
  * a file is staged. On a rule violation the current draft is returned
- * unchanged alongside the error. Accepted files get fresh object URLs;
- * existing draft items keep theirs.
+ * unchanged alongside the error.
  */
 export function ingestFiles(
 	current: DraftMedia | undefined,
@@ -96,28 +114,11 @@ export function ingestFiles(
 	const room = MAX_STAGED_PHOTOS - existing.length;
 	if (room <= 0) return { media: current, error: 'tooMany' };
 	const accepted = visual.slice(0, room);
-	const items = [
-		...existing,
-		...accepted.map(file => ({
-			file,
-			previewUrl: URL.createObjectURL(file),
-		})),
-	];
+	const items = [...existing, ...accepted];
 	return {
 		media: { kind: 'photos', items },
 		error: visual.length > room ? 'tooMany' : undefined,
 	};
-}
-
-export function revokeDraft(draft: DraftMedia): void {
-	if (draft.kind === 'photos') {
-		for (const p of draft.items) URL.revokeObjectURL(p.previewUrl);
-	}
-}
-
-/** Read a `File` as a `Uint8Array`. Raw bytes — no base64. */
-async function fileToBytes(file: File): Promise<Uint8Array> {
-	return new Uint8Array(await file.arrayBuffer());
 }
 
 /**
@@ -140,7 +141,7 @@ async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 			draft.items.map(async ({ file }) => {
 				const compressed = await compressImage(file);
 				return {
-					data: await fileToBytes(compressed),
+					data: new Uint8Array(await compressed.arrayBuffer()),
 					name: compressed.name,
 					mime_type: compressed.type || 'application/octet-stream',
 				};
@@ -149,7 +150,7 @@ async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 		return { kind: 'photos', photos };
 	}
 	const file: OutgoingFile = {
-		data: await fileToBytes(draft.file),
+		data: new Uint8Array(await draft.file.arrayBuffer()),
 		name: draft.file.name,
 		mime_type: draft.file.type || 'application/octet-stream',
 	};
@@ -158,9 +159,9 @@ async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 
 function totalMediaBytes(media: OutgoingMedia): number {
 	if (media.kind === 'photos') {
-		return media.photos.reduce((sum, p) => sum + byteLengthOf(p.data), 0);
+		return media.photos.reduce((sum, p) => sum + p.data.byteLength, 0);
 	}
-	return byteLengthOf(media.file.data);
+	return media.file.data.byteLength;
 }
 
 /** Uppercase extension for a filename, max 4 chars; '' when there is none. */
@@ -181,9 +182,47 @@ export function formatFileSize(bytes: number): string {
 	return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-/** Size in bytes of either an in-process `Uint8Array` or an IPC number array. */
-export function byteLengthOf(data: Uint8Array | number[]): number {
-	return data instanceof Uint8Array ? data.byteLength : data.length;
+/**
+ * Save a photo: straight to the device gallery on mobile (Pictures via
+ * MediaStore on Android, the photo library on iOS), a native save dialog on
+ * desktop Tauri, or an anchor-download in the browser. Returns `true` when it
+ * was saved (so the caller can confirm with a toast) and `false` when the user
+ * cancelled the desktop dialog. Throws on unexpected failure.
+ */
+export async function savePhoto(photo: Photo): Promise<boolean> {
+	if (isTauriEnv() && isMobile) {
+		await savePhotoToGallery(photo);
+		return true;
+	}
+	return saveToDisk(photo);
+}
+
+/**
+ * Save a file attachment: saved to the app storage and opened with the system
+ * handler on mobile, a native save dialog on desktop Tauri, or an
+ * anchor-download in the browser. Returns `true` only when written via the
+ * desktop dialog (so the caller can confirm with a toast). Throws on
+ * unexpected failure.
+ */
+export async function saveFileAttachment(
+	file: FileAttachment,
+): Promise<boolean> {
+	if (isTauriEnv() && isMobile) {
+		await saveAndOpenFile(file);
+		return false;
+	}
+	return saveToDisk(file);
+}
+
+async function saveToDisk(file: FileAttachment | Photo): Promise<boolean> {
+	const data = await loadMediaBytes(file);
+	return saveFile(
+		data,
+		await downloadDir().catch(() => ''),
+		file.name,
+		file.mime_type,
+		m.saveFile(),
+	);
 }
 
 /** Webview URL that the `irohblob://` URI scheme handler serves the blob's

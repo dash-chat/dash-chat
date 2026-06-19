@@ -9,7 +9,7 @@ export interface IDirectChatClient {
 		chatId: ChatId,
 		message: string,
 		media: OutgoingMedia | null,
-	): Promise<void>;
+	): Promise<Hash>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
 	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void>;
 }
@@ -25,7 +25,7 @@ export class DirectChatClient implements IDirectChatClient {
 		chatId: ChatId,
 		message: string,
 		media: OutgoingMedia | null,
-	): Promise<void> {
+	): Promise<Hash> {
 		return invoke('send_message', {
 			chatId,
 			message,

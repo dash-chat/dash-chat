@@ -49,6 +49,8 @@ pub fn receive_push_notification(
             let _ = oslog::OsLogger::new("studio.darksoil.dashchat.PushNotificationsExtension")
                 .level_filter(log::LevelFilter::Debug)
                 .init();
+            // Now that the logger is initialized, route panics through it.
+            crate::utils::install_panic_hook();
         });
         crate::i18n::init_i18n();
     }

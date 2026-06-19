@@ -1,9 +1,9 @@
 import { tid } from '../selectors';
+import { SYNC_TIMEOUT } from '../timeouts';
+import { Lightbox } from './lightbox';
 
-/** Driver for a chat's rendered message list — the messages themselves plus the
- * scroll-to-bottom button and unread affordances around them. Constructed with
- * the page-specific messages and unread-divider testids; both direct and group
- * chats use it. */
+// Driver for a chat's rendered message list — the messages themselves plus the
+// scroll-to-bottom button and unread affordances around them.
 export class Messages {
 	constructor(
 		private agent: WebdriverIO.Browser,
@@ -22,6 +22,8 @@ export class Messages {
 	readonly unreadDivider;
 	scrollBottom = this.agent.$(tid('chat-scroll-bottom'));
 	unreadBadge = this.agent.$(tid('chat-unread-badge'));
+	/** The photo viewer opened by clicking a photo in this message list. */
+	lightbox = new Lightbox(this.agent);
 
 	async unreadBadgeText(): Promise<string | null> {
 		if (!(await this.unreadBadge.isExisting())) return null;
@@ -29,7 +31,7 @@ export class Messages {
 		return text === '' ? null : text;
 	}
 
-	async waitForMessage(text: string, timeout = 25_000) {
+	async waitForMessage(text: string, timeout = SYNC_TIMEOUT) {
 		await this.agent.waitUntil(
 			async () =>
 				this.agent.execute(
@@ -46,7 +48,10 @@ export class Messages {
 	 * `label` appears. The label is the one passed to `attachPhotos`, so a
 	 * specific send can be matched without colliding with identical-looking
 	 * photos from earlier tests. */
-	async waitForPhotoMessage(label: string, timeout = 25_000): Promise<void> {
+	async waitForPhotoMessage(
+		label: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>
 				this.agent.execute(
@@ -71,7 +76,10 @@ export class Messages {
 	}
 
 	/** Wait until a file attachment with the given filename appears. */
-	async waitForFileMessage(name: string, timeout = 25_000): Promise<void> {
+	async waitForFileMessage(
+		name: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>
 				this.agent.execute(
@@ -88,9 +96,9 @@ export class Messages {
 		);
 	}
 
-	/** First clickable photo cell of the first photo message in the list. */
-	photoCellButton() {
-		return this.root.$(`${tid('message-attachment-photos')} button`);
+	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
+	photoCellButton(index: number) {
+		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
 	}
 
 	/** True if the unread divider precedes (in DOM order) the message wrapper containing `text`. */

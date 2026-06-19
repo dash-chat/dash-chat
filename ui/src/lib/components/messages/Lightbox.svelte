@@ -9,8 +9,10 @@
 		mdiTrayArrowDown,
 	} from '@mdi/js';
 	import type { Photo } from 'dash-chat-stores';
-	import { mediaSrc } from '$lib/types/media';
-	import { saveAttachment } from '$lib/utils/save-file';
+	import { objectUrl } from '$lib/actions/object-url';
+	import { savePhoto } from '$lib/utils/media';
+	import { showToast } from '$lib/utils/toasts';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
 	interface Props {
@@ -35,7 +37,6 @@
 
 	let rootEl: HTMLElement | undefined = $state();
 	let stageEl: HTMLElement | undefined = $state();
-	let closeButton: HTMLButtonElement | undefined = $state();
 
 	let zoomed = $state(false);
 	let originX = $state(50);
@@ -45,6 +46,15 @@
 		index = Math.max(0, Math.min(photos.length - 1, i));
 	}
 
+	async function handleSave() {
+		try {
+			if (await savePhoto(photo)) showToast(m.mediaSaved());
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error(e);
+		}
+	}
+
 	// Reset zoom when switching photos.
 	$effect(() => {
 		void index;
@@ -52,7 +62,9 @@
 	});
 
 	$effect(() => {
-		closeButton?.focus();
+		rootEl
+			?.querySelector<HTMLButtonElement>('[data-testid="lightbox-close"]')
+			?.focus();
 	});
 
 	function updateOrigin(event: MouseEvent) {
@@ -117,7 +129,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="fixed inset-0 z-30 flex flex-col bg-black"
+	class="fixed inset-0 z-30 flex flex-col bg-black text-white"
 	role="dialog"
 	aria-modal="true"
 	aria-label={photo.name}
@@ -125,7 +137,7 @@
 	data-testid="lightbox"
 >
 	<div
-		class="lightbox-header flex h-[52px] shrink-0 items-center justify-between px-3"
+		class="lightbox-header flex shrink-0 items-center justify-between px-3"
 		class:faded={zoomed}
 	>
 		<div class="flex min-w-0 flex-col">
@@ -136,25 +148,20 @@
 			<MessageTimestamp {timestamp} class="lightbox-time" />
 		</div>
 		<div class="flex items-center gap-2">
-			<button
-				type="button"
-				class="lightbox-button"
-				data-testid="lightbox-save"
-				aria-label={m.saveFile()}
-				onclick={() => saveAttachment(photo)}
-			>
-				<wa-icon src={wrapPathInSvg(mdiTrayArrowDown)}></wa-icon>
-			</button>
-			<button
-				type="button"
-				class="lightbox-button"
-				data-testid="lightbox-close"
-				aria-label={m.closeLightbox()}
-				bind:this={closeButton}
-				onclick={onClose}
-			>
-				<wa-icon src={wrapPathInSvg(mdiClose)}></wa-icon>
-			</button>
+			<IconButton
+				icon={mdiTrayArrowDown}
+				onClick={handleSave}
+				label={m.saveFile()}
+				testid="lightbox-save"
+				class="!p-2 opacity-85 hover:opacity-100"
+			/>
+			<IconButton
+				icon={mdiClose}
+				onClick={onClose}
+				label={m.closeLightbox()}
+				testid="lightbox-close"
+				class="!p-2 opacity-85 hover:opacity-100"
+			/>
 		</div>
 	</div>
 
@@ -171,44 +178,44 @@
 			class="lightbox-image max-h-full max-w-full object-contain"
 			class:zoomed
 			style="transform-origin: {originX}% {originY}%"
-			src={photoUrls[index]}
+			use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
 			alt={photo.name}
 			data-testid="lightbox-image"
 		/>
 	</button>
 
+	<!-- Physical left/right positioning: photo navigation keeps reading order
+	     even in RTL, matching platform image-viewer conventions. -->
 	{#if index > 0}
-		<button
-			type="button"
-			class="lightbox-button lightbox-nav lightbox-prev"
-			class:faded={zoomed}
-			data-testid="lightbox-prev"
-			aria-label={m.previousPhoto()}
-			onclick={() => select(index - 1)}
-		>
-			<wa-icon src={wrapPathInSvg(mdiChevronLeft)}></wa-icon>
-		</button>
+		<IconButton
+			icon={mdiChevronLeft}
+			onClick={() => select(index - 1)}
+			label={m.previousPhoto()}
+			testid="lightbox-prev"
+			class="absolute top-1/2 left-3 -translate-y-1/2 !bg-white/10 !p-2 opacity-85 hover:!bg-white/20 hover:opacity-100 {zoomed
+				? '!opacity-0 pointer-events-none'
+				: ''}"
+		/>
 	{/if}
 	{#if index < photos.length - 1}
-		<button
-			type="button"
-			class="lightbox-button lightbox-nav lightbox-next"
-			class:faded={zoomed}
-			data-testid="lightbox-next"
-			aria-label={m.nextPhoto()}
-			onclick={() => select(index + 1)}
-		>
-			<wa-icon src={wrapPathInSvg(mdiChevronRight)}></wa-icon>
-		</button>
+		<IconButton
+			icon={mdiChevronRight}
+			onClick={() => select(index + 1)}
+			label={m.nextPhoto()}
+			testid="lightbox-next"
+			class="absolute top-1/2 right-3 -translate-y-1/2 !bg-white/10 !p-2 opacity-85 hover:!bg-white/20 hover:opacity-100 {zoomed
+				? '!opacity-0 pointer-events-none'
+				: ''}"
+		/>
 	{/if}
 
 	{#if photos.length > 1}
 		<div
-			class="lightbox-filmstrip flex shrink-0 justify-center gap-2 overflow-x-auto px-3 py-2.5"
+			class="lightbox-filmstrip flex shrink-0 justify-center gap-2 overflow-x-auto px-3 pt-2.5"
 			class:faded={zoomed}
 			data-testid="lightbox-filmstrip"
 		>
-			{#each photos as p, i (photoUrls[i])}
+			{#each photos as p, i (i)}
 				<button
 					type="button"
 					class="lightbox-thumb h-11 w-11 shrink-0 overflow-hidden p-0"
@@ -218,7 +225,7 @@
 					onclick={() => select(i)}
 				>
 					<img
-						src={photoUrls[i]}
+						use:objectUrl={{ data: p.data, mimeType: p.mime_type }}
 						alt={p.name}
 						class="block h-full w-full object-cover"
 					/>
@@ -230,33 +237,14 @@
 
 <style>
 	.lightbox-header {
+		height: calc(52px + env(safe-area-inset-top, 0px));
+		padding-top: env(safe-area-inset-top, 0px);
 		transition: opacity 0.15s ease;
 	}
 
 	.lightbox-header :global(.lightbox-time) {
 		color: #b8b8b8;
 		font-size: 11px;
-	}
-
-	.lightbox-button {
-		border: none;
-		background: transparent;
-		color: white;
-		cursor: pointer;
-		padding: 6px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 6px;
-		opacity: 0.85;
-		transition: opacity 0.15s ease;
-	}
-	.lightbox-button:hover {
-		opacity: 1;
-	}
-	.lightbox-button :global(wa-icon) {
-		width: 24px;
-		height: 24px;
 	}
 
 	.lightbox-image {
@@ -270,27 +258,8 @@
 		cursor: zoom-in;
 	}
 
-	/* Physical positioning: photo navigation keeps reading order even in
-	 * RTL, matching platform image-viewer conventions. */
-	.lightbox-nav {
-		position: absolute;
-		top: 50%;
-		transform: translateY(-50%);
-		background: rgba(255, 255, 255, 0.12);
-		border-radius: 50%;
-		padding: 8px;
-	}
-	.lightbox-nav:hover {
-		background: rgba(255, 255, 255, 0.22);
-	}
-	.lightbox-prev {
-		left: 12px;
-	}
-	.lightbox-next {
-		right: 12px;
-	}
-
 	.lightbox-filmstrip {
+		padding-bottom: calc(0.625rem + env(safe-area-inset-bottom, 0px));
 		transition: opacity 0.15s ease;
 	}
 

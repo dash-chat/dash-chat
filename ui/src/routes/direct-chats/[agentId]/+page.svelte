@@ -160,11 +160,6 @@
 		$state();
 	let parentDivEl: HTMLDivElement | null = $state(null);
 
-	function onMessageSent() {
-		capturedUnreadHash = null;
-		unreadDividerCaptured = false;
-	}
-
 	// Scroll the message we just sent into view once its bubble mounts.
 	let justSentMessageHash: Hash | null = $state(null);
 	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
@@ -173,6 +168,12 @@
 			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		}
 	};
+
+	function onMessageSent(messageHash: Hash) {
+		justSentMessageHash = messageHash;
+		capturedUnreadHash = null;
+		unreadDividerCaptured = false;
+	}
 
 	onMount(() => {
 		if (page.url.searchParams.has('search')) {

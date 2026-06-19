@@ -1,18 +1,17 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { Sheet, Block, useTheme } from 'konsta/svelte';
-	import { onDestroy } from 'svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import {
 		type DraftMedia,
-		revokeDraft,
+		type IngestError,
 		draftToMedia,
+		ingestFiles,
 		AttachmentTooLargeError,
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
-	} from '$lib/types/media';
-	import type { MessagesStore } from 'dash-chat-stores';
-	import { stageFiles } from '$lib/utils/stage-files';
+	} from '$lib/utils/media';
+	import type { Hash, MessagesStore } from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
@@ -30,7 +29,7 @@
 		/** The direct- or group-chat store the composer persists messages to. */
 		store: MessagesStore;
 		/** Called after a message is successfully sent (e.g. to scroll the chat). */
-		onSent?: () => void;
+		onSent?: (messageHash: Hash) => void;
 	}
 
 	let {
@@ -49,26 +48,21 @@
 	let showMediaPanel = $state(false);
 	let showMediaMenu = $state(false);
 
-	function triggerSend() {
-		if (!hasContent) return;
-		void send();
-		messageInput?.reset();
-	}
-
 	async function send() {
+		if (!hasContent) return;
 		const message = value;
 		const draft = media;
 		try {
 			const wireMedia = draft ? await draftToMedia(draft) : null;
-			await store.sendMessage({ message, media: wireMedia });
+			const hash = await store.sendMessage({ message, media: wireMedia });
 			// Only clear what this send actually consumed: the user may have
 			// typed or staged new attachments while the send was confirming.
 			if (value === message) value = '';
 			if (media === draft) {
 				media = undefined;
-				if (draft) revokeDraft(draft);
 			}
-			onSent?.();
+			messageInput?.reset();
+			onSent?.(hash);
 		} catch (e) {
 			if (e instanceof AttachmentTooLargeError) {
 				showToast(
@@ -84,25 +78,32 @@
 		}
 	}
 
+	const ingestErrorMessages: Record<IngestError, () => string> = {
+		tooMany: () => m.errorTooManyAttachments(),
+		filesWithPhotos: () => m.errorFilesWithPhotos(),
+		oneFileAtATime: () => m.errorOneFileAtATime(),
+	};
+
+	/** Add files to the draft, toasting if a Signal mixing rule was violated. */
+	function stage(files: FileList | File[]) {
+		const result = ingestFiles(media, Array.from(files));
+		if (result.error) showToast(ingestErrorMessages[result.error](), 'error');
+		media = result.media;
+	}
+
 	function onPaste(event: ClipboardEvent) {
 		const files = event.clipboardData?.files;
 		if (!files || files.length === 0) return;
 		event.preventDefault();
-		media = stageFiles(media, files);
+		stage(files);
 	}
-
-	// Free staged-attachment object URLs when leaving the chat without
-	// sending; nothing else revokes them.
-	onDestroy(() => {
-		if (media) revokeDraft(media);
-	});
 </script>
 
-<MediaDropOverlay onFiles={files => (media = stageFiles(media, files))} />
+<MediaDropOverlay onFiles={stage} />
 
 <div style="display: flow-root" use:keepKeyboardOpen>
-	<div class="message-input-bar" class:pb-safe={!(isMobile && showMediaPanel)}>
-		<StagedAttachments bind:media />
+	<div class="message-input-bar" class:pb-safe={!showMediaPanel}>
+		<StagedAttachments bind:media onFiles={stage} />
 
 		<div class="m-2 row gap-2" style="align-items: center;">
 			{#if isMobile}
@@ -129,22 +130,19 @@
 					bind:this={messageInput}
 					bind:value
 					{placeholder}
-					onSend={triggerSend}
+					onSend={send}
 					onEmojiClick={() => (showEmojiPicker = true)}
 				/>
 			</div>
 
 			{#if isMobile}
-				<SendButton disabled={!hasContent} onClick={triggerSend} />
+				<SendButton disabled={!hasContent} onClick={send} />
 			{/if}
 		</div>
 	</div>
 
 	{#if isMobile}
-		<MediaPanel
-			bind:opened={showMediaPanel}
-			onFiles={files => (media = stageFiles(media, files))}
-		/>
+		<MediaPanel bind:opened={showMediaPanel} onFiles={stage} />
 	{/if}
 </div>
 
@@ -152,7 +150,7 @@
 	<MediaMenu
 		bind:opened={showMediaMenu}
 		target="[data-testid='message-input-attach']"
-		onFiles={files => (media = stageFiles(media, files))}
+		onFiles={stage}
 	/>
 {/if}
 
@@ -182,6 +180,6 @@
 	}
 
 	.input-container:focus-within {
-		border-color: var(--k-theme-color, #3b82f6);
+		border-color: var(--color-brand-primary);
 	}
 </style>

@@ -17,8 +17,8 @@ export class MockDirectChatClient implements IDirectChatClient {
 		chatId: ChatId,
 		message: string,
 		_media: OutgoingMedia | null,
-	): Promise<void> {
-		await this.logsClient.create(chatId, {
+	): Promise<Hash> {
+		return this.logsClient.create(chatId, {
 			type: 'Chat',
 			payload: {
 				type: 'Message',
