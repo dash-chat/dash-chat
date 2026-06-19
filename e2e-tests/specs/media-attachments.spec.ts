@@ -155,12 +155,17 @@ describe('Media attachments', () => {
 		await agent2.directChatPage.messages.waitForPhotoMessage('retry-blob');
 
 		// Read the exact alt off the rendered img so forceBlobError matches precisely.
-		const exactAlt = await agent2.execute((photosSel: string) => {
-			const img = document.querySelector(
-				`${photosSel} img`,
-			) as HTMLImageElement | null;
-			return img?.alt ?? null;
-		}, tid('message-attachment-photos'));
+		const exactAlt = await agent2.execute(
+			(photosSel: string, label: string) => {
+				const imgs = Array.from(
+					document.querySelectorAll(`${photosSel} img`),
+				) as HTMLImageElement[];
+				const img = imgs.find(el => el.alt.includes(label));
+				return img?.alt ?? null;
+			},
+			tid('message-attachment-photos'),
+			'retry-blob',
+		);
 		if (!exactAlt) throw new Error('Could not read alt from blob-image img');
 
 		await agent2.execute((alt: string) => {
@@ -170,7 +175,6 @@ describe('Media attachments', () => {
 		const retry = agent2.$(tid('blob-image-retry'));
 		await retry.waitForDisplayed();
 
-		// The blob is present locally so retry loads the image again.
 		await retry.click();
 		await agent2.directChatPage.messages.waitForPhotoMessage('retry-blob');
 	});
