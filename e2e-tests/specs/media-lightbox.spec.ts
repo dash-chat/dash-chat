@@ -47,37 +47,23 @@ describe('Photo lightbox', () => {
 		await agent1.directChatPage.messages.photoCellButton(0).click();
 		await agent1.directChatPage.messages.lightbox.root.waitForExist();
 
-		const first = await agent1.directChatPage.messages.lightbox.imageSrc();
-		await agent1.directChatPage.messages.lightbox.next.click();
-		await agent1.waitUntil(
-			async () =>
-				(await agent1.directChatPage.messages.lightbox.imageSrc()) !== first,
-		);
+		const lb = agent1.directChatPage.messages.lightbox;
+		await agent1.waitUntil(async () => (await lb.activeIndex()) === 0);
 
-		const second = await agent1.directChatPage.messages.lightbox.imageSrc();
-		await agent1.directChatPage.messages.lightbox.pressKey('ArrowRight');
-		await agent1.waitUntil(
-			async () =>
-				(await agent1.directChatPage.messages.lightbox.imageSrc()) !== second,
-		);
+		await lb.next.click();
+		await agent1.waitUntil(async () => (await lb.activeIndex()) === 1);
+
+		await lb.pressKey('ArrowRight');
+		await agent1.waitUntil(async () => (await lb.activeIndex()) === 2);
 
 		// At the last photo the next button disappears.
-		await agent1.waitUntil(
-			async () =>
-				!(await agent1.directChatPage.messages.lightbox.next.isExisting()),
-		);
+		await agent1.waitUntil(async () => !(await lb.next.isExisting()));
 
-		await agent1.directChatPage.messages.lightbox.pressKey('ArrowLeft');
-		await agent1.waitUntil(
-			async () =>
-				(await agent1.directChatPage.messages.lightbox.imageSrc()) === second,
-		);
+		await lb.pressKey('ArrowLeft');
+		await agent1.waitUntil(async () => (await lb.activeIndex()) === 1);
 
-		await agent1.directChatPage.messages.lightbox.thumb(0).click();
-		await agent1.waitUntil(
-			async () =>
-				(await agent1.directChatPage.messages.lightbox.imageSrc()) === first,
-		);
+		await lb.thumb(0).click();
+		await agent1.waitUntil(async () => (await lb.activeIndex()) === 0);
 
 		await agent1.directChatPage.messages.lightbox.pressKey('Escape');
 		await agent1.waitUntil(
