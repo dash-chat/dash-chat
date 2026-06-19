@@ -13,6 +13,7 @@ export class DirectChatPage extends TestPage {
 	back = this.agent.$(tid('direct-chat-back'));
 	searchBack = this.agent.$(tid('direct-chat-search-back'));
 	searchInput = this.agent.$(tid('direct-chat-search-input'));
+	searchResultsCount = this.agent.$(tid('search-results-count'));
 	settingsLink = this.agent.$(tid('direct-chat-settings-link'));
 	peerName = this.agent.$(tid('direct-chat-peer-name'));
 	peerHeader = this.agent.$(tid('direct-chat-peer-header'));

@@ -49,10 +49,12 @@
 </script>
 
 <span class="whitespace-pre-wrap"
-	>{#if searchQuery}{@html highlightMatch(
-			shown,
-			searchQuery,
-		)}{:else}{shown}{/if}{#if truncated}{'… '}<button
+	><span data-message-text
+		>{#if searchQuery}{@html highlightMatch(
+				shown,
+				searchQuery,
+			)}{:else}{shown}{/if}</span
+	>{#if truncated}{'… '}<button
 			type="button"
 			class="read-more"
 			data-testid="message-read-more"

@@ -59,5 +59,17 @@ describe('Full messaging flow', () => {
 		await agent1.directChatPage.searchFor('HIDDEN_NEEDLE');
 
 		await agent1.directChatPage.messages.waitForMessage('HIDDEN_NEEDLE');
+		await expect(agent1.directChatPage.searchResultsCount).not.toHaveText(
+			await agent1.tr('noResults'),
+		);
+	});
+
+	it('does not match the Read more button label', async () => {
+		// A truncated message renders a "Read more" button; searching for its
+		// label must not produce a false match from the UI chrome.
+		await agent1.directChatPage.searchFor(await agent1.tr('readMore'));
+		await expect(agent1.directChatPage.searchResultsCount).toHaveText(
+			await agent1.tr('noResults'),
+		);
 	});
 });
