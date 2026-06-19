@@ -1,4 +1,4 @@
-import type { Hash, ReadMessagesStore } from 'dash-chat-stores';
+import type { Hash, MessagesStore } from 'dash-chat-stores';
 import type { Action } from 'svelte/action';
 
 interface TrackReadMessagesOptions {
@@ -12,7 +12,7 @@ export interface ReadMessagesTracker {
 }
 
 export function createReadMessagesTracker(
-	store: ReadMessagesStore,
+	store: MessagesStore,
 	options: TrackReadMessagesOptions = {},
 ): ReadMessagesTracker {
 	const { debounceMs = 500, threshold = 0.5 } = options;

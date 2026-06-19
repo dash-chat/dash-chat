@@ -65,7 +65,7 @@ describe('Offline UX', () => {
 	describe('cloud mailbox online', () => {
 		it('sends a message, peer receives it, sender shows the cloud check, and the navbar chip stays hidden', async () => {
 			await agent1.directChatPage.sendMessage('online hello');
-			await agent2.directChatPage.waitForMessage('online hello');
+			await agent2.directChatPage.messages.waitForMessage('online hello');
 
 			await agent1.waitUntil(
 				async () =>
@@ -182,7 +182,7 @@ describe('Offline UX', () => {
 					(await agent1.directChatPage.lastMessageStatus()) === 'cloud',
 				{ timeout: 30_000 },
 			);
-			await agent2.directChatPage.waitForMessage('offline hello');
+			await agent2.directChatPage.messages.waitForMessage('offline hello');
 		});
 	});
 });

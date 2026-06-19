@@ -19,10 +19,10 @@ export class HomePage extends TestPage {
 	emptyState = this.agent.$(tid('all-chats-empty'));
 
 	async ready() {
-		await Promise.race([
-			this.chatList.waitForExist(),
-			this.emptyState.waitForExist(),
-		]);
+		await this.agent.waitUntil(() => this.isLoaded(), {
+			timeout: 30_000,
+			timeoutMsg: 'Home chat list (or empty state) did not render',
+		});
 	}
 
 	async isLoaded(): Promise<boolean> {

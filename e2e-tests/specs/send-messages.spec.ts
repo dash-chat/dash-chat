@@ -23,13 +23,13 @@ describe('Full messaging flow', () => {
 
 	it('sends a message from Alice to Bob', async () => {
 		await agent1.directChatPage.sendMessage('Hello from Alice!');
-		await agent1.directChatPage.waitForMessage('Hello from Alice!');
-		await agent2.directChatPage.waitForMessage('Hello from Alice!');
+		await agent1.directChatPage.messages.waitForMessage('Hello from Alice!');
+		await agent2.directChatPage.messages.waitForMessage('Hello from Alice!');
 	});
 
 	it('sends a reply from Bob to Alice', async () => {
 		await agent2.directChatPage.sendMessage('Hello from Bob!');
-		await agent2.directChatPage.waitForMessage('Hello from Bob!');
-		await agent1.directChatPage.waitForMessage('Hello from Bob!');
+		await agent2.directChatPage.messages.waitForMessage('Hello from Bob!');
+		await agent1.directChatPage.messages.waitForMessage('Hello from Bob!');
 	});
 });

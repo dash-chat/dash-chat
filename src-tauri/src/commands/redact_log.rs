@@ -34,6 +34,14 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // ChatMessageContentV1 { message: "...", media: ... }. Use \b so we
         // don't match substrings inside identifiers.
         r#"\bmessage:\s*"[^"]*""#,
+        // Media attachment byte arrays in Debug (`data: [1, 2, ...]`) and
+        // JSON (`"data":[1,2,...]`) form, inside Photo/FileAttachment.
+        // Strips the bytes so attachment content never leaves the device in
+        // a log report. Attachment filenames need no patterns of their own:
+        // the Debug `name:` and JSON "name" patterns above already cover
+        // them.
+        r#"\bdata:\s*\[[\d,\s]*\]"#,
+        r#""data"\s*:\s*\[[\d,\s]*\]"#,
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
         // JSON format: "name":"...", "surname":"...", "about":"...", "description":"..."
@@ -308,12 +316,55 @@ mod tests {
     }
 
     #[test]
+    fn redacts_chat_message_media_photo() {
+        let input = r#"ChatMessageContentV1 { message: "caption", media: Some(Photos { photos: [Photo { data: [137, 80, 78, 71, 13, 10, 26, 10], name: "private.jpg", mime_type: "image/jpeg" }] }) }"#;
+        let result = redact(input);
+        assert!(!result.contains("caption"), "caption leaked: {result}");
+        assert!(
+            !result.contains("137, 80, 78"),
+            "photo bytes leaked: {result}"
+        );
+        assert!(
+            !result.contains("private.jpg"),
+            "photo filename leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_chat_message_media_file() {
+        let input = r#"ChatMessageContentV1 { message: "", media: Some(File { file: FileAttachment { data: [1, 2, 3, 4, 5], name: "secrets.pdf", mime_type: "application/pdf" } }) }"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("1, 2, 3, 4, 5"),
+            "file bytes leaked: {result}"
+        );
+        assert!(
+            !result.contains("secrets.pdf"),
+            "file name leaked: {result}"
+        );
+    }
+
+    #[test]
     fn redacts_chat_message_json() {
         let input = r#""content":"secret message here""#;
         let result = redact(input);
         assert!(
             !result.contains("secret message"),
             "message not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_media_bytes_json() {
+        let input = r#"{"photos":[{"data":[137, 80, 78, 71],"name":"private.jpg","mime_type":"image/jpeg"}]}"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("137, 80, 78, 71"),
+            "photo bytes leaked: {result}"
+        );
+        assert!(
+            !result.contains("private.jpg"),
+            "photo name leaked: {result}"
         );
     }
 

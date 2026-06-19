@@ -12,10 +12,11 @@ import {
 	ChatSummaryLastEvent,
 	GroupControlEvent,
 	GroupInfo,
+	Media,
 	MessageContent,
+	MessagesStore,
 	Payload,
-	ReadMessagesStore,
-	getMessageText,
+	getMessageMedia,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IGroupChatClient } from './group-chat-client';
@@ -32,7 +33,7 @@ export interface GroupMemberWithProfile {
 	member: boolean;
 }
 
-export class GroupChatStore implements ReadMessagesStore {
+export class GroupChatStore implements MessagesStore {
 	private membersVersion = signal(0);
 
 	constructor(
@@ -91,7 +92,10 @@ export class GroupChatStore implements ReadMessagesStore {
 					if (body.payload.type === 'Message') {
 						messages[operation.hash] = {
 							hash: operation.hash,
-							content: getMessageText(body.payload.payload),
+							content: {
+								message: body.payload.payload.message,
+								media: getMessageMedia(body.payload.payload),
+							},
 							author,
 							seqNum: operation.header.seq_num,
 							timestamp: operation.header.timestamp,
@@ -226,7 +230,7 @@ export class GroupChatStore implements ReadMessagesStore {
 		const messageEvent: ChatSummaryLastEvent | undefined = lastMessage
 			? {
 					kind: 'message',
-					text: lastMessage.content,
+					content: lastMessage.content,
 					authorName: await this.nameForDevice(lastMessage.author),
 					timestamp: lastMessage.timestamp,
 				}
@@ -361,8 +365,16 @@ export class GroupChatStore implements ReadMessagesStore {
 		await this.client.markMessagesRead(this.chatId, messageHashes);
 	}
 
-	async sendMessage(text: string) {
-		const content: MessageContent = { v: '1', message: text, media: null };
+	async sendMessage(input: {
+		message: string;
+		media: Media | null;
+	}): Promise<Hash> {
+		const content: MessageContent = {
+			v: '1',
+			message: input.message,
+			media: input.media,
+		};
+
 		const hash = await this.client.sendMessage(this.chatId, content);
 		return hash;
 	}

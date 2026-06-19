@@ -5,15 +5,10 @@ set working-directory := '..'
 # macOS builds because apple-sys/bindgen picks it up and targets iPhone.
 export IPHONEOS_DEPLOYMENT_TARGET := "14.0"
 
-# run the app in development mode, pointing the app at UI_PORT if it is set
+# run the app in development mode. --host makes Tauri set TAURI_DEV_HOST and
+# serve the dev URL on the LAN IP so a physical device can reach Vite + HMR.
 dev:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ -n "${UI_PORT:-}" ]; then
-        pnpm tauri ios dev --host --config "{\"build\":{\"devUrl\":\"http://localhost:$UI_PORT\"}}"
-    else
-        pnpm tauri ios dev --host
-    fi
+    pnpm tauri ios dev --host
 
 # run the app in an iPhone simulator
 dev-sim device="iPhone 16":

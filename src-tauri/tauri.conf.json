@@ -21,6 +21,8 @@
 		"security": {
 			"capabilities": [
 				"mobile-capability",
+				"android-capability",
+				"ios-capability",
 				"main-capability",
 				"desktop-capability"
 			]
@@ -52,7 +54,14 @@
 			]
 		},
 		"deep-link": {
-			"mobile": [{ "scheme": ["dash-chat"] }],
+			"mobile": [
+        {
+          "scheme": ["https"],
+          "host": "dashchat.org",
+          "pathPrefix": ["/add-contact"],
+          "appLink": true
+        }
+      ],
 			"desktop": {
 				"schemes": ["dash-chat"]
 			}

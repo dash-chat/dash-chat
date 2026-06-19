@@ -182,6 +182,9 @@ importers:
       '@choochmeque/tauri-plugin-sharekit-api':
         specifier: ^0.3.0
         version: 0.3.0
+      '@gbyte/tauri-plugin-ios-photos':
+        specifier: ^0.3.0
+        version: 0.3.0
       '@mdi/js':
         specifier: ^7.4.47
         version: 7.4.47
@@ -227,6 +230,9 @@ importers:
       emoji-picker-element:
         specifier: ^1.29.0
         version: 1.29.0
+      image-blob-reduce:
+        specifier: ^5.0.0
+        version: 5.0.0
       jsqr:
         specifier: ^1.4.0
         version: 1.4.0
@@ -242,6 +248,12 @@ importers:
       tailwindcss:
         specifier: ^4.1.18
         version: 4.1.18
+      tauri-plugin-android-fs-api:
+        specifier: ^28.2.1
+        version: 28.2.1
+      tauri-plugin-view-api:
+        specifier: ^0.0.5
+        version: 0.0.5
       vite-plugin-babel:
         specifier: ^1.3.2
         version: 1.3.2(@babel/core@7.28.5)(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
@@ -264,9 +276,6 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.1.18
         version: 4.1.18(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
-      local-ip-address:
-        specifier: ^1.0.1
-        version: 1.0.1
       svelte:
         specifier: ^5.49.2
         version: 5.49.2
@@ -1034,6 +1043,9 @@ packages:
 
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
+
+  '@gbyte/tauri-plugin-ios-photos@0.3.0':
+    resolution: {integrity: sha512-q5kvL1z4XrAhoQxUDRnhVoZDmejfwX9F2vsTbD6Y2p9IroNDRFKMo95H/eAJsHEag+vs6iCqI/P5haS6KIfqSA==}
 
   '@holo-host/identicon@0.1.0':
     resolution: {integrity: sha512-Dn5pTV/m3XaK1Zvq3liw/vQUt7goM7Y84x2zUyH8cb9CNMs4kPCNHs3kalbJZ/ymzFvwcdiLwwNW8AKk+WWN5A==}
@@ -2351,6 +2363,10 @@ packages:
     engines: {node: '>=12.0.0'}
     hasBin: true
 
+  create-web-stream@1.1.3:
+    resolution: {integrity: sha512-ocdWcsi6F8/8f0L/Fsbt3UmPSB+7H5hXR0aRr7Wiu7TXC1Z8vwlwxpeO4+gMgJ8g4TqwM5oTnSid43Jxm2ArwA==}
+    engines: {node: '>=18.9.0'}
+
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
@@ -2901,6 +2917,9 @@ packages:
   globrex@0.1.2:
     resolution: {integrity: sha512-uHJgbwAMwNFf5mLst7IWLNg14x1CkeqglJb/K3doi4dw6q2IvAAmM/Y81kevy83wP+Sst+nutFTYOGg3d1lsxg==}
 
+  glur@2.0.0:
+    resolution: {integrity: sha512-ZgJCXwuaQo4vnYG+VqtNIYV9kpNC/V/mafp0UcOMiLN/7eQVjCU+RDBLIwWXlmvwYMLFDf0IJrV/4qnM5VinCA==}
+
   gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
@@ -3006,6 +3025,9 @@ packages:
   ignore@7.0.5:
     resolution: {integrity: sha512-Hs59xBNfUIunMFgWAbGX5cq6893IbWg4KnrjbYwX3tx0ztorVgTDA6B2sxf8ejHJ4wz8BqGUMYlnzNBer5NvGg==}
     engines: {node: '>= 4'}
+
+  image-blob-reduce@5.0.0:
+    resolution: {integrity: sha512-z0RNX2f2qKaUO2pLDMEnufN6xiOM2ZGD7/u2ZFwDJ2z5SpV0yIv1KfWMNCZHck3e5hAM+ONKUycYt3wOlXiKyg==}
 
   immediate@3.0.6:
     resolution: {integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==}
@@ -3342,9 +3364,6 @@ packages:
   lit@3.3.1:
     resolution: {integrity: sha512-Ksr/8L3PTapbdXJCk+EJVB78jDodUMaP54gD24W186zGRARvwrsPfS60wae/SSCTCNZVPd1chXqio1qHQmu4NA==}
 
-  local-ip-address@1.0.1:
-    resolution: {integrity: sha512-tpiVS/O9KprlGUtv5ydA4rSyjx6sLLzzGaOZsMT9o2sp67dQbJSwlIyKirPdcAkn60sh5jvIoj42LFQsqyivMQ==}
-
   locate-app@2.5.0:
     resolution: {integrity: sha512-xIqbzPMBYArJRmPGUZD9CzV9wOqmVtQnaAn3wrj3s6WYW0bQvPI7x+sPYUGmDTYMHefVK//zc6HEYZ1qnxIK+Q==}
 
@@ -3514,6 +3533,9 @@ packages:
 
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
+
+  multimath@3.0.0:
+    resolution: {integrity: sha512-U+s5xgbW55w5sbT9PeaJdEuxH5zL7wLwvp0MOJxXS8WhWDYnsTPIF3faeAltxkPNa+dDXmXs6gIiEpcCeE1YCA==}
 
   mute-stream@2.0.0:
     resolution: {integrity: sha512-WWdIxpyjEn+FhQJQQv9aQAYlHoNVdzIzUySNV1gHUPDSdZJ3yZn7pAAbQcV7B56Mvu881q9FZV+0Vx2xC44VWA==}
@@ -3693,6 +3715,9 @@ packages:
 
   periscopic@3.1.0:
     resolution: {integrity: sha512-vKiQ8RRtkl9P+r/+oefh25C3fhybptkHKCZSPlcXiJux2tJF55GnEj3BVn4A5gKfq9NWWXXrxkHBwVPUfH0opw==}
+
+  pica@10.0.1:
+    resolution: {integrity: sha512-JMM/roFvU59XVD+LQjvTPNKlIKii49flilnUOQltO2OKWKliRZ7r2u+2wMVnxgfneZgeKhOVpP+GhihhyYjGUg==}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -4207,6 +4232,12 @@ packages:
 
   tar-stream@3.1.7:
     resolution: {integrity: sha512-qJj60CXt7IU1Ffyc3NJMjh6EkuCFej46zUqJ4J7pqYlThyd9bO0XBTmcOIhSzZJVWfsLks0+nle/j538YAW9RQ==}
+
+  tauri-plugin-android-fs-api@28.2.1:
+    resolution: {integrity: sha512-Pxi0PRVCpaOXzGMSIyk8Zxz3y2aiNz/3tmSDxCERwy4pD6vcUZxe6To/ZfMqELGQSdeHJSRKpGQnDCdXwkUt4Q==}
+
+  tauri-plugin-view-api@0.0.5:
+    resolution: {integrity: sha512-W5Q3eGT1qQSUUkdoZ4nKlr52GhNtfSQA+4jXi/JlwFizhOTAbbMLa2vTGvOVjq8tVzpFmx9qYU7JBeWFXwacxA==}
 
   teex@1.0.1:
     resolution: {integrity: sha512-eYE6iEI62Ni1H8oIa7KlDU6uQBtqr4Eajni3wX7rpfXD8ysFx8z0+dri+KWEPWpBsxXfxu58x/0jvTVT1ekOSg==}
@@ -5352,6 +5383,10 @@ snapshots:
       '@floating-ui/utils': 0.2.10
 
   '@floating-ui/utils@0.2.10': {}
+
+  '@gbyte/tauri-plugin-ios-photos@0.3.0':
+    dependencies:
+      '@tauri-apps/api': 2.10.1
 
   '@holo-host/identicon@0.1.0': {}
 
@@ -6788,6 +6823,8 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
+  create-web-stream@1.1.3: {}
+
   cross-spawn@7.0.6:
     dependencies:
       path-key: 3.1.1
@@ -7424,6 +7461,8 @@ snapshots:
 
   globrex@0.1.2: {}
 
+  glur@2.0.0: {}
+
   gopd@1.2.0: {}
 
   graceful-fs@4.2.11: {}
@@ -7535,6 +7574,10 @@ snapshots:
   ignore@5.3.2: {}
 
   ignore@7.0.5: {}
+
+  image-blob-reduce@5.0.0:
+    dependencies:
+      pica: 10.0.1
 
   immediate@3.0.6: {}
 
@@ -7827,8 +7870,6 @@ snapshots:
       lit-element: 4.2.1
       lit-html: 3.3.1
 
-  local-ip-address@1.0.1: {}
-
   locate-app@2.5.0:
     dependencies:
       '@promptbook/utils': 0.69.5
@@ -7997,6 +8038,10 @@ snapshots:
   mrmime@2.0.1: {}
 
   ms@2.1.3: {}
+
+  multimath@3.0.0:
+    dependencies:
+      glur: 2.0.0
 
   mute-stream@2.0.0: {}
 
@@ -8176,6 +8221,11 @@ snapshots:
       '@types/estree': 1.0.8
       estree-walker: 3.0.3
       is-reference: 3.0.3
+
+  pica@10.0.1:
+    dependencies:
+      glur: 2.0.0
+      multimath: 3.0.0
 
   picocolors@1.1.1: {}
 
@@ -8750,6 +8800,15 @@ snapshots:
     transitivePeerDependencies:
       - bare-abort-controller
       - react-native-b4a
+
+  tauri-plugin-android-fs-api@28.2.1:
+    dependencies:
+      '@tauri-apps/api': 2.10.1
+      create-web-stream: 1.1.3
+
+  tauri-plugin-view-api@0.0.5:
+    dependencies:
+      '@tauri-apps/api': 2.10.1
 
   teex@1.0.1:
     dependencies:
