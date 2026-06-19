@@ -35,8 +35,7 @@ use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, FileAttachment, MediaAttachment, MediaMetaCollection, MediaMetaItem,
-    MediaMetaKind,
+    DirectChatId, FileAttachment, MediaAttachment, MediaCollection, MediaMetaKind, MediaMetadata,
 };
 
 pub use app_processing::Notification;
@@ -1119,14 +1118,14 @@ impl Node {
         Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 
-    pub async fn store_media(&self, media: MediaAttachment) -> anyhow::Result<MediaMetaCollection> {
+    pub async fn store_media(&self, media: MediaAttachment) -> anyhow::Result<MediaCollection> {
         let mut items = vec![];
         match media {
             MediaAttachment::Photos { photos } => {
                 for photo in photos {
                     let size = photo.data.len();
                     let tag = self.blob_sync.blobs.add_bytes(photo.data).await?;
-                    items.push(MediaMetaItem {
+                    items.push(MediaMetadata {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
@@ -1138,7 +1137,7 @@ impl Node {
             MediaAttachment::File { file } => {
                 let size = file.data.len();
                 let tag = self.blob_sync.blobs.add_bytes(file.data).await?;
-                items.push(MediaMetaItem {
+                items.push(MediaMetadata {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
@@ -1147,7 +1146,7 @@ impl Node {
                 });
             }
         }
-        Ok(MediaMetaCollection::from(items))
+        Ok(MediaCollection::from(items))
     }
 
     /// Load the raw bytes of a single blob by its hash from the local blob store.
@@ -1159,7 +1158,7 @@ impl Node {
         Ok(data.to_vec())
     }
 
-    pub async fn load_media(&self, meta: Vec<MediaMetaItem>) -> anyhow::Result<MediaAttachment> {
+    pub async fn load_media(&self, meta: Vec<MediaMetadata>) -> anyhow::Result<MediaAttachment> {
         let mut items = vec![];
         for item in meta {
             let data = self
@@ -1195,7 +1194,7 @@ impl Node {
         } else {
             let photos = photos
                 .into_iter()
-                .map(|(item, data)| crate::chat::Photo {
+                .map(|(item, data)| crate::chat::PhotoAttachment {
                     data: data.to_vec(),
                     name: item.name,
                     mime_type: item.mime_type,

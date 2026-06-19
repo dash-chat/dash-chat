@@ -23,13 +23,13 @@ pub enum ChatMessageContentV {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ChatMessageContentV1 {
     pub message: String,
-    pub media: Option<MediaMetaCollection>,
+    pub media: Option<MediaCollection>,
 }
 
 /// A photo attachment. `data` is the raw bytes of the encoded image (JPEG,
 /// PNG, etc.), not base64. `mime_type` identifies the encoding.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct Photo {
+pub struct PhotoAttachment {
     pub data: Vec<u8>,
     pub name: String,
     pub mime_type: String,
@@ -45,19 +45,25 @@ pub struct FileAttachment {
 
 /// Media attached to a chat message. A message has either a set of photos
 /// or a single file — not both — matching Signal's UX.
+///
+/// This type only applies to outgoing messages.
+/// Once a message with media is sent, it is stored in the local blob store
+/// and the message content contains hashes of the media blobs, rather than the raw bytes.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum MediaAttachment {
     #[serde(rename = "photos")]
-    Photos { photos: Vec<Photo> },
+    Photos { photos: Vec<PhotoAttachment> },
     #[serde(rename = "file")]
     File { file: FileAttachment },
 }
 
-pub type MediaMetaCollection = Vec<MediaMetaItem>;
+/// The collection of media metadata appearing in a single message.
+pub type MediaCollection = Vec<MediaMetadata>;
 
+/// The metadata to refer to a media blob, which appears in the message content.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From)]
-pub struct MediaMetaItem {
+pub struct MediaMetadata {
     pub name: String,
     pub mime_type: String,
     pub size: usize,
@@ -141,7 +147,7 @@ pub enum MediaMetaKind {
 pub struct ChatMessageContent(dashchat_compat::Compat<ChatMessageContentV0, ChatMessageContentV>);
 
 impl ChatMessageContent {
-    pub fn new(message: impl Into<String>, media: Option<MediaMetaCollection>) -> Self {
+    pub fn new(message: impl Into<String>, media: Option<MediaCollection>) -> Self {
         Self(dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(
             ChatMessageContentV1 {
                 message: message.into(),
@@ -166,7 +172,7 @@ impl ChatMessageContent {
         }
     }
 
-    pub fn media_meta(&self) -> Option<&MediaMetaCollection> {
+    pub fn media_meta(&self) -> Option<&MediaCollection> {
         match &self.0 {
             dashchat_compat::Compat::Unversioned(_) => None,
             dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => v1.media.as_ref(),

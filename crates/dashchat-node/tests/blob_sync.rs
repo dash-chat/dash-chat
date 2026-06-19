@@ -34,7 +34,7 @@ async fn media_blob_syncs_between_nodes() {
 
     let photo_bytes: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
     let media = MediaAttachment::Photos {
-        photos: vec![Photo {
+        photos: vec![PhotoAttachment {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),

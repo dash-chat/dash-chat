@@ -33,15 +33,14 @@ mod tests {
 
     #[test]
     fn chat_message_v1_media_roundtrip() {
-        let item = MediaMetaItem {
+        let item = MediaMetadata {
             name: "red.png".to_string(),
             mime_type: "image/png".to_string(),
             size: 1234,
             kind: MediaMetaKind::Photo,
             hash: iroh_blobs::Hash::new(b"hashhashhash"),
         };
-        let v1 =
-            ChatMessageContent::new("hello", Some(MediaMetaCollection::from(vec![item.clone()])));
+        let v1 = ChatMessageContent::new("hello", Some(MediaCollection::from(vec![item.clone()])));
         let bytes = encode_cbor(&v1).unwrap();
         let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
         assert_eq!(decoded, v1);
@@ -83,7 +82,7 @@ mod tests {
 
     #[test]
     fn version_convert_v1_to_v0_lossy() {
-        let v1_empty = ChatMessageContent::new("anything", Some(MediaMetaCollection::from(vec![])));
+        let v1_empty = ChatMessageContent::new("anything", Some(MediaCollection::from(vec![])));
         let result = v1_empty.to_version(&Capabilities::zero());
         assert_eq!(result, Err(VersionConvertError::Lossy));
     }

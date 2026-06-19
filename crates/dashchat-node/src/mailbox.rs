@@ -99,7 +99,7 @@ mod tests {
 
         let content = ChatMessageContent::new(
             "hello",
-            Some(vec![MediaMetaItem {
+            Some(vec![MediaMetadata {
                 name: "photo.jpg".into(),
                 mime_type: "image/jpeg".into(),
                 size: 1024,

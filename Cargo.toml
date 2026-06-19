@@ -46,14 +46,14 @@ iroh-blobs = "0.102.0"
 # slot synchronously on drop (p2panda-store/src/sqlite.rs) so a cancelled rollback
 # task can't poison the store and abort the process. See the iOS push-extension /
 # shared-DB crash investigation.
-[patch."https://github.com/p2panda/p2panda"]
-p2panda = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-p2panda-auth = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-p2panda-core = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-p2panda-store = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-p2panda-spaces = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-p2panda-net = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-p2panda-stream = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-p2panda-sync = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-p2panda-discovery = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-p2panda-encryption = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
+# [patch."https://github.com/p2panda/p2panda"]
+# p2panda = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
+# p2panda-auth = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
+# p2panda-core = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
+# p2panda-store = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
+# p2panda-spaces = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
+# p2panda-net = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
+# p2panda-stream = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
+# p2panda-sync = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
+# p2panda-discovery = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
+# p2panda-encryption = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
