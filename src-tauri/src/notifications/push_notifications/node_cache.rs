@@ -37,7 +37,7 @@ pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
 
     log::info!("No nodes in the cache, building node from scratch.");
 
-    let node = crate::setup::build_node(data_path.clone(), None, None).await?;
+    let node = crate::setup::build_node(data_path.clone(), None, None, true).await?;
     map.insert(data_path.clone(), node.clone());
 
     Ok(node)
