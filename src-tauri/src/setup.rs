@@ -171,6 +171,10 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
             ])
             .build(),
     )?;
+
+    // Now that the log plugin is registered, route panics through it.
+    crate::utils::install_panic_hook();
+
     Ok(())
 }
 

@@ -49,18 +49,8 @@ pub fn receive_push_notification(
             let _ = oslog::OsLogger::new("studio.darksoil.dashchat.PushNotificationsExtension")
                 .level_filter(log::LevelFilter::Debug)
                 .init();
-            // The release build uses `panic = "abort"`, so a panic aborts before its
-            // message reaches stderr/the unified log. Route it through the logger first
-            // so crash investigations can see the panic location and message.
-            let default_hook = std::panic::take_hook();
-            std::panic::set_hook(Box::new(move |info| {
-                let location = info
-                    .location()
-                    .map(|l| l.to_string())
-                    .unwrap_or_else(|| "unknown location".to_string());
-                log::error!("panic at {location}: {info}");
-                default_hook(info);
-            }));
+            // Now that the logger is initialized, route panics through it.
+            crate::utils::install_panic_hook();
         });
         crate::i18n::init_i18n();
     }
