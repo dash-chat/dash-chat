@@ -1151,11 +1151,31 @@ impl Node {
 
     /// Load the raw bytes of a single blob by its hash from the local blob store.
     ///
+    /// With `timeout: Some(d)` the call polls the local store until the blob is
+    /// present or `d` elapses, giving the background fetch loop a window to land
+    /// a blob that has not been downloaded yet. `None` reads once and errors
+    /// immediately if the blob is absent.
+    ///
     /// Used by the `irohblob://` URI scheme handler to serve media to the webview.
-    pub async fn load_blob(&self, hash: &str) -> anyhow::Result<Vec<u8>> {
+    pub async fn load_blob(
+        &self,
+        hash: &str,
+        timeout: Option<std::time::Duration>,
+    ) -> anyhow::Result<Vec<u8>> {
         let hash: iroh_blobs::Hash = hash.parse()?;
-        let data = self.blob_sync.blobs.get_bytes(hash).await?;
-        Ok(data.to_vec())
+        let Some(timeout) = timeout else {
+            return Ok(self.blob_sync.blobs.get_bytes(hash).await?.to_vec());
+        };
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if self.blob_sync.blobs.has(hash).await.unwrap_or(false) {
+                return Ok(self.blob_sync.blobs.get_bytes(hash).await?.to_vec());
+            }
+            if std::time::Instant::now() >= deadline {
+                anyhow::bail!("blob {hash} not available after {timeout:?}");
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
     }
 
     pub async fn load_media(&self, meta: Vec<MediaMetadata>) -> anyhow::Result<OutgoingMedia> {
@@ -1202,5 +1222,62 @@ impl Node {
                 .collect();
             return Ok(OutgoingMedia::Photos { photos });
         }
+    }
+}
+
+#[cfg(test)]
+mod blob_load_tests {
+    use crate::NodeConfig;
+    use crate::testing::TestNode;
+    use std::time::Duration;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn load_blob_present_returns_bytes_without_timeout() {
+        let node = TestNode::new(NodeConfig::testing(), "alice").await;
+        let tag = node.blobs().add_bytes(b"hello".to_vec()).await.unwrap();
+        let hash = tag.hash.to_string();
+
+        let got = node.load_blob(&hash, None).await.unwrap();
+        assert_eq!(got, b"hello");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn load_blob_missing_without_timeout_errors_immediately() {
+        let node = TestNode::new(NodeConfig::testing(), "alice").await;
+        let missing = iroh_blobs::Hash::new(b"missing-without-timeout").to_string();
+
+        let err = node.load_blob(&missing, None).await;
+        assert!(err.is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn load_blob_missing_with_timeout_errors_after_deadline() {
+        let node = TestNode::new(NodeConfig::testing(), "alice").await;
+        let missing = iroh_blobs::Hash::new(b"missing-with-timeout").to_string();
+
+        let start = std::time::Instant::now();
+        let err = node.load_blob(&missing, Some(Duration::from_millis(400))).await;
+        assert!(err.is_err());
+        assert!(start.elapsed() >= Duration::from_millis(400));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn load_blob_with_timeout_returns_blob_that_lands_mid_wait() {
+        let node = TestNode::new(NodeConfig::testing(), "alice").await;
+        let content = b"arrives-late".to_vec();
+        let hash = iroh_blobs::Hash::new(&content);
+
+        let blobs = node.blobs();
+        let content2 = content.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            blobs.add_bytes(content2).await.unwrap();
+        });
+
+        let got = node
+            .load_blob(&hash.to_string(), Some(Duration::from_secs(3)))
+            .await
+            .unwrap();
+        assert_eq!(got, content);
     }
 }
