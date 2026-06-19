@@ -23,7 +23,7 @@ export interface ChatReaction {
  * never the raw bytes. The bytes live in the iroh-blobs store and are loaded
  * lazily via the `irohblob://` URI scheme (see `mediaSrc` / `loadMediaBytes`).
  */
-export interface Photo {
+export interface PhotoAttachment {
 	/** Blob hash of the stored bytes. */
 	hash: Hash;
 	/** Encoded size in bytes, from the stored metadata. */
@@ -45,8 +45,8 @@ export interface FileAttachment {
  * photos or a single file — not both. Built from a log's `MediaMetaCollection`
  * via `mediaMetaToMedia`; carries hashes, not bytes.
  */
-export type Media =
-	| { kind: 'photos'; photos: Photo[] }
+export type MediaAttachment =
+	| { kind: 'photos'; photos: PhotoAttachment[] }
 	| { kind: 'file'; file: FileAttachment };
 
 /**
@@ -98,7 +98,7 @@ export type MediaMetaCollection = MediaMetaItem[];
  */
 export function mediaMetaToMedia(
 	meta: MediaMetaCollection | null | undefined,
-): Media | null {
+): MediaAttachment | null {
 	if (!meta || meta.length === 0) return null;
 	const file = meta.find(item => item.kind === 'File');
 	if (file) {
@@ -112,7 +112,7 @@ export function mediaMetaToMedia(
 			},
 		};
 	}
-	const photos: Photo[] = meta.map(item => ({
+	const photos: PhotoAttachment[] = meta.map(item => ({
 		name: item.name,
 		mime_type: item.mime_type,
 		size: item.size,
@@ -258,7 +258,7 @@ export type GroupControlEvent =
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
-			content: { message: string; media: Media | null };
+			content: { message: string; media: MediaAttachment | null };
 			authorName?: string;
 			timestamp: number;
 	  }

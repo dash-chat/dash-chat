@@ -23,13 +23,13 @@ pub enum ChatMessageContentV {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ChatMessageContentV1 {
     pub message: String,
-    pub media: Option<MediaCollection>,
+    pub media: Option<MediaAttachment>,
 }
 
 /// A photo attachment. `data` is the raw bytes of the encoded image (JPEG,
 /// PNG, etc.), not base64. `mime_type` identifies the encoding.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct PhotoAttachment {
+pub struct OutgoingPhoto {
     pub data: Vec<u8>,
     pub name: String,
     pub mime_type: String,
@@ -37,7 +37,7 @@ pub struct PhotoAttachment {
 
 /// A non-image file attachment.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct FileAttachment {
+pub struct OutgoingFile {
     pub data: Vec<u8>,
     pub name: String,
     pub mime_type: String,
@@ -51,15 +51,15 @@ pub struct FileAttachment {
 /// and the message content contains hashes of the media blobs, rather than the raw bytes.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind")]
-pub enum MediaAttachment {
+pub enum OutgoingMedia {
     #[serde(rename = "photos")]
-    Photos { photos: Vec<PhotoAttachment> },
+    Photos { photos: Vec<OutgoingPhoto> },
     #[serde(rename = "file")]
-    File { file: FileAttachment },
+    File { file: OutgoingFile },
 }
 
 /// The collection of media metadata appearing in a single message.
-pub type MediaCollection = Vec<MediaMetadata>;
+pub type MediaAttachment = Vec<MediaMetadata>;
 
 /// The metadata to refer to a media blob, which appears in the message content.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From)]
@@ -147,7 +147,7 @@ pub enum MediaMetaKind {
 pub struct ChatMessageContent(dashchat_compat::Compat<ChatMessageContentV0, ChatMessageContentV>);
 
 impl ChatMessageContent {
-    pub fn new(message: impl Into<String>, media: Option<MediaCollection>) -> Self {
+    pub fn new(message: impl Into<String>, media: Option<MediaAttachment>) -> Self {
         Self(dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(
             ChatMessageContentV1 {
                 message: message.into(),
@@ -172,7 +172,7 @@ impl ChatMessageContent {
         }
     }
 
-    pub fn media_meta(&self) -> Option<&MediaCollection> {
+    pub fn media(&self) -> Option<&MediaAttachment> {
         match &self.0 {
             dashchat_compat::Compat::Unversioned(_) => None,
             dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => v1.media.as_ref(),
@@ -195,7 +195,7 @@ impl From<&str> for ChatMessageContent {
 
 impl PartialOrd for ChatMessageContent {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (self.message(), self.media_meta()).partial_cmp(&(other.message(), other.media_meta()))
+        (self.message(), self.media()).partial_cmp(&(other.message(), other.media()))
     }
 }
 

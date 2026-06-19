@@ -102,8 +102,8 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     // published to the mailbox, whose fetch loop downloads the blob from Alice
     // into the relay's shared store.
     let photo_bytes: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
-    let media = MediaAttachment::Photos {
-        photos: vec![PhotoAttachment {
+    let media = OutgoingMedia::Photos {
+        photos: vec![OutgoingPhoto {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
@@ -119,7 +119,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
         .await
         .unwrap()
         .into_iter()
-        .find_map(|m| m.content.media_meta().cloned())
+        .find_map(|m| m.content.media().cloned())
         .expect("alice's message carries media metadata");
     let hash = meta.first().expect("at least one media item").hash;
 
@@ -158,7 +158,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             .await
             .unwrap()
             .iter()
-            .any(|m| m.content.media_meta().is_some())
+            .any(|m| m.content.media().is_some())
             .then_some(())
             .ok_or("bobbi has not synced the media message yet")
     })
@@ -178,7 +178,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     .unwrap();
 
     let loaded = bobbi.load_media(meta).await.unwrap();
-    let MediaAttachment::Photos { photos } = loaded else {
+    let OutgoingMedia::Photos { photos } = loaded else {
         panic!("expected a photo attachment");
     };
     assert_eq!(photos.len(), 1);

@@ -9,7 +9,7 @@ import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import {
 	ChatReaction,
 	ChatSummary,
-	Media,
+	MediaAttachment,
 	MessagesStore,
 	OutgoingMedia,
 	Payload,
@@ -22,7 +22,7 @@ export interface Message {
 	hash: string;
 	content: {
 		message: string;
-		media: Media | null;
+		media: MediaAttachment | null;
 	};
 	timestamp: number;
 	author: DeviceId;

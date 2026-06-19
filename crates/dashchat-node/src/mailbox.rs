@@ -45,7 +45,7 @@ impl MailboxItem for MailboxOperation {
         };
         match payload {
             crate::Payload::Chat(crate::ChatPayload::Message(m)) => m
-                .media_meta()
+                .media()
                 .map(|items| items.iter().map(|item| item.hash).collect())
                 .unwrap_or_default(),
             _ => Vec::new(),

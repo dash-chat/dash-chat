@@ -177,7 +177,7 @@ impl BlobFetchPool {
             };
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
-                    if let Some(media) = m.media_meta() {
+                    if let Some(media) = m.media() {
                         let Some(topic) = topic_for_log_id(&op.header.extensions.log_id) else {
                             continue;
                         };

@@ -33,8 +33,8 @@ async fn media_blob_syncs_between_nodes() {
     let chat = alice.direct_chat_topic(bobbi.agent_id());
 
     let photo_bytes: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
-    let media = MediaAttachment::Photos {
-        photos: vec![PhotoAttachment {
+    let media = OutgoingMedia::Photos {
+        photos: vec![OutgoingPhoto {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
@@ -53,7 +53,7 @@ async fn media_blob_syncs_between_nodes() {
             .await
             .unwrap()
             .iter()
-            .any(|m| m.content.media_meta().is_some());
+            .any(|m| m.content.media().is_some());
         received
             .then_some(())
             .ok_or("bobbi has not received the media message yet")
@@ -66,7 +66,7 @@ async fn media_blob_syncs_between_nodes() {
         .await
         .unwrap()
         .into_iter()
-        .find_map(|m| m.content.media_meta().cloned())
+        .find_map(|m| m.content.media().cloned())
         .expect("media metadata present on bobbi's copy of the message");
 
     // bobbi's blob fetch loop downloads the blob from alice; once present
@@ -82,7 +82,7 @@ async fn media_blob_syncs_between_nodes() {
     .unwrap();
 
     let loaded = bobbi.load_media(meta).await.unwrap();
-    let MediaAttachment::Photos { photos } = loaded else {
+    let OutgoingMedia::Photos { photos } = loaded else {
         panic!("expected a photo attachment");
     };
     assert_eq!(photos.len(), 1);

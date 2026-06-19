@@ -40,7 +40,7 @@ mod tests {
             kind: MediaMetaKind::Photo,
             hash: iroh_blobs::Hash::new(b"hashhashhash"),
         };
-        let v1 = ChatMessageContent::new("hello", Some(MediaCollection::from(vec![item.clone()])));
+        let v1 = ChatMessageContent::new("hello", Some(MediaAttachment::from(vec![item.clone()])));
         let bytes = encode_cbor(&v1).unwrap();
         let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
         assert_eq!(decoded, v1);
@@ -58,10 +58,10 @@ mod tests {
     fn chat_message_getters() {
         let v0 = ChatMessageContent::unversioned("hello");
         assert_eq!(v0.message(), "hello");
-        assert!(v0.media_meta().is_none());
+        assert!(v0.media().is_none());
         let v1 = ChatMessageContent::text_only("world");
         assert_eq!(v1.message(), "world");
-        assert!(v1.media_meta().is_none());
+        assert!(v1.media().is_none());
     }
 
     #[test]
@@ -77,12 +77,12 @@ mod tests {
         let c = Capabilities { messaging: 1 };
         let v1 = v0.to_version(&c).unwrap();
         assert_eq!(v1.message(), "hello");
-        assert!(v1.media_meta().is_none());
+        assert!(v1.media().is_none());
     }
 
     #[test]
     fn version_convert_v1_to_v0_lossy() {
-        let v1_empty = ChatMessageContent::new("anything", Some(MediaCollection::from(vec![])));
+        let v1_empty = ChatMessageContent::new("anything", Some(MediaAttachment::from(vec![])));
         let result = v1_empty.to_version(&Capabilities::zero());
         assert_eq!(result, Err(VersionConvertError::Lossy));
     }
