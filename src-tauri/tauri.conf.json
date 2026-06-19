@@ -54,7 +54,14 @@
 			]
 		},
 		"deep-link": {
-			"mobile": [{ "scheme": ["dash-chat"] }],
+			"mobile": [
+        {
+          "scheme": ["https"],
+          "host": "dashchat.org",
+          "pathPrefix": ["/add-contact"],
+          "appLink": true
+        }
+      ],
 			"desktop": {
 				"schemes": ["dash-chat"]
 			}

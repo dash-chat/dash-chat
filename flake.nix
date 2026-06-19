@@ -101,6 +101,7 @@
               packages = [
                 rust
                 pkgs."nodejs_${nodeVersion}"
+                pkgs.jdk
               ];
               inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
             };
