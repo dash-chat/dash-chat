@@ -5,7 +5,6 @@ set working-directory := '..'
 dev:
     #!/usr/bin/env bash
     set -euo pipefail
-    pnpm install
     # Free ports keep concurrent `just dev` runs in different repo folders from
     # colliding. Data dirs live under this folder's .dbs/dev, so they're already
     # per-folder; the desktop agents reach the servers via these runtime URLs.
