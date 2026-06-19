@@ -20,6 +20,7 @@ export class DirectChatPage extends TestPage {
 	acceptConfirm = this.agent.$(tid('direct-chat-accept-confirm'));
 	rejectConfirm = this.agent.$(tid('direct-chat-reject-confirm'));
 	messageStatus = this.agent.$(tid('message-status'));
+	readMore = this.agent.$(tid('message-read-more'));
 	messages = new Messages(
 		this.agent,
 		'direct-chat-messages',

@@ -32,4 +32,16 @@ describe('Full messaging flow', () => {
 		await agent2.directChatPage.messages.waitForMessage('Hello from Bob!');
 		await agent1.directChatPage.messages.waitForMessage('Hello from Bob!');
 	});
+
+	it('truncates a long message and reveals it on Read more', async () => {
+		const long = `${'A'.repeat(900)} TAIL_MARKER ${'B'.repeat(100)}`;
+		await agent1.directChatPage.sendMessage(long);
+		await agent1.directChatPage.readMore.waitForExist();
+		// The hidden tail is not rendered until expanded.
+		expect(
+			await agent1.directChatPage.messages.messageAreaContains('TAIL_MARKER'),
+		).toBe(false);
+		await agent1.directChatPage.readMore.click();
+		await agent1.directChatPage.messages.waitForMessage('TAIL_MARKER');
+	});
 });
