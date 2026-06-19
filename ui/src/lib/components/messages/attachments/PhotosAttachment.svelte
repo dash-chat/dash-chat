@@ -32,7 +32,7 @@
 <div class="attachment-photos" data-testid="message-attachment-photos">
 	{#each photos as photo, i (i)}
 		<button type="button" class="photo-cell" onclick={e => openLightbox(i, e)}>
-			<BlobImage item={photo} alt={photo.name} />
+			<BlobImage item={photo} alt={photo.name} lazy />
 			{#if i === 4 && photos.length > 5}
 				<div class="photo-overlay">+{photos.length - 5}</div>
 			{/if}
@@ -86,6 +86,7 @@
 		object-fit: contain;
 	}
 
+	/* Floor the cell's size before the img exists (loading/error), so the overlay/retry box doesn't collapse. */
 	.attachment-photos:has(.photo-cell:only-child) .photo-cell {
 		min-width: 200px;
 		min-height: 50px;

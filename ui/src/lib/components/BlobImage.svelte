@@ -12,13 +12,20 @@
 		imgClass?: string;
 		/** Forwarded to the inner <img> (e.g. zoom transform-origin). */
 		imgStyle?: string;
+		/** Defer loading until near the viewport (grid cells); the lightbox loads eagerly. */
+		lazy?: boolean;
 	}
 
-	let { item, alt, imgClass = '', imgStyle = '' }: Props = $props();
+	let {
+		item,
+		alt,
+		imgClass = '',
+		imgStyle = '',
+		lazy = false,
+	}: Props = $props();
 
 	let status = $state<'loading' | 'loaded' | 'error'>('loading');
-	// 0 keeps the first request query-free so the cached 200 is reused; a retry
-	// uses Date.now() so every attempt is a fresh URL even across app restarts.
+	// buster===0 keeps the first load query-free (cacheable); a retry uses Date.now() so it never reuses a cached failure, even across restarts.
 	let buster = $state(0);
 	const src = $derived(
 		buster === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${buster}`,
@@ -58,6 +65,7 @@
 		{alt}
 		class={imgClass}
 		style={imgStyle}
+		loading={lazy ? 'lazy' : 'eager'}
 		data-testid="blob-image"
 		onload={() => (status = 'loaded')}
 		onerror={() => (status = 'error')}
@@ -97,6 +105,10 @@
 		background: rgba(128, 128, 128, 0.12);
 		color: rgba(0, 0, 0, 0.5);
 		cursor: pointer;
+	}
+
+	:global(.dark) .blob-image-loading {
+		background: rgba(255, 255, 255, 0.06);
 	}
 
 	:global(.dark) .blob-image-retry {
