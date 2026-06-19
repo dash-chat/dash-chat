@@ -5,7 +5,7 @@ export class Lightbox {
 	constructor(private agent: WebdriverIO.Browser) {}
 
 	root = this.agent.$(tid('lightbox'));
-	image = this.agent.$(tid('lightbox-image'));
+	image = this.agent.$(`${tid('lightbox')} ${tid('blob-image')}`);
 	close = this.agent.$(tid('lightbox-close'));
 	save = this.agent.$(tid('lightbox-save'));
 	prev = this.agent.$(tid('lightbox-prev'));

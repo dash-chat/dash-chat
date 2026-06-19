@@ -10,6 +10,7 @@
 	import type { Photo } from 'dash-chat-stores';
 	import { mediaSrc, savePhoto } from '$lib/utils/media';
 	import { showToast } from '$lib/utils/toasts';
+	import BlobImage from '$lib/components/BlobImage.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
@@ -164,20 +165,18 @@
 
 	<button
 		type="button"
-		class="flex min-h-0 flex-1 cursor-default items-center justify-center overflow-hidden border-none bg-transparent p-0"
+		class="relative flex min-h-0 flex-1 cursor-default items-center justify-center overflow-hidden border-none bg-transparent p-0"
 		bind:this={stageEl}
 		aria-label={m.closeLightbox()}
 		onclick={onStageClick}
 		ondblclick={onStageDoubleClick}
 		onmousemove={onStageMouseMove}
 	>
-		<img
-			class="lightbox-image max-h-full max-w-full object-contain"
-			class:zoomed
-			style="transform-origin: {originX}% {originY}%"
-			src={mediaSrc(photo)}
+		<BlobImage
+			item={photo}
 			alt={photo.name}
-			data-testid="lightbox-image"
+			imgClass={`lightbox-image max-h-full max-w-full object-contain${zoomed ? ' zoomed' : ''}`}
+			imgStyle={`transform-origin: ${originX}% ${originY}%`}
 		/>
 	</button>
 
@@ -244,14 +243,14 @@
 		font-size: 11px;
 	}
 
-	.lightbox-image {
+	:global(.lightbox-image) {
 		transition: transform 0.15s ease;
 	}
-	.lightbox-image.zoomed {
+	:global(.lightbox-image.zoomed) {
 		transform: scale(3);
 		cursor: zoom-out;
 	}
-	.lightbox-image:not(.zoomed) {
+	:global(.lightbox-image:not(.zoomed)) {
 		cursor: zoom-in;
 	}
 
