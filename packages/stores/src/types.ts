@@ -19,20 +19,74 @@ export interface ChatReaction {
 }
 
 /**
+ * `data` is the raw attachment bytes. The Rust side holds a `Vec<u8>`, which
+ * the Tauri JSON IPC delivers to the webview as a `number[]`; `getMessageMedia`
+ * materializes that into a `Uint8Array` at the boundary, so every consumer (and
+ * the send path, which builds `Uint8Array` directly) works with `Uint8Array`.
+ */
+export interface Photo {
+	data: Uint8Array;
+	name: string;
+	mime_type: string;
+}
+
+/** A non-image file attachment. See `Photo` for the `data` shape. */
+export interface FileAttachment {
+	data: Uint8Array;
+	name: string;
+	mime_type: string;
+}
+
+/**
+ * Media attached to a chat message. A message has either a set of photos
+ * or a single file — not both. Matches `dashchat_node::Media`.
+ */
+export type Media =
+	| { kind: 'photos'; photos: Photo[] }
+	| { kind: 'file'; file: FileAttachment };
+
+/**
  * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
  * `crates/dashchat-node/src/chat/message.rs`. Sent messages are always V1.
- * Stored payloads may also appear as a bare string (V0/Unversioned); see
- * `getMessageText` for reading either form.
  */
 export type MessageContentV1 = {
 	v: '1';
 	message: string;
-	media: null;
+	media: Media | null;
 };
 export type MessageContent = MessageContentV1;
 
-export function getMessageText(content: MessageContent | string): string {
-	return typeof content === 'string' ? content : content.message;
+// Keyed on the `content` object, which `logs-store` keeps referentially stable
+// across recomputes (it reuses operation objects, only appending new ones), so
+// the materialized `Uint8Array` stays identity-stable too. That lets the
+// `objectUrl` action short-circuit and avoid reloading every image whenever a
+// new operation rebuilds the messages reactive.
+const mediaCache = new WeakMap<MessageContent, Media | null>();
+
+export function getMessageMedia(content: MessageContent): Media | null {
+	const cached = mediaCache.get(content);
+	if (cached !== undefined) return cached;
+
+	const result = materializeMessageMedia(content);
+	mediaCache.set(content, result);
+	return result;
+}
+
+function materializeMessageMedia(content: MessageContent): Media | null {
+	if (!content.media) return null;
+	const media = content.media;
+	// The Tauri JSON IPC delivers `Vec<u8>` as `number[]`; rebuild it as a
+	// `Uint8Array` here so consumers never deal with the raw wire form.
+	if (media.kind === 'photos') {
+		return {
+			kind: 'photos',
+			photos: media.photos.map(p => ({ ...p, data: new Uint8Array(p.data) })),
+		};
+	}
+	return {
+		kind: 'file',
+		file: { ...media.file, data: new Uint8Array(media.file.data) },
+	};
 }
 
 export type AnnouncementPayload =
@@ -106,8 +160,11 @@ export type MessageId = string;
 // 	timestamp: number;
 // }
 
-export interface ReadMessagesStore {
+export interface MessagesStore {
 	markAsRead(messageHashes: Hash[]): Promise<void>;
+	/** Sends the message and resolves with the operation id of the created
+	 * message once it is confirmed in the local log. */
+	sendMessage(input: { message: string; media: Media | null }): Promise<Hash>;
 }
 
 export type GroupControlEvent =
@@ -152,7 +209,7 @@ export type GroupControlEvent =
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
-			text: string;
+			content: { message: string; media: Media | null };
 			authorName?: string;
 			timestamp: number;
 	  }

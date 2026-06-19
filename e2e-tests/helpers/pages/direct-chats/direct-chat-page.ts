@@ -1,4 +1,6 @@
+import { Composer } from '../../components/composer';
 import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
+import { Messages } from '../../components/messages';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
@@ -13,17 +15,17 @@ export class DirectChatPage extends TestPage {
 	settingsLink = this.agent.$(tid('direct-chat-settings-link'));
 	peerName = this.agent.$(tid('direct-chat-peer-name'));
 	peerHeader = this.agent.$(tid('direct-chat-peer-header'));
-	scrollBottom = this.agent.$(tid('chat-scroll-bottom'));
-	unreadBadge = this.agent.$(tid('chat-unread-badge'));
-	unreadDivider = this.agent.$(tid('direct-chat-unread-divider'));
 	acceptButton = this.agent.$(tid('direct-chat-accept-btn'));
 	rejectButton = this.agent.$(tid('direct-chat-reject-btn'));
 	acceptConfirm = this.agent.$(tid('direct-chat-accept-confirm'));
 	rejectConfirm = this.agent.$(tid('direct-chat-reject-confirm'));
-	messages = this.agent.$(tid('direct-chat-messages'));
-	messageInput = this.agent.$(tid('message-input-textarea'));
-	emojiButton = this.agent.$(tid('message-input-emoji'));
 	messageStatus = this.agent.$(tid('message-status'));
+	messages = new Messages(
+		this.agent,
+		'direct-chat-messages',
+		'direct-chat-unread-divider',
+	);
+	composer = new Composer(this.agent);
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
 
@@ -48,19 +50,6 @@ export class DirectChatPage extends TestPage {
 		}, tid('message-input-textarea'));
 	}
 
-	async waitForMessage(text: string, timeout = 25_000) {
-		await this.agent.waitUntil(
-			async () =>
-				this.agent.execute(
-					(sel: string, t: string) =>
-						document.querySelector(sel)?.textContent?.includes(t) ?? false,
-					tid('direct-chat-messages'),
-					text,
-				),
-			{ timeout, timeoutMsg: `Message "${text}" not found` },
-		);
-	}
-
 	/** Read the data-status of the most recent message-status indicator. */
 	async lastMessageStatus(): Promise<MessageStatus | null> {
 		return this.agent.execute((sel: string) => {
@@ -71,20 +60,6 @@ export class DirectChatPage extends TestPage {
 			}
 			return null;
 		}, tid('message-status'));
-	}
-
-	scrollBottomButtonVisible(): Promise<boolean> {
-		return this.scrollBottom.isExisting();
-	}
-
-	async unreadBadgeText(): Promise<string | null> {
-		if (!(await this.unreadBadge.isExisting())) return null;
-		const text = (await this.unreadBadge.getText()).trim();
-		return text === '' ? null : text;
-	}
-
-	async clickScrollBottomButton(): Promise<void> {
-		await this.scrollBottom.click();
 	}
 
 	isPeerNamePresent(): Promise<boolean> {

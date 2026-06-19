@@ -11,6 +11,7 @@
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
+	import { m } from '$lib/paraglide/messages.js';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 
@@ -72,8 +73,9 @@
 	class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 >
 	<MessageContent
-		content={message.content}
+		{message}
 		{searchQuery}
+		senderName={m.you()}
 		metadata={isLast ? metadata : undefined}
 	/>
 </Card>

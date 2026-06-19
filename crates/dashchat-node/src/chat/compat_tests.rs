@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn version_convert_v1_to_v0_lossy() {
-        let v1_empty = ChatMessageContent::new("anything", ());
+        let v1_empty = ChatMessageContent::new("anything", Media::Photos { photos: vec![] });
         let result = v1_empty.to_version(&Capabilities::zero());
         assert_eq!(result, Err(VersionConvertError::Lossy));
     }

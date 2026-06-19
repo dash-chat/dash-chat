@@ -51,7 +51,7 @@
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
-	import MessageInput from '$lib/components/MessageInput.svelte';
+	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import { condenseReactions } from '$lib/utils/emojis';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
@@ -124,7 +124,6 @@
 		}
 	}
 
-	let messageText = $state('');
 	let showQuickBar = $state(false);
 	let showFullPicker = $state(false);
 	let emojiTargetedMessage: Message | undefined = $state(undefined);
@@ -161,21 +160,6 @@
 		$state();
 	let parentDivEl: HTMLDivElement | null = $state(null);
 
-	async function sendMessage() {
-		const message = messageText;
-
-		if (!message || message.trim() === '') return;
-
-		try {
-			justSentMessageHash = await store.sendMessage(message);
-			messageText = '';
-			capturedUnreadHash = null;
-			unreadDividerCaptured = false;
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-	}
-
 	// Scroll the message we just sent into view once its bubble mounts.
 	let justSentMessageHash: Hash | null = $state(null);
 	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
@@ -184,6 +168,12 @@
 			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		}
 	};
+
+	function onMessageSent(messageHash: Hash) {
+		justSentMessageHash = messageHash;
+		capturedUnreadHash = null;
+		unreadDividerCaptured = false;
+	}
 
 	onMount(() => {
 		if (page.url.searchParams.has('search')) {
@@ -626,6 +616,7 @@
 																	{myDeviceId}
 																	{chatId}
 																	searchQuery={searchMode ? searchQuery : ''}
+																	sender={profile}
 																	onToggleReaction={emoji =>
 																		toggleReaction(message, emoji, myDeviceId)}
 																/>
@@ -729,15 +720,6 @@
 								<EmojiPickerWrapper
 									onEmojiSelected={emoji =>
 										toggleReaction(emojiTargetedMessage!, emoji, myDeviceId!)}
-								></EmojiPickerWrapper>
-							</Block>
-						{:else}
-							<Block>
-								<EmojiPickerWrapper
-									onEmojiSelected={emoji => {
-										messageText += emoji;
-										hideReactionUI();
-									}}
 								></EmojiPickerWrapper>
 							</Block>
 						{/if}
@@ -874,11 +856,7 @@
 							</div>
 						</div>
 					{:else}
-						<MessageInput
-							bind:value={messageText}
-							onSend={sendMessage}
-							onEmojiClick={() => (showFullPicker = true)}
-						/>
+						<MessageComposer {store} onSent={onMessageSent} />
 					{/if}
 				</div>
 			{/await}

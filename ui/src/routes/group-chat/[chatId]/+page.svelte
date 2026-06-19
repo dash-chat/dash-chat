@@ -23,14 +23,10 @@
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
-	import MessageInput from '$lib/components/MessageInput.svelte';
+	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import {
-		messagePosition,
-		senderColor,
-	} from '$lib/components/messages/message-helpers';
-	import { showToast } from '$lib/utils/toasts';
+	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
@@ -51,7 +47,6 @@
 	const readMessageHashes = useReactivePromise(store.readMessageHashes);
 	const unreadCount = useReactivePromise(store.unreadCount);
 
-	let messageText = $state('');
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
 	let reverseScrollPage: ReturnType<typeof ReverseScrollPage> | undefined =
@@ -59,21 +54,6 @@
 
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
-
-	async function sendMessage() {
-		const text = messageText;
-		if (!text || text.trim() === '') return;
-		messageText = '';
-		try {
-			justSentMessageHash = await store.sendMessage(text);
-			capturedUnreadHash = null;
-			unreadDividerCaptured = false;
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-			console.error('Failed to send group message', e);
-			messageText = text;
-		}
-	}
 
 	// Scroll the message we just sent into view once its bubble mounts.
 	let justSentMessageHash: Hash | null = $state(null);
@@ -83,6 +63,12 @@
 			setTimeout(() => reverseScrollPage?.scrollToBottom());
 		}
 	};
+
+	function onMessageSent(messageHash: Hash) {
+		justSentMessageHash = messageHash;
+		capturedUnreadHash = null;
+		unreadDividerCaptured = false;
+	}
 
 	const theme = $derived(useTheme());
 
@@ -288,14 +274,9 @@
 														{chatId}
 														searchQuery=""
 														onToggleReaction={() => {}}
-														sender={(position === 'first' ||
-															position === 'single') &&
-														author?.profile?.name
-															? {
-																	name: author.profile.name,
-																	color: senderColor(message.author),
-																}
-															: undefined}
+														sender={author?.profile}
+														showSenderName={position === 'first' ||
+															position === 'single'}
 													/>
 												</div>
 											{/if}
@@ -327,12 +308,16 @@
 		class:bg-page-surface={theme === 'material'}
 	>
 		{#await $me then me}
-			<MessageInput
-				bind:value={messageText}
-				onSend={sendMessage}
-				disabled={!me.member}
-				placeholder={me.member ? m.typeMessage() : m.youAreNoLongerAMember()}
-			/>
+			{#if me.member}
+				<MessageComposer {store} onSent={onMessageSent} />
+			{:else}
+				<div
+					class="pb-safe-4 quiet px-6 pt-4 text-center text-sm"
+					data-testid="group-chat-not-member"
+				>
+					{m.youAreNoLongerAMember()}
+				</div>
+			{/if}
 		{/await}
 	</div>
 </div>

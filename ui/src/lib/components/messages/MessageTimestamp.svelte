@@ -13,7 +13,7 @@
 	} = $props();
 </script>
 
-<span class={`text-xs ${className}`}>
+<span class={`text-xs/none ${className}`}>
 	{#if lessThanAMinuteAgo(timestamp)}
 		<span>{m.now()}</span>
 	{:else if moreThanAnHourAgo(timestamp)}

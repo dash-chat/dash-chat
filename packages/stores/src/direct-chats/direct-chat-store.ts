@@ -8,17 +8,21 @@ import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import {
 	ChatReaction,
 	ChatSummary,
+	Media,
 	MessageContent,
+	MessagesStore,
 	Payload,
-	ReadMessagesStore,
-	getMessageText,
+	getMessageMedia,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IDirectChatClient } from './direct-chat-client';
 
 export interface Message {
 	hash: string;
-	content: string;
+	content: {
+		message: string;
+		media: Media | null;
+	};
 	timestamp: number;
 	author: DeviceId;
 	seqNum: number;
@@ -26,7 +30,7 @@ export interface Message {
 }
 
 // Store tied to a specific direct chat
-export class DirectChatStore implements ReadMessagesStore {
+export class DirectChatStore implements MessagesStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
@@ -60,7 +64,10 @@ export class DirectChatStore implements ReadMessagesStore {
 					if (body.payload.type === 'Message') {
 						messages[operation.hash] = {
 							hash: operation.hash,
-							content: getMessageText(body.payload.payload),
+							content: {
+								message: body.payload.payload.message,
+								media: getMessageMedia(body.payload.payload),
+							},
 							author,
 							seqNum: operation.header.seq_num,
 							timestamp: operation.header.timestamp,
@@ -135,16 +142,19 @@ export class DirectChatStore implements ReadMessagesStore {
 			const chatId = await this.chatId();
 			if (topicId !== chatId) return;
 			if (op.body?.payload.type !== 'Message') return;
-			handler(op, getMessageText(op.body.payload.payload));
+			handler(op, op.body.payload.payload.message);
 		});
 	}
 
-	async sendMessage(message: string) {
+	async sendMessage(input: {
+		message: string;
+		media: Media | null;
+	}): Promise<Hash> {
 		const chatId = await this.chatId();
 		const content: MessageContent = {
 			v: '1',
-			message,
-			media: null,
+			message: input.message,
+			media: input.media,
 		};
 		const hash = await this.client.sendMessage(chatId, content);
 
@@ -196,7 +206,7 @@ export class DirectChatStore implements ReadMessagesStore {
 		const lastEvent: ChatSummary['lastEvent'] = message
 			? {
 					kind: 'message',
-					text: message.content,
+					content: message.content,
 					timestamp: message.timestamp,
 				}
 			: {

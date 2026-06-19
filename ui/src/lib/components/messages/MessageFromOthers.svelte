@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { Card } from 'konsta/svelte';
-	import type {
-		ChatId,
-		DeviceId,
-		MailboxTrackerStore,
-		Message,
+	import {
+		fullName,
+		type ChatId,
+		type DeviceId,
+		type MailboxTrackerStore,
+		type Message,
+		type Profile,
 	} from 'dash-chat-stores';
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
@@ -12,6 +14,7 @@
 	import Reactions from './Reactions.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	let {
 		message,
@@ -21,6 +24,7 @@
 		onToggleReaction,
 		chatId,
 		sender,
+		showSenderName = false,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -28,10 +32,14 @@
 		chatId: ChatId;
 		searchQuery: string;
 		onToggleReaction: (emoji: string) => void;
-		sender?: { name: string; color: string };
+		sender: Profile | undefined;
+		showSenderName?: boolean;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
+	const senderDisplayName = $derived(
+		sender && sender.name ? fullName(sender) : m.unknownSender(),
+	);
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
@@ -66,18 +74,11 @@
 	contentWrapPadding="p-2"
 	class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 >
-	{#if sender}
-		<div
-			class="mx-1 mb-0.5 text-sm font-semibold text-start"
-			style="color: {sender.color}"
-			data-testid="group-message-sender-name"
-		>
-			{sender.name}
-		</div>
-	{/if}
 	<MessageContent
-		content={message.content}
+		{message}
 		{searchQuery}
+		senderName={senderDisplayName}
+		{showSenderName}
 		metadata={isLast ? metadata : undefined}
 	/>
 </Card>
