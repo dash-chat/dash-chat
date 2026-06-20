@@ -7,7 +7,7 @@
 		mdiClose,
 		mdiTrayArrowDown,
 	} from '@mdi/js';
-	import type { Photo } from 'dash-chat-stores';
+	import type { PhotoAttachment } from 'dash-chat-stores';
 	import { mediaSrc, savePhoto } from '$lib/utils/media';
 	import { showToast } from '$lib/utils/toasts';
 	import BlobImage from '$lib/components/BlobImage.svelte';
@@ -15,7 +15,7 @@
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
 	interface Props {
-		photos: Photo[];
+		photos: PhotoAttachment[];
 		/** Index of the currently shown photo; updated as the user navigates. */
 		index?: number;
 		senderName: string;
@@ -39,6 +39,9 @@
 	let zoomed = $state(false);
 	let originX = $state(50);
 	let originY = $state(50);
+
+	let imgStatus = $state<'loading' | 'loaded' | 'error'>('loading');
+	let blobImage: { retry: () => void } | undefined;
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
@@ -82,6 +85,10 @@
 	}
 
 	function onStageClick(event: MouseEvent) {
+		if (imgStatus === 'error') {
+			blobImage?.retry();
+			return;
+		}
 		if (event.target === stageEl && !zoomed) onClose();
 	}
 
@@ -173,10 +180,12 @@
 		onmousemove={onStageMouseMove}
 	>
 		<BlobImage
+			bind:this={blobImage}
 			item={photo}
 			alt={photo.name}
 			imgClass={`lightbox-image max-h-full max-w-full object-contain${zoomed ? ' zoomed' : ''}`}
 			imgStyle={`transform-origin: ${originX}% ${originY}%`}
+			onStatus={s => (imgStatus = s)}
 		/>
 	</button>
 

@@ -1,10 +1,10 @@
 <script lang="ts">
-	import type { Photo } from 'dash-chat-stores';
+	import type { PhotoAttachment } from 'dash-chat-stores';
 	import BlobImage from '$lib/components/BlobImage.svelte';
 	import Lightbox from '../Lightbox.svelte';
 
 	interface Props {
-		photos: Photo[];
+		photos: PhotoAttachment[];
 		/** Display name of the message author, shown in the lightbox header. */
 		senderName?: string;
 		timestamp?: number;
@@ -17,9 +17,22 @@
 	let lightboxIndex = $state<number | null>(null);
 	let lightboxTrigger: HTMLElement | undefined;
 
+	// Per-cell load state and component handles, so a click on a cell whose
+	// image hasn't loaded retries the download instead of opening the lightbox.
+	let statuses = $state<Record<number, 'loading' | 'loaded' | 'error'>>({});
+	const blobImages: Record<number, { retry: () => void }> = {};
+
 	function openLightbox(index: number, event: MouseEvent) {
 		lightboxTrigger = event.currentTarget as HTMLElement;
 		lightboxIndex = index;
+	}
+
+	function onCellClick(index: number, event: MouseEvent) {
+		if (statuses[index] === 'loaded') {
+			openLightbox(index, event);
+		} else {
+			blobImages[index]?.retry();
+		}
 	}
 
 	function closeLightbox() {
@@ -31,8 +44,19 @@
 
 <div class="attachment-photos" data-testid="message-attachment-photos">
 	{#each photos as photo, i (i)}
-		<button type="button" class="photo-cell" onclick={e => openLightbox(i, e)}>
-			<BlobImage item={photo} alt={photo.name} lazy />
+		<button
+			type="button"
+			class="photo-cell"
+			aria-label={photo.name}
+			onclick={e => onCellClick(i, e)}
+		>
+			<BlobImage
+				bind:this={blobImages[i]}
+				item={photo}
+				alt={photo.name}
+				lazy
+				onStatus={s => (statuses[i] = s)}
+			/>
 			{#if i === 4 && photos.length > 5}
 				<div class="photo-overlay">+{photos.length - 5}</div>
 			{/if}

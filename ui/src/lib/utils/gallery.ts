@@ -10,7 +10,7 @@ import {
 } from '@gbyte/tauri-plugin-ios-photos';
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { writeFile } from '@tauri-apps/plugin-fs';
-import type { FileAttachment, Photo } from 'dash-chat-stores';
+import type { FileAttachment, PhotoAttachment } from 'dash-chat-stores';
 import { AndroidFs, AndroidPublicImageDir } from 'tauri-plugin-android-fs-api';
 import { view } from 'tauri-plugin-view-api';
 
@@ -30,20 +30,22 @@ function basename(name: string): string {
  * so it shows up in the system gallery the way Signal does, with no share
  * sheet. Mobile-only; the caller handles desktop/browser saving.
  */
-export async function savePhotoToGallery(photo: Photo): Promise<void> {
+export async function savePhotoToGallery(
+	photo: PhotoAttachment,
+): Promise<void> {
 	if (isAndroid) {
 		const uri = await AndroidFs.createNewPublicImageFile(
 			AndroidPublicImageDir.Pictures,
 			`${GALLERY_ALBUM}/${basename(photo.name)}`,
 			photo.mime_type,
 		);
-		await AndroidFs.writeFile(uri, photo.data);
+		await AndroidFs.writeFile(uri, await loadMediaBytes(photo));
 	} else if (isIos) {
 		await savePhotoToIosLibrary(photo);
 	}
 }
 
-async function savePhotoToIosLibrary(photo: Photo): Promise<void> {
+async function savePhotoToIosLibrary(photo: PhotoAttachment): Promise<void> {
 	const status = await requestPhotosAuth();
 	if (
 		status !== PhotosAuthorizationStatus.authorized &&
@@ -53,7 +55,7 @@ async function savePhotoToIosLibrary(photo: Photo): Promise<void> {
 	}
 	const album = await getOrCreateAlbum(GALLERY_ALBUM);
 	const path = await join(await appCacheDir(), basename(photo.name));
-	await writeFile(path, photo.data);
+	await writeFile(path, await loadMediaBytes(photo));
 	const created = await createPhotos({ album, files: [path] });
 	if (!created) throw new Error('Failed to save photo to the library');
 }

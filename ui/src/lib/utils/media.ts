@@ -11,7 +11,7 @@ import type {
 	OutgoingFile,
 	OutgoingMedia,
 	OutgoingPhoto,
-	Photo,
+	PhotoAttachment,
 } from 'dash-chat-stores';
 
 export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
@@ -189,7 +189,7 @@ export function formatFileSize(bytes: number): string {
  * was saved (so the caller can confirm with a toast) and `false` when the user
  * cancelled the desktop dialog. Throws on unexpected failure.
  */
-export async function savePhoto(photo: Photo): Promise<boolean> {
+export async function savePhoto(photo: PhotoAttachment): Promise<boolean> {
 	if (isTauriEnv() && isMobile) {
 		await savePhotoToGallery(photo);
 		return true;
@@ -214,7 +214,9 @@ export async function saveFileAttachment(
 	return saveToDisk(file);
 }
 
-async function saveToDisk(file: FileAttachment | Photo): Promise<boolean> {
+async function saveToDisk(
+	file: FileAttachment | PhotoAttachment,
+): Promise<boolean> {
 	const data = await loadMediaBytes(file);
 	return saveFile(
 		data,
@@ -236,18 +238,18 @@ export function blobUrl(hash: Hash): string {
  * served from. The handler reads the blob from the node's local store; the
  * webview caches the response (hashes are content-addressed, so immutable).
  */
-export function mediaSrc(item: Photo | FileAttachment): string {
+export function mediaSrc(item: PhotoAttachment | FileAttachment): string {
 	return blobUrl(item.hash);
 }
 
 /** Display size of a media item, from its stored metadata. */
-export function mediaSize(item: Photo | FileAttachment): number {
+export function mediaSize(item: PhotoAttachment | FileAttachment): number {
 	return item.size;
 }
 
 /** Raw bytes of a media item, fetched from the `irohblob://` scheme. */
 export async function loadMediaBytes(
-	item: Photo | FileAttachment,
+	item: PhotoAttachment | FileAttachment,
 ): Promise<Uint8Array> {
 	const res = await fetch(blobUrl(item.hash));
 	if (!res.ok) throw new Error(`failed to load blob ${item.hash}`);

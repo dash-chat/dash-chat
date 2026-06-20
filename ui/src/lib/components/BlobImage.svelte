@@ -1,12 +1,12 @@
 <script lang="ts">
-	import type { FileAttachment, Photo } from 'dash-chat-stores';
+	import type { FileAttachment, PhotoAttachment } from 'dash-chat-stores';
 	import { mediaSrc } from '$lib/utils/media';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Preloader } from 'konsta/svelte';
 	import { mdiReload } from '@mdi/js';
 
 	interface Props {
-		item: Photo | FileAttachment;
+		item: PhotoAttachment | FileAttachment;
 		alt: string;
 		/** Forwarded to the inner <img> (e.g. object-fit / sizing classes). */
 		imgClass?: string;
@@ -14,6 +14,9 @@
 		imgStyle?: string;
 		/** Defer loading until near the viewport (grid cells); the lightbox loads eagerly. */
 		lazy?: boolean;
+		/** Notified whenever the load state changes, so a parent can decide what
+		 * a click should do (open vs. retry). */
+		onStatus?: (status: 'loading' | 'loaded' | 'error') => void;
 	}
 
 	let {
@@ -22,6 +25,7 @@
 		imgClass = '',
 		imgStyle = '',
 		lazy = false,
+		onStatus,
 	}: Props = $props();
 
 	let status = $state<'loading' | 'loaded' | 'error'>('loading');
@@ -31,10 +35,16 @@
 		buster === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${buster}`,
 	);
 
-	function retry() {
+	/** Re-attempt the download with a fresh, cache-busting URL. Called by the
+	 * parent when a missing image's placeholder is clicked. */
+	export function retry() {
 		status = 'loading';
 		buster = Date.now();
 	}
+
+	$effect(() => {
+		onStatus?.(status);
+	});
 
 	$effect(() => {
 		function onForceError(e: Event) {
@@ -47,18 +57,16 @@
 </script>
 
 {#if status === 'error'}
-	<button
-		type="button"
+	<span
 		class="blob-image-retry {imgClass}"
 		style={imgStyle}
-		aria-label={m.imageLoadFailedRetry()}
+		title={m.imageLoadFailedRetry()}
 		data-testid="blob-image-retry"
-		onclick={retry}
 	>
 		<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
 			<path fill="currentColor" d={mdiReload} />
 		</svg>
-	</button>
+	</span>
 {:else}
 	<img
 		{src}
