@@ -115,18 +115,37 @@ impl BlobSync {
         }
     }
 
-    /// Trigger an immediate download attempt for `hash`, bypassing the
-    /// background loop's pass interval (up to a minute away). Tries every topic
-    /// the pool associates with the hash. Returns `true` once the blob is
-    /// present locally. Concurrent downloads of the same hash are coalesced by
-    /// the iroh-blobs downloader, so racing the background loop is safe.
-    pub async fn fetch_now(&self, hash: iroh_blobs::Hash, attempt_timeout: Duration) -> bool {
-        for topic in self.fetch_pool.topics_for(hash).await {
-            if self.try_fetch(topic, hash, attempt_timeout).await {
+    /// Keep attempting an on-demand download of `hash` until it is present
+    /// locally or `timeout` elapses, bypassing the background loop's long pass
+    /// interval (up to a minute away). Retries within the window so a
+    /// fast-failing attempt — e.g. a momentarily unreachable provider — gets
+    /// another chance instead of leaving the caller to wait out the window.
+    /// Tries every topic the pool associates with the hash; concurrent
+    /// downloads of the same hash are coalesced by the iroh-blobs downloader,
+    /// so racing the background loop is safe.
+    pub async fn fetch_now(&self, hash: iroh_blobs::Hash, timeout: Duration) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if self.blobs.has(hash).await.unwrap_or(false) {
                 return true;
             }
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return false;
+            }
+            let topics = self.fetch_pool.topics_for(hash).await;
+            // No known source yet; the caller's poll still waits out the window
+            // in case the blob arrives via the background loop or a mailbox.
+            if topics.is_empty() {
+                return false;
+            }
+            for topic in topics {
+                if self.try_fetch(topic, hash, remaining).await {
+                    return true;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        self.blobs.has(hash).await.unwrap_or(false)
     }
 }
 

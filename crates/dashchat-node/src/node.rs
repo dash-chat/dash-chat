@@ -227,14 +227,23 @@ impl Node {
             mailboxes.clone(),
             self_endpoint,
         );
-        // LogId = blake3(topic.as_bytes()) is one-way; the op-store does not
-        // persist TopicId alongside each operation, so we cannot recover it
-        // here. Startup hydration skips entries whose topic is unknown. Blobs
-        // that were not yet downloaded at shutdown will be re-queued when the
-        // next matching operation arrives via the live path.
-        let blob_fetch =
-            BlobFetchPool::from_ops(op_store.get_all_operations_not_fully_sorted(), |_| None)
-                .await?;
+        // LogId = blake3(topic.as_bytes()) is one-way and the op-store does not
+        // persist TopicId alongside each operation, so we invert it by hashing
+        // the topics we subscribe to (chat media lives in subscribed chat
+        // topics). Without this the pool starts empty and a blob left
+        // undownloaded at shutdown is never re-queued — only the live path adds
+        // it — so it can never load again after a restart.
+        let topic_by_log_id: std::collections::HashMap<LogId, TopicId> = local_store
+            .subscribed_topics()
+            .await?
+            .into_iter()
+            .map(|topic| (LogId::from_topic(topic), topic))
+            .collect();
+        let blob_fetch = BlobFetchPool::from_ops(
+            op_store.get_all_operations_not_fully_sorted(),
+            move |log_id| topic_by_log_id.get(log_id).copied(),
+        )
+        .await?;
         let blob_sync = BlobSync::new(
             endpoint,
             filesystem.blobs_store_path(),
@@ -363,6 +372,13 @@ impl Node {
     /// into the shared store over the node's endpoint.
     pub fn blob_downloader(&self) -> iroh_blobs::api::downloader::Downloader {
         self.blob_sync.downloader()
+    }
+
+    #[cfg(feature = "testing")]
+    /// Topics the blob fetch pool currently associates with `hash`. Lets a test
+    /// assert that startup hydration re-queued a stored op's blob.
+    pub async fn blob_fetch_pool_topics_for(&self, hash: iroh_blobs::Hash) -> Vec<TopicId> {
+        self.blob_sync.fetch_pool.topics_for(hash).await
     }
 
     pub fn device_group_topic(&self) -> DeviceGroupId {
