@@ -1289,7 +1289,9 @@ mod blob_load_tests {
         let missing = iroh_blobs::Hash::new(b"missing-with-timeout").to_string();
 
         let start = std::time::Instant::now();
-        let err = node.load_blob(&missing, Some(Duration::from_millis(400))).await;
+        let err = node
+            .load_blob(&missing, Some(Duration::from_millis(400)))
+            .await;
         assert!(err.is_err());
         assert!(start.elapsed() >= Duration::from_millis(400));
     }
