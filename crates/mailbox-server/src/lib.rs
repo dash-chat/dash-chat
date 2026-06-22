@@ -109,6 +109,7 @@ pub async fn spawn_server(
     };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
     let blob_fetch_handle = blob_sync.spawn_fetch_loop(blob_sync.fetch_config());
+    let blob_gc_handle = blob_sync.spawn_blob_gc_task();
 
     let push_client = match push_notifications_url {
         Some(url) => {
@@ -138,6 +139,9 @@ pub async fn spawn_server(
 
     cleanup_task.abort();
     blob_fetch_handle.abort();
+    if let Some(handle) = blob_gc_handle {
+        handle.abort();
+    }
     tracing::info!("Mailbox server gracefully shut down");
 
     Ok(())

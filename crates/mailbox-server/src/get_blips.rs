@@ -8,6 +8,13 @@ use crate::{
     BLIPS_TABLE, WATERMARKS_TABLE,
 };
 
+// Per-request, per-author cap on the missing-sequence range we
+// materialize. `client_max_seq` comes straight from the (untrusted) request body,
+// so without this a single cheap request forces an arbitrarily large server-side
+// allocation. The client re-requests the next batch on its next sync, so capping
+// is functionally transparent. Raise if logs legitimately outpace this per sync.
+const MAX_MISSING_PER_AUTHOR: SequenceNumber = 10_000;
+
 #[derive(Serialize, Deserialize)]
 pub struct GetBlipsRequest {
     pub topics: BTreeMap<TopicId, BTreeMap<Author, SequenceNumber>>,
@@ -139,18 +146,19 @@ fn get_blips_for_topics_inner(
             // - Everything 0..=watermark is NOT missing (we had it at some point)
             // - For sequences above watermark
             let missing_seq_nums: Vec<SequenceNumber> = match server_watermark {
-                Some(watermark) => {
-                    // Server has contiguous sequences 0..=watermark
-                    if *client_max_seq > watermark {
-                        ((watermark + 1)..=*client_max_seq).collect()
-                    } else {
-                        // client_max_seq <= watermark: server has everything
-                        Vec::new()
-                    }
+                // Server has contiguous sequences 0..=watermark
+                Some(watermark) if *client_max_seq > watermark => {
+                    let start = watermark.saturating_add(1);
+                    let end =
+                        (*client_max_seq).min(start.saturating_add(MAX_MISSING_PER_AUTHOR - 1));
+                    (start..=end).collect()
                 }
+                // client_max_seq <= watermark: server has everything
+                Some(_) => Vec::new(),
                 None => {
                     // No watermark = no contiguous sequences from 0
-                    (0..=*client_max_seq).collect()
+                    let end = (*client_max_seq).min(MAX_MISSING_PER_AUTHOR - 1);
+                    (0..=end).collect()
                 }
             };
 

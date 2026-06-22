@@ -2,7 +2,7 @@
 
 use derive_more::derive::Constructor;
 use futures::Stream;
-use iroh_blobs::api::downloader::{Downloader, Shuffled};
+use iroh_blobs::api::downloader::{DownloadProgressItem, Downloader, Shuffled};
 use iroh_blobs::protocol::GetRequest;
 use mailbox_client::manager::Mailboxes;
 use p2panda::operation::{LogId, Operation};
@@ -18,6 +18,57 @@ use dashchat_utils::FetchPool;
 pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 
 use crate::{AsBody, ChatPayload, Payload, TopicId, mailbox::MailboxOperation, stores::OpStore};
+
+/// Max size of a single blob. The hash is content-addressed but its size is not
+/// bounded by anything the fetcher can see, so an untrusted log could reference
+/// a blob far larger than any legitimate message (the composer caps a whole
+/// message at 128 MiB, and each media item is a separate blob, so no single blob
+/// can legitimately exceed it). Enforced both when fetching ([`download_capped`])
+/// and when an honest node publishes its own media (`store_media`).
+pub(crate) const MAX_BLOB_BYTES: u64 = 128 * 1024 * 1024;
+
+/// Download `hash` from `providers`, aborting if the transfer exceeds
+/// [`MAX_BLOB_BYTES`]. Returns whether the blob is present locally afterwards.
+async fn download_capped(
+    downloader: &Downloader,
+    hash: iroh_blobs::Hash,
+    providers: Shuffled,
+    attempt_timeout: Duration,
+    blobs: &iroh_blobs::BlobsProtocol,
+) -> bool {
+    let result = tokio::time::timeout(attempt_timeout, async {
+        let mut stream = downloader
+            .download(GetRequest::all(hash), providers)
+            .stream()
+            .await
+            .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;
+        while let Some(item) = stream.next().await {
+            match item {
+                // Dropping the stream on return cancels the in-flight download.
+                DownloadProgressItem::Progress(total) if total > MAX_BLOB_BYTES => {
+                    anyhow::bail!("blob exceeds {MAX_BLOB_BYTES} byte cap ({total} bytes)")
+                }
+                DownloadProgressItem::Error(err) => anyhow::bail!("download failed: {err}"),
+                DownloadProgressItem::DownloadError => anyhow::bail!("download error"),
+                _ => {}
+            }
+        }
+        anyhow::Ok(())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(())) => blobs.has(hash).await.unwrap_or(false),
+        Ok(Err(err)) => {
+            tracing::debug!(%hash, ?err, "blob download failed");
+            false
+        }
+        Err(_) => {
+            tracing::warn!(%hash, "blob download timed out");
+            false
+        }
+    }
+}
 
 /// Manages syncing blobs referenced in logs over iroh-blobs
 #[derive(Clone)]
@@ -96,23 +147,14 @@ impl BlobSync {
         }
 
         let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
-
-        match tokio::time::timeout(
+        download_capped(
+            &self.downloader,
+            hash,
+            providers,
             attempt_timeout,
-            self.downloader.download(GetRequest::all(hash), providers),
+            &self.blobs,
         )
         .await
-        {
-            Ok(Ok(_stats)) => true,
-            Ok(Err(err)) => {
-                tracing::debug!(%hash, ?err, "blob download failed");
-                false
-            }
-            Err(_) => {
-                tracing::warn!(%hash, "blob download timed out");
-                false
-            }
-        }
     }
 
     /// Keep attempting an on-demand download of `hash` until it is present
