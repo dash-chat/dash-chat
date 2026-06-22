@@ -2,7 +2,6 @@ import { reactive } from 'signalium';
 
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
-import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
