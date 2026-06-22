@@ -23,10 +23,10 @@ describe('Media attachments', () => {
 	it('opens the desktop attach dropdown and renders the Photos and File items', async () => {
 		const composer = agent1.directChatPage.composer;
 		await composer.openAttachMenu();
-		await expect(composer.attachPhotosItem).toHaveText(
+		expect(await composer.attachItemLabel('photos')).toBe(
 			await agent1.tr('attachPhotos'),
 		);
-		await expect(composer.attachFileItem).toHaveText(
+		expect(await composer.attachItemLabel('file')).toBe(
 			await agent1.tr('attachFile'),
 		);
 		await composer.closeAttachMenu();

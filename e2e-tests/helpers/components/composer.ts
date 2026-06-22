@@ -46,6 +46,23 @@ export class Composer {
 	}
 
 	/**
+	 * Trimmed label of an attach-menu item, read via `textContent`. The items
+	 * are `wa-dropdown-item` web components whose label is a slotted text node,
+	 * and WebKitGTK's WebDriver `getText` returns empty for such hosts.
+	 */
+	async attachItemLabel(item: 'photos' | 'file'): Promise<string> {
+		const testid =
+			item === 'photos'
+				? 'message-input-attach-photos'
+				: 'message-input-attach-file';
+		return this.agent.execute(
+			(sel: string) =>
+				document.querySelector(sel)?.textContent?.trim() ?? '',
+			tid(testid),
+		);
+	}
+
+	/**
 	 * Stage a single synthesized 1×1 PNG named `${label}.png` so a later send can
 	 * be matched with `waitForPhotoMessage(label)`. Injected through the paste
 	 * pipeline — the native file picker can't be driven headlessly.
