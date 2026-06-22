@@ -20,8 +20,29 @@ export class Composer {
 	clearAttachments = this.agent.$(tid('message-input-clear-attachments'));
 	addMoreTile = this.agent.$(tid('message-input-add-more'));
 
+	attachMenuTrigger = this.agent.$(tid('message-input-attach'));
+	attachMenu = this.agent.$(tid('message-input-attach-menu'));
+	attachPhotosItem = this.agent.$(tid('message-input-attach-photos'));
+	attachFileItem = this.agent.$(tid('message-input-attach-file'));
+
 	removeAttachmentButton(index: number) {
 		return this.agent.$(tid(`message-input-remove-attachment-${index}`));
+	}
+
+	/**
+	 * Open the desktop attach dropdown by clicking its trigger. The dropdown
+	 * renders only on non-mobile builds (which CI is), where it replaces the
+	 * mobile media panel. Resolves once the Photos item is visible.
+	 */
+	async openAttachMenu(): Promise<void> {
+		await this.attachMenuTrigger.click();
+		await this.attachPhotosItem.waitForDisplayed();
+	}
+
+	/** Close the attach dropdown by toggling its trigger. */
+	async closeAttachMenu(): Promise<void> {
+		await this.attachMenuTrigger.click();
+		await this.attachPhotosItem.waitForDisplayed({ reverse: true });
 	}
 
 	/**

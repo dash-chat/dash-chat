@@ -49,19 +49,3 @@
 		{m.attachFile()}
 	</wa-dropdown-item>
 </wa-dropdown>
-
-<style>
-	/* Tailwind's preflight resets `padding: 0` on every element, which beats
-	 * WebAwesome's `:host { padding }` and collapses the dropdown items to the
-	 * height of their text. Re-apply the component's intended item padding. */
-	:global(wa-dropdown-item) {
-		padding-left: 0.5em;
-		padding-top: 0.5em;
-		padding-bottom: 0.5em;
-		padding-right: 1em;
-	}
-
-	:global(wa-dropdown-item::part(icon)) {
-		width: 42px;
-	}
-</style>

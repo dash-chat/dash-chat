@@ -20,6 +20,18 @@ describe('Media attachments', () => {
 		await exchangeContacts(agent1, agent2);
 	});
 
+	it('opens the desktop attach dropdown and renders the Photos and File items', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.openAttachMenu();
+		await expect(composer.attachPhotosItem).toHaveText(
+			await agent1.tr('attachPhotos'),
+		);
+		await expect(composer.attachFileItem).toHaveText(
+			await agent1.tr('attachFile'),
+		);
+		await composer.closeAttachMenu();
+	});
+
 	it('sends a single photo from Alice and renders on both ends', async () => {
 		await agent1.directChatPage.composer.attachPhotos('single');
 		await agent1.directChatPage.composer.send();
