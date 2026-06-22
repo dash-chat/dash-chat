@@ -224,7 +224,7 @@ where
         &self.sync_tracker
     }
 
-    pub async fn is_tracking(&self, id: &MailboxId) -> bool {
+    pub async fn is_tracked(&self, id: &MailboxId) -> bool {
         self.mailboxes.lock().await.contains_key(id)
     }
 

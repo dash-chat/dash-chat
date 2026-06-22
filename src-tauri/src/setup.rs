@@ -39,7 +39,7 @@ pub(crate) async fn build_node(
 pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
     let mailbox_url = crate::mailbox::default_mailbox_url();
     let mailbox_id = fetch_mailbox_id(&mailbox_url).await?;
-    if !node.mailboxes.is_tracking(&mailbox_id).await {
+    if !node.mailboxes.is_tracked(&mailbox_id).await {
         let mailbox_client =
             mailbox_client::toy::ToyMailboxClient::new(mailbox_id, mailbox_url, node.endpoint_id());
         node.mailboxes.register(mailbox_client).await;
