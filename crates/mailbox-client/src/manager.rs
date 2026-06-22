@@ -224,6 +224,10 @@ where
         &self.sync_tracker
     }
 
+    pub async fn is_tracking(&self, id: &MailboxId) -> bool {
+        self.mailboxes.lock().await.contains_key(id)
+    }
+
     pub async fn tracked_mailbox(&self, id: &MailboxId) -> Option<Arc<TrackedMailbox<Item>>> {
         self.mailboxes.lock().await.get(id).cloned()
     }
