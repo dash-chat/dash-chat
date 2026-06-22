@@ -20,14 +20,17 @@ import {
 const MEDIA_TYPE_IMAGE = 1;
 
 /**
- * id → on-disk path for the photos currently shown in the strip, captured from
- * the listing query so a tap reads that file directly. The plugin (v0.3.0) has
- * no fetch-by-id command, so the only paths we ever have are the
- * THUMBNAIL_PX-sized representations the listing already materialized — a tap
- * therefore sends a thumbnail-resolution file until the plugin can render a
- * single full-res asset by id.
+ * Long side, in pixels, requested when materializing a tapped photo for sending.
+ * The plugin (v0.3.0) renders assets to a target size and has no fetch-by-id
+ * command, so a tap re-queries the album at this bound and picks the asset out
+ * by id. Large enough that any phone-camera photo comes back at native
+ * resolution rather than the THUMBNAIL_PX strip size.
  */
-const photoPaths = new Map<string, string>();
+const FULL_RES_PX = 1_000_000;
+
+/** Album resolved by the last listing, reused so a tap-to-send re-query skips
+ * the album lookup. */
+let albumIdCache: string | undefined;
 
 function toPermission(
 	status: PhotosAuthorizationStatus | null,
@@ -53,6 +56,7 @@ export async function requestPermission(): Promise<RecentPhotosPermission> {
 export async function listRecentPhotos(limit: number): Promise<RecentPhoto[]> {
 	const albumId = await resolveAlbumId();
 	if (!albumId) return [];
+	albumIdCache = albumId;
 	const medias = await requestAlbumMedias({
 		id: albumId,
 		width: THUMBNAIL_PX,
@@ -63,15 +67,22 @@ export async function listRecentPhotos(limit: number): Promise<RecentPhoto[]> {
 		.filter(isImage)
 		.sort((a, b) => b.createAt - a.createAt)
 		.slice(0, limit);
-	photoPaths.clear();
-	for (const item of recent) photoPaths.set(item.id, item.data);
 	return Promise.all(recent.map(toRecentPhoto));
 }
 
 export async function loadPhotoBytes(id: string): Promise<Uint8Array> {
-	const path = photoPaths.get(id);
-	if (!path) throw new Error('Photo no longer available');
-	return readFile(path);
+	const albumId = albumIdCache ?? (await resolveAlbumId());
+	if (!albumId) throw new Error('Photo no longer available');
+	// No fetch-by-id: re-render the album at full resolution and pick our asset.
+	const medias = await requestAlbumMedias({
+		id: albumId,
+		width: FULL_RES_PX,
+		height: FULL_RES_PX,
+		quality: 1,
+	});
+	const match = medias.find(m => m.id === id && !!m.data);
+	if (!match?.data) throw new Error('Photo no longer available');
+	return readFile(match.data);
 }
 
 async function resolveAlbumId(): Promise<string | undefined> {

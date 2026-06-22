@@ -29,17 +29,17 @@ function imagesRequest(limit: number) {
 	};
 }
 
-/**
- * Whether a MediaStore image query currently returns anything. The plugin
- * misreports the granular permission state on Android 13+ (it echoes the
- * never-requested READ_EXTERNAL_STORAGE alias), so an actual query is the only
- * reliable proof of access — without the permission it yields an empty cursor or
- * throws.
- */
+/** Whether the app currently has access to query MediaStore images. */
 async function hasAccess(): Promise<boolean> {
 	try {
-		const result = await getImages(imagesRequest(1));
-		return (result?.items?.length ?? 0) > 0;
+		// The plugin misreports the granular permission state on Android 13+ (it
+		// echoes the never-requested READ_EXTERNAL_STORAGE alias), so an actual
+		// query is the only reliable proof of access: without the permission it
+		// throws a SecurityException. A query that completes means access is
+		// granted even when the gallery is empty, so we must not treat a zero-item
+		// result as "no access".
+		await getImages(imagesRequest(1));
+		return true;
 	} catch {
 		return false;
 	}

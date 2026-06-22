@@ -52,6 +52,9 @@
 		} catch (e) {
 			console.error('Failed to list recent photos', e);
 			photos = [];
+			// Access may have been revoked between preload and open; re-read it so
+			// the prompt/denied affordance renders instead of a blank panel.
+			permission = await getRecentPhotosPermission();
 		}
 	}
 
