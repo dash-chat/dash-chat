@@ -57,7 +57,13 @@
 					</li>
 				{/each}
 			</ol>
-			<Button rounded onClick={settings} large tonal data-testid="permission-settings-open">
+			<Button
+				rounded
+				onClick={settings}
+				large
+				tonal
+				data-testid="permission-settings-open"
+			>
 				{m.settings()}
 			</Button>
 		</div>
