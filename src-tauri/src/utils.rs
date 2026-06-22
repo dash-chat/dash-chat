@@ -9,6 +9,25 @@ pub fn install_crypto_provider() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
+/// Route panics through `log::error!` before the default hook runs. Release
+/// builds use `panic = "abort"`, so a panic aborts before its message reaches
+/// stderr/the unified log; logging it first preserves the panic location and
+/// message in the on-device log file for crash investigations. Idempotent.
+pub fn install_panic_hook() {
+    static PANIC_HOOK_ONCE: std::sync::Once = std::sync::Once::new();
+    PANIC_HOOK_ONCE.call_once(|| {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let location = info
+                .location()
+                .map(|l| l.to_string())
+                .unwrap_or_else(|| "unknown location".to_string());
+            log::error!("panic at {location}: {info}");
+            default_hook(info);
+        }));
+    });
+}
+
 pub async fn with_retries<T>(
     condition: impl AsyncFn() -> anyhow::Result<T>,
     retries: usize,

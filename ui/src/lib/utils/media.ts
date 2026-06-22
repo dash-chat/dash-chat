@@ -1,7 +1,7 @@
 import { m } from '$lib/paraglide/messages.js';
 import { compressImage } from '$lib/utils/compress';
-import { isMobile, isTauriEnv } from '$lib/utils/environment';
-import { saveFile } from '$lib/utils/files';
+import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
+import { pickFiles, pickNativeFiles, saveFile } from '$lib/utils/files';
 import { saveAndOpenFile, savePhotoToGallery } from '$lib/utils/gallery';
 import { downloadDir } from '@tauri-apps/api/path';
 import type { FileAttachment, Media, Photo } from 'dash-chat-stores';
@@ -52,6 +52,25 @@ const PHOTO_TYPES = new Set([
 /** `accept` value for photo pickers, kept in sync with the photo path so a
  * "Photos" pick can't surface file-attachment error toasts. */
 export const PHOTO_ACCEPT = [...PHOTO_TYPES].join(',');
+
+/**
+ * Pick media for the composer. On iOS the native picker opens the photo library
+ * (PHPickerViewController) or the document browser directly; a web `<input
+ * type=file>` would instead show a Photo Library / Take Photo / Choose File
+ * action sheet. Everywhere else the web input already opens the right picker, so
+ * it keeps using it. Resolves with the chosen files, or `null` if dismissed.
+ */
+export async function pickMedia(
+	mode: 'image' | 'document',
+	multiple: boolean,
+): Promise<File[] | null> {
+	if (isIos && isTauriEnv()) {
+		return pickNativeFiles({ mode, multiple });
+	}
+	const accept = mode === 'image' ? PHOTO_ACCEPT : undefined;
+	const list = await pickFiles({ accept, multiple });
+	return list ? Array.from(list) : null;
+}
 
 function isVisualFile(file: File): boolean {
 	return PHOTO_TYPES.has(file.type);

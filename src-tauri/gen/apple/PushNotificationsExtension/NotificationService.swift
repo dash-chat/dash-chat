@@ -105,6 +105,7 @@ class NotificationService: UNNotificationServiceExtension {
         let largeIconBytes = notification_large_icon_bytes(n).asString()
         let conversationSenderId = notification_conversation_sender_id(n).asString()
         let conversationTitle = notification_conversation_title(n).asString()
+        let dedupId = notification_id(n)
 
         notification_destroy(n)
         log.info("decoded title=\(title ?? "<nil>", privacy: .private) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .private) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
@@ -115,11 +116,14 @@ class NotificationService: UNNotificationServiceExtension {
         }
         if let title { bestAttemptContent.title = title }
         if let body { bestAttemptContent.body = body }
+        var userInfo = bestAttemptContent.userInfo
+        // Stable per-message id so the plugin's `willPresent` can dedup this push
+        // against the main app's local (sync-path) notification for the same op.
+        userInfo["__notification_dedup_id__"] = String(dedupId)
         if let route, !route.isEmpty {
-            var userInfo = bestAttemptContent.userInfo
             userInfo["__notification_route__"] = route
-            bestAttemptContent.userInfo = userInfo
         }
+        bestAttemptContent.userInfo = userInfo
 
         // Decode the avatar once — both the Communication Notification path
         // (iOS 15+) and the legacy attachment fallback need the same bytes.

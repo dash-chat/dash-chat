@@ -1,8 +1,8 @@
 import { isTauriEnv } from '$lib/utils/environment';
 import { shareFile as shareFileNative } from '@choochmeque/tauri-plugin-sharekit-api';
-import { appCacheDir, join } from '@tauri-apps/api/path';
-import { save } from '@tauri-apps/plugin-dialog';
-import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
+import { appCacheDir, basename, join } from '@tauri-apps/api/path';
+import { open, save } from '@tauri-apps/plugin-dialog';
+import { mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs';
 
 /**
  * Write raw bytes to disk: native save dialog on desktop Tauri, anchor-download
@@ -81,6 +81,52 @@ export async function shareFile(
 		if (isShareCancelled(error)) return;
 		throw error;
 	}
+}
+
+const EXTENSION_MIME: Record<string, string> = {
+	jpg: 'image/jpeg',
+	jpeg: 'image/jpeg',
+	png: 'image/png',
+	webp: 'image/webp',
+	gif: 'image/gif',
+};
+
+function mimeFromName(name: string): string {
+	const ext = name.split('.').pop()?.toLowerCase() ?? '';
+	return EXTENSION_MIME[ext] ?? 'application/octet-stream';
+}
+
+async function pathToFile(path: string): Promise<File> {
+	const bytes = await readFile(path);
+	const name = await basename(path);
+	return new File([bytes], name, { type: mimeFromName(name) });
+}
+
+/**
+ * Open a native mobile picker via tauri-plugin-dialog and resolve with the
+ * chosen files, or `null` if dismissed. `'image'` mode opens the system photo
+ * library (PHPickerViewController on iOS) directly; `'document'` mode opens the
+ * file browser directly — skipping the action sheet a web `<input type=file>`
+ * would show. The plugin copies each pick into the app cache, so we read the
+ * bytes back to rebuild a `File` (the MIME type is inferred from the name since
+ * the picker only returns paths).
+ */
+export async function pickNativeFiles(opts: {
+	mode: 'image' | 'document';
+	multiple: boolean;
+}): Promise<File[] | null> {
+	const selection = await open({
+		multiple: opts.multiple,
+		pickerMode: opts.mode,
+	});
+	const paths =
+		selection === null
+			? []
+			: Array.isArray(selection)
+				? selection
+				: [selection];
+	if (paths.length === 0) return null;
+	return Promise.all(paths.map(pathToFile));
 }
 
 /**
