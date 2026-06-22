@@ -4,10 +4,6 @@ use tokio::sync::watch;
 
 /// Derive a new watch channel from `source` by applying an async transform to
 /// the current value and every subsequent change.
-///
-/// Spawns a single task that recomputes `map` whenever `source` changes and
-/// publishes the result on the returned receiver. The task ends when `source`
-/// is dropped or all derived receivers are dropped.
 pub async fn derive_watch<A, B, F, Fut>(
     mut source: watch::Receiver<A>,
     mut map: F,
