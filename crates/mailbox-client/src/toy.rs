@@ -50,6 +50,10 @@ where
         self.id.clone()
     }
 
+    fn url(&self) -> Option<String> {
+        Some(self.base_url.clone())
+    }
+
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error> {
         if ops.is_empty() {
             return Ok(());

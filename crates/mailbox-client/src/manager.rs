@@ -144,7 +144,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         }
     }
 
-    async fn client(&self) -> Arc<dyn MailboxClient<Item>> {
+    pub async fn client(&self) -> Arc<dyn MailboxClient<Item>> {
         self.client.lock().await.clone()
     }
 

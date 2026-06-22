@@ -31,6 +31,11 @@ pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
 pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     fn id(&self) -> MailboxId;
 
+    /// The base URL this client talks to, if it has one.
+    fn url(&self) -> Option<String> {
+        None
+    }
+
     /// Publish an operation to the mailbox for the given topic.
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error>;
 

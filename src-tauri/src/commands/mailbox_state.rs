@@ -6,6 +6,8 @@ use serde::Serialize;
 use tauri::{ipc::Channel, State};
 use tokio::sync::watch;
 
+use crate::mailbox::default_mailbox_url;
+
 async fn forward<T>(mut rx: watch::Receiver<T>, on_event: Channel<T>) -> Result<(), String>
 where
     T: Serialize + Clone + Send + Sync + 'static,
@@ -30,6 +32,33 @@ pub async fn mailbox_subscribe_active_ids(
     node: State<'_, Node>,
 ) -> Result<(), String> {
     forward(node.mailboxes.active_mailbox_ids(), on_event).await
+}
+
+/// The id of the registered mailbox whose URL is the cloud URL, if any.
+async fn cloud_mailbox_id(node: &Node, ids: &BTreeSet<MailboxId>) -> Option<MailboxId> {
+    let cloud_url = crate::mailbox::default_mailbox_url();
+    for id in ids {
+        if let Some(tm) = node.mailboxes.tracked_mailbox(id).await {
+            if tm.client().await.url().as_deref() == Some(&cloud_url) {
+                return Some(id.clone());
+            }
+        }
+    }
+    None
+}
+
+#[tauri::command]
+pub async fn mailbox_subscribe_cloud_id(
+    on_event: Channel<Option<MailboxId>>,
+    node: State<'_, Node>,
+) -> Result<(), String> {
+    let node = (*node).clone();
+    let rx = dashchat_utils::derive_watch(node.mailboxes.active_mailbox_ids(), move |ids| {
+        let node = node.clone();
+        async move { cloud_mailbox_id(&node, &ids).await }
+    })
+    .await;
+    forward(rx, on_event).await
 }
 
 #[tauri::command]

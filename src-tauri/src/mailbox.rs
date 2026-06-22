@@ -9,7 +9,6 @@ use tauri::{AppHandle, Manager, Runtime};
 const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
 #[cfg(feature = "e2e-tests")]
 const MDNS_SERVICE_TYPE: &str = "_dashchat-e2e._tcp.local.";
-pub(crate) const PRODUCTION_MAILBOX_ID: &str = "dashchat-mailbox";
 pub(crate) const PRODUCTION_MAILBOX_URL: &str = "https://mailbox.production.darksoil.studio";
 
 #[cfg(not(mobile))]

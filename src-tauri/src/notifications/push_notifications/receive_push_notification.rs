@@ -171,8 +171,7 @@ async fn handle_push_notification(
     log::info!("dashchat node built successfully.");
 
     // Trigger a mailbox sync to fetch the new operation
-    node.mailboxes
-        .wakeup(crate::mailbox::PRODUCTION_MAILBOX_ID.to_string());
+    node.mailboxes.trigger_sync();
 
     // Poll for the operation to arrive (up to 15 seconds)
     // PERF: consider adding the ability for the op store to notify when an op is stored,

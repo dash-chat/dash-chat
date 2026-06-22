@@ -1,4 +1,5 @@
-import type { Channel } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
+import { type ReactivePromise, relay } from 'signalium';
 
 interface TauriChannelInternals {
 	id: number;
@@ -21,3 +22,20 @@ export function unregisterChannel<T>(channel: Channel<T>): void {
 }
 
 export type UnsubscribeFn = () => void;
+
+/// Bridge a backend streaming command (one that pushes updates over a Tauri
+/// `Channel`) into a signalium `ReactivePromise`, unregistering the channel on
+/// teardown.
+export function subscribeChannel<T>(
+	command: string,
+	args: Record<string, unknown> = {},
+): ReactivePromise<T> {
+	return relay<T>(state => {
+		const channel = new Channel<T>();
+		channel.onmessage = v => {
+			state.value = v;
+		};
+		invoke(command, { onEvent: channel, ...args });
+		return () => unregisterChannel(channel);
+	});
+}

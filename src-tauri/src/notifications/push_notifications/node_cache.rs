@@ -38,6 +38,11 @@ pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
     log::info!("No nodes in the cache, building node from scratch.");
 
     let node = crate::setup::build_node(data_path.clone(), None, None, true).await?;
+    // Best-effort: the extension only runs when a push arrives (network present),
+    // so resolve and register the cloud mailbox once so the sync below can fetch.
+    if let Err(err) = crate::setup::register_cloud_mailbox(&node).await {
+        log::warn!("failed to register cloud mailbox in push extension: {err:?}");
+    }
     map.insert(data_path.clone(), node.clone());
 
     Ok(node)
