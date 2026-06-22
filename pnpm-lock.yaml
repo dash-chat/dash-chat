@@ -221,6 +221,9 @@ importers:
       '@tauri-apps/plugin-updater':
         specifier: ^2.10.0
         version: 2.10.0
+      '@universalappfactory/tauri-plugin-medialibrary':
+        specifier: ^0.13.0
+        version: 0.13.0
       cbor:
         specifier: ^10.0.11
         version: 10.0.11
@@ -1618,6 +1621,9 @@ packages:
   '@tauri-apps/api@2.10.1':
     resolution: {integrity: sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw==}
 
+  '@tauri-apps/api@2.11.0':
+    resolution: {integrity: sha512-7CinYODhky9lmO23xHnUFv0Xt43fbtWMyxZcLcRBlFkcgXKuEirBvHpmtJ89YMhyeGcq20Wuc47Fa4XjyniywA==}
+
   '@tauri-apps/api@2.8.0':
     resolution: {integrity: sha512-ga7zdhbS2GXOMTIZRT0mYjKJtR9fivsXzsyq5U3vjDL0s6DTMwYRm0UHNjzTY5dh4+LSC68Sm/7WEiimbQNYlw==}
 
@@ -1867,6 +1873,9 @@ packages:
   '@typescript-eslint/visitor-keys@8.45.0':
     resolution: {integrity: sha512-qsaFBA3e09MIDAGFUrTk+dzqtfv1XPVz8t8d1f0ybTzrCY7BKiMC5cjrl1O/P7UmHsNyW90EYSkU/ZWpmXelag==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@universalappfactory/tauri-plugin-medialibrary@0.13.0':
+    resolution: {integrity: sha512-5VrfOeTdQSfH45kKJ/t4kwjC3kEuR7BPTuBCWMfDR6I08cWR0sTcHwvS4eJ8fvLyupIwDjambd2PoxLnUswo2g==}
 
   '@vitest/pretty-format@2.1.9':
     resolution: {integrity: sha512-KhRIdGV2U9HOUzxfiHmY8IFHTdqtOhIzCpd8WRdJiE7D/HUcZVD0EgQCVjm+Q9gkUXWgBvMmTtZgIG48wq7sOQ==}
@@ -5942,6 +5951,8 @@ snapshots:
 
   '@tauri-apps/api@2.10.1': {}
 
+  '@tauri-apps/api@2.11.0': {}
+
   '@tauri-apps/api@2.8.0': {}
 
   '@tauri-apps/cli-darwin-arm64@2.8.4':
@@ -6205,6 +6216,10 @@ snapshots:
     dependencies:
       '@typescript-eslint/types': 8.45.0
       eslint-visitor-keys: 4.2.1
+
+  '@universalappfactory/tauri-plugin-medialibrary@0.13.0':
+    dependencies:
+      '@tauri-apps/api': 2.11.0
 
   '@vitest/pretty-format@2.1.9':
     dependencies:
