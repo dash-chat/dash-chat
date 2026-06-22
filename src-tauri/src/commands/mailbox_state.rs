@@ -33,6 +33,20 @@ pub async fn mailbox_subscribe_active_ids(
 }
 
 #[tauri::command]
+pub async fn mailbox_subscribe_cloud_id(
+    on_event: Channel<Option<MailboxId>>,
+    node: State<'_, Node>,
+) -> Result<(), String> {
+    let node = (*node).clone();
+    let rx = dashchat_utils::derive_watch(node.mailboxes.active_mailbox_ids(), move |_ids| {
+        let node = node.clone();
+        async move { crate::mailbox::cloud_mailbox_id(&node).await }
+    })
+    .await;
+    forward(rx, on_event).await
+}
+
+#[tauri::command]
 pub async fn mailbox_subscribe_all_ids(
     on_event: Channel<BTreeSet<MailboxId>>,
     node: State<'_, Node>,

@@ -5,9 +5,10 @@ import {
 	type MailboxConnectionState,
 	type MailboxId,
 	type MailboxSyncState,
-	PRODUCTION_MAILBOX_ID,
 } from '../mailbox-tracker/types';
 import type { DeviceId, TopicId } from '../p2panda/types';
+
+const MOCK_MAILBOX_ID: MailboxId = 'mock-mailbox';
 
 const syncedToInfinity: MailboxSyncState = new Proxy({} as MailboxSyncState, {
 	get: () =>
@@ -26,13 +27,9 @@ const constant = <T>(value: T): ReactivePromise<T> =>
 	});
 
 export class MockMailboxTrackerStore implements IMailboxTrackerStore {
-	activeMailboxIds = reactive(() =>
-		constant<MailboxId[]>([PRODUCTION_MAILBOX_ID]),
-	);
+	activeMailboxIds = reactive(() => constant<MailboxId[]>([MOCK_MAILBOX_ID]));
 
-	allMailboxIds = reactive(() =>
-		constant<MailboxId[]>([PRODUCTION_MAILBOX_ID]),
-	);
+	allMailboxIds = reactive(() => constant<MailboxId[]>([MOCK_MAILBOX_ID]));
 
 	connectionState = reactive((_mailboxId: MailboxId) =>
 		constant<MailboxConnectionState>({
@@ -51,7 +48,7 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 			_topicId: TopicId,
 			_author: DeviceId,
 		): Promise<Record<MailboxId, number>> => ({
-			[PRODUCTION_MAILBOX_ID]: Number.MAX_SAFE_INTEGER,
+			[MOCK_MAILBOX_ID]: Number.MAX_SAFE_INTEGER,
 		}),
 	);
 
@@ -60,6 +57,6 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 			_topicId: TopicId,
 			_author: DeviceId,
 			_seq: number,
-		): Promise<MailboxId[]> => [PRODUCTION_MAILBOX_ID],
+		): Promise<MailboxId[]> => [MOCK_MAILBOX_ID],
 	);
 }

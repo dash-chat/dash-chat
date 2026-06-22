@@ -144,7 +144,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         }
     }
 
-    async fn client(&self) -> Arc<dyn MailboxClient<Item>> {
+    pub async fn client(&self) -> Arc<dyn MailboxClient<Item>> {
         self.client.lock().await.clone()
     }
 
@@ -222,6 +222,10 @@ where
     /// Persistent, watch-based view over every mailbox we've ever recorded sync state for.
     pub fn sync_tracker(&self) -> &Arc<MailboxSyncTracker<Item::Topic, Item::Author>> {
         &self.sync_tracker
+    }
+
+    pub async fn is_tracking(&self, id: &MailboxId) -> bool {
+        self.mailboxes.lock().await.contains_key(id)
     }
 
     pub async fn tracked_mailbox(&self, id: &MailboxId) -> Option<Arc<TrackedMailbox<Item>>> {
