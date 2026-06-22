@@ -133,6 +133,15 @@ impl OpStore {
         Ok(logs)
     }
 
+    /// Drop the stored payload (body) of an operation, leaving its header
+    /// intact so log sync stays consistent. Used to enforce tombstones.
+    pub async fn delete_body(&self, hash: &Hash) -> anyhow::Result<()> {
+        use p2panda_store::operations::OperationStore;
+        OperationStore::<Operation, Hash, LogId>::delete_operation_payload(&self.store, hash)
+            .await?;
+        Ok(())
+    }
+
     pub async fn get_authors(&self, log_id: LogId) -> anyhow::Result<HashSet<DeviceId>> {
         let authors = self
             .get_log_heights(&log_id)
@@ -198,5 +207,74 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
             .await?
             .into_iter()
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use p2panda::operation::{Extensions, Header};
+    use p2panda_core::{Body, PruneFlag, Timestamp};
+    use p2panda_store::operations::OperationStore;
+    use p2panda_store::Transaction;
+
+    use super::*;
+
+    async fn fetch(store: &OpStore, hash: &Hash) -> Operation {
+        OperationStore::<Operation, Hash, LogId>::get_operation(&store.store, hash)
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn delete_body_drops_payload_keeps_header() {
+        let store = OpStore::temporary_sqlite().await.unwrap();
+        let topic = TopicId::random();
+        let log_id = LogId::from_topic(topic);
+
+        let signing_key = p2panda::SigningKey::generate();
+        let body = Body::new(b"payload");
+        let mut header = Header {
+            version: 1,
+            verifying_key: signing_key.verifying_key(),
+            signature: None,
+            payload_size: body.size(),
+            payload_hash: Some(body.hash()),
+            timestamp: Timestamp::new(0),
+            seq_num: 0,
+            backlink: None,
+            extensions: Extensions {
+                log_id,
+                prune_flag: PruneFlag::default(),
+                groups_args: None,
+                version: 1,
+            },
+        };
+        header.sign(&signing_key);
+        let hash = header.hash();
+        let op = Operation {
+            hash,
+            header,
+            body: Some(body),
+        };
+
+        let permit = store.store.begin().await.unwrap();
+        OperationStore::<Operation, Hash, LogId>::insert_operation(
+            &store.store,
+            &hash,
+            &op,
+            &log_id,
+        )
+        .await
+        .unwrap();
+        store.store.commit(permit).await.unwrap();
+        assert!(fetch(&store, &hash).await.body.is_some());
+
+        store.delete_body(&hash).await.unwrap();
+
+        let stored = fetch(&store, &hash).await;
+        assert!(stored.body.is_none());
+        // The header is retained so log sync stays consistent.
+        assert_eq!(stored.header.seq_num, 0);
     }
 }

@@ -216,12 +216,27 @@ impl Node {
         handle
     }
 
+    /// Enforce the topic's tombstone set on a received operation: if its hash
+    /// has been tombstoned, drop its stored payload so it is never persisted or
+    /// synced onward. The operation arrives here already written to the op
+    /// store (by peers or by mailbox sync), so this deletes the body after the
+    /// fact.
+    async fn enforce_tombstone(&self, operation: &ProcessedOperation<Payload>) -> anyhow::Result<()> {
+        let topic = operation.topic();
+        let hash = operation.id();
+        if self.local_store.is_tombstoned(topic, hash).await? {
+            self.op_store.delete_body(&hash).await?;
+        }
+        Ok(())
+    }
+
     async fn process_groups(
         &self,
         operation: &ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
         self.register_bootstrap(operation, source).await?;
+        self.enforce_tombstone(operation).await?;
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
@@ -289,6 +304,7 @@ impl Node {
         source: &Source,
     ) -> anyhow::Result<()> {
         self.register_bootstrap(operation, source).await?;
+        self.enforce_tombstone(operation).await?;
 
         let hash = operation.id();
         let topic = operation.topic();

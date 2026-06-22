@@ -856,6 +856,15 @@ impl Node {
         Ok(latest.map(|(_, d)| d))
     }
 
+    /// Tombstone an operation: record its hash in the topic's persisted
+    /// tombstone set so its payload is never stored or synced again, and
+    /// immediately drop any payload already stored for it.
+    pub async fn tombstone_operation(&self, topic: TopicId, hash: Hash) -> anyhow::Result<()> {
+        self.local_store.add_tombstone(topic, hash).await?;
+        self.op_store.delete_body(&hash).await?;
+        Ok(())
+    }
+
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
