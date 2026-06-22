@@ -37,6 +37,27 @@ pub fn default_mailbox_url() -> String {
     PRODUCTION_MAILBOX_URL.to_string()
 }
 
+/// The id of the registered mailbox whose URL is the cloud URL, if any.
+///
+/// "Cloud" is an app-level concept — the generic `Mailboxes` manager has no
+/// notion of it — so we identify it by matching `default_mailbox_url()` against
+/// each registered mailbox's client URL. Returns `None` while the cloud mailbox
+/// is not (yet) registered (e.g. offline).
+pub(crate) async fn cloud_mailbox_id(
+    node: &dashchat_node::Node,
+) -> Option<mailbox_client::MailboxId> {
+    let cloud_url = default_mailbox_url();
+    let ids = node.mailboxes.active_mailbox_ids().borrow().clone();
+    for id in ids {
+        if let Some(tm) = node.mailboxes.tracked_mailbox(&id).await {
+            if tm.client().await.url().as_deref() == Some(&cloud_url) {
+                return Some(id);
+            }
+        }
+    }
+    None
+}
+
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     handle: &AppHandle<R>,
     node: dashchat_node::Node,

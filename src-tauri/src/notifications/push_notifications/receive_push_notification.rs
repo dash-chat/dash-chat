@@ -170,8 +170,14 @@ async fn handle_push_notification(
 
     log::info!("dashchat node built successfully.");
 
-    // Trigger a mailbox sync to fetch the new operation
-    node.mailboxes.trigger_sync();
+    // Fetch the new operation. Wake the cloud mailbox specifically so a
+    // backed-off (Stopped/Degraded) cloud mailbox is force-polled immediately;
+    // fall back to a general trigger if it isn't registered yet.
+    if let Some(cloud_id) = crate::mailbox::cloud_mailbox_id(&node).await {
+        node.mailboxes.wakeup(cloud_id);
+    } else {
+        node.mailboxes.trigger_sync();
+    }
 
     // Poll for the operation to arrive (up to 15 seconds)
     // PERF: consider adding the ability for the op store to notify when an op is stored,
