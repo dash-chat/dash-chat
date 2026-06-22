@@ -28,7 +28,9 @@ export const THUMBNAIL_PX = 256;
  * inferred from the `window.__test` declaration so it lives in one place.
  */
 function testData() {
-	return typeof window !== 'undefined' ? window.__test?.recentPhotos : undefined;
+	return typeof window !== 'undefined'
+		? window.__test?.recentPhotos
+		: undefined;
 }
 
 /** Whether reading recent photos is even possible in this environment. */
@@ -59,6 +61,9 @@ export async function requestRecentPhotosPermission(): Promise<RecentPhotosPermi
 /** Default number of recent photos to load for the strip. */
 export const RECENT_PHOTOS_LIMIT = 24;
 
+// First-paint cache only: warmed by preloadRecentPhotos and overwritten by every
+// listRecentPhotos call. RecentPhotosStrip re-queries on each panel open, so this
+// never serves photos older than that open
 let cache: RecentPhoto[] | undefined;
 let inFlight: Promise<RecentPhoto[]> | undefined;
 

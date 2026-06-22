@@ -30,11 +30,13 @@
 	onMount(init);
 
 	async function init() {
-		// Render preloaded photos instantly when the cache is already warm.
+		// Render preloaded photos instantly when the cache is already warm, then
+		// re-query in the background so photos taken since the last open appear
 		const cached = cachedRecentPhotos();
 		if (cached) {
 			photos = cached.filter(p => p.thumbnail);
 			permission = 'granted';
+			load();
 			return;
 		}
 		if (!recentPhotosSupported) return;

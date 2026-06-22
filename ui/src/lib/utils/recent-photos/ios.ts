@@ -18,12 +18,16 @@ import {
 
 /** PHAssetMediaType.image — the value iOS reports for still photos. */
 const MEDIA_TYPE_IMAGE = 1;
-/** Resolution requested when the user actually selects a photo to send; matches
- * the long-side the app compresses outgoing photos to. */
-const FULL_PX = 1920;
 
-let albumId: string | undefined;
-const fullResPaths = new Map<string, string>();
+/**
+ * id → on-disk path for the photos currently shown in the strip, captured from
+ * the listing query so a tap reads that file directly. The plugin (v0.3.0) has
+ * no fetch-by-id command, so the only paths we ever have are the
+ * THUMBNAIL_PX-sized representations the listing already materialized — a tap
+ * therefore sends a thumbnail-resolution file until the plugin can render a
+ * single full-res asset by id.
+ */
+const photoPaths = new Map<string, string>();
 
 function toPermission(
 	status: PhotosAuthorizationStatus | null,
@@ -47,7 +51,7 @@ export async function requestPermission(): Promise<RecentPhotosPermission> {
 }
 
 export async function listRecentPhotos(limit: number): Promise<RecentPhoto[]> {
-	albumId = await resolveAlbumId();
+	const albumId = await resolveAlbumId();
 	if (!albumId) return [];
 	const medias = await requestAlbumMedias({
 		id: albumId,
@@ -59,15 +63,13 @@ export async function listRecentPhotos(limit: number): Promise<RecentPhoto[]> {
 		.filter(isImage)
 		.sort((a, b) => b.createAt - a.createAt)
 		.slice(0, limit);
+	photoPaths.clear();
+	for (const item of recent) photoPaths.set(item.id, item.data);
 	return Promise.all(recent.map(toRecentPhoto));
 }
 
 export async function loadPhotoBytes(id: string): Promise<Uint8Array> {
-	let path = fullResPaths.get(id);
-	if (!path) {
-		await cacheFullResPaths();
-		path = fullResPaths.get(id);
-	}
+	const path = photoPaths.get(id);
 	if (!path) throw new Error('Photo no longer available');
 	return readFile(path);
 }
@@ -100,18 +102,4 @@ async function toRecentPhoto(
 		name: `recent-${index}.jpg`,
 		mimeType: 'image/jpeg',
 	};
-}
-
-async function cacheFullResPaths(): Promise<void> {
-	if (!albumId) albumId = await resolveAlbumId();
-	if (!albumId) return;
-	const medias = await requestAlbumMedias({
-		id: albumId,
-		width: FULL_PX,
-		height: FULL_PX,
-		quality: 0.9,
-	});
-	for (const item of medias) {
-		if (isImage(item)) fullResPaths.set(item.id, item.data);
-	}
 }
