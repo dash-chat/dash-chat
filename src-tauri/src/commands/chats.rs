@@ -69,11 +69,12 @@ pub async fn send_message(
     message: String,
     media: Option<OutgoingMedia>,
     node: State<'_, Node>,
-) -> Result<(), String> {
-    node.send_message(chat_id, message, media)
+) -> Result<Hash, String> {
+    let header = node
+        .send_message(chat_id, message, media)
         .await
         .map_err(|err| format!("{err:?}"))?;
-    Ok(())
+    Ok(header.hash())
 }
 
 #[tauri::command]
