@@ -75,6 +75,15 @@ pub enum ChatPayload {
 
     Message(ChatMessageContent),
 
+    /// Edits the text content of a previously-sent message.
+    ///
+    /// `edit_hash` refers to the operation being edited, which must be either a
+    /// `Message` or another `EditMessage` (edits can be chained). Only the text
+    /// is editable — media attachments on the original message are preserved and
+    /// cannot be changed. Edits must form a linear chain: an edit cannot target
+    /// a message which already has another edit pointing at it.
+    EditMessage { message: String, edit_hash: Hash },
+
     Reaction(ChatReaction),
 
     GroupInfo(GroupInfo),

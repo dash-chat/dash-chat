@@ -27,7 +27,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
-use crate::chat::ChatMessageContent;
+use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, validate_edit};
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
@@ -35,7 +35,8 @@ use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, MediaAttachment, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
+    DirectChatId, EditMessageError, MediaAttachment, MediaMetaKind, MediaMetadata, OutgoingFile,
+    OutgoingMedia,
 };
 
 pub use app_processing::Notification;
@@ -808,6 +809,134 @@ impl Node {
             .await?;
 
         Ok(header)
+    }
+
+    /// Edit the text content of a previously-sent message.
+    ///
+    /// `edit_hash` must refer to a `Message` or `EditMessage` operation in this
+    /// chat authored by us, within the edit window, and not already edited. The
+    /// edit is validated before publishing; see [`EditError`](crate::EditError).
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn edit_message(
+        &self,
+        topic: impl Into<ChatId>,
+        edit_hash: Hash,
+        message: impl Into<String>,
+    ) -> Result<Header, EditMessageError> {
+        let topic = topic.into();
+        let ops = self.chat_ops(topic).await?;
+        let now = u64::from(p2panda_core::Timestamp::now());
+        validate_edit(&ops, &edit_hash, self.device_id(), now, None)?;
+
+        let header = self
+            .publish(
+                topic,
+                Payload::Chat(ChatPayload::EditMessage {
+                    message: message.into(),
+                    edit_hash,
+                }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Publish an edit without validating it. For testing the receiving-side
+    /// handling of invalid edits, which the author-side validation would
+    /// otherwise prevent from ever being created.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn edit_message_raw(
+        &self,
+        topic: impl Into<ChatId>,
+        edit_hash: Hash,
+        message: impl Into<String>,
+    ) -> anyhow::Result<Header> {
+        let header = self
+            .publish(
+                topic.into(),
+                Payload::Chat(ChatPayload::EditMessage {
+                    message: message.into(),
+                    edit_hash,
+                }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Collect all chat operations in a topic, reduced to the fields edit
+    /// validation needs, keyed by operation hash.
+    pub(crate) async fn chat_ops(
+        &self,
+        topic: ChatId,
+    ) -> anyhow::Result<std::collections::HashMap<Hash, ChatOp>> {
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+
+        let mut ops = std::collections::HashMap::new();
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else { continue };
+                let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
+                    continue;
+                };
+                let kind = match chat {
+                    ChatPayload::Message(_) => ChatOpKind::Message,
+                    ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
+                    _ => ChatOpKind::Other,
+                };
+                ops.insert(
+                    op.header.hash(),
+                    ChatOp {
+                        author: DeviceId::from(op.header.verifying_key),
+                        timestamp: op.header.timestamp.into(),
+                        kind,
+                    },
+                );
+            }
+        }
+
+        Ok(ops)
+    }
+
+    /// Return every edit operation in the topic that passes validation — i.e.
+    /// the edits a receiving node would honor rather than ignore. Mirrors the
+    /// rule applied in `process_app`, exposed for tests.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn valid_edits(
+        &self,
+        topic: impl Into<ChatId>,
+    ) -> anyhow::Result<Vec<crate::chat::ValidEdit>> {
+        let topic = topic.into();
+        let ops = self.chat_ops(topic).await?;
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+
+        let mut edits = Vec::new();
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else { continue };
+                let Ok(Payload::Chat(ChatPayload::EditMessage { message, edit_hash })) =
+                    Payload::try_from_body(body)
+                else {
+                    continue;
+                };
+                let op_hash = op.header.hash();
+                let editor = DeviceId::from(op.header.verifying_key);
+                let timestamp: u64 = op.header.timestamp.into();
+                if validate_edit(&ops, &edit_hash, editor, timestamp, Some(&op_hash)).is_ok() {
+                    edits.push(crate::chat::ValidEdit {
+                        op_hash,
+                        target: edit_hash,
+                        text: message,
+                    });
+                }
+            }
+        }
+
+        Ok(edits)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]

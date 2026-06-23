@@ -1,5 +1,6 @@
 use dashchat_node::{
-    AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, Node, OutgoingMedia, RemoveGroupMemberError,
+    AgentId, ChatId, ChatReaction, DeviceId, EditMessageError, GroupInfo, Node, OutgoingMedia,
+    RemoveGroupMemberError,
 };
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
@@ -74,6 +75,17 @@ pub async fn send_message(
         .send_message(chat_id, message, media)
         .await
         .map_err(|err| format!("{err:?}"))?;
+    Ok(header.hash())
+}
+
+#[tauri::command]
+pub async fn edit_message(
+    chat_id: ChatId,
+    edit_hash: Hash,
+    message: String,
+    node: State<'_, Node>,
+) -> Result<Hash, EditMessageError> {
+    let header = node.edit_message(chat_id, edit_hash, message).await?;
     Ok(header.hash())
 }
 

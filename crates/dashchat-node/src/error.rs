@@ -40,6 +40,23 @@ pub enum AddContactError {
 
 #[derive(Debug, Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
+pub enum EditMessageError {
+    #[error("Failed to edit message: {0}")]
+    Internal(String),
+
+    #[error(transparent)]
+    #[serde(untagged)]
+    Validation(#[from] crate::chat::EditError),
+}
+
+impl From<anyhow::Error> for EditMessageError {
+    fn from(e: anyhow::Error) -> Self {
+        EditMessageError::Internal(e.to_string())
+    }
+}
+
+#[derive(Debug, Error, Serialize)]
+#[serde(tag = "kind", content = "message")]
 pub enum RemoveGroupMemberError {
     #[error("cannot remove the only admin from a group that still has members")]
     LastAdmin,
