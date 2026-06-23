@@ -227,15 +227,16 @@ impl Node {
     /// fact.
     async fn enforce_tombstone(
         &self,
-        mut operation: ProcessedOperation<Payload>,
-    ) -> anyhow::Result<ProcessedOperation<Payload>> {
+        operation: &ProcessedOperation<Payload>,
+    ) -> anyhow::Result<bool> {
         let topic = operation.topic();
         let hash = operation.id();
         if self.local_store.is_tombstoned(topic, hash).await? {
             self.op_store.delete_body(&hash).await?;
-            operation.event.operation.body = None;
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        Ok(operation)
     }
 
     /// Filter out operations whose payloads are not able to be deleted.
@@ -248,13 +249,16 @@ impl Node {
         }
     }
 
+    /// Note that this is a function that processes operations which could have deleted payloads.
+    /// This function currently doesn't do anything with payloads, so we don't check for tombstones here.
+    /// If this function is modified to process payloads, then we should call
+    /// [`Self::enforce_tombstone`] before processing.
     async fn process_groups(
         &self,
         operation: ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
         self.register_bootstrap(&operation, source).await?;
-        let operation = self.enforce_tombstone(operation).await?;
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
@@ -322,10 +326,17 @@ impl Node {
         source: &Source,
     ) -> anyhow::Result<()> {
         self.register_bootstrap(&operation, source).await?;
-        let operation = self.enforce_tombstone(operation).await?;
+        let topic = operation.topic();
+        let dashchat_topic = crate::Topic::new(*topic.as_bytes());
+        let header = operation.processed().header();
+
+        if self.enforce_tombstone(&operation).await? {
+            // The payload is tombstoned, so there's nothing to process.
+            self.notify_header(dashchat_topic, &header).await?;
+            return Ok(());
+        }
 
         let hash = operation.id();
-        let topic = operation.topic();
         let device_id = DeviceId::from(operation.author());
         let payload = operation.message();
 
@@ -459,7 +470,6 @@ impl Node {
         // informed of any errors or these events are not even forwarded.
 
         // We convert the p2panda::Topic into a dashchat Topic here in its untyped form.
-        let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         self.notify_payload(dashchat_topic, &operation.processed().header(), &payload)
             .await?;
 
@@ -507,6 +517,20 @@ impl Node {
             };
         }
 
+        Ok(())
+    }
+
+    pub async fn notify_header(&self, topic: Topic, header: &Header) -> anyhow::Result<()> {
+        if let Some(notification_tx) = self.notification_tx.clone() {
+            notification_tx
+                .send(Notification {
+                    topic: topic.clone(),
+                    header: header.clone(),
+                    payload: None,
+                })
+                .await
+                .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
+        }
         Ok(())
     }
 
