@@ -143,7 +143,7 @@ pub struct Node {
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
 /// node never references a blob that the fetcher's own cap would reject.
-fn ensure_blob_size(size: usize, name: &str) -> anyhow::Result<()> {
+fn ensure_blob_size(size: u64, name: &str) -> anyhow::Result<()> {
     if size as u64 > MAX_BLOB_BYTES {
         anyhow::bail!("media item {name:?} is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
     }
@@ -1152,7 +1152,7 @@ impl Node {
         match media {
             OutgoingMedia::Photos { photos } => {
                 for photo in photos {
-                    let size = photo.data.len();
+                    let size = photo.data.len() as u64;
                     ensure_blob_size(size, &photo.name)?;
                     let tag = self.blob_sync.blobs.add_bytes(photo.data).await?;
                     items.push(MediaMetadata {
@@ -1165,7 +1165,7 @@ impl Node {
                 }
             }
             OutgoingMedia::File { file } => {
-                let size = file.data.len();
+                let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
                 let tag = self.blob_sync.blobs.add_bytes(file.data).await?;
                 items.push(MediaMetadata {
