@@ -6,6 +6,7 @@ import {
 	getPhotosAuthStatus,
 	requestAlbumMedias,
 	requestAlbums,
+	requestMediasByIds,
 	requestPhotosAuth,
 } from '@gbyte/tauri-plugin-ios-photos';
 import { readFile } from '@tauri-apps/plugin-fs';
@@ -21,16 +22,10 @@ const MEDIA_TYPE_IMAGE = 1;
 
 /**
  * Long side, in pixels, requested when materializing a tapped photo for sending.
- * The plugin (v0.3.0) renders assets to a target size and has no fetch-by-id
- * command, so a tap re-queries the album at this bound and picks the asset out
- * by id. Large enough that any phone-camera photo comes back at native
- * resolution rather than the THUMBNAIL_PX strip size.
+ * Large enough that any phone-camera photo comes back at native resolution
+ * rather than the THUMBNAIL_PX strip size.
  */
 const FULL_RES_PX = 1_000_000;
-
-/** Album resolved by the last listing, reused so a tap-to-send re-query skips
- * the album lookup. */
-let albumIdCache: string | undefined;
 
 function toPermission(
 	status: PhotosAuthorizationStatus | null,
@@ -56,26 +51,23 @@ export async function requestPermission(): Promise<RecentPhotosPermission> {
 export async function listRecentPhotos(limit: number): Promise<RecentPhoto[]> {
 	const albumId = await resolveAlbumId();
 	if (!albumId) return [];
-	albumIdCache = albumId;
+	// `limit` is applied natively (newest-first), so only that many assets are
+	// rendered to thumbnails instead of the whole album.
 	const medias = await requestAlbumMedias({
 		id: albumId,
 		width: THUMBNAIL_PX,
 		height: THUMBNAIL_PX,
 		quality: 0.7,
+		limit,
 	});
-	const recent = medias
-		.filter(isImage)
-		.sort((a, b) => b.createAt - a.createAt)
-		.slice(0, limit);
+	const recent = medias.filter(isImage).sort((a, b) => b.createAt - a.createAt);
 	return Promise.all(recent.map(toRecentPhoto));
 }
 
 export async function loadPhotoBytes(id: string): Promise<Uint8Array> {
-	const albumId = albumIdCache ?? (await resolveAlbumId());
-	if (!albumId) throw new Error('Photo no longer available');
-	// No fetch-by-id: re-render the album at full resolution and pick our asset.
-	const medias = await requestAlbumMedias({
-		id: albumId,
+	// Render just this asset at full resolution by id — no whole-album re-render.
+	const medias = await requestMediasByIds({
+		ids: [id],
 		width: FULL_RES_PX,
 		height: FULL_RES_PX,
 		quality: 1,
