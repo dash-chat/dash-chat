@@ -121,10 +121,10 @@ describe('Offline UX', () => {
 
 			await indicator.chip.click();
 			await agent1.waitUntil(() => indicator.isDialogOpen());
-			expect(await indicator.dialogTitle.getText()).toBe(
+			await expect(indicator.dialogTitle).toHaveText(
 				await agent1.tr('connectionStatusDisconnectedTitle'),
 			);
-			expect(await indicator.dialogDescription.getText()).toBe(
+			await expect(indicator.dialogDescription).toHaveText(
 				await agent1.tr('connectionStatusDisconnectedDescription'),
 			);
 
@@ -155,10 +155,10 @@ describe('Offline UX', () => {
 
 				await indicator.chip.click();
 				await agent1.waitUntil(() => indicator.isDialogOpen());
-				expect(await indicator.dialogTitle.getText()).toBe(
+				await expect(indicator.dialogTitle).toHaveText(
 					await agent1.tr('connectionStatusLocalTitle'),
 				);
-				expect(await indicator.dialogDescription.getText()).toBe(
+				await expect(indicator.dialogDescription).toHaveText(
 					await agent1.tr('connectionStatusLocalDescription', { count: 1 }),
 				);
 

@@ -1,10 +1,10 @@
 import { tid } from '../selectors';
-import { TestPage } from './test-page';
+import { TestHelper } from './test-helper';
 
-export class CreateProfilePage extends TestPage {
-	nameInput = this.agent.$(tid('create-profile-name'));
-	surnameInput = this.agent.$(tid('create-profile-surname'));
-	createButton = this.agent.$(tid('create-profile-create-btn'));
+export class CreateProfilePage extends TestHelper {
+	nameInput = this.el(tid('create-profile-name'));
+	surnameInput = this.el(tid('create-profile-surname'));
+	createButton = this.el(tid('create-profile-create-btn'));
 
 	async ready() {
 		await this.nameInput.waitForExist();

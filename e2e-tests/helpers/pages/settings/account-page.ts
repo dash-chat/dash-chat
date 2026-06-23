@@ -1,11 +1,11 @@
 import { tid } from '../../selectors';
-import { TestPage } from '../test-page';
+import { TestHelper } from '../test-helper';
 
-export class AccountPage extends TestPage {
-	back = this.agent.$(tid('account-back'));
-	deleteItem = this.agent.$(tid('account-delete'));
-	deleteConfirm = this.agent.$(tid('account-delete-confirm'));
-	deleteCancel = this.agent.$(tid('account-delete-cancel'));
+export class AccountPage extends TestHelper {
+	back = this.el(tid('account-back'));
+	deleteItem = this.el(tid('account-delete'));
+	deleteConfirm = this.el(tid('account-delete-confirm'));
+	deleteCancel = this.el(tid('account-delete-cancel'));
 
 	async ready() {
 		await this.deleteItem.waitForExist();

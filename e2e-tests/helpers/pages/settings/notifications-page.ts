@@ -1,9 +1,9 @@
 import { tid } from '../../selectors';
-import { TestPage } from '../test-page';
+import { TestHelper } from '../test-helper';
 
-export class NotificationsPage extends TestPage {
-	back = this.agent.$(tid('notifications-back'));
-	toggle = this.agent.$(tid('notifications-toggle'));
+export class NotificationsPage extends TestHelper {
+	back = this.el(tid('notifications-back'));
+	toggle = this.el(tid('notifications-toggle'));
 
 	async ready() {
 		await this.toggle.waitForExist();
