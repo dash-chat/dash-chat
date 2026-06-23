@@ -15,6 +15,7 @@
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
+	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
@@ -147,7 +148,7 @@
 	onBackdropClick={() => (showEmojiPicker = false)}
 >
 	<div class="flex flex-col items-center">
-		<div class="sheet-handle"></div>
+		<SheetHandle />
 	</div>
 	<Block>
 		<EmojiPickerWrapper
