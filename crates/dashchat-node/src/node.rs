@@ -877,6 +877,8 @@ impl Node {
             self.unprocess_app(operation).await?;
             self.op_store.delete_body(&hash).await?;
             self.local_store.add_tombstone(topic, hash).await?;
+        } else {
+            tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
         }
         Ok(())
     }
