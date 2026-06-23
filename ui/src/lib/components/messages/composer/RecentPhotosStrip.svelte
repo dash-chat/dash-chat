@@ -66,6 +66,7 @@
 			);
 		} catch (e) {
 			console.error('Failed to list recent photos', e);
+			showToast(m.errorLoadingRecentPhotos(), 'error');
 			photos = [];
 			// Access may have been revoked since the last open; re-read it so the
 			// prompt/denied affordance renders instead of a blank panel.
@@ -97,7 +98,12 @@
 	}
 
 	async function openSettings() {
-		await openAppSettings();
+		try {
+			await openAppSettings();
+		} catch (e) {
+			console.error('Failed to open app settings', e);
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
 	}
 
 	async function add(photo: RecentPhoto) {
@@ -107,6 +113,7 @@
 			onFiles([file]);
 		} catch (e) {
 			console.error('Failed to load photo', e);
+			showToast(m.errorAddingPhoto(), 'error');
 		} finally {
 			loadingId = undefined;
 		}

@@ -225,6 +225,8 @@
 	"errorTooManyAttachments": "You cannot add any more attachments to this message.",
 	"errorFilesWithPhotos": "You can't select photos and videos along with files.",
 	"errorOneFileAtATime": "You can only select one file at a time.",
+	"errorLoadingRecentPhotos": "Failed to load recent photos. Please try again.",
+	"errorAddingPhoto": "Failed to add photo. Please try again.",
 	"errorApplyStyle": "Failed to apply style. Please try again.",
 	"errorSendErrorReport": "Failed to send error report. Please try again.",
 	"errorLeavingGroup": "Failed to leave group. Please try again.",
