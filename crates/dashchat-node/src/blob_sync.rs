@@ -22,10 +22,10 @@ use crate::{AsBody, ChatPayload, Payload, TopicId, mailbox::MailboxOperation, st
 /// Max size of a single blob. The hash is content-addressed but its size is not
 /// bounded by anything the fetcher can see, so an untrusted log could reference
 /// a blob far larger than any legitimate message (the composer caps a whole
-/// message at 128 MiB, and each media item is a separate blob, so no single blob
+/// message at 16 MiB, and each media item is a separate blob, so no single blob
 /// can legitimately exceed it). Enforced both when fetching ([`download_capped`])
 /// and when an honest node publishes its own media (`store_media`).
-pub(crate) const MAX_BLOB_BYTES: u64 = 128 * 1024 * 1024;
+pub(crate) const MAX_BLOB_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Download `hash` from `providers`, aborting if the transfer exceeds
 /// [`MAX_BLOB_BYTES`]. Returns whether the blob is present locally afterwards.
