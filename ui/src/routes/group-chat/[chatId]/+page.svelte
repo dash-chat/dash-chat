@@ -10,6 +10,7 @@
 		ContactsStore,
 		DeviceId,
 		Hash,
+		Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
@@ -25,6 +26,7 @@
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
+	import EditHistorySheet from '$lib/components/messages/EditHistorySheet.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import { m } from '$lib/paraglide/messages';
@@ -54,6 +56,14 @@
 
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
+
+	let historyMessage: Message | undefined = $state(undefined);
+	let showHistory = $state(false);
+
+	function openHistory(message: Message) {
+		historyMessage = message;
+		showHistory = true;
+	}
 
 	// Scroll the message we just sent into view once its bubble mounts.
 	let justSentMessageHash: Hash | null = $state(null);
@@ -245,6 +255,7 @@
 														{chatId}
 														searchQuery=""
 														onToggleReaction={() => {}}
+														onShowHistory={() => openHistory(message)}
 													/>
 												</div>
 											{:else}
@@ -277,6 +288,7 @@
 														sender={author?.profile}
 														showSenderName={position === 'first' ||
 															position === 'single'}
+														onShowHistory={() => openHistory(message)}
 													/>
 												</div>
 											{/if}
@@ -320,4 +332,10 @@
 			{/if}
 		{/await}
 	</div>
+
+	<EditHistorySheet
+		message={historyMessage}
+		opened={showHistory}
+		onClose={() => (showHistory = false)}
+	/>
 </div>

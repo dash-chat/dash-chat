@@ -11,6 +11,7 @@
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
+	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
@@ -25,6 +26,7 @@
 		chatId,
 		sender,
 		showSenderName = false,
+		onShowHistory,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -34,6 +36,7 @@
 		onToggleReaction: (emoji: string) => void;
 		sender: Profile | undefined;
 		showSenderName?: boolean;
+		onShowHistory?: () => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -66,6 +69,9 @@
 </script>
 
 {#snippet metadata()}
+	{#if message.editedAt}
+		<EditedIndicator class="quiet" {onShowHistory} />
+	{/if}
 	<MessageTimestamp timestamp={message.timestamp} class="quiet" />
 {/snippet}
 

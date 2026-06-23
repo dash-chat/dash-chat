@@ -15,6 +15,7 @@
 		type DeviceId,
 		type Hash,
 		type Message,
+		EDIT_WINDOW_MS,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
@@ -55,6 +56,7 @@
 	import { condenseReactions } from '$lib/utils/emojis';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
+	import EditHistorySheet from '$lib/components/messages/EditHistorySheet.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { longpress } from '$lib/actions/longpress';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
@@ -128,6 +130,10 @@
 	let showFullPicker = $state(false);
 	let emojiTargetedMessage: Message | undefined = $state(undefined);
 	let reactionTargetElement: HTMLElement | null = $state(null);
+	let editingMessage: Message | undefined = $state(undefined);
+	let composerValue = $state('');
+	let historyMessage: Message | undefined = $state(undefined);
+	let showHistory = $state(false);
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -300,6 +306,32 @@
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 		hideReactionUI();
+	}
+
+	function canEditMessage(message: Message, myDeviceId: DeviceId): boolean {
+		if (message.author !== myDeviceId) return false;
+		const rootTimestamp = message.history?.[0]?.timestamp ?? message.timestamp;
+		return Date.now() - rootTimestamp <= EDIT_WINDOW_MS;
+	}
+
+	function startEditing(message: Message) {
+		editingMessage = message;
+		composerValue = message.content.message;
+		hideReactionUI();
+	}
+
+	function cancelEditing() {
+		editingMessage = undefined;
+		composerValue = '';
+	}
+
+	async function submitEdit(message: Message, text: string) {
+		await store.editMessage(message, text);
+	}
+
+	function openHistory(message: Message) {
+		historyMessage = message;
+		showHistory = true;
 	}
 
 	const theme = $derived(useTheme());
@@ -594,6 +626,7 @@
 																	searchQuery={searchMode ? searchQuery : ''}
 																	onToggleReaction={emoji =>
 																		toggleReaction(message, emoji, myDeviceId)}
+																	onShowHistory={() => openHistory(message)}
 																/>
 															{/await}
 														</div>
@@ -619,6 +652,7 @@
 																	sender={profile}
 																	onToggleReaction={emoji =>
 																		toggleReaction(message, emoji, myDeviceId)}
+																	onShowHistory={() => openHistory(message)}
 																/>
 															{/await}
 														</div>
@@ -681,10 +715,12 @@
 							targetElement={reactionTargetElement}
 							opened={showQuickBar}
 							isOwnMessage={myDeviceId === emojiTargetedMessage.author}
+							canEdit={canEditMessage(emojiTargetedMessage, myDeviceId)}
 							{myDeviceId}
 							onReaction={emoji =>
 								toggleReaction(emojiTargetedMessage!, emoji, myDeviceId)}
 							onExpand={expandToFullPicker}
+							onEdit={() => startEditing(emojiTargetedMessage!)}
 							onClose={hideReactionUI}
 						/>
 					{/if}
@@ -734,6 +770,12 @@
 						opened={showPeerProfile}
 						onClose={() => (showPeerProfile = false)}
 						{profile}
+					/>
+
+					<EditHistorySheet
+						message={historyMessage}
+						opened={showHistory}
+						onClose={() => (showHistory = false)}
 					/>
 				</ReverseScrollPage>
 
@@ -856,7 +898,14 @@
 							</div>
 						</div>
 					{:else}
-						<MessageComposer {store} onSent={onMessageSent} />
+						<MessageComposer
+							{store}
+							bind:value={composerValue}
+							editing={editingMessage}
+							onEdit={submitEdit}
+							onCancelEdit={cancelEditing}
+							onSent={onMessageSent}
+						/>
 					{/if}
 				</div>
 			{/await}

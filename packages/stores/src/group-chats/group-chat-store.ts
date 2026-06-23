@@ -1,5 +1,6 @@
 import { reactive, signal } from 'signalium';
 
+import { applyEdits } from '../chats/edits';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
@@ -124,6 +125,7 @@ export class GroupChatStore implements MessagesStore {
 				}
 			}
 		}
+		applyEdits(messages, logs);
 		return messages;
 	});
 
@@ -369,6 +371,11 @@ export class GroupChatStore implements MessagesStore {
 		media: OutgoingMedia | null;
 	}): Promise<Hash> {
 		return this.client.sendMessage(this.chatId, input.message, input.media);
+	}
+
+	async editMessage(message: Message, newText: string): Promise<Hash> {
+		const target = message.latestEditHash ?? message.hash;
+		return this.client.editMessage(this.chatId, target, newText);
 	}
 }
 

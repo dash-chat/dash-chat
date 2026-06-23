@@ -11,9 +11,12 @@
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
 	} from '$lib/utils/media';
-	import type { Hash, MessagesStore } from 'dash-chat-stores';
+	import type { Hash, Message, MessagesStore } from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
+	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { mdiClose, mdiPencil } from '@mdi/js';
+	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
@@ -30,6 +33,13 @@
 		store: MessagesStore;
 		/** Called after a message is successfully sent (e.g. to scroll the chat). */
 		onSent?: (messageHash: Hash) => void;
+		/** When set, the composer edits this message's text instead of sending a
+		 * new message. Media attachments are disabled while editing. */
+		editing?: Message | null;
+		/** Submit an edit of `message` with the new `text`. */
+		onEdit?: (message: Message, text: string) => Promise<void>;
+		/** Called when the user cancels an in-progress edit. */
+		onCancelEdit?: () => void;
 	}
 
 	let {
@@ -37,6 +47,9 @@
 		placeholder = m.typeMessage(),
 		store,
 		onSent,
+		editing = null,
+		onEdit,
+		onCancelEdit,
 	}: Props = $props();
 
 	const theme = $derived(useTheme());
@@ -48,7 +61,28 @@
 	let showMediaPanel = $state(false);
 	let showMediaMenu = $state(false);
 
+	async function submitEdit() {
+		const target = editing;
+		if (!target || !onEdit) return;
+		const text = value.trim();
+		if (!text || text === target.content.message) {
+			onCancelEdit?.();
+			return;
+		}
+		try {
+			await onEdit(target, text);
+			onCancelEdit?.();
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to edit message', e);
+		}
+	}
+
 	async function send() {
+		if (editing) {
+			await submitEdit();
+			return;
+		}
 		if (!hasContent) return;
 		const message = value;
 		const draft = media;
@@ -103,10 +137,36 @@
 
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<div class="message-input-bar" class:pb-safe={!showMediaPanel}>
-		<StagedAttachments bind:media onFiles={stage} />
+		{#if editing}
+			<div
+				class="row items-center gap-2 px-3 pt-2 text-sm"
+				data-testid="composer-editing-banner"
+			>
+				<wa-icon
+					class="quiet"
+					src={wrapPathInSvg(mdiPencil)}
+					style="font-size: 1rem"
+				></wa-icon>
+				<span class="flex-1 quiet truncate">{m.editingMessage()}</span>
+				<button
+					type="button"
+					class="quiet flex h-7 w-7 items-center justify-center"
+					aria-label={m.cancel()}
+					data-testid="composer-cancel-edit"
+					onclick={() => onCancelEdit?.()}
+				>
+					<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 1.1rem"
+					></wa-icon>
+				</button>
+			</div>
+		{:else}
+			<StagedAttachments bind:media onFiles={stage} />
+		{/if}
 
 		<div class="m-2 row gap-2" style="align-items: center;">
-			{#if isMobile}
+			{#if editing}
+				<!-- Media cannot be edited, so the attach button is hidden. -->
+			{:else if isMobile}
 				<AttachButton
 					class="h-10 w-10"
 					expanded={showMediaPanel}

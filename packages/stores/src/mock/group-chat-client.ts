@@ -30,6 +30,13 @@ export class MockGroupChatClient implements IGroupChatClient {
 		_chatId: ChatId,
 		_messageHashes: Hash[],
 	): Promise<void> {}
+	async editMessage(
+		_chatId: ChatId,
+		_editHash: Hash,
+		_message: string,
+	): Promise<Hash> {
+		return '';
+	}
 	async setInfo(_chatId: ChatId, _info: GroupInfo): Promise<void> {}
 	async leaveGroup(): Promise<void> {}
 	async deleteGroup(): Promise<void> {}

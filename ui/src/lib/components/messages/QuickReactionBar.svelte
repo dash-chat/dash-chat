@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { QUICK_EMOJIS } from '$lib/utils/emojis';
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiDotsHorizontal } from '@mdi/js';
+	import { mdiDotsHorizontal, mdiPencil } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import type { Message, DeviceId } from 'dash-chat-stores';
@@ -11,9 +11,11 @@
 		targetElement: HTMLElement;
 		opened: boolean;
 		isOwnMessage: boolean;
+		canEdit: boolean;
 		myDeviceId: DeviceId;
 		onReaction: (emoji: string) => void;
 		onExpand: () => void;
+		onEdit: () => void;
 		onClose: () => void;
 	}
 
@@ -22,9 +24,11 @@
 		targetElement,
 		opened,
 		isOwnMessage,
+		canEdit,
 		myDeviceId,
 		onReaction,
 		onExpand,
+		onEdit,
 		onClose,
 	}: Props = $props();
 
@@ -107,6 +111,17 @@
 					style="font-size: 1.25rem"
 				></wa-icon>
 			</button>
+			{#if canEdit}
+				<button
+					class="flex h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+					onclick={onEdit}
+					aria-label={m.edit()}
+					data-testid="quick-edit-button"
+				>
+					<wa-icon src={wrapPathInSvg(mdiPencil)} style="font-size: 1.25rem"
+					></wa-icon>
+				</button>
+			{/if}
 		</div>
 	</div>
 {/if}

@@ -12,6 +12,7 @@ export interface IDirectChatClient {
 	): Promise<Hash>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
 	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void>;
+	editMessage(chatId: ChatId, editHash: Hash, message: string): Promise<Hash>;
 }
 
 export class DirectChatClient implements IDirectChatClient {
@@ -44,6 +45,14 @@ export class DirectChatClient implements IDirectChatClient {
 		return invoke('send_reaction', {
 			chatId,
 			content,
+		});
+	}
+
+	editMessage(chatId: ChatId, editHash: Hash, message: string): Promise<Hash> {
+		return invoke('edit_message', {
+			chatId,
+			editHash,
+			message,
 		});
 	}
 }

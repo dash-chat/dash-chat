@@ -9,6 +9,7 @@
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
+	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { m } from '$lib/paraglide/messages.js';
@@ -22,6 +23,7 @@
 		searchQuery,
 		onToggleReaction,
 		chatId,
+		onShowHistory,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -29,6 +31,7 @@
 		chatId: ChatId;
 		searchQuery: string;
 		onToggleReaction: (emoji: string) => void;
+		onShowHistory?: () => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -58,6 +61,9 @@
 </script>
 
 {#snippet metadata()}
+	{#if message.editedAt}
+		<EditedIndicator class="dark-quiet" {onShowHistory} />
+	{/if}
 	<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
 
 	<MessageStatusIndicator

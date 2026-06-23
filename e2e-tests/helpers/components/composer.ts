@@ -19,6 +19,8 @@ export class Composer {
 	mediaPreview = this.agent.$(tid('message-input-media-preview'));
 	clearAttachments = this.agent.$(tid('message-input-clear-attachments'));
 	addMoreTile = this.agent.$(tid('message-input-add-more'));
+	editingBanner = this.agent.$(tid('composer-editing-banner'));
+	cancelEditButton = this.agent.$(tid('composer-cancel-edit'));
 
 	removeAttachmentButton(index: number) {
 		return this.agent.$(tid(`message-input-remove-attachment-${index}`));

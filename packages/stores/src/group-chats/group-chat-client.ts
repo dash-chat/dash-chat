@@ -23,6 +23,7 @@ export interface IGroupChatClient {
 		media: OutgoingMedia | null,
 	): Promise<Hash>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
+	editMessage(chatId: ChatId, editHash: Hash, message: string): Promise<Hash>;
 
 	setInfo(chatId: ChatId, info: GroupInfo): Promise<void>;
 
@@ -55,6 +56,9 @@ export class GroupChatClient implements IGroupChatClient {
 	}
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void> {
 		return invoke('mark_messages_read', { chatId, messageHashes });
+	}
+	editMessage(chatId: ChatId, editHash: Hash, message: string): Promise<Hash> {
+		return invoke('edit_message', { chatId, editHash, message });
 	}
 	setInfo(chatId: ChatId, info: GroupInfo): Promise<void> {
 		return invoke('set_group_info', { chatId, info });

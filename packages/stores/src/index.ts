@@ -23,6 +23,7 @@ export * from './group-chats/group-chat-client.js';
 
 export * from './chats/chats-store.js';
 export * from './chats/chats-client.js';
+export * from './chats/edits.js';
 
 export * from './settings/settings-client.js';
 export * from './settings/settings-store.js';

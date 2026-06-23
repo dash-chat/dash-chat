@@ -168,4 +168,69 @@ export class Messages {
 			messageText,
 		);
 	}
+
+	/** Open the quick-action bar for the message containing `text` by
+	 * dispatching a contextmenu event (the path `longpress` uses on desktop). */
+	async openActions(text: string): Promise<void> {
+		await this.agent.execute(
+			(messagesSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						wrapper.dispatchEvent(
+							new MouseEvent('contextmenu', {
+								bubbles: true,
+								cancelable: true,
+							}),
+						);
+						return;
+					}
+				}
+			},
+			this.messagesSelector,
+			text,
+		);
+	}
+
+	/** Whether the message containing `text` shows the "Edited" indicator. */
+	async hasEditedIndicator(text: string): Promise<boolean> {
+		return this.agent.execute(
+			(messagesSel: string, editedSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return !!wrapper.querySelector(editedSel);
+					}
+				}
+				return false;
+			},
+			this.messagesSelector,
+			tid('message-edited-indicator'),
+			text,
+		);
+	}
+
+	/** Click the "Edited" indicator on the message containing `text`. */
+	async openEditHistory(text: string): Promise<void> {
+		await this.agent.execute(
+			(messagesSel: string, editedSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						(wrapper.querySelector(editedSel) as HTMLElement | null)?.click();
+						return;
+					}
+				}
+			},
+			this.messagesSelector,
+			tid('message-edited-indicator'),
+			text,
+		);
+	}
 }

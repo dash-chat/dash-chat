@@ -1,5 +1,6 @@
 import { reactive } from 'signalium';
 
+import { MessageVersion, applyEdits } from '../chats/edits';
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
@@ -27,6 +28,12 @@ export interface Message {
 	author: DeviceId;
 	seqNum: number;
 	reactions: Record<DeviceId, string>;
+	/** Timestamp of the latest edit, if the message has been edited. */
+	editedAt?: number;
+	/** Every version of the text, original first, when the message was edited. */
+	history?: MessageVersion[];
+	/** Hash of the latest edit op in the chain; the target for the next edit. */
+	latestEditHash?: Hash;
 }
 
 // Store tied to a specific direct chat
@@ -98,6 +105,7 @@ export class DirectChatStore implements MessagesStore {
 				}
 			}
 		}
+		applyEdits(messages, logs);
 		return messages;
 	});
 
@@ -227,5 +235,11 @@ export class DirectChatStore implements MessagesStore {
 	async sendReaction(reaction: ChatReaction) {
 		const chatId = await this.chatId();
 		await this.client.sendReaction(chatId, reaction);
+	}
+
+	async editMessage(message: Message, newText: string): Promise<Hash> {
+		const chatId = await this.chatId();
+		const target = message.latestEditHash ?? message.hash;
+		return this.client.editMessage(chatId, target, newText);
 	}
 }

@@ -38,4 +38,18 @@ export class MockDirectChatClient implements IDirectChatClient {
 			payload: { type: 'Reaction', payload: content },
 		});
 	}
+
+	async editMessage(
+		chatId: ChatId,
+		editHash: Hash,
+		message: string,
+	): Promise<Hash> {
+		return this.logsClient.create(chatId, {
+			type: 'Chat',
+			payload: {
+				type: 'EditMessage',
+				payload: { message, edit_hash: editHash },
+			},
+		});
+	}
 }
