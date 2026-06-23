@@ -41,7 +41,7 @@ use crate::{
 
 pub use app_processing::Notification;
 
-const NETWORK_ID: &'static str = "dash-chat";
+const NETWORK_ID: &[u8; 32] = b"usability, reliability, security";
 
 pub static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
     "https://euc1-1.relay.n0.iroh-canary.iroh.link"
@@ -81,7 +81,7 @@ impl NodeConfig {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
             capabilities: Capabilities::current(),
-            network_id: Hash::digest(NETWORK_ID.as_bytes()).into(),
+            network_id: *NETWORK_ID,
             // In testing we disable mDNS discovery and do not provide a relay address so as not
             // to effect expected behavior of existing tests.
             mdns_mode: MdnsDiscoveryMode::Disabled,
@@ -103,7 +103,7 @@ impl Default for NodeConfig {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
             capabilities: Capabilities::current(),
-            network_id: Hash::digest(NETWORK_ID.as_bytes()).into(),
+            network_id: *NETWORK_ID,
             mdns_mode: MdnsDiscoveryMode::Active,
             relay_url: Some(RELAY_URL.clone()),
             blob_fetch: BlobFetchConfig::default(),
