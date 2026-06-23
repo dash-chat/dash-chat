@@ -1,10 +1,11 @@
-import { TestPage } from '../../test-page';
+import { tid } from '../../../selectors';
+import { TestHelper } from '../../test-helper';
 
-export class HelpPage extends TestPage {
-	back = this.el('help-back');
-	contactUsLink = this.el('help-contact-us');
-	versionItem = this.el('help-version');
-	previewFeaturesToggle = this.el('help-preview-features-toggle');
+export class HelpPage extends TestHelper {
+	back = this.el(tid('help-back'));
+	contactUsLink = this.el(tid('help-contact-us'));
+	versionItem = this.el(tid('help-version'));
+	previewFeaturesToggle = this.el(tid('help-preview-features-toggle'));
 
 	async ready() {
 		await this.contactUsLink.waitForExist();

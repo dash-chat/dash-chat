@@ -1,5 +1,5 @@
 import { tid } from '../selectors';
-import { TestPage } from './test-page';
+import { TestHelper } from './test-helper';
 
 const GET_STARTED_CARD_IDS = [
 	'add-contact',
@@ -10,13 +10,13 @@ const GET_STARTED_CARD_IDS = [
 
 type GetStartedCardId = (typeof GET_STARTED_CARD_IDS)[number];
 
-export class HomePage extends TestPage {
-	settingsLink = this.el('home-settings-link');
-	newMessageButton = this.el('home-new-message-btn');
-	firstChatTooltip = this.el('first-chat-tooltip');
-	chatList = this.el('all-chats-list');
-	chatRow = this.el('all-chats-row');
-	emptyState = this.el('all-chats-empty');
+export class HomePage extends TestHelper {
+	settingsLink = this.el(tid('home-settings-link'));
+	newMessageButton = this.el(tid('home-new-message-btn'));
+	firstChatTooltip = this.el(tid('first-chat-tooltip'));
+	chatList = this.el(tid('all-chats-list'));
+	chatRow = this.el(tid('all-chats-row'));
+	emptyState = this.el(tid('all-chats-empty'));
 
 	async ready() {
 		await this.agent.waitUntil(() => this.isLoaded(), {

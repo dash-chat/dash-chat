@@ -1,16 +1,12 @@
-import { tid } from '../selectors';
-
-export abstract class TestPage {
+export abstract class TestHelper {
 	constructor(protected agent: WebdriverIO.Browser) {}
 
-	abstract ready(): Promise<void>;
-
-	/** A `data-testid` element that re-resolves on every use, so it never reuses
-	 * a stale handle across re-renders. Behaves exactly like `$(tid(id))`. */
-	protected el(id: string) {
-		return new Proxy(this.agent.$(tid(id)), {
+	/** Wraps `$(selector)` so it re-resolves on every use — never reusing a stale
+	 * handle across re-renders. Pass `tid('id')` for a `data-testid` element. */
+	protected el(selector: string) {
+		return new Proxy(this.agent.$(selector), {
 			get: (_target, prop) => {
-				const fresh = this.agent.$(tid(id));
+				const fresh = this.agent.$(selector);
 				const value = Reflect.get(fresh, prop);
 				return typeof value === 'function' ? value.bind(fresh) : value;
 			},

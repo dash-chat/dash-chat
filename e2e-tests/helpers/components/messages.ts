@@ -1,27 +1,29 @@
+import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 import { SYNC_TIMEOUT } from '../timeouts';
 import { Lightbox } from './lightbox';
 
 // Driver for a chat's rendered message list — the messages themselves plus the
 // scroll-to-bottom button and unread affordances around them.
-export class Messages {
+export class Messages extends TestHelper {
 	constructor(
-		private agent: WebdriverIO.Browser,
+		agent: WebdriverIO.Browser,
 		messagesTestId: string,
 		unreadDividerTestId: string,
 	) {
+		super(agent);
 		this.messagesSelector = tid(messagesTestId);
 		this.dividerSelector = tid(unreadDividerTestId);
-		this.root = agent.$(this.messagesSelector);
-		this.unreadDivider = agent.$(this.dividerSelector);
+		this.root = this.el(this.messagesSelector);
+		this.unreadDivider = this.el(this.dividerSelector);
 	}
 
 	private readonly messagesSelector: string;
 	private readonly dividerSelector: string;
 	readonly root;
 	readonly unreadDivider;
-	scrollBottom = this.agent.$(tid('chat-scroll-bottom'));
-	unreadBadge = this.agent.$(tid('chat-unread-badge'));
+	scrollBottom = this.el(tid('chat-scroll-bottom'));
+	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
 	lightbox = new Lightbox(this.agent);
 

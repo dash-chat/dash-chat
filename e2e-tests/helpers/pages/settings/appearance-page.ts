@@ -1,10 +1,11 @@
-import { TestPage } from '../test-page';
+import { tid } from '../../selectors';
+import { TestHelper } from '../test-helper';
 
-export class AppearancePage extends TestPage {
-	back = this.el('appearance-back');
-	light = this.el('appearance-light');
-	dark = this.el('appearance-dark');
-	system = this.el('appearance-system');
+export class AppearancePage extends TestHelper {
+	back = this.el(tid('appearance-back'));
+	light = this.el(tid('appearance-light'));
+	dark = this.el(tid('appearance-dark'));
+	system = this.el(tid('appearance-system'));
 
 	async ready() {
 		await this.light.waitForExist();
