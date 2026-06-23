@@ -56,28 +56,33 @@ pub fn run() {
         if cfg!(feature = "e2e-tests") {
             // E2E tests run multiple built instances side-by-side;
             // skip single-instance, updater, and MCP bridge plugins.
-        } else if tauri::is_dev() {
-            // MCP for Claude Code to control the tauri app
-            builder = builder.plugin(tauri_plugin_mcp_bridge::init());
         } else {
-            builder = builder
-                .plugin(tauri_plugin_single_instance::init(
-                    move |app, _argv, _cwd| {
-                        use tauri::Manager;
+            // single-instance must be registered before deep-link so it can
+            // forward deep link URLs from a second process to this one.
+            builder = builder.plugin(tauri_plugin_single_instance::init(
+                move |app, _argv, _cwd| {
+                    use tauri::Manager;
 
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.set_focus();
-                        } else if let Err(err) = tray::show_or_create_main_window(app) {
-                            log::error!("Failed to show/create main window: {err:?}");
-                        }
-                    },
-                ))
-                .plugin(tauri_plugin_autostart::init(
-                    tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-                    Some(vec!["--minimized"]),
-                ))
-                .plugin(tauri_plugin_updater::Builder::new().build())
-                .plugin(tauri_plugin_keepawake::init());
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.set_focus();
+                    } else if let Err(err) = tray::show_or_create_main_window(app) {
+                        log::error!("Failed to show/create main window: {err:?}");
+                    }
+                },
+            ));
+
+            if tauri::is_dev() {
+                // MCP for Claude Code to control the tauri app
+                builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+            } else {
+                builder = builder
+                    .plugin(tauri_plugin_autostart::init(
+                        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                        Some(vec!["--minimized"]),
+                    ))
+                    .plugin(tauri_plugin_updater::Builder::new().build())
+                    .plugin(tauri_plugin_keepawake::init());
+            }
         }
     }
 
@@ -135,6 +140,12 @@ pub fn run() {
             _ => {}
         })
         .setup(move |app| {
+            #[cfg(any(target_os = "linux", windows))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                app.deep_link().register_all()?;
+            }
+
             let handle = app.handle().clone();
 
             let result: anyhow::Result<()> =

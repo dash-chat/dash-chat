@@ -3,8 +3,6 @@ import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 
 import { showToast } from './toasts';
 
-const DEEP_LINK_BASE_URL = 'https://dashchat.org';
-
 function handleAddContactLink(code: string) {
 	console.log('[deep-link] handling add-contact link with code:', code);
 	goto('/new-message/add-contact').then(() =>
@@ -12,14 +10,20 @@ function handleAddContactLink(code: string) {
 	);
 }
 
+const HTTPS_DEEP_LINK_BASE_URL = 'https://dashchat\\.org';
+const SCHEME_DEEP_LINK_BASE_URL = 'dash-chat:/';
+
+function buildDeepLinkRegex(path: string): RegExp {
+	return new RegExp(
+		`^(?:${HTTPS_DEEP_LINK_BASE_URL}|${SCHEME_DEEP_LINK_BASE_URL})${path.replace(/\//g, '\\/')}$`,
+	);
+}
+
 function handleUrls(urls: string[]) {
 	console.log('[deep-link] handling urls:', urls);
 	for (const url of urls) {
-		const match = url.match(
-			new RegExp(`${DEEP_LINK_BASE_URL}/add-contact/(.+)`),
-		);
-		if (match) {
-			const code = match[1];
+		const code = url.match(buildDeepLinkRegex('/add-contact/(.+)'))?.[1];
+		if (code) {
 			handleAddContactLink(code);
 		} else {
 			console.log('[deep-link] url did not match pattern:', url);
