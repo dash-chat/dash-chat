@@ -11,6 +11,8 @@
 	import { Button, Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
+	import { openAppSettings } from '@tauri-apps/plugin-barcode-scanner';
+	import { isIos, isAndroid } from '$lib/utils/environment';
 	import { objectUrl } from '$lib/actions/object-url';
 	import PermissionSettingsSheet from '$lib/components/PermissionSettingsSheet.svelte';
 	import {
@@ -80,15 +82,22 @@
 			await load();
 			return;
 		}
-		// On the first refusal the OS dialog was shown and tapping "Allow Access"
-		// again re-prompts, so a toast is enough. Once permanently denied the
-		// dialog no longer shows, so guide the user to the app's settings instead.
-		if (deniedOnce) {
-			showSettingsSheet = true;
-		} else {
-			deniedOnce = true;
-			showToast(m.recentPhotosPermissionDenied());
+
+		if (isAndroid) {
+			// On the first refusal the OS dialog was shown and tapping "Allow Access"
+			// again re-prompts, so a toast is enough. Once permanently denied the
+			// dialog no longer shows, so guide the user to the app's settings instead.
+			if (deniedOnce) {
+				showSettingsSheet = true;
+			} else {
+				deniedOnce = true;
+				showToast(m.recentPhotosPermissionDenied());
+			}
 		}
+	}
+
+	async function openSettings() {
+		await openAppSettings();
 	}
 
 	async function add(photo: RecentPhoto) {
@@ -135,6 +144,21 @@
 		<div class="flex h-[100px] items-center">
 			<Preloader />
 		</div>
+	</div>
+{:else if permission === 'denied' && isIos}
+	<div class="flex flex-col items-center gap-4 px-5 pt-2 pb-4 text-center">
+		<span class="text-sm" style="color: var(--k-text-color)">
+			{m.recentPhotosNoAccess()}
+		</span>
+		<Button
+			rounded
+			tonal
+			onClick={openSettings}
+			data-testid="message-input-recent-photos-settings"
+			style="width: auto"
+		>
+			{m.recentPhotosOpenSettings()}
+		</Button>
 	</div>
 {:else if permission === 'prompt' || permission === 'denied'}
 	<div class="flex flex-col items-center gap-4 px-5 pt-2 pb-4 text-center">

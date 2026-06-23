@@ -63,6 +63,6 @@
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Dash Chat needs access to your photo library to save photos you download from chats.</string>
+	<string>Dash Chat needs access to your photo library to attach photos to messages and to save photos you download from chats.</string>
 </dict>
 </plist>

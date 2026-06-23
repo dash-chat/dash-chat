@@ -157,6 +157,8 @@
 	"recentPhotosSettingsStep1": "Tap Settings below",
 	"recentPhotosSettingsStep2": "Tap Permissions",
 	"recentPhotosSettingsStep3": "Allow the Photos and videos permission",
+	"recentPhotosNoAccess": "Dash Chat does not have access to your photos or videos. To enable access open Settings and tap Photos.",
+	"recentPhotosOpenSettings": "Open Settings",
 	"dropFilesToSend": "Drop files here to send them",
 	"saveFile": "Save file",
 	"fileSaved": "File saved.",
