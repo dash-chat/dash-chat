@@ -3,7 +3,6 @@
 use derive_more::derive::Constructor;
 use futures::Stream;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
-use iroh_blobs::protocol::GetRequest;
 use mailbox_client::manager::Mailboxes;
 use p2panda::operation::{LogId, Operation};
 use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
@@ -96,23 +95,14 @@ impl BlobSync {
         }
 
         let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
-
-        match tokio::time::timeout(
+        dashchat_utils::blob_sync::download_capped(
+            &self.downloader,
+            hash,
+            providers,
             attempt_timeout,
-            self.downloader.download(GetRequest::all(hash), providers),
+            &self.blobs,
         )
         .await
-        {
-            Ok(Ok(_stats)) => true,
-            Ok(Err(err)) => {
-                tracing::debug!(%hash, ?err, "blob download failed");
-                false
-            }
-            Err(_) => {
-                tracing::warn!(%hash, "blob download timed out");
-                false
-            }
-        }
     }
 
     /// Keep attempting an on-demand download of `hash` until it is present

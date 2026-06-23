@@ -1,15 +1,24 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use dashchat_utils::{fetch_loop, FetchConfig, FetchPool};
+use futures::StreamExt;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
-use iroh_blobs::protocol::GetRequest;
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
+
+/// Tag-name prefix marking a stored blob the server is responsible for GCing.
+/// The fetch time (unix seconds, zero-padded for lexical order) is embedded so
+/// `expire_blob_tags` can drop tags past the retention window.
+const BLOB_TAG_PREFIX: &str = "mailbox/";
+/// Retention for stored blobs, matching the 7-day blip retention in cleanup.rs.
+const BLOB_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+/// How often iroh sweeps untagged blobs and how often we expire stale tags.
+const BLOB_GC_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Clone, Default)]
 pub struct BlobFetchPool {
@@ -73,6 +82,10 @@ pub struct BlobSync {
     downloader: Downloader,
     endpoint_id: iroh::EndpointId,
     fetch_config: FetchConfig,
+    /// True when this BlobSync owns its blob store (standalone server) and is
+    /// therefore responsible for GCing stored blobs. False when sharing an
+    /// in-process node's store, where the node owns blob lifecycle.
+    enable_gc: bool,
     /// Held only when this BlobSync owns its iroh endpoint (standalone server).
     /// `None` when sharing an in-process node's endpoint, in which case the
     /// node keeps the endpoint, router, and blob store alive.
@@ -87,7 +100,13 @@ impl BlobSync {
             .bind()
             .await?;
 
-        let store = iroh_blobs::store::fs::FsStore::load(root).await?;
+        let db_path = root.join("blobs.db");
+        let mut options = iroh_blobs::store::fs::options::Options::new(&root);
+        options.gc = Some(iroh_blobs::store::GcConfig {
+            interval: BLOB_GC_INTERVAL,
+            add_protected: None,
+        });
+        let store = iroh_blobs::store::fs::FsStore::load_with_opts(db_path, options).await?;
         let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
         let router = Router::builder(endpoint.clone())
             .accept(iroh_blobs::ALPN, blobs.clone())
@@ -101,6 +120,7 @@ impl BlobSync {
             downloader,
             endpoint_id,
             fetch_config: FetchConfig::default(),
+            enable_gc: true,
             _endpoint: Some(endpoint),
             _router: Some(router),
         })
@@ -121,6 +141,7 @@ impl BlobSync {
             downloader,
             endpoint_id,
             fetch_config: FetchConfig::default(),
+            enable_gc: false,
             _endpoint: None,
             _router: None,
         }
@@ -172,23 +193,88 @@ impl BlobSync {
             return false;
         }
         let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
-        match tokio::time::timeout(
+        let fetched = dashchat_utils::blob_sync::download_capped(
+            &self.downloader,
+            hash,
+            providers,
             attempt_timeout,
-            self.downloader.download(GetRequest::all(hash), providers),
+            &self.blobs,
         )
-        .await
-        {
-            Ok(Ok(_)) => true,
-            Ok(Err(err)) => {
-                tracing::debug!(%hash, ?err, "mailbox blob download failed");
-                false
-            }
-            Err(_) => {
-                tracing::warn!(%hash, "mailbox blob download timed out");
-                false
-            }
+        .await;
+        if fetched {
+            self.protect_blob(hash).await;
+        }
+        fetched
+    }
+
+    /// Tag a freshly stored blob so iroh's GC keeps it; the tag name embeds the
+    /// fetch time so [`expire_blob_tags`] can drop it after the retention window.
+    /// No-op when sharing an in-process node's store (the node owns lifecycle).
+    async fn protect_blob(&self, hash: iroh_blobs::Hash) {
+        if !self.enable_gc {
+            return;
+        }
+        let secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let name = format!("{BLOB_TAG_PREFIX}{secs:020}/{hash}");
+        if let Err(err) = self.blobs.store().tags().set(name, hash).await {
+            tracing::warn!(%hash, ?err, "failed to tag stored blob for retention");
         }
     }
+
+    /// Spawn the loop that expires stored-blob tags past the retention window;
+    /// iroh's background GC then reclaims the now-untagged blobs. Returns `None`
+    /// when sharing a node's store (the node owns blob lifecycle).
+    pub fn spawn_blob_gc_task(&self) -> Option<JoinHandle<()>> {
+        if !self.enable_gc {
+            return None;
+        }
+        let blobs = self.blobs.clone();
+        Some(tokio::spawn(async move {
+            let mut interval = tokio::time::interval(BLOB_GC_INTERVAL);
+            loop {
+                interval.tick().await;
+                if let Err(err) = expire_blob_tags(&blobs).await {
+                    tracing::error!(?err, "failed to expire stored blob tags");
+                }
+            }
+        }))
+    }
+}
+
+/// Delete stored-blob tags older than [`BLOB_RETENTION`] so iroh's GC reclaims
+/// the underlying blobs on its next sweep.
+async fn expire_blob_tags(blobs: &iroh_blobs::BlobsProtocol) -> anyhow::Result<()> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let cutoff = now.saturating_sub(BLOB_RETENTION.as_secs());
+    let tags = blobs.store().tags();
+    let mut stream = tags.list_prefix(BLOB_TAG_PREFIX.as_bytes()).await?;
+    let mut expired = Vec::new();
+    while let Some(info) = stream.next().await {
+        let info = info?;
+        if tag_fetch_secs(info.name.as_ref()).is_some_and(|secs| secs < cutoff) {
+            expired.push(info.name);
+        }
+    }
+    for name in expired {
+        tags.delete(name).await?;
+    }
+    Ok(())
+}
+
+/// Parse the embedded fetch time (unix seconds) from a `mailbox/<secs>/<hash>` tag.
+fn tag_fetch_secs(name: &[u8]) -> Option<u64> {
+    let name = std::str::from_utf8(name).ok()?;
+    name.strip_prefix(BLOB_TAG_PREFIX)?
+        .split('/')
+        .next()?
+        .parse()
+        .ok()
 }
 
 #[cfg(test)]
@@ -223,6 +309,14 @@ mod tests {
         let (h, sources) = pool.next_untried(&tried).await.unwrap();
         assert_eq!(h, hash(1));
         assert_eq!(sources.len(), 2);
+    }
+
+    #[test]
+    fn tag_fetch_secs_round_trips_protect_blob_format() {
+        let secs = 1_700_000_000u64;
+        let name = format!("{BLOB_TAG_PREFIX}{secs:020}/{}", hash(7));
+        assert_eq!(tag_fetch_secs(name.as_bytes()), Some(secs));
+        assert_eq!(tag_fetch_secs(b"other/123/abc"), None);
     }
 
     #[tokio::test]

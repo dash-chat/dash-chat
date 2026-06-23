@@ -15,6 +15,7 @@ use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
+use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
@@ -139,6 +140,15 @@ pub struct Node {
     filesystem: Filesystem,
     blob_sync: BlobSync,
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+}
+
+/// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
+/// node never references a blob that the fetcher's own cap would reject.
+fn ensure_blob_size(size: usize, name: &str) -> anyhow::Result<()> {
+    if size as u64 > MAX_BLOB_BYTES {
+        anyhow::bail!("media item {name:?} is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
+    }
+    Ok(())
 }
 
 impl Node {
@@ -1144,6 +1154,7 @@ impl Node {
             OutgoingMedia::Photos { photos } => {
                 for photo in photos {
                     let size = photo.data.len();
+                    ensure_blob_size(size, &photo.name)?;
                     let tag = self.blob_sync.blobs.add_bytes(photo.data).await?;
                     items.push(MediaMetadata {
                         name: photo.name,
@@ -1156,6 +1167,7 @@ impl Node {
             }
             OutgoingMedia::File { file } => {
                 let size = file.data.len();
+                ensure_blob_size(size, &file.name)?;
                 let tag = self.blob_sync.blobs.add_bytes(file.data).await?;
                 items.push(MediaMetadata {
                     name: file.name,

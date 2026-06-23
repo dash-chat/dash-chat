@@ -1,8 +1,8 @@
 use mailbox_server::{
-    cleanup_old_messages, BlipsKey, GetBlipsResponse, WatermarksKey, BLIPS_TABLE, WATERMARKS_TABLE,
+    cleanup_old_messages, test_utils::LONG_AGO, BlipsKey, GetBlipsResponse, WatermarksKey,
+    BLIPS_TABLE, WATERMARKS_TABLE,
 };
 use redb::{ReadableDatabase, ReadableTable};
-use std::time::Duration;
 
 /// Tests that cleanup of old messages does not affect watermarks or cause
 /// the server to re-request blips it already received.
@@ -19,8 +19,8 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     let topic = "test-topic";
     let author = "author-1";
 
-    // Step 1: Insert OLD blips directly into DB (8 days ago - will be cleaned up)
-    let old_time = std::time::SystemTime::now() - Duration::from_secs(8 * 24 * 60 * 60);
+    // Step 1: Insert OLD blips directly into DB (will be cleaned up)
+    let old_time = std::time::SystemTime::now() - LONG_AGO;
     let old_uuid = uuid::Uuid::new_v7(uuid::Timestamp::from_unix(
         uuid::NoContext,
         old_time
