@@ -1,15 +1,14 @@
-import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
 
 export class SettingsPage extends TestPage {
-	back = this.agent.$(tid('settings-back'));
-	profileLink = this.agent.$(tid('settings-profile-link'));
-	qrLink = this.agent.$(tid('settings-qr-link'));
-	appearanceLink = this.agent.$(tid('settings-appearance-link'));
-	accountLink = this.agent.$(tid('settings-account-link'));
-	helpLink = this.agent.$(tid('settings-help-link'));
-	notificationsLink = this.agent.$(tid('settings-notifications-link'));
-	offlineLink = this.agent.$(tid('settings-offline-link'));
+	back = this.el('settings-back');
+	profileLink = this.el('settings-profile-link');
+	qrLink = this.el('settings-qr-link');
+	appearanceLink = this.el('settings-appearance-link');
+	accountLink = this.el('settings-account-link');
+	helpLink = this.el('settings-help-link');
+	notificationsLink = this.el('settings-notifications-link');
+	offlineLink = this.el('settings-offline-link');
 
 	async ready() {
 		await this.profileLink.waitForExist();

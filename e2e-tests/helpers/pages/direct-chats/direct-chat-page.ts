@@ -9,20 +9,20 @@ export type MessageStatus = 'sending' | 'local' | 'cloud';
 export type { ConnectionStatus } from '../../components/connection-status-indicator';
 
 export class DirectChatPage extends TestPage {
-	page = this.agent.$(tid('direct-chat-page'));
-	back = this.agent.$(tid('direct-chat-back'));
-	searchBack = this.agent.$(tid('direct-chat-search-back'));
-	searchInput = this.agent.$(tid('direct-chat-search-input'));
-	searchResultsCount = this.agent.$(tid('search-results-count'));
-	settingsLink = this.agent.$(tid('direct-chat-settings-link'));
-	peerName = this.agent.$(tid('direct-chat-peer-name'));
-	peerHeader = this.agent.$(tid('direct-chat-peer-header'));
-	acceptButton = this.agent.$(tid('direct-chat-accept-btn'));
-	rejectButton = this.agent.$(tid('direct-chat-reject-btn'));
-	acceptConfirm = this.agent.$(tid('direct-chat-accept-confirm'));
-	rejectConfirm = this.agent.$(tid('direct-chat-reject-confirm'));
-	messageStatus = this.agent.$(tid('message-status'));
-	readMore = this.agent.$(tid('message-read-more'));
+	page = this.el('direct-chat-page');
+	back = this.el('direct-chat-back');
+	searchBack = this.el('direct-chat-search-back');
+	searchInput = this.el('direct-chat-search-input');
+	searchResultsCount = this.el('search-results-count');
+	settingsLink = this.el('direct-chat-settings-link');
+	peerName = this.el('direct-chat-peer-name');
+	peerHeader = this.el('direct-chat-peer-header');
+	acceptButton = this.el('direct-chat-accept-btn');
+	rejectButton = this.el('direct-chat-reject-btn');
+	acceptConfirm = this.el('direct-chat-accept-confirm');
+	rejectConfirm = this.el('direct-chat-reject-confirm');
+	messageStatus = this.el('message-status');
+	readMore = this.el('message-read-more');
 	messages = new Messages(
 		this.agent,
 		'direct-chat-messages',
