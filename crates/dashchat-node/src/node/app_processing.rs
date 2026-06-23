@@ -232,6 +232,7 @@ impl Node {
         let topic = operation.topic();
         let hash = operation.id();
         if self.local_store.is_tombstoned(topic, hash).await? {
+            self.unprocess_app(&operation.operation()).await?;
             self.op_store.delete_body(&hash).await?;
             Ok(true)
         } else {
@@ -240,13 +241,8 @@ impl Node {
     }
 
     /// Filter out operations whose payloads are not able to be deleted.
-    ///
-    /// The return type is written as such to allow Try semantics for two intermediary Options.
-    pub(crate) fn is_tombstoneable(&self, operation: &Operation) -> Option<()> {
-        match Payload::try_from_body(operation.body.as_ref()?).ok()? {
-            Payload::Chat(ChatPayload::Message(_)) => Some(()),
-            _ => None,
-        }
+    pub(crate) fn is_tombstoneable(&self, payload: &Payload) -> bool {
+        matches!(payload, Payload::Chat(ChatPayload::Message(_)))
     }
 
     /// Note that this is a function that processes operations which could have deleted payloads.
@@ -320,6 +316,38 @@ impl Node {
         Ok(())
     }
 
+    /// Undo the effects of processing an app-layer operation.
+    /// This is done when an operation paylaod is deleted.
+    /// Only tombstoneable operations can be unprocessed.
+    pub(crate) async fn unprocess_app(&self, operation: &Operation) -> anyhow::Result<()> {
+        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
+            return Ok(());
+        };
+        if self.is_tombstoneable(&payload) {
+            match payload {
+                Payload::Chat(ChatPayload::Message(m)) => {
+                    use p2panda_store::topics::TopicStore;
+                    let author = operation.header().verifying_key;
+                    let log_id = operation.header.extensions.log_id;
+                    let topic = self.op_store.store.resolve_topic(&author, &log_id).await?;
+                    let Some(topic) = topic else {
+                        tracing::error!("failed to resolve topic for operation: {operation:?}");
+                        return Ok(());
+                    };
+                    if let Some(media) = m.media() {
+                        for item in media.iter() {
+                            self.blob_sync.fetch_pool.remove(topic, item.hash).await;
+                        }
+                    }
+                }
+                _ => {
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    }
+
     async fn process_app(
         &self,
         operation: ProcessedOperation<Payload>,
@@ -330,6 +358,13 @@ impl Node {
         let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         let header = operation.processed().header();
 
+        // NOTE: realistically the tombstone will only be enforced here
+        // upon playback of operations. The first time through, it will
+        // have been processed and potentially have modified local state.
+        // Upon tombstoning (or enforcement), it will be "unprocessed"
+        // via [`Self::unprocess_app`] to undo those state changes,
+        // as if it were never processed at all. On playback, the operation
+        // simply doesn't get processed.
         if self.enforce_tombstone(&operation).await? {
             // The payload is tombstoned, so there's nothing to process.
             self.notify_header(dashchat_topic, &header).await?;
@@ -402,7 +437,7 @@ impl Node {
             Payload::Chat(ChatPayload::Message(m)) => {
                 if let Some(media) = m.media() {
                     for item in media.iter() {
-                        // TODO: can we have a p2panda stream of operations?
+                        // TODO: revisit during ACID review (replay)
                         self.blob_sync.fetch_pool.add(topic.into(), item.hash).await;
                     }
                 }

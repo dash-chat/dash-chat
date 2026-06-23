@@ -859,13 +859,21 @@ impl Node {
     /// Tombstone an operation: record its hash in the topic's persisted
     /// tombstone set so its payload is never stored or synced again, and
     /// immediately drop any payload already stored for it.
+    ///
+    /// This has the effect that when the operation is played back, it will
+    /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
+    /// is `true` should not cause state changes when processed!
     pub async fn tombstone_operation(
         &self,
         topic: TopicId,
         operation: &Operation,
     ) -> anyhow::Result<()> {
-        if self.is_tombstoneable(operation).is_some() {
+        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
+            return Ok(());
+        };
+        if self.is_tombstoneable(&payload) {
             let hash = operation.hash;
+            self.unprocess_app(operation).await?;
             self.op_store.delete_body(&hash).await?;
             self.local_store.add_tombstone(topic, hash).await?;
         }

@@ -230,6 +230,13 @@ impl BlobFetchPool {
         self.added.notify_one();
     }
 
+    pub async fn remove(&self, topic: TopicId, hash: iroh_blobs::Hash) {
+        self.stack
+            .lock()
+            .await
+            .retain(|(t, h)| *t != topic || *h != hash);
+    }
+
     /// Topics the pool currently associates with `hash`, used to resolve blob
     /// sources for an on-demand fetch.
     pub async fn topics_for(&self, hash: iroh_blobs::Hash) -> Vec<TopicId> {
