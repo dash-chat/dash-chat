@@ -6,18 +6,18 @@ import { TestPage } from '../test-page';
 const FILE_INPUT_TESTID = 'add-contact-file-input';
 
 export class AddContactPage extends TestPage {
-	back = this.agent.$(tid('add-contact-back'));
-	codeTab = this.agent.$(tid('add-contact-code-tab'));
-	scanTab = this.agent.$(tid('add-contact-scan-tab'));
+	back = this.el('add-contact-back');
+	codeTab = this.el('add-contact-code-tab');
+	scanTab = this.el('add-contact-scan-tab');
 	qrCode = this.agent.$('wa-qr-code');
-	copyButton = this.agent.$(tid('add-contact-copy-btn'));
-	codeInput = this.agent.$(tid('add-contact-code-input'));
-	shareButton = this.agent.$(tid('add-contact-share-btn'));
-	saveButton = this.agent.$(tid('add-contact-save-btn'));
-	uploadButton = this.agent.$(tid('add-contact-upload-btn'));
-	selectImageButton = this.agent.$(tid('add-contact-select-image-btn'));
-	fileInput = this.agent.$(tid(FILE_INPUT_TESTID));
-	colorButton = this.agent.$(tid('add-contact-color-btn'));
+	copyButton = this.el('add-contact-copy-btn');
+	codeInput = this.el('add-contact-code-input');
+	shareButton = this.el('add-contact-share-btn');
+	saveButton = this.el('add-contact-save-btn');
+	uploadButton = this.el('add-contact-upload-btn');
+	selectImageButton = this.el('add-contact-select-image-btn');
+	fileInput = this.el(FILE_INPUT_TESTID);
+	colorButton = this.el('add-contact-color-btn');
 
 	async ready() {
 		await this.codeInput.waitForExist();

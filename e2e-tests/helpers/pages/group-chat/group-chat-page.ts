@@ -6,17 +6,17 @@ import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
 
 export class GroupChatPage extends TestPage {
-	page = this.agent.$(tid('group-chat-page'));
-	back = this.agent.$(tid('group-chat-back'));
-	infoLink = this.agent.$(tid('group-chat-info-link'));
-	headerName = this.agent.$(tid('group-chat-header-name'));
+	page = this.el('group-chat-page');
+	back = this.el('group-chat-back');
+	infoLink = this.el('group-chat-info-link');
+	headerName = this.el('group-chat-header-name');
 	messages = new Messages(
 		this.agent,
 		'group-chat-messages',
 		'group-chat-unread-divider',
 	);
 	composer = new Composer(this.agent);
-	notMemberNotice = this.agent.$(tid('group-chat-not-member'));
+	notMemberNotice = this.el('group-chat-not-member');
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'group-chat-scroll');
 

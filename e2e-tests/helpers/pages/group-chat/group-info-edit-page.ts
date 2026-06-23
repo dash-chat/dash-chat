@@ -2,8 +2,8 @@ import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
 
 export class GroupInfoEditPage extends TestPage {
-	nameInput = this.agent.$(tid('group-info-edit-name'));
-	saveButton = this.agent.$(tid('group-info-edit-save-btn'));
+	nameInput = this.el('group-info-edit-name');
+	saveButton = this.el('group-info-edit-save-btn');
 
 	async ready() {
 		await this.nameInput.waitForExist();

@@ -4,8 +4,8 @@ import { TestPage } from '../test-page';
 const TOGGLE_INPUT_SELECTOR = `${tid('offline-local-mailbox-toggle')} input[type="checkbox"]`;
 
 export class OfflinePage extends TestPage {
-	back = this.agent.$(tid('offline-back'));
-	localMailboxToggle = this.agent.$(tid('offline-local-mailbox-toggle'));
+	back = this.el('offline-back');
+	localMailboxToggle = this.el('offline-local-mailbox-toggle');
 	toggleInput = this.agent.$(TOGGLE_INPUT_SELECTOR);
 
 	async ready() {

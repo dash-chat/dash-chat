@@ -11,12 +11,12 @@ const GET_STARTED_CARD_IDS = [
 type GetStartedCardId = (typeof GET_STARTED_CARD_IDS)[number];
 
 export class HomePage extends TestPage {
-	settingsLink = this.agent.$(tid('home-settings-link'));
-	newMessageButton = this.agent.$(tid('home-new-message-btn'));
-	firstChatTooltip = this.agent.$(tid('first-chat-tooltip'));
-	chatList = this.agent.$(tid('all-chats-list'));
-	chatRow = this.agent.$(tid('all-chats-row'));
-	emptyState = this.agent.$(tid('all-chats-empty'));
+	settingsLink = this.el('home-settings-link');
+	newMessageButton = this.el('home-new-message-btn');
+	firstChatTooltip = this.el('first-chat-tooltip');
+	chatList = this.el('all-chats-list');
+	chatRow = this.el('all-chats-row');
+	emptyState = this.el('all-chats-empty');
 
 	async ready() {
 		await this.agent.waitUntil(() => this.isLoaded(), {
