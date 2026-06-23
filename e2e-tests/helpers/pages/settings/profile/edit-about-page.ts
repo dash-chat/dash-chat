@@ -2,9 +2,9 @@ import { tid } from '../../../selectors';
 import { TestPage } from '../../test-page';
 
 export class EditAboutPage extends TestPage {
-	back = this.agent.$(tid('edit-about-back'));
-	input = this.agent.$(tid('edit-about-input'));
-	saveButton = this.agent.$(tid('edit-about-save-btn'));
+	back = this.el('edit-about-back');
+	input = this.el('edit-about-input');
+	saveButton = this.el('edit-about-save-btn');
 
 	async ready() {
 		await this.input.waitForExist();

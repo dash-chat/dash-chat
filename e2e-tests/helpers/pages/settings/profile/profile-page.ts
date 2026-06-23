@@ -2,11 +2,11 @@ import { tid } from '../../../selectors';
 import { TestPage } from '../../test-page';
 
 export class ProfilePage extends TestPage {
-	back = this.agent.$(tid('profile-back'));
-	editPhoto = this.agent.$(tid('edit-photo'));
-	editName = this.agent.$(tid('profile-edit-name'));
-	editAbout = this.agent.$(tid('profile-edit-about'));
-	qrLink = this.agent.$(tid('profile-qr-link'));
+	back = this.el('profile-back');
+	editPhoto = this.el('edit-photo');
+	editName = this.el('profile-edit-name');
+	editAbout = this.el('profile-edit-about');
+	qrLink = this.el('profile-qr-link');
 
 	async ready() {
 		await this.editName.waitForExist();

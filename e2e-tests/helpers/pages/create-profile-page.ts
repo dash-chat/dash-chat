@@ -2,9 +2,9 @@ import { tid } from '../selectors';
 import { TestPage } from './test-page';
 
 export class CreateProfilePage extends TestPage {
-	nameInput = this.agent.$(tid('create-profile-name'));
-	surnameInput = this.agent.$(tid('create-profile-surname'));
-	createButton = this.agent.$(tid('create-profile-create-btn'));
+	nameInput = this.el('create-profile-name');
+	surnameInput = this.el('create-profile-surname');
+	createButton = this.el('create-profile-create-btn');
 
 	async ready() {
 		await this.nameInput.waitForExist();

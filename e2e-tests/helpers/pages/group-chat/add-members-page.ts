@@ -1,9 +1,8 @@
-import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
 
 export class AddMembersPage extends TestPage {
-	back = this.agent.$(tid('add-members-back'));
-	addButton = this.agent.$(tid('add-members-add-btn'));
+	back = this.el('add-members-back');
+	addButton = this.el('add-members-add-btn');
 
 	async ready() {
 		await this.back.waitForExist();

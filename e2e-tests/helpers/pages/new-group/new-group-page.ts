@@ -2,9 +2,9 @@ import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
 
 export class AddMembersStep extends TestPage {
-	back = this.agent.$(tid('new-group-back'));
-	navbar = this.agent.$(tid('new-group-members-navbar'));
-	nextButton = this.agent.$(tid('new-group-next'));
+	back = this.el('new-group-back');
+	navbar = this.el('new-group-members-navbar');
+	nextButton = this.el('new-group-next');
 
 	async ready() {
 		await this.navbar.waitForExist();
@@ -20,10 +20,10 @@ export class AddMembersStep extends TestPage {
 }
 
 export class GroupInfoStep extends TestPage {
-	navbar = this.agent.$(tid('new-group-info-navbar'));
-	back = this.agent.$(tid('new-group-info-back'));
-	nameInput = this.agent.$(tid('new-group-name-input'));
-	createButton = this.agent.$(tid('new-group-create'));
+	navbar = this.el('new-group-info-navbar');
+	back = this.el('new-group-info-back');
+	nameInput = this.el('new-group-name-input');
+	createButton = this.el('new-group-create');
 
 	async ready() {
 		await this.navbar.waitForExist();
