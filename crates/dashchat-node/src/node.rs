@@ -868,6 +868,10 @@ impl Node {
 
     /// Collect all chat operations in a topic, reduced to the fields edit
     /// validation needs, keyed by operation hash.
+    //
+    // TODO: performance: this triggers a full log traversal on processing every
+    // edit operation. We can improve this by building up the parallel ChatOp list
+    // reduced state as part of the ACID refactors.
     pub(crate) async fn chat_ops(
         &self,
         topic: ChatId,
@@ -878,7 +882,9 @@ impl Node {
         let mut ops = std::collections::HashMap::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else { continue };
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
                 let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
                     continue;
                 };
@@ -917,7 +923,9 @@ impl Node {
         let mut edits = Vec::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else { continue };
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
                 let Ok(Payload::Chat(ChatPayload::EditMessage { message, edit_hash })) =
                     Payload::try_from_body(body)
                 else {
