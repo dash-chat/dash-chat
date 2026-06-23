@@ -754,7 +754,9 @@
 
 				<div
 					bind:clientHeight={bottomBarHeight}
-					class="absolute bottom-0 inset-x-0 z-10"
+					class="absolute bottom-0 inset-x-0"
+					class:z-10={!page.state.stagedMedia}
+					class:z-30={page.state.stagedMedia}
 					class:bg-page-surface={theme === 'material'}
 				>
 					{#if searchMode}
@@ -860,7 +862,11 @@
 							</div>
 						</div>
 					{:else}
-						<MessageComposer {store} onSent={onMessageSent} />
+						<MessageComposer
+							{store}
+							destinationName={profile ? fullName(profile) : undefined}
+							onSent={onMessageSent}
+						/>
 					{/if}
 				</div>
 			{/await}

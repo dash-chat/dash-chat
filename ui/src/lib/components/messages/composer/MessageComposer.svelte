@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { Sheet, Block, useTheme } from 'konsta/svelte';
+	import { page } from '$app/state';
+	import { pushState } from '$app/navigation';
 	import { isMobile } from '$lib/utils/environment';
 	import {
 		type DraftMedia,
 		type IngestError,
 		draftToMedia,
 		ingestFiles,
+		pickMedia,
 		AttachmentTooLargeError,
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
@@ -17,6 +20,7 @@
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
+	import StagedMediaPage from '$lib/components/messages/composer/StagedMediaPage.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
@@ -28,6 +32,8 @@
 		placeholder?: string;
 		/** The direct- or group-chat store the composer persists messages to. */
 		store: MessagesStore;
+		/** Name of the chat, shown in the mobile staged-media page header. */
+		destinationName?: string;
 		/** Called after a message is successfully sent (e.g. to scroll the chat). */
 		onSent?: (messageHash: Hash) => void;
 	}
@@ -36,6 +42,7 @@
 		value = $bindable(''),
 		placeholder = m.typeMessage(),
 		store,
+		destinationName,
 		onSent,
 	}: Props = $props();
 
@@ -88,7 +95,25 @@
 		const result = ingestFiles(media, Array.from(files));
 		if (result.error) showToast(ingestErrorMessages[result.error](), 'error');
 		media = result.media;
+		if (isMobile && media && !page.state.stagedMedia) {
+			pushState('', { stagedMedia: true });
+		}
 	}
+
+	async function addMore() {
+		try {
+			const files = await pickMedia('image', true);
+			if (files && files.length > 0) stage(files);
+		} catch (e) {
+			console.error('Failed to pick files', e);
+		}
+	}
+
+	// Popping the staged-media history entry (hardware/browser back or
+	// `history.back()` from the page) discards the staged draft.
+	$effect(() => {
+		if (isMobile && media && !page.state.stagedMedia) media = undefined;
+	});
 
 	function onPaste(event: ClipboardEvent) {
 		const files = event.clipboardData?.files;
@@ -102,7 +127,9 @@
 
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<div class="message-input-bar" class:pb-safe={!showMediaPanel}>
-		<StagedAttachments bind:media onFiles={stage} />
+		{#if !isMobile}
+			<StagedAttachments bind:media onFiles={stage} />
+		{/if}
 
 		<div class="m-2 row gap-2" style="align-items: center;">
 			{#if isMobile}
@@ -140,6 +167,21 @@
 		<MediaPanel bind:opened={showMediaPanel} onFiles={stage} />
 	{/if}
 </div>
+
+
+{#if isMobile && media && page.state.stagedMedia}
+	<StagedMediaPage
+		bind:media
+		bind:value
+		{destinationName}
+		onSend={() => {
+			send();
+			history.back();
+		}}
+		onAddMore={addMore}
+		onClose={() => history.back()}
+	/>
+{/if}
 
 <Sheet
 	class="pb-safe text-lg"

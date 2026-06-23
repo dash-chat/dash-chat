@@ -304,12 +304,18 @@
 
 	<div
 		bind:clientHeight={bottomBarHeight}
-		class="absolute bottom-0 inset-x-0 z-20"
+		class="absolute bottom-0 inset-x-0"
+		class:z-20={!page.state.stagedMedia}
+		class:z-30={page.state.stagedMedia}
 		class:bg-page-surface={theme === 'material'}
 	>
-		{#await $me then me}
+		{#await Promise.all([$me, $info]) then [me, info]}
 			{#if me.member}
-				<MessageComposer {store} onSent={onMessageSent} />
+				<MessageComposer
+					{store}
+					destinationName={info.name}
+					onSent={onMessageSent}
+				/>
 			{:else}
 				<div
 					class="pb-safe-4 quiet px-6 pt-4 text-center text-sm"
