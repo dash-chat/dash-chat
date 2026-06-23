@@ -1,4 +1,5 @@
 import { goto } from '$app/navigation';
+import { m } from '$lib/paraglide/messages.js';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 
 import { showToast } from './toasts';
@@ -27,7 +28,7 @@ function handleUrls(urls: string[]) {
 			handleAddContactLink(code);
 		} else {
 			console.log('[deep-link] url did not match pattern:', url);
-			showToast(`Received unrecognized link: ${url}`);
+			showToast(m.receivedUnrecognizedLink({ url }));
 		}
 	}
 }
