@@ -118,7 +118,7 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
         ])
-        // .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())

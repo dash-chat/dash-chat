@@ -44,6 +44,7 @@
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
 	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
+	import { listenForDeepLinks } from '$lib/utils/deep-links';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, type Locale, setLocale } from '$lib/paraglide/runtime';
@@ -188,6 +189,10 @@
 			isWideScreen.value,
 		);
 	});
+
+	if (isTauriEnv()) {
+		$effect(() => listenForDeepLinks());
+	}
 </script>
 
 {#if showToolbar}
