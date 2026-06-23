@@ -16,6 +16,11 @@ export class Composer {
 	mediaPanel = this.agent.$(tid('message-input-media-panel'));
 	recentPhotos = new RecentPhotosStrip(this.agent);
 
+	attachMenuTrigger = this.agent.$(tid('message-input-attach'));
+	attachMenu = this.agent.$(tid('message-input-attach-menu'));
+	attachPhotosItem = this.agent.$(tid('message-input-attach-photos'));
+	attachFileItem = this.agent.$(tid('message-input-attach-file'));
+
 	removeAttachmentButton(index: number) {
 		return this.agent.$(tid(`message-input-remove-attachment-${index}`));
 	}
@@ -30,6 +35,39 @@ export class Composer {
 		} catch {
 			return false;
 		}
+	}
+
+	/**
+	 * Open the desktop attach dropdown by clicking its trigger. The dropdown
+	 * renders only on non-mobile builds (which CI is), where it replaces the
+	 * mobile media panel. Resolves once the Photos item is visible.
+	 */
+	async openAttachMenu(): Promise<void> {
+		await this.attachMenuTrigger.click();
+		await this.attachPhotosItem.waitForDisplayed();
+	}
+
+	/** Close the attach dropdown by toggling its trigger. */
+	async closeAttachMenu(): Promise<void> {
+		await this.attachMenuTrigger.click();
+		await this.attachPhotosItem.waitForDisplayed({ reverse: true });
+	}
+
+	/**
+	 * Trimmed label of an attach-menu item, read via `textContent`. The items
+	 * are `wa-dropdown-item` web components whose label is a slotted text node,
+	 * and WebKitGTK's WebDriver `getText` returns empty for such hosts.
+	 */
+	async attachItemLabel(item: 'photos' | 'file'): Promise<string> {
+		const testid =
+			item === 'photos'
+				? 'message-input-attach-photos'
+				: 'message-input-attach-file';
+		return this.agent.execute(
+			(sel: string) =>
+				document.querySelector(sel)?.textContent?.trim() ?? '',
+			tid(testid),
+		);
 	}
 
 	/**
