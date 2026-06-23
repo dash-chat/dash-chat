@@ -1,3 +1,4 @@
+import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
 const TINY_PNG = [
@@ -11,17 +12,53 @@ const TINY_PNG = [
 
 /** The shared message composer (text area + attachments) used by both
  * direct and group chats. */
-export class Composer {
-	constructor(private agent: WebdriverIO.Browser) {}
+export class Composer extends TestHelper {
+	messageInput = this.el(tid('message-input-textarea'));
+	sendButton = this.el(tid('message-input-send'));
+	mediaPreview = this.el(tid('message-input-media-preview'));
+	clearAttachments = this.el(tid('message-input-clear-attachments'));
+	addMoreTile = this.el(tid('message-input-add-more'));
 
-	messageInput = this.agent.$(tid('message-input-textarea'));
-	sendButton = this.agent.$(tid('message-input-send'));
-	mediaPreview = this.agent.$(tid('message-input-media-preview'));
-	clearAttachments = this.agent.$(tid('message-input-clear-attachments'));
-	addMoreTile = this.agent.$(tid('message-input-add-more'));
+	attachMenuTrigger = this.el(tid('message-input-attach'));
+	attachMenu = this.el(tid('message-input-attach-menu'));
+	attachPhotosItem = this.el(tid('message-input-attach-photos'));
+	attachFileItem = this.el(tid('message-input-attach-file'));
 
 	removeAttachmentButton(index: number) {
 		return this.agent.$(tid(`message-input-remove-attachment-${index}`));
+	}
+
+	/**
+	 * Open the desktop attach dropdown by clicking its trigger. The dropdown
+	 * renders only on non-mobile builds (which CI is), where it replaces the
+	 * mobile media panel. Resolves once the Photos item is visible.
+	 */
+	async openAttachMenu(): Promise<void> {
+		await this.attachMenuTrigger.click();
+		await this.attachPhotosItem.waitForDisplayed();
+	}
+
+	/** Close the attach dropdown by toggling its trigger. */
+	async closeAttachMenu(): Promise<void> {
+		await this.attachMenuTrigger.click();
+		await this.attachPhotosItem.waitForDisplayed({ reverse: true });
+	}
+
+	/**
+	 * Trimmed label of an attach-menu item, read via `textContent`. The items
+	 * are `wa-dropdown-item` web components whose label is a slotted text node,
+	 * and WebKitGTK's WebDriver `getText` returns empty for such hosts.
+	 */
+	async attachItemLabel(item: 'photos' | 'file'): Promise<string> {
+		const testid =
+			item === 'photos'
+				? 'message-input-attach-photos'
+				: 'message-input-attach-file';
+		return this.agent.execute(
+			(sel: string) =>
+				document.querySelector(sel)?.textContent?.trim() ?? '',
+			tid(testid),
+		);
 	}
 
 	/**

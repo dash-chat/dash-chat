@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::{BlipsKey, BLIPS_TABLE};
 
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
-const MESSAGE_MAX_AGE: Duration = Duration::from_secs(90 * 24 * 60 * 60); // 30 days
+const MESSAGE_MAX_AGE: Duration = Duration::from_secs(90 * 24 * 60 * 60); // 90 days
 
 /// Spawns a background task that periodically cleans up old messages
 pub fn spawn_cleanup_task(db: Arc<Database>) -> tokio::task::JoinHandle<()> {
@@ -67,6 +67,8 @@ pub async fn cleanup_old_messages(db: &Database) -> Result<(), Box<dyn std::erro
 
 #[cfg(test)]
 mod tests {
+    use crate::test_utils::LONG_AGO;
+
     use super::*;
     use redb::ReadableDatabase;
     use tempfile::NamedTempFile;
@@ -88,8 +90,8 @@ mod tests {
     async fn test_cleanup_old_messages() {
         let (db, _temp_file) = create_test_db();
 
-        // Insert an old message (100 days ago)
-        let old_time = std::time::SystemTime::now() - Duration::from_hours(100 * 24);
+        // Insert an old message
+        let old_time = std::time::SystemTime::now() - LONG_AGO;
         let old_uuid = uuid::Uuid::new_v7(uuid::Timestamp::from_unix(
             uuid::NoContext,
             old_time

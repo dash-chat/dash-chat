@@ -1,12 +1,18 @@
 //! Manages syncing blobs referenced in logs over iroh-blobs
 
+use aliased::Aliasing;
 use derive_more::derive::Constructor;
 use futures::Stream;
-use iroh_blobs::api::downloader::{DownloadProgressItem, Downloader, Shuffled};
-use iroh_blobs::protocol::GetRequest;
+use iroh_blobs::api::downloader::{Downloader, Shuffled};
 use mailbox_client::manager::Mailboxes;
 use p2panda::operation::{LogId, Operation};
-use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
+use p2panda_store::{SqliteStore, topics::TopicStore};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 use tokio::{
     sync::{Mutex, Notify},
     task::JoinHandle,
@@ -19,56 +25,9 @@ pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 
 use crate::{AsBody, ChatPayload, Payload, TopicId, mailbox::MailboxOperation, stores::OpStore};
 
-/// Max size of a single blob. The hash is content-addressed but its size is not
-/// bounded by anything the fetcher can see, so an untrusted log could reference
-/// a blob far larger than any legitimate message (the composer caps a whole
-/// message at 128 MiB, and each media item is a separate blob, so no single blob
-/// can legitimately exceed it). Enforced both when fetching ([`download_capped`])
-/// and when an honest node publishes its own media (`store_media`).
-pub(crate) const MAX_BLOB_BYTES: u64 = 128 * 1024 * 1024;
-
-/// Download `hash` from `providers`, aborting if the transfer exceeds
-/// [`MAX_BLOB_BYTES`]. Returns whether the blob is present locally afterwards.
-async fn download_capped(
-    downloader: &Downloader,
-    hash: iroh_blobs::Hash,
-    providers: Shuffled,
-    attempt_timeout: Duration,
-    blobs: &iroh_blobs::BlobsProtocol,
-) -> bool {
-    let result = tokio::time::timeout(attempt_timeout, async {
-        let mut stream = downloader
-            .download(GetRequest::all(hash), providers)
-            .stream()
-            .await
-            .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;
-        while let Some(item) = stream.next().await {
-            match item {
-                // Dropping the stream on return cancels the in-flight download.
-                DownloadProgressItem::Progress(total) if total > MAX_BLOB_BYTES => {
-                    anyhow::bail!("blob exceeds {MAX_BLOB_BYTES} byte cap ({total} bytes)")
-                }
-                DownloadProgressItem::Error(err) => anyhow::bail!("download failed: {err}"),
-                DownloadProgressItem::DownloadError => anyhow::bail!("download error"),
-                _ => {}
-            }
-        }
-        anyhow::Ok(())
-    })
-    .await;
-
-    match result {
-        Ok(Ok(())) => blobs.has(hash).await.unwrap_or(false),
-        Ok(Err(err)) => {
-            tracing::debug!(%hash, ?err, "blob download failed");
-            false
-        }
-        Err(_) => {
-            tracing::warn!(%hash, "blob download timed out");
-            false
-        }
-    }
-}
+/// Drop a pending fetch entry after this many consecutive failed passes, so a
+/// permanently-unfetchable blob doesn't accumulate steady-state background work.
+const MAX_FETCH_FAILURES: u32 = 10;
 
 /// Manages syncing blobs referenced in logs over iroh-blobs
 #[derive(Clone)]
@@ -88,10 +47,15 @@ impl BlobSync {
     ) -> anyhow::Result<Self> {
         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
         let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
-        endpoint
-            .accept_unmixed(iroh_blobs::ALPN, blobs.clone())
-            .await?;
-        let downloader = Downloader::new(&store, &endpoint.endpoint().await?);
+        let mixed_alpn =
+            p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, endpoint.network_id());
+        endpoint.accept(iroh_blobs::ALPN, blobs.clone()).await?;
+        let downloader = Downloader::new_with_opts(
+            &store,
+            &endpoint.endpoint().await?,
+            &mixed_alpn,
+            Default::default(),
+        );
 
         Ok(Self {
             blobs,
@@ -147,7 +111,7 @@ impl BlobSync {
         }
 
         let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
-        download_capped(
+        dashchat_utils::blob_sync::download_capped(
             &self.downloader,
             hash,
             providers,
@@ -194,6 +158,10 @@ impl BlobSync {
 #[derive(Clone, Default)]
 pub struct BlobFetchPool {
     stack: Arc<Mutex<Vec<(TopicId, iroh_blobs::Hash)>>>,
+    /// Consecutive failed-pass count per hash. A hash that can never be fetched
+    /// (sender deleted it, provider permanently gone, garbage hash) is evicted
+    /// after [`MAX_FETCH_FAILURES`] so it isn't re-attempted every pass forever.
+    failures: Arc<Mutex<HashMap<iroh_blobs::Hash, u32>>>,
     added: Arc<Notify>,
 }
 
@@ -218,6 +186,19 @@ impl FetchPool for BlobFetchPool {
     }
     async fn remove(&self, item: &Self::Item) {
         self.stack.lock().await.retain(|entry| entry != item);
+        self.failures.lock().await.remove(&item.1);
+    }
+    async fn on_failure(&self, item: &Self::Item) {
+        let hash = item.1;
+        let mut failures = self.failures.lock().await;
+        let count = failures.entry(hash).or_insert(0);
+        *count += 1;
+        if *count >= MAX_FETCH_FAILURES {
+            failures.remove(&hash);
+            drop(failures);
+            self.stack.lock().await.retain(|(_, h)| *h != hash);
+            tracing::debug!(%hash, "evicting blob from fetch pool after too many failures");
+        }
     }
     async fn wait_for_add(&self) {
         self.added.notified().await;
@@ -226,8 +207,18 @@ impl FetchPool for BlobFetchPool {
 
 impl BlobFetchPool {
     pub async fn add(&self, topic: TopicId, hash: iroh_blobs::Hash) {
+        // A fresh reference resets the failure count, giving an on-demand
+        // `load_blob` (or a new message) another full round of attempts.
+        self.failures.lock().await.remove(&hash);
         self.stack.lock().await.push((topic, hash));
         self.added.notify_one();
+    }
+
+    pub async fn remove(&self, topic: TopicId, hash: iroh_blobs::Hash) {
+        self.stack
+            .lock()
+            .await
+            .retain(|(t, h)| *t != topic || *h != hash);
     }
 
     /// Topics the pool currently associates with `hash`, used to resolve blob
@@ -250,7 +241,7 @@ impl BlobFetchPool {
     /// an operation whose topic cannot be recovered.
     pub async fn from_ops(
         ops: impl Stream<Item = Result<Operation, anyhow::Error>> + '_,
-        topic_for_log_id: impl Fn(&LogId) -> Option<TopicId>,
+        topic_store: SqliteStore,
     ) -> anyhow::Result<Self> {
         let store = Self::default();
         let mut s = store.stack.lock().await;
@@ -265,7 +256,15 @@ impl BlobFetchPool {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     if let Some(media) = m.media() {
-                        let Some(topic) = topic_for_log_id(&op.header.extensions.log_id) else {
+                        let Some(topic) = topic_store
+                            .resolve_topic(&op.header.verifying_key, &op.header.extensions.log_id)
+                            .await?
+                        else {
+                            tracing::error!(
+                                author = ?op.header.verifying_key.aliased(),
+                                log_id = ?op.header.extensions.log_id.aliased(),
+                                "failed to resolve topic for operation",
+                            );
                             continue;
                         };
                         for item in media {
@@ -305,5 +304,59 @@ impl MixedSourceLookup {
         let mut seen = HashSet::new();
         sources.retain(|id| *id != self.self_endpoint && seen.insert(*id));
         Ok(sources)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hash(n: u8) -> iroh_blobs::Hash {
+        iroh_blobs::Hash::new([n; 32])
+    }
+
+    #[tokio::test]
+    async fn evicts_a_hash_after_max_failures_and_keeps_others() {
+        let pool = BlobFetchPool::default();
+        let dead = hash(1);
+        let live = hash(2);
+        pool.add(TopicId::random(), dead).await;
+        pool.add(TopicId::random(), live).await;
+
+        for _ in 0..MAX_FETCH_FAILURES {
+            pool.on_failure(&(TopicId::random(), dead)).await;
+        }
+
+        let remaining = pool.stack.lock().await;
+        assert!(remaining.iter().all(|(_, h)| *h == live));
+        assert_eq!(remaining.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn evicts_every_entry_sharing_an_evicted_hash() {
+        let pool = BlobFetchPool::default();
+        let h = hash(7);
+        pool.add(TopicId::random(), h).await;
+        pool.add(TopicId::random(), h).await;
+
+        for _ in 0..MAX_FETCH_FAILURES {
+            pool.on_failure(&(TopicId::random(), h)).await;
+        }
+        assert!(pool.is_empty().await);
+    }
+
+    #[tokio::test]
+    async fn re_adding_resets_the_failure_count() {
+        let pool = BlobFetchPool::default();
+        let h = hash(3);
+        pool.add(TopicId::random(), h).await;
+
+        for _ in 0..(MAX_FETCH_FAILURES - 1) {
+            pool.on_failure(&(TopicId::random(), h)).await;
+        }
+        pool.add(TopicId::random(), h).await;
+        // The reset means one more failure must not evict it.
+        pool.on_failure(&(TopicId::random(), h)).await;
+        assert!(!pool.is_empty().await);
     }
 }

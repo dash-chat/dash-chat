@@ -358,3 +358,16 @@ emoji-picker {
 	   pass through to the buttons underneath. */
 	pointer-events: none;
 }
+
+/* Tailwind's preflight resets `padding: 0` on every element, which beats
+   WebAwesome's `:host { padding }` and collapses dropdown items to the height
+   of their text. */
+wa-dropdown-item {
+	padding-inline-start: 0.5em;
+	padding-inline-end: 1em;
+	padding-block: 0.5em;
+}
+
+wa-dropdown-item::part(icon) {
+	width: 42px;
+}

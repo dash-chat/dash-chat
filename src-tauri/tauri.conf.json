@@ -44,6 +44,9 @@
 				"Resources/Assets.car": "icons/Assets.car"
 			}
 		},
+		"iOS": {
+			"minimumSystemVersion": "17.0"
+		},
 		"createUpdaterArtifacts": true
 	},
 	"plugins": {

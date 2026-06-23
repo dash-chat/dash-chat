@@ -54,7 +54,7 @@ export type MediaAttachment =
  * bytes — NOT base64; in-process it is a `Uint8Array`, and over Tauri JSON IPC
  * a `Vec<u8>` arrives as `number[]`. This is the *only* media shape that holds
  * bytes: once `store_media` has stored them, all reads go through `irohblob://`.
- * Mirrors `dashchat_node::MediaData`.
+ * Mirrors `dashchat_node::OutgoingMedia`.
  */
 export type OutgoingMedia =
 	| { kind: 'photos'; photos: OutgoingPhoto[] }
@@ -79,7 +79,7 @@ export type MediaMetaKind = 'Photo' | 'File';
  * the raw bytes; the bytes live in the iroh-blobs store and are fetched lazily
  * via the `irohblob://` URI scheme. Matches `dashchat_node::MediaMetaItem`.
  */
-export interface MediaMetaItem {
+export interface MediaMetadata {
 	name: string;
 	mime_type: string;
 	size: number;
@@ -87,17 +87,17 @@ export interface MediaMetaItem {
 	hash: Hash;
 }
 
-/** Matches `dashchat_node::MediaMetaCollection`, which serializes as a flat array. */
-export type MediaMetaCollection = MediaMetaItem[];
+/** Matches `dashchat_node::MediaBundle`, which serializes as a flat array. */
+export type MediaBundle = MediaMetadata[];
 
 /**
  * Convert the blob metadata stored in a message log into the renderable
- * `Media` shape. Mirrors `Node::load_media`: a lone file becomes a `file`
+ * `MediaAttachment` shape. Mirrors `Node::load_media`: a lone file becomes a `file`
  * attachment, otherwise the items become `photos`. The resulting photos/file
  * carry only a `hash` (no bytes).
  */
-export function mediaMetaToMedia(
-	meta: MediaMetaCollection | null | undefined,
+export function mediaBundleToAttachment(
+	meta: MediaBundle | null | undefined,
 ): MediaAttachment | null {
 	if (!meta || meta.length === 0) return null;
 	const file = meta.find(item => item.kind === 'File');
@@ -128,10 +128,10 @@ export function mediaMetaToMedia(
 export type MessageContentV1 = {
 	v: '1';
 	message: string;
-	/** Stored/wire form: a flat `MediaMetaCollection` (bytes live in the blob
-	 * store, fetched lazily via `irohblob://`). `getMessageMedia` turns this
-	 * into the renderable `Media`. */
-	media: MediaMetaCollection | null;
+	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob
+	 * store, fetched lazily via `irohblob://`). `mediaBundleToAttachment` turns this
+	 * into the renderable `MediaAttachment`. */
+	media: MediaBundle | null;
 };
 export type MessageContent = MessageContentV1;
 

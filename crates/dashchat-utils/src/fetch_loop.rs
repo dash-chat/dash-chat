@@ -35,6 +35,9 @@ pub trait FetchPool: Clone + Send + Sync + 'static {
     /// The next item whose key is not in `tried`, or `None` if all are tried.
     async fn next_untried(&self, tried: &HashSet<Self::Key>) -> Option<Self::Item>;
     async fn remove(&self, item: &Self::Item);
+    /// Called after each failed fetch attempt for an item. The default is a
+    /// no-op; implementors may use this to track failure counts and evict.
+    async fn on_failure(&self, _item: &Self::Item) {}
     /// Resolves when an item is added, so the loop can wake early.
     async fn wait_for_add(&self);
 }
@@ -80,7 +83,7 @@ async fn run_fetch_pass<P, F, Fut>(
     Fut: std::future::Future<Output = bool> + Send + 'static,
 {
     let mut tried: HashSet<P::Key> = HashSet::new();
-    let mut in_flight: JoinSet<Option<P::Item>> = JoinSet::new();
+    let mut in_flight: JoinSet<(P::Item, bool)> = JoinSet::new();
     loop {
         while in_flight.len() < concurrency {
             let Some(item) = pool.next_untried(&tried).await else {
@@ -88,14 +91,20 @@ async fn run_fetch_pass<P, F, Fut>(
             };
             tried.insert(P::key(&item));
             let fetch = fetch.clone();
-            in_flight
-                .spawn(async move { fetch(item.clone(), attempt_timeout).await.then_some(item) });
+            in_flight.spawn(async move {
+                let succeeded = fetch(item.clone(), attempt_timeout).await;
+                (item, succeeded)
+            });
         }
         let Some(joined) = in_flight.join_next().await else {
             break;
         };
-        if let Ok(Some(item)) = joined {
-            pool.remove(&item).await;
+        if let Ok((item, succeeded)) = joined {
+            if succeeded {
+                pool.remove(&item).await;
+            } else {
+                pool.on_failure(&item).await;
+            }
         }
     }
 }

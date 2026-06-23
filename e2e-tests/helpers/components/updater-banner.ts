@@ -1,3 +1,4 @@
+import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
 export type UpdateState =
@@ -7,12 +8,10 @@ export type UpdateState =
 	| 'error'
 	| 'hidden';
 
-export class UpdaterBanner {
-	constructor(private agent: WebdriverIO.Browser) {}
-
-	banner = this.agent.$(tid('updater-banner'));
-	title = this.agent.$(tid('updater-banner-title'));
-	dismissButton = this.agent.$(tid('updater-dismiss-btn'));
+export class UpdaterBanner extends TestHelper {
+	banner = this.el(tid('updater-banner'));
+	title = this.el(tid('updater-banner-title'));
+	dismissButton = this.el(tid('updater-dismiss-btn'));
 
 	isVisible(): Promise<boolean> {
 		return this.banner.isExisting();

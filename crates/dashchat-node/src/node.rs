@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 
-use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, MAX_BLOB_BYTES};
+use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync};
 use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
 use crate::filesystem::Filesystem;
@@ -15,6 +15,7 @@ use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
+use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
@@ -35,13 +36,12 @@ use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, EditMessageError, MediaAttachment, MediaMetaKind, MediaMetadata, OutgoingFile,
+    DirectChatId, EditMessageError, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile,
     OutgoingMedia,
 };
+use dashchat_utils::NETWORK_ID;
 
 pub use app_processing::Notification;
-
-const NETWORK_ID: &'static str = "dash-chat";
 
 pub static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
     "https://euc1-1.relay.n0.iroh-canary.iroh.link"
@@ -81,7 +81,7 @@ impl NodeConfig {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
             capabilities: Capabilities::current(),
-            network_id: Hash::digest(NETWORK_ID.as_bytes()).into(),
+            network_id: *NETWORK_ID,
             // In testing we disable mDNS discovery and do not provide a relay address so as not
             // to effect expected behavior of existing tests.
             mdns_mode: MdnsDiscoveryMode::Disabled,
@@ -103,7 +103,7 @@ impl Default for NodeConfig {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
             capabilities: Capabilities::current(),
-            network_id: Hash::digest(NETWORK_ID.as_bytes()).into(),
+            network_id: *NETWORK_ID,
             mdns_mode: MdnsDiscoveryMode::Active,
             relay_url: Some(RELAY_URL.clone()),
             blob_fetch: BlobFetchConfig::default(),
@@ -144,7 +144,7 @@ pub struct Node {
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
 /// node never references a blob that the fetcher's own cap would reject.
-fn ensure_blob_size(size: usize, name: &str) -> anyhow::Result<()> {
+fn ensure_blob_size(size: u64, name: &str) -> anyhow::Result<()> {
     if size as u64 > MAX_BLOB_BYTES {
         anyhow::bail!("media item {name:?} is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
     }
@@ -237,21 +237,16 @@ impl Node {
             mailboxes.clone(),
             self_endpoint,
         );
+
         // LogId = blake3(topic.as_bytes()) is one-way and the op-store does not
         // persist TopicId alongside each operation, so we invert it by hashing
         // the topics we subscribe to (chat media lives in subscribed chat
         // topics). Without this the pool starts empty and a blob left
         // undownloaded at shutdown is never re-queued — only the live path adds
         // it — so it can never load again after a restart.
-        let topic_by_log_id: std::collections::HashMap<LogId, TopicId> = local_store
-            .subscribed_topics()
-            .await?
-            .into_iter()
-            .map(|topic| (LogId::from_topic(topic), topic))
-            .collect();
         let blob_fetch = BlobFetchPool::from_ops(
             op_store.get_all_operations_not_fully_sorted(),
-            move |log_id| topic_by_log_id.get(log_id).copied(),
+            op_store.store.clone(),
         )
         .await?;
         let blob_sync = BlobSync::new(
@@ -996,15 +991,25 @@ impl Node {
     /// Tombstone an operation: record its hash in the topic's persisted
     /// tombstone set so its payload is never stored or synced again, and
     /// immediately drop any payload already stored for it.
+    ///
+    /// This has the effect that when the operation is played back, it will
+    /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
+    /// is `true` should not cause state changes when processed!
     pub async fn tombstone_operation(
         &self,
         topic: TopicId,
         operation: &Operation,
     ) -> anyhow::Result<()> {
-        if self.is_tombstoneable(operation).is_some() {
+        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
+            return Ok(());
+        };
+        if self.is_tombstoneable(&payload) {
             let hash = operation.hash;
+            self.unprocess_app(operation).await?;
             self.op_store.delete_body(&hash).await?;
             self.local_store.add_tombstone(topic, hash).await?;
+        } else {
+            tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
         }
         Ok(())
     }
@@ -1300,12 +1305,12 @@ impl Node {
         Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 
-    pub async fn store_media(&self, media: OutgoingMedia) -> anyhow::Result<MediaAttachment> {
+    pub async fn store_media(&self, media: OutgoingMedia) -> anyhow::Result<MediaBundle> {
         let mut items = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
                 for photo in photos {
-                    let size = photo.data.len();
+                    let size = photo.data.len() as u64;
                     ensure_blob_size(size, &photo.name)?;
                     let tag = self.blob_sync.blobs.add_bytes(photo.data).await?;
                     items.push(MediaMetadata {
@@ -1318,7 +1323,7 @@ impl Node {
                 }
             }
             OutgoingMedia::File { file } => {
-                let size = file.data.len();
+                let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
                 let tag = self.blob_sync.blobs.add_bytes(file.data).await?;
                 items.push(MediaMetadata {
@@ -1330,7 +1335,7 @@ impl Node {
                 });
             }
         }
-        Ok(MediaAttachment::from(items))
+        Ok(MediaBundle::from(items))
     }
 
     /// Load the raw bytes of a single blob by its hash from the local blob store.

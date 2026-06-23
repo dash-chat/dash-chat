@@ -227,34 +227,34 @@ impl Node {
     /// fact.
     async fn enforce_tombstone(
         &self,
-        mut operation: ProcessedOperation<Payload>,
-    ) -> anyhow::Result<ProcessedOperation<Payload>> {
+        operation: &ProcessedOperation<Payload>,
+    ) -> anyhow::Result<bool> {
         let topic = operation.topic();
         let hash = operation.id();
         if self.local_store.is_tombstoned(topic, hash).await? {
+            self.unprocess_app(&operation.processed().operation).await?;
             self.op_store.delete_body(&hash).await?;
-            operation.event.operation.body = None;
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        Ok(operation)
     }
 
     /// Filter out operations whose payloads are not able to be deleted.
-    ///
-    /// The return type is written as such to allow Try semantics for two intermediary Options.
-    pub(crate) fn is_tombstoneable(&self, operation: &Operation) -> Option<()> {
-        match Payload::try_from_body(operation.body.as_ref()?).ok()? {
-            Payload::Chat(ChatPayload::Message(_)) => Some(()),
-            _ => None,
-        }
+    pub(crate) fn is_tombstoneable(&self, payload: &Payload) -> bool {
+        matches!(payload, Payload::Chat(ChatPayload::Message(_)))
     }
 
+    /// Note that this is a function that processes operations which could have deleted payloads.
+    /// This function currently doesn't do anything with payloads, so we don't check for tombstones here.
+    /// If this function is modified to process payloads, then we should call
+    /// [`Self::enforce_tombstone`] before processing.
     async fn process_groups(
         &self,
         operation: ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
         self.register_bootstrap(&operation, source).await?;
-        let operation = self.enforce_tombstone(operation).await?;
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
@@ -316,16 +316,62 @@ impl Node {
         Ok(())
     }
 
+    /// Undo the effects of processing an app-layer operation.
+    /// This is done when an operation payload is deleted.
+    /// Only tombstoneable operations can be unprocessed.
+    pub(crate) async fn unprocess_app(&self, operation: &Operation) -> anyhow::Result<()> {
+        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
+            return Ok(());
+        };
+        if self.is_tombstoneable(&payload) {
+            match payload {
+                Payload::Chat(ChatPayload::Message(m)) => {
+                    use p2panda_store::topics::TopicStore;
+                    let author = operation.header().verifying_key;
+                    let log_id = operation.header.extensions.log_id;
+                    let topic = self.op_store.store.resolve_topic(&author, &log_id).await?;
+                    let Some(topic) = topic else {
+                        tracing::error!("failed to resolve topic for operation: {operation:?}");
+                        return Ok(());
+                    };
+                    if let Some(media) = m.media() {
+                        for item in media.iter() {
+                            self.blob_sync.fetch_pool.remove(topic, item.hash).await;
+                        }
+                    }
+                }
+                _ => {
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    }
+
     async fn process_app(
         &self,
         operation: ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
         self.register_bootstrap(&operation, source).await?;
-        let operation = self.enforce_tombstone(operation).await?;
+        let topic = operation.topic();
+        let dashchat_topic = crate::Topic::new(*topic.as_bytes());
+        let header = operation.processed().header();
+
+        // NOTE: realistically the tombstone will only be enforced here
+        // upon playback of operations. The first time through, it will
+        // have been processed and potentially have modified local state.
+        // Upon tombstoning (or enforcement), it will be "unprocessed"
+        // via [`Self::unprocess_app`] to undo those state changes,
+        // as if it were never processed at all. On playback, the operation
+        // simply doesn't get processed.
+        if self.enforce_tombstone(&operation).await? {
+            // The payload is tombstoned, so there's nothing to process.
+            self.notify_header(dashchat_topic, header).await?;
+            return Ok(());
+        }
 
         let hash = operation.id();
-        let topic = operation.topic();
         let device_id = DeviceId::from(operation.author());
         let payload = operation.message();
 
@@ -391,7 +437,7 @@ impl Node {
             Payload::Chat(ChatPayload::Message(m)) => {
                 if let Some(media) = m.media() {
                     for item in media.iter() {
-                        // TODO: can we have a p2panda stream of operations?
+                        // TODO: revisit during ACID review (replay)
                         self.blob_sync.fetch_pool.add(topic.into(), item.hash).await;
                     }
                 }
@@ -472,7 +518,6 @@ impl Node {
         // informed of any errors or these events are not even forwarded.
 
         // We convert the p2panda::Topic into a dashchat Topic here in its untyped form.
-        let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         self.notify_payload(dashchat_topic, &operation.processed().header(), &payload)
             .await?;
 
@@ -520,6 +565,20 @@ impl Node {
             };
         }
 
+        Ok(())
+    }
+
+    pub async fn notify_header(&self, topic: Topic, header: &Header) -> anyhow::Result<()> {
+        if let Some(notification_tx) = self.notification_tx.clone() {
+            notification_tx
+                .send(Notification {
+                    topic: topic.clone(),
+                    header: header.clone(),
+                    payload: None,
+                })
+                .await
+                .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
+        }
         Ok(())
     }
 

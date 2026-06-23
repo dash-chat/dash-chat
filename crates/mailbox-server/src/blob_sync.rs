@@ -3,12 +3,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use dashchat_utils::{fetch_loop, FetchConfig, FetchPool};
+use dashchat_utils::{fetch_loop, FetchConfig, FetchPool, NETWORK_ID};
 use futures::StreamExt;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
-use iroh_blobs::api::downloader::{DownloadProgressItem, Downloader, Shuffled};
-use iroh_blobs::protocol::GetRequest;
+use iroh_blobs::api::downloader::{Downloader, Shuffled};
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 
@@ -20,37 +19,64 @@ const BLOB_TAG_PREFIX: &str = "mailbox/";
 const BLOB_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 /// How often iroh sweeps untagged blobs and how often we expire stale tags.
 const BLOB_GC_INTERVAL: Duration = Duration::from_secs(60 * 60);
+/// Drop a pending fetch entry after this many consecutive failed passes.
+const MAX_FETCH_FAILURES: u32 = 10;
+/// Hard cap on pending fetch entries; oldest-inserted entries are dropped first.
+const MAX_POOL_SIZE: usize = 1_000;
+
+#[derive(Default)]
+struct PoolEntry {
+    sources: BTreeSet<iroh::EndpointId>,
+    failures: u32,
+}
 
 #[derive(Clone, Default)]
 pub struct BlobFetchPool {
-    sources: Arc<Mutex<BTreeMap<iroh_blobs::Hash, BTreeSet<iroh::EndpointId>>>>,
+    entries: Arc<Mutex<BTreeMap<iroh_blobs::Hash, PoolEntry>>>,
     added: Arc<Notify>,
 }
 
 impl BlobFetchPool {
     pub async fn add_source(&self, hash: iroh_blobs::Hash, source: iroh::EndpointId) {
-        self.sources
-            .lock()
-            .await
-            .entry(hash)
-            .or_default()
-            .insert(source);
+        let mut map = self.entries.lock().await;
+        if !map.contains_key(&hash) && map.len() >= MAX_POOL_SIZE {
+            // Drop the first (lexicographically earliest) entry to stay within the cap.
+            if let Some(oldest) = map.keys().next().copied() {
+                map.remove(&oldest);
+            }
+        }
+        map.entry(hash).or_default().sources.insert(source);
         self.added.notify_one();
     }
+
     pub(crate) async fn is_empty(&self) -> bool {
-        self.sources.lock().await.is_empty()
+        self.entries.lock().await.is_empty()
     }
+
     pub(crate) async fn next_untried(
         &self,
         tried: &HashSet<iroh_blobs::Hash>,
     ) -> Option<(iroh_blobs::Hash, Vec<iroh::EndpointId>)> {
-        let map = self.sources.lock().await;
+        let map = self.entries.lock().await;
         map.iter()
             .find(|(hash, _)| !tried.contains(*hash))
-            .map(|(hash, sources)| (*hash, sources.iter().copied().collect()))
+            .map(|(hash, entry)| (*hash, entry.sources.iter().copied().collect()))
     }
+
     pub(crate) async fn remove(&self, hash: iroh_blobs::Hash) {
-        self.sources.lock().await.remove(&hash);
+        self.entries.lock().await.remove(&hash);
+    }
+
+    /// Record a failed fetch attempt; evict the entry after [`MAX_FETCH_FAILURES`].
+    pub(crate) async fn record_failure(&self, hash: iroh_blobs::Hash) {
+        let mut map = self.entries.lock().await;
+        if let Some(entry) = map.get_mut(&hash) {
+            entry.failures += 1;
+            if entry.failures >= MAX_FETCH_FAILURES {
+                map.remove(&hash);
+                tracing::debug!(%hash, "evicting blob from fetch pool after too many failures");
+            }
+        }
     }
 }
 
@@ -70,6 +96,9 @@ impl FetchPool for BlobFetchPool {
     }
     async fn remove(&self, item: &Self::Item) {
         BlobFetchPool::remove(self, item.0).await;
+    }
+    async fn on_failure(&self, item: &Self::Item) {
+        BlobFetchPool::record_failure(self, item.0).await;
     }
     async fn wait_for_add(&self) {
         self.added.notified().await;
@@ -107,12 +136,15 @@ impl BlobSync {
             interval: BLOB_GC_INTERVAL,
             add_protected: None,
         });
+        let mixed_alpn =
+            p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, *NETWORK_ID);
         let store = iroh_blobs::store::fs::FsStore::load_with_opts(db_path, options).await?;
         let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        let downloader =
+            Downloader::new_with_opts(&store, &endpoint, mixed_alpn.as_slice(), Default::default());
         let router = Router::builder(endpoint.clone())
-            .accept(iroh_blobs::ALPN, blobs.clone())
+            .accept(mixed_alpn, blobs.clone())
             .spawn();
-        let downloader = Downloader::new(&store, &endpoint);
         let endpoint_id = endpoint.id();
 
         Ok(Self {
@@ -194,7 +226,7 @@ impl BlobSync {
             return false;
         }
         let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
-        let fetched = download_capped(
+        let fetched = dashchat_utils::blob_sync::download_capped(
             &self.downloader,
             hash,
             providers,
@@ -268,7 +300,7 @@ async fn expire_blob_tags(blobs: &iroh_blobs::BlobsProtocol) -> anyhow::Result<(
     Ok(())
 }
 
-/// Parse the embedded fetch time (unix seconds) from a `relay/<secs>/<hash>` tag.
+/// Parse the embedded fetch time (unix seconds) from a `mailbox/<secs>/<hash>` tag.
 fn tag_fetch_secs(name: &[u8]) -> Option<u64> {
     let name = std::str::from_utf8(name).ok()?;
     name.strip_prefix(BLOB_TAG_PREFIX)?
@@ -276,56 +308,6 @@ fn tag_fetch_secs(name: &[u8]) -> Option<u64> {
         .next()?
         .parse()
         .ok()
-}
-
-/// Max size of a blob fetched out-of-band over iroh. The hash is
-/// content-addressed but its size is not bounded by anything the relay can see,
-/// so an untrusted log could reference a blob far larger than any legitimate
-/// message (the composer caps a whole message at 16 MiB, and each media item is
-/// a separate blob, so no single blob can legitimately exceed it).
-const MAX_BLOB_BYTES: u64 = 16 * 1024 * 1024;
-
-/// Download `hash` from `providers`, aborting if the transfer exceeds
-/// [`MAX_BLOB_BYTES`]. Returns whether the blob is present locally afterwards.
-async fn download_capped(
-    downloader: &Downloader,
-    hash: iroh_blobs::Hash,
-    providers: Shuffled,
-    attempt_timeout: Duration,
-    blobs: &iroh_blobs::BlobsProtocol,
-) -> bool {
-    let result = tokio::time::timeout(attempt_timeout, async {
-        let mut stream = downloader
-            .download(GetRequest::all(hash), providers)
-            .stream()
-            .await
-            .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;
-        while let Some(item) = stream.next().await {
-            match item {
-                // Dropping the stream on return cancels the in-flight download.
-                DownloadProgressItem::Progress(total) if total > MAX_BLOB_BYTES => {
-                    anyhow::bail!("blob exceeds {MAX_BLOB_BYTES} byte cap ({total} bytes)")
-                }
-                DownloadProgressItem::Error(err) => anyhow::bail!("download failed: {err}"),
-                DownloadProgressItem::DownloadError => anyhow::bail!("download error"),
-                _ => {}
-            }
-        }
-        anyhow::Ok(())
-    })
-    .await;
-
-    match result {
-        Ok(Ok(())) => blobs.has(hash).await.unwrap_or(false),
-        Ok(Err(err)) => {
-            tracing::debug!(%hash, ?err, "mailbox blob download failed");
-            false
-        }
-        Err(_) => {
-            tracing::warn!(%hash, "mailbox blob download timed out");
-            false
-        }
-    }
 }
 
 #[cfg(test)]
