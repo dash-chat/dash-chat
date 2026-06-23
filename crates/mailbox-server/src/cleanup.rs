@@ -67,6 +67,8 @@ pub async fn cleanup_old_messages(db: &Database) -> Result<(), Box<dyn std::erro
 
 #[cfg(test)]
 mod tests {
+    use crate::test_utils::LONG_AGO;
+
     use super::*;
     use redb::ReadableDatabase;
     use tempfile::NamedTempFile;
@@ -88,8 +90,8 @@ mod tests {
     async fn test_cleanup_old_messages() {
         let (db, _temp_file) = create_test_db();
 
-        // Insert an old message (8 days ago)
-        let old_time = std::time::SystemTime::now() - Duration::from_secs(8 * 24 * 60 * 60);
+        // Insert an old message
+        let old_time = std::time::SystemTime::now() - LONG_AGO;
         let old_uuid = uuid::Uuid::new_v7(uuid::Timestamp::from_unix(
             uuid::NoContext,
             old_time
