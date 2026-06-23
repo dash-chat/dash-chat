@@ -10,9 +10,9 @@
 	} from '@mdi/js';
 	import type { Photo } from 'dash-chat-stores';
 	import { objectUrl } from '$lib/actions/object-url';
+	import { darkOverlay } from '$lib/actions/dark-overlay';
 	import { savePhoto } from '$lib/utils/media';
 	import { showToast } from '$lib/utils/toasts';
-	import { setLightSystemBars, applyThemeSystemBars } from '$lib/utils/theme';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
@@ -54,15 +54,6 @@
 			console.error(e);
 		}
 	}
-
-	// The overlay's top is always a dark image, so force a light status bar while
-	// it is open (the navigation bar follows the theme), and restore on close.
-	$effect(() => {
-		setLightSystemBars().catch(() => {});
-		return () => {
-			applyThemeSystemBars().catch(() => {});
-		};
-	});
 
 	// Reset zoom when switching photos.
 	$effect(() => {
@@ -138,7 +129,8 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="fixed inset-0 z-30 flex flex-col bg-black text-white"
+	class="fixed inset-0 z-30 flex flex-col bg-black"
+	use:darkOverlay
 	role="dialog"
 	aria-modal="true"
 	aria-label={photo.name}

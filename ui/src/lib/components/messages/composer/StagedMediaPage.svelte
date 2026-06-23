@@ -6,7 +6,7 @@
 	import { mdiClose, mdiArrowRight } from '@mdi/js';
 	import { type DraftMedia } from '$lib/utils/media';
 	import { isAndroid } from '$lib/utils/environment';
-	import { setLightSystemBars, applyThemeSystemBars } from '$lib/utils/theme';
+	import { darkOverlay } from '$lib/actions/dark-overlay';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import StagedPhotosCarousel from '$lib/components/messages/composer/StagedPhotosCarousel.svelte';
@@ -41,15 +41,6 @@
 		media?.kind === 'file' ? media.file.name : (photos[index]?.name ?? ''),
 	);
 
-	// The overlay's top is always a dark image, so force a light status bar while
-	// it is open (the navigation bar follows the theme), and restore on close.
-	$effect(() => {
-		setLightSystemBars().catch(() => {});
-		return () => {
-			applyThemeSystemBars().catch(() => {});
-		};
-	});
-
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
 			event.preventDefault();
@@ -61,7 +52,8 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="dark fixed inset-0 z-30 flex flex-col bg-black"
+	class="fixed inset-0 z-30 flex flex-col bg-black"
+	use:darkOverlay
 	role="dialog"
 	aria-modal="true"
 	aria-label={ariaLabel}
