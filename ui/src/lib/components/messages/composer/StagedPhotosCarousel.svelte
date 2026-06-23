@@ -147,13 +147,15 @@
 			{/each}
 		{/if}
 		{#if photos.length < MAX_STAGED_PHOTOS}
-			<IconButton
-				icon={mdiPlusBoxOutline}
-				onClick={onAddMore}
-				label={m.addMoreAttachments()}
-				testid="staged-media-add-more"
-				class="!h-10 !w-10 shrink-0 !bg-[#3a3a3c] !opacity-100 hover:!bg-[#4a4a4c]"
-			/>
+			<div class="flex h-14 shrink-0 items-center">
+				<IconButton
+					icon={mdiPlusBoxOutline}
+					onClick={onAddMore}
+					label={m.addMoreAttachments()}
+					testid="staged-media-add-more"
+					class="!h-10 !w-10 shrink-0 !bg-[#3a3a3c] !opacity-100 hover:!bg-[#4a4a4c]"
+				/>
+			</div>
 		{/if}
 	</div>
 </div>
