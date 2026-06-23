@@ -61,6 +61,8 @@
     </application>
     <!-- ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- READ_EXTERNAL_STORAGE injected here by legacy_storage_permission is omitted:
+         it duplicates the maxSdkVersion=32 declaration above (a superset) and the
+         manifest merger rejects two entries for the same permission. -->
     <!-- ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
 </manifest>
