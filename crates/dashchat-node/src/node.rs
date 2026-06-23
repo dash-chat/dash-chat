@@ -143,9 +143,9 @@ pub struct Node {
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
 /// node never references a blob that the fetcher's own cap would reject.
-fn ensure_blob_size(size: u64, name: &str) -> anyhow::Result<()> {
+fn ensure_blob_size(size: u64, _name: &str) -> anyhow::Result<()> {
     if size as u64 > MAX_BLOB_BYTES {
-        anyhow::bail!("media item {name:?} is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
+        anyhow::bail!("a media item is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
     }
     Ok(())
 }

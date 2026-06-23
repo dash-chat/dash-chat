@@ -21,7 +21,7 @@ const BLOB_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const BLOB_GC_INTERVAL: Duration = Duration::from_secs(60 * 60);
 /// Drop a pending fetch entry after this many consecutive failed passes.
 const MAX_FETCH_FAILURES: u32 = 10;
-/// Hard cap on pending fetch entries; oldest-inserted entries are dropped first.
+/// Hard cap on pending fetch entries; arbitrary entries are dropped if exceeded.
 const MAX_POOL_SIZE: usize = 1_000;
 
 #[derive(Default)]
