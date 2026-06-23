@@ -232,7 +232,7 @@ impl Node {
         let topic = operation.topic();
         let hash = operation.id();
         if self.local_store.is_tombstoned(topic, hash).await? {
-            self.unprocess_app(&operation.operation()).await?;
+            self.unprocess_app(&operation.processed().operation).await?;
             self.op_store.delete_body(&hash).await?;
             Ok(true)
         } else {
@@ -317,7 +317,7 @@ impl Node {
     }
 
     /// Undo the effects of processing an app-layer operation.
-    /// This is done when an operation paylaod is deleted.
+    /// This is done when an operation payload is deleted.
     /// Only tombstoneable operations can be unprocessed.
     pub(crate) async fn unprocess_app(&self, operation: &Operation) -> anyhow::Result<()> {
         let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
@@ -367,7 +367,7 @@ impl Node {
         // simply doesn't get processed.
         if self.enforce_tombstone(&operation).await? {
             // The payload is tombstoned, so there's nothing to process.
-            self.notify_header(dashchat_topic, &header).await?;
+            self.notify_header(dashchat_topic, header).await?;
             return Ok(());
         }
 
