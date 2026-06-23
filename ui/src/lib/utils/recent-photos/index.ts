@@ -61,9 +61,9 @@ export async function requestRecentPhotosPermission(): Promise<RecentPhotosPermi
 /** Default number of recent photos to load for the strip. */
 export const RECENT_PHOTOS_LIMIT = 24;
 
-// First-paint cache only: warmed by preloadRecentPhotos and overwritten by every
-// listRecentPhotos call. RecentPhotosStrip re-queries on each panel open, so this
-// never serves photos older than that open
+// First-paint cache only: overwritten by every listRecentPhotos call.
+// RecentPhotosStrip re-queries on each panel open, so this never serves photos
+// older than the previous open this session.
 let cache: RecentPhoto[] | undefined;
 let inFlight: Promise<RecentPhoto[]> | undefined;
 
@@ -84,8 +84,7 @@ async function fetchRecentPhotos(limit: number): Promise<RecentPhoto[]> {
 
 /**
  * Recent photos, newest first, capped at `limit`. Photos only. Caches the
- * result and de-dupes concurrent calls so a warm-up and the panel opening share
- * one fetch (test data is never cached).
+ * result and de-dupes concurrent calls (test data is never cached).
  */
 export async function listRecentPhotos(
 	limit: number = RECENT_PHOTOS_LIMIT,
@@ -102,22 +101,9 @@ export async function listRecentPhotos(
 }
 
 /** Last cached photos, read synchronously for instant display; `undefined`
- * until {@link preloadRecentPhotos} or {@link listRecentPhotos} has run. */
+ * until {@link listRecentPhotos} has run. */
 export function cachedRecentPhotos(): RecentPhoto[] | undefined {
 	return cache;
-}
-
-/**
- * Warm the cache ahead of the panel opening — like Signal, so thumbnails appear
- * instantly. Only loads when access is already granted, so it never triggers a
- * permission prompt, and is a no-op once the cache is warm.
- */
-export async function preloadRecentPhotos(
-	limit: number = RECENT_PHOTOS_LIMIT,
-): Promise<void> {
-	if (cache || inFlight) return;
-	if ((await getRecentPhotosPermission()) !== 'granted') return;
-	await listRecentPhotos(limit);
 }
 
 /** Full-resolution `File` for a tapped photo, ready for `ingestFiles`/`stage`. */

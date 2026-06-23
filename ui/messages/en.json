@@ -150,6 +150,7 @@
 	"removeAllAttachments": "Remove all attachments",
 	"recentPhotosAllowAccess": "Allow Access",
 	"recentPhotosPermissionPrompt": "Allow access to show your recent photos",
+	"recentPhotosPermissionDenied": "Dash Chat needs access to photos and videos to show recent photos.",
 	"recentPhotosSettingsTitle": "Allow access to photos and videos",
 	"recentPhotosSettingsSubtitle": "To show photos and videos:",
 	"recentPhotosSettingsStep1": "Tap Settings below",

@@ -1,7 +1,16 @@
+<script module lang="ts">
+	// Whether the user has already refused the OS prompt once this app run. The
+	// prompt returns 'denied' both when it was shown-and-declined and when it's
+	// permanently suppressed, so this is how we tell them apart. Kept in module
+	// memory (shared across instances, never persisted) rather than storage.
+	let deniedOnce = false;
+</script>
+
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Button } from 'konsta/svelte';
+	import { Button, Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
+	import { showToast } from '$lib/utils/toasts';
 	import { objectUrl } from '$lib/actions/object-url';
 	import PermissionSettingsSheet from '$lib/components/PermissionSettingsSheet.svelte';
 	import {
@@ -24,14 +33,15 @@
 
 	let permission = $state<RecentPhotosPermission | undefined>(undefined);
 	let photos = $state<RecentPhoto[]>([]);
+	let loading = $state(false);
 	let loadingId = $state<string | undefined>(undefined);
 	let showSettingsSheet = $state(false);
 
 	onMount(init);
 
 	async function init() {
-		// Render preloaded photos instantly when the cache is already warm, then
-		// re-query in the background so photos taken since the last open appear
+		// Show cached photos instantly when the strip was opened earlier this
+		// session, then re-query in the background so photos taken since appear.
 		const cached = cachedRecentPhotos();
 		if (cached) {
 			photos = cached.filter(p => p.thumbnail);
@@ -40,11 +50,14 @@
 			return;
 		}
 		if (!recentPhotosSupported) return;
+		loading = true;
 		permission = await getRecentPhotosPermission();
 		if (permission === 'granted') await load();
+		else loading = false;
 	}
 
 	async function load() {
+		loading = true;
 		try {
 			photos = (await listRecentPhotos(RECENT_PHOTOS_LIMIT)).filter(
 				p => p.thumbnail,
@@ -52,18 +65,30 @@
 		} catch (e) {
 			console.error('Failed to list recent photos', e);
 			photos = [];
-			// Access may have been revoked between preload and open; re-read it so
-			// the prompt/denied affordance renders instead of a blank panel.
+			// Access may have been revoked since the last open; re-read it so the
+			// prompt/denied affordance renders instead of a blank panel.
 			permission = await getRecentPhotosPermission();
+		} finally {
+			loading = false;
 		}
 	}
 
 	async function allow() {
 		permission = await requestRecentPhotosPermission();
-		if (permission === 'granted') await load();
-		// The OS dialog won't show once the permission is permanently denied, so
-		// guide the user to grant it from the app's settings instead.
-		else showSettingsSheet = true;
+		if (permission === 'granted') {
+			deniedOnce = false;
+			await load();
+			return;
+		}
+		// On the first refusal the OS dialog was shown and tapping "Allow Access"
+		// again re-prompts, so a toast is enough. Once permanently denied the
+		// dialog no longer shows, so guide the user to the app's settings instead.
+		if (deniedOnce) {
+			showSettingsSheet = true;
+		} else {
+			deniedOnce = true;
+			showToast(m.recentPhotosPermissionDenied());
+		}
 	}
 
 	async function add(photo: RecentPhoto) {
@@ -101,6 +126,15 @@
 				{/if}
 			</button>
 		{/each}
+	</div>
+{:else if loading}
+	<div
+		class="flex justify-center px-2 pb-4"
+		data-testid="message-input-recent-photos-loading"
+	>
+		<div class="flex h-[100px] items-center">
+			<Preloader />
+		</div>
 	</div>
 {:else if permission === 'prompt' || permission === 'denied'}
 	<div class="flex flex-col items-center gap-4 px-5 pt-2 pb-4 text-center">

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Sheet, Block, useTheme } from 'konsta/svelte';
 	import { isMobile } from '$lib/utils/environment';
@@ -22,7 +21,6 @@
 	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import MediaMenu from '$lib/components/messages/composer/MediaMenu.svelte';
-	import { preloadRecentPhotos } from '$lib/utils/recent-photos';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 
 	interface Props {
@@ -49,12 +47,6 @@
 	let showEmojiPicker = $state(false);
 	let showMediaPanel = $state(false);
 	let showMediaMenu = $state(false);
-
-	// Warm the recent-photos cache so the strip shows thumbnails instantly when
-	// the media panel opens (no-op unless mobile and access is already granted).
-	onMount(() => {
-		if (isMobile) preloadRecentPhotos();
-	});
 
 	async function send() {
 		if (!hasContent) return;
