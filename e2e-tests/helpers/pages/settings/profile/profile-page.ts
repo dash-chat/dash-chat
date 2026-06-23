@@ -1,12 +1,12 @@
 import { tid } from '../../../selectors';
-import { TestPage } from '../../test-page';
+import { TestHelper } from '../../test-helper';
 
-export class ProfilePage extends TestPage {
-	back = this.el('profile-back');
-	editPhoto = this.el('edit-photo');
-	editName = this.el('profile-edit-name');
-	editAbout = this.el('profile-edit-about');
-	qrLink = this.el('profile-qr-link');
+export class ProfilePage extends TestHelper {
+	back = this.el(tid('profile-back'));
+	editPhoto = this.el(tid('edit-photo'));
+	editName = this.el(tid('profile-edit-name'));
+	editAbout = this.el(tid('profile-edit-about'));
+	qrLink = this.el(tid('profile-qr-link'));
 
 	async ready() {
 		await this.editName.waitForExist();

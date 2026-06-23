@@ -1,8 +1,9 @@
-import { TestPage } from '../test-page';
+import { tid } from '../../selectors';
+import { TestHelper } from '../test-helper';
 
-export class AddMembersPage extends TestPage {
-	back = this.el('add-members-back');
-	addButton = this.el('add-members-add-btn');
+export class AddMembersPage extends TestHelper {
+	back = this.el(tid('add-members-back'));
+	addButton = this.el(tid('add-members-add-btn'));
 
 	async ready() {
 		await this.back.waitForExist();
