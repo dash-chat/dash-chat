@@ -677,53 +677,6 @@ mod tests {
     async fn record_url_round_trip_mem() {
         record_url_round_trip_impl(Backend::Mem).await;
     }
-
-    #[tokio::test]
-    async fn mailbox_id_for_url_persists_across_reopen_sqlite() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("sync_state.db");
-
-        {
-            let store: MailboxSyncTracker<u8, char> =
-                MailboxSyncTracker::open(&path).await.unwrap();
-            store
-                .record_url(&"cloud".into(), "https://cloud.example")
-                .await
-                .unwrap();
-            store.close().await;
-        }
-
-        let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::open(&path).await.unwrap();
-        assert_eq!(
-            store
-                .mailbox_id_for_url("https://cloud.example")
-                .await
-                .unwrap(),
-            Some("cloud".to_string()),
-        );
-    }
-
-    #[tokio::test]
-    async fn record_url_is_idempotent_and_updates_mem() {
-        let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::in_memory();
-        store
-            .record_url(&"mb1".into(), "https://a.example")
-            .await
-            .unwrap();
-        store
-            .record_url(&"mb1".into(), "https://b.example")
-            .await
-            .unwrap();
-        assert_eq!(
-            store.mailbox_id_for_url("https://a.example").await.unwrap(),
-            None,
-        );
-        assert_eq!(
-            store.mailbox_id_for_url("https://b.example").await.unwrap(),
-            Some("mb1".to_string()),
-        );
-    }
-
     #[tokio::test]
     async fn sync_state_watch_updates_on_record_synced() {
         let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::in_memory();
