@@ -64,6 +64,11 @@
 			photos = (await listRecentPhotos(RECENT_PHOTOS_LIMIT)).filter(
 				p => p.thumbnail,
 			);
+			// A revoked permission doesn't throw on Android (the query just returns
+			// an empty cursor), so an empty result is also our cue to re-read access
+			// — otherwise the optimistic cache path leaves permission as 'granted'
+			// with no photos and renders a silent blank panel with no re-grant button.
+			if (photos.length === 0) permission = await getRecentPhotosPermission();
 		} catch (e) {
 			console.error('Failed to list recent photos', e);
 			showToast(m.errorLoadingRecentPhotos(), 'error');
