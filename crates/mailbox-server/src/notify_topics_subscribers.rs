@@ -10,9 +10,9 @@ use crate::{AppState, Author, TopicId};
 /// Notify push notification subscribers for topics that received new data (non-blocking).
 pub async fn notify_topics_subscribers(
     state: &AppState,
-    topics_with_new_blobs: BTreeMap<TopicId, BTreeMap<String, Author>>,
+    topics_with_new_blips: BTreeMap<TopicId, BTreeMap<String, Author>>,
 ) {
-    if topics_with_new_blobs.is_empty() {
+    if topics_with_new_blips.is_empty() {
         return;
     }
     let Some(push_client) = &state.push_client else {
@@ -22,15 +22,15 @@ pub async fn notify_topics_subscribers(
     let mut push_tasks = state.push_tasks.lock().await;
     // Reap completed tasks to prevent slow memory leak
     while push_tasks.try_join_next().is_some() {}
-    push_tasks.spawn(send_push_notifications(push_client, topics_with_new_blobs));
+    push_tasks.spawn(send_push_notifications(push_client, topics_with_new_blips));
 }
 
 async fn send_push_notifications(
     push_client: Arc<PushNotificationsClient>,
-    topics_with_new_blobs: BTreeMap<TopicId, BTreeMap<String, Author>>,
+    topics_with_new_blips: BTreeMap<TopicId, BTreeMap<String, Author>>,
 ) {
     let topics_to_notify: HashMap<PushTopicId, HashMap<OperationId, VerifyingKey>> =
-        topics_with_new_blobs
+        topics_with_new_blips
             .into_iter()
             .map(|(topic, ops)| {
                 let topic = PushTopicId::from(topic);

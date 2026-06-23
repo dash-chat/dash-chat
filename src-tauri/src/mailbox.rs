@@ -9,7 +9,6 @@ use tauri::{AppHandle, Manager, Runtime};
 const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
 #[cfg(feature = "e2e-tests")]
 const MDNS_SERVICE_TYPE: &str = "_dashchat-e2e._tcp.local.";
-pub(crate) const PRODUCTION_MAILBOX_ID: &str = "dashchat-mailbox";
 pub(crate) const PRODUCTION_MAILBOX_URL: &str = "https://mailbox.production.darksoil.studio";
 
 #[cfg(not(mobile))]
@@ -36,6 +35,34 @@ pub fn default_mailbox_url() -> String {
         return url.to_string();
     }
     PRODUCTION_MAILBOX_URL.to_string()
+}
+
+/// The id of the mailbox whose URL is the cloud URL, if any.
+///
+/// "Cloud" is an app-level concept — the generic `Mailboxes` manager has no
+/// notion of it — so we identify it by matching `default_mailbox_url()` against
+/// each registered mailbox's client URL. When no registered mailbox matches
+/// (e.g. after a cold start while the cloud server is unreachable, so it can't
+/// be re-registered), we fall back to the URL persisted in the sync tracker so
+/// a previously-delivered message still resolves to the cloud mailbox. Returns
+/// `None` only when the cloud mailbox has never been reached on this device.
+pub(crate) async fn cloud_mailbox_id(
+    node: &dashchat_node::Node,
+) -> Option<mailbox_client::MailboxId> {
+    let cloud_url = default_mailbox_url();
+    let ids = node.mailboxes.active_mailbox_ids().borrow().clone();
+    for id in ids {
+        if let Some(tm) = node.mailboxes.tracked_mailbox(&id).await {
+            if tm.client().await.url().as_deref() == Some(&cloud_url) {
+                return Some(id);
+            }
+        }
+    }
+    node.mailboxes
+        .sync_tracker()
+        .mailbox_id_for_url(&cloud_url)
+        .await
+        .unwrap_or(None)
 }
 
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
@@ -156,6 +183,7 @@ async fn handle_browse_events(
                         .register(mailbox_client::toy::ToyMailboxClient::new(
                             mailbox_id.clone(),
                             url.clone(),
+                            node.endpoint_id(),
                         ))
                         .await;
                     log::info!(

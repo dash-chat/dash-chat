@@ -9,9 +9,11 @@
  *
  * Unix-only — relies on POSIX signal semantics.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { spawnMailboxServer, waitForMailboxReady } from './mailbox-server';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MAILBOX_INFO_PATH = path.join(
@@ -48,4 +50,26 @@ export function suspendMailbox(): void {
 /** Resume a previously-suspended mailbox server. */
 export function resumeMailbox(): void {
 	signalGroup(readInfo().pid, 'SIGCONT');
+}
+
+/** Kill the mailbox server outright so connections to it are refused. */
+export function killMailbox(): void {
+	try {
+		signalGroup(readInfo().pid, 'SIGKILL');
+	} catch {
+		/* already gone */
+	}
+}
+
+/**
+ * Respawn the mailbox server on the same port + db, so a spec that killed it
+ * leaves a live server behind for the rest of the run. Updates mailbox-info.json
+ * with the new pid.
+ */
+export async function restartMailbox(): Promise<void> {
+	const info = readInfo();
+	const server = spawnMailboxServer(info.port, info.dbPath);
+	server.unref();
+	writeFileSync(MAILBOX_INFO_PATH, JSON.stringify({ ...info, pid: server.pid }));
+	await waitForMailboxReady(info.url);
 }

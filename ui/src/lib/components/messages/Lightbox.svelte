@@ -1,22 +1,21 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
 		mdiChevronLeft,
 		mdiChevronRight,
 		mdiClose,
 		mdiTrayArrowDown,
 	} from '@mdi/js';
-	import type { Photo } from 'dash-chat-stores';
-	import { objectUrl } from '$lib/actions/object-url';
+	import type { PhotoAttachment } from 'dash-chat-stores';
 	import { savePhoto } from '$lib/utils/media';
 	import { showToast } from '$lib/utils/toasts';
+	import BlobImage from '$lib/components/BlobImage.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
 	interface Props {
-		photos: Photo[];
+		photos: PhotoAttachment[];
 		/** Index of the currently shown photo; updated as the user navigates. */
 		index?: number;
 		senderName: string;
@@ -40,6 +39,9 @@
 	let zoomed = $state(false);
 	let originX = $state(50);
 	let originY = $state(50);
+
+	let imgStatus = $state<'loading' | 'loaded' | 'error'>('loading');
+	let blobImage: { retry: () => void } | undefined;
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
@@ -83,6 +85,10 @@
 	}
 
 	function onStageClick(event: MouseEvent) {
+		if (imgStatus === 'error') {
+			blobImage?.retry();
+			return;
+		}
 		if (event.target === stageEl && !zoomed) onClose();
 	}
 
@@ -166,20 +172,20 @@
 
 	<button
 		type="button"
-		class="flex min-h-0 flex-1 cursor-default items-center justify-center overflow-hidden border-none bg-transparent p-0"
+		class="relative flex min-h-0 flex-1 cursor-default items-center justify-center overflow-hidden border-none bg-transparent p-0"
 		bind:this={stageEl}
 		aria-label={m.closeLightbox()}
 		onclick={onStageClick}
 		ondblclick={onStageDoubleClick}
 		onmousemove={onStageMouseMove}
 	>
-		<img
-			class="lightbox-image max-h-full max-w-full object-contain"
-			class:zoomed
-			style="transform-origin: {originX}% {originY}%"
-			use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
+		<BlobImage
+			bind:this={blobImage}
+			item={photo}
 			alt={photo.name}
-			data-testid="lightbox-image"
+			imgClass={`lightbox-image max-h-full max-w-full object-contain${zoomed ? ' zoomed' : ''}`}
+			imgStyle={`transform-origin: ${originX}% ${originY}%`}
+			onStatus={s => (imgStatus = s)}
 		/>
 	</button>
 
@@ -217,16 +223,17 @@
 			{#each photos as p, i (i)}
 				<button
 					type="button"
-					class="lightbox-thumb h-11 w-11 shrink-0 overflow-hidden p-0"
+					class="lightbox-thumb relative h-11 w-11 shrink-0 overflow-hidden p-0"
 					class:selected={i === index}
 					data-testid="lightbox-thumb-{i}"
 					aria-label={p.name}
 					onclick={() => select(i)}
 				>
-					<img
-						use:objectUrl={{ data: p.data, mimeType: p.mime_type }}
+					<BlobImage
+						item={p}
 						alt={p.name}
-						class="block h-full w-full object-cover"
+						imgClass="block h-full w-full object-cover"
+						lazy
 					/>
 				</button>
 			{/each}
@@ -246,14 +253,14 @@
 		font-size: 11px;
 	}
 
-	.lightbox-image {
+	:global(.lightbox-image) {
 		transition: transform 0.15s ease;
 	}
-	.lightbox-image.zoomed {
+	:global(.lightbox-image.zoomed) {
 		transform: scale(3);
 		cursor: zoom-out;
 	}
-	.lightbox-image:not(.zoomed) {
+	:global(.lightbox-image:not(.zoomed)) {
 		cursor: zoom-in;
 	}
 

@@ -4,37 +4,44 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AppState, Author, Blob, BlobsKey, BlobsKeyPrefix, SequenceNumber, TopicId, WatermarksKey,
-    BLOBS_TABLE, WATERMARKS_TABLE,
+    AppState, Author, Blip, BlipsKey, BlipsKeyPrefix, SequenceNumber, TopicId, WatermarksKey,
+    BLIPS_TABLE, WATERMARKS_TABLE,
 };
 
+// Per-request, per-author cap on the missing-sequence range we
+// materialize. `client_max_seq` comes straight from the (untrusted) request body,
+// so without this a single cheap request forces an arbitrarily large server-side
+// allocation. The client re-requests the next batch on its next sync, so capping
+// is functionally transparent. Raise if logs legitimately outpace this per sync.
+const MAX_MISSING_PER_AUTHOR: SequenceNumber = 10_000;
+
 #[derive(Serialize, Deserialize)]
-pub struct GetBlobsRequest {
+pub struct GetBlipsRequest {
     pub topics: BTreeMap<TopicId, BTreeMap<Author, SequenceNumber>>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct GetBlobsForTopicResponse {
-    // The blobs that the client does not have
-    pub blobs: BTreeMap<Author, BTreeMap<SequenceNumber, Blob>>,
-    // The blobs that the server is missing from the client's request
+pub struct GetBlipsForTopicResponse {
+    // The blips that the client does not have
+    pub blips: BTreeMap<Author, BTreeMap<SequenceNumber, Blip>>,
+    // The blips that the server is missing from the client's request
     pub missing: BTreeMap<Author, Vec<SequenceNumber>>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct GetBlobsResponse {
-    pub blobs_by_topic: BTreeMap<TopicId, GetBlobsForTopicResponse>,
+pub struct GetBlipsResponse {
+    pub blips_by_topic: BTreeMap<TopicId, GetBlipsForTopicResponse>,
 }
 
-pub async fn get_blobs_for_topics(
+pub async fn get_blips_for_topics(
     State(state): State<AppState>,
-    Json(payload): Json<GetBlobsRequest>,
-) -> Result<Json<GetBlobsResponse>, (StatusCode, String)> {
+    Json(payload): Json<GetBlipsRequest>,
+) -> Result<Json<GetBlipsResponse>, (StatusCode, String)> {
     let db = state.db.clone();
     // Use spawn_blocking because redb's begin_read() can block while waiting for
     // concurrent write transactions. Running this directly in async context would
     // block tokio worker threads and cause deadlocks under concurrent load.
-    tokio::task::spawn_blocking(move || get_blobs_for_topics_inner(&db, &payload))
+    tokio::task::spawn_blocking(move || get_blips_for_topics_inner(&db, &payload))
         .await
         .map_err(|e| {
             tracing::error!("Task join error: {}", e);
@@ -53,43 +60,43 @@ pub async fn get_blobs_for_topics(
         })
 }
 
-fn get_blobs_for_topics_inner(
+fn get_blips_for_topics_inner(
     db: &Database,
-    request: &GetBlobsRequest,
-) -> Result<GetBlobsResponse, String> {
-    let mut blobs_by_topic: BTreeMap<TopicId, GetBlobsForTopicResponse> = BTreeMap::new();
+    request: &GetBlipsRequest,
+) -> Result<GetBlipsResponse, String> {
+    let mut blips_by_topic: BTreeMap<TopicId, GetBlipsForTopicResponse> = BTreeMap::new();
 
     let read_txn = db
         .begin_read()
         .map_err(|e| format!("Failed to begin transaction: {}", e))?;
 
-    let blobs_table = read_txn
-        .open_table(BLOBS_TABLE)
-        .map_err(|e| format!("Failed to open blobs table: {}", e))?;
+    let blips_table = read_txn
+        .open_table(BLIPS_TABLE)
+        .map_err(|e| format!("Failed to open blips table: {}", e))?;
 
     let watermarks_table = read_txn
         .open_table(WATERMARKS_TABLE)
         .map_err(|e| format!("Failed to open watermarks table: {}", e))?;
 
     for (topic_id, requested_authors) in &request.topics {
-        let mut topic_authors: BTreeMap<Author, BTreeMap<SequenceNumber, Blob>> = BTreeMap::new();
+        let mut topic_authors: BTreeMap<Author, BTreeMap<SequenceNumber, Blip>> = BTreeMap::new();
         // Track which sequences we have stored for each requested author
         // (used to avoid reporting as missing sequences we actually have)
         let mut stored_seqs_per_author: BTreeMap<Author, BTreeSet<SequenceNumber>> =
             BTreeMap::new();
 
-        // Use prefix-based range query to only iterate over blobs for this topic
-        let prefix = BlobsKeyPrefix::Topic(topic_id.clone());
+        // Use prefix-based range query to only iterate over blips for this topic
+        let prefix = BlipsKeyPrefix::Topic(topic_id.clone());
 
-        for entry in blobs_table
+        for entry in blips_table
             .range(prefix.range_start()..=prefix.range_end())
             .map_err(|e| format!("Failed to create iterator: {}", e))?
         {
             let (key, value) = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
 
-            let blob_key: BlobsKey = key.value();
-            let author = blob_key.author.clone();
-            let seq_num = blob_key.sequence_number;
+            let blip_key: BlipsKey = key.value();
+            let author = blip_key.author.clone();
+            let seq_num = blip_key.sequence_number;
 
             // Track sequences we have for requested authors (for missing calculation)
             if requested_authors.contains_key(&author) {
@@ -104,10 +111,10 @@ fn get_blobs_for_topics_inner(
                 // Author is in the request: only include if seq_num > min_seq_num
                 seq_num > *min_seq_num
             } else {
-                // Author is NOT in the request: include all blobs for this author
+                // Author is NOT in the request: include all blips for this author
                 // TODO: implement pagination or asynchronous data streaming
                 // (https://www.ruststepbystep.com/how-to-stream-data-asynchronously-in-rust-with-axum/)
-                // to handle huge amounts of blobs being returned
+                // to handle huge amounts of blips being returned
                 true
             };
 
@@ -115,11 +122,11 @@ fn get_blobs_for_topics_inner(
                 topic_authors
                     .entry(author)
                     .or_insert_with(BTreeMap::new)
-                    .insert(seq_num, Blob::from(value.value().to_vec()));
+                    .insert(seq_num, Blip::from(value.value().to_vec()));
             }
         }
 
-        // Calculate missing blobs using watermarks and stored sequences
+        // Calculate missing blips using watermarks and stored sequences
         let mut missing: BTreeMap<Author, Vec<SequenceNumber>> = BTreeMap::new();
         for (author, client_max_seq) in requested_authors {
             let watermarks_key =
@@ -139,18 +146,19 @@ fn get_blobs_for_topics_inner(
             // - Everything 0..=watermark is NOT missing (we had it at some point)
             // - For sequences above watermark
             let missing_seq_nums: Vec<SequenceNumber> = match server_watermark {
-                Some(watermark) => {
-                    // Server has contiguous sequences 0..=watermark
-                    if *client_max_seq > watermark {
-                        ((watermark + 1)..=*client_max_seq).collect()
-                    } else {
-                        // client_max_seq <= watermark: server has everything
-                        Vec::new()
-                    }
+                // Server has contiguous sequences 0..=watermark
+                Some(watermark) if *client_max_seq > watermark => {
+                    let start = watermark.saturating_add(1);
+                    let end =
+                        (*client_max_seq).min(start.saturating_add(MAX_MISSING_PER_AUTHOR - 1));
+                    (start..=end).collect()
                 }
+                // client_max_seq <= watermark: server has everything
+                Some(_) => Vec::new(),
                 None => {
                     // No watermark = no contiguous sequences from 0
-                    (0..=*client_max_seq).collect()
+                    let end = (*client_max_seq).min(MAX_MISSING_PER_AUTHOR - 1);
+                    (0..=end).collect()
                 }
             };
 
@@ -162,7 +170,7 @@ fn get_blobs_for_topics_inner(
 
             if !missing_seq_nums.is_empty() {
                 tracing::debug!(
-                    "Server missing {} blobs for author {} in topic {} (sequences: {:?})",
+                    "Server missing {} blips for author {} in topic {} (sequences: {:?})",
                     missing_seq_nums.len(),
                     author,
                     topic_id,
@@ -172,15 +180,15 @@ fn get_blobs_for_topics_inner(
             }
         }
 
-        blobs_by_topic.insert(
+        blips_by_topic.insert(
             topic_id.clone(),
-            GetBlobsForTopicResponse {
-                blobs: topic_authors,
+            GetBlipsForTopicResponse {
+                blips: topic_authors,
                 missing,
             },
         );
     }
 
-    tracing::debug!("Retrieved blobs for {} topics", request.topics.len());
-    Ok(GetBlobsResponse { blobs_by_topic })
+    tracing::debug!("Retrieved blips for {} topics", request.topics.len());
+    Ok(GetBlipsResponse { blips_by_topic })
 }

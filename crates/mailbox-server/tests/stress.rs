@@ -1,6 +1,6 @@
 use futures::future::join_all;
 use mailbox_server::{
-    test_utils::create_test_server, Author, GetBlobsResponse, SequenceNumber, TopicId,
+    test_utils::create_test_server, Author, GetBlipsResponse, SequenceNumber, TopicId,
 };
 use serde_json::json;
 use serial_test::serial;
@@ -18,7 +18,7 @@ fn create_store_request(
 ) -> serde_json::Value {
     let message_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, message);
     json!({
-        "blobs": {
+        "blips": {
             topic_id: {
                 "author-1": {
                     seq_num.to_string(): message_b64
@@ -32,7 +32,7 @@ fn create_store_request(
 #[tokio::test]
 #[serial]
 async fn stress_test_concurrent_writes() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
     let server = Arc::new(server);
 
     let num_concurrent_writes = 600;
@@ -48,7 +48,7 @@ async fn stress_test_concurrent_writes() {
 
         let task = async move {
             let response = server_clone
-                .post("/blobs/store")
+                .post("/blips/store")
                 .json(&create_store_request(&topic_id, message.as_bytes(), i))
                 .await;
 
@@ -72,7 +72,7 @@ async fn stress_test_concurrent_writes() {
     for topic_idx in 0..num_topics {
         let topic_id = format!("stress-topic-{}", topic_idx);
         let get_response = server
-            .post("/blobs/get")
+            .post("/blips/get")
             .json(&json!({
                 "topics": {
                     topic_id: {}
@@ -81,10 +81,10 @@ async fn stress_test_concurrent_writes() {
             .await;
 
         get_response.assert_status_ok();
-        let body: GetBlobsResponse = get_response.json();
-        let topic_authors = &body.blobs_by_topic[&format!("stress-topic-{}", topic_idx)];
+        let body: GetBlipsResponse = get_response.json();
+        let topic_authors = &body.blips_by_topic[&format!("stress-topic-{}", topic_idx)];
         let total_messages: u64 = topic_authors
-            .blobs
+            .blips
             .values()
             .map(|author| author.len() as u64)
             .sum();
@@ -97,7 +97,7 @@ async fn stress_test_concurrent_writes() {
 #[tokio::test]
 #[serial]
 async fn stress_test_concurrent_reads() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
     let server = Arc::new(server);
 
     // Pre-populate with messages
@@ -110,7 +110,7 @@ async fn stress_test_concurrent_reads() {
             let message = format!("Message {} for topic {}", msg_idx, topic_idx);
 
             server
-                .post("/blobs/store")
+                .post("/blips/store")
                 .json(&create_store_request(
                     &topic_id,
                     message.as_bytes(),
@@ -133,7 +133,7 @@ async fn stress_test_concurrent_reads() {
         let task = async move {
             let topic_id_clone = topic_id.clone();
             let response = server_clone
-                .post("/blobs/get")
+                .post("/blips/get")
                 .json(&json!({
                     "topics": {
                         &topic_id: {}
@@ -142,10 +142,10 @@ async fn stress_test_concurrent_reads() {
                 .await;
 
             response.assert_status_ok();
-            let body: GetBlobsResponse = response.json();
-            let topic_authors = &body.blobs_by_topic[&topic_id_clone];
+            let body: GetBlipsResponse = response.json();
+            let topic_authors = &body.blips_by_topic[&topic_id_clone];
             let total_messages: u64 = topic_authors
-                .blobs
+                .blips
                 .values()
                 .map(|author| author.len() as u64)
                 .sum();
@@ -168,7 +168,7 @@ async fn stress_test_concurrent_reads() {
 
 #[tokio::test]
 async fn stress_test_mixed_read_write_operations() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
     let server = Arc::new(server);
 
     let num_operations = 200;
@@ -187,7 +187,7 @@ async fn stress_test_mixed_read_write_operations() {
                 let message = format!("Mixed message {}", i);
 
                 let response = server_clone
-                    .post("/blobs/store")
+                    .post("/blips/store")
                     .json(&create_store_request(&topic_id, message.as_bytes(), i))
                     .await;
 
@@ -198,7 +198,7 @@ async fn stress_test_mixed_read_write_operations() {
             // Read operation
             let task = Box::pin(async move {
                 let response = server_clone
-                    .post("/blobs/get")
+                    .post("/blips/get")
                     .json(&json!({
                         "topics": {
                             topic_id: {}
@@ -226,7 +226,7 @@ async fn stress_test_mixed_read_write_operations() {
 
 #[tokio::test]
 async fn stress_test_large_messages() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
     let server = Arc::new(server);
 
     let num_large_messages: usize = 50;
@@ -243,7 +243,7 @@ async fn stress_test_large_messages() {
             let message = vec![b'X'; message_size];
 
             let response = server_clone
-                .post("/blobs/store")
+                .post("/blips/store")
                 .json(&create_store_request(&topic_id, &message, i as u64))
                 .await;
 
@@ -269,7 +269,7 @@ async fn stress_test_large_messages() {
     for topic_idx in 0..5 {
         let topic_id = format!("large-msg-topic-{}", topic_idx);
         let response = server
-            .post("/blobs/get")
+            .post("/blips/get")
             .json(&json!({
                 "topics": {
                     &topic_id: {}
@@ -278,10 +278,10 @@ async fn stress_test_large_messages() {
             .await;
 
         response.assert_status_ok();
-        let body: GetBlobsResponse = response.json();
-        let topic_authors = &body.blobs_by_topic[&topic_id];
+        let body: GetBlipsResponse = response.json();
+        let topic_authors = &body.blips_by_topic[&topic_id];
         let total_messages: u64 = topic_authors
-            .blobs
+            .blips
             .values()
             .map(|author| author.len() as u64)
             .sum();
@@ -291,7 +291,7 @@ async fn stress_test_large_messages() {
 
 #[tokio::test]
 async fn stress_test_many_topics() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     let num_topics = 1000;
     let messages_per_topic = 5;
@@ -304,7 +304,7 @@ async fn stress_test_many_topics() {
             let message = format!("Message {} for topic {}", msg_idx, topic_idx);
 
             server
-                .post("/blobs/store")
+                .post("/blips/store")
                 .json(&create_store_request(
                     &topic_id,
                     message.as_bytes(),
@@ -332,22 +332,22 @@ async fn stress_test_many_topics() {
 
     let start = Instant::now();
     let response = server
-        .post("/blobs/get")
+        .post("/blips/get")
         .json(&json!({
             "topics": topics_map
         }))
         .await;
 
     response.assert_status_ok();
-    let body: GetBlobsResponse = response.json();
+    let body: GetBlipsResponse = response.json();
 
     let retrieve_duration = start.elapsed();
 
-    assert_eq!(body.blobs_by_topic.len(), 100);
+    assert_eq!(body.blips_by_topic.len(), 100);
     for topic_id in &topic_ids {
-        let topic_authors = &body.blobs_by_topic[topic_id];
+        let topic_authors = &body.blips_by_topic[topic_id];
         let total_messages: u64 = topic_authors
-            .blobs
+            .blips
             .values()
             .map(|author| author.len() as u64)
             .sum();
@@ -362,7 +362,7 @@ async fn stress_test_many_topics() {
 
 #[tokio::test]
 async fn stress_test_rapid_sequential_writes() {
-    let (server, _temp_file) = create_test_server();
+    let (server, _temp_file) = create_test_server().await;
 
     let num_messages = 500;
     let topic_id = "rapid-sequential-topic";
@@ -373,7 +373,7 @@ async fn stress_test_rapid_sequential_writes() {
         let message = format!("Rapid message {}", i);
 
         server
-            .post("/blobs/store")
+            .post("/blips/store")
             .json(&create_store_request(topic_id, message.as_bytes(), i))
             .await
             .assert_status(axum::http::StatusCode::CREATED);
@@ -390,7 +390,7 @@ async fn stress_test_rapid_sequential_writes() {
 
     // Verify all messages were stored
     let response = server
-        .post("/blobs/get")
+        .post("/blips/get")
         .json(&json!({
             "topics": {
                 topic_id: {}
@@ -399,10 +399,10 @@ async fn stress_test_rapid_sequential_writes() {
         .await;
 
     response.assert_status_ok();
-    let body: GetBlobsResponse = response.json();
-    let topic_authors = &body.blobs_by_topic[topic_id];
+    let body: GetBlipsResponse = response.json();
+    let topic_authors = &body.blips_by_topic[topic_id];
     let total_messages: u64 = topic_authors
-        .blobs
+        .blips
         .values()
         .map(|author| author.len() as u64)
         .sum();

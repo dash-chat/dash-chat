@@ -15,8 +15,6 @@ pub(crate) async fn build_node(
 ) -> anyhow::Result<Node> {
     let config = if cfg!(feature = "e2e-tests") {
         let mut config = dashchat_node::NodeConfig::default();
-        config.mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
-        config.mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
         config.mdns_mode = p2panda::network::MdnsDiscoveryMode::Disabled;
         config
     } else {
@@ -31,14 +29,40 @@ pub(crate) async fn build_node(
     let config = if no_p2p { config.no_p2p() } else { config };
     let node = Node::new(data_path, config, notification_tx, topic_subscribed_tx).await?;
 
-    let mailbox_url = crate::mailbox::default_mailbox_url();
-    let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
-        crate::mailbox::PRODUCTION_MAILBOX_ID.to_string(),
-        mailbox_url,
-    );
-    node.mailboxes.register(mailbox_client).await;
-
     Ok(node)
+}
+
+/// Resolve the cloud mailbox id from its `/health` endpoint and register it on
+/// the node. Returns an error (registering nothing) when the server is
+/// unreachable — there is intentionally no fallback id, so callers retry until
+/// the real id is known. `Mailboxes::register` is idempotent.
+pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
+    let mailbox_url = crate::mailbox::default_mailbox_url();
+    let mailbox_id = fetch_mailbox_id(&mailbox_url).await?;
+    if !node.mailboxes.is_tracked(&mailbox_id).await {
+        let mailbox_client =
+            mailbox_client::toy::ToyMailboxClient::new(mailbox_id, mailbox_url, node.endpoint_id());
+        node.mailboxes.register(mailbox_client).await;
+    }
+    Ok(())
+}
+
+/// Fetch the canonical MailboxId from the mailbox server's /health endpoint.
+/// Returns the `endpoint_id` field which is the base64url-no-pad EndpointId.
+async fn fetch_mailbox_id(base_url: &str) -> anyhow::Result<mailbox_client::MailboxId> {
+    #[derive(serde::Deserialize)]
+    struct HealthResponse {
+        endpoint_id: String,
+    }
+    let url = format!("{}/health", base_url.trim_end_matches('/'));
+    let resp = mailbox_client::HTTP_CLIENT
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<HealthResponse>()
+        .await?;
+    Ok(resp.endpoint_id)
 }
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
@@ -93,6 +117,26 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     .await?;
 
     app_handle.manage(node.clone());
+
+    // Resolve and register the cloud mailbox in the background. Its id comes
+    // from the server's /health endpoint, so while offline it stays unknown;
+    // retry forever until the server is reachable.
+    {
+        let node = node.clone();
+        tokio::spawn(async move {
+            let _ = dashchat_utils::retry_with_backoff(
+                None,
+                std::time::Duration::from_secs(2),
+                std::time::Duration::from_secs(10),
+                "register cloud mailbox",
+                || {
+                    let node = node.clone();
+                    async move { register_cloud_mailbox(&node).await }
+                },
+            )
+            .await;
+        });
+    }
 
     #[cfg(mobile)]
     {
