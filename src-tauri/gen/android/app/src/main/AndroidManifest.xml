@@ -3,10 +3,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- WRITE_EXTERNAL_STORAGE (save downloaded photos to the gallery on Android 9
-         and below) is injected by tauri-plugin-android-fs's legacy_storage_permission
-         feature. The reads below gate the recent-photos strip: READ_EXTERNAL_STORAGE
+    <!-- WRITE_EXTERNAL_STORAGE saves downloaded photos to the gallery on Android 9
+         and below (Android 10+ uses scoped storage / MediaStore and needs no
+         permission). The reads gate the recent-photos strip: READ_EXTERNAL_STORAGE
          up to API 32, READ_MEDIA_IMAGES on API 33+. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
@@ -60,9 +61,6 @@
         </provider>
     </application>
     <!-- ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-    <!-- READ_EXTERNAL_STORAGE injected here by legacy_storage_permission is omitted:
-         it duplicates the maxSdkVersion=32 declaration above (a superset) and the
-         manifest merger rejects two entries for the same permission. -->
+    
     <!-- ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
 </manifest>

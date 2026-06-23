@@ -97,9 +97,8 @@ tauri-plugin-view = "0.0.5"
 jni = "0.21"
 ndk-sys = "0.6"
 ndk-context = "0.1"
-# Saves photos to the shared gallery (MediaStore). `legacy_storage_permission`
-# covers Android 9 and below (minSdk is 24), which predate scoped storage.
-tauri-plugin-android-fs = { version = "28.2", features = ["legacy_storage_permission"] }
+# Saves photos to the shared gallery (MediaStore). 
+tauri-plugin-android-fs = { version = "28.2" }
 # Enumerates recent gallery images (MediaStore) for the composer's recent-photos
 # strip. JS bindings ship as `@universalappfactory/tauri-plugin-medialibrary`.
 tauri-plugin-medialibrary = "0.16"
