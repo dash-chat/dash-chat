@@ -129,7 +129,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="fixed inset-0 z-30 flex flex-col bg-black"
+	class="fixed inset-0 z-40 flex flex-col bg-black"
 	use:darkOverlay
 	role="dialog"
 	aria-modal="true"
