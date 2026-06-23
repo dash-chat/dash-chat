@@ -335,9 +335,9 @@ impl Node {
                         return Ok(());
                     };
                     if let Some(media) = m.media() {
-                        for item in media.iter() {
-                            self.blob_sync.fetch_pool.remove(topic, item.hash).await;
-                        }
+                        self.blob_sync
+                            .delete_blobs(topic, media.iter().map(|item| item.hash))
+                            .await;
                     }
                 }
                 _ => {

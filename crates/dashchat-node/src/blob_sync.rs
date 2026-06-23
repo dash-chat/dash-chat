@@ -121,6 +121,30 @@ impl BlobSync {
         .await
     }
 
+    /// Delete all tags referencing any of the given hashes, allowing iroh's GC
+    /// to reclaim the blob data.
+    pub async fn delete_blobs(
+        &self,
+        topic: TopicId,
+        hashes: impl IntoIterator<Item = iroh_blobs::Hash>,
+    ) {
+        let hashes: HashSet<_> = hashes.into_iter().collect();
+        let tags = self.blobs.store().tags();
+        let Ok(mut stream) = tags.list().await else {
+            return;
+        };
+        while let Some(Ok(tag_info)) = stream.next().await {
+            if hashes.contains(&tag_info.hash) {
+                if let Err(err) = tags.delete(tag_info.name).await {
+                    tracing::warn!(?err, "failed to delete blob tag");
+                }
+            }
+        }
+        for hash in hashes {
+            self.fetch_pool.remove(topic, hash).await;
+        }
+    }
+
     /// Keep attempting an on-demand download of `hash` until it is present
     /// locally or `timeout` elapses, bypassing the background loop's long pass
     /// interval (up to a minute away). Retries within the window so a
