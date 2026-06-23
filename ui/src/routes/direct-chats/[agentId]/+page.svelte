@@ -194,7 +194,7 @@
 			const matches: Hash[] = [];
 			els.forEach(el => {
 				const hash = el.getAttribute('data-message-hash') as Hash;
-				const text = el.querySelector('.flex-1')?.textContent || '';
+				const text = el.querySelector('[data-message-text]')?.textContent || '';
 				if (text.toLowerCase().includes(lowerQ)) matches.push(hash);
 			});
 			matchingHashes = matches;
@@ -386,6 +386,7 @@
 											placeholder={m.searchMessages()}
 											bind:value={searchQuery}
 											use:focusOnMount
+											data-testid="direct-chat-search-input"
 										/>
 									</div>
 								{/snippet}
@@ -779,7 +780,10 @@
 									bind:this={dateInput}
 									onchange={e => jumpToDate(e.currentTarget.value)}
 								/>
-								<span class="flex-1 text-center text-sm quiet">
+								<span
+									class="flex-1 text-center text-sm quiet"
+									data-testid="search-results-count"
+								>
 									{#if !searchQuery}
 										<!-- empty -->
 									{:else if matchingHashes.length === 0}

@@ -31,6 +31,16 @@ export class Messages {
 		return text === '' ? null : text;
 	}
 
+	/** Whether the rendered message list currently contains `text`. */
+	messageAreaContains(text: string): Promise<boolean> {
+		return this.agent.execute(
+			(sel: string, t: string) =>
+				document.querySelector(sel)?.textContent?.includes(t) ?? false,
+			this.messagesSelector,
+			text,
+		);
+	}
+
 	async waitForMessage(text: string, timeout = SYNC_TIMEOUT) {
 		await this.agent.waitUntil(
 			async () =>
