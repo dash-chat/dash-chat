@@ -105,6 +105,7 @@
 			const files = await pickMedia('image', true);
 			if (files && files.length > 0) stage(files);
 		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to pick files', e);
 		}
 	}
@@ -167,7 +168,6 @@
 		<MediaPanel bind:opened={showMediaPanel} onFiles={stage} />
 	{/if}
 </div>
-
 
 {#if isMobile && media && page.state.stagedMedia}
 	<StagedMediaPage
