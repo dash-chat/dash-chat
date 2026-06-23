@@ -38,10 +38,9 @@ use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
     DirectChatId, MediaAttachment, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
 };
+use dashchat_utils::NETWORK_ID;
 
 pub use app_processing::Notification;
-
-const NETWORK_ID: &[u8; 32] = b"usability, reliability, security";
 
 pub static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
     "https://euc1-1.relay.n0.iroh-canary.iroh.link"

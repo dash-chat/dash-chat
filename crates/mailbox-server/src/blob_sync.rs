@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use dashchat_utils::{fetch_loop, FetchConfig, FetchPool};
+use dashchat_utils::{fetch_loop, FetchConfig, FetchPool, NETWORK_ID};
 use futures::StreamExt;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
@@ -106,12 +106,15 @@ impl BlobSync {
             interval: BLOB_GC_INTERVAL,
             add_protected: None,
         });
+        let mixed_alpn =
+            p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, *NETWORK_ID);
         let store = iroh_blobs::store::fs::FsStore::load_with_opts(db_path, options).await?;
         let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        let downloader =
+            Downloader::new_with_opts(&store, &endpoint, mixed_alpn.as_slice(), Default::default());
         let router = Router::builder(endpoint.clone())
-            .accept(iroh_blobs::ALPN, blobs.clone())
+            .accept(mixed_alpn, blobs.clone())
             .spawn();
-        let downloader = Downloader::new(&store, &endpoint);
         let endpoint_id = endpoint.id();
 
         Ok(Self {
