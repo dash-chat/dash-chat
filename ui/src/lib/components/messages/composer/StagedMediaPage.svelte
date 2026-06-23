@@ -6,11 +6,13 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
 		mdiClose,
-		mdiPlus,
 		mdiTrashCanOutline,
 		mdiArrowRight,
+		mdiPlusBoxOutline,
 	} from '@mdi/js';
 	import { type DraftMedia, MAX_STAGED_PHOTOS } from '$lib/utils/media';
+	import { isAndroid } from '$lib/utils/environment';
+	import { setSystemBarsStyle, applyThemeSystemBars } from '$lib/utils/theme';
 	import { objectUrl } from '$lib/actions/object-url';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
@@ -41,14 +43,46 @@
 	let carouselEl: HTMLElement | undefined = $state();
 	let showEmojiPicker = $state(false);
 
+	// The letterbox gap (px) above the rendered photo, used to anchor the
+	// destination chip to the photo's top edge instead of the screen edge.
+	let photoTopGap = $state(0);
+
 	const photos = $derived(media?.kind === 'photos' ? media.items : []);
 	const ariaLabel = $derived(
 		media?.kind === 'file' ? media.file.name : (photos[index]?.name ?? ''),
 	);
 
+	// The overlay's top is always a dark image, so force a light status bar while
+	// it is open (the navigation bar follows the theme), and restore on close.
+	$effect(() => {
+		const dark = document.documentElement.classList.contains('dark');
+		setSystemBarsStyle('light', dark ? 'light' : 'dark').catch(() => {});
+		return () => {
+			applyThemeSystemBars().catch(() => {});
+		};
+	});
+
 	// Keep the selected index in range as photos are added or removed.
 	$effect(() => {
 		if (index > photos.length - 1) index = Math.max(0, photos.length - 1);
+	});
+
+	function updatePhotoGaps() {
+		if (!carouselEl) return;
+		const img = carouselEl.children[index]?.querySelector('img');
+		if (!img) {
+			photoTopGap = 0;
+			return;
+		}
+		const carousel = carouselEl.getBoundingClientRect();
+		const photo = img.getBoundingClientRect();
+		photoTopGap = Math.max(0, Math.round(photo.top - carousel.top));
+	}
+
+	$effect(() => {
+		photos;
+		index;
+		tick().then(updatePhotoGaps);
 	});
 
 	function scrollToIndex(i: number, smooth = true) {
@@ -61,7 +95,7 @@
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
-		scrollToIndex(index);
+		scrollToIndex(index, false);
 	}
 
 	function onCarouselScroll() {
@@ -101,7 +135,7 @@
 	}
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} onresize={updatePhotoGaps} />
 
 <div
 	class="staged-root fixed inset-0 z-30 flex flex-col bg-black text-white"
@@ -110,29 +144,33 @@
 	aria-label={ariaLabel}
 	data-testid="staged-media-page"
 >
-	<div class="staged-header flex shrink-0 items-center gap-2 px-2">
-		<IconButton
-			icon={mdiClose}
-			onClick={onClose}
-			label={m.close()}
-			testid="staged-media-close"
-			class="!p-2 !text-white opacity-85 hover:opacity-100"
-		/>
-		{#if destinationName}
-			<div
-				class="ms-auto me-2 flex min-w-0 items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5"
-				data-testid="staged-media-destination"
-			>
-				<wa-icon
-					class="dir-arrow shrink-0 text-lg"
-					src={wrapPathInSvg(mdiArrowRight)}
-				></wa-icon>
-				<span class="truncate text-sm font-medium">{destinationName}</span>
-			</div>
-		{/if}
-	</div>
+	<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden pt-safe-18">
+		<div
+			class="staged-header absolute inset-x-0 z-10 flex items-center gap-2 px-2"
+		>
+			{#if !isAndroid}
+				<IconButton
+					icon={mdiClose}
+					onClick={onClose}
+					label={m.close()}
+					testid="staged-media-close"
+					class="!p-2 !text-white opacity-85 hover:opacity-100"
+				/>
+			{/if}
+			{#if destinationName}
+				<div
+					class="ms-auto me-2 flex min-w-0 items-center gap-1.5 rounded-full bg-[#3a3a3c] px-3 py-1.5"
+					data-testid="staged-media-destination"
+				>
+					<wa-icon
+						class="dir-arrow shrink-0 text-lg"
+						src={wrapPathInSvg(mdiArrowRight)}
+					></wa-icon>
+					<span class="truncate text-sm font-medium">{destinationName}</span>
+				</div>
+			{/if}
+		</div>
 
-	<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 		{#if media?.kind === 'photos'}
 			<div
 				class="carousel flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto"
@@ -141,12 +179,14 @@
 			>
 				{#each photos as photo (photo)}
 					<div
-						class="flex w-full shrink-0 snap-center items-center justify-center px-4 py-2"
+						class="flex w-full shrink-0 snap-center items-center justify-center px-3 py-3"
 					>
 						<img
-							class="max-h-full max-w-full rounded-2xl object-contain"
+							class="rounded-2xl object-contain"
+							style="max-height: 70vh; max-width: 70vw;"
 							use:objectUrl={photo}
 							alt={photo.name}
+							onload={updatePhotoGaps}
 						/>
 					</div>
 				{/each}
@@ -162,63 +202,63 @@
 				>
 			</div>
 		{/if}
-	</div>
 
-	<div class="staged-footer shrink-0 pb-safe">
 		{#if media?.kind === 'photos'}
 			<div
-				class="flex justify-start gap-3 overflow-x-auto px-4 pt-3 pb-3"
+				class="absolute inset-x-0 bottom-0 z-10 flex justify-start items-center gap-3 overflow-x-auto px-4 pt-3 pb-3"
 				data-testid="staged-media-strip"
 			>
-				{#each photos as photo, i (photo)}
-					<div
-						class="staged-thumb relative h-14 w-14 shrink-0 overflow-hidden"
-						class:selected={i === index}
-					>
-						<button
-							type="button"
-							class="block h-full w-full p-0"
-							data-testid="staged-media-thumb-{i}"
-							aria-label={photo.name}
-							onclick={() => select(i)}
+				{#if photos.length > 1}
+					{#each photos as photo, i (photo)}
+						<div
+							class="staged-thumb relative h-14 w-14 shrink-0 overflow-hidden"
+							class:selected={i === index}
 						>
-							<img
-								use:objectUrl={photo}
-								alt={photo.name}
-								class="block h-full w-full object-cover"
-							/>
-						</button>
-						{#if i === index}
-							<div
-								class="absolute inset-0 flex items-center justify-center bg-black/45"
+							<button
+								type="button"
+								class="block h-full w-full p-0"
+								data-testid="staged-media-thumb-{i}"
+								aria-label={photo.name}
+								onclick={() => select(i)}
 							>
-								<IconButton
-									icon={mdiTrashCanOutline}
-									onClick={() => removePhoto(i)}
-									label={m.removeAttachment()}
-									testid="staged-media-remove-{i}"
-									iconClass="text-xl"
-									class="!text-white opacity-100"
+								<img
+									use:objectUrl={photo}
+									alt={photo.name}
+									class="block h-full w-full object-cover"
 								/>
-							</div>
-						{/if}
-					</div>
-				{/each}
+							</button>
+							{#if i === index}
+								<div
+									class="absolute inset-0 flex items-center justify-center bg-black/45"
+								>
+									<IconButton
+										icon={mdiTrashCanOutline}
+										onClick={() => removePhoto(i)}
+										label={m.removeAttachment()}
+										testid="staged-media-remove-{i}"
+										iconClass="text-xl"
+										class="!text-white opacity-100"
+									/>
+								</div>
+							{/if}
+						</div>
+					{/each}
+				{/if}
 				{#if photos.length < MAX_STAGED_PHOTOS}
-					<button
-						type="button"
-						class="staged-add-more flex h-14 w-14 shrink-0 items-center justify-center"
-						data-testid="staged-media-add-more"
-						aria-label={m.addMoreAttachments()}
-						onclick={onAddMore}
-					>
-						<wa-icon src={wrapPathInSvg(mdiPlus)}></wa-icon>
-					</button>
+					<IconButton
+						icon={mdiPlusBoxOutline}
+						onClick={onAddMore}
+						label={m.addMoreAttachments()}
+						testid="staged-media-add-more"
+						class="staged-add-more !h-10 !w-10 shrink-0 !opacity-100"
+					/>
 				{/if}
 			</div>
 		{/if}
+	</div>
 
-		<div class="row gap-3 px-4 pb-3" style="align-items: center;">
+	<div class="staged-footer shrink-0 pb-safe">
+		<div class="row gap-3 px-4 pt-3 pb-3" style="align-items: center;">
 			<div
 				class="input-container flex min-h-[42px] min-w-0 flex-1 items-center ps-2"
 			>
@@ -261,8 +301,7 @@
 	}
 
 	.staged-header {
-		height: calc(52px + env(safe-area-inset-top, 0px));
-		padding-top: env(safe-area-inset-top, 0px);
+		height: 52px;
 	}
 
 	.dir-arrow {
@@ -290,25 +329,24 @@
 	}
 
 	.staged-thumb {
+		border: 2px solid white;
 		border-radius: 12px;
 		background: rgba(255, 255, 255, 0.08);
 	}
 	.staged-thumb.selected {
-		outline: 2px solid var(--color-brand-primary);
-		outline-offset: -2px;
+		border: 2px solid var(--color-brand-primary);
 	}
 
 	.staged-add-more {
-		border-radius: 12px;
+		border-radius: 9999px;
 		border: none;
-		background: rgba(255, 255, 255, 0.1);
+		background: #3a3a3c;
 		cursor: pointer;
 		color: white;
-		opacity: 0.75;
-		transition: opacity 0.15s ease;
+		transition: background 0.15s ease;
 	}
 	.staged-add-more:hover {
-		opacity: 1;
+		background: #4a4a4c;
 	}
 	.staged-add-more :global(wa-icon) {
 		width: 24px;
