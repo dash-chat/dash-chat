@@ -37,12 +37,15 @@ pub fn default_mailbox_url() -> String {
     PRODUCTION_MAILBOX_URL.to_string()
 }
 
-/// The id of the registered mailbox whose URL is the cloud URL, if any.
+/// The id of the mailbox whose URL is the cloud URL, if any.
 ///
 /// "Cloud" is an app-level concept — the generic `Mailboxes` manager has no
 /// notion of it — so we identify it by matching `default_mailbox_url()` against
-/// each registered mailbox's client URL. Returns `None` while the cloud mailbox
-/// is not (yet) registered (e.g. offline).
+/// each registered mailbox's client URL. When no registered mailbox matches
+/// (e.g. after a cold start while the cloud server is unreachable, so it can't
+/// be re-registered), we fall back to the URL persisted in the sync tracker so
+/// a previously-delivered message still resolves to the cloud mailbox. Returns
+/// `None` only when the cloud mailbox has never been reached on this device.
 pub(crate) async fn cloud_mailbox_id(
     node: &dashchat_node::Node,
 ) -> Option<mailbox_client::MailboxId> {
@@ -55,7 +58,11 @@ pub(crate) async fn cloud_mailbox_id(
             }
         }
     }
-    None
+    node.mailboxes
+        .sync_tracker()
+        .mailbox_id_for_url(&cloud_url)
+        .await
+        .unwrap_or(None)
 }
 
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(

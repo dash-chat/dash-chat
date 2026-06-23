@@ -1,9 +1,12 @@
 set working-directory := '..'
 
 # Pin the iOS deployment target so cargo-built object files match the Xcode
-# project (14.0). Setting this globally in .cargo/config.toml [env] breaks
+# project (17.0). Setting this globally in .cargo/config.toml [env] breaks
 # macOS builds because apple-sys/bindgen picks it up and targets iPhone.
-export IPHONEOS_DEPLOYMENT_TARGET := "14.0"
+# Must stay >= 17.0: Xcode 26 dropped the Swift back-deployment compatibility
+# libraries (swiftCompatibility56/Concurrency/Packs), so a lower target makes
+# swiftc emit __swift_FORCE_LOAD_$_swiftCompatibility* refs that fail to link.
+export IPHONEOS_DEPLOYMENT_TARGET := "17.0"
 
 # run the app in development mode. --host makes Tauri set TAURI_DEV_HOST and
 # serve the dev URL on the LAN IP so a physical device can reach Vite + HMR.

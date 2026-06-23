@@ -7,8 +7,7 @@ use dashchat_utils::{fetch_loop, FetchConfig, FetchPool};
 use futures::StreamExt;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
-use iroh_blobs::api::downloader::{DownloadProgressItem, Downloader, Shuffled};
-use iroh_blobs::protocol::GetRequest;
+use iroh_blobs::api::downloader::{Downloader, Shuffled};
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 
@@ -194,7 +193,7 @@ impl BlobSync {
             return false;
         }
         let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
-        let fetched = download_capped(
+        let fetched = dashchat_utils::blob_sync::download_capped(
             &self.downloader,
             hash,
             providers,
@@ -268,7 +267,7 @@ async fn expire_blob_tags(blobs: &iroh_blobs::BlobsProtocol) -> anyhow::Result<(
     Ok(())
 }
 
-/// Parse the embedded fetch time (unix seconds) from a `relay/<secs>/<hash>` tag.
+/// Parse the embedded fetch time (unix seconds) from a `mailbox/<secs>/<hash>` tag.
 fn tag_fetch_secs(name: &[u8]) -> Option<u64> {
     let name = std::str::from_utf8(name).ok()?;
     name.strip_prefix(BLOB_TAG_PREFIX)?
@@ -276,56 +275,6 @@ fn tag_fetch_secs(name: &[u8]) -> Option<u64> {
         .next()?
         .parse()
         .ok()
-}
-
-/// Max size of a blob fetched out-of-band over iroh. The hash is
-/// content-addressed but its size is not bounded by anything the relay can see,
-/// so an untrusted log could reference a blob far larger than any legitimate
-/// message (the composer caps a whole message at 16 MiB, and each media item is
-/// a separate blob, so no single blob can legitimately exceed it).
-const MAX_BLOB_BYTES: u64 = 16 * 1024 * 1024;
-
-/// Download `hash` from `providers`, aborting if the transfer exceeds
-/// [`MAX_BLOB_BYTES`]. Returns whether the blob is present locally afterwards.
-async fn download_capped(
-    downloader: &Downloader,
-    hash: iroh_blobs::Hash,
-    providers: Shuffled,
-    attempt_timeout: Duration,
-    blobs: &iroh_blobs::BlobsProtocol,
-) -> bool {
-    let result = tokio::time::timeout(attempt_timeout, async {
-        let mut stream = downloader
-            .download(GetRequest::all(hash), providers)
-            .stream()
-            .await
-            .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;
-        while let Some(item) = stream.next().await {
-            match item {
-                // Dropping the stream on return cancels the in-flight download.
-                DownloadProgressItem::Progress(total) if total > MAX_BLOB_BYTES => {
-                    anyhow::bail!("blob exceeds {MAX_BLOB_BYTES} byte cap ({total} bytes)")
-                }
-                DownloadProgressItem::Error(err) => anyhow::bail!("download failed: {err}"),
-                DownloadProgressItem::DownloadError => anyhow::bail!("download error"),
-                _ => {}
-            }
-        }
-        anyhow::Ok(())
-    })
-    .await;
-
-    match result {
-        Ok(Ok(())) => blobs.has(hash).await.unwrap_or(false),
-        Ok(Err(err)) => {
-            tracing::debug!(%hash, ?err, "mailbox blob download failed");
-            false
-        }
-        Err(_) => {
-            tracing::warn!(%hash, "mailbox blob download timed out");
-            false
-        }
-    }
 }
 
 #[cfg(test)]

@@ -2084,9 +2084,14 @@ dependencies = [
 name = "dashchat-utils"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
+ "futures",
+ "iroh",
+ "iroh-blobs",
  "log",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
