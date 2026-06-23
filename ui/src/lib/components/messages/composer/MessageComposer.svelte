@@ -54,8 +54,9 @@
 	let showEmojiPicker = $state(false);
 	let showMediaPanel = $state(false);
 
-	async function send() {
-		if (!hasContent) return;
+	/** Returns whether the message was sent (so callers can keep the draft on failure). */
+	async function send(): Promise<boolean> {
+		if (!hasContent) return false;
 		const message = value;
 		const draft = media;
 		try {
@@ -69,6 +70,7 @@
 			}
 			messageInput?.reset();
 			onSent?.(hash);
+			return true;
 		} catch (e) {
 			if (e instanceof AttachmentTooLargeError) {
 				showToast(
@@ -77,10 +79,11 @@
 					}),
 					'error',
 				);
-				return;
+				return false;
 			}
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to send message', e);
+			return false;
 		}
 	}
 
@@ -174,9 +177,8 @@
 		bind:media
 		bind:value
 		{destinationName}
-		onSend={() => {
-			send();
-			history.back();
+		onSend={async () => {
+			if (await send()) history.back();
 		}}
 		onAddMore={addMore}
 		onClose={() => history.back()}

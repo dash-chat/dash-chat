@@ -1,21 +1,15 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { tick } from 'svelte';
 	import { Sheet, Block } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import {
-		mdiClose,
-		mdiTrashCanOutline,
-		mdiArrowRight,
-		mdiPlusBoxOutline,
-	} from '@mdi/js';
-	import { type DraftMedia, MAX_STAGED_PHOTOS } from '$lib/utils/media';
+	import { mdiClose, mdiArrowRight } from '@mdi/js';
+	import { type DraftMedia } from '$lib/utils/media';
 	import { isAndroid } from '$lib/utils/environment';
-	import { setSystemBarsStyle, applyThemeSystemBars } from '$lib/utils/theme';
-	import { objectUrl } from '$lib/actions/object-url';
+	import { setLightSystemBars, applyThemeSystemBars } from '$lib/utils/theme';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
+	import StagedPhotosCarousel from '$lib/components/messages/composer/StagedPhotosCarousel.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
@@ -40,7 +34,6 @@
 	}: Props = $props();
 
 	let index = $state(0);
-	let carouselEl: HTMLElement | undefined = $state();
 	let showEmojiPicker = $state(false);
 
 	const photos = $derived(media?.kind === 'photos' ? media.items : []);
@@ -51,64 +44,16 @@
 	// The overlay's top is always a dark image, so force a light status bar while
 	// it is open (the navigation bar follows the theme), and restore on close.
 	$effect(() => {
-		const dark = document.documentElement.classList.contains('dark');
-		setSystemBarsStyle('light', dark ? 'light' : 'dark').catch(() => {});
+		setLightSystemBars().catch(() => {});
 		return () => {
 			applyThemeSystemBars().catch(() => {});
 		};
 	});
 
-	// Keep the selected index in range as photos are added or removed.
-	$effect(() => {
-		if (index > photos.length - 1) index = Math.max(0, photos.length - 1);
-	});
-
-	function scrollToIndex(i: number, smooth = true) {
-		if (!carouselEl) return;
-		carouselEl.scrollTo({
-			left: i * carouselEl.clientWidth,
-			behavior: smooth ? 'smooth' : 'auto',
-		});
-	}
-
-	function select(i: number) {
-		index = Math.max(0, Math.min(photos.length - 1, i));
-		scrollToIndex(index, false);
-	}
-
-	function onCarouselScroll() {
-		if (!carouselEl || carouselEl.clientWidth === 0) return;
-		const i = Math.round(carouselEl.scrollLeft / carouselEl.clientWidth);
-		if (i !== index && i >= 0 && i < photos.length) index = i;
-	}
-
-	async function removePhoto(i: number) {
-		if (media?.kind !== 'photos') return;
-		const remaining = media.items.filter((_, j) => j !== i);
-		if (remaining.length === 0) {
-			onClose();
-			return;
-		}
-		media = { kind: 'photos', items: remaining };
-		await tick();
-		index = Math.min(index, remaining.length - 1);
-		scrollToIndex(index, false);
-	}
-
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
 			event.preventDefault();
 			onClose();
-			return;
-		}
-		// Don't hijack cursor movement while typing the caption.
-		if (event.target instanceof HTMLTextAreaElement) return;
-		if (event.key === 'ArrowLeft') {
-			event.preventDefault();
-			select(index - 1);
-		} else if (event.key === 'ArrowRight') {
-			event.preventDefault();
-			select(index + 1);
 		}
 	}
 </script>
@@ -150,24 +95,7 @@
 		</div>
 
 		{#if media?.kind === 'photos'}
-			<div
-				class="carousel flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto"
-				bind:this={carouselEl}
-				onscroll={onCarouselScroll}
-			>
-				{#each photos as photo (photo)}
-					<div
-						class="flex w-full shrink-0 snap-center items-center justify-center px-3 py-3"
-					>
-						<img
-							class="rounded-2xl object-contain"
-							style="max-height: 70vh; max-width: 70vw;"
-							use:objectUrl={photo}
-							alt={photo.name}
-						/>
-					</div>
-				{/each}
-			</div>
+			<StagedPhotosCarousel bind:media bind:index {onAddMore} {onClose} />
 		{:else if media?.kind === 'file'}
 			<div
 				class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-8 text-center"
@@ -177,59 +105,6 @@
 					class="break-all text-sm text-white"
 					data-testid="staged-media-file-name">{media.file.name}</span
 				>
-			</div>
-		{/if}
-
-		{#if media?.kind === 'photos'}
-			<div
-				class="absolute inset-x-0 bottom-0 z-10 flex justify-start items-center gap-3 overflow-x-auto px-4 pt-3 pb-3"
-				data-testid="staged-media-strip"
-			>
-				{#if photos.length > 1}
-					{#each photos as photo, i (photo)}
-						<div
-							class="staged-thumb relative h-14 w-14 shrink-0 overflow-hidden"
-							class:selected={i === index}
-						>
-							<button
-								type="button"
-								class="block h-full w-full p-0"
-								data-testid="staged-media-thumb-{i}"
-								aria-label={photo.name}
-								onclick={() => select(i)}
-							>
-								<img
-									use:objectUrl={photo}
-									alt={photo.name}
-									class="block h-full w-full object-cover"
-								/>
-							</button>
-							{#if i === index}
-								<div
-									class="absolute inset-0 flex items-center justify-center bg-black/45"
-								>
-									<IconButton
-										icon={mdiTrashCanOutline}
-										onClick={() => removePhoto(i)}
-										label={m.removeAttachment()}
-										testid="staged-media-remove-{i}"
-										iconClass="text-xl"
-										class="!text-white opacity-100"
-									/>
-								</div>
-							{/if}
-						</div>
-					{/each}
-				{/if}
-				{#if photos.length < MAX_STAGED_PHOTOS}
-					<IconButton
-						icon={mdiPlusBoxOutline}
-						onClick={onAddMore}
-						label={m.addMoreAttachments()}
-						testid="staged-media-add-more"
-						class="!h-10 !w-10 shrink-0 !bg-[#3a3a3c] !opacity-100 hover:!bg-[#4a4a4c]"
-					/>
-				{/if}
 			</div>
 		{/if}
 	</div>
@@ -246,7 +121,7 @@
 					onEmojiClick={() => (showEmojiPicker = true)}
 				/>
 			</div>
-			<SendButton disabled={false} onClick={onSend} />
+			<SendButton onClick={onSend} />
 		</div>
 	</div>
 
@@ -288,13 +163,6 @@
 		transform: scaleX(-1);
 	}
 
-	.carousel {
-		scrollbar-width: none;
-	}
-	.carousel::-webkit-scrollbar {
-		display: none;
-	}
-
 	.input-container {
 		border: 1px solid rgba(255, 255, 255, 0.16);
 		border-radius: 22px;
@@ -303,14 +171,5 @@
 	}
 	.input-container:focus-within {
 		border-color: var(--color-brand-primary);
-	}
-
-	.staged-thumb {
-		border: 2px solid white;
-		border-radius: 12px;
-		background: rgba(255, 255, 255, 0.08);
-	}
-	.staged-thumb.selected {
-		border: 2px solid var(--color-brand-primary);
 	}
 </style>

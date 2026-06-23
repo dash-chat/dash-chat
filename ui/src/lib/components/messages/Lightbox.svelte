@@ -12,7 +12,7 @@
 	import { objectUrl } from '$lib/actions/object-url';
 	import { savePhoto } from '$lib/utils/media';
 	import { showToast } from '$lib/utils/toasts';
-	import { setSystemBarsStyle, applyThemeSystemBars } from '$lib/utils/theme';
+	import { setLightSystemBars, applyThemeSystemBars } from '$lib/utils/theme';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
@@ -58,8 +58,7 @@
 	// The overlay's top is always a dark image, so force a light status bar while
 	// it is open (the navigation bar follows the theme), and restore on close.
 	$effect(() => {
-		const dark = document.documentElement.classList.contains('dark');
-		setSystemBarsStyle('light', dark ? 'light' : 'dark').catch(() => {});
+		setLightSystemBars().catch(() => {});
 		return () => {
 			applyThemeSystemBars().catch(() => {});
 		};
