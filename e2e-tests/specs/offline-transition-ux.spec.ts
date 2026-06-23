@@ -72,6 +72,9 @@ describe('Offline UX', () => {
 					(await agent1.directChatPage.lastMessageStatus()) === 'cloud',
 			);
 			expect(
+				await agent1.directChatPage.messageStatusFor('online hello'),
+			).toBe('cloud');
+			expect(
 				await agent1.directChatPage.connectionStatusIndicator.status(),
 			).toBe('connected');
 		});
@@ -183,6 +186,59 @@ describe('Offline UX', () => {
 				{ timeout: 30_000 },
 			);
 			await agent2.directChatPage.messages.waitForMessage('offline hello');
+		});
+	});
+
+	// Regression: a message delivered to the cloud must still read as delivered
+	// after the app restarts while the cloud mailbox is unreachable. The cloud
+	// mailbox id is resolved from the live server, so on a cold start against an
+	// unreachable server it can't be re-resolved — but the delivered status is
+	// recorded in persisted sync state and must survive regardless.
+	describe('app restarts while the cloud mailbox is unreachable', () => {
+		after(() => {
+			if (mailboxSuspended) {
+				resumeMailbox();
+				mailboxSuspended = false;
+			}
+		});
+
+		it('a delivered message still shows the cloud check after restarting with the mailbox down', async function () {
+			this.timeout(120_000);
+			// Deliver a fresh message to the cloud right now (mailbox is online).
+			await agent1.directChatPage.sendMessage('restart hello');
+			await agent1.waitUntil(
+				async () =>
+					(await agent1.directChatPage.messageStatusFor('restart hello')) ===
+					'cloud',
+				{ timeout: 30_000 },
+			);
+
+			// Make the cloud mailbox unreachable, then cold-start the app. On boot
+			// the app re-resolves the cloud mailbox id from the live server; with
+			// the server down it never can, but the delivered status lives in
+			// persisted sync state and must survive.
+			suspendMailbox();
+			mailboxSuspended = true;
+			await agent1.restart();
+
+			await agent1.homePage.ready();
+			await agent1.homePage.openChat('Bob');
+			await agent1.directChatPage.ready();
+
+			let status = await agent1.directChatPage.messageStatusFor('restart hello');
+			await agent1.waitUntil(
+				async () => {
+					status =
+						await agent1.directChatPage.messageStatusFor('restart hello');
+					return status !== null;
+				},
+				{
+					timeout: 15_000,
+					interval: 500,
+					timeoutMsg: 'message status indicator never rendered after restart',
+				},
+			);
+			expect(status).toBe('cloud');
 		});
 	});
 });

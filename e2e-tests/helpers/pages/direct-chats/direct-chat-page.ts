@@ -70,6 +70,30 @@ export class DirectChatPage extends TestPage {
 		}, tid('message-status'));
 	}
 
+	/** Read the data-status of the status indicator inside the bubble whose text contains `text`. */
+	async messageStatusFor(text: string): Promise<MessageStatus | null> {
+		return this.agent.execute(
+			(messagesSel: string, statusSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (!wrapper.textContent?.includes(t)) continue;
+					const el = wrapper.querySelector(statusSel) as HTMLElement | null;
+					const status = el?.dataset.status;
+					if (status === 'sending' || status === 'local' || status === 'cloud') {
+						return status;
+					}
+					return null;
+				}
+				return null;
+			},
+			tid('direct-chat-messages'),
+			tid('message-status'),
+			text,
+		);
+	}
+
 	isPeerNamePresent(): Promise<boolean> {
 		return this.peerName.isExisting();
 	}
