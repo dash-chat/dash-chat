@@ -1,3 +1,4 @@
+pub mod blob_sync;
 mod derive_watch;
 mod fetch_loop;
 mod retry_with_backoff;

@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 
-use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, MAX_BLOB_BYTES};
+use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync};
 use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
 use crate::filesystem::Filesystem;
@@ -15,6 +15,7 @@ use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
+use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
