@@ -1,3 +1,4 @@
+import { TestHelper } from '../pages/test-helper';
 import { TINY_PNG_DATA_URL } from '../images';
 import { tid } from '../selectors';
 
@@ -6,11 +7,9 @@ import { tid } from '../selectors';
  * library is unavailable in the test harness, so {@link injectPhotos} feeds it
  * fake photos through the `window.__test.recentPhotos` seam.
  */
-export class RecentPhotosStrip {
-	constructor(private agent: WebdriverIO.Browser) {}
-
-	strip = this.agent.$(tid('message-input-recent-photos'));
-	allowButton = this.agent.$(tid('message-input-recent-photos-allow'));
+export class RecentPhotosStrip extends TestHelper {
+	strip = this.el(tid('message-input-recent-photos'));
+	allowButton = this.el(tid('message-input-recent-photos-allow'));
 
 	tile(index: number) {
 		return this.agent.$(tid(`message-input-recent-photo-${index}`));
