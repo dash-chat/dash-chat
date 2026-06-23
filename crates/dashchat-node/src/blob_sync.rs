@@ -121,6 +121,37 @@ impl BlobSync {
         .await
     }
 
+    /// Store blob bytes and tag them with a name that encodes `(topic, hash)`
+    /// so deletion can be scoped to a specific topic.
+    pub async fn store_blob(
+        &self,
+        topic: TopicId,
+        data: impl Into<bytes::Bytes>,
+    ) -> anyhow::Result<iroh_blobs::Hash> {
+        let tt = self.blobs.blobs().add_bytes(data).temp_tag().await?;
+        let hash = tt.hash();
+        let tag_name = blob_tag_name(topic, hash);
+        self.blobs.store().tags().set(tag_name, tt.hash_and_format()).await?;
+        Ok(hash)
+    }
+
+    /// Delete all tags for the given `(topic, hash)` pairs, allowing iroh's GC
+    /// to reclaim blob data that is no longer referenced by any topic.
+    pub async fn delete_blobs(
+        &self,
+        topic: TopicId,
+        hashes: impl IntoIterator<Item = iroh_blobs::Hash>,
+    ) {
+        let tags = self.blobs.store().tags();
+        for hash in hashes {
+            let tag_name = blob_tag_name(topic, hash);
+            if let Err(err) = tags.delete(tag_name).await {
+                tracing::warn!(?err, "failed to delete blob tag");
+            }
+            self.fetch_pool.remove(topic, hash).await;
+        }
+    }
+
     /// Keep attempting an on-demand download of `hash` until it is present
     /// locally or `timeout` elapses, bypassing the background loop's long pass
     /// interval (up to a minute away). Retries within the window so a
@@ -153,6 +184,13 @@ impl BlobSync {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
     }
+}
+
+fn blob_tag_name(topic: TopicId, hash: iroh_blobs::Hash) -> Vec<u8> {
+    let mut name = Vec::with_capacity(64);
+    name.extend_from_slice(topic.as_bytes());
+    name.extend_from_slice(hash.as_bytes());
+    name
 }
 
 #[derive(Clone, Default)]

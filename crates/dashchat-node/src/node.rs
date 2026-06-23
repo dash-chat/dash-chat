@@ -144,9 +144,9 @@ pub struct Node {
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
 /// node never references a blob that the fetcher's own cap would reject.
-fn ensure_blob_size(size: u64, name: &str) -> anyhow::Result<()> {
+fn ensure_blob_size(size: u64, _name: &str) -> anyhow::Result<()> {
     if size as u64 > MAX_BLOB_BYTES {
-        anyhow::bail!("media item {name:?} is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
+        anyhow::bail!("a media item is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
     }
     Ok(())
 }
@@ -749,13 +749,14 @@ impl Node {
         message: impl Into<String>,
         media: Option<OutgoingMedia>,
     ) -> anyhow::Result<Header> {
+        let chat_id: ChatId = topic.into();
         let meta = if let Some(media) = media {
-            Some(self.store_media(media).await?)
+            Some(self.store_media(chat_id.into(), media).await?)
         } else {
             None
         };
         let message = ChatMessageContent::new(message, meta);
-        self.send_message_raw(topic, message).await
+        self.send_message_raw(chat_id, message).await
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
@@ -1305,19 +1306,23 @@ impl Node {
         Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 
-    pub async fn store_media(&self, media: OutgoingMedia) -> anyhow::Result<MediaBundle> {
+    pub async fn store_media(
+        &self,
+        topic: TopicId,
+        media: OutgoingMedia,
+    ) -> anyhow::Result<MediaBundle> {
         let mut items = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
                 for photo in photos {
                     let size = photo.data.len() as u64;
                     ensure_blob_size(size, &photo.name)?;
-                    let tag = self.blob_sync.blobs.add_bytes(photo.data).await?;
+                    let hash = self.blob_sync.store_blob(topic, photo.data).await?;
                     items.push(MediaMetadata {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
-                        hash: tag.hash,
+                        hash,
                         kind: MediaMetaKind::Photo,
                     });
                 }
@@ -1325,12 +1330,12 @@ impl Node {
             OutgoingMedia::File { file } => {
                 let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
-                let tag = self.blob_sync.blobs.add_bytes(file.data).await?;
+                let hash = self.blob_sync.store_blob(topic, file.data).await?;
                 items.push(MediaMetadata {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
-                    hash: tag.hash,
+                    hash,
                     kind: MediaMetaKind::File,
                 });
             }
