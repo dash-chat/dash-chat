@@ -43,10 +43,6 @@
 	let carouselEl: HTMLElement | undefined = $state();
 	let showEmojiPicker = $state(false);
 
-	// The letterbox gap (px) above the rendered photo, used to anchor the
-	// destination chip to the photo's top edge instead of the screen edge.
-	let photoTopGap = $state(0);
-
 	const photos = $derived(media?.kind === 'photos' ? media.items : []);
 	const ariaLabel = $derived(
 		media?.kind === 'file' ? media.file.name : (photos[index]?.name ?? ''),
@@ -65,24 +61,6 @@
 	// Keep the selected index in range as photos are added or removed.
 	$effect(() => {
 		if (index > photos.length - 1) index = Math.max(0, photos.length - 1);
-	});
-
-	function updatePhotoGaps() {
-		if (!carouselEl) return;
-		const img = carouselEl.children[index]?.querySelector('img');
-		if (!img) {
-			photoTopGap = 0;
-			return;
-		}
-		const carousel = carouselEl.getBoundingClientRect();
-		const photo = img.getBoundingClientRect();
-		photoTopGap = Math.max(0, Math.round(photo.top - carousel.top));
-	}
-
-	$effect(() => {
-		photos;
-		index;
-		tick().then(updatePhotoGaps);
 	});
 
 	function scrollToIndex(i: number, smooth = true) {
@@ -135,7 +113,7 @@
 	}
 </script>
 
-<svelte:window onkeydown={onKeydown} onresize={updatePhotoGaps} />
+<svelte:window onkeydown={onKeydown} />
 
 <div
 	class="staged-root fixed inset-0 z-30 flex flex-col bg-black text-white"
@@ -144,7 +122,7 @@
 	aria-label={ariaLabel}
 	data-testid="staged-media-page"
 >
-	<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden pt-safe-18">
+	<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden pt-safe-12">
 		<div
 			class="staged-header absolute inset-x-0 z-10 flex items-center gap-2 px-2"
 		>
@@ -186,7 +164,6 @@
 							style="max-height: 70vh; max-width: 70vw;"
 							use:objectUrl={photo}
 							alt={photo.name}
-							onload={updatePhotoGaps}
 						/>
 					</div>
 				{/each}
@@ -250,7 +227,7 @@
 						onClick={onAddMore}
 						label={m.addMoreAttachments()}
 						testid="staged-media-add-more"
-						class="staged-add-more !h-10 !w-10 shrink-0 !opacity-100"
+						class="!h-10 !w-10 shrink-0 !bg-[#3a3a3c] !opacity-100 hover:!bg-[#4a4a4c]"
 					/>
 				{/if}
 			</div>
@@ -335,21 +312,5 @@
 	}
 	.staged-thumb.selected {
 		border: 2px solid var(--color-brand-primary);
-	}
-
-	.staged-add-more {
-		border-radius: 9999px;
-		border: none;
-		background: #3a3a3c;
-		cursor: pointer;
-		color: white;
-		transition: background 0.15s ease;
-	}
-	.staged-add-more:hover {
-		background: #4a4a4c;
-	}
-	.staged-add-more :global(wa-icon) {
-		width: 24px;
-		height: 24px;
 	}
 </style>
