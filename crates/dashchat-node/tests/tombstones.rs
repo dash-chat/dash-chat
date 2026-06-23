@@ -21,7 +21,12 @@ fn setup_tracing() {
 /// Whether the operation with `hash` is present in `node`'s store and, if so,
 /// whether it still carries a payload. `None` means the op is absent; `Some` is
 /// the payload-present flag.
-async fn payload_present(node: &TestNode, topic: TopicId, author: DeviceId, hash: p2panda::Hash) -> Option<bool> {
+async fn payload_present(
+    node: &TestNode,
+    topic: TopicId,
+    author: DeviceId,
+    hash: p2panda::Hash,
+) -> Option<bool> {
     let logs = node
         .op_store
         .get_interleaved_logs(LogId::from_topic(topic), vec![author])
@@ -99,10 +104,7 @@ async fn tombstone_drops_payload_received_by_sync() {
     // Take bobbi offline so the tombstone is recorded before the op arrives.
     bobbi.clear_mailboxes().await;
 
-    let header = alice
-        .send_message_raw(chat, "secret".into())
-        .await
-        .unwrap();
+    let header = alice.send_message_raw(chat, "secret".into()).await.unwrap();
     let secret_hash = header.hash();
 
     // bobbi records the tombstone while it still has no copy of the op.
@@ -126,10 +128,7 @@ async fn tombstone_drops_payload_received_by_sync() {
     .unwrap();
 
     // Syncing is not broken by the absent payload: a later message still flows.
-    alice
-        .send_message_raw(chat, "after".into())
-        .await
-        .unwrap();
+    alice.send_message_raw(chat, "after".into()).await.unwrap();
 
     poll.wait_for(|| async {
         let messages = bobbi.get_messages(chat).await.unwrap();

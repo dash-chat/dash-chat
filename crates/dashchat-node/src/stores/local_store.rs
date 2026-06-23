@@ -47,7 +47,7 @@ const MIGRATIONS: &[&str] = &[
     )",
     "CREATE TABLE IF NOT EXISTS tombstones (
         topic_id BLOB NOT NULL,
-        op_hash TEXT NOT NULL,
+        op_hash BLOB NOT NULL,
         PRIMARY KEY (topic_id, op_hash)
     )",
 ];
@@ -383,7 +383,7 @@ impl LocalStore {
     pub async fn add_tombstone(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<()> {
         sqlx::query("INSERT OR IGNORE INTO tombstones (topic_id, op_hash) VALUES (?, ?)")
             .bind(topic.as_bytes().to_vec())
-            .bind(op_hash.to_hex())
+            .bind(op_hash.as_bytes().to_vec())
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -393,20 +393,25 @@ impl LocalStore {
         let row: Option<(i64,)> =
             sqlx::query_as("SELECT 1 FROM tombstones WHERE topic_id = ? AND op_hash = ?")
                 .bind(topic.as_bytes().to_vec())
-                .bind(op_hash.to_hex())
+                .bind(op_hash.as_bytes().to_vec())
                 .fetch_optional(&self.pool)
                 .await?;
         Ok(row.is_some())
     }
 
     pub async fn tombstoned_hashes(&self, topic: TopicId) -> anyhow::Result<BTreeSet<Hash>> {
-        let rows: Vec<(String,)> =
+        let rows: Vec<(Vec<u8>,)> =
             sqlx::query_as("SELECT op_hash FROM tombstones WHERE topic_id = ?")
                 .bind(topic.as_bytes().to_vec())
                 .fetch_all(&self.pool)
                 .await?;
         rows.into_iter()
-            .map(|(hash,)| hash.parse::<Hash>().map_err(anyhow::Error::from))
+            .map(|(bytes,)| {
+                let arr: [u8; 32] = bytes
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("tombstone op_hash is not 32 bytes"))?;
+                Ok(Hash::from_bytes(arr))
+            })
             .collect()
     }
 }

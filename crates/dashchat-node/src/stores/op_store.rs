@@ -214,8 +214,8 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
 mod tests {
     use p2panda::operation::{Extensions, Header};
     use p2panda_core::{Body, PruneFlag, Timestamp};
-    use p2panda_store::operations::OperationStore;
     use p2panda_store::Transaction;
+    use p2panda_store::operations::OperationStore;
 
     use super::*;
 

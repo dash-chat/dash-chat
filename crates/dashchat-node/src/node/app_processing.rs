@@ -221,7 +221,10 @@ impl Node {
     /// synced onward. The operation arrives here already written to the op
     /// store (by peers or by mailbox sync), so this deletes the body after the
     /// fact.
-    async fn enforce_tombstone(&self, operation: &ProcessedOperation<Payload>) -> anyhow::Result<()> {
+    async fn enforce_tombstone(
+        &self,
+        operation: &ProcessedOperation<Payload>,
+    ) -> anyhow::Result<()> {
         let topic = operation.topic();
         let hash = operation.id();
         if self.local_store.is_tombstoned(topic, hash).await? {
