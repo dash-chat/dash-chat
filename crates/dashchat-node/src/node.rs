@@ -36,7 +36,7 @@ use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, MediaAttachment, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
+    DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
 };
 use dashchat_utils::NETWORK_ID;
 
@@ -1147,7 +1147,7 @@ impl Node {
         Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 
-    pub async fn store_media(&self, media: OutgoingMedia) -> anyhow::Result<MediaAttachment> {
+    pub async fn store_media(&self, media: OutgoingMedia) -> anyhow::Result<MediaBundle> {
         let mut items = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
@@ -1177,7 +1177,7 @@ impl Node {
                 });
             }
         }
-        Ok(MediaAttachment::from(items))
+        Ok(MediaBundle::from(items))
     }
 
     /// Load the raw bytes of a single blob by its hash from the local blob store.

@@ -40,7 +40,7 @@ mod tests {
             kind: MediaMetaKind::Photo,
             hash: iroh_blobs::Hash::new(b"hashhashhash"),
         };
-        let v1 = ChatMessageContent::new("hello", Some(MediaAttachment::from(vec![item.clone()])));
+        let v1 = ChatMessageContent::new("hello", Some(MediaBundle::from(vec![item.clone()])));
         let bytes = encode_cbor(&v1).unwrap();
         let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
         assert_eq!(decoded, v1);
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn version_convert_v1_to_v0_lossy() {
-        let v1_empty = ChatMessageContent::new("anything", Some(MediaAttachment::from(vec![])));
+        let v1_empty = ChatMessageContent::new("anything", Some(MediaBundle::from(vec![])));
         let result = v1_empty.to_version(&Capabilities::zero());
         assert_eq!(result, Err(VersionConvertError::Lossy));
     }

@@ -23,7 +23,7 @@ pub enum ChatMessageContentV {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ChatMessageContentV1 {
     pub message: String,
-    pub media: Option<MediaAttachment>,
+    pub media: Option<MediaBundle>,
 }
 
 /// A photo attachment. `data` is the raw bytes of the encoded image (JPEG,
@@ -59,7 +59,7 @@ pub enum OutgoingMedia {
 }
 
 /// The collection of media metadata appearing in a single message.
-pub type MediaAttachment = Vec<MediaMetadata>;
+pub type MediaBundle = Vec<MediaMetadata>;
 
 /// The metadata to refer to a media blob, which appears in the message content.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From)]
@@ -147,7 +147,7 @@ pub enum MediaMetaKind {
 pub struct ChatMessageContent(dashchat_compat::Compat<ChatMessageContentV0, ChatMessageContentV>);
 
 impl ChatMessageContent {
-    pub fn new(message: impl Into<String>, media: Option<MediaAttachment>) -> Self {
+    pub fn new(message: impl Into<String>, media: Option<MediaBundle>) -> Self {
         Self(dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(
             ChatMessageContentV1 {
                 message: message.into(),
@@ -172,7 +172,7 @@ impl ChatMessageContent {
         }
     }
 
-    pub fn media(&self) -> Option<&MediaAttachment> {
+    pub fn media(&self) -> Option<&MediaBundle> {
         match &self.0 {
             dashchat_compat::Compat::Unversioned(_) => None,
             dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => v1.media.as_ref(),
