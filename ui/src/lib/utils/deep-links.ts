@@ -27,25 +27,29 @@ function handleUrls(urls: string[]) {
 			handleAddContactLink(code);
 		} else {
 			console.log('[deep-link] url did not match pattern:', url);
+			showToast(`Received unrecognized link: ${url}`);
 		}
 	}
 }
 
-export async function handleLaunchDeepLink() {
-	const urls = await getCurrent();
-	if (urls) handleUrls(urls);
+export function handleLaunchDeepLink() {
+	getCurrent()
+		.then(urls => {
+			if (urls) handleUrls(urls);
+		})
+		.catch(err => {
+			console.error('[deep-link] failed to read launch deep links:', err);
+		});
 }
 
 export function listenForDeepLinks(): () => void {
 	const unlistenPromise = onOpenUrl(urls => {
 		console.log('[deep-link] onOpenUrl fired, urls:', urls);
 		handleUrls(urls);
-	})
-		.then(fn => fn)
-		.catch(err => {
-			console.error('[deep-link] failed to register listener:', err);
-			return () => {};
-		});
+	}).catch(err => {
+		console.error('[deep-link] failed to register listener:', err);
+		return () => {};
+	});
 
 	return () => {
 		unlistenPromise.then(fn => fn());
