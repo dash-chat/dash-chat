@@ -1,9 +1,8 @@
+import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
-export class PeerProfileSheet {
-	constructor(private agent: WebdriverIO.Browser) {}
-
-	root = this.agent.$(tid('peer-profile-sheet'));
+export class PeerProfileSheet extends TestHelper {
+	root = this.el(tid('peer-profile-sheet'));
 
 	/** True if the sheet is open and visible (not the slide-out dismissed state). */
 	isOpen(): Promise<boolean> {

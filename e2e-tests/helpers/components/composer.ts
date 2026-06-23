@@ -1,25 +1,24 @@
 import { TINY_PNG_BYTES } from '../images';
+import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 import { RecentPhotosStrip } from './recent-photos-strip';
 
 /** The shared message composer (text area + attachments) used by both
  * direct and group chats. */
-export class Composer {
-	constructor(private agent: WebdriverIO.Browser) {}
-
-	messageInput = this.agent.$(tid('message-input-textarea'));
-	sendButton = this.agent.$(tid('message-input-send'));
-	mediaPreview = this.agent.$(tid('message-input-media-preview'));
-	clearAttachments = this.agent.$(tid('message-input-clear-attachments'));
-	addMoreTile = this.agent.$(tid('message-input-add-more'));
-	attachButton = this.agent.$(tid('message-input-attach'));
-	mediaPanel = this.agent.$(tid('message-input-media-panel'));
+export class Composer extends TestHelper {
+	messageInput = this.el(tid('message-input-textarea'));
+	sendButton = this.el(tid('message-input-send'));
+	mediaPreview = this.el(tid('message-input-media-preview'));
+	clearAttachments = this.el(tid('message-input-clear-attachments'));
+	addMoreTile = this.el(tid('message-input-add-more'));
+	attachButton = this.el(tid('message-input-attach'));
+	mediaPanel = this.el(tid('message-input-media-panel'));
 	recentPhotos = new RecentPhotosStrip(this.agent);
-
-	attachMenuTrigger = this.agent.$(tid('message-input-attach'));
-	attachMenu = this.agent.$(tid('message-input-attach-menu'));
-	attachPhotosItem = this.agent.$(tid('message-input-attach-photos'));
-	attachFileItem = this.agent.$(tid('message-input-attach-file'));
+  
+	attachMenuTrigger = this.el(tid('message-input-attach'));
+	attachMenu = this.el(tid('message-input-attach-menu'));
+	attachPhotosItem = this.el(tid('message-input-attach-photos'));
+	attachFileItem = this.el(tid('message-input-attach-file'));
 
 	removeAttachmentButton(index: number) {
 		return this.agent.$(tid(`message-input-remove-attachment-${index}`));
