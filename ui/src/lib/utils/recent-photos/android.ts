@@ -34,19 +34,21 @@ async function hasAccess(): Promise<boolean> {
 	try {
 		// The plugin misreports the granular permission state on Android 13+ (it
 		// echoes the never-requested READ_EXTERNAL_STORAGE alias), so an actual
-		// query is the only reliable proof of access: without the permission it
-		// throws a SecurityException. A query that completes means access is
-		// granted even when the gallery is empty, so we must not treat a zero-item
-		// result as "no access".
-		await getImages(imagesRequest(1));
-		return true;
+		// query is the only reliable signal. But a denied READ_MEDIA_IMAGES does
+		// NOT throw on query: the content resolver simply returns an empty cursor,
+		// so a completed query is not proof of access. Seeing at least one image
+		// is. A genuinely empty gallery therefore reads as "no access", which is
+		// fine — there is nothing to show, and the allow affordance is harmless
+		// (re-requesting when already granted just no-ops).
+		const result = await getImages(imagesRequest(1));
+		return (result?.items?.length ?? 0) > 0;
 	} catch {
 		return false;
 	}
 }
 
 export async function getPermission(): Promise<RecentPhotosPermission> {
-	// Before asking, an empty result means "not yet granted" → offer the button.
+	// Without a readable image we can't confirm access → offer the button.
 	return (await hasAccess()) ? 'granted' : 'prompt';
 }
 
