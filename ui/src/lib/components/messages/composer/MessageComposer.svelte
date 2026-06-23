@@ -178,7 +178,9 @@
 		bind:value
 		{destinationName}
 		onSend={async () => {
-			if (await send()) history.back();
+			// Guard against the stagedMedia entry already being popped (e.g. the user
+			// hit back during a slow send) — otherwise we'd navigate off the chat.
+			if ((await send()) && page.state.stagedMedia) history.back();
 		}}
 		onAddMore={addMore}
 		onClose={() => history.back()}

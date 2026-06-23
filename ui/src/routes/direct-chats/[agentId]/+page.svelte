@@ -754,9 +754,7 @@
 
 				<div
 					bind:clientHeight={bottomBarHeight}
-					class="absolute bottom-0 inset-x-0"
-					class:z-10={!page.state.stagedMedia}
-					class:z-30={page.state.stagedMedia}
+					class="absolute bottom-0 inset-x-0 z-30"
 					class:bg-page-surface={theme === 'material'}
 				>
 					{#if searchMode}

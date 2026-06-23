@@ -34,8 +34,12 @@
 
 	function scrollToIndex(i: number, smooth = true) {
 		if (!carouselEl) return;
+		// In RTL the scroll origin is the right edge and scrollLeft runs negative,
+		// so the per-page offset is mirrored.
+		const rtl = getComputedStyle(carouselEl).direction === 'rtl';
+		const offset = i * carouselEl.clientWidth;
 		carouselEl.scrollTo({
-			left: i * carouselEl.clientWidth,
+			left: rtl ? -offset : offset,
 			behavior: smooth ? 'smooth' : 'auto',
 		});
 	}
@@ -47,7 +51,10 @@
 
 	function onCarouselScroll() {
 		if (!carouselEl || carouselEl.clientWidth === 0) return;
-		const i = Math.round(carouselEl.scrollLeft / carouselEl.clientWidth);
+		// abs() normalizes RTL's negative scrollLeft to a positive page index.
+		const i = Math.round(
+			Math.abs(carouselEl.scrollLeft) / carouselEl.clientWidth,
+		);
 		if (i !== index && i >= 0 && i < photos.length) index = i;
 	}
 

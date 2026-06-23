@@ -61,7 +61,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="staged-root fixed inset-0 z-30 flex flex-col bg-black text-white"
+	class="dark fixed inset-0 z-30 flex flex-col bg-black"
 	role="dialog"
 	aria-modal="true"
 	aria-label={ariaLabel}
@@ -145,13 +145,6 @@
 </div>
 
 <style>
-	.staged-root {
-		/* The overlay is always dark (Signal-style), independent of app theme;
-		   pin the Konsta text colors the reused MessageInput reads. */
-		--k-text-color: #fff;
-		--k-list-input-placeholder-color: rgba(255, 255, 255, 0.55);
-	}
-
 	.staged-header {
 		height: 52px;
 	}
