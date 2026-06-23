@@ -66,7 +66,7 @@ pub type MediaBundle = Vec<MediaMetadata>;
 pub struct MediaMetadata {
     pub name: String,
     pub mime_type: String,
-    pub size: usize,
+    pub size: u64,
     pub kind: MediaMetaKind,
     // Serialize as a CBOR byte string. `iroh_blobs::Hash`'s own non-human-readable
     // impl encodes a 32-element array, which serde's untagged-enum buffering (used
