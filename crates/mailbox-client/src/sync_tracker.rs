@@ -24,7 +24,11 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (mailbox_id, topic, author)
     );
-    CREATE INDEX IF NOT EXISTS idx_sync_state_log ON mailbox_sync_state(topic, author);";
+    CREATE INDEX IF NOT EXISTS idx_sync_state_log ON mailbox_sync_state(topic, author);
+    CREATE TABLE IF NOT EXISTS mailbox_url (
+        mailbox_id TEXT NOT NULL PRIMARY KEY,
+        url        TEXT NOT NULL
+    );";
 
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
 pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, u64>>;
@@ -51,6 +55,8 @@ enum SyncBackend {
 struct MemRows {
     /// `(mailbox_id, topic_bytes, author_bytes) -> seq`
     rows: BTreeMap<(MailboxId, Vec<u8>, Vec<u8>), u64>,
+    /// `mailbox_id -> base url`
+    urls: BTreeMap<MailboxId, String>,
 }
 
 impl<T, A> MailboxSyncTracker<T, A>
@@ -201,6 +207,53 @@ where
         Ok(())
     }
 
+    /// Persist the base URL a mailbox is reached at, so the mailbox can later be
+    /// identified by URL even when it is not currently registered (e.g. the
+    /// cloud mailbox after a cold start while its server is unreachable).
+    pub async fn record_url(&self, mailbox: &MailboxId, url: &str) -> anyhow::Result<()> {
+        match &self.inner {
+            SyncBackend::Sqlite(pool) => {
+                sqlx::query(
+                    "INSERT INTO mailbox_url (mailbox_id, url) VALUES (?, ?)
+                     ON CONFLICT (mailbox_id) DO UPDATE SET url = excluded.url",
+                )
+                .bind(mailbox)
+                .bind(url)
+                .execute(pool)
+                .await?;
+            }
+            SyncBackend::Mem(rows) => {
+                rows.lock()
+                    .await
+                    .urls
+                    .insert(mailbox.clone(), url.to_string());
+            }
+        }
+        Ok(())
+    }
+
+    /// The id of the mailbox last recorded at `url`, if any.
+    pub async fn mailbox_id_for_url(&self, url: &str) -> anyhow::Result<Option<MailboxId>> {
+        match &self.inner {
+            SyncBackend::Sqlite(pool) => {
+                let row: Option<(String,)> =
+                    sqlx::query_as("SELECT mailbox_id FROM mailbox_url WHERE url = ? LIMIT 1")
+                        .bind(url)
+                        .fetch_optional(pool)
+                        .await?;
+                Ok(row.map(|(m,)| m))
+            }
+            SyncBackend::Mem(rows) => {
+                let rows = rows.lock().await;
+                Ok(rows
+                    .urls
+                    .iter()
+                    .find(|(_, u)| u.as_str() == url)
+                    .map(|(m, _)| m.clone()))
+            }
+        }
+    }
+
     pub async fn get_synced(
         &self,
         mailbox: &MailboxId,
@@ -308,10 +361,15 @@ where
                     .bind(mailbox)
                     .execute(pool)
                     .await?;
+                sqlx::query("DELETE FROM mailbox_url WHERE mailbox_id = ?")
+                    .bind(mailbox)
+                    .execute(pool)
+                    .await?;
             }
             SyncBackend::Mem(rows) => {
                 let mut rows = rows.lock().await;
                 rows.rows.retain(|(m, _, _), _| m != mailbox);
+                rows.urls.remove(mailbox);
             }
         }
         self.all_ids_tx.send_if_modified(|ids| ids.remove(mailbox));
@@ -588,6 +646,37 @@ mod tests {
         assert!(rx.borrow().contains("mb2"));
     }
 
+    async fn record_url_round_trip_impl(b: Backend) {
+        let (_dir, store) = open(b).await;
+        store
+            .record_url(&"mb1".into(), "https://cloud.example")
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .mailbox_id_for_url("https://cloud.example")
+                .await
+                .unwrap(),
+            Some("mb1".to_string()),
+        );
+        assert_eq!(
+            store
+                .mailbox_id_for_url("https://other.example")
+                .await
+                .unwrap(),
+            None,
+        );
+    }
+
+    #[tokio::test]
+    async fn record_url_round_trip_sqlite() {
+        record_url_round_trip_impl(Backend::Sqlite).await;
+    }
+
+    #[tokio::test]
+    async fn record_url_round_trip_mem() {
+        record_url_round_trip_impl(Backend::Mem).await;
+    }
     #[tokio::test]
     async fn sync_state_watch_updates_on_record_synced() {
         let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::in_memory();
