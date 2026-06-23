@@ -57,25 +57,24 @@ pub fn run() {
             // E2E tests run multiple built instances side-by-side;
             // skip single-instance, updater, and MCP bridge plugins.
         } else {
-            // single-instance must be registered before deep-link so it can
-            // forward deep link URLs from a second process to this one.
-            builder = builder.plugin(tauri_plugin_single_instance::init(
-                move |app, _argv, _cwd| {
-                    use tauri::Manager;
-
-                    if let Some(w) = app.get_webview_window("main") {
-                        let _ = w.set_focus();
-                    } else if let Err(err) = tray::show_or_create_main_window(app) {
-                        log::error!("Failed to show/create main window: {err:?}");
-                    }
-                },
-            ));
-
             if tauri::is_dev() {
                 // MCP for Claude Code to control the tauri app
                 builder = builder.plugin(tauri_plugin_mcp_bridge::init());
             } else {
+                // single-instance must be registered before deep-link so it can
+                // forward deep link URLs from a second process to this one.
                 builder = builder
+                    .plugin(tauri_plugin_single_instance::init(
+                        move |app, _argv, _cwd| {
+                            use tauri::Manager;
+
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.set_focus();
+                            } else if let Err(err) = tray::show_or_create_main_window(app) {
+                                log::error!("Failed to show/create main window: {err:?}");
+                            }
+                        },
+                    ))
                     .plugin(tauri_plugin_autostart::init(
                         tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                         Some(vec!["--minimized"]),
