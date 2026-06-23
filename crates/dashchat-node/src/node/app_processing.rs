@@ -135,7 +135,9 @@ impl Node {
                                 }
                             },
                             ProcessorEvent::Groups { operation, source, processed_tx, error } => {
-                                tracing::info!(op = ?operation.id().aliased(), topic = ?operation.topic().aliased(), "groups operation processing");
+                                let topic = operation.topic();
+                                let id = operation.id();
+                                tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "groups operation processing");
 
                                 if let Some(err) = error {
                                     // @TODO: should consider if this is the desired behavior.
@@ -151,7 +153,7 @@ impl Node {
                                     continue;
                                 };
 
-                                let result = node.process_groups(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
+                                let result = node.process_groups(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
                                 if let Err(err) = result.as_ref() {
                                     tracing::error!(?err, "process groups operation error");
                                 };
@@ -167,14 +169,16 @@ impl Node {
 
                                 // @TODO: this is required for tests, but nowhere else, it can be placed behind the
                                 // testing flag.
-                                node.op_store.mark_op_processed(operation.topic().into(), &operation.id());
+                                node.op_store.mark_op_processed(topic, &id);
 
                             },
                             ProcessorEvent::App { operation, source, processed_tx } => {
-                                tracing::info!(op = ?operation.id().aliased(), topic = ?operation.topic().aliased(), "application operation processing");
+                                let topic = operation.topic();
+                                let id = operation.id();
+                                tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
 
                                 // Process the operation.
-                                let result = node.process_app(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
+                                let result = node.process_app(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
                                 if let Err(err) = result.as_ref() {
                                     tracing::error!(?err, "process operation error");
                                 }
@@ -192,7 +196,7 @@ impl Node {
 
                                 // @TODO: this is required for tests, but nowhere else, it can be placed behind the
                                 // testing flag.
-                                node.op_store.mark_op_processed(operation.topic().into(), &operation.id());
+                                node.op_store.mark_op_processed(topic, &id);
 
                             },
                         }
@@ -223,23 +227,34 @@ impl Node {
     /// fact.
     async fn enforce_tombstone(
         &self,
-        operation: &ProcessedOperation<Payload>,
-    ) -> anyhow::Result<()> {
+        mut operation: ProcessedOperation<Payload>,
+    ) -> anyhow::Result<ProcessedOperation<Payload>> {
         let topic = operation.topic();
         let hash = operation.id();
         if self.local_store.is_tombstoned(topic, hash).await? {
             self.op_store.delete_body(&hash).await?;
+            operation.event.operation.body = None;
         }
-        Ok(())
+        Ok(operation)
+    }
+
+    /// Filter out operations whose payloads are not able to be deleted.
+    ///
+    /// The return type is written as such to allow Try semantics for two intermediary Options.
+    pub(crate) fn is_tombstoneable(&self, operation: &Operation) -> Option<()> {
+        match Payload::try_from_body(operation.body.as_ref()?).ok()? {
+            Payload::Chat(ChatPayload::Message(_)) => Some(()),
+            _ => None,
+        }
     }
 
     async fn process_groups(
         &self,
-        operation: &ProcessedOperation<Payload>,
+        operation: ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
-        self.register_bootstrap(operation, source).await?;
-        self.enforce_tombstone(operation).await?;
+        self.register_bootstrap(&operation, source).await?;
+        let operation = self.enforce_tombstone(operation).await?;
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
@@ -303,11 +318,11 @@ impl Node {
 
     async fn process_app(
         &self,
-        operation: &ProcessedOperation<Payload>,
+        operation: ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
-        self.register_bootstrap(operation, source).await?;
-        self.enforce_tombstone(operation).await?;
+        self.register_bootstrap(&operation, source).await?;
+        let operation = self.enforce_tombstone(operation).await?;
 
         let hash = operation.id();
         let topic = operation.topic();

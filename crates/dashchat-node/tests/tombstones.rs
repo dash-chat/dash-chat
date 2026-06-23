@@ -43,32 +43,25 @@ async fn tombstone_drops_existing_payload() {
     setup_tracing();
 
     let node = TestNode::new(NodeConfig::testing(), "alice").await;
-    let topic = *Topic::announcements(node.agent_id());
+    let topic = Topic::random();
 
-    let header = node
-        .set_profile(Profile {
-            name: "updated".to_string(),
-            surname: None,
-            avatar: None,
-            about: None,
-        })
-        .await
-        .unwrap();
+    let header = node.send_message_raw(topic, "hello".into()).await.unwrap();
     let hash = header.hash();
 
     // The payload is stored before we tombstone.
     assert_eq!(
-        payload_present(&node, topic, node.device_id(), hash).await,
+        payload_present(&node, *topic, node.device_id(), hash).await,
         Some(true)
     );
-    assert!(!node.local_store.is_tombstoned(topic, hash).await.unwrap());
+    assert!(!node.local_store.is_tombstoned(*topic, hash).await.unwrap());
 
-    node.tombstone_operation(topic, hash).await.unwrap();
+    let operation = node.op_store.get_operation(&hash).await.unwrap().unwrap();
+    node.tombstone_operation(*topic, &operation).await.unwrap();
 
     // The hash is recorded and the payload is gone, but the header remains.
-    assert!(node.local_store.is_tombstoned(topic, hash).await.unwrap());
+    assert!(node.local_store.is_tombstoned(*topic, hash).await.unwrap());
     assert_eq!(
-        payload_present(&node, topic, node.device_id(), hash).await,
+        payload_present(&node, *topic, node.device_id(), hash).await,
         Some(false)
     );
 }
@@ -106,9 +99,15 @@ async fn tombstone_drops_payload_received_by_sync() {
 
     let header = alice.send_message_raw(chat, "secret".into()).await.unwrap();
     let secret_hash = header.hash();
+    let operation = alice
+        .op_store
+        .get_operation(&secret_hash)
+        .await
+        .unwrap()
+        .unwrap();
 
     // bobbi records the tombstone while it still has no copy of the op.
-    bobbi.tombstone_operation(*chat, secret_hash).await.unwrap();
+    bobbi.tombstone_operation(*chat, &operation).await.unwrap();
     assert_eq!(
         payload_present(&bobbi, *chat, alice.device_id(), secret_hash).await,
         None

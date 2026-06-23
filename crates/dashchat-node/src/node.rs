@@ -859,9 +859,16 @@ impl Node {
     /// Tombstone an operation: record its hash in the topic's persisted
     /// tombstone set so its payload is never stored or synced again, and
     /// immediately drop any payload already stored for it.
-    pub async fn tombstone_operation(&self, topic: TopicId, hash: Hash) -> anyhow::Result<()> {
-        self.local_store.add_tombstone(topic, hash).await?;
-        self.op_store.delete_body(&hash).await?;
+    pub async fn tombstone_operation(
+        &self,
+        topic: TopicId,
+        operation: &Operation,
+    ) -> anyhow::Result<()> {
+        if self.is_tombstoneable(operation).is_some() {
+            let hash = operation.hash;
+            self.op_store.delete_body(&hash).await?;
+            self.local_store.add_tombstone(topic, hash).await?;
+        }
         Ok(())
     }
 

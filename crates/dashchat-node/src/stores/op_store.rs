@@ -90,6 +90,13 @@ impl OpStore {
         Ok(log)
     }
 
+    pub async fn get_operation(&self, hash: &Hash) -> anyhow::Result<Option<Operation>> {
+        use p2panda_store::operations::OperationStore;
+        OperationStore::<Operation, Hash, LogId>::get_operation(&self.store, hash)
+            .await
+            .map_err(|err| anyhow::anyhow!("failed to get operation for {hash:?}: {err}"))
+    }
+
     #[deprecated = "will be replace by proper use of p2panda-streams"]
     pub fn get_all_operations_not_fully_sorted(
         &self,

@@ -19,8 +19,8 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     let topic = "test-topic";
     let author = "author-1";
 
-    // Step 1: Insert OLD blips directly into DB (8 days ago - will be cleaned up)
-    let old_time = std::time::SystemTime::now() - Duration::from_secs(8 * 24 * 60 * 60);
+    // Step 1: Insert OLD blips directly into DB (100 days ago - will be cleaned up)
+    let old_time = std::time::SystemTime::now() - Duration::from_hours(100 * 24);
     let old_uuid = uuid::Uuid::new_v7(uuid::Timestamp::from_unix(
         uuid::NoContext,
         old_time

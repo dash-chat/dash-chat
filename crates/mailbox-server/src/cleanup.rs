@@ -88,8 +88,8 @@ mod tests {
     async fn test_cleanup_old_messages() {
         let (db, _temp_file) = create_test_db();
 
-        // Insert an old message (8 days ago)
-        let old_time = std::time::SystemTime::now() - Duration::from_secs(8 * 24 * 60 * 60);
+        // Insert an old message (100 days ago)
+        let old_time = std::time::SystemTime::now() - Duration::from_hours(100 * 24);
         let old_uuid = uuid::Uuid::new_v7(uuid::Timestamp::from_unix(
             uuid::NoContext,
             old_time
