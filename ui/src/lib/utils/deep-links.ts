@@ -5,7 +5,6 @@ import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { showToast } from './toasts';
 
 function handleAddContactLink(code: string) {
-	console.log('[deep-link] handling add-contact link with code:', code);
 	goto('/new-message/add-contact').then(() =>
 		// TODO: This is temporary until another PR actually uses the code to add
 		//       the contact (hence why it doesn't use paraglide messages)
@@ -45,7 +44,6 @@ function matchesDeepLinkPath(
 }
 
 function handleUrls(urls: string[]) {
-	console.log('[deep-link] handling urls:', urls);
 	for (const url of urls) {
 		const match = matchesDeepLinkPath(url, '/add-contact/{{code}}');
 		if (match?.code) {
@@ -74,7 +72,6 @@ export function handleLaunchDeepLink() {
 
 export function listenForDeepLinks(): () => void {
 	const unlistenPromise = onOpenUrl(urls => {
-		console.log('[deep-link] onOpenUrl fired, urls:', urls);
 		const fresh = urls.filter(url => !handledLaunchUrls.delete(url));
 		if (fresh.length > 0) handleUrls(fresh);
 	}).catch(err => {
