@@ -12,6 +12,8 @@ export class DirectChatPage extends TestPage {
 	page = this.agent.$(tid('direct-chat-page'));
 	back = this.agent.$(tid('direct-chat-back'));
 	searchBack = this.agent.$(tid('direct-chat-search-back'));
+	searchInput = this.agent.$(tid('direct-chat-search-input'));
+	searchResultsCount = this.agent.$(tid('search-results-count'));
 	settingsLink = this.agent.$(tid('direct-chat-settings-link'));
 	peerName = this.agent.$(tid('direct-chat-peer-name'));
 	peerHeader = this.agent.$(tid('direct-chat-peer-header'));
@@ -20,6 +22,7 @@ export class DirectChatPage extends TestPage {
 	acceptConfirm = this.agent.$(tid('direct-chat-accept-confirm'));
 	rejectConfirm = this.agent.$(tid('direct-chat-reject-confirm'));
 	messageStatus = this.agent.$(tid('message-status'));
+	readMore = this.agent.$(tid('message-read-more'));
 	messages = new Messages(
 		this.agent,
 		'direct-chat-messages',
@@ -48,6 +51,11 @@ export class DirectChatPage extends TestPage {
 				}),
 			);
 		}, tid('message-input-textarea'));
+	}
+
+	async searchFor(query: string) {
+		await this.searchInput.waitForExist();
+		await this.typeInto(tid('direct-chat-search-input'), query);
 	}
 
 	/** Read the data-status of the most recent message-status indicator. */
