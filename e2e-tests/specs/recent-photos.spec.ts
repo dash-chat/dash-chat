@@ -1,6 +1,6 @@
 /**
  * Recent-photos strip E2E — taps photos from the composer's recent-photos strip
- * to stage them, toggles one back off, and sends. The native photo library is
+ * to stage them, and sends. The native photo library is
  * unavailable in the harness, so the strip is fed fake photos via the
  * `window.__test.recentPhotos` seam. The strip is mobile-only UI ({#if isMobile}
  * on the media panel), so the test skips on desktop user agents where the
