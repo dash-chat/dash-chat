@@ -32,15 +32,15 @@
 		if (index > photos.length - 1) index = Math.max(0, photos.length - 1);
 	});
 
+	// Page via scrollIntoView / bounding-box proximity rather than scrollLeft math:
+	// RTL's scrollLeft sign convention differs across engines (Chromium/Gecko go
+	// negative, WebKit/iOS stays positive), and these are direction-agnostic.
 	function scrollToIndex(i: number, smooth = true) {
-		if (!carouselEl) return;
-		// In RTL the scroll origin is the right edge and scrollLeft runs negative,
-		// so the per-page offset is mirrored.
-		const rtl = getComputedStyle(carouselEl).direction === 'rtl';
-		const offset = i * carouselEl.clientWidth;
-		carouselEl.scrollTo({
-			left: rtl ? -offset : offset,
+		const slide = carouselEl?.children[i] as Element | undefined;
+		slide?.scrollIntoView({
 			behavior: smooth ? 'smooth' : 'auto',
+			inline: 'center',
+			block: 'nearest',
 		});
 	}
 
@@ -51,11 +51,20 @@
 
 	function onCarouselScroll() {
 		if (!carouselEl || carouselEl.clientWidth === 0) return;
-		// abs() normalizes RTL's negative scrollLeft to a positive page index.
-		const i = Math.round(
-			Math.abs(carouselEl.scrollLeft) / carouselEl.clientWidth,
-		);
-		if (i !== index && i >= 0 && i < photos.length) index = i;
+		// The active page is the slide whose centre is closest to the viewport's.
+		const viewportCenter =
+			carouselEl.getBoundingClientRect().left + carouselEl.clientWidth / 2;
+		let nearest = index;
+		let nearestDistance = Infinity;
+		for (let i = 0; i < carouselEl.children.length; i++) {
+			const rect = carouselEl.children[i].getBoundingClientRect();
+			const distance = Math.abs(rect.left + rect.width / 2 - viewportCenter);
+			if (distance < nearestDistance) {
+				nearestDistance = distance;
+				nearest = i;
+			}
+		}
+		if (nearest !== index && nearest < photos.length) index = nearest;
 	}
 
 	async function removePhoto(i: number) {
