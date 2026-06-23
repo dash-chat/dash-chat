@@ -3,10 +3,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Saving downloaded photos to the shared gallery on Android 9 and below
-         (Android 10+ uses scoped storage / MediaStore and needs no permission). -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
+    <!-- WRITE_EXTERNAL_STORAGE (save downloaded photos to the gallery on Android 9
+         and below) is injected by tauri-plugin-android-fs's legacy_storage_permission
+         feature. The reads below gate the recent-photos strip: READ_EXTERNAL_STORAGE
+         up to API 32, READ_MEDIA_IMAGES on API 33+. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
@@ -59,4 +59,8 @@
             android:resource="@xml/file_paths" />
         </provider>
     </application>
+    <!-- ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
 </manifest>
