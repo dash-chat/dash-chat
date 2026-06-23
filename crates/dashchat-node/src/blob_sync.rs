@@ -1,10 +1,12 @@
 //! Manages syncing blobs referenced in logs over iroh-blobs
 
+use aliased::Aliasing;
 use derive_more::derive::Constructor;
 use futures::Stream;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
 use mailbox_client::manager::Mailboxes;
 use p2panda::operation::{LogId, Operation};
+use p2panda_store::{SqliteStore, topics::TopicStore};
 use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
 use tokio::{
     sync::{Mutex, Notify},
@@ -203,7 +205,7 @@ impl BlobFetchPool {
     /// an operation whose topic cannot be recovered.
     pub async fn from_ops(
         ops: impl Stream<Item = Result<Operation, anyhow::Error>> + '_,
-        topic_for_log_id: impl Fn(&LogId) -> Option<TopicId>,
+        topic_store: SqliteStore,
     ) -> anyhow::Result<Self> {
         let store = Self::default();
         let mut s = store.stack.lock().await;
@@ -218,7 +220,15 @@ impl BlobFetchPool {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     if let Some(media) = m.media() {
-                        let Some(topic) = topic_for_log_id(&op.header.extensions.log_id) else {
+                        let Some(topic) = topic_store
+                            .resolve_topic(&op.header.verifying_key, &op.header.extensions.log_id)
+                            .await?
+                        else {
+                            tracing::error!(
+                                author = ?op.header.verifying_key.aliased(),
+                                log_id = ?op.header.extensions.log_id.aliased(),
+                                "failed to resolve topic for operation",
+                            );
                             continue;
                         };
                         for item in media {

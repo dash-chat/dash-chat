@@ -236,21 +236,16 @@ impl Node {
             mailboxes.clone(),
             self_endpoint,
         );
+
         // LogId = blake3(topic.as_bytes()) is one-way and the op-store does not
         // persist TopicId alongside each operation, so we invert it by hashing
         // the topics we subscribe to (chat media lives in subscribed chat
         // topics). Without this the pool starts empty and a blob left
         // undownloaded at shutdown is never re-queued — only the live path adds
         // it — so it can never load again after a restart.
-        let topic_by_log_id: std::collections::HashMap<LogId, TopicId> = local_store
-            .subscribed_topics()
-            .await?
-            .into_iter()
-            .map(|topic| (LogId::from_topic(topic), topic))
-            .collect();
         let blob_fetch = BlobFetchPool::from_ops(
             op_store.get_all_operations_not_fully_sorted(),
-            move |log_id| topic_by_log_id.get(log_id).copied(),
+            op_store.store.clone(),
         )
         .await?;
         let blob_sync = BlobSync::new(
