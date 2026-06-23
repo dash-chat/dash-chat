@@ -3,26 +3,26 @@ import { ConnectionStatusIndicator } from '../../components/connection-status-in
 import { Messages } from '../../components/messages';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
-import { TestPage } from '../test-page';
+import { TestHelper } from '../test-helper';
 
 export type MessageStatus = 'sending' | 'local' | 'cloud';
 export type { ConnectionStatus } from '../../components/connection-status-indicator';
 
-export class DirectChatPage extends TestPage {
-	page = this.el('direct-chat-page');
-	back = this.el('direct-chat-back');
-	searchBack = this.el('direct-chat-search-back');
-	searchInput = this.el('direct-chat-search-input');
-	searchResultsCount = this.el('search-results-count');
-	settingsLink = this.el('direct-chat-settings-link');
-	peerName = this.el('direct-chat-peer-name');
-	peerHeader = this.el('direct-chat-peer-header');
-	acceptButton = this.el('direct-chat-accept-btn');
-	rejectButton = this.el('direct-chat-reject-btn');
-	acceptConfirm = this.el('direct-chat-accept-confirm');
-	rejectConfirm = this.el('direct-chat-reject-confirm');
-	messageStatus = this.el('message-status');
-	readMore = this.el('message-read-more');
+export class DirectChatPage extends TestHelper {
+	page = this.el(tid('direct-chat-page'));
+	back = this.el(tid('direct-chat-back'));
+	searchBack = this.el(tid('direct-chat-search-back'));
+	searchInput = this.el(tid('direct-chat-search-input'));
+	searchResultsCount = this.el(tid('search-results-count'));
+	settingsLink = this.el(tid('direct-chat-settings-link'));
+	peerName = this.el(tid('direct-chat-peer-name'));
+	peerHeader = this.el(tid('direct-chat-peer-header'));
+	acceptButton = this.el(tid('direct-chat-accept-btn'));
+	rejectButton = this.el(tid('direct-chat-reject-btn'));
+	acceptConfirm = this.el(tid('direct-chat-accept-confirm'));
+	rejectConfirm = this.el(tid('direct-chat-reject-confirm'));
+	messageStatus = this.el(tid('message-status'));
+	readMore = this.el(tid('message-read-more'));
 	messages = new Messages(
 		this.agent,
 		'direct-chat-messages',

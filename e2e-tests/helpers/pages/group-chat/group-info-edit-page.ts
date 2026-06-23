@@ -1,9 +1,9 @@
 import { tid } from '../../selectors';
-import { TestPage } from '../test-page';
+import { TestHelper } from '../test-helper';
 
-export class GroupInfoEditPage extends TestPage {
-	nameInput = this.el('group-info-edit-name');
-	saveButton = this.el('group-info-edit-save-btn');
+export class GroupInfoEditPage extends TestHelper {
+	nameInput = this.el(tid('group-info-edit-name'));
+	saveButton = this.el(tid('group-info-edit-save-btn'));
 
 	async ready() {
 		await this.nameInput.waitForExist();
