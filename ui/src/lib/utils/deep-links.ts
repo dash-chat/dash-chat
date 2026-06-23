@@ -57,10 +57,15 @@ function handleUrls(urls: string[]) {
 	}
 }
 
+const handledLaunchUrls = new Set<string>();
+
 export function handleLaunchDeepLink() {
 	getCurrent()
 		.then(urls => {
-			if (urls) handleUrls(urls);
+			if (urls) {
+				for (const url of urls) handledLaunchUrls.add(url);
+				handleUrls(urls);
+			}
 		})
 		.catch(err => {
 			console.error('[deep-link] failed to read launch deep links:', err);
@@ -70,7 +75,8 @@ export function handleLaunchDeepLink() {
 export function listenForDeepLinks(): () => void {
 	const unlistenPromise = onOpenUrl(urls => {
 		console.log('[deep-link] onOpenUrl fired, urls:', urls);
-		handleUrls(urls);
+		const fresh = urls.filter(url => !handledLaunchUrls.delete(url));
+		if (fresh.length > 0) handleUrls(fresh);
 	}).catch(err => {
 		console.error('[deep-link] failed to register listener:', err);
 		return () => {};
