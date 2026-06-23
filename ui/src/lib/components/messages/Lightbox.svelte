@@ -8,7 +8,7 @@
 		mdiTrayArrowDown,
 	} from '@mdi/js';
 	import type { PhotoAttachment } from 'dash-chat-stores';
-	import { mediaSrc, savePhoto } from '$lib/utils/media';
+	import { savePhoto } from '$lib/utils/media';
 	import { showToast } from '$lib/utils/toasts';
 	import BlobImage from '$lib/components/BlobImage.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
@@ -223,16 +223,17 @@
 			{#each photos as p, i (i)}
 				<button
 					type="button"
-					class="lightbox-thumb h-11 w-11 shrink-0 overflow-hidden p-0"
+					class="lightbox-thumb relative h-11 w-11 shrink-0 overflow-hidden p-0"
 					class:selected={i === index}
 					data-testid="lightbox-thumb-{i}"
 					aria-label={p.name}
 					onclick={() => select(i)}
 				>
-					<img
-						src={mediaSrc(p)}
+					<BlobImage
+						item={p}
 						alt={p.name}
-						class="block h-full w-full object-cover"
+						imgClass="block h-full w-full object-cover"
+						lazy
 					/>
 				</button>
 			{/each}
