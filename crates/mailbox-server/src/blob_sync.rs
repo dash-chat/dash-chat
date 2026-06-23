@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use dashchat_utils::{fetch_loop, FetchConfig, FetchPool};
+use dashchat_utils::{fetch_loop, FetchConfig, FetchPool, NETWORK_ID};
 use futures::StreamExt;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
@@ -19,37 +19,64 @@ const BLOB_TAG_PREFIX: &str = "mailbox/";
 const BLOB_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 /// How often iroh sweeps untagged blobs and how often we expire stale tags.
 const BLOB_GC_INTERVAL: Duration = Duration::from_secs(60 * 60);
+/// Drop a pending fetch entry after this many consecutive failed passes.
+const MAX_FETCH_FAILURES: u32 = 10;
+/// Hard cap on pending fetch entries; oldest-inserted entries are dropped first.
+const MAX_POOL_SIZE: usize = 1_000;
+
+#[derive(Default)]
+struct PoolEntry {
+    sources: BTreeSet<iroh::EndpointId>,
+    failures: u32,
+}
 
 #[derive(Clone, Default)]
 pub struct BlobFetchPool {
-    sources: Arc<Mutex<BTreeMap<iroh_blobs::Hash, BTreeSet<iroh::EndpointId>>>>,
+    entries: Arc<Mutex<BTreeMap<iroh_blobs::Hash, PoolEntry>>>,
     added: Arc<Notify>,
 }
 
 impl BlobFetchPool {
     pub async fn add_source(&self, hash: iroh_blobs::Hash, source: iroh::EndpointId) {
-        self.sources
-            .lock()
-            .await
-            .entry(hash)
-            .or_default()
-            .insert(source);
+        let mut map = self.entries.lock().await;
+        if !map.contains_key(&hash) && map.len() >= MAX_POOL_SIZE {
+            // Drop the first (lexicographically earliest) entry to stay within the cap.
+            if let Some(oldest) = map.keys().next().copied() {
+                map.remove(&oldest);
+            }
+        }
+        map.entry(hash).or_default().sources.insert(source);
         self.added.notify_one();
     }
+
     pub(crate) async fn is_empty(&self) -> bool {
-        self.sources.lock().await.is_empty()
+        self.entries.lock().await.is_empty()
     }
+
     pub(crate) async fn next_untried(
         &self,
         tried: &HashSet<iroh_blobs::Hash>,
     ) -> Option<(iroh_blobs::Hash, Vec<iroh::EndpointId>)> {
-        let map = self.sources.lock().await;
+        let map = self.entries.lock().await;
         map.iter()
             .find(|(hash, _)| !tried.contains(*hash))
-            .map(|(hash, sources)| (*hash, sources.iter().copied().collect()))
+            .map(|(hash, entry)| (*hash, entry.sources.iter().copied().collect()))
     }
+
     pub(crate) async fn remove(&self, hash: iroh_blobs::Hash) {
-        self.sources.lock().await.remove(&hash);
+        self.entries.lock().await.remove(&hash);
+    }
+
+    /// Record a failed fetch attempt; evict the entry after [`MAX_FETCH_FAILURES`].
+    pub(crate) async fn record_failure(&self, hash: iroh_blobs::Hash) {
+        let mut map = self.entries.lock().await;
+        if let Some(entry) = map.get_mut(&hash) {
+            entry.failures += 1;
+            if entry.failures >= MAX_FETCH_FAILURES {
+                map.remove(&hash);
+                tracing::debug!(%hash, "evicting blob from fetch pool after too many failures");
+            }
+        }
     }
 }
 
@@ -69,6 +96,9 @@ impl FetchPool for BlobFetchPool {
     }
     async fn remove(&self, item: &Self::Item) {
         BlobFetchPool::remove(self, item.0).await;
+    }
+    async fn on_failure(&self, item: &Self::Item) {
+        BlobFetchPool::record_failure(self, item.0).await;
     }
     async fn wait_for_add(&self) {
         self.added.notified().await;
@@ -106,12 +136,15 @@ impl BlobSync {
             interval: BLOB_GC_INTERVAL,
             add_protected: None,
         });
+        let mixed_alpn =
+            p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, *NETWORK_ID);
         let store = iroh_blobs::store::fs::FsStore::load_with_opts(db_path, options).await?;
         let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        let downloader =
+            Downloader::new_with_opts(&store, &endpoint, mixed_alpn.as_slice(), Default::default());
         let router = Router::builder(endpoint.clone())
-            .accept(iroh_blobs::ALPN, blobs.clone())
+            .accept(mixed_alpn, blobs.clone())
             .spawn();
-        let downloader = Downloader::new(&store, &endpoint);
         let endpoint_id = endpoint.id();
 
         Ok(Self {

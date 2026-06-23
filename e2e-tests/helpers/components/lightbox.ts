@@ -1,16 +1,15 @@
+import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
 /** The global photo viewer overlay. */
-export class Lightbox {
-	constructor(private agent: WebdriverIO.Browser) {}
-
-	root = this.agent.$(tid('lightbox'));
-	image = this.agent.$(`${tid('lightbox')} ${tid('blob-image')}`);
-	close = this.agent.$(tid('lightbox-close'));
-	save = this.agent.$(tid('lightbox-save'));
-	prev = this.agent.$(tid('lightbox-prev'));
-	next = this.agent.$(tid('lightbox-next'));
-	filmstrip = this.agent.$(tid('lightbox-filmstrip'));
+export class Lightbox extends TestHelper {
+	root = this.el(tid('lightbox'));
+	image = this.el(tid('lightbox-image'));
+	close = this.el(tid('lightbox-close'));
+	save = this.el(tid('lightbox-save'));
+	prev = this.el(tid('lightbox-prev'));
+	next = this.el(tid('lightbox-next'));
+	filmstrip = this.el(tid('lightbox-filmstrip'));
 
 	thumb(index: number) {
 		return this.agent.$(tid(`lightbox-thumb-${index}`));

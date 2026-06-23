@@ -36,12 +36,11 @@ use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, MediaAttachment, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
+    DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
 };
+use dashchat_utils::NETWORK_ID;
 
 pub use app_processing::Notification;
-
-const NETWORK_ID: &'static str = "dash-chat";
 
 pub static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
     "https://euc1-1.relay.n0.iroh-canary.iroh.link"
@@ -81,7 +80,7 @@ impl NodeConfig {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
             capabilities: Capabilities::current(),
-            network_id: Hash::digest(NETWORK_ID.as_bytes()).into(),
+            network_id: *NETWORK_ID,
             // In testing we disable mDNS discovery and do not provide a relay address so as not
             // to effect expected behavior of existing tests.
             mdns_mode: MdnsDiscoveryMode::Disabled,
@@ -103,7 +102,7 @@ impl Default for NodeConfig {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
             capabilities: Capabilities::current(),
-            network_id: Hash::digest(NETWORK_ID.as_bytes()).into(),
+            network_id: *NETWORK_ID,
             mdns_mode: MdnsDiscoveryMode::Active,
             relay_url: Some(RELAY_URL.clone()),
             blob_fetch: BlobFetchConfig::default(),
@@ -144,7 +143,7 @@ pub struct Node {
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
 /// node never references a blob that the fetcher's own cap would reject.
-fn ensure_blob_size(size: usize, name: &str) -> anyhow::Result<()> {
+fn ensure_blob_size(size: u64, name: &str) -> anyhow::Result<()> {
     if size as u64 > MAX_BLOB_BYTES {
         anyhow::bail!("media item {name:?} is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
     }
@@ -1174,12 +1173,12 @@ impl Node {
         Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 
-    pub async fn store_media(&self, media: OutgoingMedia) -> anyhow::Result<MediaAttachment> {
+    pub async fn store_media(&self, media: OutgoingMedia) -> anyhow::Result<MediaBundle> {
         let mut items = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
                 for photo in photos {
-                    let size = photo.data.len();
+                    let size = photo.data.len() as u64;
                     ensure_blob_size(size, &photo.name)?;
                     let tag = self.blob_sync.blobs.add_bytes(photo.data).await?;
                     items.push(MediaMetadata {
@@ -1192,7 +1191,7 @@ impl Node {
                 }
             }
             OutgoingMedia::File { file } => {
-                let size = file.data.len();
+                let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
                 let tag = self.blob_sync.blobs.add_bytes(file.data).await?;
                 items.push(MediaMetadata {
@@ -1204,7 +1203,7 @@ impl Node {
                 });
             }
         }
-        Ok(MediaAttachment::from(items))
+        Ok(MediaBundle::from(items))
     }
 
     /// Load the raw bytes of a single blob by its hash from the local blob store.

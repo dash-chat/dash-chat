@@ -15,7 +15,7 @@ import {
 	MessagesStore,
 	OutgoingMedia,
 	Payload,
-	mediaMetaToMedia,
+	mediaBundleToAttachment,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IGroupChatClient } from './group-chat-client';
@@ -93,7 +93,7 @@ export class GroupChatStore implements MessagesStore {
 							hash: operation.hash,
 							content: {
 								message: body.payload.payload.message,
-								media: mediaMetaToMedia(body.payload.payload.media),
+								media: mediaBundleToAttachment(body.payload.payload.media),
 							},
 							author,
 							seqNum: operation.header.seq_num,

@@ -2063,6 +2063,7 @@ dependencies = [
  "p2panda",
  "p2panda-auth",
  "p2panda-core",
+ "p2panda-net",
  "p2panda-spaces",
  "p2panda-store",
  "pretty_assertions",
@@ -4631,8 +4632,7 @@ dependencies = [
 [[package]]
 name = "iroh-blobs"
 version = "0.102.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b492c3b44e08605ad1e7fdc6ef35142543fa1b52166067860199b818e0be7d91"
+source = "git+https://github.com/maackle/iroh-blobs?branch=102#81db9ff192494cc3680618d92fa4d2151dcc5fc1"
 dependencies = [
  "arrayvec",
  "bao-tree",
@@ -5406,6 +5406,7 @@ dependencies = [
  "iroh",
  "iroh-blobs",
  "mailbox-server",
+ "p2panda-net",
  "push-notifications-client",
  "push-notifications-server",
  "redb 3.1.3",
@@ -6973,7 +6974,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#c164b51eac0de28c7bc4e2b27306683b668e3889"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#6e63616611d8d51bc0f815cf8976cb83087c6995"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -6994,7 +6995,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#c164b51eac0de28c7bc4e2b27306683b668e3889"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#6e63616611d8d51bc0f815cf8976cb83087c6995"
 dependencies = [
  "p2panda-core",
  "p2panda-store",
@@ -7011,7 +7012,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#c164b51eac0de28c7bc4e2b27306683b668e3889"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#6e63616611d8d51bc0f815cf8976cb83087c6995"
 dependencies = [
  "blake3",
  "ciborium",
@@ -7026,7 +7027,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#c164b51eac0de28c7bc4e2b27306683b668e3889"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#6e63616611d8d51bc0f815cf8976cb83087c6995"
 dependencies = [
  "blake3",
  "futures-util",
@@ -7041,7 +7042,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#c164b51eac0de28c7bc4e2b27306683b668e3889"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#6e63616611d8d51bc0f815cf8976cb83087c6995"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -7064,7 +7065,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#c164b51eac0de28c7bc4e2b27306683b668e3889"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#6e63616611d8d51bc0f815cf8976cb83087c6995"
 dependencies = [
  "ciborium",
  "futures-channel",
@@ -7092,7 +7093,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#c164b51eac0de28c7bc4e2b27306683b668e3889"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#6e63616611d8d51bc0f815cf8976cb83087c6995"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -7106,7 +7107,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#c164b51eac0de28c7bc4e2b27306683b668e3889"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#6e63616611d8d51bc0f815cf8976cb83087c6995"
 dependencies = [
  "p2panda-core",
  "rand 0.10.1",
@@ -7120,7 +7121,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#c164b51eac0de28c7bc4e2b27306683b668e3889"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#6e63616611d8d51bc0f815cf8976cb83087c6995"
 dependencies = [
  "futures-core",
  "p2panda-core",
@@ -7133,7 +7134,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.6.1"
-source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#c164b51eac0de28c7bc4e2b27306683b668e3889"
+source = "git+https://github.com/maackle/p2panda?branch=add-groups-to-node-extensions#6e63616611d8d51bc0f815cf8976cb83087c6995"
 dependencies = [
  "futures",
  "futures-util",

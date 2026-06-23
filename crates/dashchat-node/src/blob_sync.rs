@@ -36,10 +36,15 @@ impl BlobSync {
     ) -> anyhow::Result<Self> {
         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
         let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
-        endpoint
-            .accept_unmixed(iroh_blobs::ALPN, blobs.clone())
-            .await?;
-        let downloader = Downloader::new(&store, &endpoint.endpoint().await?);
+        let mixed_alpn =
+            p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, endpoint.network_id());
+        endpoint.accept(iroh_blobs::ALPN, blobs.clone()).await?;
+        let downloader = Downloader::new_with_opts(
+            &store,
+            &endpoint.endpoint().await?,
+            &mixed_alpn,
+            Default::default(),
+        );
 
         Ok(Self {
             blobs,
