@@ -1,5 +1,5 @@
+import { applyThemeSystemBars, setLightSystemBars } from '$lib/utils/theme';
 import type { Action } from 'svelte/action';
-import { setLightSystemBars, applyThemeSystemBars } from '$lib/utils/theme';
 
 /**
  * Marks a full-screen always-dark overlay (lightbox, staged-media page): applies
