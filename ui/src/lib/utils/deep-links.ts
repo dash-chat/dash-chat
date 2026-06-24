@@ -55,7 +55,7 @@ function handleUrls(urls: string[]) {
 		}
 		if (!matched) {
 			console.log('[deep-link] url did not match pattern:', url);
-			showToast(m.receivedUnrecognizedLink({ url }));
+			showToast(m.errorReceivedUnrecognizedLink({ url }));
 		}
 	}
 }
