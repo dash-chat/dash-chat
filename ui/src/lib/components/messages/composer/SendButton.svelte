@@ -5,11 +5,11 @@
 	import { mdiSend } from '@mdi/js';
 
 	interface Props {
-		disabled: boolean;
+		disabled?: boolean;
 		onClick: () => void;
 	}
 
-	let { disabled, onClick }: Props = $props();
+	let { disabled = false, onClick }: Props = $props();
 </script>
 
 <button

@@ -183,8 +183,8 @@ importers:
         specifier: ^0.3.0
         version: 0.3.0
       '@gbyte/tauri-plugin-ios-photos':
-        specifier: ^0.3.0
-        version: 0.3.0
+        specifier: github:dash-chat/tauri-plugin-ios-photos#ec723636ddf248dd6542e02fb2e83d91d1da36c9
+        version: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9
       '@mdi/js':
         specifier: ^7.4.47
         version: 7.4.47
@@ -224,6 +224,9 @@ importers:
       '@tauri-apps/plugin-updater':
         specifier: ^2.10.0
         version: 2.10.0
+      '@universalappfactory/tauri-plugin-medialibrary':
+        specifier: ^0.13.0
+        version: 0.13.0
       cbor:
         specifier: ^10.0.11
         version: 10.0.11
@@ -1047,8 +1050,9 @@ packages:
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
 
-  '@gbyte/tauri-plugin-ios-photos@0.3.0':
-    resolution: {integrity: sha512-q5kvL1z4XrAhoQxUDRnhVoZDmejfwX9F2vsTbD6Y2p9IroNDRFKMo95H/eAJsHEag+vs6iCqI/P5haS6KIfqSA==}
+  '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9':
+    resolution: {tarball: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9}
+    version: 0.3.0
 
   '@holo-host/identicon@0.1.0':
     resolution: {integrity: sha512-Dn5pTV/m3XaK1Zvq3liw/vQUt7goM7Y84x2zUyH8cb9CNMs4kPCNHs3kalbJZ/ymzFvwcdiLwwNW8AKk+WWN5A==}
@@ -1621,8 +1625,8 @@ packages:
   '@tauri-apps/api@2.10.1':
     resolution: {integrity: sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw==}
 
-  '@tauri-apps/api@2.11.1':
-    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
+  '@tauri-apps/api@2.11.0':
+    resolution: {integrity: sha512-7CinYODhky9lmO23xHnUFv0Xt43fbtWMyxZcLcRBlFkcgXKuEirBvHpmtJ89YMhyeGcq20Wuc47Fa4XjyniywA==}
 
   '@tauri-apps/api@2.8.0':
     resolution: {integrity: sha512-ga7zdhbS2GXOMTIZRT0mYjKJtR9fivsXzsyq5U3vjDL0s6DTMwYRm0UHNjzTY5dh4+LSC68Sm/7WEiimbQNYlw==}
@@ -1876,6 +1880,9 @@ packages:
   '@typescript-eslint/visitor-keys@8.45.0':
     resolution: {integrity: sha512-qsaFBA3e09MIDAGFUrTk+dzqtfv1XPVz8t8d1f0ybTzrCY7BKiMC5cjrl1O/P7UmHsNyW90EYSkU/ZWpmXelag==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@universalappfactory/tauri-plugin-medialibrary@0.13.0':
+    resolution: {integrity: sha512-5VrfOeTdQSfH45kKJ/t4kwjC3kEuR7BPTuBCWMfDR6I08cWR0sTcHwvS4eJ8fvLyupIwDjambd2PoxLnUswo2g==}
 
   '@vitest/pretty-format@2.1.9':
     resolution: {integrity: sha512-KhRIdGV2U9HOUzxfiHmY8IFHTdqtOhIzCpd8WRdJiE7D/HUcZVD0EgQCVjm+Q9gkUXWgBvMmTtZgIG48wq7sOQ==}
@@ -5393,9 +5400,9 @@ snapshots:
 
   '@floating-ui/utils@0.2.10': {}
 
-  '@gbyte/tauri-plugin-ios-photos@0.3.0':
+  '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9':
     dependencies:
-      '@tauri-apps/api': 2.10.1
+      '@tauri-apps/api': 2.11.0
 
   '@holo-host/identicon@0.1.0': {}
 
@@ -5951,7 +5958,7 @@ snapshots:
 
   '@tauri-apps/api@2.10.1': {}
 
-  '@tauri-apps/api@2.11.1': {}
+  '@tauri-apps/api@2.11.0': {}
 
   '@tauri-apps/api@2.8.0': {}
 
@@ -6012,7 +6019,7 @@ snapshots:
 
   '@tauri-apps/plugin-deep-link@2.4.9':
     dependencies:
-      '@tauri-apps/api': 2.11.1
+      '@tauri-apps/api': 2.11.0
 
   '@tauri-apps/plugin-dialog@2.6.0':
     dependencies:
@@ -6220,6 +6227,10 @@ snapshots:
     dependencies:
       '@typescript-eslint/types': 8.45.0
       eslint-visitor-keys: 4.2.1
+
+  '@universalappfactory/tauri-plugin-medialibrary@0.13.0':
+    dependencies:
+      '@tauri-apps/api': 2.11.0
 
   '@vitest/pretty-format@2.1.9':
     dependencies:
