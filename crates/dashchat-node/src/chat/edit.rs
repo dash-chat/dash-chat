@@ -88,6 +88,8 @@ pub fn validate_edit(
         ChatOpKind::Other => return Err(EditError::TargetNotEditable),
     }
 
+    // TODO: this is only a same-device check.
+    // If we want editing across devices, we need to check against AgentId, which is more complicated.
     if editor != target.author {
         return Err(EditError::NotAuthor);
     }
