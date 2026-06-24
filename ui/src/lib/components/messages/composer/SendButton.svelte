@@ -1,15 +1,28 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
+	import { Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiSend } from '@mdi/js';
 
 	interface Props {
 		disabled?: boolean;
-		onClick: () => void;
+		onSend: () => Promise<boolean>;
 	}
 
-	let { disabled = false, onClick }: Props = $props();
+	let { disabled = false, onSend }: Props = $props();
+
+	let loading = $state(false);
+
+	async function handleClick() {
+		if (loading) return;
+		loading = true;
+		try {
+			await onSend();
+		} finally {
+			loading = false;
+		}
+	}
 </script>
 
 <button
@@ -17,11 +30,15 @@
 	class="send-button flex h-[42px] w-[42px] shrink-0 items-center justify-center p-0"
 	data-testid="message-input-send"
 	class:enabled={!disabled}
-	onclick={onClick}
-	{disabled}
+	onclick={handleClick}
+	disabled={disabled || loading}
 	aria-label={m.send()}
 >
-	<wa-icon style="font-size: 24px" src={wrapPathInSvg(mdiSend)}></wa-icon>
+	{#if loading}
+		<Preloader class="h-[22px] w-[22px] !text-white" />
+	{:else}
+		<wa-icon style="font-size: 24px" src={wrapPathInSvg(mdiSend)}></wa-icon>
+	{/if}
 </button>
 
 <style>

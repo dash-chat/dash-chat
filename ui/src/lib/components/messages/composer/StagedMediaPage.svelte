@@ -19,7 +19,7 @@
 		value?: string;
 		/** Name of the chat the media will be sent to, shown in the header. */
 		destinationName?: string;
-		onSend: () => void;
+		onSend: () => Promise<boolean>;
 		onAddMore: () => void;
 		onClose: () => void;
 	}
@@ -113,7 +113,7 @@
 					onEmojiClick={() => (showEmojiPicker = true)}
 				/>
 			</div>
-			<SendButton onClick={onSend} />
+			<SendButton {onSend} />
 		</div>
 	</div>
 

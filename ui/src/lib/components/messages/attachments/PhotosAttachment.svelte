@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { PhotoAttachment } from 'dash-chat-stores';
+	import { pushState } from '$app/navigation';
+	import { page } from '$app/state';
 	import Lightbox from '../Lightbox.svelte';
 	import PhotoAttachmentGallery from './PhotoAttachmentGallery.svelte';
 
@@ -20,6 +22,10 @@
 	function openLightbox(index: number, event: MouseEvent) {
 		lightboxTrigger = event.currentTarget as HTMLElement;
 		lightboxIndex = index;
+		// Open behind a pushed history entry so the Android system back button
+		// (and the browser back button) closes the lightbox instead of leaving
+		// the chat. Closing pops the entry; the effect below reacts either way.
+		pushState('', { lightbox: true });
 	}
 
 	function closeLightbox() {
@@ -27,6 +33,10 @@
 		lightboxTrigger?.focus();
 		lightboxTrigger = undefined;
 	}
+
+	$effect(() => {
+		if (lightboxIndex !== null && !page.state.lightbox) closeLightbox();
+	});
 </script>
 
 <PhotoAttachmentGallery {photos} onPhotoClick={openLightbox} />
@@ -37,6 +47,6 @@
 		index={lightboxIndex}
 		{senderName}
 		{timestamp}
-		onClose={closeLightbox}
+		onClose={() => history.back()}
 	/>
 {/if}
