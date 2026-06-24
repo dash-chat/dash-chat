@@ -183,7 +183,7 @@ importers:
         specifier: ^0.3.0
         version: 0.3.0
       '@gbyte/tauri-plugin-ios-photos':
-        specifier: github:dash-chat/tauri-plugin-ios-photos#main
+        specifier: github:dash-chat/tauri-plugin-ios-photos#ec723636ddf248dd6542e02fb2e83d91d1da36c9
         version: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9
       '@mdi/js':
         specifier: ^7.4.47
@@ -200,6 +200,9 @@ importers:
       '@tauri-apps/plugin-clipboard-manager':
         specifier: ^2.3.2
         version: 2.3.2
+      '@tauri-apps/plugin-deep-link':
+        specifier: ^2.4.9
+        version: 2.4.9
       '@tauri-apps/plugin-dialog':
         specifier: ^2.6.0
         version: 2.6.0
@@ -1048,7 +1051,7 @@ packages:
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
 
   '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9':
-    resolution: {integrity: sha512-SELutoAURzJHTr0mOJb9lgxVUBuUbhpJ+CiMkrrjTHdpDa+bELXjDlLIjq0oZ9GbjgV3FldSuLkPvCNMhwC65w==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9}
+    resolution: {tarball: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9}
     version: 0.3.0
 
   '@holo-host/identicon@0.1.0':
@@ -1704,6 +1707,9 @@ packages:
 
   '@tauri-apps/plugin-clipboard-manager@2.3.2':
     resolution: {integrity: sha512-CUlb5Hqi2oZbcZf4VUyUH53XWPPdtpw43EUpCza5HWZJwxEoDowFzNUDt1tRUXA8Uq+XPn17Ysfptip33sG4eQ==}
+
+  '@tauri-apps/plugin-deep-link@2.4.9':
+    resolution: {integrity: sha512-u0SKOUHnJ1wqeqXsDFq2+kASCBj9xxbG0g9XZWPy9SOmU4wXtp6b/wiYpm6oH6/5fBTQsLqnLhIvqLBRpgHJlA==}
 
   '@tauri-apps/plugin-dialog@2.6.0':
     resolution: {integrity: sha512-q4Uq3eY87TdcYzXACiYSPhmpBA76shgmQswGkSVio4C82Sz2W4iehe9TnKYwbq7weHiL88Yw19XZm7v28+Micg==}
@@ -6010,6 +6016,10 @@ snapshots:
   '@tauri-apps/plugin-clipboard-manager@2.3.2':
     dependencies:
       '@tauri-apps/api': 2.8.0
+
+  '@tauri-apps/plugin-deep-link@2.4.9':
+    dependencies:
+      '@tauri-apps/api': 2.11.0
 
   '@tauri-apps/plugin-dialog@2.6.0':
     dependencies:

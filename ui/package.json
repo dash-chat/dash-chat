@@ -17,7 +17,7 @@
 	"dependencies": {
 		"@awesome.me/webawesome": "3.0.0-beta.6",
 		"@choochmeque/tauri-plugin-sharekit-api": "^0.3.0",
-		"@gbyte/tauri-plugin-ios-photos": "github:dash-chat/tauri-plugin-ios-photos#main",
+		"@gbyte/tauri-plugin-ios-photos": "github:dash-chat/tauri-plugin-ios-photos#ec723636ddf248dd6542e02fb2e83d91d1da36c9",
 		"@mdi/js": "^7.4.47",
 		"@saurl/tauri-plugin-safe-area-insets-css-api": "^0.1.0",
 		"@tauri-apps/api": "^2",

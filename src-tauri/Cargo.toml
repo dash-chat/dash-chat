@@ -101,14 +101,14 @@ ndk-context = "0.1"
 tauri-plugin-android-fs = { version = "28.2" }
 # Enumerates recent gallery images (MediaStore) for the composer's recent-photos
 # strip. JS bindings ship as `@universalappfactory/tauri-plugin-medialibrary`.
-tauri-plugin-medialibrary = "0.16"
+tauri-plugin-medialibrary = "=0.13"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2"
 # Fork: adds `limit`/`offset` (newest-first) to requestAlbumMedias and a
 # `requestMediasByIds` fetch-by-id command, so the recent-photos strip and
 # tap-to-send no longer render the entire album.
-tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios-photos", branch = "main" }
+tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios-photos", rev = "ec723636ddf248dd6542e02fb2e83d91d1da36c9" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
