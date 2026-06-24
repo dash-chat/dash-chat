@@ -335,9 +335,8 @@ impl Node {
                         return Ok(());
                     };
                     if let Some(media) = m.media() {
-                        self.blob_sync
-                            .delete_blobs(topic, media.iter().map(|item| item.hash))
-                            .await;
+                        let hashes: Vec<_> = media.iter().map(|item| item.hash).collect();
+                        self.blob_sync.delete_blobs(topic, hashes).await;
                     }
                 }
                 _ => {
