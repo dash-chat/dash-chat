@@ -163,7 +163,7 @@
 			</div>
 
 			{#if isMobile}
-				<SendButton disabled={!hasContent} onClick={send} />
+				<SendButton disabled={!hasContent} onSend={send} />
 			{/if}
 		</div>
 	</div>
@@ -179,9 +179,11 @@
 		bind:value
 		{destinationName}
 		onSend={async () => {
+			const sent = await send();
 			// Guard against the stagedMedia entry already being popped (e.g. the user
 			// hit back during a slow send) — otherwise we'd navigate off the chat.
-			if ((await send()) && page.state.stagedMedia) history.back();
+			if (sent && page.state.stagedMedia) history.back();
+			return sent;
 		}}
 		onAddMore={addMore}
 		onClose={() => history.back()}

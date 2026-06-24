@@ -41,7 +41,6 @@
 	const photo = $derived(photos[index]);
 
 	let rootEl: HTMLElement | undefined = $state();
-	let carousel: ImageCarousel<PhotoAttachment> | undefined = $state();
 
 	// Desktop double-click zoom; on mobile, tapping the photo instead toggles
 	// `immersive` (chrome hidden). Both hide the surrounding UI via `chromeHidden`.
@@ -57,7 +56,6 @@
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
-		carousel?.scrollToIndex(index);
 	}
 
 	async function handleSave() {
@@ -163,7 +161,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="fixed inset-0 z-50 flex flex-col bg-black"
+	class="fixed inset-0 z-50 bg-black"
 	use:darkOverlay
 	role="dialog"
 	aria-modal="true"
@@ -171,8 +169,34 @@
 	bind:this={rootEl}
 	data-testid="lightbox"
 >
+	<!-- The stage fills the whole screen so the photo centres in the full
+	     viewport; the header and footer controls overlay the letterbox gaps. -->
+	<ImageCarousel
+		bind:index
+		items={photos}
+		paused={zoomed}
+		class="absolute inset-0 cursor-default"
+		onclick={onStageClick}
+		ondblclick={onStageDoubleClick}
+		onmousemove={onStageMouseMove}
+	>
+		{#snippet slide(p, i)}
+			<BlobImage
+				bind:this={blobImages[i]}
+				item={p}
+				alt={p.name}
+				lazy={i !== index}
+				imgClass={`lightbox-image max-h-[80vh] max-w-[90vw] object-contain${zoomed && i === index ? ' zoomed' : ''}`}
+				imgStyle={i === index
+					? `transform-origin: ${originX}% ${originY}%`
+					: ''}
+				onStatus={s => (statuses[i] = s)}
+			/>
+		{/snippet}
+	</ImageCarousel>
+
 	<div
-		class="lightbox-header flex shrink-0 items-center justify-between px-3"
+		class="lightbox-header absolute inset-x-0 top-0 flex items-center justify-between px-3"
 		class:faded={chromeHidden}
 	>
 		<div class="flex min-w-0 items-center gap-2">
@@ -187,7 +211,7 @@
 			{/if}
 			<div class="flex min-w-0 flex-col">
 				<span
-					class="overflow-hidden text-[13px] font-bold text-ellipsis whitespace-nowrap text-white"
+					class="overflow-hidden text-[16px] font-bold text-ellipsis whitespace-nowrap text-white"
 					>{senderName}</span
 				>
 				<MessageTimestamp {timestamp} class="lightbox-time" />
@@ -212,31 +236,6 @@
 			{/if}
 		</div>
 	</div>
-
-	<ImageCarousel
-		bind:this={carousel}
-		bind:index
-		items={photos}
-		paused={zoomed}
-		class="min-h-0 flex-1 cursor-default"
-		onclick={onStageClick}
-		ondblclick={onStageDoubleClick}
-		onmousemove={onStageMouseMove}
-	>
-		{#snippet slide(p, i)}
-			<BlobImage
-				bind:this={blobImages[i]}
-				item={p}
-				alt={p.name}
-				lazy={i !== index}
-				imgClass={`lightbox-image max-h-full max-w-full object-contain${zoomed && i === index ? ' zoomed' : ''}`}
-				imgStyle={i === index
-					? `transform-origin: ${originX}% ${originY}%`
-					: ''}
-				onStatus={s => (statuses[i] = s)}
-			/>
-		{/snippet}
-	</ImageCarousel>
 
 	<!-- Arrows are a desktop (mouse) affordance; on mobile you swipe between
 	     photos. Physical left/right positioning keeps reading order even in RTL,
@@ -267,12 +266,14 @@
 	{/if}
 
 	{#if photos.length > 1}
-		<LightboxThumbnailStrip
-			{photos}
-			{index}
-			onSelect={select}
-			faded={chromeHidden}
-		/>
+		<div class="absolute inset-x-0 bottom-0">
+			<LightboxThumbnailStrip
+				{photos}
+				{index}
+				onSelect={select}
+				faded={chromeHidden}
+			/>
+		</div>
 	{/if}
 
 	{#if isMobile}

@@ -28,12 +28,18 @@
 	// fallback timeout, in case the exact centre is never reached).
 	let scrollTarget: number | null = null;
 	let releaseTimer: ReturnType<typeof setTimeout> | undefined;
+	// Set when `index` changes because the user scrolled, so the auto-scroll
+	// effect doesn't fight the gesture by snapping back to it.
+	let scrolledByUser = false;
+	// The first positioning (e.g. opening on the 4th photo) jumps instantly;
+	// later navigations animate.
+	let initialized = false;
 
 	// Page via scrollIntoView / bounding-box proximity rather than scrollLeft
 	// math: RTL's scrollLeft sign convention differs across engines
 	// (Chromium/Gecko go negative, WebKit/iOS stays positive), and these are
 	// direction-agnostic.
-	export function scrollToIndex(i: number, smooth = true) {
+	function scrollToIndex(i: number, smooth = true) {
 		const target = carouselEl?.children[i] as Element | undefined;
 		if (!target) return;
 		if (smooth) {
@@ -75,8 +81,27 @@
 			}
 			return;
 		}
-		if (nearest !== index && nearest < items.length) index = nearest;
+		if (nearest !== index && nearest < items.length) {
+			scrolledByUser = true;
+			index = nearest;
+		}
 	}
+
+	// Scroll to the active slide whenever `index` is set externally (thumbnail
+	// click, arrow, keyboard) or the slide set changes. Changes that come from
+	// the user scrolling are flagged so we don't fight their gesture.
+	$effect(() => {
+		const target = index;
+		void items.length;
+		if (!carouselEl) return;
+		if (scrolledByUser) {
+			scrolledByUser = false;
+			return;
+		}
+		if (initialized && nearestIndex() === target) return;
+		scrollToIndex(target, initialized);
+		initialized = true;
+	});
 </script>
 
 <div
@@ -89,7 +114,7 @@
 >
 	{#each items as item, i (i)}
 		<div
-			class="flex w-full shrink-0 snap-center snap-always items-center justify-center overflow-hidden"
+			class="relative flex h-full w-full shrink-0 snap-center snap-always items-center justify-center overflow-hidden"
 		>
 			{@render slide(item, i)}
 		</div>

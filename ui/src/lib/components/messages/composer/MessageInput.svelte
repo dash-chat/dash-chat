@@ -6,7 +6,7 @@
 	interface Props {
 		value?: string;
 		placeholder?: string;
-		onSend?: () => void;
+		onSend?: () => Promise<boolean>;
 		onEmojiClick?: () => void;
 	}
 

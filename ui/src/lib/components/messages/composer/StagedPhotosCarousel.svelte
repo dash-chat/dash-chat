@@ -24,8 +24,6 @@
 		onClose,
 	}: Props = $props();
 
-	let carousel: ImageCarousel<File> | undefined = $state();
-
 	const photos = $derived(media?.kind === 'photos' ? media.items : []);
 
 	// Keep the selected index in range as photos are added or removed.
@@ -35,7 +33,6 @@
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
-		carousel?.scrollToIndex(index, false);
 	}
 
 	async function removePhoto(i: number) {
@@ -48,7 +45,6 @@
 		media = { kind: 'photos', items: remaining };
 		await tick();
 		index = Math.min(index, remaining.length - 1);
-		carousel?.scrollToIndex(index, false);
 	}
 
 	function onKeydown(event: KeyboardEvent) {
@@ -67,12 +63,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-	<ImageCarousel
-		bind:this={carousel}
-		bind:index
-		items={photos}
-		class="min-h-0 flex-1"
-	>
+	<ImageCarousel bind:index items={photos} class="min-h-0 flex-1">
 		{#snippet slide(photo)}
 			<img
 				class="rounded-2xl object-contain"
