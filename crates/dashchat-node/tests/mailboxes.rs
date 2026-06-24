@@ -35,13 +35,18 @@ async fn test_mailbox_late_join_toy() {
     );
 
     // Start a test mailbox server
-    let (server, _temp_file) = mailbox_server::test_utils::create_test_server();
+    let (server, _temp_file) = mailbox_server::test_utils::create_test_server().await;
     let url = server.server_address().unwrap().to_string();
     let url = url.trim_end_matches('/').to_string();
 
-    // Create clients pointing to the same server
-    let alice_mailbox = ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url);
-    let bobbi_mailbox = ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url);
+    // Create clients pointing to the same server. The sender_pubkey is a
+    // per-client identity used for blob upload attribution; a fresh random
+    // key per client is sufficient for tests.
+    let dummy_key = || iroh::SecretKey::generate().public();
+    let alice_mailbox =
+        ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
+    let bobbi_mailbox =
+        ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
 
     mailbox_late_join(alice_mailbox, bobbi_mailbox).await;
 }
@@ -51,9 +56,7 @@ async fn mailbox_late_join(
     bobbi_mailbox: impl MailboxClient<MailboxOperation>,
 ) {
     let poll = PollConfig::default();
-    let mut config = NodeConfig::testing();
-    config.mailboxes_config.active_interval = Duration::from_millis(1000);
-    config.mailboxes_config.between_polls_delay = Duration::from_millis(100);
+    let config = NodeConfig::testing();
 
     // Start with no mailbox
     let alice = TestNode::new(config.clone(), "alice").await;
@@ -82,11 +85,11 @@ async fn mailbox_late_join(
     //     .unwrap();
 
     let chat = alice.direct_chat_topic(bobbi.agent_id());
-    alice.send_message(chat, "Hello".into()).await.unwrap();
+    alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
     // Introduce delay to let the first message be stored and force missing synchronization with the second one
 
-    alice.send_message(chat, "Hello2".into()).await.unwrap();
+    alice.send_message_raw(chat, "Hello2".into()).await.unwrap();
 
     println!("=== adding mailboxes ===");
 
@@ -122,7 +125,7 @@ async fn test_mailbox_restart_relay() {
     config.mailboxes_config.between_polls_delay = Duration::from_millis(100);
 
     // Start a test mailbox server
-    let (server, _temp_file) = mailbox_server::test_utils::create_test_server();
+    let (server, _temp_file) = mailbox_server::test_utils::create_test_server().await;
     let url = server.server_address().unwrap().to_string();
     let url = url.trim_end_matches('/').to_string();
 
@@ -140,16 +143,19 @@ async fn test_mailbox_restart_relay() {
         .unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
+    let dummy_key = || iroh::SecretKey::generate().public();
     alice
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
             "mailbox-1".into(),
             &url,
+            dummy_key(),
         ))
         .await;
     bobbi
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
             "mailbox-1".into(),
             &url,
+            dummy_key(),
         ))
         .await;
 
@@ -157,8 +163,14 @@ async fn test_mailbox_restart_relay() {
 
     let chat = alice.direct_chat_topic(bobbi.agent_id());
 
-    alice.send_message(chat, "Hello 1".into()).await.unwrap();
-    alice.send_message(chat, "Hello 2".into()).await.unwrap();
+    alice
+        .send_message_raw(chat, "Hello 1".into())
+        .await
+        .unwrap();
+    alice
+        .send_message_raw(chat, "Hello 2".into())
+        .await
+        .unwrap();
 
     poll.wait_for(|| async {
         (bobbi.get_messages(chat).await.unwrap().len() == 2)
@@ -185,12 +197,14 @@ async fn test_mailbox_restart_relay() {
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
             "mailbox-1".into(),
             &url,
+            dummy_key(),
         ))
         .await;
     bobbi
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
             "mailbox-1".into(),
             &url,
+            dummy_key(),
         ))
         .await;
 
@@ -198,8 +212,14 @@ async fn test_mailbox_restart_relay() {
 
     let chat = alice.direct_chat_topic(bobbi_agent_id);
 
-    alice.send_message(chat, "Hello 3".into()).await.unwrap();
-    alice.send_message(chat, "Hello 4".into()).await.unwrap();
+    alice
+        .send_message_raw(chat, "Hello 3".into())
+        .await
+        .unwrap();
+    alice
+        .send_message_raw(chat, "Hello 4".into())
+        .await
+        .unwrap();
 
     poll.wait_for(|| async {
         let msgs = bobbi.get_messages(chat).await.unwrap();

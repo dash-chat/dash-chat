@@ -37,6 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.db_path.into(),
         args.addr,
         args.push_notifications_url,
+        None,
         signal,
     )
     .await?;

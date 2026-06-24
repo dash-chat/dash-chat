@@ -4,6 +4,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { Sheet, Dialog, Button } from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import SheetHandle from './SheetHandle.svelte';
 
 	interface Props {
 		opened: boolean;
@@ -175,7 +176,7 @@
 {:else}
 	<Sheet class="pb-safe" {opened} onBackdropClick={handleClose}>
 		<div class="flex flex-col items-center px-6 pb-4 gap-4">
-			<div class="sheet-handle"></div>
+			<SheetHandle />
 			{@render content()}
 		</div>
 	</Sheet>

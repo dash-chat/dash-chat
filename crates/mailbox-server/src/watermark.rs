@@ -1,24 +1,24 @@
 use redb::{Database, ReadableDatabase, ReadableTable};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{BlobsKey, SequenceNumber, WatermarksKey, BLOBS_TABLE, WATERMARKS_TABLE};
+use crate::{BlipsKey, SequenceNumber, WatermarksKey, BLIPS_TABLE, WATERMARKS_TABLE};
 
-/// Computes initial watermarks by scanning all existing blobs.
-/// Called once at startup to ensure watermarks are in sync with stored blobs.
+/// Computes initial watermarks by scanning all existing blips.
+/// Called once at startup to ensure watermarks are in sync with stored blips.
 ///
 /// Note: We only need the keys to extract sequence numbers, but redb doesn't
 /// provide a keys-only iterator. Keys and values share the same B-tree pages,
 /// so the page bytes are loaded together. We avoid deserializing values by
 /// dropping the AccessGuard<V> without calling .value().
 pub fn compute_initial_watermarks(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
-    tracing::info!("Computing initial watermarks from existing blobs");
+    tracing::info!("Computing initial watermarks from existing blips");
 
     // Step 1: Collect all sequence numbers per topic:author
     let mut sequences_per_log: BTreeMap<WatermarksKey, BTreeSet<SequenceNumber>> = BTreeMap::new();
 
     {
         let read_txn = db.begin_read()?;
-        let table = read_txn.open_table(BLOBS_TABLE)?;
+        let table = read_txn.open_table(BLIPS_TABLE)?;
 
         // Note: redb's iter() returns (key, value) pairs. We only access the key.
         // The value's AccessGuard is dropped without deserialization.
@@ -26,13 +26,13 @@ pub fn compute_initial_watermarks(db: &Database) -> Result<(), Box<dyn std::erro
             let (key, value) = entry?;
             drop(value);
 
-            let blob_key: BlobsKey = key.value();
-            let watermarks_key = blob_key.watermarks_key();
+            let blip_key: BlipsKey = key.value();
+            let watermarks_key = blip_key.watermarks_key();
 
             sequences_per_log
                 .entry(watermarks_key)
                 .or_default()
-                .insert(blob_key.sequence_number);
+                .insert(blip_key.sequence_number);
         }
     }
 

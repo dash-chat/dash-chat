@@ -3,5 +3,8 @@
 	"identifier": "ios-capability",
 	"windows": ["main"],
 	"platforms": ["iOS"],
-	"permissions": ["ios-photos:default"]
+	"permissions": [
+		"ios-photos:default",
+		"fs:allow-temp-read-recursive"
+	]
 }

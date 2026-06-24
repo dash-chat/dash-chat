@@ -10,7 +10,12 @@
  *   - Navbar chip:    hidden (connected) → disconnected → local → hidden (connected)
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { resumeMailbox, suspendMailbox } from '../setup/mailbox-control';
+import {
+	killMailbox,
+	restartMailbox,
+	resumeMailbox,
+	suspendMailbox,
+} from '../setup/mailbox-control';
 import { type Agent, setupAgent } from '../setup/setup-agents';
 
 async function openOfflineSettings(agent: Agent): Promise<void> {
@@ -116,10 +121,10 @@ describe('Offline UX', () => {
 
 			await indicator.chip.click();
 			await agent1.waitUntil(() => indicator.isDialogOpen());
-			expect(await indicator.dialogTitle.getText()).toBe(
+			await expect(indicator.dialogTitle).toHaveText(
 				await agent1.tr('connectionStatusDisconnectedTitle'),
 			);
-			expect(await indicator.dialogDescription.getText()).toBe(
+			await expect(indicator.dialogDescription).toHaveText(
 				await agent1.tr('connectionStatusDisconnectedDescription'),
 			);
 
@@ -150,10 +155,10 @@ describe('Offline UX', () => {
 
 				await indicator.chip.click();
 				await agent1.waitUntil(() => indicator.isDialogOpen());
-				expect(await indicator.dialogTitle.getText()).toBe(
+				await expect(indicator.dialogTitle).toHaveText(
 					await agent1.tr('connectionStatusLocalTitle'),
 				);
-				expect(await indicator.dialogDescription.getText()).toBe(
+				await expect(indicator.dialogDescription).toHaveText(
 					await agent1.tr('connectionStatusLocalDescription', { count: 1 }),
 				);
 
@@ -195,11 +200,13 @@ describe('Offline UX', () => {
 	// unreachable server it can't be re-resolved — but the delivered status is
 	// recorded in persisted sync state and must survive regardless.
 	describe('app restarts while the cloud mailbox is unreachable', () => {
-		after(() => {
-			if (mailboxSuspended) {
-				resumeMailbox();
-				mailboxSuspended = false;
-			}
+		let mailboxKilled = false;
+
+		after(async function () {
+			if (!mailboxKilled) return;
+			this.timeout(60_000);
+			await restartMailbox();
+			mailboxKilled = false;
 		});
 
 		it('a delivered message still shows the cloud check after restarting with the mailbox down', async function () {
@@ -213,12 +220,12 @@ describe('Offline UX', () => {
 				{ timeout: 30_000 },
 			);
 
-			// Make the cloud mailbox unreachable, then cold-start the app. On boot
-			// the app re-resolves the cloud mailbox id from the live server; with
-			// the server down it never can, but the delivered status lives in
+			// Kill the cloud mailbox so it is unreachable, then cold-start the app.
+			// On boot the app re-resolves the cloud mailbox id from the live server;
+			// with the server down it never can, but the delivered status lives in
 			// persisted sync state and must survive.
-			suspendMailbox();
-			mailboxSuspended = true;
+			killMailbox();
+			mailboxKilled = true;
 			await agent1.restart();
 
 			await agent1.homePage.ready();

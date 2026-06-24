@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
+use futures::{Stream, StreamExt};
 use p2panda::VerifyingKey;
-use p2panda::operation::LogId;
+use p2panda::operation::{LogId, Operation};
 use p2panda_core::SeqNum;
 use p2panda_store::SqliteStore;
 use sqlx::prelude::*;
@@ -52,6 +53,47 @@ pub async fn dump_logs(db: &SqliteStore) -> Result<Vec<(DeviceId, LogId, SeqNum)
     }
 
     Ok(result)
+}
+
+/// Database representation of a single operation, mirroring p2panda-store's
+/// private `OperationRow`.
+#[derive(FromRow)]
+struct OperationRow {
+    hash: String,
+    header: Vec<u8>,
+    body: Option<Vec<u8>>,
+}
+
+impl TryFrom<OperationRow> for Operation {
+    type Error = anyhow::Error;
+
+    fn try_from(row: OperationRow) -> Result<Self, Self::Error> {
+        Ok(Operation {
+            hash: row.hash.parse()?,
+            header: p2panda_core::cbor::decode_cbor(&*row.header)?,
+            body: row.body.map(Into::into),
+        })
+    }
+}
+
+/// Return a stream over every operation in the database, deserialized into [`Operation`].
+///
+/// Rows are fetched lazily from a pooled connection rather than buffered into a `Vec`.
+pub(super) fn get_all_operations_not_fully_sorted(
+    db: &SqliteStore,
+) -> impl Stream<Item = Result<Operation, anyhow::Error>> + '_ {
+    let query_str = "
+        SELECT
+            hash, header, body
+        FROM
+            operations_v1
+        ORDER BY
+            log_id ASC,
+            seq_num ASC
+        ";
+    sqlx::query_as::<_, OperationRow>(query_str)
+        .fetch(db.pool())
+        .map(|row| Operation::try_from(row?))
 }
 
 /// Get the "height" (the highest sequence number) of each log of the given ID, paired with its author.

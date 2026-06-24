@@ -3,6 +3,7 @@
 	import { mdiImage, mdiFile } from '@mdi/js';
 	import { pickMedia } from '$lib/utils/media';
 	import LabelledIconButton from '$lib/components/contacts/LabelledIconButton.svelte';
+	import RecentPhotosStrip from './RecentPhotosStrip.svelte';
 
 	interface Props {
 		opened: boolean;
@@ -24,21 +25,23 @@
 
 {#if opened}
 	<div
-		class="flex gap-5 bg-page-surface px-5 pt-4 pb-safe-4"
-		style="justify-content: space-evenly"
+		class="bg-page-surface pt-3 pb-safe-2"
 		data-testid="message-input-media-panel"
 	>
-		<LabelledIconButton
-			label={m.gallery()}
-			icon={mdiImage}
-			testId="message-input-attach-photos"
-			onClick={() => pick('image', true)}
-		/>
-		<LabelledIconButton
-			label={m.attachFile()}
-			icon={mdiFile}
-			testId="message-input-attach-file"
-			onClick={() => pick('document', false)}
-		/>
+		<RecentPhotosStrip {onFiles} />
+		<div class="flex gap-5 px-5 pt-1" style="justify-content: space-evenly">
+			<LabelledIconButton
+				label={m.gallery()}
+				icon={mdiImage}
+				testId="message-input-attach-photos"
+				onClick={() => pick('image', true)}
+			/>
+			<LabelledIconButton
+				label={m.attachFile()}
+				icon={mdiFile}
+				testId="message-input-attach-file"
+				onClick={() => pick('document', false)}
+			/>
+		</div>
 	</div>
 {/if}

@@ -8,11 +8,11 @@ import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import {
 	ChatReaction,
 	ChatSummary,
-	Media,
-	MessageContent,
+	MediaAttachment,
 	MessagesStore,
+	OutgoingMedia,
 	Payload,
-	getMessageMedia,
+	mediaBundleToAttachment,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IDirectChatClient } from './direct-chat-client';
@@ -21,7 +21,7 @@ export interface Message {
 	hash: string;
 	content: {
 		message: string;
-		media: Media | null;
+		media: MediaAttachment | null;
 	};
 	timestamp: number;
 	author: DeviceId;
@@ -66,7 +66,7 @@ export class DirectChatStore implements MessagesStore {
 							hash: operation.hash,
 							content: {
 								message: body.payload.payload.message,
-								media: getMessageMedia(body.payload.payload),
+								media: mediaBundleToAttachment(body.payload.payload.media),
 							},
 							author,
 							seqNum: operation.header.seq_num,
@@ -148,17 +148,11 @@ export class DirectChatStore implements MessagesStore {
 
 	async sendMessage(input: {
 		message: string;
-		media: Media | null;
+		media: OutgoingMedia | null;
 	}): Promise<Hash> {
 		const chatId = await this.chatId();
-		const content: MessageContent = {
-			v: '1',
-			message: input.message,
-			media: input.media,
-		};
-		const hash = await this.client.sendMessage(chatId, content);
 
-		return hash;
+		return this.client.sendMessage(chatId, input.message, input.media);
 	}
 
 	readMessageHashes = reactive(async () => {

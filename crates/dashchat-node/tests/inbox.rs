@@ -48,7 +48,7 @@ async fn test_inbox_2() {
     tracing::info!(topic = ?direct_chat_topic.aliased(), "direct chat id");
 
     alice
-        .send_message(direct_chat_topic, "Hello".into())
+        .send_message_raw(direct_chat_topic, "Hello".into())
         .await
         .unwrap();
 }
@@ -84,7 +84,7 @@ async fn test_p2p_inbox_2() {
     tracing::info!(topic = ?direct_chat_topic.aliased(), "direct chat id");
 
     alice
-        .send_message(direct_chat_topic, "Hello".into())
+        .send_message_raw(direct_chat_topic, "Hello".into())
         .await
         .unwrap();
 }
