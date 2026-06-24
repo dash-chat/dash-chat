@@ -52,7 +52,7 @@
 
 <style>
 	.lightbox-filmstrip {
-		padding-bottom: calc(0.625rem + env(safe-area-inset-bottom, 0px));
+		padding-bottom: 0.625rem;
 		transition: opacity 0.15s ease;
 	}
 

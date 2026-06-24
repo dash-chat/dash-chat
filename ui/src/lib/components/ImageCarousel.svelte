@@ -98,7 +98,11 @@
 			scrolledByUser = false;
 			return;
 		}
-		if (initialized && nearestIndex() === target) return;
+		// Don't skip while a programmatic scroll is still animating: the carousel
+		// may be near `target` right now but still gliding toward an older target,
+		// so this newer navigation must re-aim to win.
+		if (initialized && scrollTarget === null && nearestIndex() === target)
+			return;
 		scrollToIndex(target, initialized);
 		initialized = true;
 	});

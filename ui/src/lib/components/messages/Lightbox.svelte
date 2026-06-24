@@ -186,7 +186,7 @@
 				item={p}
 				alt={p.name}
 				lazy={i !== index}
-				imgClass={`lightbox-image max-h-[80vh] max-w-[90vw] object-contain${zoomed && i === index ? ' zoomed' : ''}`}
+				imgClass={`lightbox-image max-h-full max-w-full object-contain${zoomed && i === index ? ' zoomed' : ''}`}
 				imgStyle={i === index
 					? `transform-origin: ${originX}% ${originY}%`
 					: ''}
@@ -196,7 +196,7 @@
 	</ImageCarousel>
 
 	<div
-		class="lightbox-header absolute inset-x-0 top-0 flex items-center justify-between px-3"
+		class="lightbox-header absolute inset-x-0 top-0 flex items-center justify-between bg-black/40 px-3"
 		class:faded={chromeHidden}
 	>
 		<div class="flex min-w-0 items-center gap-2">
@@ -265,25 +265,24 @@
 		/>
 	{/if}
 
-	{#if photos.length > 1}
-		<div class="absolute inset-x-0 bottom-0">
-			<LightboxThumbnailStrip
-				{photos}
-				{index}
-				onSelect={select}
-				faded={chromeHidden}
-			/>
+	{#if isMobile || photos.length > 1}
+		<div
+			class="lightbox-bottom-bar absolute inset-x-0 bottom-0 bg-black/40 pb-[env(safe-area-inset-bottom)]"
+			class:faded={chromeHidden}
+		>
+			{#if photos.length > 1}
+				<LightboxThumbnailStrip {photos} {index} onSelect={select} />
+			{/if}
+			{#if isMobile}
+				<div class="flex px-3 pt-1">
+					<ShareButton
+						onClick={handleShare}
+						testid="lightbox-share"
+						class="!p-2 opacity-85 hover:opacity-100"
+					/>
+				</div>
+			{/if}
 		</div>
-	{/if}
-
-	{#if isMobile}
-		<ShareButton
-			onClick={handleShare}
-			testid="lightbox-share"
-			class="lightbox-share absolute start-3 !p-2 opacity-85 hover:opacity-100 {chromeHidden
-				? '!opacity-0 pointer-events-none'
-				: ''}"
-		/>
 	{/if}
 </div>
 
@@ -310,8 +309,7 @@
 		cursor: zoom-in;
 	}
 
-	:global(.lightbox-share) {
-		bottom: calc(0.625rem + env(safe-area-inset-bottom, 0px));
+	.lightbox-bottom-bar {
 		transition: opacity 0.15s ease;
 	}
 

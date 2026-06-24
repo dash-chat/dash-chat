@@ -12,6 +12,11 @@
 
 	let { opened = $bindable(false), onFiles }: Props = $props();
 
+	function selectFiles(files: File[]) {
+		opened = false;
+		onFiles(files);
+	}
+
 	async function pick(mode: 'image' | 'document', multiple: boolean) {
 		opened = false;
 		try {
@@ -28,7 +33,7 @@
 		class="bg-page-surface pt-3 pb-safe-2"
 		data-testid="message-input-media-panel"
 	>
-		<RecentPhotosStrip {onFiles} />
+		<RecentPhotosStrip onFiles={selectFiles} />
 		<div class="flex gap-5 px-5 pt-1" style="justify-content: space-evenly">
 			<LabelledIconButton
 				label={m.gallery()}

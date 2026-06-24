@@ -54,10 +54,15 @@
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
 	let showMediaPanel = $state(false);
+	let sending = false;
 
 	/** Returns whether the message was sent (so callers can keep the draft on failure). */
 	async function send(): Promise<boolean> {
-		if (!hasContent) return false;
+		// Guard against concurrent sends: the button shows a spinner, but the
+		// Enter-key path goes straight here, so hammering Enter during a slow
+		// send would otherwise fire multiple store.sendMessage calls.
+		if (!hasContent || sending) return false;
+		sending = true;
 		const message = value;
 		const draft = media;
 		try {
@@ -85,6 +90,8 @@
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to send message', e);
 			return false;
+		} finally {
+			sending = false;
 		}
 	}
 
