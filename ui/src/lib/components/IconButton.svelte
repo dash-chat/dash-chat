@@ -9,6 +9,8 @@
 		label: string;
 		testid?: string;
 		expanded?: boolean;
+		/** Render as a filled circular button (fixed size + translucent surface). */
+		circle?: boolean;
 		iconClass?: string;
 		class?: string;
 	}
@@ -19,9 +21,16 @@
 		label,
 		testid,
 		expanded,
+		circle = false,
 		iconClass = 'text-2xl',
 		class: className = '',
 	}: Props = $props();
+
+	const circleClass = $derived(
+		circle
+			? '!h-10 !w-10 !bg-black/10 hover:!bg-black/15 dark:!bg-white/10 dark:hover:!bg-white/20'
+			: '',
+	);
 </script>
 
 <Button
@@ -31,7 +40,7 @@
 	aria-label={label}
 	aria-expanded={expanded}
 	data-testid={testid}
-	class="!rounded-full !p-0 !text-inherit opacity-60 transition hover:opacity-90 {className}"
+	class="!rounded-full !p-0 !text-inherit opacity-60 transition hover:opacity-90 {circleClass} {className}"
 >
 	<wa-icon class={iconClass} src={wrapPathInSvg(icon)}></wa-icon>
 </Button>

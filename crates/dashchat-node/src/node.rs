@@ -1006,9 +1006,9 @@ impl Node {
         };
         if self.is_tombstoneable(&payload) {
             let hash = operation.hash;
+            self.local_store.add_tombstone(topic, hash.clone()).await?;
             self.unprocess_app(operation).await?;
             self.op_store.delete_body(&hash).await?;
-            self.local_store.add_tombstone(topic, hash).await?;
         } else {
             tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
         }
@@ -1317,7 +1317,10 @@ impl Node {
                 for photo in photos {
                     let size = photo.data.len() as u64;
                     ensure_blob_size(size, &photo.name)?;
-                    let hash = self.blob_sync.store_blob(topic, photo.data).await?;
+                    let hash = self
+                        .blob_sync
+                        .store_blob(topic, self.device_id(), photo.data)
+                        .await?;
                     items.push(MediaMetadata {
                         name: photo.name,
                         mime_type: photo.mime_type,
@@ -1330,7 +1333,10 @@ impl Node {
             OutgoingMedia::File { file } => {
                 let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
-                let hash = self.blob_sync.store_blob(topic, file.data).await?;
+                let hash = self
+                    .blob_sync
+                    .store_blob(topic, self.device_id(), file.data)
+                    .await?;
                 items.push(MediaMetadata {
                     name: file.name,
                     mime_type: file.mime_type,

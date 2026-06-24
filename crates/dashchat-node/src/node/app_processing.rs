@@ -316,7 +316,8 @@ impl Node {
         Ok(())
     }
 
-    /// Undo the effects of processing an app-layer operation.
+    /// Undo the effects of processing an app-layer operation,
+    /// reverting to a state as if the operation were never processed.
     /// This is done when an operation payload is deleted.
     /// Only tombstoneable operations can be unprocessed.
     pub(crate) async fn unprocess_app(&self, operation: &Operation) -> anyhow::Result<()> {
@@ -336,7 +337,9 @@ impl Node {
                     };
                     if let Some(media) = m.media() {
                         let hashes: Vec<_> = media.iter().map(|item| item.hash).collect();
-                        self.blob_sync.delete_blobs(topic, hashes).await;
+                        self.blob_sync
+                            .delete_blobs(topic, author.into(), hashes)
+                            .await;
                     }
                 }
                 _ => {

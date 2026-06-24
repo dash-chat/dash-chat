@@ -58,7 +58,7 @@
 
 {#if status === 'error'}
 	<span
-		class="blob-image-retry {imgClass}"
+		class="absolute inset-0 flex min-h-16 min-w-16 cursor-pointer items-center justify-center border-none p-0 text-black/50 dark:text-white/60 {imgClass}"
 		style={imgStyle}
 		title={m.imageLoadFailedRetry()}
 		data-testid="blob-image-retry"
@@ -79,47 +79,12 @@
 		onerror={() => (status = 'error')}
 	/>
 	{#if status === 'loading'}
-		<span
-			class="blob-image-loading"
+		<div
+			class="pointer-events-none absolute inset-0 flex items-center justify-center"
 			aria-busy="true"
 			data-testid="blob-image-loading"
 		>
 			<Preloader class="w-6 h-6" />
-		</span>
+		</div>
 	{/if}
 {/if}
-
-<style>
-	.blob-image-loading {
-		position: absolute;
-		inset: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: rgba(128, 128, 128, 0.08);
-		pointer-events: none;
-	}
-
-	.blob-image-retry {
-		position: absolute;
-		inset: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 64px;
-		min-height: 64px;
-		border: none;
-		padding: 0;
-		background: rgba(128, 128, 128, 0.12);
-		color: rgba(0, 0, 0, 0.5);
-		cursor: pointer;
-	}
-
-	:global(.dark) .blob-image-loading {
-		background: rgba(255, 255, 255, 0.06);
-	}
-
-	:global(.dark) .blob-image-retry {
-		color: rgba(255, 255, 255, 0.6);
-	}
-</style>
