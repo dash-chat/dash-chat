@@ -11,8 +11,12 @@ type DeepLinkHandler = {
 
 const handlers: DeepLinkHandler[] = [addContact];
 
-const HTTPS_DEEP_LINK_BASE_URL = 'https://dashchat\\.org';
-const SCHEME_DEEP_LINK_BASE_URL = 'dash-chat:/';
+function escapeRegex(s: string): string {
+	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const HTTPS_DEEP_LINK_BASE_URL = escapeRegex('https://dashchat.org');
+const SCHEME_DEEP_LINK_BASE_URL = escapeRegex('dash-chat:/');
 
 function matchesDeepLinkPath(
 	url: string,
@@ -20,11 +24,13 @@ function matchesDeepLinkPath(
 ): Record<string, string> | null {
 	const names: string[] = [];
 	const pattern = path
-		.replace(/\//g, '\\/')
-		.replace(/\{\{(\w+)\}\}/g, (_, name: string) => {
-			names.push(name);
-			return '([^\\/?#]+)';
-		});
+		.split(/\{\{(\w+)\}\}/g)
+		.map((chunk, i) => {
+			if (i % 2 === 0) return escapeRegex(chunk);
+			names.push(chunk);
+			return '([^/?#]+)';
+		})
+		.join('');
 	const match = url.match(
 		new RegExp(
 			`^(?:${HTTPS_DEEP_LINK_BASE_URL}|${SCHEME_DEEP_LINK_BASE_URL})${pattern}(?:[?#].*)?$`,
