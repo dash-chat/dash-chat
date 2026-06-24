@@ -76,20 +76,48 @@ pub enum OutgoingMedia {
 pub type MediaBundle = Vec<MediaMetadata>;
 
 /// The metadata to refer to a media blob, which appears in the message content.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From)]
-pub struct MediaMetadata {
-    pub name: String,
-    pub mime_type: String,
-    pub size: u64,
-    pub kind: MediaMetaKind,
-    // Serialize as a CBOR byte string. `iroh_blobs::Hash`'s own non-human-readable
-    // impl encodes a 32-element array, which serde's untagged-enum buffering (used
-    // by `dashchat_compat::Compat`) cannot reconstruct from CBOR.
-    //
-    // TODO: consider reworking Compat to remove this complexity, since we're
-    //       not really getting what we want from Compat anyway.
-    #[serde(with = "hash_bytes")]
-    pub hash: iroh_blobs::Hash,
+/// Each variant carries only what its kind needs
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum MediaMetadata {
+    Photo {
+        name: String,
+        mime_type: String,
+        size: u64,
+        // Serialize as a CBOR byte string. `iroh_blobs::Hash`'s own non-human-readable
+        // impl encodes a 32-element array, which serde's untagged-enum buffering (used
+        // by `dashchat_compat::Compat`) cannot reconstruct from CBOR.
+        //
+        // TODO: consider reworking Compat to remove this complexity, since we're
+        //       not really getting what we want from Compat anyway.
+        #[serde(with = "hash_bytes")]
+        hash: iroh_blobs::Hash,
+    },
+    File {
+        name: String,
+        mime_type: String,
+        size: u64,
+        #[serde(with = "hash_bytes")]
+        hash: iroh_blobs::Hash,
+    },
+    VoiceNote {
+        mime_type: String,
+        size: u64,
+        duration_ms: u32,
+        waveform: Vec<u8>,
+        #[serde(with = "hash_bytes")]
+        hash: iroh_blobs::Hash,
+    },
+}
+
+impl MediaMetadata {
+    pub fn hash(&self) -> iroh_blobs::Hash {
+        match self {
+            MediaMetadata::Photo { hash, .. }
+            | MediaMetadata::File { hash, .. }
+            | MediaMetadata::VoiceNote { hash, .. } => *hash,
+        }
+    }
 }
 
 mod hash_bytes {
@@ -149,13 +177,6 @@ mod hash_bytes {
 
         deserializer.deserialize_any(HashVisitor)
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum MediaMetaKind {
-    Photo,
-    File,
-    VoiceNote,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Deref, From)]

@@ -46,7 +46,7 @@ export class AttachmentTooLargeError extends Error {
 export type DraftMedia =
 	| { kind: 'photos'; items: File[] }
 	| { kind: 'file'; file: File }
-	| { kind: 'voice'; voice: DraftVoiceNote };
+	| { kind: 'voice_note'; voice: DraftVoiceNote };
 
 export const MAX_STAGED_PHOTOS = 32;
 
@@ -161,10 +161,10 @@ async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 		);
 		return { kind: 'photos', photos };
 	}
-	if (draft.kind === 'voice') {
+	if (draft.kind === 'voice_note') {
 		return {
-			kind: 'voice',
-			voice: {
+			kind: 'voice_note',
+			voice_note: {
 				data: draft.voice.bytes,
 				mime_type: draft.voice.mimeType,
 				duration_ms: draft.voice.durationMs,
@@ -184,8 +184,8 @@ function totalMediaBytes(media: OutgoingMedia): number {
 	if (media.kind === 'photos') {
 		return media.photos.reduce((sum, p) => sum + p.data.byteLength, 0);
 	}
-	if (media.kind === 'voice') {
-		return media.voice.data.byteLength;
+	if (media.kind === 'voice_note') {
+		return media.voice_note.data.byteLength;
 	}
 	return media.file.data.byteLength;
 }

@@ -47,7 +47,7 @@
 	}
 </script>
 
-{#if media && media.kind !== 'voice'}
+{#if media && media.kind !== 'voice_note'}
 	<div class="pt-2" data-testid="message-input-media-preview">
 		{#if showClearAll}
 			<div class="flex justify-end pb-2 pe-2">

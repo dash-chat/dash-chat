@@ -28,7 +28,7 @@
 	const hasText = $derived(!!message.content.message);
 	const isPhotoOnly = $derived(media?.kind === 'photos' && !hasText);
 	const isFileOnly = $derived(media?.kind === 'file' && !hasText);
-	const isVoiceOnly = $derived(media?.kind === 'voice' && !hasText);
+	const isVoiceOnly = $derived(media?.kind === 'voice_note' && !hasText);
 
 	let metadataWidth = $state(0);
 </script>
@@ -64,7 +64,7 @@
 			metadata={isFileOnly ? metadata : undefined}
 		/>
 	</div>
-{:else if media?.kind === 'voice'}
+{:else if media?.kind === 'voice_note'}
 	<div class="media voice">
 		<VoiceNoteAttachment
 			voice={media.voice}

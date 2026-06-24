@@ -46,7 +46,7 @@ impl MailboxItem for MailboxOperation {
         match payload {
             crate::Payload::Chat(crate::ChatPayload::Message(m)) => m
                 .media()
-                .map(|items| items.iter().map(|item| item.hash).collect())
+                .map(|items| items.iter().map(|item| item.hash()).collect())
                 .unwrap_or_default(),
             _ => Vec::new(),
         }
@@ -99,11 +99,10 @@ mod tests {
 
         let content = ChatMessageContent::new(
             "hello",
-            Some(vec![MediaMetadata {
+            Some(vec![MediaMetadata::Photo {
                 name: "photo.jpg".into(),
                 mime_type: "image/jpeg".into(),
                 size: 1024,
-                kind: MediaMetaKind::Photo,
                 hash: media_hash,
             }]),
         );

@@ -33,11 +33,10 @@ mod tests {
 
     #[test]
     fn chat_message_v1_media_roundtrip() {
-        let item = MediaMetadata {
+        let item = MediaMetadata::Photo {
             name: "red.png".to_string(),
             mime_type: "image/png".to_string(),
             size: 1234,
-            kind: MediaMetaKind::Photo,
             hash: iroh_blobs::Hash::new(b"hashhashhash"),
         };
         let v1 = ChatMessageContent::new("hello", Some(MediaBundle::from(vec![item.clone()])));
@@ -50,7 +49,7 @@ mod tests {
         let json = serde_json::to_value(&v1).unwrap();
         assert_eq!(
             json["media"][0]["hash"],
-            serde_json::json!(item.hash.to_string())
+            serde_json::json!(item.hash().to_string())
         );
     }
 
@@ -95,43 +94,28 @@ mod tests {
     }
 
     fn voice_message() -> ChatMessageContent {
-        ChatMessageContent::new(
-            "",
-            Media::Voice {
-                voice: VoiceNote {
-                    data: vec![1, 2, 3],
-                    mime_type: "audio/wav".to_string(),
-                    duration_ms: 1000,
-                    waveform: vec![0, 128, 255],
-                },
-            },
-        )
+        let item = MediaMetadata::VoiceNote {
+            mime_type: "audio/wav".to_string(),
+            size: 3,
+            duration_ms: 1000,
+            waveform: vec![0, 128, 255],
+            hash: iroh_blobs::Hash::new(b"voicehash"),
+        };
+        ChatMessageContent::new("", Some(MediaBundle::from(vec![item])))
     }
 
     #[test]
-    fn version_convert_voice_to_messaging_2_ok() {
+    fn chat_message_v1_voice_roundtrip() {
         let voice = voice_message();
-        let result = voice.to_version(&Capabilities { messaging: 2 }).unwrap();
-        assert_eq!(result, voice);
-    }
-
-    #[test]
-    fn version_convert_voice_to_messaging_1_lossy() {
-        let result = voice_message().to_version(&Capabilities { messaging: 1 });
-        assert_eq!(result, Err(VersionConvertError::Lossy));
+        let bytes = encode_cbor(&voice).unwrap();
+        let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
+        assert_eq!(decoded, voice);
     }
 
     #[test]
     fn version_convert_voice_to_messaging_0_lossy() {
         let result = voice_message().to_version(&Capabilities::zero());
         assert_eq!(result, Err(VersionConvertError::Lossy));
-    }
-
-    #[test]
-    fn version_convert_photos_to_messaging_2_ok() {
-        let photos = ChatMessageContent::new("caption", Media::Photos { photos: vec![] });
-        let result = photos.to_version(&Capabilities { messaging: 2 }).unwrap();
-        assert_eq!(result, photos);
     }
 
     #[tokio::test(flavor = "multi_thread")]

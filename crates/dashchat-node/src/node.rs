@@ -36,7 +36,7 @@ use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
+    DirectChatId, MediaBundle, MediaMetadata, OutgoingFile, OutgoingMedia,
 };
 use dashchat_utils::NETWORK_ID;
 
@@ -1150,12 +1150,11 @@ impl Node {
                     let size = photo.data.len() as u64;
                     ensure_blob_size(size, &photo.name)?;
                     let tag = self.blob_sync.blobs.add_bytes(photo.data).await?;
-                    items.push(MediaMetadata {
+                    items.push(MediaMetadata::Photo {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
                         hash: tag.hash,
-                        kind: MediaMetaKind::Photo,
                     });
                 }
             }
@@ -1163,12 +1162,23 @@ impl Node {
                 let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
                 let tag = self.blob_sync.blobs.add_bytes(file.data).await?;
-                items.push(MediaMetadata {
+                items.push(MediaMetadata::File {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
                     hash: tag.hash,
-                    kind: MediaMetaKind::File,
+                });
+            }
+            OutgoingMedia::VoiceNote { voice_note } => {
+                let size = voice_note.data.len() as u64;
+                ensure_blob_size(size, "voice note")?;
+                let tag = self.blob_sync.blobs.add_bytes(voice_note.data).await?;
+                items.push(MediaMetadata::VoiceNote {
+                    mime_type: voice_note.mime_type,
+                    size,
+                    duration_ms: voice_note.duration_ms,
+                    waveform: voice_note.waveform,
+                    hash: tag.hash,
                 });
             }
         }
@@ -1223,44 +1233,63 @@ impl Node {
             let data = self
                 .blob_sync
                 .blobs
-                .get_bytes(item.hash)
+                .get_bytes(item.hash())
                 .await
                 .context(format!("failed to load blob: {item:?}"))?;
             items.push((item, data));
         }
 
-        let (photos, mut other): (Vec<_>, Vec<_>) = items
-            .into_iter()
-            .partition(|(item, _)| item.kind == MediaMetaKind::Photo);
-
-        if other.len() > 1 {
-            return Err(anyhow::anyhow!(
-                "multiple files are not supported. photos: {photos:?}, other: {other:?}",
-            ));
-        } else if photos.len() >= 1 && other.len() == 1 {
-            return Err(anyhow::anyhow!(
-                "photos and other media in the same message are not supported. photos: {photos:?}, other: {other:?}",
-            ));
-        } else if other.len() == 1 {
-            let (item, data) = other.pop().unwrap();
-            return Ok(OutgoingMedia::File {
-                file: OutgoingFile {
-                    data: data.to_vec(),
-                    name: item.name,
-                    mime_type: item.mime_type,
-                },
-            });
-        } else {
-            let photos = photos
-                .into_iter()
-                .map(|(item, data)| crate::chat::OutgoingPhoto {
-                    data: data.to_vec(),
-                    name: item.name,
-                    mime_type: item.mime_type,
-                })
-                .collect();
-            return Ok(OutgoingMedia::Photos { photos });
+        // A voice note or a file is always a single-item bundle; photos may be many.
+        if items.len() == 1
+            && matches!(
+                items[0].0,
+                MediaMetadata::VoiceNote { .. } | MediaMetadata::File { .. }
+            )
+        {
+            let (item, data) = items.pop().unwrap();
+            return match item {
+                MediaMetadata::VoiceNote {
+                    mime_type,
+                    duration_ms,
+                    waveform,
+                    ..
+                } => Ok(OutgoingMedia::VoiceNote {
+                    voice_note: crate::chat::OutgoingVoiceNote {
+                        data: data.to_vec(),
+                        mime_type,
+                        duration_ms,
+                        waveform,
+                    },
+                }),
+                MediaMetadata::File {
+                    name, mime_type, ..
+                } => Ok(OutgoingMedia::File {
+                    file: OutgoingFile {
+                        data: data.to_vec(),
+                        name,
+                        mime_type,
+                    },
+                }),
+                MediaMetadata::Photo { .. } => unreachable!(),
+            };
         }
+
+        let photos = items
+            .into_iter()
+            .map(|(item, data)| match item {
+                MediaMetadata::Photo {
+                    name, mime_type, ..
+                } => Ok(crate::chat::OutgoingPhoto {
+                    data: data.to_vec(),
+                    name,
+                    mime_type,
+                }),
+                other => Err(anyhow::anyhow!(
+                    "unsupported media combination in a single message: {other:?}"
+                )),
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(OutgoingMedia::Photos { photos })
     }
 }
 

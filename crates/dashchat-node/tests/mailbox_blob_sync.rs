@@ -121,7 +121,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
         .into_iter()
         .find_map(|m| m.content.media().cloned())
         .expect("alice's message carries media metadata");
-    let hash = meta.first().expect("at least one media item").hash;
+    let hash = meta.first().expect("at least one media item").hash();
 
     poll.wait_for(|| async {
         relay

@@ -41,9 +41,12 @@ export interface FileAttachment {
 }
 
 /**
- * A voice note. `data` is a self-contained audio file (16 kHz mono WAV); see
- * `Photo` for the `data`/`waveform` byte shape. `waveform` holds downsampled,
- * peak-normalized amplitude bars (0..=255) for the scrubber UI.
+ * A renderable voice note. Like `PhotoAttachment` it carries only the blob
+ * `hash` and metadata — the audio (a self-contained 16 kHz mono WAV) lives in
+ * the iroh-blobs store and is loaded lazily via the `irohblob://` URI scheme.
+ * `waveform` holds downsampled, peak-normalized amplitude bars (0..=255) for the
+ * scrubber UI, carried in the message metadata so it renders before the audio
+ * downloads.
  */
 export interface VoiceNote {
 	hash: Hash;
@@ -53,14 +56,14 @@ export interface VoiceNote {
 }
 
 /**
- * Renderable media attached to a chat message. A message has either a set of
- * photos or a single file — not both. Built from a log's `MediaMetaCollection`
- * via `mediaMetaToMedia`; carries hashes, not bytes.
+ * Renderable media attached to a chat message: a set of photos, a single file,
+ * or a single voice note — never a mix. Built from a log's `MediaBundle` via
+ * `mediaBundleToAttachment`; carries hashes, not bytes.
  */
 export type MediaAttachment =
 	| { kind: 'photos'; photos: PhotoAttachment[] }
 	| { kind: 'file'; file: FileAttachment }
-	| { kind: 'voice_note'; file: VoiceNote };
+	| { kind: 'voice_note'; voice_note: VoiceNote };
 
 /**
  * Raw bytes leaving the composer for the backend to store. `data` carries raw
@@ -93,20 +96,25 @@ export interface OutgoingVoiceNote {
 	waveform: Uint8Array;
 }
 
-export type MediaMetaKind = 'Photo' | 'File';
-
 /**
  * Metadata for a single stored blob. A message log carries these in place of
  * the raw bytes; the bytes live in the iroh-blobs store and are fetched lazily
- * via the `irohblob://` URI scheme. Matches `dashchat_node::MediaMetaItem`.
+ * via the `irohblob://` URI scheme. Mirrors the `#[serde(tag = "kind")]` enum
+ * `dashchat_node::MediaMetadata`: photos/files reference their blob by `hash`,
+ * while voice notes also carry `duration_ms`/`waveform` so the scrubber renders
+ * without first fetching the audio.
  */
-export interface MediaMetadata {
-	name: string;
-	mime_type: string;
-	size: number;
-	kind: MediaMetaKind;
-	hash: Hash;
-}
+export type MediaMetadata =
+	| { kind: 'Photo'; name: string; mime_type: string; size: number; hash: Hash }
+	| { kind: 'File'; name: string; mime_type: string; size: number; hash: Hash }
+	| {
+			kind: 'VoiceNote';
+			mime_type: string;
+			size: number;
+			duration_ms: number;
+			waveform: Uint8Array;
+			hash: Hash;
+	  };
 
 /** Matches `dashchat_node::MediaBundle`, which serializes as a flat array. */
 export type MediaBundle = MediaMetadata[];
@@ -121,8 +129,20 @@ export function mediaBundleToAttachment(
 	meta: MediaBundle | null | undefined,
 ): MediaAttachment | null {
 	if (!meta || meta.length === 0) return null;
+	const voiceNote = meta.find(item => item.kind === 'VoiceNote');
+	if (voiceNote?.kind === 'VoiceNote') {
+		return {
+			kind: 'voice_note',
+			voice_note: {
+				hash: voiceNote.hash,
+				mime_type: voiceNote.mime_type,
+				duration_ms: voiceNote.duration_ms,
+				waveform: voiceNote.waveform,
+			},
+		};
+	}
 	const file = meta.find(item => item.kind === 'File');
-	if (file) {
+	if (file?.kind === 'File') {
 		return {
 			kind: 'file',
 			file: {
@@ -133,12 +153,16 @@ export function mediaBundleToAttachment(
 			},
 		};
 	}
-	const photos: PhotoAttachment[] = meta.map(item => ({
-		name: item.name,
-		mime_type: item.mime_type,
-		size: item.size,
-		hash: item.hash,
-	}));
+	const photos: PhotoAttachment[] = [];
+	for (const item of meta) {
+		if (item.kind !== 'Photo') continue;
+		photos.push({
+			name: item.name,
+			mime_type: item.mime_type,
+			size: item.size,
+			hash: item.hash,
+		});
+	}
 	return { kind: 'photos', photos };
 }
 

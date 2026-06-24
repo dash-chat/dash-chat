@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import type { VoiceNote } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
-	import { objectUrl } from '$lib/actions/object-url';
+	import { blobUrl } from '$lib/utils/media';
 	import { formatDuration } from '$lib/utils/time';
 
 	interface Props {
@@ -82,12 +82,13 @@
 		bind:this={audioEl}
 		bind:paused
 		bind:currentTime
+		src={blobUrl(voice.hash)}
+		preload="none"
 		onloadedmetadata={() => {
 			if (audioEl && isFinite(audioEl.duration))
 				loadedDuration = audioEl.duration;
 		}}
 		onended={() => audioEl && (audioEl.currentTime = 0)}
-		use:objectUrl={{ data: voice.data, mimeType: voice.mime_type }}
 	></audio>
 
 	<button

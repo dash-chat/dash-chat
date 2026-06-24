@@ -106,7 +106,7 @@
 		const handler = (event: Event) => {
 			const detail = (event as CustomEvent).detail;
 			media = {
-				kind: 'voice',
+				kind: 'voice_note',
 				voice: {
 					bytes: new Uint8Array(detail.bytes),
 					mimeType: 'audio/wav',
@@ -159,7 +159,7 @@
 			{:else}
 				<VoiceRecordButton
 					onRecorded={draft => {
-						media = { kind: 'voice', voice: draft };
+						media = { kind: 'voice_note', voice: draft };
 						void send();
 					}}
 				/>

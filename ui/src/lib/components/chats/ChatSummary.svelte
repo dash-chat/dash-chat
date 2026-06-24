@@ -29,7 +29,7 @@
 		if (content.message) return content.message;
 		if (!content.media) return '';
 		if (content.media.kind === 'file') return content.media.file.name;
-		if (content.media.kind === 'voice') return m.voiceMessage();
+		if (content.media.kind === 'voice_note') return m.voiceMessage();
 		const n = content.media.photos.length;
 		return n > 1 ? m.photosCount({ count: n }) : m.photo();
 	}

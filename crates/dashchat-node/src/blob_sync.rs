@@ -261,7 +261,7 @@ impl BlobFetchPool {
                             continue;
                         };
                         for item in media {
-                            s.push((topic, item.hash));
+                            s.push((topic, item.hash()));
                         }
                     }
                 }

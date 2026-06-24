@@ -5,7 +5,7 @@ use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentVal
 dashchat_compat::capabilities! {
     #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Capabilities {
-        messaging: 2,
+        messaging: 1,
     }
 }
 
