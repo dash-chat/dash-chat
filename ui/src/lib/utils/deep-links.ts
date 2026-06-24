@@ -62,21 +62,28 @@ function handleUrls(urls: string[]) {
 
 const handledLaunchUrls = new Set<string>();
 
+// Resolved once getCurrent() completes so the onOpenUrl callback can safely
+// dedup against launch URLs without a startup race.
+const launchUrlsReady: Promise<void> = getCurrent()
+	.then(urls => {
+		if (urls) {
+			for (const url of urls) handledLaunchUrls.add(url);
+		}
+	})
+	.catch(err => {
+		console.error('[deep-link] failed to read launch deep links:', err);
+	});
+
 export function handleLaunchDeepLink() {
-	getCurrent()
-		.then(urls => {
-			if (urls) {
-				for (const url of urls) handledLaunchUrls.add(url);
-				handleUrls(urls);
-			}
-		})
-		.catch(err => {
-			console.error('[deep-link] failed to read launch deep links:', err);
-		});
+	launchUrlsReady.then(() => {
+		const urls = [...handledLaunchUrls];
+		if (urls.length > 0) handleUrls(urls);
+	});
 }
 
 export function listenForDeepLinks(): () => void {
-	const unlistenPromise = onOpenUrl(urls => {
+	const unlistenPromise = onOpenUrl(async urls => {
+		await launchUrlsReady;
 		const fresh = urls.filter(url => !handledLaunchUrls.delete(url));
 		if (fresh.length > 0) handleUrls(fresh);
 	}).catch(err => {
