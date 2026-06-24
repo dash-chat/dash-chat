@@ -67,7 +67,7 @@
 {:else if media?.kind === 'voice_note'}
 	<div class="media voice">
 		<VoiceNoteAttachment
-			voice={media.voice}
+			voice={media.voice_note}
 			metadata={isVoiceOnly ? metadata : undefined}
 		/>
 	</div>
