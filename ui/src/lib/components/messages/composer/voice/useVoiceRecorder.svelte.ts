@@ -2,6 +2,7 @@ import type { DraftVoiceNote } from '$lib/utils/media';
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, readFile, remove } from '@tauri-apps/plugin-fs';
 import {
+	getStatus,
 	requestPermission,
 	startRecording,
 	stopRecording,
@@ -60,6 +61,7 @@ export class VoiceRecorder {
 				cache,
 				`dc-voice-${crypto.randomUUID()}.wav`,
 			);
+			await this.#discardOrphanedRecording();
 			await startRecording({
 				outputPath,
 				format: 'wav',
@@ -115,6 +117,18 @@ export class VoiceRecorder {
 		}
 		this.phase = 'idle';
 		this.elapsedMs = 0;
+	}
+
+	// A webview reload mid-recording tears down our JS state without firing
+	// onDestroy, leaving the native recorder running; stop any such orphaned
+	// session so the next start doesn't hit "Already recording".
+	async #discardOrphanedRecording(): Promise<void> {
+		try {
+			const status = await getStatus();
+			if (status.state !== 'idle') await stopRecording();
+		} catch {
+			// Best effort — if this fails, startRecording will surface the error.
+		}
 	}
 
 	#startTimer(): void {

@@ -1,15 +1,18 @@
 <script lang="ts">
+	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { onDestroy } from 'svelte';
-	import { mdiMicrophone } from '@mdi/js';
+	import { useTheme } from 'konsta/svelte';
+	import { mdiMicrophone, mdiLockOutline, mdiChevronUp } from '@mdi/js';
+	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { showToast } from '$lib/utils/toasts';
 	import { isMobile } from '$lib/utils/environment';
 	import type { DraftVoiceNote } from '$lib/utils/media';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import { VoiceRecorder } from './useVoiceRecorder.svelte';
-	import VoiceLayer from './VoiceLayer.svelte';
 	import VoiceRecordingOverlay from './VoiceRecordingOverlay.svelte';
 	import VoiceLockedBar from './VoiceLockedBar.svelte';
+	import VoiceDesktopBar from './VoiceDesktopBar.svelte';
 
 	export interface DragState {
 		active: boolean;
@@ -23,6 +26,8 @@
 	}
 
 	let { onRecorded }: Props = $props();
+
+	const theme = $derived(useTheme());
 
 	/** Pixels the pointer must travel toward the inline-start to cancel. */
 	const CANCEL_THRESHOLD = 120;
@@ -42,6 +47,12 @@
 
 	const showLockedBar = $derived(
 		recorder.phase === 'locked' || recorder.phase === 'encoding',
+	);
+
+	// The press-and-hold visuals (red mic, slide-up-to-lock pill) only make sense
+	// mid-hold on touch; desktop click-records straight into the locked bar.
+	const recordingHoldMobile = $derived(
+		recorder.phase === 'recording' && isMobile,
 	);
 
 	recorder.onMaxDuration = () => void stopAndSend();
@@ -108,26 +119,90 @@
 </script>
 
 {#if recorder.phase === 'recording' && isMobile}
-	<VoiceLayer pointerEvents={false}>
+	<div
+		class="voice-layer pointer-events-none {theme === 'ios'
+			? 'bg-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass'
+			: 'bg-white dark:bg-gray-800'}"
+	>
 		<VoiceRecordingOverlay elapsedMs={recorder.elapsedMs} {drag} />
-	</VoiceLayer>
+	</div>
 {:else if showLockedBar || recorder.isActive}
-	<VoiceLayer>
-		<VoiceLockedBar
-			elapsedMs={recorder.elapsedMs}
-			onCancel={() => void recorder.cancel()}
-			onSend={() => void stopAndSend()}
-		/>
-	</VoiceLayer>
+	<div
+		class="voice-layer {theme === 'ios'
+			? 'bg-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass'
+			: 'bg-white dark:bg-gray-800'}"
+	>
+		{#if isMobile}
+			<VoiceLockedBar
+				elapsedMs={recorder.elapsedMs}
+				onCancel={() => void recorder.cancel()}
+				onSend={() => void stopAndSend()}
+			/>
+		{:else}
+			<VoiceDesktopBar
+				elapsedMs={recorder.elapsedMs}
+				onCancel={() => void recorder.cancel()}
+				onSend={() => void stopAndSend()}
+			/>
+		{/if}
+	</div>
 {/if}
 
-<IconButton
-	icon={mdiMicrophone}
-	label={m.voiceRecordHint()}
-	testid="message-input-voice-record"
-	class="h-[42px] w-[42px] shrink-0 touch-none"
-	onpointerdown={onPointerDown}
-	onpointermove={onPointerMove}
-	onpointerup={onPointerUp}
-	onpointercancel={() => recorder.cancel()}
-/>
+<div class="relative shrink-0">
+	{#if recordingHoldMobile}
+		<div
+			class="lock-pill pointer-events-none absolute bottom-full left-1/2 mb-2 flex flex-col items-center gap-1.5 rounded-full bg-gray-100 px-1.5 py-2.5 dark:bg-gray-700"
+			style="transform: translate(-50%, {-8 * drag.lockProgress}px)"
+		>
+			<wa-icon
+				class="lock-icon"
+				src={wrapPathInSvg(mdiLockOutline)}
+				style="opacity: {0.55 + 0.45 * drag.lockProgress}"
+			></wa-icon>
+			<wa-icon class="chevron-up" src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
+		</div>
+	{/if}
+
+	<IconButton
+		icon={mdiMicrophone}
+		label={m.voiceRecordHint()}
+		testid="message-input-voice-record"
+		iconClass={recordingHoldMobile ? 'text-2xl text-white' : 'text-2xl'}
+		class="h-[42px] w-[42px] shrink-0 touch-none {recordingHoldMobile
+			? '!bg-red-500 !opacity-100'
+			: ''}"
+		onpointerdown={onPointerDown}
+		onpointermove={onPointerMove}
+		onpointerup={onPointerUp}
+		onpointercancel={() => recorder.cancel()}
+	/>
+</div>
+
+<style>
+	.voice-layer {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		border-radius: 22px;
+	}
+	.lock-pill :global(wa-icon) {
+		width: 18px;
+		height: 18px;
+		color: var(--k-text-color);
+	}
+	.lock-pill .chevron-up {
+		animation: nudge-up 1s ease-in-out infinite;
+	}
+	@keyframes nudge-up {
+		0%,
+		100% {
+			transform: translateY(0);
+			opacity: 0.5;
+		}
+		50% {
+			transform: translateY(-3px);
+			opacity: 0.9;
+		}
+	}
+</style>

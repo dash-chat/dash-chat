@@ -158,6 +158,7 @@
 	"voicePause": "Pause voice message",
 	"voiceSeek": "Seek voice message",
 	"voiceCancel": "Cancel recording",
+	"voiceRecording": "Recording voice message…",
 	"saveFile": "Save file",
 	"fileSaved": "File saved.",
 	"mediaSaved": "Media saved.",
