@@ -4,14 +4,14 @@
 
 	interface Props {
 		photos: PhotoAttachment[];
-		/** Index of the active photo; its thumbnail is enlarged and centred. */
-		index: number;
-		onSelect: (i: number) => void;
+		/** Index of the active photo; its thumbnail is enlarged and centred.
+		    Bound, so clicking a thumbnail updates it directly. */
+		index?: number;
 		/** Hidden (e.g. while the photo is zoomed). */
 		faded?: boolean;
 	}
 
-	let { photos, index, onSelect, faded = false }: Props = $props();
+	let { photos, index = $bindable(0), faded = false }: Props = $props();
 
 	let stripEl: HTMLElement | undefined = $state();
 
@@ -38,7 +38,7 @@
 			class:selected={i === index}
 			data-testid="lightbox-thumb-{i}"
 			aria-label={p.name}
-			onclick={() => onSelect(i)}
+			onclick={() => (index = i)}
 		>
 			<BlobImage
 				item={p}

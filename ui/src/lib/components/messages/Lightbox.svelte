@@ -271,7 +271,7 @@
 			class:faded={chromeHidden}
 		>
 			{#if photos.length > 1}
-				<LightboxThumbnailStrip {photos} {index} onSelect={select} />
+				<LightboxThumbnailStrip {photos} bind:index />
 			{/if}
 			{#if isMobile}
 				<div class="flex px-3 pt-3 pb-2">
