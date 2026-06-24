@@ -47,6 +47,7 @@ pub fn run() {
     #[cfg(target_os = "android")]
     {
         builder = builder.plugin(tauri_plugin_android_fs::init());
+        builder = builder.plugin(tauri_plugin_medialibrary::init());
     }
     #[cfg(target_os = "ios")]
     {

@@ -12,6 +12,8 @@ allowBuilds:
   edgedriver: true
   esbuild: true
   geckodriver: true
+  # Builds dist-js via its `prepare` script when installed from the git fork.
+  "@gbyte/tauri-plugin-ios-photos": true
 
 patchedDependencies:
   konsta@5.0.6: patches/konsta@5.0.6.patch
