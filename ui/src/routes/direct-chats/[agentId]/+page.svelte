@@ -46,6 +46,7 @@
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
 	import SafetyTipsSheet from '$lib/components/SafetyTipsSheet.svelte';
+	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
 	import ProfileNamesSheet from '$lib/components/ProfileNamesSheet.svelte';
 	import { page } from '$app/state';
@@ -695,7 +696,7 @@
 						onBackdropClick={hideReactionUI}
 					>
 						<div class="flex flex-col items-center">
-							<div class="sheet-handle"></div>
+							<SheetHandle />
 						</div>
 						{#if emojiTargetedMessage && myDeviceId}
 							{#if Object.values(emojiTargetedMessage.reactions).length > 0}
@@ -754,7 +755,7 @@
 
 				<div
 					bind:clientHeight={bottomBarHeight}
-					class="absolute bottom-0 inset-x-0 z-10"
+					class="absolute bottom-0 inset-x-0 z-30"
 					class:bg-page-surface={theme === 'material'}
 				>
 					{#if searchMode}
@@ -860,7 +861,11 @@
 							</div>
 						</div>
 					{:else}
-						<MessageComposer {store} onSent={onMessageSent} />
+						<MessageComposer
+							{store}
+							destinationName={profile ? fullName(profile) : undefined}
+							onSent={onMessageSent}
+						/>
 					{/if}
 				</div>
 			{/await}
