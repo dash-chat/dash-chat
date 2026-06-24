@@ -111,6 +111,8 @@
 		scrollToIndex(target, initialized);
 		initialized = true;
 	});
+
+	$effect(() => () => clearTimeout(releaseTimer));
 </script>
 
 <div
