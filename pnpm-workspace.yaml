@@ -9,7 +9,6 @@ packages:
 verifyDepsBeforeRun: install
 
 allowBuilds:
-  '@gbyte/tauri-plugin-ios-photos': true
   edgedriver: true
   esbuild: true
   geckodriver: true
