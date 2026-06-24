@@ -450,9 +450,11 @@ impl Node {
                 // linear-chain / authorship / window rules is ignored (not
                 // forwarded to the frontend) with a warning.
                 let chat_id = ChatId::from_topic_id(topic)?;
-                let ops = self.chat_ops(chat_id).await?;
+                let valid_ops = self.valid_chat_ops(chat_id).await?;
                 let edit_ts: u64 = operation.processed().header().timestamp.into();
-                if let Err(err) = validate_edit(&ops, edit_hash, device_id, edit_ts, Some(&hash)) {
+                if let Err(err) =
+                    validate_edit(&valid_ops, edit_hash, device_id, edit_ts, Some(&hash))
+                {
                     warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
                     return Ok(());
                 }

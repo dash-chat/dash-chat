@@ -820,7 +820,7 @@ impl Node {
         message: impl Into<String>,
     ) -> Result<Header, EditMessageError> {
         let topic = topic.into();
-        let ops = self.chat_ops(topic).await?;
+        let ops = self.valid_chat_ops(topic).await?;
         let now = u64::from(p2panda_core::Timestamp::now());
         validate_edit(&ops, &edit_hash, self.device_id(), now, None)?;
 
@@ -868,7 +868,7 @@ impl Node {
     // TODO: performance: this triggers a full log traversal on processing every
     // edit operation. We can improve this by building up the parallel ChatOp list
     // reduced state as part of the ACID refactors.
-    pub(crate) async fn chat_ops(
+    pub(crate) async fn valid_chat_ops(
         &self,
         topic: ChatId,
     ) -> anyhow::Result<std::collections::HashMap<Hash, ChatOp>> {
@@ -900,6 +900,32 @@ impl Node {
             }
         }
 
+        // Strip edit ops that don't pass validation so callers always work with
+        // a consistent, cheat-proof view. An invalid edit (wrong author, expired
+        // window, broken chain) must not poison the AlreadyEdited scan for
+        // legitimate edits of the same target.
+        let edit_hashes: Vec<Hash> = ops
+            .iter()
+            .filter_map(|(hash, op)| {
+                if matches!(op.kind, ChatOpKind::Edit(_)) {
+                    Some(*hash)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for hash in edit_hashes {
+            let op = &ops[&hash];
+            let (ChatOpKind::Edit(edit_hash), editor, timestamp) =
+                (op.kind.clone(), op.author, op.timestamp)
+            else {
+                unreachable!()
+            };
+            if validate_edit(&ops, &edit_hash, editor, timestamp, Some(&hash)).is_err() {
+                ops.remove(&hash);
+            }
+        }
+
         Ok(ops)
     }
 
@@ -912,7 +938,7 @@ impl Node {
         topic: impl Into<ChatId>,
     ) -> anyhow::Result<Vec<crate::chat::ValidEdit>> {
         let topic = topic.into();
-        let ops = self.chat_ops(topic).await?;
+        let valid_ops = self.valid_chat_ops(topic).await?;
         let log_id = LogId::from(topic);
         let authors = self.op_store.get_authors(log_id).await?;
 
@@ -928,9 +954,7 @@ impl Node {
                     continue;
                 };
                 let op_hash = op.header.hash();
-                let editor = DeviceId::from(op.header.verifying_key);
-                let timestamp: u64 = op.header.timestamp.into();
-                if validate_edit(&ops, &edit_hash, editor, timestamp, Some(&op_hash)).is_ok() {
+                if valid_ops.contains_key(&op_hash) {
                     edits.push(crate::chat::ValidEdit {
                         op_hash,
                         target: edit_hash,
