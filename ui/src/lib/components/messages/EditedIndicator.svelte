@@ -11,14 +11,16 @@
 </script>
 
 {#if onShowHistory}
-	<button
-		type="button"
-		class={`inline p-0 text-xs/none ${className}`}
+	<span
+		role="button"
+		tabindex="0"
+		class={`text-xs/none cursor-pointer ${className}`}
 		onclick={onShowHistory}
+		onkeydown={e => (e.key === 'Enter' || e.key === ' ') && onShowHistory()}
 		data-testid="message-edited-indicator"
 	>
 		{m.edited()}
-	</button>
+	</span>
 {:else}
 	<span
 		class={`text-xs/none ${className}`}
