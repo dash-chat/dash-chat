@@ -40,7 +40,7 @@ impl TestNode {
         let local_store = LocalStore::new(filesystem.local_store_path())
             .await
             .unwrap();
-        if config.use_named_id {
+        if config.use_alias {
             local_store.device_id().await.unwrap().alias_named(name);
             local_store.agent_id().await.unwrap().alias_named(name);
         }
@@ -176,7 +176,7 @@ pub struct TestNodeConfig {
     /// Create an initial profile before returning
     pub create_profile: bool,
     /// Use a named-id for the device and agent IDs
-    pub use_named_id: bool,
+    pub use_alias: bool,
 }
 
 impl Default for TestNodeConfig {
@@ -184,7 +184,7 @@ impl Default for TestNodeConfig {
         Self {
             node_config: NodeConfig::testing(),
             create_profile: true,
-            use_named_id: true,
+            use_alias: true,
         }
     }
 }
