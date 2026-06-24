@@ -37,7 +37,7 @@ async fn direct_chat_capability_upgrade() {
 
     // Both start at zero capabilities, so messages are V0.
     alice
-        .send_message(chat, ChatMessageContent::text_only("v0-msg-1"))
+        .send_message_raw(chat, ChatMessageContent::text_only("v0-msg-1"))
         .await
         .unwrap();
 
@@ -111,11 +111,11 @@ async fn direct_chat_capability_upgrade() {
     );
 
     alice
-        .send_message(chat, ChatMessageContent::text_only("v0-msg-2"))
+        .send_message_raw(chat, ChatMessageContent::text_only("v0-msg-2"))
         .await
         .unwrap();
     bobbi
-        .send_message(chat, ChatMessageContent::text_only("v0-msg-3"))
+        .send_message_raw(chat, ChatMessageContent::text_only("v0-msg-3"))
         .await
         .unwrap();
 
@@ -176,11 +176,11 @@ async fn direct_chat_capability_upgrade() {
     );
 
     alice
-        .send_message(chat, ChatMessageContent::text_only("v1-msg-4"))
+        .send_message_raw(chat, ChatMessageContent::text_only("v1-msg-4"))
         .await
         .unwrap();
     bobbi
-        .send_message(chat, ChatMessageContent::text_only("v1-msg-5"))
+        .send_message_raw(chat, ChatMessageContent::text_only("v1-msg-5"))
         .await
         .unwrap();
 
@@ -307,7 +307,7 @@ async fn group_chat_capability_upgrade() {
 
     // All three are at zero; messages should be V0.
     alice
-        .send_message(chat_id, ChatMessageContent::text_only("zero-msg-1"))
+        .send_message_raw(chat_id, ChatMessageContent::text_only("zero-msg-1"))
         .await
         .unwrap();
 
@@ -415,7 +415,7 @@ async fn group_chat_capability_upgrade() {
 
     // Bobbi sends (bobbi has full visibility of all members' capabilities).
     bobbi
-        .send_message(chat_id, ChatMessageContent::text_only("still-zero-msg-2"))
+        .send_message_raw(chat_id, ChatMessageContent::text_only("still-zero-msg-2"))
         .await
         .unwrap();
 
@@ -490,7 +490,7 @@ async fn group_chat_capability_upgrade() {
     println!("### {:3.1?} bobbi sending v1-msg-3", start.elapsed());
 
     bobbi
-        .send_message(chat_id, ChatMessageContent::text_only("v1-msg-3"))
+        .send_message_raw(chat_id, ChatMessageContent::text_only("v1-msg-3"))
         .await
         .unwrap();
 
@@ -579,7 +579,7 @@ async fn group_chat_capability_upgrade() {
 
     // Bobbi sends (bobbi has full visibility of all members' capabilities).
     bobbi
-        .send_message(chat_id, ChatMessageContent::text_only("back-to-zero-msg-4"))
+        .send_message_raw(chat_id, ChatMessageContent::text_only("back-to-zero-msg-4"))
         .await
         .unwrap();
 

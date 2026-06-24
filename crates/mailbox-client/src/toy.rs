@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use mailbox_server::{Blob, GetBlobsRequest, GetBlobsResponse, StoreBlobsRequest};
+use mailbox_server::{Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest};
 
 use super::*;
 
@@ -21,14 +21,20 @@ impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {
 pub struct ToyMailboxClient<Item: MailboxItem> {
     id: MailboxId,
     base_url: String,
+    sender_pubkey: iroh::EndpointId,
     phantom: std::marker::PhantomData<Item>,
 }
 
 impl<Item: MailboxItem> ToyMailboxClient<Item> {
-    pub fn new(id: MailboxId, base_url: impl Into<String>) -> Self {
+    pub fn new(
+        id: MailboxId,
+        base_url: impl Into<String>,
+        sender_pubkey: iroh::EndpointId,
+    ) -> Self {
         Self {
             id,
             base_url: base_url.into(),
+            sender_pubkey,
             phantom: std::marker::PhantomData,
         }
     }
@@ -44,31 +50,43 @@ where
         self.id.clone()
     }
 
+    fn url(&self) -> Option<String> {
+        Some(self.base_url.clone())
+    }
+
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error> {
         if ops.is_empty() {
             return Ok(());
         }
 
+        let blob_hashes: Vec<iroh_blobs::Hash> =
+            ops.iter().flat_map(|op| op.blob_hashes()).collect();
+
         // Group operations by topic -> author -> seq_num
-        let mut blobs: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blob>>> = BTreeMap::new();
+        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blip>>> = BTreeMap::new();
 
         for op in ops {
             let topic_id = Self::encode_topic_id(&op.topic());
             let log_id = Self::device_id_to_log_id(&op.author());
             let seq_num = op.seq_num();
-            let blob = Self::serialize_operation(&op)?;
+            let blip = Self::serialize_operation(&op)?;
 
-            blobs
+            blips
                 .entry(topic_id)
                 .or_default()
                 .entry(log_id)
                 .or_default()
-                .insert(seq_num, blob);
+                .insert(seq_num, blip);
         }
 
-        let request = StoreBlobsRequest { blobs };
+        let request = StoreBlipsRequest {
+            blips,
+            blob_hashes,
+            sender_pubkey: Some(self.sender_pubkey),
+            signature: Vec::new(),
+        };
         let response = HTTP_CLIENT
-            .post(format!("{}/blobs/store", self.base_url))
+            .post(format!("{}/blips/store", self.base_url))
             .json(&request)
             .send()
             .await?;
@@ -79,7 +97,7 @@ where
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             Err(anyhow::anyhow!(
-                "Failed to store blobs: {} - {}",
+                "Failed to store blips: {} - {}",
                 status,
                 body
             ))
@@ -90,7 +108,7 @@ where
         &self,
         request: FetchRequest<Item>,
     ) -> Result<FetchResponse<Item>, anyhow::Error> {
-        // Convert FetchRequest to GetBlobsRequest
+        // Convert FetchRequest to GetBlipsRequest
         let mut topics: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
 
         for (log_id, authors) in request.0.iter() {
@@ -105,9 +123,9 @@ where
             topics.insert(topic_id, log_map);
         }
 
-        let get_request = GetBlobsRequest { topics };
+        let get_request = GetBlipsRequest { topics };
         let response = HTTP_CLIENT
-            .post(format!("{}/blobs/get", self.base_url))
+            .post(format!("{}/blips/get", self.base_url))
             .json(&get_request)
             .send()
             .await?;
@@ -116,25 +134,25 @@ where
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!(
-                "Failed to fetch blobs: {} - {}",
+                "Failed to fetch blips: {} - {}",
                 status,
                 body
             ));
         }
 
-        let response = response.json::<GetBlobsResponse>().await?;
+        let response = response.json::<GetBlipsResponse>().await?;
 
-        // Convert GetBlobsResponse to FetchResponse
+        // Convert GetBlipsResponse to FetchResponse
         let mut result: BTreeMap<Item::Topic, FetchTopicResponse<Item>> = BTreeMap::new();
 
-        for (topic_id_str, topic_response) in response.blobs_by_topic {
+        for (topic_id_str, topic_response) in response.blips_by_topic {
             let log_id = Self::log_id_from_string(&topic_id_str)?;
 
-            // Deserialize blobs to operations
+            // Deserialize blips to operations
             let mut items = Vec::new();
-            for (_author_str, seq_blobs) in topic_response.blobs {
-                for (_seq, blob) in seq_blobs {
-                    items.push(Self::deserialize_operation(&blob)?);
+            for (_author_str, seq_blips) in topic_response.blips {
+                for (_seq, blip) in seq_blips {
+                    items.push(Self::deserialize_operation(&blip)?);
                 }
             }
 
@@ -175,13 +193,13 @@ where
         Ok(author)
     }
 
-    fn serialize_operation(item: &Item) -> Result<Blob, anyhow::Error> {
+    fn serialize_operation(item: &Item) -> Result<Blip, anyhow::Error> {
         let bytes = p2panda_core::cbor::encode_cbor(item)?;
-        Ok(Blob::new(bytes))
+        Ok(Blip::new(bytes))
     }
 
-    fn deserialize_operation(blob: &Blob) -> Result<Item, anyhow::Error> {
-        Ok(p2panda_core::cbor::decode_cbor(blob.as_slice())?)
+    fn deserialize_operation(blip: &Blip) -> Result<Item, anyhow::Error> {
+        Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
     }
 }
 
@@ -195,6 +213,21 @@ pub fn stringify(value: impl Serialize) -> String {
 pub fn unstringify<T: DeserializeOwned>(s: &str) -> Result<T, anyhow::Error> {
     serde_json::from_str(&format!("\"{}\"", s))
         .map_err(|e| anyhow::anyhow!("Failed to unstringify: {}", e))
+}
+
+/// Poll the mailbox `/health` endpoint until it responds, confirming the server
+/// is listening before clients try to use it.
+pub async fn wait_for_mailbox_health(url: &str) {
+    let health = format!("{url}/health");
+    for _ in 0..100 {
+        if let Ok(resp) = crate::HTTP_CLIENT.get(&health).send().await {
+            if resp.status().is_success() {
+                return;
+            }
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+    panic!("mailbox /health never became ready at {health}");
 }
 
 #[cfg(test)]

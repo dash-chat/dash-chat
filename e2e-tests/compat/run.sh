@@ -114,6 +114,13 @@ BINARY_PATH="$ROOT/target/debug/dash-chat"
 cp "$BINARY_PATH" "$BINARIES_DIR/current/dash-chat"
 echo "Current binary: $BINARIES_DIR/current/dash-chat"
 
+# Pre-build the mailbox server so `cargo run` in the per-ref loop launches the
+# already-compiled binary instead of racing its (heavy iroh/iroh-blobs) compile
+# against the readiness timeout. Same invocation as the run below so the feature
+# set matches and the artifact is reused.
+echo "=== Building mailbox server ==="
+cargo build -p mailbox-server
+
 # --- Process each ref ---
 
 FAILED_REFS=()

@@ -46,6 +46,7 @@
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
 	import SafetyTipsSheet from '$lib/components/SafetyTipsSheet.svelte';
+	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
 	import ProfileNamesSheet from '$lib/components/ProfileNamesSheet.svelte';
 	import { page } from '$app/state';
@@ -194,7 +195,7 @@
 			const matches: Hash[] = [];
 			els.forEach(el => {
 				const hash = el.getAttribute('data-message-hash') as Hash;
-				const text = el.querySelector('.flex-1')?.textContent || '';
+				const text = el.querySelector('[data-message-text]')?.textContent || '';
 				if (text.toLowerCase().includes(lowerQ)) matches.push(hash);
 			});
 			matchingHashes = matches;
@@ -386,6 +387,7 @@
 											placeholder={m.searchMessages()}
 											bind:value={searchQuery}
 											use:focusOnMount
+											data-testid="direct-chat-search-input"
 										/>
 									</div>
 								{/snippet}
@@ -694,7 +696,7 @@
 						onBackdropClick={hideReactionUI}
 					>
 						<div class="flex flex-col items-center">
-							<div class="sheet-handle"></div>
+							<SheetHandle />
 						</div>
 						{#if emojiTargetedMessage && myDeviceId}
 							{#if Object.values(emojiTargetedMessage.reactions).length > 0}
@@ -779,7 +781,10 @@
 									bind:this={dateInput}
 									onchange={e => jumpToDate(e.currentTarget.value)}
 								/>
-								<span class="flex-1 text-center text-sm quiet">
+								<span
+									class="flex-1 text-center text-sm quiet"
+									data-testid="search-results-count"
+								>
 									{#if !searchQuery}
 										<!-- empty -->
 									{:else if matchingHashes.length === 0}

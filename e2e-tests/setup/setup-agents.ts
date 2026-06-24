@@ -68,6 +68,10 @@ export type Agent = WebdriverIO.Browser & {
 	checkOverflow(): Promise<string[]>;
 	/** Force the responsive `isWideScreen` store (true = desktop, false = mobile). */
 	setWideScreen(value: boolean): Promise<void>;
+	/** Cold-restart the app: relaunch the binary against the same data dir (the
+	 *  Rust node re-hydrates from persisted state), re-attach fresh page objects
+	 *  to the new session, and restore narrow layout. */
+	restart(): Promise<void>;
 	/** Switch the Konsta theme. */
 	setTheme(theme: 'material' | 'ios'): Promise<void>;
 	/** Force dark mode on/off via the test event. */
@@ -76,8 +80,9 @@ export type Agent = WebdriverIO.Browser & {
 	enablePreviewFeatures(): Promise<void>;
 };
 
-export function makeAgent(b: WebdriverIO.Browser): Agent {
-	const agent = b as Agent;
+/** (Re)build every page object against `b`. Called on first setup and again
+ *  after a restart so the new session never reuses stale element ids. */
+function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.accountPage = new AccountPage(b);
 	agent.addContactPage = new AddContactPage(b);
 	agent.appearancePage = new AppearancePage(b);
@@ -103,6 +108,11 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	agent.settingsPage = new SettingsPage(b);
 	agent.toast = new Toast(b);
 	agent.updaterBanner = new UpdaterBanner(b);
+}
+
+export function makeAgent(b: WebdriverIO.Browser): Agent {
+	const agent = b as Agent;
+	attachPages(agent, b);
 
 	agent.goto = async (path: string) => {
 		await b.execute(async (p: string) => {
@@ -145,6 +155,12 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	};
 	agent.enablePreviewFeatures = async () => {
 		await b.execute(() => window.__test.enablePreviewFeatures());
+	};
+	agent.restart = async () => {
+		await b.reloadSession();
+		await waitForTestUtils(b);
+		attachPages(agent, b);
+		await agent.setWideScreen(false);
 	};
 
 	return agent;

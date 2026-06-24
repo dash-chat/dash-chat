@@ -1,10 +1,10 @@
 <script lang="ts">
-	import type { Photo } from 'dash-chat-stores';
-	import { objectUrl } from '$lib/actions/object-url';
+	import type { PhotoAttachment } from 'dash-chat-stores';
+	import BlobImage from '$lib/components/BlobImage.svelte';
 	import Lightbox from '../Lightbox.svelte';
 
 	interface Props {
-		photos: Photo[];
+		photos: PhotoAttachment[];
 		/** Display name of the message author, shown in the lightbox header. */
 		senderName?: string;
 		timestamp?: number;
@@ -17,9 +17,22 @@
 	let lightboxIndex = $state<number | null>(null);
 	let lightboxTrigger: HTMLElement | undefined;
 
+	// Per-cell load state and component handles, so a click on a cell whose
+	// image hasn't loaded retries the download instead of opening the lightbox.
+	let statuses = $state<Record<number, 'loading' | 'loaded' | 'error'>>({});
+	const blobImages: Record<number, { retry: () => void }> = {};
+
 	function openLightbox(index: number, event: MouseEvent) {
 		lightboxTrigger = event.currentTarget as HTMLElement;
 		lightboxIndex = index;
+	}
+
+	function onCellClick(index: number, event: MouseEvent) {
+		if (statuses[index] === 'loaded') {
+			openLightbox(index, event);
+		} else {
+			blobImages[index]?.retry();
+		}
 	}
 
 	function closeLightbox() {
@@ -31,11 +44,18 @@
 
 <div class="attachment-photos" data-testid="message-attachment-photos">
 	{#each photos as photo, i (i)}
-		<button type="button" class="photo-cell" onclick={e => openLightbox(i, e)}>
-			<img
-				use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
+		<button
+			type="button"
+			class="photo-cell"
+			aria-label={photo.name}
+			onclick={e => onCellClick(i, e)}
+		>
+			<BlobImage
+				bind:this={blobImages[i]}
+				item={photo}
 				alt={photo.name}
-				loading="lazy"
+				lazy
+				onStatus={s => (statuses[i] = s)}
 			/>
 			{#if i === 4 && photos.length > 5}
 				<div class="photo-overlay">+{photos.length - 5}</div>
@@ -80,7 +100,7 @@
 	.attachment-photos:has(.photo-cell:only-child) {
 		width: fit-content;
 	}
-	.photo-cell:only-child img {
+	.photo-cell:only-child :global(img) {
 		width: auto;
 		height: auto;
 		min-width: 200px;
@@ -88,6 +108,12 @@
 		min-height: 50px;
 		max-height: 450px;
 		object-fit: contain;
+	}
+
+	/* Floor the cell's size before the img exists (loading/error), so the overlay/retry box doesn't collapse. */
+	.attachment-photos:has(.photo-cell:only-child) .photo-cell {
+		min-width: 200px;
+		min-height: 50px;
 	}
 
 	/* 2+ → a 300px-wide collage grid */
@@ -172,7 +198,7 @@
 		cursor: pointer;
 	}
 
-	.photo-cell img {
+	.photo-cell :global(img) {
 		width: 100%;
 		height: 100%;
 		object-fit: cover;

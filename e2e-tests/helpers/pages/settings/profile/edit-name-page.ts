@@ -1,11 +1,11 @@
 import { tid } from '../../../selectors';
-import { TestPage } from '../../test-page';
+import { TestHelper } from '../../test-helper';
 
-export class EditNamePage extends TestPage {
-	back = this.agent.$(tid('edit-name-back'));
-	nameInput = this.agent.$(tid('edit-name-name'));
-	surnameInput = this.agent.$(tid('edit-name-surname'));
-	saveButton = this.agent.$(tid('edit-name-save-btn'));
+export class EditNamePage extends TestHelper {
+	back = this.el(tid('edit-name-back'));
+	nameInput = this.el(tid('edit-name-name'));
+	surnameInput = this.el(tid('edit-name-surname'));
+	saveButton = this.el(tid('edit-name-save-btn'));
 
 	async ready() {
 		await this.nameInput.waitForExist();

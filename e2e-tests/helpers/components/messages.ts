@@ -1,29 +1,31 @@
+import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 import { SYNC_TIMEOUT } from '../timeouts';
 import { Lightbox } from './lightbox';
 
 // Driver for a chat's rendered message list — the messages themselves plus the
 // scroll-to-bottom button and unread affordances around them.
-export class Messages {
+export class Messages extends TestHelper {
 	constructor(
-		private agent: WebdriverIO.Browser,
+		agent: WebdriverIO.Browser,
 		messagesTestId: string,
 		unreadDividerTestId: string,
 	) {
+		super(agent);
 		this.messagesSelector = tid(messagesTestId);
 		this.dividerSelector = tid(unreadDividerTestId);
-		this.root = agent.$(this.messagesSelector);
-		this.unreadDivider = agent.$(this.dividerSelector);
+		this.root = this.el(this.messagesSelector);
+		this.unreadDivider = this.el(this.dividerSelector);
 	}
 
 	private readonly messagesSelector: string;
 	private readonly dividerSelector: string;
 	readonly root;
 	readonly unreadDivider;
-	scrollBottom = this.agent.$(tid('chat-scroll-bottom'));
-	unreadBadge = this.agent.$(tid('chat-unread-badge'));
 	/** Play/pause toggle on the first voice-note attachment in the list. */
-	voicePlayButton = this.agent.$(tid('voice-play-button'));
+	voicePlayButton = this.el(tid('voice-play-button'));
+	scrollBottom = this.el(tid('chat-scroll-bottom'));
+	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
 	lightbox = new Lightbox(this.agent);
 
@@ -31,6 +33,16 @@ export class Messages {
 		if (!(await this.unreadBadge.isExisting())) return null;
 		const text = (await this.unreadBadge.getText()).trim();
 		return text === '' ? null : text;
+	}
+
+	/** Whether the rendered message list currently contains `text`. */
+	messageAreaContains(text: string): Promise<boolean> {
+		return this.agent.execute(
+			(sel: string, t: string) =>
+				document.querySelector(sel)?.textContent?.includes(t) ?? false,
+			this.messagesSelector,
+			text,
+		);
 	}
 
 	async waitForMessage(text: string, timeout = SYNC_TIMEOUT) {

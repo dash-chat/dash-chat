@@ -1,3 +1,4 @@
+import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
 const SCROLL_BOTTOM_THRESHOLD = 200;
@@ -7,16 +8,17 @@ const SCROLL_BOTTOM_THRESHOLD = 200;
  * `data-testid` that was set on the component — that landed on the
  * column-reverse scroll container and is what we manipulate here.
  */
-export class ReverseScrollPage {
+export class ReverseScrollPage extends TestHelper {
 	private readonly scrollSelector: string;
 	readonly scroll;
 
 	constructor(
-		private agent: WebdriverIO.Browser,
+		agent: WebdriverIO.Browser,
 		scrollTestId: string,
 	) {
+		super(agent);
 		this.scrollSelector = tid(scrollTestId);
-		this.scroll = agent.$(this.scrollSelector);
+		this.scroll = this.el(this.scrollSelector);
 	}
 
 	isAtBottom(): Promise<boolean> {

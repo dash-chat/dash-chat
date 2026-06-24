@@ -1,6 +1,5 @@
 use dashchat_node::{
-    AgentId, ChatId, ChatMessageContent, ChatReaction, DeviceId, GroupInfo, Node,
-    RemoveGroupMemberError,
+    AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, Node, OutgoingMedia, RemoveGroupMemberError,
 };
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
@@ -67,11 +66,12 @@ pub async fn add_group_member(
 #[tauri::command]
 pub async fn send_message(
     chat_id: ChatId,
-    content: ChatMessageContent,
+    message: String,
+    media: Option<OutgoingMedia>,
     node: State<'_, Node>,
 ) -> Result<Hash, String> {
     let header = node
-        .send_message(chat_id, content)
+        .send_message(chat_id, message, media)
         .await
         .map_err(|err| format!("{err:?}"))?;
     Ok(header.hash())

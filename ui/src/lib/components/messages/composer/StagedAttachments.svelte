@@ -6,19 +6,18 @@
 	import {
 		type DraftMedia,
 		MAX_STAGED_PHOTOS,
-		PHOTO_ACCEPT,
+		pickMedia,
 	} from '$lib/utils/media';
-	import { objectUrl } from '$lib/actions/object-url';
-	import { pickFiles } from '$lib/utils/files';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import StagedThumb from './StagedThumb.svelte';
+	import { objectUrl } from '$lib/actions/object-url';
 
 	interface Props {
 		media: DraftMedia | undefined;
 		/** Stage files picked from the "add more" tile (handled by the composer,
 		 * which owns the ingest rules and error toasts). */
-		onFiles: (files: FileList) => void;
+		onFiles: (files: File[]) => void;
 	}
 
 	let { media = $bindable(), onFiles }: Props = $props();
@@ -28,8 +27,12 @@
 	);
 
 	async function addMore() {
-		const files = await pickFiles({ accept: PHOTO_ACCEPT, multiple: true });
-		if (files && files.length > 0) onFiles(files);
+		try {
+			const files = await pickMedia('image', true);
+			if (files && files.length > 0) onFiles(files);
+		} catch (e) {
+			console.error('Failed to pick files', e);
+		}
 	}
 
 	function clear() {

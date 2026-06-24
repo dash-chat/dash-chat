@@ -23,7 +23,19 @@
 	--color-page-surface: var(--color-md-dark-surface);
 }
 
+.k-ios {
+	--color-page-surface: var(--color-ios-light-surface);
+}
+
+:root.dark .k-ios {
+	--color-page-surface: var(--color-ios-dark-surface);
+}
+
 :root.wide-layout {
+	--color-page-surface: var(--color-desktop-main-bg);
+}
+
+:root.wide-layout .k-ios {
 	--color-page-surface: var(--color-desktop-main-bg);
 }
 
@@ -190,18 +202,6 @@ li.plain span {
 	font-size: 16px;
 }
 
-.sheet-handle {
-	width: 2.5rem;
-	height: 2px;
-	border-radius: 9999px;
-	background-color: #d1d5db;
-	margin-top: 0.5rem;
-}
-
-:where(.dark) .sheet-handle {
-	background-color: #4b5563;
-}
-
 .neutral-tonal-button.k-button {
 	background-color: rgba(0, 0, 0, 0.07);
 }
@@ -345,4 +345,17 @@ emoji-picker {
 	   sit at the row's edges. Title is non-interactive text — let pointer events
 	   pass through to the buttons underneath. */
 	pointer-events: none;
+}
+
+/* Tailwind's preflight resets `padding: 0` on every element, which beats
+   WebAwesome's `:host { padding }` and collapses dropdown items to the height
+   of their text. */
+wa-dropdown-item {
+	padding-inline-start: 0.5em;
+	padding-inline-end: 1em;
+	padding-block: 0.5em;
+}
+
+wa-dropdown-item::part(icon) {
+	width: 42px;
 }

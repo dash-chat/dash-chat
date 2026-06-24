@@ -17,12 +17,13 @@
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
+	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
-	import MediaMenu from '$lib/components/messages/composer/MediaMenu.svelte';
+	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 
 	interface Props {
@@ -48,7 +49,6 @@
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
 	let showMediaPanel = $state(false);
-	let showMediaMenu = $state(false);
 
 	async function send() {
 		if (!hasContent) return;
@@ -134,11 +134,7 @@
 					onClick={() => (showMediaPanel = !showMediaPanel)}
 				/>
 			{:else}
-				<AttachButton
-					class="h-10 w-10"
-					expanded={showMediaMenu}
-					onClick={() => (showMediaMenu = !showMediaMenu)}
-				/>
+				<AttachMenuButton onFiles={stage} />
 			{/if}
 			<div
 				class="input-container flex min-h-[42px] min-w-0 flex-1 items-center ps-2 {theme ===
@@ -176,21 +172,13 @@
 	{/if}
 </div>
 
-{#if !isMobile}
-	<MediaMenu
-		bind:opened={showMediaMenu}
-		target="[data-testid='message-input-attach']"
-		onFiles={stage}
-	/>
-{/if}
-
 <Sheet
 	class="pb-safe text-lg"
 	opened={showEmojiPicker}
 	onBackdropClick={() => (showEmojiPicker = false)}
 >
 	<div class="flex flex-col items-center">
-		<div class="sheet-handle"></div>
+		<SheetHandle />
 	</div>
 	<Block>
 		<EmojiPickerWrapper

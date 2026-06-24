@@ -1,11 +1,12 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { Message } from 'dash-chat-stores';
-	import { highlightMatch, senderColor } from './message-helpers';
+	import { senderColor } from './message-helpers';
 	import { shrinkToWidestLine } from '$lib/actions/shrink-to-widest-line';
 	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
 	import FileAttachment from './attachments/FileAttachment.svelte';
 	import VoiceNoteAttachment from './attachments/VoiceNoteAttachment.svelte';
+	import MessageText from './MessageText.svelte';
 
 	let {
 		message,
@@ -82,13 +83,7 @@
 			</div>
 		{/if}
 		<div class="max-w-full" use:shrinkToWidestLine>
-			<span class="whitespace-pre-wrap">
-				{#if searchQuery}
-					{@html highlightMatch(message.content.message, searchQuery)}
-				{:else}
-					{message.content.message}
-				{/if}
-			</span>
+			<MessageText text={message.content.message} {searchQuery} />
 			<!-- Reserves the metadata's space in the bottom-end corner, since
 			     wrapped text cannot be made to avoid an absolute box via CSS. -->
 			{#if metadata}
