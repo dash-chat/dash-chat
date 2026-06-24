@@ -332,7 +332,7 @@ impl Node {
                     let log_id = operation.header.extensions.log_id;
                     let topic = self.op_store.store.resolve_topic(&author, &log_id).await?;
                     let Some(topic) = topic else {
-                        tracing::error!("failed to resolve topic for operation: {operation:?}");
+                        tracing::error!(operation = ?operation.hash.aliased(), "failed to resolve topic for operation");
                         return Ok(());
                     };
                     if let Some(media) = m.media() {
