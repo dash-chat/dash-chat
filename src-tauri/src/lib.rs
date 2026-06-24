@@ -140,7 +140,9 @@ pub fn run() {
             #[cfg(any(target_os = "linux", windows))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
-                app.deep_link().register_all()?;
+                if let Err(err) = app.deep_link().register_all() {
+                    log::error!("Failed to register deep links: {err:?}");
+                }
             }
 
             let handle = app.handle().clone();
