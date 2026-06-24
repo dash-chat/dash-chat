@@ -42,6 +42,15 @@ function matchesDeepLinkPath(
 	);
 }
 
+function sanitizeUrl(url: string): string {
+	try {
+		const u = new URL(url);
+		return `${u.protocol}//${u.host}`;
+	} catch {
+		return '(unparseable)';
+	}
+}
+
 function handleUrls(urls: string[]) {
 	for (const url of urls) {
 		let matched = false;
@@ -54,7 +63,7 @@ function handleUrls(urls: string[]) {
 			}
 		}
 		if (!matched) {
-			console.log('[deep-link] url did not match pattern:', url);
+			console.log('[deep-link] url did not match pattern:', sanitizeUrl(url));
 			showToast(m.errorReceivedUnrecognizedLink({ url }));
 		}
 	}
