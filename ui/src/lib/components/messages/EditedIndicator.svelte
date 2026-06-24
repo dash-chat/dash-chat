@@ -13,7 +13,7 @@
 {#if onShowHistory}
 	<button
 		type="button"
-		class={`text-xs/none ${className}`}
+		class={`inline p-0 text-xs/none ${className}`}
 		onclick={onShowHistory}
 		data-testid="message-edited-indicator"
 	>

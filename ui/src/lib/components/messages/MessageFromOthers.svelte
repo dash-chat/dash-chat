@@ -68,10 +68,11 @@
 	);
 </script>
 
+{#snippet editedIndicator()}
+	<EditedIndicator class="quiet" {onShowHistory} />
+{/snippet}
+
 {#snippet metadata()}
-	{#if message.editedAt}
-		<EditedIndicator class="quiet" {onShowHistory} />
-	{/if}
 	<MessageTimestamp timestamp={message.timestamp} class="quiet" />
 {/snippet}
 
@@ -85,6 +86,7 @@
 		{searchQuery}
 		senderName={senderDisplayName}
 		{showSenderName}
+		editedIndicator={message.editedAt ? editedIndicator : undefined}
 		metadata={isLast ? metadata : undefined}
 	/>
 </Card>
