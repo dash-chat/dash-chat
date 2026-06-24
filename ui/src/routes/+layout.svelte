@@ -195,8 +195,11 @@
 
 	if (isTauriEnv()) {
 		handleLaunchDeepLink();
-		$effect(() => listenForDeepLinks());
 	}
+	$effect(() => {
+		if (!isTauriEnv()) return;
+		return listenForDeepLinks();
+	});
 </script>
 
 {#if showToolbar}

@@ -27,7 +27,7 @@ function matchesDeepLinkPath(
 		});
 	const match = url.match(
 		new RegExp(
-			`^(?:${HTTPS_DEEP_LINK_BASE_URL}|${SCHEME_DEEP_LINK_BASE_URL})${pattern}$`,
+			`^(?:${HTTPS_DEEP_LINK_BASE_URL}|${SCHEME_DEEP_LINK_BASE_URL})${pattern}(?:[?#].*)?$`,
 		),
 	);
 	if (!match) return null;
