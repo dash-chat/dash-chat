@@ -202,18 +202,6 @@ li.plain span {
 	font-size: 16px;
 }
 
-.sheet-handle {
-	width: 2.5rem;
-	height: 2px;
-	border-radius: 9999px;
-	background-color: #d1d5db;
-	margin-top: 0.5rem;
-}
-
-:where(.dark) .sheet-handle {
-	background-color: #4b5563;
-}
-
 .neutral-tonal-button.k-button {
 	background-color: rgba(0, 0, 0, 0.07);
 }
