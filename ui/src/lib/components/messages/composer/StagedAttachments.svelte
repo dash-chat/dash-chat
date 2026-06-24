@@ -8,10 +8,10 @@
 		MAX_STAGED_PHOTOS,
 		pickMedia,
 	} from '$lib/utils/media';
-	import { objectUrl } from '$lib/actions/object-url';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import StagedThumb from './StagedThumb.svelte';
+	import { objectUrl } from '$lib/actions/object-url';
 
 	interface Props {
 		media: DraftMedia | undefined;

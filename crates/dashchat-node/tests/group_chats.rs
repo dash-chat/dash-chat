@@ -114,7 +114,10 @@ async fn test_direct_chat() {
     assert!(alice.subscribed_topics().await.contains(&chat_id));
     assert!(bobbi.subscribed_topics().await.contains(&chat_id));
 
-    alice.send_message(chat_id, "Hello".into()).await.unwrap();
+    alice
+        .send_message_raw(chat_id, "Hello".into())
+        .await
+        .unwrap();
 
     // consistency(
     //     [&alice, &bobbi],
@@ -174,7 +177,10 @@ async fn test_p2p_direct_chat() {
     assert!(bobbi.subscribed_topics().await.contains(&chat_id));
 
     let message = "Hello";
-    alice.send_message(chat_id, "Hello".into()).await.unwrap();
+    alice
+        .send_message_raw(chat_id, "Hello".into())
+        .await
+        .unwrap();
 
     for mut rx in [alice.watcher.lock().await, bobbi.watcher.lock().await] {
         while let Some(notification) = rx.recv().await {
@@ -217,7 +223,10 @@ async fn test_group_chat() {
         .unwrap()
         .alias_named("groupchat");
 
-    alice.send_message(chat_id, "Hello".into()).await.unwrap();
+    alice
+        .send_message_raw(chat_id, "Hello".into())
+        .await
+        .unwrap();
 
     bobbi
         .behavior()

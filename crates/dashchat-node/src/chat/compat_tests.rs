@@ -32,6 +32,29 @@ mod tests {
     }
 
     #[test]
+    fn chat_message_v1_media_roundtrip() {
+        let item = MediaMetadata {
+            name: "red.png".to_string(),
+            mime_type: "image/png".to_string(),
+            size: 1234,
+            kind: MediaMetaKind::Photo,
+            hash: iroh_blobs::Hash::new(b"hashhashhash"),
+        };
+        let v1 = ChatMessageContent::new("hello", Some(MediaBundle::from(vec![item.clone()])));
+        let bytes = encode_cbor(&v1).unwrap();
+        let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
+        assert_eq!(decoded, v1);
+
+        // The frontend reads the hash from JSON, where it must be a hex string
+        // (matching the `Hash` TS type), not a byte array.
+        let json = serde_json::to_value(&v1).unwrap();
+        assert_eq!(
+            json["media"][0]["hash"],
+            serde_json::json!(item.hash.to_string())
+        );
+    }
+
+    #[test]
     fn chat_message_getters() {
         let v0 = ChatMessageContent::unversioned("hello");
         assert_eq!(v0.message(), "hello");
@@ -59,7 +82,7 @@ mod tests {
 
     #[test]
     fn version_convert_v1_to_v0_lossy() {
-        let v1_empty = ChatMessageContent::new("anything", Media::Photos { photos: vec![] });
+        let v1_empty = ChatMessageContent::new("anything", Some(MediaBundle::from(vec![])));
         let result = v1_empty.to_version(&Capabilities::zero());
         assert_eq!(result, Err(VersionConvertError::Lossy));
     }
@@ -187,11 +210,11 @@ mod tests {
 
         let chat = alice.direct_chat_topic(bobbi.agent_id());
         alice
-            .send_message(chat, ChatMessageContent::unversioned("Hello"))
+            .send_message_raw(chat, ChatMessageContent::unversioned("Hello"))
             .await
             .unwrap();
         bobbi
-            .send_message(chat, ChatMessageContent::text_only("Hello back"))
+            .send_message_raw(chat, ChatMessageContent::text_only("Hello back"))
             .await
             .unwrap();
 

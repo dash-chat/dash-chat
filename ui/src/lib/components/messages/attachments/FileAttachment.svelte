@@ -1,7 +1,11 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { FileAttachment } from 'dash-chat-stores';
-	import { formatFileSize, saveFileAttachment } from '$lib/utils/media';
+	import {
+		formatFileSize,
+		mediaSize,
+		saveFileAttachment,
+	} from '$lib/utils/media';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
@@ -39,9 +43,7 @@
 			class="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap"
 			>{file.name}</span
 		>
-		<span class="text-xs opacity-70"
-			>{formatFileSize(file.data.byteLength)}</span
-		>
+		<span class="text-xs opacity-70">{formatFileSize(mediaSize(file))}</span>
 	</div>
 	{#if metadata}
 		<div

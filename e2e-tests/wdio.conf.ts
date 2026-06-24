@@ -12,6 +12,7 @@ import {
 	killLeftoverMailboxServers,
 	killPortHolders,
 } from './setup/cleanup';
+import { spawnMailboxServer } from './setup/mailbox-server';
 import { waitForPortFree, waitForPortListening } from './setup/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -119,24 +120,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		mkdirSync(path.dirname(mailboxDb), { recursive: true });
 
 		console.log(`Starting local mailbox server on ${mailboxUrl}...`);
-		// `detached: true` puts the mailbox (cargo + its mailbox-server child) in
-		// its OWN process group. Without this, the mailbox sits in the wdio
-		// launcher's process group; when a worker crashes mid-spec and wdio kills
-		// its worker group on retry, mailbox can get reaped as collateral damage.
-		mailboxServer = spawn(
-			'cargo',
-			[
-				'run',
-				'-p',
-				'mailbox-server',
-				'--',
-				'--db-path',
-				mailboxDb,
-				'--addr',
-				`0.0.0.0:${mailboxPort}`,
-			],
-			{ cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'], detached: true },
-		);
+		mailboxServer = spawnMailboxServer(mailboxPort, mailboxDb);
 		console.log(`[mailbox-server] spawned (cargo pid=${mailboxServer.pid})`);
 		mailboxServer.stderr?.on('data', (data: Buffer) => {
 			console.error(`[mailbox-server] ${data.toString().trim()}`);

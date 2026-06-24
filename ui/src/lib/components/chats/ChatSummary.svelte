@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/badge/badge.js';
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
-	import { type ChatSummary, type Media } from 'dash-chat-stores';
+	import { type ChatSummary, type MediaAttachment } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Badge } from 'konsta/svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
@@ -24,7 +24,7 @@
 
 	function summarizeMessage(content: {
 		message: string;
-		media: Media | null;
+		media: MediaAttachment | null;
 	}): string {
 		if (content.message) return content.message;
 		if (!content.media) return '';

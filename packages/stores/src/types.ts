@@ -19,31 +19,107 @@ export interface ChatReaction {
 }
 
 /**
- * `data` is the raw attachment bytes. The Rust side holds a `Vec<u8>`, which
- * the Tauri JSON IPC delivers to the webview as a `number[]`; `getMessageMedia`
- * materializes that into a `Uint8Array` at the boundary, so every consumer (and
- * the send path, which builds `Uint8Array` directly) works with `Uint8Array`.
+ * A renderable photo attachment. Carries only the blob `hash` and metadata —
+ * never the raw bytes. The bytes live in the iroh-blobs store and are loaded
+ * lazily via the `irohblob://` URI scheme (see `mediaSrc` / `loadMediaBytes`).
  */
-export interface Photo {
-	data: Uint8Array;
+export interface PhotoAttachment {
+	/** Blob hash of the stored bytes. */
+	hash: Hash;
+	/** Encoded size in bytes, from the stored metadata. */
+	size: number;
 	name: string;
 	mime_type: string;
 }
 
-/** A non-image file attachment. See `Photo` for the `data` shape. */
+/** A renderable non-image file attachment. See `Photo` — hash + metadata only. */
 export interface FileAttachment {
-	data: Uint8Array;
+	hash: Hash;
+	size: number;
 	name: string;
 	mime_type: string;
 }
 
 /**
- * Media attached to a chat message. A message has either a set of photos
- * or a single file — not both. Matches `dashchat_node::Media`.
+ * Renderable media attached to a chat message. A message has either a set of
+ * photos or a single file — not both. Built from a log's `MediaMetaCollection`
+ * via `mediaMetaToMedia`; carries hashes, not bytes.
  */
-export type Media =
-	| { kind: 'photos'; photos: Photo[] }
+export type MediaAttachment =
+	| { kind: 'photos'; photos: PhotoAttachment[] }
 	| { kind: 'file'; file: FileAttachment };
+
+/**
+ * Raw bytes leaving the composer for the backend to store. `data` carries raw
+ * bytes — NOT base64; in-process it is a `Uint8Array`, and over Tauri JSON IPC
+ * a `Vec<u8>` arrives as `number[]`. This is the *only* media shape that holds
+ * bytes: once `store_media` has stored them, all reads go through `irohblob://`.
+ * Mirrors `dashchat_node::OutgoingMedia`.
+ */
+export type OutgoingMedia =
+	| { kind: 'photos'; photos: OutgoingPhoto[] }
+	| { kind: 'file'; file: OutgoingFile };
+
+export interface OutgoingPhoto {
+	data: Uint8Array;
+	name: string;
+	mime_type: string;
+}
+
+export interface OutgoingFile {
+	data: Uint8Array;
+	name: string;
+	mime_type: string;
+}
+
+export type MediaMetaKind = 'Photo' | 'File';
+
+/**
+ * Metadata for a single stored blob. A message log carries these in place of
+ * the raw bytes; the bytes live in the iroh-blobs store and are fetched lazily
+ * via the `irohblob://` URI scheme. Matches `dashchat_node::MediaMetaItem`.
+ */
+export interface MediaMetadata {
+	name: string;
+	mime_type: string;
+	size: number;
+	kind: MediaMetaKind;
+	hash: Hash;
+}
+
+/** Matches `dashchat_node::MediaBundle`, which serializes as a flat array. */
+export type MediaBundle = MediaMetadata[];
+
+/**
+ * Convert the blob metadata stored in a message log into the renderable
+ * `MediaAttachment` shape. Mirrors `Node::load_media`: a lone file becomes a `file`
+ * attachment, otherwise the items become `photos`. The resulting photos/file
+ * carry only a `hash` (no bytes).
+ */
+export function mediaBundleToAttachment(
+	meta: MediaBundle | null | undefined,
+): MediaAttachment | null {
+	if (!meta || meta.length === 0) return null;
+	const file = meta.find(item => item.kind === 'File');
+	if (file) {
+		return {
+			kind: 'file',
+			file: {
+				name: file.name,
+				mime_type: file.mime_type,
+				size: file.size,
+				hash: file.hash,
+			},
+		};
+	}
+	const photos: PhotoAttachment[] = meta.map(item => ({
+		name: item.name,
+		mime_type: item.mime_type,
+		size: item.size,
+		hash: item.hash,
+	}));
+	return { kind: 'photos', photos };
+}
 
 /**
  * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
@@ -52,42 +128,12 @@ export type Media =
 export type MessageContentV1 = {
 	v: '1';
 	message: string;
-	media: Media | null;
+	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob
+	 * store, fetched lazily via `irohblob://`). `mediaBundleToAttachment` turns this
+	 * into the renderable `MediaAttachment`. */
+	media: MediaBundle | null;
 };
 export type MessageContent = MessageContentV1;
-
-// Keyed on the `content` object, which `logs-store` keeps referentially stable
-// across recomputes (it reuses operation objects, only appending new ones), so
-// the materialized `Uint8Array` stays identity-stable too. That lets the
-// `objectUrl` action short-circuit and avoid reloading every image whenever a
-// new operation rebuilds the messages reactive.
-const mediaCache = new WeakMap<MessageContent, Media | null>();
-
-export function getMessageMedia(content: MessageContent): Media | null {
-	const cached = mediaCache.get(content);
-	if (cached !== undefined) return cached;
-
-	const result = materializeMessageMedia(content);
-	mediaCache.set(content, result);
-	return result;
-}
-
-function materializeMessageMedia(content: MessageContent): Media | null {
-	if (!content.media) return null;
-	const media = content.media;
-	// The Tauri JSON IPC delivers `Vec<u8>` as `number[]`; rebuild it as a
-	// `Uint8Array` here so consumers never deal with the raw wire form.
-	if (media.kind === 'photos') {
-		return {
-			kind: 'photos',
-			photos: media.photos.map(p => ({ ...p, data: new Uint8Array(p.data) })),
-		};
-	}
-	return {
-		kind: 'file',
-		file: { ...media.file, data: new Uint8Array(media.file.data) },
-	};
-}
 
 export type AnnouncementPayload =
 	| { type: 'SetProfile'; payload: Profile }
@@ -164,7 +210,10 @@ export interface MessagesStore {
 	markAsRead(messageHashes: Hash[]): Promise<void>;
 	/** Sends the message and resolves with the operation id of the created
 	 * message once it is confirmed in the local log. */
-	sendMessage(input: { message: string; media: Media | null }): Promise<Hash>;
+	sendMessage(input: {
+		message: string;
+		media: OutgoingMedia | null;
+	}): Promise<Hash>;
 }
 
 export type GroupControlEvent =
@@ -209,7 +258,7 @@ export type GroupControlEvent =
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
-			content: { message: string; media: Media | null };
+			content: { message: string; media: MediaAttachment | null };
 			authorName?: string;
 			timestamp: number;
 	  }

@@ -157,6 +157,7 @@
 	"previousPhoto": "Previous photo",
 	"nextPhoto": "Next photo",
 	"closeLightbox": "Close",
+	"imageLoadFailedRetry": "Image failed to load. Tap to retry.",
 
 	"nameThisGroup": "Name this group",
 	"newGroup": "New group",
@@ -218,6 +219,7 @@
 	"errorApplyStyle": "Failed to apply style. Please try again.",
 	"errorSendErrorReport": "Failed to send error report. Please try again.",
 	"errorLeavingGroup": "Failed to leave group. Please try again.",
+	"errorReceivedUnrecognizedLink": "Received unrecognized link: {{url}}",
 	"errorLeavingGroupOnlyAdmin": "Before you leave, you must choose at least one new admin for this group.",
 	"mute": "Mute",
 	"search": "Search",

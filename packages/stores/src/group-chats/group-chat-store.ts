@@ -12,11 +12,10 @@ import {
 	ChatSummaryLastEvent,
 	GroupControlEvent,
 	GroupInfo,
-	Media,
-	MessageContent,
 	MessagesStore,
+	OutgoingMedia,
 	Payload,
-	getMessageMedia,
+	mediaBundleToAttachment,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IGroupChatClient } from './group-chat-client';
@@ -94,7 +93,7 @@ export class GroupChatStore implements MessagesStore {
 							hash: operation.hash,
 							content: {
 								message: body.payload.payload.message,
-								media: getMessageMedia(body.payload.payload),
+								media: mediaBundleToAttachment(body.payload.payload.media),
 							},
 							author,
 							seqNum: operation.header.seq_num,
@@ -367,16 +366,9 @@ export class GroupChatStore implements MessagesStore {
 
 	async sendMessage(input: {
 		message: string;
-		media: Media | null;
+		media: OutgoingMedia | null;
 	}): Promise<Hash> {
-		const content: MessageContent = {
-			v: '1',
-			message: input.message,
-			media: input.media,
-		};
-
-		const hash = await this.client.sendMessage(this.chatId, content);
-		return hash;
+		return this.client.sendMessage(this.chatId, input.message, input.media);
 	}
 }
 
