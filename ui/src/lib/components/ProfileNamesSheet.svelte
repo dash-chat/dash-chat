@@ -5,6 +5,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccountQuestion } from '@mdi/js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import SheetHandle from './SheetHandle.svelte';
 
 	interface Props {
 		opened: boolean;
@@ -48,7 +49,7 @@
 {:else}
 	<Sheet class="pb-safe" {opened} onBackdropClick={onClose}>
 		<div class="flex flex-col items-center gap-6 px-6 pb-6">
-			<div class="sheet-handle"></div>
+			<SheetHandle />
 			{@render content()}
 		</div>
 	</Sheet>

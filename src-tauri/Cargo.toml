@@ -119,6 +119,7 @@ tauri-plugin-keepawake = "0.1.0"
 tauri-plugin-updater = "2.9"
 tauri-plugin-mcp-bridge = "0.8"
 mailbox-server = { path = "../crates/mailbox-server" }
+mailbox-local-server = { workspace = true }
 
 [features]
 e2e-tests = []

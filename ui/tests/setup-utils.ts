@@ -32,6 +32,13 @@ function simulateUpdate(
 	);
 }
 
+/** Force any BlobImage whose alt matches into its error/retry state. */
+function forceBlobError(alt: string) {
+	window.dispatchEvent(
+		new CustomEvent('test-blob-force-error', { detail: alt }),
+	);
+}
+
 /** True if the first element matching `selector` contains `text`. */
 function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
@@ -99,6 +106,7 @@ export const testUtils = {
 	/** E2E override for the composer's recent-photos strip; left undefined unless
 	 * a spec injects fake photos (the native library is unavailable in tests). */
 	recentPhotos: undefined as RecentPhotosTestData | undefined,
+	forceBlobError,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(

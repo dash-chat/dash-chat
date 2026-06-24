@@ -354,9 +354,16 @@ impl Node {
                 }
             }
 
-            Payload::Chat(
-                ChatPayload::Message(_) | ChatPayload::Reaction(_) | ChatPayload::GroupInfo(_),
-            ) => {
+            Payload::Chat(ChatPayload::Message(m)) => {
+                if let Some(media) = m.media() {
+                    for item in media.iter() {
+                        // TODO: can we have a p2panda stream of operations?
+                        self.blob_sync.fetch_pool.add(topic.into(), item.hash).await;
+                    }
+                }
+            }
+
+            Payload::Chat(ChatPayload::Reaction(_) | ChatPayload::GroupInfo(_)) => {
                 // Nothing to do.
             }
 
