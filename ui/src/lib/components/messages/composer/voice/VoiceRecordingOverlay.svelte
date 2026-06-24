@@ -31,7 +31,6 @@
 
 <style>
 	.voice-overlay {
-		background: inherit;
 		color: var(--k-text-color);
 	}
 	.chevron:dir(rtl) {

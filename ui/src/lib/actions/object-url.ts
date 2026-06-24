@@ -20,7 +20,7 @@ export const objectUrl: Action<
 	let url = '';
 	let current: Blob | Uint8Array | null = null;
 
-	function apply(s: ObjectUrlSource) {
+	function apply(s: ObjectUrlSource | undefined) {
 		if (!s) return;
 		if (typeof s === 'string') {
 			if (url) URL.revokeObjectURL(url);

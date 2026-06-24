@@ -4,7 +4,6 @@
  * rendered as a playable waveform bubble on both ends.
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { tid } from '../helpers/selectors';
 import { type Agent, setupAgent } from '../setup/setup-agents';
 
 describe('Voice notes', () => {
@@ -29,9 +28,7 @@ describe('Voice notes', () => {
 	});
 
 	it('exposes a clickable play control on the received voice note', async () => {
-		const playButton = agent2.directChatPage.messages.root.$(
-			tid('voice-play-button'),
-		);
+		const playButton = agent2.directChatPage.messages.voicePlayButton;
 		await playButton.waitForClickable();
 		await playButton.click();
 	});

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { tick, type Snippet } from 'svelte';
+	import type { Snippet } from 'svelte';
 	import type { VoiceNote } from 'dash-chat-stores';
 	import { objectUrl } from '$lib/actions/object-url';
-	import { blobUrl } from '$lib/utils/media';
 	import { formatDuration } from '$lib/utils/time';
+	import { AudioSourceLoader } from './useAudioSource.svelte';
 	import VoicePlayButton from './VoicePlayButton.svelte';
 	import WaveformScrubber from './WaveformScrubber.svelte';
 
@@ -35,34 +35,7 @@
 		paused && currentTime === 0 ? voice.duration_ms : currentTime * 1000,
 	);
 
-	// WebKitGTK's <audio> can't load our custom `irohblob://` scheme (its media
-	// pipeline bypasses the webview's scheme handler), so fetch the bytes and
-	// play them from a blob: URL built by the `objectUrl` action (which revokes
-	// it on destroy). Fetched lazily on first play.
-	let audioSource = $state<{ data: Uint8Array; mimeType: string }>();
-	let loadPromise: Promise<boolean> | undefined;
-
-	function ensureLoaded(): Promise<boolean> {
-		if (audioSource) return Promise.resolve(true);
-		if (loadPromise) return loadPromise;
-		loadPromise = (async () => {
-			try {
-				const res = await fetch(blobUrl(voice.hash));
-				if (!res.ok) return false;
-				audioSource = {
-					data: new Uint8Array(await res.arrayBuffer()),
-					mimeType: voice.mime_type,
-				};
-				await tick(); // let the `objectUrl` action set <audio>.src
-				return true;
-			} catch {
-				return false;
-			} finally {
-				loadPromise = undefined;
-			}
-		})();
-		return loadPromise;
-	}
+	const audio = new AudioSourceLoader(() => voice);
 
 	async function toggle() {
 		if (!audioEl) return;
@@ -70,7 +43,7 @@
 			audioEl.pause();
 			return;
 		}
-		if (await ensureLoaded()) audioEl.play();
+		if (await audio.ensureLoaded()) audioEl.play();
 	}
 
 	function seek(timeSec: number) {
@@ -95,7 +68,7 @@
 		bind:this={audioEl}
 		bind:paused
 		bind:currentTime
-		use:objectUrl={audioSource}
+		use:objectUrl={audio.source}
 		onloadedmetadata={() => {
 			if (audioEl && isFinite(audioEl.duration))
 				loadedDuration = audioEl.duration;
@@ -117,7 +90,7 @@
 	</div>
 
 	<div class="flex items-center justify-between text-xs opacity-70">
-		<span>{formatDuration(labelMs)}</span>
+		<span class="w-9 shrink-0 text-center">{formatDuration(labelMs)}</span>
 		{#if metadata}
 			<span class="flex items-center gap-1 whitespace-nowrap select-none">
 				{@render metadata()}

@@ -2,7 +2,6 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiTrashCanOutline } from '@mdi/js';
 	import IconButton from '$lib/components/IconButton.svelte';
-	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 	import RecordingIndicator from './RecordingIndicator.svelte';
 
 	interface Props {
@@ -10,11 +9,9 @@
 		elapsedMs: number;
 		/** Discard the recording. */
 		onCancel: () => void;
-		/** Stop the recording and send it immediately. */
-		onSend: () => void;
 	}
 
-	let { elapsedMs, onCancel, onSend }: Props = $props();
+	let { elapsedMs, onCancel }: Props = $props();
 </script>
 
 <div
@@ -32,6 +29,4 @@
 	<div class="flex flex-1 items-center gap-2">
 		<RecordingIndicator {elapsedMs} micSize={18} />
 	</div>
-
-	<SendButton disabled={false} onClick={onSend} testid="voice-send" />
 </div>

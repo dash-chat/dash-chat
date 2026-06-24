@@ -55,40 +55,33 @@
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
 
-          tauriLibraries = with pkgs; [
-            webkitgtk_4_1
-            gtk3
-            cairo
-            gdk-pixbuf
-            glib
-            dbus
-            openssl
-            librsvg
-            libsoup_3
-            libayatana-appindicator
-            pango
-            # Microphone capture for voice notes (cpal → ALSA) on Linux desktop.
-            alsa-lib
-            # GStreamer so WebKitGTK can play voice-note audio (<audio> WAV).
-            gst_all_1.gstreamer
-            gst_all_1.gst-plugins-base
-            gst_all_1.gst-plugins-good
-          ];
+          # Voice-note mic capture (cpal → ALSA) dev-shell plumbing.
+          alsa = import ./nix/alsa.nix { inherit pkgs lib; };
+
+          tauriLibraries =
+            (with pkgs; [
+              webkitgtk_4_1
+              gtk3
+              cairo
+              gdk-pixbuf
+              glib
+              dbus
+              openssl
+              librsvg
+              libsoup_3
+              libayatana-appindicator
+              pango
+              # GStreamer so WebKitGTK can play voice-note audio (<audio> WAV).
+              gst_all_1.gstreamer
+              gst_all_1.gst-plugins-base
+              gst_all_1.gst-plugins-good
+            ])
+            ++ alsa.libraries;
           gstPluginPath = pkgs.lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" [
             pkgs.gst_all_1.gstreamer
             pkgs.gst_all_1.gst-plugins-base
             pkgs.gst_all_1.gst-plugins-good
           ];
-          # ALSA config that routes the `default` device through PulseAudio
-          # (PipeWire-pulse) so cpal mic capture works from the dev shell. The
-          # nixpkgs alsa-lib we link/rpath otherwise resolves `default` to a
-          # nonexistent hw device.
-          alsaConf = pkgs.writeText "asound.conf" ''
-            <${pkgs.alsa-lib}/share/alsa/alsa.conf>
-            <${pkgs.alsa-plugins}/share/alsa/alsa.conf.d/50-pulseaudio.conf>
-            pcm.!default { type pulse }
-            ctl.!default { type pulse }
-          '';
           nodeVersion = lib.versions.major (lib.strings.trim (builtins.readFile ./.node-version));
           packages = [
             pkgs.mprocs
@@ -98,10 +91,8 @@
             pkgs.cargo-nextest
             pkgs.doctl
             inputs'.tauri-driver.packages.tauri-driver
-            # Build-time discovery of ALSA for cpal (voice-note recording).
-            pkgs.pkg-config
-            pkgs.alsa-lib
-          ];
+          ]
+          ++ alsa.packages;
         in
         rec {
           devShells.default =
@@ -111,16 +102,14 @@
             pkgs.mkShell {
               packages = [ rust ] ++ packages;
               inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-              shellHook = lib.optionalString pkgs.stdenv.isLinux ''
-                export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
-                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
-                # Let WebKitGTK find GStreamer plugins for <audio> playback.
-                export GST_PLUGIN_SYSTEM_PATH_1_0="${gstPluginPath}"
-                # Route ALSA (cpal mic capture) to the system PulseAudio/PipeWire
-                # so the `default` capture device resolves in the dev shell.
-                export ALSA_PLUGIN_DIR="${pkgs.alsa-plugins}/lib/alsa-lib"
-                export ALSA_CONFIG_PATH="${alsaConf}"
-              '';
+              shellHook =
+                lib.optionalString pkgs.stdenv.isLinux ''
+                  export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+                  export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+                  # Let WebKitGTK find GStreamer plugins for <audio> playback.
+                  export GST_PLUGIN_SYSTEM_PATH_1_0="${gstPluginPath}"
+                ''
+                + alsa.shellHook;
             };
 
           devShells.androidDev =

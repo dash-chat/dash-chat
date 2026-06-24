@@ -13,6 +13,7 @@
 	import VoiceRecordingOverlay from './VoiceRecordingOverlay.svelte';
 	import VoiceLockedBar from './VoiceLockedBar.svelte';
 	import VoiceDesktopBar from './VoiceDesktopBar.svelte';
+	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 
 	export interface DragState {
 		active: boolean;
@@ -44,6 +45,10 @@
 	let startY = 0;
 	let isRtl = false;
 	let willCancel = false;
+	// The pointer can be released while `recorder.start()` is still awaiting mic
+	// permission/native start; remember that so we finish the hold once recording
+	// actually begins instead of leaving it stuck recording.
+	let releasedWhileStarting = false;
 
 	const showLockedBar = $derived(
 		recorder.phase === 'locked' || recorder.phase === 'encoding',
@@ -55,11 +60,19 @@
 		recorder.phase === 'recording' && isMobile,
 	);
 
+	// While the locked/desktop bar replaces the input row, the mic button must be
+	// hidden: it overlaps the bar's send button and, painting later, would steal
+	// its taps.
+	const barReplacesButton = $derived(
+		!recordingHoldMobile && (showLockedBar || recorder.isActive),
+	);
+
 	recorder.onMaxDuration = () => void stopAndSend();
 
-	async function stopAndSend() {
+	async function stopAndSend(): Promise<boolean> {
 		const draft = await recorder.stop();
 		if (draft) onRecorded(draft);
+		return !!draft;
 	}
 
 	async function onPointerDown(event: PointerEvent) {
@@ -69,6 +82,7 @@
 		startX = event.clientX;
 		startY = event.clientY;
 		willCancel = false;
+		releasedWhileStarting = false;
 		isRtl = getComputedStyle(el).direction === 'rtl';
 		await recorder.start();
 		if (recorder.phase === 'denied') {
@@ -78,7 +92,11 @@
 		}
 		if (recorder.phase !== 'recording') return;
 		// A mouse can't comfortably press-and-hold, so a click records hands-free.
-		if (event.pointerType === 'mouse') recorder.lock();
+		if (event.pointerType === 'mouse') {
+			recorder.lock();
+			return;
+		}
+		if (releasedWhileStarting) await finishHold();
 	}
 
 	function onPointerMove(event: PointerEvent) {
@@ -101,7 +119,26 @@
 
 	async function onPointerUp() {
 		drag = idle;
+		// Released before the async start finished: defer the finish to onPointerDown.
+		if (recorder.phase === 'requesting') {
+			releasedWhileStarting = true;
+			return;
+		}
 		if (recorder.phase !== 'recording') return;
+		await finishHold();
+	}
+
+	async function onPointerCancel() {
+		drag = idle;
+		if (recorder.phase === 'requesting') {
+			willCancel = true;
+			releasedWhileStarting = true;
+			return;
+		}
+		await recorder.cancel();
+	}
+
+	async function finishHold() {
 		if (willCancel || recorder.elapsedMs < MIN_DURATION_MS) {
 			await recorder.cancel();
 			if (!willCancel) showToast(m.voiceRecordHint(), 'default');
@@ -120,71 +157,95 @@
 
 {#if recorder.phase === 'recording' && isMobile}
 	<div
-		class="voice-layer pointer-events-none {theme === 'ios'
-			? 'bg-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass'
+		class="voice-layer has-end-button pointer-events-none {theme === 'ios'
+			? 'bg-ios-light-surface backdrop-blur-lg dark:bg-ios-dark-surface'
 			: 'bg-white dark:bg-gray-800'}"
 	>
 		<VoiceRecordingOverlay elapsedMs={recorder.elapsedMs} {drag} />
 	</div>
 {:else if showLockedBar || recorder.isActive}
-	<div
-		class="voice-layer {theme === 'ios'
-			? 'bg-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass'
-			: 'bg-white dark:bg-gray-800'}"
-	>
-		{#if isMobile}
+	{#if isMobile}
+		<div
+			class="voice-layer has-end-button {theme === 'ios'
+				? 'bg-ios-light-surface backdrop-blur-lg dark:bg-ios-dark-surface'
+				: 'bg-white dark:bg-gray-800'}"
+		>
 			<VoiceLockedBar
 				elapsedMs={recorder.elapsedMs}
 				onCancel={() => void recorder.cancel()}
-				onSend={() => void stopAndSend()}
 			/>
-		{:else}
+		</div>
+	{:else}
+		<div class="voice-layer voice-layer-flush bg-page-surface">
 			<VoiceDesktopBar
 				elapsedMs={recorder.elapsedMs}
 				onCancel={() => void recorder.cancel()}
-				onSend={() => void stopAndSend()}
+				onSend={stopAndSend}
 			/>
-		{/if}
-	</div>
-{/if}
-
-<div class="relative shrink-0">
-	{#if recordingHoldMobile}
-		<div
-			class="lock-pill pointer-events-none absolute bottom-full left-1/2 mb-2 flex flex-col items-center gap-1.5 rounded-full bg-gray-100 px-1.5 py-2.5 dark:bg-gray-700"
-			style="transform: translate(-50%, {-8 * drag.lockProgress}px)"
-		>
-			<wa-icon
-				class="lock-icon"
-				src={wrapPathInSvg(mdiLockOutline)}
-				style="opacity: {0.55 + 0.45 * drag.lockProgress}"
-			></wa-icon>
-			<wa-icon class="chevron-up" src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
 		</div>
 	{/if}
+{/if}
 
-	<IconButton
-		icon={mdiMicrophone}
-		label={m.voiceRecordHint()}
-		testid="message-input-voice-record"
-		iconClass={recordingHoldMobile ? 'text-2xl text-white' : 'text-2xl'}
-		class="h-[42px] w-[42px] shrink-0 touch-none {recordingHoldMobile
-			? '!bg-red-500 !opacity-100'
-			: ''}"
-		onpointerdown={onPointerDown}
-		onpointermove={onPointerMove}
-		onpointerup={onPointerUp}
-		onpointercancel={() => recorder.cancel()}
-	/>
-</div>
+{#if barReplacesButton && isMobile}
+	<div class="relative z-30 shrink-0">
+		<SendButton disabled={false} onSend={stopAndSend} testid="voice-send" />
+	</div>
+{:else if !barReplacesButton}
+	<div class="relative shrink-0 {recordingHoldMobile ? 'z-30' : ''}">
+		{#if recordingHoldMobile}
+			<div
+				class="lock-pill pointer-events-none absolute bottom-full left-1/2 mb-2 flex flex-col items-center gap-1.5 rounded-full bg-gray-100 px-1.5 py-2.5 dark:bg-gray-700"
+				style="transform: translate(-50%, {-8 * drag.lockProgress}px)"
+			>
+				<wa-icon
+					class="lock-icon"
+					src={wrapPathInSvg(mdiLockOutline)}
+					style="opacity: {0.55 + 0.45 * drag.lockProgress}"
+				></wa-icon>
+				<wa-icon class="chevron-up" src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
+			</div>
+		{/if}
+
+		<IconButton
+			icon={mdiMicrophone}
+			label={m.voiceRecordHint()}
+			testid="message-input-voice-record"
+			iconClass={recordingHoldMobile ? 'text-2xl text-white' : 'text-2xl'}
+			class="h-[42px] w-[42px] shrink-0 touch-none {recordingHoldMobile
+				? '!bg-red-500 !opacity-100'
+				: ''}"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerCancel}
+		/>
+	</div>
+{/if}
 
 <style>
 	.voice-layer {
 		position: absolute;
-		inset: 0;
+		inset-block: 0;
+		inset-inline: 0;
 		display: flex;
 		align-items: center;
+		border: 1px solid var(--k-hairline-color);
 		border-radius: 22px;
+		/* The composer's emoji/attach/mic buttons (Konsta `Button`) sit at z-index 10;
+		   the overlay must paint above them so they don't bleed through. */
+		z-index: 20;
+	}
+	/* Leave the trailing slot free so the action button (mic / send) sits outside
+	   the bordered pill, mirroring the message input's send button. */
+	.voice-layer.has-end-button {
+		inset-inline-end: calc(42px + 0.5rem);
+	}
+	/* On desktop the bar spans the full row and lays out its own inner pill plus
+	   the Cancel/Send buttons, so the overlay itself must not look like a pill —
+	   it just paints the composer surface to hide the input row underneath. */
+	.voice-layer.voice-layer-flush {
+		border: none;
+		border-radius: 0;
 	}
 	.lock-pill :global(wa-icon) {
 		width: 18px;
