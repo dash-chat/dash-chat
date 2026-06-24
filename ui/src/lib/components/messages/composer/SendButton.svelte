@@ -11,7 +11,11 @@
 		testid?: string;
 	}
 
-	let { disabled = false, onSend,  testid = 'message-input-send' }: Props = $props();
+	let {
+		disabled = false,
+		onSend,
+		testid = 'message-input-send',
+	}: Props = $props();
 
 	let loading = $state(false);
 

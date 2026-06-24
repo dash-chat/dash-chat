@@ -1,6 +1,6 @@
-import { tick } from 'svelte';
-import type { VoiceNote } from 'dash-chat-stores';
 import { blobUrl } from '$lib/utils/media';
+import type { VoiceNote } from 'dash-chat-stores';
+import { tick } from 'svelte';
 
 export interface LoadedAudio {
 	data: Uint8Array;
