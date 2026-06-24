@@ -274,7 +274,7 @@
 				<LightboxThumbnailStrip {photos} {index} onSelect={select} />
 			{/if}
 			{#if isMobile}
-				<div class="flex px-3 pt-1">
+				<div class="flex px-3 pt-3 pb-2">
 					<ShareButton
 						onClick={handleShare}
 						testid="lightbox-share"
@@ -288,7 +288,7 @@
 
 <style>
 	.lightbox-header {
-		height: calc(52px + env(safe-area-inset-top, 0px));
+		height: calc(72px + env(safe-area-inset-top, 0px));
 		padding-top: env(safe-area-inset-top, 0px);
 		transition: opacity 0.15s ease;
 	}

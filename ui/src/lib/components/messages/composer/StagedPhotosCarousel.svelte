@@ -63,7 +63,12 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-	<ImageCarousel bind:index items={photos} class="min-h-0 flex-1">
+	<ImageCarousel
+		bind:index
+		items={photos}
+		key={photo => photo}
+		class="min-h-0 flex-1"
+	>
 		{#snippet slide(photo)}
 			<img
 				class="rounded-2xl object-contain"

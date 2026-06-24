@@ -9,6 +9,10 @@
 		slide: Snippet<[T, number]>;
 		/** Freeze horizontal paging (e.g. while a slide is zoomed). */
 		paused?: boolean;
+		/** Stable per-item identity for the keyed `{#each}`. Defaults to the array
+		    index; pass an item-derived key when items can be removed mid-list so
+		    Svelte drops the right node instead of mutating it in place. */
+		key?: (item: T, index: number) => unknown;
 	}
 
 	let {
@@ -16,6 +20,7 @@
 		index = $bindable(0),
 		slide,
 		paused = false,
+		key = (_, i) => i,
 		class: className = '',
 		...rest
 	}: Props = $props();
@@ -116,7 +121,7 @@
 	onscroll={onScroll}
 	{...rest}
 >
-	{#each items as item, i (i)}
+	{#each items as item, i (key(item, i))}
 		<div
 			class="relative flex h-full w-full shrink-0 snap-center snap-always items-center justify-center overflow-hidden"
 		>
