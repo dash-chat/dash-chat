@@ -70,7 +70,7 @@ function handleUrls(urls: string[]) {
 		}
 		if (!matched) {
 			console.log('[deep-link] url did not match pattern:', sanitizeUrl(url));
-			showToast(m.errorReceivedUnrecognizedLink({ url }));
+			showToast(m.errorReceivedUnrecognizedLink({ url }), 'error');
 		}
 	}
 }
