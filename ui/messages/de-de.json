@@ -263,5 +263,7 @@
     "connectionStatusLocalDescription_other": "Sie haben keine Internetverbindung, aber Sie sind mit {{count}} Local Mailboxes in Ihrem Netzwerk verbunden. Nachrichten werden mit ihnen synchronisiert.",
     "connectionStatusLocalAriaLabel": "Verbindungsstatus: mit der lokalen Mailbox verbunden. Tippen Sie auf Details.",
     "previewFeatures": "Funktionen der Vorschau",
-    "upload": "Hochladen"
+    "upload": "Hochladen",
+    "emoji": "Emoji",
+    "photosCount": "{{count}} Fotos"
 }
