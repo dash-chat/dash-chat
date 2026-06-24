@@ -23,7 +23,9 @@ use dashchat_utils::FetchPool;
 
 pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 
-use crate::{AsBody, ChatPayload, Payload, TopicId, mailbox::MailboxOperation, stores::OpStore};
+use crate::{
+    AsBody, ChatPayload, DeviceId, Payload, TopicId, mailbox::MailboxOperation, stores::OpStore,
+};
 
 /// Drop a pending fetch entry after this many consecutive failed passes, so a
 /// permanently-unfetchable blob doesn't accumulate steady-state background work.
@@ -126,12 +128,17 @@ impl BlobSync {
     pub async fn store_blob(
         &self,
         topic: TopicId,
+        author: DeviceId,
         data: impl Into<bytes::Bytes>,
     ) -> anyhow::Result<iroh_blobs::Hash> {
         let tt = self.blobs.blobs().add_bytes(data).temp_tag().await?;
         let hash = tt.hash();
-        let tag_name = blob_tag_name(topic, hash);
-        self.blobs.store().tags().set(tag_name, tt.hash_and_format()).await?;
+        let tag_name = blob_tag_name(topic, author, hash);
+        self.blobs
+            .store()
+            .tags()
+            .set(tag_name, tt.hash_and_format())
+            .await?;
         Ok(hash)
     }
 
@@ -140,11 +147,12 @@ impl BlobSync {
     pub async fn delete_blobs(
         &self,
         topic: TopicId,
+        author: DeviceId,
         hashes: impl IntoIterator<Item = iroh_blobs::Hash>,
     ) {
         let tags = self.blobs.store().tags();
         for hash in hashes {
-            let tag_name = blob_tag_name(topic, hash);
+            let tag_name = blob_tag_name(topic, author, hash);
             if let Err(err) = tags.delete(tag_name).await {
                 tracing::warn!(?err, "failed to delete blob tag");
             }
@@ -186,9 +194,10 @@ impl BlobSync {
     }
 }
 
-fn blob_tag_name(topic: TopicId, hash: iroh_blobs::Hash) -> Vec<u8> {
-    let mut name = Vec::with_capacity(64);
+fn blob_tag_name(topic: TopicId, author: DeviceId, hash: iroh_blobs::Hash) -> Vec<u8> {
+    let mut name = Vec::with_capacity(96);
     name.extend_from_slice(topic.as_bytes());
+    name.extend_from_slice(author.as_bytes());
     name.extend_from_slice(hash.as_bytes());
     name
 }
