@@ -7,15 +7,16 @@
 	interface Props {
 		disabled: boolean;
 		onClick: () => void;
+		testid?: string;
 	}
 
-	let { disabled, onClick }: Props = $props();
+	let { disabled, onClick, testid = 'message-input-send' }: Props = $props();
 </script>
 
 <button
 	type="button"
 	class="send-button flex h-[42px] w-[42px] shrink-0 items-center justify-center p-0"
-	data-testid="message-input-send"
+	data-testid={testid}
 	class:enabled={!disabled}
 	onclick={onClick}
 	{disabled}

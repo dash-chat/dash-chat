@@ -11,12 +11,13 @@ type ObjectUrlSource = Blob | { data: Uint8Array; mimeType: string };
  */
 export const objectUrl: Action<
 	HTMLImageElement | HTMLAudioElement,
-	ObjectUrlSource
+	ObjectUrlSource | undefined
 > = (node, source) => {
 	let url = '';
 	let current: Blob | Uint8Array | null = null;
 
-	function apply(s: ObjectUrlSource) {
+	function apply(s: ObjectUrlSource | undefined) {
+		if (!s) return;
 		const key = s instanceof Blob ? s : s.data;
 		if (key === current) return;
 		if (url) URL.revokeObjectURL(url);

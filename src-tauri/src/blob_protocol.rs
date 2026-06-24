@@ -31,6 +31,9 @@ pub fn handle<R: Runtime>(
                 // The webview's `fetch()` (save path) reads these cross-origin.
                 .header("Access-Control-Allow-Origin", "*")
                 .header("Cache-Control", "public, max-age=31536000, immutable")
+                // `<audio>` (voice notes) won't content-sniff and rejects a
+                // typeless source, so derive a MIME from the magic bytes.
+                .header("Content-Type", sniff_content_type(&bytes))
                 .body(bytes)
                 .expect("valid response"),
             Err(err) => {
@@ -45,6 +48,29 @@ pub fn handle<R: Runtime>(
         };
         responder.respond(response);
     });
+}
+
+/// Best-effort MIME type from a blob's magic bytes. Covers the media kinds the
+/// app stores (voice-note WAV and the supported image formats); anything else
+/// falls back to a generic type, which is fine for file-attachment downloads.
+fn sniff_content_type(bytes: &[u8]) -> &'static str {
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" {
+        match &bytes[8..12] {
+            b"WAVE" => return "audio/wav",
+            b"WEBP" => return "image/webp",
+            _ => {}
+        }
+    }
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return "image/jpeg";
+    }
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return "image/png";
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return "image/gif";
+    }
+    "application/octet-stream"
 }
 
 async fn load<R: Runtime>(app: &tauri::AppHandle<R>, hash: &str) -> anyhow::Result<Vec<u8>> {

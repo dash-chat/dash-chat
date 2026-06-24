@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { onDestroy } from 'svelte';
-	import { useTheme } from 'konsta/svelte';
 	import { mdiMicrophone } from '@mdi/js';
 	import { showToast } from '$lib/utils/toasts';
+	import { isMobile } from '$lib/utils/environment';
 	import type { DraftVoiceNote } from '$lib/utils/media';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import { VoiceRecorder } from './useVoiceRecorder.svelte';
+	import VoiceLayer from './VoiceLayer.svelte';
 	import VoiceRecordingOverlay from './VoiceRecordingOverlay.svelte';
 	import VoiceLockedBar from './VoiceLockedBar.svelte';
 
@@ -22,8 +23,6 @@
 	}
 
 	let { onRecorded }: Props = $props();
-
-	const theme = $derived(useTheme());
 
 	/** Pixels the pointer must travel toward the inline-start to cancel. */
 	const CANCEL_THRESHOLD = 120;
@@ -108,26 +107,18 @@
 	onDestroy(() => void recorder.cancel());
 </script>
 
-{#if recorder.phase === 'recording'}
-	<div
-		class="voice-layer pointer-events-none {theme === 'ios'
-			? 'bg-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass'
-			: 'bg-white dark:bg-gray-800'}"
-	>
+{#if recorder.phase === 'recording' && isMobile}
+	<VoiceLayer pointerEvents={false}>
 		<VoiceRecordingOverlay elapsedMs={recorder.elapsedMs} {drag} />
-	</div>
-{:else if showLockedBar}
-	<div
-		class="voice-layer {theme === 'ios'
-			? 'bg-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass'
-			: 'bg-white dark:bg-gray-800'}"
-	>
+	</VoiceLayer>
+{:else if showLockedBar || recorder.isActive}
+	<VoiceLayer>
 		<VoiceLockedBar
 			elapsedMs={recorder.elapsedMs}
 			onCancel={() => void recorder.cancel()}
 			onSend={() => void stopAndSend()}
 		/>
-	</div>
+	</VoiceLayer>
 {/if}
 
 <IconButton
@@ -140,13 +131,3 @@
 	onpointerup={onPointerUp}
 	onpointercancel={() => recorder.cancel()}
 />
-
-<style>
-	.voice-layer {
-		position: absolute;
-		inset: 0;
-		display: flex;
-		align-items: center;
-		border-radius: 22px;
-	}
-</style>
