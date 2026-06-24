@@ -75,14 +75,15 @@ function handleUrls(urls: string[]) {
 	}
 }
 
-const handledLaunchUrls = new Set<string>();
+const launchUrls = new Set<string>();
+let launchUrlsConsumed = false;
 
 // Resolved once getCurrent() completes so the onOpenUrl callback can safely
 // dedup against launch URLs without a startup race.
 const launchUrlsReady: Promise<void> = getCurrent()
 	.then(urls => {
 		if (urls) {
-			for (const url of urls) handledLaunchUrls.add(url);
+			for (const url of urls) launchUrls.add(url);
 		}
 	})
 	.catch(err => {
@@ -91,7 +92,8 @@ const launchUrlsReady: Promise<void> = getCurrent()
 
 export function handleLaunchDeepLink() {
 	launchUrlsReady.then(() => {
-		const urls = [...handledLaunchUrls];
+		const urls = [...launchUrls];
+		launchUrlsConsumed = true;
 		if (urls.length > 0) handleUrls(urls);
 	});
 }
@@ -99,7 +101,11 @@ export function handleLaunchDeepLink() {
 export function listenForDeepLinks(): () => void {
 	const unlistenPromise = onOpenUrl(async urls => {
 		await launchUrlsReady;
-		const fresh = urls.filter(url => !handledLaunchUrls.delete(url));
+		// If the launch handler hasn't run yet, skip URLs it will handle.
+		// Once it has run (or if it never will), treat everything as fresh.
+		const fresh = launchUrlsConsumed
+			? urls
+			: urls.filter(url => !launchUrls.has(url));
 		if (fresh.length > 0) handleUrls(fresh);
 	}).catch(err => {
 		console.error('[deep-link] failed to register listener:', err);
