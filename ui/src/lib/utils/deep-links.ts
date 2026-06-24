@@ -1,16 +1,15 @@
-import { goto } from '$app/navigation';
+import * as addContact from '$lib/deep-links/add-contact';
 import { m } from '$lib/paraglide/messages.js';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 
 import { showToast } from './toasts';
 
-function handleAddContactLink(code: string) {
-	goto('/new-message/add-contact').then(() =>
-		// TODO: This is temporary until another PR actually uses the code to add
-		//       the contact (hence why it doesn't use paraglide messages)
-		showToast(`Got a deep link with code: ${code}`),
-	);
-}
+type DeepLinkHandler = {
+	path: string;
+	handle: (params: Record<string, string>) => void;
+};
+
+const handlers: DeepLinkHandler[] = [addContact];
 
 const HTTPS_DEEP_LINK_BASE_URL = 'https://dashchat\\.org';
 const SCHEME_DEEP_LINK_BASE_URL = 'dash-chat:/';
@@ -45,10 +44,16 @@ function matchesDeepLinkPath(
 
 function handleUrls(urls: string[]) {
 	for (const url of urls) {
-		const match = matchesDeepLinkPath(url, '/add-contact/{{code}}');
-		if (match?.code) {
-			handleAddContactLink(match.code);
-		} else {
+		let matched = false;
+		for (const handler of handlers) {
+			const params = matchesDeepLinkPath(url, handler.path);
+			if (params) {
+				handler.handle(params);
+				matched = true;
+				break;
+			}
+		}
+		if (!matched) {
 			console.log('[deep-link] url did not match pattern:', url);
 			showToast(m.receivedUnrecognizedLink({ url }));
 		}
