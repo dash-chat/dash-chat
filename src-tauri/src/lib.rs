@@ -60,6 +60,8 @@ pub fn run() {
             // MCP for Claude Code to control the tauri app
             builder = builder.plugin(tauri_plugin_mcp_bridge::init());
         } else {
+            // single-instance must be registered before deep-link so it can
+            // forward deep link URLs from a second process to this one.
             builder = builder
                 .plugin(tauri_plugin_single_instance::init(
                     move |app, _argv, _cwd| {
@@ -118,7 +120,7 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
         ])
-        // .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
@@ -135,6 +137,14 @@ pub fn run() {
             _ => {}
         })
         .setup(move |app| {
+            #[cfg(any(target_os = "linux", windows))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                if let Err(err) = app.deep_link().register_all() {
+                    log::error!("Failed to register deep links: {err:?}");
+                }
+            }
+
             let handle = app.handle().clone();
 
             let result: anyhow::Result<()> =
