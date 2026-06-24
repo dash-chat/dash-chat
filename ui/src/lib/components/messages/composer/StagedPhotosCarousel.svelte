@@ -5,6 +5,7 @@
 	import { type DraftMedia, MAX_STAGED_PHOTOS } from '$lib/utils/media';
 	import { objectUrl } from '$lib/actions/object-url';
 	import IconButton from '$lib/components/IconButton.svelte';
+	import ImageCarousel from '$lib/components/ImageCarousel.svelte';
 
 	interface Props {
 		/** The staged draft. Only the `photos` variant is rendered. */
@@ -23,7 +24,7 @@
 		onClose,
 	}: Props = $props();
 
-	let carouselEl: HTMLElement | undefined = $state();
+	let carousel: ImageCarousel<File> | undefined = $state();
 
 	const photos = $derived(media?.kind === 'photos' ? media.items : []);
 
@@ -32,39 +33,9 @@
 		if (index > photos.length - 1) index = Math.max(0, photos.length - 1);
 	});
 
-	// Page via scrollIntoView / bounding-box proximity rather than scrollLeft math:
-	// RTL's scrollLeft sign convention differs across engines (Chromium/Gecko go
-	// negative, WebKit/iOS stays positive), and these are direction-agnostic.
-	function scrollToIndex(i: number, smooth = true) {
-		const slide = carouselEl?.children[i] as Element | undefined;
-		slide?.scrollIntoView({
-			behavior: smooth ? 'smooth' : 'auto',
-			inline: 'center',
-			block: 'nearest',
-		});
-	}
-
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
-		scrollToIndex(index, false);
-	}
-
-	function onCarouselScroll() {
-		if (!carouselEl || carouselEl.clientWidth === 0) return;
-		// The active page is the slide whose centre is closest to the viewport's.
-		const viewportCenter =
-			carouselEl.getBoundingClientRect().left + carouselEl.clientWidth / 2;
-		let nearest = index;
-		let nearestDistance = Infinity;
-		for (let i = 0; i < carouselEl.children.length; i++) {
-			const rect = carouselEl.children[i].getBoundingClientRect();
-			const distance = Math.abs(rect.left + rect.width / 2 - viewportCenter);
-			if (distance < nearestDistance) {
-				nearestDistance = distance;
-				nearest = i;
-			}
-		}
-		if (nearest !== index && nearest < photos.length) index = nearest;
+		carousel?.scrollToIndex(index, false);
 	}
 
 	async function removePhoto(i: number) {
@@ -77,7 +48,7 @@
 		media = { kind: 'photos', items: remaining };
 		await tick();
 		index = Math.min(index, remaining.length - 1);
-		scrollToIndex(index, false);
+		carousel?.scrollToIndex(index, false);
 	}
 
 	function onKeydown(event: KeyboardEvent) {
@@ -96,24 +67,21 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-	<div
-		class="carousel flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto"
-		bind:this={carouselEl}
-		onscroll={onCarouselScroll}
+	<ImageCarousel
+		bind:this={carousel}
+		bind:index
+		items={photos}
+		class="min-h-0 flex-1"
 	>
-		{#each photos as photo (photo)}
-			<div
-				class="flex w-full shrink-0 snap-center snap-always items-center justify-center px-3 py-3"
-			>
-				<img
-					class="rounded-2xl object-contain"
-					style="max-height: 70vh; max-width: 70vw;"
-					use:objectUrl={photo}
-					alt={photo.name}
-				/>
-			</div>
-		{/each}
-	</div>
+		{#snippet slide(photo)}
+			<img
+				class="rounded-2xl object-contain"
+				style="max-height: 70vh; max-width: 70vw;"
+				use:objectUrl={photo}
+				alt={photo.name}
+			/>
+		{/snippet}
+	</ImageCarousel>
 
 	<div
 		class="absolute inset-x-0 bottom-0 z-10 flex items-center justify-start gap-3 overflow-x-auto px-4 pt-3 pb-3"
@@ -170,13 +138,6 @@
 </div>
 
 <style>
-	.carousel {
-		scrollbar-width: none;
-	}
-	.carousel::-webkit-scrollbar {
-		display: none;
-	}
-
 	.staged-thumb {
 		border: 2px solid white;
 		border-radius: 12px;
