@@ -75,8 +75,10 @@ function handleUrls(urls: string[]) {
 	}
 }
 
+// URLs delivered at launch, populated before launchUrlsReady resolves.
+// The onOpenUrl listener removes each URL on first sight so it only dedupes
+// one re-delivery, not all future deliveries of the same URL.
 const launchUrls = new Set<string>();
-let launchUrlsConsumed = false;
 
 // Resolved once getCurrent() completes so the onOpenUrl callback can safely
 // dedup against launch URLs without a startup race.
@@ -93,7 +95,6 @@ const launchUrlsReady: Promise<void> = getCurrent()
 export function handleLaunchDeepLink() {
 	launchUrlsReady.then(() => {
 		const urls = [...launchUrls];
-		launchUrlsConsumed = true;
 		if (urls.length > 0) handleUrls(urls);
 	});
 }
@@ -101,11 +102,10 @@ export function handleLaunchDeepLink() {
 export function listenForDeepLinks(): () => void {
 	const unlistenPromise = onOpenUrl(async urls => {
 		await launchUrlsReady;
-		// If the launch handler hasn't run yet, skip URLs it will handle.
-		// Once it has run (or if it never will), treat everything as fresh.
-		const fresh = launchUrlsConsumed
-			? urls
-			: urls.filter(url => !launchUrls.has(url));
+		// Remove each URL from launchUrls on first sight — if the plugin
+		// re-delivers a launch URL, skip it exactly once; after that, treat
+		// further deliveries as genuinely new.
+		const fresh = urls.filter(url => !launchUrls.delete(url));
 		if (fresh.length > 0) handleUrls(fresh);
 	}).catch(err => {
 		console.error('[deep-link] failed to register listener:', err);
