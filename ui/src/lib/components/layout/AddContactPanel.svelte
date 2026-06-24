@@ -28,6 +28,7 @@
 		Tabbar,
 	} from 'konsta/svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
 	import { defaultQrColor } from '$lib/utils/qrcode';
@@ -52,10 +53,21 @@
 	let scannerRef: QrCodeScanner | null = $state(null);
 	let uploaderRef: QrCodeUploader | null = $state(null);
 
-	async function receiveCode(code: string) {
-		try {
-			const contactCode = decodeContactCode(code);
+	$effect(() => {
+		const code = page.url.searchParams.get('code');
+		if (code) receiveCode(decodeURIComponent(code));
+	});
 
+	async function receiveCode(code: string) {
+		let contactCode;
+		try {
+			contactCode = decodeContactCode(code);
+		} catch {
+			showToast(m.errorAddContactInvalidCode(), 'error');
+			return;
+		}
+
+		try {
 			const myCodeString = await myCode;
 
 			if (code === myCodeString) {
