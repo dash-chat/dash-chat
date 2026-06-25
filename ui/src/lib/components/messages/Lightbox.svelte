@@ -1,17 +1,24 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
+	import { mdiArrowBack } from '$lib/utils/icon';
 	import {
 		mdiChevronLeft,
 		mdiChevronRight,
 		mdiClose,
 		mdiTrayArrowDown,
 	} from '@mdi/js';
+	import { darkOverlay } from '$lib/actions/dark-overlay';
 	import type { PhotoAttachment } from 'dash-chat-stores';
-	import { savePhoto } from '$lib/utils/media';
+	import { savePhoto, loadMediaBytes } from '$lib/utils/media';
+	import { shareFile } from '$lib/utils/files';
+	import { isMobile, isAndroid } from '$lib/utils/environment';
 	import { showToast } from '$lib/utils/toasts';
 	import BlobImage from '$lib/components/BlobImage.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
+	import ShareButton from '$lib/components/ShareButton.svelte';
+	import ImageCarousel from '$lib/components/ImageCarousel.svelte';
+	import LightboxThumbnailStrip from './LightboxThumbnailStrip.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
 	interface Props {
@@ -34,14 +41,18 @@
 	const photo = $derived(photos[index]);
 
 	let rootEl: HTMLElement | undefined = $state();
-	let stageEl: HTMLElement | undefined = $state();
 
+	// Desktop double-click zoom; on mobile, tapping the photo instead toggles
+	// `immersive` (chrome hidden). Both hide the surrounding UI via `chromeHidden`.
 	let zoomed = $state(false);
+	let immersive = $state(false);
+	const chromeHidden = $derived(isMobile ? immersive : zoomed);
 	let originX = $state(50);
 	let originY = $state(50);
 
-	let imgStatus = $state<'loading' | 'loaded' | 'error'>('loading');
-	let blobImage: { retry: () => void } | undefined;
+	let blobImages = $state<Array<{ retry: () => void } | undefined>>([]);
+	let statuses = $state<Record<number, 'loading' | 'loaded' | 'error'>>({});
+	const imgStatus = $derived(statuses[index] ?? 'loading');
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
@@ -50,6 +61,16 @@
 	async function handleSave() {
 		try {
 			if (await savePhoto(photo)) showToast(m.mediaSaved());
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error(e);
+		}
+	}
+
+	async function handleShare() {
+		try {
+			const data = await loadMediaBytes(photo);
+			await shareFile(data, photo.name, photo.mime_type);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error(e);
@@ -69,13 +90,13 @@
 	});
 
 	function updateOrigin(event: MouseEvent) {
-		if (!stageEl) return;
-		const rect = stageEl.getBoundingClientRect();
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		originX = ((event.clientX - rect.left) / rect.width) * 100;
 		originY = ((event.clientY - rect.top) / rect.height) * 100;
 	}
 
 	function onStageDoubleClick(event: MouseEvent) {
+		if (isMobile) return;
 		updateOrigin(event);
 		zoomed = !zoomed;
 	}
@@ -86,10 +107,16 @@
 
 	function onStageClick(event: MouseEvent) {
 		if (imgStatus === 'error') {
-			blobImage?.retry();
+			blobImages[index]?.retry();
 			return;
 		}
-		if (event.target === stageEl && !zoomed) onClose();
+		// Mobile: a tap toggles immersive mode (hide all chrome). Desktop: tapping
+		// the letterbox around the image (anything but the photo) closes.
+		if (isMobile) {
+			immersive = !immersive;
+		} else if (!zoomed && !(event.target instanceof HTMLImageElement)) {
+			onClose();
+		}
 	}
 
 	function trapFocus(event: KeyboardEvent) {
@@ -134,23 +161,61 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="fixed inset-0 z-30 flex flex-col bg-black text-white"
+	class="fixed inset-0 z-50 bg-black"
+	use:darkOverlay
 	role="dialog"
 	aria-modal="true"
 	aria-label={photo.name}
 	bind:this={rootEl}
 	data-testid="lightbox"
 >
-	<div
-		class="lightbox-header flex shrink-0 items-center justify-between px-3"
-		class:faded={zoomed}
+	<!-- The stage fills the whole screen so the photo centres in the full
+	     viewport; the header and footer controls overlay the letterbox gaps. -->
+	<ImageCarousel
+		bind:index
+		items={photos}
+		paused={zoomed}
+		class="absolute inset-0 cursor-default"
+		onclick={onStageClick}
+		ondblclick={onStageDoubleClick}
+		onmousemove={onStageMouseMove}
 	>
-		<div class="flex min-w-0 flex-col">
-			<span
-				class="overflow-hidden text-[13px] font-bold text-ellipsis whitespace-nowrap text-white"
-				>{senderName}</span
-			>
-			<MessageTimestamp {timestamp} class="lightbox-time" />
+		{#snippet slide(p, i)}
+			<BlobImage
+				bind:this={blobImages[i]}
+				item={p}
+				alt={p.name}
+				lazy={i !== index}
+				imgClass={`lightbox-image max-h-full max-w-full object-contain${zoomed && i === index ? ' zoomed' : ''}`}
+				imgStyle={i === index
+					? `transform-origin: ${originX}% ${originY}%`
+					: ''}
+				onStatus={s => (statuses[i] = s)}
+			/>
+		{/snippet}
+	</ImageCarousel>
+
+	<div
+		class="lightbox-header absolute inset-x-0 top-0 flex items-center justify-between bg-black/40 px-3"
+		class:faded={chromeHidden}
+	>
+		<div class="flex min-w-0 items-center gap-2">
+			{#if isAndroid}
+				<IconButton
+					icon={mdiArrowBack}
+					onClick={onClose}
+					label={m.closeLightbox()}
+					testid="lightbox-back"
+					class="!p-2 opacity-85 hover:opacity-100"
+				/>
+			{/if}
+			<div class="flex min-w-0 flex-col">
+				<span
+					class="overflow-hidden text-[16px] font-bold text-ellipsis whitespace-nowrap text-white"
+					>{senderName}</span
+				>
+				<MessageTimestamp {timestamp} class="lightbox-time" />
+			</div>
 		</div>
 		<div class="flex items-center gap-2">
 			<IconButton
@@ -160,90 +225,70 @@
 				testid="lightbox-save"
 				class="!p-2 opacity-85 hover:opacity-100"
 			/>
-			<IconButton
-				icon={mdiClose}
-				onClick={onClose}
-				label={m.closeLightbox()}
-				testid="lightbox-close"
-				class="!p-2 opacity-85 hover:opacity-100"
-			/>
+			{#if !isAndroid}
+				<IconButton
+					icon={mdiClose}
+					onClick={onClose}
+					label={m.closeLightbox()}
+					testid="lightbox-close"
+					class="!p-2 opacity-85 hover:opacity-100"
+				/>
+			{/if}
 		</div>
 	</div>
 
-	<button
-		type="button"
-		class="relative flex min-h-0 flex-1 cursor-default items-center justify-center overflow-hidden border-none bg-transparent p-0"
-		bind:this={stageEl}
-		aria-label={m.closeLightbox()}
-		onclick={onStageClick}
-		ondblclick={onStageDoubleClick}
-		onmousemove={onStageMouseMove}
-	>
-		<BlobImage
-			bind:this={blobImage}
-			item={photo}
-			alt={photo.name}
-			imgClass={`lightbox-image max-h-full max-w-full object-contain${zoomed ? ' zoomed' : ''}`}
-			imgStyle={`transform-origin: ${originX}% ${originY}%`}
-			onStatus={s => (imgStatus = s)}
-		/>
-	</button>
-
-	<!-- Physical left/right positioning: photo navigation keeps reading order
-	     even in RTL, matching platform image-viewer conventions. -->
-	{#if index > 0}
+	<!-- Arrows are a desktop (mouse) affordance; on mobile you swipe between
+	     photos. Physical left/right positioning keeps reading order even in RTL,
+	     matching platform image-viewer conventions. -->
+	{#if !isMobile && index > 0}
 		<IconButton
 			icon={mdiChevronLeft}
 			onClick={() => select(index - 1)}
 			label={m.previousPhoto()}
 			testid="lightbox-prev"
-			class="absolute top-1/2 left-3 -translate-y-1/2 !bg-white/10 !p-2 opacity-85 hover:!bg-white/20 hover:opacity-100 {zoomed
+			circle
+			class="absolute top-1/2 left-3 -translate-y-1/2 opacity-85 hover:opacity-100 {zoomed
 				? '!opacity-0 pointer-events-none'
 				: ''}"
 		/>
 	{/if}
-	{#if index < photos.length - 1}
+	{#if !isMobile && index < photos.length - 1}
 		<IconButton
 			icon={mdiChevronRight}
 			onClick={() => select(index + 1)}
 			label={m.nextPhoto()}
 			testid="lightbox-next"
-			class="absolute top-1/2 right-3 -translate-y-1/2 !bg-white/10 !p-2 opacity-85 hover:!bg-white/20 hover:opacity-100 {zoomed
+			circle
+			class="absolute top-1/2 right-3 -translate-y-1/2 opacity-85 hover:opacity-100 {zoomed
 				? '!opacity-0 pointer-events-none'
 				: ''}"
 		/>
 	{/if}
 
-	{#if photos.length > 1}
+	{#if isMobile || photos.length > 1}
 		<div
-			class="lightbox-filmstrip flex shrink-0 justify-center gap-2 overflow-x-auto px-3 pt-2.5"
-			class:faded={zoomed}
-			data-testid="lightbox-filmstrip"
+			class="lightbox-bottom-bar absolute inset-x-0 bottom-0 bg-black/40 pb-[env(safe-area-inset-bottom)]"
+			class:faded={chromeHidden}
 		>
-			{#each photos as p, i (i)}
-				<button
-					type="button"
-					class="lightbox-thumb relative h-11 w-11 shrink-0 overflow-hidden p-0"
-					class:selected={i === index}
-					data-testid="lightbox-thumb-{i}"
-					aria-label={p.name}
-					onclick={() => select(i)}
-				>
-					<BlobImage
-						item={p}
-						alt={p.name}
-						imgClass="block h-full w-full object-cover"
-						lazy
+			{#if photos.length > 1}
+				<LightboxThumbnailStrip {photos} bind:index />
+			{/if}
+			{#if isMobile}
+				<div class="flex px-3 pt-3 pb-2">
+					<ShareButton
+						onClick={handleShare}
+						testid="lightbox-share"
+						class="!p-2 opacity-85 hover:opacity-100"
 					/>
-				</button>
-			{/each}
+				</div>
+			{/if}
 		</div>
 	{/if}
 </div>
 
 <style>
 	.lightbox-header {
-		height: calc(52px + env(safe-area-inset-top, 0px));
+		height: calc(72px + env(safe-area-inset-top, 0px));
 		padding-top: env(safe-area-inset-top, 0px);
 		transition: opacity 0.15s ease;
 	}
@@ -264,26 +309,8 @@
 		cursor: zoom-in;
 	}
 
-	.lightbox-filmstrip {
-		padding-bottom: calc(0.625rem + env(safe-area-inset-bottom, 0px));
+	.lightbox-bottom-bar {
 		transition: opacity 0.15s ease;
-	}
-
-	.lightbox-thumb {
-		border: none;
-		border-radius: 6px;
-		cursor: pointer;
-		background: transparent;
-		opacity: 0.7;
-		transition: opacity 0.15s ease;
-	}
-	.lightbox-thumb:hover {
-		opacity: 1;
-	}
-	.lightbox-thumb.selected {
-		opacity: 1;
-		outline: 2px solid white;
-		outline-offset: -2px;
 	}
 
 	.faded {

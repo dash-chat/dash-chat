@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { Sheet, Block, useTheme } from 'konsta/svelte';
+	import { page } from '$app/state';
+	import { pushState } from '$app/navigation';
 	import { isMobile } from '$lib/utils/environment';
 	import {
 		type DraftMedia,
 		type IngestError,
 		draftToMedia,
 		ingestFiles,
+		pickMedia,
 		AttachmentTooLargeError,
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
@@ -15,8 +18,10 @@
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
+	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
+	import StagedMediaPage from '$lib/components/messages/composer/StagedMediaPage.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
@@ -28,6 +33,8 @@
 		placeholder?: string;
 		/** The direct- or group-chat store the composer persists messages to. */
 		store: MessagesStore;
+		/** Name of the chat, shown in the mobile staged-media page header. */
+		destinationName?: string;
 		/** Called after a message is successfully sent (e.g. to scroll the chat). */
 		onSent?: (messageHash: Hash) => void;
 	}
@@ -36,6 +43,7 @@
 		value = $bindable(''),
 		placeholder = m.typeMessage(),
 		store,
+		destinationName,
 		onSent,
 	}: Props = $props();
 
@@ -46,9 +54,15 @@
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
 	let showMediaPanel = $state(false);
+	let sending = false;
 
-	async function send() {
-		if (!hasContent) return;
+	/** Returns whether the message was sent (so callers can keep the draft on failure). */
+	async function send(): Promise<boolean> {
+		// Guard against concurrent sends: the button shows a spinner, but the
+		// Enter-key path goes straight here, so hammering Enter during a slow
+		// send would otherwise fire multiple store.sendMessage calls.
+		if (!hasContent || sending) return false;
+		sending = true;
 		const message = value;
 		const draft = media;
 		try {
@@ -62,6 +76,7 @@
 			}
 			messageInput?.reset();
 			onSent?.(hash);
+			return true;
 		} catch (e) {
 			if (e instanceof AttachmentTooLargeError) {
 				showToast(
@@ -70,10 +85,13 @@
 					}),
 					'error',
 				);
-				return;
+				return false;
 			}
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to send message', e);
+			return false;
+		} finally {
+			sending = false;
 		}
 	}
 
@@ -88,7 +106,26 @@
 		const result = ingestFiles(media, Array.from(files));
 		if (result.error) showToast(ingestErrorMessages[result.error](), 'error');
 		media = result.media;
+		if (isMobile && media && !page.state.stagedMedia) {
+			pushState('', { stagedMedia: true });
+		}
 	}
+
+	async function addMore() {
+		try {
+			const files = await pickMedia('image', true);
+			if (files && files.length > 0) stage(files);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to pick files', e);
+		}
+	}
+
+	// Popping the staged-media history entry (hardware/browser back or
+	// `history.back()` from the page) discards the staged draft.
+	$effect(() => {
+		if (isMobile && media && !page.state.stagedMedia) media = undefined;
+	});
 
 	function onPaste(event: ClipboardEvent) {
 		const files = event.clipboardData?.files;
@@ -102,7 +139,9 @@
 
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<div class="message-input-bar" class:pb-safe={!showMediaPanel}>
-		<StagedAttachments bind:media onFiles={stage} />
+		{#if !isMobile}
+			<StagedAttachments bind:media onFiles={stage} />
+		{/if}
 
 		<div class="m-2 row gap-2" style="align-items: center;">
 			{#if isMobile}
@@ -131,7 +170,7 @@
 			</div>
 
 			{#if isMobile}
-				<SendButton disabled={!hasContent} onClick={send} />
+				<SendButton disabled={!hasContent} onSend={send} />
 			{/if}
 		</div>
 	</div>
@@ -141,13 +180,30 @@
 	{/if}
 </div>
 
+{#if isMobile && media && page.state.stagedMedia}
+	<StagedMediaPage
+		bind:media
+		bind:value
+		{destinationName}
+		onSend={async () => {
+			const sent = await send();
+			// Guard against the stagedMedia entry already being popped (e.g. the user
+			// hit back during a slow send) — otherwise we'd navigate off the chat.
+			if (sent && page.state.stagedMedia) history.back();
+			return sent;
+		}}
+		onAddMore={addMore}
+		onClose={() => history.back()}
+	/>
+{/if}
+
 <Sheet
 	class="pb-safe text-lg"
 	opened={showEmojiPicker}
 	onBackdropClick={() => (showEmojiPicker = false)}
 >
 	<div class="flex flex-col items-center">
-		<div class="sheet-handle"></div>
+		<SheetHandle />
 	</div>
 	<Block>
 		<EmojiPickerWrapper

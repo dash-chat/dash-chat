@@ -8,8 +8,8 @@ dev:
     # Free ports keep concurrent `just dev` runs in different repo folders from
     # colliding. Data dirs live under this folder's .dbs/dev, so they're already
     # per-folder; the desktop agents reach the servers via these runtime URLs.
-    export MAILBOX_PORT=$(pnpm exec get-port)
-    export PUSH_NOTIFICATIONS_SERVER_PORT=$(pnpm exec get-port)
+    export MAILBOX_PORT=$(pnpm --silent exec get-port)
+    export PUSH_NOTIFICATIONS_SERVER_PORT=$(pnpm --silent exec get-port)
     export MAILBOX_URL="http://localhost:$MAILBOX_PORT"
     export PUSH_NOTIFICATIONS_SERVER_URL="http://localhost:$PUSH_NOTIFICATIONS_SERVER_PORT"
     echo "MAILBOX_PORT=$MAILBOX_PORT"
@@ -21,7 +21,7 @@ dev:
 tauri:
     #!/usr/bin/env bash
     set -euo pipefail
-    export UI_PORT=$(pnpm exec get-port)
+    export UI_PORT=$(pnpm --silent exec get-port)
     pnpm tauri dev --config "{\"build\":{\"devUrl\":\"http://localhost:$UI_PORT\"}}"
 
 # clean all paths used by the dev environment
