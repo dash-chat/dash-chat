@@ -21,7 +21,6 @@
 
 	export function reset() {
 		textarea.style.height = 'auto';
-		textarea.focus();
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
