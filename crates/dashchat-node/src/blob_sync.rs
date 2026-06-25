@@ -277,7 +277,8 @@ impl BlobFetchPool {
         self.added.notify_one();
     }
 
-    pub async fn remove(&self, topic: TopicId, hash: iroh_blobs::Hash) {
+    // Not pub so that we call it from BlobSync and remove a tag at the same time.
+    async fn remove(&self, topic: TopicId, hash: iroh_blobs::Hash) {
         self.stack
             .lock()
             .await
