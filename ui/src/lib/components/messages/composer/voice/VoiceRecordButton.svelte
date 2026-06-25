@@ -194,7 +194,7 @@
 	<div class="relative shrink-0 {recordingHoldMobile ? 'z-30' : ''}">
 		{#if recordingHoldMobile}
 			<div
-				class="lock-pill pointer-events-none absolute bottom-full left-1/2 mb-2 flex flex-col items-center gap-1.5 rounded-full bg-gray-100 px-1.5 py-2.5 dark:bg-gray-700"
+				class="lock-pill pointer-events-none absolute bottom-full start-1/2 mb-2 flex flex-col items-center gap-1.5 rounded-full bg-gray-100 px-1.5 py-2.5 dark:bg-gray-700"
 				style="transform: translate(-50%, {-8 * drag.lockProgress}px)"
 			>
 				<wa-icon
