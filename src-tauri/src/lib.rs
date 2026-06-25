@@ -41,8 +41,7 @@ pub fn run() {
             .plugin(tauri_plugin_virtual_keyboard_padding::init())
             .plugin(tauri_plugin_barcode_scanner::init())
             .plugin(tauri_plugin_view::init())
-            .plugin(tauri_plugin_system_bars_styles::init())
-            .plugin(tauri_plugin_media_toolkit::init());
+            .plugin(tauri_plugin_system_bars_styles::init());
     }
     #[cfg(target_os = "android")]
     {
