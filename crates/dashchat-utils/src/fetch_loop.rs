@@ -21,7 +21,7 @@ impl Default for FetchConfig {
     fn default() -> Self {
         Self {
             concurrency: 4,
-            attempt_timeout: Duration::from_secs(30),
+            attempt_timeout: Duration::from_secs(60),
             pass_interval: Duration::from_secs(60),
             retry_cooldown: Duration::from_secs(30),
         }
