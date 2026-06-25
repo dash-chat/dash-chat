@@ -123,6 +123,21 @@ impl BlobSync {
         .await
     }
 
+    pub async fn add_to_fetch_pool(
+        &self,
+        topic: TopicId,
+        author: DeviceId,
+        hash: iroh_blobs::Hash,
+    ) -> anyhow::Result<()> {
+        // Protect the blob with the tag before fetching.
+        // This is the right moment to do it, because if multiple authors
+
+        let tag_name = blob_tag_name(topic, author, hash);
+        self.blobs.store().tags().set(tag_name, hash).await?;
+        self.fetch_pool.add(topic, hash).await;
+        Ok(())
+    }
+
     /// Store blob bytes and tag them with a name that encodes `(topic, hash)`
     /// so deletion can be scoped to a specific topic.
     pub async fn store_blob(
@@ -253,7 +268,8 @@ impl FetchPool for BlobFetchPool {
 }
 
 impl BlobFetchPool {
-    pub async fn add(&self, topic: TopicId, hash: iroh_blobs::Hash) {
+    // Not pub so that we call it from BlobSync and add a tag at the same time.
+    async fn add(&self, topic: TopicId, hash: iroh_blobs::Hash) {
         // A fresh reference resets the failure count, giving an on-demand
         // `load_blob` (or a new message) another full round of attempts.
         self.failures.lock().await.remove(&hash);
