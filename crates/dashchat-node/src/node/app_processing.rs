@@ -341,8 +341,9 @@ impl Node {
 
                     if let Some(media) = m.media() {
                         let hashes: Vec<_> = media.iter().map(|item| item.hash).collect();
+                        let is_own = DeviceId::from(author) == self.device_id();
                         self.blob_sync
-                            .delete_blobs(topic, author.into(), hashes)
+                            .delete_blobs(topic, author.into(), operation.hash, hashes, is_own)
                             .await;
                     }
                 }
@@ -440,7 +441,7 @@ impl Node {
                     for item in media.iter() {
                         // TODO: revisit during ACID review (replay)
                         self.blob_sync
-                            .add_to_fetch_pool(topic.into(), author, item.hash)
+                            .add_to_fetch_pool(topic.into(), author, hash, item.hash)
                             .await?;
                     }
                 }

@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 
-use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync};
+use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
 use crate::filesystem::Filesystem;
@@ -755,12 +755,25 @@ impl Node {
     ) -> anyhow::Result<Header> {
         let chat_id: ChatId = topic.into();
         let meta = if let Some(media) = media {
-            Some(self.store_media(chat_id.into(), media).await?)
+            Some(self.store_media(chat_id.into(), SENTINEL_OP_HASH, media).await?)
         } else {
             None
         };
-        let message = ChatMessageContent::new(message, meta);
-        self.send_message_raw(chat_id, message).await
+        let message = ChatMessageContent::new(message, meta.clone());
+        let header = self.send_message_raw(chat_id, message).await?;
+        if let Some(bundle) = meta {
+            let topic_id: TopicId = chat_id.into();
+            for item in bundle.iter() {
+                if let Err(err) = self
+                    .blob_sync
+                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash)
+                    .await
+                {
+                    tracing::warn!(?err, "failed to retag blob after operation creation");
+                }
+            }
+        }
+        Ok(header)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
@@ -1178,6 +1191,7 @@ impl Node {
     pub async fn store_media(
         &self,
         topic: TopicId,
+        operation_hash: p2panda::Hash,
         media: OutgoingMedia,
     ) -> anyhow::Result<MediaBundle> {
         let mut items = vec![];
@@ -1188,7 +1202,7 @@ impl Node {
                     ensure_blob_size(size, &photo.name)?;
                     let hash = self
                         .blob_sync
-                        .store_blob(topic, self.device_id(), photo.data)
+                        .store_blob(topic, self.device_id(), operation_hash, photo.data)
                         .await?;
                     items.push(MediaMetadata {
                         name: photo.name,
@@ -1204,7 +1218,7 @@ impl Node {
                 ensure_blob_size(size, &file.name)?;
                 let hash = self
                     .blob_sync
-                    .store_blob(topic, self.device_id(), file.data)
+                    .store_blob(topic, self.device_id(), operation_hash, file.data)
                     .await?;
                 items.push(MediaMetadata {
                     name: file.name,
