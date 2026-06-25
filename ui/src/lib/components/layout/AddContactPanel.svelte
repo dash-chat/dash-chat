@@ -71,7 +71,7 @@
 		try {
 			contactCode = decodeContactCode(code);
 		} catch (e) {
-			console.error("Error decoding contact code", e);
+			console.error('Error decoding contact code', e);
 			showToast(m.errorAddContactInvalidCode(), 'error');
 			return;
 		}
