@@ -3,7 +3,7 @@
 use aliased::Aliasing;
 use derive_more::derive::Constructor;
 use futures::Stream;
-use iroh_blobs::api::downloader::{Downloader};
+use iroh_blobs::api::downloader::Downloader;
 use mailbox_client::manager::Mailboxes;
 use p2panda::operation::{LogId, Operation};
 use p2panda_store::{SqliteStore, topics::TopicStore};
