@@ -8,7 +8,7 @@
 		type ContactsStore,
 		type SettingsStore,
 	} from 'dash-chat-stores';
-	import type { AddContactError } from 'dash-chat-stores';
+	import type { AddContactError, ContactCode } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -27,7 +27,7 @@
 		TabbarLink,
 		Tabbar,
 	} from 'konsta/svelte';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
@@ -55,11 +55,19 @@
 
 	$effect(() => {
 		const code = page.url.searchParams.get('code');
-		if (code) receiveCode(code);
+		if (code) void handleCodeFromQueryParam(code);
 	});
 
+	async function handleCodeFromQueryParam(code: string) {
+		await receiveCode(code);
+
+		const url = new URL(page.url);
+		url.searchParams.delete('code');
+		replaceState(url, page.state);
+	}
+
 	async function receiveCode(code: string) {
-		let contactCode;
+		let contactCode: ContactCode;
 		try {
 			contactCode = decodeContactCode(code);
 		} catch {
