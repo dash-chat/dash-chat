@@ -3,7 +3,7 @@
 use aliased::Aliasing;
 use derive_more::derive::Constructor;
 use futures::Stream;
-use iroh_blobs::api::downloader::{Downloader, Shuffled};
+use iroh_blobs::api::downloader::{Downloader};
 use mailbox_client::manager::Mailboxes;
 use p2panda::operation::{LogId, Operation};
 use p2panda_store::{SqliteStore, topics::TopicStore};
@@ -110,11 +110,11 @@ impl BlobSync {
             return false;
         }
 
-        let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
+        // let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
         dashchat_utils::blob_sync::download_capped(
             &self.downloader,
             hash,
-            providers,
+            sources,
             attempt_timeout,
             &self.blobs,
         )
@@ -283,14 +283,16 @@ pub struct MixedSourceLookup {
 impl MixedSourceLookup {
     pub async fn sources(&self, topic: TopicId) -> anyhow::Result<Vec<iroh::EndpointId>> {
         let log_id = LogId::from_topic(topic);
-        let mut sources = self
-            .op_store
-            .get_authors(log_id)
-            .await?
-            .into_iter()
-            .map(|author| iroh::EndpointId::from_bytes(author.as_bytes()))
-            .collect::<Result<Vec<iroh::EndpointId>, _>>()?;
+        let mut sources = vec![];
         sources.extend(self.mailboxes.get_sources(&topic).await?);
+        sources.extend(
+            self.op_store
+                .get_authors(log_id)
+                .await?
+                .into_iter()
+                .map(|author| iroh::EndpointId::from_bytes(author.as_bytes()))
+                .collect::<Result<Vec<iroh::EndpointId>, _>>()?,
+        );
         // Never dial ourselves (we already early-return when the blob is local),
         // and dedupe so a provider isn't dialed twice — redundant dials churn
         // iroh connection paths.
