@@ -55,7 +55,7 @@
 
 	$effect(() => {
 		const code = page.url.searchParams.get('code');
-		if (code) receiveCode(decodeURIComponent(code));
+		if (code) receiveCode(code);
 	});
 
 	async function receiveCode(code: string) {
