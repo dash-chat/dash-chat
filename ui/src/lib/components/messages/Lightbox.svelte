@@ -196,7 +196,7 @@
 	</ImageCarousel>
 
 	<div
-		class="lightbox-header absolute inset-x-0 top-0 flex items-center justify-between bg-black/40 px-3"
+		class="lightbox-header absolute inset-x-0 top-0 flex items-center justify-between bg-black/60 px-3"
 		class:faded={chromeHidden}
 	>
 		<div class="flex min-w-0 items-center gap-2">
@@ -267,7 +267,7 @@
 
 	{#if isMobile || photos.length > 1}
 		<div
-			class="lightbox-bottom-bar absolute inset-x-0 bottom-0 bg-black/40 pb-[env(safe-area-inset-bottom)]"
+			class="lightbox-bottom-bar absolute inset-x-0 bottom-0 bg-black/60 pb-[env(safe-area-inset-bottom)]"
 			class:faded={chromeHidden}
 		>
 			{#if photos.length > 1}
