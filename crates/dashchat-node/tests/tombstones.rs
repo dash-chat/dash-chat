@@ -94,6 +94,11 @@ async fn tombstone_drops_payload_received_by_sync() {
 
     let chat = alice.direct_chat_topic(bobbi.agent_id());
 
+    // Wait for bobbi to know about alice's log in the chat topic.
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
     // Take bobbi offline so the tombstone is recorded before the op arrives.
     bobbi.clear_mailboxes().await;
 

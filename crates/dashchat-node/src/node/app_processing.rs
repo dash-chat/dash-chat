@@ -336,7 +336,7 @@ impl Node {
                         .resolve_topic(&author, &log_id)
                         .await?
                         .ok_or_else(|| {
-                            anyhow!("failed to resolve topic for operation. this is a bug.")
+                            anyhow!(format!("failed to resolve topic for operation. this is a bug. author: {:?}, log: {:?}", author.aliased(), log_id.aliased()))
                         })?;
 
                     if let Some(media) = m.media() {
