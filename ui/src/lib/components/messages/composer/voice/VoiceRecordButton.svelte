@@ -55,9 +55,12 @@
 	);
 
 	// The press-and-hold visuals (red mic, slide-up-to-lock pill) only make sense
-	// mid-hold on touch; desktop click-records straight into the locked bar.
+	// mid-hold on touch; desktop click-records straight into the locked bar. Show
+	// them already during `requesting` so the overlay appears the instant the user
+	// presses, rather than after the native recorder has finished starting up.
 	const recordingHoldMobile = $derived(
-		recorder.phase === 'recording' && isMobile,
+		(recorder.phase === 'recording' || recorder.phase === 'requesting') &&
+			isMobile,
 	);
 
 	// While the locked/desktop bar replaces the input row, the mic button must be
@@ -74,7 +77,7 @@
 		try {
 			draft = await recorder.stop();
 		} catch (e) {
-			console.error('Failed to stop voice recording', e);
+			console.error('Failed to finish voice recording', e);
 			showToast(m.voiceRecordFailed(), 'error');
 			return false;
 		}
@@ -162,10 +165,10 @@
 	onDestroy(() => void recorder.cancel());
 </script>
 
-{#if recorder.phase === 'recording' && isMobile}
+{#if recordingHoldMobile}
 	<div
 		class="voice-layer has-end-button pointer-events-none {theme === 'ios'
-			? 'bg-ios-light-surface backdrop-blur-lg dark:bg-ios-dark-surface'
+			? 'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
 			: 'bg-white dark:bg-gray-800'}"
 	>
 		<VoiceRecordingOverlay elapsedMs={recorder.elapsedMs} {drag} />
@@ -174,7 +177,7 @@
 	{#if isMobile}
 		<div
 			class="voice-layer has-end-button {theme === 'ios'
-				? 'bg-ios-light-surface backdrop-blur-lg dark:bg-ios-dark-surface'
+				? 'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
 				: 'bg-white dark:bg-gray-800'}"
 		>
 			<VoiceLockedBar

@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiTrashCanOutline } from '@mdi/js';
-	import IconButton from '$lib/components/IconButton.svelte';
 	import RecordingIndicator from './RecordingIndicator.svelte';
 
 	interface Props {
@@ -15,18 +13,20 @@
 </script>
 
 <div
-	class="voice-locked-bar flex w-full items-center gap-2 px-1"
+	class="voice-locked-bar flex w-full items-center gap-2 ps-3 pe-2"
 	data-testid="voice-locked-bar"
 >
-	<IconButton
-		icon={mdiTrashCanOutline}
-		onClick={onCancel}
-		label={m.voiceCancel()}
-		testid="voice-cancel"
-		class="h-10 w-10 shrink-0"
-	/>
+	<RecordingIndicator {elapsedMs} micSize={18} />
 
-	<div class="flex flex-1 items-center gap-2">
-		<RecordingIndicator {elapsedMs} micSize={18} />
-	</div>
+	<div class="flex-1"></div>
+
+	<button
+		type="button"
+		class="px-2 py-1 text-base font-medium text-red-500 active:opacity-60"
+		onclick={onCancel}
+		aria-label={m.voiceCancel()}
+		data-testid="voice-cancel"
+	>
+		{m.cancel()}
+	</button>
 </div>

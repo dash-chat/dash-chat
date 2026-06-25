@@ -2090,7 +2090,6 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-mailto",
  "tauri-plugin-mcp-bridge",
- "tauri-plugin-media-toolkit",
  "tauri-plugin-medialibrary",
  "tauri-plugin-notification",
  "tauri-plugin-os",
@@ -10626,20 +10625,6 @@ dependencies = [
  "webview2-com",
  "windows 0.61.3",
  "windows-core 0.61.2",
-]
-
-[[package]]
-name = "tauri-plugin-media-toolkit"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef7388973d1f54547594dfa5da7eb9666f6a26d26d358fac3633bba02b216003"
-dependencies = [
- "log",
- "serde",
- "serde_json",
- "tauri",
- "tauri-plugin",
- "thiserror 2.0.18",
 ]
 
 [[package]]

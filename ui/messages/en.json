@@ -160,7 +160,7 @@
 	"recentPhotosNoAccess": "Dash Chat does not have access to your photos or videos. To enable access open Settings and tap Photos.",
 	"recentPhotosOpenSettings": "Open Settings",
 	"dropFilesToSend": "Drop files here to send them",
-	"voiceRecordHint": "Tap and hold to record a voice message, release to send",
+	"voiceRecordHint": "Tap and hold to record a voice message, release to send.",
 	"voiceSlideToCancel": "Slide to cancel",
 	"voiceMicDenied": "Microphone access is required to record voice messages. Enable it in your system settings.",
 	"voiceMessage": "Voice message",

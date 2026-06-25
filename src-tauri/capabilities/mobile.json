@@ -18,7 +18,13 @@
 		"view:allow-view",
 		"dialog:allow-open",
 		"fs:allow-appcache-read-recursive",
-		"media-toolkit:default",
-		"media-toolkit:allow-convert"
+		{
+			"identifier": "fs:allow-read-file",
+			"allow": [{ "path": "$CACHE/dc-voice-*" }]
+		},
+		{
+			"identifier": "fs:allow-remove",
+			"allow": [{ "path": "$CACHE/dc-voice-*" }]
+		}
 	]
 }

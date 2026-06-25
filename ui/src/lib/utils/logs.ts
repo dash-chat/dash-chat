@@ -70,4 +70,19 @@ export function forwardConsoleToTauriLog(): void {
 		orig.debug(...args);
 		debug(fmt(args)).catch(() => {});
 	};
+
+	// Uncaught errors and rejected promises with no `.catch` are printed by the
+	// engine through an internal channel that bypasses our patched `console.*`,
+	// so capture them explicitly or they never reach the Tauri log.
+	window.addEventListener('unhandledrejection', event => {
+		error(`Unhandled promise rejection: ${fmtOne(event.reason)}`).catch(
+			() => {},
+		);
+	});
+	window.addEventListener('error', event => {
+		const detail = event.error
+			? fmtOne(event.error)
+			: `${event.message} (${event.filename}:${event.lineno}:${event.colno})`;
+		error(`Uncaught error: ${detail}`).catch(() => {});
+	});
 }

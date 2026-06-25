@@ -1,11 +1,10 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { VoiceNote } from 'dash-chat-stores';
-	import { objectUrl } from '$lib/actions/object-url';
 	import { formatDuration } from '$lib/utils/time';
-	import { AudioSourceLoader } from './useAudioSource.svelte';
+	import { AudioSourceLoader, type LoadedAudio } from './useAudioSource.svelte';
 	import VoicePlayButton from './VoicePlayButton.svelte';
-	import WaveformScrubber from './WaveformScrubber.svelte';
+	import Waveform from './Waveform.svelte';
 
 	interface Props {
 		voice: VoiceNote;
@@ -16,46 +15,22 @@
 
 	let { voice, metadata }: Props = $props();
 
-	const bars = $derived(Array.from(voice.waveform));
+	const peaks = $derived(Array.from(voice.waveform, v => v / 255));
+	const durationSec = $derived(voice.duration_ms / 1000);
 
-	let audioEl: HTMLAudioElement | undefined = $state();
 	let paused = $state(true);
 	let currentTime = $state(0);
-	let loadedDuration = $state(0);
+	let waveform: ReturnType<typeof Waveform> | undefined = $state();
 
-	// `voice.duration_ms` is authoritative; the decoded WAV's reported duration
-	// is only a fallback for the scrubber once metadata loads.
-	const durationSec = $derived(
-		loadedDuration > 0 ? loadedDuration : voice.duration_ms / 1000,
-	);
-	const progress = $derived(
-		durationSec > 0 ? Math.min(1, currentTime / durationSec) : 0,
-	);
+	// `voice.duration_ms` is authoritative; while playing we show the elapsed time.
 	const labelMs = $derived(
 		paused && currentTime === 0 ? voice.duration_ms : currentTime * 1000,
 	);
 
 	const audio = new AudioSourceLoader(() => voice);
 
-	async function toggle() {
-		if (!audioEl) return;
-		if (!audioEl.paused) {
-			audioEl.pause();
-			return;
-		}
-		if (await audio.ensureLoaded()) void audioEl.play().catch(() => {});
-	}
-
-	function seek(timeSec: number) {
-		if (audioEl) audioEl.currentTime = timeSec;
-	}
-
-	function seekBy(deltaSec: number) {
-		if (!audioEl) return;
-		audioEl.currentTime = Math.max(
-			0,
-			Math.min(durationSec, audioEl.currentTime + deltaSec),
-		);
+	async function loadAudio(): Promise<LoadedAudio | undefined> {
+		return (await audio.ensureLoaded()) ? audio.source : undefined;
 	}
 </script>
 
@@ -64,28 +39,16 @@
 	style="width: 240px; max-width: 100%"
 	data-testid="message-attachment-voice"
 >
-	<audio
-		bind:this={audioEl}
-		bind:paused
-		bind:currentTime
-		use:objectUrl={audio.source}
-		onloadedmetadata={() => {
-			if (audioEl && isFinite(audioEl.duration))
-				loadedDuration = audioEl.duration;
-		}}
-		onended={() => audioEl && (audioEl.currentTime = 0)}
-	></audio>
-
 	<div class="flex items-center gap-3">
-		<VoicePlayButton {paused} onclick={toggle} />
+		<VoicePlayButton {paused} onclick={() => void waveform?.toggle()} />
 
-		<WaveformScrubber
-			{bars}
-			{progress}
+		<Waveform
+			bind:this={waveform}
+			{peaks}
 			{durationSec}
-			{currentTime}
-			onseek={seek}
-			onseekBy={seekBy}
+			{loadAudio}
+			bind:paused
+			bind:currentTime
 		/>
 	</div>
 

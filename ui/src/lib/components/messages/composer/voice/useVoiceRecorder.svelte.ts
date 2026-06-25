@@ -1,15 +1,15 @@
 import type { DraftVoiceNote } from '$lib/utils/media';
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, readFile, remove } from '@tauri-apps/plugin-fs';
+import audioBufferToWav from 'audiobuffer-to-wav';
 import {
 	getStatus,
 	requestPermission,
 	startRecording,
 	stopRecording,
 } from 'tauri-plugin-audio-recorder-api';
-import { convert } from 'tauri-plugin-media-toolkit-api';
 
-import { computeWaveform, decodeToBuffer } from './encodeWav';
+import { computeWaveform, decodeToBuffer, resampleToMono } from './audioBuffer';
 
 export type RecorderPhase =
 	| 'idle'
@@ -22,6 +22,11 @@ export type RecorderPhase =
 /** Hard cap on recording length (seconds); keeps the WAV well under the
  * message size limit and matches Signal's generous-but-bounded behavior. */
 const MAX_DURATION_SECONDS = 300;
+
+/** Mono sample rate for normalized voice notes. Matches the desktop recorder's
+ * "low" preset, and keeps a full-length recording well under the message size
+ * limit when re-encoding a mobile recording to WAV. */
+const TARGET_SAMPLE_RATE = 16000;
 
 /**
  * Owns the voice-note recording lifecycle: microphone permission, the native
@@ -46,6 +51,9 @@ export class VoiceRecorder {
 	async start(): Promise<void> {
 		if (this.isActive || this.phase === 'requesting') return;
 		this.phase = 'requesting';
+		// Reset now so the optimistic overlay (shown during `requesting`, before the
+		// native recorder has started) reads 0:00 instead of the prior take's time.
+		this.elapsedMs = 0;
 		try {
 			const permission = await requestPermission();
 			if (!permission.granted) {
@@ -86,23 +94,27 @@ export class VoiceRecorder {
 		if (!this.isActive) return undefined;
 		this.#stopTimer();
 		this.phase = 'encoding';
-		const temps: string[] = [];
+		const result = await stopRecording();
 		try {
-			const result = await stopRecording();
-			temps.push(result.filePath);
-			const wavPath = await ensureWav(result.filePath);
-			if (wavPath !== result.filePath) temps.push(wavPath);
-			const bytes = await readFile(wavPath);
-			const waveform = computeWaveform(await decodeToBuffer(bytes));
+			const recorded = await readFile(result.filePath);
+			const decoded = await decodeToBuffer(recorded);
+			// Desktop already records low-rate mono WAV; mobile records AAC/M4A,
+			// which we decode and re-encode to WAV so every peer can play the same
+			// bytes. iOS `AVAssetExportSession` can't output WAV, so the conversion
+			// is done here in the webview rather than via the native media plugin.
+			const isWav = result.filePath.toLowerCase().endsWith('.wav');
+			const buffer = isWav
+				? decoded
+				: await resampleToMono(decoded, TARGET_SAMPLE_RATE);
 			return {
-				bytes,
+				bytes: isWav ? recorded : new Uint8Array(audioBufferToWav(buffer)),
 				mimeType: 'audio/wav',
 				durationMs: result.durationMs,
-				waveform,
+				waveform: computeWaveform(buffer),
 			};
 		} finally {
 			this.phase = 'idle';
-			await cleanup(temps);
+			await cleanup([result.filePath]);
 		}
 	}
 
@@ -148,20 +160,6 @@ export class VoiceRecorder {
 			this.#timer = undefined;
 		}
 	}
-}
-
-/** Normalize a recording to WAV. Desktop already records WAV; mobile records
- * M4A/AAC, which we convert so every peer can play the same bytes. */
-async function ensureWav(filePath: string): Promise<string> {
-	if (filePath.toLowerCase().endsWith('.wav')) return filePath;
-	const base = filePath.replace(/\.[^.]+$/, '');
-	const result = await convert({
-		inputPath: filePath,
-		outputPath: base,
-		format: 'wav',
-		audioQuality: 'low',
-	});
-	return result.outputPath;
 }
 
 async function cleanup(paths: string[]): Promise<void> {
