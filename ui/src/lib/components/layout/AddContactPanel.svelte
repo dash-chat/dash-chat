@@ -59,21 +59,20 @@
 	});
 
 	async function handleCodeFromQueryParam(code: string) {
-		const success = await receiveCode(code);
-		if (success) return;
-
 		const url = new URL(page.url);
 		url.searchParams.delete('code');
 		replaceState(url, page.state);
+
+		await receiveCode(code);
 	}
 
-	async function receiveCode(code: string): Promise<boolean> {
+	async function receiveCode(code: string) {
 		let contactCode: ContactCode;
 		try {
 			contactCode = decodeContactCode(code);
 		} catch {
 			showToast(m.errorAddContactInvalidCode(), 'error');
-			return false;
+			return;
 		}
 
 		try {
@@ -81,7 +80,7 @@
 
 			if (code === myCodeString) {
 				showToast(m.cantAddYourselfAsContact(), 'error');
-				return false;
+				return;
 			}
 
 			// Don't send a contact request if they're already in your contacts
@@ -99,8 +98,7 @@
 			await contactsStore.client.addContact(contactCode);
 			showToast(m.contactAccepted());
 
-			void goto(`/direct-chats/${contactCode.agent_id}`);
-			return true;
+			goto(`/direct-chats/${contactCode.agent_id}`);
 		} catch (e) {
 			console.error(e);
 			const error = e as AddContactError;
@@ -118,7 +116,6 @@
 				default:
 					showToast(m.errorUnexpected(), 'unexpected', e);
 			}
-			return false;
 		}
 	}
 
@@ -306,21 +303,11 @@
 							</div>
 						</div>
 					</div>
-					<QrCodeUploader
-						bind:this={uploaderRef}
-						onSelectImage={async (code: string) => {
-							await receiveCode(code);
-						}}
-					/>
+					<QrCodeUploader bind:this={uploaderRef} onSelectImage={receiveCode} />
 				{/await}
 			{/await}
 		{:else if tab === 'scan'}
-			<QrCodeScanner
-				bind:this={scannerRef}
-				onSelectImage={async (code: string) => {
-					await receiveCode(code);
-				}}
-			/>
+			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveCode} />
 		{/if}
 	</Page>
 {/if}
