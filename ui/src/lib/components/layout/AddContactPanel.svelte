@@ -8,7 +8,7 @@
 		type ContactsStore,
 		type SettingsStore,
 	} from 'dash-chat-stores';
-	import type { AddContactError } from 'dash-chat-stores';
+	import type { AddContactError, ContactCode } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -27,7 +27,8 @@
 		TabbarLink,
 		Tabbar,
 	} from 'konsta/svelte';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
 	import { defaultQrColor } from '$lib/utils/qrcode';
@@ -52,10 +53,29 @@
 	let scannerRef: QrCodeScanner | null = $state(null);
 	let uploaderRef: QrCodeUploader | null = $state(null);
 
-	async function receiveCode(code: string) {
-		try {
-			const contactCode = decodeContactCode(code);
+	$effect(() => {
+		const code = page.url.searchParams.get('code');
+		if (code) void handleCodeFromQueryParam(code);
+	});
 
+	async function handleCodeFromQueryParam(code: string) {
+		const url = new URL(page.url);
+		url.searchParams.delete('code');
+		replaceState(url, page.state);
+
+		await receiveCode(code);
+	}
+
+	async function receiveCode(code: string) {
+		let contactCode: ContactCode;
+		try {
+			contactCode = decodeContactCode(code);
+		} catch {
+			showToast(m.errorAddContactInvalidCode(), 'error');
+			return;
+		}
+
+		try {
 			const myCodeString = await myCode;
 
 			if (code === myCodeString) {

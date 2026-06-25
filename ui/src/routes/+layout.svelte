@@ -47,6 +47,7 @@
 	import {
 		listenForDeepLinks,
 		handleLaunchDeepLink,
+		handleUrls,
 	} from '$lib/utils/deep-links';
 
 	import { m } from '$lib/paraglide/messages.js';
@@ -69,8 +70,12 @@
 		// Paraglide types setLocale with a string-literal union; we widen to
 		// plain `string` at the test boundary since invalid locales fail at
 		// runtime anyway.
-		registerTestUtils(goto, setLocale as (locale: string) => void, m, () =>
-			previewFeatures.enable(),
+		registerTestUtils(
+			goto,
+			setLocale as (locale: string) => void,
+			m,
+			() => previewFeatures.enable(),
+			url => handleUrls([url]),
 		),
 	);
 
