@@ -43,10 +43,12 @@
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
+	import { trackKeyboardHeight } from '$lib/utils/keyboard.svelte';
 	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 	import {
 		listenForDeepLinks,
 		handleLaunchDeepLink,
+		handleUrls,
 	} from '$lib/utils/deep-links';
 
 	import { m } from '$lib/paraglide/messages.js';
@@ -69,8 +71,12 @@
 		// Paraglide types setLocale with a string-literal union; we widen to
 		// plain `string` at the test boundary since invalid locales fail at
 		// runtime anyway.
-		registerTestUtils(goto, setLocale as (locale: string) => void, m, () =>
-			previewFeatures.enable(),
+		registerTestUtils(
+			goto,
+			setLocale as (locale: string) => void,
+			m,
+			() => previewFeatures.enable(),
+			url => handleUrls([url]),
 		),
 	);
 
@@ -166,6 +172,10 @@
 		applyDarkMode(effectiveDark).catch(e => {
 			showToast(m.errorApplyStyle(), 'error');
 		});
+	});
+
+	$effect(() => {
+		if (isMobile) trackKeyboardHeight();
 	});
 
 	$effect(() => {
