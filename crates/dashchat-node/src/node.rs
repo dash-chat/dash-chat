@@ -358,6 +358,11 @@ impl Node {
     }
 
     #[cfg(feature = "testing")]
+    pub fn blob_sync(&self) -> &crate::blob_sync::BlobSync {
+        &self.blob_sync
+    }
+
+    #[cfg(feature = "testing")]
     pub fn endpoint_id(&self) -> iroh::EndpointId {
         iroh::EndpointId::from_bytes(self.device_id().as_bytes())
             .expect("device id is a valid endpoint id")

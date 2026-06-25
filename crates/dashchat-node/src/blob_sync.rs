@@ -379,6 +379,152 @@ mod tests {
         iroh_blobs::Hash::new([n; 32])
     }
 
+    /// Collect all persistent tag names from a blob store.
+    async fn list_tag_names(blobs: &iroh_blobs::BlobsProtocol) -> Vec<Vec<u8>> {
+        use tokio_stream::StreamExt;
+        let stream = blobs.store().tags().list().await.unwrap();
+        tokio::pin!(stream);
+        let mut names = vec![];
+        while let Some(Ok(info)) = stream.next().await {
+            names.push(info.name.0.to_vec());
+        }
+        names
+    }
+
+    async fn tag_count_for_hash(
+        blobs: &iroh_blobs::BlobsProtocol,
+        hash: iroh_blobs::Hash,
+    ) -> usize {
+        list_tag_names(blobs)
+            .await
+            .into_iter()
+            .filter(|name| name.ends_with(hash.as_bytes()))
+            .count()
+    }
+
+    #[cfg(feature = "testing")]
+    mod integration {
+        use super::*;
+        use crate::{NodeConfig, testing::TestNode, topic::TopicId};
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn two_authors_same_blob_get_distinct_tags() {
+            let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+            let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+            let topic = TopicId::random();
+            let data = b"shared-media-blob";
+
+            let hash_alice = alice
+                .blob_sync()
+                .store_blob(topic, alice.device_id(), data.as_ref())
+                .await
+                .unwrap();
+            let hash_bobbi = bobbi
+                .blob_sync()
+                .store_blob(topic, bobbi.device_id(), data.as_ref())
+                .await
+                .unwrap();
+
+            // Same content → same hash.
+            assert_eq!(hash_alice, hash_bobbi);
+
+            // Each node has exactly one tag for that hash (their own authorship tag).
+            assert_eq!(tag_count_for_hash(&alice.blobs(), hash_alice).await, 1);
+            assert_eq!(tag_count_for_hash(&bobbi.blobs(), hash_bobbi).await, 1);
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn deleting_alice_author_tag_leaves_one_tag_each() {
+            let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+            let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+            let topic = TopicId::random();
+            let data = b"shared-media-blob";
+
+            // Both nodes store the same blob under their own authorship.
+            let hash = alice
+                .blob_sync()
+                .store_blob(topic, alice.device_id(), data.as_ref())
+                .await
+                .unwrap();
+            alice
+                .blob_sync()
+                .store_blob(topic, bobbi.device_id(), data.as_ref())
+                .await
+                .unwrap();
+            bobbi
+                .blob_sync()
+                .store_blob(topic, alice.device_id(), data.as_ref())
+                .await
+                .unwrap();
+            bobbi
+                .blob_sync()
+                .store_blob(topic, bobbi.device_id(), data.as_ref())
+                .await
+                .unwrap();
+
+            // Before deletion: two tags each.
+            assert_eq!(tag_count_for_hash(&alice.blobs(), hash).await, 2);
+            assert_eq!(tag_count_for_hash(&bobbi.blobs(), hash).await, 2);
+
+            // Delete alice's authorship tag on both nodes.
+            alice
+                .blob_sync()
+                .delete_blobs(topic, alice.device_id(), [hash])
+                .await;
+            bobbi
+                .blob_sync()
+                .delete_blobs(topic, alice.device_id(), [hash])
+                .await;
+
+            // One tag remains on each node (bobbi's).
+            assert_eq!(tag_count_for_hash(&alice.blobs(), hash).await, 1);
+            assert_eq!(tag_count_for_hash(&bobbi.blobs(), hash).await, 1);
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn deleting_both_author_tags_leaves_no_tags() {
+            let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+            let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+            let topic = TopicId::random();
+            let data = b"gc-target-blob";
+
+            let hash = alice
+                .blob_sync()
+                .store_blob(topic, alice.device_id(), data.as_ref())
+                .await
+                .unwrap();
+            alice
+                .blob_sync()
+                .store_blob(topic, bobbi.device_id(), data.as_ref())
+                .await
+                .unwrap();
+            bobbi
+                .blob_sync()
+                .store_blob(topic, alice.device_id(), data.as_ref())
+                .await
+                .unwrap();
+            bobbi
+                .blob_sync()
+                .store_blob(topic, bobbi.device_id(), data.as_ref())
+                .await
+                .unwrap();
+
+            // Delete all tags on both nodes.
+            for node in [&alice, &bobbi] {
+                node.blob_sync()
+                    .delete_blobs(topic, alice.device_id(), [hash])
+                    .await;
+                node.blob_sync()
+                    .delete_blobs(topic, bobbi.device_id(), [hash])
+                    .await;
+            }
+
+            // No pinning tags remain — blob is eligible for GC on the next cycle.
+            assert_eq!(tag_count_for_hash(&alice.blobs(), hash).await, 0);
+            assert_eq!(tag_count_for_hash(&bobbi.blobs(), hash).await, 0);
+        }
+    }
+
     #[tokio::test]
     async fn evicts_a_hash_after_max_failures_and_keeps_others() {
         let pool = BlobFetchPool::default();
