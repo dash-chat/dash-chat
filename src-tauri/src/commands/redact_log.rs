@@ -346,8 +346,16 @@ mod tests {
 
     #[test]
     fn redacts_chat_message_media_voice() {
-        let input = r#"ChatMessageContentV1 { message: "", media: Some(Voice { voice: VoiceNote { data: [255, 251, 144, 0, 7, 8], mime_type: "audio/wav", duration_ms: 4200, waveform: [0, 128, 255] } }) }"#;
-        let result = redact(input);
+        let voice = dashchat_node::OutgoingMedia::VoiceNote {
+            voice_note: dashchat_node::OutgoingVoiceNote {
+                data: vec![255, 251, 144, 0, 7, 8],
+                mime_type: "audio/wav".into(),
+                duration_ms: 4200,
+                waveform: vec![0, 128, 255],
+            },
+        };
+        let input = format!("{voice:?}");
+        let result = redact(&input);
         // The recorded audio bytes are private and must be stripped. The
         // waveform is lossy downsampled amplitude (not recoverable audio), so
         // it is left readable for debugging.

@@ -43,7 +43,7 @@
 			audioEl.pause();
 			return;
 		}
-		if (await audio.ensureLoaded()) audioEl.play();
+		if (await audio.ensureLoaded()) void audioEl.play().catch(() => {});
 	}
 
 	function seek(timeSec: number) {

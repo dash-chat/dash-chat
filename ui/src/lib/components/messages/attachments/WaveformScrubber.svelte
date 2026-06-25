@@ -38,13 +38,11 @@
 
 	function onKeyDown(event: KeyboardEvent) {
 		if (durationSec <= 0) return;
-		if (event.key === 'ArrowLeft') {
-			onseekBy(-5);
-		} else if (event.key === 'ArrowRight') {
-			onseekBy(5);
-		} else {
-			return;
-		}
+		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+		const container = event.currentTarget as HTMLElement;
+		const isRtl = getComputedStyle(container).direction === 'rtl';
+		const forward = event.key === (isRtl ? 'ArrowLeft' : 'ArrowRight');
+		onseekBy(forward ? 5 : -5);
 		event.preventDefault();
 	}
 </script>
