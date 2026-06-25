@@ -70,7 +70,8 @@
 		let contactCode: ContactCode;
 		try {
 			contactCode = decodeContactCode(code);
-		} catch {
+		} catch (e) {
+			console.error("Error decoding contact code", e);
 			showToast(m.errorAddContactInvalidCode(), 'error');
 			return;
 		}
