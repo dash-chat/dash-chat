@@ -53,8 +53,9 @@
 	let hasContent = $derived(value.trim().length > 0 || media !== undefined);
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
-	let showMediaPanel = $state(false);
 	let sending = false;
+
+	let showMediaPanel = $state(false);
 
 	/** Returns whether the message was sent (so callers can keep the draft on failure). */
 	async function send(): Promise<boolean> {
@@ -176,7 +177,7 @@
 	</div>
 
 	{#if isMobile}
-		<MediaPanel bind:opened={showMediaPanel} onFiles={stage} />
+		<MediaPanel bind:open={showMediaPanel} onFiles={stage} />
 	{/if}
 </div>
 

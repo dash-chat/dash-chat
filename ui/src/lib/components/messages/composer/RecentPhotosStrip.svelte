@@ -127,13 +127,13 @@
 
 {#if photos.length > 0}
 	<div
-		class="flex gap-2 overflow-x-auto px-2 pb-4"
+		class="flex h-full gap-2 overflow-x-auto px-2 pb-4"
 		data-testid="message-input-recent-photos"
 	>
 		{#each photos as photo, i (photo.id)}
 			<button
 				type="button"
-				class="recent-tile relative h-[100px] w-[100px] shrink-0 overflow-hidden"
+				class="recent-tile relative aspect-square h-full shrink-0 overflow-hidden"
 				data-testid="message-input-recent-photo-{i}"
 				onclick={() => add(photo)}
 			>
@@ -150,15 +150,15 @@
 	</div>
 {:else if loading}
 	<div
-		class="flex justify-center px-2 pb-4"
+		class="flex h-full items-center justify-center px-2"
 		data-testid="message-input-recent-photos-loading"
 	>
-		<div class="flex h-[100px] items-center">
-			<Preloader />
-		</div>
+		<Preloader />
 	</div>
 {:else if permission === 'denied' && isIos}
-	<div class="flex flex-col items-center gap-4 px-5 pt-2 pb-4 text-center">
+	<div
+		class="flex h-full flex-col items-center justify-center gap-4 px-5 text-center"
+	>
 		<span class="text-sm" style="color: var(--k-text-color)">
 			{m.recentPhotosNoAccess()}
 		</span>
@@ -173,7 +173,9 @@
 		</Button>
 	</div>
 {:else if permission === 'prompt' || permission === 'denied'}
-	<div class="flex flex-col items-center gap-4 px-5 pt-2 pb-4 text-center">
+	<div
+		class="flex h-full flex-col items-center justify-center gap-4 px-5 text-center"
+	>
 		<span class="text-sm" style="color: var(--k-text-color)">
 			{m.recentPhotosPermissionPrompt()}
 		</span>

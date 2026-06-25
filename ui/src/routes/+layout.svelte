@@ -43,6 +43,7 @@
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
+	import { trackKeyboardHeight } from '$lib/utils/keyboard.svelte';
 	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 	import {
 		listenForDeepLinks,
@@ -171,6 +172,10 @@
 		applyDarkMode(effectiveDark).catch(e => {
 			showToast(m.errorApplyStyle(), 'error');
 		});
+	});
+
+	$effect(() => {
+		if (isMobile) trackKeyboardHeight();
 	});
 
 	$effect(() => {
