@@ -169,6 +169,7 @@
 	"voiceSeek": "Seek voice message",
 	"voiceCancel": "Cancel recording",
 	"voiceRecording": "Recording voice message…",
+	"voiceRecordFailed": "Couldn’t finish the recording. Please try again.",
 	"saveFile": "Save file",
 	"fileSaved": "File saved.",
 	"mediaSaved": "Media saved.",

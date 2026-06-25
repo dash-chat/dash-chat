@@ -70,7 +70,14 @@
 	recorder.onMaxDuration = () => void stopAndSend();
 
 	async function stopAndSend(): Promise<boolean> {
-		const draft = await recorder.stop();
+		let draft: DraftVoiceNote | undefined;
+		try {
+			draft = await recorder.stop();
+		} catch (e) {
+			console.error('Failed to stop voice recording', e);
+			showToast(m.voiceRecordFailed(), 'error');
+			return false;
+		}
 		if (draft) onRecorded(draft);
 		return !!draft;
 	}

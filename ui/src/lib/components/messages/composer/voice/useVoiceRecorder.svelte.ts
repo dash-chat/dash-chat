@@ -86,9 +86,10 @@ export class VoiceRecorder {
 		if (!this.isActive) return undefined;
 		this.#stopTimer();
 		this.phase = 'encoding';
-		const result = await stopRecording();
-		const temps = [result.filePath];
+		const temps: string[] = [];
 		try {
+			const result = await stopRecording();
+			temps.push(result.filePath);
 			const wavPath = await ensureWav(result.filePath);
 			if (wavPath !== result.filePath) temps.push(wavPath);
 			const bytes = await readFile(wavPath);
