@@ -104,11 +104,8 @@ async fn run_fetch_pass<P, F, Fut>(
     Fut: std::future::Future<Output = bool> + Send + 'static,
 {
     let now = Instant::now();
-    let mut tried: HashSet<P::Key> = last_tried
-        .iter()
-        .filter(|(_, t)| now.duration_since(**t) < cooldown)
-        .map(|(k, _)| *k)
-        .collect();
+    last_tried.retain(|_, t| now.duration_since(*t) < cooldown);
+    let mut tried: HashSet<P::Key> = last_tried.keys().copied().collect();
 
     let mut in_flight: JoinSet<(P::Item, bool)> = JoinSet::new();
     loop {
