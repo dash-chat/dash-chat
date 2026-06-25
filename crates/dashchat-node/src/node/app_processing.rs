@@ -330,11 +330,15 @@ impl Node {
                     use p2panda_store::topics::TopicStore;
                     let author = operation.header().verifying_key;
                     let log_id = operation.header.extensions.log_id;
-                    let topic = self.op_store.store.resolve_topic(&author, &log_id).await?;
-                    let Some(topic) = topic else {
-                        tracing::error!(operation = ?operation.hash.aliased(), "failed to resolve topic for operation");
-                        return Ok(());
-                    };
+                    let topic = self
+                        .op_store
+                        .store
+                        .resolve_topic(&author, &log_id)
+                        .await?
+                        .ok_or_else(|| {
+                            anyhow!("failed to resolve topic for operation. this is a bug.")
+                        })?;
+
                     if let Some(media) = m.media() {
                         let hashes: Vec<_> = media.iter().map(|item| item.hash).collect();
                         self.blob_sync

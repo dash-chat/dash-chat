@@ -131,14 +131,14 @@ impl BlobSync {
     ) -> anyhow::Result<()> {
         // Protect the blob with the tag before fetching.
         // This is the right moment to do it, because if multiple authors
-
+        // publish the same blob, we want tags from each of them
         let tag_name = blob_tag_name(topic, author, hash);
         self.blobs.store().tags().set(tag_name, hash).await?;
         self.fetch_pool.add(topic, hash).await;
         Ok(())
     }
 
-    /// Store blob bytes and tag them with a name that encodes `(topic, hash)`
+    /// Store blob bytes and tag them with a name that encodes `(topic, author, hash)`
     /// so deletion can be scoped to a specific topic.
     pub async fn store_blob(
         &self,
@@ -157,8 +157,8 @@ impl BlobSync {
         Ok(hash)
     }
 
-    /// Delete all tags for the given `(topic, hash)` pairs, allowing iroh's GC
-    /// to reclaim blob data that is no longer referenced by any topic.
+    /// Delete all tags for the given `(topic, author, hash)` pairs, allowing iroh's GC
+    /// to reclaim blob data that is no longer referenced by any topic + author.
     pub async fn delete_blobs(
         &self,
         topic: TopicId,
