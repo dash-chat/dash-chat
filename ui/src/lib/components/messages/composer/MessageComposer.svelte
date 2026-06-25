@@ -167,6 +167,7 @@
 					{placeholder}
 					onSend={send}
 					onEmojiClick={() => (showEmojiPicker = true)}
+					onFocus={() => (showMediaPanel = false)}
 				/>
 			</div>
 
