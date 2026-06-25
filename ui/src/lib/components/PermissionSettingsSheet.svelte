@@ -5,6 +5,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiRadioboxMarked } from '@mdi/js';
+	import { showToast } from '$lib/utils/toasts';
 
 	interface Props {
 		opened: boolean;
@@ -20,7 +21,12 @@
 	// generic cross-platform helper.)
 	async function settings() {
 		opened = false;
-		await openAppSettings();
+		try {
+			await openAppSettings();
+		} catch (e) {
+			console.error('Failed to open settings', e);
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
 	}
 </script>
 

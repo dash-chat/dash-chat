@@ -62,6 +62,8 @@ export type Agent = WebdriverIO.Browser & {
 
 	/** SvelteKit `goto` — uses `window.__test.goto` for client-side nav. */
 	goto(path: string): Promise<void>;
+	/** Dispatch a URL through the app's deep link routing logic. */
+	handleDeepLink(url: string): Promise<void>;
 	/** Resolve a paraglide message key in the agent's current locale. */
 	tr(key: string, params?: Record<string, unknown>): Promise<string>;
 	/** Scan the whole page for horizontal-overflow issues. */
@@ -118,6 +120,9 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 		await b.execute(async (p: string) => {
 			await window.__test.goto(p);
 		}, path);
+	};
+	agent.handleDeepLink = async (url: string) => {
+		await b.execute((u: string) => window.__test.handleDeepLink(u), url);
 	};
 	agent.tr = async (key: string, params?: Record<string, unknown>) =>
 		await b.execute(

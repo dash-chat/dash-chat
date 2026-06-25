@@ -123,6 +123,12 @@ export const testUtils = {
 			'enablePreviewFeatures called before registerTestUtils provided the callback',
 		);
 	},
+	/** Dispatch a deep link URL through the app's full routing logic. */
+	handleDeepLink: (_url: string): void => {
+		throw new Error(
+			'handleDeepLink called before registerTestUtils provided the callback',
+		);
+	},
 };
 
 declare global {
@@ -136,10 +142,14 @@ export function registerTestUtils(
 	setLocale?: (locale: string) => void,
 	messages?: Messages,
 	enablePreviewFeatures?: () => void,
+	handleDeepLink?: (url: string) => void,
 ) {
 	window.__test = testUtils;
 	if (enablePreviewFeatures) {
 		testUtils.enablePreviewFeatures = enablePreviewFeatures;
+	}
+	if (handleDeepLink) {
+		testUtils.handleDeepLink = handleDeepLink;
 	}
 	if (goto) {
 		testUtils.goto = goto;

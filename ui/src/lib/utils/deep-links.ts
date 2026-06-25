@@ -57,7 +57,7 @@ function sanitizeUrl(url: string): string {
 	}
 }
 
-function handleUrls(urls: string[]) {
+export function handleUrls(urls: string[]) {
 	for (const url of urls) {
 		let matched = false;
 		for (const handler of handlers) {

@@ -30,24 +30,28 @@ export class LogsStore<PAYLOAD> {
 		(topicId: TopicId): ReactivePromise<VerifyingKey[]> =>
 			relay<VerifyingKey[]>(state => {
 				const fetchAuthors = async () => {
-					const authors = await this.logsClient.getAuthorsForTopic(topicId);
-					const current = state.value;
+					try {
+						const authors = await this.logsClient.getAuthorsForTopic(topicId);
+						const current = state.value;
 
-					let allAuthorsAreKnown = true;
-					for (const author of authors) {
-						if (!current?.includes(author)) {
-							allAuthorsAreKnown = false;
+						let allAuthorsAreKnown = true;
+						for (const author of authors) {
+							if (!current?.includes(author)) {
+								allAuthorsAreKnown = false;
+							}
 						}
-					}
 
-					if (
-						!current ||
-						current.length !== authors.length ||
-						!allAuthorsAreKnown
-					) {
-						state.value = authors;
+						if (
+							!current ||
+							current.length !== authors.length ||
+							!allAuthorsAreKnown
+						) {
+							state.value = authors;
+						}
+						return authors;
+					} catch (error) {
+						state.setError(error);
 					}
-					return authors;
 				};
 				fetchAuthors();
 				const interval = POLLING_ENABLED
@@ -78,13 +82,17 @@ export class LogsStore<PAYLOAD> {
 		): ReactivePromise<SimplifiedOperation<PAYLOAD>[]> =>
 			relay<SimplifiedOperation<PAYLOAD>[]>(state => {
 				const fetchLog = async () => {
-					const log = await this.logsClient.getLog(topicId, author);
-					const current = state.value;
-					// Logs are append-only per author; same length means same content.
-					if (!(current && current.length === log.length)) {
-						state.value = log;
+					try {
+						const log = await this.logsClient.getLog(topicId, author);
+						const current = state.value;
+						// Logs are append-only per author; same length means same content.
+						if (!(current && current.length === log.length)) {
+							state.value = log;
+						}
+						return log;
+					} catch (error) {
+						state.setError(error);
 					}
-					return log;
 				};
 				fetchLog();
 				const interval = POLLING_ENABLED

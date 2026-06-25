@@ -332,7 +332,7 @@ impl Node {
                     let log_id = operation.header.extensions.log_id;
                     let topic = self.op_store.store.resolve_topic(&author, &log_id).await?;
                     let Some(topic) = topic else {
-                        tracing::error!("failed to resolve topic for operation: {operation:?}");
+                        tracing::error!(operation = ?operation.hash.aliased(), "failed to resolve topic for operation");
                         return Ok(());
                     };
                     if let Some(media) = m.media() {
@@ -374,7 +374,7 @@ impl Node {
         }
 
         let hash = operation.id();
-        let device_id = DeviceId::from(operation.author());
+        let author = DeviceId::from(operation.author());
         let payload = operation.message();
 
         match &payload {
@@ -382,11 +382,6 @@ impl Node {
                 // Nothing to do.
             }
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
-                tracing::info!(
-                    me = ?device_id.aliased(),
-                    count = agents.len(),
-                    "received IntroduceAgents message"
-                );
                 for (device_id, agent_id) in agents {
                     if let Err(err) = self
                         .local_store
@@ -440,7 +435,9 @@ impl Node {
                 if let Some(media) = m.media() {
                     for item in media.iter() {
                         // TODO: revisit during ACID review (replay)
-                        self.blob_sync.fetch_pool.add(topic.into(), item.hash).await;
+                        self.blob_sync
+                            .add_to_fetch_pool(topic.into(), author, item.hash)
+                            .await?;
                     }
                 }
             }
@@ -490,17 +487,13 @@ impl Node {
                     AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
                         anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
                     })?);
-                if let Err(err) = self
-                    .local_store
-                    .save_agent_mapping(device_id, agent_id)
-                    .await
-                {
+                if let Err(err) = self.local_store.save_agent_mapping(author, agent_id).await {
                     tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
                 }
 
                 if let Err(err) = self
                     .local_store
-                    .save_capabilities(device_id, capabilities.clone())
+                    .save_capabilities(author, capabilities.clone())
                     .await
                 {
                     tracing::warn!(?err, "failed to save capabilities from SetCapabilities");

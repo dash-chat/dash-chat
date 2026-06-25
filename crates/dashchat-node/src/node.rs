@@ -1019,7 +1019,8 @@ impl Node {
     ///
     /// This has the effect that when the operation is played back, it will
     /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
-    /// is `true` should not cause state changes when processed!
+    /// is `true` MUST also revert their changes in [`Self::unprocess_app`]
+    /// so that they leave behind no traces in local state.
     pub async fn tombstone_operation(
         &self,
         topic: TopicId,
