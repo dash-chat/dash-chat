@@ -8,7 +8,6 @@
 		placeholder?: string;
 		onSend?: () => Promise<boolean>;
 		onEmojiClick?: () => void;
-		onFocus?: () => void;
 	}
 
 	let {
@@ -16,7 +15,6 @@
 		placeholder = m.typeMessage(),
 		onSend,
 		onEmojiClick,
-		onFocus,
 	}: Props = $props();
 
 	let textarea: HTMLTextAreaElement;
@@ -57,7 +55,6 @@
 	rows="1"
 	onkeydown={handleKeydown}
 	oninput={handleInput}
-	onfocus={() => onFocus?.()}
 ></textarea>
 
 <style>
