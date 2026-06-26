@@ -76,7 +76,7 @@ fn setup() {
             "p2panda_stream=warn",
             "p2panda_auth=warn",
             "p2panda_spaces=warn",
-            "named_id=warn",
+            "aliased=warn",
         ],
         true,
     );

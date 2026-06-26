@@ -531,7 +531,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn process_groups_control_messages() {
-        setup_tracing(&["dashchat=info", "named_id=warn"], true);
+        setup_tracing(&["dashchat=info", "aliased=warn"], true);
 
         let network_id = Topic::random();
         let topic = Topic::random();

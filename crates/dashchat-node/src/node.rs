@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 
-use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync};
+use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
 use crate::filesystem::Filesystem;
@@ -368,6 +368,11 @@ impl Node {
 
     pub fn device_id(&self) -> DeviceId {
         self.node_keys.device_id()
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn blob_sync(&self) -> &crate::blob_sync::BlobSync {
+        &self.blob_sync
     }
 
     #[cfg(feature = "testing")]
@@ -761,13 +766,30 @@ impl Node {
         message: impl Into<String>,
         media: Option<OutgoingMedia>,
     ) -> anyhow::Result<Header> {
+        let chat_id: ChatId = topic.into();
         let meta = if let Some(media) = media {
-            Some(self.store_media(media).await?)
+            Some(
+                self.store_media(chat_id.into(), SENTINEL_OP_HASH, media)
+                    .await?,
+            )
         } else {
             None
         };
-        let message = ChatMessageContent::new(message, meta);
-        self.send_message_raw(topic, message).await
+        let message = ChatMessageContent::new(message, meta.clone());
+        let header = self.send_message_raw(chat_id, message).await?;
+        if let Some(bundle) = meta {
+            let topic_id: TopicId = chat_id.into();
+            for item in bundle.iter() {
+                if let Err(err) = self
+                    .blob_sync
+                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash)
+                    .await
+                {
+                    tracing::warn!(?err, "failed to retag blob after operation creation");
+                }
+            }
+        }
+        Ok(header)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
@@ -862,6 +884,33 @@ impl Node {
             }
         }
         Ok(latest.map(|(_, d)| d))
+    }
+
+    /// Tombstone an operation: record its hash in the topic's persisted
+    /// tombstone set so its payload is never stored or synced again, and
+    /// immediately drop any payload already stored for it.
+    ///
+    /// This has the effect that when the operation is played back, it will
+    /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
+    /// is `true` MUST also revert their changes in [`Self::unprocess_app`]
+    /// so that they leave behind no traces in local state.
+    pub async fn tombstone_operation(
+        &self,
+        topic: TopicId,
+        operation: &Operation,
+    ) -> anyhow::Result<()> {
+        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
+            return Ok(());
+        };
+        if self.is_tombstoneable(&payload) {
+            let hash = operation.hash;
+            self.local_store.add_tombstone(topic, hash.clone()).await?;
+            self.unprocess_app(operation).await?;
+            self.op_store.delete_body(&hash).await?;
+        } else {
+            tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
+        }
+        Ok(())
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.
@@ -1155,19 +1204,27 @@ impl Node {
         Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 
-    pub async fn store_media(&self, media: OutgoingMedia) -> anyhow::Result<MediaBundle> {
+    pub async fn store_media(
+        &self,
+        topic: TopicId,
+        operation_hash: p2panda::Hash,
+        media: OutgoingMedia,
+    ) -> anyhow::Result<MediaBundle> {
         let mut items = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
                 for photo in photos {
                     let size = photo.data.len() as u64;
                     ensure_blob_size(size, &photo.name)?;
-                    let tag = self.blob_sync.blobs.add_bytes(photo.data).await?;
+                    let hash = self
+                        .blob_sync
+                        .store_blob(topic, self.device_id(), operation_hash, photo.data)
+                        .await?;
                     items.push(MediaMetadata {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
-                        hash: tag.hash,
+                        hash,
                         kind: MediaMetaKind::Photo,
                     });
                 }
@@ -1175,12 +1232,15 @@ impl Node {
             OutgoingMedia::File { file } => {
                 let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
-                let tag = self.blob_sync.blobs.add_bytes(file.data).await?;
+                let hash = self
+                    .blob_sync
+                    .store_blob(topic, self.device_id(), operation_hash, file.data)
+                    .await?;
                 items.push(MediaMetadata {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
-                    hash: tag.hash,
+                    hash,
                     kind: MediaMetaKind::File,
                 });
             }
