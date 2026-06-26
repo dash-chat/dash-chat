@@ -19,7 +19,8 @@ pub async fn save_blob_to_cache(
     let dir = app
         .path()
         .app_cache_dir()
-        .map_err(|e| format!("Failed to resolve app cache dir: {e:?}"))?;
+        .map_err(|e| format!("Failed to resolve app cache dir: {e:?}"))?
+        .join(sanitized_file_name(&hash));
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create cache dir: {e:?}"))?;
 
     let path = dir.join(sanitized_file_name(&name));
@@ -35,7 +36,7 @@ pub async fn save_blob_to_cache(
 fn sanitized_file_name(name: &str) -> String {
     name.rsplit(['/', '\\'])
         .next()
-        .filter(|s| !s.is_empty())
+        .filter(|s| !s.is_empty() && *s != "." && *s != "..")
         .unwrap_or("attachment")
         .to_string()
 }
