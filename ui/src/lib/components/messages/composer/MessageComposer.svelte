@@ -3,7 +3,7 @@
 	import { Sheet, Block, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
-	import { isMobile } from '$lib/utils/environment';
+	import { isMobile, isIos } from '$lib/utils/environment';
 	import {
 		type DraftMedia,
 		type IngestError,
@@ -167,7 +167,12 @@
 					{placeholder}
 					onSend={send}
 					onEmojiClick={() => (showEmojiPicker = true)}
-					onFocus={() => (showMediaPanel = false)}
+					onFocus={() => {
+						// iOS needs the panel dismissed on focus to avoid a glitch; on other
+						// platforms `render-below-keyboard` yields the slot to the rising
+						// keyboard so the input bar stays pinned (closing here makes it jump).
+						if (isIos) showMediaPanel = false;
+					}}
 				/>
 			</div>
 
