@@ -17,6 +17,9 @@
 	} = $props();
 
 	const isWhite = $derived(color === '#ffffff');
+	const versionHint = $derived(
+		code.includes('=') ? code.split('=')[1] : undefined,
+	);
 
 	async function copyLink() {
 		await writeText(code);
@@ -32,6 +35,13 @@
 		>
 			<wa-qr-code value={code} size="180" fill={isWhite ? '#000000' : color}
 			></wa-qr-code>
+			{#if versionHint}
+				<span
+					class="mt-1"
+					style="font-size: 11px; opacity: 0.5; font-family: monospace;"
+					>{versionHint}</span
+				>
+			{/if}
 		</div>
 
 		<div class="py-1">

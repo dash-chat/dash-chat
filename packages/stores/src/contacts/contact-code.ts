@@ -4,18 +4,26 @@ import { decode, encode } from 'cbor-web';
 
 import { ContactCode } from '../types';
 
-export function encodeContactCode(contactCode: ContactCode): string {
+export function encodeContactCode(contactCode: ContactCode, versionHint?: string): string {
 	const bin = encode([
 		contactCode.device_pubkey,
 		contactCode.agent_id,
 		contactCode.inbox_topic,
 		contactCode.share_intent,
 	]);
-	return fromByteArray(bin);
+	const base64 = fromByteArray(bin);
+	if (versionHint) {
+		// Append version hint after the base64 padding; stripped during decode
+		const withoutPadding = base64.replace(/=+$/, '');
+		return `${withoutPadding}=${versionHint}`;
+	}
+	return base64;
 }
 
 export function decodeContactCode(contactCodeString: string): ContactCode {
-	const bin = toByteArray(contactCodeString);
+	// Strip anything after (and including) the first '=' to ignore version hints
+	const base64 = contactCodeString.split('=')[0];
+	const bin = toByteArray(base64);
 	const [device_pubkey, agent_id, inbox_topic, share_intent] = decode(bin);
 	return {
 		device_pubkey,

@@ -11,6 +11,7 @@
 	import type { AddContactError, ContactCode } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 
+	import { getVersion } from '@tauri-apps/api/app';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { isMobile } from '$lib/utils/environment';
@@ -47,7 +48,12 @@
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const settingsStore: SettingsStore = getContext('settings-store');
 
-	let myCode = contactsStore.client.createContactCode().then(encodeContactCode);
+	let myCode = Promise.all([
+		contactsStore.client.createContactCode(),
+		getVersion(),
+	]).then(([contactCode, version]) =>
+		encodeContactCode(contactCode, `v${version}`),
+	);
 
 	let tab = $state<TabName>('code');
 	let scannerRef: QrCodeScanner | null = $state(null);

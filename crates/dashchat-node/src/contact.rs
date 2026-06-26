@@ -5,6 +5,16 @@ use std::str::FromStr;
 
 use crate::{AgentId, DeviceId, Topic, topic::kind};
 
+/// Version hint appended to contact codes for visual identification during testing.
+#[allow(dead_code)]
+pub struct VersionHint;
+
+impl std::fmt::Display for VersionHint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "v{}", env!("CARGO_PKG_VERSION"))
+    }
+}
+
 /// The content for a QR code or deep link.
 ///
 /// These codes are used to introduce two nodes for the purpose of either establishing
