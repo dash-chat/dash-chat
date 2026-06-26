@@ -120,6 +120,7 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_connection_state,
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
+            commands::media::save_blob_to_cache,
         ])
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
