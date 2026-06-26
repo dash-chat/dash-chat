@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isMobile } from '$lib/utils/environment';
+	import { keyboard } from '$lib/utils/keyboard.svelte';
 	import {
 		type DraftMedia,
 		type IngestError,
@@ -139,7 +140,15 @@
 <MediaDropOverlay onFiles={stage} />
 
 <div style="display: flow-root" use:keepKeyboardOpen>
-	<div class="message-input-bar" class:pb-safe={!showMediaPanel}>
+	<!-- Safe-area padding only when the bar is the bottom-most surface (nothing
+	     below it): no panel and no keyboard. Keying it off the panel alone bumps
+	     the bar by `env(safe-area-inset-bottom)` during the panel→keyboard swap,
+	     because the panel closes before the (visual-viewport-driven) safe area
+	     has collapsed to 0. -->
+	<div
+		class="message-input-bar"
+		class:pb-safe={!showMediaPanel && !keyboard.isOpen}
+	>
 		{#if !isMobile}
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
@@ -167,7 +176,6 @@
 					{placeholder}
 					onSend={send}
 					onEmojiClick={() => (showEmojiPicker = true)}
-					onFocus={() => (showMediaPanel = false)}
 				/>
 			</div>
 

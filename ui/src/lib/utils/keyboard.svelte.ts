@@ -18,12 +18,21 @@ let liveHeight = $state(0);
 let maxHeight = $state(0);
 let tracking = false;
 
-// Prefer visualViewport: on iOS WKWebView it's the reliable signal for keyboard
-// geometry and doesn't always move in lockstep with innerHeight.
+// Track whichever viewport metric has shrunk the most. As the iOS keyboard opens
+// the layout viewport (`documentElement.clientHeight`) leads both `innerHeight`
+// and `visualViewport` by a frame or two; since the panel slot is laid out
+// against the layout viewport, following the leading signal keeps the slot and
+// the layout in lockstep and avoids a transient where the slot is still full
+// while the layout has already shrunk.
 function viewport() {
 	const vv = window.visualViewport;
+	const layout = document.documentElement.clientHeight || window.innerHeight;
 	return {
-		height: vv?.height ?? window.innerHeight,
+		height: Math.min(
+			vv?.height ?? window.innerHeight,
+			window.innerHeight,
+			layout,
+		),
 		width: vv?.width ?? window.innerWidth,
 	};
 }
@@ -64,6 +73,30 @@ export function trackKeyboardHeight() {
 	}
 	window.addEventListener('resize', measure);
 	window.visualViewport?.addEventListener('resize', measure);
+}
+
+let pulseRaf: number | undefined;
+let pulseUntil = 0;
+
+/**
+ * Re-measure every frame for a short window. The iOS layout viewport can shrink
+ * a frame or two before any `resize`/`visualViewport` event fires (or without
+ * firing one at all), so event-driven measuring alone leaves the height stale
+ * mid-animation. Call when a keyboard transition is about to start.
+ */
+export function pulseKeyboardTracking(durationMs = 400) {
+	if (!tracking) return;
+	pulseUntil = Math.max(pulseUntil, performance.now() + durationMs);
+	if (pulseRaf !== undefined) return;
+	const tick = () => {
+		measure();
+		if (performance.now() < pulseUntil) {
+			pulseRaf = requestAnimationFrame(tick);
+		} else {
+			pulseRaf = undefined;
+		}
+	};
+	pulseRaf = requestAnimationFrame(tick);
 }
 
 export const keyboard = {

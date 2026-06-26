@@ -45,6 +45,9 @@ pub fn run() {
     }
     #[cfg(target_os = "android")]
     {
+        // Registered first so it binds the process to the default network before
+        // the iroh endpoint creates its sockets (bindProcessToNetwork only
+        // affects sockets opened after the bind).
         builder = builder.plugin(tauri_plugin_android_fs::init());
         builder = builder.plugin(tauri_plugin_medialibrary::init());
     }
@@ -120,6 +123,7 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_connection_state,
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
+            commands::media::save_blob_to_cache,
         ])
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())

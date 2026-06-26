@@ -10,7 +10,7 @@
 	} from '@mdi/js';
 	import { darkOverlay } from '$lib/actions/dark-overlay';
 	import type { PhotoAttachment } from 'dash-chat-stores';
-	import { savePhoto, loadMediaBytes } from '$lib/utils/media';
+	import { savePhoto, loadMediaBytes, BlobLoadError } from '$lib/utils/media';
 	import { shareFile } from '$lib/utils/files';
 	import { isMobile, isAndroid } from '$lib/utils/environment';
 	import { showToast } from '$lib/utils/toasts';
@@ -62,7 +62,8 @@
 		try {
 			if (await savePhoto(photo)) showToast(m.mediaSaved());
 		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
+			if (!(e instanceof BlobLoadError))
+				showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error(e);
 		}
 	}
@@ -72,7 +73,8 @@
 			const data = await loadMediaBytes(photo);
 			await shareFile(data, photo.name, photo.mime_type);
 		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
+			if (!(e instanceof BlobLoadError))
+				showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error(e);
 		}
 	}
