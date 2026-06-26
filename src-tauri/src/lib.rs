@@ -48,7 +48,6 @@ pub fn run() {
         // Registered first so it binds the process to the default network before
         // the iroh endpoint creates its sockets (bindProcessToNetwork only
         // affects sockets opened after the bind).
-        builder = builder.plugin(tauri_plugin_network_interfaces::init());
         builder = builder.plugin(tauri_plugin_android_fs::init());
         builder = builder.plugin(tauri_plugin_medialibrary::init());
     }
