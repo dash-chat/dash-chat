@@ -110,7 +110,6 @@ impl BlobSync {
             return false;
         }
 
-        // let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
         dashchat_utils::blob_sync::download_capped(
             &self.downloader,
             hash,
@@ -281,6 +280,8 @@ pub struct MixedSourceLookup {
 }
 
 impl MixedSourceLookup {
+    /// Return a list of providers for the blobs in a topic.
+    /// Mailboxes come first, then peer subscribers.
     pub async fn sources(&self, topic: TopicId) -> anyhow::Result<Vec<iroh::EndpointId>> {
         let log_id = LogId::from_topic(topic);
         let mut sources = vec![];

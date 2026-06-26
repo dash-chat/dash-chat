@@ -54,7 +54,7 @@ pub trait FetchPool: Clone + Send + Sync + 'static {
 /// An item for which `fetch` returns `true` is removed. With items still
 /// outstanding the loop waits up to `pass_interval` since the pass began before
 /// retrying, but a newly added item wakes it early; with an empty pool it parks.
-/// A per-item `retry_cooldown` (defaulting to `pass_interval`) prevents early
+/// A per-item `retry_cooldown` prevents early
 /// wakes from retrying recently-failed items in a tight loop.
 pub async fn fetch_loop<P, F, Fut>(pool: P, config: FetchConfig, fetch: F)
 where
