@@ -1,6 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use tokio::time::Instant;
 
 use tokio::task::JoinSet;
 
@@ -9,14 +11,19 @@ pub struct FetchConfig {
     pub concurrency: usize,
     pub attempt_timeout: Duration,
     pub pass_interval: Duration,
+    /// Minimum time between successive attempts of the same item.
+    /// Setting this prevents early-wake notifications from
+    /// causing tight retry loops when items fail fast.
+    pub retry_cooldown: Duration,
 }
 
 impl Default for FetchConfig {
     fn default() -> Self {
         Self {
             concurrency: 4,
-            attempt_timeout: Duration::from_secs(30),
+            attempt_timeout: Duration::from_secs(60),
             pass_interval: Duration::from_secs(60),
+            retry_cooldown: Duration::from_secs(30),
         }
     }
 }
@@ -47,6 +54,8 @@ pub trait FetchPool: Clone + Send + Sync + 'static {
 /// An item for which `fetch` returns `true` is removed. With items still
 /// outstanding the loop waits up to `pass_interval` since the pass began before
 /// retrying, but a newly added item wakes it early; with an empty pool it parks.
+/// A per-item `retry_cooldown` prevents early
+/// wakes from retrying recently-failed items in a tight loop.
 pub async fn fetch_loop<P, F, Fut>(pool: P, config: FetchConfig, fetch: F)
 where
     P: FetchPool,
@@ -54,9 +63,19 @@ where
     Fut: std::future::Future<Output = bool> + Send + 'static,
 {
     let concurrency = config.concurrency.max(1);
+    let cooldown = config.retry_cooldown;
+    let mut last_tried: HashMap<P::Key, Instant> = HashMap::new();
     loop {
         let pass_start = Instant::now();
-        run_fetch_pass(&pool, concurrency, config.attempt_timeout, &fetch).await;
+        run_fetch_pass(
+            &pool,
+            concurrency,
+            config.attempt_timeout,
+            &fetch,
+            &mut last_tried,
+            cooldown,
+        )
+        .await;
 
         if pool.is_empty().await {
             pool.wait_for_add().await;
@@ -77,19 +96,26 @@ async fn run_fetch_pass<P, F, Fut>(
     concurrency: usize,
     attempt_timeout: Duration,
     fetch: &F,
+    last_tried: &mut HashMap<P::Key, Instant>,
+    cooldown: Duration,
 ) where
     P: FetchPool,
     F: Fn(P::Item, Duration) -> Fut + Clone + Send + 'static,
     Fut: std::future::Future<Output = bool> + Send + 'static,
 {
-    let mut tried: HashSet<P::Key> = HashSet::new();
+    let now = Instant::now();
+    last_tried.retain(|_, t| now.duration_since(*t) < cooldown);
+    let mut tried: HashSet<P::Key> = last_tried.keys().copied().collect();
+
     let mut in_flight: JoinSet<(P::Item, bool)> = JoinSet::new();
     loop {
         while in_flight.len() < concurrency {
             let Some(item) = pool.next_untried(&tried).await else {
                 break;
             };
-            tried.insert(P::key(&item));
+            let key = P::key(&item);
+            tried.insert(key);
+            last_tried.insert(key, Instant::now());
             let fetch = fetch.clone();
             in_flight.spawn(async move {
                 let succeeded = fetch(item.clone(), attempt_timeout).await;
@@ -102,6 +128,7 @@ async fn run_fetch_pass<P, F, Fut>(
         if let Ok((item, succeeded)) = joined {
             if succeeded {
                 pool.remove(&item).await;
+                last_tried.remove(&P::key(&item));
             } else {
                 pool.on_failure(&item).await;
             }
@@ -163,6 +190,7 @@ mod tests {
             concurrency: 2,
             attempt_timeout: Duration::from_secs(5),
             pass_interval: Duration::from_secs(60),
+            retry_cooldown: Duration::from_secs(60),
         }
     }
 
@@ -271,6 +299,37 @@ mod tests {
             .iter()
             .any(|(n, at)| *n == 2 && *at < Duration::from_secs(30));
         assert!(woke_early, "expected item 2 fetched early, got {times:?}");
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn early_wake_does_not_retry_recently_failed_item() {
+        let pool = TestPool::default();
+        pool.add(1).await;
+        let calls: Arc<Mutex<Vec<(u8, Duration)>>> = Arc::new(Mutex::new(Vec::new()));
+        let start = tokio::time::Instant::now();
+        let handle = {
+            let calls = calls.clone();
+            tokio::spawn(fetch_loop(pool.clone(), config(), move |n, _t| {
+                let calls = calls.clone();
+                async move {
+                    calls.lock().await.push((n, start.elapsed()));
+                    false
+                }
+            }))
+        };
+        // Item 1 fails fast; at t=5s add item 2 to wake the loop early.
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        pool.add(2).await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        let calls = calls.lock().await.clone();
+        // Item 1 should only have been attempted once (at ~t=0), not retried at ~t=5.
+        let item1_calls: Vec<_> = calls.iter().filter(|(n, _)| *n == 1).collect();
+        assert_eq!(
+            item1_calls.len(),
+            1,
+            "item 1 was retried during cooldown: {calls:?}"
+        );
         handle.abort();
     }
 

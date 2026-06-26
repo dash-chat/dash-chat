@@ -55,6 +55,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             concurrency: 4,
             attempt_timeout: Duration::from_secs(10),
             pass_interval: Duration::from_secs(2),
+            retry_cooldown: Duration::from_secs(2),
         }),
     )
     .await
