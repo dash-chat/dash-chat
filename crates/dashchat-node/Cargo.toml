@@ -48,6 +48,9 @@ sqlx = "0.8.6"
 tempfile = { version = "3.24", optional = true }
 nanoid = { version = "0.4", optional = true }
 
+[target.'cfg(target_os = "android")'.dependencies]
+if-watch = { version = "3", features = ["tokio"] }
+
 [dev-dependencies]
 dashchat-node = { path = ".", features = ["testing"] }
 mailbox-server = { path = "../mailbox-server", features = ["test_utils"] }

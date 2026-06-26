@@ -2053,6 +2053,7 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "futures",
  "hex",
+ "if-watch",
  "iroh",
  "iroh-blobs",
  "itertools 0.14.0",
