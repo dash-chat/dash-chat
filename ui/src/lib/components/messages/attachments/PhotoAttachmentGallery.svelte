@@ -11,15 +11,20 @@
 	let { photos, onPhotoClick }: Props = $props();
 
 	// Per-cell load state and component handles, so a click on a cell whose
-	// image hasn't loaded retries the download instead of opening the lightbox.
+	// image failed to load retries the download instead of opening the lightbox.
 	let statuses = $state<Record<number, 'loading' | 'loaded' | 'error'>>({});
 	const blobImages: Record<number, { retry: () => void }> = {};
 
+	// The 5th cell of a 6+ gallery is the "+N" overflow scrim — it stands for all
+	// the hidden photos, so it always opens the lightbox rather than retrying its
+	// own thumbnail.
+	const isOverflowCell = (index: number) => index === 4 && photos.length > 5;
+
 	function onCellClick(index: number, event: MouseEvent) {
-		if (statuses[index] === 'loaded') {
-			onPhotoClick(index, event);
-		} else {
+		if (statuses[index] === 'error' && !isOverflowCell(index)) {
 			blobImages[index]?.retry();
+		} else {
+			onPhotoClick(index, event);
 		}
 	}
 </script>
@@ -39,7 +44,7 @@
 				lazy
 				onStatus={s => (statuses[i] = s)}
 			/>
-			{#if i === 4 && photos.length > 5}
+			{#if isOverflowCell(i)}
 				<div class="photo-overlay">+{photos.length - 5}</div>
 			{/if}
 		</button>

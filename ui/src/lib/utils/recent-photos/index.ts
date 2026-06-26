@@ -18,8 +18,17 @@ export interface RecentPhoto {
 
 export type RecentPhotosPermission = 'granted' | 'denied' | 'prompt';
 
-/** Long side, in pixels, used for strip thumbnails on both platforms. */
-export const THUMBNAIL_PX = 256;
+/** Largest height, in CSS pixels, a strip tile is expected to reach: the tile
+ *  is `aspect-square h-full` and fills the media panel, whose height tracks the
+ *  on-screen keyboard (~250–300px) minus the attach-buttons row below it. */
+const MAX_TILE_CSS_PX = 240;
+
+/** Long side, in device pixels, used for strip thumbnails on both platforms.
+ *  Scaled by the (capped) device pixel ratio so tiles stay crisp now that they
+ *  fill the panel height instead of a fixed 100px box. */
+export const THUMBNAIL_PX = Math.round(
+	MAX_TILE_CSS_PX * Math.min(globalThis.devicePixelRatio || 1, 3),
+);
 
 /**
  * E2E seam: when `window.__test.recentPhotos` is set (see `RecentPhotosTestData`
