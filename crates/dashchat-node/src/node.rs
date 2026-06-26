@@ -140,6 +140,8 @@ pub struct Node {
     filesystem: Filesystem,
     blob_sync: BlobSync,
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    endpoint: p2panda::Endpoint,
+    network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
@@ -250,7 +252,7 @@ impl Node {
         )
         .await?;
         let blob_sync = BlobSync::new(
-            endpoint,
+            endpoint.clone(),
             filesystem.blobs_store_path(),
             blob_fetch,
             source_lookup,
@@ -276,6 +278,8 @@ impl Node {
             registered_bootstraps: Default::default(),
             blob_sync,
             blob_fetch_handle: Default::default(),
+            endpoint,
+            network_change_handle: Default::default(),
         };
 
         // === application processor task === //
@@ -293,6 +297,14 @@ impl Node {
             .lock()
             .await
             .replace(blob_fetch_handle);
+
+        // === network change notifier === //
+
+        let network_change_handle = crate::network_change_notifier::spawn(node.endpoint.clone());
+        node.network_change_handle
+            .lock()
+            .await
+            .replace(network_change_handle);
 
         // === topics === //
 
