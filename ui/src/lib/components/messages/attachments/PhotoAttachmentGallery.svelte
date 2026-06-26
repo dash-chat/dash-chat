@@ -85,13 +85,13 @@
 	/* Floor the cell's size before the img exists (loading/error), so the overlay/retry box doesn't collapse. */
 	.attachment-photos:has(.photo-cell:only-child) .photo-cell {
 		min-width: 200px;
-		min-height: 50px;
+		min-height: 150px;
 	}
 
 	/* 2+ → a 300px-wide collage grid */
 	.attachment-photos:has(.photo-cell:nth-child(2)) {
 		display: grid;
-		gap: 1px;
+		gap: 2px;
 		width: 300px;
 	}
 

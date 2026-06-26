@@ -247,11 +247,21 @@ export function mediaSize(item: PhotoAttachment | FileAttachment): number {
 	return item.size;
 }
 
+/** Thrown when a media item's blob bytes can't be fetched — typically because
+ * the blob hasn't synced to this device yet. Expected, so callers should not
+ * surface it as an unexpected error. */
+export class BlobLoadError extends Error {
+	constructor(hash: Hash) {
+		super(`failed to load blob ${hash}`);
+		this.name = 'BlobLoadError';
+	}
+}
+
 /** Raw bytes of a media item, fetched from the `irohblob://` scheme. */
 export async function loadMediaBytes(
 	item: PhotoAttachment | FileAttachment,
 ): Promise<Uint8Array> {
 	const res = await fetch(blobUrl(item.hash));
-	if (!res.ok) throw new Error(`failed to load blob ${item.hash}`);
+	if (!res.ok) throw new BlobLoadError(item.hash);
 	return new Uint8Array(await res.arrayBuffer());
 }

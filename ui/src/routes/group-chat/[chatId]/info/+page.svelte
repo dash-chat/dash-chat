@@ -195,9 +195,14 @@
 							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
 						</Avatar>
 
-						<span class="text-xl font-semibold">{info.name}</span>
+						<span
+							class="text-xl font-semibold break-words text-center max-w-full"
+							>{info.name}</span
+						>
 
-						<span class="quiet">{info.description}</span>
+						<span class="quiet break-words text-center max-w-full"
+							>{info.description}</span
+						>
 					</div>
 
 					{#await $members then members}
