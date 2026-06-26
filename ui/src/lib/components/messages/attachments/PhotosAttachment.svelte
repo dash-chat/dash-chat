@@ -39,7 +39,9 @@
 	});
 </script>
 
+<div style="max-width: 280px">
 <PhotoAttachmentGallery {photos} onPhotoClick={openLightbox} />
+</div>
 
 {#if lightboxIndex !== null}
 	<Lightbox

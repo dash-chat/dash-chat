@@ -83,7 +83,7 @@
 	/>
 </Card>
 {#if Object.keys(message.reactions).length}
-	<div class="flex justify-end -mt-1.5 mb-0.5 px-1">
+	<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
 		<Reactions reactions={message.reactions} {myDeviceId} {onToggleReaction} />
 	</div>
 {/if}
