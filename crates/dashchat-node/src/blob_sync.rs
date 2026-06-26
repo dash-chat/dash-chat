@@ -35,7 +35,7 @@ const MAX_FETCH_FAILURES: u32 = 10;
 /// not yet known (e.g. media stored before its enclosing operation is created).
 /// Replaced by [`BlobSync::retag_blob`] once the real hash is available.
 /// On deletion, the sentinel tag is also attempted so crash-orphaned tags are GC'd.
-pub const SENTINEL_OP_HASH: p2panda::Hash = p2panda::Hash::from_bytes([0u8; 32]);
+pub const SENTINEL_OP_HASH: p2panda::Hash = p2panda::Hash::from_bytes([111u8; 32]);
 
 /// Manages syncing blobs referenced in logs over iroh-blobs
 #[derive(Clone)]
