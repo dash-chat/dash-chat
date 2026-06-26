@@ -1,10 +1,12 @@
 <script lang="ts">
 	import type { FileAttachment, PhotoAttachment } from 'dash-chat-stores';
-	import { mediaSrc } from '$lib/utils/media';
+	import { inView } from '$lib/actions/in-view';
 	import {
+		acquireMediaUrl,
 		cacheMediaUrl,
 		cachedMediaUrl,
 		invalidateMediaUrl,
+		releaseMediaUrl,
 	} from '$lib/utils/media-cache';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Preloader } from 'konsta/svelte';
@@ -33,44 +35,57 @@
 		onStatus,
 	}: Props = $props();
 
+	// Always render from a cached blob: URL. The bytes are fetched once (one IPC
+	// round-trip) and reused on every later mount; we never point the <img> at
+	// irohblob:// directly, which would re-read the blob a second time to fill
+	// the cache. `src` is empty until the bytes resolve (set in the effect below).
+	let src = $state('');
 	let status = $state<'loading' | 'loaded' | 'error'>('loading');
-	// buster busts a failed retry's URL so it never reuses a cached failure.
-	let buster = $state(0);
 
-	// Prefer a cached blob: URL (set once the bytes were fetched on an earlier
-	// render); otherwise point the <img> at irohblob:// so its native lazy
-	// loading defers the store read until it nears the viewport.
-	function resolveSrc(): string {
-		const cached = cachedMediaUrl(item.hash);
-		if (cached) return cached;
-		return buster === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${buster}`;
+	function load() {
+		const hash = item.hash;
+		const hit = cachedMediaUrl(hash);
+		if (hit) {
+			src = hit;
+			return;
+		}
+		cacheMediaUrl(item)
+			.then(url => {
+				if (item.hash === hash) src = url;
+			})
+			.catch(() => {
+				if (item.hash === hash) status = 'error';
+			});
 	}
 
-	let src = $state(resolveSrc());
-
-	// Recompute the src only on item/retry changes; the background cache fill
-	// (in onLoaded) is intentionally non-reactive so it never swaps a live src.
-	// Track both explicitly: a cache hit makes resolveSrc return before reading
-	// them, which would otherwise drop the dependency and miss a later retry.
+	// Resolve from the cache whenever the item changes. A hit shows instantly; on
+	// a miss, eager cells (e.g. the focused lightbox image) fetch immediately
+	// while lazy cells wait for `inView`. Reading `lazy` re-runs this when a
+	// lightbox slide becomes focused, so it loads even if it never neared the
+	// viewport. Writes (not reads) src/status, so it can't loop on itself.
 	$effect(() => {
-		void item;
-		void buster;
-		src = resolveSrc();
+		const hit = cachedMediaUrl(item.hash);
+		src = hit ?? '';
 		status = 'loading';
+		if (!hit && !lazy) load();
 	});
 
-	function onLoaded() {
-		status = 'loaded';
-		// Keep the bytes as a blob: URL so the next mount (re-opening the chat,
-		// scrolling back) skips the store read. No-op once cached.
-		void cacheMediaUrl(item).catch(() => {});
-	}
+	// While the <img> points at a cached blob: URL, hold a reference so the cache
+	// won't revoke it out from under a still-mounted image during eviction.
+	$effect(() => {
+		if (!src.startsWith('blob:')) return;
+		const url = src;
+		acquireMediaUrl(url);
+		return () => releaseMediaUrl(url);
+	});
 
 	/** Re-attempt the download after a failed load (e.g. the blob hadn't synced
 	 * yet). Drops any cached entry so the bytes are re-fetched from the store. */
 	export function retry() {
 		invalidateMediaUrl(item.hash);
-		buster = Date.now();
+		status = 'loading';
+		src = '';
+		load();
 	}
 
 	$effect(() => {
@@ -98,15 +113,14 @@
 			<path fill="currentColor" d={mdiReload} />
 		</svg>
 	</span>
-{:else}
+{:else if src}
 	<img
 		{src}
 		{alt}
 		class={imgClass}
 		style={imgStyle}
-		loading={lazy ? 'lazy' : 'eager'}
 		data-testid="blob-image"
-		onload={onLoaded}
+		onload={() => (status = 'loaded')}
 		onerror={() => (status = 'error')}
 	/>
 	{#if status === 'loading'}
@@ -118,4 +132,13 @@
 			<Preloader class="w-6 h-6" />
 		</div>
 	{/if}
+{:else}
+	<div
+		class="absolute inset-0 flex items-center justify-center"
+		aria-busy="true"
+		data-testid="blob-image-loading"
+		use:inView={lazy ? { onEnter: load } : undefined}
+	>
+		<Preloader class="w-6 h-6" />
+	</div>
 {/if}

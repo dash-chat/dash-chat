@@ -23,13 +23,46 @@ const cache = new Map<Hash, CacheEntry>();
 const inFlight = new Map<Hash, Promise<string>>();
 let cachedBytes = 0;
 
+// Live <img src> references per blob: URL, plus the URLs that were dropped from
+// the cache while still referenced. The cache is keyed by hash and can't know
+// which URLs are bound to a mounted <img>, so eviction must not revoke a URL an
+// off-screen-but-still-mounted image is using — that would surface a retry
+// placeholder for an image whose bytes are fine. Instead the URL is pinned and
+// revoked once {@link releaseMediaUrl} drops the last reference.
+const urlRefs = new Map<string, number>();
+const pinnedUrls = new Set<string>();
+
+// Revoke an evicted entry's URL now, or pin it for later if a live <img> still
+// references it.
+function dropEntry(entry: CacheEntry): void {
+	if ((urlRefs.get(entry.url) ?? 0) > 0) pinnedUrls.add(entry.url);
+	else URL.revokeObjectURL(entry.url);
+}
+
 function evictToCap(): void {
 	for (const [hash, entry] of cache) {
 		if (cachedBytes <= MAX_CACHE_BYTES) break;
 		cache.delete(hash);
 		cachedBytes -= entry.size;
-		URL.revokeObjectURL(entry.url);
+		dropEntry(entry);
 	}
+}
+
+/** Mark a blob: URL as bound to a live <img> so eviction won't revoke it. */
+export function acquireMediaUrl(url: string): void {
+	urlRefs.set(url, (urlRefs.get(url) ?? 0) + 1);
+}
+
+/** Release a reference taken by {@link acquireMediaUrl}; revokes the URL once
+ * the last referrer is gone and the entry was already evicted from the cache. */
+export function releaseMediaUrl(url: string): void {
+	const next = (urlRefs.get(url) ?? 0) - 1;
+	if (next > 0) {
+		urlRefs.set(url, next);
+		return;
+	}
+	urlRefs.delete(url);
+	if (pinnedUrls.delete(url)) URL.revokeObjectURL(url);
 }
 
 /**
@@ -85,5 +118,5 @@ export function invalidateMediaUrl(hash: Hash): void {
 	if (!entry) return;
 	cache.delete(hash);
 	cachedBytes -= entry.size;
-	URL.revokeObjectURL(entry.url);
+	dropEntry(entry);
 }
