@@ -14,6 +14,7 @@ mod id;
 pub mod mailbox;
 
 pub mod compat;
+pub mod connectivity;
 #[cfg(feature = "testing")]
 pub mod testing;
 
