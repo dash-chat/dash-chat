@@ -755,7 +755,10 @@ impl Node {
     ) -> anyhow::Result<Header> {
         let chat_id: ChatId = topic.into();
         let meta = if let Some(media) = media {
-            Some(self.store_media(chat_id.into(), SENTINEL_OP_HASH, media).await?)
+            Some(
+                self.store_media(chat_id.into(), SENTINEL_OP_HASH, media)
+                    .await?,
+            )
         } else {
             None
         };
