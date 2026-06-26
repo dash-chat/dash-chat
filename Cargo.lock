@@ -2007,6 +2007,7 @@ dependencies = [
  "tauri-plugin-mailto",
  "tauri-plugin-mcp-bridge",
  "tauri-plugin-medialibrary",
+ "tauri-plugin-network-interfaces",
  "tauri-plugin-notification",
  "tauri-plugin-os",
  "tauri-plugin-process",
@@ -10470,6 +10471,17 @@ dependencies = [
  "thiserror 2.0.18",
  "urlencoding",
  "walkdir",
+]
+
+[[package]]
+name = "tauri-plugin-network-interfaces"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-network-interfaces?branch=main#929619b776419b2b63780fbda42c284b507136fc"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
