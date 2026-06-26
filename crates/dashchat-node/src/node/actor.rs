@@ -19,8 +19,8 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{StreamExt, StreamMap};
 use tracing::warn;
 
-use crate::Payload;
 use crate::stores::GROUPS_STATE_ID;
+use crate::{Payload, TopicId};
 
 type GroupsProcessor = p2panda_auth::processor::GroupsProcessor<Topic, Extensions, LogId>;
 
@@ -74,7 +74,10 @@ pub(crate) enum Command {
 // one place. In any case, it would be required to have both the processed_tx and additional error
 // handling in place, so this is not wasted work in the long-run.
 pub enum ProcessorEvent {
-    System(StreamEvent<Payload>),
+    System {
+        event: StreamEvent<Payload>,
+        topic: TopicId,
+    },
     Groups {
         operation: ProcessedOperation<Payload>,
         source: Source,
@@ -180,8 +183,8 @@ impl Actor {
                             }
                         };
                     }
-                    Some((_, event)) = self.streams.next() => {
-                        let _ = self.process_event(event).await;
+                    Some((topic, event)) = self.streams.next() => {
+                        let _ = self.process_event(topic, event).await;
                     }
                     else => {
                         warn!("node actor message channel closed, exiting event loop");
@@ -271,7 +274,11 @@ impl Actor {
         Ok(())
     }
 
-    async fn process_event(&mut self, event: StreamEvent<Payload>) -> Result<(), NodeActorError> {
+    async fn process_event(
+        &mut self,
+        topic: TopicId,
+        event: StreamEvent<Payload>,
+    ) -> Result<(), NodeActorError> {
         let processor_event = match &event {
             StreamEvent::Processed { operation, source } => {
                 let id = operation.id();
@@ -300,7 +307,7 @@ impl Actor {
                     }
                 }
             }
-            _ => ProcessorEvent::System(event),
+            _ => ProcessorEvent::System { event, topic },
         };
 
         // Forward the event for further application layer processing.

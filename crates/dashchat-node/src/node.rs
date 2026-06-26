@@ -8,6 +8,7 @@ use std::sync::{Arc, LazyLock};
 
 use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
+use crate::connectivity::{Connectivity, ConnectivityConfig, ConnectivityUpdate};
 use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
 use crate::filesystem::Filesystem;
 use crate::node::actor::{Actor, Command};
@@ -136,6 +137,7 @@ pub struct Node {
     pub local_store: LocalStore,
     group_store: GroupStore,
     node_keys: NodeKeys,
+    connectivity: Connectivity,
 
     filesystem: Filesystem,
     blob_sync: BlobSync,
@@ -224,12 +226,26 @@ impl Node {
             .await?,
         );
 
+        let connectivity = Connectivity::new(ConnectivityConfig::default());
+
+        let (mailbox_status_tx, mut mailbox_status_rx) = mpsc::channel(100);
+
         let mailboxes = Mailboxes::spawn(
             op_store.clone(),
             sync_tracker,
             config.mailboxes_config.clone(),
+            mailbox_status_tx,
         )
         .await?;
+
+        let connectivity_clone = connectivity.clone();
+        tokio::spawn(async move {
+            while let Some((mailbox_id, status)) = mailbox_status_rx.recv().await {
+                connectivity_clone
+                    .update(ConnectivityUpdate::Mailbox(mailbox_id, status))
+                    .await;
+            }
+        });
 
         // === blob sync === //
 
@@ -270,6 +286,7 @@ impl Node {
             local_store: local_store.clone(),
             group_store,
             node_keys,
+            connectivity,
             notification_tx,
             topic_subscribed_tx,
             actor_tx,

@@ -1,19 +1,27 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    sync::Arc,
+};
 
 use chrono::{DateTime, Duration, Utc};
 use derive_more::derive::Constructor;
 use mailbox_client::{MailboxId, manager::MailboxStatus};
+use tokio::sync::RwLock;
 
 use crate::{DeviceId, TopicId};
 
-pub struct Connectivity {
+#[derive(Clone, Debug)]
+pub struct Connectivity(Arc<RwLock<ConnectivityState>>);
+
+#[derive(Debug)]
+pub struct ConnectivityState {
     pub mailboxes: HashMap<MailboxId, MailboxConnectivity>,
     pub peers: HashMap<TopicId, HashMap<DeviceId, PeerConnectivity>>,
     pub config: ConnectivityConfig,
     last_pruned: DateTime<Utc>,
 }
 
-#[derive(Constructor)]
+#[derive(Constructor, Debug)]
 pub struct MailboxConnectivity {
     pub status: MailboxStatus,
     pub last_updated: DateTime<Utc>,
@@ -28,11 +36,12 @@ impl Default for MailboxConnectivity {
     }
 }
 
-#[derive(Constructor, Default)]
+#[derive(Constructor, Default, Debug)]
 pub struct PeerConnectivity {
     pub last_updated: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug)]
 pub struct ConnectivityConfig {
     pub stale_duration: Duration,
     pub prune_interval: Duration,
@@ -49,6 +58,20 @@ impl Default for ConnectivityConfig {
 
 impl Connectivity {
     pub fn new(config: ConnectivityConfig) -> Self {
+        Self(Arc::new(RwLock::new(ConnectivityState::new(config))))
+    }
+
+    pub async fn update(&self, update: ConnectivityUpdate) {
+        self.0.write().await.update(update);
+    }
+
+    pub async fn report(&self, topic: TopicId) -> ConnectivityReport {
+        self.0.write().await.report(topic)
+    }
+}
+
+impl ConnectivityState {
+    fn new(config: ConnectivityConfig) -> Self {
         Self {
             config,
             mailboxes: HashMap::new(),
@@ -57,7 +80,7 @@ impl Connectivity {
         }
     }
 
-    pub fn update(&mut self, update: ConnectivityUpdate) {
+    fn update(&mut self, update: ConnectivityUpdate) {
         match update {
             ConnectivityUpdate::Mailbox(mailbox_id, status) => {
                 self.mailboxes
@@ -80,7 +103,7 @@ impl Connectivity {
         }
     }
 
-    pub fn report(&mut self, topic: TopicId) -> ConnectivityReport {
+    fn report(&mut self, topic: TopicId) -> ConnectivityReport {
         self.prune();
         ConnectivityReport {
             mailboxes: self

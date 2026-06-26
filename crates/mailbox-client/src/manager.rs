@@ -2,6 +2,7 @@ use crate::store::MailboxStore;
 use crate::sync_tracker::MailboxSyncTracker;
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Serializer};
+use tokio::sync::mpsc::Sender;
 use tokio::sync::watch;
 use tokio::time::Instant;
 
@@ -185,6 +186,7 @@ where
     active_mailbox_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Store,
+    status_events: mpsc::Sender<(MailboxId, MailboxStatus)>,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
     config: MailboxesConfig,
     trigger: mpsc::Sender<Option<MailboxId>>,
@@ -201,6 +203,7 @@ where
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
         trigger: mpsc::Sender<Option<MailboxId>>,
+        status_events: mpsc::Sender<(MailboxId, MailboxStatus)>,
     ) -> Self {
         let (active_mailbox_ids_tx, _) = watch::channel(BTreeSet::new());
         Self {
@@ -209,6 +212,7 @@ where
             topics: Arc::new(Mutex::new(Default::default())),
             store,
             sync_tracker,
+            status_events,
             config,
             trigger,
         }
@@ -337,9 +341,10 @@ where
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
+        status_events: Sender<(MailboxId, MailboxStatus)>,
     ) -> Result<Self, anyhow::Error> {
         let (trigger_tx, mut trigger_rx) = mpsc::channel::<Option<MailboxId>>(1);
-        let manager = Self::new(store, sync_tracker, config, trigger_tx);
+        let manager = Self::new(store, sync_tracker, config, trigger_tx, status_events);
         let r = manager.clone();
         tokio::spawn(
             async move {
@@ -439,17 +444,20 @@ where
         let client = tracked_mailbox.client().await;
         let result = self.sync_topics(topics.into_iter(), &client).await;
 
+        let state = tracked_mailbox.connection_state();
+        let state = state.borrow().clone();
+
+        let _ = self.status_events.send((id.clone(), state.status)).await;
+
         match result {
             Ok(()) => tracked_mailbox.record_success(&self.config),
             Err(err) => {
                 tracing::error!(?err, mailbox = %id, "mailbox sync error");
                 tracked_mailbox.record_error(&self.config, format!("{err:?}"));
-                let tracker = tracked_mailbox.connection_state();
-                let tracker = tracker.borrow();
                 tracing::info!(
                     mailbox = %id,
-                    status = ?tracker.status,
-                    errors = tracker.consecutive_errors,
+                    status = ?state.status,
+                    errors = state.consecutive_errors,
                     "mailbox status updated"
                 );
             }
@@ -626,13 +634,26 @@ mod tests {
     /// Create a Mailboxes instance without spawning the background loop
     fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
         let (trigger_tx, _trigger_rx) = mpsc::channel(1);
-        Mailboxes::new(DummyStore, test_sync_tracker(), config, trigger_tx)
+        let (status_events_tx, _status_events_rx) = mpsc::channel(1);
+        Mailboxes::new(
+            DummyStore,
+            test_sync_tracker(),
+            config,
+            trigger_tx,
+            status_events_tx,
+        )
     }
 
     async fn spawn_test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
-        Mailboxes::<Msg, DummyStore>::spawn(DummyStore, test_sync_tracker(), config)
-            .await
-            .unwrap()
+        let (status_events_tx, _status_events_rx) = mpsc::channel(1);
+        Mailboxes::<Msg, DummyStore>::spawn(
+            DummyStore,
+            test_sync_tracker(),
+            config,
+            status_events_tx,
+        )
+        .await
+        .unwrap()
     }
 
     // -- MailboxTracker unit tests --
