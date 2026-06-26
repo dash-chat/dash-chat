@@ -4,11 +4,6 @@ use tauri::{AppHandle, Manager, State};
 
 /// Load a blob from the node's local store and write it to a file in the app
 /// cache directory, returning the absolute path.
-///
-/// Used to hand a downloaded attachment to the system file viewer without
-/// round-tripping its bytes back through the JS↔Rust IPC bridge: a plugin-fs
-/// `writeFile` of a multi-MB attachment runs at ~1 MB/s on Android, so doing
-/// the load-and-write entirely in Rust keeps the bytes off the bridge.
 #[tauri::command]
 pub async fn save_blob_to_cache(
     hash: String,
