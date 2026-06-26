@@ -1,6 +1,11 @@
 <script lang="ts">
 	import type { FileAttachment, PhotoAttachment } from 'dash-chat-stores';
 	import { mediaSrc } from '$lib/utils/media';
+	import {
+		cacheMediaUrl,
+		cachedMediaUrl,
+		invalidateMediaUrl,
+	} from '$lib/utils/media-cache';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Preloader } from 'konsta/svelte';
 	import { mdiReload } from '@mdi/js';
@@ -29,16 +34,42 @@
 	}: Props = $props();
 
 	let status = $state<'loading' | 'loaded' | 'error'>('loading');
-	// buster===0 keeps the first load query-free (cacheable); a retry uses Date.now() so it never reuses a cached failure, even across restarts.
+	// buster busts a failed retry's URL so it never reuses a cached failure.
 	let buster = $state(0);
-	const src = $derived(
-		buster === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${buster}`,
-	);
 
-	/** Re-attempt the download with a fresh, cache-busting URL. Called by the
-	 * parent when a missing image's placeholder is clicked. */
-	export function retry() {
+	// Prefer a cached blob: URL (set once the bytes were fetched on an earlier
+	// render); otherwise point the <img> at irohblob:// so its native lazy
+	// loading defers the store read until it nears the viewport.
+	function resolveSrc(): string {
+		const cached = cachedMediaUrl(item.hash);
+		if (cached) return cached;
+		return buster === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${buster}`;
+	}
+
+	let src = $state(resolveSrc());
+
+	// Recompute the src only on item/retry changes; the background cache fill
+	// (in onLoaded) is intentionally non-reactive so it never swaps a live src.
+	// Track both explicitly: a cache hit makes resolveSrc return before reading
+	// them, which would otherwise drop the dependency and miss a later retry.
+	$effect(() => {
+		void item;
+		void buster;
+		src = resolveSrc();
 		status = 'loading';
+	});
+
+	function onLoaded() {
+		status = 'loaded';
+		// Keep the bytes as a blob: URL so the next mount (re-opening the chat,
+		// scrolling back) skips the store read. No-op once cached.
+		void cacheMediaUrl(item).catch(() => {});
+	}
+
+	/** Re-attempt the download after a failed load (e.g. the blob hadn't synced
+	 * yet). Drops any cached entry so the bytes are re-fetched from the store. */
+	export function retry() {
+		invalidateMediaUrl(item.hash);
 		buster = Date.now();
 	}
 
@@ -75,7 +106,7 @@
 		style={imgStyle}
 		loading={lazy ? 'lazy' : 'eager'}
 		data-testid="blob-image"
-		onload={() => (status = 'loaded')}
+		onload={onLoaded}
 		onerror={() => (status = 'error')}
 	/>
 	{#if status === 'loading'}
