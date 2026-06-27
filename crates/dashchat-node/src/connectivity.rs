@@ -186,10 +186,11 @@ mod tests {
         let t = topic(1);
         let d = device(1);
 
-        state.peers.entry(t).or_default().insert(
-            d,
-            PeerConnectivity::new(Utc::now() - Duration::minutes(10)),
-        );
+        state
+            .peers
+            .entry(t)
+            .or_default()
+            .insert(d, PeerConnectivity::new(Utc::now() - Duration::minutes(10)));
 
         let report = state.report(t);
         assert!(report.peers.is_empty());
@@ -203,7 +204,10 @@ mod tests {
         let fresh = device(2);
 
         let peers = state.peers.entry(t).or_default();
-        peers.insert(stale, PeerConnectivity::new(Utc::now() - Duration::minutes(10)));
+        peers.insert(
+            stale,
+            PeerConnectivity::new(Utc::now() - Duration::minutes(10)),
+        );
         peers.insert(fresh, PeerConnectivity::new(Utc::now()));
 
         let report = state.report(t);
@@ -250,12 +254,16 @@ mod tests {
         let t = topic(1);
         let d = device(1);
 
-        state.peers.entry(t).or_default().insert(
-            d,
-            PeerConnectivity::new(Utc::now() - Duration::minutes(10)),
-        );
+        state
+            .peers
+            .entry(t)
+            .or_default()
+            .insert(d, PeerConnectivity::new(Utc::now() - Duration::minutes(10)));
 
         let report = state.report(t);
-        assert!(report.peers.contains(&d), "stale peer should survive when prune interval has not elapsed");
+        assert!(
+            report.peers.contains(&d),
+            "stale peer should survive when prune interval has not elapsed"
+        );
     }
 }
