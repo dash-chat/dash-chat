@@ -153,3 +153,109 @@ pub struct ConnectivityReport {
     pub mailboxes: BTreeMap<MailboxId, MailboxStatus>,
     pub peers: BTreeSet<DeviceId>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn topic(byte: u8) -> TopicId {
+        TopicId::from([byte; 32])
+    }
+
+    fn device(byte: u8) -> DeviceId {
+        use p2panda::SigningKey;
+        DeviceId::from(SigningKey::from_bytes(&[byte; 32]).verifying_key())
+    }
+
+    fn instant_prune_config() -> ConnectivityConfig {
+        ConnectivityConfig {
+            stale_duration: Duration::minutes(3),
+            prune_interval: Duration::zero(),
+        }
+    }
+
+    fn state_with_config(config: ConnectivityConfig) -> ConnectivityState {
+        let mut s = ConnectivityState::new(config);
+        s.last_pruned = DateTime::UNIX_EPOCH;
+        s
+    }
+
+    #[test]
+    fn stale_peer_is_pruned_from_topic() {
+        let mut state = state_with_config(instant_prune_config());
+        let t = topic(1);
+        let d = device(1);
+
+        state.peers.entry(t).or_default().insert(
+            d,
+            PeerConnectivity::new(Utc::now() - Duration::minutes(10)),
+        );
+
+        let report = state.report(t);
+        assert!(report.peers.is_empty());
+    }
+
+    #[test]
+    fn fresh_peer_survives_while_stale_peer_is_removed() {
+        let mut state = state_with_config(instant_prune_config());
+        let t = topic(1);
+        let stale = device(1);
+        let fresh = device(2);
+
+        let peers = state.peers.entry(t).or_default();
+        peers.insert(stale, PeerConnectivity::new(Utc::now() - Duration::minutes(10)));
+        peers.insert(fresh, PeerConnectivity::new(Utc::now()));
+
+        let report = state.report(t);
+        assert!(!report.peers.contains(&stale));
+        assert!(report.peers.contains(&fresh));
+    }
+
+    #[test]
+    fn topic_entry_dropped_when_all_peers_stale() {
+        let mut state = state_with_config(instant_prune_config());
+        let t = topic(1);
+
+        state.peers.entry(t).or_default().insert(
+            device(1),
+            PeerConnectivity::new(Utc::now() - Duration::minutes(10)),
+        );
+
+        state.report(t);
+        assert!(!state.peers.contains_key(&t));
+    }
+
+    #[test]
+    fn failed_sync_does_not_add_peer() {
+        let mut state = ConnectivityState::new(instant_prune_config());
+        let t = topic(1);
+        let d = device(1);
+
+        state.update(ConnectivityUpdate::Peer {
+            topic_id: t,
+            device_id: d,
+            success: false,
+        });
+
+        assert!(state.peers.get(&t).map_or(true, |p| !p.contains_key(&d)));
+    }
+
+    #[test]
+    fn prune_interval_gates_pruning() {
+        let config = ConnectivityConfig {
+            stale_duration: Duration::minutes(3),
+            prune_interval: Duration::hours(1),
+        };
+        let mut state = ConnectivityState::new(config);
+        let t = topic(1);
+        let d = device(1);
+
+        state.peers.entry(t).or_default().insert(
+            d,
+            PeerConnectivity::new(Utc::now() - Duration::minutes(10)),
+        );
+
+        let report = state.report(t);
+        assert!(report.peers.contains(&d), "stale peer should survive when prune interval has not elapsed");
+    }
+}
