@@ -8,7 +8,9 @@ use std::sync::{Arc, LazyLock};
 
 use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
-use crate::connectivity::{Connectivity, ConnectivityConfig, ConnectivityUpdate};
+use crate::connectivity::{
+    Connectivity, ConnectivityConfig, ConnectivityReport, ConnectivityUpdate,
+};
 use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
 use crate::filesystem::Filesystem;
 use crate::node::actor::{Actor, Command};
@@ -901,6 +903,10 @@ impl Node {
             }
         }
         Ok(latest.map(|(_, d)| d))
+    }
+
+    pub async fn connectivity_report(&self, topic: TopicId) -> anyhow::Result<ConnectivityReport> {
+        Ok(self.connectivity.report(topic).await)
     }
 
     /// Tombstone an operation: record its hash in the topic's persisted

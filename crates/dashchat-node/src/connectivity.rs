@@ -149,6 +149,7 @@ pub enum ConnectivityUpdate {
     },
 }
 
+#[derive(Clone, Debug)]
 pub struct ConnectivityReport {
     pub mailboxes: BTreeMap<MailboxId, MailboxStatus>,
     pub peers: BTreeSet<DeviceId>,
