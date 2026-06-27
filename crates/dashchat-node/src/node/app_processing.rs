@@ -128,7 +128,6 @@ impl Node {
                                     StreamEvent::DecodeFailed { error, .. } => warn!("error decoding operation: {error:?}"),
                                     StreamEvent::ReplayFailed { error, .. } => warn!("error replaying stream: {error:?}"),
                                     StreamEvent::AckFailed { error, .. } => warn!("error acking operation: {error:?}"),
-                                    // StreamEvent::SyncStarted {..} => (),
                                     StreamEvent::SyncEnded { remote_node_id, error, .. } => {
                                         node.connectivity.update(ConnectivityUpdate::Peer {
                                             topic_id: topic,

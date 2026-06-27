@@ -92,12 +92,10 @@ impl ConnectivityState {
                 success,
             } => {
                 if success {
-                    self.peers.entry(topic_id).or_insert_with(HashMap::new);
                     self.peers
-                        .get_mut(&topic_id)
-                        .unwrap()
-                        .entry(device_id)
-                        .insert_entry(PeerConnectivity::new(Utc::now()));
+                        .entry(topic_id)
+                        .or_default()
+                        .insert(device_id, PeerConnectivity::new(Utc::now()));
                 }
             }
         }
@@ -131,10 +129,11 @@ impl ConnectivityState {
                 < self.config.stale_duration
         });
         self.peers.retain(|_, peers| {
-            peers.values().any(|peer_connectivity| {
+            peers.retain(|_, peer_connectivity| {
                 now.signed_duration_since(peer_connectivity.last_updated)
                     < self.config.stale_duration
-            })
+            });
+            !peers.is_empty()
         });
         self.last_pruned = now;
     }

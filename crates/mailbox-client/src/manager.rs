@@ -444,24 +444,19 @@ where
         let client = tracked_mailbox.client().await;
         let result = self.sync_topics(topics.into_iter(), &client).await;
 
-        let state = tracked_mailbox.connection_state();
-        let state = state.borrow().clone();
-
-        let _ = self.status_events.send((id.clone(), state.status)).await;
-
         match result {
             Ok(()) => tracked_mailbox.record_success(&self.config),
             Err(err) => {
                 tracing::error!(?err, mailbox = %id, "mailbox sync error");
                 tracked_mailbox.record_error(&self.config, format!("{err:?}"));
-                tracing::info!(
-                    mailbox = %id,
-                    status = ?state.status,
-                    errors = state.consecutive_errors,
-                    "mailbox status updated"
-                );
             }
         }
+
+        let state = tracked_mailbox.connection_state();
+        let state = state.borrow().clone();
+        tracing::info!(mailbox = %id, status = ?state.status, errors = state.consecutive_errors, "mailbox status updated");
+
+        let _ = self.status_events.send((id.clone(), state.status)).await;
     }
 
     /// Immediately sync the given topics with the given mailbox:
