@@ -316,5 +316,6 @@
     "errorFilesWithPhotos": "Koos failidega sa ei saa valida fotosid ja videoid.",
     "errorAddContactInvalidCode": "Vigane kontakti kood. Palu tal oma koodi uuesti jagada.",
     "errorAttachmentTooLarge": "Manus on liiga mahukas. Sõnumikohane mahu ülempiir on {{max}}.",
-    "errorTooManyAttachments": "Siia sõnumisse ei saa rohkem manuseid lisada."
+    "errorTooManyAttachments": "Siia sõnumisse ei saa rohkem manuseid lisada.",
+    "fileDownloadFailed": "Faili allalaadimine ei õnnestunud."
 }
