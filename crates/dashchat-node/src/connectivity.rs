@@ -27,16 +27,7 @@ pub struct MailboxConnectivity {
     pub last_updated: DateTime<Utc>,
 }
 
-impl Default for MailboxConnectivity {
-    fn default() -> Self {
-        Self {
-            status: MailboxStatus::Stopped,
-            last_updated: Utc::now(),
-        }
-    }
-}
-
-#[derive(Constructor, Default, Debug)]
+#[derive(Constructor, Debug)]
 pub struct PeerConnectivity {
     pub last_updated: DateTime<Utc>,
 }
@@ -148,9 +139,12 @@ pub enum ConnectivityUpdate {
     },
 }
 
+/// A report on all connected nodes for a given topic.
 #[derive(Clone, Debug)]
 pub struct ConnectivityReport {
+    /// Mailboxes are not topic-specific, so any recently synced mailboxes are returned here.
     pub mailboxes: BTreeMap<MailboxId, MailboxStatus>,
+    /// Peers who we have synced with on a given topic are returned here.
     pub peers: BTreeSet<DeviceId>,
 }
 

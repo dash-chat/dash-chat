@@ -144,6 +144,7 @@ pub struct Node {
     filesystem: Filesystem,
     blob_sync: BlobSync,
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    mailbox_status_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     endpoint: p2panda::Endpoint,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
@@ -241,7 +242,7 @@ impl Node {
         .await?;
 
         let connectivity_clone = connectivity.clone();
-        tokio::spawn(async move {
+        let mailbox_status_handle = tokio::spawn(async move {
             while let Some((mailbox_id, status)) = mailbox_status_rx.recv().await {
                 connectivity_clone
                     .update(ConnectivityUpdate::Mailbox(mailbox_id, status))
@@ -297,9 +298,17 @@ impl Node {
             registered_bootstraps: Default::default(),
             blob_sync,
             blob_fetch_handle: Default::default(),
+            mailbox_status_handle: Default::default(),
             endpoint,
             network_change_handle: Default::default(),
         };
+
+        // === mailbox status task === //
+
+        node.mailbox_status_handle
+            .lock()
+            .await
+            .replace(mailbox_status_handle);
 
         // === application processor task === //
 
@@ -962,6 +971,10 @@ impl Node {
         }
 
         if let Some(handle) = self.blob_fetch_handle.lock().await.take() {
+            handle.abort();
+        }
+
+        if let Some(handle) = self.mailbox_status_handle.lock().await.take() {
             handle.abort();
         }
 
