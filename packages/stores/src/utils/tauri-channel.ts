@@ -1,5 +1,7 @@
-import { Channel, invoke } from '@tauri-apps/api/core';
+import { Channel } from '@tauri-apps/api/core';
 import { type ReactivePromise, relay } from 'signalium';
+
+import { invoke } from './invoke';
 
 interface TauriChannelInternals {
 	id: number;

@@ -1,7 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
-
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import { ChatId, GroupInfo, OutgoingMedia } from '../types';
+import { invoke } from '../utils/invoke';
 
 export interface GroupMember {
 	agentId: AgentId;

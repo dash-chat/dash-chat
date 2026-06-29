@@ -1,7 +1,7 @@
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { type UnsubscribeFunction } from 'emittery';
 
+import { invoke } from '../utils/invoke';
 import type { LogsClient } from './logs-client';
 import type { SimplifiedOperation } from './simplified-types';
 import type { TopicId, VerifyingKey } from './types';

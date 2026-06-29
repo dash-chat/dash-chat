@@ -1,7 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
-
 import { Hash, VerifyingKey } from '../p2panda/types';
 import { ChatId } from '../types';
+import { invoke } from '../utils/invoke';
 
 export interface IChatsClient {
 	createGroup(initialMembers: VerifyingKey[]): Promise<ChatId>;

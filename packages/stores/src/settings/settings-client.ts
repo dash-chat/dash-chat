@@ -1,6 +1,7 @@
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { type UnsubscribeFunction } from 'emittery';
+
+import { invoke } from '../utils/invoke';
 
 export interface Settings {
 	qr_color: string | null;

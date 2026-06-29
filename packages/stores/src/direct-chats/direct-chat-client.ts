@@ -1,7 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
-
 import { AgentId, Hash } from '../p2panda/types';
 import { ChatId, ChatReaction, OutgoingMedia } from '../types';
+import { invoke } from '../utils/invoke';
 
 export interface IDirectChatClient {
 	chatId(peer: AgentId): Promise<ChatId>;

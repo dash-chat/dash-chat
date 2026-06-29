@@ -1,8 +1,7 @@
-import { invoke } from '@tauri-apps/api/core';
-
 import { LogsClient, waitForOperation } from '../p2panda/logs-client';
 import { AgentId, DeviceId, type TopicId } from '../p2panda/types';
 import { ContactCode, Payload } from '../types';
+import { invoke } from '../utils/invoke';
 
 export interface Profile {
 	name: string;
