@@ -69,7 +69,7 @@ pub async fn spawn_local_mailbox_server(
             let _ = stop_signal_rx.await;
         };
         if let Err(e) =
-            mailbox_server::spawn_server(db_path, addr, None, Some(blob_sync), None, signal).await
+            mailbox_server::spawn_server(db_path, addr, None, Some(blob_sync), signal).await
         {
             log::error!("Local mailbox server failed: {e:?}");
         }

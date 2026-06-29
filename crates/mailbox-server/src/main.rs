@@ -18,13 +18,6 @@ struct Args {
     /// URL of the push notifications server (enables push notification integration)
     #[arg(long)]
     push_notifications_url: Option<String>,
-
-    /// iroh relay URL the mailbox's blob endpoint should register with. Set this
-    /// to the same relay clients use so the mailbox is reachable behind NAT and
-    /// dialable by its EndpointId. When unset the mailbox is only reachable via
-    /// its direct (public) addresses.
-    #[arg(long)]
-    relay_url: Option<iroh::RelayUrl>,
 }
 
 #[tokio::main]
@@ -45,7 +38,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.addr,
         args.push_notifications_url,
         None,
-        args.relay_url,
         signal,
     )
     .await?;

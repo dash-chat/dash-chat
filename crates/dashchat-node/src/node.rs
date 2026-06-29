@@ -4,7 +4,7 @@ pub(crate) mod publish;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
 use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
@@ -38,15 +38,9 @@ use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
     DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
 };
-use dashchat_utils::NETWORK_ID;
+use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
 pub use app_processing::Notification;
-
-pub static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
-    "https://euc1-1.relay.n0.iroh-canary.iroh.link"
-        .parse()
-        .expect("valid relay URL")
-});
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
