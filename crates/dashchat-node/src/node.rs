@@ -381,6 +381,26 @@ impl Node {
             .expect("device id is a valid endpoint id")
     }
 
+    /// The underlying iroh endpoint. An in-process mailbox shares this so its
+    /// `/health` response advertises the node's dialing address.
+    pub async fn iroh_endpoint(&self) -> Result<iroh::Endpoint> {
+        Ok(self.endpoint.endpoint().await?)
+    }
+
+    /// Add a mailbox's dialing address (relay + direct addresses) to the
+    /// p2panda address book so the iroh blob downloader can reach the mailbox
+    /// by its EndpointId. The address is learned out-of-band from the mailbox's
+    /// `/health` endpoint.
+    pub async fn insert_mailbox_addr(&self, addr: iroh::EndpointAddr) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::RegisterMailboxAddr { addr, reply_tx })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+        reply_rx.await??;
+        Ok(())
+    }
+
     #[cfg(feature = "testing")]
     /// The node's iroh-blobs protocol handle, sharing its blob store. An
     /// in-process mailbox uses this so relayed blobs land in—and are served

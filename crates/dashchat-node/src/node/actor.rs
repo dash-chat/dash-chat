@@ -50,6 +50,10 @@ pub(crate) enum Command {
         relay_url: RelayUrl,
         reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
     },
+    RegisterMailboxAddr {
+        addr: iroh::EndpointAddr,
+        reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
+    },
     Shutdown {
         reply_tx: oneshot::Sender<()>,
     },
@@ -171,6 +175,10 @@ impl Actor {
                                 let _ = reply_tx.send(result);
 
                             },
+                            Command::RegisterMailboxAddr { addr, reply_tx } => {
+                                let result = self.handle_register_mailbox_addr(addr).await;
+                                let _ = reply_tx.send(result);
+                            },
                             Command::Shutdown { reply_tx } => {
                                 // Drop self and then break out of the processing loop which will
                                 // cause the actor task to complete.
@@ -268,6 +276,14 @@ impl Actor {
         relay_url: RelayUrl,
     ) -> Result<(), NodeActorError> {
         self.inner.insert_bootstrap(node_id, relay_url).await?;
+        Ok(())
+    }
+
+    async fn handle_register_mailbox_addr(
+        &self,
+        addr: iroh::EndpointAddr,
+    ) -> Result<(), NodeActorError> {
+        self.inner.insert_node_addr(addr).await?;
         Ok(())
     }
 

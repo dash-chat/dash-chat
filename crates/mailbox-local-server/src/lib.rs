@@ -47,12 +47,12 @@ pub async fn spawn_local_mailbox_server(
     db_path: PathBuf,
     blobs: BlobsProtocol,
     downloader: Downloader,
-    endpoint_id: EndpointId,
+    endpoint: iroh::Endpoint,
     fetch_config: Option<FetchConfig>,
 ) -> anyhow::Result<LocalMailboxServer> {
     let port = free_port()?;
 
-    let mut blob_sync = BlobSync::shared(blobs, downloader, endpoint_id);
+    let mut blob_sync = BlobSync::shared(blobs, downloader, endpoint);
     if let Some(fetch_config) = fetch_config {
         blob_sync = blob_sync.with_fetch_config(fetch_config);
     }
@@ -69,7 +69,7 @@ pub async fn spawn_local_mailbox_server(
             let _ = stop_signal_rx.await;
         };
         if let Err(e) =
-            mailbox_server::spawn_server(db_path, addr, None, Some(blob_sync), signal).await
+            mailbox_server::spawn_server(db_path, addr, None, Some(blob_sync), None, signal).await
         {
             log::error!("Local mailbox server failed: {e:?}");
         }

@@ -50,7 +50,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
         db_path,
         relay.blobs(),
         relay.blob_downloader(),
-        relay.endpoint_id(),
+        relay.iroh_endpoint().await.unwrap(),
         Some(mailbox_server::FetchConfig {
             concurrency: 4,
             attempt_timeout: Duration::from_secs(10),

@@ -10,23 +10,32 @@ fn main() {
     // (set by `just dev`), and release builds fall through to the production URLs.
     let cross_compiling = std::env::var("HOST") != std::env::var("TARGET");
     if tauri_build::is_dev() && cross_compiling {
+        println!("cargo:rerun-if-env-changed=MAILBOX_URL");
         println!("cargo:rerun-if-env-changed=MAILBOX_PORT");
+        println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_URL");
         println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_PORT");
 
-        let mailbox_port = std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
-        let push_port =
-            std::env::var("PUSH_NOTIFICATIONS_SERVER_PORT").unwrap_or_else(|_| "3001".to_string());
-
-        let host = local_ip().unwrap_or_else(|| {
-            println!(
-                "cargo:warning=Could not detect local IP; falling back to 127.0.0.1. \
-                 Mobile devices will not be able to reach the dev servers."
-            );
-            "127.0.0.1".to_string()
+        let mailbox_url = std::env::var("MAILBOX_URL").unwrap_or_else(|_| {
+            let port = std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
+            let host = local_ip().unwrap_or_else(|| {
+                println!(
+                    "cargo:warning=Could not detect local IP; falling back to 127.0.0.1. \
+                     Mobile devices will not be able to reach the dev servers."
+                );
+                "127.0.0.1".to_string()
+            });
+            format!("http://{host}:{port}")
         });
 
-        println!("cargo:rustc-env=MAILBOX_URL=http://{host}:{mailbox_port}");
-        println!("cargo:rustc-env=PUSH_NOTIFICATIONS_SERVER_URL=http://{host}:{push_port}");
+        let push_url = std::env::var("PUSH_NOTIFICATIONS_SERVER_URL").unwrap_or_else(|_| {
+            let port = std::env::var("PUSH_NOTIFICATIONS_SERVER_PORT")
+                .unwrap_or_else(|_| "3001".to_string());
+            let host = local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+            format!("http://{host}:{port}")
+        });
+
+        println!("cargo:rustc-env=MAILBOX_URL={mailbox_url}");
+        println!("cargo:rustc-env=PUSH_NOTIFICATIONS_SERVER_URL={push_url}");
     }
 
     tauri_build::build()

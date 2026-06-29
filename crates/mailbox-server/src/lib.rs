@@ -75,6 +75,10 @@ pub struct AppState {
 struct HealthResponse {
     status: String,
     endpoint_id: String,
+    /// The mailbox endpoint's dialing address (relay + direct addresses), so
+    /// clients can add it to their p2panda address book and dial this mailbox
+    /// by its EndpointId rather than only knowing the bare id.
+    endpoint_addr: iroh::EndpointAddr,
 }
 
 fn db_path_blobs_dir(db_path: &std::path::Path) -> std::path::PathBuf {
@@ -89,6 +93,7 @@ pub async fn spawn_server(
     addr: String,
     push_notifications_url: Option<String>,
     blob_sync: Option<BlobSync>,
+    relay_url: Option<iroh::RelayUrl>,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = init_db(db_path.clone())?;
@@ -104,7 +109,7 @@ pub async fn spawn_server(
             let secret_key = load_or_create_secret_key(&db_arc)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             let blobs_root = db_path_blobs_dir(&db_path);
-            BlobSync::new(secret_key, blobs_root).await?
+            BlobSync::new(secret_key, blobs_root, relay_url).await?
         }
     };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
@@ -151,6 +156,7 @@ async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
         endpoint_id: encode_mailbox_id(state.blob_sync.endpoint_id()),
+        endpoint_addr: state.blob_sync.endpoint_addr(),
     })
 }
 
