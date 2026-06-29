@@ -149,7 +149,15 @@ impl BlobSync {
         // `endpoint.addr()` only includes the relay once the endpoint has
         // connected to it, so wait for that before serving `/health`. Bounded
         // so an unreachable relay can't block server startup indefinitely.
-        let _ = tokio::time::timeout(Duration::from_secs(10), endpoint.online()).await;
+        if let Err(e) = tokio::time::timeout(Duration::from_secs(10), endpoint.online()).await {
+            tracing::error!(
+                ?e,
+                "failed to connect to bind iroh endpoint after 10 seconds"
+            );
+            return Err(anyhow::anyhow!(
+                "failed to connect to bind iroh endpoint after 10 seconds: {e}"
+            ));
+        }
 
         let db_path = root.join("blobs.db");
         let mut options = iroh_blobs::store::fs::options::Options::new(&root);
