@@ -58,7 +58,7 @@
 
 {#if status === 'error'}
 	<span
-		class="absolute inset-0 flex min-h-16 min-w-16 cursor-pointer items-center justify-center border-none p-0 text-black/50 dark:text-white/60 {imgClass}"
+		class="absolute inset-0 flex cursor-pointer items-center justify-center border-none p-0 text-black/50 dark:text-white/60 {imgClass}"
 		style={imgStyle}
 		title={m.imageLoadFailedRetry()}
 		data-testid="blob-image-retry"

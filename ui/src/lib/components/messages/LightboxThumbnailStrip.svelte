@@ -27,7 +27,7 @@
 
 <div
 	bind:this={stripEl}
-	class="lightbox-filmstrip flex shrink-0 items-center justify-center gap-2 overflow-x-auto px-3 pt-2.5"
+	class="lightbox-filmstrip flex shrink-0 touch-pan-x items-center justify-center-safe gap-2 overflow-x-auto overscroll-x-contain px-3 pt-2.5"
 	class:faded
 	data-testid="lightbox-filmstrip"
 >

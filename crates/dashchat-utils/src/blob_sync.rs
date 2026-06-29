@@ -1,5 +1,10 @@
+use std::sync::Arc;
+
 use futures::StreamExt;
-use iroh_blobs::api::downloader::{DownloadProgressItem, Downloader, Shuffled};
+use iroh_blobs::api::downloader::{
+    ContentDiscovery, DownloadProgressItem, DownloadRequest, Downloader, FiniteRequest,
+    SplitStrategy,
+};
 use iroh_blobs::protocol::GetRequest;
 use tokio::time::Duration;
 
@@ -16,13 +21,18 @@ pub const MAX_BLOB_BYTES: u64 = 16 * 1024 * 1024;
 pub async fn download_capped(
     downloader: &Downloader,
     hash: iroh_blobs::Hash,
-    providers: Shuffled,
+    providers: impl ContentDiscovery,
     attempt_timeout: Duration,
     blobs: &iroh_blobs::BlobsProtocol,
 ) -> bool {
     let result = tokio::time::timeout(attempt_timeout, async {
+        let options = DownloadRequest {
+            request: FiniteRequest::Get(GetRequest::all(hash)),
+            providers: Arc::new(providers),
+            strategy: SplitStrategy::Split,
+        };
         let mut stream = downloader
-            .download(GetRequest::all(hash), providers)
+            .download_with_opts(options)
             .stream()
             .await
             .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;

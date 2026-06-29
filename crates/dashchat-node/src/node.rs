@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 
-use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync};
+use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
 use crate::filesystem::Filesystem;
@@ -88,9 +88,10 @@ impl NodeConfig {
             // Retry blob downloads quickly so tests don't wait on the
             // production-scale pass interval.
             blob_fetch: BlobFetchConfig {
-                pass_interval: std::time::Duration::from_secs(2),
-                attempt_timeout: std::time::Duration::from_secs(10),
-                ..BlobFetchConfig::default()
+                concurrency: 4,
+                pass_interval: std::time::Duration::from_secs(1),
+                attempt_timeout: std::time::Duration::from_secs(3),
+                retry_cooldown: std::time::Duration::from_secs(1),
             },
         }
     }
@@ -139,6 +140,8 @@ pub struct Node {
     filesystem: Filesystem,
     blob_sync: BlobSync,
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    endpoint: p2panda::Endpoint,
+    network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
@@ -249,7 +252,7 @@ impl Node {
         )
         .await?;
         let blob_sync = BlobSync::new(
-            endpoint,
+            endpoint.clone(),
             filesystem.blobs_store_path(),
             blob_fetch,
             source_lookup,
@@ -275,6 +278,8 @@ impl Node {
             registered_bootstraps: Default::default(),
             blob_sync,
             blob_fetch_handle: Default::default(),
+            endpoint,
+            network_change_handle: Default::default(),
         };
 
         // === application processor task === //
@@ -292,6 +297,14 @@ impl Node {
             .lock()
             .await
             .replace(blob_fetch_handle);
+
+        // === network change notifier === //
+
+        let network_change_handle = crate::network_change_notifier::spawn(node.endpoint.clone());
+        node.network_change_handle
+            .lock()
+            .await
+            .replace(network_change_handle);
 
         // === topics === //
 
@@ -355,6 +368,11 @@ impl Node {
 
     pub fn device_id(&self) -> DeviceId {
         self.node_keys.device_id()
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn blob_sync(&self) -> &crate::blob_sync::BlobSync {
+        &self.blob_sync
     }
 
     #[cfg(feature = "testing")]
@@ -748,13 +766,30 @@ impl Node {
         message: impl Into<String>,
         media: Option<OutgoingMedia>,
     ) -> anyhow::Result<Header> {
+        let chat_id: ChatId = topic.into();
         let meta = if let Some(media) = media {
-            Some(self.store_media(media).await?)
+            Some(
+                self.store_media(chat_id.into(), SENTINEL_OP_HASH, media)
+                    .await?,
+            )
         } else {
             None
         };
-        let message = ChatMessageContent::new(message, meta);
-        self.send_message_raw(topic, message).await
+        let message = ChatMessageContent::new(message, meta.clone());
+        let header = self.send_message_raw(chat_id, message).await?;
+        if let Some(bundle) = meta {
+            let topic_id: TopicId = chat_id.into();
+            for item in bundle.iter() {
+                if let Err(err) = self
+                    .blob_sync
+                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash())
+                    .await
+                {
+                    tracing::warn!(?err, "failed to retag blob after operation creation");
+                }
+            }
+        }
+        Ok(header)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
@@ -849,6 +884,33 @@ impl Node {
             }
         }
         Ok(latest.map(|(_, d)| d))
+    }
+
+    /// Tombstone an operation: record its hash in the topic's persisted
+    /// tombstone set so its payload is never stored or synced again, and
+    /// immediately drop any payload already stored for it.
+    ///
+    /// This has the effect that when the operation is played back, it will
+    /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
+    /// is `true` MUST also revert their changes in [`Self::unprocess_app`]
+    /// so that they leave behind no traces in local state.
+    pub async fn tombstone_operation(
+        &self,
+        topic: TopicId,
+        operation: &Operation,
+    ) -> anyhow::Result<()> {
+        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
+            return Ok(());
+        };
+        if self.is_tombstoneable(&payload) {
+            let hash = operation.hash;
+            self.local_store.add_tombstone(topic, hash.clone()).await?;
+            self.unprocess_app(operation).await?;
+            self.op_store.delete_body(&hash).await?;
+        } else {
+            tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
+        }
+        Ok(())
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.
@@ -1142,43 +1204,59 @@ impl Node {
         Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 
-    pub async fn store_media(&self, media: OutgoingMedia) -> anyhow::Result<MediaBundle> {
+    pub async fn store_media(
+        &self,
+        topic: TopicId,
+        operation_hash: p2panda::Hash,
+        media: OutgoingMedia,
+    ) -> anyhow::Result<MediaBundle> {
         let mut items = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
                 for photo in photos {
                     let size = photo.data.len() as u64;
                     ensure_blob_size(size, &photo.name)?;
-                    let tag = self.blob_sync.blobs.add_bytes(photo.data).await?;
+
+                    let hash = self
+                        .blob_sync
+                        .store_blob(topic, self.device_id(), operation_hash, photo.data)
+                        .await?;
                     items.push(MediaMetadata::Photo {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
-                        hash: tag.hash,
+                        hash,
                     });
                 }
             }
             OutgoingMedia::File { file } => {
                 let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
-                let tag = self.blob_sync.blobs.add_bytes(file.data).await?;
+                let hash = self
+                    .blob_sync
+                    .store_blob(topic, self.device_id(), operation_hash, file.data)
+                    .await?;
                 items.push(MediaMetadata::File {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
-                    hash: tag.hash,
+                    hash,
                 });
             }
             OutgoingMedia::VoiceNote { voice_note } => {
                 let size = voice_note.data.len() as u64;
                 ensure_blob_size(size, "voice note")?;
-                let tag = self.blob_sync.blobs.add_bytes(voice_note.data).await?;
+
+                let hash = self
+                    .blob_sync
+                    .store_blob(topic, self.device_id(), operation_hash, voice_note.data)
+                    .await?;
                 items.push(MediaMetadata::VoiceNote {
                     mime_type: voice_note.mime_type,
                     size,
                     duration_ms: voice_note.duration_ms,
                     waveform: voice_note.waveform,
-                    hash: tag.hash,
+                    hash,
                 });
             }
         }

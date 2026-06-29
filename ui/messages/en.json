@@ -172,6 +172,7 @@
 	"voiceRecordFailed": "Couldn’t finish the recording. Please try again.",
 	"saveFile": "Save file",
 	"fileSaved": "File saved.",
+	"fileDownloadFailed": "File download failed.",
 	"mediaSaved": "Media saved.",
 	"you": "You",
 	"previousPhoto": "Previous photo",
