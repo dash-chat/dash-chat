@@ -187,3 +187,26 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
 
     server.stop().await;
 }
+
+/// A node can add a mailbox's dialing address to its p2panda address book.
+///
+/// This exercises the full client-side wiring added for mailbox dialability:
+/// `Node::insert_mailbox_addr` → the `RegisterMailboxAddr` actor command → the
+/// p2panda `Node::insert_node_addr` → `AddressBook::insert_node_info`. Without
+/// this path the iroh blob downloader can't reach a mailbox by its EndpointId.
+/// We feed it a real `EndpointAddr` (the host node's own) and assert the insert
+/// succeeds end-to-end.
+#[tokio::test(flavor = "multi_thread")]
+async fn node_inserts_mailbox_addr_into_address_book() {
+    let config = NodeConfig::testing();
+
+    // A stand-in "mailbox" endpoint: any real, well-formed EndpointAddr works.
+    let host = TestNode::new(config.clone(), "host").await;
+    let mailbox_addr = host.iroh_endpoint().await.unwrap().addr();
+
+    let client = TestNode::new(config.clone(), "client").await;
+    client
+        .insert_mailbox_addr(mailbox_addr)
+        .await
+        .expect("inserting a mailbox addr into the address book should succeed");
+}

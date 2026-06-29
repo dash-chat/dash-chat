@@ -983,6 +983,13 @@ impl Node {
             .await
             .map_err(|e| AddContactError::StoreContact(e.to_string()))?;
 
+        // Register the scanned contact as a bootstrap so p2panda discovery can
+        // reach it directly over the internet (relay + pkarr), rather than
+        // depending on a mutually-reachable mailbox to introduce the two nodes.
+        self.register_bootstrap_node(*contact.device_pubkey)
+            .await
+            .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
+
         // SPACES: Register the member in the spaces manager
 
         // Must subscribe to the new member's device group in order to receive their
