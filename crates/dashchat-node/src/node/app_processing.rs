@@ -340,7 +340,7 @@ impl Node {
                         })?;
 
                     if let Some(media) = m.media() {
-                        let hashes: Vec<_> = media.iter().map(|item| item.hash).collect();
+                        let hashes: Vec<_> = media.iter().map(|item| item.hash()).collect();
                         let is_own = DeviceId::from(author) == self.device_id();
                         self.blob_sync
                             .delete_blobs(topic, author.into(), operation.hash, hashes, is_own)

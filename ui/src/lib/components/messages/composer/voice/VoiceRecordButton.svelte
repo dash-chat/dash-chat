@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { useTheme } from 'konsta/svelte';
 	import { mdiMicrophone, mdiLockOutline, mdiChevronUp } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -9,7 +9,7 @@
 	import { isMobile } from '$lib/utils/environment';
 	import type { DraftVoiceNote } from '$lib/utils/media';
 	import IconButton from '$lib/components/IconButton.svelte';
-	import { VoiceRecorder } from './useVoiceRecorder.svelte';
+	import { VoiceRecorder, warmUpRecorder } from './useVoiceRecorder.svelte';
 	import VoiceRecordingOverlay from './VoiceRecordingOverlay.svelte';
 	import VoiceLockedBar from './VoiceLockedBar.svelte';
 	import VoiceDesktopBar from './VoiceDesktopBar.svelte';
@@ -71,6 +71,12 @@
 	);
 
 	recorder.onMaxDuration = () => void stopAndSend();
+
+	// Pre-pay cpal's ~2s cold audio-subsystem init on desktop so the first press
+	// records immediately instead of hanging while the device spins up.
+	onMount(() => {
+		if (!isMobile) warmUpRecorder();
+	});
 
 	async function stopAndSend(): Promise<boolean> {
 		let draft: DraftVoiceNote | undefined;
@@ -220,6 +226,7 @@
 			icon={mdiMicrophone}
 			label={m.voiceRecordHint()}
 			testid="message-input-voice-record"
+			loading={recorder.phase === 'requesting' && !isMobile}
 			iconClass={recordingHoldMobile ? 'text-2xl text-white' : 'text-2xl'}
 			class="h-[42px] w-[42px] shrink-0 touch-none {recordingHoldMobile
 				? '!bg-red-500 !opacity-100'

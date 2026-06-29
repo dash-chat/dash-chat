@@ -3,6 +3,7 @@ import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, readFile, remove } from '@tauri-apps/plugin-fs';
 import audioBufferToWav from 'audiobuffer-to-wav';
 import {
+	getDevices,
 	getStatus,
 	requestPermission,
 	startRecording,
@@ -10,6 +11,18 @@ import {
 } from 'tauri-plugin-audio-recorder-api';
 
 import { computeWaveform, decodeToBuffer, resampleToMono } from './audioBuffer';
+
+let warmUpPromise: Promise<unknown> | undefined;
+
+/** cpal cold-initializes the audio subsystem (~2s on desktop) on the first
+ * device access in the process, which would otherwise land on the user's first
+ * recording. Enumerate devices once up front — this touches the same cpal host
+ * without opening the mic — so the first real `startRecording` is fast. Runs at
+ * most once per session; safe to call repeatedly. */
+export function warmUpRecorder(): void {
+	if (warmUpPromise) return;
+	warmUpPromise = getDevices().catch(() => {});
+}
 
 export type RecorderPhase =
 	| 'idle'
@@ -69,6 +82,9 @@ export class VoiceRecorder {
 				cache,
 				`dc-voice-${crypto.randomUUID()}.wav`,
 			);
+			// If a warm-up is in flight, let it finish before opening the device so
+			// the two don't race the same cold cpal init.
+			if (warmUpPromise) await warmUpPromise;
 			await this.#discardOrphanedRecording();
 			await startRecording({
 				outputPath,

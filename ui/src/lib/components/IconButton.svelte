@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { Button } from 'konsta/svelte';
+	import { Button, Preloader } from 'konsta/svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import type { HTMLButtonAttributes } from 'svelte/elements';
 
@@ -19,6 +19,8 @@
 		expanded?: boolean;
 		/** Render as a filled circular button (fixed size + translucent surface). */
 		circle?: boolean;
+		/** Show a spinner in place of the icon while an action is in flight. */
+		loading?: boolean;
 		iconClass?: string;
 		class?: string;
 	}
@@ -30,6 +32,7 @@
 		testid,
 		expanded,
 		circle = false,
+		loading = false,
 		iconClass = 'text-2xl',
 		class: className = '',
 		...rest
@@ -52,5 +55,9 @@
 	data-testid={testid}
 	class="!rounded-full !p-0 !text-inherit opacity-60 transition hover:opacity-90 {circleClass} {className}"
 >
-	<wa-icon class={iconClass} src={wrapPathInSvg(icon)}></wa-icon>
+	{#if loading}
+		<Preloader class="h-6 w-6" />
+	{:else}
+		<wa-icon class={iconClass} src={wrapPathInSvg(icon)}></wa-icon>
+	{/if}
 </Button>
