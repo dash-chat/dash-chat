@@ -138,10 +138,11 @@ impl BlobSync {
         root: PathBuf,
         relay_url: Option<iroh::RelayUrl>,
     ) -> anyhow::Result<Self> {
-        let mut builder = iroh::Endpoint::builder(presets::Minimal).secret_key(secret_key);
+        let mut builder = iroh::Endpoint::builder(presets::N0).secret_key(secret_key);
         if let Some(relay_url) = relay_url {
-            builder = builder
-                .relay_mode(iroh::RelayMode::Custom(iroh::RelayMap::from_iter([relay_url])));
+            builder = builder.relay_mode(iroh::RelayMode::Custom(iroh::RelayMap::from_iter([
+                relay_url,
+            ])));
         }
         let endpoint = builder.bind().await?;
 
