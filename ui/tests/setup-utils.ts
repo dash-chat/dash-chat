@@ -130,8 +130,8 @@ function buildSilentWav(durationMs: number): Uint8Array {
  * (microphone capture is unavailable in the WebKitGTK test harness). The
  * composer listens for `test-inject-voice-note` and sets a voice draft.
  */
-function injectVoiceNote(durationMs = 3000) {
-	const wav = buildSilentWav(durationMs);
+function injectVoiceNote(durationMs = 3000, audioDurationMs = durationMs) {
+	const wav = buildSilentWav(audioDurationMs);
 	const waveform = Array.from({ length: 48 }, (_, i) => 40 + (i % 5) * 40);
 	window.dispatchEvent(
 		new CustomEvent('test-inject-voice-note', {
@@ -140,12 +140,67 @@ function injectVoiceNote(durationMs = 3000) {
 	);
 }
 
+/** Pause and seek the first voice note to `fraction` of its real audio length,
+ * returning that real fraction (or -1 if the audio isn't loaded yet). Lets specs
+ * assert the scrubber maps progress to the audio's own duration, not the
+ * (possibly inaccurate) recorded metadata. */
+function voiceSeekFraction(fraction: number): number {
+	const audio = document.querySelector<HTMLAudioElement>(
+		'[data-testid="message-attachment-voice"] audio',
+	);
+	if (!audio || !isFinite(audio.duration) || audio.duration <= 0) return -1;
+	audio.pause();
+	audio.currentTime = Math.max(0, Math.min(1, fraction)) * audio.duration;
+	return audio.currentTime / audio.duration;
+}
+
+/** Read the played fraction (0..1) of the first voice-note waveform from
+ * wavesurfer's shadow DOM, so specs can assert playback progress advances. */
+function voiceProgress(): number {
+	const scrubber = document.querySelector('[data-testid="voice-scrubber"]');
+	const progress = scrubber
+		?.querySelector('div')
+		?.shadowRoot?.querySelector<HTMLElement>('.progress');
+	if (!progress) return 0;
+	return parseFloat(progress.style.width) / 100 || 0;
+}
+
+/** Peak bar luminance of the unplayed (wave) vs played (progress) canvases, so
+ * specs can assert the played region is visibly distinct — wavesurfer composites
+ * `progressColor` onto the wave canvas with `source-in`, so a translucent
+ * waveColor would make the two indistinguishable. */
+function voiceBarLuminance(): { unplayed: number; played: number } {
+	const shadow = document
+		.querySelector('[data-testid="voice-scrubber"]')
+		?.querySelector('div')?.shadowRoot;
+	const peak = (canvas: HTMLCanvasElement | null | undefined): number => {
+		if (!canvas) return 0;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return 0;
+		const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+		let max = 0;
+		for (let i = 0; i < data.length; i += 4) {
+			const lum =
+				((data[i] + data[i + 1] + data[i + 2]) / 3) * (data[i + 3] / 255);
+			if (lum > max) max = lum;
+		}
+		return max;
+	};
+	return {
+		unplayed: peak(shadow?.querySelector('.canvases canvas')),
+		played: peak(shadow?.querySelector('.progress canvas')),
+	};
+}
+
 export const testUtils = {
 	simulateUpdate,
 	hasText,
 	pasteFiles,
 	dropFiles,
 	injectVoiceNote,
+	voiceSeekFraction,
+	voiceProgress,
+	voiceBarLuminance,
 	/** E2E override for the composer's recent-photos strip; left undefined unless
 	 * a spec injects fake photos (the native library is unavailable in tests). */
 	recentPhotos: undefined as RecentPhotosTestData | undefined,

@@ -114,11 +114,21 @@ export class Composer extends TestHelper {
 	 * Stage a synthetic voice note in the composer. Microphone capture isn't
 	 * available in the WebKitGTK harness, so this injects a ready-made WAV draft
 	 * via `window.__test.injectVoiceNote` instead of driving the recorder.
+	 *
+	 * `audioDurationMs` defaults to `durationMs`; pass a smaller value to simulate
+	 * a recording whose metadata duration overshoots the real audio length.
 	 */
-	async recordVoiceNote(durationMs = 3000): Promise<void> {
-		await this.agent.execute((ms: number) => {
-			window.__test.injectVoiceNote(ms);
-		}, durationMs);
+	async recordVoiceNote(
+		durationMs = 3000,
+		audioDurationMs = durationMs,
+	): Promise<void> {
+		await this.agent.execute(
+			(ms: number, ams: number) => {
+				window.__test.injectVoiceNote(ms, ams);
+			},
+			durationMs,
+			audioDurationMs,
+		);
 	}
 
 	/** Paste a single synthesized PNG named `${label}.png` into the composer. */

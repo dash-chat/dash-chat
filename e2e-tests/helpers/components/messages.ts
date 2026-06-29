@@ -130,6 +130,25 @@ export class Messages extends TestHelper {
 		);
 	}
 
+	/** Played fraction (0..1) of the first voice note's waveform. */
+	async voiceProgress(): Promise<number> {
+		return this.agent.execute(() => window.__test.voiceProgress());
+	}
+
+	/** Peak bar luminance of the unplayed vs played regions of the first voice note. */
+	async voiceBarLuminance(): Promise<{ unplayed: number; played: number }> {
+		return this.agent.execute(() => window.__test.voiceBarLuminance());
+	}
+
+	/** Pause and seek the first voice note to `fraction` of its real audio length;
+	 * resolves to that real fraction (or -1 if the audio isn't loaded). */
+	async voiceSeekFraction(fraction: number): Promise<number> {
+		return this.agent.execute(
+			(f: number) => window.__test.voiceSeekFraction(f),
+			fraction,
+		);
+	}
+
 	/** Number of voice-note attachments currently rendered in the list. */
 	async voiceMessageCount(): Promise<number> {
 		return this.agent.execute(

@@ -109,7 +109,10 @@ export class VoiceRecorder {
 			return {
 				bytes: isWav ? recorded : new Uint8Array(audioBufferToWav(buffer)),
 				mimeType: 'audio/wav',
-				durationMs: result.durationMs,
+				// The decoded buffer is the audio peers actually play; its duration is
+				// exact, whereas the recorder's wall-clock `result.durationMs` overshoots
+				// and leaves the scrubber/timer short of the end on playback.
+				durationMs: Math.round(buffer.duration * 1000),
 				waveform: computeWaveform(buffer),
 			};
 		} finally {
