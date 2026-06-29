@@ -1,7 +1,7 @@
 import { LogsClient, waitForOperation } from '../p2panda/logs-client';
 import { AgentId, DeviceId, type TopicId } from '../p2panda/types';
 import { ContactCode, Payload } from '../types';
-import { invoke } from '../utils/invoke';
+import { invokeAfterSetup } from '../utils/invoke-after-setup';
 
 export interface Profile {
 	name: string;
@@ -61,30 +61,30 @@ export class ContactsClient implements IContactsClient {
 	constructor(protected logsClient: LogsClient<Payload>) {}
 
 	myAgentId(): Promise<AgentId> {
-		return invoke('my_agent_id');
+		return invokeAfterSetup('my_agent_id');
 	}
 
 	myDeviceId(): Promise<DeviceId> {
-		return invoke('my_device_id');
+		return invokeAfterSetup('my_device_id');
 	}
 
 	async setProfile(profile: Profile): Promise<void> {
-		return invoke('set_profile', {
+		return invokeAfterSetup('set_profile', {
 			profile,
 		});
 	}
 
 	createContactCode(): Promise<ContactCode> {
-		return invoke('create_contact_code');
+		return invokeAfterSetup('create_contact_code');
 	}
 
 	activeInboxTopics(): Promise<TopicId[]> {
-		return invoke('active_inbox_topics');
+		return invokeAfterSetup('active_inbox_topics');
 	}
 
 	async addContact(contactCode: ContactCode): Promise<void> {
 		await Promise.all([
-			invoke('add_contact', { contactCode }),
+			invokeAfterSetup('add_contact', { contactCode }),
 			waitForOperation(
 				this.logsClient,
 				op =>
@@ -96,7 +96,7 @@ export class ContactsClient implements IContactsClient {
 
 	async rejectContactRequest(agentId: AgentId): Promise<void> {
 		await Promise.all([
-			invoke('reject_contact_request', { agentId }),
+			invokeAfterSetup('reject_contact_request', { agentId }),
 			waitForOperation(
 				this.logsClient,
 				op =>
@@ -107,11 +107,11 @@ export class ContactsClient implements IContactsClient {
 	}
 
 	// getContacts(): Promise<Array<VerifyingKey>> {
-	// 	return invoke('get_contacts');
+	// 	return invokeAfterSetup('get_contacts');
 	// }
 
 	// removeContact(contactId: ContactId): Promise<void> {
-	// 	return invoke('remove_contact', {
+	// 	return invokeAfterSetup('remove_contact', {
 	// 		contactId,
 	// 	});
 	// }

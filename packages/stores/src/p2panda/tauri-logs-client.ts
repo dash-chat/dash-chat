@@ -1,25 +1,25 @@
 import { listen } from '@tauri-apps/api/event';
 import { type UnsubscribeFunction } from 'emittery';
 
-import { invoke } from '../utils/invoke';
+import { invokeAfterSetup } from '../utils/invoke-after-setup';
 import type { LogsClient } from './logs-client';
 import type { SimplifiedOperation } from './simplified-types';
 import type { TopicId, VerifyingKey } from './types';
 
 export class TauriLogsClient<PAYLOAD> implements LogsClient<PAYLOAD> {
 	// myPubKey(): Promise<VerifyingKey> {
-	// 	return invoke('my_pub_key');
+	// 	return invokeAfterSetup('my_pub_key');
 	// }
 
 	async getLog(
 		topicId: TopicId,
 		author: VerifyingKey,
 	): Promise<SimplifiedOperation<PAYLOAD>[]> {
-		return invoke('get_log', { topicId, author });
+		return invokeAfterSetup('get_log', { topicId, author });
 	}
 
 	async getAuthorsForTopic(topicId: TopicId): Promise<VerifyingKey[]> {
-		return invoke('get_authors', { topicId });
+		return invokeAfterSetup('get_authors', { topicId });
 	}
 
 	onNewOperation(

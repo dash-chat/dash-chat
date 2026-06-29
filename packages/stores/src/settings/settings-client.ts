@@ -1,7 +1,7 @@
 import { listen } from '@tauri-apps/api/event';
 import { type UnsubscribeFunction } from 'emittery';
 
-import { invoke } from '../utils/invoke';
+import { invokeAfterSetup } from '../utils/invoke-after-setup';
 
 export interface Settings {
 	qr_color: string | null;
@@ -20,15 +20,15 @@ export interface ISettingsClient {
 
 export class SettingsClient implements ISettingsClient {
 	getSettings(): Promise<Settings> {
-		return invoke('get_settings');
+		return invokeAfterSetup('get_settings');
 	}
 
 	setSetting(key: string, value: unknown): Promise<void> {
-		return invoke('set_setting', { key, value });
+		return invokeAfterSetup('set_setting', { key, value });
 	}
 
 	setLocalMailboxEnabled(enabled: boolean): Promise<void> {
-		return invoke('set_local_mailbox_enabled', { enabled });
+		return invokeAfterSetup('set_local_mailbox_enabled', { enabled });
 	}
 
 	setNotificationsEnabled(enabled: boolean): Promise<void> {

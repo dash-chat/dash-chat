@@ -1,7 +1,7 @@
 import { Channel } from '@tauri-apps/api/core';
 import { type ReactivePromise, relay } from 'signalium';
 
-import { invoke } from './invoke';
+import { invokeAfterSetup } from './invoke-after-setup';
 
 interface TauriChannelInternals {
 	id: number;
@@ -37,7 +37,7 @@ export function subscribeChannel<T>(
 		channel.onmessage = v => {
 			state.value = v;
 		};
-		invoke(command, { onEvent: channel, ...args });
+		invokeAfterSetup(command, { onEvent: channel, ...args });
 		return () => unregisterChannel(channel);
 	});
 }

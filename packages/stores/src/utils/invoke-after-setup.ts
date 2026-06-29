@@ -20,20 +20,20 @@ const isBackendNotReady = (error: unknown): boolean => {
 	return message.includes(BACKEND_NOT_READY);
 };
 
-const delay = (ms: number): Promise<void> =>
+export const sleep = (ms: number): Promise<void> =>
 	new Promise(resolve => setTimeout(resolve, ms));
 
-export async function invoke<T>(
+export async function invokeAfterSetup<T>(
 	cmd: string,
 	args?: InvokeArgs,
 	options?: InvokeOptions,
 ): Promise<T> {
-	for (let attempt = 0; ; attempt++) {
+	for (let attempt = 1; ; attempt++) {
 		try {
 			return await tauriInvoke<T>(cmd, args, options);
 		} catch (error) {
 			if (!isBackendNotReady(error) || attempt >= MAX_ATTEMPTS) throw error;
-			await delay(RETRY_DELAY_MS);
+			await sleep(RETRY_DELAY_MS);
 		}
 	}
 }
