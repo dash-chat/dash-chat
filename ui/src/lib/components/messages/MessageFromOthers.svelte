@@ -104,14 +104,12 @@
 		</div>
 	{/if}
 </div>
-{#if reactionsOpened}
-	<QuickReactionBar
-		{message}
-		{myDeviceId}
-		target={messageEl}
-		onClose={() => (reactionsOpened = false)}
-	/>
-{/if}
+<QuickReactionBar
+	{message}
+	{myDeviceId}
+	bind:opened={reactionsOpened}
+	target={messageEl}
+/>
 
 <style>
 	:global(.others-message) {

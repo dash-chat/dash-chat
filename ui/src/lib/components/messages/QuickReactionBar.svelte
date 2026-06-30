@@ -12,27 +12,26 @@
 
 	interface Props {
 		message: Message;
+		/** Whether the reaction UI is showing — drives the popover open/close. */
+		opened: boolean;
 		/** The message bubble the popover anchors to. */
 		target: HTMLElement | undefined;
 		myDeviceId: DeviceId;
-		onClose: () => void;
 	}
 
-	let { message, target, myDeviceId, onClose }: Props = $props();
+	let { message, opened = $bindable(), target, myDeviceId }: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
 
 	let expanded = $state(false);
 
-	// Collapse the picker before unmounting, otherwise Konsta leaves the open
-	// sheet orphaned in the DOM.
+	// Reset the picker state once the reaction UI is closed.
+	$effect(() => {
+		if (!opened) expanded = false;
+	});
+
 	function close() {
-		if (expanded) {
-			expanded = false;
-			setTimeout(onClose, 300);
-		} else {
-			onClose();
-		}
+		opened = false;
 	}
 
 	function hasReacted(emoji: string): boolean {
@@ -47,11 +46,14 @@
 	const condensed = $derived(condenseReactions(message.reactions, myDeviceId));
 </script>
 
+<!-- The popover backdrop is the single, steady dim the whole time the reaction UI
+     is up; while the picker sheet covers it, only the popover card is hidden (two
+     cross-fading backdrops would dip lighter mid-transition). -->
 <Popover
-	opened={!expanded}
+	{opened}
 	{target}
 	onBackdropClick={close}
-	class="!w-auto !rounded-full"
+	class={`!w-auto !rounded-full ${expanded ? '!opacity-0 !pointer-events-none' : ''}`}
 >
 	<div
 		class="flex items-center gap-1 px-1 py-0.5"
@@ -82,22 +84,24 @@
 	</div>
 </Popover>
 
-<Sheet class="pb-safe text-lg" opened={expanded} onBackdropClick={onClose}>
-	<div class="flex flex-col items-center">
-		<SheetHandle />
-	</div>
-	{#if condensed.length > 0}
+{#if opened}
+	<Sheet class="pb-safe text-lg" opened={expanded} backdrop={false}>
+		<div class="flex flex-col items-center">
+			<SheetHandle />
+		</div>
+		{#if condensed.length > 0}
+			<Block>
+				{#each condensed as reaction}
+					<button class="me-2 text-lg" onclick={() => react(reaction.emoji)}>
+						<Chip class="border !border-white dark:!border-black">
+							{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
+						</Chip>
+					</button>
+				{/each}
+			</Block>
+		{/if}
 		<Block>
-			{#each condensed as reaction}
-				<button class="me-2 text-lg" onclick={() => react(reaction.emoji)}>
-					<Chip class="border !border-white dark:!border-black">
-						{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
-					</Chip>
-				</button>
-			{/each}
+			<EmojiPickerWrapper onEmojiSelected={react}></EmojiPickerWrapper>
 		</Block>
-	{/if}
-	<Block>
-		<EmojiPickerWrapper onEmojiSelected={react}></EmojiPickerWrapper>
-	</Block>
-</Sheet>
+	</Sheet>
+{/if}
