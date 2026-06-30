@@ -49,7 +49,14 @@ pub struct NodeConfig {
     pub capabilities: Capabilities,
     pub network_id: NetworkId,
     pub mdns_mode: MdnsDiscoveryMode,
-    pub relay_url: Option<RelayUrl>,
+    /// Whether to register the node with the hardcoded relay so it is reachable
+    /// over the internet.
+    pub use_relay: bool,
+    /// Whether to register peers as bootstrap nodes, enabling direct iroh
+    /// connections between Dash Chat clients. When disabled, all communication
+    /// flows through mailbox servers (mailbox blob/media exchange still uses
+    /// iroh, which is not affected by this flag).
+    pub enable_p2p: bool,
     pub blob_fetch: BlobFetchConfig,
 }
 
@@ -57,7 +64,8 @@ impl NodeConfig {
     /// Disable p2p features and only use mailbox-based communication.
     pub fn no_p2p(mut self) -> Self {
         self.mdns_mode = MdnsDiscoveryMode::Disabled;
-        self.relay_url = None;
+        self.use_relay = false;
+        self.enable_p2p = false;
         self
     }
 
@@ -78,7 +86,8 @@ impl NodeConfig {
             // In testing we disable mDNS discovery and do not provide a relay address so as not
             // to effect expected behavior of existing tests.
             mdns_mode: MdnsDiscoveryMode::Disabled,
-            relay_url: None,
+            use_relay: false,
+            enable_p2p: true,
             // Retry blob downloads quickly so tests don't wait on the
             // production-scale pass interval.
             blob_fetch: BlobFetchConfig {
@@ -99,7 +108,8 @@ impl Default for NodeConfig {
             capabilities: Capabilities::current(),
             network_id: *NETWORK_ID,
             mdns_mode: MdnsDiscoveryMode::Active,
-            relay_url: Some(RELAY_URL.clone()),
+            use_relay: true,
+            enable_p2p: true,
             blob_fetch: BlobFetchConfig::default(),
         }
     }
@@ -187,8 +197,8 @@ impl Node {
             .database_url(&url)
             .mdns_mode(config.mdns_mode.clone());
 
-        if let Some(relay_url) = &config.relay_url {
-            builder = builder.relay_url(relay_url.clone());
+        if config.use_relay {
+            builder = builder.relay_url(RELAY_URL.clone());
         }
 
         let p2panda_node = builder.spawn().await?;
