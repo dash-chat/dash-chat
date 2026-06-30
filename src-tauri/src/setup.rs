@@ -56,8 +56,12 @@ pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
     // uploads but cannot dial us). Wait for the relay first so the address we
     // send includes our relay URL; otherwise a NAT'd mailbox cannot dial us
     // back. On failure we return Err so the retry wrapper runs us again.
-    node.wait_endpoint_online(std::time::Duration::from_secs(10))
-        .await?;
+    dashchat_utils::endpoint::wait_endpoint_online(
+        node.config.relay_url.is_some(),
+        &node.iroh_endpoint().await?,
+        std::time::Duration::from_secs(10),
+    )
+    .await?;
     let our_addr = node.iroh_endpoint().await?.addr();
     register_self_with_mailbox(&mailbox_url, our_addr).await?;
     Ok(())

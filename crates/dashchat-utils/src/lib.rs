@@ -1,5 +1,6 @@
 pub mod blob_sync;
 mod derive_watch;
+pub mod endpoint;
 mod fetch_loop;
 mod retry_with_backoff;
 mod singleton_task_with_retries;

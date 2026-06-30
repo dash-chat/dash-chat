@@ -167,17 +167,12 @@ impl BlobSync {
         // so an unreachable relay can't block server startup indefinitely.
         // Skipped when no relay is configured (e.g. tests): with the `Minimal`
         // preset there is no default relay, so `online()` would never resolve.
-        if has_relay {
-            if let Err(e) = tokio::time::timeout(Duration::from_secs(10), endpoint.online()).await {
-                tracing::error!(
-                    ?e,
-                    "failed to connect to bind iroh endpoint after 10 seconds"
-                );
-                return Err(anyhow::anyhow!(
-                    "failed to connect to bind iroh endpoint after 10 seconds: {e}"
-                ));
-            }
-        }
+        dashchat_utils::endpoint::wait_endpoint_online(
+            has_relay,
+            &endpoint,
+            Duration::from_secs(10),
+        )
+        .await?;
 
         let db_path = root.join("blobs.db");
         let mut options = iroh_blobs::store::fs::options::Options::new(&root);

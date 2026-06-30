@@ -113,7 +113,7 @@ pub struct Node {
 
     pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
 
-    config: NodeConfig,
+    pub config: NodeConfig,
 
     notification_tx: Option<mpsc::Sender<Notification>>,
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
@@ -379,23 +379,6 @@ impl Node {
     /// `/health` response advertises the node's dialing address.
     pub async fn iroh_endpoint(&self) -> Result<iroh::Endpoint> {
         Ok(self.endpoint.endpoint().await?)
-    }
-
-    /// Wait until the iroh endpoint has connected to its relay, so that
-    /// `iroh_endpoint().addr()` includes the relay URL. Without this a NAT'd
-    /// peer we hand our address to (e.g. a cloud mailbox) may only learn our
-    /// direct addresses and fail to dial us back. No-op when no relay is
-    /// configured (tests, the push extension's no-p2p node), where `online()`
-    /// would never resolve.
-    pub async fn wait_endpoint_online(&self, timeout: std::time::Duration) -> Result<()> {
-        if self.config.relay_url.is_none() {
-            return Ok(());
-        }
-        let endpoint = self.iroh_endpoint().await?;
-        tokio::time::timeout(timeout, endpoint.online())
-            .await
-            .map_err(|_| anyhow::anyhow!("iroh endpoint did not connect to relay within {timeout:?}"))?;
-        Ok(())
     }
 
     /// Add a peer's dialing address (relay + direct addresses) to the p2panda
