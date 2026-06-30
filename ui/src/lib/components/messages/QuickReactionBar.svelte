@@ -1,112 +1,129 @@
 <script lang="ts">
-	import { QUICK_EMOJIS } from '$lib/utils/emojis';
+	import { QUICK_EMOJIS, condenseReactions } from '$lib/utils/emojis';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiDotsHorizontal } from '@mdi/js';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import type { Message, DeviceId } from 'dash-chat-stores';
+	import '@awesome.me/webawesome/dist/components/popover/popover.js';
+	import type WaPopover from '@awesome.me/webawesome/dist/components/popover/popover.js';
+	import { Sheet, Block, Chip } from 'konsta/svelte';
+	import { getContext, onMount } from 'svelte';
+	import type { Message, DeviceId, MessagesStore } from 'dash-chat-stores';
+	import IconButton from '$lib/components/IconButton.svelte';
+	import SheetHandle from '$lib/components/SheetHandle.svelte';
+	import EmojiPickerWrapper from './EmojiPickerWrapper.svelte';
+	import { toggleReaction } from '$lib/utils/reactions';
 
 	interface Props {
 		message: Message;
-		targetElement: HTMLElement;
-		opened: boolean;
-		isOwnMessage: boolean;
+		/** id of the message bubble element the popover anchors to. */
+		for: string;
+		placement: WaPopover['placement'];
 		myDeviceId: DeviceId;
-		onReaction: (emoji: string) => void;
-		onExpand: () => void;
 		onClose: () => void;
 	}
 
-	let {
-		message,
-		targetElement,
-		opened,
-		isOwnMessage,
-		myDeviceId,
-		onReaction,
-		onExpand,
-		onClose,
-	}: Props = $props();
+	let { message, for: forId, placement, myDeviceId, onClose }: Props = $props();
 
-	function computeBarStyle(): string {
-		if (!opened || !targetElement) return '';
-		const rect = targetElement.getBoundingClientRect();
-		const barWidth = 320;
-		const isRtl = document.dir === 'rtl';
-		const anchorRight = isOwnMessage !== isRtl;
-		let left = anchorRight ? rect.right - barWidth : rect.left;
+	const store: MessagesStore = getContext('messages-store');
 
-		left = Math.max(8, Math.min(left, window.innerWidth - barWidth - 8));
+	let popover = $state<WaPopover>();
+	let open = $state(false);
+	let expanded = $state(false);
 
-		const top = rect.top - 52;
-		const finalTop = top < 8 ? rect.bottom + 8 : top;
+	// Open only after the element's first render: WebAwesome registers its
+	// outside-click / Escape dismiss handlers when `open` changes, but its watcher
+	// skips the first update — so opening at mount-time would never be dismissable.
+	onMount(() => {
+		popover?.updateComplete.then(() => (open = true));
+	});
 
-		return `left: ${left}px; top: ${finalTop}px;`;
+	function expand() {
+		open = false;
+		expanded = true;
 	}
 
-	let barStyle = $state(computeBarStyle());
-
-	$effect(() => {
-		barStyle = computeBarStyle();
-	});
-
-	$effect(() => {
-		if (!opened) return;
-		const onScroll = () => onClose();
-		window.addEventListener('scroll', onScroll, {
-			capture: true,
-			passive: true,
-		});
-		return () =>
-			window.removeEventListener('scroll', onScroll, { capture: true });
-	});
+	// The popover hides on outside click or Escape; tear down the reaction UI too.
+	function onAfterHide() {
+		if (!expanded) onClose();
+	}
 
 	function hasReacted(emoji: string): boolean {
 		return message.reactions[myDeviceId] === emoji;
 	}
+
+	function react(emoji: string) {
+		toggleReaction(store, message, myDeviceId, emoji);
+		onClose();
+	}
+
+	const condensed = $derived(condenseReactions(message.reactions, myDeviceId));
 </script>
 
-{#if opened}
+<wa-popover
+	bind:this={popover}
+	for={forId}
+	{placement}
+	{open}
+	without-arrow
+	onwa-after-hide={onAfterHide}
+>
 	<div
-		class="fixed inset-0 z-50 bg-black/30"
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-		aria-label={m.quickReactions()}
-		onclick={e => e.target === e.currentTarget && onClose()}
-		onkeydown={e => e.key === 'Escape' && onClose()}
-		oncontextmenu={e => {
-			e.preventDefault();
-			onClose();
-		}}
+		class="flex items-center gap-1"
+		role="group"
+		data-testid="quick-reaction-bar"
 	>
-		<div
-			class="fixed z-50 flex items-center gap-1 rounded-full bg-white px-2 py-1.5 shadow-lg dark:bg-gray-800"
-			role="group"
-			style={barStyle}
-		>
-			{#each QUICK_EMOJIS as emoji}
-				<button
-					class="flex h-9 w-9 items-center justify-center rounded-full text-xl transition-transform hover:scale-110 {hasReacted(
-						emoji,
-					)
-						? 'bg-blue-100 dark:bg-blue-900'
-						: ''}"
-					onclick={() => onReaction(emoji)}
-				>
-					{emoji}
+		{#each QUICK_EMOJIS as emoji}
+			<button
+				class="flex h-9 w-9 items-center justify-center rounded-full text-xl transition-transform hover:scale-110 {hasReacted(
+					emoji,
+				)
+					? 'bg-blue-100 dark:bg-blue-900'
+					: ''}"
+				onclick={() => react(emoji)}
+				data-testid={`quick-reaction-${emoji}`}
+			>
+				{emoji}
+			</button>
+		{/each}
+		<IconButton
+			icon={mdiDotsHorizontal}
+			onClick={expand}
+			label={m.moreReactions()}
+			testid="quick-reaction-more"
+			iconClass="text-xl"
+		/>
+	</div>
+</wa-popover>
+
+<Sheet class="pb-safe text-lg" opened={expanded} onBackdropClick={onClose}>
+	<div class="flex flex-col items-center">
+		<SheetHandle />
+	</div>
+	{#if condensed.length > 0}
+		<Block>
+			{#each condensed as reaction}
+				<button class="me-2 text-lg" onclick={() => react(reaction.emoji)}>
+					<Chip class="border !border-white dark:!border-black">
+						{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
+					</Chip>
 				</button>
 			{/each}
-			<button
-				class="flex h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
-				onclick={onExpand}
-				aria-label={m.moreReactions()}
-			>
-				<wa-icon
-					src={wrapPathInSvg(mdiDotsHorizontal)}
-					style="font-size: 1.25rem"
-				></wa-icon>
-			</button>
-		</div>
-	</div>
-{/if}
+		</Block>
+	{/if}
+	<Block>
+		<EmojiPickerWrapper onEmojiSelected={react}></EmojiPickerWrapper>
+	</Block>
+</Sheet>
+
+<style>
+	wa-popover::part(body) {
+		padding: 0.375rem 0.5rem;
+		border-radius: 9999px;
+		background-color: white;
+		box-shadow:
+			0 10px 15px -3px rgb(0 0 0 / 0.1),
+			0 4px 6px -4px rgb(0 0 0 / 0.1);
+	}
+	:global(html.dark) wa-popover::part(body) {
+		background-color: #1f2937;
+	}
+</style>

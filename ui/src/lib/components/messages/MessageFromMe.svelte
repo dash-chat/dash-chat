@@ -5,22 +5,25 @@
 		DeviceId,
 		MailboxTrackerStore,
 		Message,
+		MessagesStore,
 	} from 'dash-chat-stores';
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
+	import QuickReactionBar from './QuickReactionBar.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
+	import { longpress } from '$lib/actions/longpress';
+	import { toggleReaction } from '$lib/utils/reactions';
 
 	let {
 		message,
 		position,
 		myDeviceId,
 		searchQuery,
-		onToggleReaction,
 		chatId,
 	}: {
 		message: Message;
@@ -28,10 +31,14 @@
 		myDeviceId: DeviceId;
 		chatId: ChatId;
 		searchQuery: string;
-		onToggleReaction: (emoji: string) => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
+
+	const store: MessagesStore = getContext('messages-store');
+
+	let reactionsOpened = $state(false);
+	const anchorId = $derived(`reaction-anchor-${message.hash}`);
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
@@ -67,22 +74,41 @@
 	/>
 {/snippet}
 
-<Card
-	raised
-	contentWrapPadding="p-2"
-	class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+<div
+	id={anchorId}
+	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
 >
-	<MessageContent
+	<Card
+		raised
+		contentWrapPadding="p-2"
+		class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+	>
+		<MessageContent
+			{message}
+			{searchQuery}
+			senderName={m.you()}
+			metadata={isLast ? metadata : undefined}
+		/>
+	</Card>
+	{#if Object.keys(message.reactions).length}
+		<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
+			<Reactions
+				reactions={message.reactions}
+				{myDeviceId}
+				onToggleReaction={emoji =>
+					toggleReaction(store, message, myDeviceId, emoji)}
+			/>
+		</div>
+	{/if}
+</div>
+{#if reactionsOpened}
+	<QuickReactionBar
 		{message}
-		{searchQuery}
-		senderName={m.you()}
-		metadata={isLast ? metadata : undefined}
+		{myDeviceId}
+		for={anchorId}
+		placement="top-end"
+		onClose={() => (reactionsOpened = false)}
 	/>
-</Card>
-{#if Object.keys(message.reactions).length}
-	<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
-		<Reactions reactions={message.reactions} {myDeviceId} {onToggleReaction} />
-	</div>
 {/if}
 
 <style>

@@ -26,6 +26,12 @@ export class Messages extends TestHelper {
 	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
 	lightbox = new Lightbox(this.agent);
+	/** The floating quick-reaction bar (open while a message is long-pressed). */
+	quickReactionBar = this.el(tid('quick-reaction-bar'));
+
+	quickReactionButton(emoji: string) {
+		return this.el(tid(`quick-reaction-${emoji}`));
+	}
 
 	async unreadBadgeText(): Promise<string | null> {
 		if (!(await this.unreadBadge.isExisting())) return null;
@@ -157,6 +163,75 @@ export class Messages extends TestHelper {
 		if (!hash) return null;
 		return this.agent.$(
 			`${this.messagesSelector} [data-message-hash="${hash}"]`,
+		);
+	}
+
+	/** Long-press (via a synthetic contextmenu) the bubble containing `text` to
+	 * open the quick-reaction bar. */
+	async openReactions(text: string) {
+		const dispatched = await this.agent.execute(
+			(messagesSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						const msg = wrapper.querySelector('.message') as HTMLElement | null;
+						(msg ?? wrapper).dispatchEvent(
+							new MouseEvent('contextmenu', {
+								bubbles: true,
+								cancelable: true,
+							}),
+						);
+						return true;
+					}
+				}
+				return false;
+			},
+			this.messagesSelector,
+			text,
+		);
+		if (!dispatched) throw new Error(`Message "${text}" not found`);
+		await this.quickReactionBar.waitForExist();
+	}
+
+	/** Open the quick-reaction bar for `text` and tap the given quick emoji. */
+	async reactWith(text: string, emoji: string) {
+		await this.openReactions(text);
+		await this.quickReactionButton(emoji).click();
+	}
+
+	/** Whether the bubble containing `text` shows a reaction chip for `emoji`. */
+	hasReaction(text: string, emoji: string): Promise<boolean> {
+		return this.agent.execute(
+			(messagesSel: string, t: string, chipSel: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return !!wrapper.querySelector(chipSel);
+					}
+				}
+				return false;
+			},
+			this.messagesSelector,
+			text,
+			tid(`reaction-chip-${emoji}`),
+		);
+	}
+
+	async waitForReaction(text: string, emoji: string, timeout = SYNC_TIMEOUT) {
+		await this.agent.waitUntil(() => this.hasReaction(text, emoji), {
+			timeout,
+			timeoutMsg: `Reaction "${emoji}" on "${text}" not found`,
+		});
+	}
+
+	async waitForNoReaction(text: string, emoji: string, timeout = SYNC_TIMEOUT) {
+		await this.agent.waitUntil(
+			async () => !(await this.hasReaction(text, emoji)),
+			{ timeout, timeoutMsg: `Reaction "${emoji}" on "${text}" still present` },
 		);
 	}
 
