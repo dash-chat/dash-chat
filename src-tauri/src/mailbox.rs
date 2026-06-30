@@ -201,6 +201,27 @@ async fn handle_browse_events(
                             "Failed to fetch local mailbox {mailbox_id} health for address book: {err}"
                         ),
                     }
+                    // Tell the mailbox our own dialing address so its blob fetch
+                    // pool can reach us as a source.
+                    // NOTE: on network changes, mDNS re-browse fires a new
+                    // ServiceResolved for each known mailbox, which re-runs this
+                    // path and re-registers the updated EndpointAddr. Cloud
+                    // mailboxes don't have this hook; re-registration there would
+                    // require a network-change callback from the node layer.
+                    match node.iroh_endpoint().await {
+                        Ok(ep) => {
+                            if let Err(err) =
+                                crate::setup::register_self_with_mailbox(&url, ep.addr()).await
+                            {
+                                log::warn!(
+                                    "Failed to register our addr with local mailbox {mailbox_id}: {err}"
+                                );
+                            }
+                        }
+                        Err(err) => log::warn!(
+                            "Could not get iroh endpoint to register with mailbox {mailbox_id}: {err}"
+                        ),
+                    }
                     log::info!(
                         "*** Registered local mailbox client via mdns: {mailbox_id} ({url}) ***",
                     );
