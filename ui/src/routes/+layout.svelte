@@ -4,9 +4,9 @@
 
 	import '../app.css';
 	import { setContext } from 'svelte';
-	import { invoke } from '@tauri-apps/api/core';
 
 	import {
+		invokeAfterSetup,
 		ChatsClient,
 		ChatsStore,
 		LogsStore,
@@ -147,9 +147,9 @@
 
 		mailboxTrackerStore = new MailboxTrackerStore();
 
-		invoke('log_webview_info', { userAgent: navigator.userAgent }).catch(
-			() => {},
-		);
+		invokeAfterSetup('log_webview_info', {
+			userAgent: navigator.userAgent,
+		}).catch(() => {});
 	}
 
 	setContext('settings-store', settingsStore);

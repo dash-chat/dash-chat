@@ -93,6 +93,18 @@
 		min-height: 150px;
 	}
 
+	/* On error there's no <img> to size the container, so fit-content floors it
+	 * to 200px. When a wider caption stretches the bubble, that leaves a white
+	 * strip beside the grey placeholder — let it fill the bubble width instead.
+	 * The cell is a <button>, which shrinks to content, so it needs width:100%
+	 * to fill the stretched container too. */
+	.attachment-photos:has(.photo-cell:only-child):not(:has(img)) {
+		width: auto;
+	}
+	.attachment-photos:has(.photo-cell:only-child):not(:has(img)) .photo-cell {
+		width: 100%;
+	}
+
 	/* 2+ → a 300px-wide collage grid */
 	.attachment-photos:has(.photo-cell:nth-child(2)) {
 		display: grid;
