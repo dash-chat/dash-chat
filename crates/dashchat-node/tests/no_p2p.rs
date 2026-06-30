@@ -4,6 +4,24 @@ use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
 use mailbox_client::mem::MemMailbox;
 use mailbox_client::toy::ToyMailboxClient;
 
+/// POST our dialing address to a mailbox's `/peers/register` endpoint so its
+/// blob fetcher can dial us. Mirrors `setup::register_self_with_mailbox`.
+async fn register_self_with_mailbox(mailbox_url: &str, addr: iroh::EndpointAddr) {
+    #[derive(serde::Serialize)]
+    struct Req {
+        addr: iroh::EndpointAddr,
+    }
+    let url = format!("{}/peers/register", mailbox_url.trim_end_matches('/'));
+    mailbox_client::HTTP_CLIENT
+        .post(&url)
+        .json(&Req { addr })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+}
+
 /// Once a mailbox introduces two `no_p2p` nodes, removing the mailbox must stop
 /// all further sync — unlike the default p2p mode, there is no direct fallback
 /// channel. This is the inverse of `tests/bootstrap.rs::test_mailbox_bootstrap`.
@@ -69,14 +87,11 @@ async fn no_p2p_cannot_sync_after_mailbox_removed() {
 /// the mailbox is provably the only possible relay — mirroring
 /// `tests/mailbox_blob_sync.rs` but with `no_p2p` nodes.
 ///
-/// Because mDNS is off, the mailbox can only fetch the blob from Alice if it has
-/// learned her iroh address out-of-band (the mailbox-client-discovery fix). On
-/// the pre-fix tree the `relay.blobs().has(hash)` wait below times out, so this
-/// test fails — it is the regression test for that fix.
-///
-/// IGNORED on this branch: requires the `mailbox-client-discovery` fix, not yet
-/// present here. Un-ignore once that lands.
-#[ignore = "requires the mailbox-client-discovery fix (mailbox learning client iroh addresses)"]
+/// With p2p (and its random-walk discovery) disabled, the mailbox cannot learn
+/// Alice's iroh address on its own. Alice registers it via the mailbox's
+/// `/peers/register` endpoint, which the in-process server forwards back to the
+/// relay node's address book so its blob fetcher can dial her. This is the
+/// regression test for the mailbox-client-discovery path under `no_p2p`.
 #[tokio::test(flavor = "multi_thread")]
 async fn no_p2p_exchanges_media_through_mailbox_only() {
     dashchat_node::testing::setup_tracing(&["dashchat=info", "mailbox_server=info"], true);
@@ -91,6 +106,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
     let mailbox_addr = relay.iroh_endpoint().await.unwrap().addr();
 
     let mailbox_dir = tempfile::tempdir().unwrap();
+    let (peer_addr_tx, mut peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
     let server = mailbox_local_server::spawn_local_mailbox_server(
         mailbox_dir.path().join("mailbox.redb"),
         relay.blobs(),
@@ -102,11 +118,22 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             pass_interval: Duration::from_secs(2),
             retry_cooldown: Duration::from_secs(2),
         }),
+        peer_addr_tx,
     )
     .await
     .unwrap();
     let url = server.url.clone();
     mailbox_client::toy::wait_for_mailbox_health(&url).await;
+
+    // Forward addresses peers register with the mailbox into the relay node's
+    // address book, so its shared blob fetcher can dial them (the in-process
+    // equivalent of `src-tauri/src/mailbox/server.rs`).
+    let relay_for_addrs = relay.clone();
+    tokio::spawn(async move {
+        while let Some(addr) = peer_addr_rx.recv().await {
+            let _ = relay_for_addrs.insert_mailbox_addr(addr).await;
+        }
+    });
 
     let config = NodeConfig::testing().no_p2p();
 
@@ -122,6 +149,9 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
         .insert_mailbox_addr(mailbox_addr.clone())
         .await
         .unwrap();
+    // Alice tells the mailbox her dialing address so its fetcher can reach her
+    // while she is the only blob source.
+    register_self_with_mailbox(&url, alice.iroh_endpoint().await.unwrap().addr()).await;
 
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
     bobbi
