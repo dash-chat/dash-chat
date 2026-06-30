@@ -31,3 +31,4 @@ export * from './mailbox-tracker/mailbox-tracker-store.js';
 export * from './mailbox-tracker/types.js';
 
 export * from './utils/memo.js';
+export * from './utils/invoke-after-setup.js';

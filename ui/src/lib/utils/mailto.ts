@@ -1,6 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
+import { invokeAfterSetup } from 'dash-chat-stores';
 
 interface MailtoRequest {
 	subject: string;
@@ -14,7 +14,7 @@ export async function sendMailto(request: MailtoRequest): Promise<void> {
 	let body = request.body;
 	if (request.includeDebugLog) {
 		try {
-			const redactedPath = await invoke<string>('get_redacted_log');
+			const redactedPath = await invokeAfterSetup<string>('get_redacted_log');
 			attachments = [redactedPath];
 		} catch (e) {
 			console.error('Failed to get redacted log for mailto:', e);
@@ -27,7 +27,7 @@ export async function sendMailto(request: MailtoRequest): Promise<void> {
 		attachments = [...(attachments ?? []), ...paths];
 	}
 
-	await invoke('plugin:mailto|mailto', {
+	await invokeAfterSetup('plugin:mailto|mailto', {
 		request: {
 			email: 'support@dashchat.org',
 			subject: request.subject,
