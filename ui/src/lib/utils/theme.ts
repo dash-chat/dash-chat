@@ -6,8 +6,8 @@ async function setSystemBarsStyle(
 	statusBarStyle: BarStyle,
 	navigationBarStyle: BarStyle,
 ) {
-	const { invoke } = await import('@tauri-apps/api/core');
-	await invoke('plugin:system-bars-styles|set_style', {
+	const { invokeAfterSetup } = await import('dash-chat-stores');
+	await invokeAfterSetup('plugin:system-bars-styles|set_style', {
 		statusBarStyle,
 		navigationBarStyle,
 		navigationBarTransparent: true,

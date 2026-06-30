@@ -189,7 +189,7 @@ The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tau
 
 **Frontend Patterns:**
 - Signalium for reactive state management
-- Tauri commands invoked via `invoke()` from `@tauri-apps/api`
+- **STRICT: All Tauri commands must be invoked via `invokeAfterSetup()` from `packages/stores/src/utils/invoke-after-setup.ts`, never `invoke()` from `@tauri-apps/api` directly.** At startup the webview can invoke node-backed commands before `async_setup` finishes managing the node; `invokeAfterSetup()` retries the transient "state not managed" error until the backend is ready. Importing `invoke` directly from `@tauri-apps/api/core` (outside `invoke-after-setup.ts` itself) is a defect — flag it in review.
 - UI built with Konsta UI components (mobile-first design)
 - Internationalization using @inlang/paraglide-js
 - Image compression before upload
