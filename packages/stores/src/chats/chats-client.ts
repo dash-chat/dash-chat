@@ -1,7 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
-
 import { Hash, VerifyingKey } from '../p2panda/types';
 import { ChatId } from '../types';
+import { invokeAfterSetup } from '../utils/invoke-after-setup';
 
 export interface IChatsClient {
 	createGroup(initialMembers: VerifyingKey[]): Promise<ChatId>;
@@ -11,17 +10,17 @@ export interface IChatsClient {
 
 export class ChatsClient implements IChatsClient {
 	createGroup(initialMembers: VerifyingKey[]): Promise<ChatId> {
-		return invoke('create_group', {
+		return invokeAfterSetup('create_group', {
 			initialMembers,
 		});
 	}
 
 	getGroupChats(): Promise<Array<ChatId>> {
-		return invoke('get_group_chats');
+		return invokeAfterSetup('get_group_chats');
 	}
 
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void> {
-		return invoke('mark_messages_read', {
+		return invokeAfterSetup('mark_messages_read', {
 			chatId,
 			messageHashes,
 		});
