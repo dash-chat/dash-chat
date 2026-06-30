@@ -212,3 +212,69 @@ async fn node_inserts_mailbox_addr_into_address_book() {
         .await
         .expect("inserting a mailbox addr into the address book should succeed");
 }
+
+/// The standalone mailbox server's blob fetch loop can reach a peer after that
+/// peer's `EndpointAddr` is registered via `BlobSync::add_peer_addr` (which is
+/// what `POST /peers/register` calls under the hood). Without the registration
+/// the downloader only knows the peer's EndpointId and cannot dial it.
+#[tokio::test(flavor = "multi_thread")]
+async fn blob_fetch_succeeds_after_peer_addr_registration() {
+    use dashchat_utils::FetchConfig;
+    use mailbox_server::BlobSync;
+
+    let poll = PollConfig::default();
+
+    // Sender: a standalone BlobSync endpoint that stores a blob.
+    let sender_dir = tempfile::tempdir().unwrap();
+    let sender = BlobSync::new(
+        iroh::SecretKey::generate(),
+        sender_dir.path().join("blobs"),
+        None,
+    )
+    .await
+    .unwrap();
+    let blob_data: Vec<u8> = b"peer-addr-registration-test".to_vec();
+    let tag = sender.blobs.add_bytes(blob_data.clone()).await.unwrap();
+    let hash = tag.hash;
+    let sender_id = sender.endpoint_id();
+    let sender_addr = sender.endpoint_addr();
+
+    // Standalone mailbox: its own endpoint, separate blob store.
+    let mb_dir = tempfile::tempdir().unwrap();
+    let mailbox = BlobSync::new(
+        iroh::SecretKey::generate(),
+        mb_dir.path().join("blobs"),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Register the sender's dialing address. Without this the mailbox knows
+    // the sender only by EndpointId and the fetch will fail to connect.
+    mailbox.add_peer_addr(sender_addr);
+
+    // Enqueue the blob for download from the sender.
+    mailbox.fetch_pool().add_source(hash, sender_id).await;
+
+    let _fetch_handle = mailbox.spawn_fetch_loop(FetchConfig {
+        concurrency: 1,
+        pass_interval: Duration::from_millis(100),
+        attempt_timeout: Duration::from_secs(5),
+        retry_cooldown: Duration::from_millis(100),
+    });
+
+    poll.wait_for(|| async {
+        mailbox
+            .blobs
+            .has(hash)
+            .await
+            .unwrap_or(false)
+            .then_some(())
+            .ok_or("mailbox has not fetched the blob from the sender yet")
+    })
+    .await
+    .unwrap();
+
+    let fetched = mailbox.blobs.get_bytes(hash).await.unwrap();
+    assert_eq!(fetched.as_ref(), blob_data.as_slice());
+}

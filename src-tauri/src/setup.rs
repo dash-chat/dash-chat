@@ -46,11 +46,36 @@ pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
     if !node.mailboxes.is_tracked(&health.mailbox_id).await {
         let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
             health.mailbox_id,
-            mailbox_url,
+            mailbox_url.clone(),
             node.endpoint_id(),
         );
         node.mailboxes.register(mailbox_client).await;
     }
+    // Tell the mailbox our own dialing address so its blob fetch pool can reach
+    // us as a source (without this the mailbox knows our EndpointId from blip
+    // uploads but cannot dial us).
+    let our_addr = node.iroh_endpoint().await?.addr();
+    register_self_with_mailbox(&mailbox_url, our_addr).await?;
+    Ok(())
+}
+
+/// POST our current `EndpointAddr` to a mailbox's `/peers/register` endpoint so
+/// it can dial us when fetching blobs we published.
+pub(crate) async fn register_self_with_mailbox(
+    base_url: &str,
+    our_addr: iroh::EndpointAddr,
+) -> anyhow::Result<()> {
+    #[derive(serde::Serialize)]
+    struct Req {
+        addr: iroh::EndpointAddr,
+    }
+    let url = format!("{}/peers/register", base_url.trim_end_matches('/'));
+    mailbox_client::HTTP_CLIENT
+        .post(&url)
+        .json(&Req { addr: our_addr })
+        .send()
+        .await?
+        .error_for_status()?;
     Ok(())
 }
 
