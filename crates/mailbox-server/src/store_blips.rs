@@ -229,7 +229,7 @@ mod tests {
     async fn store_records_blob_sources() {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
-        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf())
+        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf(), None)
             .await
             .unwrap();
         let source = iroh::SecretKey::from_bytes(&[7; 32]).public();

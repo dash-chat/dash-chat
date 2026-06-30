@@ -186,6 +186,21 @@ async fn handle_browse_events(
                             node.endpoint_id(),
                         ))
                         .await;
+                    // Add the mailbox's dialing address to the address book so
+                    // the blob downloader can reach it by EndpointId rather than
+                    // relying solely on p2panda mDNS resolution timing.
+                    match crate::setup::fetch_mailbox_health(&url).await {
+                        Ok(health) => {
+                            if let Err(err) = node.insert_mailbox_addr(health.endpoint_addr).await {
+                                log::warn!(
+                                    "Failed to add local mailbox {mailbox_id} addr to address book: {err}"
+                                );
+                            }
+                        }
+                        Err(err) => log::warn!(
+                            "Failed to fetch local mailbox {mailbox_id} health for address book: {err}"
+                        ),
+                    }
                     log::info!(
                         "*** Registered local mailbox client via mdns: {mailbox_id} ({url}) ***",
                     );
