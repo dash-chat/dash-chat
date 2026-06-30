@@ -17,12 +17,12 @@ use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
-use p2panda_net::discovery::DiscoveryConfig;
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
+use p2panda_net::discovery::DiscoveryConfig;
 use p2panda_spaces::ActorId;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
@@ -53,10 +53,30 @@ pub struct NodeConfig {
     /// Whether to register the node with the hardcoded relay so it is reachable
     /// over the internet.
     pub use_relay: bool,
-    /// Whether to register peers as bootstrap nodes, enabling direct iroh
-    /// connections between Dash Chat clients. When disabled, all communication
-    /// flows through mailbox servers (mailbox blob/media exchange still uses
-    /// iroh, which is not affected by this flag).
+    /// Whether to participate in peer-to-peer connectivity with other Dash Chat
+    /// clients. When disabled, all communication flows through mailbox servers.
+    ///
+    /// This flag itself gates two of the four p2p surfaces:
+    /// - **p2panda random-walk discovery**: when false, zero random walkers run
+    ///   (see [`Node::init`]), so the node never gossips its own transport info
+    ///   to peers nor learns theirs.
+    /// - **p2panda bootstrap nodes**: when false, peers are never registered as
+    ///   bootstrap nodes (see `register_bootstrap_node`), so discovery can't
+    ///   reach them directly over a relay.
+    ///
+    /// The other two surfaces are also controlled by sibling fields:
+    /// - **mDNS discovery**: [`Self::mdns_mode`].
+    /// - **iroh relay** (internet reachability / NAT traversal): [`Self::use_relay`].
+    ///
+    /// [`Self::no_p2p`] disables all four together.
+    /// The Node's initialization will reject any config with `enable_p2p` set to false
+    /// and either `mdns_mode` or `use_relay` set to active/true.
+    ///
+    /// The iroh endpoint itself
+    /// always stays up — mailbox blob/media exchange rides it and is unaffected.
+    /// (The blob fetcher does still *attempt* a direct dial to a blob's author
+    /// as a fallback source, but with every discovery surface off it has no
+    /// address to dial, so those attempts cannot connect.)
     pub enable_p2p: bool,
     pub blob_fetch: BlobFetchConfig,
 }
@@ -189,6 +209,20 @@ impl Node {
         notification_tx: Option<mpsc::Sender<Notification>>,
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
+        // A no-p2p config must fully disable p2p: `enable_p2p == false` is only
+        // coherent when mDNS is disabled and no relay is used. Reject a config
+        // that contradicts itself rather than silently leaving a p2p surface on.
+        if !config.enable_p2p
+            && (!matches!(config.mdns_mode, MdnsDiscoveryMode::Disabled) || config.use_relay)
+        {
+            anyhow::bail!(
+                "invalid NodeConfig: enable_p2p is false but a p2p surface is still on \
+                 (mdns_mode = {:?}, use_relay = {})",
+                config.mdns_mode,
+                config.use_relay,
+            );
+        }
+
         // === p2panda node === //
 
         let url = format!("sqlite://{}", filesystem.op_store_path().to_string_lossy());
@@ -1386,6 +1420,39 @@ impl Node {
                 .collect();
             return Ok(OutgoingMedia::Photos { photos });
         }
+    }
+}
+
+#[cfg(test)]
+mod config_validation_tests {
+    use crate::NodeConfig;
+    use crate::node::Node;
+
+    async fn init_result(config: NodeConfig) -> anyhow::Result<Node> {
+        let dir = tempfile::tempdir().unwrap();
+        Node::new(dir.path().into(), config, None, None).await
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn init_rejects_no_p2p_with_relay() {
+        let mut config = NodeConfig::testing();
+        config.enable_p2p = false;
+        config.use_relay = true;
+        assert!(init_result(config).await.is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn init_rejects_no_p2p_with_mdns() {
+        use p2panda::network::MdnsDiscoveryMode;
+        let mut config = NodeConfig::testing();
+        config.enable_p2p = false;
+        config.mdns_mode = MdnsDiscoveryMode::Active;
+        assert!(init_result(config).await.is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn init_accepts_consistent_no_p2p_config() {
+        assert!(init_result(NodeConfig::testing().no_p2p()).await.is_ok());
     }
 }
 
