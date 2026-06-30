@@ -46,6 +46,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     // The relay shares no chat topic with Alice, so it discovers her address
     // lazily over mDNS rather than via an active gossip connection; retry the
     // blob fetch on a short interval so a pass lands once her address resolves.
+    let (peer_addr_tx, _peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
     let server = mailbox_local_server::spawn_local_mailbox_server(
         db_path,
         relay.blobs(),
@@ -57,6 +58,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             pass_interval: Duration::from_secs(2),
             retry_cooldown: Duration::from_secs(2),
         }),
+        peer_addr_tx,
     )
     .await
     .unwrap();

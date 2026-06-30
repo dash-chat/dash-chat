@@ -5,7 +5,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use dashchat_utils::{fetch_loop, FetchConfig, FetchPool, NETWORK_ID};
 use futures::StreamExt;
+use iroh::address_lookup::memory::MemoryLookup;
 use iroh::endpoint::presets;
+use tokio::sync::mpsc::UnboundedSender;
 use iroh::protocol::Router;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
 use tokio::sync::{Mutex, Notify};
@@ -106,6 +108,15 @@ impl FetchPool for BlobFetchPool {
 }
 
 #[derive(Clone)]
+enum PeerAddrRegistry {
+    /// Standalone server: lookup is wired directly into the iroh endpoint builder.
+    Memory(MemoryLookup),
+    /// Shared (in-process) server: iroh endpoint is p2panda's; addresses are
+    /// forwarded to the node's address book via an unbounded channel.
+    Channel(UnboundedSender<iroh::EndpointAddr>),
+}
+
+#[derive(Clone)]
 pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
     pub(crate) fetch_pool: BlobFetchPool,
@@ -125,6 +136,7 @@ pub struct BlobSync {
     /// `None` when sharing an in-process node's endpoint, in which case the
     /// node keeps the router and blob store alive.
     _router: Option<Router>,
+    peer_addr_registry: PeerAddrRegistry,
 }
 
 impl BlobSync {
@@ -138,7 +150,10 @@ impl BlobSync {
         root: PathBuf,
         relay_url: Option<iroh::RelayUrl>,
     ) -> anyhow::Result<Self> {
-        let mut builder = iroh::Endpoint::builder(presets::Minimal).secret_key(secret_key);
+        let peer_addr_lookup = MemoryLookup::new();
+        let mut builder = iroh::Endpoint::builder(presets::Minimal)
+            .secret_key(secret_key)
+            .address_lookup(peer_addr_lookup.clone());
         let has_relay = relay_url.is_some();
         if let Some(relay_url) = relay_url {
             builder = builder.relay_mode(iroh::RelayMode::Custom(iroh::RelayMap::from_iter([
@@ -188,6 +203,7 @@ impl BlobSync {
             fetch_config: FetchConfig::default(),
             enable_gc: true,
             _router: Some(router),
+            peer_addr_registry: PeerAddrRegistry::Memory(peer_addr_lookup),
         })
     }
 
@@ -200,6 +216,7 @@ impl BlobSync {
         blobs: iroh_blobs::BlobsProtocol,
         downloader: Downloader,
         endpoint: iroh::Endpoint,
+        peer_addr_tx: UnboundedSender<iroh::EndpointAddr>,
     ) -> Self {
         Self {
             blobs,
@@ -209,6 +226,7 @@ impl BlobSync {
             fetch_config: FetchConfig::default(),
             enable_gc: false,
             _router: None,
+            peer_addr_registry: PeerAddrRegistry::Channel(peer_addr_tx),
         }
     }
 
@@ -231,6 +249,17 @@ impl BlobSync {
     /// served via `/health` so clients can reach this mailbox by its EndpointId.
     pub fn endpoint_addr(&self) -> iroh::EndpointAddr {
         self.endpoint.addr()
+    }
+
+    /// Register a peer's dialing address so the blob downloader can reach it
+    /// by its EndpointId.
+    pub fn add_peer_addr(&self, addr: iroh::EndpointAddr) {
+        match &self.peer_addr_registry {
+            PeerAddrRegistry::Memory(lookup) => lookup.add_endpoint_info(addr),
+            PeerAddrRegistry::Channel(tx) => {
+                let _ = tx.send(addr);
+            }
+        }
     }
 
     pub fn fetch_pool(&self) -> &BlobFetchPool {
