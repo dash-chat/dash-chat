@@ -138,7 +138,8 @@ impl BlobSync {
         root: PathBuf,
         relay_url: Option<iroh::RelayUrl>,
     ) -> anyhow::Result<Self> {
-        let mut builder = iroh::Endpoint::builder(presets::N0).secret_key(secret_key);
+        let mut builder = iroh::Endpoint::builder(presets::Minimal).secret_key(secret_key);
+        let has_relay = relay_url.is_some();
         if let Some(relay_url) = relay_url {
             builder = builder.relay_mode(iroh::RelayMode::Custom(iroh::RelayMap::from_iter([
                 relay_url,
@@ -149,14 +150,18 @@ impl BlobSync {
         // `endpoint.addr()` only includes the relay once the endpoint has
         // connected to it, so wait for that before serving `/health`. Bounded
         // so an unreachable relay can't block server startup indefinitely.
-        if let Err(e) = tokio::time::timeout(Duration::from_secs(10), endpoint.online()).await {
-            tracing::error!(
-                ?e,
-                "failed to connect to bind iroh endpoint after 10 seconds"
-            );
-            return Err(anyhow::anyhow!(
-                "failed to connect to bind iroh endpoint after 10 seconds: {e}"
-            ));
+        // Skipped when no relay is configured (e.g. tests): with the `Minimal`
+        // preset there is no default relay, so `online()` would never resolve.
+        if has_relay {
+            if let Err(e) = tokio::time::timeout(Duration::from_secs(10), endpoint.online()).await {
+                tracing::error!(
+                    ?e,
+                    "failed to connect to bind iroh endpoint after 10 seconds"
+                );
+                return Err(anyhow::anyhow!(
+                    "failed to connect to bind iroh endpoint after 10 seconds: {e}"
+                ));
+            }
         }
 
         let db_path = root.join("blobs.db");
