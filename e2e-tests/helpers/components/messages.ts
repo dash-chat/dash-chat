@@ -26,12 +26,6 @@ export class Messages extends TestHelper {
 	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
 	lightbox = new Lightbox(this.agent);
-	/** The floating quick-reaction bar (open while a message is long-pressed). */
-	quickReactionBar = this.el(tid('quick-reaction-bar'));
-
-	quickReactionButton(emoji: string) {
-		return this.el(tid(`quick-reaction-${emoji}`));
-	}
 
 	async unreadBadgeText(): Promise<string | null> {
 		if (!(await this.unreadBadge.isExisting())) return null;
@@ -167,7 +161,7 @@ export class Messages extends TestHelper {
 	}
 
 	/** Long-press (via a synthetic contextmenu) the bubble containing `text` to
-	 * open the quick-reaction bar. */
+	 * open its quick-reaction bar, and resolve the bar scoped to that message. */
 	async openReactions(text: string) {
 		const dispatched = await this.agent.execute(
 			(messagesSel: string, t: string) => {
@@ -192,13 +186,19 @@ export class Messages extends TestHelper {
 			text,
 		);
 		if (!dispatched) throw new Error(`Message "${text}" not found`);
-		await this.quickReactionBar.waitForExist();
+		// A quick-reaction bar exists per message; scope to this one and wait for
+		// it to actually open.
+		const wrapper = await this.messageBubbleWithText(text);
+		if (!wrapper) throw new Error(`Message "${text}" not found`);
+		const bar = wrapper.$(tid('quick-reaction-bar'));
+		await bar.waitForDisplayed();
+		return wrapper;
 	}
 
 	/** Open the quick-reaction bar for `text` and tap the given quick emoji. */
 	async reactWith(text: string, emoji: string) {
-		await this.openReactions(text);
-		await this.quickReactionButton(emoji).click();
+		const wrapper = await this.openReactions(text);
+		await wrapper.$(tid(`quick-reaction-${emoji}`)).click();
 	}
 
 	/** Whether the bubble containing `text` shows a reaction chip for `emoji`. */

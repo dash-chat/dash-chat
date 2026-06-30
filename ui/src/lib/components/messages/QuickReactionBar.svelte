@@ -30,6 +30,19 @@
 		if (!opened) expanded = false;
 	});
 
+	// Spotlight the focused message: raise it above the dimming backdrop (z-40),
+	// while the popover card sits above it (z-50). Matches Signal's focused-message
+	// lift.
+	$effect(() => {
+		if (!opened || !target) return;
+		target.style.position = 'relative';
+		target.style.zIndex = '45';
+		return () => {
+			target.style.position = '';
+			target.style.zIndex = '';
+		};
+	});
+
 	function close() {
 		opened = false;
 	}
@@ -53,7 +66,7 @@
 	{opened}
 	{target}
 	onBackdropClick={close}
-	class={`!w-auto !rounded-full ${expanded ? '!opacity-0 !pointer-events-none' : ''}`}
+	class={`!z-50 !w-auto !rounded-full ${expanded ? '!opacity-0 !pointer-events-none' : ''}`}
 >
 	<div
 		class="flex items-center gap-1 px-1 py-0.5"
