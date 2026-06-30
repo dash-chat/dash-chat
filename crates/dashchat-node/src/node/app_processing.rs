@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
+use crate::connectivity::ConnectivityUpdate;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
 use crate::topic::AutoRegisteredTopic;
 
@@ -121,12 +122,19 @@ impl Node {
                 tokio::select! {
                     Some(processor_event) = events_rx.recv() => {
                         match processor_event {
-                            ProcessorEvent::System(event) => {
+                            ProcessorEvent::System { event, topic } => {
                                 match event {
                                     StreamEvent::ProcessingFailed { error, .. } => warn!("error processing operation: {error:?}"),
                                     StreamEvent::DecodeFailed { error, .. } => warn!("error decoding operation: {error:?}"),
                                     StreamEvent::ReplayFailed { error, .. } => warn!("error replaying stream: {error:?}"),
                                     StreamEvent::AckFailed { error, .. } => warn!("error acking operation: {error:?}"),
+                                    StreamEvent::SyncEnded { remote_node_id, error, .. } => {
+                                        node.connectivity.update(ConnectivityUpdate::Peer {
+                                            topic_id: topic,
+                                            device_id: remote_node_id.into(),
+                                            success: error.is_none(),
+                                        }).await;
+                                    },
                                     // @TODO: the operation variant should never be included here in the
                                     // system event as it will either be a groups or application event.
                                     StreamEvent::Processed {..} => unreachable!(),

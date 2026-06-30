@@ -145,6 +145,14 @@ async fn test_direct_chat() {
         bobbi_messages.first().map(|m| m.content.clone()),
         Some("Hello".into())
     );
+
+    let report = alice.connectivity_report(*chat_id).await.unwrap();
+    assert_eq!(report.mailboxes.len(), 1);
+    assert_eq!(report.peers.len(), 0);
+
+    let report = bobbi.connectivity_report(*chat_id).await.unwrap();
+    assert_eq!(report.mailboxes.len(), 1);
+    assert_eq!(report.peers.len(), 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -190,6 +198,14 @@ async fn test_p2p_direct_chat() {
             }
         }
     }
+
+    let report = alice.connectivity_report(*chat_id).await.unwrap();
+    assert_eq!(report.mailboxes.len(), 0);
+    assert_eq!(report.peers, btreeset![bobbi.device_id()]);
+
+    let report = bobbi.connectivity_report(*chat_id).await.unwrap();
+    assert_eq!(report.mailboxes.len(), 0);
+    assert_eq!(report.peers, btreeset![alice.device_id()]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -2,6 +2,7 @@ use crate::store::MailboxStore;
 use crate::sync_tracker::MailboxSyncTracker;
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Serializer};
+use tokio::sync::mpsc::Sender;
 use tokio::sync::watch;
 use tokio::time::Instant;
 
@@ -37,18 +38,18 @@ impl Default for MailboxesConfig {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub enum SyncStatus {
+pub enum MailboxStatus {
     Active,
     Degraded,
     Stopped,
 }
 
-impl SyncStatus {
+impl MailboxStatus {
     fn interval(&self, config: &MailboxesConfig) -> Duration {
         match self {
-            SyncStatus::Active => config.active_interval,
-            SyncStatus::Degraded => config.degraded_interval,
-            SyncStatus::Stopped => config.stopped_interval,
+            MailboxStatus::Active => config.active_interval,
+            MailboxStatus::Degraded => config.degraded_interval,
+            MailboxStatus::Stopped => config.stopped_interval,
         }
     }
 }
@@ -61,7 +62,7 @@ pub struct LastError {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MailboxConnectionState {
-    pub status: SyncStatus,
+    pub status: MailboxStatus,
     pub consecutive_errors: u32,
     #[serde(rename = "next_poll_in_ms", serialize_with = "ser_next_poll_in_ms")]
     pub next_poll: Instant,
@@ -82,7 +83,7 @@ fn ser_next_poll_in_ms<S: Serializer>(next: &Instant, s: S) -> Result<S::Ok, S::
 impl MailboxConnectionState {
     fn new() -> Self {
         Self {
-            status: SyncStatus::Active,
+            status: MailboxStatus::Active,
             consecutive_errors: 0,
             next_poll: Instant::now(),
             last_success_at: None,
@@ -92,7 +93,7 @@ impl MailboxConnectionState {
 
     fn record_success(&mut self, config: &MailboxesConfig) {
         self.consecutive_errors = 0;
-        self.status = SyncStatus::Active;
+        self.status = MailboxStatus::Active;
         self.next_poll = Instant::now() + config.active_interval + config.between_polls_delay;
         self.last_success_at = Some(Utc::now());
         self.last_error = None;
@@ -101,9 +102,9 @@ impl MailboxConnectionState {
     fn record_error(&mut self, config: &MailboxesConfig, err: String) {
         self.consecutive_errors += 1;
         self.status = if self.consecutive_errors >= config.stopped_threshold {
-            SyncStatus::Stopped
+            MailboxStatus::Stopped
         } else if self.consecutive_errors >= config.degraded_threshold {
-            SyncStatus::Degraded
+            MailboxStatus::Degraded
         } else {
             self.status
         };
@@ -119,7 +120,7 @@ impl MailboxConnectionState {
     }
 
     fn wakeup(&mut self) {
-        self.status = SyncStatus::Active;
+        self.status = MailboxStatus::Active;
         self.consecutive_errors = 0;
         self.next_poll = Instant::now();
     }
@@ -185,6 +186,7 @@ where
     active_mailbox_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Store,
+    status_events: mpsc::Sender<(MailboxId, MailboxStatus)>,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
     config: MailboxesConfig,
     trigger: mpsc::Sender<Option<MailboxId>>,
@@ -201,6 +203,7 @@ where
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
         trigger: mpsc::Sender<Option<MailboxId>>,
+        status_events: mpsc::Sender<(MailboxId, MailboxStatus)>,
     ) -> Self {
         let (active_mailbox_ids_tx, _) = watch::channel(BTreeSet::new());
         Self {
@@ -209,6 +212,7 @@ where
             topics: Arc::new(Mutex::new(Default::default())),
             store,
             sync_tracker,
+            status_events,
             config,
             trigger,
         }
@@ -337,9 +341,10 @@ where
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
+        status_events: Sender<(MailboxId, MailboxStatus)>,
     ) -> Result<Self, anyhow::Error> {
         let (trigger_tx, mut trigger_rx) = mpsc::channel::<Option<MailboxId>>(1);
-        let manager = Self::new(store, sync_tracker, config, trigger_tx);
+        let manager = Self::new(store, sync_tracker, config, trigger_tx, status_events);
         let r = manager.clone();
         tokio::spawn(
             async move {
@@ -444,16 +449,14 @@ where
             Err(err) => {
                 tracing::error!(?err, mailbox = %id, "mailbox sync error");
                 tracked_mailbox.record_error(&self.config, format!("{err:?}"));
-                let tracker = tracked_mailbox.connection_state();
-                let tracker = tracker.borrow();
-                tracing::info!(
-                    mailbox = %id,
-                    status = ?tracker.status,
-                    errors = tracker.consecutive_errors,
-                    "mailbox status updated"
-                );
             }
         }
+
+        let state = tracked_mailbox.connection_state();
+        let state = state.borrow().clone();
+        tracing::info!(mailbox = %id, status = ?state.status, errors = state.consecutive_errors, "mailbox status updated");
+
+        let _ = self.status_events.send((id.clone(), state.status)).await;
     }
 
     /// Immediately sync the given topics with the given mailbox:
@@ -626,13 +629,26 @@ mod tests {
     /// Create a Mailboxes instance without spawning the background loop
     fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
         let (trigger_tx, _trigger_rx) = mpsc::channel(1);
-        Mailboxes::new(DummyStore, test_sync_tracker(), config, trigger_tx)
+        let (status_events_tx, _status_events_rx) = mpsc::channel(1);
+        Mailboxes::new(
+            DummyStore,
+            test_sync_tracker(),
+            config,
+            trigger_tx,
+            status_events_tx,
+        )
     }
 
     async fn spawn_test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
-        Mailboxes::<Msg, DummyStore>::spawn(DummyStore, test_sync_tracker(), config)
-            .await
-            .unwrap()
+        let (status_events_tx, _status_events_rx) = mpsc::channel(1);
+        Mailboxes::<Msg, DummyStore>::spawn(
+            DummyStore,
+            test_sync_tracker(),
+            config,
+            status_events_tx,
+        )
+        .await
+        .unwrap()
     }
 
     // -- MailboxTracker unit tests --
@@ -640,7 +656,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_starts_active() {
         let tracker = MailboxConnectionState::new();
-        assert_eq!(tracker.status, SyncStatus::Active);
+        assert_eq!(tracker.status, MailboxStatus::Active);
         assert_eq!(tracker.consecutive_errors, 0);
     }
 
@@ -652,11 +668,11 @@ mod tests {
         // Accumulate some errors first
         tracker.record_error(&config, "x".into());
         tracker.record_error(&config, "x".into());
-        assert_eq!(tracker.status, SyncStatus::Degraded);
+        assert_eq!(tracker.status, MailboxStatus::Degraded);
 
         // Success resets everything
         tracker.record_success(&config);
-        assert_eq!(tracker.status, SyncStatus::Active);
+        assert_eq!(tracker.status, MailboxStatus::Active);
         assert_eq!(tracker.consecutive_errors, 0);
         assert!(tracker.last_success_at.is_some());
         assert!(tracker.last_error.is_none());
@@ -669,22 +685,22 @@ mod tests {
 
         // 1 error: still Active
         tracker.record_error(&config, "x".into());
-        assert_eq!(tracker.status, SyncStatus::Active);
+        assert_eq!(tracker.status, MailboxStatus::Active);
         assert_eq!(tracker.consecutive_errors, 1);
 
         // 2 errors: Degraded
         tracker.record_error(&config, "x".into());
-        assert_eq!(tracker.status, SyncStatus::Degraded);
+        assert_eq!(tracker.status, MailboxStatus::Degraded);
         assert_eq!(tracker.consecutive_errors, 2);
 
         // 3 errors: Stopped
         tracker.record_error(&config, "x".into());
-        assert_eq!(tracker.status, SyncStatus::Stopped);
+        assert_eq!(tracker.status, MailboxStatus::Stopped);
         assert_eq!(tracker.consecutive_errors, 3);
 
         // More errors: stays Stopped
         tracker.record_error(&config, "x".into());
-        assert_eq!(tracker.status, SyncStatus::Stopped);
+        assert_eq!(tracker.status, MailboxStatus::Stopped);
         assert_eq!(tracker.consecutive_errors, 4);
         assert!(tracker.last_error.is_some());
     }
@@ -854,7 +870,7 @@ mod tests {
             t.record_error(&config, "x".into());
             t.record_error(&config, "x".into());
             t.record_error(&config, "x".into());
-            assert_eq!(t.connection_state().borrow().status, SyncStatus::Stopped);
+            assert_eq!(t.connection_state().borrow().status, MailboxStatus::Stopped);
         }
 
         let (_found_id, wait) = mgr.find_next_due().await.unwrap();
@@ -1009,7 +1025,7 @@ mod tests {
             mm.get(&id).unwrap().record_success(&config);
         }
         rx.changed().await.expect("subscriber channel closed");
-        assert_eq!(rx.borrow().status, SyncStatus::Active);
+        assert_eq!(rx.borrow().status, MailboxStatus::Active);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1040,7 +1056,7 @@ mod tests {
             let mm = mgr.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
             t.connection_state.send_modify(|s| {
-                s.status = SyncStatus::Stopped;
+                s.status = MailboxStatus::Stopped;
                 s.consecutive_errors = 100;
                 s.next_poll = Instant::now() + Duration::from_secs(600);
             });
@@ -1062,7 +1078,7 @@ mod tests {
         let mm = mgr.mailboxes.lock().await;
         assert_eq!(
             mm.get(&id).unwrap().connection_state().borrow().status,
-            SyncStatus::Active
+            MailboxStatus::Active
         );
     }
 
@@ -1085,7 +1101,7 @@ mod tests {
             t.record_error(&config, "x".into());
             t.record_error(&config, "x".into());
             t.record_error(&config, "x".into());
-            assert_eq!(t.connection_state().borrow().status, SyncStatus::Stopped);
+            assert_eq!(t.connection_state().borrow().status, MailboxStatus::Stopped);
         }
 
         let (_, wait) = mgr.find_next_due().await.unwrap();
@@ -1099,7 +1115,7 @@ mod tests {
         let mm = mgr.mailboxes.lock().await;
         let tracker = mm.get(&id).unwrap().connection_state();
         let tracker = tracker.borrow();
-        assert_eq!(tracker.status, SyncStatus::Active);
+        assert_eq!(tracker.status, MailboxStatus::Active);
         assert_eq!(tracker.consecutive_errors, 0);
     }
 
@@ -1131,7 +1147,7 @@ mod tests {
             let mm = mgr.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
             t.connection_state.send_modify(|s| {
-                s.status = SyncStatus::Stopped;
+                s.status = MailboxStatus::Stopped;
                 s.consecutive_errors = 100;
                 s.next_poll = Instant::now() + Duration::from_secs(600);
             });
@@ -1153,7 +1169,7 @@ mod tests {
         let mm = mgr.mailboxes.lock().await;
         assert_eq!(
             mm.get(&id).unwrap().connection_state().borrow().status,
-            SyncStatus::Active
+            MailboxStatus::Active
         );
     }
 
@@ -1294,14 +1310,14 @@ mod tests {
             for id in &degraded_ids {
                 let t = mm.get(id).unwrap();
                 t.connection_state.send_modify(|s| {
-                    s.status = SyncStatus::Degraded;
+                    s.status = MailboxStatus::Degraded;
                     s.consecutive_errors = 1; // at degraded_threshold
                 });
             }
             for id in &stopped_ids {
                 let t = mm.get(id).unwrap();
                 t.connection_state.send_modify(|s| {
-                    s.status = SyncStatus::Stopped;
+                    s.status = MailboxStatus::Stopped;
                     s.consecutive_errors = 1000; // at stopped_threshold
                 });
             }
