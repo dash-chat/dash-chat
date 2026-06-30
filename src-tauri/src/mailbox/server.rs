@@ -38,7 +38,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     let node_for_peer_addrs = (*node).clone();
     tokio::spawn(async move {
         while let Some(addr) = peer_addr_rx.recv().await {
-            if let Err(err) = node_for_peer_addrs.insert_mailbox_addr(addr).await {
+            if let Err(err) = node_for_peer_addrs.insert_peer_addr(addr).await {
                 log::warn!("Failed to register peer addr: {err}");
             }
         }

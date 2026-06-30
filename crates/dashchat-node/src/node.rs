@@ -381,14 +381,32 @@ impl Node {
         Ok(self.endpoint.endpoint().await?)
     }
 
-    /// Add a mailbox's dialing address (relay + direct addresses) to the
-    /// p2panda address book so the iroh blob downloader can reach the mailbox
-    /// by its EndpointId. The address is learned out-of-band from the mailbox's
-    /// `/health` endpoint.
-    pub async fn insert_mailbox_addr(&self, addr: iroh::EndpointAddr) -> Result<()> {
+    /// Wait until the iroh endpoint has connected to its relay, so that
+    /// `iroh_endpoint().addr()` includes the relay URL. Without this a NAT'd
+    /// peer we hand our address to (e.g. a cloud mailbox) may only learn our
+    /// direct addresses and fail to dial us back. No-op when no relay is
+    /// configured (tests, the push extension's no-p2p node), where `online()`
+    /// would never resolve.
+    pub async fn wait_endpoint_online(&self, timeout: std::time::Duration) -> Result<()> {
+        if self.config.relay_url.is_none() {
+            return Ok(());
+        }
+        let endpoint = self.iroh_endpoint().await?;
+        tokio::time::timeout(timeout, endpoint.online())
+            .await
+            .map_err(|_| anyhow::anyhow!("iroh endpoint did not connect to relay within {timeout:?}"))?;
+        Ok(())
+    }
+
+    /// Add a peer's dialing address (relay + direct addresses) to the p2panda
+    /// address book so the iroh blob downloader can reach that peer by its
+    /// EndpointId. Used both for mailbox addresses learned from a mailbox's
+    /// `/health` endpoint and for arbitrary peer addresses forwarded by a
+    /// mailbox's `/peers/register` endpoint.
+    pub async fn insert_peer_addr(&self, addr: iroh::EndpointAddr) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.actor_tx
-            .send(Command::RegisterMailboxAddr { addr, reply_tx })
+            .send(Command::RegisterPeerAddr { addr, reply_tx })
             .await
             .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
         reply_rx.await??;

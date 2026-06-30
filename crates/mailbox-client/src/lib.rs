@@ -4,6 +4,8 @@ pub mod store;
 pub mod sync_tracker;
 pub mod toy;
 
+pub use mailbox_server::RegisterPeerRequest;
+
 #[cfg(test)]
 pub mod testing;
 

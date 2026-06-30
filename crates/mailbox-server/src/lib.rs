@@ -41,6 +41,7 @@ pub use dashchat_utils::FetchConfig;
 pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
 };
+pub use register_peer::RegisterPeerRequest;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest};
 pub use watermark::compute_initial_watermarks;

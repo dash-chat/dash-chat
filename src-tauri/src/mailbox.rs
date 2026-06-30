@@ -191,7 +191,7 @@ async fn handle_browse_events(
                     // relying solely on p2panda mDNS resolution timing.
                     match crate::setup::fetch_mailbox_health(&url).await {
                         Ok(health) => {
-                            if let Err(err) = node.insert_mailbox_addr(health.endpoint_addr).await {
+                            if let Err(err) = node.insert_peer_addr(health.endpoint_addr).await {
                                 log::warn!(
                                     "Failed to add local mailbox {mailbox_id} addr to address book: {err}"
                                 );
