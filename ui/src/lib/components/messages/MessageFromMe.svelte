@@ -38,7 +38,7 @@
 	const store: MessagesStore = getContext('messages-store');
 
 	let reactionsOpened = $state(false);
-	const anchorId = $derived(`reaction-anchor-${message.hash}`);
+	let messageEl = $state<HTMLElement>();
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
@@ -75,7 +75,7 @@
 {/snippet}
 
 <div
-	id={anchorId}
+	bind:this={messageEl}
 	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
 >
 	<Card
@@ -105,8 +105,7 @@
 	<QuickReactionBar
 		{message}
 		{myDeviceId}
-		for={anchorId}
-		placement="top-end"
+		target={messageEl}
 		onClose={() => (reactionsOpened = false)}
 	/>
 {/if}

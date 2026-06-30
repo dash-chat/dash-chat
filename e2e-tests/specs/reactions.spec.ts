@@ -52,5 +52,16 @@ describe('Message reactions', () => {
 		await agent1.groupChatPage.messages.reactWith('React in group', '❤️');
 		await agent1.groupChatPage.messages.waitForReaction('React in group', '❤️');
 		await agent2.groupChatPage.messages.waitForReaction('React in group', '❤️');
+
+		// Reacting with the same emoji again removes it.
+		await agent1.groupChatPage.messages.reactWith('React in group', '❤️');
+		await agent1.groupChatPage.messages.waitForNoReaction(
+			'React in group',
+			'❤️',
+		);
+		await agent2.groupChatPage.messages.waitForNoReaction(
+			'React in group',
+			'❤️',
+		);
 	});
 });
