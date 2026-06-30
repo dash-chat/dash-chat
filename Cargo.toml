@@ -26,16 +26,16 @@ mailbox-client = { path = "crates/mailbox-client" }
 mailbox-server = { path = "crates/mailbox-server" }
 mailbox-local-server = { path = "crates/mailbox-local-server" }
 
-p2panda = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-p2panda-auth = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat", features = [
+p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
   "processor",
 ] }
-p2panda-core = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-p2panda-net = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-p2panda-store = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
   "sqlite",
 ] }
-p2panda-spaces = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat", features = [
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
   "test_utils",
 ] }
 
@@ -53,13 +53,13 @@ iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
 # task can't poison the store and abort the process. See the iOS push-extension /
 # shared-DB crash investigation.
 # [patch."https://github.com/p2panda/p2panda"]
-# p2panda = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-auth = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-core = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-store = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-spaces = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-net = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-stream = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-sync = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-discovery = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-encryption = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
+# p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-sync = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-discovery = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -53,6 +53,10 @@ pub(crate) enum Command {
     RegisterMailboxAddr {
         addr: iroh::EndpointAddr,
         reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
+    },
+    NodeAddrKnown {
+        addr: iroh::EndpointAddr,
+        reply_tx: oneshot::Sender<Result<bool, NodeActorError>>,
     },
     Shutdown {
         reply_tx: oneshot::Sender<()>,
@@ -122,6 +126,12 @@ pub struct Actor {
 
     /// Channel for forwarding all received events on to the application layer processor.
     events_tx: mpsc::Sender<ProcessorEvent>,
+
+    /// EndpointIds registered exclusively via mailbox `/peers/register` hints.
+    /// Tracked separately from node-discovered addresses so re-registration after
+    /// a network change is allowed for hints while node-discovered entries are
+    /// never overwritten by mailbox-supplied data.
+    mailbox_addr_hints: HashSet<iroh::EndpointId>,
 }
 
 impl Actor {
@@ -137,6 +147,7 @@ impl Actor {
                 processed: Default::default(),
                 groups_processor,
                 events_tx,
+                mailbox_addr_hints: Default::default(),
             },
             events_rx,
         )
@@ -177,6 +188,10 @@ impl Actor {
                             },
                             Command::RegisterMailboxAddr { addr, reply_tx } => {
                                 let result = self.handle_register_mailbox_addr(addr).await;
+                                let _ = reply_tx.send(result);
+                            },
+                            Command::NodeAddrKnown { addr, reply_tx } => {
+                                let result = self.handle_node_addr_known(addr).await;
                                 let _ = reply_tx.send(result);
                             },
                             Command::Shutdown { reply_tx } => {
@@ -280,11 +295,35 @@ impl Actor {
     }
 
     async fn handle_register_mailbox_addr(
-        &self,
+        &mut self,
         addr: iroh::EndpointAddr,
     ) -> Result<(), NodeActorError> {
-        self.inner.insert_node_addr(addr).await?;
+        let id = addr.id;
+        if self.mailbox_addr_hints.contains(&id) {
+            // Previously mailbox-registered: allow re-registration so updated
+            // addresses after a network change are picked up.
+            //
+            // KNOWN LIMITATION: a malicious client that registered this endpoint
+            // before p2panda discovered it via mDNS/gossip can continue to inject
+            // undialable addresses here (griefing). We cannot detect the upgrade
+            // from mailbox-hint to node-discovered without a p2panda discovery
+            // hook; the iroh QUIC handshake prevents data from flowing to the
+            // wrong peer, so the worst case is wasted dial attempts.
+            self.inner.insert_node_addr(addr).await?;
+        } else if !self.inner.node_addr_known(&addr).await? {
+            // First time seen: register as a mailbox hint.
+            self.inner.insert_node_addr(addr).await?;
+            self.mailbox_addr_hints.insert(id);
+        }
+        // else: in address book but not a hint → node-discovered, skip.
         Ok(())
+    }
+
+    async fn handle_node_addr_known(
+        &self,
+        addr: iroh::EndpointAddr,
+    ) -> Result<bool, NodeActorError> {
+        Ok(self.inner.node_addr_known(&addr).await?)
     }
 
     async fn process_event(&mut self, event: StreamEvent<Payload>) -> Result<(), NodeActorError> {
