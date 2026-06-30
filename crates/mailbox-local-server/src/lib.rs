@@ -47,12 +47,12 @@ pub async fn spawn_local_mailbox_server(
     db_path: PathBuf,
     blobs: BlobsProtocol,
     downloader: Downloader,
-    endpoint_id: EndpointId,
+    endpoint: iroh::Endpoint,
     fetch_config: Option<FetchConfig>,
 ) -> anyhow::Result<LocalMailboxServer> {
     let port = free_port()?;
 
-    let mut blob_sync = BlobSync::shared(blobs, downloader, endpoint_id);
+    let mut blob_sync = BlobSync::shared(blobs, downloader, endpoint);
     if let Some(fetch_config) = fetch_config {
         blob_sync = blob_sync.with_fetch_config(fetch_config);
     }

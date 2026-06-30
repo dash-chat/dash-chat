@@ -30,6 +30,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
 
     let node = handle.state::<Node>();
     let endpoint_id = node.endpoint_id();
+    let endpoint = node.iroh_endpoint().await?;
     let path = FileSystem::new(handle)?.local_mailbox_db_path();
     let daemon: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
 
@@ -41,7 +42,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         path,
         node.blobs(),
         node.blob_downloader(),
-        endpoint_id,
+        endpoint,
         None,
     )
     .await?;

@@ -529,29 +529,39 @@ impl Node {
         // via a dedicated channel.
         if let Source::ExternalStream { .. } = source {
             let node_id: NodeId = operation.author().into();
-
-            // Only register the bootstrap if we didn't already do so.
-            if self
-                .registered_bootstraps
-                .lock()
-                .await
-                .insert((node_id, RELAY_URL.clone()))
-            {
-                debug!(node_id = %node_id, "add bootstrap node");
-                let (reply_tx, reply_rx) = oneshot::channel();
-                self.actor_tx
-                    .send(Command::RegisterBootstrap {
-                        node_id,
-                        relay_url: RELAY_URL.clone(),
-                        reply_tx,
-                    })
-                    .await
-                    .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
-
-                reply_rx.await??;
-            };
+            self.register_bootstrap_node(node_id).await?;
         }
 
+        Ok(())
+    }
+
+    /// Register a single node as a bootstrap (on the shared relay) so p2panda
+    /// discovery can reach it. Deduplicated so repeated calls are cheap. Used
+    /// both for mailbox-stream authors and for a freshly-scanned contact, the
+    /// latter letting two nodes connect directly over the internet (relay +
+    /// pkarr) without depending on a mutually-reachable mailbox.
+    pub(crate) async fn register_bootstrap_node(&self, node_id: NodeId) -> anyhow::Result<()> {
+        if !self
+            .registered_bootstraps
+            .lock()
+            .await
+            .insert((node_id, RELAY_URL.clone()))
+        {
+            return Ok(());
+        }
+
+        debug!(node_id = %node_id, "add bootstrap node");
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::RegisterBootstrap {
+                node_id,
+                relay_url: RELAY_URL.clone(),
+                reply_tx,
+            })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+
+        reply_rx.await??;
         Ok(())
     }
 

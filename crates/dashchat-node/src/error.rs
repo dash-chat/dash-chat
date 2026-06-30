@@ -8,6 +8,9 @@ pub enum Error {
     #[error("Failed to initialize topic: {0}")]
     InitializeTopic(String),
 
+    #[error("Failed to register bootstrap node: {0}")]
+    RegisterBootstrap(String),
+
     #[error("Failed to author operation: {0}")]
     AuthorOperation(String),
 
