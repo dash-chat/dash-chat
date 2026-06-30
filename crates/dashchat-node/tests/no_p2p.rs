@@ -32,10 +32,7 @@ async fn no_p2p_cannot_sync_after_mailbox_removed() {
     let chat = alice.direct_chat_topic(bobbi.agent_id());
 
     // A message sent while the mailbox is present syncs as usual.
-    alice
-        .send_message_raw(chat, "before".into())
-        .await
-        .unwrap();
+    alice.send_message_raw(chat, "before".into()).await.unwrap();
     poll.consistency([&alice, &bobbi], &[chat.into()])
         .await
         .unwrap();
@@ -67,15 +64,21 @@ async fn no_p2p_cannot_sync_after_mailbox_removed() {
     );
 }
 
-/// Media still flows between two `no_p2p` nodes via the mailbox: the mailbox
-/// relay rides iroh, which `no_p2p` does not disable. Because mDNS is off, the
-/// nodes learn the mailbox's iroh endpoint explicitly via `insert_mailbox_addr`.
+/// Media reaches a `no_p2p` node *through the mailbox* even when the sender is
+/// offline. The two nodes are never online together while the blob exists, so
+/// the mailbox is provably the only possible relay — mirroring
+/// `tests/mailbox_blob_sync.rs` but with `no_p2p` nodes.
 ///
-/// IGNORED: mailbox-only media transfer is currently broken (fix in flight on a
-/// separate branch). Un-ignore once that lands.
-#[ignore = "mailbox-only media transfer is broken pending a fix on another branch"]
+/// Because mDNS is off, the mailbox can only fetch the blob from Alice if it has
+/// learned her iroh address out-of-band (the mailbox-client-discovery fix). On
+/// the pre-fix tree the `relay.blobs().has(hash)` wait below times out, so this
+/// test fails — it is the regression test for that fix.
+///
+/// IGNORED on this branch: requires the `mailbox-client-discovery` fix, not yet
+/// present here. Un-ignore once that lands.
+#[ignore = "requires the mailbox-client-discovery fix (mailbox learning client iroh addresses)"]
 #[tokio::test(flavor = "multi_thread")]
-async fn no_p2p_exchanges_media_through_mailbox() {
+async fn no_p2p_exchanges_media_through_mailbox_only() {
     dashchat_node::testing::setup_tracing(&["dashchat=info", "mailbox_server=info"], true);
 
     let poll = PollConfig::default();
@@ -105,7 +108,9 @@ async fn no_p2p_exchanges_media_through_mailbox() {
     let url = server.url.clone();
     mailbox_client::toy::wait_for_mailbox_health(&url).await;
 
-    let alice = TestNode::new(NodeConfig::testing().no_p2p(), "alice").await;
+    let config = NodeConfig::testing().no_p2p();
+
+    let alice = TestNode::new(config.clone(), "alice").await;
     alice
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
             mailbox_id.clone(),
@@ -113,9 +118,12 @@ async fn no_p2p_exchanges_media_through_mailbox() {
             alice.endpoint_id(),
         ))
         .await;
-    alice.insert_mailbox_addr(mailbox_addr.clone()).await.unwrap();
+    alice
+        .insert_mailbox_addr(mailbox_addr.clone())
+        .await
+        .unwrap();
 
-    let bobbi = TestNode::new(NodeConfig::testing().no_p2p(), "bobbi").await;
+    let bobbi = TestNode::new(config.clone(), "bobbi").await;
     bobbi
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
             mailbox_id.clone(),
@@ -123,8 +131,12 @@ async fn no_p2p_exchanges_media_through_mailbox() {
             bobbi.endpoint_id(),
         ))
         .await;
-    bobbi.insert_mailbox_addr(mailbox_addr).await.unwrap();
+    bobbi
+        .insert_mailbox_addr(mailbox_addr.clone())
+        .await
+        .unwrap();
 
+    // Establish contact while both are online (no media exchanged yet).
     alice
         .behavior()
         .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
@@ -132,7 +144,12 @@ async fn no_p2p_exchanges_media_through_mailbox() {
         .unwrap();
 
     let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let bobbi_agent_id = bobbi.agent_id();
 
+    // Bobbi goes offline before any media exists.
+    let bobbi_dir = bobbi.shutdown().await;
+
+    // Alice sends a photo while Bobbi is offline.
     let photo_bytes: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
     let media = OutgoingMedia::Photos {
         photos: vec![OutgoingPhoto {
@@ -153,9 +170,39 @@ async fn no_p2p_exchanges_media_through_mailbox() {
         .into_iter()
         .find_map(|m| m.content.media().cloned())
         .expect("alice's message carries media metadata");
+    let hash = meta.first().expect("at least one media item").hash;
 
-    // Bobbi receives the message and downloads the blob — only the mailbox can
-    // have relayed it, since there is no direct p2p path.
+    // The mailbox must fetch the blob from Alice. With mDNS off this only works
+    // if the mailbox has learned Alice's iroh address — the behavior under test.
+    poll.wait_for(|| async {
+        relay
+            .blobs()
+            .has(hash)
+            .await
+            .unwrap_or(false)
+            .then_some(())
+            .ok_or("mailbox has not fetched the blob from alice yet")
+    })
+    .await
+    .unwrap();
+
+    // Alice goes offline. The blob now lives only in the mailbox's store, so
+    // Bobbi cannot possibly fetch it directly from Alice.
+    alice.shutdown().await;
+
+    // Bobbi comes back (same identity/store) and syncs the op + blob from the
+    // mailbox alone.
+    let bobbi = TestNode::new_at_path(config.clone(), "bobbi", bobbi_dir).await;
+    assert_eq!(bobbi.agent_id(), bobbi_agent_id);
+    bobbi
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            mailbox_id.clone(),
+            &url,
+            bobbi.endpoint_id(),
+        ))
+        .await;
+    bobbi.insert_mailbox_addr(mailbox_addr).await.unwrap();
+
     poll.wait_for(|| async {
         bobbi
             .load_media(meta.clone())
@@ -170,6 +217,7 @@ async fn no_p2p_exchanges_media_through_mailbox() {
     let OutgoingMedia::Photos { photos } = loaded else {
         panic!("expected a photo attachment");
     };
+    assert_eq!(photos.len(), 1);
     assert_eq!(photos[0].data, photo_bytes);
 
     server.stop().await;

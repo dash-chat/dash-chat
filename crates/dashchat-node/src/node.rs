@@ -17,6 +17,7 @@ use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
+use p2panda_net::discovery::DiscoveryConfig;
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
@@ -199,6 +200,17 @@ impl Node {
 
         if config.use_relay {
             builder = builder.relay_url(RELAY_URL.clone());
+        }
+
+        // With p2p disabled, run zero random-walk discovery walkers so the node
+        // never initiates discovery sessions. Otherwise, inserting a mailbox's
+        // address (a full p2panda node when run in-process) would let discovery
+        // gossip our transport info through it, leaking a direct path to peers.
+        if !config.enable_p2p {
+            builder = builder.discovery_config(DiscoveryConfig {
+                random_walkers_count: 0,
+                ..Default::default()
+            });
         }
 
         let p2panda_node = builder.spawn().await?;
