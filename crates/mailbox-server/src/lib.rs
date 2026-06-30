@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use dashchat_utils::RELAY_URL;
 use push_notifications_client::client::PushNotificationsClient;
 use redb::Database;
 use serde::{Deserialize, Serialize};
@@ -75,6 +76,10 @@ pub struct AppState {
 struct HealthResponse {
     status: String,
     endpoint_id: String,
+    /// The mailbox endpoint's dialing address (relay + direct addresses), so
+    /// clients can add it to their p2panda address book and dial this mailbox
+    /// by its EndpointId rather than only knowing the bare id.
+    endpoint_addr: iroh::EndpointAddr,
 }
 
 fn db_path_blobs_dir(db_path: &std::path::Path) -> std::path::PathBuf {
@@ -94,6 +99,8 @@ pub async fn spawn_server(
     let db = init_db(db_path.clone())?;
     let db_arc = Arc::new(db);
 
+    let relay_url = Some(RELAY_URL.clone());
+
     // Spawn background cleanup task
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
@@ -104,7 +111,7 @@ pub async fn spawn_server(
             let secret_key = load_or_create_secret_key(&db_arc)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             let blobs_root = db_path_blobs_dir(&db_path);
-            BlobSync::new(secret_key, blobs_root).await?
+            BlobSync::new(secret_key, blobs_root, relay_url).await?
         }
     };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
@@ -151,6 +158,7 @@ async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
         endpoint_id: encode_mailbox_id(state.blob_sync.endpoint_id()),
+        endpoint_addr: state.blob_sync.endpoint_addr(),
     })
 }
 

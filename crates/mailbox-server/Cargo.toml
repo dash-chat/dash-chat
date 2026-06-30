@@ -46,6 +46,7 @@ optional = true
 
 [dev-dependencies]
 mailbox-server = { path = ".", features = ["test_utils"] }
+iroh = { workspace = true }
 tempfile = "3.14"
 push-notifications-client = { path = "../push-notifications-client" }
 push-notifications-server = { path = "../push-notifications-server", features = ["test-utils"] }

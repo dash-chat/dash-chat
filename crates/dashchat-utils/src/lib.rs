@@ -10,3 +10,9 @@ pub use retry_with_backoff::retry_with_backoff;
 pub use singleton_task_with_retries::SingletonTaskWithRetries;
 
 pub const NETWORK_ID: &[u8; 32] = b"usability, reliability, security";
+
+pub static RELAY_URL: std::sync::LazyLock<iroh::RelayUrl> = std::sync::LazyLock::new(|| {
+    "https://euc1-1.relay.n0.iroh-canary.iroh.link"
+        .parse()
+        .expect("valid relay URL")
+});

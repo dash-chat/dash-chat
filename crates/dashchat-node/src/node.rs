@@ -4,7 +4,7 @@ pub(crate) mod publish;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
 use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
@@ -38,15 +38,9 @@ use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
     DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
 };
-use dashchat_utils::NETWORK_ID;
+use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
 pub use app_processing::Notification;
-
-pub static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
-    "https://euc1-1.relay.n0.iroh-canary.iroh.link"
-        .parse()
-        .expect("valid relay URL")
-});
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
@@ -379,6 +373,26 @@ impl Node {
     pub fn endpoint_id(&self) -> iroh::EndpointId {
         iroh::EndpointId::from_bytes(self.device_id().as_bytes())
             .expect("device id is a valid endpoint id")
+    }
+
+    /// The underlying iroh endpoint. An in-process mailbox shares this so its
+    /// `/health` response advertises the node's dialing address.
+    pub async fn iroh_endpoint(&self) -> Result<iroh::Endpoint> {
+        Ok(self.endpoint.endpoint().await?)
+    }
+
+    /// Add a mailbox's dialing address (relay + direct addresses) to the
+    /// p2panda address book so the iroh blob downloader can reach the mailbox
+    /// by its EndpointId. The address is learned out-of-band from the mailbox's
+    /// `/health` endpoint.
+    pub async fn insert_mailbox_addr(&self, addr: iroh::EndpointAddr) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::RegisterMailboxAddr { addr, reply_tx })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+        reply_rx.await??;
+        Ok(())
     }
 
     #[cfg(feature = "testing")]
@@ -968,6 +982,13 @@ impl Node {
             .save_contact(contact.clone())
             .await
             .map_err(|e| AddContactError::StoreContact(e.to_string()))?;
+
+        // Register the scanned contact as a bootstrap so p2panda discovery can
+        // reach it directly over the internet (relay + pkarr), rather than
+        // depending on a mutually-reachable mailbox to introduce the two nodes.
+        self.register_bootstrap_node(*contact.device_pubkey)
+            .await
+            .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
 
         // SPACES: Register the member in the spaces manager
 
