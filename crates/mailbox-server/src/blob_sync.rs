@@ -7,9 +7,9 @@ use dashchat_utils::{fetch_loop, FetchConfig, FetchPool, NETWORK_ID};
 use futures::StreamExt;
 use iroh::address_lookup::memory::MemoryLookup;
 use iroh::endpoint::presets;
-use tokio::sync::mpsc::UnboundedSender;
 use iroh::protocol::Router;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 

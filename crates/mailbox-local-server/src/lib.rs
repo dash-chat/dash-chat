@@ -13,8 +13,8 @@ use iroh::EndpointId;
 use iroh_blobs::api::downloader::Downloader;
 use iroh_blobs::BlobsProtocol;
 use mailbox_server::{encode_mailbox_id, BlobSync, FetchConfig};
-use tokio::sync::mpsc::UnboundedSender;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
+use tokio::sync::mpsc::UnboundedSender;
 
 /// A running in-process mailbox server. Call [`LocalMailboxServer::stop`] to
 /// shut it down gracefully.
