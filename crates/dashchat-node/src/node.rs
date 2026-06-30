@@ -395,6 +395,15 @@ impl Node {
         Ok(())
     }
 
+    pub async fn node_addr_known(&self, addr: iroh::EndpointAddr) -> Result<bool> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::NodeAddrKnown { addr, reply_tx })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+        Ok(reply_rx.await??)
+    }
+
     #[cfg(feature = "testing")]
     /// The node's iroh-blobs protocol handle, sharing its blob store. An
     /// in-process mailbox uses this so relayed blobs land in—and are served

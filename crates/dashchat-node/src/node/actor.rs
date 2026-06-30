@@ -54,6 +54,10 @@ pub(crate) enum Command {
         addr: iroh::EndpointAddr,
         reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
     },
+    NodeAddrKnown {
+        addr: iroh::EndpointAddr,
+        reply_tx: oneshot::Sender<Result<bool, NodeActorError>>,
+    },
     Shutdown {
         reply_tx: oneshot::Sender<()>,
     },
@@ -179,6 +183,10 @@ impl Actor {
                                 let result = self.handle_register_mailbox_addr(addr).await;
                                 let _ = reply_tx.send(result);
                             },
+                            Command::NodeAddrKnown { addr, reply_tx } => {
+                                let result = self.handle_node_addr_known(addr).await;
+                                let _ = reply_tx.send(result);
+                            },
                             Command::Shutdown { reply_tx } => {
                                 // Drop self and then break out of the processing loop which will
                                 // cause the actor task to complete.
@@ -283,8 +291,17 @@ impl Actor {
         &self,
         addr: iroh::EndpointAddr,
     ) -> Result<(), NodeActorError> {
-        self.inner.insert_node_addr(addr).await?;
+        if !self.inner.node_addr_known(&addr).await? {
+            self.inner.insert_node_addr(addr).await?;
+        }
         Ok(())
+    }
+
+    async fn handle_node_addr_known(
+        &self,
+        addr: iroh::EndpointAddr,
+    ) -> Result<bool, NodeActorError> {
+        Ok(self.inner.node_addr_known(&addr).await?)
     }
 
     async fn process_event(&mut self, event: StreamEvent<Payload>) -> Result<(), NodeActorError> {

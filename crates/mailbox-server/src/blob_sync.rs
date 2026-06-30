@@ -252,10 +252,16 @@ impl BlobSync {
     }
 
     /// Register a peer's dialing address so the blob downloader can reach it
-    /// by its EndpointId.
+    /// by its EndpointId. If an entry for this EndpointId already exists
+    /// (registered by this node's own discovery), the hint is dropped so
+    /// node-discovered addresses are never overwritten by client-supplied ones.
     pub fn add_peer_addr(&self, addr: iroh::EndpointAddr) {
         match &self.peer_addr_registry {
-            PeerAddrRegistry::Memory(lookup) => lookup.add_endpoint_info(addr),
+            PeerAddrRegistry::Memory(lookup) => {
+                if lookup.get_endpoint_info(addr.id).is_none() {
+                    lookup.add_endpoint_info(addr);
+                }
+            }
             PeerAddrRegistry::Channel(tx) => {
                 let _ = tx.send(addr);
             }
