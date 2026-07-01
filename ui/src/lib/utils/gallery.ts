@@ -8,10 +8,13 @@ import {
 	requestAlbums,
 	requestPhotosAuth,
 } from '@gbyte/tauri-plugin-ios-photos';
-import { invoke } from '@tauri-apps/api/core';
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { writeFile } from '@tauri-apps/plugin-fs';
-import type { FileAttachment, PhotoAttachment } from 'dash-chat-stores';
+import {
+	type FileAttachment,
+	type PhotoAttachment,
+	invokeAfterSetup,
+} from 'dash-chat-stores';
 import { AndroidFs, AndroidPublicImageDir } from 'tauri-plugin-android-fs-api';
 import { view } from 'tauri-plugin-view-api';
 
@@ -80,7 +83,7 @@ async function getOrCreateAlbum(title: string): Promise<string> {
  * Mobile-only; the caller handles desktop/browser saving.
  */
 export async function saveAndOpenFile(file: FileAttachment): Promise<void> {
-	const path = await invoke<string>('save_blob_to_cache', {
+	const path = await invokeAfterSetup<string>('save_blob_to_cache', {
 		hash: file.hash,
 		name: file.name,
 	});

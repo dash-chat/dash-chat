@@ -29,7 +29,11 @@ pub async fn download_capped(
         let options = DownloadRequest {
             request: FiniteRequest::Get(GetRequest::all(hash)),
             providers: Arc::new(providers),
-            strategy: SplitStrategy::Split,
+            // Media are single blobs, not hash-sequences. `SplitStrategy::Split`
+            // routes the download through iroh-blobs' hash-seq path, which asserts
+            // the root size is a multiple of 32 and so always fails for a raw blob
+            // ("Size is not a multiple of 32"), making every download report failure.
+            strategy: SplitStrategy::None,
         };
         let mut stream = downloader
             .download_with_opts(options)
