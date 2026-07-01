@@ -1,6 +1,10 @@
 import { blobUrl } from '$lib/utils/media';
 import type { VoiceNote } from 'dash-chat-stores';
 
+// Only one voice note plays at a time: starting a player pauses whichever was
+// already playing, matching Signal.
+let playing: VoicePlayer | undefined;
+
 /**
  * Owns the playback of a single voice note: the one `<audio>` element, its
  * play/pause/seek logic, lazy byte loading, and the reactive state
@@ -39,15 +43,19 @@ export class VoicePlayer {
 	attach(audio: HTMLAudioElement): () => void {
 		this.#audio = audio;
 		const onPlay = () => {
+			if (playing && playing !== this) playing.#audio?.pause();
+			playing = this;
 			this.paused = false;
 			this.#startTicking();
 		};
 		const onPause = () => {
+			if (playing === this) playing = undefined;
 			this.paused = true;
 			this.#stopTicking();
 			this.#sync();
 		};
 		const onEnded = () => {
+			if (playing === this) playing = undefined;
 			this.paused = true;
 			this.#stopTicking();
 			audio.currentTime = 0;
@@ -63,6 +71,7 @@ export class VoicePlayer {
 			audio.removeEventListener('timeupdate', this.#sync);
 			audio.removeEventListener('ended', onEnded);
 			this.#stopTicking();
+			if (playing === this) playing = undefined;
 			if (this.#objectUrl) URL.revokeObjectURL(this.#objectUrl);
 		};
 	}
