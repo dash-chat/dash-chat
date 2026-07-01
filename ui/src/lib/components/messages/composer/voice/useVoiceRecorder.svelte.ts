@@ -110,8 +110,13 @@ export class VoiceRecorder {
 		if (!this.isActive) return undefined;
 		this.#stopTimer();
 		this.phase = 'encoding';
-		const result = await stopRecording();
+		// Track the file path separately so a rejection from `stopRecording()`
+		// itself still runs the `finally` — otherwise `phase` would stay 'encoding'
+		// and the locked/desktop bar would wedge on screen until a manual Cancel.
+		let filePath: string | undefined;
 		try {
+			const result = await stopRecording();
+			filePath = result.filePath;
 			const recorded = await readFile(result.filePath);
 			const decoded = await decodeToBuffer(recorded);
 			// Desktop already records low-rate mono WAV; mobile records AAC/M4A,
@@ -133,7 +138,7 @@ export class VoiceRecorder {
 			};
 		} finally {
 			this.phase = 'idle';
-			await cleanup([result.filePath]);
+			if (filePath) await cleanup([filePath]);
 		}
 	}
 

@@ -149,6 +149,20 @@ export class Messages extends TestHelper {
 		);
 	}
 
+	/** Force the next voice-note byte-load to fail after `delayMs`, so specs can
+	 * exercise the play button's loading spinner and the load-error toast. */
+	async failNextVoiceLoad(delayMs = 0): Promise<void> {
+		await this.agent.execute(
+			(ms: number) => window.__test.failNextVoiceLoad(ms),
+			delayMs,
+		);
+	}
+
+	/** Whether the first voice note's play button is in its loading state. */
+	async voicePlayLoading(): Promise<boolean> {
+		return (await this.voicePlayButton.getAttribute('aria-busy')) === 'true';
+	}
+
 	/** Number of voice-note attachments currently rendered in the list. */
 	async voiceMessageCount(): Promise<number> {
 		return this.agent.execute(

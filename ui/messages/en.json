@@ -170,6 +170,7 @@
 	"voiceCancel": "Cancel recording",
 	"voiceRecording": "Recording voice message…",
 	"voiceRecordFailed": "Couldn’t finish the recording. Please try again.",
+	"voicePlayFailed": "Couldn’t play the voice message. Please try again.",
 	"saveFile": "Save file",
 	"fileSaved": "File saved.",
 	"fileDownloadFailed": "File download failed.",

@@ -192,6 +192,30 @@ function voiceBarLuminance(): { unplayed: number; played: number } {
 	};
 }
 
+/** Make the next voice-note byte fetch fail (after `delayMs`, so the play
+ * button's loading spinner stays observable), letting specs exercise the
+ * load-error toast. Only the `irohblob` blob request is intercepted; the
+ * original `fetch` is restored as soon as it fires. */
+function failNextVoiceLoad(delayMs = 0) {
+	const original = window.fetch;
+	window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+		const url =
+			typeof input === 'string'
+				? input
+				: input instanceof URL
+					? input.href
+					: input.url;
+		if (!url.includes('irohblob')) return original(input, init);
+		window.fetch = original;
+		return new Promise<Response>((_, reject) =>
+			setTimeout(
+				() => reject(new Error('test: forced voice load failure')),
+				delayMs,
+			),
+		);
+	};
+}
+
 export const testUtils = {
 	simulateUpdate,
 	hasText,
@@ -201,6 +225,7 @@ export const testUtils = {
 	voiceSeekFraction,
 	voiceProgress,
 	voiceBarLuminance,
+	failNextVoiceLoad,
 	/** E2E override for the composer's recent-photos strip; left undefined unless
 	 * a spec injects fake photos (the native library is unavailable in tests). */
 	recentPhotos: undefined as RecentPhotosTestData | undefined,

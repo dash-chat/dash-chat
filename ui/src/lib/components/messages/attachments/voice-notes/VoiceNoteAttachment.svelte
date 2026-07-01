@@ -1,8 +1,10 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import type { VoiceNote } from 'dash-chat-stores';
 	import { formatDuration } from '$lib/utils/time';
-	import { loadVoiceAudio } from './audio-source';
+	import { m } from '$lib/paraglide/messages.js';
+	import { showToast } from '$lib/utils/toasts';
+	import { VoicePlayer } from './voice-player.svelte';
 	import VoicePlayButton from './VoicePlayButton.svelte';
 	import Waveform from './Waveform.svelte';
 
@@ -18,16 +20,21 @@
 	const peaks = $derived(Array.from(voice.waveform, v => v / 255));
 	const durationSec = $derived(voice.duration_ms / 1000);
 
-	let paused = $state(true);
-	let currentTime = $state(0);
-	let waveform: ReturnType<typeof Waveform> | undefined = $state();
+	const player = untrack(
+		() => new VoicePlayer(voice, () => showToast(m.voicePlayFailed(), 'error')),
+	);
+
+	let audioEl: HTMLAudioElement | undefined = $state();
+	$effect(() => {
+		if (audioEl) return player.attach(audioEl);
+	});
 
 	// `voice.duration_ms` is authoritative; while playing we show the elapsed time.
 	const labelMs = $derived(
-		paused && currentTime === 0 ? voice.duration_ms : currentTime * 1000,
+		player.paused && player.currentTime === 0
+			? voice.duration_ms
+			: player.currentTime * 1000,
 	);
-
-	const loadAudio = () => loadVoiceAudio(voice);
 </script>
 
 <div
@@ -35,17 +42,16 @@
 	style="width: 240px; max-width: 100%"
 	data-testid="message-attachment-voice"
 >
-	<div class="flex items-center gap-3">
-		<VoicePlayButton {paused} onclick={() => void waveform?.toggle()} />
+	<audio bind:this={audioEl}></audio>
 
-		<Waveform
-			bind:this={waveform}
-			{peaks}
-			{durationSec}
-			{loadAudio}
-			bind:paused
-			bind:currentTime
+	<div class="flex items-center gap-3">
+		<VoicePlayButton
+			paused={player.paused}
+			loading={player.loading}
+			onclick={() => void player.toggle()}
 		/>
+
+		<Waveform {peaks} {durationSec} {player} />
 	</div>
 
 	<div class="flex items-center justify-between text-xs opacity-70">

@@ -5,7 +5,7 @@
 	import { shrinkToWidestLine } from '$lib/actions/shrink-to-widest-line';
 	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
 	import FileAttachment from './attachments/FileAttachment.svelte';
-	import VoiceNoteAttachment from './attachments/VoiceNoteAttachment.svelte';
+	import VoiceNoteAttachment from './attachments/voice-notes/VoiceNoteAttachment.svelte';
 	import MessageText from './MessageText.svelte';
 
 	let {

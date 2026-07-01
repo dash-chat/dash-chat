@@ -52,6 +52,24 @@ describe('Voice notes', () => {
 		);
 	});
 
+	it('shows a spinner while loading and toasts when the audio fails to load', async () => {
+		// Alice plays her own sent note; force its byte-load to fail after a beat so
+		// the play button's spinner is observable before the error toast appears.
+		const messages = agent1.directChatPage.messages;
+		await messages.waitForVoiceMessage();
+		await messages.failNextVoiceLoad(1500);
+		await messages.voicePlayButton.click();
+		await agent1.waitUntil(() => messages.voicePlayLoading(), {
+			timeoutMsg: 'Voice play button did not show its loading spinner',
+		});
+		await agent1.toast.expectMessageContaining(
+			await agent1.tr('voicePlayFailed'),
+		);
+		await agent1.waitUntil(async () => !(await messages.voicePlayLoading()), {
+			timeoutMsg: 'Voice play button stayed in its loading state after failure',
+		});
+	});
+
 	it('maps progress to the real audio duration, not the recorded metadata', async () => {
 		const messages = agent2.directChatPage.messages;
 		// Audio is really 2s but metadata claims 4s; seeking to the real midpoint

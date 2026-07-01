@@ -45,13 +45,17 @@
 	let startY = 0;
 	let isRtl = false;
 	let willCancel = false;
+	// Whether this take was locked hands-free. A hold-and-release also passes
+	// through `encoding`, but must not surface the locked bar / send button while
+	// the WAV encodes — only a genuinely locked take should.
+	let wasLocked = $state(false);
 	// The pointer can be released while `recorder.start()` is still awaiting mic
 	// permission/native start; remember that so we finish the hold once recording
 	// actually begins instead of leaving it stuck recording.
 	let releasedWhileStarting = false;
 
 	const showLockedBar = $derived(
-		recorder.phase === 'locked' || recorder.phase === 'encoding',
+		recorder.phase === 'locked' || (recorder.phase === 'encoding' && wasLocked),
 	);
 
 	// The press-and-hold visuals (red mic, slide-up-to-lock pill) only make sense
@@ -99,6 +103,7 @@
 		startY = event.clientY;
 		willCancel = false;
 		releasedWhileStarting = false;
+		wasLocked = false;
 		isRtl = getComputedStyle(el).direction === 'rtl';
 		await recorder.start();
 		if (recorder.phase === 'denied') {
@@ -110,6 +115,7 @@
 		// A mouse can't comfortably press-and-hold, so a click records hands-free.
 		if (event.pointerType === 'mouse') {
 			recorder.lock();
+			wasLocked = true;
 			return;
 		}
 		if (releasedWhileStarting) await finishHold();
@@ -129,6 +135,7 @@
 		};
 		if (up >= LOCK_THRESHOLD) {
 			recorder.lock();
+			wasLocked = true;
 			drag = idle;
 		}
 	}

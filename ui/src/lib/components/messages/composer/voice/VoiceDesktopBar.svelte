@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from 'konsta/svelte';
+	import { Button, Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import RecordingIndicator from './RecordingIndicator.svelte';
 
@@ -74,7 +74,11 @@
 		data-testid="voice-send"
 		style="width: auto"
 	>
-		{m.send()}
+		{#if sending}
+			<Preloader class="h-5 w-5" />
+		{:else}
+			{m.send()}
+		{/if}
 	</Button>
 </div>
 
