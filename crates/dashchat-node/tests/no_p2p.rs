@@ -131,7 +131,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
     let relay_for_addrs = relay.clone();
     tokio::spawn(async move {
         while let Some(addr) = peer_addr_rx.recv().await {
-            let _ = relay_for_addrs.insert_mailbox_addr(addr).await;
+            let _ = relay_for_addrs.insert_peer_addr(addr).await;
         }
     });
 
@@ -145,10 +145,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             alice.endpoint_id(),
         ))
         .await;
-    alice
-        .insert_mailbox_addr(mailbox_addr.clone())
-        .await
-        .unwrap();
+    alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
     // Alice tells the mailbox her dialing address so its fetcher can reach her
     // while she is the only blob source.
     register_self_with_mailbox(&url, alice.iroh_endpoint().await.unwrap().addr()).await;
@@ -161,10 +158,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             bobbi.endpoint_id(),
         ))
         .await;
-    bobbi
-        .insert_mailbox_addr(mailbox_addr.clone())
-        .await
-        .unwrap();
+    bobbi.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
 
     // Establish contact while both are online (no media exchanged yet).
     alice
@@ -231,7 +225,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             bobbi.endpoint_id(),
         ))
         .await;
-    bobbi.insert_mailbox_addr(mailbox_addr).await.unwrap();
+    bobbi.insert_peer_addr(mailbox_addr).await.unwrap();
 
     poll.wait_for(|| async {
         bobbi
