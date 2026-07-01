@@ -541,6 +541,13 @@ impl Node {
     /// latter letting two nodes connect directly over the internet (relay +
     /// pkarr) without depending on a mutually-reachable mailbox.
     pub(crate) async fn register_bootstrap_node(&self, node_id: NodeId) -> anyhow::Result<()> {
+        // In no-p2p mode we never register peers as bootstrap nodes, so direct
+        // iroh connections between Dash Chat clients are never established. All
+        // communication flows through mailbox servers.
+        if !self.config.enable_p2p {
+            return Ok(());
+        }
+
         if !self
             .registered_bootstraps
             .lock()
