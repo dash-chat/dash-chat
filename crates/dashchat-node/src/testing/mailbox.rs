@@ -1,12 +1,10 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use mailbox_client::{
     FetchRequest, FetchResponse, MailboxClient, MailboxId,
     mem::{MemMailbox, MemMailboxClient},
     toy::ToyMailboxClient,
 };
-use tokio::sync::OnceCell;
 
 use crate::mailbox::{
     MailboxHealth, MailboxOperation, fetch_mailbox_health, register_self_with_mailbox,
@@ -26,14 +24,7 @@ pub const ALLOWED_TEST_ENVS: &[&str] = &["testing"];
 #[derive(Clone)]
 pub enum TestMailbox {
     Mem(MemMailbox<MailboxOperation>),
-    Env {
-        name: String,
-        url: String,
-        // Shared and memoized across clones so repeated `id`/`client`/
-        // `register_on` calls on the same mailbox don't each pay a fresh
-        // `/health` round-trip for data that never changes.
-        health: Arc<OnceCell<MailboxHealth>>,
-    },
+    Env { name: String, url: String },
 }
 
 impl TestMailbox {
@@ -42,7 +33,10 @@ impl TestMailbox {
     /// environment's cloud mailbox (URL resolved from the repo's
     /// `.env.<name>` file). Panics on a non-allowlisted environment.
     pub fn from_env() -> Self {
-        match std::env::var(TEST_ENV_VAR).ok().filter(|name| !name.is_empty()) {
+        match std::env::var(TEST_ENV_VAR)
+            .ok()
+            .filter(|name| !name.is_empty())
+        {
             None => Self::Mem(MemMailbox::new()),
             Some(name) => {
                 assert!(
@@ -50,22 +44,16 @@ impl TestMailbox {
                     "{TEST_ENV_VAR}={name} is not an allowed test environment (allowed: {ALLOWED_TEST_ENVS:?})"
                 );
                 let url = env_file_mailbox_url(&name);
-                Self::Env {
-                    name,
-                    url,
-                    health: Arc::new(OnceCell::new()),
-                }
+                Self::Env { name, url }
             }
         }
     }
 
-    async fn health(&self) -> &MailboxHealth {
-        let Self::Env { url, health, .. } = self else {
+    async fn health(&self) -> MailboxHealth {
+        let Self::Env { url, .. } = self else {
             unreachable!("health() only called on the Env variant")
         };
-        health
-            .get_or_init(|| async { fetch_mailbox_health(url).await.unwrap() })
-            .await
+        fetch_mailbox_health(url).await.unwrap()
     }
 
     /// The mailbox's id: the in-memory id, or the environment mailbox's
