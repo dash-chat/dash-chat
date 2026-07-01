@@ -19,6 +19,7 @@ mod blob_sync;
 mod cleanup;
 mod get_blips;
 mod notify_topics_subscribers;
+mod register_peer;
 mod server_key;
 mod store_blips;
 mod watermark;
@@ -40,6 +41,7 @@ pub use dashchat_utils::FetchConfig;
 pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
 };
+pub use register_peer::RegisterPeerRequest;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest};
 pub use watermark::compute_initial_watermarks;
@@ -204,6 +206,7 @@ pub fn create_app(
         .route("/health", get(health_check))
         .route("/blips/store", post(store_blips))
         .route("/blips/get", post(get_blips_for_topics))
+        .route("/peers/register", post(register_peer::register_peer))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))

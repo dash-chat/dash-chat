@@ -14,6 +14,7 @@ use iroh_blobs::api::downloader::Downloader;
 use iroh_blobs::BlobsProtocol;
 use mailbox_server::{encode_mailbox_id, BlobSync, FetchConfig};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
+use tokio::sync::mpsc::UnboundedSender;
 
 /// A running in-process mailbox server. Call [`LocalMailboxServer::stop`] to
 /// shut it down gracefully.
@@ -49,10 +50,11 @@ pub async fn spawn_local_mailbox_server(
     downloader: Downloader,
     endpoint: iroh::Endpoint,
     fetch_config: Option<FetchConfig>,
+    peer_addr_tx: UnboundedSender<iroh::EndpointAddr>,
 ) -> anyhow::Result<LocalMailboxServer> {
     let port = free_port()?;
 
-    let mut blob_sync = BlobSync::shared(blobs, downloader, endpoint);
+    let mut blob_sync = BlobSync::shared(blobs, downloader, endpoint, peer_addr_tx);
     if let Some(fetch_config) = fetch_config {
         blob_sync = blob_sync.with_fetch_config(fetch_config);
     }
