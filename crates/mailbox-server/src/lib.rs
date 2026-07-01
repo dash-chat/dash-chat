@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use dashchat_utils::RELAY_URL;
 use push_notifications_client::client::PushNotificationsClient;
 use redb::Database;
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,7 @@ mod blob_sync;
 mod cleanup;
 mod get_blips;
 mod notify_topics_subscribers;
+mod register_peer;
 mod server_key;
 mod store_blips;
 mod watermark;
@@ -39,6 +41,7 @@ pub use dashchat_utils::FetchConfig;
 pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
 };
+pub use register_peer::RegisterPeerRequest;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest};
 pub use watermark::compute_initial_watermarks;
@@ -75,6 +78,10 @@ pub struct AppState {
 struct HealthResponse {
     status: String,
     endpoint_id: String,
+    /// The mailbox endpoint's dialing address (relay + direct addresses), so
+    /// clients can add it to their p2panda address book and dial this mailbox
+    /// by its EndpointId rather than only knowing the bare id.
+    endpoint_addr: iroh::EndpointAddr,
 }
 
 fn db_path_blobs_dir(db_path: &std::path::Path) -> std::path::PathBuf {
@@ -94,6 +101,8 @@ pub async fn spawn_server(
     let db = init_db(db_path.clone())?;
     let db_arc = Arc::new(db);
 
+    let relay_url = Some(RELAY_URL.clone());
+
     // Spawn background cleanup task
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
@@ -104,7 +113,7 @@ pub async fn spawn_server(
             let secret_key = load_or_create_secret_key(&db_arc)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             let blobs_root = db_path_blobs_dir(&db_path);
-            BlobSync::new(secret_key, blobs_root).await?
+            BlobSync::new(secret_key, blobs_root, relay_url).await?
         }
     };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
@@ -151,6 +160,7 @@ async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
         endpoint_id: encode_mailbox_id(state.blob_sync.endpoint_id()),
+        endpoint_addr: state.blob_sync.endpoint_addr(),
     })
 }
 
@@ -196,6 +206,7 @@ pub fn create_app(
         .route("/health", get(health_check))
         .route("/blips/store", post(store_blips))
         .route("/blips/get", post(get_blips_for_topics))
+        .route("/peers/register", post(register_peer::register_peer))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))

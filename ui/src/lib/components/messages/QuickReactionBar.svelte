@@ -1,112 +1,122 @@
 <script lang="ts">
-	import { QUICK_EMOJIS } from '$lib/utils/emojis';
+	import { QUICK_EMOJIS, condenseReactions } from '$lib/utils/emojis';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiDotsHorizontal } from '@mdi/js';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import type { Message, DeviceId } from 'dash-chat-stores';
+	import { Popover, Sheet, Block, Chip } from 'konsta/svelte';
+	import { getContext } from 'svelte';
+	import type { Message, DeviceId, MessagesStore } from 'dash-chat-stores';
+	import IconButton from '$lib/components/IconButton.svelte';
+	import SheetHandle from '$lib/components/SheetHandle.svelte';
+	import EmojiPickerWrapper from './EmojiPickerWrapper.svelte';
+	import { toggleReaction } from '$lib/utils/reactions';
 
 	interface Props {
 		message: Message;
-		targetElement: HTMLElement;
+		/** Whether the reaction UI is showing — drives the popover open/close. */
 		opened: boolean;
-		isOwnMessage: boolean;
+		/** The message bubble the popover anchors to. */
+		target: HTMLElement | undefined;
 		myDeviceId: DeviceId;
-		onReaction: (emoji: string) => void;
-		onExpand: () => void;
-		onClose: () => void;
 	}
 
-	let {
-		message,
-		targetElement,
-		opened,
-		isOwnMessage,
-		myDeviceId,
-		onReaction,
-		onExpand,
-		onClose,
-	}: Props = $props();
+	let { message, opened = $bindable(), target, myDeviceId }: Props = $props();
 
-	function computeBarStyle(): string {
-		if (!opened || !targetElement) return '';
-		const rect = targetElement.getBoundingClientRect();
-		const barWidth = 320;
-		const isRtl = document.dir === 'rtl';
-		const anchorRight = isOwnMessage !== isRtl;
-		let left = anchorRight ? rect.right - barWidth : rect.left;
+	const store: MessagesStore = getContext('messages-store');
 
-		left = Math.max(8, Math.min(left, window.innerWidth - barWidth - 8));
+	let expanded = $state(false);
 
-		const top = rect.top - 52;
-		const finalTop = top < 8 ? rect.bottom + 8 : top;
+	// Reset the picker state once the reaction UI is closed.
+	$effect(() => {
+		if (!opened) expanded = false;
+	});
 
-		return `left: ${left}px; top: ${finalTop}px;`;
+	// Spotlight the focused message: raise it above the dimming backdrop (z-40),
+	// while the popover card sits above it (z-50). Matches Signal's focused-message
+	// lift.
+	$effect(() => {
+		if (!opened || !target) return;
+		target.style.position = 'relative';
+		target.style.zIndex = '45';
+		return () => {
+			target.style.position = '';
+			target.style.zIndex = '';
+		};
+	});
+
+	function close() {
+		opened = false;
 	}
-
-	let barStyle = $state(computeBarStyle());
-
-	$effect(() => {
-		barStyle = computeBarStyle();
-	});
-
-	$effect(() => {
-		if (!opened) return;
-		const onScroll = () => onClose();
-		window.addEventListener('scroll', onScroll, {
-			capture: true,
-			passive: true,
-		});
-		return () =>
-			window.removeEventListener('scroll', onScroll, { capture: true });
-	});
 
 	function hasReacted(emoji: string): boolean {
 		return message.reactions[myDeviceId] === emoji;
 	}
+
+	function react(emoji: string) {
+		toggleReaction(store, message, myDeviceId, emoji);
+		close();
+	}
+
+	const condensed = $derived(condenseReactions(message.reactions, myDeviceId));
 </script>
 
-{#if opened}
+<!-- The popover backdrop is the single, steady dim the whole time the reaction UI
+     is up; while the picker sheet covers it, only the popover card is hidden (two
+     cross-fading backdrops would dip lighter mid-transition). -->
+<Popover
+	{opened}
+	{target}
+	onBackdropClick={close}
+	class={`!z-50 !w-auto !rounded-full ${expanded ? '!opacity-0 !pointer-events-none' : ''}`}
+>
 	<div
-		class="fixed inset-0 z-50 bg-black/30"
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
+		class="flex items-center gap-1 px-1 py-0.5"
+		role="group"
 		aria-label={m.quickReactions()}
-		onclick={e => e.target === e.currentTarget && onClose()}
-		onkeydown={e => e.key === 'Escape' && onClose()}
-		oncontextmenu={e => {
-			e.preventDefault();
-			onClose();
-		}}
+		data-testid="quick-reaction-bar"
 	>
-		<div
-			class="fixed z-50 flex items-center gap-1 rounded-full bg-white px-2 py-1.5 shadow-lg dark:bg-gray-800"
-			role="group"
-			style={barStyle}
-		>
-			{#each QUICK_EMOJIS as emoji}
-				<button
-					class="flex h-9 w-9 items-center justify-center rounded-full text-xl transition-transform hover:scale-110 {hasReacted(
-						emoji,
-					)
-						? 'bg-blue-100 dark:bg-blue-900'
-						: ''}"
-					onclick={() => onReaction(emoji)}
-				>
-					{emoji}
-				</button>
-			{/each}
+		{#each QUICK_EMOJIS as emoji}
 			<button
-				class="flex h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
-				onclick={onExpand}
-				aria-label={m.moreReactions()}
+				class="flex h-9 w-9 items-center justify-center rounded-full text-xl transition-transform hover:scale-110 {hasReacted(
+					emoji,
+				)
+					? 'bg-blue-100 dark:bg-blue-900'
+					: ''}"
+				onclick={() => react(emoji)}
+				data-testid={`quick-reaction-${emoji}`}
 			>
-				<wa-icon
-					src={wrapPathInSvg(mdiDotsHorizontal)}
-					style="font-size: 1.25rem"
-				></wa-icon>
+				{emoji}
 			</button>
-		</div>
+		{/each}
+		<IconButton
+			icon={mdiDotsHorizontal}
+			onClick={() => (expanded = true)}
+			label={m.moreReactions()}
+			testid="quick-reaction-more"
+			iconClass="text-xl"
+		/>
 	</div>
+</Popover>
+
+{#if opened}
+	<Sheet class="pb-safe text-lg" opened={expanded} backdrop={false}>
+		<div class="flex flex-col items-center">
+			<SheetHandle />
+		</div>
+		{#if condensed.length > 0}
+			<Block>
+				{#each condensed as reaction}
+					<button class="me-2 text-lg" onclick={() => react(reaction.emoji)}>
+						<Chip class="border !border-white dark:!border-black">
+							{reaction.emoji}{#if reaction.count > 1}<span class="ms-1"
+									>{reaction.count}</span
+								>{/if}
+						</Chip>
+					</button>
+				{/each}
+			</Block>
+		{/if}
+		<Block>
+			<EmojiPickerWrapper onEmojiSelected={react}></EmojiPickerWrapper>
+		</Block>
+	</Sheet>
 {/if}

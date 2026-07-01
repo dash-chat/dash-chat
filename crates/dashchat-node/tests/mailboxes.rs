@@ -11,7 +11,7 @@ async fn test_mailbox_late_join_mem() {
             "p2panda_stream=warn",
             "p2panda_auth=warn",
             "p2panda_spaces=warn",
-            "named_id=warn",
+            "aliased=warn",
         ],
         true,
     );
@@ -29,7 +29,7 @@ async fn test_mailbox_late_join_toy() {
             "p2panda_stream=warn",
             "p2panda_auth=warn",
             "p2panda_spaces=warn",
-            "named_id=warn",
+            "aliased=warn",
         ],
         true,
     );
@@ -114,7 +114,7 @@ async fn test_mailbox_restart_relay() {
             "p2panda_stream=warn",
             "p2panda_auth=warn",
             "p2panda_spaces=warn",
-            "named_id=warn",
+            "aliased=warn",
         ],
         true,
     );
@@ -242,7 +242,7 @@ async fn test_multiple_mailboxes_group_pivot() {
             "p2panda_stream=warn",
             "p2panda_auth=warn",
             "p2panda_spaces=warn",
-            "named_id=warn",
+            "aliased=warn",
         ],
         true,
     );

@@ -4,9 +4,9 @@ pub(crate) mod publish;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
-use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync};
+use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
 use crate::filesystem::Filesystem;
@@ -22,6 +22,7 @@ use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingK
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
+use p2panda_net::discovery::DiscoveryConfig;
 use p2panda_spaces::ActorId;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
@@ -38,15 +39,9 @@ use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
     DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
 };
-use dashchat_utils::NETWORK_ID;
+use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
 pub use app_processing::Notification;
-
-pub static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
-    "https://euc1-1.relay.n0.iroh-canary.iroh.link"
-        .parse()
-        .expect("valid relay URL")
-});
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
@@ -55,7 +50,34 @@ pub struct NodeConfig {
     pub capabilities: Capabilities,
     pub network_id: NetworkId,
     pub mdns_mode: MdnsDiscoveryMode,
-    pub relay_url: Option<RelayUrl>,
+    /// Whether to register the node with the hardcoded relay so it is reachable
+    /// over the internet.
+    pub use_relay: bool,
+    /// Whether to participate in peer-to-peer connectivity with other Dash Chat
+    /// clients. When disabled, all communication flows through mailbox servers.
+    ///
+    /// This flag itself gates two of the four p2p surfaces:
+    /// - **p2panda random-walk discovery**: when false, zero random walkers run
+    ///   (see [`Node::init`]), so the node never gossips its own transport info
+    ///   to peers nor learns theirs.
+    /// - **p2panda bootstrap nodes**: when false, peers are never registered as
+    ///   bootstrap nodes (see `register_bootstrap_node`), so discovery can't
+    ///   reach them directly over a relay.
+    ///
+    /// The other two surfaces are also controlled by sibling fields:
+    /// - **mDNS discovery**: [`Self::mdns_mode`].
+    /// - **iroh relay** (internet reachability / NAT traversal): [`Self::use_relay`].
+    ///
+    /// [`Self::no_p2p`] disables all four together.
+    /// The Node's initialization will reject any config with `enable_p2p` set to false
+    /// and either `mdns_mode` or `use_relay` set to active/true.
+    ///
+    /// The iroh endpoint itself
+    /// always stays up — mailbox blob/media exchange rides it and is unaffected.
+    /// (The blob fetcher does still *attempt* a direct dial to a blob's author
+    /// as a fallback source, but with every discovery surface off it has no
+    /// address to dial, so those attempts cannot connect.)
+    pub enable_p2p: bool,
     pub blob_fetch: BlobFetchConfig,
 }
 
@@ -63,7 +85,8 @@ impl NodeConfig {
     /// Disable p2p features and only use mailbox-based communication.
     pub fn no_p2p(mut self) -> Self {
         self.mdns_mode = MdnsDiscoveryMode::Disabled;
-        self.relay_url = None;
+        self.use_relay = false;
+        self.enable_p2p = false;
         self
     }
 
@@ -84,7 +107,8 @@ impl NodeConfig {
             // In testing we disable mDNS discovery and do not provide a relay address so as not
             // to effect expected behavior of existing tests.
             mdns_mode: MdnsDiscoveryMode::Disabled,
-            relay_url: None,
+            use_relay: false,
+            enable_p2p: true,
             // Retry blob downloads quickly so tests don't wait on the
             // production-scale pass interval.
             blob_fetch: BlobFetchConfig {
@@ -105,7 +129,8 @@ impl Default for NodeConfig {
             capabilities: Capabilities::current(),
             network_id: *NETWORK_ID,
             mdns_mode: MdnsDiscoveryMode::Active,
-            relay_url: Some(RELAY_URL.clone()),
+            use_relay: true,
+            enable_p2p: true,
             blob_fetch: BlobFetchConfig::default(),
         }
     }
@@ -119,7 +144,7 @@ pub struct Node {
 
     pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
 
-    config: NodeConfig,
+    pub config: NodeConfig,
 
     notification_tx: Option<mpsc::Sender<Notification>>,
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
@@ -140,6 +165,8 @@ pub struct Node {
     filesystem: Filesystem,
     blob_sync: BlobSync,
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    endpoint: p2panda::Endpoint,
+    network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
@@ -182,6 +209,20 @@ impl Node {
         notification_tx: Option<mpsc::Sender<Notification>>,
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
+        // A no-p2p config must fully disable p2p: `enable_p2p == false` is only
+        // coherent when mDNS is disabled and no relay is used. Reject a config
+        // that contradicts itself rather than silently leaving a p2p surface on.
+        if !config.enable_p2p
+            && (!matches!(config.mdns_mode, MdnsDiscoveryMode::Disabled) || config.use_relay)
+        {
+            anyhow::bail!(
+                "invalid NodeConfig: enable_p2p is false but a p2p surface is still on \
+                 (mdns_mode = {:?}, use_relay = {})",
+                config.mdns_mode,
+                config.use_relay,
+            );
+        }
+
         // === p2panda node === //
 
         let url = format!("sqlite://{}", filesystem.op_store_path().to_string_lossy());
@@ -191,8 +232,19 @@ impl Node {
             .database_url(&url)
             .mdns_mode(config.mdns_mode.clone());
 
-        if let Some(relay_url) = &config.relay_url {
-            builder = builder.relay_url(relay_url.clone());
+        if config.use_relay {
+            builder = builder.relay_url(RELAY_URL.clone());
+        }
+
+        // With p2p disabled, run zero random-walk discovery walkers so the node
+        // never initiates discovery sessions. Otherwise, inserting a mailbox's
+        // address (a full p2panda node when run in-process) would let discovery
+        // gossip our transport info through it, leaking a direct path to peers.
+        if !config.enable_p2p {
+            builder = builder.discovery_config(DiscoveryConfig {
+                random_walkers_count: 0,
+                ..Default::default()
+            });
         }
 
         let p2panda_node = builder.spawn().await?;
@@ -250,7 +302,7 @@ impl Node {
         )
         .await?;
         let blob_sync = BlobSync::new(
-            endpoint,
+            endpoint.clone(),
             filesystem.blobs_store_path(),
             blob_fetch,
             source_lookup,
@@ -276,6 +328,8 @@ impl Node {
             registered_bootstraps: Default::default(),
             blob_sync,
             blob_fetch_handle: Default::default(),
+            endpoint,
+            network_change_handle: Default::default(),
         };
 
         // === application processor task === //
@@ -293,6 +347,14 @@ impl Node {
             .lock()
             .await
             .replace(blob_fetch_handle);
+
+        // === network change notifier === //
+
+        let network_change_handle = crate::network_change_notifier::spawn(node.endpoint.clone());
+        node.network_change_handle
+            .lock()
+            .await
+            .replace(network_change_handle);
 
         // === topics === //
 
@@ -359,9 +421,35 @@ impl Node {
     }
 
     #[cfg(feature = "testing")]
+    pub fn blob_sync(&self) -> &crate::blob_sync::BlobSync {
+        &self.blob_sync
+    }
+
+    #[cfg(feature = "testing")]
     pub fn endpoint_id(&self) -> iroh::EndpointId {
         iroh::EndpointId::from_bytes(self.device_id().as_bytes())
             .expect("device id is a valid endpoint id")
+    }
+
+    /// The underlying iroh endpoint. An in-process mailbox shares this so its
+    /// `/health` response advertises the node's dialing address.
+    pub async fn iroh_endpoint(&self) -> Result<iroh::Endpoint> {
+        Ok(self.endpoint.endpoint().await?)
+    }
+
+    /// Add a peer's dialing address (relay + direct addresses) to the p2panda
+    /// address book so the iroh blob downloader can reach that peer by its
+    /// EndpointId. Used both for mailbox addresses learned from a mailbox's
+    /// `/health` endpoint and for arbitrary peer addresses forwarded by a
+    /// mailbox's `/peers/register` endpoint.
+    pub async fn insert_peer_addr(&self, addr: iroh::EndpointAddr) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::RegisterPeerAddr { addr, reply_tx })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+        reply_rx.await??;
+        Ok(())
     }
 
     #[cfg(feature = "testing")]
@@ -749,13 +837,30 @@ impl Node {
         message: impl Into<String>,
         media: Option<OutgoingMedia>,
     ) -> anyhow::Result<Header> {
+        let chat_id: ChatId = topic.into();
         let meta = if let Some(media) = media {
-            Some(self.store_media(media).await?)
+            Some(
+                self.store_media(chat_id.into(), SENTINEL_OP_HASH, media)
+                    .await?,
+            )
         } else {
             None
         };
-        let message = ChatMessageContent::new(message, meta);
-        self.send_message_raw(topic, message).await
+        let message = ChatMessageContent::new(message, meta.clone());
+        let header = self.send_message_raw(chat_id, message).await?;
+        if let Some(bundle) = meta {
+            let topic_id: TopicId = chat_id.into();
+            for item in bundle.iter() {
+                if let Err(err) = self
+                    .blob_sync
+                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash)
+                    .await
+                {
+                    tracing::warn!(?err, "failed to retag blob after operation creation");
+                }
+            }
+        }
+        Ok(header)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
@@ -852,6 +957,33 @@ impl Node {
         Ok(latest.map(|(_, d)| d))
     }
 
+    /// Tombstone an operation: record its hash in the topic's persisted
+    /// tombstone set so its payload is never stored or synced again, and
+    /// immediately drop any payload already stored for it.
+    ///
+    /// This has the effect that when the operation is played back, it will
+    /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
+    /// is `true` MUST also revert their changes in [`Self::unprocess_app`]
+    /// so that they leave behind no traces in local state.
+    pub async fn tombstone_operation(
+        &self,
+        topic: TopicId,
+        operation: &Operation,
+    ) -> anyhow::Result<()> {
+        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
+            return Ok(());
+        };
+        if self.is_tombstoneable(&payload) {
+            let hash = operation.hash;
+            self.local_store.add_tombstone(topic, hash.clone()).await?;
+            self.unprocess_app(operation).await?;
+            self.op_store.delete_body(&hash).await?;
+        } else {
+            tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
+        }
+        Ok(())
+    }
+
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
@@ -907,6 +1039,13 @@ impl Node {
             .save_contact(contact.clone())
             .await
             .map_err(|e| AddContactError::StoreContact(e.to_string()))?;
+
+        // Register the scanned contact as a bootstrap so p2panda discovery can
+        // reach it directly over the internet (relay + pkarr), rather than
+        // depending on a mutually-reachable mailbox to introduce the two nodes.
+        self.register_bootstrap_node(*contact.device_pubkey)
+            .await
+            .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
 
         // SPACES: Register the member in the spaces manager
 
@@ -1143,19 +1282,27 @@ impl Node {
         Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 
-    pub async fn store_media(&self, media: OutgoingMedia) -> anyhow::Result<MediaBundle> {
+    pub async fn store_media(
+        &self,
+        topic: TopicId,
+        operation_hash: p2panda::Hash,
+        media: OutgoingMedia,
+    ) -> anyhow::Result<MediaBundle> {
         let mut items = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
                 for photo in photos {
                     let size = photo.data.len() as u64;
                     ensure_blob_size(size, &photo.name)?;
-                    let tag = self.blob_sync.blobs.add_bytes(photo.data).await?;
+                    let hash = self
+                        .blob_sync
+                        .store_blob(topic, self.device_id(), operation_hash, photo.data)
+                        .await?;
                     items.push(MediaMetadata {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
-                        hash: tag.hash,
+                        hash,
                         kind: MediaMetaKind::Photo,
                     });
                 }
@@ -1163,12 +1310,15 @@ impl Node {
             OutgoingMedia::File { file } => {
                 let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
-                let tag = self.blob_sync.blobs.add_bytes(file.data).await?;
+                let hash = self
+                    .blob_sync
+                    .store_blob(topic, self.device_id(), operation_hash, file.data)
+                    .await?;
                 items.push(MediaMetadata {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
-                    hash: tag.hash,
+                    hash,
                     kind: MediaMetaKind::File,
                 });
             }
@@ -1262,6 +1412,39 @@ impl Node {
                 .collect();
             return Ok(OutgoingMedia::Photos { photos });
         }
+    }
+}
+
+#[cfg(test)]
+mod config_validation_tests {
+    use crate::NodeConfig;
+    use crate::node::Node;
+
+    async fn init_result(config: NodeConfig) -> anyhow::Result<Node> {
+        let dir = tempfile::tempdir().unwrap();
+        Node::new(dir.path().into(), config, None, None).await
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn init_rejects_no_p2p_with_relay() {
+        let mut config = NodeConfig::testing();
+        config.enable_p2p = false;
+        config.use_relay = true;
+        assert!(init_result(config).await.is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn init_rejects_no_p2p_with_mdns() {
+        use p2panda::network::MdnsDiscoveryMode;
+        let mut config = NodeConfig::testing();
+        config.enable_p2p = false;
+        config.mdns_mode = MdnsDiscoveryMode::Active;
+        assert!(init_result(config).await.is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn init_accepts_consistent_no_p2p_config() {
+        assert!(init_result(NodeConfig::testing().no_p2p()).await.is_ok());
     }
 }
 

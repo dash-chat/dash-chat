@@ -135,7 +135,9 @@ impl Node {
                                 }
                             },
                             ProcessorEvent::Groups { operation, source, processed_tx, error } => {
-                                tracing::info!(op = ?operation.id().aliased(), topic = ?operation.topic().aliased(), "groups operation processing");
+                                let topic = operation.topic();
+                                let id = operation.id();
+                                tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "groups operation processing");
 
                                 if let Some(err) = error {
                                     // @TODO: should consider if this is the desired behavior.
@@ -151,7 +153,7 @@ impl Node {
                                     continue;
                                 };
 
-                                let result = node.process_groups(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
+                                let result = node.process_groups(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
                                 if let Err(err) = result.as_ref() {
                                     tracing::error!(?err, "process groups operation error");
                                 };
@@ -167,14 +169,16 @@ impl Node {
 
                                 // @TODO: this is required for tests, but nowhere else, it can be placed behind the
                                 // testing flag.
-                                node.op_store.mark_op_processed(operation.topic().into(), &operation.id());
+                                node.op_store.mark_op_processed(topic, &id);
 
                             },
                             ProcessorEvent::App { operation, source, processed_tx } => {
-                                tracing::info!(op = ?operation.id().aliased(), topic = ?operation.topic().aliased(), "application operation processing");
+                                let topic = operation.topic();
+                                let id = operation.id();
+                                tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
 
                                 // Process the operation.
-                                let result = node.process_app(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
+                                let result = node.process_app(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
                                 if let Err(err) = result.as_ref() {
                                     tracing::error!(?err, "process operation error");
                                 }
@@ -192,7 +196,7 @@ impl Node {
 
                                 // @TODO: this is required for tests, but nowhere else, it can be placed behind the
                                 // testing flag.
-                                node.op_store.mark_op_processed(operation.topic().into(), &operation.id());
+                                node.op_store.mark_op_processed(topic, &id);
 
                             },
                         }
@@ -216,12 +220,41 @@ impl Node {
         handle
     }
 
-    async fn process_groups(
+    /// Enforce the topic's tombstone set on a received operation: if its hash
+    /// has been tombstoned, drop its stored payload so it is never persisted or
+    /// synced onward. The operation arrives here already written to the op
+    /// store (by peers or by mailbox sync), so this deletes the body after the
+    /// fact.
+    async fn enforce_tombstone(
         &self,
         operation: &ProcessedOperation<Payload>,
+    ) -> anyhow::Result<bool> {
+        let topic = operation.topic();
+        let hash = operation.id();
+        if self.local_store.is_tombstoned(topic, hash).await? {
+            self.unprocess_app(&operation.processed().operation).await?;
+            self.op_store.delete_body(&hash).await?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Filter out operations whose payloads are not able to be deleted.
+    pub(crate) fn is_tombstoneable(&self, payload: &Payload) -> bool {
+        matches!(payload, Payload::Chat(ChatPayload::Message(_)))
+    }
+
+    /// Note that this is a function that processes operations which could have deleted payloads.
+    /// This function currently doesn't do anything with payloads, so we don't check for tombstones here.
+    /// If this function is modified to process payloads, then we should call
+    /// [`Self::enforce_tombstone`] before processing.
+    async fn process_groups(
+        &self,
+        operation: ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
-        self.register_bootstrap(operation, source).await?;
+        self.register_bootstrap(&operation, source).await?;
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
@@ -283,16 +316,70 @@ impl Node {
         Ok(())
     }
 
+    /// Undo the effects of processing an app-layer operation,
+    /// reverting to a state as if the operation were never processed.
+    /// This is done when an operation payload is deleted.
+    /// Only tombstoneable operations can be unprocessed.
+    pub(crate) async fn unprocess_app(&self, operation: &Operation) -> anyhow::Result<()> {
+        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
+            return Ok(());
+        };
+        if self.is_tombstoneable(&payload) {
+            match payload {
+                Payload::Chat(ChatPayload::Message(m)) => {
+                    use p2panda_store::topics::TopicStore;
+                    let author = operation.header().verifying_key;
+                    let log_id = operation.header.extensions.log_id;
+                    let topic = self
+                        .op_store
+                        .store
+                        .resolve_topic(&author, &log_id)
+                        .await?
+                        .ok_or_else(|| {
+                            anyhow!(format!("failed to resolve topic for operation. this is a bug. author: {:?}, log: {:?}", author.aliased(), log_id.aliased()))
+                        })?;
+
+                    if let Some(media) = m.media() {
+                        let hashes: Vec<_> = media.iter().map(|item| item.hash).collect();
+                        let is_own = DeviceId::from(author) == self.device_id();
+                        self.blob_sync
+                            .delete_blobs(topic, author.into(), operation.hash, hashes, is_own)
+                            .await;
+                    }
+                }
+                _ => {
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    }
+
     async fn process_app(
         &self,
-        operation: &ProcessedOperation<Payload>,
+        operation: ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
-        self.register_bootstrap(operation, source).await?;
+        self.register_bootstrap(&operation, source).await?;
+        let topic = operation.topic();
+        let dashchat_topic = crate::Topic::new(*topic.as_bytes());
+        let header = operation.processed().header();
+
+        // NOTE: realistically the tombstone will only be enforced here
+        // upon playback of operations. The first time through, it will
+        // have been processed and potentially have modified local state.
+        // Upon tombstoning (or enforcement), it will be "unprocessed"
+        // via [`Self::unprocess_app`] to undo those state changes,
+        // as if it were never processed at all. On playback, the operation
+        // simply doesn't get processed.
+        if self.enforce_tombstone(&operation).await? {
+            // The payload is tombstoned, so there's nothing to process.
+            self.notify_header(dashchat_topic, header).await?;
+            return Ok(());
+        }
 
         let hash = operation.id();
-        let topic = operation.topic();
-        let device_id = DeviceId::from(operation.author());
+        let author = DeviceId::from(operation.author());
         let payload = operation.message();
 
         match &payload {
@@ -300,11 +387,6 @@ impl Node {
                 // Nothing to do.
             }
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
-                tracing::info!(
-                    me = ?device_id.aliased(),
-                    count = agents.len(),
-                    "received IntroduceAgents message"
-                );
                 for (device_id, agent_id) in agents {
                     if let Err(err) = self
                         .local_store
@@ -357,8 +439,10 @@ impl Node {
             Payload::Chat(ChatPayload::Message(m)) => {
                 if let Some(media) = m.media() {
                     for item in media.iter() {
-                        // TODO: can we have a p2panda stream of operations?
-                        self.blob_sync.fetch_pool.add(topic.into(), item.hash).await;
+                        // TODO: revisit during ACID review (replay)
+                        self.blob_sync
+                            .add_to_fetch_pool(topic.into(), author, hash, item.hash)
+                            .await?;
                     }
                 }
             }
@@ -393,17 +477,13 @@ impl Node {
                     AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
                         anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
                     })?);
-                if let Err(err) = self
-                    .local_store
-                    .save_agent_mapping(device_id, agent_id)
-                    .await
-                {
+                if let Err(err) = self.local_store.save_agent_mapping(author, agent_id).await {
                     tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
                 }
 
                 if let Err(err) = self
                     .local_store
-                    .save_capabilities(device_id, capabilities.clone())
+                    .save_capabilities(author, capabilities.clone())
                     .await
                 {
                     tracing::warn!(?err, "failed to save capabilities from SetCapabilities");
@@ -425,7 +505,6 @@ impl Node {
         // informed of any errors or these events are not even forwarded.
 
         // We convert the p2panda::Topic into a dashchat Topic here in its untyped form.
-        let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         self.notify_payload(dashchat_topic, &operation.processed().header(), &payload)
             .await?;
 
@@ -450,29 +529,60 @@ impl Node {
         // via a dedicated channel.
         if let Source::ExternalStream { .. } = source {
             let node_id: NodeId = operation.author().into();
-
-            // Only register the bootstrap if we didn't already do so.
-            if self
-                .registered_bootstraps
-                .lock()
-                .await
-                .insert((node_id, RELAY_URL.clone()))
-            {
-                debug!(node_id = %node_id, "add bootstrap node");
-                let (reply_tx, reply_rx) = oneshot::channel();
-                self.actor_tx
-                    .send(Command::RegisterBootstrap {
-                        node_id,
-                        relay_url: RELAY_URL.clone(),
-                        reply_tx,
-                    })
-                    .await
-                    .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
-
-                reply_rx.await??;
-            };
+            self.register_bootstrap_node(node_id).await?;
         }
 
+        Ok(())
+    }
+
+    /// Register a single node as a bootstrap (on the shared relay) so p2panda
+    /// discovery can reach it. Deduplicated so repeated calls are cheap. Used
+    /// both for mailbox-stream authors and for a freshly-scanned contact, the
+    /// latter letting two nodes connect directly over the internet (relay +
+    /// pkarr) without depending on a mutually-reachable mailbox.
+    pub(crate) async fn register_bootstrap_node(&self, node_id: NodeId) -> anyhow::Result<()> {
+        // In no-p2p mode we never register peers as bootstrap nodes, so direct
+        // iroh connections between Dash Chat clients are never established. All
+        // communication flows through mailbox servers.
+        if !self.config.enable_p2p {
+            return Ok(());
+        }
+
+        if !self
+            .registered_bootstraps
+            .lock()
+            .await
+            .insert((node_id, RELAY_URL.clone()))
+        {
+            return Ok(());
+        }
+
+        debug!(node_id = %node_id, "add bootstrap node");
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::RegisterBootstrap {
+                node_id,
+                relay_url: RELAY_URL.clone(),
+                reply_tx,
+            })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+
+        reply_rx.await??;
+        Ok(())
+    }
+
+    pub async fn notify_header(&self, topic: Topic, header: &Header) -> anyhow::Result<()> {
+        if let Some(notification_tx) = self.notification_tx.clone() {
+            notification_tx
+                .send(Notification {
+                    topic: topic.clone(),
+                    header: header.clone(),
+                    payload: None,
+                })
+                .await
+                .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
+        }
         Ok(())
     }
 

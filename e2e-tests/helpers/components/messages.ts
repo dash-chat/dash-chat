@@ -160,6 +160,81 @@ export class Messages extends TestHelper {
 		);
 	}
 
+	/** Long-press (via a synthetic contextmenu) the bubble containing `text` to
+	 * open its quick-reaction bar, and resolve the bar scoped to that message. */
+	async openReactions(text: string) {
+		const dispatched = await this.agent.execute(
+			(messagesSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						const msg = wrapper.querySelector('.message') as HTMLElement | null;
+						(msg ?? wrapper).dispatchEvent(
+							new MouseEvent('contextmenu', {
+								bubbles: true,
+								cancelable: true,
+							}),
+						);
+						return true;
+					}
+				}
+				return false;
+			},
+			this.messagesSelector,
+			text,
+		);
+		if (!dispatched) throw new Error(`Message "${text}" not found`);
+		// A quick-reaction bar exists per message; scope to this one and wait for
+		// it to actually open.
+		const wrapper = await this.messageBubbleWithText(text);
+		if (!wrapper) throw new Error(`Message "${text}" not found`);
+		const bar = wrapper.$(tid('quick-reaction-bar'));
+		await bar.waitForDisplayed();
+		return wrapper;
+	}
+
+	/** Open the quick-reaction bar for `text` and tap the given quick emoji. */
+	async reactWith(text: string, emoji: string) {
+		const wrapper = await this.openReactions(text);
+		await wrapper.$(tid(`quick-reaction-${emoji}`)).click();
+	}
+
+	/** Whether the bubble containing `text` shows a reaction chip for `emoji`. */
+	hasReaction(text: string, emoji: string): Promise<boolean> {
+		return this.agent.execute(
+			(messagesSel: string, t: string, chipSel: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return !!wrapper.querySelector(chipSel);
+					}
+				}
+				return false;
+			},
+			this.messagesSelector,
+			text,
+			tid(`reaction-chip-${emoji}`),
+		);
+	}
+
+	async waitForReaction(text: string, emoji: string, timeout = SYNC_TIMEOUT) {
+		await this.agent.waitUntil(() => this.hasReaction(text, emoji), {
+			timeout,
+			timeoutMsg: `Reaction "${emoji}" on "${text}" not found`,
+		});
+	}
+
+	async waitForNoReaction(text: string, emoji: string, timeout = SYNC_TIMEOUT) {
+		await this.agent.waitUntil(
+			async () => !(await this.hasReaction(text, emoji)),
+			{ timeout, timeoutMsg: `Reaction "${emoji}" on "${text}" still present` },
+		);
+	}
+
 	async getAuthorInitials(messageText: string): Promise<string | null> {
 		return this.agent.execute(
 			(sel: string, t: string) => {

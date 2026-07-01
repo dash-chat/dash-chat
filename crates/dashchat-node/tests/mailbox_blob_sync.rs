@@ -23,7 +23,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             "p2panda_stream=warn",
             "p2panda_auth=warn",
             "p2panda_spaces=warn",
-            "named_id=warn",
+            "aliased=warn",
         ],
         true,
     );
@@ -46,17 +46,19 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     // The relay shares no chat topic with Alice, so it discovers her address
     // lazily over mDNS rather than via an active gossip connection; retry the
     // blob fetch on a short interval so a pass lands once her address resolves.
+    let (peer_addr_tx, _peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
     let server = mailbox_local_server::spawn_local_mailbox_server(
         db_path,
         relay.blobs(),
         relay.blob_downloader(),
-        relay.endpoint_id(),
+        relay.iroh_endpoint().await.unwrap(),
         Some(mailbox_server::FetchConfig {
             concurrency: 4,
             attempt_timeout: Duration::from_secs(10),
             pass_interval: Duration::from_secs(2),
             retry_cooldown: Duration::from_secs(2),
         }),
+        peer_addr_tx,
     )
     .await
     .unwrap();
@@ -186,4 +188,94 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     assert_eq!(photos[0].data, photo_bytes);
 
     server.stop().await;
+}
+
+/// A node running a local mailbox can add a peer's dialing address
+/// to its p2panda address book.
+///
+/// This exercises the full client-side wiring added for mailbox dialability:
+/// `Node::insert_peer_addr` → the `RegisterPeerAddr` actor command → the
+/// p2panda `Node::insert_node_addr` → `AddressBook::insert_node_info`. Without
+/// this path the iroh blob downloader can't reach a peer by its EndpointId.
+/// We feed it a real `EndpointAddr` (the host node's own) and assert the insert
+/// succeeds end-to-end.
+#[tokio::test(flavor = "multi_thread")]
+async fn node_inserts_peer_addr_into_address_book() {
+    let config = NodeConfig::testing();
+
+    // A stand-in peer endpoint: any real, well-formed EndpointAddr works.
+    let host = TestNode::new(config.clone(), "host").await;
+    let peer_addr = host.iroh_endpoint().await.unwrap().addr();
+
+    let client = TestNode::new(config.clone(), "client").await;
+    client
+        .insert_peer_addr(peer_addr)
+        .await
+        .expect("inserting a peer addr into the address book should succeed");
+}
+
+/// The standalone mailbox server's blob fetch loop can reach a peer after that
+/// peer's `EndpointAddr` is registered via `BlobSync::add_peer_addr` (which is
+/// what `POST /peers/register` calls under the hood). Without the registration
+/// the downloader only knows the peer's EndpointId and cannot dial it.
+#[tokio::test(flavor = "multi_thread")]
+async fn blob_fetch_succeeds_after_peer_addr_registration() {
+    use dashchat_utils::FetchConfig;
+    use mailbox_server::BlobSync;
+
+    let poll = PollConfig::default();
+
+    // Sender: a standalone BlobSync endpoint that stores a blob.
+    let sender_dir = tempfile::tempdir().unwrap();
+    let sender = BlobSync::new(
+        iroh::SecretKey::generate(),
+        sender_dir.path().join("blobs"),
+        None,
+    )
+    .await
+    .unwrap();
+    let blob_data: Vec<u8> = b"peer-addr-registration-test".to_vec();
+    let tag = sender.blobs.add_bytes(blob_data.clone()).await.unwrap();
+    let hash = tag.hash;
+    let sender_id = sender.endpoint_id();
+    let sender_addr = sender.endpoint_addr();
+
+    // Standalone mailbox: its own endpoint, separate blob store.
+    let mb_dir = tempfile::tempdir().unwrap();
+    let mailbox = BlobSync::new(
+        iroh::SecretKey::generate(),
+        mb_dir.path().join("blobs"),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Register the sender's dialing address. Without this the mailbox knows
+    // the sender only by EndpointId and the fetch will fail to connect.
+    mailbox.add_peer_addr(sender_addr);
+
+    // Enqueue the blob for download from the sender.
+    mailbox.fetch_pool().add_source(hash, sender_id).await;
+
+    let _fetch_handle = mailbox.spawn_fetch_loop(FetchConfig {
+        concurrency: 1,
+        pass_interval: Duration::from_millis(100),
+        attempt_timeout: Duration::from_secs(5),
+        retry_cooldown: Duration::from_millis(100),
+    });
+
+    poll.wait_for(|| async {
+        mailbox
+            .blobs
+            .has(hash)
+            .await
+            .unwrap_or(false)
+            .then_some(())
+            .ok_or("mailbox has not fetched the blob from the sender yet")
+    })
+    .await
+    .unwrap();
+
+    let fetched = mailbox.blobs.get_bytes(hash).await.unwrap();
+    assert_eq!(fetched.as_ref(), blob_data.as_slice());
 }

@@ -3,6 +3,7 @@ mod chat;
 mod contact;
 mod error;
 mod filesystem;
+mod network_change_notifier;
 pub mod node;
 mod payload;
 pub mod stores;
@@ -46,5 +47,11 @@ pub trait AsBody: Cbor {
 
     fn try_from_body(body: &p2panda_core::Body) -> Result<Self, p2panda_core::cbor::DecodeError> {
         Self::from_bytes(body.to_bytes().as_slice())
+    }
+
+    fn try_from_body_opt(
+        body: Option<&p2panda_core::Body>,
+    ) -> Result<Option<Self>, p2panda_core::cbor::DecodeError> {
+        body.map(|body| Self::try_from_body(body)).transpose()
     }
 }
