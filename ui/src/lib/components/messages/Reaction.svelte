@@ -12,6 +12,7 @@
 </script>
 
 <Chip
+	data-testid={`reaction-chip-${reaction.emoji}`}
 	class="h-6 px-1.5 text-sm cursor-pointer border !border-white dark:!border-black"
 	colors={reaction.own
 		? {

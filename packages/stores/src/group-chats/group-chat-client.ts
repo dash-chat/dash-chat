@@ -1,5 +1,5 @@
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
-import { ChatId, GroupInfo, OutgoingMedia } from '../types';
+import { ChatId, ChatReaction, GroupInfo, OutgoingMedia } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
 
 export interface GroupMember {
@@ -22,6 +22,7 @@ export interface IGroupChatClient {
 		media: OutgoingMedia | null,
 	): Promise<Hash>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
+	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void>;
 
 	setInfo(chatId: ChatId, info: GroupInfo): Promise<void>;
 
@@ -54,6 +55,9 @@ export class GroupChatClient implements IGroupChatClient {
 	}
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void> {
 		return invokeAfterSetup('mark_messages_read', { chatId, messageHashes });
+	}
+	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void> {
+		return invokeAfterSetup('send_reaction', { chatId, content });
 	}
 	setInfo(chatId: ChatId, info: GroupInfo): Promise<void> {
 		return invokeAfterSetup('set_group_info', { chatId, info });

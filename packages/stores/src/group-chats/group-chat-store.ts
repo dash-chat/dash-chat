@@ -8,6 +8,7 @@ import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
 import {
 	ChatId,
+	ChatReaction,
 	ChatSummary,
 	ChatSummaryLastEvent,
 	GroupControlEvent,
@@ -369,6 +370,10 @@ export class GroupChatStore implements MessagesStore {
 		media: OutgoingMedia | null;
 	}): Promise<Hash> {
 		return this.client.sendMessage(this.chatId, input.message, input.media);
+	}
+
+	async sendReaction(reaction: ChatReaction) {
+		await this.client.sendReaction(this.chatId, reaction);
 	}
 }
 
