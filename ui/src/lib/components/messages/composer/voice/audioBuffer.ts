@@ -59,6 +59,7 @@ export function computeWaveform(
 	);
 	const peaks = data[0];
 	const pixels = Math.floor(peaks.length / 2);
+	if (pixels === 0) return new Uint8Array(bars);
 
 	const amplitudes = new Float32Array(bars);
 	let max = 0;

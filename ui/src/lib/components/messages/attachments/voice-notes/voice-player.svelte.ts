@@ -21,6 +21,7 @@ export class VoicePlayer {
 	#audio: HTMLAudioElement | undefined;
 	#objectUrl: string | undefined;
 	#loaded = false;
+	#loadPromise: Promise<boolean> | undefined;
 	#rafId: number | undefined;
 	readonly #voice: VoiceNote;
 	readonly #onError: (() => void) | undefined;
@@ -109,9 +110,17 @@ export class VoicePlayer {
 
 	// WebKitGTK's `<audio>` can't load our custom `irohblob://` scheme (its media
 	// pipeline bypasses the webview's scheme handler), so the bytes are fetched
-	// lazily on first play and set as an object URL.
-	async #ensureLoaded(): Promise<boolean> {
-		if (this.#loaded) return true;
+	// lazily on first play and set as an object URL. Concurrent callers (e.g.
+	// scrubbing before the first play) share one in-flight load rather than each
+	// firing its own fetch and leaking all but the last object URL.
+	#ensureLoaded(): Promise<boolean> {
+		if (this.#loaded) return Promise.resolve(true);
+		return (this.#loadPromise ??= this.#load().finally(
+			() => (this.#loadPromise = undefined),
+		));
+	}
+
+	async #load(): Promise<boolean> {
 		this.loading = true;
 		try {
 			const source = await this.#fetchAudio();
