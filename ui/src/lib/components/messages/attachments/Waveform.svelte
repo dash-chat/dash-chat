@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import WaveSurfer from 'wavesurfer.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import type { LoadedAudio } from './useAudioSource.svelte';
+	import type { LoadedAudio } from './audio-source';
 
 	interface Props {
 		/** Peak amplitudes in 0..1, one per bar. */

@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import type { VoiceNote } from 'dash-chat-stores';
 	import { formatDuration } from '$lib/utils/time';
-	import { AudioSourceLoader, type LoadedAudio } from './useAudioSource.svelte';
+	import { loadVoiceAudio } from './audio-source';
 	import VoicePlayButton from './VoicePlayButton.svelte';
 	import Waveform from './Waveform.svelte';
 
@@ -27,11 +27,7 @@
 		paused && currentTime === 0 ? voice.duration_ms : currentTime * 1000,
 	);
 
-	const audio = new AudioSourceLoader(() => voice);
-
-	async function loadAudio(): Promise<LoadedAudio | undefined> {
-		return (await audio.ensureLoaded()) ? audio.source : undefined;
-	}
+	const loadAudio = () => loadVoiceAudio(voice);
 </script>
 
 <div
