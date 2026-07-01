@@ -194,7 +194,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
         .into_iter()
         .find_map(|m| m.content.media().cloned())
         .expect("alice's message carries media metadata");
-    let hash = meta.first().expect("at least one media item").hash;
+    let hash = meta.first().expect("at least one media item").hash();
 
     // The mailbox must fetch the blob from Alice. With mDNS off this only works
     // if the mailbox has learned Alice's iroh address — the behavior under test.
