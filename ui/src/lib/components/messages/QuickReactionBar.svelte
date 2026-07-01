@@ -107,7 +107,9 @@
 				{#each condensed as reaction}
 					<button class="me-2 text-lg" onclick={() => react(reaction.emoji)}>
 						<Chip class="border !border-white dark:!border-black">
-							{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
+							{reaction.emoji}{#if reaction.count > 1}<span class="ms-1"
+									>{reaction.count}</span
+								>{/if}
 						</Chip>
 					</button>
 				{/each}

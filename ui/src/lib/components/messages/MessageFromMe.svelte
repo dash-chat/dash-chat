@@ -90,7 +90,7 @@
 			metadata={isLast ? metadata : undefined}
 		/>
 	</Card>
-	{#if Object.keys(message.reactions).length}
+	{#if Object.keys(message.reactions).length > 0}
 		<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
 			<Reactions
 				reactions={message.reactions}
