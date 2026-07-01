@@ -16,6 +16,7 @@ use crate::mailbox::{
 pub const TEST_ENV_VAR: &str = "DASHCHAT_TEST_ENV";
 
 /// Deployment environments the test suite is allowed to run against.
+/// Keep in sync with `ALLOWED_TEST_ENVS` in `e2e-tests/setup/test-env.ts`.
 pub const ALLOWED_TEST_ENVS: &[&str] = &["testing"];
 
 /// A mailbox for tests, built by [`TestMailbox::from_env`]: an in-memory
@@ -151,12 +152,18 @@ impl MailboxClient<MailboxOperation> for TestMailboxClient {
     }
 }
 
-/// Reads `MAILBOX_URL` from the repo-root `.env.<name>` file, resolving
-/// `${VAR}` references against values defined earlier in the same file.
+/// Reads `MAILBOX_URL` from the repo-root `.env.<name>` file.
 fn env_file_mailbox_url(name: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../.env.{name}"));
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+    parse_mailbox_url(&content).unwrap_or_else(|| panic!("no MAILBOX_URL in {}", path.display()))
+}
+
+/// Extracts `MAILBOX_URL` from dotenv-style content, resolving `${VAR}`
+/// references against values defined earlier in the same content.
+/// Keep in sync with `testEnvMailboxUrl` in `e2e-tests/setup/test-env.ts`.
+fn parse_mailbox_url(content: &str) -> Option<String> {
     let mut vars: Vec<(String, String)> = Vec::new();
     for line in content.lines() {
         let line = line.trim();
@@ -175,7 +182,6 @@ fn env_file_mailbox_url(name: &str) -> String {
     vars.into_iter()
         .find(|(k, _)| k == "MAILBOX_URL")
         .map(|(_, v)| v)
-        .unwrap_or_else(|| panic!("no MAILBOX_URL in {}", path.display()))
 }
 
 #[cfg(test)]
@@ -183,8 +189,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn env_file_mailbox_url_interpolates_domain() {
-        let url = env_file_mailbox_url("testing");
-        assert_eq!(url, "https://0-19.mailbox.testing.darksoil.studio");
+    fn parse_mailbox_url_interpolates_vars() {
+        let content = "\
+# comment
+MAILBOX_DOMAIN=mailbox.example.test
+MAILBOX_URL=https://${MAILBOX_DOMAIN}
+OTHER=unrelated
+";
+        assert_eq!(
+            parse_mailbox_url(content).unwrap(),
+            "https://mailbox.example.test"
+        );
+        assert_eq!(parse_mailbox_url("OTHER=x\n"), None);
     }
 }

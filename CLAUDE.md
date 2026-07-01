@@ -428,6 +428,8 @@ DASHCHAT_TEST_ENV=testing just test e2e       # E2E suite
 
 Allowed environments are allowlisted (`ALLOWED_TEST_ENVS`, currently only `testing`) in both suites; any other value fails fast so tests can never hit staging/production.
 
+Remote runs share one persistent cloud mailbox across all tests, parallel test binaries, and past runs (blobs are retained for ~7 days). Isolation relies on every test using freshly generated agent/device ids and topics; the mailbox's peer list and blob store are shared global state. Tests that need a mailbox they can control (in-process HTTP servers, lifecycle manipulation) stay local-only regardless of the env var.
+
 ### Development Testing
 Use `pnpm start` to run two instances locally that can communicate with each other over the p2panda network.
 

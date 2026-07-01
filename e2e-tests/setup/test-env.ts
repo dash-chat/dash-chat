@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Keep in sync with ALLOWED_TEST_ENVS in crates/dashchat-node/src/testing/mailbox.rs.
 const ALLOWED_TEST_ENVS = ['testing'];
 
 /**
@@ -11,6 +12,9 @@ const ALLOWED_TEST_ENVS = ['testing'];
  * resolved from the repo-root `.env.<name>` file, or null when the var is
  * unset — in which case the suite spawns its own local mailbox server.
  * Throws on a non-allowlisted environment.
+ *
+ * Keep the parsing in sync with `parse_mailbox_url` in
+ * crates/dashchat-node/src/testing/mailbox.rs.
  */
 export function testEnvMailboxUrl(): string | null {
 	const name = process.env.DASHCHAT_TEST_ENV;
