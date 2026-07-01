@@ -1,6 +1,7 @@
-use dashchat_node::Node;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
+
+use crate::app_node::AppNode;
 
 /// Load a blob from the node's local store and write it to a file in the app
 /// cache directory, returning the absolute path.
@@ -9,8 +10,9 @@ pub async fn save_blob_to_cache(
     hash: String,
     name: String,
     app: AppHandle,
-    node: State<'_, Node>,
+    app_node: State<'_, AppNode>,
 ) -> Result<String, String> {
+    let node = app_node.get().await?;
     let dir = app
         .path()
         .app_cache_dir()

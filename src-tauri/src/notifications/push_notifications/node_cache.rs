@@ -17,13 +17,17 @@ static NODES: Mutex<Option<HashMap<PathBuf, Node>>> = Mutex::const_new(None);
 /// 2. A previously cached Node for this data path.
 /// 3. Build a new Node without channels and cache it.
 pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
-    // Try the app's managed state first
+    // Try the app's managed state first. If the app is running but its node is
+    // paused (backgrounded on iOS), fall through and build the extension's own
+    // node so we never hold two live p2p endpoints on the shared identity.
     if let Some(handle) = crate::APP_HANDLE.get() {
-        if let Some(node) = handle.try_state::<Node>().map(|s| s.inner().clone()) {
-            // The app is fully running — clear any stale cached nodes
-            clear().await;
-            log::info!("The app is opened: reuse the currently running node.");
-            return Ok(node);
+        if let Some(app_node) = handle.try_state::<crate::app_node::AppNode>() {
+            if let Ok(node) = app_node.get().await {
+                // The app is fully running — clear any stale cached nodes
+                clear().await;
+                log::info!("The app is opened: reuse the currently running node.");
+                return Ok(node);
+            }
         }
     }
 
@@ -37,10 +41,16 @@ pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
 
     log::info!("No nodes in the cache, building node from scratch.");
 
-    let node = crate::setup::build_node(data_path.clone(), None, None, true).await?;
+    let node = Node::new(
+        data_path.clone(),
+        crate::app_node::AppNode::node_config(true),
+        None,
+        None,
+    )
+    .await?;
     // Best-effort: the extension only runs when a push arrives (network present),
     // so resolve and register the cloud mailbox once so the sync below can fetch.
-    if let Err(err) = crate::setup::register_cloud_mailbox(&node).await {
+    if let Err(err) = crate::app_node::register_cloud_mailbox(&node).await {
         log::warn!("failed to register cloud mailbox in push extension: {err:?}");
     }
     map.insert(data_path.clone(), node.clone());

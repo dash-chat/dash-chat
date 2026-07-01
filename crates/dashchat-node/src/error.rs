@@ -19,6 +19,12 @@ pub enum Error {
 
     #[error("Failed to get active inboxes: {0}")]
     GetActiveInboxes(String),
+
+    /// The node is temporarily unavailable (e.g. quiesced while the iOS app is
+    /// backgrounded and not yet rebuilt on foreground). The message carries the
+    /// frontend's retry sentinel so `invokeAfterSetup` retries the command.
+    #[error("{0}")]
+    NodeNotReady(String),
 }
 
 #[derive(Debug, Error, Serialize)]

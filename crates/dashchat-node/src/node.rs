@@ -1013,8 +1013,15 @@ impl Node {
             handle.abort();
         }
 
+        if let Some(handle) = self.network_change_handle.lock().await.take() {
+            handle.abort();
+        }
+
         // Close pools last. SqlitePool clones share underlying state, so closing
-        // here drains every connection across the app.
+        // here drains every connection across the app. The sync tracker owns a
+        // separate pool (mailbox_sync_tracker.db) that must be drained too, or
+        // iOS will SIGKILL the suspended app for holding its file lock (0xdead10cc).
+        self.mailboxes.sync_tracker().close().await;
         self.local_store.close().await;
         self.op_store.close().await;
 

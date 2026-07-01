@@ -1,35 +1,44 @@
 use dashchat_node::{
-    topic::kind::Inbox, AddContactError, AgentId, DeviceId, Error, Node, QrCode, ShareIntent, Topic,
+    topic::kind::Inbox, AddContactError, AgentId, DeviceId, Error, QrCode, ShareIntent, Topic,
 };
 use std::collections::BTreeSet;
 use tauri::State;
 
+use crate::app_node::AppNode;
+
 #[tauri::command]
-pub async fn create_contact_code(node: State<'_, Node>) -> Result<QrCode, Error> {
+pub async fn create_contact_code(app_node: State<'_, AppNode>) -> Result<QrCode, Error> {
+    let node = app_node.get().await.map_err(Error::NodeNotReady)?;
     node.new_qr_code(ShareIntent::AddContact, true).await
 }
 
 #[tauri::command]
-pub fn my_agent_id(node: State<'_, Node>) -> AgentId {
-    node.agent_id()
+pub async fn my_agent_id(app_node: State<'_, AppNode>) -> Result<AgentId, String> {
+    let node = app_node.get().await?;
+    Ok(node.agent_id())
 }
 
 #[tauri::command]
-pub fn my_device_id(node: State<'_, Node>) -> DeviceId {
-    node.device_id()
+pub async fn my_device_id(app_node: State<'_, AppNode>) -> Result<DeviceId, String> {
+    let node = app_node.get().await?;
+    Ok(node.device_id())
 }
 
 #[tauri::command]
 pub async fn add_contact(
     contact_code: QrCode,
-    node: State<'_, Node>,
+    app_node: State<'_, AppNode>,
 ) -> Result<(), AddContactError> {
+    let node = app_node.get().await.map_err(Error::NodeNotReady)?;
     node.add_contact(contact_code).await?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn active_inbox_topics(node: State<'_, Node>) -> Result<BTreeSet<Topic<Inbox>>, Error> {
+pub async fn active_inbox_topics(
+    app_node: State<'_, AppNode>,
+) -> Result<BTreeSet<Topic<Inbox>>, Error> {
+    let node = app_node.get().await.map_err(Error::NodeNotReady)?;
     let topics = node.get_active_inbox_topics().await?;
     let topics_ids = topics.clone().into_iter().map(|t| t.topic).collect();
 
@@ -37,7 +46,11 @@ pub async fn active_inbox_topics(node: State<'_, Node>) -> Result<BTreeSet<Topic
 }
 
 #[tauri::command]
-pub async fn reject_contact_request(agent_id: AgentId, node: State<'_, Node>) -> Result<(), Error> {
+pub async fn reject_contact_request(
+    agent_id: AgentId,
+    app_node: State<'_, AppNode>,
+) -> Result<(), Error> {
+    let node = app_node.get().await.map_err(Error::NodeNotReady)?;
     node.reject_contact_request(agent_id).await
 }
 

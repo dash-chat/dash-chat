@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
 
-use dashchat_node::{topic::TopicId, DeviceId, Node};
+use dashchat_node::{topic::TopicId, DeviceId};
 use mailbox_client::{manager::MailboxConnectionState, sync_tracker::MailboxSyncState, MailboxId};
 use serde::Serialize;
 use tauri::{ipc::Channel, State};
 use tokio::sync::watch;
+
+use crate::app_node::AppNode;
 
 async fn forward<T>(mut rx: watch::Receiver<T>, on_event: Channel<T>) -> Result<(), String>
 where
@@ -27,17 +29,18 @@ where
 #[tauri::command]
 pub async fn mailbox_subscribe_active_ids(
     on_event: Channel<BTreeSet<MailboxId>>,
-    node: State<'_, Node>,
+    app_node: State<'_, AppNode>,
 ) -> Result<(), String> {
+    let node = app_node.get().await?;
     forward(node.mailboxes.active_mailbox_ids(), on_event).await
 }
 
 #[tauri::command]
 pub async fn mailbox_subscribe_cloud_id(
     on_event: Channel<Option<MailboxId>>,
-    node: State<'_, Node>,
+    app_node: State<'_, AppNode>,
 ) -> Result<(), String> {
-    let node = (*node).clone();
+    let node = app_node.get().await?;
     let rx = dashchat_utils::derive_watch(node.mailboxes.active_mailbox_ids(), move |_ids| {
         let node = node.clone();
         async move { crate::mailbox::cloud_mailbox_id(&node).await }
@@ -49,8 +52,9 @@ pub async fn mailbox_subscribe_cloud_id(
 #[tauri::command]
 pub async fn mailbox_subscribe_all_ids(
     on_event: Channel<BTreeSet<MailboxId>>,
-    node: State<'_, Node>,
+    app_node: State<'_, AppNode>,
 ) -> Result<(), String> {
+    let node = app_node.get().await?;
     forward(node.mailboxes.sync_tracker().all_mailbox_ids(), on_event).await
 }
 
@@ -58,8 +62,9 @@ pub async fn mailbox_subscribe_all_ids(
 pub async fn mailbox_subscribe_connection_state(
     mailbox_id: MailboxId,
     on_event: Channel<MailboxConnectionState>,
-    node: State<'_, Node>,
+    app_node: State<'_, AppNode>,
 ) -> Result<(), String> {
+    let node = app_node.get().await?;
     let mailbox = node
         .mailboxes
         .tracked_mailbox(&mailbox_id)
@@ -72,8 +77,9 @@ pub async fn mailbox_subscribe_connection_state(
 pub async fn mailbox_subscribe_sync_state(
     mailbox_id: MailboxId,
     on_event: Channel<MailboxSyncState<TopicId, DeviceId>>,
-    node: State<'_, Node>,
+    app_node: State<'_, AppNode>,
 ) -> Result<(), String> {
+    let node = app_node.get().await?;
     let rx = node
         .mailboxes
         .sync_tracker()

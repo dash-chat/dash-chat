@@ -7,17 +7,24 @@ import {
 // Tauri returns this framework error when a command needs managed state that
 // hasn't been registered yet. At startup the webview can invoke node-backed
 // commands before `async_setup` reaches `app_handle.manage(node)` (the node is
-// built before it is managed). The error is transient — retry briefly until the
-// node is managed. Every other error propagates immediately.
+// built before it is managed). The error is transient — retry until ready.
 const BACKEND_NOT_READY = 'state not managed';
 
-const MAX_ATTEMPTS = 50;
+// The iOS app quiesces its node when backgrounded (releasing SQLite locks to
+// avoid a 0xdead10cc kill) and rebuilds it on foreground. While paused/rebuilding,
+// node-backed commands return this sentinel (see `AppNode::get`); retry until the
+// node is back. Keep in sync with `NODE_NOT_READY` in src-tauri/src/app_node.rs.
+const NODE_NOT_READY = 'node not ready';
+
+// ~15s: covers both the startup race and node rebuild on foreground (iroh/relay
+// bring-up). While backgrounded the webview is suspended, so no attempts burn.
+const MAX_ATTEMPTS = 150;
 const RETRY_DELAY_MS = 100;
 
 const isBackendNotReady = (error: unknown): boolean => {
 	const message =
 		typeof error === 'string' ? error : ((error as Error)?.message ?? '');
-	return message.includes(BACKEND_NOT_READY);
+	return message.includes(BACKEND_NOT_READY) || message.includes(NODE_NOT_READY);
 };
 
 export const sleep = (ms: number): Promise<void> =>
