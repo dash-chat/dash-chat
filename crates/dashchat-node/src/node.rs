@@ -1346,7 +1346,7 @@ impl Node {
             )
         {
             let (item, data) = items.pop().unwrap();
-            return match item {
+            let outgoing_media = match item {
                 MediaMetadata::VoiceNote {
                     mime_type,
                     duration_ms,
@@ -1371,6 +1371,7 @@ impl Node {
                 }),
                 MediaMetadata::Photo { .. } => unreachable!(),
             };
+            return outgoing_media;
         }
 
         let photos = items
