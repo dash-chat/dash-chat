@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { getContext } from 'svelte';
+	import { getContext, setContext } from 'svelte';
 	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
 	import type {
@@ -36,6 +36,7 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
+	setContext('messages-store', store);
 
 	const readTracker = createReadMessagesTracker(store);
 	const readMessageOnObserve = readTracker.observe;
@@ -244,7 +245,6 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
-														onToggleReaction={() => {}}
 													/>
 												</div>
 											{:else}
@@ -273,7 +273,6 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
-														onToggleReaction={() => {}}
 														sender={author?.profile}
 														showSenderName={position === 'first' ||
 															position === 'single'}
