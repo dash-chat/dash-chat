@@ -214,6 +214,7 @@ export interface MessagesStore {
 		message: string;
 		media: OutgoingMedia | null;
 	}): Promise<Hash>;
+	sendReaction(reaction: ChatReaction): Promise<void>;
 }
 
 export type GroupControlEvent =
