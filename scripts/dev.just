@@ -10,8 +10,6 @@ dev:
     # per-folder; the desktop agents reach the servers via these runtime URLs.
     export MAILBOX_PORT=$(pnpm --silent exec get-port)
     export PUSH_NOTIFICATIONS_SERVER_PORT=$(pnpm --silent exec get-port)
-    export MAILBOX_URL="http://localhost:$MAILBOX_PORT"
-    export PUSH_NOTIFICATIONS_SERVER_URL="http://localhost:$PUSH_NOTIFICATIONS_SERVER_PORT"
     echo "MAILBOX_PORT=$MAILBOX_PORT"
     echo "PUSH_NOTIFICATIONS_SERVER_PORT=$PUSH_NOTIFICATIONS_SERVER_PORT"
     pnpm exec mprocs

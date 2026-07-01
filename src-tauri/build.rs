@@ -8,8 +8,7 @@ fn main() {
     // host's LAN IP) into debug cross-compiled builds. Desktop dev reads
     // MAILBOX_URL / PUSH_NOTIFICATIONS_SERVER_URL from the runtime env instead
     // (set by `just dev`), and release builds fall through to the production URLs.
-    let cross_compiling = std::env::var("HOST") != std::env::var("TARGET");
-    if tauri_build::is_dev() && cross_compiling {
+    if tauri_build::is_dev() {
         println!("cargo:rerun-if-env-changed=MAILBOX_URL");
         println!("cargo:rerun-if-env-changed=MAILBOX_PORT");
         println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_URL");
