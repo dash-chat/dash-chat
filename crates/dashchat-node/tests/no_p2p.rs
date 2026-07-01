@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use dashchat_node::{mailbox::MailboxOperation, mailbox::register_self_with_mailbox, testing::*, *};
+use dashchat_node::{
+    mailbox::MailboxOperation, mailbox::register_self_with_mailbox, testing::*, *,
+};
 use mailbox_client::toy::ToyMailboxClient;
 
 /// Once a mailbox introduces two `no_p2p` nodes, removing the mailbox must stop
