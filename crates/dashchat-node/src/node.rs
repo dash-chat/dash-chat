@@ -113,7 +113,7 @@ pub struct Node {
 
     pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
 
-    config: NodeConfig,
+    pub config: NodeConfig,
 
     notification_tx: Option<mpsc::Sender<Notification>>,
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
@@ -381,14 +381,15 @@ impl Node {
         Ok(self.endpoint.endpoint().await?)
     }
 
-    /// Add a mailbox's dialing address (relay + direct addresses) to the
-    /// p2panda address book so the iroh blob downloader can reach the mailbox
-    /// by its EndpointId. The address is learned out-of-band from the mailbox's
-    /// `/health` endpoint.
-    pub async fn insert_mailbox_addr(&self, addr: iroh::EndpointAddr) -> Result<()> {
+    /// Add a peer's dialing address (relay + direct addresses) to the p2panda
+    /// address book so the iroh blob downloader can reach that peer by its
+    /// EndpointId. Used both for mailbox addresses learned from a mailbox's
+    /// `/health` endpoint and for arbitrary peer addresses forwarded by a
+    /// mailbox's `/peers/register` endpoint.
+    pub async fn insert_peer_addr(&self, addr: iroh::EndpointAddr) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.actor_tx
-            .send(Command::RegisterMailboxAddr { addr, reply_tx })
+            .send(Command::RegisterPeerAddr { addr, reply_tx })
             .await
             .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
         reply_rx.await??;

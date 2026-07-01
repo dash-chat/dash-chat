@@ -191,7 +191,7 @@ async fn handle_browse_events(
                     // relying solely on p2panda mDNS resolution timing.
                     match crate::setup::fetch_mailbox_health(&url).await {
                         Ok(health) => {
-                            if let Err(err) = node.insert_mailbox_addr(health.endpoint_addr).await {
+                            if let Err(err) = node.insert_peer_addr(health.endpoint_addr).await {
                                 log::warn!(
                                     "Failed to add local mailbox {mailbox_id} addr to address book: {err}"
                                 );
@@ -199,6 +199,27 @@ async fn handle_browse_events(
                         }
                         Err(err) => log::warn!(
                             "Failed to fetch local mailbox {mailbox_id} health for address book: {err}"
+                        ),
+                    }
+                    // Tell the mailbox our own dialing address so its blob fetch
+                    // pool can reach us as a source.
+                    // NOTE: on network changes, mDNS re-browse fires a new
+                    // ServiceResolved for each known mailbox, which re-runs this
+                    // path and re-registers the updated EndpointAddr. Cloud
+                    // mailboxes don't have this hook; re-registration there would
+                    // require a network-change callback from the node layer.
+                    match node.iroh_endpoint().await {
+                        Ok(ep) => {
+                            if let Err(err) =
+                                crate::setup::register_self_with_mailbox(&url, ep.addr()).await
+                            {
+                                log::warn!(
+                                    "Failed to register our addr with local mailbox {mailbox_id}: {err}"
+                                );
+                            }
+                        }
+                        Err(err) => log::warn!(
+                            "Could not get iroh endpoint to register with mailbox {mailbox_id}: {err}"
                         ),
                     }
                     log::info!(
