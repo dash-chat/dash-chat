@@ -1951,7 +1951,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.19.4"
+version = "0.19.6"
 dependencies = [
  "anyhow",
  "app_dirs2",
@@ -1974,7 +1974,7 @@ dependencies = [
  "mailbox-local-server",
  "mailbox-server",
  "mdns-sd",
- "nanoid 0.5.0",
+ "nanoid 0.4.0",
  "ndk-context",
  "ndk-sys",
  "netdev 0.43.0",
