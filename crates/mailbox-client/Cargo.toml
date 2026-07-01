@@ -30,8 +30,8 @@ mailbox-server = { path = "../mailbox-server" }
 
 # NOTE: only used for cbor encoding/decoding
 p2panda-core = { workspace = true }
-iroh = { version = "1.0.0-rc.1", default-features = false, features = ["tls-ring"] }
-iroh-blobs = "0.102.0"
+iroh = { version = "1.0.0", default-features = false, features = ["tls-ring"] }
+iroh-blobs = "0.103.0"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
