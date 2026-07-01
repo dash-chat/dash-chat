@@ -68,7 +68,7 @@ impl From<MailboxOperation> for Operation {
 mod tests {
 
     use crate::{testing::*, *};
-    use mailbox_client::{MailboxClient, MailboxItem as _, mem::MemMailbox};
+    use mailbox_client::MailboxItem as _;
 
     fn make_header(topic: TopicId) -> p2panda::operation::Header {
         use p2panda::operation::{Extensions, LogId};
@@ -149,7 +149,7 @@ mod tests {
             true,
         );
 
-        let mb = MemMailbox::new();
+        let mb = TestMailbox::from_env();
         let config = NodeConfig::testing();
         let poll = PollConfig::default();
 
@@ -163,8 +163,8 @@ mod tests {
         alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
         println!("=== adding mailboxes ===");
-        bobbi.add_mailbox_client(mb.client()).await;
-        alice.add_mailbox_client(mb.client()).await;
+        bobbi.add_mailbox(&mb).await;
+        alice.add_mailbox(&mb).await;
 
         bobbi.register_topic(chat).await.unwrap();
         println!("=== added mailboxes ===");
@@ -193,7 +193,7 @@ mod tests {
             true,
         );
 
-        let mb = MemMailbox::new();
+        let mb = TestMailbox::from_env();
         let config = NodeConfig::testing();
         let poll = PollConfig::default();
 
@@ -203,8 +203,8 @@ mod tests {
         let chat_id = alice.direct_chat_topic(bobbi.agent_id());
         alice.register_topic(chat_id).await.unwrap();
 
-        alice.add_mailbox_client(mb.client()).await;
-        bobbi.add_mailbox_client(mb.client()).await;
+        alice.add_mailbox(&mb).await;
+        bobbi.add_mailbox(&mb).await;
         bobbi.register_topic(chat_id).await.unwrap();
 
         alice
@@ -222,7 +222,7 @@ mod tests {
         .await
         .unwrap();
 
-        let mailbox_id = mb.client().id();
+        let mailbox_id = mb.id().await;
         let alice_device: crate::DeviceId = alice.device_id();
 
         // The mailbox should have recorded alice's seq 0 from both sides.

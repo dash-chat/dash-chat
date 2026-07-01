@@ -1,8 +1,10 @@
 mod behavior;
 mod introduce;
+mod mailbox;
 mod test_node;
 
 pub use introduce::*;
+pub use mailbox::*;
 pub use test_node::*;
 use tracing_subscriber::EnvFilter;
 

@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::{MailboxClient, mem::MemMailbox, toy::ToyMailboxClient};
+use mailbox_client::{MailboxClient, toy::ToyMailboxClient};
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_mailbox_late_join_mem() {
+async fn test_mailbox_late_join_default() {
     dashchat_node::testing::setup_tracing(
         &[
             "dashchat=info",
@@ -16,8 +16,8 @@ async fn test_mailbox_late_join_mem() {
         true,
     );
 
-    let mb = MemMailbox::new();
-    mailbox_late_join(mb.client(), mb.client()).await;
+    let mb = TestMailbox::from_env();
+    mailbox_late_join(mb.client().await, mb.client().await).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -247,23 +247,23 @@ async fn test_multiple_mailboxes_group_pivot() {
         true,
     );
 
-    let mb1 = MemMailbox::new();
-    let mb2 = MemMailbox::new();
+    let mb1 = TestMailbox::from_env();
+    let mb2 = TestMailbox::from_env();
     let alice = TestNode::new(NodeConfig::testing(), "alice")
         .await
-        .add_mailbox_client(mb1.client())
+        .add_mailbox(&mb1)
         .await;
 
     let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
         .await
-        .add_mailbox_client(mb1.client())
+        .add_mailbox(&mb1)
         .await
-        .add_mailbox_client(mb2.client())
+        .add_mailbox(&mb2)
         .await;
 
     let carol = TestNode::new(NodeConfig::testing(), "carol")
         .await
-        .add_mailbox_client(mb2.client())
+        .add_mailbox(&mb2)
         .await;
 
     alice

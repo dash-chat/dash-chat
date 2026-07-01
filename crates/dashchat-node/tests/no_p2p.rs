@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::mem::MemMailbox;
 use mailbox_client::toy::ToyMailboxClient;
 
 /// POST our dialing address to a mailbox's `/peers/register` endpoint so its
@@ -31,14 +30,14 @@ async fn no_p2p_cannot_sync_after_mailbox_removed() {
 
     let poll = PollConfig::default();
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(NodeConfig::testing().no_p2p(), "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(NodeConfig::testing().no_p2p(), "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     alice

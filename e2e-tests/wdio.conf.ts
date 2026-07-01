@@ -13,6 +13,7 @@ import {
 	killPortHolders,
 } from './setup/cleanup';
 import { spawnMailboxServer } from './setup/mailbox-server';
+import { testEnvMailboxUrl } from './setup/test-env';
 import { waitForPortFree, waitForPortListening } from './setup/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -107,6 +108,25 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		killLeftoverMailboxServers();
 		killPortHolders(ALL_PORTS);
 
+		const mailboxInfoPath = path.join(ROOT, '.dbs', 'e2e', 'mailbox-info.json');
+
+		// When DASHCHAT_TEST_ENV names a deployment environment, run against
+		// its cloud mailbox instead of spawning a local server. Specs that
+		// drive the mailbox's lifecycle skip themselves via isRemoteMailbox().
+		const remoteMailboxUrl = testEnvMailboxUrl();
+		if (remoteMailboxUrl !== null) {
+			process.env.MAILBOX_URL = remoteMailboxUrl;
+			mkdirSync(path.dirname(mailboxInfoPath), { recursive: true });
+			writeFileSync(
+				mailboxInfoPath,
+				JSON.stringify({ remote: true, url: remoteMailboxUrl }),
+			);
+			console.log(
+				`Using remote '${process.env.DASHCHAT_TEST_ENV}' mailbox at ${remoteMailboxUrl}`,
+			);
+			return;
+		}
+
 		// Start a local mailbox server so e2e tests don't hit the internet.
 		const mailboxPort = allocatePort();
 		const mailboxUrl = `http://localhost:${mailboxPort}`;
@@ -154,7 +174,6 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 		// Persist mailbox info so individual specs can suspend/resume it to
 		// drive the offline-UX state transitions.
-		const mailboxInfoPath = path.join(ROOT, '.dbs', 'e2e', 'mailbox-info.json');
 		writeFileSync(
 			mailboxInfoPath,
 			JSON.stringify({

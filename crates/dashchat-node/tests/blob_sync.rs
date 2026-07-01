@@ -1,5 +1,4 @@
 use dashchat_node::{testing::*, *};
-use mailbox_client::mem::MemMailbox;
 use p2panda::network::MdnsDiscoveryMode;
 
 /// A chat message with a photo attachment created by one node should be
@@ -14,14 +13,14 @@ async fn media_blob_syncs_between_nodes() {
     let mut config = NodeConfig::testing();
     config.mdns_mode = MdnsDiscoveryMode::Active;
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(config.clone(), "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(config.clone(), "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     alice
@@ -102,14 +101,14 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
     let mut config = NodeConfig::testing();
     config.mdns_mode = MdnsDiscoveryMode::Active;
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(config.clone(), "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(config.clone(), "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     alice

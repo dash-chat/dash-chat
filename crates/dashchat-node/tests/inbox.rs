@@ -1,5 +1,4 @@
 use dashchat_node::{testing::*, *};
-use mailbox_client::mem::MemMailbox;
 use p2panda::network::MdnsDiscoveryMode;
 
 const TRACING_FILTER: [&str; 5] = [
@@ -14,14 +13,14 @@ const TRACING_FILTER: [&str; 5] = [
 async fn test_inbox_2() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(NodeConfig::testing(), "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     println!("nodes:");
