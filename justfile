@@ -30,7 +30,12 @@ build:
 
 # build dash chat as an installer (AppImage on linux)
 bundle:
+    #!/usr/bin/env bash
+    set -euo pipefail
     pnpm tauri build
+    if [ "$(uname -s)" = "Linux" ]; then
+        ./scripts/strip-appimage-gl-libs.sh
+    fi
 
 # cut a new release (e.g. just release 0.11.0)
 release version:
