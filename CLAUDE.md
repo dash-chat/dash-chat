@@ -62,6 +62,7 @@ Please read this coding style carefully and take it into account when planning o
 - Try to remain as simple as possible with your implementations.
 - Try to reuse types and functions across the project rather than reimplement them.
 - Don't use `any` or `unknown` typescript types. Instead, try to understand the actual typescript types and use them to infer the appropriate data structures and algorithms to use.
+- **Don't implicitly cast numbers to booleans.** In conditions (`if`, `{#if}`, `&&`, ternaries) compare numbers explicitly — write `arr.length > 0`, not `arr.length`; `count !== 0`, not `count`. Truthiness on a number silently treats `0` as false, which hides intent and is a common source of off-by-one/empty-state bugs. Use `!!value` only to coerce a genuinely non-numeric value (object/string) to a boolean.
 - Prefer Tailwind CSS utility classes over custom CSS styles whenever possible. Use inline `class` attributes with Tailwind classes instead of adding styles to `<style>` blocks.
 - **Write very few comments.** Default to none. The only two acceptable reasons to add a comment are:
   1. Documenting what a function does (a doc-comment on the function signature). Skip these for self-explanatory helpers whose name and signature already say everything.
