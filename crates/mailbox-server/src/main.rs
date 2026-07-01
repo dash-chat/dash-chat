@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                "mailbox_server=debug,dashchat_utils=debug,iroh=debug,iroh_blobs=debug".into()
+                "mailbox_server=debug,dashchat_utils=debug,iroh=info,iroh_blobs=info".into()
             }),
         )
         .with(tracing_subscriber::fmt::layer())
