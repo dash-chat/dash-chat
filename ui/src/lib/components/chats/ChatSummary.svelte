@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/badge/badge.js';
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
-	import { type ChatSummary, type MediaAttachment } from 'dash-chat-stores';
+	import { type ChatSummary, type MediaBundle } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Badge } from 'konsta/svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
@@ -24,13 +24,15 @@
 
 	function summarizeMessage(content: {
 		message: string;
-		media: MediaAttachment | null;
+		media: MediaBundle | null;
 	}): string {
 		if (content.message) return content.message;
-		if (!content.media) return '';
-		if (content.media.kind === 'file') return content.media.file.name;
-		if (content.media.kind === 'voice_note') return m.voiceMessage();
-		const n = content.media.photos.length;
+		const media = content.media;
+		if (!media || media.length === 0) return '';
+		if (media.some(item => item.kind === 'VoiceNote')) return m.voiceMessage();
+		const file = media.find(item => item.kind === 'File');
+		if (file) return file.name;
+		const n = media.filter(item => item.kind === 'Photo').length;
 		return n > 1 ? m.photosCount({ count: n }) : m.photo();
 	}
 </script>

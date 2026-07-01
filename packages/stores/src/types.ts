@@ -56,16 +56,6 @@ export interface VoiceNote {
 }
 
 /**
- * Renderable media attached to a chat message: a set of photos, a single file,
- * or a single voice note — never a mix. Built from a log's `MediaBundle` via
- * `mediaBundleToAttachment`; carries hashes, not bytes.
- */
-export type MediaAttachment =
-	| { kind: 'photos'; photos: PhotoAttachment[] }
-	| { kind: 'file'; file: FileAttachment }
-	| { kind: 'voice_note'; voice_note: VoiceNote };
-
-/**
  * Raw bytes leaving the composer for the backend to store. `data` carries raw
  * bytes — NOT base64; in-process it is a `Uint8Array`, and over Tauri JSON IPC
  * a `Vec<u8>` arrives as `number[]`. This is the *only* media shape that holds
@@ -120,62 +110,15 @@ export type MediaMetadata =
 export type MediaBundle = MediaMetadata[];
 
 /**
- * Convert the blob metadata stored in a message log into the renderable
- * `MediaAttachment` shape. Mirrors `Node::load_media`: a lone file becomes a `file`
- * attachment, otherwise the items become `photos`. The resulting photos/file
- * carry only a `hash` (no bytes).
- */
-export function mediaBundleToAttachment(
-	meta: MediaBundle | null | undefined,
-): MediaAttachment | null {
-	if (!meta || meta.length === 0) return null;
-	const voiceNote = meta.find(item => item.kind === 'VoiceNote');
-	if (voiceNote?.kind === 'VoiceNote') {
-		return {
-			kind: 'voice_note',
-			voice_note: {
-				hash: voiceNote.hash,
-				mime_type: voiceNote.mime_type,
-				duration_ms: voiceNote.duration_ms,
-				waveform: voiceNote.waveform,
-			},
-		};
-	}
-	const file = meta.find(item => item.kind === 'File');
-	if (file?.kind === 'File') {
-		return {
-			kind: 'file',
-			file: {
-				name: file.name,
-				mime_type: file.mime_type,
-				size: file.size,
-				hash: file.hash,
-			},
-		};
-	}
-	const photos: PhotoAttachment[] = [];
-	for (const item of meta) {
-		if (item.kind !== 'Photo') continue;
-		photos.push({
-			name: item.name,
-			mime_type: item.mime_type,
-			size: item.size,
-			hash: item.hash,
-		});
-	}
-	return { kind: 'photos', photos };
-}
-
-/**
  * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
  * `crates/dashchat-node/src/chat/message.rs`. Sent messages are always V1.
  */
 export type MessageContentV1 = {
 	v: '1';
 	message: string;
-	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob
-	 * store, fetched lazily via `irohblob://`). `mediaBundleToAttachment` turns this
-	 * into the renderable `MediaAttachment`. */
+	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob store,
+	 * fetched lazily via `irohblob://`). Consumers derive the photos/file/voice
+	 * grouping from this list at render time. */
 	media: MediaBundle | null;
 };
 export type MessageContent = MessageContentV1;
@@ -304,7 +247,7 @@ export type GroupControlEvent =
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
-			content: { message: string; media: MediaAttachment | null };
+			content: { message: string; media: MediaBundle | null };
 			authorName?: string;
 			timestamp: number;
 	  }

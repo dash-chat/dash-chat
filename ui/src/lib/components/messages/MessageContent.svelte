@@ -25,10 +25,17 @@
 	} = $props();
 
 	const media = $derived(message.content.media);
+	const voiceNote = $derived(media?.find(m => m.kind === 'VoiceNote'));
+	const file = $derived(
+		voiceNote ? undefined : media?.find(m => m.kind === 'File'),
+	);
+	const photos = $derived(
+		voiceNote || file ? [] : (media?.filter(m => m.kind === 'Photo') ?? []),
+	);
 	const hasText = $derived(!!message.content.message);
-	const isPhotoOnly = $derived(media?.kind === 'photos' && !hasText);
-	const isFileOnly = $derived(media?.kind === 'file' && !hasText);
-	const isVoiceOnly = $derived(media?.kind === 'voice_note' && !hasText);
+	const isPhotoOnly = $derived(photos.length > 0 && !hasText);
+	const isFileOnly = $derived(!!file && !hasText);
+	const isVoiceOnly = $derived(!!voiceNote && !hasText);
 
 	let metadataWidth = $state(0);
 </script>
@@ -42,13 +49,9 @@
 		{senderName}
 	</div>
 {/if}
-{#if media?.kind === 'photos'}
+{#if photos.length > 0}
 	<div class="media photos">
-		<PhotosAttachment
-			photos={media.photos}
-			{senderName}
-			timestamp={message.timestamp}
-		/>
+		<PhotosAttachment {photos} {senderName} timestamp={message.timestamp} />
 		{#if isPhotoOnly && metadata}
 			<div
 				class="photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 px-2 pt-4 pb-1"
@@ -57,17 +60,14 @@
 			</div>
 		{/if}
 	</div>
-{:else if media?.kind === 'file'}
+{:else if file}
 	<div class="media file">
-		<FileAttachment
-			file={media.file}
-			metadata={isFileOnly ? metadata : undefined}
-		/>
+		<FileAttachment {file} metadata={isFileOnly ? metadata : undefined} />
 	</div>
-{:else if media?.kind === 'voice_note'}
+{:else if voiceNote}
 	<div class="media voice">
 		<VoiceNoteAttachment
-			voice={media.voice_note}
+			voice={voiceNote}
 			metadata={isVoiceOnly ? metadata : undefined}
 		/>
 	</div>

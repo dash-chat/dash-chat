@@ -8,11 +8,10 @@ import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import {
 	ChatReaction,
 	ChatSummary,
-	MediaAttachment,
+	MediaBundle,
 	MessagesStore,
 	OutgoingMedia,
 	Payload,
-	mediaBundleToAttachment,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IDirectChatClient } from './direct-chat-client';
@@ -21,7 +20,7 @@ export interface Message {
 	hash: string;
 	content: {
 		message: string;
-		media: MediaAttachment | null;
+		media: MediaBundle | null;
 	};
 	timestamp: number;
 	author: DeviceId;
@@ -66,7 +65,7 @@ export class DirectChatStore implements MessagesStore {
 							hash: operation.hash,
 							content: {
 								message: body.payload.payload.message,
-								media: mediaBundleToAttachment(body.payload.payload.media),
+								media: body.payload.payload.media,
 							},
 							author,
 							seqNum: operation.header.seq_num,
