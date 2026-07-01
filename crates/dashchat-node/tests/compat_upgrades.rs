@@ -1,5 +1,5 @@
 use dashchat_node::ChatMessageContent;
-use dashchat_node::testing::{PollConfig, TestNode, TestNodeConfig};
+use dashchat_node::testing::{PollConfig, TestMailbox, TestNode, TestNodeConfig};
 use dashchat_node::{ShareIntent, compat::Capabilities, node::NodeConfig};
 
 /// Capability upgrade in a direct chat:

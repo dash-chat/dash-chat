@@ -189,7 +189,7 @@ async fn handle_browse_events(
                     // Add the mailbox's dialing address to the address book so
                     // the blob downloader can reach it by EndpointId rather than
                     // relying solely on p2panda mDNS resolution timing.
-                    match crate::setup::fetch_mailbox_health(&url).await {
+                    match dashchat_node::mailbox::fetch_mailbox_health(&url).await {
                         Ok(health) => {
                             if let Err(err) = node.insert_peer_addr(health.endpoint_addr).await {
                                 log::warn!(
@@ -211,7 +211,7 @@ async fn handle_browse_events(
                     match node.iroh_endpoint().await {
                         Ok(ep) => {
                             if let Err(err) =
-                                crate::setup::register_self_with_mailbox(&url, ep.addr()).await
+                                dashchat_node::mailbox::register_self_with_mailbox(&url, ep.addr()).await
                             {
                                 log::warn!(
                                     "Failed to register our addr with local mailbox {mailbox_id}: {err}"

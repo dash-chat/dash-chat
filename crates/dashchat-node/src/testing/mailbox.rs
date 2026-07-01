@@ -1,12 +1,16 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use mailbox_client::{
-    FetchRequest, FetchResponse, MailboxClient, MailboxId, RegisterPeerRequest,
+    FetchRequest, FetchResponse, MailboxClient, MailboxId,
     mem::{MemMailbox, MemMailboxClient},
     toy::ToyMailboxClient,
 };
+use tokio::sync::OnceCell;
 
-use crate::mailbox::MailboxOperation;
+use crate::mailbox::{
+    MailboxHealth, MailboxOperation, fetch_mailbox_health, register_self_with_mailbox,
+};
 
 /// Env var naming the deployment environment whose cloud mailbox the test
 /// suite should run against (e.g. `DASHCHAT_TEST_ENV=testing`). When unset,
@@ -22,7 +26,14 @@ pub const ALLOWED_TEST_ENVS: &[&str] = &["testing"];
 #[derive(Clone)]
 pub enum TestMailbox {
     Mem(MemMailbox<MailboxOperation>),
-    Env { name: String, url: String },
+    Env {
+        name: String,
+        url: String,
+        // Shared and memoized across clones so repeated `id`/`client`/
+        // `register_on` calls on the same mailbox don't each pay a fresh
+        // `/health` round-trip for data that never changes.
+        health: Arc<OnceCell<MailboxHealth>>,
+    },
 }
 
 impl TestMailbox {
@@ -31,18 +42,30 @@ impl TestMailbox {
     /// environment's cloud mailbox (URL resolved from the repo's
     /// `.env.<name>` file). Panics on a non-allowlisted environment.
     pub fn from_env() -> Self {
-        match std::env::var(TEST_ENV_VAR) {
-            Err(_) => Self::Mem(MemMailbox::new()),
-            Ok(name) if name.is_empty() => Self::Mem(MemMailbox::new()),
-            Ok(name) => {
+        match std::env::var(TEST_ENV_VAR).ok().filter(|name| !name.is_empty()) {
+            None => Self::Mem(MemMailbox::new()),
+            Some(name) => {
                 assert!(
                     ALLOWED_TEST_ENVS.contains(&name.as_str()),
                     "{TEST_ENV_VAR}={name} is not an allowed test environment (allowed: {ALLOWED_TEST_ENVS:?})"
                 );
                 let url = env_file_mailbox_url(&name);
-                Self::Env { name, url }
+                Self::Env {
+                    name,
+                    url,
+                    health: Arc::new(OnceCell::new()),
+                }
             }
         }
+    }
+
+    async fn health(&self) -> &MailboxHealth {
+        let Self::Env { url, health, .. } = self else {
+            unreachable!("health() only called on the Env variant")
+        };
+        health
+            .get_or_init(|| async { fetch_mailbox_health(url).await.unwrap() })
+            .await
     }
 
     /// The mailbox's id: the in-memory id, or the environment mailbox's
@@ -50,7 +73,7 @@ impl TestMailbox {
     pub async fn id(&self) -> MailboxId {
         match self {
             Self::Mem(mb) => mb.client().id(),
-            Self::Env { url, .. } => fetch_mailbox_health(url).await.unwrap().mailbox_id,
+            Self::Env { .. } => self.health().await.mailbox_id.clone(),
         }
     }
 
@@ -61,9 +84,9 @@ impl TestMailbox {
         match self {
             Self::Mem(mb) => TestMailboxClient::Mem(mb.client()),
             Self::Env { url, .. } => {
-                let health = fetch_mailbox_health(url).await.unwrap();
+                let health = self.health().await;
                 TestMailboxClient::Toy(ToyMailboxClient::new(
-                    health.mailbox_id,
+                    health.mailbox_id.clone(),
                     url,
                     iroh::SecretKey::generate().public(),
                 ))
@@ -79,11 +102,13 @@ impl TestMailbox {
         match self {
             Self::Mem(mb) => node.mailboxes.register(mb.client()).await,
             Self::Env { url, .. } => {
-                let health = fetch_mailbox_health(url).await.unwrap();
-                node.insert_peer_addr(health.endpoint_addr).await.unwrap();
+                let health = self.health().await;
+                node.insert_peer_addr(health.endpoint_addr.clone())
+                    .await
+                    .unwrap();
                 node.mailboxes
                     .register(ToyMailboxClient::<MailboxOperation>::new(
-                        health.mailbox_id,
+                        health.mailbox_id.clone(),
                         url,
                         node.endpoint_id(),
                     ))
@@ -163,49 +188,6 @@ fn env_file_mailbox_url(name: &str) -> String {
         .find(|(k, _)| k == "MAILBOX_URL")
         .map(|(_, v)| v)
         .unwrap_or_else(|| panic!("no MAILBOX_URL in {}", path.display()))
-}
-
-struct MailboxHealth {
-    mailbox_id: MailboxId,
-    endpoint_addr: iroh::EndpointAddr,
-}
-
-/// Fetch a mailbox server's `/health` response: its canonical MailboxId and
-/// its dialing address (mirrors `src-tauri/src/setup.rs`).
-async fn fetch_mailbox_health(base_url: &str) -> anyhow::Result<MailboxHealth> {
-    #[derive(serde::Deserialize)]
-    struct HealthResponse {
-        endpoint_id: String,
-        endpoint_addr: iroh::EndpointAddr,
-    }
-    let url = format!("{}/health", base_url.trim_end_matches('/'));
-    let resp = mailbox_client::HTTP_CLIENT
-        .get(&url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<HealthResponse>()
-        .await?;
-    Ok(MailboxHealth {
-        mailbox_id: resp.endpoint_id,
-        endpoint_addr: resp.endpoint_addr,
-    })
-}
-
-/// POST the node's `EndpointAddr` to the mailbox's `/peers/register` endpoint
-/// so its blob fetch pool can dial the node as a source.
-async fn register_self_with_mailbox(
-    base_url: &str,
-    our_addr: iroh::EndpointAddr,
-) -> anyhow::Result<()> {
-    let url = format!("{}/peers/register", base_url.trim_end_matches('/'));
-    mailbox_client::HTTP_CLIENT
-        .post(&url)
-        .json(&RegisterPeerRequest { addr: our_addr })
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(())
 }
 
 #[cfg(test)]
