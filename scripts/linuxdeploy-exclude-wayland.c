@@ -1,6 +1,13 @@
 /*
  * linuxdeploy shim: exec the real linuxdeploy with extra --exclude-library
- * flags so the wayland client stack is never bundled into the AppImage.
+ * flags so host-coupled libraries are never bundled into the AppImage. Two
+ * stacks are excluded:
+ *   - the wayland client stack (prevents blank-screen EGL mismatch), and
+ *   - the glib/gio stack. GIO loads modules from the host (gvfs, gsettings
+ *     backends) that are built against the host's glib. AppRun puts bundled
+ *     libs first, so a runner-built (older) libglib gets paired with a newer
+ *     host gvfs module -> "undefined symbol: g_task_set_static_name". Letting
+ *     glib resolve from the host keeps it in lockstep with those modules.
  *
  * tauri-bundler invokes linuxdeploy with a hardcoded argument list and offers
  * no way to pass --exclude-library. It caches the tool at
@@ -38,6 +45,10 @@ int main(int argc, char **argv) {
       "--exclude-library=libwayland-egl.so*",
       "--exclude-library=libwayland-cursor.so*",
       "--exclude-library=libwayland-server.so*",
+      "--exclude-library=libglib-2.0.so*",
+      "--exclude-library=libgio-2.0.so*",
+      "--exclude-library=libgobject-2.0.so*",
+      "--exclude-library=libgmodule-2.0.so*",
   };
   const int n_excludes = (int)(sizeof(excludes) / sizeof(excludes[0]));
 
