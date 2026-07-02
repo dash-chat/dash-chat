@@ -5,8 +5,8 @@ use thiserror::Error as ThisError;
 #[derive(Debug, ThisError, Serialize)]
 #[serde(tag = "kind", content = "message")]
 pub enum Error {
-    #[error("{0}")]
-    NodeNotReady(String),
+    #[error("NodeNotReady")]
+    NodeNotReady,
 
     #[error(transparent)]
     #[serde(untagged)]
@@ -15,4 +15,12 @@ pub enum Error {
     #[error(transparent)]
     #[serde(untagged)]
     AddContact(#[from] dashchat_node::AddContactError),
+}
+
+/// Lets commands that still return `Result<_, String>` use `?` on `AppNode::get`
+/// and other `Error`-producing calls.
+impl From<Error> for String {
+    fn from(err: Error) -> Self {
+        err.to_string()
+    }
 }

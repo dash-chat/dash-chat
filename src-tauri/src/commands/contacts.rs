@@ -7,7 +7,7 @@ use crate::error::Error;
 
 #[tauri::command]
 pub async fn create_contact_code(app_node: State<'_, AppNode>) -> Result<QrCode, Error> {
-    let node = app_node.get().await.map_err(Error::NodeNotReady)?;
+    let node = app_node.get().await?;
     Ok(node.new_qr_code(ShareIntent::AddContact, true).await?)
 }
 
@@ -25,7 +25,7 @@ pub async fn my_device_id(app_node: State<'_, AppNode>) -> Result<DeviceId, Stri
 
 #[tauri::command]
 pub async fn add_contact(contact_code: QrCode, app_node: State<'_, AppNode>) -> Result<(), Error> {
-    let node = app_node.get().await.map_err(Error::NodeNotReady)?;
+    let node = app_node.get().await?;
     node.add_contact(contact_code).await?;
     Ok(())
 }
@@ -34,7 +34,7 @@ pub async fn add_contact(contact_code: QrCode, app_node: State<'_, AppNode>) -> 
 pub async fn active_inbox_topics(
     app_node: State<'_, AppNode>,
 ) -> Result<BTreeSet<Topic<Inbox>>, Error> {
-    let node = app_node.get().await.map_err(Error::NodeNotReady)?;
+    let node = app_node.get().await?;
     let topics = node.get_active_inbox_topics().await?;
     let topics_ids = topics.clone().into_iter().map(|t| t.topic).collect();
 
@@ -46,7 +46,7 @@ pub async fn reject_contact_request(
     agent_id: AgentId,
     app_node: State<'_, AppNode>,
 ) -> Result<(), Error> {
-    let node = app_node.get().await.map_err(Error::NodeNotReady)?;
+    let node = app_node.get().await?;
     Ok(node.reject_contact_request(agent_id).await?)
 }
 

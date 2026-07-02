@@ -11,12 +11,6 @@ use tokio_util::task::{AbortOnDropHandle, TaskTracker};
 use crate::commands::logs::simplify;
 use crate::notifications::NotifiedOperationsStore;
 
-/// Retry sentinel returned by [`AppNode::get`] when the node is temporarily
-/// unavailable (quiesced while the iOS app is backgrounded, not yet rebuilt on
-/// foreground). The frontend's `invokeAfterSetup` retries any command whose
-/// error message contains this string — the same treatment as the startup race.
-pub const NODE_NOT_READY: &str = "node not ready";
-
 struct Inner {
     node: Option<Node>,
     /// Cloud-mailbox registration retry, tracked so [`AppNode::pause`] can cancel
@@ -75,7 +69,7 @@ impl AppNode {
             &crate::filesystem::FileSystem::new(app)?.notified_operations_db_path(),
         )
         .await?;
-        let this = Self {
+        let app_node = Self {
             inner: Arc::new(RwLock::new(Inner {
                 node: None,
                 tracker: TaskTracker::new(),
@@ -96,8 +90,8 @@ impl AppNode {
             app.clone(),
             topic_subscribed_rx,
         )?;
-        this.resume(app).await?;
-        Ok(this)
+        app_node.resume(app).await?;
+        Ok(app_node)
     }
 
     /// Build the [`NodeConfig`](dashchat_node::NodeConfig) for a node.
@@ -132,13 +126,13 @@ impl AppNode {
     /// in-progress rebuild and then succeed against the live node instead of
     /// bouncing through the frontend retry loop; the sentinel — and that retry
     /// loop — only come into play once the node is actually gone.
-    pub async fn get(&self) -> Result<Node, String> {
+    pub async fn get(&self) -> Result<Node, crate::error::Error> {
         self.inner
             .read()
             .await
             .node
             .clone()
-            .ok_or_else(|| NODE_NOT_READY.to_string())
+            .ok_or(crate::error::Error::NodeNotReady)
     }
 
     /// The app-lifetime store of already-notified operations (cheap `Arc` clone).
@@ -230,7 +224,7 @@ impl AppNode {
 /// Forward node notifications to the webview (`p2panda://new-operation`) and show
 /// system notifications. App-lifetime (tied to the notification channel), so it is
 /// spawned once (detached) rather than tracked in a node's task set.
-pub(crate) async fn notification_loop(
+async fn notification_loop(
     app_handle: AppHandle,
     mut notification_rx: mpsc::Receiver<dashchat_node::Notification>,
 ) {
