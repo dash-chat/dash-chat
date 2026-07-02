@@ -425,6 +425,10 @@ impl Node {
         &self.blob_sync
     }
 
+    pub fn unfetched_blob_tracker(&self) -> std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker> {
+        crate::LocalStoreBlobTracker::new(self.local_store.clone())
+    }
+
     #[cfg(feature = "testing")]
     pub fn endpoint_id(&self) -> iroh::EndpointId {
         iroh::EndpointId::from_bytes(self.device_id().as_bytes())

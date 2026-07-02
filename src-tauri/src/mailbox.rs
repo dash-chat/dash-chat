@@ -184,6 +184,7 @@ async fn handle_browse_events(
                             mailbox_id.clone(),
                             url.clone(),
                             node.endpoint_id(),
+                            node.unfetched_blob_tracker(),
                         ))
                         .await;
                     // Add the mailbox's dialing address to the address book so
