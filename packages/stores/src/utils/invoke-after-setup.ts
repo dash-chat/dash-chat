@@ -24,7 +24,9 @@ const RETRY_DELAY_MS = 100;
 const isBackendNotReady = (error: unknown): boolean => {
 	const message =
 		typeof error === 'string' ? error : ((error as Error)?.message ?? '');
-	return message.includes(BACKEND_NOT_READY) || message.includes(NODE_NOT_READY);
+	return (
+		message.includes(BACKEND_NOT_READY) || message.includes(NODE_NOT_READY)
+	);
 };
 
 export const sleep = (ms: number): Promise<void> =>
