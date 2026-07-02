@@ -123,9 +123,15 @@ impl AppNode {
         }
     }
 
-    /// Snapshot the live node, or a retryable "not ready" error when paused.
-    /// Returns immediately — the frontend retry loop covers the resume window,
-    /// so we deliberately do not wait here.
+    /// Snapshot the live node, or a retryable "not ready" sentinel when the node
+    /// is absent (paused, or a rebuild that already failed).
+    ///
+    /// Acquiring the read lock blocks while `resume` holds the write lock across
+    /// `Node::new` (seconds on iOS foreground, during iroh/relay bring-up) or
+    /// while `pause` tears the node down. Callers therefore wait out an
+    /// in-progress rebuild and then succeed against the live node instead of
+    /// bouncing through the frontend retry loop; the sentinel — and that retry
+    /// loop — only come into play once the node is actually gone.
     pub async fn get(&self) -> Result<Node, String> {
         self.inner
             .read()
