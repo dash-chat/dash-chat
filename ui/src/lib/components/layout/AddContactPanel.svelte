@@ -31,6 +31,10 @@
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
+	import {
+		generate as generateAddContactDeepLink,
+		extract as extractCodeFromAddContactDeepLink,
+	} from '$lib/deep-links/add-contact';
 	import { defaultQrColor } from '$lib/utils/qrcode';
 	import SelectColor from './SelectColor.svelte';
 	import MyQrCodeCard from '$lib/components/contacts/MyQrCodeCard.svelte';
@@ -120,6 +124,16 @@
 		}
 	}
 
+	async function receiveCodeFromDeepLink(value: string) {
+		const code = extractCodeFromAddContactDeepLink(value) ?? value.trim();
+		if (!code) {
+			showToast(m.errorAddContactInvalidCode(), 'error');
+			return;
+		}
+
+		await receiveCode(code);
+	}
+
 	const qrColor = useReactivePromise(settingsStore.qrColor);
 	let colorPickerOpen = $state(false);
 	let colorForPicker = $state(defaultQrColor());
@@ -133,7 +147,7 @@
 		try {
 			const name = await getMyName();
 			const color = (await settingsStore.qrColor()) ?? defaultQrColor();
-			await shareQrCode(code, color, name);
+			await shareQrCode(generateAddContactDeepLink(code), color, name);
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
@@ -148,7 +162,11 @@
 	async function saveCode(code: string, color: string) {
 		try {
 			const name = await getMyName();
-			await saveQrCode(code, color ?? defaultQrColor(), name);
+			await saveQrCode(
+				generateAddContactDeepLink(code),
+				color ?? defaultQrColor(),
+				name,
+			);
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
@@ -304,11 +322,17 @@
 							</div>
 						</div>
 					</div>
-					<QrCodeUploader bind:this={uploaderRef} onSelectImage={receiveCode} />
+					<QrCodeUploader
+						bind:this={uploaderRef}
+						onSelectImage={receiveCodeFromDeepLink}
+					/>
 				{/await}
 			{/await}
 		{:else if tab === 'scan'}
-			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveCode} />
+			<QrCodeScanner
+				bind:this={scannerRef}
+				onSelectImage={receiveCodeFromDeepLink}
+			/>
 		{/if}
 	</Page>
 {/if}

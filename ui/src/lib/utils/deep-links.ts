@@ -18,7 +18,7 @@ function escapeRegex(s: string): string {
 const HTTPS_DEEP_LINK_BASE_URL = escapeRegex('https://dashchat.org');
 const SCHEME_DEEP_LINK_BASE_URL = escapeRegex('dash-chat:/');
 
-function matchesDeepLinkPath(
+export function matchesDeepLinkPath(
 	url: string,
 	path: string,
 ): Record<string, string> | null {

@@ -5,6 +5,7 @@
 	import { mdiContentCopy } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { writeText } from '$lib/utils/clipboard';
+	import { generate as generateAddContactDeepLink } from '$lib/deep-links/add-contact';
 	import { showToast } from '$lib/utils/toasts';
 	import { m } from '$lib/paraglide/messages.js';
 
@@ -17,6 +18,7 @@
 	} = $props();
 
 	const isWhite = $derived(color === '#ffffff');
+	const qrValue = $derived(generateAddContactDeepLink(code));
 
 	async function copyLink() {
 		await writeText(code);
@@ -30,7 +32,7 @@
 			class="column w-full p-3"
 			style="align-items: center; justify-content: center; background-color: white; border-radius: 10px;"
 		>
-			<wa-qr-code value={code} size="180" fill={isWhite ? '#000000' : color}
+			<wa-qr-code value={qrValue} size="180" fill={isWhite ? '#000000' : color}
 			></wa-qr-code>
 		</div>
 

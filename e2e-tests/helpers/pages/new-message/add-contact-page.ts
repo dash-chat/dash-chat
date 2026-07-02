@@ -26,9 +26,11 @@ export class AddContactPage extends TestHelper {
 	/** Read the contact code from the QR element. */
 	async getContactCode(): Promise<string> {
 		await this.qrCode.waitForExist();
-		const code = (await this.qrCode.getProperty('value')) as string | null;
-		if (!code) throw new Error('contact code missing on QR element');
-		return code;
+		const value = (await this.qrCode.getProperty('value')) as string | null;
+		if (!value) throw new Error('contact code missing on QR element');
+		const match = value.match(/\/add-contact\/([^/?#]+)/);
+		if (!match) throw new Error(`unexpected QR value format: ${value}`);
+		return decodeURIComponent(match[1]);
 	}
 
 	async enterCode(code: string) {
