@@ -74,18 +74,13 @@ pub struct MailboxHealth {
 /// base64url-no-pad EndpointId) and its dialing address (relay + direct
 /// addresses) for the p2panda address book.
 pub async fn fetch_mailbox_health(base_url: &str) -> anyhow::Result<MailboxHealth> {
-    #[derive(Deserialize)]
-    struct HealthResponse {
-        endpoint_id: String,
-        endpoint_addr: iroh::EndpointAddr,
-    }
     let url = format!("{}/health", base_url.trim_end_matches('/'));
     let resp = mailbox_client::HTTP_CLIENT
         .get(&url)
         .send()
         .await?
         .error_for_status()?
-        .json::<HealthResponse>()
+        .json::<mailbox_server::HealthResponse>()
         .await?;
     Ok(MailboxHealth {
         mailbox_id: resp.endpoint_id,
