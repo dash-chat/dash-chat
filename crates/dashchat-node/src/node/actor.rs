@@ -122,7 +122,6 @@ pub struct Actor {
 
     /// Channel for forwarding all received events on to the application layer processor.
     events_tx: mpsc::Sender<ProcessorEvent>,
-
 }
 
 impl Actor {
