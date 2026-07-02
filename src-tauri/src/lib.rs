@@ -2,6 +2,7 @@ mod app_node;
 mod blob_protocol;
 mod commands;
 mod device_info;
+mod error;
 mod filesystem;
 mod i18n;
 mod mailbox;
