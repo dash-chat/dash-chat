@@ -6,7 +6,7 @@ use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, RwLock};
 use tokio_util::sync::CancellationToken;
-use tokio_util::task::TaskTracker;
+use tokio_util::task::{AbortOnDropHandle, TaskTracker};
 
 use crate::commands::logs::simplify;
 use crate::notifications::NotifiedOperationsStore;
@@ -19,13 +19,16 @@ pub const NODE_NOT_READY: &str = "node not ready";
 
 struct Inner {
     node: Option<Node>,
-    /// Per-node-instance background tasks (cloud-mailbox registration retry and
-    /// local-mailbox mDNS discovery). A fresh tracker+token pair is installed per
-    /// node generation in [`AppNode::resume`]; [`AppNode::pause`] cancels the token
-    /// and waits on the tracker so every task has drained before the node is torn
-    /// down (`TaskTracker`/`CancellationToken` from `tokio-util`).
+    /// Cloud-mailbox registration retry, tracked so [`AppNode::pause`] can cancel
+    /// the token and wait for it to drain before the node is torn down. A fresh
+    /// tracker+token pair is installed per node generation in [`AppNode::resume`]
+    /// (`TaskTracker`/`CancellationToken` from `tokio-util`).
     tracker: TaskTracker,
     token: CancellationToken,
+    /// Local-mailbox mDNS discovery for the current node generation. Held so it is
+    /// aborted (dropping the handle tears down its browse + interface-watcher
+    /// tasks) when the node is paused, rather than leaking against the dead node.
+    mdns_discovery: Option<AbortOnDropHandle<()>>,
 }
 
 /// A swappable container for the app's [`Node`].
@@ -77,6 +80,7 @@ impl AppNode {
                 node: None,
                 tracker: TaskTracker::new(),
                 token: CancellationToken::new(),
+                mdns_discovery: None,
             })),
             data_path,
             notification_tx,
@@ -144,12 +148,15 @@ impl AppNode {
         let Some(node) = inner.node.take() else {
             return;
         };
-        // Cancel every per-node task (cloud-mailbox retry, mDNS discovery) and
-        // wait for them to drain, so nothing still touches the node's SQLite pools
+        // Cancel the tracked cloud-mailbox retry and wait for it to drain, and
+        // abort mDNS discovery, so nothing still touches the node's SQLite pools
         // when iOS suspends the process.
         inner.token.cancel();
         inner.tracker.close();
         inner.tracker.wait().await;
+        if let Some(discovery) = inner.mdns_discovery.take() {
+            discovery.abort();
+        }
         // Full teardown closes every SQLite pool the node owns. `shutdown` is
         // one-way for this `Node`, which is fine — `resume` builds a fresh one.
         if let Err(err) = node.shutdown().await {
@@ -198,53 +205,20 @@ impl AppNode {
                     "register cloud mailbox",
                     move || {
                         let node = cloud_node.clone();
-                        async move { register_cloud_mailbox(&node).await }
+                        async move { crate::setup::register_cloud_mailbox(&node).await }
                     },
                 )),
         );
-        // Local-mailbox mDNS discovery spawns its own detached tasks; not tracked.
-        crate::mailbox::spawn_local_mailbox_mdns_discovery(app, node.clone())?;
+        // Local-mailbox mDNS discovery runs on its own tasks; the handle is held
+        // in `inner` so `pause` aborts it with the node generation.
+        let mdns_discovery = crate::mailbox::spawn_local_mailbox_mdns_discovery(app, node.clone())?;
 
         inner.node = Some(node);
+        inner.mdns_discovery = Some(mdns_discovery);
         inner.tracker = tracker;
         inner.token = token;
         Ok(())
     }
-}
-
-/// Resolve the cloud mailbox id from its `/health` endpoint and register it on
-/// the node. Returns an error (registering nothing) when the server is
-/// unreachable — there is intentionally no fallback id, so callers retry until
-/// the real id is known. `Mailboxes::register` is idempotent.
-pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
-    let mailbox_url = crate::mailbox::default_mailbox_url();
-    let health = crate::setup::fetch_mailbox_health(&mailbox_url).await?;
-    // Add the mailbox's dialing address to the p2panda address book so the iroh
-    // blob downloader can reach it by EndpointId; without this the mailbox is
-    // known only by id and is not dialable.
-    node.insert_peer_addr(health.endpoint_addr).await?;
-    if !node.mailboxes.is_tracked(&health.mailbox_id).await {
-        let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
-            health.mailbox_id,
-            mailbox_url.clone(),
-            node.endpoint_id(),
-        );
-        node.mailboxes.register(mailbox_client).await;
-    }
-    // Tell the mailbox our own dialing address so its blob fetch pool can reach
-    // us as a source (without this the mailbox knows our EndpointId from blip
-    // uploads but cannot dial us). Wait for the relay first so the address we
-    // send includes our relay URL; otherwise a NAT'd mailbox cannot dial us
-    // back. On failure we return Err so the retry wrapper runs us again.
-    dashchat_utils::endpoint::wait_endpoint_online(
-        node.config.use_relay,
-        &node.iroh_endpoint().await?,
-        std::time::Duration::from_secs(10),
-    )
-    .await?;
-    let our_addr = node.iroh_endpoint().await?.addr();
-    crate::setup::register_self_with_mailbox(&mailbox_url, our_addr).await?;
-    Ok(())
 }
 
 /// Forward node notifications to the webview (`p2panda://new-operation`) and show
