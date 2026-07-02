@@ -143,6 +143,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             mailbox_id.clone(),
             &url,
             alice.endpoint_id(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
@@ -156,6 +157,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
@@ -223,6 +225,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr).await.unwrap();

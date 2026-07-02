@@ -43,10 +43,18 @@ async fn test_mailbox_late_join_toy() {
     // per-client identity used for blob upload attribution; a fresh random
     // key per client is sufficient for tests.
     let dummy_key = || iroh::SecretKey::generate().public();
-    let alice_mailbox =
-        ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
-    let bobbi_mailbox =
-        ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
+    let alice_mailbox = ToyMailboxClient::<MailboxOperation>::new(
+        nanoid::nanoid!(),
+        &url,
+        dummy_key(),
+        std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+    );
+    let bobbi_mailbox = ToyMailboxClient::<MailboxOperation>::new(
+        nanoid::nanoid!(),
+        &url,
+        dummy_key(),
+        std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+    );
 
     mailbox_late_join(alice_mailbox, bobbi_mailbox).await;
 }
@@ -149,6 +157,7 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
     bobbi
@@ -156,6 +165,7 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
 
@@ -198,6 +208,7 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
     bobbi
@@ -205,6 +216,7 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
 

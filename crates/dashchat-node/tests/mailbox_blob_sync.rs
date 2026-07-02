@@ -77,6 +77,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             mailbox_id.clone(),
             &url,
             alice.endpoint_id(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
@@ -85,6 +86,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
 
@@ -151,6 +153,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
 

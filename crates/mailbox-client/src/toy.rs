@@ -16,12 +16,42 @@ use super::*;
 pub trait ToyItemTraits: ItemTraits + Serialize + DeserializeOwned {}
 impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {}
 
+/// POST blob hashes to a mailbox's `/blobs/store`, returning the subset the
+/// mailbox reports it already has stored.
+pub async fn send_store_blobs(
+    base_url: &str,
+    hashes: Vec<iroh_blobs::Hash>,
+    sender_pubkey: iroh::EndpointId,
+) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
+    if hashes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let request = mailbox_server::StoreBlobsRequest {
+        blob_hashes: hashes,
+        sender_pubkey,
+        signature: Vec::new(),
+    };
+    let response = HTTP_CLIENT
+        .post(format!("{base_url}/blobs/store"))
+        .json(&request)
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("Failed to store blobs: {status} - {body}");
+    }
+    let response: mailbox_server::StoreBlobsResponse = response.json().await?;
+    Ok(response.already_stored)
+}
+
 /// A client for the toy mailbox server.
 #[derive(Clone)]
 pub struct ToyMailboxClient<Item: MailboxItem> {
     id: MailboxId,
     base_url: String,
     sender_pubkey: iroh::EndpointId,
+    tracker: std::sync::Arc<dyn crate::UnfetchedBlobTracker>,
     phantom: std::marker::PhantomData<Item>,
 }
 
@@ -30,13 +60,32 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         id: MailboxId,
         base_url: impl Into<String>,
         sender_pubkey: iroh::EndpointId,
+        tracker: std::sync::Arc<dyn crate::UnfetchedBlobTracker>,
     ) -> Self {
         Self {
             id,
             base_url: base_url.into(),
             sender_pubkey,
+            tracker,
             phantom: std::marker::PhantomData,
         }
+    }
+
+    /// Announce blob hashes to this mailbox and reconcile the unfetched tracker:
+    /// record hashes the mailbox still needs, remove any it already has.
+    async fn store_blobs(&self, hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
+        if hashes.is_empty() {
+            return Ok(());
+        }
+        let already_stored =
+            send_store_blobs(&self.base_url, hashes.clone(), self.sender_pubkey).await?;
+        let not_stored: Vec<_> = hashes
+            .into_iter()
+            .filter(|h| !already_stored.contains(h))
+            .collect();
+        self.tracker.record(&self.id, &not_stored).await;
+        self.tracker.remove(&self.id, &already_stored).await;
+        Ok(())
     }
 }
 
@@ -61,6 +110,9 @@ where
 
         // Group operations by topic -> author -> seq_num
         let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blip>>> = BTreeMap::new();
+
+        let blob_hashes: Vec<iroh_blobs::Hash> =
+            ops.iter().flat_map(|op| op.blob_hashes()).collect();
 
         for op in ops {
             let topic_id = Self::encode_topic_id(&op.topic());
@@ -88,6 +140,7 @@ where
             .await?;
 
         if response.status().is_success() {
+            self.store_blobs(blob_hashes).await?;
             Ok(())
         } else {
             let status = response.status();
@@ -262,5 +315,51 @@ mod tests {
         assert_eq!(topic_str, "abcdefghij");
         let topic_unstr = unstringify(&topic_str).unwrap();
         assert_eq!(topic, topic_unstr);
+    }
+
+    #[tokio::test]
+    async fn store_blobs_records_not_stored_and_removes_already_stored() {
+        use std::sync::Mutex as StdMutex;
+
+        #[derive(Default)]
+        struct RecordingTracker {
+            recorded: StdMutex<Vec<(String, Vec<iroh_blobs::Hash>)>>,
+            removed: StdMutex<Vec<(String, Vec<iroh_blobs::Hash>)>>,
+        }
+        #[async_trait::async_trait]
+        impl crate::UnfetchedBlobTracker for RecordingTracker {
+            async fn record(&self, id: &crate::MailboxId, hashes: &[iroh_blobs::Hash]) {
+                self.recorded.lock().unwrap().push((id.clone(), hashes.to_vec()));
+            }
+            async fn remove(&self, id: &crate::MailboxId, hashes: &[iroh_blobs::Hash]) {
+                self.removed.lock().unwrap().push((id.clone(), hashes.to_vec()));
+            }
+        }
+
+        // Server that reports h_stored as already stored, h_new as not.
+        let h_stored = iroh_blobs::Hash::new([1; 32]);
+        let h_new = iroh_blobs::Hash::new([2; 32]);
+        let app = axum::Router::new().route(
+            "/blobs/store",
+            axum::routing::post(move |axum::Json(req): axum::Json<mailbox_server::StoreBlobsRequest>| async move {
+                let already_stored: Vec<_> =
+                    req.blob_hashes.into_iter().filter(|h| *h == h_stored).collect();
+                axum::Json(mailbox_server::StoreBlobsResponse { already_stored })
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+        let base_url = format!("http://{addr}");
+
+        let tracker = std::sync::Arc::new(RecordingTracker::default());
+        let already = crate::toy::send_store_blobs(
+            &base_url,
+            vec![h_stored, h_new],
+            iroh::SecretKey::from_bytes(&[3; 32]).public(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(already, vec![h_stored]);
     }
 }
