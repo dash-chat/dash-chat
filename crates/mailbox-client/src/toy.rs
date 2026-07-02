@@ -59,9 +59,6 @@ where
             return Ok(());
         }
 
-        let blob_hashes: Vec<iroh_blobs::Hash> =
-            ops.iter().flat_map(|op| op.blob_hashes()).collect();
-
         // Group operations by topic -> author -> seq_num
         let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blip>>> = BTreeMap::new();
 
@@ -81,7 +78,6 @@ where
 
         let request = StoreBlipsRequest {
             blips,
-            blob_hashes,
             sender_pubkey: Some(self.sender_pubkey),
             signature: Vec::new(),
         };
