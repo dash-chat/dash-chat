@@ -342,6 +342,13 @@ impl Node {
                     if let Some(media) = m.media() {
                         let hashes: Vec<_> = media.iter().map(|item| item.hash).collect();
                         let is_own = DeviceId::from(author) == self.device_id();
+                        if let Err(err) = self
+                            .local_store
+                            .remove_unfetched_blobs_all_mailboxes(&hashes)
+                            .await
+                        {
+                            tracing::warn!(?err, "failed to clear unfetched blob rows on delete");
+                        }
                         self.blob_sync
                             .delete_blobs(topic, author.into(), operation.hash, hashes, is_own)
                             .await;

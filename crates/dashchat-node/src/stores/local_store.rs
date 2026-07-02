@@ -461,6 +461,22 @@ impl LocalStore {
         Ok(())
     }
 
+    /// Remove every `unfetched_blob_hashes` row for these hashes across ALL
+    /// mailboxes. Called when a blob is deleted locally, so the followup task
+    /// stops re-announcing a hash this node can no longer serve.
+    pub async fn remove_unfetched_blobs_all_mailboxes(
+        &self,
+        hashes: &[iroh_blobs::Hash],
+    ) -> anyhow::Result<()> {
+        for hash in hashes {
+            sqlx::query("DELETE FROM unfetched_blob_hashes WHERE blob_hash = ?")
+                .bind(hash.as_bytes().to_vec())
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(())
+    }
+
     pub async fn unfetched_blobs_by_mailbox(
         &self,
     ) -> anyhow::Result<std::collections::BTreeMap<String, Vec<iroh_blobs::Hash>>> {
@@ -594,6 +610,26 @@ mod tests {
         let store = LocalStore::new(&path).await.unwrap();
         let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
         assert_eq!(by_mailbox.get(mbx_b).unwrap(), &vec![h1]);
+    }
+
+    #[tokio::test]
+    async fn test_remove_unfetched_blobs_all_mailboxes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_unfetched_all.db");
+        let store = LocalStore::new(&path).await.unwrap();
+
+        let h1 = iroh_blobs::Hash::new([1; 32]);
+        let h2 = iroh_blobs::Hash::new([2; 32]);
+        store.add_unfetched_blobs("mbx-a", &[h1, h2]).await.unwrap();
+        store.add_unfetched_blobs("mbx-b", &[h1]).await.unwrap();
+
+        // Removing h1 across all mailboxes clears it from both mbx-a and mbx-b,
+        // but leaves h2 (still needed by mbx-a).
+        store.remove_unfetched_blobs_all_mailboxes(&[h1]).await.unwrap();
+
+        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
+        assert_eq!(by_mailbox.get("mbx-a").unwrap(), &vec![h2]);
+        assert!(by_mailbox.get("mbx-b").is_none());
     }
 
     #[tokio::test]
