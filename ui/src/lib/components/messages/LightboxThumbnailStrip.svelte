@@ -14,6 +14,15 @@
 	let { photos, index = $bindable(0), faded = false }: Props = $props();
 
 	let stripEl: HTMLElement | undefined = $state();
+	let blobImages = $state<Array<{ retry: () => void } | undefined>>([]);
+	let statuses = $state<Record<number, 'loading' | 'loaded' | 'error'>>({});
+
+	// A failed thumbnail shows a reload icon; clicking it re-downloads it while
+	// also switching to that photo, so the main view retries alongside it.
+	function onThumbClick(i: number) {
+		if (statuses[i] === 'error') blobImages[i]?.retry();
+		index = i;
+	}
 
 	// Keep the active thumbnail centred as the selection changes.
 	$effect(() => {
@@ -38,12 +47,14 @@
 			class:selected={i === index}
 			data-testid="lightbox-thumb-{i}"
 			aria-label={p.name}
-			onclick={() => (index = i)}
+			onclick={() => onThumbClick(i)}
 		>
 			<BlobImage
+				bind:this={blobImages[i]}
 				item={p}
 				alt={p.name}
 				imgClass="block h-full w-full object-cover"
+				onStatus={s => (statuses[i] = s)}
 				lazy
 			/>
 		</button>

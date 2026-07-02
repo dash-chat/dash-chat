@@ -15,6 +15,22 @@ export class Lightbox extends TestHelper {
 		return this.agent.$(tid(`lightbox-thumb-${index}`));
 	}
 
+	/** The reload/retry affordance inside the thumbnail at `index`, shown when
+	 * that thumbnail's image failed to load. */
+	thumbRetry(index: number) {
+		return this.thumb(index).$(tid('blob-image-retry'));
+	}
+
+	/** Simulate a failed load for the thumbnail at `index` (and any image that
+	 * shares its alt), surfacing the reload/retry affordance. */
+	async forceThumbError(index: number): Promise<void> {
+		const alt = await this.thumb(index).$('img').getAttribute('alt');
+		if (!alt) throw new Error(`Thumbnail ${index} has no image alt to target`);
+		await this.agent.execute((a: string) => {
+			window.__test.forceBlobError(a);
+		}, alt);
+	}
+
 	/** Index of the currently active photo (based on the selected filmstrip thumb). */
 	async activeIndex(): Promise<number> {
 		const thumbs = await this.agent.$$(tid('lightbox-filmstrip') + ' button');
