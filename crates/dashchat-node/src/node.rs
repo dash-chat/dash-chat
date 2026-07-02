@@ -306,6 +306,7 @@ impl Node {
             filesystem.blobs_store_path(),
             blob_fetch,
             source_lookup,
+            local_store.clone(),
         )
         .await?;
 
