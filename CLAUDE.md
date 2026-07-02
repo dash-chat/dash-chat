@@ -416,17 +416,17 @@ Run tests from workspace root. Tests use tokio async runtime.
 
 ### Running Tests Against a Deployment Environment
 
-By default all tests use a local (in-memory or in-process) mailbox. Set `DASHCHAT_TEST_ENV=<env>` to run the same suites against a deployment environment's cloud mailbox instead (URL resolved from the repo-root `.env.<env>` file):
+By default all tests use a local (in-memory or in-process) mailbox. Run the same suites against a deployment environment's cloud mailbox by setting `MAILBOX_URL` to that environment's mailbox. The `justfile` loads `.env.${ENV:-development}` via dotenv, so `ENV=<env>` selects the environment (whose `.env.<env>` defines `MAILBOX_URL`):
 
 ```bash
-DASHCHAT_TEST_ENV=testing cargo nextest run   # Rust suite
-DASHCHAT_TEST_ENV=testing just test e2e       # E2E suite
+ENV=testing just test          # Rust suite
+ENV=testing just test e2e      # E2E suite
 ```
 
-- **Rust**: tests build their mailbox via `TestMailbox::from_env()` (`crates/dashchat-node/src/testing/mailbox.rs`) and register it with `TestNode::add_mailbox(&mb)`. Unset var → a fresh `MemMailbox`; set → a `ToyMailboxClient` for the environment's mailbox, registered the way the production app does it (id from `/health`, address book entry, `/peers/register`). Don't use `MemMailbox::new()` directly in new tests.
-- **E2E**: `wdio.conf.ts` skips spawning the local mailbox server and points the agents at the environment's mailbox. Specs that drive the mailbox server's lifecycle (suspend/kill) skip themselves via `isRemoteMailbox()`.
+- **Rust**: tests build their mailbox via `TestMailbox::from_env()` (`crates/dashchat-node/src/testing/mailbox.rs`) and register it with `TestNode::add_mailbox(&mb)`. `MAILBOX_URL` unset → a fresh `MemMailbox`; set → a `ToyMailboxClient` for that mailbox, registered the way the production app does it (id from `/health`, address book entry, `/peers/register`). Don't use `MemMailbox::new()` directly in new tests.
+- **E2E**: when `MAILBOX_URL` is set, `wdio.conf.ts` skips spawning the local mailbox server and points the agents at it. Specs that drive the mailbox server's lifecycle (suspend/kill) skip themselves via `isRemoteMailbox()`.
 
-Allowed environments are allowlisted (`ALLOWED_TEST_ENVS`, currently only `testing`) in both suites; any other value fails fast so tests can never hit staging/production.
+Allowed mailbox URLs are allowlisted as regex patterns in the repo-root `allowed-test-mailbox-url-patterns.json`, read by both suites (`TestMailbox::from_env` in Rust and `remoteMailboxUrl()` in `e2e-tests/setup/test-env.ts`); a `MAILBOX_URL` matching none of them fails fast so tests can never hit staging/production.
 
 ### Development Testing
 Use `pnpm start` to run two instances locally that can communicate with each other over the p2panda network.

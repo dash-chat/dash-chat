@@ -27,7 +27,7 @@ const MAILBOX_INFO_PATH = path.join(
 
 interface MailboxInfo {
 	url: string;
-	/** Set when the suite runs against a remote environment mailbox (DASHCHAT_TEST_ENV). */
+	/** Set when the suite runs against a remote environment mailbox (MAILBOX_URL). */
 	remote?: boolean;
 	pid?: number;
 	port?: number;
@@ -56,7 +56,7 @@ function localInfo(): { pid: number; port: number; url: string; dbPath: string }
 		dbPath === undefined
 	) {
 		throw new Error(
-			'mailbox lifecycle control is unavailable against a remote environment mailbox (DASHCHAT_TEST_ENV)',
+			'mailbox lifecycle control is unavailable against a remote environment mailbox (MAILBOX_URL)',
 		);
 	}
 	return { pid, port, url, dbPath };

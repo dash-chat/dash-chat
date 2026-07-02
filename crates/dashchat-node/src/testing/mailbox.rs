@@ -1,56 +1,66 @@
-use std::path::PathBuf;
-
 use mailbox_client::{
     FetchRequest, FetchResponse, MailboxClient, MailboxId,
     mem::{MemMailbox, MemMailboxClient},
     toy::ToyMailboxClient,
 };
+use regex::Regex;
 
 use crate::mailbox::{
     MailboxHealth, MailboxOperation, fetch_mailbox_health, register_self_with_mailbox,
 };
 
-/// Env var naming the deployment environment whose cloud mailbox the test
-/// suite should run against (e.g. `DASHCHAT_TEST_ENV=testing`). When unset,
-/// tests use an in-memory mailbox.
-pub const TEST_ENV_VAR: &str = "DASHCHAT_TEST_ENV";
+/// Regex patterns for the mailbox URLs the test suite is allowed to run
+/// against, shared with the E2E suite via `allowed-test-mailbox-url-patterns.json`
+/// at the repo root. Any `MAILBOX_URL` matching none of them fails fast so
+/// tests can never hit staging or production.
+const ALLOWED_MAILBOX_URL_PATTERNS_JSON: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../allowed-test-mailbox-url-patterns.json"
+));
 
-/// Deployment environments the test suite is allowed to run against.
-pub const ALLOWED_TEST_ENVS: &[&str] = &["testing"];
+fn allowed_mailbox_url_patterns() -> Vec<Regex> {
+    serde_json::from_str::<Vec<String>>(ALLOWED_MAILBOX_URL_PATTERNS_JSON)
+        .expect("allowed-test-mailbox-url-patterns.json is a JSON array of strings")
+        .iter()
+        .map(|pattern| {
+            Regex::new(pattern).expect("invalid regex in allowed-test-mailbox-url-patterns.json")
+        })
+        .collect()
+}
 
 /// A mailbox for tests, built by [`TestMailbox::from_env`]: an in-memory
-/// mailbox by default, or the cloud mailbox of a deployment environment when
-/// [`TEST_ENV_VAR`] is set.
+/// mailbox by default, or a cloud mailbox when `MAILBOX_URL` names an
+/// allowlisted deployment environment.
 #[derive(Clone)]
 pub enum TestMailbox {
     Mem(MemMailbox<MailboxOperation>),
-    Env { name: String, url: String },
+    Env { url: String },
 }
 
 impl TestMailbox {
-    /// Builds a mailbox according to [`TEST_ENV_VAR`]: unset or empty → a
-    /// fresh [`MemMailbox`]; an allowlisted environment name → that
-    /// environment's cloud mailbox (URL resolved from the repo's
-    /// `.env.<name>` file). Panics on a non-allowlisted environment.
+    /// Builds a mailbox from `MAILBOX_URL`: unset or empty → a fresh
+    /// [`MemMailbox`]; an allowlisted URL → that environment's cloud mailbox.
+    /// Panics on a non-allowlisted URL.
     pub fn from_env() -> Self {
-        match std::env::var(TEST_ENV_VAR)
+        match std::env::var("MAILBOX_URL")
             .ok()
-            .filter(|name| !name.is_empty())
+            .filter(|url| !url.is_empty())
         {
             None => Self::Mem(MemMailbox::new()),
-            Some(name) => {
+            Some(url) => {
                 assert!(
-                    ALLOWED_TEST_ENVS.contains(&name.as_str()),
-                    "{TEST_ENV_VAR}={name} is not an allowed test environment (allowed: {ALLOWED_TEST_ENVS:?})"
+                    allowed_mailbox_url_patterns()
+                        .iter()
+                        .any(|pattern| pattern.is_match(&url)),
+                    "MAILBOX_URL={url} is not an allowed test mailbox (allowed patterns: {ALLOWED_MAILBOX_URL_PATTERNS_JSON})"
                 );
-                let url = env_file_mailbox_url(&name);
-                Self::Env { name, url }
+                Self::Env { url }
             }
         }
     }
 
     async fn health(&self) -> MailboxHealth {
-        let Self::Env { url, .. } = self else {
+        let Self::Env { url } = self else {
             unreachable!("health() only called on the Env variant")
         };
         fetch_mailbox_health(url).await.unwrap()
@@ -71,7 +81,7 @@ impl TestMailbox {
     pub async fn client(&self) -> TestMailboxClient {
         match self {
             Self::Mem(mb) => TestMailboxClient::Mem(mb.client()),
-            Self::Env { url, .. } => {
+            Self::Env { url } => {
                 let health = self.health().await;
                 TestMailboxClient::Toy(ToyMailboxClient::new(
                     health.mailbox_id.clone(),
@@ -89,7 +99,7 @@ impl TestMailbox {
     pub async fn register_on(&self, node: &crate::Node) {
         match self {
             Self::Mem(mb) => node.mailboxes.register(mb.client()).await,
-            Self::Env { url, .. } => {
+            Self::Env { url } => {
                 let health = self.health().await;
                 node.insert_peer_addr(health.endpoint_addr.clone())
                     .await
@@ -148,43 +158,5 @@ impl MailboxClient<MailboxOperation> for TestMailboxClient {
             Self::Mem(client) => client.fetch(request).await,
             Self::Toy(client) => client.fetch(request).await,
         }
-    }
-}
-
-/// Reads `MAILBOX_URL` from the repo-root `.env.<name>` file, resolving
-/// `${VAR}` references against values defined earlier in the same file.
-fn env_file_mailbox_url(name: &str) -> String {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../.env.{name}"));
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
-    let mut vars: Vec<(String, String)> = Vec::new();
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        let mut value = value.trim().to_string();
-        for (k, v) in &vars {
-            value = value.replace(&format!("${{{k}}}"), v);
-        }
-        vars.push((key.trim().to_string(), value));
-    }
-    vars.into_iter()
-        .find(|(k, _)| k == "MAILBOX_URL")
-        .map(|(_, v)| v)
-        .unwrap_or_else(|| panic!("no MAILBOX_URL in {}", path.display()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn env_file_mailbox_url_interpolates_domain() {
-        let url = env_file_mailbox_url("testing");
-        assert_eq!(url, "https://0-19.mailbox.testing.darksoil.studio");
     }
 }

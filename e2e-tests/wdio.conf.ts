@@ -13,7 +13,7 @@ import {
 	killPortHolders,
 } from './setup/cleanup';
 import { spawnMailboxServer } from './setup/mailbox-server';
-import { testEnvMailboxUrl } from './setup/test-env';
+import { remoteMailboxUrl } from './setup/test-env';
 import { waitForPortFree, waitForPortListening } from './setup/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -110,20 +110,19 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 		const mailboxInfoPath = path.join(ROOT, '.dbs', 'e2e', 'mailbox-info.json');
 
-		// When DASHCHAT_TEST_ENV names a deployment environment, run against
-		// its cloud mailbox instead of spawning a local server. Specs that
-		// drive the mailbox's lifecycle skip themselves via isRemoteMailbox().
-		const remoteMailboxUrl = testEnvMailboxUrl();
-		if (remoteMailboxUrl !== null) {
-			process.env.MAILBOX_URL = remoteMailboxUrl;
+		// When MAILBOX_URL names an allowlisted deployment environment, run
+		// against its cloud mailbox instead of spawning a local server. Specs
+		// that drive the mailbox's lifecycle skip themselves via
+		// isRemoteMailbox().
+		const remoteUrl = remoteMailboxUrl();
+		if (remoteUrl !== null) {
+			process.env.MAILBOX_URL = remoteUrl;
 			mkdirSync(path.dirname(mailboxInfoPath), { recursive: true });
 			writeFileSync(
 				mailboxInfoPath,
-				JSON.stringify({ remote: true, url: remoteMailboxUrl }),
+				JSON.stringify({ remote: true, url: remoteUrl }),
 			);
-			console.log(
-				`Using remote '${process.env.DASHCHAT_TEST_ENV}' mailbox at ${remoteMailboxUrl}`,
-			);
+			console.log(`Using remote mailbox at ${remoteUrl}`);
 			return;
 		}
 

@@ -4,37 +4,30 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const ALLOWED_TEST_ENVS = ['testing'];
+/**
+ * Regex patterns for the mailbox URLs the suite is allowed to run against,
+ * shared with the Rust suite via `allowed-test-mailbox-url-patterns.json` at the
+ * repo root.
+ */
+const ALLOWED_MAILBOX_URL_PATTERNS: RegExp[] = (
+	JSON.parse(
+		readFileSync(
+			path.resolve(__dirname, '..', '..', 'allowed-test-mailbox-url-patterns.json'),
+			'utf-8',
+		),
+	) as string[]
+).map(pattern => new RegExp(pattern));
 
 /**
- * Mailbox URL for the deployment environment named by DASHCHAT_TEST_ENV,
- * resolved from the repo-root `.env.<name>` file, or null when the var is
- * unset — in which case the suite spawns its own local mailbox server.
- * Throws on a non-allowlisted environment.
+ * Remote mailbox URL the suite should run against, taken from MAILBOX_URL when
+ * it matches an allowlisted pattern, or null when unset — in which case the
+ * suite spawns its own local mailbox server. Throws on a non-allowlisted URL.
  */
-export function testEnvMailboxUrl(): string | null {
-	const name = process.env.DASHCHAT_TEST_ENV;
-	if (name === undefined || name === '') return null;
-	if (!ALLOWED_TEST_ENVS.includes(name)) {
-		throw new Error(
-			`DASHCHAT_TEST_ENV=${name} is not an allowed test environment (allowed: ${ALLOWED_TEST_ENVS.join(', ')})`,
-		);
+export function remoteMailboxUrl(): string | null {
+	const url = process.env.MAILBOX_URL;
+	if (url === undefined || url === '') return null;
+	if (!ALLOWED_MAILBOX_URL_PATTERNS.some(pattern => pattern.test(url))) {
+		throw new Error(`MAILBOX_URL=${url} is not an allowed test mailbox`);
 	}
-	const file = path.resolve(__dirname, '..', '..', `.env.${name}`);
-	const vars = new Map<string, string>();
-	for (const line of readFileSync(file, 'utf-8').split('\n')) {
-		const trimmed = line.trim();
-		if (trimmed === '' || trimmed.startsWith('#')) continue;
-		const eq = trimmed.indexOf('=');
-		if (eq === -1) continue;
-		const key = trimmed.slice(0, eq).trim();
-		let value = trimmed.slice(eq + 1).trim();
-		for (const [k, v] of vars) {
-			value = value.split(`\${${k}}`).join(v);
-		}
-		vars.set(key, value);
-	}
-	const url = vars.get('MAILBOX_URL');
-	if (url === undefined) throw new Error(`no MAILBOX_URL in ${file}`);
 	return url;
 }
