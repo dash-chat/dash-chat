@@ -7,8 +7,9 @@
  *
  * Single-purpose DOM queries belong in `e2e-tests/helpers/pages/*`.
  */
-import type { m } from '../src/lib/paraglide/messages.js';
 import { invokeAfterSetup } from 'dash-chat-stores';
+
+import type { m } from '../src/lib/paraglide/messages.js';
 
 type Messages = typeof m;
 
@@ -51,7 +52,8 @@ function hasText(selector: string, text: string): boolean {
  * restarts. */
 function disableP2p(): Promise<void> {
 	return invokeAfterSetup('disable_p2p');
-}export interface TestFileSpec {
+}
+export interface TestFileSpec {
 	name: string;
 	mimeType: string;
 	/** Raw bytes. Omit and pass `size` for a large zero-filled file so a huge
