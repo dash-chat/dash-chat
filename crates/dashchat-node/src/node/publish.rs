@@ -40,6 +40,8 @@ impl Node {
 
         // Trigger sync with all mailboxes.
         self.mailboxes.trigger_sync();
+        // Re-announce any still-unfetched blobs now that we've published.
+        self.notify_unfetched_blob_followup();
 
         Ok(event.header().to_owned())
     }

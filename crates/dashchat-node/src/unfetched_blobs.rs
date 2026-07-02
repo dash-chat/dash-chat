@@ -1,7 +1,11 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use mailbox_client::{MailboxId, UnfetchedBlobTracker};
+use tokio::sync::Notify;
+use tokio::task::JoinHandle;
 
+use crate::node::Node;
 use crate::stores::LocalStore;
 
 /// `UnfetchedBlobTracker` backed by the node's `LocalStore` table.
@@ -28,6 +32,63 @@ impl UnfetchedBlobTracker for LocalStoreBlobTracker {
             tracing::error!(?err, mailbox = %mailbox_id, "failed to remove unfetched blobs");
         }
     }
+}
+
+/// One reconciliation pass: for every mailbox with unfetched blobs that is still
+/// tracked, re-announce its hashes and drop the ones it reports already stored.
+pub async fn followup_unfetched_blobs_once(node: &Node) {
+    let by_mailbox = match node.local_store.unfetched_blobs_by_mailbox().await {
+        Ok(m) => m,
+        Err(err) => {
+            tracing::error!(?err, "failed to read unfetched blobs");
+            return;
+        }
+    };
+    let self_endpoint = node.endpoint_id();
+    for (mailbox_id, hashes) in by_mailbox {
+        let Some(tracked) = node.mailboxes.tracked_mailbox(&mailbox_id).await else {
+            continue; // mailbox not currently registered; retry when it returns
+        };
+        let Some(url) = tracked.client().await.url() else {
+            continue; // non-HTTP mailbox (e.g. in-memory test mailbox)
+        };
+        match mailbox_client::toy::send_store_blobs(&url, hashes, self_endpoint).await {
+            Ok(already_stored) => {
+                if let Err(err) = node
+                    .local_store
+                    .remove_unfetched_blobs(&mailbox_id, &already_stored)
+                    .await
+                {
+                    tracing::error!(?err, mailbox = %mailbox_id, "failed to reconcile unfetched blobs");
+                }
+            }
+            Err(err) => {
+                tracing::warn!(?err, mailbox = %mailbox_id, "followup store_blobs failed");
+            }
+        }
+    }
+}
+
+/// Spawn the loop that runs `followup_unfetched_blobs_once` on `interval` and
+/// immediately whenever `trigger` is notified (startup, unpause, network change).
+pub fn spawn_unfetched_blob_followup_task(
+    node: Node,
+    interval: Duration,
+    trigger: Arc<Notify>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        // Fire once immediately on startup.
+        followup_unfetched_blobs_once(&node).await;
+        let mut ticker = tokio::time::interval(interval);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {}
+                _ = trigger.notified() => {}
+            }
+            followup_unfetched_blobs_once(&node).await;
+        }
+    })
 }
 
 #[cfg(test)]

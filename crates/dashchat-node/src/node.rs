@@ -79,6 +79,9 @@ pub struct NodeConfig {
     /// address to dial, so those attempts cannot connect.)
     pub enable_p2p: bool,
     pub blob_fetch: BlobFetchConfig,
+    /// How often the followup task re-announces still-unfetched blob hashes to
+    /// their mailboxes.
+    pub unfetched_blob_followup_interval: std::time::Duration,
 }
 
 impl NodeConfig {
@@ -117,6 +120,7 @@ impl NodeConfig {
                 attempt_timeout: std::time::Duration::from_secs(3),
                 retry_cooldown: std::time::Duration::from_secs(1),
             },
+            unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
         }
     }
 }
@@ -132,6 +136,7 @@ impl Default for NodeConfig {
             use_relay: true,
             enable_p2p: true,
             blob_fetch: BlobFetchConfig::default(),
+            unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
         }
     }
 }
@@ -167,6 +172,8 @@ pub struct Node {
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     endpoint: p2panda::Endpoint,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    unfetched_blob_trigger: Arc<tokio::sync::Notify>,
+    unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
@@ -331,6 +338,8 @@ impl Node {
             blob_fetch_handle: Default::default(),
             endpoint,
             network_change_handle: Default::default(),
+            unfetched_blob_trigger: Default::default(),
+            unfetched_blob_followup_handle: Default::default(),
         };
 
         // === application processor task === //
@@ -356,6 +365,18 @@ impl Node {
             .lock()
             .await
             .replace(network_change_handle);
+
+        // === unfetched blob followup loop === //
+
+        let followup_handle = crate::spawn_unfetched_blob_followup_task(
+            node.clone(),
+            node.config.unfetched_blob_followup_interval,
+            node.unfetched_blob_trigger.clone(),
+        );
+        node.unfetched_blob_followup_handle
+            .lock()
+            .await
+            .replace(followup_handle);
 
         // === topics === //
 
@@ -428,6 +449,12 @@ impl Node {
 
     pub fn unfetched_blob_tracker(&self) -> std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker> {
         crate::LocalStoreBlobTracker::new(self.local_store.clone())
+    }
+
+    /// Wake the unfetched-blob followup task to run a reconciliation pass now
+    /// (e.g. on unpause / network change).
+    pub fn notify_unfetched_blob_followup(&self) {
+        self.unfetched_blob_trigger.notify_one();
     }
 
     #[cfg(feature = "testing")]
@@ -1015,6 +1042,10 @@ impl Node {
         }
 
         if let Some(handle) = self.blob_fetch_handle.lock().await.take() {
+            handle.abort();
+        }
+
+        if let Some(handle) = self.unfetched_blob_followup_handle.lock().await.take() {
             handle.abort();
         }
 
