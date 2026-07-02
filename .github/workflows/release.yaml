@@ -127,7 +127,7 @@ jobs:
       - name: Set staging server URLs
         if: contains(github.ref_name, '-staging')
         run: |
-          echo "MAILBOX_URL=https://mailbox.staging.darksoil.studio" >> $GITHUB_ENV
+          echo "MAILBOX_URL=https://0-19.mailbox.staging.darksoil.studio" >> $GITHUB_ENV
           echo "PUSH_NOTIFICATIONS_SERVER_URL=https://push-notifications.staging.darksoil.studio" >> $GITHUB_ENV
 
       # Force linuxdeploy to exclude the wayland client stack from the AppImage
