@@ -5,12 +5,11 @@ use dashchat_node::Node;
 use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, RwLock};
-use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 
 use crate::commands::logs::simplify;
-
-mod notified_operations_store;
-pub(crate) use notified_operations_store::NotifiedOperationsStore;
+use crate::notifications::NotifiedOperationsStore;
 
 /// Retry sentinel returned by [`AppNode::get`] when the node is temporarily
 /// unavailable (quiesced while the iOS app is backgrounded, not yet rebuilt on
@@ -21,10 +20,12 @@ pub const NODE_NOT_READY: &str = "node not ready";
 struct Inner {
     node: Option<Node>,
     /// Per-node-instance background tasks (cloud-mailbox registration retry and
-    /// local-mailbox mDNS discovery). Held only so aborting/replacing the set
-    /// tears them down (`JoinSet` aborts its tasks on drop); never read directly.
-    #[allow(dead_code)]
-    tasks: JoinSet<()>,
+    /// local-mailbox mDNS discovery). A fresh tracker+token pair is installed per
+    /// node generation in [`AppNode::resume`]; [`AppNode::pause`] cancels the token
+    /// and waits on the tracker so every task has drained before the node is torn
+    /// down (`TaskTracker`/`CancellationToken` from `tokio-util`).
+    tracker: TaskTracker,
+    token: CancellationToken,
 }
 
 /// A swappable container for the app's [`Node`].
@@ -74,7 +75,8 @@ impl AppNode {
         let this = Self {
             inner: Arc::new(RwLock::new(Inner {
                 node: None,
-                tasks: JoinSet::new(),
+                tracker: TaskTracker::new(),
+                token: CancellationToken::new(),
             })),
             data_path,
             notification_tx,
@@ -117,7 +119,6 @@ impl AppNode {
         }
     }
 
-
     /// Snapshot the live node, or a retryable "not ready" error when paused.
     /// Returns immediately — the frontend retry loop covers the resume window,
     /// so we deliberately do not wait here.
@@ -138,14 +139,17 @@ impl AppNode {
     /// Tear the node down and release all SQLite locks so iOS can suspend the
     /// app cleanly. Idempotent, and holds the write lock for the whole teardown
     /// so a concurrent [`resume`](Self::resume) can't interleave.
-    pub async fn pause(&self, app: &AppHandle) {
+    pub async fn pause(&self) {
         let mut inner = self.inner.write().await;
         let Some(node) = inner.node.take() else {
             return;
         };
-        // Aborts the cloud-mailbox retry and the mDNS watcher.
-        inner.tasks.abort_all();
-        crate::mailbox::stop_local_mailbox_mdns_discovery(app);
+        // Cancel every per-node task (cloud-mailbox retry, mDNS discovery) and
+        // wait for them to drain, so nothing still touches the node's SQLite pools
+        // when iOS suspends the process.
+        inner.token.cancel();
+        inner.tracker.close();
+        inner.tracker.wait().await;
         // Full teardown closes every SQLite pool the node owns. `shutdown` is
         // one-way for this `Node`, which is fine — `resume` builds a fresh one.
         if let Err(err) = node.shutdown().await {
@@ -177,32 +181,33 @@ impl AppNode {
         )
         .await?;
 
-        // Per-node-instance background tasks, tracked in a JoinSet so they are
-        // torn down with the node when the set is aborted/replaced:
-        // - cloud-mailbox registration, retried until the server is reachable;
-        // - local-mailbox mDNS discovery (its interface-watcher task).
-        let mut tasks = JoinSet::new();
+        // Cloud-mailbox registration retry, tracked so `pause` can cancel and
+        // drain it with the node. A fresh tracker+token pair is installed per
+        // generation (a `TaskTracker` can't be reused after `close`, a token
+        // can't be un-cancelled).
+        let tracker = TaskTracker::new();
+        let token = CancellationToken::new();
         let cloud_node = node.clone();
-        tasks.spawn(async move {
-            let _ = dashchat_utils::retry_with_backoff(
-                None,
-                std::time::Duration::from_secs(2),
-                std::time::Duration::from_secs(10),
-                "register cloud mailbox",
-                || {
-                    let node = cloud_node.clone();
-                    async move { register_cloud_mailbox(&node).await }
-                },
-            )
-            .await;
-        });
-        tasks.spawn(crate::mailbox::local_mailbox_mdns_discovery(
-            app.clone(),
-            node.clone(),
-        ));
+        tracker.spawn(
+            token
+                .clone()
+                .run_until_cancelled_owned(dashchat_utils::retry_with_backoff(
+                    None,
+                    std::time::Duration::from_secs(2),
+                    std::time::Duration::from_secs(10),
+                    "register cloud mailbox",
+                    move || {
+                        let node = cloud_node.clone();
+                        async move { register_cloud_mailbox(&node).await }
+                    },
+                )),
+        );
+        // Local-mailbox mDNS discovery spawns its own detached tasks; not tracked.
+        crate::mailbox::spawn_local_mailbox_mdns_discovery(app, node.clone())?;
 
         inner.node = Some(node);
-        inner.tasks = tasks;
+        inner.tracker = tracker;
+        inner.token = token;
         Ok(())
     }
 }

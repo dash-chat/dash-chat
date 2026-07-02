@@ -51,6 +51,7 @@ anyhow = "1.0.95"
 async-trait = "0.1.85"
 time = "0.3"
 tokio = { version = "1.43.0", features = ["fs"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 regex = "1"
 hex = "0.4.3"
 mdns-sd = "0.17"

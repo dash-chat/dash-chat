@@ -1,5 +1,8 @@
+mod notified_operations_store;
 #[cfg(mobile)]
 pub mod push_notifications;
+
+pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
 use dashchat_node::{DeviceId, Node, Payload, Topic, TopicId};

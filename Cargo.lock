@@ -2021,6 +2021,7 @@ dependencies = [
  "tempfile",
  "time",
  "tokio",
+ "tokio-util",
  "url2",
  "uuid",
  "vergen-gitcl",
