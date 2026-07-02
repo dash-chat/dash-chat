@@ -27,12 +27,16 @@ pub async fn download_capped(
 ) -> bool {
     let result = tokio::time::timeout(attempt_timeout, async {
         let options = DownloadRequest {
-            request: FiniteRequest::Get(GetRequest::all(hash)),
+            // Media are single blobs, not hash-sequences. `GetRequest::blob`
+            // requests only the blob itself; `GetRequest::all` would additionally
+            // request the blob's hash-sequence children, which makes the provider
+            // parse the raw media bytes as a hash-seq and reset the stream with
+            // `ERR_INTERNAL` (`InvalidHashSeq`) — so the blob never transfers.
+            request: FiniteRequest::Get(GetRequest::blob(hash)),
             providers: Arc::new(providers),
-            // Media are single blobs, not hash-sequences. `SplitStrategy::Split`
-            // routes the download through iroh-blobs' hash-seq path, which asserts
-            // the root size is a multiple of 32 and so always fails for a raw blob
-            // ("Size is not a multiple of 32"), making every download report failure.
+            // `SplitStrategy::Split` routes the download through iroh-blobs'
+            // hash-seq path, which asserts the root size is a multiple of 32 and
+            // so always fails for a raw blob ("Size is not a multiple of 32").
             strategy: SplitStrategy::None,
         };
         let mut stream = downloader
