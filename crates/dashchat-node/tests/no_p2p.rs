@@ -246,3 +246,162 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
 
     server.stop().await;
 }
+
+/// Regression test for the address-book refresh in `handle_register_peer_addr`.
+///
+/// The p2panda address book is persisted, so an entry for the mailbox endpoint
+/// survives a restart. If that entry carries no usable transport — a stale entry
+/// `AddressBookDiscovery` refuses to resolve — the mailbox must become dialable
+/// again when it re-registers its real `/health` address. If `handle_register_peer_addr`
+/// skips re-inserting an endpoint that was already in the address book but not
+/// registered *in the current process* (which is every persisted entry after a
+/// restart, since that set is in-memory), the unusable address is never
+/// refreshed and the blob can never be fetched.
+#[tokio::test(flavor = "multi_thread")]
+async fn stale_mailbox_addr_is_refreshed_on_reregister() {
+    dashchat_node::testing::setup_tracing(&["dashchat=info", "mailbox_server=info"], true);
+
+    let poll = PollConfig::default();
+
+    let relay = TestNode::new(NodeConfig::testing(), "relay").await;
+    let mailbox_id = mailbox_server::encode_mailbox_id(relay.endpoint_id());
+    let mailbox_addr = relay.iroh_endpoint().await.unwrap().addr();
+
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let (peer_addr_tx, mut peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
+    let server = mailbox_local_server::spawn_local_mailbox_server(
+        mailbox_dir.path().join("mailbox.redb"),
+        relay.blobs(),
+        relay.blob_downloader(),
+        relay.iroh_endpoint().await.unwrap(),
+        Some(mailbox_server::FetchConfig {
+            concurrency: 4,
+            attempt_timeout: Duration::from_secs(10),
+            pass_interval: Duration::from_secs(2),
+            retry_cooldown: Duration::from_secs(2),
+        }),
+        peer_addr_tx,
+    )
+    .await
+    .unwrap();
+    let url = server.url.clone();
+    mailbox_client::toy::wait_for_mailbox_health(&url).await;
+
+    let relay_for_addrs = relay.clone();
+    tokio::spawn(async move {
+        while let Some(addr) = peer_addr_rx.recv().await {
+            let _ = relay_for_addrs.insert_peer_addr(addr).await;
+        }
+    });
+
+    let config = NodeConfig::testing().no_p2p();
+
+    let alice = TestNode::new(config.clone(), "alice").await;
+    alice
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            mailbox_id.clone(),
+            &url,
+            alice.endpoint_id(),
+        ))
+        .await;
+    alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
+    register_self_with_mailbox(&url, alice.iroh_endpoint().await.unwrap().addr()).await;
+
+    let bobbi = TestNode::new(config.clone(), "bobbi").await;
+    bobbi
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            mailbox_id.clone(),
+            &url,
+            bobbi.endpoint_id(),
+        ))
+        .await;
+    // Poison: register the mailbox endpoint with NO usable transport. Op sync
+    // rides the mailbox HTTP client so contact still establishes, but this entry
+    // (which persists across Bobbi's restart) leaves the mailbox undialable until
+    // it is refreshed with the real address below.
+    bobbi
+        .insert_peer_addr(iroh::EndpointAddr::new(relay.endpoint_id()))
+        .await
+        .unwrap();
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let bobbi_agent_id = bobbi.agent_id();
+
+    let bobbi_dir = bobbi.shutdown().await;
+
+    let photo_bytes: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
+    let media = OutgoingMedia::Photos {
+        photos: vec![OutgoingPhoto {
+            data: photo_bytes.clone(),
+            name: "pic.png".into(),
+            mime_type: "image/png".into(),
+        }],
+    };
+    alice
+        .send_message(chat, "look at this", Some(media))
+        .await
+        .unwrap();
+
+    let meta = alice
+        .get_messages(chat)
+        .await
+        .unwrap()
+        .into_iter()
+        .find_map(|m| m.content.media().cloned())
+        .expect("alice's message carries media metadata");
+    let hash = meta.first().expect("at least one media item").hash;
+
+    poll.wait_for(|| async {
+        relay
+            .blobs()
+            .has(hash)
+            .await
+            .unwrap_or(false)
+            .then_some(())
+            .ok_or("mailbox has not fetched the blob from alice yet")
+    })
+    .await
+    .unwrap();
+
+    alice.shutdown().await;
+
+    // Bobbi restarts (in-memory registration state cleared, address book — with
+    // the transport-less mailbox entry — persisted) and re-registers the mailbox
+    // with its REAL address. The fix must overwrite the stale entry; the old
+    // skip-branch would leave it in place and the blob could never be fetched.
+    let bobbi = TestNode::new_at_path(config.clone(), "bobbi", bobbi_dir).await;
+    assert_eq!(bobbi.agent_id(), bobbi_agent_id);
+    bobbi
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            mailbox_id.clone(),
+            &url,
+            bobbi.endpoint_id(),
+        ))
+        .await;
+    bobbi.insert_peer_addr(mailbox_addr).await.unwrap();
+
+    poll.wait_for(|| async {
+        bobbi
+            .load_media(meta.clone())
+            .await
+            .map(|_| ())
+            .map_err(|err| format!("bobbi has not downloaded the blob yet: {err:?}"))
+    })
+    .await
+    .unwrap();
+
+    let loaded = bobbi.load_media(meta).await.unwrap();
+    let OutgoingMedia::Photos { photos } = loaded else {
+        panic!("expected a photo attachment");
+    };
+    assert_eq!(photos.len(), 1);
+    assert_eq!(photos[0].data, photo_bytes);
+
+    server.stop().await;
+}
