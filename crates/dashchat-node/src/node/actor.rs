@@ -289,6 +289,14 @@ impl Actor {
     /// dialable again. Callers only ever pass mailbox `/health` self-addresses
     /// and addresses a user's opt-in local mailbox forwards, so there is no
     /// untrusted address here to guard an existing entry against.
+    //
+    // KNOWN LIMITATION: a malicious client that registered this endpoint
+    // before p2panda discovered it via mDNS/gossip can continue to inject
+    // undialable addresses here (griefing). We cannot detect the upgrade
+    // from mailbox-discovered to node-discovered without a
+    // p2panda discovery hook;
+    // the iroh QUIC handshake prevents data from flowing to the wrong peer,
+    // so the worst case is wasted dial attempts.
     async fn handle_register_peer_addr(
         &mut self,
         addr: iroh::EndpointAddr,
