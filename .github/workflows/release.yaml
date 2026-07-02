@@ -124,11 +124,19 @@ jobs:
             libsoup-3.0 \
             webkit2gtk-4.1
 
-      - name: Set staging server URLs
-        if: contains(github.ref_name, '-staging')
+      - name: Load server URLs from .env
+        shell: bash
         run: |
-          echo "MAILBOX_URL=https://mailbox.staging.darksoil.studio" >> $GITHUB_ENV
-          echo "PUSH_NOTIFICATIONS_SERVER_URL=https://push-notifications.staging.darksoil.studio" >> $GITHUB_ENV
+          if [[ "${{ github.ref_name }}" == *-staging ]]; then
+            env_file=.env.staging
+          else
+            env_file=.env.production
+          fi
+          set -a
+          source "$env_file"
+          set +a
+          echo "MAILBOX_URL=$MAILBOX_URL" >> "$GITHUB_ENV"
+          echo "PUSH_NOTIFICATIONS_SERVER_URL=$PUSH_NOTIFICATIONS_SERVER_URL" >> "$GITHUB_ENV"
 
       # Force linuxdeploy to exclude the wayland client stack from the AppImage
       # so it resolves from the host at runtime (prevents blank-screen EGL
@@ -294,11 +302,19 @@ jobs:
 
           echo "Generated tauri.properties with version $VERSION and versionCode $VERSION_CODE"
 
-      - name: Set staging server URLs
-        if: contains(github.ref_name, '-staging')
+      - name: Load server URLs from .env
+        shell: bash
         run: |
-          echo "MAILBOX_URL=https://mailbox.staging.darksoil.studio" >> $GITHUB_ENV
-          echo "PUSH_NOTIFICATIONS_SERVER_URL=https://push-notifications.staging.darksoil.studio" >> $GITHUB_ENV
+          if [[ "${{ github.ref_name }}" == *-staging ]]; then
+            env_file=.env.staging
+          else
+            env_file=.env.production
+          fi
+          set -a
+          source "$env_file"
+          set +a
+          echo "MAILBOX_URL=$MAILBOX_URL" >> "$GITHUB_ENV"
+          echo "PUSH_NOTIFICATIONS_SERVER_URL=$PUSH_NOTIFICATIONS_SERVER_URL" >> "$GITHUB_ENV"
 
       - name: Install and Build 🔧
         run: pnpm install && pnpm tauri android build --aab --apk
