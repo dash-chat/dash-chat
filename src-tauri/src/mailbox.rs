@@ -66,11 +66,6 @@ pub(crate) async fn cloud_mailbox_id(
         .unwrap_or(None)
 }
 
-/// Start browsing for local mailboxes and return a handle that tears the whole
-/// discovery down when dropped or aborted: aborting the returned watcher task
-/// drops its captured browse handler (also an [`AbortOnDropHandle`]), which
-/// aborts that too. `AppNode` holds the handle per node generation so discovery
-/// is stopped alongside the node on iOS background.
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     handle: &AppHandle<R>,
     node: dashchat_node::Node,
