@@ -4,6 +4,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { condenseReactions } from '$lib/utils/emojis';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { OverlayTransition } from '$lib/utils/overlay-transition.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import ReactionsSheetRow from './ReactionsSheetRow.svelte';
 
@@ -29,6 +30,10 @@
 	const filtered = $derived(
 		filter === null ? entries : entries.filter(([, emoji]) => emoji === filter),
 	);
+
+	// In the DOM only around being open, so a chat doesn't carry a hidden
+	// sheet per message.
+	const transition = new OverlayTransition(() => opened);
 
 	$effect(() => {
 		if (!opened) filter = null;
@@ -90,19 +95,21 @@
 	</List>
 {/snippet}
 
-{#if isWideScreen.value}
-	<Dialog {opened} onBackdropClick={close} class="!p-0">
-		<div data-testid="reactions-sheet">
-			{@render content()}
-		</div>
-	</Dialog>
-{:else}
-	<Sheet class="pb-safe" {opened} onBackdropClick={close}>
-		<div data-testid="reactions-sheet">
-			<div class="flex flex-col items-center">
-				<SheetHandle />
+{#if transition.mounted}
+	{#if isWideScreen.value}
+		<Dialog opened={transition.shown} onBackdropClick={close} class="!p-0">
+			<div data-testid="reactions-sheet">
+				{@render content()}
 			</div>
-			{@render content()}
-		</div>
-	</Sheet>
+		</Dialog>
+	{:else}
+		<Sheet class="pb-safe" opened={transition.shown} onBackdropClick={close}>
+			<div data-testid="reactions-sheet">
+				<div class="flex flex-col items-center">
+					<SheetHandle />
+				</div>
+				{@render content()}
+			</div>
+		</Sheet>
+	{/if}
 {/if}
