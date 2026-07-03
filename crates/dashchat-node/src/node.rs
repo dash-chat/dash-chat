@@ -1062,16 +1062,19 @@ impl Node {
         // close last, each time-bounded so none outlasts the suspension window.
 
         // iroh-blobs redb store: a file lock like the SQLite pools; fetch loop
-        // aborted above so nothing else is using it now.
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            self.blob_sync.blobs.store().shutdown(),
-        )
-        .await
-        {
-            Ok(Ok(())) => {}
-            Ok(Err(err)) => tracing::warn!("failed to shut down blob store: {err:?}"),
-            Err(_) => tracing::warn!("timed out shutting down blob store"),
+        // aborted above so nothing else is using it now. Absent on no-p2p nodes
+        // (e.g. the push extension), which never open it.
+        if let Some(blob_sync) = &self.blob_sync {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                blob_sync.blobs.store().shutdown(),
+            )
+            .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) => tracing::warn!("failed to shut down blob store: {err:?}"),
+                Err(_) => tracing::warn!("timed out shutting down blob store"),
+            }
         }
 
         // SqlitePool clones share state, so this drains every connection; the
