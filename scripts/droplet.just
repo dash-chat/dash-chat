@@ -8,9 +8,9 @@ create-mailbox-server version region='nyc1' size='s-1vcpu-2gb':
         echo "ghcr.io/dash-chat/mailbox-server:{{version}} not found in the registry (run: just docker push mailbox-server)" >&2
         exit 1
     fi
-    mailbox_domain="${MAILBOX_DOMAIN:?Set ENV=staging or ENV=production}"
-    project="${DROPLET_PROJECT:?Set ENV=staging or ENV=production}"
-    push_notifications_server_url="${PUSH_NOTIFICATIONS_SERVER_URL:?Set ENV=staging or ENV=production}"
+    mailbox_domain="${MAILBOX_DOMAIN:?Set ENV=staging or ENV=production or ENV=testing}"
+    project="${DROPLET_PROJECT:?Set ENV=staging or ENV=production or ENV=testing}"
+    push_notifications_server_url="${PUSH_NOTIFICATIONS_SERVER_URL:?Set ENV=staging or ENV=production or ENV=testing}"
     project_id=$(doctl projects list --format ID,Name --no-header | grep " $project$" | cut -d' ' -f1)
     server_args="--push-notifications-url $push_notifications_server_url"
     ssh_keys=$(doctl compute ssh-key list --format ID --no-header | paste -sd,)

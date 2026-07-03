@@ -104,7 +104,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     // Alice sends a photo; the op (and its blob hash + Alice's pubkey) is
     // published to the mailbox, whose fetch loop downloads the blob from Alice
     // into the relay's shared store.
-    let photo_bytes: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
+    let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
     let media = OutgoingMedia::Photos {
         photos: vec![OutgoingPhoto {
             data: photo_bytes.clone(),
@@ -234,7 +234,7 @@ async fn blob_fetch_succeeds_after_peer_addr_registration() {
     )
     .await
     .unwrap();
-    let blob_data: Vec<u8> = b"peer-addr-registration-test".to_vec();
+    let blob_data = unique_blob_bytes(b"peer-addr-registration-test".to_vec());
     let tag = sender.blobs.add_bytes(blob_data.clone()).await.unwrap();
     let hash = tag.hash;
     let sender_id = sender.endpoint_id();

@@ -1,26 +1,9 @@
 use std::time::Duration;
 
-use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::mem::MemMailbox;
+use dashchat_node::{
+    mailbox::MailboxOperation, mailbox::register_self_with_mailbox, testing::*, *,
+};
 use mailbox_client::toy::ToyMailboxClient;
-
-/// POST our dialing address to a mailbox's `/peers/register` endpoint so its
-/// blob fetcher can dial us. Mirrors `setup::register_self_with_mailbox`.
-async fn register_self_with_mailbox(mailbox_url: &str, addr: iroh::EndpointAddr) {
-    #[derive(serde::Serialize)]
-    struct Req {
-        addr: iroh::EndpointAddr,
-    }
-    let url = format!("{}/peers/register", mailbox_url.trim_end_matches('/'));
-    mailbox_client::HTTP_CLIENT
-        .post(&url)
-        .json(&Req { addr })
-        .send()
-        .await
-        .unwrap()
-        .error_for_status()
-        .unwrap();
-}
 
 /// Once a mailbox introduces two `no_p2p` nodes, removing the mailbox must stop
 /// all further sync — unlike the default p2p mode, there is no direct fallback
@@ -31,14 +14,14 @@ async fn no_p2p_cannot_sync_after_mailbox_removed() {
 
     let poll = PollConfig::default();
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(NodeConfig::testing().no_p2p(), "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(NodeConfig::testing().no_p2p(), "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     alice
@@ -148,7 +131,9 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
     // Alice tells the mailbox her dialing address so its fetcher can reach her
     // while she is the only blob source.
-    register_self_with_mailbox(&url, alice.iroh_endpoint().await.unwrap().addr()).await;
+    register_self_with_mailbox(&url, alice.iroh_endpoint().await.unwrap().addr())
+        .await
+        .unwrap();
 
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
     bobbi
@@ -305,7 +290,9 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
         ))
         .await;
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
-    register_self_with_mailbox(&url, alice.iroh_endpoint().await.unwrap().addr()).await;
+    register_self_with_mailbox(&url, alice.iroh_endpoint().await.unwrap().addr())
+        .await
+        .unwrap();
 
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
     bobbi

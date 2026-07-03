@@ -11,6 +11,7 @@
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import {
+	isRemoteMailbox,
 	killMailbox,
 	restartMailbox,
 	resumeMailbox,
@@ -44,6 +45,9 @@ describe('Offline UX', () => {
 
 	before(async function () {
 		this.timeout(120_000);
+		// The whole suite toggles the mailbox server's lifecycle, which is
+		// impossible against a remote environment mailbox.
+		if (isRemoteMailbox()) this.skip();
 		[agent1, agent2] = await Promise.all([
 			setupAgent('agent1'),
 			setupAgent('agent2'),

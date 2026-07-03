@@ -1,5 +1,4 @@
 use dashchat_node::{testing::*, *};
-use mailbox_client::mem::MemMailbox;
 
 const TRACING_FILTER: [&str; 4] = [
     "dashchat=debug",
@@ -13,14 +12,14 @@ const TRACING_FILTER: [&str; 4] = [
 async fn device_group_solo() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(NodeConfig::testing(), "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let alicia = TestNode::new(NodeConfig::testing(), "alicia")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     println!("nodes:");
