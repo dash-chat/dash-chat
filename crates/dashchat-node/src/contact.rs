@@ -48,9 +48,28 @@ pub enum ShareIntent {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct InboxTopic {
     // NOTE: order of these fields matters! expires_at, then topic.
-    /// Expiry date must be within the valid range expressible by DateTime::from_timestamp_nanos
+    /// Expiry date. Serialized as a whole number of hours since the Unix epoch
+    /// to keep the QR code short; sub-hour precision is not needed for expiry.
+    #[serde(with = "expires_at_hours")]
     pub expires_at: DateTime<Utc>,
     pub topic: Topic<kind::Inbox>,
+}
+
+/// Serialize a `DateTime<Utc>` as an `i64` count of whole hours since the Unix
+/// epoch. Truncates toward the epoch; used only for coarse expiry timestamps.
+mod expires_at_hours {
+    use chrono::{DateTime, Utc};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(dt: &DateTime<Utc>, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_i64(dt.timestamp().div_euclid(3600))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<DateTime<Utc>, D::Error> {
+        let hours = i64::deserialize(d)?;
+        DateTime::from_timestamp(hours * 3600, 0)
+            .ok_or_else(|| serde::de::Error::custom("expires_at hours out of range"))
+    }
 }
 
 impl std::fmt::Display for QrCode {
@@ -109,7 +128,9 @@ mod tests {
             device_pubkey: DeviceId::from(pubkey),
             inbox_topic: Some(InboxTopic {
                 topic: Topic::inbox(),
-                expires_at: Utc::now() + chrono::Duration::seconds(3600),
+                // Hour-aligned so it survives the coarse (hours-since-epoch)
+                // serialization used to keep the QR code short.
+                expires_at: DateTime::from_timestamp(1_700_000_000 / 3600 * 3600, 0).unwrap(),
             }),
             agent_id,
             share_intent: ShareIntent::AddDevice,
