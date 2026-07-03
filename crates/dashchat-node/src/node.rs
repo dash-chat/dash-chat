@@ -163,7 +163,12 @@ pub struct Node {
     node_keys: NodeKeys,
 
     filesystem: Filesystem,
-    blob_sync: BlobSync,
+    /// `None` for `no_p2p` nodes (the iOS push extension), which only read the
+    /// operation to build a notification and never fetch media blobs. Skipping it
+    /// avoids opening the iroh-blobs `redb` metadata store — whose exclusive
+    /// single-process lock the always-on main app holds, which would otherwise
+    /// deadlock the extension's node build.
+    blob_sync: Option<BlobSync>,
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     endpoint: p2panda::Endpoint,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -283,31 +288,42 @@ impl Node {
 
         // === blob sync === //
 
-        let self_endpoint = iroh::EndpointId::from_bytes(node_keys.device_id().as_bytes())?;
-        let source_lookup = crate::blob_sync::MixedSourceLookup::new(
-            op_store.clone(),
-            mailboxes.clone(),
-            self_endpoint,
-        );
+        // `no_p2p` nodes (the push extension) never fetch media and must not open
+        // the iroh-blobs store — its `redb` metadata db takes an exclusive
+        // single-process lock the always-on main app already holds, which would
+        // deadlock this build. They read the operation and build a notification
+        // from its payload only, so blob sync is skipped entirely.
+        let blob_sync = if config.enable_p2p {
+            let self_endpoint = iroh::EndpointId::from_bytes(node_keys.device_id().as_bytes())?;
+            let source_lookup = crate::blob_sync::MixedSourceLookup::new(
+                op_store.clone(),
+                mailboxes.clone(),
+                self_endpoint,
+            );
 
-        // LogId = blake3(topic.as_bytes()) is one-way and the op-store does not
-        // persist TopicId alongside each operation, so we invert it by hashing
-        // the topics we subscribe to (chat media lives in subscribed chat
-        // topics). Without this the pool starts empty and a blob left
-        // undownloaded at shutdown is never re-queued — only the live path adds
-        // it — so it can never load again after a restart.
-        let blob_fetch = BlobFetchPool::from_ops(
-            op_store.get_all_operations_not_fully_sorted(),
-            op_store.store.clone(),
-        )
-        .await?;
-        let blob_sync = BlobSync::new(
-            endpoint.clone(),
-            filesystem.blobs_store_path(),
-            blob_fetch,
-            source_lookup,
-        )
-        .await?;
+            // LogId = blake3(topic.as_bytes()) is one-way and the op-store does not
+            // persist TopicId alongside each operation, so we invert it by hashing
+            // the topics we subscribe to (chat media lives in subscribed chat
+            // topics). Without this the pool starts empty and a blob left
+            // undownloaded at shutdown is never re-queued — only the live path adds
+            // it — so it can never load again after a restart.
+            let blob_fetch = BlobFetchPool::from_ops(
+                op_store.get_all_operations_not_fully_sorted(),
+                op_store.store.clone(),
+            )
+            .await?;
+            Some(
+                BlobSync::new(
+                    endpoint.clone(),
+                    filesystem.blobs_store_path(),
+                    blob_fetch,
+                    source_lookup,
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
 
         // === node === //
 
@@ -340,13 +356,13 @@ impl Node {
 
         // === blob fetch loop === //
 
-        let blob_fetch_handle = node
-            .blob_sync
-            .spawn_fetch_loop(node.config.blob_fetch.clone());
-        node.blob_fetch_handle
-            .lock()
-            .await
-            .replace(blob_fetch_handle);
+        if let Some(blob_sync) = &node.blob_sync {
+            let blob_fetch_handle = blob_sync.spawn_fetch_loop(node.config.blob_fetch.clone());
+            node.blob_fetch_handle
+                .lock()
+                .await
+                .replace(blob_fetch_handle);
+        }
 
         // === network change notifier === //
 
@@ -422,7 +438,9 @@ impl Node {
 
     #[cfg(feature = "testing")]
     pub fn blob_sync(&self) -> &crate::blob_sync::BlobSync {
-        &self.blob_sync
+        self.blob_sync
+            .as_ref()
+            .expect("blob sync is enabled for p2p (testing) nodes")
     }
 
     #[cfg(feature = "testing")]
@@ -452,26 +470,47 @@ impl Node {
         Ok(())
     }
 
+    /// The node's blob sync, or an error for `no_p2p` nodes (the push extension)
+    /// that never open a blob store. Only the media send/serve paths — reached
+    /// exclusively by the main app's p2p node — call this.
+    fn require_blob_sync(&self) -> Result<&BlobSync> {
+        self.blob_sync
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("media blob operations require a p2p node"))
+    }
+
     #[cfg(feature = "testing")]
     /// The node's iroh-blobs protocol handle, sharing its blob store. An
     /// in-process mailbox uses this so relayed blobs land in—and are served
     /// from—the same store on the same endpoint as the node.
     pub fn blobs(&self) -> iroh_blobs::BlobsProtocol {
-        self.blob_sync.blobs.clone()
+        self.blob_sync
+            .as_ref()
+            .expect("blob sync is enabled for p2p (testing) nodes")
+            .blobs
+            .clone()
     }
 
     #[cfg(feature = "testing")]
     /// The node's blob downloader, for an in-process mailbox to fetch blobs
     /// into the shared store over the node's endpoint.
     pub fn blob_downloader(&self) -> iroh_blobs::api::downloader::Downloader {
-        self.blob_sync.downloader()
+        self.blob_sync
+            .as_ref()
+            .expect("blob sync is enabled for p2p (testing) nodes")
+            .downloader()
     }
 
     #[cfg(feature = "testing")]
     /// Topics the blob fetch pool currently associates with `hash`. Lets a test
     /// assert that startup hydration re-queued a stored op's blob.
     pub async fn blob_fetch_pool_topics_for(&self, hash: iroh_blobs::Hash) -> Vec<TopicId> {
-        self.blob_sync.fetch_pool.topics_for(hash).await
+        self.blob_sync
+            .as_ref()
+            .expect("blob sync is enabled for p2p (testing) nodes")
+            .fetch_pool
+            .topics_for(hash)
+            .await
     }
 
     pub fn device_group_topic(&self) -> DeviceGroupId {
@@ -852,7 +891,7 @@ impl Node {
             let topic_id: TopicId = chat_id.into();
             for item in bundle.iter() {
                 if let Err(err) = self
-                    .blob_sync
+                    .require_blob_sync()?
                     .retag_blob(topic_id, self.device_id(), header.hash(), item.hash)
                     .await
                 {
@@ -1295,7 +1334,7 @@ impl Node {
                     let size = photo.data.len() as u64;
                     ensure_blob_size(size, &photo.name)?;
                     let hash = self
-                        .blob_sync
+                        .require_blob_sync()?
                         .store_blob(topic, self.device_id(), operation_hash, photo.data)
                         .await?;
                     items.push(MediaMetadata {
@@ -1311,7 +1350,7 @@ impl Node {
                 let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
                 let hash = self
-                    .blob_sync
+                    .require_blob_sync()?
                     .store_blob(topic, self.device_id(), operation_hash, file.data)
                     .await?;
                 items.push(MediaMetadata {
@@ -1342,15 +1381,16 @@ impl Node {
         timeout: Option<std::time::Duration>,
     ) -> anyhow::Result<Vec<u8>> {
         let hash: iroh_blobs::Hash = hash.parse()?;
+        let blob_sync = self.require_blob_sync()?;
         let Some(timeout) = timeout else {
-            return Ok(self.blob_sync.blobs.get_bytes(hash).await?.to_vec());
+            return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
         };
 
-        if !self.blob_sync.blobs.has(hash).await.unwrap_or(false) {
+        if !blob_sync.blobs.has(hash).await.unwrap_or(false) {
             // Kick the download in the background so the poll below can still
             // observe the blob arriving via any path (this fetch, the
             // background loop, or a mailbox relay) rather than blocking on one.
-            let blob_sync = self.blob_sync.clone();
+            let blob_sync = blob_sync.clone();
             tokio::spawn(async move {
                 blob_sync.fetch_now(hash, timeout).await;
             });
@@ -1358,8 +1398,8 @@ impl Node {
 
         let deadline = std::time::Instant::now() + timeout;
         loop {
-            if self.blob_sync.blobs.has(hash).await.unwrap_or(false) {
-                return Ok(self.blob_sync.blobs.get_bytes(hash).await?.to_vec());
+            if blob_sync.blobs.has(hash).await.unwrap_or(false) {
+                return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
             }
             if std::time::Instant::now() >= deadline {
                 anyhow::bail!("blob {hash} not available after {timeout:?}");
@@ -1372,7 +1412,7 @@ impl Node {
         let mut items = vec![];
         for item in meta {
             let data = self
-                .blob_sync
+                .require_blob_sync()?
                 .blobs
                 .get_bytes(item.hash)
                 .await
