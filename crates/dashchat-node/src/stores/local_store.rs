@@ -21,6 +21,17 @@ use crate::{
 const PRIVATE_KEY_KEY: &str = "private_key";
 const AGENT_ID_KEY: &str = "agent_id";
 
+/// Distinguishes the two roles an inbox topic can play for this node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[repr(i64)]
+enum InboxRole {
+    /// An inbox we advertise in our QR code and receive contact requests on.
+    Advertised = 0,
+    /// A private inbox we minted while scanning someone's QR, used only to
+    /// receive their `ContactRequestAck`.
+    Reply = 1,
+}
+
 const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS identity (
         key TEXT PRIMARY KEY,
@@ -40,7 +51,8 @@ const MIGRATIONS: &[&str] = &[
     )",
     "CREATE TABLE IF NOT EXISTS active_inboxes (
         topic_id BLOB NOT NULL PRIMARY KEY,
-        expires_at_nanos INTEGER NOT NULL
+        expires_at_nanos INTEGER NOT NULL,
+        role INTEGER NOT NULL DEFAULT 0
     )",
     "CREATE TABLE IF NOT EXISTS group_chats (
         chat_id BLOB NOT NULL PRIMARY KEY
@@ -318,9 +330,23 @@ impl LocalStore {
         Ok(AgentId::from(crate::ActorId::from_bytes(&arr)?))
     }
 
+    /// Inbox topics this node created and advertises via its QR code.
     pub async fn get_active_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
+        self.get_inbox_topics(InboxRole::Advertised).await
+    }
+
+    /// Reply inbox topics this node created for a specific contact exchange and
+    /// is awaiting a `ContactRequestAck` on. Kept separate from advertised
+    /// inboxes so the frontend's contact-request scan only looks at inboxes
+    /// meant to receive requests, not our own private reply channels.
+    pub async fn get_reply_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
+        self.get_inbox_topics(InboxRole::Reply).await
+    }
+
+    async fn get_inbox_topics(&self, role: InboxRole) -> anyhow::Result<BTreeSet<InboxTopic>> {
         let rows: Vec<(Topic, i64)> =
-            sqlx::query_as("SELECT topic_id, expires_at_nanos FROM active_inboxes")
+            sqlx::query_as("SELECT topic_id, expires_at_nanos FROM active_inboxes WHERE role = ?")
+                .bind(role)
                 .fetch_all(&self.pool)
                 .await?;
         Ok(rows
@@ -333,16 +359,30 @@ impl LocalStore {
     }
 
     pub async fn add_active_inbox_topic(&self, inbox_topic: InboxTopic) -> anyhow::Result<()> {
+        self.add_inbox_topic(inbox_topic, InboxRole::Advertised)
+            .await
+    }
+
+    pub async fn add_reply_inbox_topic(&self, inbox_topic: InboxTopic) -> anyhow::Result<()> {
+        self.add_inbox_topic(inbox_topic, InboxRole::Reply).await
+    }
+
+    async fn add_inbox_topic(
+        &self,
+        inbox_topic: InboxTopic,
+        role: InboxRole,
+    ) -> anyhow::Result<()> {
         let nanos = inbox_topic
             .expires_at
             .timestamp_nanos_opt()
             .unwrap_or(0)
             .max(0);
         sqlx::query(
-            "INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos, role) VALUES (?, ?, ?)",
         )
         .bind(inbox_topic.topic.to_vec())
         .bind(nanos)
+        .bind(role)
         .execute(&self.pool)
         .await?;
         Ok(())

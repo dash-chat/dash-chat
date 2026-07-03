@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use crate::chat::ChatId;
 use crate::compat::Capabilities;
 use crate::contact::QrCode;
+use crate::topic::{Topic, kind};
 use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, DeviceId};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,8 +43,19 @@ pub enum AnnouncementsPayload {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum InboxPayload {
-    /// Invites the recipient to add the sender as a contact.
-    ContactRequest { code: QrCode, profile: Profile },
+    /// Invites the recipient to add the sender as a contact. `reply_topic` is a
+    /// private inbox the sender created for this exchange; the recipient sends
+    /// its `ContactRequestAck` there rather than on the (possibly shared)
+    /// advertised inbox, so other scanners of the same QR code never see it.
+    ContactRequest {
+        code: QrCode,
+        profile: Profile,
+        reply_topic: Topic<kind::Inbox>,
+    },
+    /// Sent by the inbox owner back to the scanner over the scanner's private
+    /// reply topic, carrying the owner's profile so the scanner learns it
+    /// immediately rather than waiting for announcements sync.
+    ContactRequestAck { profile: Profile },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

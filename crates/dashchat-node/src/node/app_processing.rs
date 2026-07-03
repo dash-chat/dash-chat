@@ -428,17 +428,49 @@ impl Node {
             }
 
             Payload::Inbox(invitation) => {
-                let active_topics = self.local_store.get_active_inbox_topics().await?;
-                if !active_topics
+                let topic_id = TopicId::from(topic);
+                let owned = self.local_store.get_active_inbox_topics().await?;
+                let owned_topic = owned.iter().any(|it| *it.topic == topic_id);
+                let is_reply = self
+                    .local_store
+                    .get_reply_inbox_topics()
+                    .await?
                     .iter()
-                    .any(|it| *it.topic == TopicId::from(topic))
-                {
-                    // not for me, ignore
+                    .any(|it| *it.topic == topic_id);
+                if !owned_topic && !is_reply {
+                    // not for me (e.g. another scanner's request on a shared
+                    // advertised inbox we only transiently synced): ignore.
                     return Ok(());
                 }
                 match invitation {
-                    InboxPayload::ContactRequest { .. } => {
-                        // Nothing to do.
+                    InboxPayload::ContactRequest { reply_topic, .. } => {
+                        // Only the advertised inbox owner answers, and only for a
+                        // freshly-received request (not a local replay), by
+                        // sending its profile to the scanner's private reply
+                        // topic. Spawned so we don't await publishing (which needs
+                        // this same processor) and deadlock.
+                        if owned_topic && !matches!(source, Source::LocalStore) {
+                            let node = self.clone();
+                            let reply_topic = *reply_topic;
+                            tokio::spawn(async move {
+                                if let Err(err) = node.reply_to_contact_request(reply_topic).await {
+                                    tracing::warn!(?err, "failed to reply to contact request");
+                                }
+                            });
+                        }
+                    }
+                    InboxPayload::ContactRequestAck { profile } => {
+                        // The scanner learns the owner's profile over its private
+                        // reply topic.
+                        if is_reply {
+                            if let Some(agent_id) =
+                                self.local_store.lookup_contact_by_device_id(author).await?
+                            {
+                                self.local_store
+                                    .save_profile(agent_id, profile.clone())
+                                    .await?;
+                            }
+                        }
                     }
                 }
             }

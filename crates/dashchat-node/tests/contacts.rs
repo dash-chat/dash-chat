@@ -154,3 +154,50 @@ async fn test_reject_multiple_contact_requests() {
     assert!(rejected.contains(&received_agents[0]));
     assert!(!rejected.contains(&received_agents[1]));
 }
+
+/// Two-way inbox flow: when the scanner sends a contact request, the inbox
+/// owner replies over the same inbox with a `ContactRequestAck` carrying its
+/// profile, and the scanner receives it on the inbox it scanned.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_inbox_two_way_flow() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let mailbox = MemMailbox::new();
+    let alice = TestNode::new(NodeConfig::testing(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    #[cfg(feature = "p2p")]
+    introduce_and_wait([&alice, &bobbi]).await;
+
+    // Alice generates a QR code with an inbox and Bobbi scans it, sending his
+    // contact request to Alice's inbox.
+    let qr = alice
+        .new_qr_code(ShareIntent::AddContact, true)
+        .await
+        .unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+
+    // Bobbi should receive Alice's reply over the same inbox, carrying her
+    // profile — proving the inbox channel is bidirectional.
+    let acked_profile = bobbi
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(Duration::from_secs(30), |n: &Notification| {
+            let Some(Payload::Inbox(InboxPayload::ContactRequestAck { profile })) = &n.payload
+            else {
+                return None;
+            };
+            Some(profile.clone())
+        })
+        .await
+        .expect("Bobbi should receive Alice's contact request ack");
+
+    assert_eq!(acked_profile.name, "alice");
+}

@@ -34,7 +34,7 @@ use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
-use crate::topic::{Topic, TopicId};
+use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
     DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
@@ -1255,6 +1255,22 @@ impl Node {
             self.initialize_topic(*inbox_topic.topic)
                 .await
                 .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+            // Mint a private reply inbox for this exchange and listen on it for
+            // the owner's ack. We do NOT persist the (possibly shared) advertised
+            // inbox we scanned — only the owner keeps camping on that — so other
+            // scanners of the same QR never share a return channel with us.
+            let reply_inbox = InboxTopic {
+                topic: Topic::inbox()
+                    .alias_named(&format!("reply_inbox({:?})", self.device_id().aliased())),
+                expires_at: Utc::now() + self.config.contact_code_expiry,
+            };
+            self.initialize_topic(*reply_inbox.topic)
+                .await
+                .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+            self.local_store
+                .add_reply_inbox_topic(reply_inbox.clone())
+                .await
+                .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
             let code = self
                 .new_qr_code(ShareIntent::AddContact, false)
                 .await
@@ -1268,7 +1284,11 @@ impl Node {
             };
             self.publish(
                 inbox_topic.topic,
-                Payload::Inbox(InboxPayload::ContactRequest { code, profile }),
+                Payload::Inbox(InboxPayload::ContactRequest {
+                    code,
+                    profile,
+                    reply_topic: reply_inbox.topic.clone(),
+                }),
                 Some(&format!(
                     "add_contact/contact_request({:?})",
                     agent.aliased()
@@ -1286,6 +1306,34 @@ impl Node {
         }
 
         Ok(agent)
+    }
+
+    /// Reply to an incoming contact request by sending our profile to the
+    /// scanner's private reply topic, so the scanner learns it immediately over
+    /// the inbox rather than waiting for announcements sync. We subscribe to the
+    /// reply topic just long enough to publish to it.
+    pub(crate) async fn reply_to_contact_request(
+        &self,
+        reply_topic: Topic<kind::Inbox>,
+    ) -> Result<(), Error> {
+        let Some(profile) = self
+            .my_profile()
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+        else {
+            return Ok(());
+        };
+        self.initialize_topic(*reply_topic)
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        self.publish(
+            reply_topic,
+            Payload::Inbox(InboxPayload::ContactRequestAck { profile }),
+            Some("reply_to_contact_request"),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        Ok(())
     }
 
     /// Reject a contact request from the given agent.
@@ -1348,6 +1396,16 @@ impl Node {
                     .topic
                     .clone()
                     .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
+            )
+            .await?;
+        }
+
+        for topic in self.local_store.get_reply_inbox_topics().await?.iter() {
+            self.initialize_topic(
+                *topic
+                    .topic
+                    .clone()
+                    .alias_named(&format!("reply_inbox({:?})", self.device_id().aliased())),
             )
             .await?;
         }
