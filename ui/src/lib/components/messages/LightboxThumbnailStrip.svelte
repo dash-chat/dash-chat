@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { PhotoAttachment } from 'dash-chat-stores';
 	import BlobImage from '$lib/components/BlobImage.svelte';
-	import { blobStatus, retryBlob } from '$lib/stores/blob-load-store.svelte';
 
 	interface Props {
 		photos: PhotoAttachment[];
@@ -15,14 +14,13 @@
 	let { photos, index = $bindable(0), faded = false }: Props = $props();
 
 	let stripEl: HTMLElement | undefined = $state();
+	const thumbs: Record<number, { retryIfErrored: () => boolean }> = {};
 
-	// A failed thumbnail shows a reload icon; clicking it retries the download and
-	// switches to that photo. Load state is shared per blob hash, so the retry
-	// re-fetches the main-stage image of the same photo alongside the thumbnail.
-	// Guard on the error status so retrying a healthy thumb can't needlessly bust
-	// its cache and re-fetch.
+	// A failed thumbnail shows a reload icon; clicking it retries the download
+	// (which re-fetches the main-stage image of the same blob too) and switches to
+	// that photo. A healthy thumb just switches — `retryIfErrored` no-ops.
 	function onThumbClick(i: number) {
-		if (blobStatus(photos[i].hash) === 'error') retryBlob(photos[i].hash);
+		thumbs[i]?.retryIfErrored();
 		index = i;
 	}
 
@@ -52,6 +50,7 @@
 			onclick={() => onThumbClick(i)}
 		>
 			<BlobImage
+				bind:this={thumbs[i]}
 				item={p}
 				alt={p.name}
 				imgClass="block h-full w-full object-cover"
