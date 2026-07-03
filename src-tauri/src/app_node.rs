@@ -137,7 +137,7 @@ impl AppNode {
     /// Tear the node down and release all SQLite locks so iOS can suspend the
     /// app cleanly. Idempotent, and holds the write lock for the whole teardown
     /// so a concurrent [`resume`](Self::resume) can't interleave.
-    pub async fn pause(&self, app: &AppHandle) {
+    pub async fn pause(&self) {
         log::info!("Quiescing node for iOS background suspension");
         let mut inner = self.inner.write().await;
         let Some(node) = inner.node.take() else {
