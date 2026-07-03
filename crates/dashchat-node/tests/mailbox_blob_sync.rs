@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
 use mailbox_client::toy::ToyMailboxClient;
-use p2panda::network::MdnsDiscoveryMode;
 
 /// A media blob relays through a mailbox when the sender is offline.
 ///
@@ -30,8 +29,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
 
     let poll = PollConfig::default();
 
-    let mut config = NodeConfig::testing();
-    config.mdns_mode = MdnsDiscoveryMode::Active;
+    let config = NodeConfig::testing();
 
     // Always-on relay node hosting an in-process mailbox that shares its iroh
     // endpoint + blob store. Because the mailbox rides the relay node's p2panda
@@ -89,6 +87,12 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
+
+    // Simulate alice and bobbi discovering the relay's address over mDNS.
+    teach_peers(&alice, [&relay]).await.unwrap();
+    teach_peers(&bobbi, [&relay]).await.unwrap();
+    alice.register_with_mailbox(&url).await.unwrap();
+    bobbi.register_with_mailbox(&url).await.unwrap();
 
     // Establish contact while both are online (no media exchanged yet).
     alice

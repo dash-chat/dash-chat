@@ -4,7 +4,6 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use dashchat_utils::RELAY_URL;
 use push_notifications_client::client::PushNotificationsClient;
 use redb::Database;
 use serde::{Deserialize, Serialize};
@@ -98,12 +97,11 @@ pub async fn spawn_server(
     addr: String,
     push_notifications_url: Option<String>,
     blob_sync: Option<BlobSync>,
+    relay_url: Option<iroh::RelayUrl>,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = init_db(db_path.clone())?;
     let db_arc = Arc::new(db);
-
-    let relay_url = Some(RELAY_URL.clone());
 
     // Spawn background cleanup task
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));

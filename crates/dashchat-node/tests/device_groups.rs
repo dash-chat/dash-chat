@@ -28,7 +28,7 @@ async fn device_group_solo() {
 
     // @TODO: comment out unsupported feature for now.
     // #[cfg(feature = "p2p")]
-    // introduce_and_wait([&alice.network, &alicia.network]).await;
+    // introduce([&alice.network, &alicia.network]).await;
 
     println!("peers see each other");
 

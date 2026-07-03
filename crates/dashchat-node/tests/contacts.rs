@@ -29,9 +29,6 @@ async fn test_reject_contact_request() {
     println!("alice: {}", alice.device_id());
     println!("bobbi: {}", bobbi.device_id());
 
-    #[cfg(feature = "p2p")]
-    introduce_and_wait([&alice, &bobbi]).await;
-
     // Alice generates a QR code with inbox
     let qr = alice
         .new_qr_code(ShareIntent::AddContact, true)

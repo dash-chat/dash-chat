@@ -123,6 +123,12 @@ impl NodeConfig {
             unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
         }
     }
+
+    #[cfg(feature = "testing")]
+    pub fn random_network_id(mut self) -> Self {
+        self.network_id = p2panda::Topic::random().into();
+        self
+    }
 }
 
 impl Default for NodeConfig {

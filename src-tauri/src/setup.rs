@@ -1,4 +1,4 @@
-use dashchat_node::mailbox::{fetch_mailbox_health, register_self_with_mailbox};
+use dashchat_node::mailbox::fetch_mailbox_health;
 use dashchat_node::Node;
 use tauri::AppHandle;
 use tauri::Manager;
@@ -36,8 +36,7 @@ pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
         std::time::Duration::from_secs(10),
     )
     .await?;
-    let our_addr = node.iroh_endpoint().await?.addr();
-    register_self_with_mailbox(&mailbox_url, our_addr).await?;
+    node.register_with_mailbox(&mailbox_url).await?;
     Ok(())
 }
 
