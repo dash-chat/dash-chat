@@ -117,16 +117,10 @@ impl AppNode {
         }
     }
 
-    /// Snapshot the live node, or a retryable "not ready" sentinel when the node
-    /// is absent (paused, or a rebuild that already failed).
-    ///
-    /// Acquiring the read lock blocks while `resume` holds the write lock across
-    /// `Node::new` (seconds on iOS foreground, during iroh/relay bring-up) or
-    /// while `pause` tears the node down. Callers therefore wait out an
-    /// in-progress rebuild and then succeed against the live node instead of
-    /// bouncing through the frontend retry loop; the sentinel — and that retry
-    /// loop — only come into play once the node is actually gone.
-    pub async fn get(&self) -> Result<Node, crate::error::Error> {
+    /// Snapshot the live node, or a retryable "not ready" error when paused.
+    /// Returns immediately — the frontend retry loop covers the resume window,
+    /// so we deliberately do not wait here.
+    pub async fn get(&self) -> Result<Node, String> {
         self.inner
             .read()
             .await
@@ -143,9 +137,13 @@ impl AppNode {
     /// Tear the node down and release all SQLite locks so iOS can suspend the
     /// app cleanly. Idempotent, and holds the write lock for the whole teardown
     /// so a concurrent [`resume`](Self::resume) can't interleave.
-    pub async fn pause(&self) {
+    pub async fn pause(&self, app: &AppHandle) {
+        log::info!("Quiescing node for iOS background suspension");
         let mut inner = self.inner.write().await;
         let Some(node) = inner.node.take() else {
+            // Still building or already paused; a still-building node keeps
+            // running in the background (0xdead10cc risk).
+            log::warn!("Backgrounded with no live node to quiesce");
             return;
         };
         // Cancel the tracked cloud-mailbox retry and wait for it to drain, and
@@ -175,6 +173,7 @@ impl AppNode {
         if inner.node.is_some() {
             return Ok(());
         }
+        log::info!("Rebuilding node on iOS foreground");
 
         #[cfg(mobile)]
         let topic_subscribed_tx = Some(self.topic_subscribed_tx.clone());

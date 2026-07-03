@@ -1017,13 +1017,42 @@ impl Node {
             handle.abort();
         }
 
-        // Close pools last. SqlitePool clones share underlying state, so closing
-        // here drains every connection across the app. The sync tracker owns a
-        // separate pool (mailbox_sync_tracker.db) that must be drained too, or
-        // iOS will SIGKILL the suspended app for holding its file lock (0xdead10cc).
+        // Release every held file lock before returning, or iOS SIGKILLs the
+        // suspended app (0xdead10cc). File locks first, slow best-effort endpoint
+        // close last, each time-bounded so none outlasts the suspension window.
+
+        // iroh-blobs redb store: a file lock like the SQLite pools; fetch loop
+        // aborted above so nothing else is using it now.
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            self.blob_sync.blobs.store().shutdown(),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => tracing::warn!("failed to shut down blob store: {err:?}"),
+            Err(_) => tracing::warn!("timed out shutting down blob store"),
+        }
+
+        // SqlitePool clones share state, so this drains every connection; the
+        // sync tracker owns a separate pool (mailbox_sync_tracker.db).
         self.mailboxes.sync_tracker().close().await;
         self.local_store.close().await;
         self.op_store.close().await;
+
+        // Holds only sockets (no file lock), so it goes last. The node keeps its
+        // own endpoint clone, so the actor drop above doesn't release it.
+        match self.endpoint.endpoint().await {
+            Ok(endpoint) => {
+                if tokio::time::timeout(std::time::Duration::from_secs(3), endpoint.close())
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!("timed out closing iroh endpoint");
+                }
+            }
+            Err(err) => tracing::warn!("failed to resolve iroh endpoint for close: {err:?}"),
+        }
 
         Ok(())
     }
