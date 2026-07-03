@@ -6,11 +6,11 @@
 	let {
 		reactions,
 		myDeviceId,
-		onToggleReaction,
+		onClick,
 	}: {
 		reactions: Record<DeviceId, string>;
 		myDeviceId: DeviceId;
-		onToggleReaction: (emoji: string) => void;
+		onClick: () => void;
 	} = $props();
 
 	const condensed = $derived(condenseReactions(reactions, myDeviceId));
@@ -18,6 +18,6 @@
 
 <div class="flex gap-0.5">
 	{#each condensed as reaction}
-		<Reaction {reaction} {onToggleReaction} />
+		<Reaction {reaction} {onClick} />
 	{/each}
 </div>

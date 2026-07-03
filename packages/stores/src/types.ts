@@ -1,3 +1,5 @@
+import type { ReactivePromise } from 'signalium';
+
 import { Profile } from './contacts/contacts-client';
 import { AgentId, DeviceId, Hash, TopicId } from './p2panda/types';
 
@@ -215,6 +217,8 @@ export interface MessagesStore {
 		media: OutgoingMedia | null;
 	}): Promise<Hash>;
 	sendReaction(reaction: ChatReaction): Promise<void>;
+	/** Resolves the agent owning the given device among this chat's participants. */
+	agentIdForDeviceId(deviceId: DeviceId): ReactivePromise<AgentId | undefined>;
 }
 
 export type GroupControlEvent =

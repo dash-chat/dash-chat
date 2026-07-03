@@ -221,6 +221,116 @@ export class Messages extends TestHelper {
 		);
 	}
 
+	/** Whether the who-reacted sheet of the message containing `text` is open. */
+	reactionsSheetOpen(text: string): Promise<boolean> {
+		return this.agent.execute(
+			(messagesSel: string, t: string, sheetSel: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						const sheet = wrapper
+							.querySelector(sheetSel)
+							?.closest('.k-sheet, .k-dialog');
+						if (!sheet) return false;
+						if (sheet.classList.contains('k-sheet')) {
+							return sheet.classList.contains('-translate-y-full');
+						}
+						return !sheet.classList.contains('opacity-0');
+					}
+				}
+				return false;
+			},
+			this.messagesSelector,
+			text,
+			tid('reactions-sheet'),
+		);
+	}
+
+	/** Tap the reaction chip for `emoji` on the message containing `text` to
+	 * open the who-reacted sheet, and wait for it to slide in. */
+	async openReactionsSheet(text: string, emoji: string) {
+		const wrapper = await this.messageBubbleWithText(text);
+		if (!wrapper) throw new Error(`Message "${text}" not found`);
+		await wrapper.$(tid(`reaction-chip-${emoji}`)).click();
+		await this.agent.waitUntil(() => this.reactionsSheetOpen(text), {
+			timeoutMsg: `Reactions sheet for "${text}" did not open`,
+		});
+		return wrapper;
+	}
+
+	/** Whether the open who-reacted sheet of the message containing `text`
+	 * shows a reactor row with `name`. */
+	reactionsSheetShowsReactor(text: string, name: string): Promise<boolean> {
+		return this.agent.execute(
+			(messagesSel: string, t: string, n: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						const rows = wrapper.querySelectorAll(
+							'[data-testid^="reaction-row"]',
+						);
+						return Array.from(rows).some(row =>
+							row.textContent?.includes(n),
+						);
+					}
+				}
+				return false;
+			},
+			this.messagesSelector,
+			text,
+			name,
+		);
+	}
+
+	/** Click a filter tab in the open who-reacted sheet: 'all' or an emoji. */
+	async clickReactionsTab(text: string, tab: string) {
+		const wrapper = await this.messageBubbleWithText(text);
+		if (!wrapper) throw new Error(`Message "${text}" not found`);
+		await wrapper.$(tid(`reactions-tab-${tab}`)).click();
+	}
+
+	/** Tap the own-reaction row in the open who-reacted sheet to remove the
+	 * reaction (the sheet closes itself). */
+	async removeOwnReaction(text: string) {
+		const wrapper = await this.messageBubbleWithText(text);
+		if (!wrapper) throw new Error(`Message "${text}" not found`);
+		await wrapper.$(tid('reaction-row-own')).click();
+	}
+
+	/** Close the who-reacted sheet by clicking the backdrop above it. The
+	 * backdrop is Konsta's untagged sibling div, so it can't be clicked via a
+	 * testid selector. */
+	async closeReactionsSheet(text: string) {
+		await this.agent.execute(
+			(messagesSel: string, t: string, sheetSel: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						const root = wrapper
+							.querySelector(sheetSel)
+							?.closest('.k-sheet, .k-dialog');
+						const backdrop = root?.previousElementSibling;
+						if (backdrop instanceof HTMLElement) backdrop.click();
+						return;
+					}
+				}
+			},
+			this.messagesSelector,
+			text,
+			tid('reactions-sheet'),
+		);
+		await this.agent.waitUntil(
+			async () => !(await this.reactionsSheetOpen(text)),
+			{ timeoutMsg: `Reactions sheet for "${text}" did not close` },
+		);
+	}
+
 	async waitForReaction(text: string, emoji: string, timeout = SYNC_TIMEOUT) {
 		await this.agent.waitUntil(() => this.hasReaction(text, emoji), {
 			timeout,

@@ -51,6 +51,12 @@ export class DirectChatStore implements MessagesStore {
 		return contactRequests.find(cr => cr.code.agent_id === this.peer);
 	});
 
+	agentIdForDeviceId = reactive(async (deviceId: DeviceId) => {
+		const myDeviceId = await this.contactsStore.myDeviceId();
+		if (deviceId === myDeviceId) return await this.contactsStore.myAgentId();
+		return this.peer;
+	});
+
 	messages = reactive(async () => {
 		const chatId = await this.chatId();
 		const logs = await this.logsStore.logsForAllAuthors(chatId);

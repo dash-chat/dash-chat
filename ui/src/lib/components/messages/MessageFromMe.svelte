@@ -11,6 +11,7 @@
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
+	import ReactionsSheet from './ReactionsSheet.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { m } from '$lib/paraglide/messages.js';
@@ -38,6 +39,7 @@
 	const store: MessagesStore = getContext('messages-store');
 
 	let reactionsOpened = $state(false);
+	let reactionsSheetOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
@@ -95,8 +97,10 @@
 			<Reactions
 				reactions={message.reactions}
 				{myDeviceId}
-				onToggleReaction={emoji =>
-					toggleReaction(store, message, myDeviceId, emoji)}
+				onClick={() => {
+					reactionsOpened = false;
+					reactionsSheetOpened = true;
+				}}
 			/>
 		</div>
 	{/if}
@@ -106,6 +110,12 @@
 	{myDeviceId}
 	bind:opened={reactionsOpened}
 	target={messageEl}
+/>
+<ReactionsSheet
+	reactions={message.reactions}
+	{myDeviceId}
+	onToggleReaction={emoji => toggleReaction(store, message, myDeviceId, emoji)}
+	bind:opened={reactionsSheetOpened}
 />
 
 <style>
