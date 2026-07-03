@@ -89,7 +89,10 @@ impl TestMailbox {
     }
 
     /// Spawn a standalone mailbox server (its own endpoint + blob store, no
-    /// blob-store sharing with any node) on a free port under a temp dir.
+    /// blob-store sharing with any node) on a free port under a temp dir. No
+    /// relay is configured, so the mailbox stays fully local and needs no
+    /// internet access — nodes reach it over their directly-registered
+    /// addresses.
     fn spawn_local() -> Self {
         let dir = tempfile::tempdir().expect("failed to create temp dir for local mailbox");
         let db_path = dir.path().join("mailbox.redb");
@@ -102,7 +105,9 @@ impl TestMailbox {
             let signal = async move {
                 let _ = stop_signal_rx.await;
             };
-            if let Err(e) = mailbox_server::spawn_server(db_path, addr, None, None, signal).await {
+            if let Err(e) =
+                mailbox_server::spawn_server(db_path, addr, None, None, None, signal).await
+            {
                 tracing::error!("Local test mailbox server failed: {e:?}");
             }
         });

@@ -94,6 +94,8 @@ impl NodeConfig {
     pub fn testing() -> Self {
         use crate::compat::Capabilities;
 
+        let network_id = p2panda::Topic::random().into();
+
         let mut mailboxes_config = MailboxesConfig::default();
         mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
         mailboxes_config.degraded_interval = std::time::Duration::from_millis(2000);
@@ -103,7 +105,7 @@ impl NodeConfig {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
             capabilities: Capabilities::current(),
-            network_id: *NETWORK_ID,
+            network_id,
             // In testing we disable mDNS discovery and do not provide a relay address so as not
             // to effect expected behavior of existing tests.
             mdns_mode: MdnsDiscoveryMode::Disabled,

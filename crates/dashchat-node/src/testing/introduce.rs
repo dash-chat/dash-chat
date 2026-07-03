@@ -1,70 +1,31 @@
 use crate::testing::test_node::TestNode;
 
-pub async fn introduce_and_wait(_nodes: impl IntoIterator<Item = &TestNode>) {
-    #[cfg(feature = "p2p")]
-    unimplemented!("re-implement when p2p sync is available");
-
-    // let networks = networks.into_iter().collect::<Vec<_>>();
-    // let expected_peers = networks.len() - 1;
-    // introduce(networks.clone()).await;
-    // wait_for(
-    //     Duration::from_millis(100),
-    //     Duration::from_secs(10),
-    //     || async {
-    //         let peers = join_all(
-    //             networks
-    //                 .iter()
-    //                 .map(|n| async { n.known_peers().await.unwrap().len() }),
-    //         )
-    //         .await;
-    //         match peers.iter().all(|p| *p == expected_peers) {
-    //             true => Ok(()),
-    //             false => Err(peers),
-    //         }
-    //     },
-    // )
-    // .await
-    // .unwrap();
+/// Teach every node the direct dialing address of every other node, so they can
+/// reach each other by EndpointId without any network-based discovery (relay +
+/// pkarr). In production that resolution happens over the internet or over mDNS;
+/// doing it explicitly keeps tests fully local and avoids flakiness of mDNS.
+///
+/// Each `insert_peer_addr` awaits the node actor's confirmation, so the
+/// introduction has taken hold in the address book by the time this returns.
+pub async fn introduce_peers(nodes: impl IntoIterator<Item = &TestNode>) -> anyhow::Result<()> {
+    let nodes: Vec<&TestNode> = nodes.into_iter().collect();
+    for node in &nodes {
+        teach_peers(node, nodes.iter().copied()).await?;
+    }
+    Ok(())
 }
 
-pub async fn introduce(_nodes: impl IntoIterator<Item = &TestNode>) {
-    #[cfg(feature = "p2p")]
-    unimplemented!("re-implement when p2p sync is available");
-
-    // let networks = networks.into_iter().collect::<Vec<_>>();
-    // for m in networks.iter() {
-    //     for n in networks.iter() {
-    //         if m.node_id() == n.node_id() {
-    //             continue;
-    //         }
-    //         let m_addr = m.endpoint().node_addr().await.unwrap();
-    //         let n_addr = n.endpoint().node_addr().await.unwrap();
-
-    //         m.add_peer(NodeAddress {
-    //             verifying_key: p2panda_core::VerifyingKey::from_bytes(n_addr.node_id.as_bytes())
-    //                 .expect("already validated public key"),
-    //             direct_addresses: n_addr
-    //                 .direct_addresses
-    //                 .iter()
-    //                 .map(|addr| addr.to_owned())
-    //                 .collect(),
-    //             relay_url: None, // n_addr.relay_url.map(to_relay_url),
-    //         })
-    //         .await
-    //         .unwrap();
-
-    //         n.add_peer(NodeAddress {
-    //             verifying_key: p2panda_core::VerifyingKey::from_bytes(m_addr.node_id.as_bytes())
-    //                 .expect("already validated public key"),
-    //             direct_addresses: m_addr
-    //                 .direct_addresses
-    //                 .iter()
-    //                 .map(|addr| addr.to_owned())
-    //                 .collect(),
-    //             relay_url: None, // n_addr.relay_url.map(to_relay_url),
-    //         })
-    //         .await
-    //         .unwrap();
-    //     }
-    // }
+/// Register every peer's dialing address on `node`, skipping the node's own.
+pub async fn teach_peers(
+    node: &TestNode,
+    peers: impl IntoIterator<Item = &TestNode>,
+) -> anyhow::Result<()> {
+    let me = node.endpoint_id();
+    for peer in peers {
+        let addr = peer.iroh_endpoint().await?.addr();
+        if addr.id != me {
+            node.insert_peer_addr(addr.clone()).await?;
+        }
+    }
+    Ok(())
 }

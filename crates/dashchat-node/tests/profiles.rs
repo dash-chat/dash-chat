@@ -78,8 +78,6 @@ async fn test_profiles_sync_between_contacts() {
     println!("alice: {}", alice.device_id());
     println!("bobbi: {}", bobbi.device_id());
 
-    introduce_and_wait([&alice, &bobbi]).await;
-
     // Set initial profiles before adding contacts
     let profile = Profile {
         name: "Alice".to_string(),

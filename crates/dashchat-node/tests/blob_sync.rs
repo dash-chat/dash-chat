@@ -1,5 +1,4 @@
 use dashchat_node::{testing::*, *};
-use p2panda::network::MdnsDiscoveryMode;
 
 /// A chat message with a photo attachment created by one node should be
 /// loadable by the recipient node: the op carrying the media metadata syncs
@@ -10,8 +9,7 @@ async fn media_blob_syncs_between_nodes() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
 
     let poll = PollConfig::default();
-    let mut config = NodeConfig::testing();
-    config.mdns_mode = MdnsDiscoveryMode::Active;
+    let config = NodeConfig::testing();
 
     let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(config.clone(), "alice")
@@ -98,8 +96,7 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
 
     let poll = PollConfig::default();
-    let mut config = NodeConfig::testing();
-    config.mdns_mode = MdnsDiscoveryMode::Active;
+    let config = NodeConfig::testing();
 
     let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(config.clone(), "alice")
