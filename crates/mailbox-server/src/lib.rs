@@ -216,29 +216,6 @@ impl MailboxServer {
     }
 }
 
-/// Transitional wrapper for callers not yet migrated to [`MailboxServer::spawn`]
-/// (mailbox-local-server); removed once they are.
-#[deprecated = "use MailboxServer::spawn"]
-pub async fn spawn_server(
-    db_path: PathBuf,
-    addr: String,
-    push_notifications_url: Option<String>,
-    blob_sync: Option<BlobSync>,
-    signal: impl std::future::Future<Output = ()> + Send + 'static,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let server = MailboxServer::spawn(
-        db_path,
-        &addr,
-        push_notifications_url,
-        blob_sync,
-        Some(dashchat_utils::RELAY_URL.clone()),
-    )
-    .await?;
-    signal.await;
-    server.stop().await;
-    Ok(())
-}
-
 #[derive(Serialize, Deserialize)]
 struct HealthResponse {
     status: String,

@@ -10,14 +10,14 @@ use crate::filesystem::FileSystem;
 /// the real id is known. `Mailboxes::register` is idempotent.
 pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
     let mailbox_url = crate::mailbox::default_mailbox_url();
-    let health = fetch_mailbox_health(&mailbox_url).await?;
+    let health = mailbox_client::fetch_mailbox_health(&mailbox_url).await?;
     // Add the mailbox's dialing address to the p2panda address book so the iroh
     // blob downloader can reach it by EndpointId; without this the mailbox is
     // known only by id and is not dialable.
     node.insert_peer_addr(health.endpoint_addr).await?;
-    if !node.mailboxes.is_tracked(&health.mailbox_id).await {
+    if !node.mailboxes.is_tracked(&health.endpoint_id).await {
         let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
-            health.mailbox_id,
+            health.endpoint_id,
             mailbox_url.clone(),
             node.endpoint_id(),
         );
@@ -53,34 +53,6 @@ pub(crate) async fn register_self_with_mailbox(
         .await?
         .error_for_status()?;
     Ok(())
-}
-
-pub(crate) struct MailboxHealth {
-    pub mailbox_id: mailbox_client::MailboxId,
-    pub endpoint_addr: iroh::EndpointAddr,
-}
-
-/// Fetch a mailbox server's `/health` response: its canonical MailboxId (the
-/// base64url-no-pad EndpointId) and its dialing address (relay + direct
-/// addresses) for the p2panda address book.
-pub(crate) async fn fetch_mailbox_health(base_url: &str) -> anyhow::Result<MailboxHealth> {
-    #[derive(serde::Deserialize)]
-    struct HealthResponse {
-        endpoint_id: String,
-        endpoint_addr: iroh::EndpointAddr,
-    }
-    let url = format!("{}/health", base_url.trim_end_matches('/'));
-    let resp = mailbox_client::HTTP_CLIENT
-        .get(&url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<HealthResponse>()
-        .await?;
-    Ok(MailboxHealth {
-        mailbox_id: resp.endpoint_id,
-        endpoint_addr: resp.endpoint_addr,
-    })
 }
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {

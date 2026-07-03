@@ -29,6 +29,27 @@ pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         .expect("Failed to build HTTP client")
 });
 
+/// A mailbox server's `/health` response: its canonical MailboxId (the
+/// base64url-no-pad encoding of its iroh EndpointId) and its dialing address
+/// (relay + direct addresses).
+#[derive(Clone, Debug, Deserialize)]
+pub struct MailboxHealth {
+    pub endpoint_id: MailboxId,
+    pub endpoint_addr: iroh::EndpointAddr,
+}
+
+/// Fetch a mailbox server's `/health` response.
+pub async fn fetch_mailbox_health(base_url: &str) -> Result<MailboxHealth, anyhow::Error> {
+    let url = format!("{}/health", base_url.trim_end_matches('/'));
+    Ok(HTTP_CLIENT
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?)
+}
+
 #[async_trait::async_trait]
 pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     fn id(&self) -> MailboxId;

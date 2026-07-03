@@ -1,0 +1,19 @@
+[package]
+name = "mailbox-mdns-discovery"
+version = "0.1.0"
+edition = "2021"
+description = "Shared mDNS announcement and discovery of Dash Chat mailbox services on the LAN"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+dashchat-utils = { path = "../dashchat-utils" }
+mailbox-client = { path = "../mailbox-client" }
+iroh = { workspace = true }
+mdns-sd = "0.17"
+if-watch = { version = "3", features = ["tokio"] }
+tokio = { version = "1", features = ["rt", "net", "time", "sync", "macros"] }
+futures = "0.3"
+log = "0.4"

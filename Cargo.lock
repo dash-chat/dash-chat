@@ -1972,6 +1972,7 @@ dependencies = [
  "log",
  "mailbox-client",
  "mailbox-local-server",
+ "mailbox-mdns-discovery",
  "mailbox-server",
  "mdns-sd",
  "nanoid 0.5.0",
@@ -2065,6 +2066,7 @@ dependencies = [
  "mailbox-local-server",
  "mailbox-server",
  "maplit",
+ "mdns-sd",
  "nanoid 0.4.0",
  "p2panda",
  "p2panda-auth",
@@ -2094,6 +2096,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures",
+ "if-watch",
  "iroh",
  "iroh-blobs",
  "log",
@@ -5421,12 +5424,26 @@ name = "mailbox-local-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "log",
+ "mailbox-mdns-discovery",
+ "mailbox-server",
+ "mdns-sd",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "mailbox-mdns-discovery"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dashchat-utils",
  "futures",
  "if-watch",
  "iroh",
- "iroh-blobs",
  "log",
- "mailbox-server",
+ "mailbox-client",
  "mdns-sd",
  "tokio",
 ]

@@ -47,22 +47,28 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     // lazily over mDNS rather than via an active gossip connection; retry the
     // blob fetch on a short interval so a pass lands once her address resolves.
     let (peer_addr_tx, _peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
-    let server = mailbox_local_server::spawn_local_mailbox_server(
-        db_path,
+    let blob_sync = mailbox_server::BlobSync::shared(
         relay.blobs(),
         relay.blob_downloader(),
         relay.iroh_endpoint().await.unwrap(),
-        Some(mailbox_server::FetchConfig {
-            concurrency: 4,
-            attempt_timeout: Duration::from_secs(10),
-            pass_interval: Duration::from_secs(2),
-            retry_cooldown: Duration::from_secs(2),
-        }),
         peer_addr_tx,
+    )
+    .with_fetch_config(mailbox_server::FetchConfig {
+        concurrency: 4,
+        attempt_timeout: Duration::from_secs(10),
+        pass_interval: Duration::from_secs(2),
+        retry_cooldown: Duration::from_secs(2),
+    });
+    let server = mailbox_local_server::LocalMailboxServer::spawn(
+        db_path,
+        "[::]:0",
+        Some(blob_sync),
+        mdns_sd::ServiceDaemon::new().unwrap(),
+        "_dashchat-test._tcp.local.".to_string(),
     )
     .await
     .unwrap();
-    let url = server.url.clone();
+    let url = server.url();
     mailbox_client::toy::wait_for_mailbox_health(&url).await;
 
     // Alice and Bobbi, both pointing their toy mailbox client at the relay's

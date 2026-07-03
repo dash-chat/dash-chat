@@ -8,11 +8,10 @@ path = "src/lib.rs"
 
 [dependencies]
 mailbox-server = { workspace = true }
-iroh = { workspace = true }
-iroh-blobs = { workspace = true }
+mailbox-mdns-discovery = { workspace = true }
 anyhow = "1"
 log = "0.4"
 tokio = { version = "1", features = ["full"] }
-futures = "0.3"
+tokio-util = { version = "0.7", features = ["rt"] }
 mdns-sd = "0.17"
-if-watch = { version = "3", features = ["tokio"] }
+tracing = "0.1"

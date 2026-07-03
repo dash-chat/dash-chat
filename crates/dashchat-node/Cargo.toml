@@ -55,6 +55,7 @@ if-watch = { version = "3", features = ["tokio"] }
 dashchat-node = { path = ".", features = ["testing"] }
 mailbox-server = { path = "../mailbox-server", features = ["test_utils"] }
 mailbox-local-server = { workspace = true }
+mdns-sd = "0.17"
 itertools = "0.14.0"
 maplit = "1.0"
 pretty_assertions = "1.4.1"

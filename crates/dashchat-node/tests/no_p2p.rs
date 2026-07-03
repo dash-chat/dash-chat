@@ -107,22 +107,28 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
 
     let mailbox_dir = tempfile::tempdir().unwrap();
     let (peer_addr_tx, mut peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
-    let server = mailbox_local_server::spawn_local_mailbox_server(
-        mailbox_dir.path().join("mailbox.redb"),
+    let blob_sync = mailbox_server::BlobSync::shared(
         relay.blobs(),
         relay.blob_downloader(),
         relay.iroh_endpoint().await.unwrap(),
-        Some(mailbox_server::FetchConfig {
-            concurrency: 4,
-            attempt_timeout: Duration::from_secs(10),
-            pass_interval: Duration::from_secs(2),
-            retry_cooldown: Duration::from_secs(2),
-        }),
         peer_addr_tx,
+    )
+    .with_fetch_config(mailbox_server::FetchConfig {
+        concurrency: 4,
+        attempt_timeout: Duration::from_secs(10),
+        pass_interval: Duration::from_secs(2),
+        retry_cooldown: Duration::from_secs(2),
+    });
+    let server = mailbox_local_server::LocalMailboxServer::spawn(
+        mailbox_dir.path().join("mailbox.redb"),
+        "[::]:0",
+        Some(blob_sync),
+        mdns_sd::ServiceDaemon::new().unwrap(),
+        "_dashchat-test._tcp.local.".to_string(),
     )
     .await
     .unwrap();
-    let url = server.url.clone();
+    let url = server.url();
     mailbox_client::toy::wait_for_mailbox_health(&url).await;
 
     // Forward addresses peers register with the mailbox into the relay node's
@@ -269,22 +275,28 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
 
     let mailbox_dir = tempfile::tempdir().unwrap();
     let (peer_addr_tx, mut peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
-    let server = mailbox_local_server::spawn_local_mailbox_server(
-        mailbox_dir.path().join("mailbox.redb"),
+    let blob_sync = mailbox_server::BlobSync::shared(
         relay.blobs(),
         relay.blob_downloader(),
         relay.iroh_endpoint().await.unwrap(),
-        Some(mailbox_server::FetchConfig {
-            concurrency: 4,
-            attempt_timeout: Duration::from_secs(10),
-            pass_interval: Duration::from_secs(2),
-            retry_cooldown: Duration::from_secs(2),
-        }),
         peer_addr_tx,
+    )
+    .with_fetch_config(mailbox_server::FetchConfig {
+        concurrency: 4,
+        attempt_timeout: Duration::from_secs(10),
+        pass_interval: Duration::from_secs(2),
+        retry_cooldown: Duration::from_secs(2),
+    });
+    let server = mailbox_local_server::LocalMailboxServer::spawn(
+        mailbox_dir.path().join("mailbox.redb"),
+        "[::]:0",
+        Some(blob_sync),
+        mdns_sd::ServiceDaemon::new().unwrap(),
+        "_dashchat-test._tcp.local.".to_string(),
     )
     .await
     .unwrap();
-    let url = server.url.clone();
+    let url = server.url();
     mailbox_client::toy::wait_for_mailbox_health(&url).await;
 
     let relay_for_addrs = relay.clone();
