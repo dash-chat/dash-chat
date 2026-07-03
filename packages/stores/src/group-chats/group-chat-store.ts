@@ -281,8 +281,7 @@ export class GroupChatStore implements MessagesStore {
 
 	agentIdForDeviceId = reactive(async (deviceId: DeviceId) => {
 		const members = await this.membersData();
-		return members.find(member => member.deviceIds.includes(deviceId))
-			?.agentId;
+		return members.find(member => member.deviceIds.includes(deviceId))?.agentId;
 	});
 
 	private buildMember = reactive(
