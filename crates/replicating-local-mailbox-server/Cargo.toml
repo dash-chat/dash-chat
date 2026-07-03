@@ -1,0 +1,38 @@
+[package]
+name = "replicating-local-mailbox-server"
+version = "0.1.0"
+edition = "2021"
+description = "A LAN mailbox appliance: mailbox HTTP server + mDNS discovery + mailbox-to-mailbox replication via the mailbox-client sync engine"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "local-mailbox-server"
+path = "src/bin/local-mailbox-server.rs"
+
+[dependencies]
+mailbox-local-server = { workspace = true }
+mailbox-server = { workspace = true }
+mailbox-client = { workspace = true }
+mailbox-mdns-discovery = { workspace = true }
+dashchat-utils = { path = "../dashchat-utils" }
+axum = { version = "0.8", features = ["json"] }
+iroh = { workspace = true }
+iroh-blobs = { workspace = true }
+redb = "3.1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+anyhow = "1"
+async-trait = "0.1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-log = "0.2"
+clap = { version = "4.5", features = ["derive"] }
+mdns-sd = "0.17"
+uuid = { version = "1", features = ["v7", "serde"] }
+
+[dev-dependencies]
+tempfile = "3"

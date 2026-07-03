@@ -33,6 +33,7 @@
         ./nix/docker.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix
+        ./crates/replicating-local-mailbox-server/default.nix
         ./crates/push-notifications-server/default.nix
       ];
 

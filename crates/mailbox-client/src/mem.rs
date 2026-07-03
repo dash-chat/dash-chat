@@ -54,9 +54,9 @@ impl<Item: MailboxItem> MemMailbox<Item> {
         for (topic, ops) in ops.iter() {
             let mut topic_heights = BTreeMap::new();
             for (author, ops) in ops.iter() {
-                topic_heights.insert(*author, ops.len() as u64);
+                topic_heights.insert(author.clone(), ops.len() as u64);
             }
-            log_heights.insert(*topic, topic_heights);
+            log_heights.insert(topic.clone(), topic_heights);
         }
         log_heights
     }

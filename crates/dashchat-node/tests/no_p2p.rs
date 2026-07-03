@@ -125,6 +125,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
         Some(blob_sync),
         mdns_sd::ServiceDaemon::new().unwrap(),
         "_dashchat-test._tcp.local.".to_string(),
+        None,
     )
     .await
     .unwrap();
@@ -293,6 +294,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
         Some(blob_sync),
         mdns_sd::ServiceDaemon::new().unwrap(),
         "_dashchat-test._tcp.local.".to_string(),
+        None,
     )
     .await
     .unwrap();

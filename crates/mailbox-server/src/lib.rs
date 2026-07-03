@@ -18,6 +18,7 @@ mod blob_sync;
 mod cleanup;
 mod get_blips;
 mod notify_topics_subscribers;
+mod reads;
 mod register_peer;
 mod server_key;
 mod store_blips;
@@ -40,6 +41,7 @@ pub use dashchat_utils::FetchConfig;
 pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
 };
+pub use reads::{blips_since, log_heights_for_topic};
 pub use register_peer::RegisterPeerRequest;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest};
@@ -94,6 +96,14 @@ impl AppState {
     }
 }
 
+/// Lets `extra` routers passed to [`MailboxServer::spawn`] extract
+/// `State<BlobSync>` (e.g. the replicating server's `/blobs/list`).
+impl axum::extract::FromRef<AppState> for BlobSync {
+    fn from_ref(state: &AppState) -> Self {
+        state.blob_sync.clone()
+    }
+}
+
 /// The mailbox server: the handler state plus the HTTP serve task and its
 /// shutdown plumbing. The reusable core that `mailbox-local-server` wraps
 /// with mDNS.
@@ -113,13 +123,16 @@ impl MailboxServer {
     /// mailbox server is spawned; call [`MailboxServer::stop`] to shut it down.
     ///
     /// Pass `blob_sync` to share an existing iroh endpoint/store, or `None` to
-    /// create one from the persisted server key.
+    /// create one from the persisted server key. `extra` routes are merged onto
+    /// the mailbox router with this server as their state (e.g. the replicating
+    /// server's `/blobs/list`).
     pub async fn spawn(
         db_path: PathBuf,
         addr: &str,
         push_notifications_url: Option<String>,
         blob_sync: Option<BlobSync>,
         relay_url: Option<iroh::RelayUrl>,
+        extra: Option<Router<AppState>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
         let bound = listener.local_addr()?;
@@ -177,7 +190,10 @@ impl MailboxServer {
             );
         }
 
-        let app = state.router();
+        let mut app = state.router();
+        if let Some(extra) = extra {
+            app = app.merge(extra.with_state(state.clone()));
+        }
         let shutdown = token.clone().cancelled_owned();
         state.tasks.spawn(async move {
             if let Err(e) = axum::serve(listener, app)

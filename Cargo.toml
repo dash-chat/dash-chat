@@ -26,6 +26,7 @@ mailbox-client = { path = "crates/mailbox-client" }
 mailbox-server = { path = "crates/mailbox-server" }
 mailbox-local-server = { path = "crates/mailbox-local-server" }
 mailbox-mdns-discovery = { path = "crates/mailbox-mdns-discovery" }
+replicating-local-mailbox-server = { path = "crates/replicating-local-mailbox-server" }
 
 p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
 p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [

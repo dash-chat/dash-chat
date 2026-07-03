@@ -469,7 +469,7 @@ where
         for topic in topics {
             let heights =
                 BTreeMap::from_iter(self.store.get_log_heights(&topic).await?.into_iter());
-            sent_heights.insert(topic, heights.clone());
+            sent_heights.insert(topic.clone(), heights.clone());
             request.insert(topic, heights);
         }
 
@@ -496,7 +496,7 @@ where
             if let Some(heights) = sent_heights.get(&topic) {
                 for (author, height) in heights {
                     if !missing.contains_key(author) {
-                        acks.push((topic, *author, *height));
+                        acks.push((topic.clone(), author.clone(), *height));
                     }
                 }
             }

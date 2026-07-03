@@ -69,7 +69,7 @@ where
             let topic_id = Self::encode_topic_id(&op.topic());
             let log_id = Self::device_id_to_log_id(&op.author());
             let seq_num = op.seq_num();
-            let blip = Self::serialize_operation(&op)?;
+            let blip = op.to_blip()?;
 
             blips
                 .entry(topic_id)
@@ -146,13 +146,16 @@ where
         let mut result: BTreeMap<Item::Topic, FetchTopicResponse<Item>> = BTreeMap::new();
 
         for (topic_id_str, topic_response) in response.blips_by_topic {
-            let log_id = Self::log_id_from_string(&topic_id_str)?;
+            let topic = Self::log_id_from_string(&topic_id_str)?;
 
-            // Deserialize blips to operations
+            // Reconstruct items from the response keys + blip bytes. The blip may
+            // be opaque (no self-describing topic/author/seq), so we pass the
+            // key parts to `from_blip`.
             let mut items = Vec::new();
-            for (_author_str, seq_blips) in topic_response.blips {
-                for (_seq, blip) in seq_blips {
-                    items.push(Self::deserialize_operation(&blip)?);
+            for (author_str, seq_blips) in topic_response.blips {
+                let author = Self::device_id_from_string(&author_str)?;
+                for (seq, blip) in seq_blips {
+                    items.push(Item::from_blip(&topic, &author, seq, &blip)?);
                 }
             }
 
@@ -163,7 +166,7 @@ where
                 missing.insert(device_id, seq_nums);
             }
 
-            result.insert(log_id, FetchTopicResponse { items, missing });
+            result.insert(topic, FetchTopicResponse { items, missing });
         }
 
         Ok(FetchResponse(result))
@@ -193,14 +196,6 @@ where
         Ok(author)
     }
 
-    fn serialize_operation(item: &Item) -> Result<Blip, anyhow::Error> {
-        let bytes = p2panda_core::cbor::encode_cbor(item)?;
-        Ok(Blip::new(bytes))
-    }
-
-    fn deserialize_operation(blip: &Blip) -> Result<Item, anyhow::Error> {
-        Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
-    }
 }
 
 pub fn stringify(value: impl Serialize) -> String {

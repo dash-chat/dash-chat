@@ -103,12 +103,12 @@ pub type MailboxId = String;
 pub type SeqNum = u64;
 
 pub trait ItemTraits:
-    Copy + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync
+    Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync
 {
 }
 
 impl<T> ItemTraits for T where
-    T: Copy
+    T: Clone
         + Eq
         + Ord
         + std::hash::Hash
@@ -133,6 +133,27 @@ pub trait MailboxItem:
     fn topic(&self) -> Self::Topic;
     fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
         Vec::new()
+    }
+
+    /// Serialize this item into the opaque blip bytes a mailbox stores.
+    /// Default: CBOR-encode the whole (self-describing) item.
+    fn to_blip(&self) -> Result<mailbox_server::Blip, anyhow::Error> {
+        Ok(mailbox_server::Blip::new(p2panda_core::cbor::encode_cbor(
+            self,
+        )?))
+    }
+
+    /// Reconstruct an item from a blip fetched from a mailbox, given the
+    /// `(topic, author, seq_num)` the mailbox keyed it under. Default: CBOR-decode
+    /// the blip and ignore the key parts (the item is self-describing). Override
+    /// for opaque items whose topic/author/seq only exist in the key.
+    fn from_blip(
+        _topic: &Self::Topic,
+        _author: &Self::Author,
+        _seq_num: SeqNum,
+        blip: &mailbox_server::Blip,
+    ) -> Result<Self, anyhow::Error> {
+        Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
     }
 }
 

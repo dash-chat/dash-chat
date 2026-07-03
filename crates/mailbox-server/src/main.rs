@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.push_notifications_url,
         None,
         Some(RELAY_URL.clone()),
+        None,
     )
     .await?;
 

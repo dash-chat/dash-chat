@@ -1,7 +1,8 @@
 //! An in-process or standalone mailbox HTTP server announced on the LAN via mDNS.
 //!
-//! [`LocalMailboxServer`] serves the reusable `mailbox-server` API, announces
-//! itself as a DNS-SD service, and re-announces on interface changes. It either owns its iroh endpoint/blob
+//! [`LocalMailboxServer`] serves the reusable `mailbox-server` API (plus any
+//! `extra` routes the caller supplies), announces itself as a DNS-SD service,
+//! and re-announces on interface changes. It either owns its iroh endpoint/blob
 //! store (standalone daemon) or shares a node's (the Tauri app's in-process
 //! mailbox). The mDNS announce/browse logic lives in the
 //! `mailbox-mdns-discovery` crate.
@@ -9,8 +10,9 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 
+use axum::Router;
 use mailbox_mdns_discovery::{reannounce_on_interface_change_loop, register_mdns_with_retry};
-use mailbox_server::{BlobSync, MailboxServer, TaskTracker};
+use mailbox_server::{AppState, BlobSync, MailboxServer, TaskTracker};
 use mdns_sd::ServiceDaemon;
 use tokio_util::sync::CancellationToken;
 
@@ -37,14 +39,17 @@ impl LocalMailboxServer {
     /// Pass `blob_sync: Some(..)` to share an existing node's iroh endpoint/blob
     /// store, or `None` to build an owned endpoint/store from the persisted
     /// server key. Use `addr = "[::]:0"` for an ephemeral dual-stack port.
+    /// `extra` routes are merged onto the mailbox router (e.g. the replicating
+    /// server's `/blobs/list`).
     pub async fn spawn(
         db_path: PathBuf,
         addr: &str,
         blob_sync: Option<BlobSync>,
         daemon: ServiceDaemon,
         service_type: String,
+        extra: Option<Router<AppState>>,
     ) -> anyhow::Result<Self> {
-        let mailbox = MailboxServer::spawn(db_path, addr, None, blob_sync, None)
+        let mailbox = MailboxServer::spawn(db_path, addr, None, blob_sync, None, extra)
             .await
             .map_err(|e| anyhow::anyhow!("failed to start mailbox server: {e}"))?;
 

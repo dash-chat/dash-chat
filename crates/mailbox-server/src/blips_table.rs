@@ -1,4 +1,5 @@
 use redb::{Key, TableDefinition, TypeName, Value};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 use uuid::Uuid;
@@ -27,7 +28,7 @@ pub enum BlipsKeyError {
 /// - uuid_16: UUID as 16 raw bytes
 ///
 /// This format enables direct byte comparison that matches struct field ordering.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct BlipsKey {
     // NOTE: order of these fields matters!
     pub topic_id: String,
