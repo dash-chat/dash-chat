@@ -2,7 +2,6 @@
 //! must never be stored or synced.
 
 use dashchat_node::{testing::*, *};
-use mailbox_client::mem::MemMailbox;
 use p2panda::operation::LogId;
 
 fn setup_tracing() {
@@ -75,15 +74,15 @@ async fn tombstone_drops_payload_received_by_sync() {
 
     let poll = PollConfig::default();
     let config = NodeConfig::testing();
-    let mb = MemMailbox::new();
+    let mb = TestMailbox::from_env();
 
     let alice = TestNode::new(config.clone(), "alice")
         .await
-        .add_mailbox_client(mb.client())
+        .add_mailbox(&mb)
         .await;
     let bobbi = TestNode::new(config.clone(), "bobbi")
         .await
-        .add_mailbox_client(mb.client())
+        .add_mailbox(&mb)
         .await;
 
     alice
@@ -119,7 +118,7 @@ async fn tombstone_drops_payload_received_by_sync() {
     );
 
     // Reconnect bobbi: it syncs the op and drops the payload on arrival.
-    bobbi.add_mailbox_client(mb.client()).await;
+    bobbi.add_mailbox(&mb).await;
 
     poll.wait_for(|| async {
         match payload_present(&bobbi, *chat, alice.device_id(), secret_hash).await {

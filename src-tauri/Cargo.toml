@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.19.4"
+version = "0.19.9"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -51,6 +51,8 @@ anyhow = "1.0.95"
 async-trait = "0.1.85"
 time = "0.3"
 tokio = { version = "1.43.0", features = ["fs"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+thiserror = "2.0"
 regex = "1"
 hex = "0.4.3"
 mdns-sd = "0.17"
@@ -110,6 +112,9 @@ oslog = "0.2"
 # `requestMediasByIds` fetch-by-id command, so the recent-photos strip and
 # tap-to-send no longer render the entire album.
 tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios-photos", rev = "ec723636ddf248dd6542e02fb2e83d91d1da36c9" }
+# Releases SQLite locks on background so iOS can suspend the app without a
+# 0xdead10cc kill; rebuilds the node on foreground.
+tauri-plugin-ios-lifecycle = { git = "https://github.com/dash-chat/tauri-plugin-ios-lifecycle", branch = "main" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

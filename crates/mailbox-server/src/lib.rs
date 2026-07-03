@@ -77,13 +77,13 @@ pub struct AppState {
 }
 
 #[derive(Serialize, Deserialize)]
-struct HealthResponse {
-    status: String,
-    endpoint_id: String,
+pub struct HealthResponse {
+    pub status: String,
+    pub endpoint_id: String,
     /// The mailbox endpoint's dialing address (relay + direct addresses), so
     /// clients can add it to their p2panda address book and dial this mailbox
     /// by its EndpointId rather than only knowing the bare id.
-    endpoint_addr: iroh::EndpointAddr,
+    pub endpoint_addr: iroh::EndpointAddr,
 }
 
 fn db_path_blobs_dir(db_path: &std::path::Path) -> std::path::PathBuf {
