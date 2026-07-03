@@ -17,8 +17,9 @@
 	let blobImages = $state<Array<{ retry: () => void } | undefined>>([]);
 	let statuses = $state<Record<number, 'loading' | 'loaded' | 'error'>>({});
 
-	// A failed thumbnail shows a reload icon; clicking it re-downloads it while
-	// also switching to that photo, so the main view retries alongside it.
+	// A failed thumbnail shows a reload icon; clicking it retries the download and
+	// switches to that photo. Load state is shared per blob hash, so the retry
+	// re-fetches the main-stage image of the same photo alongside the thumbnail.
 	function onThumbClick(i: number) {
 		if (statuses[i] === 'error') blobImages[i]?.retry();
 		index = i;

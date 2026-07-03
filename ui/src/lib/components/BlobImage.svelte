@@ -1,6 +1,12 @@
 <script lang="ts">
 	import type { FileAttachment, PhotoAttachment } from 'dash-chat-stores';
 	import { mediaSrc } from '$lib/utils/media';
+	import {
+		blobStatus,
+		blobToken,
+		reportBlobStatus,
+		retryBlob,
+	} from '$lib/stores/blob-load-store.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Preloader } from 'konsta/svelte';
 	import { mdiReload } from '@mdi/js';
@@ -28,18 +34,19 @@
 		onStatus,
 	}: Props = $props();
 
-	let status = $state<'loading' | 'loaded' | 'error'>('loading');
-	// buster===0 keeps the first load query-free (cacheable); a retry uses Date.now() so it never reuses a cached failure, even across restarts.
-	let buster = $state(0);
+	// Status and cache-busting token are shared per content hash, so every
+	// BlobImage of the same blob (grid cell, lightbox stage, filmstrip thumb)
+	// loads, errors, and retries together.
+	const status = $derived(blobStatus(item.hash));
+	const token = $derived(blobToken(item.hash));
 	const src = $derived(
-		buster === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${buster}`,
+		token === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${token}`,
 	);
 
 	/** Re-attempt the download with a fresh, cache-busting URL. Called by the
 	 * parent when a missing image's placeholder is clicked. */
 	export function retry() {
-		status = 'loading';
-		buster = Date.now();
+		retryBlob(item.hash);
 	}
 
 	$effect(() => {
@@ -48,7 +55,8 @@
 
 	$effect(() => {
 		function onForceError(e: Event) {
-			if ((e as CustomEvent<string>).detail === alt) status = 'error';
+			if ((e as CustomEvent<string>).detail === alt)
+				reportBlobStatus(item.hash, 'error');
 		}
 		window.addEventListener('test-blob-force-error', onForceError);
 		return () =>
@@ -75,8 +83,8 @@
 		style={imgStyle}
 		loading={lazy ? 'lazy' : 'eager'}
 		data-testid="blob-image"
-		onload={() => (status = 'loaded')}
-		onerror={() => (status = 'error')}
+		onload={() => reportBlobStatus(item.hash, 'loaded')}
+		onerror={() => reportBlobStatus(item.hash, 'error')}
 	/>
 	{#if status === 'loading'}
 		<div
