@@ -1,5 +1,6 @@
 use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
+use tokio_util::task::AbortOnDropHandle;
 
 // In e2e mode, use a distinct service type so test agents only discover each
 // other's local mailboxes, not external dash-chat instances on the same LAN
@@ -68,17 +69,18 @@ pub(crate) async fn cloud_mailbox_id(
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     handle: &AppHandle<R>,
     node: dashchat_node::Node,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<AbortOnDropHandle<()>> {
     let mdns: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
     let receiver = mdns.browse(MDNS_SERVICE_TYPE)?;
     log::info!("Started mdns browse for local mailboxes: {MDNS_SERVICE_TYPE}");
 
-    let mut handler_task = tokio::spawn(handle_browse_events(node.clone(), receiver));
+    let mut handler_task =
+        AbortOnDropHandle::new(tokio::spawn(handle_browse_events(node.clone(), receiver)));
 
     // The browse receiver is tied to the interface set the daemon had at
     // `browse()` time; when the device switches networks services on the
     // new interface aren't picked up until we re-issue the browse.
-    tokio::spawn(async move {
+    let watcher_task = tokio::spawn(async move {
         use futures::StreamExt;
         let mut watcher = match if_watch::tokio::IfWatcher::new() {
             Ok(w) => w,
@@ -120,7 +122,10 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
 
             match mdns.browse(MDNS_SERVICE_TYPE) {
                 Ok(receiver) => {
-                    handler_task = tokio::spawn(handle_browse_events(node.clone(), receiver));
+                    handler_task = AbortOnDropHandle::new(tokio::spawn(handle_browse_events(
+                        node.clone(),
+                        receiver,
+                    )));
                 }
                 Err(err) => {
                     log::warn!("Failed to restart mDNS browse after interface change: {err:?}");
@@ -131,7 +136,7 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
         log::warn!("Mailbox browse interface watcher stream ended");
     });
 
-    Ok(())
+    Ok(AbortOnDropHandle::new(watcher_task))
 }
 
 async fn handle_browse_events(
