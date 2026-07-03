@@ -97,9 +97,14 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     }
 
     // Step 6: Test get_blips - verify missing response is correct
-    let push_tasks = std::sync::Arc::new(tokio::sync::Mutex::new(tokio::task::JoinSet::new()));
     let blob_sync = mailbox_server::test_utils::test_blob_sync().await;
-    let app = mailbox_server::create_app(db.clone(), None, push_tasks, blob_sync);
+    let app = mailbox_server::AppState {
+        db: db.clone(),
+        push_client: None,
+        blob_sync,
+        tasks: mailbox_server::TaskTracker::new(),
+    }
+    .router();
     let config = axum_test::TestServerConfig {
         transport: Some(axum_test::Transport::HttpRandomPort),
         ..Default::default()

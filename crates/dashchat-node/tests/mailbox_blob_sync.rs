@@ -257,12 +257,12 @@ async fn blob_fetch_succeeds_after_peer_addr_registration() {
     // Enqueue the blob for download from the sender.
     mailbox.fetch_pool().add_source(hash, sender_id).await;
 
-    let _fetch_handle = mailbox.spawn_fetch_loop(FetchConfig {
+    let _fetch_handle = tokio::spawn(mailbox.clone().fetch_loop(FetchConfig {
         concurrency: 1,
         pass_interval: Duration::from_millis(100),
         attempt_timeout: Duration::from_secs(5),
         retry_cooldown: Duration::from_millis(100),
-    });
+    }));
 
     poll.wait_for(|| async {
         mailbox

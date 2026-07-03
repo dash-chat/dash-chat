@@ -19,10 +19,9 @@ pub async fn notify_topics_subscribers(
         return;
     };
     let push_client = push_client.clone();
-    let mut push_tasks = state.push_tasks.lock().await;
-    // Reap completed tasks to prevent slow memory leak
-    while push_tasks.try_join_next().is_some() {}
-    push_tasks.spawn(send_push_notifications(push_client, topics_with_new_blips));
+    state
+        .tasks
+        .spawn(send_push_notifications(push_client, topics_with_new_blips));
 }
 
 async fn send_push_notifications(

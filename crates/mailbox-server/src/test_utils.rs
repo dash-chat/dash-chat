@@ -3,9 +3,8 @@ use std::{sync::Arc, time::Duration};
 use axum_test::{TestServer, TestServerConfig, Transport};
 use redb::Database;
 use tempfile::NamedTempFile;
-use tokio::task::JoinSet;
 
-use crate::{create_app, BlobSync, BLIPS_TABLE, WATERMARKS_TABLE};
+use crate::{AppState, BlobSync, TaskTracker, BLIPS_TABLE, WATERMARKS_TABLE};
 
 pub const LONG_AGO: Duration = Duration::from_hours(100 * 24); // 100 days
 
@@ -36,9 +35,14 @@ pub async fn test_blob_sync() -> BlobSync {
 /// Creates a test server with HTTP transport so server_address() works
 pub async fn create_test_server() -> (TestServer, NamedTempFile) {
     let (db, temp_file) = create_test_db();
-    let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
     let blob_sync = test_blob_sync().await;
-    let app = create_app(Arc::new(db), None, push_tasks, blob_sync);
+    let app = AppState {
+        db: Arc::new(db),
+        push_client: None,
+        blob_sync,
+        tasks: TaskTracker::new(),
+    }
+    .router();
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),
         ..TestServerConfig::default()

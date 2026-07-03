@@ -4,13 +4,12 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use dashchat_utils::RELAY_URL;
 use push_notifications_client::client::PushNotificationsClient;
 use redb::Database;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::{future::Future, path::PathBuf};
-use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod blip;
@@ -36,7 +35,7 @@ const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 pub use blip::Blip;
 pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
 pub use blob_sync::{BlobFetchPool, BlobSync};
-pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
+pub use cleanup::{cleanup_loop, cleanup_old_messages};
 pub use dashchat_utils::FetchConfig;
 pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
@@ -44,6 +43,7 @@ pub use get_blips::{
 pub use register_peer::RegisterPeerRequest;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest};
+pub use tokio_util::task::TaskTracker;
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
@@ -66,12 +66,177 @@ pub fn decode_mailbox_id(s: &str) -> anyhow::Result<iroh::EndpointId> {
     Ok(iroh::EndpointId::from_bytes(&arr)?)
 }
 
+/// The axum handler state: the redb store, the iroh-backed blob sync, and push
+/// notification plumbing.
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<Database>,
     pub push_client: Option<Arc<PushNotificationsClient>>,
-    pub push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
     pub blob_sync: BlobSync,
+    /// Every task the server owns: the HTTP serve task, the background loops
+    /// (blip cleanup, the blob fetch loop, blob GC), and in-flight push
+    /// notification sends. [`MailboxServer::stop`] waits for it to drain.
+    pub tasks: TaskTracker,
+}
+
+impl AppState {
+    /// The axum router for the mailbox HTTP API.
+    pub fn router(&self) -> Router {
+        Router::new()
+            .route("/health", get(health_check))
+            .route("/blips/store", post(store_blips))
+            .route("/blips/get", post(get_blips_for_topics))
+            .route("/peers/register", post(register_peer::register_peer))
+            .layer(CorsLayer::permissive())
+            .layer(TraceLayer::new_for_http())
+            .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))
+            .with_state(self.clone())
+    }
+}
+
+/// The mailbox server: the handler state plus the HTTP serve task and its
+/// shutdown plumbing. The reusable core that `mailbox-local-server` wraps
+/// with mDNS.
+pub struct MailboxServer {
+    pub state: AppState,
+    /// The TCP port the HTTP API is served on, bound in [`MailboxServer::spawn`].
+    pub port: u16,
+    /// Cancels the serve task (gracefully) and the background loops on
+    /// [`MailboxServer::stop`].
+    token: CancellationToken,
+}
+
+impl MailboxServer {
+    /// Open the db, derive the persistent identity, bring up blob sync, spawn
+    /// the background tasks, and serve the HTTP API on `addr` (use `"[::]:0"`
+    /// for an ephemeral dual-stack port). This is the single place an HTTP
+    /// mailbox server is spawned; call [`MailboxServer::stop`] to shut it down.
+    ///
+    /// Pass `blob_sync` to share an existing iroh endpoint/store, or `None` to
+    /// create one from the persisted server key.
+    pub async fn spawn(
+        db_path: PathBuf,
+        addr: &str,
+        push_notifications_url: Option<String>,
+        blob_sync: Option<BlobSync>,
+        relay_url: Option<iroh::RelayUrl>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        let bound = listener.local_addr()?;
+        tracing::info!("Mailbox server listening on {}", bound);
+
+        let db = Arc::new(init_db(db_path.clone())?);
+
+        let blob_sync = match blob_sync {
+            Some(blob_sync) => blob_sync,
+            None => {
+                let secret_key = load_or_create_secret_key(&db)
+                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+                BlobSync::new(secret_key, db_path_blobs_dir(&db_path), relay_url).await?
+            }
+        };
+        tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
+
+        let push_client = match push_notifications_url {
+            Some(url) => {
+                tracing::info!("Push notifications integration enabled: {url}");
+                Some(Arc::new(PushNotificationsClient::new(url)?))
+            }
+            None => None,
+        };
+
+        let state = AppState {
+            db,
+            push_client,
+            blob_sync,
+            tasks: TaskTracker::new(),
+        };
+        let token = CancellationToken::new();
+
+        // The background loops (blip cleanup, the blob fetch loop, blob GC),
+        // cancelled by `stop`.
+        tracing::info!("Started background cleanup task (runs every 5 minutes)");
+        state.tasks.spawn(
+            token
+                .clone()
+                .run_until_cancelled_owned(cleanup_loop(Arc::clone(&state.db))),
+        );
+        state.tasks.spawn(
+            token.clone().run_until_cancelled_owned(
+                state
+                    .blob_sync
+                    .clone()
+                    .fetch_loop(state.blob_sync.fetch_config()),
+            ),
+        );
+        if state.blob_sync.gc_enabled() {
+            state.tasks.spawn(
+                token
+                    .clone()
+                    .run_until_cancelled_owned(state.blob_sync.clone().blob_gc_loop()),
+            );
+        }
+
+        let app = state.router();
+        let shutdown = token.clone().cancelled_owned();
+        state.tasks.spawn(async move {
+            if let Err(e) = axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown)
+                .await
+            {
+                tracing::error!("HTTP server exited: {e}");
+            }
+        });
+
+        Ok(Self {
+            state,
+            port: bound.port(),
+            token,
+        })
+    }
+
+    /// Gracefully shut down: stop the HTTP server (finishing in-flight requests
+    /// and releasing the port), stop the background loops, and drain pending
+    /// push notification sends.
+    pub async fn stop(&self) {
+        self.token.cancel();
+        self.state.tasks.close();
+        self.state.tasks.wait().await;
+        tracing::info!("Mailbox server gracefully shut down");
+    }
+
+    /// This mailbox's iroh endpoint id.
+    pub fn endpoint_id(&self) -> iroh::EndpointId {
+        self.state.blob_sync.endpoint_id()
+    }
+
+    /// This mailbox's canonical MailboxId (the mDNS instance name).
+    pub fn mailbox_id(&self) -> String {
+        encode_mailbox_id(self.endpoint_id())
+    }
+}
+
+/// Transitional wrapper for callers not yet migrated to [`MailboxServer::spawn`]
+/// (mailbox-local-server); removed once they are.
+#[deprecated = "use MailboxServer::spawn"]
+pub async fn spawn_server(
+    db_path: PathBuf,
+    addr: String,
+    push_notifications_url: Option<String>,
+    blob_sync: Option<BlobSync>,
+    signal: impl std::future::Future<Output = ()> + Send + 'static,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let server = MailboxServer::spawn(
+        db_path,
+        &addr,
+        push_notifications_url,
+        blob_sync,
+        Some(dashchat_utils::RELAY_URL.clone()),
+    )
+    .await?;
+    signal.await;
+    server.stop().await;
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -89,71 +254,6 @@ fn db_path_blobs_dir(db_path: &std::path::Path) -> std::path::PathBuf {
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."))
         .join("mailbox_blobs")
-}
-
-pub async fn spawn_server(
-    db_path: PathBuf,
-    addr: String,
-    push_notifications_url: Option<String>,
-    blob_sync: Option<BlobSync>,
-    signal: impl Future<Output = ()> + Send + 'static,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let db = init_db(db_path.clone())?;
-    let db_arc = Arc::new(db);
-
-    let relay_url = Some(RELAY_URL.clone());
-
-    // Spawn background cleanup task
-    let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
-    tracing::info!("Started background cleanup task (runs every 5 minutes)");
-
-    let blob_sync = match blob_sync {
-        Some(blob_sync) => blob_sync,
-        None => {
-            let secret_key = load_or_create_secret_key(&db_arc)
-                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-            let blobs_root = db_path_blobs_dir(&db_path);
-            BlobSync::new(secret_key, blobs_root, relay_url).await?
-        }
-    };
-    tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
-    let blob_fetch_handle = blob_sync.spawn_fetch_loop(blob_sync.fetch_config());
-    let blob_gc_handle = blob_sync.spawn_blob_gc_task();
-
-    let push_client = match push_notifications_url {
-        Some(url) => {
-            tracing::info!("Push notifications integration enabled: {url}");
-            Some(Arc::new(PushNotificationsClient::new(url)?))
-        }
-        None => None,
-    };
-
-    let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
-    let app = create_app(db_arc, push_client, Arc::clone(&push_tasks), blob_sync);
-
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    let addr = listener.local_addr()?;
-
-    tracing::info!("Mailbox server listening on {}", addr);
-
-    let server = axum::serve(listener, app);
-    server.with_graceful_shutdown(signal).await?;
-
-    // TODO: cleanup task needs to be cleaned up even if the server is aborted.
-    //      the database stays open as long as this task holds a reference to the db arc.
-
-    // Drain pending push notification tasks before shutting down
-    let mut tasks = push_tasks.lock().await;
-    while tasks.join_next().await.is_some() {}
-
-    cleanup_task.abort();
-    blob_fetch_handle.abort();
-    if let Some(handle) = blob_gc_handle {
-        handle.abort();
-    }
-    tracing::info!("Mailbox server gracefully shut down");
-
-    Ok(())
 }
 
 async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
@@ -187,28 +287,4 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
     tracing::info!("Database initialized successfully");
 
     Ok(db)
-}
-
-pub fn create_app(
-    db: Arc<Database>,
-    push_client: Option<Arc<PushNotificationsClient>>,
-    push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
-    blob_sync: BlobSync,
-) -> Router {
-    let state = AppState {
-        db,
-        push_client,
-        push_tasks,
-        blob_sync,
-    };
-
-    Router::new()
-        .route("/health", get(health_check))
-        .route("/blips/store", post(store_blips))
-        .route("/blips/get", post(get_blips_for_topics))
-        .route("/peers/register", post(register_peer::register_peer))
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
-        .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))
-        .with_state(state)
 }

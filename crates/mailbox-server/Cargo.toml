@@ -14,6 +14,7 @@ path = "src/main.rs"
 axum = { version = "0.8", features = ["json"] }
 futures = "0.3"
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 p2panda-net = { workspace = true }
 redb = "3.1"
 thiserror = "1.0"

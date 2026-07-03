@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::http::StatusCode;
 use axum_test::{TestServer, TestServerConfig, Transport};
 use mailbox_server::test_utils::create_test_db;
+use mailbox_server::TaskTracker;
 use push_notifications_client::client::PushNotificationsClient;
 use push_notifications_client::requests::{AddTopicSubscriptionsRequest, RegisterFcmTokenRequest};
 use push_notifications_client::types::{FcmToken, TopicId, VerifyingKey};
@@ -29,50 +30,35 @@ async fn start_push_server(mock_fcm: MockFcm) -> String {
 }
 
 /// Creates a mailbox TestServer connected to the given push notifications URL.
-/// Returns the push_tasks handle so tests can await completion instead of sleeping.
+/// Returns the task tracker so tests can await push sends instead of sleeping.
 async fn start_mailbox_server(
     push_url: String,
-) -> (
-    TestServer,
-    tempfile::NamedTempFile,
-    Arc<tokio::sync::Mutex<tokio::task::JoinSet<()>>>,
-) {
+) -> (TestServer, tempfile::NamedTempFile, TaskTracker) {
     let (db, temp_file) = create_test_db();
     let push_client = PushNotificationsClient::new(push_url).unwrap();
-    let push_tasks = Arc::new(tokio::sync::Mutex::new(tokio::task::JoinSet::new()));
+    let tasks = TaskTracker::new();
     let blob_sync = mailbox_server::test_utils::test_blob_sync().await;
-    let app = mailbox_server::create_app(
-        Arc::new(db),
-        Some(Arc::new(push_client)),
-        push_tasks.clone(),
+    let app = mailbox_server::AppState {
+        db: Arc::new(db),
+        push_client: Some(Arc::new(push_client)),
         blob_sync,
-    );
+        tasks: tasks.clone(),
+    }
+    .router();
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),
         ..TestServerConfig::default()
     };
     let server = TestServer::new_with_config(app, config).unwrap();
-    (server, temp_file, push_tasks)
+    (server, temp_file, tasks)
 }
 
 /// Waits for all spawned push notification tasks to complete, with a timeout.
-async fn drain_push_tasks(push_tasks: &Arc<tokio::sync::Mutex<tokio::task::JoinSet<()>>>) {
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
-    loop {
-        let done = {
-            let mut tasks = push_tasks.lock().await;
-            // try_join_next returns None when there are no remaining tasks
-            while tasks.try_join_next().is_some() {}
-            tasks.is_empty()
-        };
-        if done {
-            break;
-        }
-        if tokio::time::Instant::now() >= deadline {
-            panic!("push tasks did not complete within 5s");
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
+async fn drain_push_tasks(tasks: &TaskTracker) {
+    tasks.close();
+    tokio::time::timeout(std::time::Duration::from_secs(5), tasks.wait())
+        .await
+        .expect("push tasks did not complete within 5s");
 }
 
 /// Full integration test: subscribe → store blips → push notification sent.

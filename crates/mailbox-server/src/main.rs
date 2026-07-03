@@ -1,6 +1,6 @@
 use clap::Parser;
-use futures::FutureExt;
-use mailbox_server::spawn_server;
+use dashchat_utils::RELAY_URL;
+use mailbox_server::MailboxServer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
@@ -33,15 +33,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
-    spawn_server(
+    // The standalone cloud server registers with the relay so it is reachable
+    // behind NAT.
+    let server = MailboxServer::spawn(
         args.db_path.into(),
-        args.addr,
+        &args.addr,
         args.push_notifications_url,
         None,
-        signal,
+        Some(RELAY_URL.clone()),
     )
     .await?;
+
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to listen for event");
+    server.stop().await;
 
     Ok(())
 }

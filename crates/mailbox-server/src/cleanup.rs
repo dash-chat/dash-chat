@@ -7,19 +7,17 @@ use crate::{BlipsKey, BLIPS_TABLE};
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 const MESSAGE_MAX_AGE: Duration = Duration::from_secs(90 * 24 * 60 * 60); // 90 days
 
-/// Spawns a background task that periodically cleans up old messages
-pub fn spawn_cleanup_task(db: Arc<Database>) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(CLEANUP_INTERVAL);
+/// Periodically cleans up old messages; runs until cancelled.
+pub async fn cleanup_loop(db: Arc<Database>) {
+    let mut interval = tokio::time::interval(CLEANUP_INTERVAL);
 
-        loop {
-            interval.tick().await;
+    loop {
+        interval.tick().await;
 
-            if let Err(e) = cleanup_old_messages(&db).await {
-                tracing::error!("Failed to cleanup old messages: {}", e);
-            }
+        if let Err(e) = cleanup_old_messages(&db).await {
+            tracing::error!("Failed to cleanup old messages: {}", e);
         }
-    })
+    }
 }
 
 /// Deletes all messages older than MESSAGE_MAX_AGE

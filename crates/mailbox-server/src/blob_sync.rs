@@ -11,7 +11,6 @@ use iroh::protocol::Router;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, Notify};
-use tokio::task::JoinHandle;
 
 /// Tag-name prefix marking a stored blob the server is responsible for GCing.
 /// The fetch time (unix seconds, zero-padded for lexical order) is embedded so
@@ -226,7 +225,8 @@ impl BlobSync {
     }
 
     /// Override the fetch loop's cadence (concurrency, attempt timeout, retry
-    /// interval). Used by `spawn_server` when it spawns the loop.
+    /// interval). Used by [`MailboxServer::spawn`](crate::MailboxServer::spawn)
+    /// when it spawns the loop.
     pub fn with_fetch_config(mut self, config: FetchConfig) -> Self {
         self.fetch_config = config;
         self
@@ -266,13 +266,15 @@ impl BlobSync {
         self.fetch_pool.clone()
     }
 
-    pub fn spawn_fetch_loop(&self, config: FetchConfig) -> JoinHandle<()> {
-        let this = self.clone();
+    /// The loop that downloads pooled blobs from their sources; runs until
+    /// cancelled.
+    pub async fn fetch_loop(self, config: FetchConfig) {
         let pool = self.fetch_pool.clone();
-        tokio::spawn(fetch_loop(pool, config, move |(hash, sources), timeout| {
-            let this = this.clone();
+        fetch_loop(pool, config, move |(hash, sources), timeout| {
+            let this = self.clone();
             async move { this.try_fetch(hash, sources, timeout).await }
-        }))
+        })
+        .await
     }
 
     async fn try_fetch(
@@ -319,23 +321,24 @@ impl BlobSync {
         }
     }
 
-    /// Spawn the loop that expires stored-blob tags past the retention window;
-    /// iroh's background GC then reclaims the now-untagged blobs. Returns `None`
-    /// when sharing a node's store (the node owns blob lifecycle).
-    pub fn spawn_blob_gc_task(&self) -> Option<JoinHandle<()>> {
-        if !self.enable_gc {
-            return None;
-        }
-        let blobs = self.blobs.clone();
-        Some(tokio::spawn(async move {
-            let mut interval = tokio::time::interval(BLOB_GC_INTERVAL);
-            loop {
-                interval.tick().await;
-                if let Err(err) = expire_blob_tags(&blobs).await {
-                    tracing::error!(?err, "failed to expire stored blob tags");
-                }
+    /// True when this BlobSync owns its blob store (standalone server) and is
+    /// therefore responsible for GCing stored blobs.
+    pub fn gc_enabled(&self) -> bool {
+        self.enable_gc
+    }
+
+    /// The loop that expires stored-blob tags past the retention window;
+    /// iroh's background GC then reclaims the now-untagged blobs. Runs until
+    /// cancelled. Only run it when [`BlobSync::gc_enabled`] (when sharing a
+    /// node's store, the node owns blob lifecycle).
+    pub async fn blob_gc_loop(self) {
+        let mut interval = tokio::time::interval(BLOB_GC_INTERVAL);
+        loop {
+            interval.tick().await;
+            if let Err(err) = expire_blob_tags(&self.blobs).await {
+                tracing::error!(?err, "failed to expire stored blob tags");
             }
-        }))
+        }
     }
 }
 
