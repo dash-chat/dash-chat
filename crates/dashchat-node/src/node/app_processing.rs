@@ -456,12 +456,10 @@ impl Node {
                         // this same processor) and deadlock.
                         if owned_topic && !matches!(source, Source::LocalStore) {
                             // The request is signed by the scanner's device key
-                            // (author), so record the device_pubkey -> agent_id
-                            // mapping directly rather than relying on one taken
-                            // from the embedded QR code.
-                            self.local_store
-                                .save_agent_mapping(author, *agent_id)
-                                .await?;
+                            // (author), so establish the contact directly from
+                            // the request rather than relying on the embedded QR
+                            // code's agent_id.
+                            self.establish_contact(author, *agent_id).await?;
                             self.local_store
                                 .save_profile(*agent_id, profile.clone())
                                 .await?;
@@ -477,13 +475,10 @@ impl Node {
                     InboxPayload::ContactRequestAck { profile, agent_id } => {
                         // The scanner learns the owner's agent_id and profile
                         // over its private reply topic. The op is signed by the
-                        // owner's device key (author), so record the
-                        // device_pubkey -> agent_id mapping directly rather than
-                        // relying on one previously taken from the QR code.
-                        if is_reply {
-                            self.local_store
-                                .save_agent_mapping(author, *agent_id)
-                                .await?;
+                        // owner's device key (author), so establish the contact
+                        // directly rather than relying on the QR code's agent_id.
+                        if is_reply && !matches!(source, Source::LocalStore) {
+                            self.establish_contact(author, *agent_id).await?;
                             self.local_store
                                 .save_profile(*agent_id, profile.clone())
                                 .await?;

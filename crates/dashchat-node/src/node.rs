@@ -1161,6 +1161,37 @@ impl Node {
         Ok(())
     }
 
+    /// Register the shared, idempotent state for a contact identified by their
+    /// device pubkey and agent id: record the device -> agent mapping, register
+    /// them as a bootstrap peer, and subscribe to their announcements and our
+    /// direct-chat topic. Safe to call repeatedly, so both the initiating
+    /// `add_contact` path and the inbox request/ack handlers can call it.
+    pub(crate) async fn establish_contact(
+        &self,
+        device_pubkey: DeviceId,
+        agent_id: AgentId,
+    ) -> Result<(), Error> {
+        self.local_store
+            .save_agent_mapping(device_pubkey, agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        // Register the contact as a bootstrap so p2panda discovery can reach it
+        // directly over the internet (relay + pkarr), rather than depending on a
+        // mutually-reachable mailbox to introduce the two nodes.
+        self.register_bootstrap_node(*device_pubkey)
+            .await
+            .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
+        // Subscribe to the contact's announcements to receive their group
+        // control messages, and to our shared direct-chat topic.
+        self.register_topic(Topic::announcements(agent_id))
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        self.register_topic(self.direct_chat_topic(agent_id))
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        Ok(())
+    }
+
     /// Store someone as a contact, and:
     /// - register their spaces keybundle so we can add them to spaces
     /// - subscribe to their inbox
@@ -1175,26 +1206,8 @@ impl Node {
             "adding contact",
         );
 
-        self.local_store
-            .save_contact(contact.clone())
-            .await
-            .map_err(|e| AddContactError::StoreContact(e.to_string()))?;
-
-        // Register the scanned contact as a bootstrap so p2panda discovery can
-        // reach it directly over the internet (relay + pkarr), rather than
-        // depending on a mutually-reachable mailbox to introduce the two nodes.
-        self.register_bootstrap_node(*contact.device_pubkey)
-            .await
-            .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
-
-        // SPACES: Register the member in the spaces manager
-
-        // Must subscribe to the new member's device group in order to receive their
-        // group control messages.
-        // TODO: is this idempotent? If not we must make sure to do this only once.
-        self.register_topic(Topic::announcements(contact.agent_id))
-            .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        self.establish_contact(contact.device_pubkey, contact.agent_id)
+            .await?;
 
         // TODO: use all of this commented out stuff when spaces are possible again
         // // XXX: there should be a better way to wait for the device group to be created,
@@ -1238,11 +1251,6 @@ impl Node {
         // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
 
         let agent = contact.agent_id;
-        let direct_topic = self.direct_chat_topic(agent);
-        self.register_topic(direct_topic)
-            .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-
         self.publish(
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact.clone())),
