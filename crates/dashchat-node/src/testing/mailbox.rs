@@ -3,6 +3,8 @@ use mailbox_client::{
     mem::{MemMailbox, MemMailboxClient},
     toy::ToyMailboxClient,
 };
+use std::sync::LazyLock;
+
 use regex::Regex;
 
 use crate::mailbox::{
@@ -18,7 +20,7 @@ const ALLOWED_MAILBOX_URL_PATTERNS_JSON: &str = include_str!(concat!(
     "/../../allowed-test-mailbox-url-patterns.json"
 ));
 
-fn allowed_mailbox_url_patterns() -> Vec<Regex> {
+static ALLOWED_MAILBOX_URL_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     serde_json::from_str::<Vec<String>>(ALLOWED_MAILBOX_URL_PATTERNS_JSON)
         .expect("allowed-test-mailbox-url-patterns.json is a JSON array of strings")
         .iter()
@@ -26,7 +28,7 @@ fn allowed_mailbox_url_patterns() -> Vec<Regex> {
             Regex::new(pattern).expect("invalid regex in allowed-test-mailbox-url-patterns.json")
         })
         .collect()
-}
+});
 
 /// A mailbox for tests, built by [`TestMailbox::from_env`]: an in-memory
 /// mailbox by default, or a cloud mailbox when `MAILBOX_URL` names an
@@ -49,7 +51,7 @@ impl TestMailbox {
             None => Self::Mem(MemMailbox::new()),
             Some(url) => {
                 assert!(
-                    allowed_mailbox_url_patterns()
+                    ALLOWED_MAILBOX_URL_PATTERNS
                         .iter()
                         .any(|pattern| pattern.is_match(&url)),
                     "MAILBOX_URL={url} is not an allowed test mailbox (allowed patterns: {ALLOWED_MAILBOX_URL_PATTERNS_JSON})"
