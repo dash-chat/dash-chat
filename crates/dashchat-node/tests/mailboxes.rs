@@ -1,27 +1,10 @@
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::{MailboxClient, toy::ToyMailboxClient};
+use mailbox_client::toy::ToyMailboxClient;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_mailbox_late_join_default() {
-    dashchat_node::testing::setup_tracing(
-        &[
-            "dashchat=info",
-            "p2panda_stream=warn",
-            "p2panda_auth=warn",
-            "p2panda_spaces=warn",
-            "aliased=warn",
-        ],
-        true,
-    );
-
-    let mb = TestMailbox::from_env();
-    mailbox_late_join(mb.client().await, mb.client().await).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn test_mailbox_late_join_toy() {
+async fn mailbox_late_join() {
     dashchat_node::testing::setup_tracing(
         &[
             "dashchat=info",
@@ -34,27 +17,7 @@ async fn test_mailbox_late_join_toy() {
         true,
     );
 
-    // Start a test mailbox server
-    let (server, _temp_file) = mailbox_server::test_utils::create_test_server().await;
-    let url = server.server_address().unwrap().to_string();
-    let url = url.trim_end_matches('/').to_string();
-
-    // Create clients pointing to the same server. The sender_pubkey is a
-    // per-client identity used for blob upload attribution; a fresh random
-    // key per client is sufficient for tests.
-    let dummy_key = || iroh::SecretKey::generate().public();
-    let alice_mailbox =
-        ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
-    let bobbi_mailbox =
-        ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
-
-    mailbox_late_join(alice_mailbox, bobbi_mailbox).await;
-}
-
-async fn mailbox_late_join(
-    alice_mailbox: impl MailboxClient<MailboxOperation>,
-    bobbi_mailbox: impl MailboxClient<MailboxOperation>,
-) {
+    let mailbox = TestMailbox::from_env();
     let poll = PollConfig::default();
     let config = NodeConfig::testing();
 
@@ -68,8 +31,8 @@ async fn mailbox_late_join(
         .unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
-    alice.add_mailbox_client(alice_mailbox).await;
-    bobbi.add_mailbox_client(bobbi_mailbox).await;
+    alice.add_mailbox(&mailbox).await;
+    bobbi.add_mailbox(&mailbox).await;
 
     alice.behavior().accept_next_contact().await.unwrap();
 

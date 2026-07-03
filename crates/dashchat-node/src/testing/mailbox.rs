@@ -77,23 +77,6 @@ impl TestMailbox {
         }
     }
 
-    /// A standalone client with a throwaway sender identity. Prefer
-    /// [`crate::testing::TestNode::add_mailbox`], which attributes the client
-    /// to the node and registers addresses for blob transfer.
-    pub async fn client(&self) -> TestMailboxClient {
-        match self {
-            Self::Mem(mb) => TestMailboxClient::Mem(mb.client()),
-            Self::Env { url } => {
-                let health = self.health().await;
-                TestMailboxClient::Toy(ToyMailboxClient::new(
-                    health.mailbox_id.clone(),
-                    url,
-                    iroh::SecretKey::generate().public(),
-                ))
-            }
-        }
-    }
-
     /// Registers this mailbox on a node the way the production app does: for
     /// an environment mailbox, resolve its id from `/health`, add its dialing
     /// address to the node's address book, and register the node's own
