@@ -29,7 +29,8 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
 
     let poll = PollConfig::default();
 
-    let config = NodeConfig::testing();
+    let mut config = NodeConfig::testing();
+    config.mdns_mode = p2panda::network::MdnsDiscoveryMode::Active;
 
     // Always-on relay node hosting an in-process mailbox that shares its iroh
     // endpoint + blob store. Because the mailbox rides the relay node's p2panda
