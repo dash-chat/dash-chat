@@ -34,13 +34,24 @@
 		onStatus,
 	}: Props = $props();
 
-	// Status and cache-busting token are shared per content hash, so every
-	// BlobImage of the same blob (grid cell, lightbox stage, filmstrip thumb)
-	// loads, errors, and retries together.
-	const status = $derived(blobStatus(item.hash));
+	// The cache-busting token is shared per content hash, so a retry from any
+	// surface (grid cell, lightbox stage, filmstrip thumb) re-fetches them all.
 	const token = $derived(blobToken(item.hash));
 	const src = $derived(
 		token === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${token}`,
+	);
+
+	// Once this instance has rendered the blob at the current token it pins to
+	// `loaded` and ignores an `error` another surface reports for the same hash:
+	// a transient failure on the eager lightbox image must not blank a grid
+	// thumbnail that already loaded fine. A genuinely unfetchable blob still
+	// shows the reload icon on every surface that never loaded, and a retry (new
+	// token) drops the pin so each image re-decides its own status.
+	let loaded = $state<{ hash: string; token: number } | undefined>();
+	const status = $derived(
+		loaded?.hash === item.hash && loaded.token === token
+			? 'loaded'
+			: blobStatus(item.hash),
 	);
 
 	/** Re-attempt the download with a fresh, cache-busting URL. Called by the
@@ -55,8 +66,12 @@
 
 	$effect(() => {
 		function onForceError(e: Event) {
-			if ((e as CustomEvent<string>).detail === alt)
+			// Simulates the blob becoming unfetchable everywhere, so drop this
+			// instance's pin too — otherwise an already-loaded image would ignore it.
+			if ((e as CustomEvent<string>).detail === alt) {
+				loaded = undefined;
 				reportBlobStatus(item.hash, 'error');
+			}
 		}
 		window.addEventListener('test-blob-force-error', onForceError);
 		return () =>
@@ -83,7 +98,10 @@
 		style={imgStyle}
 		loading={lazy ? 'lazy' : 'eager'}
 		data-testid="blob-image"
-		onload={() => reportBlobStatus(item.hash, 'loaded')}
+		onload={() => {
+			loaded = { hash: item.hash, token };
+			reportBlobStatus(item.hash, 'loaded');
+		}}
 		onerror={() => reportBlobStatus(item.hash, 'error')}
 	/>
 	{#if status === 'loading'}
