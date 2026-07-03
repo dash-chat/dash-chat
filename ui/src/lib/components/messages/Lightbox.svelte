@@ -50,9 +50,9 @@
 	let originX = $state(50);
 	let originY = $state(50);
 
-	let blobImages = $state<Array<{ retry: () => void } | undefined>>([]);
-	let statuses = $state<Record<number, 'loading' | 'loaded' | 'error'>>({});
-	const imgStatus = $derived(statuses[index] ?? 'loading');
+	let blobImages = $state<Array<{ retryIfErrored: () => boolean } | undefined>>(
+		[],
+	);
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
@@ -108,10 +108,7 @@
 	}
 
 	function onStageClick(event: MouseEvent) {
-		if (imgStatus === 'error') {
-			blobImages[index]?.retry();
-			return;
-		}
+		if (blobImages[index]?.retryIfErrored()) return;
 		// Mobile: a tap toggles immersive mode (hide all chrome). Desktop: tapping
 		// the letterbox around the image (anything but the photo) closes.
 		if (isMobile) {
@@ -192,7 +189,6 @@
 				imgStyle={i === index
 					? `transform-origin: ${originX}% ${originY}%`
 					: ''}
-				onStatus={s => (statuses[i] = s)}
 			/>
 		{/snippet}
 	</ImageCarousel>

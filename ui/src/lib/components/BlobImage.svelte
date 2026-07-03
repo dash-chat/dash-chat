@@ -1,6 +1,13 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { FileAttachment, PhotoAttachment } from 'dash-chat-stores';
 	import { mediaSrc } from '$lib/utils/media';
+	import {
+		acquireBlob,
+		blobToken,
+		releaseBlob,
+		retryBlob,
+	} from '$lib/stores/blob-load-store.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Preloader } from 'konsta/svelte';
 	import { mdiReload } from '@mdi/js';
@@ -14,9 +21,6 @@
 		imgStyle?: string;
 		/** Defer loading until near the viewport (grid cells); the lightbox loads eagerly. */
 		lazy?: boolean;
-		/** Notified whenever the load state changes, so a parent can decide what
-		 * a click should do (open vs. retry). */
-		onStatus?: (status: 'loading' | 'loaded' | 'error') => void;
 	}
 
 	let {
@@ -25,25 +29,52 @@
 		imgClass = '',
 		imgStyle = '',
 		lazy = false,
-		onStatus,
 	}: Props = $props();
 
+	// Load status is this element's own — each <img> fetches independently, so a
+	// failure here never blanks another surface of the same blob. Only the
+	// cache-busting token is shared per hash: a retry from any surface bumps it,
+	// and every mounted image re-attempts because its `src` changes.
 	let status = $state<'loading' | 'loaded' | 'error'>('loading');
-	// buster===0 keeps the first load query-free (cacheable); a retry uses Date.now() so it never reuses a cached failure, even across restarts.
-	let buster = $state(0);
+	const token = $derived(blobToken(item.hash));
 	const src = $derived(
-		buster === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${buster}`,
+		token === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${token}`,
 	);
 
-	/** Re-attempt the download with a fresh, cache-busting URL. Called by the
-	 * parent when a missing image's placeholder is clicked. */
-	export function retry() {
-		status = 'loading';
-		buster = Date.now();
+	// A fresh mount or a new blob re-attempts from scratch, which also self-heals
+	// a blob that failed only because it hadn't synced yet. A retry (token bump)
+	// re-fetches every surface via the changed `src`, but an already-loaded,
+	// healthy surface keeps showing its image instead of flushing to the spinner —
+	// only surfaces that still need the blob reset visibly.
+	let previousHash = untrack(() => item.hash);
+	$effect(() => {
+		void token;
+		const hash = item.hash;
+		untrack(() => {
+			const isNewBlob = hash !== previousHash;
+			previousHash = hash;
+			if (isNewBlob || status !== 'loaded') status = 'loading';
+		});
+	});
+
+	/** If this image is showing its reload placeholder, re-fetch the blob on every
+	 * surface and report that the click was handled. Lets a parent decide a click
+	 * means "retry" vs. its normal action without tracking load state itself. */
+	export function retryIfErrored(): boolean {
+		if (status !== 'error') return false;
+		retryBlob(item.hash);
+		return true;
 	}
 
+	// Bound the shared map to blobs on screen: keep the entry alive only while
+	// mounted. `hash` is captured so teardown releases what it acquired even if
+	// `item` changes.
 	$effect(() => {
-		onStatus?.(status);
+		const hash = item.hash;
+		// untrack: the ref bookkeeping reads and writes the store entry, which must
+		// not make this effect depend on (and re-run from) its own mutation.
+		untrack(() => acquireBlob(hash));
+		return () => releaseBlob(hash);
 	});
 
 	$effect(() => {
