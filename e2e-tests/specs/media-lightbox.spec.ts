@@ -89,6 +89,28 @@ describe('Photo lightbox', () => {
 		await agent1.waitUntil(async () => (await lb.activeIndex()) === 1);
 	});
 
+	it('recovers the main stage when a failed photo is retried from the filmstrip', async () => {
+		const lb = agent1.directChatPage.messages.lightbox;
+		await agent1.directChatPage.messages.photoCellButton(0).click();
+		await lb.root.waitForExist();
+		await agent1.waitUntil(async () => (await lb.activeIndex()) === 0);
+
+		// Fail the displayed photo: because load state is shared per blob hash,
+		// the main stage shows its own reload icon, not just the thumbnail.
+		await lb.forceThumbError(0);
+		await lb.stageRetry().waitForDisplayed();
+		await lb.thumbRetry(0).waitForDisplayed();
+
+		// Retrying from the filmstrip re-downloads the shared blob, so the main
+		// stage recovers alongside the thumbnail.
+		await lb.thumb(0).click();
+		await lb.stageRetry().waitForDisplayed({ reverse: true });
+		await lb.thumbRetry(0).waitForDisplayed({ reverse: true });
+
+		await lb.pressKey('Escape');
+		await agent1.waitUntil(async () => !(await lb.isOpen()));
+	});
+
 	it('opens on the receiving side too', async () => {
 		await agent2.directChatPage.messages.waitForPhotoMessage('lightbox');
 		await agent2.directChatPage.messages.photoCellButton(0).click();

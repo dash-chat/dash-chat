@@ -21,6 +21,13 @@ export class Lightbox extends TestHelper {
 		return this.thumb(index).$(tid('blob-image-retry'));
 	}
 
+	/** The reload/retry affordance on the main stage (not a filmstrip thumb),
+	 * shown when the displayed photo failed to load. Stage images carry the
+	 * `lightbox-image` class; thumbnails do not. */
+	stageRetry() {
+		return this.agent.$(`.lightbox-image${tid('blob-image-retry')}`);
+	}
+
 	/** Simulate a failed load for the thumbnail at `index` (and any image that
 	 * shares its alt), surfacing the reload/retry affordance. */
 	async forceThumbError(index: number): Promise<void> {
