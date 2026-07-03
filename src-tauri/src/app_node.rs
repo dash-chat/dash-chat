@@ -120,7 +120,7 @@ impl AppNode {
     /// Snapshot the live node, or a retryable "not ready" error when paused.
     /// Returns immediately — the frontend retry loop covers the resume window,
     /// so we deliberately do not wait here.
-    pub async fn get(&self) -> Result<Node, String> {
+    pub async fn get(&self) -> Result<Node, crate::error::Error> {
         self.inner
             .read()
             .await
