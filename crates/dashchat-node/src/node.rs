@@ -1287,6 +1287,7 @@ impl Node {
                 Payload::Inbox(InboxPayload::ContactRequest {
                     code,
                     profile,
+                    agent_id: self.agent_id(),
                     reply_topic: reply_inbox.topic.clone(),
                 }),
                 Some(&format!(

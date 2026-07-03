@@ -443,13 +443,28 @@ impl Node {
                     return Ok(());
                 }
                 match invitation {
-                    InboxPayload::ContactRequest { reply_topic, .. } => {
+                    InboxPayload::ContactRequest {
+                        reply_topic,
+                        agent_id,
+                        profile,
+                        ..
+                    } => {
                         // Only the advertised inbox owner answers, and only for a
                         // freshly-received request (not a local replay), by
                         // sending its profile to the scanner's private reply
                         // topic. Spawned so we don't await publishing (which needs
                         // this same processor) and deadlock.
                         if owned_topic && !matches!(source, Source::LocalStore) {
+                            // The request is signed by the scanner's device key
+                            // (author), so record the device_pubkey -> agent_id
+                            // mapping directly rather than relying on one taken
+                            // from the embedded QR code.
+                            self.local_store
+                                .save_agent_mapping(author, *agent_id)
+                                .await?;
+                            self.local_store
+                                .save_profile(*agent_id, profile.clone())
+                                .await?;
                             let node = self.clone();
                             let reply_topic = *reply_topic;
                             tokio::spawn(async move {

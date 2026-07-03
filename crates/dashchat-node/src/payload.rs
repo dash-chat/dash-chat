@@ -47,9 +47,12 @@ pub enum InboxPayload {
     /// private inbox the sender created for this exchange; the recipient sends
     /// its `ContactRequestAck` there rather than on the (possibly shared)
     /// advertised inbox, so other scanners of the same QR code never see it.
+    /// `agent_id` is the sender's agent id; the recipient records it against the
+    /// op author (device_pubkey)
     ContactRequest {
         code: QrCode,
         profile: Profile,
+        agent_id: AgentId,
         reply_topic: Topic<kind::Inbox>,
     },
     /// Sent by the inbox owner back to the scanner over the scanner's private
