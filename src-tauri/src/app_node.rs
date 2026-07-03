@@ -4,7 +4,7 @@ use std::sync::Arc;
 use dashchat_node::Node;
 use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, watch, RwLock};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::{AbortOnDropHandle, TaskTracker};
 
@@ -48,6 +48,10 @@ pub struct AppNode {
     /// extension via the app-group container. Closed on background (releasing its
     /// file lock) and reopened lazily on next use.
     notified_operations_store: NotifiedOperationsStore,
+    /// Bumped on every node swap (pause tear-down / resume rebuild) so long-lived
+    /// per-node subscriptions can re-bind to the current node. A plain counter,
+    /// never the `Node`, so it can never keep a paused node alive.
+    generation_tx: Arc<watch::Sender<u64>>,
 }
 
 // `pause`/`resume` are driven by the iOS lifecycle plugin; they are unused on
@@ -69,6 +73,7 @@ impl AppNode {
             &crate::filesystem::FileSystem::new(app)?.notified_operations_db_path(),
         )
         .await?;
+        let (generation_tx, _) = watch::channel(0u64);
         let app_node = Self {
             inner: Arc::new(RwLock::new(Inner {
                 node: None,
@@ -81,6 +86,7 @@ impl AppNode {
             #[cfg(mobile)]
             topic_subscribed_tx,
             notified_operations_store,
+            generation_tx: Arc::new(generation_tx),
         };
         // App-lifetime loop: it outlives node rebuilds, so it is started once here
         // and detached rather than tracked in a node's task set.
@@ -134,6 +140,16 @@ impl AppNode {
         self.notified_operations_store.clone()
     }
 
+    /// A receiver that fires whenever the node is swapped (paused or rebuilt), so
+    /// a long-lived per-node subscription can re-bind to the current node.
+    pub fn subscribe_generation(&self) -> watch::Receiver<u64> {
+        self.generation_tx.subscribe()
+    }
+
+    fn bump_generation(&self) {
+        self.generation_tx.send_modify(|g| *g = g.wrapping_add(1));
+    }
+
     /// Tear the node down and release all SQLite locks so iOS can suspend the
     /// app cleanly. Idempotent, and holds the write lock for the whole teardown
     /// so a concurrent [`resume`](Self::resume) can't interleave.
@@ -162,6 +178,10 @@ impl AppNode {
         }
         // Also close our own store (reopens lazily on next use).
         self.notified_operations_store.close().await;
+        // Wake forwarders so any mid-subscribe (holding a transient node clone)
+        // aborts and releases it, and bound ones stop waiting on the dead node.
+        drop(inner);
+        self.bump_generation();
         log::info!("Node quiesced; SQLite locks released for background suspension");
     }
 
@@ -216,6 +236,9 @@ impl AppNode {
         inner.mdns_discovery = Some(mdns_discovery);
         inner.tracker = tracker;
         inner.token = token;
+        // Wake forwarders so they re-bind to the fresh node.
+        drop(inner);
+        self.bump_generation();
         Ok(())
     }
 }
