@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex as StdMutex};
 
-use dashchat_node::Node;
+use crate::app_node::AppNode;
 use mailbox_local_server::LocalMailboxServer;
 use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
@@ -28,14 +28,18 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         return Ok(());
     }
 
-    let node = handle.state::<Node>();
+    let node = handle
+        .state::<AppNode>()
+        .get()
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
     let endpoint_id = node.endpoint_id();
     let endpoint = node.iroh_endpoint().await?;
     let path = FileSystem::new(handle)?.local_mailbox_db_path();
     let daemon: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
 
     let (peer_addr_tx, mut peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
-    let node_for_peer_addrs = (*node).clone();
+    let node_for_peer_addrs = node.clone();
     tokio::spawn(async move {
         while let Some(addr) = peer_addr_rx.recv().await {
             if let Err(err) = node_for_peer_addrs.insert_peer_addr(addr).await {

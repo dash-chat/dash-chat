@@ -1,6 +1,8 @@
+mod app_node;
 mod blob_protocol;
 mod commands;
 mod device_info;
+mod error;
 mod filesystem;
 mod i18n;
 mod mailbox;
@@ -54,6 +56,32 @@ pub fn run() {
     #[cfg(target_os = "ios")]
     {
         builder = builder.plugin(tauri_plugin_ios_photos::init());
+        // Quiesce the node (release SQLite locks) on background and rebuild it on
+        // foreground so iOS can suspend the app without a 0xdead10cc kill.
+        builder = builder.plugin(
+            tauri_plugin_ios_lifecycle::Builder::new()
+                .on_pause(|app| async move {
+                    use tauri::Manager;
+                    if let Some(app_node) = app
+                        .try_state::<app_node::AppNode>()
+                        .map(|s| s.inner().clone())
+                    {
+                        app_node.pause().await;
+                    }
+                })
+                .on_resume(|app| async move {
+                    use tauri::Manager;
+                    if let Some(app_node) = app
+                        .try_state::<app_node::AppNode>()
+                        .map(|s| s.inner().clone())
+                    {
+                        if let Err(err) = app_node.resume(&app).await {
+                            log::error!("Failed to rebuild node on foreground: {err:?}");
+                        }
+                    }
+                })
+                .build(),
+        );
     }
     #[cfg(not(mobile))]
     {

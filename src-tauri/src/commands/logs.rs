@@ -1,4 +1,4 @@
-use dashchat_node::{DeviceId, Node, Payload, Topic};
+use dashchat_node::{DeviceId, Payload, Topic};
 use p2panda::operation::{Header, LogId};
 use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::processor::GroupsArgs;
@@ -6,6 +6,8 @@ use p2panda_core::cbor::decode_cbor;
 use p2panda_core::Timestamp;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tauri::State;
+
+use crate::app_node::AppNode;
 
 /// Serialize a `Timestamp` (microseconds) as milliseconds since the UNIX epoch
 /// so JS can pass it straight to `new Date(ms)`.
@@ -176,8 +178,9 @@ pub fn simplify(
 pub async fn get_log(
     topic_id: Topic,
     author: DeviceId,
-    node: State<'_, Node>,
+    app_node: State<'_, AppNode>,
 ) -> Result<Vec<SimplifiedOperation>, String> {
+    let node = app_node.get().await?;
     let log = node
         .op_store
         .get_log(&author, &LogId::from(topic_id), None)
@@ -196,8 +199,9 @@ pub async fn get_log(
 #[tauri::command]
 pub async fn get_authors(
     topic_id: Topic,
-    node: State<'_, Node>,
+    app_node: State<'_, AppNode>,
 ) -> Result<std::collections::HashSet<DeviceId>, String> {
+    let node = app_node.get().await?;
     let authors = node
         .op_store
         .get_authors(LogId::from(topic_id))

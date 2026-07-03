@@ -58,13 +58,13 @@
 		},
 		"deep-link": {
 			"mobile": [
-        {
-          "scheme": ["https"],
-          "host": "dashchat.org",
-          "pathPrefix": ["/add-contact"],
-          "appLink": true
-        }
-      ],
+				{
+					"scheme": ["https"],
+					"host": "dashchat.org",
+					"pathPrefix": ["/add-contact"],
+					"appLink": true
+				}
+			],
 			"desktop": {
 				"schemes": ["dash-chat"]
 			}

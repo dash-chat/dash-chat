@@ -1,10 +1,12 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
     SqlitePool,
 };
+use tokio::sync::RwLock;
 
 const MIGRATIONS: &[&str] = &["CREATE TABLE IF NOT EXISTS notified_operations (
         hash BLOB PRIMARY KEY,
@@ -16,15 +18,20 @@ const MIGRATIONS: &[&str] = &["CREATE TABLE IF NOT EXISTS notified_operations (
 /// path consult it so the same op never produces two banners — important on
 /// Android where MessagingStyle would otherwise append the message twice into
 /// the same thread.
+///
+/// The pool is behind an `Option` so [`close`](Self::close) can drain it when
+/// the iOS app is backgrounded (releasing the file lock, avoiding 0xdead10cc)
+/// and it is transparently reopened on next use.
 #[derive(Clone)]
 pub struct NotifiedOperationsStore {
-    pool: SqlitePool,
+    path: PathBuf,
+    pool: Arc<RwLock<Option<SqlitePool>>>,
 }
 
 impl NotifiedOperationsStore {
-    pub async fn open(db_path: &Path) -> anyhow::Result<Self> {
+    async fn open_pool(path: &Path) -> anyhow::Result<SqlitePool> {
         let opts = SqliteConnectOptions::new()
-            .filename(db_path)
+            .filename(path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
             .busy_timeout(Duration::from_secs(30));
@@ -32,7 +39,36 @@ impl NotifiedOperationsStore {
         for sql in MIGRATIONS {
             sqlx::query(sql).execute(&pool).await?;
         }
-        Ok(Self { pool })
+        Ok(pool)
+    }
+
+    pub async fn open(db_path: &Path) -> anyhow::Result<Self> {
+        let pool = Self::open_pool(db_path).await?;
+        Ok(Self {
+            path: db_path.to_path_buf(),
+            pool: Arc::new(RwLock::new(Some(pool))),
+        })
+    }
+
+    /// Return the live pool, reopening it if it was closed (e.g. after the app
+    /// was backgrounded and has since resumed).
+    async fn pool(&self) -> anyhow::Result<SqlitePool> {
+        if let Some(pool) = self.pool.read().await.as_ref() {
+            return Ok(pool.clone());
+        }
+        let mut guard = self.pool.write().await;
+        if guard.is_none() {
+            *guard = Some(Self::open_pool(&self.path).await?);
+        }
+        Ok(guard.as_ref().expect("just opened").clone())
+    }
+
+    /// Drain the SQLite pool so it releases its file lock. Called when the iOS
+    /// app is backgrounded; the pool reopens lazily on next use.
+    pub async fn close(&self) {
+        if let Some(pool) = self.pool.write().await.take() {
+            pool.close().await;
+        }
     }
 
     /// Records that the operation identified by `hash` has had a notification
@@ -48,7 +84,7 @@ impl NotifiedOperationsStore {
         )
         .bind(hash.as_bytes().to_vec())
         .bind(now_nanos)
-        .execute(&self.pool)
+        .execute(&self.pool().await?)
         .await?;
         Ok(result.rows_affected() == 1)
     }
@@ -58,7 +94,7 @@ impl NotifiedOperationsStore {
         let row: Option<(i64,)> =
             sqlx::query_as("SELECT notified_at_nanos FROM notified_operations WHERE hash = ?")
                 .bind(hash.as_bytes().to_vec())
-                .fetch_optional(&self.pool)
+                .fetch_optional(&self.pool().await?)
                 .await?;
         Ok(row.is_some())
     }
