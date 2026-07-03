@@ -220,6 +220,15 @@ impl Default for PollConfig {
 }
 
 impl PollConfig {
+    pub fn seconds(seconds: u64) -> Self {
+        let poll_timeout = Duration::from_secs(seconds);
+        let poll_interval = poll_timeout / 10;
+        Self {
+            poll_interval,
+            poll_timeout,
+        }
+    }
+
     pub async fn consistency(
         &self,
         nodes: impl IntoIterator<Item = &TestNode>,

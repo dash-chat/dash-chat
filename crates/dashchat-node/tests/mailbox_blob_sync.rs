@@ -241,21 +241,11 @@ async fn recovers_unfetched_blob_after_source_restart() {
 
     let poll = PollConfig::default();
 
-    let mut config = NodeConfig::testing();
-    config.mdns_mode = MdnsDiscoveryMode::Active;
-
-    // The relay hosts the in-process mailbox but has mDNS discovery DISABLED, so
-    // it never auto-learns alice's dialing address. That makes the phase-1 blob
-    // fetch fail deterministically: the mailbox knows alice's EndpointId (from
-    // `/blobs/store`) but has no address to dial until we register one in the
-    // recovery phase. The mailbox HTTP endpoints (blip/blob announce, health)
-    // are unaffected — those are plain HTTP, not p2p discovery.
-    let mut relay_config = config.clone();
-    relay_config.mdns_mode = MdnsDiscoveryMode::Disabled;
+    let config = NodeConfig::testing();
 
     // Relay node hosting the in-process mailbox (shares its iroh endpoint + blob
     // store). The mailbox's MailboxId is the relay's EndpointId.
-    let relay = TestNode::new(relay_config, "relay").await;
+    let relay = TestNode::new(config.clone(), "relay").await;
     let mailbox_id = mailbox_server::encode_mailbox_id(relay.endpoint_id());
 
     let mailbox_dir = tempfile::tempdir().unwrap();
@@ -315,6 +305,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());
+
     bobbi.shutdown().await;
 
     // Alice sends a photo. `publish` announces the blob to the mailbox and,
@@ -346,13 +337,13 @@ async fn recovers_unfetched_blob_after_source_restart() {
     // yet have it, records the unfetched-blob row through the real tracker. The
     // first sync pass depends on the mailbox becoming reachable, which can take
     // longer than the default 10s window, so widen this specific wait.
-    let record_poll = PollConfig {
-        poll_timeout: Duration::from_secs(30),
-        ..PollConfig::default()
-    };
-    record_poll
+    PollConfig::seconds(30)
         .wait_for(|| async {
-            let by_mailbox = alice.local_store.unfetched_blobs_by_mailbox().await.unwrap();
+            let by_mailbox = alice
+                .local_store
+                .unfetched_blobs_by_mailbox()
+                .await
+                .unwrap();
             by_mailbox
                 .get(&mailbox_id)
                 .is_some_and(|hashes| hashes.contains(&hash))
@@ -381,7 +372,11 @@ async fn recovers_unfetched_blob_after_source_restart() {
     // Confirm the row persisted across the restart boundary (the whole point of
     // the on-disk table): reopen alice's store in place and read it back.
     let alice = TestNode::new_at_path(config.clone(), "alice", alice_dir).await;
-    let by_mailbox = alice.local_store.unfetched_blobs_by_mailbox().await.unwrap();
+    let by_mailbox = alice
+        .local_store
+        .unfetched_blobs_by_mailbox()
+        .await
+        .unwrap();
     assert!(
         by_mailbox
             .get(&mailbox_id)
@@ -425,7 +420,11 @@ async fn recovers_unfetched_blob_after_source_restart() {
 
     // The provider-download event on alice's blob endpoint clears the row.
     poll.wait_for(|| async {
-        let by_mailbox = alice.local_store.unfetched_blobs_by_mailbox().await.unwrap();
+        let by_mailbox = alice
+            .local_store
+            .unfetched_blobs_by_mailbox()
+            .await
+            .unwrap();
         (!by_mailbox
             .get(&mailbox_id)
             .is_some_and(|hashes| hashes.contains(&hash)))
