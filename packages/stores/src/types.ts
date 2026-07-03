@@ -155,7 +155,12 @@ export interface InboxTopic {
 	topic: TopicId;
 }
 
-export type ShareIntent = 'AddDevice' | 'AddContact';
+/** Numeric discriminant matching `dashchat_node::ShareIntent` (serde_repr u8). */
+export type ShareIntent = 0 | 1;
+export const ShareIntent = {
+	AddDevice: 0,
+	AddContact: 1,
+} as const;
 
 export interface ContactCode {
 	/// Pubkey of this node: allows adding this node to groups.

@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::str::FromStr;
 
 use crate::{AgentId, DeviceId, Topic, topic::kind};
@@ -37,10 +38,11 @@ pub struct QrCode {
     pub share_intent: ShareIntent,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
 pub enum ShareIntent {
-    AddDevice,
-    AddContact,
+    AddDevice = 0,
+    AddContact = 1,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

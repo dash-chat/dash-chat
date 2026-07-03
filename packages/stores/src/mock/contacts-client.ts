@@ -2,6 +2,7 @@ import type { IContactsClient, Profile } from '../contacts/contacts-client';
 import type { AgentId, DeviceId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
 import type { ContactCode, InboxTopic } from '../types';
+import { ShareIntent } from '../types';
 import type { LocalStorageLogsClient } from './client';
 
 export class MockContactsClient implements IContactsClient {
@@ -35,7 +36,7 @@ export class MockContactsClient implements IContactsClient {
 			inbox_topic: this.inboxTopics[0]
 				? { topic: this.inboxTopics[0], expires_at: Date.now() + 86400000 }
 				: undefined,
-			share_intent: 'AddContact',
+			share_intent: ShareIntent.AddContact,
 		};
 	}
 
