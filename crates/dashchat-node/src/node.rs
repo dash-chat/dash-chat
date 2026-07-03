@@ -1328,7 +1328,10 @@ impl Node {
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.publish(
             reply_topic,
-            Payload::Inbox(InboxPayload::ContactRequestAck { profile }),
+            Payload::Inbox(InboxPayload::ContactRequestAck {
+                profile,
+                agent_id: self.agent_id(),
+            }),
             Some("reply_to_contact_request"),
         )
         .await

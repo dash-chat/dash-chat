@@ -54,8 +54,10 @@ pub enum InboxPayload {
     },
     /// Sent by the inbox owner back to the scanner over the scanner's private
     /// reply topic, carrying the owner's profile so the scanner learns it
-    /// immediately rather than waiting for announcements sync.
-    ContactRequestAck { profile: Profile },
+    /// immediately rather than waiting for announcements sync. `agent_id` is the
+    /// owner's agent id; the scanner records it against the op author
+    /// (device_pubkey), a step toward dropping `agent_id` from the QR code.
+    ContactRequestAck { profile: Profile, agent_id: AgentId },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

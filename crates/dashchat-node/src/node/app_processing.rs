@@ -459,17 +459,19 @@ impl Node {
                             });
                         }
                     }
-                    InboxPayload::ContactRequestAck { profile } => {
-                        // The scanner learns the owner's profile over its private
-                        // reply topic.
+                    InboxPayload::ContactRequestAck { profile, agent_id } => {
+                        // The scanner learns the owner's agent_id and profile
+                        // over its private reply topic. The op is signed by the
+                        // owner's device key (author), so record the
+                        // device_pubkey -> agent_id mapping directly rather than
+                        // relying on one previously taken from the QR code.
                         if is_reply {
-                            if let Some(agent_id) =
-                                self.local_store.lookup_contact_by_device_id(author).await?
-                            {
-                                self.local_store
-                                    .save_profile(agent_id, profile.clone())
-                                    .await?;
-                            }
+                            self.local_store
+                                .save_agent_mapping(author, *agent_id)
+                                .await?;
+                            self.local_store
+                                .save_profile(*agent_id, profile.clone())
+                                .await?;
                         }
                     }
                 }
