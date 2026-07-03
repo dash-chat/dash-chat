@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { FileAttachment, PhotoAttachment } from 'dash-chat-stores';
 	import { mediaSrc } from '$lib/utils/media';
 	import {
@@ -62,7 +63,9 @@
 	// `item` changes.
 	$effect(() => {
 		const hash = item.hash;
-		acquireBlob(hash);
+		// untrack: the ref bookkeeping reads and writes the store entry, which must
+		// not make this effect depend on (and re-run from) its own mutation.
+		untrack(() => acquireBlob(hash));
 		return () => releaseBlob(hash);
 	});
 

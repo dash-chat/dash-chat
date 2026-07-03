@@ -12,7 +12,9 @@
 
 	// Cell component handles, so a click on a cell whose image failed to load
 	// retries the download instead of opening the lightbox.
-	const blobImages: Record<number, { retryIfErrored: () => boolean }> = {};
+	const blobImages = $state<Record<number, { retryIfErrored: () => boolean }>>(
+		{},
+	);
 
 	// The 5th cell of a 6+ gallery is the "+N" overflow scrim — it stands for all
 	// the hidden photos, so it always opens the lightbox rather than retrying its

@@ -14,7 +14,7 @@
 	let { photos, index = $bindable(0), faded = false }: Props = $props();
 
 	let stripEl: HTMLElement | undefined = $state();
-	const thumbs: Record<number, { retryIfErrored: () => boolean }> = {};
+	const thumbs = $state<Record<number, { retryIfErrored: () => boolean }>>({});
 
 	// A failed thumbnail shows a reload icon; clicking it retries the download
 	// (which re-fetches the main-stage image of the same blob too) and switches to
