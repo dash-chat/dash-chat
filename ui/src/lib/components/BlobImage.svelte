@@ -41,12 +41,20 @@
 		token === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${token}`,
 	);
 
-	// A fresh mount (or a bumped token) re-attempts from scratch, which also
-	// self-heals a blob that failed only because it hadn't synced yet.
+	// A fresh mount or a new blob re-attempts from scratch, which also self-heals
+	// a blob that failed only because it hadn't synced yet. A retry (token bump)
+	// re-fetches every surface via the changed `src`, but an already-loaded,
+	// healthy surface keeps showing its image instead of flushing to the spinner —
+	// only surfaces that still need the blob reset visibly.
+	let previousHash = untrack(() => item.hash);
 	$effect(() => {
-		void item.hash;
 		void token;
-		status = 'loading';
+		const hash = item.hash;
+		untrack(() => {
+			const isNewBlob = hash !== previousHash;
+			previousHash = hash;
+			if (isNewBlob || status !== 'loaded') status = 'loading';
+		});
 	});
 
 	/** If this image is showing its reload placeholder, re-fetch the blob on every
