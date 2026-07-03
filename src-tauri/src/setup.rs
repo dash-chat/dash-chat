@@ -1,7 +1,43 @@
+use dashchat_node::Node;
 use tauri::AppHandle;
 use tauri::Manager;
 
 use crate::filesystem::FileSystem;
+
+/// Resolve the cloud mailbox id from its `/health` endpoint and register it on
+/// the node. Returns an error (registering nothing) when the server is
+/// unreachable — there is intentionally no fallback id, so callers retry until
+/// the real id is known. `Mailboxes::register` is idempotent.
+pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
+    let mailbox_url = crate::mailbox::default_mailbox_url();
+    let health = fetch_mailbox_health(&mailbox_url).await?;
+    // Add the mailbox's dialing address to the p2panda address book so the iroh
+    // blob downloader can reach it by EndpointId; without this the mailbox is
+    // known only by id and is not dialable.
+    node.insert_peer_addr(health.endpoint_addr).await?;
+    if !node.mailboxes.is_tracked(&health.mailbox_id).await {
+        let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
+            health.mailbox_id,
+            mailbox_url.clone(),
+            node.endpoint_id(),
+        );
+        node.mailboxes.register(mailbox_client).await;
+    }
+    // Tell the mailbox our own dialing address so its blob fetch pool can reach
+    // us as a source (without this the mailbox knows our EndpointId from blip
+    // uploads but cannot dial us). Wait for the relay first so the address we
+    // send includes our relay URL; otherwise a NAT'd mailbox cannot dial us
+    // back. On failure we return Err so the retry wrapper runs us again.
+    dashchat_utils::endpoint::wait_endpoint_online(
+        node.config.use_relay,
+        &node.iroh_endpoint().await?,
+        std::time::Duration::from_secs(10),
+    )
+    .await?;
+    let our_addr = node.iroh_endpoint().await?.addr();
+    register_self_with_mailbox(&mailbox_url, our_addr).await?;
+    Ok(())
+}
 
 /// POST our current `EndpointAddr` to a mailbox's `/peers/register` endpoint so
 /// it can dial us when fetching blobs we published.

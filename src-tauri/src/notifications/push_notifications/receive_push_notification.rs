@@ -207,7 +207,7 @@ async fn handle_push_notification(
         return Ok(Some(notifications::new_message_generic_notification()));
     };
 
-    let notified_operations_store = crate::app_node::NotifiedOperationsStore::open(
+    let notified_operations_store = crate::notifications::NotifiedOperationsStore::open(
         &filesystem.notified_operations_db_path(),
     )
     .await

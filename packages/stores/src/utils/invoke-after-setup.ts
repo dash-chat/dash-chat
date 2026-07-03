@@ -13,8 +13,8 @@ const BACKEND_NOT_READY = 'state not managed';
 // The iOS app quiesces its node when backgrounded (releasing SQLite locks to
 // avoid a 0xdead10cc kill) and rebuilds it on foreground. While paused/rebuilding,
 // node-backed commands return this sentinel (see `AppNode::get`); retry until the
-// node is back. Keep in sync with `NODE_NOT_READY` in src-tauri/src/app_node.rs.
-const NODE_NOT_READY = 'node not ready';
+// node is back.
+const NODE_NOT_READY = 'NodeNotReady';
 
 // ~15s: covers both the startup race and node rebuild on foreground (iroh/relay
 // bring-up). While backgrounded the webview is suspended, so no attempts burn.
@@ -22,9 +22,19 @@ const MAX_ATTEMPTS = 150;
 const RETRY_DELAY_MS = 100;
 
 const isBackendNotReady = (error: unknown): boolean => {
+	if (
+		typeof error === 'object' &&
+		error !== null &&
+		'kind' in error &&
+		error.kind === NODE_NOT_READY
+	) {
+		return true;
+	}
 	const message =
 		typeof error === 'string' ? error : ((error as Error)?.message ?? '');
-	return message.includes(BACKEND_NOT_READY) || message.includes(NODE_NOT_READY);
+	return (
+		message.includes(BACKEND_NOT_READY) || message.includes(NODE_NOT_READY)
+	);
 };
 
 export const sleep = (ms: number): Promise<void> =>

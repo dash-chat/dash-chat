@@ -28,22 +28,22 @@ pub struct NotifiedOperationsStore {
     pool: Arc<RwLock<Option<SqlitePool>>>,
 }
 
-async fn open_pool(path: &Path) -> anyhow::Result<SqlitePool> {
-    let opts = SqliteConnectOptions::new()
-        .filename(path)
-        .create_if_missing(true)
-        .journal_mode(SqliteJournalMode::Wal)
-        .busy_timeout(Duration::from_secs(30));
-    let pool = SqlitePoolOptions::new().connect_with(opts).await?;
-    for sql in MIGRATIONS {
-        sqlx::query(sql).execute(&pool).await?;
-    }
-    Ok(pool)
-}
-
 impl NotifiedOperationsStore {
+    async fn open_pool(path: &Path) -> anyhow::Result<SqlitePool> {
+        let opts = SqliteConnectOptions::new()
+            .filename(path)
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(Duration::from_secs(30));
+        let pool = SqlitePoolOptions::new().connect_with(opts).await?;
+        for sql in MIGRATIONS {
+            sqlx::query(sql).execute(&pool).await?;
+        }
+        Ok(pool)
+    }
+
     pub async fn open(db_path: &Path) -> anyhow::Result<Self> {
-        let pool = open_pool(db_path).await?;
+        let pool = Self::open_pool(db_path).await?;
         Ok(Self {
             path: db_path.to_path_buf(),
             pool: Arc::new(RwLock::new(Some(pool))),
@@ -58,7 +58,7 @@ impl NotifiedOperationsStore {
         }
         let mut guard = self.pool.write().await;
         if guard.is_none() {
-            *guard = Some(open_pool(&self.path).await?);
+            *guard = Some(Self::open_pool(&self.path).await?);
         }
         Ok(guard.as_ref().expect("just opened").clone())
     }

@@ -1,5 +1,6 @@
 use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
+use tokio_util::task::AbortOnDropHandle;
 
 // In e2e mode, use a distinct service type so test agents only discover each
 // other's local mailboxes, not external dash-chat instances on the same LAN
@@ -65,87 +66,77 @@ pub(crate) async fn cloud_mailbox_id(
         .unwrap_or(None)
 }
 
-/// Stop the running mDNS browse for local mailboxes. Closes the browse
-/// receiver, which ends the handler loop; pair with aborting the
-/// [`local_mailbox_mdns_discovery`] task to fully tear discovery down (used
-/// when the iOS app is backgrounded).
-#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
-pub(crate) fn stop_local_mailbox_mdns_discovery<R: Runtime>(handle: &AppHandle<R>) {
-    let mdns: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
-    if let Err(err) = mdns.stop_browse(MDNS_SERVICE_TYPE) {
-        log::warn!("Failed to stop mDNS browse: {err:?}");
-    }
-}
-
-/// Local-mailbox mDNS discovery: browses for local mailboxes and re-browses on
-/// interface changes. Spawn it into the node's `JoinSet` (`tasks.spawn(...)`);
-/// aborting that task (together with [`stop_local_mailbox_mdns_discovery`]) tears
-/// discovery down on background, and it is spawned again on foreground.
-pub async fn local_mailbox_mdns_discovery<R: Runtime>(
-    handle: AppHandle<R>,
+pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
+    handle: &AppHandle<R>,
     node: dashchat_node::Node,
-) {
+) -> anyhow::Result<AbortOnDropHandle<()>> {
     let mdns: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
-    let receiver = match mdns.browse(MDNS_SERVICE_TYPE) {
-        Ok(receiver) => receiver,
-        Err(err) => {
-            log::warn!("Failed to start mDNS browse for local mailboxes: {err:?}");
-            return;
-        }
-    };
+    let receiver = mdns.browse(MDNS_SERVICE_TYPE)?;
     log::info!("Started mdns browse for local mailboxes: {MDNS_SERVICE_TYPE}");
 
-    let mut handler_task = tokio::spawn(handle_browse_events(node.clone(), receiver));
+    let mut handler_task =
+        AbortOnDropHandle::new(tokio::spawn(handle_browse_events(node.clone(), receiver)));
 
     // The browse receiver is tied to the interface set the daemon had at
     // `browse()` time; when the device switches networks services on the
     // new interface aren't picked up until we re-issue the browse.
-    use futures::StreamExt;
-    let mut watcher = match if_watch::tokio::IfWatcher::new() {
-        Ok(w) => w,
-        Err(err) => {
-            log::warn!("Failed to start mailbox browse interface watcher: {err:?}");
-            return;
-        }
-    };
-
-    while let Some(event) = watcher.next().await {
-        match event {
-            Ok(if_watch::IfEvent::Up(net)) => {
-                log::info!("Mailbox browse interface watcher: up {net}, refreshing mDNS browse");
-            }
-            Ok(if_watch::IfEvent::Down(net)) => {
-                log::info!("Mailbox browse interface watcher: down {net}, refreshing mDNS browse");
-            }
+    let watcher_task = tokio::spawn(async move {
+        use futures::StreamExt;
+        let mut watcher = match if_watch::tokio::IfWatcher::new() {
+            Ok(w) => w,
             Err(err) => {
-                log::warn!("Mailbox browse interface watcher error: {err:?}");
-                continue;
+                log::warn!("Failed to start mailbox browse interface watcher: {err:?}");
+                return;
+            }
+        };
+
+        while let Some(event) = watcher.next().await {
+            match event {
+                Ok(if_watch::IfEvent::Up(net)) => {
+                    log::info!(
+                        "Mailbox browse interface watcher: up {net}, refreshing mDNS browse"
+                    );
+                }
+                Ok(if_watch::IfEvent::Down(net)) => {
+                    log::info!(
+                        "Mailbox browse interface watcher: down {net}, refreshing mDNS browse"
+                    );
+                }
+                Err(err) => {
+                    log::warn!("Mailbox browse interface watcher error: {err:?}");
+                    continue;
+                }
+            }
+
+            debounce_rebrowse_burst(&mut watcher).await;
+
+            // Tear down the current browse + handler, then restart against the
+            // now-current interface set. `stop_browse` closes the existing
+            // receiver, which exits the handler loop on its own; we also abort
+            // it as a belt-and-suspenders guard in case stop_browse races with
+            // an in-flight recv.
+            if let Err(err) = mdns.stop_browse(MDNS_SERVICE_TYPE) {
+                log::warn!("Failed to stop mDNS browse during refresh: {err:?}");
+            }
+            handler_task.abort();
+
+            match mdns.browse(MDNS_SERVICE_TYPE) {
+                Ok(receiver) => {
+                    handler_task = AbortOnDropHandle::new(tokio::spawn(handle_browse_events(
+                        node.clone(),
+                        receiver,
+                    )));
+                }
+                Err(err) => {
+                    log::warn!("Failed to restart mDNS browse after interface change: {err:?}");
+                }
             }
         }
 
-        debounce_rebrowse_burst(&mut watcher).await;
+        log::warn!("Mailbox browse interface watcher stream ended");
+    });
 
-        // Tear down the current browse + handler, then restart against the
-        // now-current interface set. `stop_browse` closes the existing
-        // receiver, which exits the handler loop on its own; we also abort
-        // it as a belt-and-suspenders guard in case stop_browse races with
-        // an in-flight recv.
-        if let Err(err) = mdns.stop_browse(MDNS_SERVICE_TYPE) {
-            log::warn!("Failed to stop mDNS browse during refresh: {err:?}");
-        }
-        handler_task.abort();
-
-        match mdns.browse(MDNS_SERVICE_TYPE) {
-            Ok(receiver) => {
-                handler_task = tokio::spawn(handle_browse_events(node.clone(), receiver));
-            }
-            Err(err) => {
-                log::warn!("Failed to restart mDNS browse after interface change: {err:?}");
-            }
-        }
-    }
-
-    log::warn!("Mailbox browse interface watcher stream ended");
+    Ok(AbortOnDropHandle::new(watcher_task))
 }
 
 async fn handle_browse_events(

@@ -50,7 +50,7 @@ pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
     .await?;
     // Best-effort: the extension only runs when a push arrives (network present),
     // so resolve and register the cloud mailbox once so the sync below can fetch.
-    if let Err(err) = crate::app_node::register_cloud_mailbox(&node).await {
+    if let Err(err) = crate::setup::register_cloud_mailbox(&node).await {
         log::warn!("failed to register cloud mailbox in push extension: {err:?}");
     }
     map.insert(data_path.clone(), node.clone());
