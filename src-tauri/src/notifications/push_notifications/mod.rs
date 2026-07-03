@@ -2,13 +2,13 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::Context;
-use dashchat_node::Node;
 use dashchat_utils::SingletonTaskWithRetries;
 use push_notifications_client::client::PushNotificationsClient;
 use push_notifications_client::types::{FcmToken, TopicId as PushTopicId, VerifyingKey};
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
+use crate::app_node::AppNode;
 use crate::notifications::are_notifications_enabled;
 
 mod node_cache;
@@ -110,7 +110,12 @@ pub fn setup_push_notifications(
 /// If notifications are currently enabled, get the FCM token and register it with the server
 /// If they're not, unregister the FCM token from the server
 async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Result<()> {
-    let node = handle.state::<Node>();
+    let node = handle
+        .try_state::<AppNode>()
+        .ok_or_else(|| anyhow::anyhow!("app node not managed yet"))?
+        .get()
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
     let verifying_key = VerifyingKey::from(node.device_id().to_string());
     let client = handle.state::<PushNotificationsClient>();
 
@@ -139,7 +144,12 @@ async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Re
 /// If notifications are enabled, sync all subscribed topics with the push notifications server.
 /// If they're not, remove all topic subscriptions from it.
 async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
-    let node = app_handle.state::<Node>();
+    let node = app_handle
+        .try_state::<AppNode>()
+        .ok_or_else(|| anyhow::anyhow!("app node not managed yet"))?
+        .get()
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
     let verifying_key = VerifyingKey::from(node.device_id().to_string());
 
     let topic_ids = if are_notifications_enabled(&app_handle) {
@@ -176,7 +186,12 @@ async fn subscribe_to_topics(
         return Ok(());
     }
 
-    let node = app_handle.state::<Node>();
+    let node = app_handle
+        .try_state::<AppNode>()
+        .ok_or_else(|| anyhow::anyhow!("app node not managed yet"))?
+        .get()
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
     let verifying_key = VerifyingKey::from(node.device_id().to_string());
 
     let client = app_handle.state::<PushNotificationsClient>();
