@@ -7,7 +7,7 @@ use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 
 use regex::Regex;
 
-use crate::mailbox::{MailboxOperation, fetch_mailbox_health, register_self_with_mailbox};
+use crate::mailbox::{MailboxOperation, fetch_mailbox_health};
 
 /// Regex patterns for the mailbox URLs the test suite is allowed to run
 /// against, shared with the E2E suite via `allowed-test-mailbox-url-patterns.json`
@@ -158,9 +158,7 @@ async fn register_served_mailbox(node: &crate::Node, url: &str) {
             node.endpoint_id(),
         ))
         .await;
-    register_self_with_mailbox(url, node.iroh_endpoint().await.unwrap().addr())
-        .await
-        .unwrap();
+    node.register_with_mailbox(url).await.unwrap();
 }
 
 fn spawn_local_mailbox_enabled() -> bool {

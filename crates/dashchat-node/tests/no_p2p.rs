@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-use dashchat_node::{
-    mailbox::MailboxOperation, mailbox::register_self_with_mailbox, testing::*, *,
-};
+use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
 use mailbox_client::toy::ToyMailboxClient;
 
 /// Once a mailbox introduces two `no_p2p` nodes, removing the mailbox must stop
@@ -131,9 +129,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
     // Alice tells the mailbox her dialing address so its fetcher can reach her
     // while she is the only blob source.
-    register_self_with_mailbox(&url, alice.iroh_endpoint().await.unwrap().addr())
-        .await
-        .unwrap();
+    alice.register_with_mailbox(&url).await.unwrap();
 
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
     bobbi
@@ -290,9 +286,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
         ))
         .await;
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
-    register_self_with_mailbox(&url, alice.iroh_endpoint().await.unwrap().addr())
-        .await
-        .unwrap();
+    alice.register_with_mailbox(&url).await.unwrap();
 
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
     bobbi

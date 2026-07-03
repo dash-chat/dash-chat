@@ -88,20 +88,20 @@ pub async fn fetch_mailbox_health(base_url: &str) -> anyhow::Result<MailboxHealt
     })
 }
 
-/// POST our current `EndpointAddr` to a mailbox's `/peers/register` endpoint
-/// so it can dial us when fetching blobs we published.
-pub async fn register_self_with_mailbox(
-    base_url: &str,
-    our_addr: iroh::EndpointAddr,
-) -> anyhow::Result<()> {
-    let url = format!("{}/peers/register", base_url.trim_end_matches('/'));
-    mailbox_client::HTTP_CLIENT
-        .post(&url)
-        .json(&mailbox_client::RegisterPeerRequest { addr: our_addr })
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(())
+impl crate::Node {
+    /// POST our current `EndpointAddr` to a mailbox's `/peers/register` endpoint
+    /// so it can dial us when fetching blobs we published.
+    pub async fn register_with_mailbox(&self, base_url: &str) -> anyhow::Result<()> {
+        let our_addr = self.iroh_endpoint().await?.addr();
+        let url = format!("{}/peers/register", base_url.trim_end_matches('/'));
+        mailbox_client::HTTP_CLIENT
+            .post(&url)
+            .json(&mailbox_client::RegisterPeerRequest { addr: our_addr })
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
