@@ -437,11 +437,12 @@ impl Node {
         Ok(self.endpoint.endpoint().await?)
     }
 
-    /// Add a peer's dialing address (relay + direct addresses) to the p2panda
-    /// address book so the iroh blob downloader can reach that peer by its
-    /// EndpointId. Used both for mailbox addresses learned from a mailbox's
-    /// `/health` endpoint and for arbitrary peer addresses forwarded by a
-    /// mailbox's `/peers/register` endpoint.
+    /// Add (or refresh) a peer's dialing address (relay + direct addresses) in
+    /// the p2panda address book so the iroh blob downloader can reach that peer
+    /// by its EndpointId. Used for mailbox `/health` self-addresses and for peer
+    /// addresses forwarded by a user's opt-in local mailbox. Always overwrites
+    /// any existing entry so a stale one (refused by `AddressBookDiscovery`) is
+    /// refreshed and becomes dialable again.
     pub async fn insert_peer_addr(&self, addr: iroh::EndpointAddr) -> Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.actor_tx
