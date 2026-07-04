@@ -625,7 +625,10 @@ mod tests {
 
         // Removing h1 across all mailboxes clears it from both mbx-a and mbx-b,
         // but leaves h2 (still needed by mbx-a).
-        store.remove_unfetched_blobs_all_mailboxes(&[h1]).await.unwrap();
+        store
+            .remove_unfetched_blobs_all_mailboxes(&[h1])
+            .await
+            .unwrap();
 
         let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
         assert_eq!(by_mailbox.get("mbx-a").unwrap(), &vec![h2]);

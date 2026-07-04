@@ -329,10 +329,16 @@ mod tests {
         #[async_trait::async_trait]
         impl crate::UnfetchedBlobTracker for RecordingTracker {
             async fn record(&self, id: &crate::MailboxId, hashes: &[iroh_blobs::Hash]) {
-                self.recorded.lock().unwrap().push((id.clone(), hashes.to_vec()));
+                self.recorded
+                    .lock()
+                    .unwrap()
+                    .push((id.clone(), hashes.to_vec()));
             }
             async fn remove(&self, id: &crate::MailboxId, hashes: &[iroh_blobs::Hash]) {
-                self.removed.lock().unwrap().push((id.clone(), hashes.to_vec()));
+                self.removed
+                    .lock()
+                    .unwrap()
+                    .push((id.clone(), hashes.to_vec()));
             }
         }
 
@@ -341,15 +347,22 @@ mod tests {
         let h_new = iroh_blobs::Hash::new([2; 32]);
         let app = axum::Router::new().route(
             "/blobs/store",
-            axum::routing::post(move |axum::Json(req): axum::Json<mailbox_server::StoreBlobsRequest>| async move {
-                let already_stored: Vec<_> =
-                    req.blob_hashes.into_iter().filter(|h| *h == h_stored).collect();
-                axum::Json(mailbox_server::StoreBlobsResponse { already_stored })
-            }),
+            axum::routing::post(
+                move |axum::Json(req): axum::Json<mailbox_server::StoreBlobsRequest>| async move {
+                    let already_stored: Vec<_> = req
+                        .blob_hashes
+                        .into_iter()
+                        .filter(|h| *h == h_stored)
+                        .collect();
+                    axum::Json(mailbox_server::StoreBlobsResponse { already_stored })
+                },
+            ),
         );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
         let base_url = format!("http://{addr}");
 
         let tracker = std::sync::Arc::new(RecordingTracker::default());

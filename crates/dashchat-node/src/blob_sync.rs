@@ -27,7 +27,8 @@ use dashchat_utils::FetchPool;
 pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 
 use crate::{
-    AsBody, ChatPayload, DeviceId, Payload, TopicId, mailbox::MailboxOperation,
+    AsBody, ChatPayload, DeviceId, Payload, TopicId,
+    mailbox::MailboxOperation,
     stores::{LocalStore, OpStore},
 };
 
