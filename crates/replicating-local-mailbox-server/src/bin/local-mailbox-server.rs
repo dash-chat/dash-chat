@@ -71,9 +71,11 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn init_tracing() {
-    // Bridge `log` records (from mailbox-mdns-discovery and the announce helpers)
-    // into tracing so they show up alongside the server's own output.
-    let _ = tracing_log::LogTracer::init();
+    // `fmt().init()` also installs the log->tracing bridge (tracing-subscriber's
+    // default `tracing-log` feature), so `log` records from mailbox-mdns-discovery
+    // and the announce helpers show up alongside the server's own output. Don't
+    // call `tracing_log::LogTracer::init()` here as well — a second global logger
+    // install makes `init()` panic with SetLoggerError.
     let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| {
         "local_mailbox_server=info,replicating_local_mailbox_server=info,mailbox_local_server=info,mailbox_server=info,mailbox_client=info,mailbox_mdns_discovery=info".to_string()
     });
