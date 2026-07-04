@@ -102,6 +102,25 @@ impl crate::Node {
             .error_for_status()?;
         Ok(())
     }
+
+    /// Re-POST our current `EndpointAddr` to every mailbox we're tracking, so
+    /// each one's blob fetcher can still dial us after our address changed.
+    /// Idempotent and best-effort: a failure against one mailbox is logged and
+    /// skipped, not propagated.
+    pub async fn reregister_addr_with_mailboxes(&self) {
+        let ids = self.mailboxes.active_mailbox_ids().borrow().clone();
+        for id in ids {
+            let Some(tracked) = self.mailboxes.tracked_mailbox(&id).await else {
+                continue; // mailbox not currently registered
+            };
+            let Some(url) = tracked.client().await.url() else {
+                continue; // non-HTTP mailbox (e.g. in-memory test mailbox)
+            };
+            if let Err(err) = self.register_with_mailbox(&url).await {
+                tracing::warn!(%id, %url, ?err, "failed to re-register addr with mailbox");
+            }
+        }
+    }
 }
 
 #[cfg(test)]

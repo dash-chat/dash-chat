@@ -178,6 +178,7 @@ pub struct Node {
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     endpoint: p2panda::Endpoint,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    mailbox_reregister_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     unfetched_blob_trigger: Arc<tokio::sync::Notify>,
     unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
@@ -344,6 +345,7 @@ impl Node {
             blob_fetch_handle: Default::default(),
             endpoint,
             network_change_handle: Default::default(),
+            mailbox_reregister_handle: Default::default(),
             unfetched_blob_trigger: Default::default(),
             unfetched_blob_followup_handle: Default::default(),
         };
@@ -371,6 +373,15 @@ impl Node {
             .lock()
             .await
             .replace(network_change_handle);
+
+        // === mailbox re-registration on address change === //
+
+        let mailbox_reregister_handle =
+            crate::mailbox_reregister::spawn(node.clone(), node.endpoint.clone());
+        node.mailbox_reregister_handle
+            .lock()
+            .await
+            .replace(mailbox_reregister_handle);
 
         // === unfetched blob followup loop === //
 
@@ -1059,6 +1070,10 @@ impl Node {
         }
 
         if let Some(handle) = self.network_change_handle.lock().await.take() {
+            handle.abort();
+        }
+
+        if let Some(handle) = self.mailbox_reregister_handle.lock().await.take() {
             handle.abort();
         }
 
