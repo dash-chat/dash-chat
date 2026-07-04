@@ -9,6 +9,7 @@
 //! remote mailbox.
 
 pub mod blobs;
+pub mod compat;
 pub mod drain;
 pub mod item;
 pub mod store;
@@ -59,7 +60,7 @@ impl ReplicatingLocalMailboxServer {
             None,
             daemon.clone(),
             service_type.clone(),
-            Some(blobs::router()),
+            Some(blobs::router().merge(compat::router())),
         )
         .await?;
         let db = Arc::clone(&local.mailbox.state.db);
