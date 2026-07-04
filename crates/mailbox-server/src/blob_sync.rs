@@ -110,13 +110,7 @@ impl FetchPool for BlobFetchPool {
 #[derive(Clone)]
 enum PeerAddrRegistry {
     /// Standalone server: lookup is wired directly into the iroh endpoint builder.
-    Memory {
-        lookup: MemoryLookup,
-        /// TEMPORARY TESTING HACK: ids we've registered, so the sabotage task
-        /// in `new` can drop them all once, 30s after startup. Remove along
-        /// with the sabotage task.
-        registered: Arc<std::sync::Mutex<Vec<iroh::EndpointId>>>,
-    },
+    Memory(MemoryLookup),
     /// Shared (in-process) server: iroh endpoint is p2panda's; addresses are
     /// forwarded to the node's address book via an unbounded channel.
     Channel(UnboundedSender<iroh::EndpointAddr>),
@@ -196,29 +190,6 @@ impl BlobSync {
             .accept(mixed_alpn, blobs.clone())
             .spawn();
 
-        // TEMPORARY TESTING HACK: 30s after startup, forget every peer address
-        // registered so far so the mailbox can no longer dial those clients. This
-        // lets us test normal operation for the first 30s and then observe the
-        // failure mode. Clients that re-register afterwards repopulate the
-        // address book; restart the server to reset. Remove this task and the
-        // `registered` state on the `Memory` variant when done.
-        let registered = Arc::new(std::sync::Mutex::new(Vec::new()));
-        {
-            let lookup = peer_addr_lookup.clone();
-            let registered = registered.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_secs(30)).await;
-                let ids = std::mem::take(&mut *registered.lock().unwrap());
-                tracing::warn!(
-                    count = ids.len(),
-                    "TESTING HACK: dropping all peer addresses; mailbox can no longer dial these clients. SABOTAAAAGE!!!"
-                );
-                for id in ids {
-                    lookup.remove_endpoint_info(id);
-                }
-            });
-        }
-
         Ok(Self {
             blobs,
             fetch_pool: BlobFetchPool::default(),
@@ -227,10 +198,7 @@ impl BlobSync {
             fetch_config: FetchConfig::default(),
             enable_gc: true,
             _router: Some(router),
-            peer_addr_registry: PeerAddrRegistry::Memory {
-                lookup: peer_addr_lookup,
-                registered,
-            },
+            peer_addr_registry: PeerAddrRegistry::Memory(peer_addr_lookup),
         })
     }
 
@@ -282,12 +250,7 @@ impl BlobSync {
     /// by its EndpointId.
     pub fn add_peer_addr(&self, addr: iroh::EndpointAddr) {
         match &self.peer_addr_registry {
-            PeerAddrRegistry::Memory { lookup, registered } => {
-                // TEMPORARY TESTING HACK: track registered ids so the sabotage
-                // task can drop them all once, 30s after startup.
-                registered.lock().unwrap().push(addr.id);
-                lookup.add_endpoint_info(addr);
-            }
+            PeerAddrRegistry::Memory(lookup) => lookup.add_endpoint_info(addr),
             PeerAddrRegistry::Channel(tx) => {
                 let _ = tx.send(addr);
             }
