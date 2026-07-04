@@ -23,12 +23,20 @@ impl LocalStoreBlobTracker {
 #[async_trait::async_trait]
 impl UnfetchedBlobTracker for LocalStoreBlobTracker {
     async fn record(&self, mailbox_id: &MailboxId, hashes: &[iroh_blobs::Hash]) {
-        if let Err(err) = self.local_store.add_unfetched_blobs(mailbox_id, hashes).await {
+        if let Err(err) = self
+            .local_store
+            .add_unfetched_blobs(mailbox_id, hashes)
+            .await
+        {
             tracing::error!(?err, mailbox = %mailbox_id, "failed to record unfetched blobs");
         }
     }
     async fn remove(&self, mailbox_id: &MailboxId, hashes: &[iroh_blobs::Hash]) {
-        if let Err(err) = self.local_store.remove_unfetched_blobs(mailbox_id, hashes).await {
+        if let Err(err) = self
+            .local_store
+            .remove_unfetched_blobs(mailbox_id, hashes)
+            .await
+        {
             tracing::error!(?err, mailbox = %mailbox_id, "failed to remove unfetched blobs");
         }
     }
@@ -52,6 +60,9 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
         let Some(url) = tracked.client().await.url() else {
             continue; // non-HTTP mailbox (e.g. in-memory test mailbox)
         };
+        if hashes.is_empty() {
+            continue; // no unfetched blobs to re-announce
+        }
         match mailbox_client::toy::send_store_blobs(&url, hashes, self_endpoint).await {
             Ok(already_stored) => {
                 if let Err(err) = node
@@ -61,6 +72,8 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
                 {
                     tracing::error!(?err, mailbox = %mailbox_id, "failed to reconcile unfetched blobs");
                 }
+                let already_stored_count = already_stored.len();
+                tracing::info!(mailbox = %mailbox_id, %already_stored_count, "re-sent unfetched blobs");
             }
             Err(err) => {
                 tracing::warn!(?err, mailbox = %mailbox_id, "followup store_blobs failed");
