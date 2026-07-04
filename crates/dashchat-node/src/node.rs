@@ -98,9 +98,9 @@ impl NodeConfig {
         use crate::compat::Capabilities;
 
         let mut mailboxes_config = MailboxesConfig::default();
-        mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
-        mailboxes_config.degraded_interval = std::time::Duration::from_millis(2000);
-        mailboxes_config.stopped_interval = std::time::Duration::from_millis(5000);
+        mailboxes_config.active_interval = std::time::Duration::from_millis(500);
+        mailboxes_config.degraded_interval = std::time::Duration::from_millis(1000);
+        mailboxes_config.stopped_interval = std::time::Duration::from_millis(1500);
         mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
         Self {
             contact_code_expiry: Duration::days(7),
@@ -120,7 +120,7 @@ impl NodeConfig {
                 attempt_timeout: std::time::Duration::from_secs(3),
                 retry_cooldown: std::time::Duration::from_secs(1),
             },
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
+            unfetched_blob_followup_interval: std::time::Duration::from_secs(1),
         }
     }
 

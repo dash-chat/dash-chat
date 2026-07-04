@@ -399,9 +399,9 @@ async fn recovers_unfetched_blob_after_source_restart() {
     let alice_addr = alice.iroh_endpoint().await.unwrap().addr();
     relay.insert_peer_addr(alice_addr).await.unwrap();
 
-    // One deterministic followup pass: re-announce the still-unfetched blob to
-    // the mailbox, which re-enqueues the fetch now that alice is back online.
-    dashchat_node::followup_unfetched_blobs_once(&alice).await;
+    // Alice's node will run `followup_unfetched_blobs_once` during startup
+    // which will re-announce the still-unfetched blob to the mailbox, which
+    // re-enqueues the fetch now that alice is back online.
 
     // The mailbox downloads the blob from the now-reachable alice (bobbi, the
     // only other possible source, is offline). Allow a couple of 2s fetch passes
