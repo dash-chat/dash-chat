@@ -339,10 +339,17 @@ impl Node {
                             anyhow!(format!("failed to resolve topic for operation. this is a bug. author: {:?}, log: {:?}", author.aliased(), log_id.aliased()))
                         })?;
 
-                    if let Some(media) = m.media() {
+                    if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                         let hashes: Vec<_> = media.iter().map(|item| item.hash).collect();
                         let is_own = DeviceId::from(author) == self.device_id();
-                        self.blob_sync
+                        if let Err(err) = self
+                            .local_store
+                            .remove_unfetched_blobs_all_mailboxes(&hashes)
+                            .await
+                        {
+                            tracing::warn!(?err, "failed to clear unfetched blob rows on delete");
+                        }
+                        blob_sync
                             .delete_blobs(topic, author.into(), operation.hash, hashes, is_own)
                             .await;
                     }
@@ -437,10 +444,10 @@ impl Node {
             }
 
             Payload::Chat(ChatPayload::Message(m)) => {
-                if let Some(media) = m.media() {
+                if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                     for item in media.iter() {
                         // TODO: revisit during ACID review (replay)
-                        self.blob_sync
+                        blob_sync
                             .add_to_fetch_pool(topic.into(), author, hash, item.hash)
                             .await?;
                     }

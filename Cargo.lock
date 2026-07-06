@@ -2076,6 +2076,7 @@ dependencies = [
  "p2panda-store",
  "pretty_assertions",
  "rand 0.9.4",
+ "regex",
  "serde",
  "serde_bytes",
  "serde_json",
@@ -5397,6 +5398,7 @@ dependencies = [
  "aliased",
  "anyhow",
  "async-trait",
+ "axum",
  "bytes",
  "chrono",
  "ciborium",
@@ -5424,6 +5426,7 @@ name = "mailbox-local-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dashchat-utils",
  "log",
  "mailbox-mdns-discovery",
  "mailbox-server",

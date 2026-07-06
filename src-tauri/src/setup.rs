@@ -4,11 +4,12 @@ use tauri::Manager;
 
 use crate::filesystem::FileSystem;
 
-/// Resolve the cloud mailbox id from its `/health` endpoint and register it on
-/// the node. Returns an error (registering nothing) when the server is
-/// unreachable — there is intentionally no fallback id, so callers retry until
-/// the real id is known. `Mailboxes::register` is idempotent.
-pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
+/// Resolve the cloud mailbox id from its `/health` endpoint and register it as a
+/// sync source on the node so operations and blobs can be fetched from it,
+/// returning the resolved mailbox URL. Returns an error (registering nothing)
+/// when the server is unreachable — there is intentionally no fallback id, so
+/// callers retry until the real id is known. `Mailboxes::register` is idempotent.
+pub(crate) async fn track_cloud_mailbox(node: &Node) -> anyhow::Result<String> {
     let mailbox_url = crate::mailbox::default_mailbox_url();
     let health = mailbox_client::fetch_mailbox_health(&mailbox_url).await?;
     // Add the mailbox's dialing address to the p2panda address book so the iroh
@@ -20,9 +21,21 @@ pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
             health.endpoint_id,
             mailbox_url.clone(),
             node.endpoint_id(),
+            node.unfetched_blob_tracker(),
         );
         node.mailboxes.register(mailbox_client).await;
     }
+    Ok(mailbox_url)
+}
+
+/// Track the cloud mailbox (so we can fetch from it) and additionally register
+/// our own dialing address with it so its blob fetch pool can dial us to fetch
+/// blobs we publish. The endpoint-online wait and self-registration are only
+/// needed when we act as a blob *source*, so the iOS push extension — which only
+/// fetches and runs under a ~30s budget — calls [`track_cloud_mailbox`] directly
+/// to avoid the up-to-10s `wait_endpoint_online` stall.
+pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
+    let mailbox_url = track_cloud_mailbox(node).await?;
     // Tell the mailbox our own dialing address so its blob fetch pool can reach
     // us as a source (without this the mailbox knows our EndpointId from blip
     // uploads but cannot dial us). Wait for the relay first so the address we
@@ -34,24 +47,7 @@ pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
         std::time::Duration::from_secs(10),
     )
     .await?;
-    let our_addr = node.iroh_endpoint().await?.addr();
-    register_self_with_mailbox(&mailbox_url, our_addr).await?;
-    Ok(())
-}
-
-/// POST our current `EndpointAddr` to a mailbox's `/peers/register` endpoint so
-/// it can dial us when fetching blobs we published.
-pub(crate) async fn register_self_with_mailbox(
-    base_url: &str,
-    our_addr: iroh::EndpointAddr,
-) -> anyhow::Result<()> {
-    let url = format!("{}/peers/register", base_url.trim_end_matches('/'));
-    mailbox_client::HTTP_CLIENT
-        .post(&url)
-        .json(&mailbox_client::RegisterPeerRequest { addr: our_addr })
-        .send()
-        .await?
-        .error_for_status()?;
+    node.register_with_mailbox(&mailbox_url).await?;
     Ok(())
 }
 

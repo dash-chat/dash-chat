@@ -34,6 +34,7 @@ iroh = { version = "1.0.0", default-features = false, features = ["tls-ring"] }
 iroh-blobs = "0.103.0"
 
 [dev-dependencies]
+axum = { version = "0.8", features = ["json"] }
 pretty_assertions = "1.4.1"
 tempfile = "3.24"
 tokio = { version = "1.43.0", features = ["test-util"] }
