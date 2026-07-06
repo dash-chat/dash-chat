@@ -21,17 +21,28 @@ export async function exchangeContactsAndCreateGroup(
 	await agent1.homePage.ready();
 	await agent2.homePage.ready();
 
-	await agent1.homePage.newMessageButton.click();
-	await agent1.newMessagePage.ready();
-	await agent1.newMessagePage.newGroup.click();
+	await createGroup(agent1, 'mygroup', 'Bob');
+}
 
-	await agent1.newGroupPage.addMembersStep.ready();
-	await agent1.newGroupPage.addMembersStep.addContactByName('Bob');
-	await agent1.newGroupPage.addMembersStep.nextButton.click();
+export async function createGroup(
+	agent: Agent,
+	groupName: string,
+	addContactName: string | null = null,
+): Promise<void> {
+	await agent.homePage.ready();
+	await agent.homePage.newMessageButton.click();
+	await agent.newMessagePage.ready();
+	await agent.newMessagePage.newGroup.click();
 
-	await agent1.newGroupPage.groupInfoStep.ready();
-	await agent1.newGroupPage.groupInfoStep.setName('mygroup');
-	await agent1.newGroupPage.groupInfoStep.createButton.click();
+	await agent.newGroupPage.addMembersStep.ready();
+	if (addContactName) {
+		await agent.newGroupPage.addMembersStep.addContactByName(addContactName);
+	}
+	await agent.newGroupPage.addMembersStep.nextButton.click();
 
-	await agent1.groupChatPage.ready();
+	await agent.newGroupPage.groupInfoStep.ready();
+	await agent.newGroupPage.groupInfoStep.setName(groupName);
+	await agent.newGroupPage.groupInfoStep.createButton.click();
+
+	await agent.groupChatPage.ready();
 }
