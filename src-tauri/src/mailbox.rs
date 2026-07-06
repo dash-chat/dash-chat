@@ -10,8 +10,7 @@ const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
 #[cfg(feature = "e2e-tests")]
 const MDNS_SERVICE_TYPE: &str = "_dashchat-e2e._tcp.local.";
 pub(crate) const PRODUCTION_MAILBOX_ID: &str = "dashchat-mailbox";
-pub(crate) const PRODUCTION_MAILBOX_URL: &str =
-    "http://mailbox.darksoil.studio";
+pub(crate) const PRODUCTION_MAILBOX_URL: &str = "http://mailbox.darksoil.studio";
 
 #[cfg(not(mobile))]
 pub mod server;
