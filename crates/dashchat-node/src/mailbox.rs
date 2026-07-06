@@ -63,12 +63,53 @@ impl From<MailboxOperation> for Operation {
     }
 }
 
+/// A mailbox server's canonical id (its EndpointId) and dialing address, as
+/// reported by its `/health` endpoint.
+pub struct MailboxHealth {
+    pub mailbox_id: mailbox_client::MailboxId,
+    pub endpoint_addr: iroh::EndpointAddr,
+}
+
+/// Fetch a mailbox server's `/health` response: its canonical MailboxId (the
+/// base64url-no-pad EndpointId) and its dialing address (relay + direct
+/// addresses) for the p2panda address book.
+pub async fn fetch_mailbox_health(base_url: &str) -> anyhow::Result<MailboxHealth> {
+    let url = format!("{}/health", base_url.trim_end_matches('/'));
+    let resp = mailbox_client::HTTP_CLIENT
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<mailbox_server::HealthResponse>()
+        .await?;
+    Ok(MailboxHealth {
+        mailbox_id: resp.endpoint_id,
+        endpoint_addr: resp.endpoint_addr,
+    })
+}
+
+/// POST our current `EndpointAddr` to a mailbox's `/peers/register` endpoint
+/// so it can dial us when fetching blobs we published.
+pub async fn register_self_with_mailbox(
+    base_url: &str,
+    our_addr: iroh::EndpointAddr,
+) -> anyhow::Result<()> {
+    let url = format!("{}/peers/register", base_url.trim_end_matches('/'));
+    mailbox_client::HTTP_CLIENT
+        .post(&url)
+        .json(&mailbox_client::RegisterPeerRequest { addr: our_addr })
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
+}
+
 #[cfg(test)]
 
 mod tests {
 
     use crate::{testing::*, *};
-    use mailbox_client::{MailboxClient, MailboxItem as _, mem::MemMailbox};
+    use mailbox_client::MailboxItem as _;
 
     fn make_header(topic: TopicId) -> p2panda::operation::Header {
         use p2panda::operation::{Extensions, LogId};
@@ -149,7 +190,7 @@ mod tests {
             true,
         );
 
-        let mb = MemMailbox::new();
+        let mb = TestMailbox::from_env();
         let config = NodeConfig::testing();
         let poll = PollConfig::default();
 
@@ -163,8 +204,8 @@ mod tests {
         alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
         println!("=== adding mailboxes ===");
-        bobbi.add_mailbox_client(mb.client()).await;
-        alice.add_mailbox_client(mb.client()).await;
+        bobbi.add_mailbox(&mb).await;
+        alice.add_mailbox(&mb).await;
 
         bobbi.register_topic(chat).await.unwrap();
         println!("=== added mailboxes ===");
@@ -193,7 +234,7 @@ mod tests {
             true,
         );
 
-        let mb = MemMailbox::new();
+        let mb = TestMailbox::from_env();
         let config = NodeConfig::testing();
         let poll = PollConfig::default();
 
@@ -203,8 +244,8 @@ mod tests {
         let chat_id = alice.direct_chat_topic(bobbi.agent_id());
         alice.register_topic(chat_id).await.unwrap();
 
-        alice.add_mailbox_client(mb.client()).await;
-        bobbi.add_mailbox_client(mb.client()).await;
+        alice.add_mailbox(&mb).await;
+        bobbi.add_mailbox(&mb).await;
         bobbi.register_topic(chat_id).await.unwrap();
 
         alice
@@ -222,7 +263,7 @@ mod tests {
         .await
         .unwrap();
 
-        let mailbox_id = mb.client().id();
+        let mailbox_id = mb.id().await;
         let alice_device: crate::DeviceId = alice.device_id();
 
         // The mailbox should have recorded alice's seq 0 from both sides.

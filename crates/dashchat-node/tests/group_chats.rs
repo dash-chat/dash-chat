@@ -3,8 +3,7 @@
 
 #![cfg(test)]
 
-use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::mem::MemMailbox;
+use dashchat_node::{testing::*, *};
 
 use maplit::{btreemap, btreeset};
 use p2panda::network::MdnsDiscoveryMode;
@@ -82,10 +81,10 @@ fn setup() {
     );
 }
 
-async fn make_node(mailbox: &MemMailbox<MailboxOperation>, name: &str) -> TestNode {
+async fn make_node(mailbox: &TestMailbox, name: &str) -> TestNode {
     let result = TestNode::new(NodeConfig::testing(), name)
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(mailbox)
         .await;
     println!("Node {}: {}", name, result.device_id());
     result
@@ -96,7 +95,7 @@ async fn test_direct_chat() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
@@ -197,7 +196,7 @@ async fn test_group_chat() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
     let cammy = make_node(&mailbox, "cammy").await;
@@ -352,7 +351,7 @@ async fn test_admin_removes_themself_when_they_are_the_only_member() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
 
     let chat_id = alice
@@ -374,7 +373,7 @@ async fn test_admin_removes_themself_there_is_another_admin() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
@@ -426,7 +425,7 @@ async fn test_admin_removes_themself_there_is_another_admin() {
 async fn test_admin_cant_remove_themself_when_they_are_the_only_admin() {
     setup();
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
@@ -459,7 +458,7 @@ async fn test_non_admin_removes_themself() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
@@ -513,7 +512,7 @@ async fn test_admin_removes_non_admin() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
@@ -566,7 +565,7 @@ async fn test_non_admin_cannot_remove_admin() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let andi = make_node(&mailbox, "andi").await;
     let bobbi = make_node(&mailbox, "bobbi").await;

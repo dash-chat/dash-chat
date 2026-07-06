@@ -1,5 +1,3 @@
-use mailbox_client::mem::MemMailbox;
-
 use dashchat_node::{testing::*, *};
 
 const TRACING_FILTER: [&str; 4] = [
@@ -65,14 +63,14 @@ async fn test_profiles_sync_between_contacts() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
     println!("nodes:");
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(NodeConfig::testing(), "alice--")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(NodeConfig::testing(), "--bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     let poll = PollConfig::default();

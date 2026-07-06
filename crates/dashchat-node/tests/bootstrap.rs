@@ -1,5 +1,4 @@
 use dashchat_node::{testing::*, *};
-use mailbox_client::mem::MemMailbox;
 use p2panda::network::MdnsDiscoveryMode;
 
 const TRACING_FILTER: [&str; 1] = ["dashchat=debug"];
@@ -18,14 +17,14 @@ async fn test_mailbox_bootstrap() {
     let mut bobbi_config = NodeConfig::testing();
     bobbi_config.mdns_mode = MdnsDiscoveryMode::Disabled;
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(alice_config, "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(bobbi_config, "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     alice

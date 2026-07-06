@@ -26,14 +26,40 @@ const MAILBOX_INFO_PATH = path.join(
 );
 
 interface MailboxInfo {
-	pid: number;
-	port: number;
 	url: string;
-	dbPath: string;
+	/** Set when the suite runs against a remote environment mailbox (MAILBOX_URL). */
+	remote?: boolean;
+	pid?: number;
+	port?: number;
+	dbPath?: string;
 }
 
 function readInfo(): MailboxInfo {
 	return JSON.parse(readFileSync(MAILBOX_INFO_PATH, 'utf-8')) as MailboxInfo;
+}
+
+/**
+ * True when the suite runs against a remote environment mailbox, whose
+ * lifecycle specs cannot control. Specs using the helpers below should skip
+ * themselves when this returns true.
+ */
+export function isRemoteMailbox(): boolean {
+	return readInfo().remote === true;
+}
+
+function localInfo(): { pid: number; port: number; url: string; dbPath: string } {
+	const { remote, pid, port, url, dbPath } = readInfo();
+	if (
+		remote === true ||
+		pid === undefined ||
+		port === undefined ||
+		dbPath === undefined
+	) {
+		throw new Error(
+			'mailbox lifecycle control is unavailable against a remote environment mailbox (MAILBOX_URL)',
+		);
+	}
+	return { pid, port, url, dbPath };
 }
 
 function signalGroup(pid: number, sig: NodeJS.Signals): void {
@@ -44,18 +70,18 @@ function signalGroup(pid: number, sig: NodeJS.Signals): void {
 
 /** Suspend the mailbox server so all HTTP traffic to it hangs/times out. */
 export function suspendMailbox(): void {
-	signalGroup(readInfo().pid, 'SIGSTOP');
+	signalGroup(localInfo().pid, 'SIGSTOP');
 }
 
 /** Resume a previously-suspended mailbox server. */
 export function resumeMailbox(): void {
-	signalGroup(readInfo().pid, 'SIGCONT');
+	signalGroup(localInfo().pid, 'SIGCONT');
 }
 
 /** Kill the mailbox server outright so connections to it are refused. */
 export function killMailbox(): void {
 	try {
-		signalGroup(readInfo().pid, 'SIGKILL');
+		signalGroup(localInfo().pid, 'SIGKILL');
 	} catch {
 		/* already gone */
 	}
@@ -67,7 +93,7 @@ export function killMailbox(): void {
  * with the new pid.
  */
 export async function restartMailbox(): Promise<void> {
-	const info = readInfo();
+	const info = localInfo();
 	const server = spawnMailboxServer(info.port, info.dbPath);
 	server.unref();
 	writeFileSync(MAILBOX_INFO_PATH, JSON.stringify({ ...info, pid: server.pid }));
