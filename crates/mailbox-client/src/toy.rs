@@ -21,11 +21,15 @@ impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {
 const UPLOAD_BLOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// POST blob hashes to a mailbox's `/blobs/store`, returning the subset the
-/// mailbox reports it already has stored.
+/// mailbox reports it already has stored. Pass `upload_grace` (the caller's
+/// upload timeout) when the caller will stream the bytes to `/blobs/upload` right
+/// after, so the mailbox defers fetching them by exactly that window; pass `None`
+/// to have the mailbox fetch immediately.
 pub async fn send_store_blobs(
     base_url: &str,
     hashes: Vec<iroh_blobs::Hash>,
     sender_pubkey: iroh::EndpointId,
+    upload_grace: Option<std::time::Duration>,
 ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
     if hashes.is_empty() {
         return Ok(Vec::new());
@@ -33,6 +37,7 @@ pub async fn send_store_blobs(
     let request = mailbox_server::StoreBlobsRequest {
         blob_hashes: hashes,
         sender_pubkey,
+        upload_grace,
         signature: Vec::new(),
     };
     let response = HTTP_CLIENT
@@ -117,8 +122,13 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         if hashes.is_empty() {
             return Ok(());
         }
+        // Send our upload timeout as the grace only when we can actually stream
+        // the bytes, so the mailbox defers fetching by exactly our window and
+        // only when a push is really coming.
+        let upload_grace = self.blob_reader.is_some().then_some(UPLOAD_BLOB_TIMEOUT);
         let already_stored =
-            send_store_blobs(&self.base_url, hashes.clone(), self.sender_pubkey).await?;
+            send_store_blobs(&self.base_url, hashes.clone(), self.sender_pubkey, upload_grace)
+                .await?;
         let not_stored: Vec<_> = hashes
             .into_iter()
             .filter(|h| !already_stored.contains(h))
@@ -446,6 +456,7 @@ mod tests {
             &base_url,
             vec![h_stored, h_new],
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
+            None,
         )
         .await
         .unwrap();

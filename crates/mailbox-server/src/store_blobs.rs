@@ -14,6 +14,13 @@ pub struct StoreBlobsRequest {
     /// The peer the mailbox should dial to fetch any hash it does not already
     /// hold (typically the sending client itself).
     pub sender_pubkey: iroh::EndpointId,
+    /// Set to the client's upload timeout when it intends to stream the announced
+    /// blobs to `/blobs/upload` right after this announce. The mailbox defers
+    /// dialing `sender_pubkey` by exactly this window so the upload can land first
+    /// without a duplicate transfer. Clients that only announce (e.g. the
+    /// re-announce followup) leave it `None` for an immediate fetch.
+    #[serde(default)]
+    pub upload_grace: Option<std::time::Duration>,
     /// Reserved for a `sender_pubkey` signature over the request; currently
     /// unverified, so clients send it empty. `#[serde(default)]` keeps older
     /// payloads that omit the field entirely decodable.
@@ -34,16 +41,18 @@ pub struct UploadBlobResponse {
     pub hash: iroh_blobs::Hash,
 }
 
-/// Register `source` as a provider for each hash the mailbox does not yet hold,
-/// deferring each fetch by the upload grace window so a client that announces and
-/// then streams the same blobs doesn't race the mailbox into a duplicate fetch.
+/// Register `source` as a provider for each hash the mailbox does not yet hold.
+/// When `grace` is set, each fetch is deferred by that window so a client that
+/// announces and then streams the same blobs doesn't race the mailbox into a
+/// duplicate fetch; otherwise the hash is fetchable immediately.
 pub async fn record_blob_sources(
     blob_sync: &BlobSync,
     hashes: &[iroh_blobs::Hash],
     source: iroh::EndpointId,
+    grace: Option<std::time::Duration>,
 ) {
     for hash in hashes {
-        blob_sync.add_delayed_fetch_source(*hash, source).await;
+        blob_sync.add_fetch_source(*hash, source, grace).await;
     }
 }
 
@@ -66,7 +75,13 @@ pub async fn store_blobs(
             to_fetch.push(hash);
         }
     }
-    record_blob_sources(&state.blob_sync, &to_fetch, payload.sender_pubkey).await;
+    record_blob_sources(
+        &state.blob_sync,
+        &to_fetch,
+        payload.sender_pubkey,
+        payload.upload_grace,
+    )
+    .await;
     Json(StoreBlobsResponse { already_stored })
 }
 
@@ -106,20 +121,9 @@ mod tests {
         let source = iroh::SecretKey::from_bytes(&[7; 32]).public();
         let h = iroh_blobs::Hash::new([9; 32]);
 
-        record_blob_sources(&blob_sync, &[h], source).await;
+        // Announce without an expected upload: the source is fetchable at once.
+        record_blob_sources(&blob_sync, &[h], source, None).await;
         let tried = HashSet::new();
-
-        // The announce defers the fetch by the grace window, so it is not yet
-        // ready to dial the source.
-        assert!(blob_sync
-            .fetch_pool_for_test()
-            .next_untried(&tried)
-            .await
-            .is_none());
-
-        // Once the grace window passes, the source is fetchable.
-        tokio::time::advance(crate::blob_sync::FETCH_GRACE + std::time::Duration::from_secs(1))
-            .await;
         let (got, sources) = blob_sync
             .fetch_pool_for_test()
             .next_untried(&tried)
@@ -127,6 +131,36 @@ mod tests {
             .unwrap();
         assert_eq!(got, h);
         assert!(sources.contains(&source));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn expected_upload_defers_the_fetch_by_the_grace_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = iroh::SecretKey::generate();
+        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf(), None)
+            .await
+            .unwrap();
+        let source = iroh::SecretKey::from_bytes(&[7; 32]).public();
+        let h = iroh_blobs::Hash::new([9; 32]);
+
+        // Announce with an expected upload: the fetch is held off until the grace
+        // window passes, giving the upload time to land.
+        let grace = std::time::Duration::from_secs(15);
+        record_blob_sources(&blob_sync, &[h], source, Some(grace)).await;
+        let tried = HashSet::new();
+        assert!(blob_sync
+            .fetch_pool_for_test()
+            .next_untried(&tried)
+            .await
+            .is_none());
+
+        tokio::time::advance(grace + std::time::Duration::from_secs(1)).await;
+        let (got, _sources) = blob_sync
+            .fetch_pool_for_test()
+            .next_untried(&tried)
+            .await
+            .unwrap();
+        assert_eq!(got, h);
     }
 
     #[tokio::test(start_paused = true)]
@@ -140,14 +174,15 @@ mod tests {
         let data = bytes::Bytes::from_static(b"raced blob");
         let h = iroh_blobs::Hash::new(&data);
 
-        // A hash is announced (queued for fetch after the grace window)...
-        record_blob_sources(&blob_sync, &[h], source).await;
+        // A hash is announced with an expected upload (queued for fetch after the
+        // grace window)...
+        let grace = std::time::Duration::from_secs(15);
+        record_blob_sources(&blob_sync, &[h], source, Some(grace)).await;
         // ...then the client's upload lands, which must drop the pending fetch.
         blob_sync.store_pushed_blob(data.clone()).await.unwrap();
         blob_sync.clear_pending_fetch(h).await;
 
-        tokio::time::advance(crate::blob_sync::FETCH_GRACE + std::time::Duration::from_secs(1))
-            .await;
+        tokio::time::advance(grace + std::time::Duration::from_secs(1)).await;
         assert!(blob_sync
             .fetch_pool_for_test()
             .next_untried(&HashSet::new())

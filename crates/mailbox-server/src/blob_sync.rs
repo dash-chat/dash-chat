@@ -25,12 +25,11 @@ const BLOB_GC_INTERVAL: Duration = Duration::from_secs(60 * 60);
 const MAX_FETCH_FAILURES: u32 = 10;
 /// Hard cap on pending fetch entries; arbitrary entries are dropped if exceeded.
 const MAX_POOL_SIZE: usize = 1_000;
-/// Grace period before the fetch pool will dial the source for a freshly
-/// announced hash. A publishing client streams the bytes to `/blobs/upload`
-/// right after announcing, so this window lets that upload land before the
-/// mailbox duplicates the transfer by fetching. Roughly the client's upload
-/// timeout.
-pub(crate) const FETCH_GRACE: Duration = Duration::from_secs(15);
+/// Upper bound on the grace period a client can request before the mailbox
+/// dials the source for a freshly announced hash. The client sends its own
+/// upload timeout so the two stay in lockstep; this only caps a pathological
+/// value so a client can't defer fetching its own blobs indefinitely.
+pub(crate) const MAX_UPLOAD_GRACE: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
 struct PoolEntry {
@@ -356,17 +355,24 @@ impl BlobSync {
         Ok(hash)
     }
 
-    /// Register `source` as a provider for `hash`, deferring the fetch by
-    /// [`FETCH_GRACE`] so a concurrent inline upload of the same blob can land
-    /// first and make the fetch unnecessary.
-    pub(crate) async fn add_delayed_fetch_source(
+    /// Register `source` as a provider for `hash`. When `grace` is set the fetch
+    /// is deferred by that window (capped at [`MAX_UPLOAD_GRACE`]) so a concurrent
+    /// inline upload of the same blob can land first and make the fetch
+    /// unnecessary; when `None` the hash is fetchable immediately.
+    pub(crate) async fn add_fetch_source(
         &self,
         hash: iroh_blobs::Hash,
         source: iroh::EndpointId,
+        grace: Option<Duration>,
     ) {
-        self.fetch_pool
-            .add_source_after(hash, source, FETCH_GRACE)
-            .await;
+        match grace {
+            Some(grace) => {
+                self.fetch_pool
+                    .add_source_after(hash, source, grace.min(MAX_UPLOAD_GRACE))
+                    .await
+            }
+            None => self.fetch_pool.add_source(hash, source).await,
+        }
     }
 
     /// Drop `hash` from the fetch pool: the mailbox now holds it (e.g. a client
