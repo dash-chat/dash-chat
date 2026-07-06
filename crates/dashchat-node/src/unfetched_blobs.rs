@@ -63,7 +63,7 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
         if hashes.is_empty() {
             continue; // no unfetched blobs to re-announce
         }
-        match mailbox_client::toy::send_store_blobs(&url, None, hashes, self_endpoint).await {
+        match mailbox_client::toy::send_store_blobs(&url, hashes, self_endpoint).await {
             Ok(already_stored) => {
                 if let Err(err) = node
                     .local_store

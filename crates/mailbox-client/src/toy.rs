@@ -16,36 +16,30 @@ use super::*;
 pub trait ToyItemTraits: ItemTraits + Serialize + DeserializeOwned {}
 impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {}
 
-/// Client-side timeout for a `/blobs/store` request that carries blob bytes
-/// inline; larger than the default HTTP timeout because the upload can be big.
-const STORE_BLOBS_WITH_BYTES_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+/// Client-side timeout for a single blob upload, larger than the default HTTP
+/// timeout because a blob can be big.
+const UPLOAD_BLOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
-/// POST blob hashes (and optionally the blob bytes themselves) to a mailbox's
-/// `/blobs/store`, returning the subset the mailbox reports it already has
-/// stored. When `blobs` is `Some`, a longer per-request timeout is applied.
+/// POST blob hashes to a mailbox's `/blobs/store`, returning the subset the
+/// mailbox reports it already has stored.
 pub async fn send_store_blobs(
     base_url: &str,
-    blobs: Option<Vec<bytes::Bytes>>,
     hashes: Vec<iroh_blobs::Hash>,
     sender_pubkey: iroh::EndpointId,
 ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
     if hashes.is_empty() {
         return Ok(Vec::new());
     }
-    let has_blobs = blobs.is_some();
     let request = mailbox_server::StoreBlobsRequest {
-        blobs,
         blob_hashes: hashes,
         sender_pubkey,
         signature: Vec::new(),
     };
-    let mut builder = HTTP_CLIENT
+    let response = HTTP_CLIENT
         .post(format!("{base_url}/blobs/store"))
-        .json(&request);
-    if has_blobs {
-        builder = builder.timeout(STORE_BLOBS_WITH_BYTES_TIMEOUT);
-    }
-    let response = builder.send().await?;
+        .json(&request)
+        .send()
+        .await?;
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
@@ -53,6 +47,24 @@ pub async fn send_store_blobs(
     }
     let response: mailbox_server::StoreBlobsResponse = response.json().await?;
     Ok(response.already_stored)
+}
+
+/// POST a single blob's raw bytes to a mailbox's `/blobs/upload`. The body is the
+/// bytes themselves — no JSON/base64 wrapping — so the on-wire size matches the
+/// blob.
+async fn upload_blob(base_url: &str, bytes: bytes::Bytes) -> anyhow::Result<()> {
+    let response = HTTP_CLIENT
+        .post(format!("{base_url}/blobs/upload"))
+        .timeout(UPLOAD_BLOB_TIMEOUT)
+        .body(bytes)
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("Failed to upload blob: {status} - {body}");
+    }
+    Ok(())
 }
 
 /// A client for the toy mailbox server.
@@ -83,9 +95,9 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         }
     }
 
-    /// Attach a blob-bytes source so `publish` uploads blob bytes inline to the
-    /// mailbox (falling back to announcing hashes only on timeout). Without a
-    /// reader the client only announces hashes and the mailbox fetches them.
+    /// Attach a blob-bytes source so `publish` pushes blob bytes straight to the
+    /// mailbox (best-effort) before announcing their hashes. Without a reader the
+    /// client only announces hashes and the mailbox fetches the bytes from us.
     pub fn with_blob_reader(
         mut self,
         blob_reader: std::sync::Arc<dyn crate::BlobReader>,
@@ -94,13 +106,18 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         self
     }
 
-    /// Announce blob hashes to this mailbox and reconcile the unfetched tracker:
-    /// record hashes the mailbox still needs, remove any it already has.
+    /// Push blob bytes to the mailbox immediately (best-effort), then announce
+    /// their hashes and reconcile the unfetched tracker: record hashes the
+    /// mailbox still needs, remove any it already has. The announce always runs,
+    /// so any blob that failed to upload is still fetched by the mailbox and
+    /// retried by the followup task.
     async fn store_blobs(&self, hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
         if hashes.is_empty() {
             return Ok(());
         }
-        let already_stored = self.upload_blobs(hashes.clone()).await?;
+        self.upload_blobs(&hashes).await;
+        let already_stored =
+            send_store_blobs(&self.base_url, hashes.clone(), self.sender_pubkey).await?;
         let not_stored: Vec<_> = hashes
             .into_iter()
             .filter(|h| !already_stored.contains(h))
@@ -110,53 +127,28 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         Ok(())
     }
 
-    /// Upload blob bytes inline (with a 15s timeout) when a blob reader is
-    /// available; if that upload times out — or no reader is configured — send
-    /// the hashes alone so the mailbox fetches the blobs from us instead.
-    async fn upload_blobs(
-        &self,
-        hashes: Vec<iroh_blobs::Hash>,
-    ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
-        if let Some(blobs) = self.read_blobs(&hashes).await {
-            match send_store_blobs(&self.base_url, Some(blobs), hashes.clone(), self.sender_pubkey)
-                .await
-            {
-                Ok(already_stored) => return Ok(already_stored),
-                Err(err) if is_timeout(&err) => {
-                    tracing::warn!(
-                        "store_blobs with inline bytes timed out; retrying with hashes only"
-                    );
-                }
-                Err(err) => return Err(err),
-            }
-        }
-        send_store_blobs(&self.base_url, None, hashes, self.sender_pubkey).await
-    }
-
-    /// Read every blob's bytes from the configured reader, returning `None` (so
-    /// the caller announces hashes only) when there is no reader or any read
-    /// fails.
-    async fn read_blobs(&self, hashes: &[iroh_blobs::Hash]) -> Option<Vec<bytes::Bytes>> {
-        let reader = self.blob_reader.as_ref()?;
-        let mut blobs = Vec::with_capacity(hashes.len());
+    /// Best-effort: read each blob from the configured reader and upload its
+    /// bytes to the mailbox, one at a time (so at most one blob is held in
+    /// memory). Logs and continues past any read or upload error — the caller's
+    /// announce is the source of truth, so a missed upload just means the mailbox
+    /// fetches that blob instead. No-op when no reader is configured.
+    async fn upload_blobs(&self, hashes: &[iroh_blobs::Hash]) {
+        let Some(reader) = self.blob_reader.as_ref() else {
+            return;
+        };
         for hash in hashes {
-            match reader.read_blob(*hash).await {
-                Ok(bytes) => blobs.push(bytes),
+            let bytes = match reader.read_blob(*hash).await {
+                Ok(bytes) => bytes,
                 Err(err) => {
-                    tracing::warn!(%hash, ?err, "failed to read blob bytes; announcing hashes only");
-                    return None;
+                    tracing::warn!(%hash, ?err, "failed to read blob for upload; relying on announce");
+                    continue;
                 }
+            };
+            if let Err(err) = upload_blob(&self.base_url, bytes).await {
+                tracing::warn!(%hash, ?err, "blob upload failed; relying on announce");
             }
         }
-        Some(blobs)
     }
-}
-
-/// True when the error was caused by a request timeout, so the caller can retry
-/// via a different path rather than surfacing the failure.
-fn is_timeout(err: &anyhow::Error) -> bool {
-    err.downcast_ref::<reqwest::Error>()
-        .is_some_and(|e| e.is_timeout())
 }
 
 #[async_trait::async_trait]
@@ -435,10 +427,9 @@ mod tests {
         });
         let base_url = format!("http://{addr}");
 
-        let tracker = std::sync::Arc::new(RecordingTracker::default());
+        let _tracker = std::sync::Arc::new(RecordingTracker::default());
         let already = crate::toy::send_store_blobs(
             &base_url,
-            None,
             vec![h_stored, h_new],
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
         )
@@ -448,25 +439,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn store_blobs_sends_inline_bytes_and_reports_them_stored() {
-        // Server that hashes each inline blob it receives and reports those
-        // hashes as already stored (mirroring the real mailbox behavior).
+    async fn upload_blob_posts_raw_bytes() {
+        use std::sync::{Arc, Mutex};
+
+        // Server that records the raw body it received and echoes back its hash.
+        let received: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let received_in_handler = received.clone();
         let app = axum::Router::new().route(
-            "/blobs/store",
-            axum::routing::post(
-                |axum::Json(req): axum::Json<mailbox_server::StoreBlobsRequest>| async move {
-                    let stored: Vec<_> = req
-                        .blobs
-                        .unwrap_or_default()
-                        .iter()
-                        .map(iroh_blobs::Hash::new)
-                        .filter(|h| req.blob_hashes.contains(h))
-                        .collect();
-                    axum::Json(mailbox_server::StoreBlobsResponse {
-                        already_stored: stored,
-                    })
-                },
-            ),
+            "/blobs/upload",
+            axum::routing::post(move |body: axum::body::Bytes| {
+                let received_in_handler = received_in_handler.clone();
+                async move {
+                    let hash = iroh_blobs::Hash::new(&body);
+                    *received_in_handler.lock().unwrap() = body.to_vec();
+                    axum::Json(mailbox_server::UploadBlobResponse { hash })
+                }
+            }),
         );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -475,16 +463,75 @@ mod tests {
         });
         let base_url = format!("http://{addr}");
 
-        let data = bytes::Bytes::from_static(b"inline blob");
+        let data = bytes::Bytes::from_static(b"raw blob bytes");
+        crate::toy::upload_blob(&base_url, data.clone())
+            .await
+            .unwrap();
+        assert_eq!(*received.lock().unwrap(), data.to_vec());
+    }
+
+    #[tokio::test]
+    async fn store_blobs_uploads_bytes_then_announces() {
+        use std::sync::{Arc, Mutex};
+
+        struct StubReader(bytes::Bytes);
+        #[async_trait::async_trait]
+        impl crate::BlobReader for StubReader {
+            async fn read_blob(&self, _hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
+                Ok(self.0.clone())
+            }
+        }
+
+        let data = bytes::Bytes::from_static(b"a blob");
         let hash = iroh_blobs::Hash::new(&data);
-        let already = crate::toy::send_store_blobs(
-            &base_url,
-            Some(vec![data]),
-            vec![hash],
+
+        // `/blobs/upload` records the pushed bytes; once uploaded, `/blobs/store`
+        // reports the announced hash as already stored.
+        let uploaded: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let uploaded_in_handler = uploaded.clone();
+        let uploaded_for_store = uploaded.clone();
+        let app = axum::Router::new()
+            .route(
+                "/blobs/upload",
+                axum::routing::post(move |body: axum::body::Bytes| {
+                    let uploaded_in_handler = uploaded_in_handler.clone();
+                    async move {
+                        let hash = iroh_blobs::Hash::new(&body);
+                        *uploaded_in_handler.lock().unwrap() = body.to_vec();
+                        axum::Json(mailbox_server::UploadBlobResponse { hash })
+                    }
+                }),
+            )
+            .route(
+                "/blobs/store",
+                axum::routing::post(
+                    move |axum::Json(req): axum::Json<mailbox_server::StoreBlobsRequest>| async move {
+                        let has_upload = !uploaded_for_store.lock().unwrap().is_empty();
+                        let already_stored = if has_upload {
+                            req.blob_hashes
+                        } else {
+                            Vec::new()
+                        };
+                        axum::Json(mailbox_server::StoreBlobsResponse { already_stored })
+                    },
+                ),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+
+        let client = ToyMailboxClient::<crate::testing::Msg>::new(
+            "mbx".to_string(),
+            base_url,
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
+            std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
         )
-        .await
-        .unwrap();
-        assert_eq!(already, vec![hash]);
+        .with_blob_reader(std::sync::Arc::new(StubReader(data.clone())));
+
+        client.store_blobs(vec![hash]).await.unwrap();
+        assert_eq!(*uploaded.lock().unwrap(), data.to_vec());
     }
 }

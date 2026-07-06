@@ -1,26 +1,18 @@
-use axum::{extract::State, Json};
+use axum::{body::Bytes, extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
 use crate::{AppState, BlobSync};
 
-/// A client's request to make blobs available on the mailbox. Clients send this
-/// two ways: first with the blob bytes inline (`blobs = Some`) so the mailbox can
-/// store them without a round trip back to the client, and — if that upload times
-/// out — again with `blobs = None`, leaving the mailbox to fetch them from
-/// `sender_pubkey` via its fetch pool.
+/// A client's request to announce blob hashes to the mailbox. For each hash the
+/// mailbox already holds it reports `already_stored`; every other hash it
+/// registers in its fetch pool so it pulls the blob from `sender_pubkey`. Blob
+/// bytes are never carried here — clients push those separately to
+/// `/blobs/upload` and use this announce to reconcile what actually landed.
 #[derive(Serialize, Deserialize)]
 pub struct StoreBlobsRequest {
-    /// The blob bytes themselves, when the client uploads them inline. `None`
-    /// means announce-only: the mailbox fetches any hashes it lacks from
-    /// `sender_pubkey` instead. Bytes are matched to `blob_hashes` by content
-    /// hash, not position, so order and extra/missing entries are harmless.
-    pub blobs: Option<Vec<bytes::Bytes>>,
-    /// Every blob hash this request is about, whether or not its bytes are
-    /// included in `blobs`. Hashes the mailbox ends up without are added to the
-    /// fetch pool.
     pub blob_hashes: Vec<iroh_blobs::Hash>,
-    /// The peer the mailbox should dial to fetch any hash it does not receive
-    /// inline (typically the sending client itself).
+    /// The peer the mailbox should dial to fetch any hash it does not already
+    /// hold (typically the sending client itself).
     pub sender_pubkey: iroh::EndpointId,
     /// Reserved for a `sender_pubkey` signature over the request; currently
     /// unverified, so clients send it empty. `#[serde(default)]` keeps older
@@ -35,6 +27,13 @@ pub struct StoreBlobsResponse {
     pub already_stored: Vec<iroh_blobs::Hash>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct UploadBlobResponse {
+    /// The hash the uploaded bytes hash to, so the client can confirm the
+    /// mailbox stored what it intended.
+    pub hash: iroh_blobs::Hash,
+}
+
 /// Register `source` as a provider for each hash the mailbox does not yet hold.
 pub async fn record_blob_sources(
     blob_sync: &BlobSync,
@@ -46,25 +45,16 @@ pub async fn record_blob_sources(
     }
 }
 
-/// Handle `POST /blobs/store`: persist any inline blob bytes, then partition the
-/// announced hashes into those the mailbox now holds (reported back as
-/// `already_stored`) and those it still lacks (registered in the fetch pool so it
-/// pulls them from `sender_pubkey`). A hash sent with matching bytes lands in the
-/// former group and is never fetched; a hash sent without bytes (or whose bytes
-/// failed to store) lands in the latter. The `has` check does double duty here:
-/// it catches both blobs stored moments ago from this request and blobs the
-/// mailbox already had from a previous one.
+/// Handle `POST /blobs/store`: partition the announced hashes into those the
+/// mailbox already holds (reported back as `already_stored`) and those it lacks
+/// (registered in the fetch pool so it pulls them from `sender_pubkey`). This is
+/// the source of truth for what the mailbox has: a blob pushed to `/blobs/upload`
+/// shows up here as `already_stored`, and anything that never arrived falls into
+/// the fetch pool as a backstop.
 pub async fn store_blobs(
     State(state): State<AppState>,
     Json(payload): Json<StoreBlobsRequest>,
 ) -> Json<StoreBlobsResponse> {
-    if let Some(blobs) = payload.blobs {
-        for blob in blobs {
-            if let Err(err) = state.blob_sync.store_pushed_blob(blob).await {
-                tracing::warn!(?err, "failed to store pushed blob");
-            }
-        }
-    }
     let mut already_stored = Vec::new();
     let mut to_fetch = Vec::new();
     for hash in payload.blob_hashes {
@@ -76,6 +66,24 @@ pub async fn store_blobs(
     }
     record_blob_sources(&state.blob_sync, &to_fetch, payload.sender_pubkey).await;
     Json(StoreBlobsResponse { already_stored })
+}
+
+/// Handle `POST /blobs/upload`: store the raw blob bytes in the request body and
+/// return the hash they hash to. This is the direct-upload fast path — clients
+/// push bytes here immediately on publish so recipients get them without waiting
+/// for the mailbox to dial back and fetch. It is best-effort from the client's
+/// side: `/blobs/store` remains the source of truth, so a failed upload simply
+/// falls back to a fetch. The 64MB `DefaultBodyLimit` caps a single upload.
+pub async fn upload_blob(
+    State(state): State<AppState>,
+    body: Bytes,
+) -> Result<Json<UploadBlobResponse>, (StatusCode, String)> {
+    let hash = state
+        .blob_sync
+        .store_pushed_blob(body)
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    Ok(Json(UploadBlobResponse { hash }))
 }
 
 #[cfg(test)]
