@@ -40,7 +40,7 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
 dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { workspace = true }
 push-notifications-client = { path = "../crates/push-notifications-client" }
-dashchat-utils = { path = "../crates/dashchat-utils" }
+dashchat-utils = { workspace = true }
 
 p2panda = { workspace = true }
 iroh = { workspace = true }

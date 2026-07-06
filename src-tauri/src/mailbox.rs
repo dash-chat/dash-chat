@@ -189,12 +189,13 @@ async fn handle_browse_events(
                             mailbox_id.clone(),
                             url.clone(),
                             node.endpoint_id(),
+                            node.unfetched_blob_tracker(),
                         ))
                         .await;
                     // Add the mailbox's dialing address to the address book so
                     // the blob downloader can reach it by EndpointId rather than
                     // relying solely on p2panda mDNS resolution timing.
-                    match crate::setup::fetch_mailbox_health(&url).await {
+                    match dashchat_node::mailbox::fetch_mailbox_health(&url).await {
                         Ok(health) => {
                             if let Err(err) = node.insert_peer_addr(health.endpoint_addr).await {
                                 log::warn!(
@@ -213,19 +214,10 @@ async fn handle_browse_events(
                     // path and re-registers the updated EndpointAddr. Cloud
                     // mailboxes don't have this hook; re-registration there would
                     // require a network-change callback from the node layer.
-                    match node.iroh_endpoint().await {
-                        Ok(ep) => {
-                            if let Err(err) =
-                                crate::setup::register_self_with_mailbox(&url, ep.addr()).await
-                            {
-                                log::warn!(
-                                    "Failed to register our addr with local mailbox {mailbox_id}: {err}"
-                                );
-                            }
-                        }
-                        Err(err) => log::warn!(
-                            "Could not get iroh endpoint to register with mailbox {mailbox_id}: {err}"
-                        ),
+                    if let Err(err) = node.register_with_mailbox(&url).await {
+                        log::warn!(
+                            "Failed to register our addr with local mailbox {mailbox_id}: {err}"
+                        );
                     }
                     log::info!(
                         "*** Registered local mailbox client via mdns: {mailbox_id} ({url}) ***",

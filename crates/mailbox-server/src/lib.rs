@@ -21,6 +21,7 @@ mod notify_topics_subscribers;
 mod register_peer;
 mod server_key;
 mod store_blips;
+mod store_blobs;
 mod watermark;
 mod watermarks_table;
 
@@ -43,6 +44,7 @@ pub use get_blips::{
 pub use register_peer::RegisterPeerRequest;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest};
+pub use store_blobs::{record_blob_sources, store_blobs, StoreBlobsRequest, StoreBlobsResponse};
 pub use tokio_util::task::TaskTracker;
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
@@ -85,6 +87,7 @@ impl AppState {
         Router::new()
             .route("/health", get(health_check))
             .route("/blips/store", post(store_blips))
+            .route("/blobs/store", post(store_blobs::store_blobs))
             .route("/blips/get", post(get_blips_for_topics))
             .route("/peers/register", post(register_peer::register_peer))
             .layer(CorsLayer::permissive())
@@ -224,29 +227,24 @@ pub async fn spawn_server(
     addr: String,
     push_notifications_url: Option<String>,
     blob_sync: Option<BlobSync>,
+    relay_url: Option<iroh::RelayUrl>,
     signal: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let server = MailboxServer::spawn(
-        db_path,
-        &addr,
-        push_notifications_url,
-        blob_sync,
-        Some(dashchat_utils::RELAY_URL.clone()),
-    )
-    .await?;
+    let server =
+        MailboxServer::spawn(db_path, &addr, push_notifications_url, blob_sync, relay_url).await?;
     signal.await;
     server.stop().await;
     Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
-struct HealthResponse {
-    status: String,
-    endpoint_id: String,
+pub struct HealthResponse {
+    pub status: String,
+    pub endpoint_id: String,
     /// The mailbox endpoint's dialing address (relay + direct addresses), so
     /// clients can add it to their p2panda address book and dial this mailbox
     /// by its EndpointId rather than only knowing the bare id.
-    endpoint_addr: iroh::EndpointAddr,
+    pub endpoint_addr: iroh::EndpointAddr,
 }
 
 fn db_path_blobs_dir(db_path: &std::path::Path) -> std::path::PathBuf {

@@ -26,7 +26,7 @@ iroh-blobs = { workspace = true }
 aliased = { workspace = true }
 anyhow = "1.0.95"
 dashchat-compat = { workspace = true }
-dashchat-utils = { path = "../dashchat-utils" }
+dashchat-utils = { workspace = true }
 ed25519-dalek = { workspace = true }
 thiserror = "2.0"
 async-trait = "0.1.85"
@@ -47,6 +47,7 @@ sqlx = "0.8.6"
 
 tempfile = { version = "3.24", optional = true }
 nanoid = { version = "0.4", optional = true }
+regex = { version = "1", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 if-watch = { version = "3", features = ["tokio"] }
@@ -64,5 +65,5 @@ p2panda-store = { workspace = true, features = ["test_utils"] }
 [features]
 default = ["testing", "instrument"]
 instrument = []
-testing = ["tempfile", "nanoid", "p2panda-store/test_utils"]
+testing = ["tempfile", "nanoid", "regex", "p2panda-store/test_utils"]
 p2p = []
