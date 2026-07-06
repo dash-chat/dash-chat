@@ -21,6 +21,7 @@ mod notify_topics_subscribers;
 mod register_peer;
 mod server_key;
 mod store_blips;
+mod store_blobs;
 mod watermark;
 mod watermarks_table;
 
@@ -43,6 +44,7 @@ pub use get_blips::{
 pub use register_peer::RegisterPeerRequest;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest};
+pub use store_blobs::{record_blob_sources, store_blobs, StoreBlobsRequest, StoreBlobsResponse};
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
@@ -203,6 +205,7 @@ pub fn create_app(
     Router::new()
         .route("/health", get(health_check))
         .route("/blips/store", post(store_blips))
+        .route("/blobs/store", post(store_blobs::store_blobs))
         .route("/blips/get", post(get_blips_for_topics))
         .route("/peers/register", post(register_peer::register_peer))
         .layer(CorsLayer::permissive())

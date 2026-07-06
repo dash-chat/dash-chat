@@ -156,6 +156,7 @@ async fn register_served_mailbox(node: &crate::Node, url: &str) {
             health.mailbox_id.clone(),
             url,
             node.endpoint_id(),
+            node.unfetched_blob_tracker(),
         ))
         .await;
     node.register_with_mailbox(url).await.unwrap();

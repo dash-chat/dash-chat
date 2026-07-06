@@ -86,6 +86,9 @@ pub struct NodeConfig {
     /// the exclusive single-process lock the always-on main app already holds.
     pub enable_blob_sync: bool,
     pub blob_fetch: BlobFetchConfig,
+    /// How often the followup task re-announces still-unfetched blob hashes to
+    /// their mailboxes.
+    pub unfetched_blob_followup_interval: std::time::Duration,
 }
 
 impl NodeConfig {
@@ -108,9 +111,9 @@ impl NodeConfig {
         use crate::compat::Capabilities;
 
         let mut mailboxes_config = MailboxesConfig::default();
-        mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
-        mailboxes_config.degraded_interval = std::time::Duration::from_millis(2000);
-        mailboxes_config.stopped_interval = std::time::Duration::from_millis(5000);
+        mailboxes_config.active_interval = std::time::Duration::from_millis(500);
+        mailboxes_config.degraded_interval = std::time::Duration::from_millis(1000);
+        mailboxes_config.stopped_interval = std::time::Duration::from_millis(1500);
         mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
         Self {
             contact_code_expiry: Duration::days(7),
@@ -131,6 +134,7 @@ impl NodeConfig {
                 attempt_timeout: std::time::Duration::from_secs(3),
                 retry_cooldown: std::time::Duration::from_secs(1),
             },
+            unfetched_blob_followup_interval: std::time::Duration::from_secs(1),
         }
     }
 
@@ -153,6 +157,7 @@ impl Default for NodeConfig {
             enable_p2p: true,
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
+            unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
         }
     }
 }
@@ -193,6 +198,8 @@ pub struct Node {
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     endpoint: p2panda::Endpoint,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    unfetched_blob_trigger: Arc<tokio::sync::Notify>,
+    unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
@@ -339,6 +346,7 @@ impl Node {
                     filesystem.blobs_store_path(),
                     blob_fetch,
                     source_lookup,
+                    local_store.clone(),
                 )
                 .await?,
             )
@@ -367,6 +375,8 @@ impl Node {
             blob_fetch_handle: Default::default(),
             endpoint,
             network_change_handle: Default::default(),
+            unfetched_blob_trigger: Default::default(),
+            unfetched_blob_followup_handle: Default::default(),
         };
 
         // === application processor task === //
@@ -392,6 +402,18 @@ impl Node {
             .lock()
             .await
             .replace(network_change_handle);
+
+        // === unfetched blob followup loop === //
+
+        let followup_handle = crate::spawn_unfetched_blob_followup_task(
+            node.clone(),
+            node.config.unfetched_blob_followup_interval,
+            node.unfetched_blob_trigger.clone(),
+        );
+        node.unfetched_blob_followup_handle
+            .lock()
+            .await
+            .replace(followup_handle);
 
         // === topics === //
 
@@ -462,6 +484,18 @@ impl Node {
         self.blob_sync
             .as_ref()
             .expect("blob sync is enabled for p2p (testing) nodes")
+    }
+
+    pub fn unfetched_blob_tracker(
+        &self,
+    ) -> std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker> {
+        crate::LocalStoreBlobTracker::new(self.local_store.clone())
+    }
+
+    /// Wake the unfetched-blob followup task to run a reconciliation pass now
+    /// (e.g. on unpause / network change).
+    pub fn notify_unfetched_blob_followup(&self) {
+        self.unfetched_blob_trigger.notify_one();
     }
 
     #[cfg(feature = "testing")]
@@ -1074,6 +1108,10 @@ impl Node {
             handle.abort();
         }
 
+        if let Some(handle) = self.unfetched_blob_followup_handle.lock().await.take() {
+            handle.abort();
+        }
+
         if let Some(handle) = self.network_change_handle.lock().await.take() {
             handle.abort();
         }
@@ -1098,6 +1136,7 @@ impl Node {
             }
         }
 
+        // Close pools last.
         // SqlitePool clones share state, so this drains every connection; the
         // sync tracker owns a separate pool (mailbox_sync_tracker.db).
         self.mailboxes.sync_tracker().close().await;

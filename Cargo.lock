@@ -5395,6 +5395,7 @@ dependencies = [
  "aliased",
  "anyhow",
  "async-trait",
+ "axum",
  "bytes",
  "chrono",
  "ciborium",

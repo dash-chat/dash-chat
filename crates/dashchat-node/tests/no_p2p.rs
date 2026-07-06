@@ -124,6 +124,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             mailbox_id.clone(),
             &url,
             alice.endpoint_id(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
@@ -137,6 +138,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
@@ -204,6 +206,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr).await.unwrap();
@@ -283,6 +286,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             mailbox_id.clone(),
             &url,
             alice.endpoint_id(),
+            alice.unfetched_blob_tracker(),
         ))
         .await;
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
@@ -294,6 +298,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
+            bobbi.unfetched_blob_tracker(),
         ))
         .await;
     // Poison: register the mailbox endpoint with NO usable transport. Op sync
@@ -363,6 +368,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
+            bobbi.unfetched_blob_tracker(),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr).await.unwrap();
