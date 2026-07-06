@@ -1,4 +1,5 @@
 import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
+import { Messages } from '../../components/messages';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
 import { TestPage } from '../test-page';
@@ -20,7 +21,7 @@ export class DirectChatPage extends TestPage {
 	rejectButton = this.agent.$(tid('direct-chat-reject-btn'));
 	acceptConfirm = this.agent.$(tid('direct-chat-accept-confirm'));
 	rejectConfirm = this.agent.$(tid('direct-chat-reject-confirm'));
-	messages = this.agent.$(tid('direct-chat-messages'));
+	messages = new Messages(this.agent, 'direct-chat-messages');
 	messageInput = this.agent.$(tid('message-input-textarea'));
 	emojiButton = this.agent.$(tid('message-input-emoji'));
 	messageStatus = this.agent.$(tid('message-status'));

@@ -110,6 +110,10 @@ export interface ReadMessagesStore {
 	markAsRead(messageHashes: Hash[]): Promise<void>;
 }
 
+export interface MessagesStore {
+	sendReaction(reaction: ChatReaction): Promise<void>;
+}
+
 export type GroupControlEvent =
 	| {
 			kind: 'group_created';

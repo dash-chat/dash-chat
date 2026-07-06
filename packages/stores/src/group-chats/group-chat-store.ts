@@ -9,6 +9,7 @@ import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, PublicKey } from '../p2panda/types';
 import {
 	ChatId,
+	ChatReaction,
 	ChatSummary,
 	ChatSummaryLastEvent,
 	GroupControlEvent,
@@ -362,6 +363,10 @@ export class GroupChatStore implements ReadMessagesStore {
 			}),
 			this.client.sendMessage(this.chatId, content),
 		]);
+	}
+
+	async sendReaction(reaction: ChatReaction) {
+		await this.client.sendReaction(this.chatId, reaction);
 	}
 }
 

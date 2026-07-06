@@ -120,11 +120,6 @@ li.plain span {
 	border: none !important;
 }
 
-.message-highlighted {
-	position: relative;
-	z-index: 51;
-}
-
 .qr-card > div {
 	/* Padding for the copy button below the QR code in add-contact */
 	padding-bottom: 8px;

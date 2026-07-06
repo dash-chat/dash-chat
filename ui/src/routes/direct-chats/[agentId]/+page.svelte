@@ -1,10 +1,9 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import 'emoji-picker-element';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { getContext, onMount, tick } from 'svelte';
+	import { getContext, setContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
@@ -14,7 +13,6 @@
 		type ContactsStore,
 		type DeviceId,
 		type Hash,
-		type Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
@@ -40,7 +38,6 @@
 		DialogButton,
 		useTheme,
 		Link,
-		Chip,
 		Block,
 	} from 'konsta/svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
@@ -52,11 +49,8 @@
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
 	import MessageInput from '$lib/components/MessageInput.svelte';
-	import { condenseReactions } from '$lib/utils/emojis';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
-	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import { longpress } from '$lib/actions/longpress';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
@@ -71,6 +65,7 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
+	setContext('messages-store', store);
 
 	const readTracker = createReadMessagesTracker(store);
 	const readMessageOnObserve = readTracker.observe;
@@ -125,10 +120,7 @@
 	}
 
 	let messageText = $state('');
-	let showQuickBar = $state(false);
 	let showFullPicker = $state(false);
-	let emojiTargetedMessage: Message | undefined = $state(undefined);
-	let reactionTargetElement: HTMLElement | null = $state(null);
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -265,51 +257,6 @@
 			}
 		}
 		closest?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-	}
-
-	function showQuickReactionBar(e: MouseEvent | TouchEvent, message: Message) {
-		const el = e.target as HTMLElement;
-		const target =
-			(el.closest('.message') as HTMLElement) ??
-			(el.querySelector('.message') as HTMLElement);
-		if (!target) return;
-		emojiTargetedMessage = message;
-		reactionTargetElement = target;
-		target.parentElement?.classList.add('message-highlighted');
-		showQuickBar = true;
-	}
-
-	function hideReactionUI() {
-		reactionTargetElement?.parentElement?.classList.remove(
-			'message-highlighted',
-		);
-		showQuickBar = false;
-		showFullPicker = false;
-		emojiTargetedMessage = undefined;
-		reactionTargetElement = null;
-	}
-
-	function expandToFullPicker() {
-		reactionTargetElement?.parentElement?.classList.remove(
-			'message-highlighted',
-		);
-		showQuickBar = false;
-		showFullPicker = true;
-	}
-
-	async function toggleReaction(
-		message: Message,
-		emoji: string,
-		deviceId: DeviceId,
-	) {
-		const currentReaction = message.reactions[deviceId];
-		const newEmoji = currentReaction === emoji ? null : emoji;
-		try {
-			await store.sendReaction({ target: message.hash, emoji: newEmoji });
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-		hideReactionUI();
 	}
 
 	const theme = $derived(useTheme());
@@ -589,10 +536,6 @@
 														<div
 															class="self-end max-w-[85%]"
 															data-message-hash={hash}
-															use:longpress={{
-																onLongPress: e =>
-																	showQuickReactionBar(e, message),
-															}}
 														>
 															{#await $chatId then chatId}
 																<MessageFromMe
@@ -601,8 +544,6 @@
 																	{myDeviceId}
 																	{chatId}
 																	searchQuery={searchMode ? searchQuery : ''}
-																	onToggleReaction={emoji =>
-																		toggleReaction(message, emoji, myDeviceId)}
 																/>
 															{/await}
 														</div>
@@ -613,10 +554,6 @@
 															use:readMessageOnObserve={readHashes?.has(hash)
 																? null
 																: hash}
-															use:longpress={{
-																onLongPress: e =>
-																	showQuickReactionBar(e, message),
-															}}
 														>
 															{#await $chatId then chatId}
 																<MessageFromOthers
@@ -625,8 +562,6 @@
 																	{myDeviceId}
 																	{chatId}
 																	searchQuery={searchMode ? searchQuery : ''}
-																	onToggleReaction={emoji =>
-																		toggleReaction(message, emoji, myDeviceId)}
 																/>
 															{/await}
 														</div>
@@ -683,63 +618,22 @@
 							{/snippet}
 						</Dialog>
 					{/if}
-					{#if emojiTargetedMessage && reactionTargetElement && myDeviceId}
-						<QuickReactionBar
-							message={emojiTargetedMessage}
-							targetElement={reactionTargetElement}
-							opened={showQuickBar}
-							isOwnMessage={myDeviceId === emojiTargetedMessage.author}
-							{myDeviceId}
-							onReaction={emoji =>
-								toggleReaction(emojiTargetedMessage!, emoji, myDeviceId)}
-							onExpand={expandToFullPicker}
-							onClose={hideReactionUI}
-						/>
-					{/if}
 					<Sheet
 						class="pb-safe text-lg"
 						opened={showFullPicker}
-						onBackdropClick={hideReactionUI}
+						onBackdropClick={() => (showFullPicker = false)}
 					>
 						<div class="flex flex-col items-center">
 							<div class="sheet-handle"></div>
 						</div>
-						{#if emojiTargetedMessage && myDeviceId}
-							{#if Object.values(emojiTargetedMessage.reactions).length > 0}
-								<Block>
-									{#each condenseReactions(emojiTargetedMessage.reactions, myDeviceId) as reaction}
-										<button
-											class="me-2 text-lg"
-											onclick={() =>
-												toggleReaction(
-													emojiTargetedMessage!,
-													reaction.emoji,
-													myDeviceId!,
-												)}
-										>
-											<Chip class="border !border-white dark:!border-black">
-												{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
-											</Chip>
-										</button>
-									{/each}
-								</Block>
-							{/if}
-							<Block>
-								<EmojiPickerWrapper
-									onEmojiSelected={emoji =>
-										toggleReaction(emojiTargetedMessage!, emoji, myDeviceId!)}
-								></EmojiPickerWrapper>
-							</Block>
-						{:else}
-							<Block>
-								<EmojiPickerWrapper
-									onEmojiSelected={emoji => {
-										messageText += emoji;
-										hideReactionUI();
-									}}
-								></EmojiPickerWrapper>
-							</Block>
-						{/if}
+						<Block>
+							<EmojiPickerWrapper
+								onEmojiSelected={emoji => {
+									messageText += emoji;
+									showFullPicker = false;
+								}}
+							></EmojiPickerWrapper>
+						</Block>
 					</Sheet>
 
 					<SafetyTipsSheet

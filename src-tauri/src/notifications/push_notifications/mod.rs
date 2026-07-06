@@ -17,8 +17,7 @@ mod receive_push_notification;
 #[cfg(target_os = "android")]
 mod android;
 
-const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str =
-    "http://push-notifications.darksoil.studio";
+const PRODUCTION_PUSH_NOTIFICATIONS_SERVER_URL: &str = "http://push-notifications.darksoil.studio";
 
 /// Returns the push notifications server URL to use.
 ///

@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
-import { ChatId, GroupDetails, MessageContent } from '../types';
+import { ChatId, ChatReaction, GroupDetails, MessageContent } from '../types';
 
 export interface GroupMember {
 	agentId: AgentId;
@@ -19,6 +19,7 @@ export interface IGroupChatClient {
 
 	sendMessage(chatId: ChatId, content: MessageContent): Promise<void>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
+	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void>;
 
 	setDetails(chatId: ChatId, details: GroupDetails): Promise<void>;
 
@@ -41,6 +42,9 @@ export class GroupChatClient implements IGroupChatClient {
 	}
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void> {
 		return invoke('mark_messages_read', { chatId, messageHashes });
+	}
+	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void> {
+		return invoke('send_reaction', { chatId, content });
 	}
 	setDetails(chatId: ChatId, details: GroupDetails): Promise<void> {
 		return invoke('set_group_details', { chatId, details });
