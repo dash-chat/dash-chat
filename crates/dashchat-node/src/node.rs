@@ -133,6 +133,12 @@ impl NodeConfig {
             },
         }
     }
+
+    #[cfg(feature = "testing")]
+    pub fn random_network_id(mut self) -> Self {
+        self.network_id = p2panda::Topic::random().into();
+        self
+    }
 }
 
 impl Default for NodeConfig {

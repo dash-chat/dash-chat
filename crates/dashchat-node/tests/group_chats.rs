@@ -6,7 +6,6 @@
 use dashchat_node::{testing::*, *};
 
 use maplit::{btreemap, btreeset};
-use p2panda::network::MdnsDiscoveryMode;
 use p2panda_auth::Access;
 use std::collections::BTreeSet;
 
@@ -99,8 +98,6 @@ async fn test_direct_chat() {
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
-    introduce_and_wait([&alice, &bobbi]).await;
-
     alice
         .behavior()
         .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
@@ -152,16 +149,14 @@ async fn test_p2p_direct_chat() {
 
     let network_id = p2panda::Topic::random();
 
-    let mut alice_config = NodeConfig::testing();
-    alice_config.network_id = network_id.into();
-    alice_config.mdns_mode = MdnsDiscoveryMode::Active;
+    let mut config = NodeConfig::testing();
+    config.network_id = network_id.into();
 
-    let mut bobbi_config = NodeConfig::testing();
-    bobbi_config.network_id = network_id.into();
-    bobbi_config.mdns_mode = MdnsDiscoveryMode::Active;
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
-    let alice = TestNode::new(alice_config, "alice").await;
-    let bobbi = TestNode::new(bobbi_config, "bobbi").await;
+    // Faster and more reliable than testing mDNS discovery.
+    introduce_peers([&alice, &bobbi]).await.unwrap();
 
     alice
         .behavior()
@@ -200,8 +195,6 @@ async fn test_group_chat() {
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
     let cammy = make_node(&mailbox, "cammy").await;
-
-    introduce_and_wait([&alice, &bobbi, &cammy]).await;
 
     alice
         .behavior()
@@ -377,8 +370,6 @@ async fn test_admin_removes_themself_there_is_another_admin() {
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
-    introduce_and_wait([&alice, &bobbi]).await;
-
     alice
         .behavior()
         .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
@@ -429,8 +420,6 @@ async fn test_admin_cant_remove_themself_when_they_are_the_only_admin() {
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
-    introduce_and_wait([&alice, &bobbi]).await;
-
     alice
         .behavior()
         .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
@@ -461,8 +450,6 @@ async fn test_non_admin_removes_themself() {
     let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
-
-    introduce_and_wait([&alice, &bobbi]).await;
 
     alice
         .behavior()
@@ -516,8 +503,6 @@ async fn test_admin_removes_non_admin() {
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
-    introduce_and_wait([&alice, &bobbi]).await;
-
     alice
         .behavior()
         .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
@@ -569,8 +554,6 @@ async fn test_non_admin_cannot_remove_admin() {
     let alice = make_node(&mailbox, "alice").await;
     let andi = make_node(&mailbox, "andi").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
-
-    introduce_and_wait([&alice, &andi, &bobbi]).await;
 
     alice
         .behavior()

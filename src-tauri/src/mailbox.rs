@@ -213,19 +213,10 @@ async fn handle_browse_events(
                     // path and re-registers the updated EndpointAddr. Cloud
                     // mailboxes don't have this hook; re-registration there would
                     // require a network-change callback from the node layer.
-                    match node.iroh_endpoint().await {
-                        Ok(ep) => {
-                            if let Err(err) =
-                                dashchat_node::mailbox::register_self_with_mailbox(&url, ep.addr()).await
-                            {
-                                log::warn!(
-                                    "Failed to register our addr with local mailbox {mailbox_id}: {err}"
-                                );
-                            }
-                        }
-                        Err(err) => log::warn!(
-                            "Could not get iroh endpoint to register with mailbox {mailbox_id}: {err}"
-                        ),
+                    if let Err(err) = node.register_with_mailbox(&url).await {
+                        log::warn!(
+                            "Failed to register our addr with local mailbox {mailbox_id}: {err}"
+                        );
                     }
                     log::info!(
                         "*** Registered local mailbox client via mdns: {mailbox_id} ({url}) ***",
