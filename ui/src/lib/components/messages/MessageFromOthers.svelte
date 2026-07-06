@@ -14,6 +14,7 @@
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -28,6 +29,7 @@
 		chatId,
 		sender,
 		showSenderName = false,
+		showAvatar = false,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -36,6 +38,7 @@
 		searchQuery: string;
 		sender: Profile | undefined;
 		showSenderName?: boolean;
+		showAvatar?: boolean;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -80,19 +83,32 @@
 	bind:this={messageEl}
 	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
 >
-	<Card
-		raised
-		contentWrapPadding="p-2"
-		class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
-	>
-		<MessageContent
-			{message}
-			{searchQuery}
-			senderName={senderDisplayName}
-			{showSenderName}
-			metadata={isLast ? metadata : undefined}
-		/>
-	</Card>
+	<div class="row items-end gap-2">
+		{#if showAvatar}
+			{#if isLast}
+				<Avatar
+					image={sender?.avatar}
+					initials={sender?.name.slice(0, 2)}
+					size="2rem"
+				/>
+			{:else}
+				<div class="shrink-0" style="width: 2rem"></div>
+			{/if}
+		{/if}
+		<Card
+			raised
+			contentWrapPadding="p-2"
+			class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+		>
+			<MessageContent
+				{message}
+				{searchQuery}
+				senderName={senderDisplayName}
+				{showSenderName}
+				metadata={isLast ? metadata : undefined}
+			/>
+		</Card>
+	</div>
 	{#if Object.keys(message.reactions).length > 0}
 		<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
 			<Reactions
