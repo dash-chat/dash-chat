@@ -2,9 +2,9 @@ name: E2E Tests
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, 'main-**', develop]
   pull_request:
-    branches: [main, develop]
+    branches: [main, 'main-**', develop]
 
 jobs:
   e2e:
