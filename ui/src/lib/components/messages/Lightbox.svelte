@@ -10,7 +10,7 @@
 	} from '@mdi/js';
 	import { darkOverlay } from '$lib/actions/dark-overlay';
 	import type { PhotoAttachment } from 'dash-chat-stores';
-	import { savePhoto, loadMediaBytes } from '$lib/utils/media';
+	import { savePhoto, loadMediaBytes, BlobLoadError } from '$lib/utils/media';
 	import { shareFile } from '$lib/utils/files';
 	import { isMobile, isAndroid } from '$lib/utils/environment';
 	import { showToast } from '$lib/utils/toasts';
@@ -50,9 +50,9 @@
 	let originX = $state(50);
 	let originY = $state(50);
 
-	let blobImages = $state<Array<{ retry: () => void } | undefined>>([]);
-	let statuses = $state<Record<number, 'loading' | 'loaded' | 'error'>>({});
-	const imgStatus = $derived(statuses[index] ?? 'loading');
+	let blobImages = $state<Array<{ retryIfErrored: () => boolean } | undefined>>(
+		[],
+	);
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
@@ -62,7 +62,8 @@
 		try {
 			if (await savePhoto(photo)) showToast(m.mediaSaved());
 		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
+			if (!(e instanceof BlobLoadError))
+				showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error(e);
 		}
 	}
@@ -72,7 +73,8 @@
 			const data = await loadMediaBytes(photo);
 			await shareFile(data, photo.name, photo.mime_type);
 		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
+			if (!(e instanceof BlobLoadError))
+				showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error(e);
 		}
 	}
@@ -106,10 +108,7 @@
 	}
 
 	function onStageClick(event: MouseEvent) {
-		if (imgStatus === 'error') {
-			blobImages[index]?.retry();
-			return;
-		}
+		if (blobImages[index]?.retryIfErrored()) return;
 		// Mobile: a tap toggles immersive mode (hide all chrome). Desktop: tapping
 		// the letterbox around the image (anything but the photo) closes.
 		if (isMobile) {
@@ -190,13 +189,12 @@
 				imgStyle={i === index
 					? `transform-origin: ${originX}% ${originY}%`
 					: ''}
-				onStatus={s => (statuses[i] = s)}
 			/>
 		{/snippet}
 	</ImageCarousel>
 
 	<div
-		class="lightbox-header absolute inset-x-0 top-0 flex items-center justify-between bg-black/40 px-3"
+		class="lightbox-header absolute inset-x-0 top-0 flex items-center justify-between bg-black/60 px-3"
 		class:faded={chromeHidden}
 	>
 		<div class="flex min-w-0 items-center gap-2">
@@ -267,7 +265,7 @@
 
 	{#if isMobile || photos.length > 1}
 		<div
-			class="lightbox-bottom-bar absolute inset-x-0 bottom-0 bg-black/40 pb-[env(safe-area-inset-bottom)]"
+			class="lightbox-bottom-bar absolute inset-x-0 bottom-0 bg-black/60 pb-[env(safe-area-inset-bottom)]"
 			class:faded={chromeHidden}
 		>
 			{#if photos.length > 1}

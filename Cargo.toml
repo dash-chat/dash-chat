@@ -22,44 +22,45 @@ serde_json = "1"
 tracing = "0.1"
 
 dashchat-compat = { path = "crates/dashchat-compat" }
+dashchat-utils = { path = "crates/dashchat-utils" }
 mailbox-client = { path = "crates/mailbox-client" }
 mailbox-server = { path = "crates/mailbox-server" }
 mailbox-local-server = { path = "crates/mailbox-local-server" }
 
-p2panda = { git = "https://github.com/maackle/p2panda", branch = "add-groups-to-node-extensions" }
-p2panda-auth = { git = "https://github.com/maackle/p2panda", branch = "add-groups-to-node-extensions", features = [
+p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
   "processor",
 ] }
-p2panda-core = { git = "https://github.com/maackle/p2panda", branch = "add-groups-to-node-extensions" }
-p2panda-net = { git = "https://github.com/maackle/p2panda", branch = "add-groups-to-node-extensions" }
-p2panda-store = { git = "https://github.com/maackle/p2panda", branch = "add-groups-to-node-extensions", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
   "sqlite",
 ] }
-p2panda-spaces = { git = "https://github.com/maackle/p2panda", branch = "add-groups-to-node-extensions", features = [
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
   "test_utils",
 ] }
 
 # iroh imports must match p2panda iroh dep version
-iroh = { version = "1.0.0-rc.1", default-features = false, features = [
+iroh = { version = "1.0.0", default-features = false, features = [
   "tls-ring",
 ] }
-iroh-blobs = "0.102.0"
+iroh-blobs = "0.103.0"
 
 [patch.crates-io]
-iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "102" }
+iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
 
 # Fork of p2panda (rev 92e7782 + one patch): clears the SQLite TransactionPermit
 # slot synchronously on drop (p2panda-store/src/sqlite.rs) so a cancelled rollback
 # task can't poison the store and abort the process. See the iOS push-extension /
 # shared-DB crash investigation.
 # [patch."https://github.com/p2panda/p2panda"]
-# p2panda = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-auth = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-core = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-store = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-spaces = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-net = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-stream = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-sync = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-discovery = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
-# p2panda-encryption = { git = "https://github.com/guillemcordoba/p2panda", branch = "dashchat" }
+# p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-sync = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-discovery = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }

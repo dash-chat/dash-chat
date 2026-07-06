@@ -10,17 +10,20 @@
 
 	let { photos, onPhotoClick }: Props = $props();
 
-	// Per-cell load state and component handles, so a click on a cell whose
-	// image hasn't loaded retries the download instead of opening the lightbox.
-	let statuses = $state<Record<number, 'loading' | 'loaded' | 'error'>>({});
-	const blobImages: Record<number, { retry: () => void }> = {};
+	// Cell component handles, so a click on a cell whose image failed to load
+	// retries the download instead of opening the lightbox.
+	const blobImages = $state<Record<number, { retryIfErrored: () => boolean }>>(
+		{},
+	);
+
+	// The 5th cell of a 6+ gallery is the "+N" overflow scrim — it stands for all
+	// the hidden photos, so it always opens the lightbox rather than retrying its
+	// own thumbnail.
+	const isOverflowCell = (index: number) => index === 4 && photos.length > 5;
 
 	function onCellClick(index: number, event: MouseEvent) {
-		if (statuses[index] === 'loaded') {
-			onPhotoClick(index, event);
-		} else {
-			blobImages[index]?.retry();
-		}
+		if (!isOverflowCell(index) && blobImages[index]?.retryIfErrored()) return;
+		onPhotoClick(index, event);
 	}
 </script>
 
@@ -32,14 +35,8 @@
 			aria-label={photo.name}
 			onclick={e => onCellClick(i, e)}
 		>
-			<BlobImage
-				bind:this={blobImages[i]}
-				item={photo}
-				alt={photo.name}
-				lazy
-				onStatus={s => (statuses[i] = s)}
-			/>
-			{#if i === 4 && photos.length > 5}
+			<BlobImage bind:this={blobImages[i]} item={photo} alt={photo.name} lazy />
+			{#if isOverflowCell(i)}
 				<div class="photo-overlay">+{photos.length - 5}</div>
 			{/if}
 		</button>
@@ -85,13 +82,25 @@
 	/* Floor the cell's size before the img exists (loading/error), so the overlay/retry box doesn't collapse. */
 	.attachment-photos:has(.photo-cell:only-child) .photo-cell {
 		min-width: 200px;
-		min-height: 50px;
+		min-height: 150px;
+	}
+
+	/* On error there's no <img> to size the container, so fit-content floors it
+	 * to 200px. When a wider caption stretches the bubble, that leaves a white
+	 * strip beside the grey placeholder — let it fill the bubble width instead.
+	 * The cell is a <button>, which shrinks to content, so it needs width:100%
+	 * to fill the stretched container too. */
+	.attachment-photos:has(.photo-cell:only-child):not(:has(img)) {
+		width: auto;
+	}
+	.attachment-photos:has(.photo-cell:only-child):not(:has(img)) .photo-cell {
+		width: 100%;
 	}
 
 	/* 2+ → a 300px-wide collage grid */
 	.attachment-photos:has(.photo-cell:nth-child(2)) {
 		display: grid;
-		gap: 1px;
+		gap: 2px;
 		width: 300px;
 	}
 

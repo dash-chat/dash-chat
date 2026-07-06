@@ -1,7 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
-
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
-import { ChatId, GroupInfo, OutgoingMedia } from '../types';
+import { ChatId, ChatReaction, GroupInfo, OutgoingMedia } from '../types';
+import { invokeAfterSetup } from '../utils/invoke-after-setup';
 
 export interface GroupMember {
 	agentId: AgentId;
@@ -23,6 +22,7 @@ export interface IGroupChatClient {
 		media: OutgoingMedia | null,
 	): Promise<Hash>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
+	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void>;
 
 	setInfo(chatId: ChatId, info: GroupInfo): Promise<void>;
 
@@ -32,14 +32,14 @@ export interface IGroupChatClient {
 
 export class GroupChatClient implements IGroupChatClient {
 	async getMembers(chatId: ChatId): Promise<GroupMember[]> {
-		return invoke('get_group_members', { chatId });
+		return invokeAfterSetup('get_group_members', { chatId });
 	}
 
 	async addMember(chatId: ChatId, member: AgentId): Promise<void> {
-		await invoke('add_group_member', { chatId, agentId: member });
+		await invokeAfterSetup('add_group_member', { chatId, agentId: member });
 	}
 	async removeMember(chatId: ChatId, member: AgentId): Promise<void> {
-		await invoke('remove_group_member', { chatId, agentId: member });
+		await invokeAfterSetup('remove_group_member', { chatId, agentId: member });
 	}
 
 	sendMessage(
@@ -47,17 +47,20 @@ export class GroupChatClient implements IGroupChatClient {
 		message: string,
 		media: OutgoingMedia | null,
 	): Promise<Hash> {
-		return invoke('send_message', {
+		return invokeAfterSetup('send_message', {
 			chatId,
 			message,
 			media,
 		});
 	}
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void> {
-		return invoke('mark_messages_read', { chatId, messageHashes });
+		return invokeAfterSetup('mark_messages_read', { chatId, messageHashes });
+	}
+	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void> {
+		return invokeAfterSetup('send_reaction', { chatId, content });
 	}
 	setInfo(chatId: ChatId, info: GroupInfo): Promise<void> {
-		return invoke('set_group_info', { chatId, info });
+		return invokeAfterSetup('set_group_info', { chatId, info });
 	}
 	async promoteToAdministrator(
 		chatId: ChatId,
@@ -69,7 +72,7 @@ export class GroupChatClient implements IGroupChatClient {
 	): Promise<void> {}
 
 	async leaveGroup(chatId: ChatId): Promise<void> {
-		await invoke('leave_group', { chatId });
+		await invokeAfterSetup('leave_group', { chatId });
 	}
 
 	async deleteGroup(): Promise<void> {}

@@ -50,6 +50,10 @@ pub(crate) enum Command {
         relay_url: RelayUrl,
         reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
     },
+    RegisterPeerAddr {
+        addr: iroh::EndpointAddr,
+        reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
+    },
     Shutdown {
         reply_tx: oneshot::Sender<()>,
     },
@@ -171,6 +175,10 @@ impl Actor {
                                 let _ = reply_tx.send(result);
 
                             },
+                            Command::RegisterPeerAddr { addr, reply_tx } => {
+                                let result = self.handle_register_peer_addr(addr).await;
+                                let _ = reply_tx.send(result);
+                            },
                             Command::Shutdown { reply_tx } => {
                                 // Drop self and then break out of the processing loop which will
                                 // cause the actor task to complete.
@@ -268,6 +276,32 @@ impl Actor {
         relay_url: RelayUrl,
     ) -> Result<(), NodeActorError> {
         self.inner.insert_bootstrap(node_id, relay_url).await?;
+        Ok(())
+    }
+
+    /// Insert (or refresh) a peer's dialing address in the p2panda address book.
+    ///
+    /// Always overwrites any existing entry: `insert_node_addr` replaces the
+    /// whole `NodeInfo`, resetting its metrics, so an entry marked "stale" by an
+    /// earlier failed dial — which `AddressBookDiscovery` then refuses to
+    /// resolve, leaving the peer undialable and, since the address book is
+    /// persisted, staying that way across restarts — is refreshed and becomes
+    /// dialable again. Callers only ever pass mailbox `/health` self-addresses
+    /// and addresses a user's opt-in local mailbox forwards, so there is no
+    /// untrusted address here to guard an existing entry against.
+    //
+    // KNOWN LIMITATION: a malicious client that registered this endpoint
+    // before p2panda discovered it via mDNS/gossip can continue to inject
+    // undialable addresses here (griefing). We cannot detect the upgrade
+    // from mailbox-discovered to node-discovered without a
+    // p2panda discovery hook;
+    // the iroh QUIC handshake prevents data from flowing to the wrong peer,
+    // so the worst case is wasted dial attempts.
+    async fn handle_register_peer_addr(
+        &mut self,
+        addr: iroh::EndpointAddr,
+    ) -> Result<(), NodeActorError> {
+        self.inner.insert_node_addr(addr).await?;
         Ok(())
     }
 

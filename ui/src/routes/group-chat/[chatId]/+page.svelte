@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { getContext } from 'svelte';
+	import { getContext, setContext } from 'svelte';
 	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
 	import type {
@@ -36,6 +36,7 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
+	setContext('messages-store', store);
 
 	const readTracker = createReadMessagesTracker(store);
 	const readMessageOnObserve = readTracker.observe;
@@ -244,7 +245,6 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
-														onToggleReaction={() => {}}
 													/>
 												</div>
 											{:else}
@@ -252,31 +252,22 @@
 													m.deviceIds.includes(message.author),
 												)}
 												<div
-													class="row items-end gap-2 self-start max-w-[85%]"
+													class="self-start max-w-[85%]"
 													data-message-hash={hash}
 													use:readMessageOnObserve={readHashes?.has(hash)
 														? null
 														: hash}
 												>
-													{#if position === 'last' || position === 'single'}
-														<Avatar
-															image={author?.profile?.avatar}
-															initials={author?.profile?.name.slice(0, 2)}
-															size="2rem"
-														/>
-													{:else}
-														<div class="shrink-0" style="width: 2rem"></div>
-													{/if}
 													<MessageFromOthers
 														{message}
 														{position}
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
-														onToggleReaction={() => {}}
 														sender={author?.profile}
 														showSenderName={position === 'first' ||
 															position === 'single'}
+														showAvatar
 													/>
 												</div>
 											{/if}

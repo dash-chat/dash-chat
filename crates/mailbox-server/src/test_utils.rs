@@ -26,7 +26,7 @@ pub fn create_test_db() -> (Database, NamedTempFile) {
 pub async fn test_blob_sync() -> BlobSync {
     let dir = tempfile::tempdir().expect("tempdir");
     let key = iroh::SecretKey::generate();
-    let bs = BlobSync::new(key, dir.path().to_path_buf())
+    let bs = BlobSync::new(key, dir.path().to_path_buf(), None)
         .await
         .expect("blob sync");
     std::mem::forget(dir);

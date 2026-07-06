@@ -1,4 +1,8 @@
-use mailbox_server::{test_utils::create_test_server, GetBlipsResponse};
+use mailbox_server::{
+    encode_mailbox_id,
+    test_utils::{create_test_server, test_blob_sync},
+    GetBlipsResponse,
+};
 use serde_json::json;
 
 #[tokio::test]
@@ -19,6 +23,19 @@ async fn test_health_check() {
         id.len(),
         43,
         "base64url no-pad endpoint_id should be 43 chars"
+    );
+
+    // The dialing address clients add to their address book must deserialize as
+    // an `iroh::EndpointAddr` and identify the same endpoint as `endpoint_id`.
+    // This is the wire contract the entire client-side dialability feature
+    // depends on; if it regresses, `fetch_mailbox_health` fails to parse and no
+    // mailbox is ever made dialable.
+    let endpoint_addr: iroh::EndpointAddr = serde_json::from_value(body["endpoint_addr"].clone())
+        .expect("endpoint_addr should deserialize as an iroh::EndpointAddr");
+    assert_eq!(
+        encode_mailbox_id(endpoint_addr.id),
+        id,
+        "endpoint_addr.id must match the advertised endpoint_id"
     );
 }
 
@@ -562,4 +579,17 @@ async fn test_no_missing_when_server_is_ahead() {
 
     // No missing since server is ahead
     assert!(topic_response.missing.is_empty());
+}
+
+#[tokio::test]
+async fn register_peer_returns_no_content() {
+    let (server, _temp_file) = create_test_server().await;
+    // Use a real BlobSync endpoint to obtain a well-formed EndpointAddr.
+    let peer = test_blob_sync().await;
+    let addr = peer.endpoint_addr();
+    server
+        .post("/peers/register")
+        .json(&serde_json::json!({ "addr": addr }))
+        .await
+        .assert_status_no_content();
 }

@@ -14,6 +14,15 @@
 	let { photos, index = $bindable(0), faded = false }: Props = $props();
 
 	let stripEl: HTMLElement | undefined = $state();
+	const thumbs = $state<Record<number, { retryIfErrored: () => boolean }>>({});
+
+	// A failed thumbnail shows a reload icon; clicking it retries the download
+	// (which re-fetches the main-stage image of the same blob too) and switches to
+	// that photo. A healthy thumb just switches — `retryIfErrored` no-ops.
+	function onThumbClick(i: number) {
+		thumbs[i]?.retryIfErrored();
+		index = i;
+	}
 
 	// Keep the active thumbnail centred as the selection changes.
 	$effect(() => {
@@ -27,7 +36,7 @@
 
 <div
 	bind:this={stripEl}
-	class="lightbox-filmstrip flex shrink-0 items-center justify-center gap-2 overflow-x-auto px-3 pt-2.5"
+	class="lightbox-filmstrip flex shrink-0 touch-pan-x items-center justify-center-safe gap-2 overflow-x-auto overscroll-x-contain px-3 pt-2.5"
 	class:faded
 	data-testid="lightbox-filmstrip"
 >
@@ -38,9 +47,10 @@
 			class:selected={i === index}
 			data-testid="lightbox-thumb-{i}"
 			aria-label={p.name}
-			onclick={() => (index = i)}
+			onclick={() => onThumbClick(i)}
 		>
 			<BlobImage
+				bind:this={thumbs[i]}
 				item={p}
 				alt={p.name}
 				imgClass="block h-full w-full object-cover"

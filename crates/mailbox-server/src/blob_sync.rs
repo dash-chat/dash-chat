@@ -5,9 +5,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use dashchat_utils::{fetch_loop, FetchConfig, FetchPool, NETWORK_ID};
 use futures::StreamExt;
+use iroh::address_lookup::memory::MemoryLookup;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 
@@ -106,11 +108,25 @@ impl FetchPool for BlobFetchPool {
 }
 
 #[derive(Clone)]
+enum PeerAddrRegistry {
+    /// Standalone server: lookup is wired directly into the iroh endpoint builder.
+    Memory(MemoryLookup),
+    /// Shared (in-process) server: iroh endpoint is p2panda's; addresses are
+    /// forwarded to the node's address book via an unbounded channel.
+    Channel(UnboundedSender<iroh::EndpointAddr>),
+}
+
+#[derive(Clone)]
 pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
     pub(crate) fetch_pool: BlobFetchPool,
     downloader: Downloader,
-    endpoint_id: iroh::EndpointId,
+    /// The iroh endpoint blobs are served from. Held both to keep a
+    /// standalone server's endpoint alive and to read its live [`EndpointAddr`]
+    /// (relay + direct addresses) for the `/health` response so clients can
+    /// dial this mailbox by its EndpointId. In the shared model this is a clone
+    /// of the in-process node's endpoint.
+    endpoint: iroh::Endpoint,
     fetch_config: FetchConfig,
     /// True when this BlobSync owns its blob store (standalone server) and is
     /// therefore responsible for GCing stored blobs. False when sharing an
@@ -118,17 +134,45 @@ pub struct BlobSync {
     enable_gc: bool,
     /// Held only when this BlobSync owns its iroh endpoint (standalone server).
     /// `None` when sharing an in-process node's endpoint, in which case the
-    /// node keeps the endpoint, router, and blob store alive.
-    _endpoint: Option<iroh::Endpoint>,
+    /// node keeps the router and blob store alive.
     _router: Option<Router>,
+    peer_addr_registry: PeerAddrRegistry,
 }
 
 impl BlobSync {
-    pub async fn new(secret_key: iroh::SecretKey, root: PathBuf) -> anyhow::Result<Self> {
-        let endpoint = iroh::Endpoint::builder(presets::N0)
+    /// Build a standalone mailbox BlobSync that owns its own iroh endpoint and
+    /// blob store. When `relay_url` is set the endpoint registers with that
+    /// relay so it is reachable behind NAT and its advertised [`EndpointAddr`]
+    /// includes the relay; the call waits (bounded) for the relay connection so
+    /// the first `/health` response carries a complete address.
+    pub async fn new(
+        secret_key: iroh::SecretKey,
+        root: PathBuf,
+        relay_url: Option<iroh::RelayUrl>,
+    ) -> anyhow::Result<Self> {
+        let peer_addr_lookup = MemoryLookup::new();
+        let mut builder = iroh::Endpoint::builder(presets::Minimal)
             .secret_key(secret_key)
-            .bind()
-            .await?;
+            .address_lookup(peer_addr_lookup.clone());
+        let has_relay = relay_url.is_some();
+        if let Some(relay_url) = relay_url {
+            builder = builder.relay_mode(iroh::RelayMode::Custom(iroh::RelayMap::from_iter([
+                relay_url,
+            ])));
+        }
+        let endpoint = builder.bind().await?;
+
+        // `endpoint.addr()` only includes the relay once the endpoint has
+        // connected to it, so wait for that before serving `/health`. Bounded
+        // so an unreachable relay can't block server startup indefinitely.
+        // Skipped when no relay is configured (e.g. tests): with the `Minimal`
+        // preset there is no default relay, so `online()` would never resolve.
+        dashchat_utils::endpoint::wait_endpoint_online(
+            has_relay,
+            &endpoint,
+            Duration::from_secs(10),
+        )
+        .await?;
 
         let db_path = root.join("blobs.db");
         let mut options = iroh_blobs::store::fs::options::Options::new(&root);
@@ -145,38 +189,39 @@ impl BlobSync {
         let router = Router::builder(endpoint.clone())
             .accept(mixed_alpn, blobs.clone())
             .spawn();
-        let endpoint_id = endpoint.id();
 
         Ok(Self {
             blobs,
             fetch_pool: BlobFetchPool::default(),
             downloader,
-            endpoint_id,
+            endpoint,
             fetch_config: FetchConfig::default(),
             enable_gc: true,
-            _endpoint: Some(endpoint),
             _router: Some(router),
+            peer_addr_registry: PeerAddrRegistry::Memory(peer_addr_lookup),
         })
     }
 
     /// Build a mailbox BlobSync that shares an existing iroh endpoint and blob
     /// store (the in-process node's) instead of creating its own. Relayed blobs
     /// land in the shared store and are served by the node's existing protocol,
-    /// so the mailbox's EndpointId is the node's EndpointId.
+    /// so the mailbox's EndpointId is the node's EndpointId and its advertised
+    /// `EndpointAddr` is the node's.
     pub fn shared(
         blobs: iroh_blobs::BlobsProtocol,
         downloader: Downloader,
-        endpoint_id: iroh::EndpointId,
+        endpoint: iroh::Endpoint,
+        peer_addr_tx: UnboundedSender<iroh::EndpointAddr>,
     ) -> Self {
         Self {
             blobs,
             fetch_pool: BlobFetchPool::default(),
             downloader,
-            endpoint_id,
+            endpoint,
             fetch_config: FetchConfig::default(),
             enable_gc: false,
-            _endpoint: None,
             _router: None,
+            peer_addr_registry: PeerAddrRegistry::Channel(peer_addr_tx),
         }
     }
 
@@ -192,7 +237,24 @@ impl BlobSync {
     }
 
     pub fn endpoint_id(&self) -> iroh::EndpointId {
-        self.endpoint_id
+        self.endpoint.id()
+    }
+
+    /// The endpoint's current dialing address (relay + direct addresses),
+    /// served via `/health` so clients can reach this mailbox by its EndpointId.
+    pub fn endpoint_addr(&self) -> iroh::EndpointAddr {
+        self.endpoint.addr()
+    }
+
+    /// Register a peer's dialing address so the blob downloader can reach it
+    /// by its EndpointId.
+    pub fn add_peer_addr(&self, addr: iroh::EndpointAddr) {
+        match &self.peer_addr_registry {
+            PeerAddrRegistry::Memory(lookup) => lookup.add_endpoint_info(addr),
+            PeerAddrRegistry::Channel(tx) => {
+                let _ = tx.send(addr);
+            }
+        }
     }
 
     pub fn fetch_pool(&self) -> &BlobFetchPool {
@@ -319,7 +381,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
         let expected = key.public();
-        let bs = BlobSync::new(key, dir.path().to_path_buf()).await.unwrap();
+        let bs = BlobSync::new(key, dir.path().to_path_buf(), None)
+            .await
+            .unwrap();
         assert_eq!(bs.endpoint_id(), expected);
     }
 

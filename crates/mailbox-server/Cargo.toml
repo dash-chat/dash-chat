@@ -27,11 +27,11 @@ base64 = "0.22"
 uuid = { version = "1.0", features = ["v7"] }
 clap = { version = "4.5", features = ["derive"] }
 push-notifications-client = { path = "../push-notifications-client" }
-dashchat-utils = { path = "../dashchat-utils" }
+dashchat-utils = { workspace = true }
 async-trait = "0.1"
 anyhow = "1"
-iroh = { version = "1.0.0-rc.1", default-features = false, features = ["tls-ring"] }
-iroh-blobs = "0.102.0"
+iroh = { version = "1.0.0", default-features = false, features = ["tls-ring"] }
+iroh-blobs = "0.103.0"
 
 [features]
 test_utils = ["dep:axum-test", "dep:tempfile"]
@@ -46,6 +46,7 @@ optional = true
 
 [dev-dependencies]
 mailbox-server = { path = ".", features = ["test_utils"] }
+iroh = { workspace = true }
 tempfile = "3.14"
 push-notifications-client = { path = "../push-notifications-client" }
 push-notifications-server = { path = "../push-notifications-server", features = ["test-utils"] }

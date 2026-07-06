@@ -1,7 +1,12 @@
-use dashchat_node::{topic::kind, Node, Topic};
+use dashchat_node::{topic::kind, Topic};
 use tauri::State;
 
+use crate::app_node::AppNode;
+
 #[tauri::command]
-pub fn my_device_group_topic(node: State<'_, Node>) -> Topic<kind::DeviceGroup> {
-    node.device_group_topic()
+pub async fn my_device_group_topic(
+    app_node: State<'_, AppNode>,
+) -> Result<Topic<kind::DeviceGroup>, String> {
+    let node = app_node.get().await?;
+    Ok(node.device_group_topic())
 }

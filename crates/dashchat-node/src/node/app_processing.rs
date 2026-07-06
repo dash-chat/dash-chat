@@ -330,15 +330,27 @@ impl Node {
                     use p2panda_store::topics::TopicStore;
                     let author = operation.header().verifying_key;
                     let log_id = operation.header.extensions.log_id;
-                    let topic = self.op_store.store.resolve_topic(&author, &log_id).await?;
-                    let Some(topic) = topic else {
-                        tracing::error!(operation = ?operation.hash.aliased(), "failed to resolve topic for operation");
-                        return Ok(());
-                    };
-                    if let Some(media) = m.media() {
+                    let topic = self
+                        .op_store
+                        .store
+                        .resolve_topic(&author, &log_id)
+                        .await?
+                        .ok_or_else(|| {
+                            anyhow!(format!("failed to resolve topic for operation. this is a bug. author: {:?}, log: {:?}", author.aliased(), log_id.aliased()))
+                        })?;
+
+                    if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                         let hashes: Vec<_> = media.iter().map(|item| item.hash).collect();
-                        self.blob_sync
-                            .delete_blobs(topic, author.into(), hashes)
+                        let is_own = DeviceId::from(author) == self.device_id();
+                        if let Err(err) = self
+                            .local_store
+                            .remove_unfetched_blobs_all_mailboxes(&hashes)
+                            .await
+                        {
+                            tracing::warn!(?err, "failed to clear unfetched blob rows on delete");
+                        }
+                        blob_sync
+                            .delete_blobs(topic, author.into(), operation.hash, hashes, is_own)
                             .await;
                     }
                 }
@@ -432,11 +444,11 @@ impl Node {
             }
 
             Payload::Chat(ChatPayload::Message(m)) => {
-                if let Some(media) = m.media() {
+                if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                     for item in media.iter() {
                         // TODO: revisit during ACID review (replay)
-                        self.blob_sync
-                            .add_to_fetch_pool(topic.into(), author, item.hash)
+                        blob_sync
+                            .add_to_fetch_pool(topic.into(), author, hash, item.hash)
                             .await?;
                     }
                 }
@@ -449,8 +461,7 @@ impl Node {
                 let chat_id = ChatId::from_topic_id(topic)?;
                 let valid_ops = self.valid_chat_ops(chat_id).await?;
                 let edit_ts: u64 = operation.processed().header().timestamp.into();
-                if let Err(err) =
-                    validate_edit(&valid_ops, edit_hash, device_id, edit_ts, Some(&hash))
+                if let Err(err) = validate_edit(&valid_ops, edit_hash, author, edit_ts, Some(&hash))
                 {
                     warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
                     return Ok(());
@@ -539,29 +550,46 @@ impl Node {
         // via a dedicated channel.
         if let Source::ExternalStream { .. } = source {
             let node_id: NodeId = operation.author().into();
-
-            // Only register the bootstrap if we didn't already do so.
-            if self
-                .registered_bootstraps
-                .lock()
-                .await
-                .insert((node_id, RELAY_URL.clone()))
-            {
-                debug!(node_id = %node_id, "add bootstrap node");
-                let (reply_tx, reply_rx) = oneshot::channel();
-                self.actor_tx
-                    .send(Command::RegisterBootstrap {
-                        node_id,
-                        relay_url: RELAY_URL.clone(),
-                        reply_tx,
-                    })
-                    .await
-                    .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
-
-                reply_rx.await??;
-            };
+            self.register_bootstrap_node(node_id).await?;
         }
 
+        Ok(())
+    }
+
+    /// Register a single node as a bootstrap (on the shared relay) so p2panda
+    /// discovery can reach it. Deduplicated so repeated calls are cheap. Used
+    /// both for mailbox-stream authors and for a freshly-scanned contact, the
+    /// latter letting two nodes connect directly over the internet (relay +
+    /// pkarr) without depending on a mutually-reachable mailbox.
+    pub(crate) async fn register_bootstrap_node(&self, node_id: NodeId) -> anyhow::Result<()> {
+        // In no-p2p mode we never register peers as bootstrap nodes, so direct
+        // iroh connections between Dash Chat clients are never established. All
+        // communication flows through mailbox servers.
+        if !self.config.enable_p2p {
+            return Ok(());
+        }
+
+        if !self
+            .registered_bootstraps
+            .lock()
+            .await
+            .insert((node_id, RELAY_URL.clone()))
+        {
+            return Ok(());
+        }
+
+        debug!(node_id = %node_id, "add bootstrap node");
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::RegisterBootstrap {
+                node_id,
+                relay_url: RELAY_URL.clone(),
+                reply_tx,
+            })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+
+        reply_rx.await??;
         Ok(())
     }
 

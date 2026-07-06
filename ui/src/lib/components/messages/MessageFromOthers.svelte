@@ -6,40 +6,50 @@
 		type DeviceId,
 		type MailboxTrackerStore,
 		type Message,
+		type MessagesStore,
 		type Profile,
 	} from 'dash-chat-stores';
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
+	import QuickReactionBar from './QuickReactionBar.svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
+	import { longpress } from '$lib/actions/longpress';
+	import { toggleReaction } from '$lib/utils/reactions';
 
 	let {
 		message,
 		position,
 		myDeviceId,
 		searchQuery,
-		onToggleReaction,
 		chatId,
 		sender,
 		showSenderName = false,
+		showAvatar = false,
 	}: {
 		message: Message;
 		position: MessagePosition;
 		myDeviceId: DeviceId;
 		chatId: ChatId;
 		searchQuery: string;
-		onToggleReaction: (emoji: string) => void;
 		sender: Profile | undefined;
 		showSenderName?: boolean;
+		showAvatar?: boolean;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
 	const senderDisplayName = $derived(
 		sender && sender.name ? fullName(sender) : m.unknownSender(),
 	);
+
+	const store: MessagesStore = getContext('messages-store');
+
+	let reactionsOpened = $state(false);
+	let messageEl = $state<HTMLElement>();
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
@@ -69,24 +79,53 @@
 	<MessageTimestamp timestamp={message.timestamp} class="quiet" />
 {/snippet}
 
-<Card
-	raised
-	contentWrapPadding="p-2"
-	class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+<div
+	bind:this={messageEl}
+	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
 >
-	<MessageContent
-		{message}
-		{searchQuery}
-		senderName={senderDisplayName}
-		{showSenderName}
-		metadata={isLast ? metadata : undefined}
-	/>
-</Card>
-{#if Object.keys(message.reactions).length}
-	<div class="flex justify-end -mt-1.5 mb-0.5 px-1">
-		<Reactions reactions={message.reactions} {myDeviceId} {onToggleReaction} />
+	<div class="row items-end gap-2">
+		{#if showAvatar}
+			{#if isLast}
+				<Avatar
+					image={sender?.avatar}
+					initials={sender?.name.slice(0, 2)}
+					size="2rem"
+				/>
+			{:else}
+				<div class="shrink-0" style="width: 2rem"></div>
+			{/if}
+		{/if}
+		<Card
+			raised
+			contentWrapPadding="p-2"
+			class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+		>
+			<MessageContent
+				{message}
+				{searchQuery}
+				senderName={senderDisplayName}
+				{showSenderName}
+				metadata={isLast ? metadata : undefined}
+			/>
+		</Card>
 	</div>
-{/if}
+	{#if Object.keys(message.reactions).length > 0}
+		<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
+			<Reactions
+				reactions={message.reactions}
+				{myDeviceId}
+				onToggleReaction={emoji =>
+					toggleReaction(store, message, myDeviceId, emoji)}
+			/>
+		</div>
+	{/if}
+</div>
+<QuickReactionBar
+	{message}
+	{myDeviceId}
+	bind:opened={reactionsOpened}
+	target={messageEl}
+/>
 
 <style>
 	:global(.others-message) {

@@ -3,7 +3,10 @@
 use aliased::Aliasing;
 use derive_more::derive::Constructor;
 use futures::Stream;
-use iroh_blobs::api::downloader::{Downloader, Shuffled};
+use iroh_blobs::api::downloader::Downloader;
+use iroh_blobs::provider::events::{
+    ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
+};
 use mailbox_client::manager::Mailboxes;
 use p2panda::operation::{LogId, Operation};
 use p2panda_store::{SqliteStore, topics::TopicStore};
@@ -24,12 +27,20 @@ use dashchat_utils::FetchPool;
 pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 
 use crate::{
-    AsBody, ChatPayload, DeviceId, Payload, TopicId, mailbox::MailboxOperation, stores::OpStore,
+    AsBody, ChatPayload, DeviceId, Payload, TopicId,
+    mailbox::MailboxOperation,
+    stores::{LocalStore, OpStore},
 };
 
 /// Drop a pending fetch entry after this many consecutive failed passes, so a
 /// permanently-unfetchable blob doesn't accumulate steady-state background work.
 const MAX_FETCH_FAILURES: u32 = 10;
+
+/// Placeholder used as the operation hash in blob tags when the real op hash is
+/// not yet known (e.g. media stored before its enclosing operation is created).
+/// Replaced by [`BlobSync::retag_blob`] once the real hash is available.
+/// On deletion, the sentinel tag is also attempted so crash-orphaned tags are GC'd.
+pub const SENTINEL_OP_HASH: p2panda::Hash = p2panda::Hash::from_bytes([111u8; 32]);
 
 /// Manages syncing blobs referenced in logs over iroh-blobs
 #[derive(Clone)]
@@ -46,9 +57,19 @@ impl BlobSync {
         root: PathBuf,
         blob_fetch: BlobFetchPool,
         sources: MixedSourceLookup,
+        local_store: LocalStore,
     ) -> anyhow::Result<Self> {
         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
-        let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+
+        let mask = EventMask {
+            connected: ConnectMode::Notify,
+            get: RequestMode::NotifyLog,
+            ..EventMask::DEFAULT
+        };
+        let (events, rx) = EventSender::channel(256, mask);
+        spawn_download_event_listener(rx, local_store);
+
+        let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events));
         let mixed_alpn =
             p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, endpoint.network_id());
         endpoint.accept(iroh_blobs::ALPN, blobs.clone()).await?;
@@ -112,11 +133,10 @@ impl BlobSync {
             return false;
         }
 
-        let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
         dashchat_utils::blob_sync::download_capped(
             &self.downloader,
             hash,
-            providers,
+            sources,
             attempt_timeout,
             &self.blobs,
         )
@@ -127,28 +147,30 @@ impl BlobSync {
         &self,
         topic: TopicId,
         author: DeviceId,
-        hash: iroh_blobs::Hash,
+        operation_hash: p2panda::Hash,
+        blob_hash: iroh_blobs::Hash,
     ) -> anyhow::Result<()> {
         // Protect the blob with the tag before fetching.
         // This is the right moment to do it, because if multiple authors
-
-        let tag_name = blob_tag_name(topic, author, hash);
-        self.blobs.store().tags().set(tag_name, hash).await?;
-        self.fetch_pool.add(topic, hash).await;
+        // publish the same blob, we want tags from each of them
+        let tag_name = blob_tag_name(topic, author, operation_hash, blob_hash);
+        self.blobs.store().tags().set(tag_name, blob_hash).await?;
+        self.fetch_pool.add(topic, blob_hash).await;
         Ok(())
     }
 
-    /// Store blob bytes and tag them with a name that encodes `(topic, hash)`
+    /// Store blob bytes and tag them with a name that encodes `(topic, author, hash)`
     /// so deletion can be scoped to a specific topic.
     pub async fn store_blob(
         &self,
         topic: TopicId,
         author: DeviceId,
+        operation_hash: p2panda::Hash,
         data: impl Into<bytes::Bytes>,
     ) -> anyhow::Result<iroh_blobs::Hash> {
         let tt = self.blobs.blobs().add_bytes(data).temp_tag().await?;
         let hash = tt.hash();
-        let tag_name = blob_tag_name(topic, author, hash);
+        let tag_name = blob_tag_name(topic, author, operation_hash, hash);
         self.blobs
             .store()
             .tags()
@@ -157,19 +179,47 @@ impl BlobSync {
         Ok(hash)
     }
 
-    /// Delete all tags for the given `(topic, hash)` pairs, allowing iroh's GC
-    /// to reclaim blob data that is no longer referenced by any topic.
+    /// Replace the sentinel-tagged entry for a blob with its real operation hash tag.
+    /// Called immediately after the enclosing operation is created.
+    pub async fn retag_blob(
+        &self,
+        topic: TopicId,
+        author: DeviceId,
+        operation_hash: p2panda::Hash,
+        blob_hash: iroh_blobs::Hash,
+    ) -> anyhow::Result<()> {
+        let tags = self.blobs.store().tags();
+        let real_tag = blob_tag_name(topic, author, operation_hash, blob_hash);
+        tags.set(real_tag, blob_hash).await?;
+        let sentinel_tag = blob_tag_name(topic, author, SENTINEL_OP_HASH, blob_hash);
+        tags.delete(sentinel_tag).await?;
+        Ok(())
+    }
+
+    /// Delete all tags for the given `(topic, author, operation_hash, blob_hash)` tuples,
+    /// allowing iroh's GC to reclaim data no longer referenced.
+    ///
+    /// Pass `also_delete_sentinel: true` when the author is self, to clean up any
+    /// sentinel-tagged entry left by a crash between `store_blob` and `retag_blob`.
     pub async fn delete_blobs(
         &self,
         topic: TopicId,
         author: DeviceId,
-        hashes: impl IntoIterator<Item = iroh_blobs::Hash>,
+        operation_hash: p2panda::Hash,
+        blob_hashes: impl IntoIterator<Item = iroh_blobs::Hash>,
+        also_delete_sentinel: bool,
     ) {
         let tags = self.blobs.store().tags();
-        for hash in hashes {
-            let tag_name = blob_tag_name(topic, author, hash);
+        for hash in blob_hashes {
+            let tag_name = blob_tag_name(topic, author, operation_hash, hash);
             if let Err(err) = tags.delete(tag_name).await {
                 tracing::warn!(?err, "failed to delete blob tag");
+            }
+            if also_delete_sentinel {
+                let sentinel_tag = blob_tag_name(topic, author, SENTINEL_OP_HASH, hash);
+                if let Err(err) = tags.delete(sentinel_tag).await {
+                    tracing::warn!(?err, "failed to delete sentinel blob tag");
+                }
             }
             self.fetch_pool.remove(topic, hash).await;
         }
@@ -209,11 +259,62 @@ impl BlobSync {
     }
 }
 
-fn blob_tag_name(topic: TopicId, author: DeviceId, hash: iroh_blobs::Hash) -> Vec<u8> {
-    let mut name = Vec::with_capacity(96);
+/// Consume provider events on this node's blob endpoint. When a remote endpoint
+/// finishes downloading a blob from us, drop the matching `unfetched_blob_hashes`
+/// row for that mailbox — the mailbox now has the blob.
+fn spawn_download_event_listener(
+    mut rx: tokio::sync::mpsc::Receiver<ProviderMessage>,
+    local_store: LocalStore,
+) {
+    tokio::spawn(async move {
+        let mut connections: HashMap<u64, iroh::EndpointId> = HashMap::new();
+        while let Some(msg) = rx.recv().await {
+            match msg {
+                ProviderMessage::ClientConnectedNotify(msg) => {
+                    if let Some(id) = msg.inner.endpoint_id {
+                        connections.insert(msg.inner.connection_id, id);
+                    }
+                }
+                ProviderMessage::ConnectionClosed(msg) => {
+                    connections.remove(&msg.inner.connection_id);
+                }
+                ProviderMessage::GetRequestReceivedNotify(msg) => {
+                    let hash = msg.inner.request.hash;
+                    let endpoint = connections.get(&msg.inner.connection_id).copied();
+                    let local_store = local_store.clone();
+                    let mut updates = msg.rx;
+                    tokio::spawn(async move {
+                        while let Ok(Some(update)) = updates.recv().await {
+                            if let RequestUpdate::Completed(_) = update {
+                                if let Some(endpoint) = endpoint {
+                                    let mailbox_id = mailbox_server::encode_mailbox_id(endpoint);
+                                    if let Err(err) =
+                                        local_store.remove_unfetched_blob(&mailbox_id, hash).await
+                                    {
+                                        tracing::error!(?err, %hash, "failed to clear unfetched blob after download");
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+                _ => {}
+            }
+        }
+    });
+}
+
+fn blob_tag_name(
+    topic: TopicId,
+    author: DeviceId,
+    operation_hash: p2panda::Hash,
+    blob_hash: iroh_blobs::Hash,
+) -> Vec<u8> {
+    let mut name = Vec::with_capacity(128);
     name.extend_from_slice(topic.as_bytes());
     name.extend_from_slice(author.as_bytes());
-    name.extend_from_slice(hash.as_bytes());
+    name.extend_from_slice(operation_hash.as_bytes());
+    name.extend_from_slice(blob_hash.as_bytes());
     name
 }
 
@@ -352,16 +453,20 @@ pub struct MixedSourceLookup {
 }
 
 impl MixedSourceLookup {
+    /// Return a list of providers for the blobs in a topic.
+    /// Mailboxes come first, then peer subscribers.
     pub async fn sources(&self, topic: TopicId) -> anyhow::Result<Vec<iroh::EndpointId>> {
         let log_id = LogId::from_topic(topic);
-        let mut sources = self
-            .op_store
-            .get_authors(log_id)
-            .await?
-            .into_iter()
-            .map(|author| iroh::EndpointId::from_bytes(author.as_bytes()))
-            .collect::<Result<Vec<iroh::EndpointId>, _>>()?;
+        let mut sources = vec![];
         sources.extend(self.mailboxes.get_sources(&topic).await?);
+        sources.extend(
+            self.op_store
+                .get_authors(log_id)
+                .await?
+                .into_iter()
+                .map(|author| iroh::EndpointId::from_bytes(author.as_bytes()))
+                .collect::<Result<Vec<iroh::EndpointId>, _>>()?,
+        );
         // Never dial ourselves (we already early-return when the blob is local),
         // and dedupe so a provider isn't dialed twice — redundant dials churn
         // iroh connection paths.
@@ -377,6 +482,155 @@ mod tests {
 
     fn hash(n: u8) -> iroh_blobs::Hash {
         iroh_blobs::Hash::new([n; 32])
+    }
+
+    /// Collect all persistent tag names from a blob store.
+    async fn list_tag_names(blobs: &iroh_blobs::BlobsProtocol) -> Vec<Vec<u8>> {
+        use tokio_stream::StreamExt;
+        let stream = blobs.store().tags().list().await.unwrap();
+        tokio::pin!(stream);
+        let mut names = vec![];
+        while let Some(Ok(info)) = stream.next().await {
+            names.push(info.name.0.to_vec());
+        }
+        names
+    }
+
+    async fn tag_count_for_hash(
+        blobs: &iroh_blobs::BlobsProtocol,
+        hash: iroh_blobs::Hash,
+    ) -> usize {
+        list_tag_names(blobs)
+            .await
+            .into_iter()
+            .filter(|name| name.ends_with(hash.as_bytes()))
+            .count()
+    }
+
+    #[cfg(feature = "testing")]
+    mod integration {
+        use super::*;
+        use crate::{NodeConfig, testing::TestNode, topic::TopicId};
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn two_authors_same_blob_get_distinct_tags() {
+            let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+            let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+            let topic = TopicId::random();
+            let operation_hash = p2panda::Hash::digest(b"test-op");
+            let data = b"shared-media-blob";
+
+            let hash_alice = alice
+                .blob_sync()
+                .store_blob(topic, alice.device_id(), operation_hash, data.as_ref())
+                .await
+                .unwrap();
+            let hash_bobbi = bobbi
+                .blob_sync()
+                .store_blob(topic, bobbi.device_id(), operation_hash, data.as_ref())
+                .await
+                .unwrap();
+
+            // Same content → same hash.
+            assert_eq!(hash_alice, hash_bobbi);
+
+            // Each node has exactly one tag for that hash (their own authorship tag).
+            assert_eq!(tag_count_for_hash(&alice.blobs(), hash_alice).await, 1);
+            assert_eq!(tag_count_for_hash(&bobbi.blobs(), hash_bobbi).await, 1);
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn deleting_alice_author_tag_leaves_one_tag_each() {
+            let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+            let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+            let topic = TopicId::random();
+            let op_hash = p2panda::Hash::digest(b"test-op");
+            let data = b"shared-media-blob";
+
+            // Both nodes store the same blob under their own authorship.
+            let hash = alice
+                .blob_sync()
+                .store_blob(topic, alice.device_id(), op_hash, data.as_ref())
+                .await
+                .unwrap();
+            alice
+                .blob_sync()
+                .store_blob(topic, bobbi.device_id(), op_hash, data.as_ref())
+                .await
+                .unwrap();
+            bobbi
+                .blob_sync()
+                .store_blob(topic, alice.device_id(), op_hash, data.as_ref())
+                .await
+                .unwrap();
+            bobbi
+                .blob_sync()
+                .store_blob(topic, bobbi.device_id(), op_hash, data.as_ref())
+                .await
+                .unwrap();
+
+            // Before deletion: two tags each.
+            assert_eq!(tag_count_for_hash(&alice.blobs(), hash).await, 2);
+            assert_eq!(tag_count_for_hash(&bobbi.blobs(), hash).await, 2);
+
+            // Delete alice's authorship tag on both nodes.
+            alice
+                .blob_sync()
+                .delete_blobs(topic, alice.device_id(), op_hash, [hash], false)
+                .await;
+            bobbi
+                .blob_sync()
+                .delete_blobs(topic, alice.device_id(), op_hash, [hash], false)
+                .await;
+
+            // One tag remains on each node (bobbi's).
+            assert_eq!(tag_count_for_hash(&alice.blobs(), hash).await, 1);
+            assert_eq!(tag_count_for_hash(&bobbi.blobs(), hash).await, 1);
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn deleting_both_author_tags_leaves_no_tags() {
+            let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+            let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+            let topic = TopicId::random();
+            let op_hash = p2panda::Hash::digest(b"test-op");
+            let data = b"gc-target-blob";
+
+            let hash = alice
+                .blob_sync()
+                .store_blob(topic, alice.device_id(), op_hash, data.as_ref())
+                .await
+                .unwrap();
+            alice
+                .blob_sync()
+                .store_blob(topic, bobbi.device_id(), op_hash, data.as_ref())
+                .await
+                .unwrap();
+            bobbi
+                .blob_sync()
+                .store_blob(topic, alice.device_id(), op_hash, data.as_ref())
+                .await
+                .unwrap();
+            bobbi
+                .blob_sync()
+                .store_blob(topic, bobbi.device_id(), op_hash, data.as_ref())
+                .await
+                .unwrap();
+
+            // Delete all tags on both nodes.
+            for node in [&alice, &bobbi] {
+                node.blob_sync()
+                    .delete_blobs(topic, alice.device_id(), op_hash, [hash], false)
+                    .await;
+                node.blob_sync()
+                    .delete_blobs(topic, bobbi.device_id(), op_hash, [hash], false)
+                    .await;
+            }
+
+            // No pinning tags remain — blob is eligible for GC on the next cycle.
+            assert_eq!(tag_count_for_hash(&alice.blobs(), hash).await, 0);
+            assert_eq!(tag_count_for_hash(&bobbi.blobs(), hash).await, 0);
+        }
     }
 
     #[tokio::test]

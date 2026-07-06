@@ -1,5 +1,10 @@
+use std::sync::Arc;
+
 use futures::StreamExt;
-use iroh_blobs::api::downloader::{DownloadProgressItem, Downloader, Shuffled};
+use iroh_blobs::api::downloader::{
+    ContentDiscovery, DownloadProgressItem, DownloadRequest, Downloader, FiniteRequest,
+    SplitStrategy,
+};
 use iroh_blobs::protocol::GetRequest;
 use tokio::time::Duration;
 
@@ -16,13 +21,26 @@ pub const MAX_BLOB_BYTES: u64 = 16 * 1024 * 1024;
 pub async fn download_capped(
     downloader: &Downloader,
     hash: iroh_blobs::Hash,
-    providers: Shuffled,
+    providers: impl ContentDiscovery,
     attempt_timeout: Duration,
     blobs: &iroh_blobs::BlobsProtocol,
 ) -> bool {
     let result = tokio::time::timeout(attempt_timeout, async {
+        let options = DownloadRequest {
+            // Media are single blobs, not hash-sequences. `GetRequest::blob`
+            // requests only the blob itself; `GetRequest::all` would additionally
+            // request the blob's hash-sequence children, which makes the provider
+            // parse the raw media bytes as a hash-seq and reset the stream with
+            // `ERR_INTERNAL` (`InvalidHashSeq`) — so the blob never transfers.
+            request: FiniteRequest::Get(GetRequest::blob(hash)),
+            providers: Arc::new(providers),
+            // `SplitStrategy::Split` routes the download through iroh-blobs'
+            // hash-seq path, which asserts the root size is a multiple of 32 and
+            // so always fails for a raw blob ("Size is not a multiple of 32").
+            strategy: SplitStrategy::None,
+        };
         let mut stream = downloader
-            .download(GetRequest::all(hash), providers)
+            .download_with_opts(options)
             .stream()
             .await
             .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;

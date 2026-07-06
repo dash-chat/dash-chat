@@ -62,6 +62,7 @@ Please read this coding style carefully and take it into account when planning o
 - Try to remain as simple as possible with your implementations.
 - Try to reuse types and functions across the project rather than reimplement them.
 - Don't use `any` or `unknown` typescript types. Instead, try to understand the actual typescript types and use them to infer the appropriate data structures and algorithms to use.
+- **Don't implicitly cast numbers to booleans.** In conditions (`if`, `{#if}`, `&&`, ternaries) compare numbers explicitly — write `arr.length > 0`, not `arr.length`; `count !== 0`, not `count`. Truthiness on a number silently treats `0` as false, which hides intent and is a common source of off-by-one/empty-state bugs. Use `!!value` only to coerce a genuinely non-numeric value (object/string) to a boolean.
 - Prefer Tailwind CSS utility classes over custom CSS styles whenever possible. Use inline `class` attributes with Tailwind classes instead of adding styles to `<style>` blocks.
 - **Write very few comments.** Default to none. The only two acceptable reasons to add a comment are:
   1. Documenting what a function does (a doc-comment on the function signature). Skip these for self-explanatory helpers whose name and signature already say everything.
@@ -189,7 +190,7 @@ The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tau
 
 **Frontend Patterns:**
 - Signalium for reactive state management
-- Tauri commands invoked via `invoke()` from `@tauri-apps/api`
+- **STRICT: All Tauri commands must be invoked via `invokeAfterSetup()` from `packages/stores/src/utils/invoke-after-setup.ts`, never `invoke()` from `@tauri-apps/api` directly.** At startup the webview can invoke node-backed commands before `async_setup` finishes managing the node; `invokeAfterSetup()` retries the transient "state not managed" error until the backend is ready. Importing `invoke` directly from `@tauri-apps/api/core` (outside `invoke-after-setup.ts` itself) is a defect — flag it in review.
 - UI built with Konsta UI components (mobile-first design)
 - Internationalization using @inlang/paraglide-js
 - Image compression before upload
@@ -412,6 +413,20 @@ cargo nextest run
 ```
 
 Run tests from workspace root. Tests use tokio async runtime.
+
+### Running Tests Against a Deployment Environment
+
+By default all tests use a local (in-memory or in-process) mailbox. Run the same suites against a deployment environment's cloud mailbox by setting `MAILBOX_URL` to that environment's mailbox. The `justfile` loads `.env.${ENV:-development}` via dotenv, so `ENV=<env>` selects the environment (whose `.env.<env>` defines `MAILBOX_URL`):
+
+```bash
+ENV=testing just test          # Rust suite
+ENV=testing just test e2e      # E2E suite
+```
+
+- **Rust**: tests build their mailbox via `TestMailbox::from_env()` (`crates/dashchat-node/src/testing/mailbox.rs`) and register it with `TestNode::add_mailbox(&mb)`. `MAILBOX_URL` unset → a fresh `MemMailbox`; set → a `ToyMailboxClient` for that mailbox, registered the way the production app does it (id from `/health`, address book entry, `/peers/register`). Don't use `MemMailbox::new()` directly in new tests.
+- **E2E**: when `MAILBOX_URL` is set, `wdio.conf.ts` skips spawning the local mailbox server and points the agents at it. Specs that drive the mailbox server's lifecycle (suspend/kill) skip themselves via `isRemoteMailbox()`.
+
+Allowed mailbox URLs are allowlisted as regex patterns in the repo-root `allowed-test-mailbox-url-patterns.json`, read by both suites (`TestMailbox::from_env` in Rust and `remoteMailboxUrl()` in `e2e-tests/setup/test-env.ts`); a `MAILBOX_URL` matching none of them fails fast so tests can never hit staging/production.
 
 ### Development Testing
 Use `pnpm start` to run two instances locally that can communicate with each other over the p2panda network.
