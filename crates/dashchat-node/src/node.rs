@@ -397,7 +397,8 @@ impl Node {
 
         // === network change notifier === //
 
-        let network_change_handle = crate::network_change_notifier::spawn(node.endpoint.clone());
+        let network_change_handle =
+            crate::network_change_notifier::spawn(node.endpoint.clone(), node.mailboxes.clone());
         node.network_change_handle
             .lock()
             .await
