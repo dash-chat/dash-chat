@@ -16,6 +16,7 @@ mod blip;
 mod blips_table;
 mod blob_sync;
 mod cleanup;
+mod compat_v018;
 mod get_blips;
 mod notify_topics_subscribers;
 mod reads;
@@ -89,8 +90,11 @@ impl AppState {
         Router::new()
             .route("/health", get(health_check))
             .route("/blips/store", post(store_blips))
-            .route("/blobs/store", post(store_blobs::store_blobs))
             .route("/blips/get", post(get_blips_for_topics))
+            // `/blobs/store` doubles as the 0.18 inline-blip store; the
+            // dispatch routes by body shape (see `compat_v018`).
+            .route("/blobs/store", post(compat_v018::store_blobs_dispatch))
+            .route("/blobs/get", post(compat_v018::get_blobs_v018))
             .route("/peers/register", post(register_peer::register_peer))
             .layer(CorsLayer::permissive())
             .layer(TraceLayer::new_for_http())
