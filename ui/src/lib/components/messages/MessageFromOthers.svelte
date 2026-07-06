@@ -11,6 +11,7 @@
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import Reactions from './Reactions.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { longpress } from '$lib/actions/longpress';
@@ -23,6 +24,8 @@
 		searchQuery,
 		chatId,
 		sender,
+		showAvatar = false,
+		avatar,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -30,6 +33,8 @@
 		chatId: ChatId;
 		searchQuery: string;
 		sender?: { name: string; color: string };
+		showAvatar?: boolean;
+		avatar?: { image?: string; initials?: string };
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -67,34 +72,47 @@
 	bind:this={messageEl}
 	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
 >
-	<Card
-		raised
-		contentWrapPadding="p-2"
-		class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
-	>
-		{#if sender}
-			<div
-				class="mx-1 mb-0.5 text-sm font-semibold text-start"
-				style="color: {sender.color}"
-				data-testid="group-message-sender-name"
-			>
-				{sender.name}
-			</div>
-		{/if}
-		<div class="row gap-2 mx-1" style="align-items: end">
-			<span class="flex-1">
-				{#if searchQuery}
-					{@html highlightMatch(message.content, searchQuery)}
-				{:else}
-					{message.content}
-				{/if}
-			</span>
-
+	<div class="row items-end gap-2">
+		{#if showAvatar}
 			{#if isLast}
-				<MessageTimestamp timestamp={message.timestamp} class="quiet" />
+				<Avatar
+					image={avatar?.image}
+					initials={avatar?.initials}
+					style="--size: 2rem"
+				/>
+			{:else}
+				<div class="shrink-0" style="width: 2rem"></div>
 			{/if}
-		</div>
-	</Card>
+		{/if}
+		<Card
+			raised
+			contentWrapPadding="p-2"
+			class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+		>
+			{#if sender}
+				<div
+					class="mx-1 mb-0.5 text-sm font-semibold text-start"
+					style="color: {sender.color}"
+					data-testid="group-message-sender-name"
+				>
+					{sender.name}
+				</div>
+			{/if}
+			<div class="row gap-2 mx-1" style="align-items: end">
+				<span class="flex-1">
+					{#if searchQuery}
+						{@html highlightMatch(message.content, searchQuery)}
+					{:else}
+						{message.content}
+					{/if}
+				</span>
+
+				{#if isLast}
+					<MessageTimestamp timestamp={message.timestamp} class="quiet" />
+				{/if}
+			</div>
+		</Card>
+	</div>
 	{#if Object.keys(message.reactions).length > 0}
 		<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
 			<Reactions

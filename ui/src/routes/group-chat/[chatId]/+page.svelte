@@ -255,21 +255,12 @@
 													m.deviceIds.includes(message.author),
 												)}
 												<div
-													class="row items-end gap-2 self-start max-w-[85%]"
+													class="self-start max-w-[85%]"
 													data-message-hash={hash}
 													use:readMessageOnObserve={readHashes?.has(hash)
 														? null
 														: hash}
 												>
-													{#if position === 'last' || position === 'single'}
-														<Avatar
-															image={author?.profile?.avatar}
-															initials={author?.profile?.name.slice(0, 2)}
-															style="--size: 2rem"
-														/>
-													{:else}
-														<div class="shrink-0" style="width: 2rem"></div>
-													{/if}
 													<MessageFromOthers
 														{message}
 														{position}
@@ -284,6 +275,11 @@
 																	color: senderColor(message.author),
 																}
 															: undefined}
+														showAvatar
+														avatar={{
+															image: author?.profile?.avatar,
+															initials: author?.profile?.name.slice(0, 2),
+														}}
 													/>
 												</div>
 											{/if}
