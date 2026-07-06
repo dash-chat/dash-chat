@@ -76,11 +76,51 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
 ) -> anyhow::Result<AbortOnDropHandle<()>> {
     let mdns: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
     log::info!("Started mdns browse for local mailboxes: {MDNS_SERVICE_TYPE}");
+    let on_registered = {
+        let node = node.clone();
+        move |mailbox_id: mailbox_client::MailboxId, url: String| {
+            let node = node.clone();
+            async move {
+                // Add the mailbox's dialing address to the address book so
+                // the blob downloader can reach it by EndpointId rather than
+                // relying solely on p2panda mDNS resolution timing.
+                match mailbox_client::fetch_mailbox_health(&url).await {
+                    Ok(health) => {
+                        if let Err(err) = node.insert_peer_addr(health.endpoint_addr).await {
+                            log::warn!(
+                                "Failed to add local mailbox {mailbox_id} addr to address book: {err}"
+                            );
+                        }
+                    }
+                    Err(err) => log::warn!(
+                        "Failed to fetch local mailbox {mailbox_id} health for address book: {err}"
+                    ),
+                }
+                // Tell the mailbox our own dialing address so its blob fetch
+                // pool can reach us as a source.
+                // NOTE: on network changes, mDNS re-browse fires a new
+                // ServiceResolved for each known mailbox, which re-runs this
+                // path and re-registers the updated EndpointAddr. Cloud
+                // mailboxes don't have this hook; re-registration there would
+                // require a network-change callback from the node layer.
+                if let Err(err) = node.register_with_mailbox(&url).await {
+                    log::warn!(
+                        "Failed to register our addr with local mailbox {mailbox_id}: {err}"
+                    );
+                }
+                log::info!(
+                    "*** Registered local mailbox client via mdns: {mailbox_id} ({url}) ***",
+                );
+            }
+        }
+    };
     let task = tokio::spawn(mailbox_mdns_discovery::discover_mailboxes_loop(
         mdns,
         MDNS_SERVICE_TYPE.to_string(),
         node.mailboxes.clone(),
         node.endpoint_id(),
+        node.unfetched_blob_tracker(),
+        on_registered,
     ));
     Ok(AbortOnDropHandle::new(task))
 }

@@ -50,6 +50,11 @@ const MIGRATIONS: &[&str] = &[
         op_hash BLOB NOT NULL,
         PRIMARY KEY (topic_id, op_hash)
     )",
+    "CREATE TABLE IF NOT EXISTS unfetched_blob_hashes (
+        blob_hash BLOB NOT NULL,
+        mailbox_id TEXT NOT NULL,
+        PRIMARY KEY (blob_hash, mailbox_id)
+    )",
 ];
 
 #[derive(Clone, Debug)]
@@ -414,6 +419,83 @@ impl LocalStore {
             })
             .collect()
     }
+
+    pub async fn add_unfetched_blobs(
+        &self,
+        mailbox_id: &str,
+        hashes: &[iroh_blobs::Hash],
+    ) -> anyhow::Result<()> {
+        for hash in hashes {
+            sqlx::query(
+                "INSERT OR IGNORE INTO unfetched_blob_hashes (blob_hash, mailbox_id) VALUES (?, ?)",
+            )
+            .bind(hash.as_bytes().to_vec())
+            .bind(mailbox_id)
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn remove_unfetched_blob(
+        &self,
+        mailbox_id: &str,
+        hash: iroh_blobs::Hash,
+    ) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM unfetched_blob_hashes WHERE mailbox_id = ? AND blob_hash = ?")
+            .bind(mailbox_id)
+            .bind(hash.as_bytes().to_vec())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn remove_unfetched_blobs(
+        &self,
+        mailbox_id: &str,
+        hashes: &[iroh_blobs::Hash],
+    ) -> anyhow::Result<()> {
+        for hash in hashes {
+            self.remove_unfetched_blob(mailbox_id, *hash).await?;
+        }
+        Ok(())
+    }
+
+    /// Remove every `unfetched_blob_hashes` row for these hashes across ALL
+    /// mailboxes. Called when a blob is deleted locally, so the followup task
+    /// stops re-announcing a hash this node can no longer serve.
+    pub async fn remove_unfetched_blobs_all_mailboxes(
+        &self,
+        hashes: &[iroh_blobs::Hash],
+    ) -> anyhow::Result<()> {
+        for hash in hashes {
+            sqlx::query("DELETE FROM unfetched_blob_hashes WHERE blob_hash = ?")
+                .bind(hash.as_bytes().to_vec())
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn unfetched_blobs_by_mailbox(
+        &self,
+    ) -> anyhow::Result<std::collections::BTreeMap<String, Vec<iroh_blobs::Hash>>> {
+        let rows: Vec<(Vec<u8>, String)> =
+            sqlx::query_as("SELECT blob_hash, mailbox_id FROM unfetched_blob_hashes")
+                .fetch_all(&self.pool)
+                .await?;
+        let mut out: std::collections::BTreeMap<String, Vec<iroh_blobs::Hash>> =
+            std::collections::BTreeMap::new();
+        for (bytes, mailbox_id) in rows {
+            let arr: [u8; 32] = bytes
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("unfetched blob_hash is not 32 bytes"))?;
+            out.entry(mailbox_id)
+                .or_default()
+                .push(iroh_blobs::Hash::from_bytes(arr));
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
@@ -490,6 +572,67 @@ mod tests {
             store.tombstoned_hashes(topic_a).await.unwrap(),
             maplit::btreeset![hash1, hash2]
         );
+    }
+
+    #[tokio::test]
+    async fn test_unfetched_blob_hashes_crud() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_unfetched.db");
+        let store = LocalStore::new(&path).await.unwrap();
+
+        let mbx_a = "mailbox-a";
+        let mbx_b = "mailbox-b";
+        let h1 = iroh_blobs::Hash::new([1; 32]);
+        let h2 = iroh_blobs::Hash::new([2; 32]);
+
+        store.add_unfetched_blobs(mbx_a, &[h1, h2]).await.unwrap();
+        store.add_unfetched_blobs(mbx_b, &[h1]).await.unwrap();
+        // Idempotent insert.
+        store.add_unfetched_blobs(mbx_a, &[h1]).await.unwrap();
+
+        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
+        assert_eq!(by_mailbox.get(mbx_a).unwrap().len(), 2);
+        assert_eq!(by_mailbox.get(mbx_b).unwrap(), &vec![h1]);
+
+        // Removing h1 from mailbox-a leaves h2 for a, and does not touch mailbox-b.
+        store.remove_unfetched_blob(mbx_a, h1).await.unwrap();
+        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
+        assert_eq!(by_mailbox.get(mbx_a).unwrap(), &vec![h2]);
+        assert_eq!(by_mailbox.get(mbx_b).unwrap(), &vec![h1]);
+
+        // Bulk remove.
+        store.remove_unfetched_blobs(mbx_a, &[h2]).await.unwrap();
+        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
+        assert!(by_mailbox.get(mbx_a).is_none());
+
+        // Persists across reopen.
+        drop(store);
+        let store = LocalStore::new(&path).await.unwrap();
+        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
+        assert_eq!(by_mailbox.get(mbx_b).unwrap(), &vec![h1]);
+    }
+
+    #[tokio::test]
+    async fn test_remove_unfetched_blobs_all_mailboxes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_unfetched_all.db");
+        let store = LocalStore::new(&path).await.unwrap();
+
+        let h1 = iroh_blobs::Hash::new([1; 32]);
+        let h2 = iroh_blobs::Hash::new([2; 32]);
+        store.add_unfetched_blobs("mbx-a", &[h1, h2]).await.unwrap();
+        store.add_unfetched_blobs("mbx-b", &[h1]).await.unwrap();
+
+        // Removing h1 across all mailboxes clears it from both mbx-a and mbx-b,
+        // but leaves h2 (still needed by mbx-a).
+        store
+            .remove_unfetched_blobs_all_mailboxes(&[h1])
+            .await
+            .unwrap();
+
+        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
+        assert_eq!(by_mailbox.get("mbx-a").unwrap(), &vec![h2]);
+        assert!(by_mailbox.get("mbx-b").is_none());
     }
 
     #[tokio::test]

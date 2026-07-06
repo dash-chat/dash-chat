@@ -15,7 +15,7 @@ use mailbox_client::MailboxClient;
 use crate::{
     AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
     filesystem::Filesystem, mailbox::MailboxOperation, node::Node, stores::LocalStore,
-    testing::behavior::Behavior, topic::TopicId,
+    testing::TestMailbox, testing::behavior::Behavior, topic::TopicId,
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::Debug)]
@@ -112,6 +112,11 @@ impl TestNode {
 
     pub async fn add_mailbox_client(&self, mailbox: impl MailboxClient<MailboxOperation>) -> Self {
         self.node.mailboxes.register(mailbox).await;
+        self.clone()
+    }
+
+    pub async fn add_mailbox(&self, mailbox: &TestMailbox) -> Self {
+        mailbox.register_on(&self.node).await;
         self.clone()
     }
 
@@ -215,6 +220,15 @@ impl Default for PollConfig {
 }
 
 impl PollConfig {
+    pub fn seconds(seconds: u64) -> Self {
+        let poll_timeout = Duration::from_secs(seconds);
+        let poll_interval = poll_timeout / 10;
+        Self {
+            poll_interval,
+            poll_timeout,
+        }
+    }
+
     pub async fn consistency(
         &self,
         nodes: impl IntoIterator<Item = &TestNode>,

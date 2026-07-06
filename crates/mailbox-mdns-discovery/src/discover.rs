@@ -1,31 +1,40 @@
 //! Browse for mailbox services on the LAN, TCP-probe the resolved addresses,
 //! and register each reachable peer into a [`Mailboxes`] manager.
 
+use std::future::Future;
 use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use mailbox_client::manager::Mailboxes;
 use mailbox_client::store::MailboxStore;
 use mailbox_client::toy::{ToyItemTraits, ToyMailboxClient};
-use mailbox_client::{MailboxItem, OptionalItemTraits};
+use mailbox_client::{MailboxId, MailboxItem, OptionalItemTraits, UnfetchedBlobTracker};
 use mdns_sd::{ResolvedService, ScopedIp, ServiceDaemon, ServiceEvent};
 
 /// Browse the LAN for mailboxes and register each reachable peer directly into
 /// `mailboxes` (as a [`ToyMailboxClient`] reachable at its URL), unregistering it
 /// on removal; runs until cancelled. `our_endpoint` is our own iroh id, used as
-/// the client's `sender_pubkey`. Re-issues the browse when network interfaces
-/// change (the browse receiver is bound to the interface set present at
-/// `browse()` time).
-pub async fn discover_mailboxes_loop<Item, Store>(
+/// the client's `sender_pubkey`; `tracker` receives the client's unfetched
+/// blob-hash bookkeeping. `on_registered(mailbox_id, url)` runs after each
+/// (re-)registration so callers can do their own per-mailbox setup (e.g. the
+/// app adds the mailbox's dialing address to its address book and registers its
+/// own address back). Re-issues the browse when network interfaces change (the
+/// browse receiver is bound to the interface set present at `browse()` time).
+pub async fn discover_mailboxes_loop<Item, Store, F, Fut>(
     daemon: ServiceDaemon,
     service_type: String,
     mailboxes: Mailboxes<Item, Store>,
     our_endpoint: iroh::EndpointId,
+    tracker: Arc<dyn UnfetchedBlobTracker>,
+    on_registered: F,
 ) where
     Item: MailboxItem,
     Store: MailboxStore<Item>,
     Item::Topic: ToyItemTraits + OptionalItemTraits,
     Item::Author: ToyItemTraits,
+    F: Fn(MailboxId, String) -> Fut + Clone + Send + Sync + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
 {
     let mut watcher = match if_watch::tokio::IfWatcher::new() {
         Ok(w) => w,
@@ -40,7 +49,7 @@ pub async fn discover_mailboxes_loop<Item, Store>(
             Ok(receiver) => {
                 log::info!("Started mDNS browse for {service_type}");
                 tokio::select! {
-                    _ = handle_browse_events(receiver, mailboxes.clone(), our_endpoint) => {
+                    _ = handle_browse_events(receiver, mailboxes.clone(), our_endpoint, tracker.clone(), on_registered.clone()) => {
                         log::warn!("mDNS browse event stream ended");
                         return;
                     }
@@ -64,15 +73,19 @@ pub async fn discover_mailboxes_loop<Item, Store>(
     }
 }
 
-async fn handle_browse_events<Item, Store>(
+async fn handle_browse_events<Item, Store, F, Fut>(
     receiver: mdns_sd::Receiver<ServiceEvent>,
     mailboxes: Mailboxes<Item, Store>,
     our_endpoint: iroh::EndpointId,
+    tracker: Arc<dyn UnfetchedBlobTracker>,
+    on_registered: F,
 ) where
     Item: MailboxItem,
     Store: MailboxStore<Item>,
     Item::Topic: ToyItemTraits + OptionalItemTraits,
     Item::Author: ToyItemTraits,
+    F: Fn(MailboxId, String) -> Fut + Clone + Send + Sync + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
 {
     while let Ok(event) = receiver.recv_async().await {
         match event {
@@ -81,6 +94,8 @@ async fn handle_browse_events<Item, Store>(
                     instance_name_from_fullname(&resolved.fullname, &resolved.ty_domain);
                 let port = resolved.port;
                 let mailboxes = mailboxes.clone();
+                let tracker = tracker.clone();
+                let on_registered = on_registered.clone();
                 // Probe + register off the event loop so a slow/unreachable peer
                 // can't stall it.
                 tokio::spawn(async move {
@@ -90,8 +105,14 @@ async fn handle_browse_events<Item, Store>(
                     };
                     let url = format!("http://{host}:{port}");
                     mailboxes
-                        .register(ToyMailboxClient::new(mailbox_id, url, our_endpoint))
+                        .register(ToyMailboxClient::new(
+                            mailbox_id.clone(),
+                            url.clone(),
+                            our_endpoint,
+                            tracker,
+                        ))
                         .await;
+                    on_registered(mailbox_id, url).await;
                 });
             }
             ServiceEvent::ServiceRemoved(ty_domain, fullname) => {

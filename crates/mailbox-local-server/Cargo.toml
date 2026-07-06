@@ -7,6 +7,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [dependencies]
+dashchat-utils = { workspace = true }
 mailbox-server = { workspace = true }
 mailbox-mdns-discovery = { workspace = true }
 anyhow = "1"

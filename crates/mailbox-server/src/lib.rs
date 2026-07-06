@@ -22,6 +22,7 @@ mod reads;
 mod register_peer;
 mod server_key;
 mod store_blips;
+mod store_blobs;
 mod watermark;
 mod watermarks_table;
 
@@ -45,6 +46,7 @@ pub use reads::{blips_since, log_heights_for_topic};
 pub use register_peer::RegisterPeerRequest;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest};
+pub use store_blobs::{record_blob_sources, store_blobs, StoreBlobsRequest, StoreBlobsResponse};
 pub use tokio_util::task::TaskTracker;
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
@@ -87,6 +89,7 @@ impl AppState {
         Router::new()
             .route("/health", get(health_check))
             .route("/blips/store", post(store_blips))
+            .route("/blobs/store", post(store_blobs::store_blobs))
             .route("/blips/get", post(get_blips_for_topics))
             .route("/peers/register", post(register_peer::register_peer))
             .layer(CorsLayer::permissive())
@@ -233,13 +236,13 @@ impl MailboxServer {
 }
 
 #[derive(Serialize, Deserialize)]
-struct HealthResponse {
-    status: String,
-    endpoint_id: String,
+pub struct HealthResponse {
+    pub status: String,
+    pub endpoint_id: String,
     /// The mailbox endpoint's dialing address (relay + direct addresses), so
     /// clients can add it to their p2panda address book and dial this mailbox
     /// by its EndpointId rather than only knowing the bare id.
-    endpoint_addr: iroh::EndpointAddr,
+    pub endpoint_addr: iroh::EndpointAddr,
 }
 
 fn db_path_blobs_dir(db_path: &std::path::Path) -> std::path::PathBuf {

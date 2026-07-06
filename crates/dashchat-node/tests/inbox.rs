@@ -1,6 +1,4 @@
 use dashchat_node::{testing::*, *};
-use mailbox_client::mem::MemMailbox;
-use p2panda::network::MdnsDiscoveryMode;
 
 const TRACING_FILTER: [&str; 5] = [
     "inbox=info",
@@ -14,14 +12,14 @@ const TRACING_FILTER: [&str; 5] = [
 async fn test_inbox_2() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(NodeConfig::testing(), "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     println!("nodes:");
@@ -30,7 +28,7 @@ async fn test_inbox_2() {
 
     // @TODO: comment out unsupported feature for now.
     // #[cfg(feature = "p2p")]
-    // introduce_and_wait([&alice.network, &bobbi.network]).await;
+    // introduce([&alice.network, &bobbi.network]).await;
 
     println!("peers see each other");
 
@@ -57,18 +55,11 @@ async fn test_inbox_2() {
 async fn test_p2p_inbox_2() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
-    let network_id = p2panda::Topic::random();
+    let config = NodeConfig::testing();
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config, "bobbi").await;
 
-    let mut alice_config = NodeConfig::testing();
-    alice_config.network_id = network_id.into();
-    alice_config.mdns_mode = MdnsDiscoveryMode::Active;
-
-    let mut bobbi_config = NodeConfig::testing();
-    bobbi_config.network_id = network_id.into();
-    bobbi_config.mdns_mode = MdnsDiscoveryMode::Active;
-
-    let alice = TestNode::new(alice_config, "alice").await;
-    let bobbi = TestNode::new(bobbi_config, "bobbi").await;
+    introduce_peers([&alice, &bobbi]).await.unwrap();
 
     alice
         .behavior()
