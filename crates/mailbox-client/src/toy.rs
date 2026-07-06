@@ -95,24 +95,28 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         }
     }
 
-    /// Attach a blob-bytes source so `publish` pushes blob bytes straight to the
-    /// mailbox (best-effort) before announcing their hashes. Without a reader the
-    /// client only announces hashes and the mailbox fetches the bytes from us.
+    /// Attach a blob-bytes source so `publish` streams blob bytes to the mailbox
+    /// (best-effort, in a spawned task) after announcing their hashes. Without a
+    /// reader the client only announces hashes and the mailbox fetches the bytes
+    /// from us.
     pub fn with_blob_reader(mut self, blob_reader: std::sync::Arc<dyn crate::BlobReader>) -> Self {
         self.blob_reader = Some(blob_reader);
         self
     }
 
-    /// Push blob bytes to the mailbox immediately (best-effort), then announce
-    /// their hashes and reconcile the unfetched tracker: record hashes the
-    /// mailbox still needs, remove any it already has. The announce always runs,
-    /// so any blob that failed to upload is still fetched by the mailbox and
-    /// retried by the followup task.
+    /// Announce blob hashes to the mailbox and reconcile the unfetched tracker,
+    /// then push the bytes the mailbox still needs in a detached best-effort task.
+    ///
+    /// The announce goes first and is awaited: it is what atomically locks in the
+    /// publish (the mailbox now knows to fetch these hashes as a backstop). Only
+    /// then do we stream the bytes the mailbox reported it lacks — spawned, so a
+    /// batch of large blobs never stalls this per-mailbox publish iteration, and
+    /// scoped to `not_stored`, so we never re-upload blobs the mailbox already
+    /// holds.
     async fn store_blobs(&self, hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
         if hashes.is_empty() {
             return Ok(());
         }
-        self.upload_blobs(&hashes).await;
         let already_stored =
             send_store_blobs(&self.base_url, hashes.clone(), self.sender_pubkey).await?;
         let not_stored: Vec<_> = hashes
@@ -121,30 +125,43 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
             .collect();
         self.tracker.record(&self.id, &not_stored).await;
         self.tracker.remove(&self.id, &already_stored).await;
+        self.spawn_blob_upload(not_stored);
         Ok(())
     }
 
-    /// Best-effort: read each blob from the configured reader and upload its
-    /// bytes to the mailbox, one at a time (so at most one blob is held in
-    /// memory). Logs and continues past any read or upload error — the caller's
-    /// announce is the source of truth, so a missed upload just means the mailbox
-    /// fetches that blob instead. No-op when no reader is configured.
-    async fn upload_blobs(&self, hashes: &[iroh_blobs::Hash]) {
-        let Some(reader) = self.blob_reader.as_ref() else {
+    /// Spawn a detached best-effort task that streams each blob's bytes to the
+    /// mailbox, one at a time (so at most one blob is held in memory). Every blob
+    /// that uploads successfully is removed from the unfetched tracker (the
+    /// mailbox now holds it); anything that fails to read or upload is left in the
+    /// tracker for the followup task and fetched by the mailbox in the meantime.
+    /// No-op when no blob reader is configured.
+    fn spawn_blob_upload(&self, hashes: Vec<iroh_blobs::Hash>) {
+        let Some(reader) = self.blob_reader.clone() else {
             return;
         };
-        for hash in hashes {
-            let bytes = match reader.read_blob(*hash).await {
-                Ok(bytes) => bytes,
-                Err(err) => {
-                    tracing::warn!(%hash, ?err, "failed to read blob for upload; relying on announce");
-                    continue;
-                }
-            };
-            if let Err(err) = upload_blob(&self.base_url, bytes).await {
-                tracing::warn!(%hash, ?err, "blob upload failed; relying on announce");
-            }
+        if hashes.is_empty() {
+            return;
         }
+        let base_url = self.base_url.clone();
+        let id = self.id.clone();
+        let tracker = self.tracker.clone();
+        tokio::spawn(async move {
+            for hash in hashes {
+                let bytes = match reader.read_blob(hash).await {
+                    Ok(bytes) => bytes,
+                    Err(err) => {
+                        tracing::warn!(%hash, ?err, "failed to read blob for upload; relying on announce");
+                        continue;
+                    }
+                };
+                match upload_blob(&base_url, bytes).await {
+                    Ok(()) => tracker.remove(&id, &[hash]).await,
+                    Err(err) => {
+                        tracing::warn!(%hash, ?err, "blob upload failed; relying on announce");
+                    }
+                }
+            }
+        });
     }
 }
 
@@ -482,11 +499,10 @@ mod tests {
         let data = bytes::Bytes::from_static(b"a blob");
         let hash = iroh_blobs::Hash::new(&data);
 
-        // `/blobs/upload` records the pushed bytes; once uploaded, `/blobs/store`
-        // reports the announced hash as already stored.
+        // The mailbox has nothing yet, so the announce reports no `already_stored`
+        // and the client streams the bytes to `/blobs/upload` afterward.
         let uploaded: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         let uploaded_in_handler = uploaded.clone();
-        let uploaded_for_store = uploaded.clone();
         let app = axum::Router::new()
             .route(
                 "/blobs/upload",
@@ -502,14 +518,10 @@ mod tests {
             .route(
                 "/blobs/store",
                 axum::routing::post(
-                    move |axum::Json(req): axum::Json<mailbox_server::StoreBlobsRequest>| async move {
-                        let has_upload = !uploaded_for_store.lock().unwrap().is_empty();
-                        let already_stored = if has_upload {
-                            req.blob_hashes
-                        } else {
-                            Vec::new()
-                        };
-                        axum::Json(mailbox_server::StoreBlobsResponse { already_stored })
+                    |axum::Json(_req): axum::Json<mailbox_server::StoreBlobsRequest>| async move {
+                        axum::Json(mailbox_server::StoreBlobsResponse {
+                            already_stored: Vec::new(),
+                        })
                     },
                 ),
             );
@@ -529,6 +541,14 @@ mod tests {
         .with_blob_reader(std::sync::Arc::new(StubReader(data.clone())));
 
         client.store_blobs(vec![hash]).await.unwrap();
+
+        // The upload is spawned, so wait for the detached task to deliver it.
+        for _ in 0..100 {
+            if *uploaded.lock().unwrap() == data.to_vec() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
         assert_eq!(*uploaded.lock().unwrap(), data.to_vec());
     }
 }

@@ -25,11 +25,21 @@ const BLOB_GC_INTERVAL: Duration = Duration::from_secs(60 * 60);
 const MAX_FETCH_FAILURES: u32 = 10;
 /// Hard cap on pending fetch entries; arbitrary entries are dropped if exceeded.
 const MAX_POOL_SIZE: usize = 1_000;
+/// Grace period before the fetch pool will dial the source for a freshly
+/// announced hash. A publishing client streams the bytes to `/blobs/upload`
+/// right after announcing, so this window lets that upload land before the
+/// mailbox duplicates the transfer by fetching. Roughly the client's upload
+/// timeout.
+pub(crate) const FETCH_GRACE: Duration = Duration::from_secs(15);
 
 #[derive(Default)]
 struct PoolEntry {
     sources: BTreeSet<iroh::EndpointId>,
     failures: u32,
+    /// Earliest time this entry may be fetched, or `None` to fetch immediately.
+    /// Set when a hash is announced, to give a concurrent inline upload time to
+    /// arrive before the mailbox dials the source.
+    not_before: Option<tokio::time::Instant>,
 }
 
 #[derive(Clone, Default)]
@@ -40,6 +50,29 @@ pub struct BlobFetchPool {
 
 impl BlobFetchPool {
     pub async fn add_source(&self, hash: iroh_blobs::Hash, source: iroh::EndpointId) {
+        self.add_source_inner(hash, source, None).await;
+    }
+
+    /// Like [`add_source`](Self::add_source) but holds off fetching a *newly*
+    /// added hash until `delay` has passed, so a concurrent inline upload of the
+    /// same blob can land first. An already-pending entry keeps its existing
+    /// schedule (a re-announce never pushes a fetch further out).
+    pub(crate) async fn add_source_after(
+        &self,
+        hash: iroh_blobs::Hash,
+        source: iroh::EndpointId,
+        delay: Duration,
+    ) {
+        self.add_source_inner(hash, source, Some(tokio::time::Instant::now() + delay))
+            .await;
+    }
+
+    async fn add_source_inner(
+        &self,
+        hash: iroh_blobs::Hash,
+        source: iroh::EndpointId,
+        not_before: Option<tokio::time::Instant>,
+    ) {
         let mut map = self.entries.lock().await;
         if !map.contains_key(&hash) && map.len() >= MAX_POOL_SIZE {
             // Drop the first (lexicographically earliest) entry to stay within the cap.
@@ -47,7 +80,11 @@ impl BlobFetchPool {
                 map.remove(&oldest);
             }
         }
-        map.entry(hash).or_default().sources.insert(source);
+        let entry = map.entry(hash).or_insert_with(|| PoolEntry {
+            not_before,
+            ..Default::default()
+        });
+        entry.sources.insert(source);
         self.added.notify_one();
     }
 
@@ -59,9 +96,12 @@ impl BlobFetchPool {
         &self,
         tried: &HashSet<iroh_blobs::Hash>,
     ) -> Option<(iroh_blobs::Hash, Vec<iroh::EndpointId>)> {
+        let now = tokio::time::Instant::now();
         let map = self.entries.lock().await;
         map.iter()
-            .find(|(hash, _)| !tried.contains(*hash))
+            .find(|(hash, entry)| {
+                !tried.contains(*hash) && entry.not_before.is_none_or(|t| t <= now)
+            })
             .map(|(hash, entry)| (*hash, entry.sources.iter().copied().collect()))
     }
 
@@ -302,17 +342,37 @@ impl BlobSync {
         fetched
     }
 
-    /// Store a blob a client pushed directly (via `/blobs/store`) and protect it
+    /// Store a blob a client pushed directly (via `/blobs/upload`) and protect it
     /// for the retention window, returning its computed hash. Pushed and fetched
     /// blobs are tagged the same way so GC treats them alike. `add_bytes` streams
-    /// the data into the store and yields a temp tag; we swap that for a
-    /// retention tag before dropping it so the blob is never left untagged.
+    /// the data into the store (although each blob is fully loaded into memory)
+    /// and yields a temp tag; we swap that for a retention tag before dropping
+    /// it so the blob is never left untagged.
     pub async fn store_pushed_blob(&self, data: bytes::Bytes) -> anyhow::Result<iroh_blobs::Hash> {
         let temp_tag = self.blobs.add_bytes(data).temp_tag().await?;
         let hash = temp_tag.hash();
         self.protect_blob(hash).await;
         drop(temp_tag);
         Ok(hash)
+    }
+
+    /// Register `source` as a provider for `hash`, deferring the fetch by
+    /// [`FETCH_GRACE`] so a concurrent inline upload of the same blob can land
+    /// first and make the fetch unnecessary.
+    pub(crate) async fn add_delayed_fetch_source(
+        &self,
+        hash: iroh_blobs::Hash,
+        source: iroh::EndpointId,
+    ) {
+        self.fetch_pool
+            .add_source_after(hash, source, FETCH_GRACE)
+            .await;
+    }
+
+    /// Drop `hash` from the fetch pool: the mailbox now holds it (e.g. a client
+    /// just uploaded it) and no longer needs to fetch it.
+    pub(crate) async fn clear_pending_fetch(&self, hash: iroh_blobs::Hash) {
+        self.fetch_pool.remove(hash).await;
     }
 
     /// Tag a freshly stored blob so iroh's GC keeps it; the tag name embeds the
