@@ -307,10 +307,7 @@ impl BlobSync {
     /// blobs are tagged the same way so GC treats them alike. `add_bytes` streams
     /// the data into the store and yields a temp tag; we swap that for a
     /// retention tag before dropping it so the blob is never left untagged.
-    pub async fn store_pushed_blob(
-        &self,
-        data: bytes::Bytes,
-    ) -> anyhow::Result<iroh_blobs::Hash> {
+    pub async fn store_pushed_blob(&self, data: bytes::Bytes) -> anyhow::Result<iroh_blobs::Hash> {
         let temp_tag = self.blobs.add_bytes(data).temp_tag().await?;
         let hash = temp_tag.hash();
         self.protect_blob(hash).await;

@@ -546,6 +546,10 @@ Testing keyboard behavior and UI interactions in the iOS simulator has inherent 
 - **Mobile vs Desktop**: Code paths differ for mobile/desktop (check `#[cfg(mobile)]` and `#[cfg(not(mobile))]`)
 - **Internationalization**: UI supports multiple languages via Weblate integration
 
+### Notes for edits
+
+- Run `just format` before considering any code ready to commit.
+ 
 ## Build Configuration
 
 ### Development

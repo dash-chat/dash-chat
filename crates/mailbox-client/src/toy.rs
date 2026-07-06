@@ -98,10 +98,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     /// Attach a blob-bytes source so `publish` pushes blob bytes straight to the
     /// mailbox (best-effort) before announcing their hashes. Without a reader the
     /// client only announces hashes and the mailbox fetches the bytes from us.
-    pub fn with_blob_reader(
-        mut self,
-        blob_reader: std::sync::Arc<dyn crate::BlobReader>,
-    ) -> Self {
+    pub fn with_blob_reader(mut self, blob_reader: std::sync::Arc<dyn crate::BlobReader>) -> Self {
         self.blob_reader = Some(blob_reader);
         self
     }
