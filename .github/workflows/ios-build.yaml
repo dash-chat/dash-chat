@@ -7,7 +7,7 @@ on:
 
 jobs:
   ios-build:
-    runs-on: macos-latest
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
@@ -90,6 +90,6 @@ jobs:
 
       - name: Build iOS app for simulator (compile check)
         env:
-          IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+          IPHONEOS_DEPLOYMENT_TARGET: "17.0"
         run: |
           pnpm tauri ios build --debug --target aarch64-sim
