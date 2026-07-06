@@ -93,6 +93,8 @@ pub struct Node {
     stream_cancel: Option<mpsc::Sender<()>>,
     /// Join handle for the stream processing background task
     stream_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    /// Join handle for the network-change notifier background task
+    network_change_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 
     pub local_store: LocalStore,
     group_store: GroupStore,
@@ -164,12 +166,19 @@ impl Node {
             topic_subscribed_tx,
             stream_cancel: None,
             stream_handle: Arc::new(Mutex::new(None)),
+            network_change_handle: Arc::new(Mutex::new(None)),
         };
 
         let (cancel_tx, cancel_rx) = mpsc::channel(1);
         let handle = node.spawn_stream_process_loop(subscription_rx, cancel_rx);
         node.stream_cancel = Some(cancel_tx);
         node.stream_handle.lock().unwrap().replace(handle);
+
+        let network_change_handle = crate::network_change_notifier::spawn(node.mailboxes.clone());
+        node.network_change_handle
+            .lock()
+            .unwrap()
+            .replace(network_change_handle);
 
         node.initialize_stored_topics().await?;
 
@@ -645,6 +654,14 @@ impl Node {
 
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
+        // Await the aborted task so it can't wake mailboxes concurrently with
+        // the clear() below.
+        let network_change_handle = self.network_change_handle.lock().unwrap().take();
+        if let Some(handle) = network_change_handle {
+            handle.abort();
+            let _ = handle.await;
+        }
+
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
 

@@ -290,6 +290,14 @@ where
         _ = self.trigger.try_send(Some(id));
     }
 
+    /// Immediately activate and sync every registered mailbox, resetting any backoff.
+    pub async fn wakeup_all(&self) {
+        for tracked_mailbox in self.mailboxes.lock().await.values() {
+            tracked_mailbox.wakeup();
+        }
+        self.trigger_sync();
+    }
+
     pub async fn subscribe(
         &self,
         topic: Item::Topic,

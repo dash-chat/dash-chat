@@ -2,6 +2,7 @@ mod chat;
 mod contact;
 mod error;
 mod filesystem;
+mod network_change_notifier;
 pub mod node;
 mod payload;
 pub mod stores;
