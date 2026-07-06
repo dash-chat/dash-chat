@@ -48,7 +48,7 @@ export class DirectChatClient implements IDirectChatClient {
 	}
 
 	editMessage(chatId: ChatId, editHash: Hash, message: string): Promise<Hash> {
-		return invoke('edit_message', {
+		return invokeAfterSetup('edit_message', {
 			chatId,
 			editHash,
 			message,
