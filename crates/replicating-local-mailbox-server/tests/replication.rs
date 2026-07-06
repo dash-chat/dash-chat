@@ -28,7 +28,6 @@ async fn spawn_server() -> (LocalMailboxServer, tempfile::TempDir) {
         None,
         daemon,
         SERVICE_TYPE.to_string(),
-        None,
     )
     .await
     .expect("server starts");
@@ -45,7 +44,7 @@ async fn store_blip(url: &str, topic: &str, author: &str, seq: u64, payload: &[u
     blips.insert(topic.to_string(), authors);
     let request = StoreBlipsRequest {
         blips,
-        blob_hashes: vec![],
+
         sender_pubkey: None,
         signature: vec![],
     };
@@ -114,6 +113,7 @@ async fn blips_replicate_via_mailboxes() {
             server_a.mailbox.mailbox_id(),
             server_a.url(),
             server_b.mailbox.endpoint_id(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
 

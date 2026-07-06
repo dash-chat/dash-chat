@@ -1,43 +1,83 @@
-//! Smoke-test the blob-replication endpoint: a served mailbox exposes
-//! `/blobs/list`, and `peer_blob_hashes_to_fetch` round-trips it (teaching the
-//! caller the peer's iroh address and returning the hashes it lacks).
+//! Prove blob replication over the standard mailbox API: an announcer holding a
+//! blob registers its address (`/peers/register`) and announces the hash
+//! (`/blobs/store`) to a served mailbox, whose fetch loop then downloads the
+//! content from the announcer over iroh.
+
+use std::time::{Duration, Instant};
 
 use mailbox_local_server::LocalMailboxServer;
-use replicating_local_mailbox_server::blobs;
+use mailbox_server::{BlobSync, FetchConfig};
+use replicating_local_mailbox_server::blobs::announce_blobs_to_peer;
 
 const SERVICE_TYPE: &str = "_dashchat-test._tcp.local.";
 
-async fn spawn_server() -> (LocalMailboxServer, tempfile::TempDir) {
-    let dir = tempfile::tempdir().unwrap();
-    let daemon = mdns_sd::ServiceDaemon::new().unwrap();
-    let server = LocalMailboxServer::spawn(
-        dir.path().join("mailbox.redb"),
-        "127.0.0.1:0",
+#[tokio::test(flavor = "multi_thread")]
+async fn announced_blob_is_fetched_by_peer() {
+    // Receiver: a served mailbox with a fast fetch loop.
+    let receiver_dir = tempfile::tempdir().unwrap();
+    let receiver_blob_sync = BlobSync::new(
+        iroh::SecretKey::generate(),
+        receiver_dir.path().join("blobs"),
         None,
-        daemon,
+    )
+    .await
+    .unwrap()
+    .with_fetch_config(FetchConfig {
+        concurrency: 1,
+        pass_interval: Duration::from_millis(100),
+        attempt_timeout: Duration::from_secs(5),
+        retry_cooldown: Duration::from_millis(100),
+    });
+    let receiver_blobs = receiver_blob_sync.blobs.clone();
+    let server = LocalMailboxServer::spawn(
+        receiver_dir.path().join("mailbox.redb"),
+        "127.0.0.1:0",
+        Some(receiver_blob_sync),
+        mdns_sd::ServiceDaemon::new().unwrap(),
         SERVICE_TYPE.to_string(),
-        Some(blobs::router()),
     )
     .await
     .expect("server starts");
     mailbox_client::toy::wait_for_mailbox_health(&server.url()).await;
-    (server, dir)
-}
 
-#[tokio::test]
-async fn blobs_list_round_trips_and_reports_no_missing_blobs() {
-    let (peer, _peer_dir) = spawn_server().await;
-    let (local, _local_dir) = spawn_server().await;
+    // Announcer: a standalone endpoint holding one blob.
+    let announcer_dir = tempfile::tempdir().unwrap();
+    let announcer = BlobSync::new(
+        iroh::SecretKey::generate(),
+        announcer_dir.path().join("blobs"),
+        None,
+    )
+    .await
+    .unwrap();
+    let tag = announcer
+        .blobs
+        .add_bytes(b"announced-blob".to_vec())
+        .await
+        .unwrap();
+    let hash = tag.hash;
 
-    // The peer holds no blobs, so there is nothing for us to fetch — but the
-    // `/blobs/list` endpoint must still respond and carry the peer's addr.
     let client = reqwest::Client::new();
-    let wanted =
-        blobs::peer_blob_hashes_to_fetch(&client, &peer.url(), &local.mailbox.state.blob_sync)
-            .await
-            .expect("peer /blobs/list responds");
-    assert!(wanted.is_empty(), "peer has no blobs, so none are missing");
+    announce_blobs_to_peer(&client, &server.url(), &[hash], &announcer)
+        .await
+        .expect("announce succeeds");
 
-    peer.stop().await;
-    local.stop().await;
+    // The receiver's fetch loop downloads the blob from the announcer.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        if receiver_blobs.has(hash).await.unwrap_or(false) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "receiver did not fetch the announced blob in time"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // Re-announcing what the peer now holds is an idempotent no-op.
+    announce_blobs_to_peer(&client, &server.url(), &[hash], &announcer)
+        .await
+        .expect("re-announce succeeds");
+
+    server.stop().await;
 }

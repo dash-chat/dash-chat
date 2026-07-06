@@ -63,7 +63,6 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
         Some(blob_sync),
         mdns_sd::ServiceDaemon::new().unwrap(),
         "_dashchat-test._tcp.local.".to_string(),
-        None,
     )
     .await
     .unwrap();

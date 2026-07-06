@@ -5,8 +5,8 @@
 //! Discovery registers each LAN peer straight into the [`Mailboxes`] manager (as
 //! a [`ToyMailboxClient`]); the manager's bidirectional sync then pulls each
 //! peer's blips (persisted via the drain loop) and pushes ours. A blob loop
-//! mirrors referenced blobs, and an optional cloud URL bridges the LAN to a
-//! remote mailbox.
+//! announces our stored blobs to each peer so they fetch what they lack, and an
+//! optional cloud URL bridges the LAN to a remote mailbox.
 
 pub mod blobs;
 pub mod drain;
@@ -53,15 +53,9 @@ impl ReplicatingLocalMailboxServer {
         sync_interval: Duration,
         cloud_url: Option<String>,
     ) -> anyhow::Result<Self> {
-        let local = LocalMailboxServer::spawn(
-            db_path,
-            addr,
-            None,
-            daemon.clone(),
-            service_type.clone(),
-            Some(blobs::router()),
-        )
-        .await?;
+        let local =
+            LocalMailboxServer::spawn(db_path, addr, None, daemon.clone(), service_type.clone())
+                .await?;
         let db = Arc::clone(&local.mailbox.state.db);
         let our_endpoint = local.mailbox.endpoint_id();
         let self_store_url = format!("http://127.0.0.1:{}/blips/store", local.port());
@@ -79,12 +73,17 @@ impl ReplicatingLocalMailboxServer {
         let tasks = TaskTracker::new();
         let token = CancellationToken::new();
 
+        // No unfetched-blob bookkeeping or per-peer registration: the appliance
+        // replicates blobs via its own announce loop and its opaque blips carry
+        // no blob hashes.
         tasks.spawn(token.clone().run_until_cancelled_owned(
             mailbox_mdns_discovery::discover_mailboxes_loop(
                 daemon,
                 service_type,
                 mailboxes.clone(),
                 our_endpoint,
+                Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+                |_mailbox_id, _url| async {},
             ),
         ));
         tasks.spawn(
@@ -100,7 +99,7 @@ impl ReplicatingLocalMailboxServer {
         tasks.spawn(
             token
                 .clone()
-                .run_until_cancelled_owned(blobs::mirror_peer_blobs_loop(
+                .run_until_cancelled_owned(blobs::announce_blobs_loop(
                     mailboxes.clone(),
                     local.mailbox.state.blob_sync.clone(),
                     sync_interval,
@@ -170,6 +169,7 @@ async fn register_cloud_mailbox(
             health.endpoint_id,
             url.clone(),
             our_endpoint,
+            Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
     tracing::info!("Registered cloud mailbox at {url}");

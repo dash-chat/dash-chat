@@ -47,7 +47,6 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         Some(blob_sync),
         daemon,
         super::MDNS_SERVICE_TYPE.to_string(),
-        None,
     )
     .await?;
 

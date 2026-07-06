@@ -45,7 +45,7 @@ async fn store_items(
     // hashes: opaque blips carry none, and blobs are handled by the blob loop.
     let request = StoreBlipsRequest {
         blips,
-        blob_hashes: vec![],
+
         sender_pubkey: None,
         signature: vec![],
     };

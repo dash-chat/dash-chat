@@ -244,7 +244,6 @@ where
         let author: Item::Author = unstringify(s)?;
         Ok(author)
     }
-
 }
 
 pub fn stringify(value: impl Serialize) -> String {
