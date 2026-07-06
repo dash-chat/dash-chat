@@ -48,8 +48,6 @@ sqlx = "0.8.6"
 tempfile = { version = "3.24", optional = true }
 nanoid = { version = "0.4", optional = true }
 regex = { version = "1", optional = true }
-
-[target.'cfg(target_os = "android")'.dependencies]
 if-watch = { version = "3", features = ["tokio"] }
 
 [dev-dependencies]
