@@ -78,6 +78,13 @@ pub struct NodeConfig {
     /// as a fallback source, but with every discovery surface off it has no
     /// address to dial, so those attempts cannot connect.)
     pub enable_p2p: bool,
+    /// Whether to open the blob store and run blob sync. When disabled, all
+    /// media send/fetch/serve operations error. Independent of [`Self::enable_p2p`]:
+    /// `no_p2p` nodes still exchange media blobs through mailboxes over the iroh
+    /// endpoint. Only the iOS push extension disables this — it never touches
+    /// media, and opening the iroh-blobs `redb` metadata store would deadlock on
+    /// the exclusive single-process lock the always-on main app already holds.
+    pub enable_blob_sync: bool,
     pub blob_fetch: BlobFetchConfig,
 }
 
@@ -87,6 +94,12 @@ impl NodeConfig {
         self.mdns_mode = MdnsDiscoveryMode::Disabled;
         self.use_relay = false;
         self.enable_p2p = false;
+        self
+    }
+
+    /// Skip opening the blob store entirely; media operations become unavailable.
+    pub fn no_blob_sync(mut self) -> Self {
+        self.enable_blob_sync = false;
         self
     }
 
@@ -109,6 +122,7 @@ impl NodeConfig {
             mdns_mode: MdnsDiscoveryMode::Disabled,
             use_relay: false,
             enable_p2p: true,
+            enable_blob_sync: true,
             // Retry blob downloads quickly so tests don't wait on the
             // production-scale pass interval.
             blob_fetch: BlobFetchConfig {
@@ -131,6 +145,7 @@ impl Default for NodeConfig {
             mdns_mode: MdnsDiscoveryMode::Active,
             use_relay: true,
             enable_p2p: true,
+            enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
         }
     }
@@ -163,11 +178,11 @@ pub struct Node {
     node_keys: NodeKeys,
 
     filesystem: Filesystem,
-    /// `None` for `no_p2p` nodes (the iOS push extension), which only read the
-    /// operation to build a notification and never fetch media blobs. Skipping it
-    /// avoids opening the iroh-blobs `redb` metadata store — whose exclusive
-    /// single-process lock the always-on main app holds, which would otherwise
-    /// deadlock the extension's node build.
+    /// `None` when [`NodeConfig::enable_blob_sync`] is off (the iOS push
+    /// extension), which only reads the operation to build a notification and
+    /// never touches media blobs. Skipping it avoids opening the iroh-blobs
+    /// `redb` metadata store — whose exclusive single-process lock the always-on
+    /// main app holds, which would otherwise deadlock the extension's node build.
     blob_sync: Option<BlobSync>,
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     endpoint: p2panda::Endpoint,
@@ -288,12 +303,12 @@ impl Node {
 
         // === blob sync === //
 
-        // `no_p2p` nodes (the push extension) never fetch media and must not open
-        // the iroh-blobs store — its `redb` metadata db takes an exclusive
+        // The push extension never touches media and must not open the
+        // iroh-blobs store — its `redb` metadata db takes an exclusive
         // single-process lock the always-on main app already holds, which would
-        // deadlock this build. They read the operation and build a notification
+        // deadlock this build. It reads the operation and builds a notification
         // from its payload only, so blob sync is skipped entirely.
-        let blob_sync = if config.enable_p2p {
+        let blob_sync = if config.enable_blob_sync {
             let self_endpoint = iroh::EndpointId::from_bytes(node_keys.device_id().as_bytes())?;
             let source_lookup = crate::blob_sync::MixedSourceLookup::new(
                 op_store.clone(),
@@ -471,13 +486,13 @@ impl Node {
         Ok(())
     }
 
-    /// The node's blob sync, or an error for `no_p2p` nodes (the push extension)
-    /// that never open a blob store. Only the media send/serve paths — reached
-    /// exclusively by the main app's p2p node — call this.
+    /// The node's blob sync, or an error when blob sync is disabled (the push
+    /// extension never opens a blob store). Only the media send/serve paths —
+    /// never reached by the extension — call this.
     fn require_blob_sync(&self) -> Result<&BlobSync> {
         self.blob_sync
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("media blob operations require a p2p node"))
+            .ok_or_else(|| anyhow::anyhow!("media blob operations require blob sync enabled"))
     }
 
     #[cfg(feature = "testing")]
@@ -1062,8 +1077,8 @@ impl Node {
         // close last, each time-bounded so none outlasts the suspension window.
 
         // iroh-blobs redb store: a file lock like the SQLite pools; fetch loop
-        // aborted above so nothing else is using it now. Absent on no-p2p nodes
-        // (e.g. the push extension), which never open it.
+        // aborted above so nothing else is using it now. Absent when blob sync
+        // is disabled (the push extension), which never opens it.
         if let Some(blob_sync) = &self.blob_sync {
             match tokio::time::timeout(
                 std::time::Duration::from_secs(5),
