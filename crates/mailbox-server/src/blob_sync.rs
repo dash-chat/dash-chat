@@ -302,6 +302,22 @@ impl BlobSync {
         fetched
     }
 
+    /// Store a blob a client pushed directly (via `/blobs/store`) and protect it
+    /// for the retention window, returning its computed hash. Pushed and fetched
+    /// blobs are tagged the same way so GC treats them alike. `add_bytes` streams
+    /// the data into the store and yields a temp tag; we swap that for a
+    /// retention tag before dropping it so the blob is never left untagged.
+    pub async fn store_pushed_blob(
+        &self,
+        data: bytes::Bytes,
+    ) -> anyhow::Result<iroh_blobs::Hash> {
+        let temp_tag = self.blobs.add_bytes(data).temp_tag().await?;
+        let hash = temp_tag.hash();
+        self.protect_blob(hash).await;
+        drop(temp_tag);
+        Ok(hash)
+    }
+
     /// Tag a freshly stored blob so iroh's GC keeps it; the tag name embeds the
     /// fetch time so [`expire_blob_tags`] can drop it after the retention window.
     /// No-op when sharing an in-process node's store (the node owns lifecycle).

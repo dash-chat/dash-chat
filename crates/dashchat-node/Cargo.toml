@@ -42,7 +42,7 @@ tokio-stream = "0.1.17"
 tokio-util = "0.7"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-bytes = "1.11.0"
+bytes = { workspace = true }
 sqlx = "0.8.6"
 
 tempfile = { version = "3.24", optional = true }

@@ -152,12 +152,15 @@ async fn register_served_mailbox(node: &crate::Node, url: &str) {
         .await
         .unwrap();
     node.mailboxes
-        .register(ToyMailboxClient::<MailboxOperation>::new(
-            health.mailbox_id.clone(),
-            url,
-            node.endpoint_id(),
-            node.unfetched_blob_tracker(),
-        ))
+        .register(
+            ToyMailboxClient::<MailboxOperation>::new(
+                health.mailbox_id.clone(),
+                url,
+                node.endpoint_id(),
+                node.unfetched_blob_tracker(),
+            )
+            .with_blob_reader(node.blob_reader()),
+        )
         .await;
     node.register_with_mailbox(url).await.unwrap();
 }

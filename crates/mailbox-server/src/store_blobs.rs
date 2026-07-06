@@ -3,10 +3,28 @@ use serde::{Deserialize, Serialize};
 
 use crate::{AppState, BlobSync};
 
+/// A client's request to make blobs available on the mailbox. Clients send this
+/// two ways: first with the blob bytes inline (`blobs = Some`) so the mailbox can
+/// store them without a round trip back to the client, and — if that upload times
+/// out — again with `blobs = None`, leaving the mailbox to fetch them from
+/// `sender_pubkey` via its fetch pool.
 #[derive(Serialize, Deserialize)]
 pub struct StoreBlobsRequest {
+    /// The blob bytes themselves, when the client uploads them inline. `None`
+    /// means announce-only: the mailbox fetches any hashes it lacks from
+    /// `sender_pubkey` instead. Bytes are matched to `blob_hashes` by content
+    /// hash, not position, so order and extra/missing entries are harmless.
+    pub blobs: Option<Vec<bytes::Bytes>>,
+    /// Every blob hash this request is about, whether or not its bytes are
+    /// included in `blobs`. Hashes the mailbox ends up without are added to the
+    /// fetch pool.
     pub blob_hashes: Vec<iroh_blobs::Hash>,
+    /// The peer the mailbox should dial to fetch any hash it does not receive
+    /// inline (typically the sending client itself).
     pub sender_pubkey: iroh::EndpointId,
+    /// Reserved for a `sender_pubkey` signature over the request; currently
+    /// unverified, so clients send it empty. `#[serde(default)]` keeps older
+    /// payloads that omit the field entirely decodable.
     #[serde(default)]
     pub signature: Vec<u8>,
 }
@@ -28,10 +46,25 @@ pub async fn record_blob_sources(
     }
 }
 
+/// Handle `POST /blobs/store`: persist any inline blob bytes, then partition the
+/// announced hashes into those the mailbox now holds (reported back as
+/// `already_stored`) and those it still lacks (registered in the fetch pool so it
+/// pulls them from `sender_pubkey`). A hash sent with matching bytes lands in the
+/// former group and is never fetched; a hash sent without bytes (or whose bytes
+/// failed to store) lands in the latter. The `has` check does double duty here:
+/// it catches both blobs stored moments ago from this request and blobs the
+/// mailbox already had from a previous one.
 pub async fn store_blobs(
     State(state): State<AppState>,
     Json(payload): Json<StoreBlobsRequest>,
 ) -> Json<StoreBlobsResponse> {
+    if let Some(blobs) = payload.blobs {
+        for blob in blobs {
+            if let Err(err) = state.blob_sync.store_pushed_blob(blob).await {
+                tracing::warn!(?err, "failed to store pushed blob");
+            }
+        }
+    }
     let mut already_stored = Vec::new();
     let mut to_fetch = Vec::new();
     for hash in payload.blob_hashes {
@@ -70,5 +103,20 @@ mod tests {
             .unwrap();
         assert_eq!(got, h);
         assert!(sources.contains(&source));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pushed_blob_is_stored_under_its_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = iroh::SecretKey::generate();
+        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf(), None)
+            .await
+            .unwrap();
+
+        let data = bytes::Bytes::from_static(b"pushed blob contents");
+        let stored = blob_sync.store_pushed_blob(data.clone()).await.unwrap();
+
+        assert_eq!(stored, iroh_blobs::Hash::new(&data));
+        assert!(blob_sync.blobs.has(stored).await.unwrap());
     }
 }

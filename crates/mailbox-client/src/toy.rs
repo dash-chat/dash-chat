@@ -16,26 +16,36 @@ use super::*;
 pub trait ToyItemTraits: ItemTraits + Serialize + DeserializeOwned {}
 impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {}
 
-/// POST blob hashes to a mailbox's `/blobs/store`, returning the subset the
-/// mailbox reports it already has stored.
+/// Client-side timeout for a `/blobs/store` request that carries blob bytes
+/// inline; larger than the default HTTP timeout because the upload can be big.
+const STORE_BLOBS_WITH_BYTES_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// POST blob hashes (and optionally the blob bytes themselves) to a mailbox's
+/// `/blobs/store`, returning the subset the mailbox reports it already has
+/// stored. When `blobs` is `Some`, a longer per-request timeout is applied.
 pub async fn send_store_blobs(
     base_url: &str,
+    blobs: Option<Vec<bytes::Bytes>>,
     hashes: Vec<iroh_blobs::Hash>,
     sender_pubkey: iroh::EndpointId,
 ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
     if hashes.is_empty() {
         return Ok(Vec::new());
     }
+    let has_blobs = blobs.is_some();
     let request = mailbox_server::StoreBlobsRequest {
+        blobs,
         blob_hashes: hashes,
         sender_pubkey,
         signature: Vec::new(),
     };
-    let response = HTTP_CLIENT
+    let mut builder = HTTP_CLIENT
         .post(format!("{base_url}/blobs/store"))
-        .json(&request)
-        .send()
-        .await?;
+        .json(&request);
+    if has_blobs {
+        builder = builder.timeout(STORE_BLOBS_WITH_BYTES_TIMEOUT);
+    }
+    let response = builder.send().await?;
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
@@ -52,6 +62,7 @@ pub struct ToyMailboxClient<Item: MailboxItem> {
     base_url: String,
     sender_pubkey: iroh::EndpointId,
     tracker: std::sync::Arc<dyn crate::UnfetchedBlobTracker>,
+    blob_reader: Option<std::sync::Arc<dyn crate::BlobReader>>,
     phantom: std::marker::PhantomData<Item>,
 }
 
@@ -67,8 +78,20 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
             base_url: base_url.into(),
             sender_pubkey,
             tracker,
+            blob_reader: None,
             phantom: std::marker::PhantomData,
         }
+    }
+
+    /// Attach a blob-bytes source so `publish` uploads blob bytes inline to the
+    /// mailbox (falling back to announcing hashes only on timeout). Without a
+    /// reader the client only announces hashes and the mailbox fetches them.
+    pub fn with_blob_reader(
+        mut self,
+        blob_reader: std::sync::Arc<dyn crate::BlobReader>,
+    ) -> Self {
+        self.blob_reader = Some(blob_reader);
+        self
     }
 
     /// Announce blob hashes to this mailbox and reconcile the unfetched tracker:
@@ -77,8 +100,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         if hashes.is_empty() {
             return Ok(());
         }
-        let already_stored =
-            send_store_blobs(&self.base_url, hashes.clone(), self.sender_pubkey).await?;
+        let already_stored = self.upload_blobs(hashes.clone()).await?;
         let not_stored: Vec<_> = hashes
             .into_iter()
             .filter(|h| !already_stored.contains(h))
@@ -87,6 +109,54 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         self.tracker.remove(&self.id, &already_stored).await;
         Ok(())
     }
+
+    /// Upload blob bytes inline (with a 15s timeout) when a blob reader is
+    /// available; if that upload times out — or no reader is configured — send
+    /// the hashes alone so the mailbox fetches the blobs from us instead.
+    async fn upload_blobs(
+        &self,
+        hashes: Vec<iroh_blobs::Hash>,
+    ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
+        if let Some(blobs) = self.read_blobs(&hashes).await {
+            match send_store_blobs(&self.base_url, Some(blobs), hashes.clone(), self.sender_pubkey)
+                .await
+            {
+                Ok(already_stored) => return Ok(already_stored),
+                Err(err) if is_timeout(&err) => {
+                    tracing::warn!(
+                        "store_blobs with inline bytes timed out; retrying with hashes only"
+                    );
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        send_store_blobs(&self.base_url, None, hashes, self.sender_pubkey).await
+    }
+
+    /// Read every blob's bytes from the configured reader, returning `None` (so
+    /// the caller announces hashes only) when there is no reader or any read
+    /// fails.
+    async fn read_blobs(&self, hashes: &[iroh_blobs::Hash]) -> Option<Vec<bytes::Bytes>> {
+        let reader = self.blob_reader.as_ref()?;
+        let mut blobs = Vec::with_capacity(hashes.len());
+        for hash in hashes {
+            match reader.read_blob(*hash).await {
+                Ok(bytes) => blobs.push(bytes),
+                Err(err) => {
+                    tracing::warn!(%hash, ?err, "failed to read blob bytes; announcing hashes only");
+                    return None;
+                }
+            }
+        }
+        Some(blobs)
+    }
+}
+
+/// True when the error was caused by a request timeout, so the caller can retry
+/// via a different path rather than surfacing the failure.
+fn is_timeout(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<reqwest::Error>()
+        .is_some_and(|e| e.is_timeout())
 }
 
 #[async_trait::async_trait]
@@ -368,11 +438,53 @@ mod tests {
         let tracker = std::sync::Arc::new(RecordingTracker::default());
         let already = crate::toy::send_store_blobs(
             &base_url,
+            None,
             vec![h_stored, h_new],
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
         )
         .await
         .unwrap();
         assert_eq!(already, vec![h_stored]);
+    }
+
+    #[tokio::test]
+    async fn store_blobs_sends_inline_bytes_and_reports_them_stored() {
+        // Server that hashes each inline blob it receives and reports those
+        // hashes as already stored (mirroring the real mailbox behavior).
+        let app = axum::Router::new().route(
+            "/blobs/store",
+            axum::routing::post(
+                |axum::Json(req): axum::Json<mailbox_server::StoreBlobsRequest>| async move {
+                    let stored: Vec<_> = req
+                        .blobs
+                        .unwrap_or_default()
+                        .iter()
+                        .map(iroh_blobs::Hash::new)
+                        .filter(|h| req.blob_hashes.contains(h))
+                        .collect();
+                    axum::Json(mailbox_server::StoreBlobsResponse {
+                        already_stored: stored,
+                    })
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+
+        let data = bytes::Bytes::from_static(b"inline blob");
+        let hash = iroh_blobs::Hash::new(&data);
+        let already = crate::toy::send_store_blobs(
+            &base_url,
+            Some(vec![data]),
+            vec![hash],
+            iroh::SecretKey::from_bytes(&[3; 32]).public(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(already, vec![hash]);
     }
 }

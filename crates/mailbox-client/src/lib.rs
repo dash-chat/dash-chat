@@ -128,6 +128,14 @@ pub trait UnfetchedBlobTracker: Send + Sync + 'static {
     async fn remove(&self, mailbox_id: &MailboxId, hashes: &[iroh_blobs::Hash]);
 }
 
+/// Node-side source of blob bytes by hash. Implemented in `dashchat-node` over
+/// the node's blob store; kept as a trait here so this crate stays free of node
+/// types. Used by the toy client to upload blob bytes inline to a mailbox.
+#[async_trait::async_trait]
+pub trait BlobReader: Send + Sync + 'static {
+    async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes>;
+}
+
 /// No-op tracker for tests and contexts that don't persist unfetched blobs.
 #[derive(Clone, Default)]
 pub struct NoopUnfetchedBlobTracker;

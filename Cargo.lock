@@ -5443,6 +5443,7 @@ dependencies = [
  "axum",
  "axum-test",
  "base64 0.22.1",
+ "bytes",
  "clap",
  "dashchat-utils",
  "futures",
