@@ -82,7 +82,10 @@ pub enum ChatPayload {
     /// is editable — media attachments on the original message are preserved and
     /// cannot be changed. Edits must form a linear chain: an edit cannot target
     /// a message which already has another edit pointing at it.
-    EditMessage { message: String, edit_hash: Hash },
+    EditMessage {
+        message: String,
+        edit_hash: Hash,
+    },
 
     Reaction(ChatReaction),
 

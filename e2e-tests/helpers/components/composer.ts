@@ -1,29 +1,74 @@
+import { TINY_PNG_BYTES } from '../images';
+import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
-
-const TINY_PNG = [
-	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49,
-	0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06,
-	0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44,
-	0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d,
-	0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42,
-	0x60, 0x82,
-];
+import { RecentPhotosStrip } from './recent-photos-strip';
 
 /** The shared message composer (text area + attachments) used by both
  * direct and group chats. */
-export class Composer {
-	constructor(private agent: WebdriverIO.Browser) {}
+export class Composer extends TestHelper {
+	messageInput = this.el(tid('message-input-textarea'));
+	sendButton = this.el(tid('message-input-send'));
+	mediaPreview = this.el(tid('message-input-media-preview'));
+	clearAttachments = this.el(tid('message-input-clear-attachments'));
+	addMoreTile = this.el(tid('message-input-add-more'));
+	editingBanner = this.el(tid('composer-editing-banner'));
+	cancelEditButton = this.el(tid('composer-cancel-edit'));
+	attachButton = this.el(tid('message-input-attach'));
+	mediaPanel = this.el(tid('message-input-media-panel'));
+	recentPhotos = new RecentPhotosStrip(this.agent);
 
-	messageInput = this.agent.$(tid('message-input-textarea'));
-	sendButton = this.agent.$(tid('message-input-send'));
-	mediaPreview = this.agent.$(tid('message-input-media-preview'));
-	clearAttachments = this.agent.$(tid('message-input-clear-attachments'));
-	addMoreTile = this.agent.$(tid('message-input-add-more'));
-	editingBanner = this.agent.$(tid('composer-editing-banner'));
-	cancelEditButton = this.agent.$(tid('composer-cancel-edit'));
+	attachMenuTrigger = this.el(tid('message-input-attach'));
+	attachMenu = this.el(tid('message-input-attach-menu'));
+	attachPhotosItem = this.el(tid('message-input-attach-photos'));
+	attachFileItem = this.el(tid('message-input-attach-file'));
 
 	removeAttachmentButton(index: number) {
 		return this.agent.$(tid(`message-input-remove-attachment-${index}`));
+	}
+
+	/** Open the mobile media panel via the attach button. Returns false when the
+	 * panel isn't available (desktop user agents show the MediaMenu instead). */
+	async openMediaPanel(): Promise<boolean> {
+		await this.attachButton.click();
+		try {
+			await this.mediaPanel.waitForExist({ timeout: 2_000 });
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * Open the desktop attach dropdown by clicking its trigger. The dropdown
+	 * renders only on non-mobile builds (which CI is), where it replaces the
+	 * mobile media panel. Resolves once the Photos item is visible.
+	 */
+	async openAttachMenu(): Promise<void> {
+		await this.attachMenuTrigger.click();
+		await this.attachPhotosItem.waitForDisplayed();
+	}
+
+	/** Close the attach dropdown by toggling its trigger. */
+	async closeAttachMenu(): Promise<void> {
+		await this.attachMenuTrigger.click();
+		await this.attachPhotosItem.waitForDisplayed({ reverse: true });
+	}
+
+	/**
+	 * Trimmed label of an attach-menu item, read via `textContent`. The items
+	 * are `wa-dropdown-item` web components whose label is a slotted text node,
+	 * and WebKitGTK's WebDriver `getText` returns empty for such hosts.
+	 */
+	async attachItemLabel(item: 'photos' | 'file'): Promise<string> {
+		const testid =
+			item === 'photos'
+				? 'message-input-attach-photos'
+				: 'message-input-attach-file';
+		return this.agent.execute(
+			(sel: string) =>
+				document.querySelector(sel)?.textContent?.trim() ?? '',
+			tid(testid),
+		);
 	}
 
 	/**
@@ -75,7 +120,7 @@ export class Composer {
 					{ name: `${name}.png`, mimeType: 'image/png', bytes: pngBytes },
 				]);
 			},
-			TINY_PNG,
+			TINY_PNG_BYTES,
 			label,
 		);
 		await this.mediaPreview.waitForExist({ timeout: 5_000 });
@@ -89,7 +134,7 @@ export class Composer {
 					{ name: `${name}.png`, mimeType: 'image/png', bytes: pngBytes },
 				]);
 			},
-			TINY_PNG,
+			TINY_PNG_BYTES,
 			label,
 		);
 		await this.mediaPreview.waitForExist({ timeout: 5_000 });

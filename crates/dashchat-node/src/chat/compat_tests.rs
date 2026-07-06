@@ -2,7 +2,6 @@
 mod tests {
     use dashchat_compat::{VersionConvert, VersionConvertError};
 
-    use mailbox_client::mem::MemMailbox;
     use maplit::btreeset;
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
 
@@ -10,7 +9,7 @@ mod tests {
         ShareIntent,
         chat::*,
         compat::Capabilities,
-        testing::{PollConfig, TestNode, TestNodeConfig},
+        testing::{PollConfig, TestMailbox, TestNode, TestNodeConfig},
     };
 
     #[test]
@@ -40,7 +39,7 @@ mod tests {
             kind: MediaMetaKind::Photo,
             hash: iroh_blobs::Hash::new(b"hashhashhash"),
         };
-        let v1 = ChatMessageContent::new("hello", Some(MediaAttachment::from(vec![item.clone()])));
+        let v1 = ChatMessageContent::new("hello", Some(MediaBundle::from(vec![item.clone()])));
         let bytes = encode_cbor(&v1).unwrap();
         let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
         assert_eq!(decoded, v1);
@@ -82,7 +81,7 @@ mod tests {
 
     #[test]
     fn version_convert_v1_to_v0_lossy() {
-        let v1_empty = ChatMessageContent::new("anything", Some(MediaAttachment::from(vec![])));
+        let v1_empty = ChatMessageContent::new("anything", Some(MediaBundle::from(vec![])));
         let result = v1_empty.to_version(&Capabilities::zero());
         assert_eq!(result, Err(VersionConvertError::Lossy));
     }
@@ -102,14 +101,14 @@ mod tests {
         let bobbi_config = TestNodeConfig::default();
         alice_config.node_config.capabilities = Capabilities::zero();
 
-        let mailbox = MemMailbox::new();
+        let mailbox = TestMailbox::from_env();
         let alice = TestNode::new(alice_config, "alice")
             .await
-            .add_mailbox_client(mailbox.client())
+            .add_mailbox(&mailbox)
             .await;
         let bobbi = TestNode::new(bobbi_config, "bobbi")
             .await
-            .add_mailbox_client(mailbox.client())
+            .add_mailbox(&mailbox)
             .await;
 
         let ac = alice
@@ -137,14 +136,14 @@ mod tests {
         alice_config.node_config.capabilities = Capabilities::zero();
 
         let poll = PollConfig::default();
-        let mailbox = MemMailbox::new();
+        let mailbox = TestMailbox::from_env();
         let alice = TestNode::new(alice_config, "alice")
             .await
-            .add_mailbox_client(mailbox.client())
+            .add_mailbox(&mailbox)
             .await;
         let bobbi = TestNode::new(bobbi_config, "bobbi")
             .await
-            .add_mailbox_client(mailbox.client())
+            .add_mailbox(&mailbox)
             .await;
 
         println!("alice: {:?}", alice.device_id().to_hex());

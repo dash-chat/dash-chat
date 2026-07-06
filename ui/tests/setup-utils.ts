@@ -10,6 +10,16 @@
 import type { m } from '../src/lib/paraglide/messages.js';
 
 type Messages = typeof m;
+
+/** Fake recent-photos data the composer strip reads via `window.__test`. This is
+ * the single source of truth for the seam's shape — `$lib/utils/recent-photos`
+ * infers it from the `window.__test` declaration below. Kept here (not imported
+ * from the `$lib`-aliased prod module) so the e2e tsconfig, which compiles this
+ * file for the global augmentation, doesn't have to resolve `$lib`. */
+export interface RecentPhotosTestData {
+	permission: 'granted' | 'denied' | 'prompt';
+	photos: { id: string; name: string; mimeType: string; dataUrl: string }[];
+}
 type MessageKey = Extract<keyof Messages, string>;
 type MessageParams<K extends MessageKey> = Parameters<Messages[K]>[0];
 
@@ -93,6 +103,9 @@ export const testUtils = {
 	hasText,
 	pasteFiles,
 	dropFiles,
+	/** E2E override for the composer's recent-photos strip; left undefined unless
+	 * a spec injects fake photos (the native library is unavailable in tests). */
+	recentPhotos: undefined as RecentPhotosTestData | undefined,
 	forceBlobError,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
@@ -110,6 +123,12 @@ export const testUtils = {
 			'enablePreviewFeatures called before registerTestUtils provided the callback',
 		);
 	},
+	/** Dispatch a deep link URL through the app's full routing logic. */
+	handleDeepLink: (_url: string): void => {
+		throw new Error(
+			'handleDeepLink called before registerTestUtils provided the callback',
+		);
+	},
 };
 
 declare global {
@@ -123,10 +142,14 @@ export function registerTestUtils(
 	setLocale?: (locale: string) => void,
 	messages?: Messages,
 	enablePreviewFeatures?: () => void,
+	handleDeepLink?: (url: string) => void,
 ) {
 	window.__test = testUtils;
 	if (enablePreviewFeatures) {
 		testUtils.enablePreviewFeatures = enablePreviewFeatures;
+	}
+	if (handleDeepLink) {
+		testUtils.handleDeepLink = handleDeepLink;
 	}
 	if (goto) {
 		testUtils.goto = goto;

@@ -7,6 +7,7 @@
 	import { mdiAccount, mdiAccountGroup } from '@mdi/js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from './profiles/Avatar.svelte';
+	import SheetHandle from './SheetHandle.svelte';
 
 	interface Props {
 		opened: boolean;
@@ -61,7 +62,7 @@
 			class="flex flex-col items-center px-6 pb-6 gap-4 max-h-[85vh] overflow-y-auto"
 			data-testid="peer-profile-sheet"
 		>
-			<div class="sheet-handle shrink-0"></div>
+			<SheetHandle class="shrink-0" />
 			{@render profileContent()}
 		</div>
 	</Sheet>

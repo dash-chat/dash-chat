@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { Sheet, Block, useTheme } from 'konsta/svelte';
+	import { page } from '$app/state';
+	import { pushState } from '$app/navigation';
 	import { isMobile } from '$lib/utils/environment';
+	import { keyboard } from '$lib/utils/keyboard.svelte';
 	import {
 		type DraftMedia,
 		type IngestError,
 		draftToMedia,
 		ingestFiles,
+		pickMedia,
 		AttachmentTooLargeError,
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
@@ -18,12 +22,14 @@
 	import { mdiClose, mdiPencil } from '@mdi/js';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
+	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
+	import StagedMediaPage from '$lib/components/messages/composer/StagedMediaPage.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
-	import MediaMenu from '$lib/components/messages/composer/MediaMenu.svelte';
+	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 
 	interface Props {
@@ -31,6 +37,8 @@
 		placeholder?: string;
 		/** The direct- or group-chat store the composer persists messages to. */
 		store: MessagesStore;
+		/** Name of the chat, shown in the mobile staged-media page header. */
+		destinationName?: string;
 		/** Called after a message is successfully sent (e.g. to scroll the chat). */
 		onSent?: (messageHash: Hash) => void;
 		/** When set, the composer edits this message's text instead of sending a
@@ -46,6 +54,7 @@
 		value = $bindable(''),
 		placeholder = m.typeMessage(),
 		store,
+		destinationName,
 		onSent,
 		editing = null,
 		onEdit,
@@ -58,8 +67,9 @@
 	let hasContent = $derived(value.trim().length > 0 || media !== undefined);
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
+	let sending = false;
+
 	let showMediaPanel = $state(false);
-	let showMediaMenu = $state(false);
 
 	async function submitEdit() {
 		const target = editing;
@@ -78,12 +88,17 @@
 		}
 	}
 
-	async function send() {
+	/** Returns whether the message was sent (so callers can keep the draft on failure). */
+	async function send(): Promise<boolean> {
 		if (editing) {
 			await submitEdit();
-			return;
+			return false;
 		}
-		if (!hasContent) return;
+		// Guard against concurrent sends: the button shows a spinner, but the
+		// Enter-key path goes straight here, so hammering Enter during a slow
+		// send would otherwise fire multiple store.sendMessage calls.
+		if (!hasContent || sending) return false;
+		sending = true;
 		const message = value;
 		const draft = media;
 		try {
@@ -97,6 +112,7 @@
 			}
 			messageInput?.reset();
 			onSent?.(hash);
+			return true;
 		} catch (e) {
 			if (e instanceof AttachmentTooLargeError) {
 				showToast(
@@ -105,10 +121,13 @@
 					}),
 					'error',
 				);
-				return;
+				return false;
 			}
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to send message', e);
+			return false;
+		} finally {
+			sending = false;
 		}
 	}
 
@@ -123,7 +142,26 @@
 		const result = ingestFiles(media, Array.from(files));
 		if (result.error) showToast(ingestErrorMessages[result.error](), 'error');
 		media = result.media;
+		if (isMobile && media && !page.state.stagedMedia) {
+			pushState('', { stagedMedia: true });
+		}
 	}
+
+	async function addMore() {
+		try {
+			const files = await pickMedia('image', true);
+			if (files && files.length > 0) stage(files);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to pick files', e);
+		}
+	}
+
+	// Popping the staged-media history entry (hardware/browser back or
+	// `history.back()` from the page) discards the staged draft.
+	$effect(() => {
+		if (isMobile && media && !page.state.stagedMedia) media = undefined;
+	});
 
 	function onPaste(event: ClipboardEvent) {
 		const files = event.clipboardData?.files;
@@ -136,7 +174,15 @@
 <MediaDropOverlay onFiles={stage} />
 
 <div style="display: flow-root" use:keepKeyboardOpen>
-	<div class="message-input-bar" class:pb-safe={!showMediaPanel}>
+	<!-- Safe-area padding only when the bar is the bottom-most surface (nothing
+	     below it): no panel and no keyboard. Keying it off the panel alone bumps
+	     the bar by `env(safe-area-inset-bottom)` during the panel→keyboard swap,
+	     because the panel closes before the (visual-viewport-driven) safe area
+	     has collapsed to 0. -->
+	<div
+		class="message-input-bar"
+		class:pb-safe={!showMediaPanel && !keyboard.isOpen}
+	>
 		{#if editing}
 			<div
 				class="row items-center gap-2 px-3 pt-2 text-sm"
@@ -159,7 +205,7 @@
 					></wa-icon>
 				</button>
 			</div>
-		{:else}
+		{:else if !isMobile}
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
 
@@ -173,11 +219,7 @@
 					onClick={() => (showMediaPanel = !showMediaPanel)}
 				/>
 			{:else}
-				<AttachButton
-					class="h-10 w-10"
-					expanded={showMediaMenu}
-					onClick={() => (showMediaMenu = !showMediaMenu)}
-				/>
+				<AttachMenuButton onFiles={stage} />
 			{/if}
 			<div
 				class="input-container flex min-h-[42px] min-w-0 flex-1 items-center ps-2 {theme ===
@@ -196,21 +238,30 @@
 			</div>
 
 			{#if isMobile}
-				<SendButton disabled={!hasContent} onClick={send} />
+				<SendButton disabled={!hasContent} onSend={send} />
 			{/if}
 		</div>
 	</div>
 
 	{#if isMobile}
-		<MediaPanel bind:opened={showMediaPanel} onFiles={stage} />
+		<MediaPanel bind:open={showMediaPanel} onFiles={stage} />
 	{/if}
 </div>
 
-{#if !isMobile}
-	<MediaMenu
-		bind:opened={showMediaMenu}
-		target="[data-testid='message-input-attach']"
-		onFiles={stage}
+{#if isMobile && media && page.state.stagedMedia}
+	<StagedMediaPage
+		bind:media
+		bind:value
+		{destinationName}
+		onSend={async () => {
+			const sent = await send();
+			// Guard against the stagedMedia entry already being popped (e.g. the user
+			// hit back during a slow send) — otherwise we'd navigate off the chat.
+			if (sent && page.state.stagedMedia) history.back();
+			return sent;
+		}}
+		onAddMore={addMore}
+		onClose={() => history.back()}
 	/>
 {/if}
 
@@ -220,7 +271,7 @@
 	onBackdropClick={() => (showEmojiPicker = false)}
 >
 	<div class="flex flex-col items-center">
-		<div class="sheet-handle"></div>
+		<SheetHandle />
 	</div>
 	<Block>
 		<EmojiPickerWrapper

@@ -3,12 +3,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use dashchat_utils::{fetch_loop, FetchConfig, FetchPool};
+use dashchat_utils::{fetch_loop, FetchConfig, FetchPool, NETWORK_ID};
 use futures::StreamExt;
+use iroh::address_lookup::memory::MemoryLookup;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
-use iroh_blobs::api::downloader::{DownloadProgressItem, Downloader, Shuffled};
-use iroh_blobs::protocol::GetRequest;
+use iroh_blobs::api::downloader::{Downloader, Shuffled};
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 
@@ -20,37 +21,64 @@ const BLOB_TAG_PREFIX: &str = "mailbox/";
 const BLOB_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 /// How often iroh sweeps untagged blobs and how often we expire stale tags.
 const BLOB_GC_INTERVAL: Duration = Duration::from_secs(60 * 60);
+/// Drop a pending fetch entry after this many consecutive failed passes.
+const MAX_FETCH_FAILURES: u32 = 10;
+/// Hard cap on pending fetch entries; arbitrary entries are dropped if exceeded.
+const MAX_POOL_SIZE: usize = 1_000;
+
+#[derive(Default)]
+struct PoolEntry {
+    sources: BTreeSet<iroh::EndpointId>,
+    failures: u32,
+}
 
 #[derive(Clone, Default)]
 pub struct BlobFetchPool {
-    sources: Arc<Mutex<BTreeMap<iroh_blobs::Hash, BTreeSet<iroh::EndpointId>>>>,
+    entries: Arc<Mutex<BTreeMap<iroh_blobs::Hash, PoolEntry>>>,
     added: Arc<Notify>,
 }
 
 impl BlobFetchPool {
     pub async fn add_source(&self, hash: iroh_blobs::Hash, source: iroh::EndpointId) {
-        self.sources
-            .lock()
-            .await
-            .entry(hash)
-            .or_default()
-            .insert(source);
+        let mut map = self.entries.lock().await;
+        if !map.contains_key(&hash) && map.len() >= MAX_POOL_SIZE {
+            // Drop the first (lexicographically earliest) entry to stay within the cap.
+            if let Some(oldest) = map.keys().next().copied() {
+                map.remove(&oldest);
+            }
+        }
+        map.entry(hash).or_default().sources.insert(source);
         self.added.notify_one();
     }
+
     pub(crate) async fn is_empty(&self) -> bool {
-        self.sources.lock().await.is_empty()
+        self.entries.lock().await.is_empty()
     }
+
     pub(crate) async fn next_untried(
         &self,
         tried: &HashSet<iroh_blobs::Hash>,
     ) -> Option<(iroh_blobs::Hash, Vec<iroh::EndpointId>)> {
-        let map = self.sources.lock().await;
+        let map = self.entries.lock().await;
         map.iter()
             .find(|(hash, _)| !tried.contains(*hash))
-            .map(|(hash, sources)| (*hash, sources.iter().copied().collect()))
+            .map(|(hash, entry)| (*hash, entry.sources.iter().copied().collect()))
     }
+
     pub(crate) async fn remove(&self, hash: iroh_blobs::Hash) {
-        self.sources.lock().await.remove(&hash);
+        self.entries.lock().await.remove(&hash);
+    }
+
+    /// Record a failed fetch attempt; evict the entry after [`MAX_FETCH_FAILURES`].
+    pub(crate) async fn record_failure(&self, hash: iroh_blobs::Hash) {
+        let mut map = self.entries.lock().await;
+        if let Some(entry) = map.get_mut(&hash) {
+            entry.failures += 1;
+            if entry.failures >= MAX_FETCH_FAILURES {
+                map.remove(&hash);
+                tracing::debug!(%hash, "evicting blob from fetch pool after too many failures");
+            }
+        }
     }
 }
 
@@ -71,9 +99,21 @@ impl FetchPool for BlobFetchPool {
     async fn remove(&self, item: &Self::Item) {
         BlobFetchPool::remove(self, item.0).await;
     }
+    async fn on_failure(&self, item: &Self::Item) {
+        BlobFetchPool::record_failure(self, item.0).await;
+    }
     async fn wait_for_add(&self) {
         self.added.notified().await;
     }
+}
+
+#[derive(Clone)]
+enum PeerAddrRegistry {
+    /// Standalone server: lookup is wired directly into the iroh endpoint builder.
+    Memory(MemoryLookup),
+    /// Shared (in-process) server: iroh endpoint is p2panda's; addresses are
+    /// forwarded to the node's address book via an unbounded channel.
+    Channel(UnboundedSender<iroh::EndpointAddr>),
 }
 
 #[derive(Clone)]
@@ -81,7 +121,12 @@ pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
     pub(crate) fetch_pool: BlobFetchPool,
     downloader: Downloader,
-    endpoint_id: iroh::EndpointId,
+    /// The iroh endpoint blobs are served from. Held both to keep a
+    /// standalone server's endpoint alive and to read its live [`EndpointAddr`]
+    /// (relay + direct addresses) for the `/health` response so clients can
+    /// dial this mailbox by its EndpointId. In the shared model this is a clone
+    /// of the in-process node's endpoint.
+    endpoint: iroh::Endpoint,
     fetch_config: FetchConfig,
     /// True when this BlobSync owns its blob store (standalone server) and is
     /// therefore responsible for GCing stored blobs. False when sharing an
@@ -89,17 +134,45 @@ pub struct BlobSync {
     enable_gc: bool,
     /// Held only when this BlobSync owns its iroh endpoint (standalone server).
     /// `None` when sharing an in-process node's endpoint, in which case the
-    /// node keeps the endpoint, router, and blob store alive.
-    _endpoint: Option<iroh::Endpoint>,
+    /// node keeps the router and blob store alive.
     _router: Option<Router>,
+    peer_addr_registry: PeerAddrRegistry,
 }
 
 impl BlobSync {
-    pub async fn new(secret_key: iroh::SecretKey, root: PathBuf) -> anyhow::Result<Self> {
-        let endpoint = iroh::Endpoint::builder(presets::N0)
+    /// Build a standalone mailbox BlobSync that owns its own iroh endpoint and
+    /// blob store. When `relay_url` is set the endpoint registers with that
+    /// relay so it is reachable behind NAT and its advertised [`EndpointAddr`]
+    /// includes the relay; the call waits (bounded) for the relay connection so
+    /// the first `/health` response carries a complete address.
+    pub async fn new(
+        secret_key: iroh::SecretKey,
+        root: PathBuf,
+        relay_url: Option<iroh::RelayUrl>,
+    ) -> anyhow::Result<Self> {
+        let peer_addr_lookup = MemoryLookup::new();
+        let mut builder = iroh::Endpoint::builder(presets::Minimal)
             .secret_key(secret_key)
-            .bind()
-            .await?;
+            .address_lookup(peer_addr_lookup.clone());
+        let has_relay = relay_url.is_some();
+        if let Some(relay_url) = relay_url {
+            builder = builder.relay_mode(iroh::RelayMode::Custom(iroh::RelayMap::from_iter([
+                relay_url,
+            ])));
+        }
+        let endpoint = builder.bind().await?;
+
+        // `endpoint.addr()` only includes the relay once the endpoint has
+        // connected to it, so wait for that before serving `/health`. Bounded
+        // so an unreachable relay can't block server startup indefinitely.
+        // Skipped when no relay is configured (e.g. tests): with the `Minimal`
+        // preset there is no default relay, so `online()` would never resolve.
+        dashchat_utils::endpoint::wait_endpoint_online(
+            has_relay,
+            &endpoint,
+            Duration::from_secs(10),
+        )
+        .await?;
 
         let db_path = root.join("blobs.db");
         let mut options = iroh_blobs::store::fs::options::Options::new(&root);
@@ -107,44 +180,48 @@ impl BlobSync {
             interval: BLOB_GC_INTERVAL,
             add_protected: None,
         });
+        let mixed_alpn =
+            p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, *NETWORK_ID);
         let store = iroh_blobs::store::fs::FsStore::load_with_opts(db_path, options).await?;
         let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        let downloader =
+            Downloader::new_with_opts(&store, &endpoint, mixed_alpn.as_slice(), Default::default());
         let router = Router::builder(endpoint.clone())
-            .accept(iroh_blobs::ALPN, blobs.clone())
+            .accept(mixed_alpn, blobs.clone())
             .spawn();
-        let downloader = Downloader::new(&store, &endpoint);
-        let endpoint_id = endpoint.id();
 
         Ok(Self {
             blobs,
             fetch_pool: BlobFetchPool::default(),
             downloader,
-            endpoint_id,
+            endpoint,
             fetch_config: FetchConfig::default(),
             enable_gc: true,
-            _endpoint: Some(endpoint),
             _router: Some(router),
+            peer_addr_registry: PeerAddrRegistry::Memory(peer_addr_lookup),
         })
     }
 
     /// Build a mailbox BlobSync that shares an existing iroh endpoint and blob
     /// store (the in-process node's) instead of creating its own. Relayed blobs
     /// land in the shared store and are served by the node's existing protocol,
-    /// so the mailbox's EndpointId is the node's EndpointId.
+    /// so the mailbox's EndpointId is the node's EndpointId and its advertised
+    /// `EndpointAddr` is the node's.
     pub fn shared(
         blobs: iroh_blobs::BlobsProtocol,
         downloader: Downloader,
-        endpoint_id: iroh::EndpointId,
+        endpoint: iroh::Endpoint,
+        peer_addr_tx: UnboundedSender<iroh::EndpointAddr>,
     ) -> Self {
         Self {
             blobs,
             fetch_pool: BlobFetchPool::default(),
             downloader,
-            endpoint_id,
+            endpoint,
             fetch_config: FetchConfig::default(),
             enable_gc: false,
-            _endpoint: None,
             _router: None,
+            peer_addr_registry: PeerAddrRegistry::Channel(peer_addr_tx),
         }
     }
 
@@ -160,7 +237,24 @@ impl BlobSync {
     }
 
     pub fn endpoint_id(&self) -> iroh::EndpointId {
-        self.endpoint_id
+        self.endpoint.id()
+    }
+
+    /// The endpoint's current dialing address (relay + direct addresses),
+    /// served via `/health` so clients can reach this mailbox by its EndpointId.
+    pub fn endpoint_addr(&self) -> iroh::EndpointAddr {
+        self.endpoint.addr()
+    }
+
+    /// Register a peer's dialing address so the blob downloader can reach it
+    /// by its EndpointId.
+    pub fn add_peer_addr(&self, addr: iroh::EndpointAddr) {
+        match &self.peer_addr_registry {
+            PeerAddrRegistry::Memory(lookup) => lookup.add_endpoint_info(addr),
+            PeerAddrRegistry::Channel(tx) => {
+                let _ = tx.send(addr);
+            }
+        }
     }
 
     pub fn fetch_pool(&self) -> &BlobFetchPool {
@@ -194,7 +288,7 @@ impl BlobSync {
             return false;
         }
         let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
-        let fetched = download_capped(
+        let fetched = dashchat_utils::blob_sync::download_capped(
             &self.downloader,
             hash,
             providers,
@@ -268,7 +362,7 @@ async fn expire_blob_tags(blobs: &iroh_blobs::BlobsProtocol) -> anyhow::Result<(
     Ok(())
 }
 
-/// Parse the embedded fetch time (unix seconds) from a `relay/<secs>/<hash>` tag.
+/// Parse the embedded fetch time (unix seconds) from a `mailbox/<secs>/<hash>` tag.
 fn tag_fetch_secs(name: &[u8]) -> Option<u64> {
     let name = std::str::from_utf8(name).ok()?;
     name.strip_prefix(BLOB_TAG_PREFIX)?
@@ -276,56 +370,6 @@ fn tag_fetch_secs(name: &[u8]) -> Option<u64> {
         .next()?
         .parse()
         .ok()
-}
-
-/// Max size of a blob fetched out-of-band over iroh. The hash is
-/// content-addressed but its size is not bounded by anything the relay can see,
-/// so an untrusted log could reference a blob far larger than any legitimate
-/// message (the composer caps a whole message at 16 MiB, and each media item is
-/// a separate blob, so no single blob can legitimately exceed it).
-const MAX_BLOB_BYTES: u64 = 16 * 1024 * 1024;
-
-/// Download `hash` from `providers`, aborting if the transfer exceeds
-/// [`MAX_BLOB_BYTES`]. Returns whether the blob is present locally afterwards.
-async fn download_capped(
-    downloader: &Downloader,
-    hash: iroh_blobs::Hash,
-    providers: Shuffled,
-    attempt_timeout: Duration,
-    blobs: &iroh_blobs::BlobsProtocol,
-) -> bool {
-    let result = tokio::time::timeout(attempt_timeout, async {
-        let mut stream = downloader
-            .download(GetRequest::all(hash), providers)
-            .stream()
-            .await
-            .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;
-        while let Some(item) = stream.next().await {
-            match item {
-                // Dropping the stream on return cancels the in-flight download.
-                DownloadProgressItem::Progress(total) if total > MAX_BLOB_BYTES => {
-                    anyhow::bail!("blob exceeds {MAX_BLOB_BYTES} byte cap ({total} bytes)")
-                }
-                DownloadProgressItem::Error(err) => anyhow::bail!("download failed: {err}"),
-                DownloadProgressItem::DownloadError => anyhow::bail!("download error"),
-                _ => {}
-            }
-        }
-        anyhow::Ok(())
-    })
-    .await;
-
-    match result {
-        Ok(Ok(())) => blobs.has(hash).await.unwrap_or(false),
-        Ok(Err(err)) => {
-            tracing::debug!(%hash, ?err, "mailbox blob download failed");
-            false
-        }
-        Err(_) => {
-            tracing::warn!(%hash, "mailbox blob download timed out");
-            false
-        }
-    }
 }
 
 #[cfg(test)]
@@ -337,7 +381,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
         let expected = key.public();
-        let bs = BlobSync::new(key, dir.path().to_path_buf()).await.unwrap();
+        let bs = BlobSync::new(key, dir.path().to_path_buf(), None)
+            .await
+            .unwrap();
         assert_eq!(bs.endpoint_id(), expected);
     }
 

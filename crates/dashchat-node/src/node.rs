@@ -4,9 +4,9 @@ pub(crate) mod publish;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
-use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, MAX_BLOB_BYTES};
+use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
 use crate::filesystem::Filesystem;
@@ -15,12 +15,14 @@ use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
+use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
+use p2panda_net::discovery::DiscoveryConfig;
 use p2panda_spaces::ActorId;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
@@ -35,19 +37,12 @@ use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, EditMessageError, MediaAttachment, MediaMetaKind, MediaMetadata, OutgoingFile,
+    DirectChatId, EditMessageError, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile,
     OutgoingMedia,
 };
+use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
 pub use app_processing::Notification;
-
-const NETWORK_ID: &'static str = "dash-chat";
-
-pub static RELAY_URL: LazyLock<RelayUrl> = LazyLock::new(|| {
-    "https://euc1-1.relay.n0.iroh-canary.iroh.link"
-        .parse()
-        .expect("valid relay URL")
-});
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
@@ -56,15 +51,59 @@ pub struct NodeConfig {
     pub capabilities: Capabilities,
     pub network_id: NetworkId,
     pub mdns_mode: MdnsDiscoveryMode,
-    pub relay_url: Option<RelayUrl>,
+    /// Whether to register the node with the hardcoded relay so it is reachable
+    /// over the internet.
+    pub use_relay: bool,
+    /// Whether to participate in peer-to-peer connectivity with other Dash Chat
+    /// clients. When disabled, all communication flows through mailbox servers.
+    ///
+    /// This flag itself gates two of the four p2p surfaces:
+    /// - **p2panda random-walk discovery**: when false, zero random walkers run
+    ///   (see [`Node::init`]), so the node never gossips its own transport info
+    ///   to peers nor learns theirs.
+    /// - **p2panda bootstrap nodes**: when false, peers are never registered as
+    ///   bootstrap nodes (see `register_bootstrap_node`), so discovery can't
+    ///   reach them directly over a relay.
+    ///
+    /// The other two surfaces are also controlled by sibling fields:
+    /// - **mDNS discovery**: [`Self::mdns_mode`].
+    /// - **iroh relay** (internet reachability / NAT traversal): [`Self::use_relay`].
+    ///
+    /// [`Self::no_p2p`] disables all four together.
+    /// The Node's initialization will reject any config with `enable_p2p` set to false
+    /// and either `mdns_mode` or `use_relay` set to active/true.
+    ///
+    /// The iroh endpoint itself
+    /// always stays up — mailbox blob/media exchange rides it and is unaffected.
+    /// (The blob fetcher does still *attempt* a direct dial to a blob's author
+    /// as a fallback source, but with every discovery surface off it has no
+    /// address to dial, so those attempts cannot connect.)
+    pub enable_p2p: bool,
+    /// Whether to open the blob store and run blob sync. When disabled, all
+    /// media send/fetch/serve operations error. Independent of [`Self::enable_p2p`]:
+    /// `no_p2p` nodes still exchange media blobs through mailboxes over the iroh
+    /// endpoint. Only the iOS push extension disables this — it never touches
+    /// media, and opening the iroh-blobs `redb` metadata store would deadlock on
+    /// the exclusive single-process lock the always-on main app already holds.
+    pub enable_blob_sync: bool,
     pub blob_fetch: BlobFetchConfig,
+    /// How often the followup task re-announces still-unfetched blob hashes to
+    /// their mailboxes.
+    pub unfetched_blob_followup_interval: std::time::Duration,
 }
 
 impl NodeConfig {
     /// Disable p2p features and only use mailbox-based communication.
     pub fn no_p2p(mut self) -> Self {
         self.mdns_mode = MdnsDiscoveryMode::Disabled;
-        self.relay_url = None;
+        self.use_relay = false;
+        self.enable_p2p = false;
+        self
+    }
+
+    /// Skip opening the blob store entirely; media operations become unavailable.
+    pub fn no_blob_sync(mut self) -> Self {
+        self.enable_blob_sync = false;
         self
     }
 
@@ -73,27 +112,37 @@ impl NodeConfig {
         use crate::compat::Capabilities;
 
         let mut mailboxes_config = MailboxesConfig::default();
-        mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
-        mailboxes_config.degraded_interval = std::time::Duration::from_millis(2000);
-        mailboxes_config.stopped_interval = std::time::Duration::from_millis(5000);
+        mailboxes_config.active_interval = std::time::Duration::from_millis(500);
+        mailboxes_config.degraded_interval = std::time::Duration::from_millis(1000);
+        mailboxes_config.stopped_interval = std::time::Duration::from_millis(1500);
         mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config,
             capabilities: Capabilities::current(),
-            network_id: Hash::digest(NETWORK_ID.as_bytes()).into(),
+            network_id: *NETWORK_ID,
             // In testing we disable mDNS discovery and do not provide a relay address so as not
             // to effect expected behavior of existing tests.
             mdns_mode: MdnsDiscoveryMode::Disabled,
-            relay_url: None,
+            use_relay: false,
+            enable_p2p: true,
+            enable_blob_sync: true,
             // Retry blob downloads quickly so tests don't wait on the
             // production-scale pass interval.
             blob_fetch: BlobFetchConfig {
-                pass_interval: std::time::Duration::from_secs(2),
-                attempt_timeout: std::time::Duration::from_secs(10),
-                ..BlobFetchConfig::default()
+                concurrency: 4,
+                pass_interval: std::time::Duration::from_secs(1),
+                attempt_timeout: std::time::Duration::from_secs(3),
+                retry_cooldown: std::time::Duration::from_secs(1),
             },
+            unfetched_blob_followup_interval: std::time::Duration::from_secs(1),
         }
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn random_network_id(mut self) -> Self {
+        self.network_id = p2panda::Topic::random().into();
+        self
     }
 }
 
@@ -103,10 +152,13 @@ impl Default for NodeConfig {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
             capabilities: Capabilities::current(),
-            network_id: Hash::digest(NETWORK_ID.as_bytes()).into(),
+            network_id: *NETWORK_ID,
             mdns_mode: MdnsDiscoveryMode::Active,
-            relay_url: Some(RELAY_URL.clone()),
+            use_relay: true,
+            enable_p2p: true,
+            enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
+            unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
         }
     }
 }
@@ -119,7 +171,7 @@ pub struct Node {
 
     pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
 
-    config: NodeConfig,
+    pub config: NodeConfig,
 
     notification_tx: Option<mpsc::Sender<Notification>>,
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
@@ -138,15 +190,24 @@ pub struct Node {
     node_keys: NodeKeys,
 
     filesystem: Filesystem,
-    blob_sync: BlobSync,
+    /// `None` when [`NodeConfig::enable_blob_sync`] is off (the iOS push
+    /// extension), which only reads the operation to build a notification and
+    /// never touches media blobs. Skipping it avoids opening the iroh-blobs
+    /// `redb` metadata store — whose exclusive single-process lock the always-on
+    /// main app holds, which would otherwise deadlock the extension's node build.
+    blob_sync: Option<BlobSync>,
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    endpoint: p2panda::Endpoint,
+    network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    unfetched_blob_trigger: Arc<tokio::sync::Notify>,
+    unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
 /// node never references a blob that the fetcher's own cap would reject.
-fn ensure_blob_size(size: usize, name: &str) -> anyhow::Result<()> {
+fn ensure_blob_size(size: u64, _name: &str) -> anyhow::Result<()> {
     if size as u64 > MAX_BLOB_BYTES {
-        anyhow::bail!("media item {name:?} is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
+        anyhow::bail!("a media item is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
     }
     Ok(())
 }
@@ -182,6 +243,20 @@ impl Node {
         notification_tx: Option<mpsc::Sender<Notification>>,
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
+        // A no-p2p config must fully disable p2p: `enable_p2p == false` is only
+        // coherent when mDNS is disabled and no relay is used. Reject a config
+        // that contradicts itself rather than silently leaving a p2p surface on.
+        if !config.enable_p2p
+            && (!matches!(config.mdns_mode, MdnsDiscoveryMode::Disabled) || config.use_relay)
+        {
+            anyhow::bail!(
+                "invalid NodeConfig: enable_p2p is false but a p2p surface is still on \
+                 (mdns_mode = {:?}, use_relay = {})",
+                config.mdns_mode,
+                config.use_relay,
+            );
+        }
+
         // === p2panda node === //
 
         let url = format!("sqlite://{}", filesystem.op_store_path().to_string_lossy());
@@ -191,8 +266,19 @@ impl Node {
             .database_url(&url)
             .mdns_mode(config.mdns_mode.clone());
 
-        if let Some(relay_url) = &config.relay_url {
-            builder = builder.relay_url(relay_url.clone());
+        if config.use_relay {
+            builder = builder.relay_url(RELAY_URL.clone());
+        }
+
+        // With p2p disabled, run zero random-walk discovery walkers so the node
+        // never initiates discovery sessions. Otherwise, inserting a mailbox's
+        // address (a full p2panda node when run in-process) would let discovery
+        // gossip our transport info through it, leaking a direct path to peers.
+        if !config.enable_p2p {
+            builder = builder.discovery_config(DiscoveryConfig {
+                random_walkers_count: 0,
+                ..Default::default()
+            });
         }
 
         let p2panda_node = builder.spawn().await?;
@@ -231,36 +317,43 @@ impl Node {
 
         // === blob sync === //
 
-        let self_endpoint = iroh::EndpointId::from_bytes(node_keys.device_id().as_bytes())?;
-        let source_lookup = crate::blob_sync::MixedSourceLookup::new(
-            op_store.clone(),
-            mailboxes.clone(),
-            self_endpoint,
-        );
-        // LogId = blake3(topic.as_bytes()) is one-way and the op-store does not
-        // persist TopicId alongside each operation, so we invert it by hashing
-        // the topics we subscribe to (chat media lives in subscribed chat
-        // topics). Without this the pool starts empty and a blob left
-        // undownloaded at shutdown is never re-queued — only the live path adds
-        // it — so it can never load again after a restart.
-        let topic_by_log_id: std::collections::HashMap<LogId, TopicId> = local_store
-            .subscribed_topics()
-            .await?
-            .into_iter()
-            .map(|topic| (LogId::from_topic(topic), topic))
-            .collect();
-        let blob_fetch = BlobFetchPool::from_ops(
-            op_store.get_all_operations_not_fully_sorted(),
-            move |log_id| topic_by_log_id.get(log_id).copied(),
-        )
-        .await?;
-        let blob_sync = BlobSync::new(
-            endpoint,
-            filesystem.blobs_store_path(),
-            blob_fetch,
-            source_lookup,
-        )
-        .await?;
+        // The push extension never touches media and must not open the
+        // iroh-blobs store — its `redb` metadata db takes an exclusive
+        // single-process lock the always-on main app already holds, which would
+        // deadlock this build. It reads the operation and builds a notification
+        // from its payload only, so blob sync is skipped entirely.
+        let blob_sync = if config.enable_blob_sync {
+            let self_endpoint = iroh::EndpointId::from_bytes(node_keys.device_id().as_bytes())?;
+            let source_lookup = crate::blob_sync::MixedSourceLookup::new(
+                op_store.clone(),
+                mailboxes.clone(),
+                self_endpoint,
+            );
+
+            // LogId = blake3(topic.as_bytes()) is one-way and the op-store does not
+            // persist TopicId alongside each operation, so we invert it by hashing
+            // the topics we subscribe to (chat media lives in subscribed chat
+            // topics). Without this the pool starts empty and a blob left
+            // undownloaded at shutdown is never re-queued — only the live path adds
+            // it — so it can never load again after a restart.
+            let blob_fetch = BlobFetchPool::from_ops(
+                op_store.get_all_operations_not_fully_sorted(),
+                op_store.store.clone(),
+            )
+            .await?;
+            Some(
+                BlobSync::new(
+                    endpoint.clone(),
+                    filesystem.blobs_store_path(),
+                    blob_fetch,
+                    source_lookup,
+                    local_store.clone(),
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
 
         // === node === //
 
@@ -281,6 +374,10 @@ impl Node {
             registered_bootstraps: Default::default(),
             blob_sync,
             blob_fetch_handle: Default::default(),
+            endpoint,
+            network_change_handle: Default::default(),
+            unfetched_blob_trigger: Default::default(),
+            unfetched_blob_followup_handle: Default::default(),
         };
 
         // === application processor task === //
@@ -291,13 +388,34 @@ impl Node {
 
         // === blob fetch loop === //
 
-        let blob_fetch_handle = node
-            .blob_sync
-            .spawn_fetch_loop(node.config.blob_fetch.clone());
-        node.blob_fetch_handle
+        if let Some(blob_sync) = &node.blob_sync {
+            let blob_fetch_handle = blob_sync.spawn_fetch_loop(node.config.blob_fetch.clone());
+            node.blob_fetch_handle
+                .lock()
+                .await
+                .replace(blob_fetch_handle);
+        }
+
+        // === network change notifier === //
+
+        let network_change_handle =
+            crate::network_change_notifier::spawn(node.endpoint.clone(), node.mailboxes.clone());
+        node.network_change_handle
             .lock()
             .await
-            .replace(blob_fetch_handle);
+            .replace(network_change_handle);
+
+        // === unfetched blob followup loop === //
+
+        let followup_handle = crate::spawn_unfetched_blob_followup_task(
+            node.clone(),
+            node.config.unfetched_blob_followup_interval,
+            node.unfetched_blob_trigger.clone(),
+        );
+        node.unfetched_blob_followup_handle
+            .lock()
+            .await
+            .replace(followup_handle);
 
         // === topics === //
 
@@ -364,9 +482,59 @@ impl Node {
     }
 
     #[cfg(feature = "testing")]
+    pub fn blob_sync(&self) -> &crate::blob_sync::BlobSync {
+        self.blob_sync
+            .as_ref()
+            .expect("blob sync is enabled for p2p (testing) nodes")
+    }
+
+    pub fn unfetched_blob_tracker(
+        &self,
+    ) -> std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker> {
+        crate::LocalStoreBlobTracker::new(self.local_store.clone())
+    }
+
+    /// Wake the unfetched-blob followup task to run a reconciliation pass now
+    /// (e.g. on unpause / network change).
+    pub fn notify_unfetched_blob_followup(&self) {
+        self.unfetched_blob_trigger.notify_one();
+    }
+
+    #[cfg(feature = "testing")]
     pub fn endpoint_id(&self) -> iroh::EndpointId {
         iroh::EndpointId::from_bytes(self.device_id().as_bytes())
             .expect("device id is a valid endpoint id")
+    }
+
+    /// The underlying iroh endpoint. An in-process mailbox shares this so its
+    /// `/health` response advertises the node's dialing address.
+    pub async fn iroh_endpoint(&self) -> Result<iroh::Endpoint> {
+        Ok(self.endpoint.endpoint().await?)
+    }
+
+    /// Add (or refresh) a peer's dialing address (relay + direct addresses) in
+    /// the p2panda address book so the iroh blob downloader can reach that peer
+    /// by its EndpointId. Used for mailbox `/health` self-addresses and for peer
+    /// addresses forwarded by a user's opt-in local mailbox. Always overwrites
+    /// any existing entry so a stale one (refused by `AddressBookDiscovery`) is
+    /// refreshed and becomes dialable again.
+    pub async fn insert_peer_addr(&self, addr: iroh::EndpointAddr) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::RegisterPeerAddr { addr, reply_tx })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+        reply_rx.await??;
+        Ok(())
+    }
+
+    /// The node's blob sync, or an error when blob sync is disabled (the push
+    /// extension never opens a blob store). Only the media send/serve paths —
+    /// never reached by the extension — call this.
+    fn require_blob_sync(&self) -> Result<&BlobSync> {
+        self.blob_sync
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("media blob operations require blob sync enabled"))
     }
 
     #[cfg(feature = "testing")]
@@ -374,21 +542,33 @@ impl Node {
     /// in-process mailbox uses this so relayed blobs land in—and are served
     /// from—the same store on the same endpoint as the node.
     pub fn blobs(&self) -> iroh_blobs::BlobsProtocol {
-        self.blob_sync.blobs.clone()
+        self.blob_sync
+            .as_ref()
+            .expect("blob sync is enabled for p2p (testing) nodes")
+            .blobs
+            .clone()
     }
 
     #[cfg(feature = "testing")]
     /// The node's blob downloader, for an in-process mailbox to fetch blobs
     /// into the shared store over the node's endpoint.
     pub fn blob_downloader(&self) -> iroh_blobs::api::downloader::Downloader {
-        self.blob_sync.downloader()
+        self.blob_sync
+            .as_ref()
+            .expect("blob sync is enabled for p2p (testing) nodes")
+            .downloader()
     }
 
     #[cfg(feature = "testing")]
     /// Topics the blob fetch pool currently associates with `hash`. Lets a test
     /// assert that startup hydration re-queued a stored op's blob.
     pub async fn blob_fetch_pool_topics_for(&self, hash: iroh_blobs::Hash) -> Vec<TopicId> {
-        self.blob_sync.fetch_pool.topics_for(hash).await
+        self.blob_sync
+            .as_ref()
+            .expect("blob sync is enabled for p2p (testing) nodes")
+            .fetch_pool
+            .topics_for(hash)
+            .await
     }
 
     pub fn device_group_topic(&self) -> DeviceGroupId {
@@ -754,13 +934,30 @@ impl Node {
         message: impl Into<String>,
         media: Option<OutgoingMedia>,
     ) -> anyhow::Result<Header> {
+        let chat_id: ChatId = topic.into();
         let meta = if let Some(media) = media {
-            Some(self.store_media(media).await?)
+            Some(
+                self.store_media(chat_id.into(), SENTINEL_OP_HASH, media)
+                    .await?,
+            )
         } else {
             None
         };
-        let message = ChatMessageContent::new(message, meta);
-        self.send_message_raw(topic, message).await
+        let message = ChatMessageContent::new(message, meta.clone());
+        let header = self.send_message_raw(chat_id, message).await?;
+        if let Some(bundle) = meta {
+            let topic_id: TopicId = chat_id.into();
+            for item in bundle.iter() {
+                if let Err(err) = self
+                    .require_blob_sync()?
+                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash)
+                    .await
+                {
+                    tracing::warn!(?err, "failed to retag blob after operation creation");
+                }
+            }
+        }
+        Ok(header)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
@@ -824,7 +1021,7 @@ impl Node {
         message: impl Into<String>,
     ) -> Result<Header, EditMessageError> {
         let topic = topic.into();
-        let ops = self.chat_ops(topic).await?;
+        let ops = self.valid_chat_ops(topic).await?;
         let now = u64::from(p2panda_core::Timestamp::now());
         validate_edit(&ops, &edit_hash, self.device_id(), now, None)?;
 
@@ -868,7 +1065,11 @@ impl Node {
 
     /// Collect all chat operations in a topic, reduced to the fields edit
     /// validation needs, keyed by operation hash.
-    pub(crate) async fn chat_ops(
+    //
+    // TODO: performance: this triggers a full log traversal on processing every
+    // edit operation. We can improve this by building up the parallel ChatOp list
+    // reduced state as part of the ACID refactors.
+    pub(crate) async fn valid_chat_ops(
         &self,
         topic: ChatId,
     ) -> anyhow::Result<std::collections::HashMap<Hash, ChatOp>> {
@@ -878,7 +1079,9 @@ impl Node {
         let mut ops = std::collections::HashMap::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else { continue };
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
                 let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
                     continue;
                 };
@@ -898,6 +1101,32 @@ impl Node {
             }
         }
 
+        // Strip edit ops that don't pass validation so callers always work with
+        // a consistent, cheat-proof view. An invalid edit (wrong author, expired
+        // window, broken chain) must not poison the AlreadyEdited scan for
+        // legitimate edits of the same target.
+        let edit_hashes: Vec<Hash> = ops
+            .iter()
+            .filter_map(|(hash, op)| {
+                if matches!(op.kind, ChatOpKind::Edit(_)) {
+                    Some(*hash)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for hash in edit_hashes {
+            let op = &ops[&hash];
+            let (ChatOpKind::Edit(edit_hash), editor, timestamp) =
+                (op.kind.clone(), op.author, op.timestamp)
+            else {
+                unreachable!()
+            };
+            if validate_edit(&ops, &edit_hash, editor, timestamp, Some(&hash)).is_err() {
+                ops.remove(&hash);
+            }
+        }
+
         Ok(ops)
     }
 
@@ -910,23 +1139,23 @@ impl Node {
         topic: impl Into<ChatId>,
     ) -> anyhow::Result<Vec<crate::chat::ValidEdit>> {
         let topic = topic.into();
-        let ops = self.chat_ops(topic).await?;
+        let valid_ops = self.valid_chat_ops(topic).await?;
         let log_id = LogId::from(topic);
         let authors = self.op_store.get_authors(log_id).await?;
 
         let mut edits = Vec::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else { continue };
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
                 let Ok(Payload::Chat(ChatPayload::EditMessage { message, edit_hash })) =
                     Payload::try_from_body(body)
                 else {
                     continue;
                 };
                 let op_hash = op.header.hash();
-                let editor = DeviceId::from(op.header.verifying_key);
-                let timestamp: u64 = op.header.timestamp.into();
-                if validate_edit(&ops, &edit_hash, editor, timestamp, Some(&op_hash)).is_ok() {
+                if valid_ops.contains_key(&op_hash) {
                     edits.push(crate::chat::ValidEdit {
                         op_hash,
                         target: edit_hash,
@@ -988,15 +1217,26 @@ impl Node {
     /// Tombstone an operation: record its hash in the topic's persisted
     /// tombstone set so its payload is never stored or synced again, and
     /// immediately drop any payload already stored for it.
+    ///
+    /// This has the effect that when the operation is played back, it will
+    /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
+    /// is `true` MUST also revert their changes in [`Self::unprocess_app`]
+    /// so that they leave behind no traces in local state.
     pub async fn tombstone_operation(
         &self,
         topic: TopicId,
         operation: &Operation,
     ) -> anyhow::Result<()> {
-        if self.is_tombstoneable(operation).is_some() {
+        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
+            return Ok(());
+        };
+        if self.is_tombstoneable(&payload) {
             let hash = operation.hash;
+            self.local_store.add_tombstone(topic, hash.clone()).await?;
+            self.unprocess_app(operation).await?;
             self.op_store.delete_body(&hash).await?;
-            self.local_store.add_tombstone(topic, hash).await?;
+        } else {
+            tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
         }
         Ok(())
     }
@@ -1030,10 +1270,54 @@ impl Node {
             handle.abort();
         }
 
-        // Close pools last. SqlitePool clones share underlying state, so closing
-        // here drains every connection across the app.
+        if let Some(handle) = self.unfetched_blob_followup_handle.lock().await.take() {
+            handle.abort();
+        }
+
+        if let Some(handle) = self.network_change_handle.lock().await.take() {
+            handle.abort();
+        }
+
+        // Release every held file lock before returning, or iOS SIGKILLs the
+        // suspended app (0xdead10cc). File locks first, slow best-effort endpoint
+        // close last, each time-bounded so none outlasts the suspension window.
+
+        // iroh-blobs redb store: a file lock like the SQLite pools; fetch loop
+        // aborted above so nothing else is using it now. Absent when blob sync
+        // is disabled (the push extension), which never opens it.
+        if let Some(blob_sync) = &self.blob_sync {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                blob_sync.blobs.store().shutdown(),
+            )
+            .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) => tracing::warn!("failed to shut down blob store: {err:?}"),
+                Err(_) => tracing::warn!("timed out shutting down blob store"),
+            }
+        }
+
+        // Close pools last.
+        // SqlitePool clones share state, so this drains every connection; the
+        // sync tracker owns a separate pool (mailbox_sync_tracker.db).
+        self.mailboxes.sync_tracker().close().await;
         self.local_store.close().await;
         self.op_store.close().await;
+
+        // Holds only sockets (no file lock), so it goes last. The node keeps its
+        // own endpoint clone, so the actor drop above doesn't release it.
+        match self.endpoint.endpoint().await {
+            Ok(endpoint) => {
+                if tokio::time::timeout(std::time::Duration::from_secs(3), endpoint.close())
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!("timed out closing iroh endpoint");
+                }
+            }
+            Err(err) => tracing::warn!("failed to resolve iroh endpoint for close: {err:?}"),
+        }
 
         Ok(())
     }
@@ -1056,6 +1340,13 @@ impl Node {
             .save_contact(contact.clone())
             .await
             .map_err(|e| AddContactError::StoreContact(e.to_string()))?;
+
+        // Register the scanned contact as a bootstrap so p2panda discovery can
+        // reach it directly over the internet (relay + pkarr), rather than
+        // depending on a mutually-reachable mailbox to introduce the two nodes.
+        self.register_bootstrap_node(*contact.device_pubkey)
+            .await
+            .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
 
         // SPACES: Register the member in the spaces manager
 
@@ -1292,37 +1583,48 @@ impl Node {
         Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 
-    pub async fn store_media(&self, media: OutgoingMedia) -> anyhow::Result<MediaAttachment> {
+    pub async fn store_media(
+        &self,
+        topic: TopicId,
+        operation_hash: p2panda::Hash,
+        media: OutgoingMedia,
+    ) -> anyhow::Result<MediaBundle> {
         let mut items = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
                 for photo in photos {
-                    let size = photo.data.len();
+                    let size = photo.data.len() as u64;
                     ensure_blob_size(size, &photo.name)?;
-                    let tag = self.blob_sync.blobs.add_bytes(photo.data).await?;
+                    let hash = self
+                        .require_blob_sync()?
+                        .store_blob(topic, self.device_id(), operation_hash, photo.data)
+                        .await?;
                     items.push(MediaMetadata {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
-                        hash: tag.hash,
+                        hash,
                         kind: MediaMetaKind::Photo,
                     });
                 }
             }
             OutgoingMedia::File { file } => {
-                let size = file.data.len();
+                let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
-                let tag = self.blob_sync.blobs.add_bytes(file.data).await?;
+                let hash = self
+                    .require_blob_sync()?
+                    .store_blob(topic, self.device_id(), operation_hash, file.data)
+                    .await?;
                 items.push(MediaMetadata {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
-                    hash: tag.hash,
+                    hash,
                     kind: MediaMetaKind::File,
                 });
             }
         }
-        Ok(MediaAttachment::from(items))
+        Ok(MediaBundle::from(items))
     }
 
     /// Load the raw bytes of a single blob by its hash from the local blob store.
@@ -1341,15 +1643,16 @@ impl Node {
         timeout: Option<std::time::Duration>,
     ) -> anyhow::Result<Vec<u8>> {
         let hash: iroh_blobs::Hash = hash.parse()?;
+        let blob_sync = self.require_blob_sync()?;
         let Some(timeout) = timeout else {
-            return Ok(self.blob_sync.blobs.get_bytes(hash).await?.to_vec());
+            return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
         };
 
-        if !self.blob_sync.blobs.has(hash).await.unwrap_or(false) {
+        if !blob_sync.blobs.has(hash).await.unwrap_or(false) {
             // Kick the download in the background so the poll below can still
             // observe the blob arriving via any path (this fetch, the
             // background loop, or a mailbox relay) rather than blocking on one.
-            let blob_sync = self.blob_sync.clone();
+            let blob_sync = blob_sync.clone();
             tokio::spawn(async move {
                 blob_sync.fetch_now(hash, timeout).await;
             });
@@ -1357,8 +1660,8 @@ impl Node {
 
         let deadline = std::time::Instant::now() + timeout;
         loop {
-            if self.blob_sync.blobs.has(hash).await.unwrap_or(false) {
-                return Ok(self.blob_sync.blobs.get_bytes(hash).await?.to_vec());
+            if blob_sync.blobs.has(hash).await.unwrap_or(false) {
+                return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
             }
             if std::time::Instant::now() >= deadline {
                 anyhow::bail!("blob {hash} not available after {timeout:?}");
@@ -1371,7 +1674,7 @@ impl Node {
         let mut items = vec![];
         for item in meta {
             let data = self
-                .blob_sync
+                .require_blob_sync()?
                 .blobs
                 .get_bytes(item.hash)
                 .await
@@ -1411,6 +1714,39 @@ impl Node {
                 .collect();
             return Ok(OutgoingMedia::Photos { photos });
         }
+    }
+}
+
+#[cfg(test)]
+mod config_validation_tests {
+    use crate::NodeConfig;
+    use crate::node::Node;
+
+    async fn init_result(config: NodeConfig) -> anyhow::Result<Node> {
+        let dir = tempfile::tempdir().unwrap();
+        Node::new(dir.path().into(), config, None, None).await
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn init_rejects_no_p2p_with_relay() {
+        let mut config = NodeConfig::testing();
+        config.enable_p2p = false;
+        config.use_relay = true;
+        assert!(init_result(config).await.is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn init_rejects_no_p2p_with_mdns() {
+        use p2panda::network::MdnsDiscoveryMode;
+        let mut config = NodeConfig::testing();
+        config.enable_p2p = false;
+        config.mdns_mode = MdnsDiscoveryMode::Active;
+        assert!(init_result(config).await.is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn init_accepts_consistent_no_p2p_config() {
+        assert!(init_result(NodeConfig::testing().no_p2p()).await.is_ok());
     }
 }
 

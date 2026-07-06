@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { invoke } from '@tauri-apps/api/core';
+	import { invokeAfterSetup } from 'dash-chat-stores';
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -25,7 +25,7 @@
 		try {
 			// On success the app exits immediately,
 			// so no code after this line executes on the happy path.
-			await invoke('delete_account');
+			await invokeAfterSetup('delete_account');
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorDeleteAccount(), 'error');

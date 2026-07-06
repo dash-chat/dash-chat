@@ -1,19 +1,41 @@
+import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
 /** The global photo viewer overlay. */
-export class Lightbox {
-	constructor(private agent: WebdriverIO.Browser) {}
-
-	root = this.agent.$(tid('lightbox'));
-	image = this.agent.$(`${tid('lightbox')} ${tid('blob-image')}`);
-	close = this.agent.$(tid('lightbox-close'));
-	save = this.agent.$(tid('lightbox-save'));
-	prev = this.agent.$(tid('lightbox-prev'));
-	next = this.agent.$(tid('lightbox-next'));
-	filmstrip = this.agent.$(tid('lightbox-filmstrip'));
+export class Lightbox extends TestHelper {
+	root = this.el(tid('lightbox'));
+	image = this.el(tid('lightbox-image'));
+	close = this.el(tid('lightbox-close'));
+	save = this.el(tid('lightbox-save'));
+	prev = this.el(tid('lightbox-prev'));
+	next = this.el(tid('lightbox-next'));
+	filmstrip = this.el(tid('lightbox-filmstrip'));
 
 	thumb(index: number) {
 		return this.agent.$(tid(`lightbox-thumb-${index}`));
+	}
+
+	/** The reload/retry affordance inside the thumbnail at `index`, shown when
+	 * that thumbnail's image failed to load. */
+	thumbRetry(index: number) {
+		return this.thumb(index).$(tid('blob-image-retry'));
+	}
+
+	/** The reload/retry affordance on the main stage (not a filmstrip thumb),
+	 * shown when the displayed photo failed to load. Stage images carry the
+	 * `lightbox-image` class; thumbnails do not. */
+	stageRetry() {
+		return this.agent.$(`.lightbox-image${tid('blob-image-retry')}`);
+	}
+
+	/** Simulate a failed load for the thumbnail at `index` (and any image that
+	 * shares its alt), surfacing the reload/retry affordance. */
+	async forceThumbError(index: number): Promise<void> {
+		const alt = await this.thumb(index).$('img').getAttribute('alt');
+		if (!alt) throw new Error(`Thumbnail ${index} has no image alt to target`);
+		await this.agent.execute((a: string) => {
+			window.__test.forceBlobError(a);
+		}, alt);
 	}
 
 	/** Index of the currently active photo (based on the selected filmstrip thumb). */

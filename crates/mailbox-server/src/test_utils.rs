@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use axum_test::{TestServer, TestServerConfig, Transport};
 use redb::Database;
@@ -6,6 +6,8 @@ use tempfile::NamedTempFile;
 use tokio::task::JoinSet;
 
 use crate::{create_app, BlobSync, BLIPS_TABLE, WATERMARKS_TABLE};
+
+pub const LONG_AGO: Duration = Duration::from_hours(100 * 24); // 100 days
 
 pub fn create_test_db() -> (Database, NamedTempFile) {
     let temp_file = NamedTempFile::new().unwrap();
@@ -24,7 +26,7 @@ pub fn create_test_db() -> (Database, NamedTempFile) {
 pub async fn test_blob_sync() -> BlobSync {
     let dir = tempfile::tempdir().expect("tempdir");
     let key = iroh::SecretKey::generate();
-    let bs = BlobSync::new(key, dir.path().to_path_buf())
+    let bs = BlobSync::new(key, dir.path().to_path_buf(), None)
         .await
         .expect("blob sync");
     std::mem::forget(dir);

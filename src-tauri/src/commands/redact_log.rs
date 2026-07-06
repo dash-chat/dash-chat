@@ -383,7 +383,8 @@ mod tests {
 
     #[test]
     fn redacts_edit_message_json() {
-        let input = r#"{"type":"EditMessage","payload":{"message":"edited secret","edit_hash":"abc"}}"#;
+        let input =
+            r#"{"type":"EditMessage","payload":{"message":"edited secret","edit_hash":"abc"}}"#;
         let result = redact(input);
         assert!(
             !result.contains("edited secret"),

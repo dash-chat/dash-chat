@@ -1,5 +1,6 @@
 use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
+use tokio_util::task::AbortOnDropHandle;
 
 // In e2e mode, use a distinct service type so test agents only discover each
 // other's local mailboxes, not external dash-chat instances on the same LAN
@@ -37,12 +38,15 @@ pub fn default_mailbox_url() -> String {
     PRODUCTION_MAILBOX_URL.to_string()
 }
 
-/// The id of the registered mailbox whose URL is the cloud URL, if any.
+/// The id of the mailbox whose URL is the cloud URL, if any.
 ///
 /// "Cloud" is an app-level concept — the generic `Mailboxes` manager has no
 /// notion of it — so we identify it by matching `default_mailbox_url()` against
-/// each registered mailbox's client URL. Returns `None` while the cloud mailbox
-/// is not (yet) registered (e.g. offline).
+/// each registered mailbox's client URL. When no registered mailbox matches
+/// (e.g. after a cold start while the cloud server is unreachable, so it can't
+/// be re-registered), we fall back to the URL persisted in the sync tracker so
+/// a previously-delivered message still resolves to the cloud mailbox. Returns
+/// `None` only when the cloud mailbox has never been reached on this device.
 pub(crate) async fn cloud_mailbox_id(
     node: &dashchat_node::Node,
 ) -> Option<mailbox_client::MailboxId> {
@@ -55,23 +59,28 @@ pub(crate) async fn cloud_mailbox_id(
             }
         }
     }
-    None
+    node.mailboxes
+        .sync_tracker()
+        .mailbox_id_for_url(&cloud_url)
+        .await
+        .unwrap_or(None)
 }
 
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     handle: &AppHandle<R>,
     node: dashchat_node::Node,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<AbortOnDropHandle<()>> {
     let mdns: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
     let receiver = mdns.browse(MDNS_SERVICE_TYPE)?;
     log::info!("Started mdns browse for local mailboxes: {MDNS_SERVICE_TYPE}");
 
-    let mut handler_task = tokio::spawn(handle_browse_events(node.clone(), receiver));
+    let mut handler_task =
+        AbortOnDropHandle::new(tokio::spawn(handle_browse_events(node.clone(), receiver)));
 
     // The browse receiver is tied to the interface set the daemon had at
     // `browse()` time; when the device switches networks services on the
     // new interface aren't picked up until we re-issue the browse.
-    tokio::spawn(async move {
+    let watcher_task = tokio::spawn(async move {
         use futures::StreamExt;
         let mut watcher = match if_watch::tokio::IfWatcher::new() {
             Ok(w) => w,
@@ -113,7 +122,10 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
 
             match mdns.browse(MDNS_SERVICE_TYPE) {
                 Ok(receiver) => {
-                    handler_task = tokio::spawn(handle_browse_events(node.clone(), receiver));
+                    handler_task = AbortOnDropHandle::new(tokio::spawn(handle_browse_events(
+                        node.clone(),
+                        receiver,
+                    )));
                 }
                 Err(err) => {
                     log::warn!("Failed to restart mDNS browse after interface change: {err:?}");
@@ -124,7 +136,7 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
         log::warn!("Mailbox browse interface watcher stream ended");
     });
 
-    Ok(())
+    Ok(AbortOnDropHandle::new(watcher_task))
 }
 
 async fn handle_browse_events(
@@ -177,8 +189,36 @@ async fn handle_browse_events(
                             mailbox_id.clone(),
                             url.clone(),
                             node.endpoint_id(),
+                            node.unfetched_blob_tracker(),
                         ))
                         .await;
+                    // Add the mailbox's dialing address to the address book so
+                    // the blob downloader can reach it by EndpointId rather than
+                    // relying solely on p2panda mDNS resolution timing.
+                    match dashchat_node::mailbox::fetch_mailbox_health(&url).await {
+                        Ok(health) => {
+                            if let Err(err) = node.insert_peer_addr(health.endpoint_addr).await {
+                                log::warn!(
+                                    "Failed to add local mailbox {mailbox_id} addr to address book: {err}"
+                                );
+                            }
+                        }
+                        Err(err) => log::warn!(
+                            "Failed to fetch local mailbox {mailbox_id} health for address book: {err}"
+                        ),
+                    }
+                    // Tell the mailbox our own dialing address so its blob fetch
+                    // pool can reach us as a source.
+                    // NOTE: on network changes, mDNS re-browse fires a new
+                    // ServiceResolved for each known mailbox, which re-runs this
+                    // path and re-registers the updated EndpointAddr. Cloud
+                    // mailboxes don't have this hook; re-registration there would
+                    // require a network-change callback from the node layer.
+                    if let Err(err) = node.register_with_mailbox(&url).await {
+                        log::warn!(
+                            "Failed to register our addr with local mailbox {mailbox_id}: {err}"
+                        );
+                    }
                     log::info!(
                         "*** Registered local mailbox client via mdns: {mailbox_id} ({url}) ***",
                     );

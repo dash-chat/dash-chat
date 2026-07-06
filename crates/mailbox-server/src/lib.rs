@@ -18,8 +18,10 @@ mod blob_sync;
 mod cleanup;
 mod get_blips;
 mod notify_topics_subscribers;
+mod register_peer;
 mod server_key;
 mod store_blips;
+mod store_blobs;
 mod watermark;
 mod watermarks_table;
 
@@ -39,8 +41,10 @@ pub use dashchat_utils::FetchConfig;
 pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
 };
+pub use register_peer::RegisterPeerRequest;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest};
+pub use store_blobs::{record_blob_sources, store_blobs, StoreBlobsRequest, StoreBlobsResponse};
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
@@ -72,9 +76,13 @@ pub struct AppState {
 }
 
 #[derive(Serialize, Deserialize)]
-struct HealthResponse {
-    status: String,
-    endpoint_id: String,
+pub struct HealthResponse {
+    pub status: String,
+    pub endpoint_id: String,
+    /// The mailbox endpoint's dialing address (relay + direct addresses), so
+    /// clients can add it to their p2panda address book and dial this mailbox
+    /// by its EndpointId rather than only knowing the bare id.
+    pub endpoint_addr: iroh::EndpointAddr,
 }
 
 fn db_path_blobs_dir(db_path: &std::path::Path) -> std::path::PathBuf {
@@ -89,6 +97,7 @@ pub async fn spawn_server(
     addr: String,
     push_notifications_url: Option<String>,
     blob_sync: Option<BlobSync>,
+    relay_url: Option<iroh::RelayUrl>,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = init_db(db_path.clone())?;
@@ -104,7 +113,7 @@ pub async fn spawn_server(
             let secret_key = load_or_create_secret_key(&db_arc)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             let blobs_root = db_path_blobs_dir(&db_path);
-            BlobSync::new(secret_key, blobs_root).await?
+            BlobSync::new(secret_key, blobs_root, relay_url).await?
         }
     };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
@@ -151,6 +160,7 @@ async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
         endpoint_id: encode_mailbox_id(state.blob_sync.endpoint_id()),
+        endpoint_addr: state.blob_sync.endpoint_addr(),
     })
 }
 
@@ -195,7 +205,9 @@ pub fn create_app(
     Router::new()
         .route("/health", get(health_check))
         .route("/blips/store", post(store_blips))
+        .route("/blobs/store", post(store_blobs::store_blobs))
         .route("/blips/get", post(get_blips_for_topics))
+        .route("/peers/register", post(register_peer::register_peer))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))

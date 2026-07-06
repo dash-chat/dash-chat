@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.19.1"
+version = "0.19.9"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -40,9 +40,10 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
 dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { workspace = true }
 push-notifications-client = { path = "../crates/push-notifications-client" }
-dashchat-utils = { path = "../crates/dashchat-utils" }
+dashchat-utils = { workspace = true }
 
 p2panda = { workspace = true }
+iroh = { workspace = true }
 p2panda-auth = { workspace = true }
 p2panda-core = { workspace = true }
 
@@ -50,6 +51,8 @@ anyhow = "1.0.95"
 async-trait = "0.1.85"
 time = "0.3"
 tokio = { version = "1.43.0", features = ["fs"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+thiserror = "2.0"
 regex = "1"
 hex = "0.4.3"
 mdns-sd = "0.17"
@@ -97,13 +100,21 @@ tauri-plugin-view = "0.0.5"
 jni = "0.21"
 ndk-sys = "0.6"
 ndk-context = "0.1"
-# Saves photos to the shared gallery (MediaStore). `legacy_storage_permission`
-# covers Android 9 and below (minSdk is 24), which predate scoped storage.
-tauri-plugin-android-fs = { version = "28.2", features = ["legacy_storage_permission"] }
+# Saves photos to the shared gallery (MediaStore). 
+tauri-plugin-android-fs = { version = "28.2" }
+# Enumerates recent gallery images (MediaStore) for the composer's recent-photos
+# strip. JS bindings ship as `@universalappfactory/tauri-plugin-medialibrary`.
+tauri-plugin-medialibrary = "=0.13"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2"
-tauri-plugin-ios-photos = "0.3"
+# Fork: adds `limit`/`offset` (newest-first) to requestAlbumMedias and a
+# `requestMediasByIds` fetch-by-id command, so the recent-photos strip and
+# tap-to-send no longer render the entire album.
+tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios-photos", rev = "ec723636ddf248dd6542e02fb2e83d91d1da36c9" }
+# Releases SQLite locks on background so iOS can suspend the app without a
+# 0xdead10cc kill; rebuilds the node on foreground.
+tauri-plugin-ios-lifecycle = { git = "https://github.com/dash-chat/tauri-plugin-ios-lifecycle", branch = "main" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

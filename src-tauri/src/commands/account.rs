@@ -1,10 +1,15 @@
+#[cfg(mobile)]
 use dashchat_node::Node;
 use tauri::Manager;
 use tauri::{AppHandle, State};
 
+use crate::app_node::AppNode;
+
 #[tauri::command]
-pub async fn delete_account(app: AppHandle, node: State<'_, Node>) -> Result<(), String> {
+pub async fn delete_account(app: AppHandle, app_node: State<'_, AppNode>) -> Result<(), String> {
     log::info!("Deleting account...");
+
+    let node = app_node.get().await?;
 
     #[cfg(mobile)]
     unregister_fcm_token(&app, &node).await;

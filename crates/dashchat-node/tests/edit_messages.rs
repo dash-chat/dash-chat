@@ -22,8 +22,6 @@ async fn two_friends(mailbox: &MemMailbox<MailboxOperation>) -> (TestNode, TestN
     let alice = make_node(mailbox, "alice").await;
     let bobbi = make_node(mailbox, "bobbi").await;
 
-    introduce_and_wait([&alice, &bobbi]).await;
-
     alice
         .behavior()
         .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
@@ -42,7 +40,10 @@ async fn edit_propagates_to_peer() {
     let mailbox = MemMailbox::new();
     let (alice, bobbi, chat_id) = two_friends(&mailbox).await;
 
-    let original = alice.send_message_raw(chat_id, "Helo".into()).await.unwrap();
+    let original = alice
+        .send_message_raw(chat_id, "Helo".into())
+        .await
+        .unwrap();
 
     poll.wait_for(|| async {
         let n = bobbi.get_messages(chat_id).await.unwrap().len();
@@ -88,8 +89,16 @@ async fn chained_edits_form_a_linear_chain() {
 
     let edits = alice.valid_edits(chat_id).await.unwrap();
     assert_eq!(edits.len(), 2);
-    assert!(edits.iter().any(|e| e.text == "v2" && e.target == original.hash()));
-    assert!(edits.iter().any(|e| e.text == "v3" && e.target == edit1.hash()));
+    assert!(
+        edits
+            .iter()
+            .any(|e| e.text == "v2" && e.target == original.hash())
+    );
+    assert!(
+        edits
+            .iter()
+            .any(|e| e.text == "v3" && e.target == edit1.hash())
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

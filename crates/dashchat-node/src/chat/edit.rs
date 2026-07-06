@@ -75,31 +75,34 @@ pub struct ValidEdit {
 /// "already edited" scan); it is `None` when an author validates before
 /// publishing.
 pub fn validate_edit(
-    ops: &HashMap<Hash, ChatOp>,
+    valid_ops: &HashMap<Hash, ChatOp>,
     edit_hash: &Hash,
     editor: DeviceId,
     edit_timestamp: u64,
     self_hash: Option<&Hash>,
 ) -> Result<(), EditError> {
-    let target = ops.get(edit_hash).ok_or(EditError::TargetNotFound)?;
+    let target = valid_ops.get(edit_hash).ok_or(EditError::TargetNotFound)?;
 
     match target.kind {
         ChatOpKind::Message | ChatOpKind::Edit(_) => {}
         ChatOpKind::Other => return Err(EditError::TargetNotEditable),
     }
 
+    // TODO: this is only a same-device check.
+    // If we want editing across devices, we need to check against AgentId, which is more complicated.
     if editor != target.author {
         return Err(EditError::NotAuthor);
     }
 
-    let already_edited = ops.iter().any(|(hash, op)| {
+    let already_edited = valid_ops.iter().any(|(hash, op)| {
         Some(hash) != self_hash && matches!(&op.kind, ChatOpKind::Edit(t) if t == edit_hash)
     });
     if already_edited {
         return Err(EditError::AlreadyEdited);
     }
 
-    let root_timestamp = root_message_timestamp(ops, edit_hash).ok_or(EditError::TargetNotFound)?;
+    let root_timestamp =
+        root_message_timestamp(valid_ops, edit_hash).ok_or(EditError::TargetNotFound)?;
     if edit_timestamp.saturating_sub(root_timestamp) > EDIT_WINDOW_MICROS {
         return Err(EditError::WindowExpired);
     }

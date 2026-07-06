@@ -23,7 +23,7 @@ pub enum ChatMessageContentV {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ChatMessageContentV1 {
     pub message: String,
-    pub media: Option<MediaAttachment>,
+    pub media: Option<MediaBundle>,
 }
 
 /// A photo attachment. `data` is the raw bytes of the encoded image (JPEG,
@@ -59,14 +59,14 @@ pub enum OutgoingMedia {
 }
 
 /// The collection of media metadata appearing in a single message.
-pub type MediaAttachment = Vec<MediaMetadata>;
+pub type MediaBundle = Vec<MediaMetadata>;
 
 /// The metadata to refer to a media blob, which appears in the message content.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, From)]
 pub struct MediaMetadata {
     pub name: String,
     pub mime_type: String,
-    pub size: usize,
+    pub size: u64,
     pub kind: MediaMetaKind,
     // Serialize as a CBOR byte string. `iroh_blobs::Hash`'s own non-human-readable
     // impl encodes a 32-element array, which serde's untagged-enum buffering (used
@@ -147,7 +147,7 @@ pub enum MediaMetaKind {
 pub struct ChatMessageContent(dashchat_compat::Compat<ChatMessageContentV0, ChatMessageContentV>);
 
 impl ChatMessageContent {
-    pub fn new(message: impl Into<String>, media: Option<MediaAttachment>) -> Self {
+    pub fn new(message: impl Into<String>, media: Option<MediaBundle>) -> Self {
         Self(dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(
             ChatMessageContentV1 {
                 message: message.into(),
@@ -172,7 +172,7 @@ impl ChatMessageContent {
         }
     }
 
-    pub fn media(&self) -> Option<&MediaAttachment> {
+    pub fn media(&self) -> Option<&MediaBundle> {
         match &self.0 {
             dashchat_compat::Compat::Unversioned(_) => None,
             dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => v1.media.as_ref(),

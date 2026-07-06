@@ -238,6 +238,15 @@ where
         let id = mailbox.id();
         let new_client: Arc<dyn MailboxClient<Item>> = Arc::new(mailbox);
 
+        // Persist the mailbox's URL so it can be re-identified by URL after a
+        // restart even when it is not currently registered (e.g. the cloud
+        // mailbox whose id is otherwise only resolvable from its live server).
+        if let Some(url) = new_client.url() {
+            if let Err(err) = self.sync_tracker.record_url(&id, &url).await {
+                tracing::error!(?err, mailbox = %id, "failed to record mailbox url");
+            }
+        }
+
         let mut mailboxes = self.mailboxes.lock().await;
         if let Some(tm) = mailboxes.get(&id).cloned() {
             drop(mailboxes);
@@ -301,6 +310,14 @@ where
     /// Immediately activate and sync a specific mailbox, resetting any backoff.
     pub fn wakeup(&self, id: MailboxId) {
         _ = self.trigger.try_send(Some(id));
+    }
+
+    /// Immediately activate and sync every registered mailbox, resetting any backoff.
+    pub async fn wakeup_all(&self) {
+        for tracked_mailbox in self.mailboxes.lock().await.values() {
+            tracked_mailbox.wakeup();
+        }
+        self.trigger_sync();
     }
 
     pub async fn subscribe(

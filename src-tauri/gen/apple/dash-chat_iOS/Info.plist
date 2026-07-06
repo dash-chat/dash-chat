@@ -15,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.19.1</string>
+	<string>0.19.9</string>
 	<key>CFBundleVersion</key>
-	<string>0.19.1</string>
+	<string>0.19.9</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -63,6 +63,6 @@
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Dash Chat needs access to your photo library to save photos you download from chats.</string>
+	<string>Dash Chat needs access to your photo library to attach photos to messages and to save photos you download from chats.</string>
 </dict>
 </plist>

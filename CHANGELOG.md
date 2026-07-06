@@ -19,4 +19,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The term "blob" in mailbox code (used to refer to encrypted log items) is now renamed to "blip" to free the word "blob" for the canonical meaning of large binary objects.
-- Logs ("blips") are now stored in the mailbox for 90 days, now that they don't contain large blobs.
+- Logs ("blips") are now stored in the mailbox for 90 days, now that they don't contain large blobs. Media blobs get cleared after only 7 days, but the benefit of syncing logs even without blobs is worthwhile (peers can still backfill missing blobs).

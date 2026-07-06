@@ -1,6 +1,6 @@
 {
 	"productName": "Dash Chat",
-	"version": "0.19.1",
+	"version": "0.19.9",
 	"identifier": "studio.darksoil.dashchat",
 	"build": {
 		"beforeDevCommand": "pnpm dev",
@@ -44,6 +44,9 @@
 				"Resources/Assets.car": "icons/Assets.car"
 			}
 		},
+		"iOS": {
+			"minimumSystemVersion": "17.0"
+		},
 		"createUpdaterArtifacts": true
 	},
 	"plugins": {
@@ -55,13 +58,13 @@
 		},
 		"deep-link": {
 			"mobile": [
-        {
-          "scheme": ["https"],
-          "host": "dashchat.org",
-          "pathPrefix": ["/add-contact"],
-          "appLink": true
-        }
-      ],
+				{
+					"scheme": ["https"],
+					"host": "dashchat.org",
+					"pathPrefix": ["/add-contact"],
+					"appLink": true
+				}
+			],
 			"desktop": {
 				"schemes": ["dash-chat"]
 			}

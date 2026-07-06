@@ -1,10 +1,10 @@
 import { tid } from '../../selectors';
-import { TestPage } from '../test-page';
+import { TestHelper } from '../test-helper';
 
-export class AddMembersStep extends TestPage {
-	back = this.agent.$(tid('new-group-back'));
-	navbar = this.agent.$(tid('new-group-members-navbar'));
-	nextButton = this.agent.$(tid('new-group-next'));
+export class AddMembersStep extends TestHelper {
+	back = this.el(tid('new-group-back'));
+	navbar = this.el(tid('new-group-members-navbar'));
+	nextButton = this.el(tid('new-group-next'));
 
 	async ready() {
 		await this.navbar.waitForExist();
@@ -19,11 +19,11 @@ export class AddMembersStep extends TestPage {
 	}
 }
 
-export class GroupInfoStep extends TestPage {
-	navbar = this.agent.$(tid('new-group-info-navbar'));
-	back = this.agent.$(tid('new-group-info-back'));
-	nameInput = this.agent.$(tid('new-group-name-input'));
-	createButton = this.agent.$(tid('new-group-create'));
+export class GroupInfoStep extends TestHelper {
+	navbar = this.el(tid('new-group-info-navbar'));
+	back = this.el(tid('new-group-info-back'));
+	nameInput = this.el(tid('new-group-name-input'));
+	createButton = this.el(tid('new-group-create'));
 
 	async ready() {
 		await this.navbar.waitForExist();
@@ -34,7 +34,7 @@ export class GroupInfoStep extends TestPage {
 	}
 }
 
-export class NewGroupPage extends TestPage {
+export class NewGroupPage extends TestHelper {
 	addMembersStep = new AddMembersStep(this.agent);
 	groupInfoStep = new GroupInfoStep(this.agent);
 

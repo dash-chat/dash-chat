@@ -1,4 +1,5 @@
 use clap::Parser;
+use dashchat_utils::RELAY_URL;
 use futures::FutureExt;
 use mailbox_server::spawn_server;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -24,8 +25,9 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "mailbox_server=debug".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                "mailbox_server=debug,dashchat_utils=debug,iroh=info,iroh_blobs=info".into()
+            }),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -38,6 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.addr,
         args.push_notifications_url,
         None,
+        Some(RELAY_URL.clone()),
         signal,
     )
     .await?;

@@ -9,6 +9,7 @@ import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
 import {
 	ChatId,
+	ChatReaction,
 	ChatSummary,
 	ChatSummaryLastEvent,
 	GroupControlEvent,
@@ -16,7 +17,7 @@ import {
 	MessagesStore,
 	OutgoingMedia,
 	Payload,
-	mediaMetaToMedia,
+	mediaBundleToAttachment,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IGroupChatClient } from './group-chat-client';
@@ -94,7 +95,7 @@ export class GroupChatStore implements MessagesStore {
 							hash: operation.hash,
 							content: {
 								message: body.payload.payload.message,
-								media: mediaMetaToMedia(body.payload.payload.media),
+								media: mediaBundleToAttachment(body.payload.payload.media),
 							},
 							author,
 							seqNum: operation.header.seq_num,
@@ -376,6 +377,10 @@ export class GroupChatStore implements MessagesStore {
 	async editMessage(message: Message, newText: string): Promise<Hash> {
 		const target = message.latestEditHash ?? message.hash;
 		return this.client.editMessage(this.chatId, target, newText);
+	}
+
+	async sendReaction(reaction: ChatReaction) {
+		await this.client.sendReaction(this.chatId, reaction);
 	}
 }
 

@@ -1,4 +1,4 @@
-use dashchat_node::Node;
+use crate::app_node::AppNode;
 use tauri::{Manager, Runtime, UriSchemeContext, UriSchemeResponder};
 
 /// Handle an `irohblob://{hash}` request by loading the blob's bytes from the
@@ -30,6 +30,7 @@ pub fn handle<R: Runtime>(
                 .status(tauri::http::StatusCode::OK)
                 // The webview's `fetch()` (save path) reads these cross-origin.
                 .header("Access-Control-Allow-Origin", "*")
+                .header("Cache-Control", "public, max-age=31536000, immutable")
                 .body(bytes)
                 .expect("valid response"),
             Err(err) => {
@@ -48,8 +49,11 @@ pub fn handle<R: Runtime>(
 
 async fn load<R: Runtime>(app: &tauri::AppHandle<R>, hash: &str) -> anyhow::Result<Vec<u8>> {
     let node = app
-        .try_state::<Node>()
-        .ok_or_else(|| anyhow::anyhow!("node not yet initialized"))?;
-    node.load_blob(hash, Some(std::time::Duration::from_secs(10)))
+        .try_state::<AppNode>()
+        .ok_or_else(|| anyhow::anyhow!("node not yet initialized"))?
+        .get()
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
+    node.load_blob(hash, Some(std::time::Duration::from_secs(30)))
         .await
 }

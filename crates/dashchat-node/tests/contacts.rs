@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use dashchat_node::{testing::*, *};
-use mailbox_client::mem::MemMailbox;
 
 const TRACING_FILTER: [&str; 5] = [
     "contacts=info",
@@ -16,22 +15,19 @@ const TRACING_FILTER: [&str; 5] = [
 async fn test_reject_contact_request() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(NodeConfig::testing(), "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     println!("nodes:");
     println!("alice: {}", alice.device_id());
     println!("bobbi: {}", bobbi.device_id());
-
-    #[cfg(feature = "p2p")]
-    introduce_and_wait([&alice, &bobbi]).await;
 
     // Alice generates a QR code with inbox
     let qr = alice
@@ -77,18 +73,18 @@ async fn test_reject_multiple_contact_requests() {
 
     let start = tokio::time::Instant::now();
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(NodeConfig::testing(), "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let carol = TestNode::new(NodeConfig::testing(), "carol")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     println!("### {:3.1?} alice creating QR codes", start.elapsed());

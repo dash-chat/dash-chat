@@ -6,7 +6,7 @@
 	interface Props {
 		value?: string;
 		placeholder?: string;
-		onSend?: () => void;
+		onSend?: () => Promise<boolean>;
 		onEmojiClick?: () => void;
 	}
 
@@ -21,7 +21,6 @@
 
 	export function reset() {
 		textarea.style.height = 'auto';
-		textarea.focus();
 	}
 
 	function handleKeydown(event: KeyboardEvent) {

@@ -1,10 +1,9 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import 'emoji-picker-element';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { getContext, onMount, tick } from 'svelte';
+	import { getContext, setContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
@@ -36,13 +35,10 @@
 		Navbar,
 		NavbarBackLink,
 		Button,
-		Sheet,
 		Dialog,
 		DialogButton,
 		useTheme,
 		Link,
-		Chip,
-		Block,
 	} from 'konsta/svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
@@ -53,12 +49,8 @@
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
-	import { condenseReactions } from '$lib/utils/emojis';
-	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
-	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
 	import EditHistorySheet from '$lib/components/messages/EditHistorySheet.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import { longpress } from '$lib/actions/longpress';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
@@ -73,6 +65,7 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
+	setContext('messages-store', store);
 
 	const readTracker = createReadMessagesTracker(store);
 	const readMessageOnObserve = readTracker.observe;
@@ -126,10 +119,6 @@
 		}
 	}
 
-	let showQuickBar = $state(false);
-	let showFullPicker = $state(false);
-	let emojiTargetedMessage: Message | undefined = $state(undefined);
-	let reactionTargetElement: HTMLElement | null = $state(null);
 	let editingMessage: Message | undefined = $state(undefined);
 	let composerValue = $state('');
 	let historyMessage: Message | undefined = $state(undefined);
@@ -200,7 +189,7 @@
 			const matches: Hash[] = [];
 			els.forEach(el => {
 				const hash = el.getAttribute('data-message-hash') as Hash;
-				const text = el.querySelector('.flex-1')?.textContent || '';
+				const text = el.querySelector('[data-message-text]')?.textContent || '';
 				if (text.toLowerCase().includes(lowerQ)) matches.push(hash);
 			});
 			matchingHashes = matches;
@@ -263,51 +252,6 @@
 		closest?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	}
 
-	function showQuickReactionBar(e: MouseEvent | TouchEvent, message: Message) {
-		const el = e.target as HTMLElement;
-		const target =
-			(el.closest('.message') as HTMLElement) ??
-			(el.querySelector('.message') as HTMLElement);
-		if (!target) return;
-		emojiTargetedMessage = message;
-		reactionTargetElement = target;
-		target.parentElement?.classList.add('message-highlighted');
-		showQuickBar = true;
-	}
-
-	function hideReactionUI() {
-		reactionTargetElement?.parentElement?.classList.remove(
-			'message-highlighted',
-		);
-		showQuickBar = false;
-		showFullPicker = false;
-		emojiTargetedMessage = undefined;
-		reactionTargetElement = null;
-	}
-
-	function expandToFullPicker() {
-		reactionTargetElement?.parentElement?.classList.remove(
-			'message-highlighted',
-		);
-		showQuickBar = false;
-		showFullPicker = true;
-	}
-
-	async function toggleReaction(
-		message: Message,
-		emoji: string,
-		deviceId: DeviceId,
-	) {
-		const currentReaction = message.reactions[deviceId];
-		const newEmoji = currentReaction === emoji ? null : emoji;
-		try {
-			await store.sendReaction({ target: message.hash, emoji: newEmoji });
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-		hideReactionUI();
-	}
-
 	function canEditMessage(message: Message, myDeviceId: DeviceId): boolean {
 		if (message.author !== myDeviceId) return false;
 		const rootTimestamp = message.history?.[0]?.timestamp ?? message.timestamp;
@@ -317,7 +261,6 @@
 	function startEditing(message: Message) {
 		editingMessage = message;
 		composerValue = message.content.message;
-		hideReactionUI();
 	}
 
 	function cancelEditing() {
@@ -418,6 +361,7 @@
 											placeholder={m.searchMessages()}
 											bind:value={searchQuery}
 											use:focusOnMount
+											data-testid="direct-chat-search-input"
 										/>
 									</div>
 								{/snippet}
@@ -611,10 +555,6 @@
 														<div
 															class="self-end max-w-[85%]"
 															data-message-hash={hash}
-															use:longpress={{
-																onLongPress: e =>
-																	showQuickReactionBar(e, message),
-															}}
 															use:scrollToBottomOnMount={hash}
 														>
 															{#await $chatId then chatId}
@@ -624,9 +564,9 @@
 																	{myDeviceId}
 																	{chatId}
 																	searchQuery={searchMode ? searchQuery : ''}
-																	onToggleReaction={emoji =>
-																		toggleReaction(message, emoji, myDeviceId)}
 																	onShowHistory={() => openHistory(message)}
+																	canEdit={canEditMessage(message, myDeviceId)}
+																	onEdit={() => startEditing(message)}
 																/>
 															{/await}
 														</div>
@@ -637,10 +577,6 @@
 															use:readMessageOnObserve={readHashes?.has(hash)
 																? null
 																: hash}
-															use:longpress={{
-																onLongPress: e =>
-																	showQuickReactionBar(e, message),
-															}}
 														>
 															{#await $chatId then chatId}
 																<MessageFromOthers
@@ -650,8 +586,6 @@
 																	{chatId}
 																	searchQuery={searchMode ? searchQuery : ''}
 																	sender={profile}
-																	onToggleReaction={emoji =>
-																		toggleReaction(message, emoji, myDeviceId)}
 																	onShowHistory={() => openHistory(message)}
 																/>
 															{/await}
@@ -709,58 +643,6 @@
 							{/snippet}
 						</Dialog>
 					{/if}
-					{#if emojiTargetedMessage && reactionTargetElement && myDeviceId}
-						<QuickReactionBar
-							message={emojiTargetedMessage}
-							targetElement={reactionTargetElement}
-							opened={showQuickBar}
-							isOwnMessage={myDeviceId === emojiTargetedMessage.author}
-							canEdit={canEditMessage(emojiTargetedMessage, myDeviceId)}
-							{myDeviceId}
-							onReaction={emoji =>
-								toggleReaction(emojiTargetedMessage!, emoji, myDeviceId)}
-							onExpand={expandToFullPicker}
-							onEdit={() => startEditing(emojiTargetedMessage!)}
-							onClose={hideReactionUI}
-						/>
-					{/if}
-					<Sheet
-						class="pb-safe text-lg"
-						opened={showFullPicker}
-						onBackdropClick={hideReactionUI}
-					>
-						<div class="flex flex-col items-center">
-							<div class="sheet-handle"></div>
-						</div>
-						{#if emojiTargetedMessage && myDeviceId}
-							{#if Object.values(emojiTargetedMessage.reactions).length > 0}
-								<Block>
-									{#each condenseReactions(emojiTargetedMessage.reactions, myDeviceId) as reaction}
-										<button
-											class="me-2 text-lg"
-											onclick={() =>
-												toggleReaction(
-													emojiTargetedMessage!,
-													reaction.emoji,
-													myDeviceId!,
-												)}
-										>
-											<Chip class="border !border-white dark:!border-black">
-												{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
-											</Chip>
-										</button>
-									{/each}
-								</Block>
-							{/if}
-							<Block>
-								<EmojiPickerWrapper
-									onEmojiSelected={emoji =>
-										toggleReaction(emojiTargetedMessage!, emoji, myDeviceId!)}
-								></EmojiPickerWrapper>
-							</Block>
-						{/if}
-					</Sheet>
-
 					<SafetyTipsSheet
 						opened={showSecurityTips}
 						onClose={() => (showSecurityTips = false)}
@@ -795,7 +677,7 @@
 
 				<div
 					bind:clientHeight={bottomBarHeight}
-					class="absolute bottom-0 inset-x-0 z-10"
+					class="absolute bottom-0 inset-x-0 z-30"
 					class:bg-page-surface={theme === 'material'}
 				>
 					{#if searchMode}
@@ -821,7 +703,10 @@
 									bind:this={dateInput}
 									onchange={e => jumpToDate(e.currentTarget.value)}
 								/>
-								<span class="flex-1 text-center text-sm quiet">
+								<span
+									class="flex-1 text-center text-sm quiet"
+									data-testid="search-results-count"
+								>
 									{#if !searchQuery}
 										<!-- empty -->
 									{:else if matchingHashes.length === 0}
@@ -904,6 +789,7 @@
 							editing={editingMessage}
 							onEdit={submitEdit}
 							onCancelEdit={cancelEditing}
+							destinationName={profile ? fullName(profile) : undefined}
 							onSent={onMessageSent}
 						/>
 					{/if}
