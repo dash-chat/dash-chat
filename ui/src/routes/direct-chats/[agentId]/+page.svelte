@@ -64,6 +64,8 @@
 	const store = chatsStore.directChats(agentId);
 	setContext('messages-store', store);
 
+	const isPendingChat = store.isPending;
+
 	const readTracker = createReadMessagesTracker(store);
 	const readMessageOnObserve = readTracker.observe;
 
@@ -692,6 +694,19 @@
 									<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
 								</button>
 							</div>
+						</div>
+					{:else if isPendingChat}
+						<div class="pb-safe bg-page-surface">
+							<div
+								class="mx-4 border-t border-gray-300 dark:border-gray-600"
+								style="margin: 0 auto"
+							></div>
+							<p
+								class="px-6 py-4 text-center text-sm text-gray-600 dark:text-gray-400"
+								data-testid="direct-chat-pending-note"
+							>
+								{m.waitingForProfile()}
+							</p>
 						</div>
 					{:else if contactRequest}
 						<div class="pb-safe bg-page-surface">

@@ -24,6 +24,15 @@ pub async fn my_device_id(app_node: State<'_, AppNode>) -> Result<DeviceId, Stri
 }
 
 #[tauri::command]
+pub async fn agent_for_device(
+    device_pubkey: DeviceId,
+    app_node: State<'_, AppNode>,
+) -> Result<Option<AgentId>, Error> {
+    let node = app_node.get().await?;
+    Ok(node.agent_for_device(device_pubkey).await?)
+}
+
+#[tauri::command]
 pub async fn add_contact(contact_code: QrCode, app_node: State<'_, AppNode>) -> Result<(), Error> {
     let node = app_node.get().await?;
     node.add_contact(contact_code).await?;

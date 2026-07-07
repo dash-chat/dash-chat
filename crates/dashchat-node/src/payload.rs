@@ -129,7 +129,18 @@ pub struct ReadMessagesPayload {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
-    AddContact { agent_id: AgentId },
+    AddContact {
+        agent_id: AgentId,
+    },
+    /// Recorded by the scanner the moment it sends a contact request, before it
+    /// knows the owner's agent id (the QR code no longer carries it). Keyed on
+    /// the owner's device pubkey — the only identity the scanner has at that
+    /// point — so the UI can show a "waiting for profile" placeholder chat.
+    /// Superseded by the `AddContact` marker once the owner's ack arrives and
+    /// the device -> agent mapping is known.
+    PendingContactRequest {
+        device_pubkey: DeviceId,
+    },
     RejectContactRequest(AgentId),
     ReadMessages(ReadMessagesPayload),
 }

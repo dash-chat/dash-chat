@@ -3,7 +3,7 @@ import { reactive, relay } from 'signalium';
 import { DevicesStore } from '../devices/devices-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { AgentId, TopicId } from '../p2panda/types';
+import { AgentId, DeviceId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
 import { AnnouncementPayload, ContactCode, Payload } from '../types';
 import { IContactsClient, Profile } from './contacts-client';
@@ -14,6 +14,16 @@ export interface ContactRequest {
 	agentId: AgentId;
 	timestamp: number;
 	topicId: TopicId;
+}
+
+/**
+ * An outgoing contact request we've sent by scanning a QR code, before the
+ * owner's ack has arrived. Keyed on the owner's device pubkey, since we don't
+ * yet know their agent id or profile.
+ */
+export interface OutgoingContactRequest {
+	devicePubkey: DeviceId;
+	timestamp: number;
 }
 
 export class ContactsStore {
@@ -66,6 +76,45 @@ export class ContactsStore {
 		}
 
 		return Array.from(contacts);
+	});
+
+	/**
+	 * Outgoing contact requests we've sent but whose ack hasn't arrived yet.
+	 * A pending marker is dropped once its device pubkey resolves to an
+	 * established contact (the ack was processed and the `AddContact` marker
+	 * created a real chat that supersedes the placeholder).
+	 */
+	outgoingPendingRequests = reactive(async () => {
+		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
+
+		const latestByDevice: Record<DeviceId, number> = {};
+		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				if (op.body?.payload?.type !== 'PendingContactRequest') continue;
+				const { device_pubkey } = op.body.payload.payload;
+				const existing = latestByDevice[device_pubkey];
+				if (existing === undefined || op.header.timestamp > existing) {
+					latestByDevice[device_pubkey] = op.header.timestamp;
+				}
+			}
+		}
+
+		const devices = Object.keys(latestByDevice);
+		const contacts = await this.contactsAgentIds();
+		const resolved = await Promise.all(
+			devices.map(device => this.client.agentForDevice(device)),
+		);
+
+		const pending: OutgoingContactRequest[] = [];
+		for (let i = 0; i < devices.length; i++) {
+			const agentId = resolved[i];
+			if (agentId !== undefined && contacts.includes(agentId)) continue;
+			pending.push({
+				devicePubkey: devices[i],
+				timestamp: latestByDevice[devices[i]],
+			});
+		}
+		return pending;
 	});
 
 	contactAddedTimestamp = reactive(async (agentId: AgentId) => {

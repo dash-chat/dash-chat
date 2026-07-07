@@ -22,6 +22,10 @@ export class MockContactsClient implements IContactsClient {
 		return this.deviceId;
 	}
 
+	async agentForDevice(_devicePubkey: DeviceId): Promise<AgentId | undefined> {
+		return undefined;
+	}
+
 	async setProfile(profile: Profile): Promise<void> {
 		await this.logsClient.create(personalTopicFor(this.agentId), {
 			type: 'Announcements',

@@ -21,6 +21,10 @@ export interface IContactsClient {
 
 	myDeviceId(): Promise<DeviceId>;
 
+	// Resolve the agent id recorded for a device pubkey, if the contact is
+	// established. Undefined while an outgoing request is still pending.
+	agentForDevice(devicePubkey: DeviceId): Promise<AgentId | undefined>;
+
 	// Sets the profile for this user
 	setProfile(profile: Profile): Promise<void>;
 
@@ -69,6 +73,14 @@ export class ContactsClient implements IContactsClient {
 
 	myDeviceId(): Promise<DeviceId> {
 		return invokeAfterSetup('my_device_id');
+	}
+
+	async agentForDevice(devicePubkey: DeviceId): Promise<AgentId | undefined> {
+		return (
+			(await invokeAfterSetup<AgentId | null>('agent_for_device', {
+				devicePubkey,
+			})) ?? undefined
+		);
 	}
 
 	async setProfile(profile: Profile): Promise<void> {

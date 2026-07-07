@@ -127,6 +127,7 @@ pub fn run() {
             commands::devices::my_device_group_topic,
             commands::contacts::my_device_id,
             commands::contacts::my_agent_id,
+            commands::contacts::agent_for_device,
             commands::contacts::create_contact_code,
             commands::contacts::add_contact,
             commands::contacts::accept_contact,

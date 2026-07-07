@@ -177,6 +177,7 @@ export interface ReadMessagesPayload {
 
 export type DeviceGroupPayload =
 	| { type: 'AddContact'; payload: { agent_id: AgentId } }
+	| { type: 'PendingContactRequest'; payload: { device_pubkey: DeviceId } }
 	| { type: 'RejectContactRequest'; payload: AgentId }
 	| { type: 'ReadMessages'; payload: ReadMessagesPayload };
 

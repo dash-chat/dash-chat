@@ -1,5 +1,6 @@
 import { reactive } from 'signalium';
 
+import { isPendingChatKey } from '../chats/chat-key';
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
@@ -38,9 +39,17 @@ export class DirectChatStore implements MessagesStore {
 		public peer: AgentId,
 	) {}
 
-	chatId = reactive(async () => await this.client.chatId(this.peer));
+	get isPending(): boolean {
+		return isPendingChatKey(this.peer);
+	}
+
+	chatId = reactive(async () => {
+		if (this.isPending) return '';
+		return await this.client.chatId(this.peer);
+	});
 
 	peerProfile = reactive(async () => {
+		if (this.isPending) return undefined;
 		const request = await this.contactRequest();
 		if (request) return request.profile;
 		return await this.contactsStore.profiles(this.peer);
@@ -52,6 +61,7 @@ export class DirectChatStore implements MessagesStore {
 	});
 
 	messages = reactive(async () => {
+		if (this.isPending) return {} as Record<Hash, Message>;
 		const chatId = await this.chatId();
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 

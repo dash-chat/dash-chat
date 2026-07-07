@@ -5,6 +5,7 @@
 		decodeContactCode,
 		encodeContactCode,
 		fullName,
+		pendingChatKey,
 		type ContactsStore,
 		type SettingsStore,
 	} from 'dash-chat-stores';
@@ -99,7 +100,7 @@
 			await contactsStore.client.addContact(contactCode);
 			showToast(m.contactAccepted());
 
-			goto('/');
+			goto(`/direct-chats/${pendingChatKey(contactCode.device_pubkey)}`);
 		} catch (e) {
 			console.error(e);
 			const error = e as AddContactError;
