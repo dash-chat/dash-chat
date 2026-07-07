@@ -54,7 +54,8 @@ impl Behavior {
                     hash = ?n.header.hash(),
                     "checking for contact invitation"
                 );
-                let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) = &n.payload
+                let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) =
+                    &n.payload
                 else {
                     return None;
                 };

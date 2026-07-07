@@ -122,7 +122,8 @@ async fn test_reject_multiple_contact_requests() {
             .lock()
             .await
             .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-                let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) = &n.payload
+                let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) =
+                    &n.payload
                 else {
                     return None;
                 };

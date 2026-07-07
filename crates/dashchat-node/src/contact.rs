@@ -72,12 +72,8 @@ mod expires_at_hours {
 
 impl std::fmt::Display for QrCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let bytes = encode_cbor(&(
-            &self.device_pubkey,
-            &self.inbox_topic,
-            &self.share_intent,
-        ))
-        .map_err(|_| std::fmt::Error)?;
+        let bytes = encode_cbor(&(&self.device_pubkey, &self.inbox_topic, &self.share_intent))
+            .map_err(|_| std::fmt::Error)?;
         write!(f, "{}", hex::encode(bytes))
     }
 }

@@ -159,17 +159,15 @@ pub async fn build_notification_data(
         }
         Payload::Inbox(dashchat_node::InboxPayload::ContactRequest {
             agent_id, profile, ..
-        }) => {
-            Some(NotificationData {
-                id,
-                title: Some(sonix_i18n::t!("newContactRequest")),
-                body: Some(profile.name.clone()),
-                icon: Some("ic_stat_icon".to_string()),
-                group: Some(topic.to_hex()),
-                route: Some(format!("/direct-chats/{}", agent_id.to_hex())),
-                ..Default::default()
-            })
-        }
+        }) => Some(NotificationData {
+            id,
+            title: Some(sonix_i18n::t!("newContactRequest")),
+            body: Some(profile.name.clone()),
+            icon: Some("ic_stat_icon".to_string()),
+            group: Some(topic.to_hex()),
+            route: Some(format!("/direct-chats/{}", agent_id.to_hex())),
+            ..Default::default()
+        }),
         _ => None,
     }
 }
