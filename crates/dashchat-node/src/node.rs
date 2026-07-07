@@ -442,7 +442,10 @@ impl Node {
     /// Resolve the agent id we've recorded for a device pubkey, if any. Returns
     /// `None` until the contact is established (e.g. while an outgoing contact
     /// request is still pending its ack).
-    pub async fn agent_for_device(&self, device_pubkey: DeviceId) -> Result<Option<AgentId>, Error> {
+    pub async fn agent_for_device(
+        &self,
+        device_pubkey: DeviceId,
+    ) -> Result<Option<AgentId>, Error> {
         let map = self
             .local_store
             .lookup_contacts([&device_pubkey])
