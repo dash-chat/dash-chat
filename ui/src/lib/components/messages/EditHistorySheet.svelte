@@ -2,6 +2,7 @@
 	import { Sheet, Block } from 'konsta/svelte';
 	import type { Message } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
 	let {
@@ -19,7 +20,7 @@
 </script>
 
 <Sheet
-	class="pb-safe"
+	class={`pb-safe ${isWideScreen.value ? 'edit-history-sheet-panel' : ''}`}
 	{opened}
 	onBackdropClick={onClose}
 	data-testid="edit-history-sheet"
@@ -44,3 +45,17 @@
 		</div>
 	</Block>
 </Sheet>
+
+<style>
+	/* On the desktop two-panel layout, keep the edit-history sheet (and its
+	   backdrop) within the chat content area instead of covering the sidebar.
+	   280px matches the sidebar width in DesktopLayout.svelte. */
+	:global(.edit-history-sheet-panel) {
+		inset-inline-start: 280px !important;
+	}
+	:global(*:has(+ .edit-history-sheet-panel)) {
+		inset-inline-start: 280px !important;
+		inset-inline-end: 0 !important;
+		width: auto !important;
+	}
+</style>
