@@ -51,6 +51,8 @@ pub struct ChatOp {
     pub author: DeviceId,
     /// Microseconds since the UNIX epoch (the operation header timestamp).
     pub timestamp: u64,
+    /// Position in the author's append-only log; monotonic in publish order.
+    pub seq_num: u64,
     pub kind: ChatOpKind,
 }
 
@@ -71,10 +73,11 @@ pub struct ValidEdit {
 /// `ops` is the set of all chat operations in the topic, keyed by hash.
 /// `edit_hash` is the operation the edit points at. `editor` and
 /// `edit_timestamp` describe the edit itself. `self_hash` is the hash of the
-/// edit operation when validating a received edit; it drives the deterministic
-/// lowest-op-hash-wins tie-break between competing edits and excludes the edit
-/// from its own "already edited" scan. It is `None` when an author validates
-/// before publishing, where any existing edit of the target is rejected.
+/// edit operation when validating an edit that is already in `ops` (the
+/// receiving/reduction side); it identifies which competing edit this call is
+/// judging so exactly one of them survives. It is `None` when an author
+/// validates before publishing, where any existing edit of the target is
+/// rejected.
 pub fn validate_edit(
     valid_ops: &HashMap<Hash, ChatOp>,
     edit_hash: &Hash,
@@ -95,18 +98,27 @@ pub fn validate_edit(
         return Err(EditError::NotAuthor);
     }
 
-    // An edit loses to a competing edit of the same target. On the receiving
-    // side (`self_hash` is set) the tie-break is deterministic — the lowest op
-    // hash wins — so every peer converges on the same surviving edit regardless
-    // of HashMap iteration or arrival order. On the author side (`self_hash` is
-    // `None`, before the op has a hash) any existing edit of the target blocks
-    // publishing outright.
+    // Edits must form a linear chain: a target may be edited at most once. Two
+    // edits of the same target can still arise honestly — e.g. a UI that
+    // "bounces" repeated edit clicks before the first is committed — so instead
+    // of dropping all of them we keep exactly one: the edit published earliest.
+    // `seq_num` on a single author's append-only log is monotonic in publish
+    // order, so the lowest `seq_num` was written first and any later edit had
+    // knowledge of it.
+    //
+    // The op hash only breaks the tie in the pathological case
+    // of a forked log reusing a `seq_num`, keeping every peer's choice
+    // deterministic. On the receiving/reduction side (`self_hash` is set) this
+    // edit is already in `valid_ops` and the `(seq_num, hash)` key excludes it
+    // from itself; on the author side (`self_hash` is `None`, before the op has
+    // a hash) any existing edit blocks publishing outright.
+    let self_order = self_hash.and_then(|h| valid_ops.get(h).map(|op| (op.seq_num, h)));
     let superseded = valid_ops.iter().any(|(hash, op)| {
         if !matches!(&op.kind, ChatOpKind::Edit(t) if t == edit_hash) {
             return false;
         }
-        match self_hash {
-            Some(self_hash) => hash < self_hash,
+        match self_order {
+            Some(self_order) => (op.seq_num, hash) < self_order,
             None => true,
         }
     });
@@ -151,26 +163,29 @@ mod tests {
         Hash::from_bytes([n; 32])
     }
 
-    fn message(author: DeviceId, timestamp: u64) -> ChatOp {
+    fn message(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
         ChatOp {
             author,
             timestamp,
+            seq_num,
             kind: ChatOpKind::Message,
         }
     }
 
-    fn edit(author: DeviceId, timestamp: u64, target: Hash) -> ChatOp {
+    fn edit(author: DeviceId, timestamp: u64, seq_num: u64, target: Hash) -> ChatOp {
         ChatOp {
             author,
             timestamp,
+            seq_num,
             kind: ChatOpKind::Edit(target),
         }
     }
 
-    fn other(author: DeviceId, timestamp: u64) -> ChatOp {
+    fn other(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
         ChatOp {
             author,
             timestamp,
+            seq_num,
             kind: ChatOpKind::Other,
         }
     }
@@ -178,7 +193,7 @@ mod tests {
     #[test]
     fn valid_first_edit() {
         let alice = device(1);
-        let ops = HashMap::from([(hash(1), message(alice, 1000))]);
+        let ops = HashMap::from([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(validate_edit(&ops, &hash(1), alice, 2000, None), Ok(()));
     }
 
@@ -186,8 +201,8 @@ mod tests {
     fn valid_chained_edit() {
         let alice = device(1);
         let ops = HashMap::from([
-            (hash(1), message(alice, 1000)),
-            (hash(2), edit(alice, 2000, hash(1))),
+            (hash(1), message(alice, 1000, 0)),
+            (hash(2), edit(alice, 2000, 1, hash(1))),
         ]);
         // Editing the edit (hash 2) extends the linear chain.
         assert_eq!(validate_edit(&ops, &hash(2), alice, 3000, None), Ok(()));
@@ -196,7 +211,7 @@ mod tests {
     #[test]
     fn target_not_found() {
         let alice = device(1);
-        let ops = HashMap::from([(hash(1), message(alice, 1000))]);
+        let ops = HashMap::from([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(
             validate_edit(&ops, &hash(9), alice, 2000, None),
             Err(EditError::TargetNotFound)
@@ -207,7 +222,7 @@ mod tests {
     fn target_not_editable() {
         let alice = device(1);
         // hash 1 is a reaction / group-info / etc.
-        let ops = HashMap::from([(hash(1), other(alice, 1000))]);
+        let ops = HashMap::from([(hash(1), other(alice, 1000, 0))]);
         assert_eq!(
             validate_edit(&ops, &hash(1), alice, 2000, None),
             Err(EditError::TargetNotEditable)
@@ -218,7 +233,7 @@ mod tests {
     fn not_author() {
         let alice = device(1);
         let bobbi = device(2);
-        let ops = HashMap::from([(hash(1), message(alice, 1000))]);
+        let ops = HashMap::from([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(
             validate_edit(&ops, &hash(1), bobbi, 2000, None),
             Err(EditError::NotAuthor)
@@ -229,8 +244,8 @@ mod tests {
     fn already_edited_is_rejected() {
         let alice = device(1);
         let ops = HashMap::from([
-            (hash(1), message(alice, 1000)),
-            (hash(2), edit(alice, 2000, hash(1))),
+            (hash(1), message(alice, 1000, 0)),
+            (hash(2), edit(alice, 2000, 1, hash(1))),
         ]);
         // A second edit of hash 1 would form a tree, not a chain.
         assert_eq!(
@@ -243,8 +258,8 @@ mod tests {
     fn self_hash_excluded_from_already_edited_scan() {
         let alice = device(1);
         let ops = HashMap::from([
-            (hash(1), message(alice, 1000)),
-            (hash(2), edit(alice, 2000, hash(1))),
+            (hash(1), message(alice, 1000, 0)),
+            (hash(2), edit(alice, 2000, 1, hash(1))),
         ]);
         // Validating the existing edit (hash 2) against its own target must not
         // see itself as a competing edit.
@@ -255,20 +270,42 @@ mod tests {
     }
 
     #[test]
-    fn competing_edits_lowest_hash_wins() {
+    fn competing_edits_earliest_seq_num_wins() {
         let alice = device(1);
-        // hash(2) and hash(3) both edit the same original hash(1).
+        // hash(2) and hash(3) both edit the same original hash(1) — e.g. a UI
+        // that bounced two edit clicks before the first was committed. The one
+        // published earlier (lower seq_num) survives; the later one loses.
         let ops = HashMap::from([
-            (hash(1), message(alice, 1000)),
-            (hash(2), edit(alice, 2000, hash(1))),
-            (hash(3), edit(alice, 2000, hash(1))),
+            (hash(1), message(alice, 1000, 0)),
+            (hash(2), edit(alice, 2000, 2, hash(1))),
+            (hash(3), edit(alice, 2000, 1, hash(1))),
         ]);
-        // The lower-hash edit survives: no competitor with a lower hash exists.
+
+        // hash(3) has the lower seq_num, so it wins
+        assert_eq!(
+            validate_edit(&ops, &hash(1), alice, 2000, Some(&hash(3))),
+            Ok(())
+        );
+        assert_eq!(
+            validate_edit(&ops, &hash(1), alice, 2000, Some(&hash(2))),
+            Err(EditError::AlreadyEdited)
+        );
+    }
+
+    #[test]
+    fn competing_edits_same_seq_num_break_ties_by_hash() {
+        let alice = device(1);
+        // A forked log can reuse a seq_num; the lower op hash then wins so every
+        // peer converges on the same survivor.
+        let ops = HashMap::from([
+            (hash(1), message(alice, 1000, 0)),
+            (hash(2), edit(alice, 2000, 1, hash(1))),
+            (hash(3), edit(alice, 2000, 1, hash(1))),
+        ]);
         assert_eq!(
             validate_edit(&ops, &hash(1), alice, 2000, Some(&hash(2))),
             Ok(())
         );
-        // The higher-hash edit loses to the lower-hash competitor.
         assert_eq!(
             validate_edit(&ops, &hash(1), alice, 2000, Some(&hash(3))),
             Err(EditError::AlreadyEdited)
@@ -279,8 +316,8 @@ mod tests {
     fn window_measured_from_root_message() {
         let alice = device(1);
         let ops = HashMap::from([
-            (hash(1), message(alice, 1000)),
-            (hash(2), edit(alice, 1000 + EDIT_WINDOW_MICROS, hash(1))),
+            (hash(1), message(alice, 1000, 0)),
+            (hash(2), edit(alice, 1000 + EDIT_WINDOW_MICROS, 1, hash(1))),
         ]);
         // Editing the chained edit just within the window from the root is ok.
         assert_eq!(
@@ -298,7 +335,7 @@ mod tests {
     #[test]
     fn window_expired_on_first_edit() {
         let alice = device(1);
-        let ops = HashMap::from([(hash(1), message(alice, 1000))]);
+        let ops = HashMap::from([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(
             validate_edit(&ops, &hash(1), alice, 1000 + EDIT_WINDOW_MICROS + 1, None),
             Err(EditError::WindowExpired)
