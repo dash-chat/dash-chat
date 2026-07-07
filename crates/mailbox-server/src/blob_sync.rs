@@ -64,6 +64,15 @@ impl BlobFetchPool {
     ) {
         self.add_source_inner(hash, source, Some(tokio::time::Instant::now() + delay))
             .await;
+        // A deferred entry keeps the pool non-empty, so the fetch loop sleeps a
+        // full `pass_interval` and never wakes on its own when the grace expires.
+        // Nudge it at the grace boundary so the backstop fetch isn't delayed to
+        // the next pass.
+        let added = self.added.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(delay).await;
+            added.notify_one();
+        });
     }
 
     async fn add_source_inner(
@@ -501,5 +510,40 @@ mod tests {
         pool.add_source(hash(1), endpoint_id(1)).await;
         pool.remove(hash(1)).await;
         assert!(pool.is_empty().await);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn deferred_entry_is_fetched_at_grace_boundary_not_next_pass() {
+        let pool = BlobFetchPool::default();
+        pool.add_source_after(hash(1), endpoint_id(1), Duration::from_secs(5))
+            .await;
+        let start = tokio::time::Instant::now();
+        let fetched_at: Arc<Mutex<Option<Duration>>> = Arc::new(Mutex::new(None));
+        let handle = {
+            let fetched_at = fetched_at.clone();
+            let config = FetchConfig {
+                concurrency: 1,
+                attempt_timeout: Duration::from_secs(5),
+                pass_interval: Duration::from_secs(60),
+                retry_cooldown: Duration::from_secs(30),
+            };
+            tokio::spawn(fetch_loop(pool.clone(), config, move |_item, _t| {
+                let fetched_at = fetched_at.clone();
+                async move {
+                    *fetched_at.lock().await = Some(start.elapsed());
+                    true
+                }
+            }))
+        };
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        let at = fetched_at
+            .lock()
+            .await
+            .expect("deferred entry should have been fetched");
+        assert!(
+            at >= Duration::from_secs(5) && at < Duration::from_secs(30),
+            "expected fetch at the grace boundary (~5s), got {at:?}"
+        );
+        handle.abort();
     }
 }
