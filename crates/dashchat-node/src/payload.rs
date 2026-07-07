@@ -129,7 +129,7 @@ pub struct ReadMessagesPayload {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
-    AddContact(QrCode),
+    AddContact { agent_id: AgentId },
     RejectContactRequest(AgentId),
     ReadMessages(ReadMessagesPayload),
 }

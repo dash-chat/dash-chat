@@ -1253,7 +1253,7 @@ impl Node {
         let agent = contact.agent_id;
         self.publish(
             self.device_group_topic(),
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact.clone())),
+            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id: agent }),
             Some(&format!("add_contact/add_contact({:?})", agent.aliased())),
         )
         .await
