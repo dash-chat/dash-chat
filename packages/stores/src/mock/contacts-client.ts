@@ -32,7 +32,6 @@ export class MockContactsClient implements IContactsClient {
 	async createContactCode(): Promise<ContactCode> {
 		return {
 			device_pubkey: this.deviceId,
-			agent_id: this.agentId,
 			inbox_topic: this.inboxTopics[0]
 				? { topic: this.inboxTopics[0], expires_at: Date.now() + 86400000 }
 				: undefined,
@@ -44,10 +43,12 @@ export class MockContactsClient implements IContactsClient {
 		return this.inboxTopics;
 	}
 
-	async addContact(contactCode: ContactCode): Promise<void> {
+	async addContact(_contactCode: ContactCode): Promise<void> {}
+
+	async acceptContact(agentId: AgentId): Promise<void> {
 		await this.logsClient.create(this.deviceGroupTopicId, {
 			type: 'DeviceGroupPayload',
-			payload: { type: 'AddContact', payload: contactCode },
+			payload: { type: 'AddContact', payload: { agent_id: agentId } },
 		});
 	}
 

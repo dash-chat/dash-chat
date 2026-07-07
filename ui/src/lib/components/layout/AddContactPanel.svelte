@@ -99,7 +99,7 @@
 			await contactsStore.client.addContact(contactCode);
 			showToast(m.contactAccepted());
 
-			goto(`/direct-chats/${contactCode.agent_id}`);
+			goto('/');
 		} catch (e) {
 			console.error(e);
 			const error = e as AddContactError;

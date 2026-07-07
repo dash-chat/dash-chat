@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::str::FromStr;
 
-use crate::{AgentId, DeviceId, Topic, topic::kind};
+use crate::{DeviceId, Topic, topic::kind};
 
 /// The content for a QR code or deep link.
 ///
@@ -27,8 +27,6 @@ use crate::{AgentId, DeviceId, Topic, topic::kind};
 pub struct QrCode {
     /// Pubkey of this node: allows adding this node to groups.
     pub device_pubkey: DeviceId,
-    /// Agent ID to add to spaces
-    pub agent_id: AgentId,
     /// Topic for receiving messages from this node during the lifetime of the QR code.
     /// The initiator will specify an InboxTopic, and the recipient will send back a QR
     /// code without an associated inbox, because after this exchange the two nodes
@@ -77,7 +75,6 @@ impl std::fmt::Display for QrCode {
         let bytes = encode_cbor(&(
             &self.device_pubkey,
             &self.inbox_topic,
-            &self.agent_id,
             &self.share_intent,
         ))
         .map_err(|_| std::fmt::Error)?;
@@ -89,11 +86,10 @@ impl FromStr for QrCode {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = hex::decode(s)?;
-        let (device_pubkey, inbox_topic, agent_id, share_intent) = decode_cbor(bytes.as_slice())?;
+        let (device_pubkey, inbox_topic, share_intent) = decode_cbor(bytes.as_slice())?;
         Ok(QrCode {
             device_pubkey,
             inbox_topic,
-            agent_id,
             share_intent,
         })
     }
@@ -116,14 +112,12 @@ impl TryFrom<String> for QrCode {
 mod tests {
 
     use p2panda::VerifyingKey;
-    use p2panda_spaces::ActorId;
 
     use super::*;
 
     #[test]
     fn test_contact_roundtrip() {
         let pubkey = VerifyingKey::from_bytes(&[11; 32]).unwrap();
-        let agent_id = AgentId::from(ActorId::from_bytes(&[22; 32]).unwrap());
         let contact = QrCode {
             device_pubkey: DeviceId::from(pubkey),
             inbox_topic: Some(InboxTopic {
@@ -132,7 +126,6 @@ mod tests {
                 // serialization used to keep the QR code short.
                 expires_at: DateTime::from_timestamp(1_700_000_000 / 3600 * 3600, 0).unwrap(),
             }),
-            agent_id,
             share_intent: ShareIntent::AddDevice,
         };
         let encoded = contact.to_string();

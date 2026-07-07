@@ -86,15 +86,7 @@ export class ContactsClient implements IContactsClient {
 	}
 
 	async addContact(contactCode: ContactCode): Promise<void> {
-		await Promise.all([
-			invokeAfterSetup('add_contact', { contactCode }),
-			waitForOperation(
-				this.logsClient,
-				op =>
-					op.body?.payload.type === 'AddContact' &&
-					op.body.payload.payload.agent_id === contactCode.agent_id,
-			),
-		]);
+		await invokeAfterSetup('add_contact', { contactCode });
 	}
 
 	async acceptContact(agentId: AgentId): Promise<void> {

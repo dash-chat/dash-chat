@@ -214,11 +214,6 @@ impl LocalStore {
         Ok(q.fetch_all(&self.pool).await?.into_iter().collect())
     }
 
-    pub async fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
-        self.save_agent_mapping(contact.device_pubkey, contact.agent_id)
-            .await
-    }
-
     pub async fn save_agent_mapping(
         &self,
         device_id: DeviceId,

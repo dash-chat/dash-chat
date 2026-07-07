@@ -477,11 +477,20 @@ impl Node {
                         // over its private reply topic. The op is signed by the
                         // owner's device key (author), so establish the contact
                         // directly rather than relying on the QR code's agent_id.
+                        // The scanner initiated contact, so record it immediately
+                        // (spawned, since publishing needs this same processor).
                         if is_reply && !matches!(source, Source::LocalStore) {
                             self.establish_contact(author, *agent_id).await?;
                             self.local_store
                                 .save_profile(*agent_id, profile.clone())
                                 .await?;
+                            let node = self.clone();
+                            let agent_id = *agent_id;
+                            tokio::spawn(async move {
+                                if let Err(err) = node.publish_add_contact(agent_id).await {
+                                    tracing::warn!(?err, "failed to record accepted contact");
+                                }
+                            });
                         }
                     }
                 }

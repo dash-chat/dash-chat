@@ -7,7 +7,6 @@ import { ContactCode } from '../types';
 export function encodeContactCode(contactCode: ContactCode): string {
 	const bin = encode([
 		contactCode.device_pubkey,
-		contactCode.agent_id,
 		contactCode.inbox_topic,
 		contactCode.share_intent,
 	]);
@@ -16,10 +15,9 @@ export function encodeContactCode(contactCode: ContactCode): string {
 
 export function decodeContactCode(contactCodeString: string): ContactCode {
 	const bin = toByteArray(contactCodeString);
-	const [device_pubkey, agent_id, inbox_topic, share_intent] = decode(bin);
+	const [device_pubkey, inbox_topic, share_intent] = decode(bin);
 	return {
 		device_pubkey,
-		agent_id,
 		inbox_topic,
 		share_intent,
 	};

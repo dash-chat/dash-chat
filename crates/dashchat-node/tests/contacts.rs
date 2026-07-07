@@ -39,21 +39,22 @@ async fn test_reject_contact_request() {
     bobbi.add_contact(qr).await.unwrap();
 
     // Wait for Alice to receive the contact request
-    let received_qr = alice
+    let received_agent_id = alice
         .watcher
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-            let Some(Payload::Inbox(InboxPayload::ContactRequest { code, .. })) = &n.payload else {
+            let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) = &n.payload
+            else {
                 return None;
             };
-            Some(code.clone())
+            Some(*agent_id)
         })
         .await
         .expect("Alice should receive Bobbi's contact request");
 
     // Verify the contact request came from Bobbi
-    assert_eq!(received_qr.agent_id, bobbi.agent_id());
+    assert_eq!(received_agent_id, bobbi.agent_id());
 
     // Alice rejects the contact request instead of accepting it
     alice
@@ -121,11 +122,11 @@ async fn test_reject_multiple_contact_requests() {
             .lock()
             .await
             .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-                let Some(Payload::Inbox(InboxPayload::ContactRequest { code, .. })) = &n.payload
+                let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) = &n.payload
                 else {
                     return None;
                 };
-                Some(code.agent_id)
+                Some(*agent_id)
             })
             .await
             .expect("Alice should receive contact request");

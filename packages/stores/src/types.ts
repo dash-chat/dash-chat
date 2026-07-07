@@ -165,8 +165,6 @@ export const ShareIntent = {
 export interface ContactCode {
 	/// Pubkey of this node: allows adding this node to groups.
 	device_pubkey: DeviceId;
-	/// Agent ID to add to spaces
-	agent_id: AgentId;
 	inbox_topic: InboxTopic | undefined;
 	/// The intent of the QR code: whether to add this node as a contact or a device.
 	share_intent: ShareIntent;
@@ -178,7 +176,7 @@ export interface ReadMessagesPayload {
 }
 
 export type DeviceGroupPayload =
-	| { type: 'AddContact'; payload: ContactCode }
+	| { type: 'AddContact'; payload: { agent_id: AgentId } }
 	| { type: 'RejectContactRequest'; payload: AgentId }
 	| { type: 'ReadMessages'; payload: ReadMessagesPayload };
 

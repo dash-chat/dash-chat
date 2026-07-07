@@ -467,7 +467,6 @@ impl Node {
         Ok(QrCode {
             device_pubkey: self.device_id(),
             inbox_topic,
-            agent_id: self.node_keys.agent_id,
             share_intent,
         })
     }
@@ -1198,16 +1197,18 @@ impl Node {
     /// - store them in the contacts map
     /// - send an invitation to them to do the same
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn add_contact(&self, contact: QrCode) -> Result<AgentId, AddContactError> {
+    pub async fn add_contact(&self, contact: QrCode) -> Result<(), AddContactError> {
         tracing::debug!(
             device_pub_key = ?contact.device_pubkey.aliased(),
-            agent_id = ?contact.agent_id.aliased(),
             inbox_topic = ?contact.inbox_topic,
             "adding contact",
         );
 
-        self.establish_contact(contact.device_pubkey, contact.agent_id)
-            .await?;
+        let Some(inbox_topic) = contact.inbox_topic.clone() else {
+            return Err(AddContactError::CreateQrCode(
+                "contact code has no inbox to send a request to".to_string(),
+            ));
+        };
 
         // TODO: use all of this commented out stuff when spaces are possible again
         // // XXX: there should be a better way to wait for the device group to be created,
@@ -1250,71 +1251,67 @@ impl Node {
         // // XXX: need sleep a little more for all the messages to be processed
         // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
 
-        let agent = contact.agent_id;
+        self.initialize_topic(*inbox_topic.topic)
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        // Mint a private reply inbox for this exchange and listen on it for
+        // the owner's ack. We do NOT persist the (possibly shared) advertised
+        // inbox we scanned — only the owner keeps camping on that — so other
+        // scanners of the same QR never share a return channel with us.
+        let reply_inbox = InboxTopic {
+            topic: Topic::inbox()
+                .alias_named(&format!("reply_inbox({:?})", self.device_id().aliased())),
+            expires_at: Utc::now() + self.config.contact_code_expiry,
+        };
+        self.initialize_topic(*reply_inbox.topic)
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        self.local_store
+            .add_reply_inbox_topic(reply_inbox.clone())
+            .await
+            .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
+        let code = self
+            .new_qr_code(ShareIntent::AddContact, false)
+            .await
+            .map_err(|e| AddContactError::CreateQrCode(e.to_string()))?;
+        let Some(profile) = self
+            .my_profile()
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+        else {
+            return Err(AddContactError::ProfileNotCreated);
+        };
         self.publish(
-            self.device_group_topic(),
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id: agent }),
-            Some(&format!("add_contact/add_contact({:?})", agent.aliased())),
+            inbox_topic.topic,
+            Payload::Inbox(InboxPayload::ContactRequest {
+                code,
+                profile,
+                agent_id: self.agent_id(),
+                reply_topic: reply_inbox.topic.clone(),
+            }),
+            Some(&format!(
+                "add_contact/contact_request({:?})",
+                contact.device_pubkey.aliased()
+            )),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
-        if let Some(inbox_topic) = contact.inbox_topic.clone() {
-            self.initialize_topic(*inbox_topic.topic)
-                .await
-                .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-            // Mint a private reply inbox for this exchange and listen on it for
-            // the owner's ack. We do NOT persist the (possibly shared) advertised
-            // inbox we scanned — only the owner keeps camping on that — so other
-            // scanners of the same QR never share a return channel with us.
-            let reply_inbox = InboxTopic {
-                topic: Topic::inbox()
-                    .alias_named(&format!("reply_inbox({:?})", self.device_id().aliased())),
-                expires_at: Utc::now() + self.config.contact_code_expiry,
-            };
-            self.initialize_topic(*reply_inbox.topic)
-                .await
-                .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-            self.local_store
-                .add_reply_inbox_topic(reply_inbox.clone())
-                .await
-                .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
-            let code = self
-                .new_qr_code(ShareIntent::AddContact, false)
-                .await
-                .map_err(|e| AddContactError::CreateQrCode(e.to_string()))?;
-            let Some(profile) = self
-                .my_profile()
-                .await
-                .map_err(|e| Error::AuthorOperation(e.to_string()))?
-            else {
-                return Err(AddContactError::ProfileNotCreated);
-            };
-            self.publish(
-                inbox_topic.topic,
-                Payload::Inbox(InboxPayload::ContactRequest {
-                    code,
-                    profile,
-                    agent_id: self.agent_id(),
-                    reply_topic: reply_inbox.topic.clone(),
-                }),
-                Some(&format!(
-                    "add_contact/contact_request({:?})",
-                    agent.aliased()
-                )),
-            )
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
-        }
+        Ok(())
+    }
 
-        // Only the initiator of contactship should create the direct chat space
-        if contact.share_intent == ShareIntent::AddContact && contact.inbox_topic.is_none() {
-            self.create_direct_chat_space(agent)
-                .await
-                .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
-        }
-
-        Ok(agent)
+    /// Record a mutual contact by publishing the contact marker into our own
+    /// device group. Contact establishment (mapping, topics, bootstrap) is done
+    /// separately via [`Self::establish_contact`].
+    pub(crate) async fn publish_add_contact(&self, agent_id: AgentId) -> Result<(), Error> {
+        self.publish(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }),
+            Some(&format!("add_contact({:?})", agent_id.aliased())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        Ok(())
     }
 
     /// Accept a contact request that was received over our advertised inbox.
@@ -1324,13 +1321,7 @@ impl Node {
     /// agent_id.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn accept_contact(&self, agent_id: AgentId) -> Result<(), AddContactError> {
-        self.publish(
-            self.device_group_topic(),
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }),
-            Some(&format!("accept_contact/add_contact({:?})", agent_id.aliased())),
-        )
-        .await
-        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        self.publish_add_contact(agent_id).await?;
 
         self.create_direct_chat_space(agent_id)
             .await
