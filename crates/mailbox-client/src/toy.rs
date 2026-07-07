@@ -16,11 +16,8 @@ use super::*;
 pub trait ToyItemTraits: ItemTraits + Serialize + DeserializeOwned {}
 impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {}
 
-/// Fixed grace window for the inline-upload path, larger than the default HTTP
-/// timeout because a blob can be big. It serves two roles: the per-request
-/// upload timeout, and the `upload_grace` the client sends to `/blobs/store` so
-/// the mailbox defers its fetch backstop by the same window. Kept a constant but
-/// still sent as a request parameter so a slower client could raise it.
+/// Client-side timeout for a single blob upload, larger than the default HTTP
+/// timeout because a blob can be big.
 const UPLOAD_BLOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// Why a single blob upload attempt didn't succeed, so the caller can tell an
@@ -49,15 +46,13 @@ fn classify_upload_error(err: reqwest::Error) -> UploadError {
 }
 
 /// POST blob hashes to a mailbox's `/blobs/store`, returning the subset the
-/// mailbox reports it already has stored. Pass `upload_grace` (the fixed grace
-/// window) when the caller will stream the bytes to `/blobs/upload` right after,
-/// so the mailbox defers fetching them by exactly that window; pass `None` to
-/// have the mailbox fetch immediately.
+/// mailbox reports it already has stored. The mailbox registers every other hash
+/// in its fetch pool, deferred by its own fixed grace window so a concurrent
+/// upload of the same bytes can land first without a duplicate transfer.
 pub async fn send_store_blobs(
     base_url: &str,
     hashes: Vec<iroh_blobs::Hash>,
     sender_pubkey: iroh::EndpointId,
-    upload_grace: Option<std::time::Duration>,
 ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
     if hashes.is_empty() {
         return Ok(Vec::new());
@@ -65,7 +60,6 @@ pub async fn send_store_blobs(
     let request = mailbox_server::StoreBlobsRequest {
         blob_hashes: hashes,
         sender_pubkey,
-        upload_grace,
         signature: Vec::new(),
     };
     let response = HTTP_CLIENT
@@ -153,17 +147,8 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         if hashes.is_empty() {
             return Ok(());
         }
-        // Send the fixed grace window only when we can actually stream the bytes,
-        // so the mailbox defers its fetch backstop by exactly our window and only
-        // when a push is really coming.
-        let upload_grace = self.blob_reader.is_some().then_some(UPLOAD_BLOB_TIMEOUT);
-        let already_stored = send_store_blobs(
-            &self.base_url,
-            hashes.clone(),
-            self.sender_pubkey,
-            upload_grace,
-        )
-        .await?;
+        let already_stored =
+            send_store_blobs(&self.base_url, hashes.clone(), self.sender_pubkey).await?;
         let not_stored: Vec<_> = hashes
             .into_iter()
             .filter(|h| !already_stored.contains(h))
@@ -498,7 +483,6 @@ mod tests {
             &base_url,
             vec![h_stored, h_new],
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
-            None,
         )
         .await
         .unwrap();
