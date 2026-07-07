@@ -183,6 +183,50 @@ async fn cannot_edit_an_already_edited_message() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn competing_edits_resolve_deterministically_on_both_nodes() {
+    setup();
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let (alice, bobbi, chat_id) = two_friends(&mailbox).await;
+
+    let original = alice.send_message_raw(chat_id, "v1".into()).await.unwrap();
+
+    // Inject two competing edits of the same message via the raw path, which
+    // bypasses author-side validation. A conforming client can never publish
+    // these, but a modified peer could — the receiver-side tie-break must still
+    // make every node agree on the same survivor.
+    let edit_a = alice
+        .edit_message_raw(chat_id, original.hash(), "edit-a")
+        .await
+        .unwrap();
+    let edit_b = alice
+        .edit_message_raw(chat_id, original.hash(), "edit-b")
+        .await
+        .unwrap();
+
+    // Lowest op hash wins.
+    let winner_text = if edit_a.hash() < edit_b.hash() {
+        "edit-a"
+    } else {
+        "edit-b"
+    };
+
+    // Both nodes converge on exactly one surviving edit — the same one.
+    for node in [&alice, &bobbi] {
+        poll.wait_for(|| async {
+            let edits = node.valid_edits(chat_id).await.unwrap();
+            (edits.len() == 1
+                && edits[0].text == winner_text
+                && edits[0].target == original.hash())
+            .then_some(())
+            .ok_or_else(|| edits.clone())
+        })
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn receiver_ignores_invalid_edit() {
     setup();
     let poll = PollConfig::default();

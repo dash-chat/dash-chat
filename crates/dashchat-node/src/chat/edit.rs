@@ -71,9 +71,10 @@ pub struct ValidEdit {
 /// `ops` is the set of all chat operations in the topic, keyed by hash.
 /// `edit_hash` is the operation the edit points at. `editor` and
 /// `edit_timestamp` describe the edit itself. `self_hash` is the hash of the
-/// edit operation when validating a received edit (so it is excluded from the
-/// "already edited" scan); it is `None` when an author validates before
-/// publishing.
+/// edit operation when validating a received edit; it drives the deterministic
+/// lowest-op-hash-wins tie-break between competing edits and excludes the edit
+/// from its own "already edited" scan. It is `None` when an author validates
+/// before publishing, where any existing edit of the target is rejected.
 pub fn validate_edit(
     valid_ops: &HashMap<Hash, ChatOp>,
     edit_hash: &Hash,
@@ -94,10 +95,22 @@ pub fn validate_edit(
         return Err(EditError::NotAuthor);
     }
 
-    let already_edited = valid_ops.iter().any(|(hash, op)| {
-        Some(hash) != self_hash && matches!(&op.kind, ChatOpKind::Edit(t) if t == edit_hash)
+    // An edit loses to a competing edit of the same target. On the receiving
+    // side (`self_hash` is set) the tie-break is deterministic — the lowest op
+    // hash wins — so every peer converges on the same surviving edit regardless
+    // of HashMap iteration or arrival order. On the author side (`self_hash` is
+    // `None`, before the op has a hash) any existing edit of the target blocks
+    // publishing outright.
+    let superseded = valid_ops.iter().any(|(hash, op)| {
+        if !matches!(&op.kind, ChatOpKind::Edit(t) if t == edit_hash) {
+            return false;
+        }
+        match self_hash {
+            Some(self_hash) => hash < self_hash,
+            None => true,
+        }
     });
-    if already_edited {
+    if superseded {
         return Err(EditError::AlreadyEdited);
     }
 
@@ -238,6 +251,27 @@ mod tests {
         assert_eq!(
             validate_edit(&ops, &hash(1), alice, 2000, Some(&hash(2))),
             Ok(())
+        );
+    }
+
+    #[test]
+    fn competing_edits_lowest_hash_wins() {
+        let alice = device(1);
+        // hash(2) and hash(3) both edit the same original hash(1).
+        let ops = HashMap::from([
+            (hash(1), message(alice, 1000)),
+            (hash(2), edit(alice, 2000, hash(1))),
+            (hash(3), edit(alice, 2000, hash(1))),
+        ]);
+        // The lower-hash edit survives: no competitor with a lower hash exists.
+        assert_eq!(
+            validate_edit(&ops, &hash(1), alice, 2000, Some(&hash(2))),
+            Ok(())
+        );
+        // The higher-hash edit loses to the lower-hash competitor.
+        assert_eq!(
+            validate_edit(&ops, &hash(1), alice, 2000, Some(&hash(3))),
+            Err(EditError::AlreadyEdited)
         );
     }
 

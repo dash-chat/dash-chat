@@ -1103,27 +1103,35 @@ impl Node {
 
         // Strip edit ops that don't pass validation so callers always work with
         // a consistent, cheat-proof view. An invalid edit (wrong author, expired
-        // window, broken chain) must not poison the AlreadyEdited scan for
-        // legitimate edits of the same target.
-        let edit_hashes: Vec<Hash> = ops
-            .iter()
-            .filter_map(|(hash, op)| {
-                if matches!(op.kind, ChatOpKind::Edit(_)) {
-                    Some(*hash)
-                } else {
-                    None
+        // window, broken chain, or the losing side of a competing-edit
+        // tie-break) must not poison the scan for legitimate edits. Removals
+        // cascade — a chained edit whose target gets stripped is itself invalid
+        // — so iterate to a fixpoint. Competing edits are resolved
+        // deterministically inside `validate_edit` (lowest op hash wins), so
+        // every peer converges on the same reduced view regardless of arrival
+        // order.
+        loop {
+            let edit_hashes: Vec<Hash> = ops
+                .iter()
+                .filter_map(|(hash, op)| matches!(op.kind, ChatOpKind::Edit(_)).then_some(*hash))
+                .collect();
+            let mut removed_any = false;
+            for hash in edit_hashes {
+                let Some(op) = ops.get(&hash) else {
+                    continue;
+                };
+                let (ChatOpKind::Edit(edit_hash), editor, timestamp) =
+                    (op.kind.clone(), op.author, op.timestamp)
+                else {
+                    unreachable!()
+                };
+                if validate_edit(&ops, &edit_hash, editor, timestamp, Some(&hash)).is_err() {
+                    ops.remove(&hash);
+                    removed_any = true;
                 }
-            })
-            .collect();
-        for hash in edit_hashes {
-            let op = &ops[&hash];
-            let (ChatOpKind::Edit(edit_hash), editor, timestamp) =
-                (op.kind.clone(), op.author, op.timestamp)
-            else {
-                unreachable!()
-            };
-            if validate_edit(&ops, &edit_hash, editor, timestamp, Some(&hash)).is_err() {
-                ops.remove(&hash);
+            }
+            if !removed_any {
+                break;
             }
         }
 
