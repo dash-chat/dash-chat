@@ -38,7 +38,9 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
         None
     }
 
-    /// Publish an operation to the mailbox for the given topic.
+    /// Publish operations to the mailbox during topic sync.
+    /// Different mailbox implementations have different semantics for this,
+    /// for instance separate storage for logs vs blobs.
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error>;
 
     /// Fetch operations from the mailbox for the given topics.
