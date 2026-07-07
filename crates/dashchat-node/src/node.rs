@@ -1095,6 +1095,7 @@ impl Node {
                     ChatOp {
                         author: DeviceId::from(op.header.verifying_key),
                         timestamp: op.header.timestamp.into(),
+                        seq_num: op.header.seq_num,
                         kind,
                     },
                 );
@@ -1103,13 +1104,11 @@ impl Node {
 
         // Strip edit ops that don't pass validation so callers always work with
         // a consistent, cheat-proof view. An invalid edit (wrong author, expired
-        // window, broken chain, or the losing side of a competing-edit
-        // tie-break) must not poison the scan for legitimate edits. Removals
-        // cascade — a chained edit whose target gets stripped is itself invalid
-        // — so iterate to a fixpoint. Competing edits are resolved
-        // deterministically inside `validate_edit` (lowest op hash wins), so
-        // every peer converges on the same reduced view regardless of arrival
-        // order.
+        // window, or broken chain) must not poison the scan for legitimate
+        // edits. Removals cascade — a chained edit whose target gets stripped is
+        // itself invalid — so iterate to a fixpoint. Validation depends only on
+        // the op set, not arrival order, so every peer converges on the same
+        // reduced view.
         loop {
             let edit_hashes: Vec<Hash> = ops
                 .iter()
