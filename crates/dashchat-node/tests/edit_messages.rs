@@ -215,11 +215,9 @@ async fn competing_edits_resolve_deterministically_on_both_nodes() {
     for node in [&alice, &bobbi] {
         poll.wait_for(|| async {
             let edits = node.valid_edits(chat_id).await.unwrap();
-            (edits.len() == 1
-                && edits[0].text == winner_text
-                && edits[0].target == original.hash())
-            .then_some(())
-            .ok_or_else(|| edits.clone())
+            (edits.len() == 1 && edits[0].text == winner_text && edits[0].target == original.hash())
+                .then_some(())
+                .ok_or_else(|| edits.clone())
         })
         .await
         .unwrap();
