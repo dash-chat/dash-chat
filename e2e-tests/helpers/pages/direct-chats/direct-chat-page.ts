@@ -31,34 +31,9 @@ export class DirectChatPage extends TestHelper {
 	composer = new Composer(this.agent);
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
-	quickEditButton = this.agent.$(tid('quick-edit-button'));
-	editHistorySheet = this.agent.$(tid('edit-history-sheet'));
 
 	async ready() {
 		await this.page.waitForExist();
-	}
-
-	/** Long-press (contextmenu) the message with `oldText`, tap Edit, replace the
-	 * text with `newText`, and send. */
-	async editMessage(oldText: string, newText: string): Promise<void> {
-		await this.messages.openActions(oldText);
-		await this.quickEditButton.waitForClickable();
-		await this.quickEditButton.click();
-		await this.composer.editingBanner.waitForExist();
-		await this.composer.type(newText);
-		await this.composer.send();
-	}
-
-	/** Text of each version listed in the open edit-history sheet, newest first. */
-	async editHistoryVersions(): Promise<string[]> {
-		await this.editHistorySheet.waitForExist();
-		return this.agent.execute((sel: string) => {
-			const sheet = document.querySelector(sel);
-			if (!sheet) return [];
-			return Array.from(sheet.querySelectorAll('.whitespace-pre-wrap')).map(
-				el => el.textContent?.trim() ?? '',
-			);
-		}, tid('edit-history-sheet'));
 	}
 
 	async sendMessage(text: string) {
@@ -106,7 +81,11 @@ export class DirectChatPage extends TestHelper {
 					if (!wrapper.textContent?.includes(t)) continue;
 					const el = wrapper.querySelector(statusSel) as HTMLElement | null;
 					const status = el?.dataset.status;
-					if (status === 'sending' || status === 'local' || status === 'cloud') {
+					if (
+						status === 'sending' ||
+						status === 'local' ||
+						status === 'cloud'
+					) {
 						return status;
 					}
 					return null;

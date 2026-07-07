@@ -1,6 +1,7 @@
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 import { SYNC_TIMEOUT } from '../timeouts';
+import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
 // Driver for a chat's rendered message list — the messages themselves plus the
@@ -26,6 +27,10 @@ export class Messages extends TestHelper {
 	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
 	lightbox = new Lightbox(this.agent);
+	/** The composer, for driving the type/send step of an in-place edit. */
+	private composer = new Composer(this.agent);
+	quickEditButton = this.el(tid('quick-edit-button'));
+	editHistorySheet = this.el(tid('edit-history-sheet'));
 
 	async unreadBadgeText(): Promise<string | null> {
 		if (!(await this.unreadBadge.isExisting())) return null;
@@ -319,5 +324,28 @@ export class Messages extends TestHelper {
 			tid('message-edited-indicator'),
 			text,
 		);
+	}
+
+	/** Open the quick-action bar on the message with `oldText`, tap Edit, replace
+	 * the text with `newText`, and send. */
+	async editMessage(oldText: string, newText: string): Promise<void> {
+		await this.openActions(oldText);
+		await this.quickEditButton.waitForClickable();
+		await this.quickEditButton.click();
+		await this.composer.editingBanner.waitForExist();
+		await this.composer.type(newText);
+		await this.composer.send();
+	}
+
+	/** Text of each version listed in the open edit-history sheet, newest first. */
+	async editHistoryVersions(): Promise<string[]> {
+		await this.editHistorySheet.waitForExist();
+		return this.agent.execute((sel: string) => {
+			const sheet = document.querySelector(sel);
+			if (!sheet) return [];
+			return Array.from(sheet.querySelectorAll('.whitespace-pre-wrap')).map(
+				el => el.textContent?.trim() ?? '',
+			);
+		}, tid('edit-history-sheet'));
 	}
 }

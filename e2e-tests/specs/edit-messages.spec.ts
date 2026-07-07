@@ -20,7 +20,10 @@ describe('Editing messages', () => {
 		await agent1.directChatPage.messages.waitForMessage('Helo world');
 		await agent2.directChatPage.messages.waitForMessage('Helo world');
 
-		await agent1.directChatPage.editMessage('Helo world', 'Hello world');
+		await agent1.directChatPage.messages.editMessage(
+			'Helo world',
+			'Hello world',
+		);
 
 		// Author and peer both converge on the corrected text in place.
 		await agent1.directChatPage.messages.waitForMessage('Hello world');
@@ -38,7 +41,7 @@ describe('Editing messages', () => {
 
 	it('shows the full edit history, original first', async () => {
 		await agent1.directChatPage.messages.openEditHistory('Hello world');
-		const versions = await agent1.directChatPage.editHistoryVersions();
+		const versions = await agent1.directChatPage.messages.editHistoryVersions();
 		expect(versions).toEqual(['Hello world', 'Helo world']);
 	});
 
@@ -47,8 +50,8 @@ describe('Editing messages', () => {
 		await agent1.directChatPage.messages.waitForMessage("Bob's message");
 
 		await agent1.directChatPage.messages.openActions("Bob's message");
-		expect(await agent1.directChatPage.quickEditButton.isExisting()).toBe(
-			false,
-		);
+		expect(
+			await agent1.directChatPage.messages.quickEditButton.isExisting(),
+		).toBe(false);
 	});
 });

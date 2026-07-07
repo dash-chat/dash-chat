@@ -28,7 +28,11 @@
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import EditHistorySheet from '$lib/components/messages/EditHistorySheet.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import {
+		messagePosition,
+		canEditMessage,
+	} from '$lib/components/messages/message-helpers';
+	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
@@ -58,6 +62,7 @@
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
+	const editing = new MessageEditing(store);
 	let historyMessage: Message | undefined = $state(undefined);
 	let showHistory = $state(false);
 
@@ -256,6 +261,8 @@
 														{chatId}
 														searchQuery=""
 														onShowHistory={() => openHistory(message)}
+														canEdit={canEditMessage(message, myDeviceId)}
+														onEdit={() => editing.start(message)}
 													/>
 												</div>
 											{:else}
@@ -314,6 +321,10 @@
 			{#if me.member}
 				<MessageComposer
 					{store}
+					bind:value={editing.value}
+					editing={editing.editing}
+					onEdit={editing.submit}
+					onCancelEdit={() => editing.cancel()}
 					destinationName={info.name}
 					onSent={onMessageSent}
 				/>

@@ -1,4 +1,5 @@
 import { Profile } from './contacts/contacts-client';
+import type { Message } from './direct-chats/direct-chat-store';
 import { AgentId, DeviceId, Hash, TopicId } from './p2panda/types';
 
 export type ChatId = TopicId;
@@ -222,6 +223,7 @@ export interface MessagesStore {
 		message: string;
 		media: OutgoingMedia | null;
 	}): Promise<Hash>;
+	editMessage(message: Message, newText: string): Promise<Hash>;
 	sendReaction(reaction: ChatReaction): Promise<void>;
 }
 

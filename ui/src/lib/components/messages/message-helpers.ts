@@ -1,4 +1,15 @@
+import { type DeviceId, EDIT_WINDOW_MS, type Message } from 'dash-chat-stores';
+
 export type MessagePosition = 'first' | 'middle' | 'last' | 'single';
+
+export function canEditMessage(
+	message: Message,
+	myDeviceId: DeviceId,
+): boolean {
+	if (message.author !== myDeviceId) return false;
+	const rootTimestamp = message.history?.[0]?.timestamp ?? message.timestamp;
+	return Date.now() - rootTimestamp <= EDIT_WINDOW_MS;
+}
 
 export function messagePosition(
 	setLength: number,

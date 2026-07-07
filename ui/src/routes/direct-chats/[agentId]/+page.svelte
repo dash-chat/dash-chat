@@ -14,7 +14,6 @@
 		type DeviceId,
 		type Hash,
 		type Message,
-		EDIT_WINDOW_MS,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
@@ -57,7 +56,11 @@
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
-	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import {
+		messagePosition,
+		canEditMessage,
+	} from '$lib/components/messages/message-helpers';
+	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	let agentId = page.params.agentId!;
 
@@ -119,8 +122,7 @@
 		}
 	}
 
-	let editingMessage: Message | undefined = $state(undefined);
-	let composerValue = $state('');
+	const editing = new MessageEditing(store);
 	let historyMessage: Message | undefined = $state(undefined);
 	let showHistory = $state(false);
 	let showSecurityTips = $state(false);
@@ -250,26 +252,6 @@
 			}
 		}
 		closest?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-	}
-
-	function canEditMessage(message: Message, myDeviceId: DeviceId): boolean {
-		if (message.author !== myDeviceId) return false;
-		const rootTimestamp = message.history?.[0]?.timestamp ?? message.timestamp;
-		return Date.now() - rootTimestamp <= EDIT_WINDOW_MS;
-	}
-
-	function startEditing(message: Message) {
-		editingMessage = message;
-		composerValue = message.content.message;
-	}
-
-	function cancelEditing() {
-		editingMessage = undefined;
-		composerValue = '';
-	}
-
-	async function submitEdit(message: Message, text: string) {
-		await store.editMessage(message, text);
 	}
 
 	function openHistory(message: Message) {
@@ -566,7 +548,7 @@
 																	searchQuery={searchMode ? searchQuery : ''}
 																	onShowHistory={() => openHistory(message)}
 																	canEdit={canEditMessage(message, myDeviceId)}
-																	onEdit={() => startEditing(message)}
+																	onEdit={() => editing.start(message)}
 																/>
 															{/await}
 														</div>
@@ -785,10 +767,10 @@
 					{:else}
 						<MessageComposer
 							{store}
-							bind:value={composerValue}
-							editing={editingMessage}
-							onEdit={submitEdit}
-							onCancelEdit={cancelEditing}
+							bind:value={editing.value}
+							editing={editing.editing}
+							onEdit={editing.submit}
+							onCancelEdit={() => editing.cancel()}
 							destinationName={profile ? fullName(profile) : undefined}
 							onSent={onMessageSent}
 						/>
