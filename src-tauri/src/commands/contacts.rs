@@ -31,6 +31,16 @@ pub async fn add_contact(contact_code: QrCode, app_node: State<'_, AppNode>) -> 
 }
 
 #[tauri::command]
+pub async fn accept_contact(
+    agent_id: AgentId,
+    app_node: State<'_, AppNode>,
+) -> Result<(), Error> {
+    let node = app_node.get().await?;
+    node.accept_contact(agent_id).await?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn active_inbox_topics(
     app_node: State<'_, AppNode>,
 ) -> Result<BTreeSet<Topic<Inbox>>, Error> {

@@ -77,7 +77,7 @@
 
 	async function acceptContactRequest(contactRequest: ContactRequest) {
 		try {
-			await contactsStore.client.addContact(contactRequest.code);
+			await contactsStore.client.acceptContact(contactRequest.agentId);
 			showToast(m.contactAccepted());
 		} catch (e) {
 			console.error(e);
@@ -102,7 +102,7 @@
 	async function rejectContactRequest(contactRequest: ContactRequest) {
 		try {
 			await contactsStore.client.rejectContactRequest(
-				contactRequest.code.agent_id,
+				contactRequest.agentId,
 			);
 			// Defer navigation so the rejection operation propagates before the home page renders
 			setTimeout(() => {

@@ -114,12 +114,11 @@ export class ChatsStore {
 			const pendingRequests = await this.contactsStore.contactRequests();
 			const unique = pendingRequests.filter(
 				(request, index, self) =>
-					self.findIndex(r => r.code.agent_id === request.code.agent_id) ===
-					index,
+					self.findIndex(r => r.agentId === request.agentId) === index,
 			);
 			return unique.map(pendingRequest => ({
 				type: 'DirectChat',
-				chatId: pendingRequest.code.agent_id,
+				chatId: pendingRequest.agentId,
 				name: fullName(pendingRequest.profile),
 				avatar: pendingRequest.profile.avatar,
 				lastEvent: {

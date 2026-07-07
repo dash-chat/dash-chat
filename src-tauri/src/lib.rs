@@ -129,6 +129,7 @@ pub fn run() {
             commands::contacts::my_agent_id,
             commands::contacts::create_contact_code,
             commands::contacts::add_contact,
+            commands::contacts::accept_contact,
             commands::contacts::active_inbox_topics,
             commands::contacts::reject_contact_request,
             commands::direct_chats::direct_chat_id,

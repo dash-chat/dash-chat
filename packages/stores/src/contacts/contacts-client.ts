@@ -36,6 +36,9 @@ export interface IContactsClient {
 	// Add contact
 	addContact(code: ContactCode): Promise<void>;
 
+	// Accept an incoming contact request
+	acceptContact(agentId: AgentId): Promise<void>;
+
 	// Reject contact request
 	rejectContactRequest(agentId: AgentId): Promise<void>;
 
@@ -90,6 +93,18 @@ export class ContactsClient implements IContactsClient {
 				op =>
 					op.body?.payload.type === 'AddContact' &&
 					op.body.payload.payload.agent_id === contactCode.agent_id,
+			),
+		]);
+	}
+
+	async acceptContact(agentId: AgentId): Promise<void> {
+		await Promise.all([
+			invokeAfterSetup('accept_contact', { agentId }),
+			waitForOperation(
+				this.logsClient,
+				op =>
+					op.body?.payload.type === 'AddContact' &&
+					op.body.payload.payload.agent_id === agentId,
 			),
 		]);
 	}

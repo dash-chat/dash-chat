@@ -11,6 +11,7 @@ import { IContactsClient, Profile } from './contacts-client';
 export interface ContactRequest {
 	profile: Profile;
 	code: ContactCode;
+	agentId: AgentId;
 	timestamp: number;
 	topicId: TopicId;
 }
@@ -125,9 +126,9 @@ export class ContactsStore {
 				for (const operation of operations) {
 					if (operation.body?.type !== 'Inbox') continue;
 					if (operation.body.payload.type !== 'ContactRequest') continue;
-					const { code, profile } = operation.body.payload.payload;
-					if (!code?.agent_id) continue;
-					const agentId = code.agent_id;
+					const { code, profile, agent_id } = operation.body.payload.payload;
+					if (!agent_id) continue;
+					const agentId = agent_id;
 
 					// We have already accepted this contact request
 					if (contacts.includes(agentId)) continue;
@@ -143,6 +144,7 @@ export class ContactsStore {
 					contactRequests.push({
 						code,
 						profile,
+						agentId,
 						topicId,
 						timestamp: operation.header.timestamp,
 					});
@@ -170,8 +172,8 @@ export class ContactsStore {
 				for (const operation of operations) {
 					if (operation.body?.type !== 'Inbox') continue;
 					if (operation.body.payload.type !== 'ContactRequest') continue;
-					const { code, profile } = operation.body.payload.payload;
-					if (code?.agent_id !== agentId) continue;
+					const { profile, agent_id } = operation.body.payload.payload;
+					if (agent_id !== agentId) continue;
 					const ts = operation.header.timestamp;
 					if (!latest || ts > latest.timestamp) {
 						latest = { timestamp: ts, profile };

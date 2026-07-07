@@ -1317,6 +1317,28 @@ impl Node {
         Ok(agent)
     }
 
+    /// Accept a contact request that was received over our advertised inbox.
+    /// Contact establishment (mapping, topics, bootstrap) already happened when
+    /// the request was processed; accepting publishes the contact marker and
+    /// creates the shared direct-chat space, keyed only on the requester's
+    /// agent_id.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn accept_contact(&self, agent_id: AgentId) -> Result<(), AddContactError> {
+        self.publish(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }),
+            Some(&format!("accept_contact/add_contact({:?})", agent_id.aliased())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        self.create_direct_chat_space(agent_id)
+            .await
+            .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// Reply to an incoming contact request by sending our profile to the
     /// scanner's private reply topic, so the scanner learns it immediately over
     /// the inbox rather than waiting for announcements sync. We subscribe to the

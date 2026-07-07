@@ -187,6 +187,8 @@ export type InboxPayload = {
 	payload: {
 		code: ContactCode;
 		profile: Profile;
+		agent_id: AgentId;
+		reply_topic: TopicId;
 	};
 };
 
