@@ -16,15 +16,43 @@ use super::*;
 pub trait ToyItemTraits: ItemTraits + Serialize + DeserializeOwned {}
 impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {}
 
-/// Client-side timeout for a single blob upload, larger than the default HTTP
-/// timeout because a blob can be big.
+/// Fixed grace window for the inline-upload path, larger than the default HTTP
+/// timeout because a blob can be big. It serves two roles: the per-request
+/// upload timeout, and the `upload_grace` the client sends to `/blobs/store` so
+/// the mailbox defers its fetch backstop by the same window. Kept a constant but
+/// still sent as a request parameter so a slower client could raise it.
 const UPLOAD_BLOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
+/// Why a single blob upload attempt didn't succeed, so the caller can tell an
+/// unreachable mailbox from a failure isolated to one blob.
+#[derive(Debug)]
+enum UploadError {
+    /// The mailbox itself couldn't be reached (connection refused/reset). Every
+    /// other upload in the batch will hit the same wall, so the caller stops and
+    /// lets the announce/fetch backstop take over.
+    MailboxUnavailable(anyhow::Error),
+    /// The mailbox is reachable but this blob didn't store (non-success status,
+    /// or the request timed out mid-transfer). Isolated to this blob, so the
+    /// caller skips it and keeps uploading the rest.
+    Blob(anyhow::Error),
+}
+
+/// A connection-level failure means the mailbox is unreachable; anything else
+/// (including a per-request timeout on one large blob) is scoped to that blob so
+/// a single slow or rejected upload doesn't abort the whole batch.
+fn classify_upload_error(err: reqwest::Error) -> UploadError {
+    if err.is_connect() {
+        UploadError::MailboxUnavailable(err.into())
+    } else {
+        UploadError::Blob(err.into())
+    }
+}
+
 /// POST blob hashes to a mailbox's `/blobs/store`, returning the subset the
-/// mailbox reports it already has stored. Pass `upload_grace` (the caller's
-/// upload timeout) when the caller will stream the bytes to `/blobs/upload` right
-/// after, so the mailbox defers fetching them by exactly that window; pass `None`
-/// to have the mailbox fetch immediately.
+/// mailbox reports it already has stored. Pass `upload_grace` (the fixed grace
+/// window) when the caller will stream the bytes to `/blobs/upload` right after,
+/// so the mailbox defers fetching them by exactly that window; pass `None` to
+/// have the mailbox fetch immediately.
 pub async fn send_store_blobs(
     base_url: &str,
     hashes: Vec<iroh_blobs::Hash>,
@@ -57,17 +85,20 @@ pub async fn send_store_blobs(
 /// POST a single blob's raw bytes to a mailbox's `/blobs/upload`. The body is the
 /// bytes themselves — no JSON/base64 wrapping — so the on-wire size matches the
 /// blob.
-async fn upload_blob(base_url: &str, bytes: bytes::Bytes) -> anyhow::Result<()> {
+async fn upload_blob(base_url: &str, bytes: bytes::Bytes) -> Result<(), UploadError> {
     let response = HTTP_CLIENT
         .post(format!("{base_url}/blobs/upload"))
         .timeout(UPLOAD_BLOB_TIMEOUT)
         .body(bytes)
         .send()
-        .await?;
+        .await
+        .map_err(classify_upload_error)?;
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        anyhow::bail!("Failed to upload blob: {status} - {body}");
+        return Err(UploadError::Blob(anyhow::anyhow!(
+            "Failed to upload blob: {status} - {body}"
+        )));
     }
     Ok(())
 }
@@ -122,13 +153,17 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         if hashes.is_empty() {
             return Ok(());
         }
-        // Send our upload timeout as the grace only when we can actually stream
-        // the bytes, so the mailbox defers fetching by exactly our window and
-        // only when a push is really coming.
+        // Send the fixed grace window only when we can actually stream the bytes,
+        // so the mailbox defers its fetch backstop by exactly our window and only
+        // when a push is really coming.
         let upload_grace = self.blob_reader.is_some().then_some(UPLOAD_BLOB_TIMEOUT);
-        let already_stored =
-            send_store_blobs(&self.base_url, hashes.clone(), self.sender_pubkey, upload_grace)
-                .await?;
+        let already_stored = send_store_blobs(
+            &self.base_url,
+            hashes.clone(),
+            self.sender_pubkey,
+            upload_grace,
+        )
+        .await?;
         let not_stored: Vec<_> = hashes
             .into_iter()
             .filter(|h| !already_stored.contains(h))
@@ -142,9 +177,12 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     /// Spawn a detached best-effort task that streams each blob's bytes to the
     /// mailbox, one at a time (so at most one blob is held in memory). Every blob
     /// that uploads successfully is removed from the unfetched tracker (the
-    /// mailbox now holds it); anything that fails to read or upload is left in the
-    /// tracker for the followup task and fetched by the mailbox in the meantime.
-    /// No-op when no blob reader is configured.
+    /// mailbox now holds it). We keep going through the batch as long as uploads
+    /// are feasible: a blob we can't read or that the mailbox rejects is left in
+    /// the tracker and skipped, but the moment the mailbox itself is unreachable
+    /// we stop — the remaining blobs stay queued for the mailbox's fetch backstop
+    /// rather than burning through the batch against a dead endpoint. No-op when
+    /// no blob reader is configured.
     fn spawn_blob_upload(&self, hashes: Vec<iroh_blobs::Hash>) {
         let Some(reader) = self.blob_reader.clone() else {
             return;
@@ -166,8 +204,12 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
                 };
                 match upload_blob(&base_url, bytes).await {
                     Ok(()) => tracker.remove(&id, &[hash]).await,
-                    Err(err) => {
+                    Err(UploadError::Blob(err)) => {
                         tracing::warn!(%hash, ?err, "blob upload failed; relying on announce");
+                    }
+                    Err(UploadError::MailboxUnavailable(err)) => {
+                        tracing::warn!(%hash, ?err, "mailbox unreachable; aborting remaining uploads, relying on announce/fetch backstop");
+                        break;
                     }
                 }
             }
@@ -489,10 +531,43 @@ mod tests {
         let base_url = format!("http://{addr}");
 
         let data = bytes::Bytes::from_static(b"raw blob bytes");
-        crate::toy::upload_blob(&base_url, data.clone())
-            .await
-            .unwrap();
+        upload_blob(&base_url, data.clone()).await.unwrap();
         assert_eq!(*received.lock().unwrap(), data.to_vec());
+    }
+
+    #[tokio::test]
+    async fn upload_blob_reports_mailbox_unavailable_when_unreachable() {
+        // Bind then drop the listener so the port is closed and the connect fails.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let base_url = format!("http://{addr}");
+
+        let err = upload_blob(&base_url, bytes::Bytes::from_static(b"x"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, UploadError::MailboxUnavailable(_)));
+    }
+
+    #[tokio::test]
+    async fn upload_blob_reports_blob_failure_on_error_status() {
+        let app = axum::Router::new().route(
+            "/blobs/upload",
+            axum::routing::post(|| async {
+                (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "boom")
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+
+        let err = upload_blob(&base_url, bytes::Bytes::from_static(b"x"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, UploadError::Blob(_)));
     }
 
     #[tokio::test]
