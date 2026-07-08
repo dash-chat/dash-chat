@@ -549,6 +549,7 @@ Testing keyboard behavior and UI interactions in the iOS simulator has inherent 
 ### Notes for edits
 
 - Run `just format` before considering any code ready to commit.
+- IDE diagnostics for Rust code will usually be stale and inaccurate while you're changing things. If you can verify that they're up to date, use them, but otherwise prefer running explicit lints/checks.
  
 ## Build Configuration
 
