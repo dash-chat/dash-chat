@@ -1,5 +1,6 @@
 import { reactive } from 'signalium';
 
+import { applyDeletes } from '../chats/deletes';
 import { MessageVersion, applyEdits } from '../chats/edits';
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
@@ -34,6 +35,8 @@ export interface Message {
 	history?: MessageVersion[];
 	/** Hash of the latest edit op in the chain; the target for the next edit. */
 	latestEditHash?: Hash;
+	/** Whether the message was deleted for everyone; rendered as a placeholder. */
+	deleted?: boolean;
 }
 
 // Store tied to a specific direct chat
@@ -106,6 +109,7 @@ export class DirectChatStore implements MessagesStore {
 			}
 		}
 		applyEdits(messages, logs);
+		applyDeletes(messages, logs);
 		return messages;
 	});
 
@@ -210,6 +214,7 @@ export class DirectChatStore implements MessagesStore {
 					kind: 'message',
 					content: message.content,
 					timestamp: message.timestamp,
+					deleted: message.deleted,
 				}
 			: {
 					kind: 'contact_added',
@@ -241,5 +246,11 @@ export class DirectChatStore implements MessagesStore {
 		const chatId = await this.chatId();
 		const target = message.latestEditHash ?? message.hash;
 		return this.client.editMessage(chatId, target, newText);
+	}
+
+	async deleteMessage(message: Message): Promise<Hash> {
+		const chatId = await this.chatId();
+		const target = message.latestEditHash ?? message.hash;
+		return this.client.deleteMessage(chatId, target);
 	}
 }
