@@ -88,7 +88,11 @@
 
 <div
 	bind:this={messageEl}
-	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
+	use:longpress={{
+		onLongPress: () => {
+			if (!message.deleted) reactionsOpened = true;
+		},
+	}}
 >
 	<div class="row items-end gap-2">
 		{#if showAvatar}
@@ -107,14 +111,26 @@
 			contentWrapPadding="p-2"
 			class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 		>
-			<MessageContent
-				{message}
-				{searchQuery}
-				senderName={senderDisplayName}
-				{showSenderName}
-				editedIndicator={message.editedAt ? editedIndicator : undefined}
-				metadata={isLast ? metadata : undefined}
-			/>
+			{#if message.deleted}
+				<div
+					class="flex items-end gap-2.5 px-1 italic"
+					data-testid="deleted-message"
+				>
+					{m.thisMessageWasDeleted()}
+					{#if isLast}
+						<MessageTimestamp timestamp={message.timestamp} class="quiet" />
+					{/if}
+				</div>
+			{:else}
+				<MessageContent
+					{message}
+					{searchQuery}
+					senderName={senderDisplayName}
+					{showSenderName}
+					editedIndicator={message.editedAt ? editedIndicator : undefined}
+					metadata={isLast ? metadata : undefined}
+				/>
+			{/if}
 		</Card>
 	</div>
 	{#if Object.keys(message.reactions).length > 0}

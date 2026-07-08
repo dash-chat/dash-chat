@@ -29,6 +29,8 @@
 		onShowHistory,
 		canEdit = false,
 		onEdit,
+		canDelete = false,
+		onDelete,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -38,6 +40,8 @@
 		onShowHistory?: () => void;
 		canEdit?: boolean;
 		onEdit?: () => void;
+		canDelete?: boolean;
+		onDelete?: () => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -87,20 +91,36 @@
 
 <div
 	bind:this={messageEl}
-	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
+	use:longpress={{
+		onLongPress: () => {
+			if (!message.deleted) reactionsOpened = true;
+		},
+	}}
 >
 	<Card
 		raised
 		contentWrapPadding="p-2"
 		class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 	>
-		<MessageContent
-			{message}
-			{searchQuery}
-			senderName={m.you()}
-			editedIndicator={message.editedAt ? editedIndicator : undefined}
-			metadata={isLast ? metadata : undefined}
-		/>
+		{#if message.deleted}
+			<div
+				class="flex items-end gap-2.5 px-1 italic"
+				data-testid="deleted-message"
+			>
+				{m.youDeletedThisMessage()}
+				{#if isLast}
+					<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
+				{/if}
+			</div>
+		{:else}
+			<MessageContent
+				{message}
+				{searchQuery}
+				senderName={m.you()}
+				editedIndicator={message.editedAt ? editedIndicator : undefined}
+				metadata={isLast ? metadata : undefined}
+			/>
+		{/if}
 	</Card>
 	{#if Object.keys(message.reactions).length > 0}
 		<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
@@ -118,6 +138,8 @@
 	{myDeviceId}
 	{canEdit}
 	{onEdit}
+	{canDelete}
+	{onDelete}
 	bind:opened={reactionsOpened}
 	target={messageEl}
 />

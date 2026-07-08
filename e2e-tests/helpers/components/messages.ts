@@ -30,6 +30,8 @@ export class Messages extends TestHelper {
 	/** The composer, for driving the type/send step of an in-place edit. */
 	private composer = new Composer(this.agent);
 	quickEditButton = this.el(tid('quick-edit-button'));
+	quickDeleteButton = this.el(tid('quick-delete-button'));
+	deleteConfirmButton = this.el(tid('delete-message-confirm'));
 	editHistorySheet = this.el(tid('edit-history-sheet'));
 
 	async unreadBadgeText(): Promise<string | null> {
@@ -335,6 +337,45 @@ export class Messages extends TestHelper {
 		await this.composer.editingBanner.waitForExist();
 		await this.composer.type(newText);
 		await this.composer.send();
+	}
+
+	/** Open the quick-action bar on the message with `text`, tap Delete, and
+	 * confirm "Delete for everyone" in the dialog. */
+	async deleteMessage(text: string): Promise<void> {
+		await this.openActions(text);
+		await this.quickDeleteButton.waitForClickable();
+		await this.quickDeleteButton.click();
+		await this.deleteConfirmButton.waitForClickable();
+		await this.deleteConfirmButton.click();
+	}
+
+	/** Wait until `originalText` is gone from the message list and a
+	 * deleted-message placeholder containing `placeholder` is shown. */
+	async waitForDeleted(
+		originalText: string,
+		placeholder: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => {
+				if (await this.messageAreaContains(originalText)) return false;
+				return this.agent.execute(
+					(messagesSel: string, deletedSel: string, p: string) => {
+						const els = document.querySelectorAll(
+							`${messagesSel} ${deletedSel}`,
+						);
+						return Array.from(els).some(el => el.textContent?.includes(p));
+					},
+					this.messagesSelector,
+					tid('deleted-message'),
+					placeholder,
+				);
+			},
+			{
+				timeout,
+				timeoutMsg: `"${originalText}" was not replaced by the deleted placeholder`,
+			},
+		);
 	}
 
 	/** Text of each version listed in the open edit-history sheet, newest first. */

@@ -59,6 +59,7 @@
 	import {
 		messagePosition,
 		canEditMessage,
+		canDeleteMessage,
 	} from '$lib/components/messages/message-helpers';
 	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
@@ -123,6 +124,18 @@
 	}
 
 	const editing = new MessageEditing(store);
+	let deletingMessage: Message | undefined = $state(undefined);
+
+	async function deleteForEveryone(message: Message) {
+		deletingMessage = undefined;
+		try {
+			await store.deleteMessage(message);
+		} catch (e) {
+			console.error(e);
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
+	}
+
 	let historyMessage: Message | undefined = $state(undefined);
 	let showHistory = $state(false);
 	let showSecurityTips = $state(false);
@@ -549,6 +562,11 @@
 																	onShowHistory={() => openHistory(message)}
 																	canEdit={canEditMessage(message, myDeviceId)}
 																	onEdit={() => editing.start(message)}
+																	canDelete={canDeleteMessage(
+																		message,
+																		myDeviceId,
+																	)}
+																	onDelete={() => (deletingMessage = message)}
 																/>
 															{/await}
 														</div>
@@ -641,6 +659,25 @@
 						opened={showHistory}
 						onClose={() => (showHistory = false)}
 					/>
+
+					<Dialog
+						opened={deletingMessage !== undefined}
+						onBackdropClick={() => (deletingMessage = undefined)}
+						title={m.deleteMessageTitle()}
+					>
+						{#snippet buttons()}
+							<DialogButton onClick={() => (deletingMessage = undefined)}>
+								{m.cancel()}
+							</DialogButton>
+							<DialogButton
+								data-testid="delete-message-confirm"
+								onClick={() =>
+									deletingMessage && deleteForEveryone(deletingMessage)}
+							>
+								{m.deleteForEveryone()}
+							</DialogButton>
+						{/snippet}
+					</Dialog>
 				</ReverseScrollPage>
 
 				{#if !isAtBottom}

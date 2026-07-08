@@ -85,7 +85,13 @@
 				{:else if summary.lastEvent.kind === 'message'}
 					{#if summary.type === 'GroupChat'}
 						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
-						{summarizeMessage(summary.lastEvent.content)}
+						{#if summary.lastEvent.deleted}
+							<span class="italic">{m.messageDeleted()}</span>
+						{:else}
+							{summarizeMessage(summary.lastEvent.content)}
+						{/if}
+					{:else if summary.lastEvent.deleted}
+						<span class="italic">{m.messageDeleted()}</span>
 					{:else}
 						{summarizeMessage(summary.lastEvent.content)}
 					{/if}

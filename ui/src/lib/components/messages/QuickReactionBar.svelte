@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { QUICK_EMOJIS, condenseReactions } from '$lib/utils/emojis';
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiDotsHorizontal, mdiPencil } from '@mdi/js';
+	import { mdiDotsHorizontal, mdiPencil, mdiTrashCanOutline } from '@mdi/js';
 	import { Popover, Sheet, Block, Chip } from 'konsta/svelte';
 	import { getContext } from 'svelte';
 	import type { Message, DeviceId, MessagesStore } from 'dash-chat-stores';
@@ -20,6 +20,9 @@
 		/** Whether to offer an edit action (author, within the edit window). */
 		canEdit?: boolean;
 		onEdit?: () => void;
+		/** Whether to offer a delete action (author, within the delete window). */
+		canDelete?: boolean;
+		onDelete?: () => void;
 	}
 
 	let {
@@ -29,6 +32,8 @@
 		myDeviceId,
 		canEdit = false,
 		onEdit,
+		canDelete = false,
+		onDelete,
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
@@ -71,6 +76,11 @@
 		onEdit?.();
 	}
 
+	function del() {
+		close();
+		onDelete?.();
+	}
+
 	const condensed = $derived(condenseReactions(message.reactions, myDeviceId));
 </script>
 
@@ -108,6 +118,15 @@
 				onClick={edit}
 				label={m.edit()}
 				testid="quick-edit-button"
+				iconClass="text-xl"
+			/>
+		{/if}
+		{#if canDelete}
+			<IconButton
+				icon={mdiTrashCanOutline}
+				onClick={del}
+				label={m.delete()}
+				testid="quick-delete-button"
 				iconClass="text-xl"
 			/>
 		{/if}

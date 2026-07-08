@@ -13,7 +13,14 @@
 		Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
-	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
+	import {
+		Navbar,
+		NavbarBackLink,
+		Link,
+		Dialog,
+		DialogButton,
+		useTheme,
+	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -31,7 +38,9 @@
 	import {
 		messagePosition,
 		canEditMessage,
+		canDeleteMessage,
 	} from '$lib/components/messages/message-helpers';
+	import { showToast } from '$lib/utils/toasts';
 	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
 	import { m } from '$lib/paraglide/messages';
 
@@ -63,6 +72,18 @@
 	let unreadDividerCaptured = false;
 
 	const editing = new MessageEditing(store);
+	let deletingMessage: Message | undefined = $state(undefined);
+
+	async function deleteForEveryone(message: Message) {
+		deletingMessage = undefined;
+		try {
+			await store.deleteMessage(message);
+		} catch (e) {
+			console.error(e);
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
+	}
+
 	let historyMessage: Message | undefined = $state(undefined);
 	let showHistory = $state(false);
 
@@ -263,6 +284,8 @@
 														onShowHistory={() => openHistory(message)}
 														canEdit={canEditMessage(message, myDeviceId)}
 														onEdit={() => editing.start(message)}
+														canDelete={canDeleteMessage(message, myDeviceId)}
+														onDelete={() => (deletingMessage = message)}
 													/>
 												</div>
 											{:else}
@@ -344,4 +367,22 @@
 		opened={showHistory}
 		onClose={() => (showHistory = false)}
 	/>
+
+	<Dialog
+		opened={deletingMessage !== undefined}
+		onBackdropClick={() => (deletingMessage = undefined)}
+		title={m.deleteMessageTitle()}
+	>
+		{#snippet buttons()}
+			<DialogButton onClick={() => (deletingMessage = undefined)}>
+				{m.cancel()}
+			</DialogButton>
+			<DialogButton
+				data-testid="delete-message-confirm"
+				onClick={() => deletingMessage && deleteForEveryone(deletingMessage)}
+			>
+				{m.deleteForEveryone()}
+			</DialogButton>
+		{/snippet}
+	</Dialog>
 </div>
