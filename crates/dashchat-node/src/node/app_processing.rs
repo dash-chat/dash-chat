@@ -444,32 +444,27 @@ impl Node {
                 }
                 match invitation {
                     InboxPayload::ContactRequest {
-                        reply_topic,
-                        agent_id,
-                        profile,
-                        ..
+                        agent_id, profile, ..
                     } => {
-                        // Only the advertised inbox owner answers, and only for a
-                        // freshly-received request (not a local replay), by
-                        // sending its profile to the scanner's private reply
-                        // topic. Spawned so we don't await publishing (which needs
-                        // this same processor) and deadlock.
+                        // A request arrived on our advertised inbox. Persist the
+                        // requester's identity + profile locally so the UI can
+                        // render the pending request, but perform no network
+                        // side-effects (bootstrap registration, topic
+                        // subscriptions) and disclose nothing about us until the
+                        // user explicitly accepts (see `accept_contact`). This
+                        // keeps an unsolicited request — e.g. anyone scanning a
+                        // shared QR — from amplifying our resources or handing our
+                        // profile to every scanner. The request is signed by the
+                        // scanner's device key (author), so we map that device to
+                        // the requester's agent_id directly rather than trusting
+                        // the embedded QR code's agent_id.
                         if owned_topic && !matches!(source, Source::LocalStore) {
-                            // The request is signed by the scanner's device key
-                            // (author), so establish the contact directly from
-                            // the request rather than relying on the embedded QR
-                            // code's agent_id.
-                            self.establish_contact(author, *agent_id).await?;
+                            self.local_store
+                                .save_agent_mapping(author, *agent_id)
+                                .await?;
                             self.local_store
                                 .save_profile(*agent_id, profile.clone())
                                 .await?;
-                            let node = self.clone();
-                            let reply_topic = *reply_topic;
-                            tokio::spawn(async move {
-                                if let Err(err) = node.reply_to_contact_request(reply_topic).await {
-                                    tracing::warn!(?err, "failed to reply to contact request");
-                                }
-                            });
                         }
                     }
                     InboxPayload::ContactRequestAck { profile, agent_id } => {

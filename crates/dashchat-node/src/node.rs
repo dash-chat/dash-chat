@@ -1346,12 +1346,45 @@ impl Node {
     }
 
     /// Accept a contact request that was received over our advertised inbox.
-    /// Contact establishment (mapping, topics, bootstrap) already happened when
-    /// the request was processed; accepting publishes the contact marker and
-    /// creates the shared direct-chat space, keyed only on the requester's
-    /// agent_id.
+    /// On receipt we only recorded the requester's identity + profile locally;
+    /// accepting now performs the network establishment we deliberately deferred
+    /// — registering the requester as a bootstrap node and subscribing to their
+    /// topics — replies with our profile (which also signals acceptance so the
+    /// requester can complete their side), publishes the contact marker, and
+    /// creates the shared direct-chat space.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn accept_contact(&self, agent_id: AgentId) -> Result<(), AddContactError> {
+        // The requester's device was mapped to their agent_id when the request
+        // arrived; recover it to establish their network presence.
+        let device_pubkey = self
+            .local_store
+            .lookup_contact_by_agent_id(agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            .ok_or_else(|| {
+                AddContactError::CreateDirectChat(format!(
+                    "no pending contact request found for agent {:?}",
+                    agent_id.aliased()
+                ))
+            })?;
+        self.establish_contact(device_pubkey, agent_id).await?;
+
+        // Reply to the requester with our profile over their private reply
+        // topic. This is the point at which we first disclose our profile and
+        // signals that we accepted, letting them complete the exchange.
+        if let Some(reply_topic) = self
+            .find_contact_request_reply_topic(agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+        {
+            self.reply_to_contact_request(reply_topic).await?;
+        } else {
+            tracing::warn!(
+                agent_id = ?agent_id.aliased(),
+                "accepted contact but found no request to reply to"
+            );
+        }
+
         self.publish_add_contact(agent_id).await?;
 
         self.create_direct_chat_space(agent_id)
@@ -1359,6 +1392,35 @@ impl Node {
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
 
         Ok(())
+    }
+
+    /// Scan our advertised inbox logs for a pending [`InboxPayload::ContactRequest`]
+    /// from `agent_id` and return its private reply topic, so [`Self::accept_contact`]
+    /// can send our acceptance there. Returns `None` if no matching request is stored.
+    async fn find_contact_request_reply_topic(
+        &self,
+        agent_id: AgentId,
+    ) -> anyhow::Result<Option<Topic<kind::Inbox>>> {
+        for inbox in self.local_store.get_active_inbox_topics().await? {
+            let log_id = LogId::from_topic(*inbox.topic);
+            for author in self.op_store.get_authors(log_id).await? {
+                for op in self.op_store.get_log(&author, &log_id, None).await? {
+                    let Some(body) = op.body else { continue };
+                    let Ok(Payload::Inbox(InboxPayload::ContactRequest {
+                        agent_id: req_agent,
+                        reply_topic,
+                        ..
+                    })) = Payload::try_from_body(&body)
+                    else {
+                        continue;
+                    };
+                    if req_agent == agent_id {
+                        return Ok(Some(reply_topic));
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// Reply to an incoming contact request by sending our profile to the
