@@ -260,10 +260,12 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         // still have its payload dropped by a tombstone it is about to
         // enforce, so it must not be sent onward yet. Truncating (rather than
         // filtering) keeps the returned log dense from `from`, which callers
-        // index by sequence number.
+        // index by sequence number. Body-less operations are always safe to
+        // transmit — there is no payload to leak — and are never forwarded to
+        // the application layer, so they'd never be marked processed.
         let mut ops = Vec::with_capacity(log.len());
         for (op, _) in log {
-            if !self.is_op_processed_persistent(&op.hash).await? {
+            if op.body.is_some() && !self.is_op_processed_persistent(&op.hash).await? {
                 break;
             }
             ops.push(MailboxOperation {
@@ -382,6 +384,14 @@ mod tests {
 
         store.mark_op_processed_persistent(&op0.hash).await.unwrap();
         assert_eq!(served(&store).await, vec![op0.hash, op1.hash]);
+
+        // A body-less operation (tombstoned payload) never reaches the
+        // application layer, so it is never marked processed — but it carries
+        // no payload and is always safe to transmit.
+        let mut op2 = signed_op(&signing_key, log_id, 2, Some(op1.hash), b"two");
+        op2.body = None;
+        insert(&store, &op2, &log_id).await;
+        assert_eq!(served(&store).await, vec![op0.hash, op1.hash, op2.hash]);
     }
 
     #[tokio::test]

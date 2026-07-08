@@ -262,27 +262,41 @@ impl Node {
         )
     }
 
-    /// Apply a validated delete: tombstone every operation in the edit chain,
-    /// undo their local effects, drop their stored payloads, and overwrite the
-    /// mailbox copies with body-less versions so mailboxes stop serving the
-    /// deleted payloads to peers that don't have them yet.
+    /// Apply a delete: tombstone every operation in the edit chain, undo their
+    /// local effects, drop their stored payloads, and overwrite the mailbox
+    /// copies with body-less versions so mailboxes stop serving the deleted
+    /// payloads to peers that don't have them yet.
+    ///
+    /// Each operation is guarded by an authorship check — a delete may only
+    /// ever drop its own author's operations — so this is safe to call even
+    /// when the full chain validation couldn't run (see the `DeleteMessage`
+    /// arm in [`Self::process_app`]).
     async fn apply_delete(
         &self,
         topic: TopicId,
+        deleter: DeviceId,
         hashes: &std::collections::BTreeSet<Hash>,
     ) -> anyhow::Result<()> {
         let mut scrubbed = Vec::new();
         for hash in hashes {
+            let Some(op) = self.op_store.get_operation(hash).await? else {
+                warn!(op = ?hash.aliased(), "delete references an unknown operation; skipping");
+                continue;
+            };
+            if DeviceId::from(op.header.verifying_key) != deleter {
+                warn!(op = ?hash.aliased(), "delete references another author's operation; skipping");
+                continue;
+            }
             self.local_store.add_tombstone(topic, *hash).await?;
-            if let Some(op) = self.op_store.get_operation(hash).await? {
+            if op.body.is_some() {
                 self.unprocess_app(&op).await?;
                 self.op_store.delete_body(hash).await?;
-                scrubbed.push(MailboxOperation {
-                    topic,
-                    header: op.header,
-                    body: None,
-                });
             }
+            scrubbed.push(MailboxOperation {
+                topic,
+                header: op.header,
+                body: None,
+            });
         }
         if !scrubbed.is_empty() {
             self.mailboxes.publish_to_all(scrubbed).await;
@@ -527,17 +541,25 @@ impl Node {
                 if !already_applied {
                     // Mirror the author-side validation: a delete that breaks
                     // the chain-completeness / authorship / window rules is
-                    // ignored (not applied) with a warning.
+                    // ignored (not applied) with a warning. Full validation
+                    // needs every referenced payload; when some are already
+                    // gone (a partially-applied replay, or a member that
+                    // joined after the delete and synced body-less copies) the
+                    // chain can't be reconstructed, and the per-operation
+                    // authorship check in `apply_delete` is the property that
+                    // tombstoning relies on.
                     let chat_id = ChatId::from_topic_id(topic)?;
                     let valid_ops = self.valid_chat_ops(chat_id).await?;
-                    let delete_ts: u64 = operation.processed().header().timestamp.into();
-                    if let Err(err) =
-                        validate_delete(&valid_ops, hashes, author, delete_ts, Some(&hash))
-                    {
-                        warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
-                        return Ok(());
+                    if hashes.iter().all(|h| valid_ops.contains_key(h)) {
+                        let delete_ts: u64 = operation.processed().header().timestamp.into();
+                        if let Err(err) =
+                            validate_delete(&valid_ops, hashes, author, delete_ts, Some(&hash))
+                        {
+                            warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
+                            return Ok(());
+                        }
                     }
-                    self.apply_delete(topic.into(), hashes).await?;
+                    self.apply_delete(topic.into(), author, hashes).await?;
                 }
             }
 
