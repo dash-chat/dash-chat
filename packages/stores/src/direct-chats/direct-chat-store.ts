@@ -46,6 +46,10 @@ export class DirectChatStore implements MessagesStore {
 	resolvedPendingAgent = reactive(async () => {
 		const device = pendingChatKeyDevice(this.peer);
 		if (device === undefined) return undefined;
+		// Depend on the reactive contacts list so this re-runs once the contact
+		// is established (the device→agent mapping is saved around the same time
+		// the AddContact marker is published).
+		await this.contactsStore.contactsAgentIds();
 		return await this.contactsStore.client.agentForDevice(device);
 	});
 
