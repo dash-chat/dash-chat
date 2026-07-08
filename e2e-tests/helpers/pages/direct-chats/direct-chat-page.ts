@@ -85,7 +85,11 @@ export class DirectChatPage extends TestHelper {
 					if (!wrapper.textContent?.includes(t)) continue;
 					const el = wrapper.querySelector(statusSel) as HTMLElement | null;
 					const status = el?.dataset.status;
-					if (status === 'sending' || status === 'local' || status === 'cloud') {
+					if (
+						status === 'sending' ||
+						status === 'local' ||
+						status === 'cloud'
+					) {
 						return status;
 					}
 					return null;

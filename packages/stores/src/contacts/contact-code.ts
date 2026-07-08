@@ -17,7 +17,10 @@ function bytesToHex(bytes: Uint8Array): string {
 // 64-char text string, roughly halving the encoded contact code.
 export function encodeContactCode(contactCode: ContactCode): string {
 	const inboxTopic = contactCode.inbox_topic
-		? [contactCode.inbox_topic.expires_at, hexToBytes(contactCode.inbox_topic.topic)]
+		? [
+				contactCode.inbox_topic.expires_at,
+				hexToBytes(contactCode.inbox_topic.topic),
+			]
 		: null;
 	const bin = encode([
 		hexToBytes(contactCode.device_pubkey),
