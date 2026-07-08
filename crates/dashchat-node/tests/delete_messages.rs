@@ -395,7 +395,13 @@ async fn invalid_deletes_are_rejected() {
         .unwrap();
 
     for node in [&alice, &bobbi] {
-        assert!(!node.local_store.is_tombstoned(*chat, msg.hash()).await.unwrap());
+        assert!(
+            !node
+                .local_store
+                .is_tombstoned(*chat, msg.hash())
+                .await
+                .unwrap()
+        );
         assert_eq!(
             payload_present(node, *chat, alice.device_id(), msg.hash()).await,
             Some(true)

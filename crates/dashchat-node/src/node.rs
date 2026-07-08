@@ -1086,7 +1086,11 @@ impl Node {
         validate_delete(&ops, &hashes, self.device_id(), now, None)?;
 
         let header = self
-            .publish(topic, Payload::Chat(ChatPayload::DeleteMessage { hashes }), None)
+            .publish(
+                topic,
+                Payload::Chat(ChatPayload::DeleteMessage { hashes }),
+                None,
+            )
             .await?;
 
         Ok(header)
@@ -1166,8 +1170,7 @@ impl Node {
             let candidates: Vec<Hash> = ops
                 .iter()
                 .filter_map(|(hash, op)| {
-                    matches!(op.kind, ChatOpKind::Edit(_) | ChatOpKind::Delete(_))
-                        .then_some(*hash)
+                    matches!(op.kind, ChatOpKind::Edit(_) | ChatOpKind::Delete(_)).then_some(*hash)
                 })
                 .collect();
             let mut removed_any = false;
