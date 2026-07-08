@@ -46,13 +46,16 @@ fn classify_upload_error(err: reqwest::Error) -> UploadError {
 }
 
 /// POST blob hashes to a mailbox's `/blobs/store`, returning the subset the
-/// mailbox reports it already has stored. The mailbox registers every other hash
-/// in its fetch pool, deferred by its own fixed grace window so a concurrent
-/// upload of the same bytes can land first without a duplicate transfer.
+/// mailbox reports it already has stored. Set `expect_upload` when the caller
+/// will stream the bytes to `/blobs/upload` right after, so the mailbox defers
+/// its fetch backstop by its own fixed grace window and lets that upload land
+/// first without a duplicate transfer; pass `false` to have the mailbox fetch
+/// immediately (no upload is coming).
 pub async fn send_store_blobs(
     base_url: &str,
     hashes: Vec<iroh_blobs::Hash>,
     sender_pubkey: iroh::EndpointId,
+    expect_upload: bool,
 ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
     if hashes.is_empty() {
         return Ok(Vec::new());
@@ -60,6 +63,7 @@ pub async fn send_store_blobs(
     let request = mailbox_server::StoreBlobsRequest {
         blob_hashes: hashes,
         sender_pubkey,
+        expect_upload,
         signature: Vec::new(),
     };
     let response = HTTP_CLIENT
@@ -147,8 +151,17 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         if hashes.is_empty() {
             return Ok(());
         }
-        let already_stored =
-            send_store_blobs(&self.base_url, hashes.clone(), self.sender_pubkey).await?;
+        // Tell the mailbox to defer its fetch backstop only when we can actually
+        // stream the bytes; a reader-less client never uploads, so the mailbox
+        // should fetch from us right away.
+        let expect_upload = self.blob_reader.is_some();
+        let already_stored = send_store_blobs(
+            &self.base_url,
+            hashes.clone(),
+            self.sender_pubkey,
+            expect_upload,
+        )
+        .await?;
         let not_stored: Vec<_> = hashes
             .into_iter()
             .filter(|h| !already_stored.contains(h))
@@ -483,6 +496,7 @@ mod tests {
             &base_url,
             vec![h_stored, h_new],
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
+            false,
         )
         .await
         .unwrap();

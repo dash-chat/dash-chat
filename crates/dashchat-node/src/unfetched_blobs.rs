@@ -63,9 +63,10 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
         if hashes.is_empty() {
             continue; // no unfetched blobs to re-announce
         }
-        // Re-announce so the mailbox re-registers these hashes for fetching; it
-        // applies its own fixed grace window before dialing us.
-        match mailbox_client::toy::send_store_blobs(&url, hashes, self_endpoint).await {
+        // Re-announce so the mailbox re-registers these hashes for fetching. No
+        // upload follows here, so ask it to fetch immediately rather than deferring
+        // by its grace window.
+        match mailbox_client::toy::send_store_blobs(&url, hashes, self_endpoint, false).await {
             Ok(already_stored) => {
                 if let Err(err) = node
                     .local_store

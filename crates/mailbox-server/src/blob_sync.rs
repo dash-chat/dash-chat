@@ -364,13 +364,23 @@ impl BlobSync {
         Ok(hash)
     }
 
-    /// Register `source` as a provider for `hash`, deferring the fetch by
-    /// [`UPLOAD_GRACE`] so a concurrent inline upload of the same blob can land
-    /// first and make the fetch unnecessary.
-    pub(crate) async fn add_fetch_source(&self, hash: iroh_blobs::Hash, source: iroh::EndpointId) {
-        self.fetch_pool
-            .add_source_after(hash, source, UPLOAD_GRACE)
-            .await
+    /// Register `source` as a provider for `hash`. When `expect_upload` is set the
+    /// fetch is deferred by [`UPLOAD_GRACE`] so a concurrent inline upload of the
+    /// same blob can land first and make the fetch unnecessary; otherwise the hash
+    /// is fetchable immediately (no upload is coming).
+    pub(crate) async fn add_fetch_source(
+        &self,
+        hash: iroh_blobs::Hash,
+        source: iroh::EndpointId,
+        expect_upload: bool,
+    ) {
+        if expect_upload {
+            self.fetch_pool
+                .add_source_after(hash, source, UPLOAD_GRACE)
+                .await
+        } else {
+            self.fetch_pool.add_source(hash, source).await
+        }
     }
 
     /// Drop `hash` from the fetch pool: the mailbox now holds it (e.g. a client
