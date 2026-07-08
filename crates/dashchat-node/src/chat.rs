@@ -1,6 +1,8 @@
 mod compat_tests;
+mod delete;
 mod edit;
 mod message;
+pub use delete::*;
 pub use edit::*;
 pub use message::*;
 

@@ -171,6 +171,13 @@ impl Node {
                                 // testing flag.
                                 node.op_store.mark_op_processed(topic, &id);
 
+                                // Persistently mark the operation processed so
+                                // mailbox sync may transmit it onward; see
+                                // `OpStore::init_processed_ops`.
+                                if let Err(err) = node.op_store.mark_op_processed_persistent(&id).await {
+                                    tracing::error!(?err, "failed to record processed operation");
+                                }
+
                             },
                             ProcessorEvent::App { operation, source, processed_tx } => {
                                 let topic = operation.topic();
@@ -197,6 +204,13 @@ impl Node {
                                 // @TODO: this is required for tests, but nowhere else, it can be placed behind the
                                 // testing flag.
                                 node.op_store.mark_op_processed(topic, &id);
+
+                                // Persistently mark the operation processed so
+                                // mailbox sync may transmit it onward; see
+                                // `OpStore::init_processed_ops`.
+                                if let Err(err) = node.op_store.mark_op_processed_persistent(&id).await {
+                                    tracing::error!(?err, "failed to record processed operation");
+                                }
 
                             },
                         }
@@ -242,7 +256,38 @@ impl Node {
 
     /// Filter out operations whose payloads are not able to be deleted.
     pub(crate) fn is_tombstoneable(&self, payload: &Payload) -> bool {
-        matches!(payload, Payload::Chat(ChatPayload::Message(_)))
+        matches!(
+            payload,
+            Payload::Chat(ChatPayload::Message(_) | ChatPayload::EditMessage { .. })
+        )
+    }
+
+    /// Apply a validated delete: tombstone every operation in the edit chain,
+    /// undo their local effects, drop their stored payloads, and overwrite the
+    /// mailbox copies with body-less versions so mailboxes stop serving the
+    /// deleted payloads to peers that don't have them yet.
+    async fn apply_delete(
+        &self,
+        topic: TopicId,
+        hashes: &std::collections::BTreeSet<Hash>,
+    ) -> anyhow::Result<()> {
+        let mut scrubbed = Vec::new();
+        for hash in hashes {
+            self.local_store.add_tombstone(topic, *hash).await?;
+            if let Some(op) = self.op_store.get_operation(hash).await? {
+                self.unprocess_app(&op).await?;
+                self.op_store.delete_body(hash).await?;
+                scrubbed.push(MailboxOperation {
+                    topic,
+                    header: op.header,
+                    body: None,
+                });
+            }
+        }
+        if !scrubbed.is_empty() {
+            self.mailboxes.publish_to_all(scrubbed).await;
+        }
+        Ok(())
     }
 
     /// Note that this is a function that processes operations which could have deleted payloads.
@@ -465,6 +510,34 @@ impl Node {
                 {
                     warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
                     return Ok(());
+                }
+            }
+
+            Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
+                // On replay (or a duplicate delivery) the delete has already
+                // been applied and its targets' bodies are gone, which would
+                // fail validation; skip silently instead.
+                let mut already_applied = true;
+                for h in hashes {
+                    if !self.local_store.is_tombstoned(topic, *h).await? {
+                        already_applied = false;
+                        break;
+                    }
+                }
+                if !already_applied {
+                    // Mirror the author-side validation: a delete that breaks
+                    // the chain-completeness / authorship / window rules is
+                    // ignored (not applied) with a warning.
+                    let chat_id = ChatId::from_topic_id(topic)?;
+                    let valid_ops = self.valid_chat_ops(chat_id).await?;
+                    let delete_ts: u64 = operation.processed().header().timestamp.into();
+                    if let Err(err) =
+                        validate_delete(&valid_ops, hashes, author, delete_ts, Some(&hash))
+                    {
+                        warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
+                        return Ok(());
+                    }
+                    self.apply_delete(topic.into(), hashes).await?;
                 }
             }
 

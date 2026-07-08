@@ -60,6 +60,23 @@ impl From<anyhow::Error> for EditMessageError {
 
 #[derive(Debug, Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
+pub enum DeleteMessageError {
+    #[error("Failed to delete message: {0}")]
+    Internal(String),
+
+    #[error(transparent)]
+    #[serde(untagged)]
+    Validation(#[from] crate::chat::DeleteError),
+}
+
+impl From<anyhow::Error> for DeleteMessageError {
+    fn from(e: anyhow::Error) -> Self {
+        DeleteMessageError::Internal(e.to_string())
+    }
+}
+
+#[derive(Debug, Error, Serialize)]
+#[serde(tag = "kind", content = "message")]
 pub enum RemoveGroupMemberError {
     #[error("cannot remove the only admin from a group that still has members")]
     LastAdmin,

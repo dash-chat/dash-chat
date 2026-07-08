@@ -43,10 +43,12 @@ impl OpStore {
             panic!("Database migration failed");
         }
         let store = SqliteStore::from_pool(pool);
-        Ok(Self {
+        let store = Self {
             store,
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
-        })
+        };
+        store.init_processed_ops().await?;
+        Ok(store)
     }
 
     pub fn from_sqlite(store: SqliteStore) -> Self {
@@ -58,7 +60,58 @@ impl OpStore {
 
     pub async fn temporary_sqlite() -> anyhow::Result<Self> {
         let store = SqliteStore::temporary().await;
-        Ok(Self::from_sqlite(store))
+        let store = Self::from_sqlite(store);
+        store.init_processed_ops().await?;
+        Ok(store)
+    }
+
+    /// Create the processed-ops table if it doesn't exist yet. On first
+    /// creation, backfill it with every already-stored operation: those
+    /// predate the table and have long been processed (and transmitted).
+    ///
+    /// The table records which operations have completed application-layer
+    /// processing. Mailbox sync only transmits the contiguous processed prefix
+    /// of each log, so an operation whose payload might still be tombstoned by
+    /// pending processing is never sent onward.
+    pub async fn init_processed_ops(&self) -> anyhow::Result<()> {
+        let pool = self.store.pool();
+        let existed: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dashchat_processed_ops_v1'",
+        )
+        .fetch_optional(pool)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS dashchat_processed_ops_v1 (hash TEXT NOT NULL PRIMARY KEY)",
+        )
+        .execute(pool)
+        .await?;
+        if existed.is_none() {
+            sqlx::query(
+                "INSERT OR IGNORE INTO dashchat_processed_ops_v1 (hash) SELECT hash FROM operations_v1",
+            )
+            .execute(pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Record that an operation has completed application-layer processing,
+    /// making it eligible for mailbox transmission.
+    pub async fn mark_op_processed_persistent(&self, hash: &Hash) -> anyhow::Result<()> {
+        sqlx::query("INSERT OR IGNORE INTO dashchat_processed_ops_v1 (hash) VALUES (?)")
+            .bind(hash.to_string())
+            .execute(self.store.pool())
+            .await?;
+        Ok(())
+    }
+
+    async fn is_op_processed_persistent(&self, hash: &Hash) -> anyhow::Result<bool> {
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT 1 FROM dashchat_processed_ops_v1 WHERE hash = ?")
+                .bind(hash.to_string())
+                .fetch_optional(self.store.pool())
+                .await?;
+        Ok(row.is_some())
     }
 
     /// Gracefully close the underlying SQLite pool (no-op for the in-memory variant).
@@ -198,15 +251,28 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
                 anyhow::anyhow!("failed to get log for {author:?}: {log_id:?}: {err}")
             })?;
 
-        Ok(log.map(|log| {
-            log.into_iter()
-                .map(|(op, _)| MailboxOperation {
-                    topic: *topic,
-                    header: op.header,
-                    body: op.body,
-                })
-                .collect()
-        }))
+        let Some(log) = log else {
+            return Ok(None);
+        };
+
+        // Only transmit the contiguous prefix of fully-processed operations.
+        // An operation that hasn't completed application-layer processing may
+        // still have its payload dropped by a tombstone it is about to
+        // enforce, so it must not be sent onward yet. Truncating (rather than
+        // filtering) keeps the returned log dense from `from`, which callers
+        // index by sequence number.
+        let mut ops = Vec::with_capacity(log.len());
+        for (op, _) in log {
+            if !self.is_op_processed_persistent(&op.hash).await? {
+                break;
+            }
+            ops.push(MailboxOperation {
+                topic: *topic,
+                header: op.header,
+                body: op.body,
+            });
+        }
+        Ok(Some(ops))
     }
 
     async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(DeviceId, u64)>> {
@@ -231,6 +297,91 @@ mod tests {
             .await
             .unwrap()
             .unwrap()
+    }
+
+    fn signed_op(
+        signing_key: &p2panda::SigningKey,
+        log_id: LogId,
+        seq_num: u64,
+        backlink: Option<Hash>,
+        payload: &[u8],
+    ) -> Operation {
+        let body = Body::new(payload);
+        let mut header = Header {
+            version: 1,
+            verifying_key: signing_key.verifying_key(),
+            signature: None,
+            payload_size: body.size(),
+            payload_hash: Some(body.hash()),
+            timestamp: Timestamp::new(seq_num),
+            seq_num,
+            backlink,
+            extensions: Extensions {
+                log_id,
+                prune_flag: PruneFlag::default(),
+                groups_args: None,
+                version: 1,
+            },
+        };
+        header.sign(signing_key);
+        Operation {
+            hash: header.hash(),
+            header,
+            body: Some(body),
+        }
+    }
+
+    async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
+        let permit = store.store.begin().await.unwrap();
+        OperationStore::<Operation, Hash, LogId>::insert_operation(
+            &store.store,
+            &op.hash,
+            op,
+            log_id,
+        )
+        .await
+        .unwrap();
+        store.store.commit(permit).await.unwrap();
+    }
+
+    /// Mailbox sync must only see the contiguous prefix of a log whose
+    /// operations have completed application-layer processing.
+    #[tokio::test]
+    async fn mailbox_get_log_truncates_at_first_unprocessed_op() {
+        use mailbox_client::store::MailboxStore;
+
+        let store = OpStore::temporary_sqlite().await.unwrap();
+        let topic = TopicId::random();
+        let log_id = LogId::from_topic(topic);
+        let signing_key = p2panda::SigningKey::generate();
+        let author = DeviceId::from(signing_key.verifying_key());
+
+        let op0 = signed_op(&signing_key, log_id, 0, None, b"zero");
+        let op1 = signed_op(&signing_key, log_id, 1, Some(op0.hash), b"one");
+        insert(&store, &op0, &log_id).await;
+        insert(&store, &op1, &log_id).await;
+
+        let served = |store: &OpStore| {
+            let store = store.clone();
+            async move {
+                MailboxStore::get_log(&store, &author, &topic, 0)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .into_iter()
+                    .map(|op| op.header.hash())
+                    .collect::<Vec<_>>()
+            }
+        };
+
+        assert_eq!(served(&store).await, vec![]);
+
+        store.mark_op_processed_persistent(&op1.hash).await.unwrap();
+        // op0 is still unprocessed, so nothing is served despite op1's marker.
+        assert_eq!(served(&store).await, vec![]);
+
+        store.mark_op_processed_persistent(&op0.hash).await.unwrap();
+        assert_eq!(served(&store).await, vec![op0.hash, op1.hash]);
     }
 
     #[tokio::test]

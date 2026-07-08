@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use p2panda::Hash;
 use serde::Serialize;
@@ -34,13 +34,15 @@ pub enum EditError {
     WindowExpired,
 }
 
-/// The kind of a chat operation, reduced to what edit validation cares about.
+/// The kind of a chat operation, reduced to what edit/delete validation cares about.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatOpKind {
     /// An original `ChatPayload::Message`.
     Message,
     /// A `ChatPayload::EditMessage` pointing at the operation it edits.
     Edit(Hash),
+    /// A `ChatPayload::DeleteMessage` carrying the full edit chain it deletes.
+    Delete(BTreeSet<Hash>),
     /// Any other chat payload (reaction, group info, …) which cannot be edited.
     Other,
 }
@@ -89,7 +91,7 @@ pub fn validate_edit(
 
     match target.kind {
         ChatOpKind::Message | ChatOpKind::Edit(_) => {}
-        ChatOpKind::Other => return Err(EditError::TargetNotEditable),
+        ChatOpKind::Delete(_) | ChatOpKind::Other => return Err(EditError::TargetNotEditable),
     }
 
     // TODO: this is only a same-device check.
@@ -145,7 +147,7 @@ fn root_message_timestamp(ops: &HashMap<Hash, ChatOp>, start: &Hash) -> Option<u
         match &op.kind {
             ChatOpKind::Message => return Some(op.timestamp),
             ChatOpKind::Edit(target) => current = target,
-            ChatOpKind::Other => return None,
+            ChatOpKind::Delete(_) | ChatOpKind::Other => return None,
         }
     }
     None
