@@ -118,6 +118,42 @@ impl BlobFetchPool {
         self.entries.lock().await.remove(&hash);
     }
 
+    /// Record that a client uploaded `hash`, then push out the grace window for
+    /// that sender's other still-deferred fetches. Removes `hash` (the mailbox
+    /// now holds it) and, for every remaining entry that shares a source with it
+    /// and whose `not_before` is still in the future, resets `not_before` to a
+    /// fresh `grace` from now — steady upload progress keeps the mailbox from
+    /// racing the client into a duplicate fetch of a sibling in the same batch.
+    /// Entries whose grace has already elapsed are never touched.
+    pub(crate) async fn note_upload(&self, hash: iroh_blobs::Hash, grace: Duration) {
+        let now = tokio::time::Instant::now();
+        let deadline = now + grace;
+        let mut bumped = false;
+        {
+            let mut map = self.entries.lock().await;
+            let Some(uploaded) = map.remove(&hash) else {
+                return;
+            };
+            let senders = uploaded.sources;
+            for entry in map.values_mut() {
+                let deferred = entry.not_before.is_some_and(|t| t > now);
+                if deferred && !entry.sources.is_disjoint(&senders) {
+                    entry.not_before = Some(deadline);
+                    bumped = true;
+                }
+            }
+        }
+        // A bumped entry sits past any nudge an earlier announce scheduled, so
+        // wake the fetch loop at the new boundary (see `add_source_after`).
+        if bumped {
+            let added = self.added.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(grace).await;
+                added.notify_one();
+            });
+        }
+    }
+
     /// Record a failed fetch attempt; evict the entry after [`MAX_FETCH_FAILURES`].
     pub(crate) async fn record_failure(&self, hash: iroh_blobs::Hash) {
         let mut map = self.entries.lock().await;
@@ -397,10 +433,11 @@ impl BlobSync {
         }
     }
 
-    /// Drop `hash` from the fetch pool: the mailbox now holds it (e.g. a client
-    /// just uploaded it) and no longer needs to fetch it.
-    pub(crate) async fn clear_pending_fetch(&self, hash: iroh_blobs::Hash) {
-        self.fetch_pool.remove(hash).await;
+    /// A client just uploaded `hash` via `/blobs/upload`. Drop it from the fetch
+    /// pool (the mailbox now holds it) and push out the grace window for the
+    /// sender's other still-deferred fetches (see [`BlobFetchPool::note_upload`]).
+    pub(crate) async fn note_upload(&self, hash: iroh_blobs::Hash) {
+        self.fetch_pool.note_upload(hash, self.upload_grace).await;
     }
 
     /// Tag a freshly stored blob so iroh's GC keeps it; the tag name embeds the
@@ -523,6 +560,67 @@ mod tests {
         pool.add_source(hash(1), endpoint_id(1)).await;
         pool.remove(hash(1)).await;
         assert!(pool.is_empty().await);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn upload_pushes_out_grace_for_same_sender_siblings() {
+        let pool = BlobFetchPool::default();
+        let grace = Duration::from_secs(10);
+        let sender = endpoint_id(1);
+        let other = endpoint_id(2);
+
+        // Sender S announces A and B (uploads expected); a different sender
+        // announces D. All three defer their fetch by the grace window.
+        pool.add_source_after(hash(1), sender, grace).await; // A
+        pool.add_source_after(hash(2), sender, grace).await; // B
+        pool.add_source_after(hash(4), other, grace).await; // D
+
+        // Halfway through the window, S's upload of A lands.
+        tokio::time::advance(grace / 2).await;
+        pool.note_upload(hash(1), grace).await;
+
+        // Just past the ORIGINAL deadline: D (different sender) is fetchable, but
+        // B was pushed out to a fresh grace and is still deferred.
+        tokio::time::advance(grace / 2 + Duration::from_secs(1)).await;
+        let (h, _) = pool.next_untried(&HashSet::new()).await.unwrap();
+        assert_eq!(
+            h,
+            hash(4),
+            "different-sender entry keeps its original deadline"
+        );
+        pool.remove(hash(4)).await;
+        assert!(
+            pool.next_untried(&HashSet::new()).await.is_none(),
+            "same-sender sibling should still be deferred after the bump"
+        );
+
+        // Past the bumped deadline, B finally becomes fetchable.
+        tokio::time::advance(grace).await;
+        let (h, _) = pool.next_untried(&HashSet::new()).await.unwrap();
+        assert_eq!(h, hash(2));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn upload_does_not_revive_already_elapsed_grace() {
+        let pool = BlobFetchPool::default();
+        let grace = Duration::from_secs(10);
+        let sender = endpoint_id(1);
+
+        pool.add_source_after(hash(1), sender, grace).await; // A, will be uploaded
+        pool.add_source_after(hash(2), sender, grace).await; // B, grace elapses
+
+        // Let the whole window elapse so B is already fetchable.
+        tokio::time::advance(grace + Duration::from_secs(1)).await;
+        assert!(pool.next_untried(&HashSet::new()).await.is_some());
+
+        // A late upload of A must not push B's already-elapsed deadline back out.
+        pool.note_upload(hash(1), grace).await;
+        let (h, _) = pool.next_untried(&HashSet::new()).await.unwrap();
+        assert_eq!(
+            h,
+            hash(2),
+            "elapsed entry must remain immediately fetchable"
+        );
     }
 
     #[tokio::test(start_paused = true)]

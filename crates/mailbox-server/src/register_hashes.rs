@@ -105,8 +105,9 @@ pub async fn upload_blob(
         .await
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
     // The mailbox now holds this blob, so drop any pending fetch an earlier
-    // announce queued for it.
-    state.blob_sync.clear_pending_fetch(hash).await;
+    // announce queued for it and push out the grace window for the sender's
+    // other still-deferred fetches (upload progress defers the fetch backstop).
+    state.blob_sync.note_upload(hash).await;
     Ok(Json(UploadBlobResponse { hash }))
 }
 
@@ -186,7 +187,7 @@ mod tests {
         record_blob_sources(&blob_sync, &[h], source, true).await;
         // ...then the client's upload lands, which must drop the pending fetch.
         blob_sync.store_pushed_blob(data.clone()).await.unwrap();
-        blob_sync.clear_pending_fetch(h).await;
+        blob_sync.note_upload(h).await;
 
         tokio::time::advance(
             crate::blob_sync::DEFAULT_UPLOAD_GRACE + std::time::Duration::from_secs(1),
