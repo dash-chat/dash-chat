@@ -9,7 +9,7 @@ use crate::{AppState, BlobSync};
 /// bytes are never carried here — clients push those separately to
 /// `/blobs/upload` and use this announce to reconcile what actually landed.
 #[derive(Serialize, Deserialize)]
-pub struct StoreBlobsRequest {
+pub struct RegisterHashesRequest {
     pub blob_hashes: Vec<iroh_blobs::Hash>,
     /// The peer the mailbox should dial to fetch any hash it does not already
     /// hold (typically the sending client itself).
@@ -30,7 +30,7 @@ pub struct StoreBlobsRequest {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct StoreBlobsResponse {
+pub struct RegisterHashesResponse {
     /// Hashes the mailbox already has stored (empty if it has stored none).
     pub already_stored: Vec<iroh_blobs::Hash>,
 }
@@ -60,16 +60,16 @@ pub async fn record_blob_sources(
     }
 }
 
-/// Handle `POST /blobs/store`: partition the announced hashes into those the
-/// mailbox already holds (reported back as `already_stored`) and those it lacks
-/// (registered in the fetch pool so it pulls them from `sender_pubkey`). This is
-/// the source of truth for what the mailbox has: a blob pushed to `/blobs/upload`
-/// shows up here as `already_stored`, and anything that never arrived falls into
-/// the fetch pool as a backstop.
-pub async fn store_blobs(
+/// Handle `POST /blobs/register-hashes`: partition the announced hashes into
+/// those the mailbox already holds (reported back as `already_stored`) and those
+/// it lacks (registered in the fetch pool so it pulls them from `sender_pubkey`).
+/// This is the source of truth for what the mailbox has: a blob pushed to
+/// `/blobs/upload` shows up here as `already_stored`, and anything that never
+/// arrived falls into the fetch pool as a backstop.
+pub async fn register_hashes(
     State(state): State<AppState>,
-    Json(payload): Json<StoreBlobsRequest>,
-) -> Json<StoreBlobsResponse> {
+    Json(payload): Json<RegisterHashesRequest>,
+) -> Json<RegisterHashesResponse> {
     let mut already_stored = Vec::new();
     let mut to_fetch = Vec::new();
     for hash in payload.blob_hashes {
@@ -86,14 +86,14 @@ pub async fn store_blobs(
         payload.expect_upload,
     )
     .await;
-    Json(StoreBlobsResponse { already_stored })
+    Json(RegisterHashesResponse { already_stored })
 }
 
 /// Handle `POST /blobs/upload`: store the raw blob bytes in the request body and
 /// return the hash they hash to. This is the direct-upload fast path — clients
 /// push bytes here immediately on publish so recipients get them without waiting
 /// for the mailbox to dial back and fetch. It is best-effort from the client's
-/// side: `/blobs/store` remains the source of truth, so a failed upload simply
+/// side: `/blobs/register-hashes` remains the source of truth, so a failed upload simply
 /// falls back to a fetch. The 64MB `DefaultBodyLimit` caps a single upload.
 pub async fn upload_blob(
     State(state): State<AppState>,

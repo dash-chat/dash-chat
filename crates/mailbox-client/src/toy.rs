@@ -45,13 +45,13 @@ fn classify_upload_error(err: reqwest::Error) -> UploadError {
     }
 }
 
-/// POST blob hashes to a mailbox's `/blobs/store`, returning the subset the
+/// POST blob hashes to a mailbox's `/blobs/register-hashes`, returning the subset the
 /// mailbox reports it already has stored. Set `expect_upload` when the caller
 /// will stream the bytes to `/blobs/upload` right after, so the mailbox defers
 /// its fetch backstop by its own fixed grace window and lets that upload land
 /// first without a duplicate transfer; pass `false` to have the mailbox fetch
 /// immediately (no upload is coming).
-pub async fn send_store_blobs(
+pub async fn send_register_hashes(
     base_url: &str,
     hashes: Vec<iroh_blobs::Hash>,
     sender_pubkey: iroh::EndpointId,
@@ -60,14 +60,14 @@ pub async fn send_store_blobs(
     if hashes.is_empty() {
         return Ok(Vec::new());
     }
-    let request = mailbox_server::StoreBlobsRequest {
+    let request = mailbox_server::RegisterHashesRequest {
         blob_hashes: hashes,
         sender_pubkey,
         expect_upload,
         signature: Vec::new(),
     };
     let response = HTTP_CLIENT
-        .post(format!("{base_url}/blobs/store"))
+        .post(format!("{base_url}/blobs/register-hashes"))
         .json(&request)
         .send()
         .await?;
@@ -76,7 +76,7 @@ pub async fn send_store_blobs(
         let body = response.text().await.unwrap_or_default();
         anyhow::bail!("Failed to store blobs: {status} - {body}");
     }
-    let response: mailbox_server::StoreBlobsResponse = response.json().await?;
+    let response: mailbox_server::RegisterHashesResponse = response.json().await?;
     Ok(response.already_stored)
 }
 
@@ -155,7 +155,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         // stream the bytes; a reader-less client never uploads, so the mailbox
         // should fetch from us right away.
         let expect_upload = self.blob_reader.is_some();
-        let already_stored = send_store_blobs(
+        let already_stored = send_register_hashes(
             &self.base_url,
             hashes.clone(),
             self.sender_pubkey,
@@ -444,7 +444,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn store_blobs_records_not_stored_and_removes_already_stored() {
+    async fn register_hashes_records_not_stored_and_removes_already_stored() {
         use std::sync::Mutex as StdMutex;
 
         #[derive(Default)]
@@ -472,15 +472,15 @@ mod tests {
         let h_stored = iroh_blobs::Hash::new([1; 32]);
         let h_new = iroh_blobs::Hash::new([2; 32]);
         let app = axum::Router::new().route(
-            "/blobs/store",
+            "/blobs/register-hashes",
             axum::routing::post(
-                move |axum::Json(req): axum::Json<mailbox_server::StoreBlobsRequest>| async move {
+                move |axum::Json(req): axum::Json<mailbox_server::RegisterHashesRequest>| async move {
                     let already_stored: Vec<_> = req
                         .blob_hashes
                         .into_iter()
                         .filter(|h| *h == h_stored)
                         .collect();
-                    axum::Json(mailbox_server::StoreBlobsResponse { already_stored })
+                    axum::Json(mailbox_server::RegisterHashesResponse { already_stored })
                 },
             ),
         );
@@ -492,7 +492,7 @@ mod tests {
         let base_url = format!("http://{addr}");
 
         let _tracker = std::sync::Arc::new(RecordingTracker::default());
-        let already = crate::toy::send_store_blobs(
+        let already = crate::toy::send_register_hashes(
             &base_url,
             vec![h_stored, h_new],
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
@@ -600,10 +600,10 @@ mod tests {
                 }),
             )
             .route(
-                "/blobs/store",
+                "/blobs/register-hashes",
                 axum::routing::post(
-                    |axum::Json(_req): axum::Json<mailbox_server::StoreBlobsRequest>| async move {
-                        axum::Json(mailbox_server::StoreBlobsResponse {
+                    |axum::Json(_req): axum::Json<mailbox_server::RegisterHashesRequest>| async move {
+                        axum::Json(mailbox_server::RegisterHashesResponse {
                             already_stored: Vec::new(),
                         })
                     },

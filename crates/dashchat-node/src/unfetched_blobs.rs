@@ -66,7 +66,7 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
         // Re-announce so the mailbox re-registers these hashes for fetching. No
         // upload follows here, so ask it to fetch immediately rather than deferring
         // by its grace window.
-        match mailbox_client::toy::send_store_blobs(&url, hashes, self_endpoint, false).await {
+        match mailbox_client::toy::send_register_hashes(&url, hashes, self_endpoint, false).await {
             Ok(already_stored) => {
                 if let Err(err) = node
                     .local_store
@@ -79,7 +79,7 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
                 tracing::info!(mailbox = %mailbox_id, %already_stored_count, "re-sent unfetched blobs");
             }
             Err(err) => {
-                tracing::warn!(?err, mailbox = %mailbox_id, "followup store_blobs failed");
+                tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
             }
         }
     }
