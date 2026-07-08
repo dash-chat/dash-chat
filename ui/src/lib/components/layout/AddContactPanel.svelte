@@ -100,7 +100,12 @@
 			await contactsStore.client.addContact(contactCode);
 			showToast(m.contactAccepted());
 
-			goto(`/direct-chats/${pendingChatKey(contactCode.device_pubkey)}`);
+			const knownAgent = await contactsStore.client.agentForDevice(
+				contactCode.device_pubkey,
+			);
+			goto(
+				`/direct-chats/${knownAgent ?? pendingChatKey(contactCode.device_pubkey)}`,
+			);
 		} catch (e) {
 			console.error(e);
 			const error = e as AddContactError;

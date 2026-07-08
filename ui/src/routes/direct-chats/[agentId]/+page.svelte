@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext, setContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -65,6 +65,13 @@
 	setContext('messages-store', store);
 
 	const isPendingChat = store.isPending;
+
+	const resolvedAgent = useReactiveValue(store.resolvedPendingAgent);
+	$effect(() => {
+		if (!isPendingChat) return;
+		const agent = $resolvedAgent;
+		if (agent) goto(`/direct-chats/${agent}`, { replaceState: true });
+	});
 
 	const readTracker = createReadMessagesTracker(store);
 	const readMessageOnObserve = readTracker.observe;
@@ -382,187 +389,205 @@
 						{/if}
 					{/snippet}
 
-					{#await $readMessageHashes then readHashes}
-						{#await $messagesSets then messagesSetsInDays}
-							{@const unreadDivider = getUnreadDividerInfo(
-								messagesSetsInDays,
-								readHashes,
-								myDeviceId,
-							)}
+					{#if isPendingChat}
+						<div class="column" style={`padding-bottom: ${bottomBarHeight}px`}>
 							<div
-								class="column"
-								style={`padding-bottom: ${bottomBarHeight}px`}
+								class="column min-w-0"
+								style="align-items: center"
+								data-testid="direct-chat-peer-header"
 							>
-								<div
-									class="column min-w-0"
-									style="align-items: center"
-									data-testid="direct-chat-peer-header"
-								>
-									{#if profile}
-										<Link
-											class="column my-6 gap-2 items-center max-w-full px-4"
-											onclick={() => (showPeerProfile = true)}
-										>
-											<Avatar
-												image={profile.avatar}
-												initials={profile.name.slice(0, 2)}
-												size={80}
-											/>
-											<div class="flex items-center gap-1 max-w-full">
-												<span
-													class="text-xl font-semibold break-words text-center min-w-0"
-													>{fullName(profile)}</span
-												>
-												<wa-icon
-													class="small-icon quiet shrink-0"
-													src={wrapPathInSvg(mdiChevronRight)}
-												></wa-icon>
-											</div>
-										</Link>
-									{:else}
-										<div class="column my-6 gap-2 items-center">
-											<Avatar waitingForProfile size={80} />
-											<span class="quiet text-xl">
-												{m.waitingForProfile()}
-											</span>
-										</div>
-									{/if}
-								</div>
-								<div class="row justify-center mb-4">
-									<div class="outline-card" style="border-radius: 0.75rem;">
-										<div
-											class="flex flex-col gap-1 items-center p-3 text-center"
-										>
-											{#if contactRequest}
-												<div class="flex items-center gap-2 text-amber-600">
-													<wa-icon
-														class="small-icon"
-														src={wrapPathInSvg(mdiAlert)}
-													></wa-icon>
-													<span class="font-semibold"
-														>{m.reviewCarefully()}</span
-													>
-												</div>
-											{/if}
-											<div
-												class="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300"
-											>
-												<div
-													class="flex items-center justify-center gap-2"
-													role="button"
-													tabindex="0"
-													onclick={() => (profileNamesSheetOpen = true)}
-													onkeydown={onActivate(
-														() => (profileNamesSheetOpen = true),
-													)}
-												>
-													<wa-icon
-														class="small-icon"
-														src={wrapPathInSvg(mdiAccountQuestion)}
-													></wa-icon>
-													<span
-														><u>{m.profileNames()}</u>{m.areNotVerified()}</span
-													>
-												</div>
-												<div class="flex items-center justify-center gap-2">
-													<wa-icon
-														class="small-icon"
-														src={wrapPathInSvg(mdiAccountGroup)}
-													></wa-icon>
-													<span>{m.noGroupsInCommon()}</span>
-												</div>
-											</div>
-											{#if contactRequest}
-												<div class="row pt-1 justify-center">
-													<Button
-														rounded
-														tonal
-														small
-														onClick={() => (showSecurityTips = true)}
-													>
-														{m.securityTips()}
-													</Button>
-												</div>
-											{/if}
-										</div>
-									</div>
-								</div>
-
-								<ProfileNamesSheet
-									opened={profileNamesSheetOpen}
-									onClose={() => (profileNamesSheetOpen = false)}
-								/>
-
-								<div
-									class="column m-2 gap-1"
-									data-testid="direct-chat-messages"
-								>
-									{#each messagesSetsInDays as messageSetInDay}
-										<div use:navbarSticky class="self-center z-10">
-											<DayTag class="quiet" day={messageSetInDay.day} />
-										</div>
-
-										{#each messageSetInDay.eventsSets as messageSet}
-											<div class="column" style="gap: 1px">
-												{#each messageSet as [hash, message], i (hash)}
-													{#if unreadDivider.hash === hash}
-														<div
-															class="unread-divider"
-															data-testid="direct-chat-unread-divider"
-														>
-															{m.unreadMessages({
-																count: unreadDivider.count,
-															})}
-														</div>
-													{/if}
-													{@const position = messagePosition(
-														messageSet.length,
-														i,
-													)}
-													{#if myDeviceId == message.author}
-														<div
-															class="self-end max-w-[85%]"
-															data-message-hash={hash}
-															use:scrollToBottomOnMount={hash}
-														>
-															{#await $chatId then chatId}
-																<MessageFromMe
-																	{message}
-																	{position}
-																	{myDeviceId}
-																	{chatId}
-																	searchQuery={searchMode ? searchQuery : ''}
-																/>
-															{/await}
-														</div>
-													{:else}
-														<div
-															class="self-start max-w-[85%]"
-															data-message-hash={hash}
-															use:readMessageOnObserve={readHashes?.has(hash)
-																? null
-																: hash}
-														>
-															{#await $chatId then chatId}
-																<MessageFromOthers
-																	{message}
-																	{position}
-																	{myDeviceId}
-																	{chatId}
-																	searchQuery={searchMode ? searchQuery : ''}
-																	sender={profile}
-																/>
-															{/await}
-														</div>
-													{/if}
-												{/each}
-											</div>
-										{/each}
-									{/each}
+								<div class="column my-6 gap-2 items-center">
+									<Avatar waitingForProfile size={80} />
+									<span class="quiet text-xl">
+										{m.waitingForProfile()}
+									</span>
 								</div>
 							</div>
+						</div>
+					{:else}
+						{#await $readMessageHashes then readHashes}
+							{#await $messagesSets then messagesSetsInDays}
+								{@const unreadDivider = getUnreadDividerInfo(
+									messagesSetsInDays,
+									readHashes,
+									myDeviceId,
+								)}
+								<div
+									class="column"
+									style={`padding-bottom: ${bottomBarHeight}px`}
+								>
+									<div
+										class="column min-w-0"
+										style="align-items: center"
+										data-testid="direct-chat-peer-header"
+									>
+										{#if profile}
+											<Link
+												class="column my-6 gap-2 items-center max-w-full px-4"
+												onclick={() => (showPeerProfile = true)}
+											>
+												<Avatar
+													image={profile.avatar}
+													initials={profile.name.slice(0, 2)}
+													size={80}
+												/>
+												<div class="flex items-center gap-1 max-w-full">
+													<span
+														class="text-xl font-semibold break-words text-center min-w-0"
+														>{fullName(profile)}</span
+													>
+													<wa-icon
+														class="small-icon quiet shrink-0"
+														src={wrapPathInSvg(mdiChevronRight)}
+													></wa-icon>
+												</div>
+											</Link>
+										{:else}
+											<div class="column my-6 gap-2 items-center">
+												<Avatar waitingForProfile size={80} />
+												<span class="quiet text-xl">
+													{m.waitingForProfile()}
+												</span>
+											</div>
+										{/if}
+									</div>
+									<div class="row justify-center mb-4">
+										<div class="outline-card" style="border-radius: 0.75rem;">
+											<div
+												class="flex flex-col gap-1 items-center p-3 text-center"
+											>
+												{#if contactRequest}
+													<div class="flex items-center gap-2 text-amber-600">
+														<wa-icon
+															class="small-icon"
+															src={wrapPathInSvg(mdiAlert)}
+														></wa-icon>
+														<span class="font-semibold"
+															>{m.reviewCarefully()}</span
+														>
+													</div>
+												{/if}
+												<div
+													class="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300"
+												>
+													<div
+														class="flex items-center justify-center gap-2"
+														role="button"
+														tabindex="0"
+														onclick={() => (profileNamesSheetOpen = true)}
+														onkeydown={onActivate(
+															() => (profileNamesSheetOpen = true),
+														)}
+													>
+														<wa-icon
+															class="small-icon"
+															src={wrapPathInSvg(mdiAccountQuestion)}
+														></wa-icon>
+														<span
+															><u>{m.profileNames()}</u
+															>{m.areNotVerified()}</span
+														>
+													</div>
+													<div class="flex items-center justify-center gap-2">
+														<wa-icon
+															class="small-icon"
+															src={wrapPathInSvg(mdiAccountGroup)}
+														></wa-icon>
+														<span>{m.noGroupsInCommon()}</span>
+													</div>
+												</div>
+												{#if contactRequest}
+													<div class="row pt-1 justify-center">
+														<Button
+															rounded
+															tonal
+															small
+															onClick={() => (showSecurityTips = true)}
+														>
+															{m.securityTips()}
+														</Button>
+													</div>
+												{/if}
+											</div>
+										</div>
+									</div>
+
+									<ProfileNamesSheet
+										opened={profileNamesSheetOpen}
+										onClose={() => (profileNamesSheetOpen = false)}
+									/>
+
+									<div
+										class="column m-2 gap-1"
+										data-testid="direct-chat-messages"
+									>
+										{#each messagesSetsInDays as messageSetInDay}
+											<div use:navbarSticky class="self-center z-10">
+												<DayTag class="quiet" day={messageSetInDay.day} />
+											</div>
+
+											{#each messageSetInDay.eventsSets as messageSet}
+												<div class="column" style="gap: 1px">
+													{#each messageSet as [hash, message], i (hash)}
+														{#if unreadDivider.hash === hash}
+															<div
+																class="unread-divider"
+																data-testid="direct-chat-unread-divider"
+															>
+																{m.unreadMessages({
+																	count: unreadDivider.count,
+																})}
+															</div>
+														{/if}
+														{@const position = messagePosition(
+															messageSet.length,
+															i,
+														)}
+														{#if myDeviceId == message.author}
+															<div
+																class="self-end max-w-[85%]"
+																data-message-hash={hash}
+																use:scrollToBottomOnMount={hash}
+															>
+																{#await $chatId then chatId}
+																	<MessageFromMe
+																		{message}
+																		{position}
+																		{myDeviceId}
+																		{chatId}
+																		searchQuery={searchMode ? searchQuery : ''}
+																	/>
+																{/await}
+															</div>
+														{:else}
+															<div
+																class="self-start max-w-[85%]"
+																data-message-hash={hash}
+																use:readMessageOnObserve={readHashes?.has(hash)
+																	? null
+																	: hash}
+															>
+																{#await $chatId then chatId}
+																	<MessageFromOthers
+																		{message}
+																		{position}
+																		{myDeviceId}
+																		{chatId}
+																		searchQuery={searchMode ? searchQuery : ''}
+																		sender={profile}
+																	/>
+																{/await}
+															</div>
+														{/if}
+													{/each}
+												</div>
+											{/each}
+										{/each}
+									</div>
+								</div>
+							{/await}
 						{/await}
-					{/await}
+					{/if}
 					{#if contactRequest}
 						<Dialog
 							opened={showAcceptDialog}

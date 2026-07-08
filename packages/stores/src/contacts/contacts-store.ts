@@ -100,15 +100,13 @@ export class ContactsStore {
 		}
 
 		const devices = Object.keys(latestByDevice);
-		const contacts = await this.contactsAgentIds();
 		const resolved = await Promise.all(
 			devices.map(device => this.client.agentForDevice(device)),
 		);
 
 		const pending: OutgoingContactRequest[] = [];
 		for (let i = 0; i < devices.length; i++) {
-			const agentId = resolved[i];
-			if (agentId !== undefined && contacts.includes(agentId)) continue;
+			if (resolved[i] !== undefined) continue;
 			pending.push({
 				devicePubkey: devices[i],
 				timestamp: latestByDevice[devices[i]],

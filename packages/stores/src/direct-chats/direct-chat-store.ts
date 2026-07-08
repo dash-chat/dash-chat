@@ -1,6 +1,6 @@
 import { reactive } from 'signalium';
 
-import { isPendingChatKey } from '../chats/chat-key';
+import { isPendingChatKey, pendingChatKeyDevice } from '../chats/chat-key';
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
@@ -42,6 +42,12 @@ export class DirectChatStore implements MessagesStore {
 	get isPending(): boolean {
 		return isPendingChatKey(this.peer);
 	}
+
+	resolvedPendingAgent = reactive(async () => {
+		const device = pendingChatKeyDevice(this.peer);
+		if (device === undefined) return undefined;
+		return await this.contactsStore.client.agentForDevice(device);
+	});
 
 	chatId = reactive(async () => {
 		if (this.isPending) return '';
