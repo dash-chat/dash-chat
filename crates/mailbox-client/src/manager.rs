@@ -307,6 +307,26 @@ where
         _ = self.trigger.try_send(None);
     }
 
+    /// Publish the given items to every registered mailbox, best-effort.
+    /// Used to overwrite an already-synced operation in place (e.g. replacing
+    /// a deleted payload with its body-less form) — regular sync only pushes
+    /// operations a mailbox reports as missing.
+    pub async fn publish_to_all(&self, items: Vec<Item>) {
+        let mailboxes: Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> = self
+            .mailboxes
+            .lock()
+            .await
+            .iter()
+            .map(|(id, tm)| (id.clone(), tm.clone()))
+            .collect();
+        for (id, tracked) in mailboxes {
+            let client = tracked.client().await;
+            if let Err(err) = client.publish(items.clone()).await {
+                tracing::warn!(?err, mailbox = %id, "failed to publish items to mailbox");
+            }
+        }
+    }
+
     /// Immediately activate and sync a specific mailbox, resetting any backoff.
     pub fn wakeup(&self, id: MailboxId) {
         _ = self.trigger.try_send(Some(id));

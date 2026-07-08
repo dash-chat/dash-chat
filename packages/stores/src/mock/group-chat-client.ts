@@ -37,6 +37,9 @@ export class MockGroupChatClient implements IGroupChatClient {
 	): Promise<Hash> {
 		return '';
 	}
+	async deleteMessage(_chatId: ChatId, _targetHash: Hash): Promise<Hash> {
+		return '';
+	}
 	async sendReaction(_chatId: ChatId, _content: ChatReaction): Promise<void> {}
 	async setInfo(_chatId: ChatId, _info: GroupInfo): Promise<void> {}
 	async leaveGroup(): Promise<void> {}

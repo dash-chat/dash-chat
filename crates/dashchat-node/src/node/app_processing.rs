@@ -153,7 +153,7 @@ impl Node {
                                     continue;
                                 };
 
-                                let result = node.process_groups(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
+                                let result = node.process_groups(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
                                 if let Err(err) = result.as_ref() {
                                     tracing::error!(?err, "process groups operation error");
                                 };
@@ -171,6 +171,15 @@ impl Node {
                                 // testing flag.
                                 node.op_store.mark_op_processed(topic, &id);
 
+                                // Acknowledge the operation now that application-layer
+                                // processing has finished. The node uses an `Explicit`
+                                // ack policy, so this persisted ack is what makes the
+                                // operation eligible for mailbox transmission (see
+                                // `OpStore::acked_log_height`).
+                                if let Err(err) = operation.ack().await {
+                                    tracing::error!(?err, "failed to acknowledge operation");
+                                }
+
                             },
                             ProcessorEvent::App { operation, source, processed_tx } => {
                                 let topic = operation.topic();
@@ -178,7 +187,7 @@ impl Node {
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
 
                                 // Process the operation.
-                                let result = node.process_app(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
+                                let result = node.process_app(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
                                 if let Err(err) = result.as_ref() {
                                     tracing::error!(?err, "process operation error");
                                 }
@@ -197,6 +206,15 @@ impl Node {
                                 // @TODO: this is required for tests, but nowhere else, it can be placed behind the
                                 // testing flag.
                                 node.op_store.mark_op_processed(topic, &id);
+
+                                // Acknowledge the operation now that application-layer
+                                // processing has finished. The node uses an `Explicit`
+                                // ack policy, so this persisted ack is what makes the
+                                // operation eligible for mailbox transmission (see
+                                // `OpStore::acked_log_height`).
+                                if let Err(err) = operation.ack().await {
+                                    tracing::error!(?err, "failed to acknowledge operation");
+                                }
 
                             },
                         }
@@ -242,7 +260,52 @@ impl Node {
 
     /// Filter out operations whose payloads are not able to be deleted.
     pub(crate) fn is_tombstoneable(&self, payload: &Payload) -> bool {
-        matches!(payload, Payload::Chat(ChatPayload::Message(_)))
+        matches!(
+            payload,
+            Payload::Chat(ChatPayload::Message(_) | ChatPayload::EditMessage { .. })
+        )
+    }
+
+    /// Apply a delete: tombstone every operation in the edit chain, undo their
+    /// local effects, drop their stored payloads, and overwrite the mailbox
+    /// copies with body-less versions so mailboxes stop serving the deleted
+    /// payloads to peers that don't have them yet.
+    ///
+    /// Each operation is guarded by an authorship check — a delete may only
+    /// ever drop its own author's operations — so this is safe to call even
+    /// when the full chain validation couldn't run (see the `DeleteMessage`
+    /// arm in [`Self::process_app`]).
+    async fn apply_delete(
+        &self,
+        topic: TopicId,
+        deleter: DeviceId,
+        hashes: &std::collections::BTreeSet<Hash>,
+    ) -> anyhow::Result<()> {
+        let mut scrubbed = Vec::new();
+        for hash in hashes {
+            let Some(op) = self.op_store.get_operation(hash).await? else {
+                warn!(op = ?hash.aliased(), "delete references an unknown operation; skipping");
+                continue;
+            };
+            if DeviceId::from(op.header.verifying_key) != deleter {
+                warn!(op = ?hash.aliased(), "delete references another author's operation; skipping");
+                continue;
+            }
+            self.local_store.add_tombstone(topic, *hash).await?;
+            if op.body.is_some() {
+                self.unprocess_app(&op).await?;
+                self.op_store.delete_body(hash).await?;
+            }
+            scrubbed.push(MailboxOperation {
+                topic,
+                header: op.header,
+                body: None,
+            });
+        }
+        if !scrubbed.is_empty() {
+            self.mailboxes.publish_to_all(scrubbed).await;
+        }
+        Ok(())
     }
 
     /// Note that this is a function that processes operations which could have deleted payloads.
@@ -251,10 +314,10 @@ impl Node {
     /// [`Self::enforce_tombstone`] before processing.
     async fn process_groups(
         &self,
-        operation: ProcessedOperation<Payload>,
+        operation: &ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
-        self.register_bootstrap(&operation, source).await?;
+        self.register_bootstrap(operation, source).await?;
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
@@ -364,10 +427,10 @@ impl Node {
 
     async fn process_app(
         &self,
-        operation: ProcessedOperation<Payload>,
+        operation: &ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
-        self.register_bootstrap(&operation, source).await?;
+        self.register_bootstrap(operation, source).await?;
         let topic = operation.topic();
         let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         let header = operation.processed().header();
@@ -379,7 +442,7 @@ impl Node {
         // via [`Self::unprocess_app`] to undo those state changes,
         // as if it were never processed at all. On playback, the operation
         // simply doesn't get processed.
-        if self.enforce_tombstone(&operation).await? {
+        if self.enforce_tombstone(operation).await? {
             // The payload is tombstoned, so there's nothing to process.
             self.notify_header(dashchat_topic, header).await?;
             return Ok(());
@@ -465,6 +528,42 @@ impl Node {
                 {
                     warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
                     return Ok(());
+                }
+            }
+
+            Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
+                // On replay (or a duplicate delivery) the delete has already
+                // been applied and its targets' bodies are gone, which would
+                // fail validation; skip silently instead.
+                let mut already_applied = true;
+                for h in hashes {
+                    if !self.local_store.is_tombstoned(topic, *h).await? {
+                        already_applied = false;
+                        break;
+                    }
+                }
+                if !already_applied {
+                    // Mirror the author-side validation: a delete that breaks
+                    // the chain-completeness / authorship / window rules is
+                    // ignored (not applied) with a warning. Full validation
+                    // needs every referenced payload; when some are already
+                    // gone (a partially-applied replay, or a member that
+                    // joined after the delete and synced body-less copies) the
+                    // chain can't be reconstructed, and the per-operation
+                    // authorship check in `apply_delete` is the property that
+                    // tombstoning relies on.
+                    let chat_id = ChatId::from_topic_id(topic)?;
+                    let valid_ops = self.valid_chat_ops(chat_id).await?;
+                    if hashes.iter().all(|h| valid_ops.contains_key(h)) {
+                        let delete_ts: u64 = operation.processed().header().timestamp.into();
+                        if let Err(err) =
+                            validate_delete(&valid_ops, hashes, author, delete_ts, Some(&hash))
+                        {
+                            warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
+                            return Ok(());
+                        }
+                    }
+                    self.apply_delete(topic.into(), author, hashes).await?;
                 }
             }
 

@@ -152,10 +152,17 @@ export interface EditMessagePayload {
 	edit_hash: Hash;
 }
 
+export interface DeleteMessagePayload {
+	/** The complete edit chain being deleted: the original message plus every
+	 * edit (a single hash when the message was never edited). */
+	hashes: Hash[];
+}
+
 export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
 	| { type: 'Reaction'; payload: ChatReaction }
 	| { type: 'EditMessage'; payload: EditMessagePayload }
+	| { type: 'DeleteMessage'; payload: DeleteMessagePayload }
 	| { type: 'JoinGroup'; payload: { chat_id: string } }
 	| { type: 'GroupInfo'; payload: GroupInfo };
 
@@ -224,6 +231,7 @@ export interface MessagesStore {
 		media: OutgoingMedia | null;
 	}): Promise<Hash>;
 	editMessage(message: Message, newText: string): Promise<Hash>;
+	deleteMessage(message: Message): Promise<Hash>;
 	sendReaction(reaction: ChatReaction): Promise<void>;
 }
 
@@ -272,6 +280,7 @@ export type ChatSummaryLastEvent =
 			content: { message: string; media: MediaAttachment | null };
 			authorName?: string;
 			timestamp: number;
+			deleted?: boolean;
 	  }
 	| { kind: 'contact_request'; timestamp: number }
 	| { kind: 'contact_added'; timestamp: number }

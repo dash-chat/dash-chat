@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use p2panda::Hash;
 use serde::Serialize;
@@ -34,13 +34,15 @@ pub enum EditError {
     WindowExpired,
 }
 
-/// The kind of a chat operation, reduced to what edit validation cares about.
+/// The kind of a chat operation, reduced to what edit/delete validation cares about.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatOpKind {
     /// An original `ChatPayload::Message`.
     Message,
     /// A `ChatPayload::EditMessage` pointing at the operation it edits.
     Edit(Hash),
+    /// A `ChatPayload::DeleteMessage` carrying the full edit chain it deletes.
+    Delete(BTreeSet<Hash>),
     /// Any other chat payload (reaction, group info, …) which cannot be edited.
     Other,
 }
@@ -89,7 +91,7 @@ pub fn validate_edit(
 
     match target.kind {
         ChatOpKind::Message | ChatOpKind::Edit(_) => {}
-        ChatOpKind::Other => return Err(EditError::TargetNotEditable),
+        ChatOpKind::Delete(_) | ChatOpKind::Other => return Err(EditError::TargetNotEditable),
     }
 
     // TODO: this is only a same-device check.
@@ -126,8 +128,8 @@ pub fn validate_edit(
         return Err(EditError::AlreadyEdited);
     }
 
-    let root_timestamp =
-        root_message_timestamp(valid_ops, edit_hash).ok_or(EditError::TargetNotFound)?;
+    let root_timestamp = root_message_timestamp_for_edit_chain(valid_ops, edit_hash)
+        .ok_or(EditError::TargetNotFound)?;
     if edit_timestamp.saturating_sub(root_timestamp) > EDIT_WINDOW_MICROS {
         return Err(EditError::WindowExpired);
     }
@@ -137,15 +139,15 @@ pub fn validate_edit(
 
 /// Walk the edit chain back from `start` to the original message and return its
 /// timestamp. Returns `None` if the chain is broken (a link is missing or
-/// reaches a non-editable operation) or cyclic.
-fn root_message_timestamp(ops: &HashMap<Hash, ChatOp>, start: &Hash) -> Option<u64> {
+/// reaches a non-editable operation) or cyclic, or is terminated by a delete.
+fn root_message_timestamp_for_edit_chain(ops: &HashMap<Hash, ChatOp>, start: &Hash) -> Option<u64> {
     let mut current = start;
     for _ in 0..ops.len() + 1 {
         let op = ops.get(current)?;
         match &op.kind {
             ChatOpKind::Message => return Some(op.timestamp),
             ChatOpKind::Edit(target) => current = target,
-            ChatOpKind::Other => return None,
+            ChatOpKind::Delete(_) | ChatOpKind::Other => return None,
         }
     }
     None

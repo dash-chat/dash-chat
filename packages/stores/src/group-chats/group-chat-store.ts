@@ -1,5 +1,6 @@
 import { reactive, signal } from 'signalium';
 
+import { applyDeletes } from '../chats/deletes';
 import { applyEdits } from '../chats/edits';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
@@ -127,6 +128,7 @@ export class GroupChatStore implements MessagesStore {
 			}
 		}
 		applyEdits(messages, logs);
+		applyDeletes(messages, logs);
 		return messages;
 	});
 
@@ -235,6 +237,7 @@ export class GroupChatStore implements MessagesStore {
 					content: lastMessage.content,
 					authorName: await this.nameForDevice(lastMessage.author),
 					timestamp: lastMessage.timestamp,
+					deleted: lastMessage.deleted,
 				}
 			: undefined;
 
@@ -377,6 +380,11 @@ export class GroupChatStore implements MessagesStore {
 	async editMessage(message: Message, newText: string): Promise<Hash> {
 		const target = message.latestEditHash ?? message.hash;
 		return this.client.editMessage(this.chatId, target, newText);
+	}
+
+	async deleteMessage(message: Message): Promise<Hash> {
+		const target = message.latestEditHash ?? message.hash;
+		return this.client.deleteMessage(this.chatId, target);
 	}
 
 	async sendReaction(reaction: ChatReaction) {

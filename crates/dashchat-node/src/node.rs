@@ -17,6 +17,7 @@ use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
+use p2panda::node::AckPolicy;
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
@@ -29,16 +30,18 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
-use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, validate_edit};
+use crate::chat::{
+    ChatMessageContent, ChatOp, ChatOpKind, collect_edit_chain, validate_delete, validate_edit,
+};
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, EditMessageError, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile,
-    OutgoingMedia,
+    AgentId, AsBody, ChatId, ChatReaction, DeleteMessageError, DeviceGroupId, DeviceGroupPayload,
+    DeviceId, DirectChatId, EditMessageError, MediaBundle, MediaMetaKind, MediaMetadata,
+    OutgoingFile, OutgoingMedia,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
@@ -264,6 +267,11 @@ impl Node {
             .network_id(config.network_id)
             .signing_key(node_keys.private_key.clone())
             .database_url(&url)
+            // Acknowledge operations explicitly, only once application-layer
+            // processing has finished (see `spawn_application_processor_task`).
+            // The persisted ack cursor then doubles as the "processed" watermark
+            // gating mailbox transmission (see `OpStore`'s `MailboxStore` impl).
+            .ack_policy(AckPolicy::Explicit)
             .mdns_mode(config.mdns_mode.clone());
 
         if config.use_relay {
@@ -1063,6 +1071,56 @@ impl Node {
         Ok(header)
     }
 
+    /// Delete a previously-sent message for everyone in the chat.
+    ///
+    /// `target` must be the most recent edit of the message (or the message
+    /// itself when unedited), authored by us, within the delete window, and not
+    /// already deleted. The full edit chain is collected and published in a
+    /// `DeleteMessage` payload; processing it tombstones every operation in the
+    /// chain. See [`DeleteError`](crate::chat::DeleteError).
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn delete_message(
+        &self,
+        topic: impl Into<ChatId>,
+        target: Hash,
+    ) -> Result<Header, DeleteMessageError> {
+        let topic = topic.into();
+        let ops = self.valid_chat_ops(topic).await?;
+        let hashes = collect_edit_chain(&ops, &target)?;
+        let now = u64::from(p2panda_core::Timestamp::now());
+        validate_delete(&ops, &hashes, self.device_id(), now, None)?;
+
+        let header = self
+            .publish(
+                topic,
+                Payload::Chat(ChatPayload::DeleteMessage { hashes }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Publish a delete without validating it. For testing the receiving-side
+    /// handling of invalid deletes, which the author-side validation would
+    /// otherwise prevent from ever being created.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn delete_message_raw(
+        &self,
+        topic: impl Into<ChatId>,
+        hashes: BTreeSet<Hash>,
+    ) -> anyhow::Result<Header> {
+        let header = self
+            .publish(
+                topic.into(),
+                Payload::Chat(ChatPayload::DeleteMessage { hashes }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
     /// Collect all chat operations in a topic, reduced to the fields edit
     /// validation needs, keyed by operation hash.
     //
@@ -1088,6 +1146,7 @@ impl Node {
                 let kind = match chat {
                     ChatPayload::Message(_) => ChatOpKind::Message,
                     ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
+                    ChatPayload::DeleteMessage { hashes } => ChatOpKind::Delete(hashes),
                     _ => ChatOpKind::Other,
                 };
                 ops.insert(
@@ -1102,29 +1161,39 @@ impl Node {
             }
         }
 
-        // Strip edit ops that don't pass validation so callers always work with
-        // a consistent, cheat-proof view. An invalid edit (wrong author, expired
-        // window, or broken chain) must not poison the scan for legitimate
-        // edits. Removals cascade — a chained edit whose target gets stripped is
-        // itself invalid — so iterate to a fixpoint. Validation depends only on
-        // the op set, not arrival order, so every peer converges on the same
-        // reduced view.
+        // Strip edit and delete ops that don't pass validation so callers
+        // always work with a consistent, cheat-proof view. An invalid op (wrong
+        // author, expired window, or broken chain) must not poison the scan for
+        // legitimate ones. Removals cascade — a chained edit whose target gets
+        // stripped is itself invalid — so iterate to a fixpoint. Validation
+        // depends only on the op set, not arrival order, so every peer
+        // converges on the same reduced view. (A delete that has already been
+        // applied gets stripped too — its targets' bodies are gone — which is
+        // harmless: the dropped bodies themselves block any further edit or
+        // delete of those operations.)
         loop {
-            let edit_hashes: Vec<Hash> = ops
+            let candidates: Vec<Hash> = ops
                 .iter()
-                .filter_map(|(hash, op)| matches!(op.kind, ChatOpKind::Edit(_)).then_some(*hash))
+                .filter_map(|(hash, op)| {
+                    matches!(op.kind, ChatOpKind::Edit(_) | ChatOpKind::Delete(_)).then_some(*hash)
+                })
                 .collect();
             let mut removed_any = false;
-            for hash in edit_hashes {
+            for hash in candidates {
                 let Some(op) = ops.get(&hash) else {
                     continue;
                 };
-                let (ChatOpKind::Edit(edit_hash), editor, timestamp) =
-                    (op.kind.clone(), op.author, op.timestamp)
-                else {
-                    unreachable!()
+                let (kind, author, timestamp) = (op.kind.clone(), op.author, op.timestamp);
+                let valid = match kind {
+                    ChatOpKind::Edit(edit_hash) => {
+                        validate_edit(&ops, &edit_hash, author, timestamp, Some(&hash)).is_ok()
+                    }
+                    ChatOpKind::Delete(hashes) => {
+                        validate_delete(&ops, &hashes, author, timestamp, Some(&hash)).is_ok()
+                    }
+                    _ => unreachable!(),
                 };
-                if validate_edit(&ops, &edit_hash, editor, timestamp, Some(&hash)).is_err() {
+                if !valid {
                     ops.remove(&hash);
                     removed_any = true;
                 }

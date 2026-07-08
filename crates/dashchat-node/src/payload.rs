@@ -5,7 +5,7 @@ use p2panda_core::Body;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chat::ChatId;
 use crate::compat::Capabilities;
@@ -85,6 +85,18 @@ pub enum ChatPayload {
     EditMessage {
         message: String,
         edit_hash: Hash,
+    },
+
+    /// Deletes a previously-sent message for everyone.
+    ///
+    /// `hashes` is the complete edit chain of the message being deleted: the
+    /// original `Message` operation plus every `EditMessage` in its chain (a
+    /// single hash when the message was never edited). Processing a delete
+    /// tombstones every referenced operation so its payload is dropped and
+    /// never stored or synced again. Deletes are validated on both sides; see
+    /// [`DeleteError`](crate::chat::DeleteError).
+    DeleteMessage {
+        hashes: BTreeSet<Hash>,
     },
 
     Reaction(ChatReaction),
