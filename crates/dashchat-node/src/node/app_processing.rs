@@ -153,7 +153,7 @@ impl Node {
                                     continue;
                                 };
 
-                                let result = node.process_groups(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
+                                let result = node.process_groups(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
                                 if let Err(err) = result.as_ref() {
                                     tracing::error!(?err, "process groups operation error");
                                 };
@@ -171,11 +171,13 @@ impl Node {
                                 // testing flag.
                                 node.op_store.mark_op_processed(topic, &id);
 
-                                // Persistently mark the operation processed so
-                                // mailbox sync may transmit it onward; see
-                                // `OpStore::init_processed_ops`.
-                                if let Err(err) = node.op_store.mark_op_processed_persistent(&id).await {
-                                    tracing::error!(?err, "failed to record processed operation");
+                                // Acknowledge the operation now that application-layer
+                                // processing has finished. The node uses an `Explicit`
+                                // ack policy, so this persisted ack is what makes the
+                                // operation eligible for mailbox transmission (see
+                                // `OpStore::acked_log_height`).
+                                if let Err(err) = operation.ack().await {
+                                    tracing::error!(?err, "failed to acknowledge operation");
                                 }
 
                             },
@@ -185,7 +187,7 @@ impl Node {
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
 
                                 // Process the operation.
-                                let result = node.process_app(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
+                                let result = node.process_app(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
                                 if let Err(err) = result.as_ref() {
                                     tracing::error!(?err, "process operation error");
                                 }
@@ -205,11 +207,13 @@ impl Node {
                                 // testing flag.
                                 node.op_store.mark_op_processed(topic, &id);
 
-                                // Persistently mark the operation processed so
-                                // mailbox sync may transmit it onward; see
-                                // `OpStore::init_processed_ops`.
-                                if let Err(err) = node.op_store.mark_op_processed_persistent(&id).await {
-                                    tracing::error!(?err, "failed to record processed operation");
+                                // Acknowledge the operation now that application-layer
+                                // processing has finished. The node uses an `Explicit`
+                                // ack policy, so this persisted ack is what makes the
+                                // operation eligible for mailbox transmission (see
+                                // `OpStore::acked_log_height`).
+                                if let Err(err) = operation.ack().await {
+                                    tracing::error!(?err, "failed to acknowledge operation");
                                 }
 
                             },
@@ -310,10 +314,10 @@ impl Node {
     /// [`Self::enforce_tombstone`] before processing.
     async fn process_groups(
         &self,
-        operation: ProcessedOperation<Payload>,
+        operation: &ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
-        self.register_bootstrap(&operation, source).await?;
+        self.register_bootstrap(operation, source).await?;
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
@@ -423,10 +427,10 @@ impl Node {
 
     async fn process_app(
         &self,
-        operation: ProcessedOperation<Payload>,
+        operation: &ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
-        self.register_bootstrap(&operation, source).await?;
+        self.register_bootstrap(operation, source).await?;
         let topic = operation.topic();
         let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         let header = operation.processed().header();
@@ -438,7 +442,7 @@ impl Node {
         // via [`Self::unprocess_app`] to undo those state changes,
         // as if it were never processed at all. On playback, the operation
         // simply doesn't get processed.
-        if self.enforce_tombstone(&operation).await? {
+        if self.enforce_tombstone(operation).await? {
             // The payload is tombstoned, so there's nothing to process.
             self.notify_header(dashchat_topic, header).await?;
             return Ok(());

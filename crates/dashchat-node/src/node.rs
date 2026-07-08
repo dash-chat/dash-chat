@@ -17,6 +17,7 @@ use chrono::{Duration, Utc};
 use dashchat_compat::VersionConvert;
 use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
+use p2panda::node::AckPolicy;
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
@@ -266,6 +267,11 @@ impl Node {
             .network_id(config.network_id)
             .signing_key(node_keys.private_key.clone())
             .database_url(&url)
+            // Acknowledge operations explicitly, only once application-layer
+            // processing has finished (see `spawn_application_processor_task`).
+            // The persisted ack cursor then doubles as the "processed" watermark
+            // gating mailbox transmission (see `OpStore`'s `MailboxStore` impl).
+            .ack_policy(AckPolicy::Explicit)
             .mdns_mode(config.mdns_mode.clone());
 
         if config.use_relay {
@@ -300,7 +306,6 @@ impl Node {
         // p2panda or finding alternative routes to achieve the same queries.
         let group_store = GroupStore::new(store.clone());
         let op_store = OpStore::from_sqlite(store.clone());
-        op_store.init_processed_ops().await?;
 
         // === mailboxes === //
 

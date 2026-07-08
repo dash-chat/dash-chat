@@ -47,7 +47,6 @@ impl OpStore {
             store,
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
         };
-        store.init_processed_ops().await?;
         Ok(store)
     }
 
@@ -60,58 +59,33 @@ impl OpStore {
 
     pub async fn temporary_sqlite() -> anyhow::Result<Self> {
         let store = SqliteStore::temporary().await;
-        let store = Self::from_sqlite(store);
-        store.init_processed_ops().await?;
-        Ok(store)
+        Ok(Self::from_sqlite(store))
     }
 
-    /// Create the processed-ops table if it doesn't exist yet. On first
-    /// creation, backfill it with every already-stored operation: those
-    /// predate the table and have long been processed (and transmitted).
+    /// Highest sequence number the node has acknowledged for `author`'s log in
+    /// `topic`, or `None` if nothing has been acknowledged yet.
     ///
-    /// The table records which operations have completed application-layer
-    /// processing. Mailbox sync only transmits the contiguous processed prefix
-    /// of each log, so an operation whose payload might still be tombstoned by
-    /// pending processing is never sent onward.
-    pub async fn init_processed_ops(&self) -> anyhow::Result<()> {
-        let pool = self.store.pool();
-        let existed: Option<(i64,)> = sqlx::query_as(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dashchat_processed_ops_v1'",
+    /// Under the node's `Explicit` ack policy an operation is acknowledged only
+    /// once application-layer processing has finished (see
+    /// `Node::spawn_application_processor_task`), so p2panda's persisted ack
+    /// cursor is exactly the "processed" watermark that gates mailbox
+    /// transmission — an operation whose payload might still be tombstoned by
+    /// pending processing sits above the watermark and is never sent onward.
+    async fn acked_log_height(
+        &self,
+        topic: &TopicId,
+        author: &DeviceId,
+        log_id: &LogId,
+    ) -> anyhow::Result<Option<u64>> {
+        use p2panda_store::cursors::CursorStore;
+        // The ack cursor is persisted by p2panda under the topic's string
+        // representation (see `StreamSubscription`'s internal `Acked`).
+        let cursor = CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor(
+            &self.store,
+            topic.to_string(),
         )
-        .fetch_optional(pool)
         .await?;
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS dashchat_processed_ops_v1 (hash TEXT NOT NULL PRIMARY KEY)",
-        )
-        .execute(pool)
-        .await?;
-        if existed.is_none() {
-            sqlx::query(
-                "INSERT OR IGNORE INTO dashchat_processed_ops_v1 (hash) SELECT hash FROM operations_v1",
-            )
-            .execute(pool)
-            .await?;
-        }
-        Ok(())
-    }
-
-    /// Record that an operation has completed application-layer processing,
-    /// making it eligible for mailbox transmission.
-    pub async fn mark_op_processed_persistent(&self, hash: &Hash) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR IGNORE INTO dashchat_processed_ops_v1 (hash) VALUES (?)")
-            .bind(hash.to_string())
-            .execute(self.store.pool())
-            .await?;
-        Ok(())
-    }
-
-    async fn is_op_processed_persistent(&self, hash: &Hash) -> anyhow::Result<bool> {
-        let row: Option<(i64,)> =
-            sqlx::query_as("SELECT 1 FROM dashchat_processed_ops_v1 WHERE hash = ?")
-                .bind(hash.to_string())
-                .fetch_optional(self.store.pool())
-                .await?;
-        Ok(row.is_some())
+        Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
     }
 
     /// Gracefully close the underlying SQLite pool (no-op for the in-memory variant).
@@ -261,11 +235,12 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         // enforce, so it must not be sent onward yet. Truncating (rather than
         // filtering) keeps the returned log dense from `from`, which callers
         // index by sequence number. Body-less operations are always safe to
-        // transmit — there is no payload to leak — and are never forwarded to
-        // the application layer, so they'd never be marked processed.
+        // transmit — there is no payload to leak — and are acknowledged by
+        // p2panda before ever reaching the application layer.
+        let acked_height = self.acked_log_height(topic, author, &log_id).await?;
         let mut ops = Vec::with_capacity(log.len());
         for (op, _) in log {
-            if op.body.is_some() && !self.is_op_processed_persistent(&op.hash).await? {
+            if op.body.is_some() && acked_height.is_none_or(|h| op.header.seq_num > h) {
                 break;
             }
             ops.push(MailboxOperation {
@@ -346,10 +321,32 @@ mod tests {
         store.store.commit(permit).await.unwrap();
     }
 
+    /// Advance p2panda's ack cursor for `author`'s log to `seq`, mimicking what
+    /// `ProcessedOperation::ack` persists once application-layer processing has
+    /// finished (see `OpStore::acked_log_height`).
+    async fn ack_up_to(store: &OpStore, topic: &TopicId, author: &DeviceId, log_id: LogId, seq: u64) {
+        use p2panda_core::Cursor;
+        use p2panda_core::logs::LogHeights;
+        use p2panda_store::cursors::CursorStore;
+
+        let mut cursor = CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor(
+            &store.store,
+            topic.to_string(),
+        )
+        .await
+        .unwrap()
+        .unwrap_or_else(|| Cursor::new(topic.to_string(), LogHeights::default()));
+        cursor.advance(**author, log_id, seq);
+        let permit = store.store.begin().await.unwrap();
+        CursorStore::set_cursor(&store.store, &cursor).await.unwrap();
+        store.store.commit(permit).await.unwrap();
+    }
+
     /// Mailbox sync must only see the contiguous prefix of a log whose
-    /// operations have completed application-layer processing.
+    /// operations have completed application-layer processing, as recorded by
+    /// p2panda's ack cursor.
     #[tokio::test]
-    async fn mailbox_get_log_truncates_at_first_unprocessed_op() {
+    async fn mailbox_get_log_truncates_at_first_unacked_op() {
         use mailbox_client::store::MailboxStore;
 
         let store = OpStore::temporary_sqlite().await.unwrap();
@@ -376,18 +373,18 @@ mod tests {
             }
         };
 
+        // Nothing acked yet: no body-carrying op may be transmitted.
         assert_eq!(served(&store).await, vec![]);
 
-        store.mark_op_processed_persistent(&op1.hash).await.unwrap();
-        // op0 is still unprocessed, so nothing is served despite op1's marker.
-        assert_eq!(served(&store).await, vec![]);
+        ack_up_to(&store, &topic, &author, log_id, 0).await;
+        // Only op0 is acked; op1 sits above the watermark and truncates the log.
+        assert_eq!(served(&store).await, vec![op0.hash]);
 
-        store.mark_op_processed_persistent(&op0.hash).await.unwrap();
+        ack_up_to(&store, &topic, &author, log_id, 1).await;
         assert_eq!(served(&store).await, vec![op0.hash, op1.hash]);
 
-        // A body-less operation (tombstoned payload) never reaches the
-        // application layer, so it is never marked processed — but it carries
-        // no payload and is always safe to transmit.
+        // A body-less operation (tombstoned payload) carries no payload and is
+        // always safe to transmit, even though it sits above the ack watermark.
         let mut op2 = signed_op(&signing_key, log_id, 2, Some(op1.hash), b"two");
         op2.body = None;
         insert(&store, &op2, &log_id).await;

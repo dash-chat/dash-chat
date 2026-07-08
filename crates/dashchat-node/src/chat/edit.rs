@@ -128,8 +128,8 @@ pub fn validate_edit(
         return Err(EditError::AlreadyEdited);
     }
 
-    let root_timestamp =
-        root_message_timestamp(valid_ops, edit_hash).ok_or(EditError::TargetNotFound)?;
+    let root_timestamp = root_message_timestamp_for_edit_chain(valid_ops, edit_hash)
+        .ok_or(EditError::TargetNotFound)?;
     if edit_timestamp.saturating_sub(root_timestamp) > EDIT_WINDOW_MICROS {
         return Err(EditError::WindowExpired);
     }
@@ -139,8 +139,8 @@ pub fn validate_edit(
 
 /// Walk the edit chain back from `start` to the original message and return its
 /// timestamp. Returns `None` if the chain is broken (a link is missing or
-/// reaches a non-editable operation) or cyclic.
-fn root_message_timestamp(ops: &HashMap<Hash, ChatOp>, start: &Hash) -> Option<u64> {
+/// reaches a non-editable operation) or cyclic, or is terminated by a delete.
+fn root_message_timestamp_for_edit_chain(ops: &HashMap<Hash, ChatOp>, start: &Hash) -> Option<u64> {
     let mut current = start;
     for _ in 0..ops.len() + 1 {
         let op = ops.get(current)?;
