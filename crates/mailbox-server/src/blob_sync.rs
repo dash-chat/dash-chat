@@ -25,11 +25,12 @@ const BLOB_GC_INTERVAL: Duration = Duration::from_secs(60 * 60);
 const MAX_FETCH_FAILURES: u32 = 10;
 /// Hard cap on pending fetch entries; arbitrary entries are dropped if exceeded.
 const MAX_POOL_SIZE: usize = 1_000;
-/// Fixed grace period the mailbox waits before dialing the source for a freshly
-/// announced hash, giving a concurrent inline upload of the same blob time to
-/// land first. Applied uniformly to every announce: its purpose is to keep the
-/// mailbox from fetching too soon, not to fetch sooner than the next poll.
-pub(crate) const UPLOAD_GRACE: Duration = Duration::from_secs(60);
+/// Default grace period the mailbox waits before dialing the source for a hash
+/// announced with an expected upload, giving a concurrent inline upload of the
+/// same blob time to land first. Its purpose is to keep the mailbox from
+/// fetching too soon, not to fetch sooner than the next poll. Overridable per
+/// server via [`BlobSync::with_upload_grace`] (tests use a much shorter window).
+pub const DEFAULT_UPLOAD_GRACE: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
 struct PoolEntry {
@@ -176,6 +177,9 @@ pub struct BlobSync {
     /// of the in-process node's endpoint.
     endpoint: iroh::Endpoint,
     fetch_config: FetchConfig,
+    /// Grace window applied to a hash announced with an expected upload before the
+    /// mailbox dials its source. Defaults to [`DEFAULT_UPLOAD_GRACE`].
+    upload_grace: Duration,
     /// True when this BlobSync owns its blob store (standalone server) and is
     /// therefore responsible for GCing stored blobs. False when sharing an
     /// in-process node's store, where the node owns blob lifecycle.
@@ -244,6 +248,7 @@ impl BlobSync {
             downloader,
             endpoint,
             fetch_config: FetchConfig::default(),
+            upload_grace: DEFAULT_UPLOAD_GRACE,
             enable_gc: true,
             _router: Some(router),
             peer_addr_registry: PeerAddrRegistry::Memory(peer_addr_lookup),
@@ -267,6 +272,7 @@ impl BlobSync {
             downloader,
             endpoint,
             fetch_config: FetchConfig::default(),
+            upload_grace: DEFAULT_UPLOAD_GRACE,
             enable_gc: false,
             _router: None,
             peer_addr_registry: PeerAddrRegistry::Channel(peer_addr_tx),
@@ -277,6 +283,14 @@ impl BlobSync {
     /// interval). Used by `spawn_server` when it spawns the loop.
     pub fn with_fetch_config(mut self, config: FetchConfig) -> Self {
         self.fetch_config = config;
+        self
+    }
+
+    /// Override the grace window applied before dialing the source of a hash
+    /// announced with an expected upload. Tests use a short window to avoid
+    /// waiting out the production [`DEFAULT_UPLOAD_GRACE`].
+    pub fn with_upload_grace(mut self, grace: Duration) -> Self {
+        self.upload_grace = grace;
         self
     }
 
@@ -365,9 +379,9 @@ impl BlobSync {
     }
 
     /// Register `source` as a provider for `hash`. When `expect_upload` is set the
-    /// fetch is deferred by [`UPLOAD_GRACE`] so a concurrent inline upload of the
-    /// same blob can land first and make the fetch unnecessary; otherwise the hash
-    /// is fetchable immediately (no upload is coming).
+    /// fetch is deferred by this server's `upload_grace` so a concurrent inline
+    /// upload of the same blob can land first and make the fetch unnecessary;
+    /// otherwise the hash is fetchable immediately (no upload is coming).
     pub(crate) async fn add_fetch_source(
         &self,
         hash: iroh_blobs::Hash,
@@ -376,7 +390,7 @@ impl BlobSync {
     ) {
         if expect_upload {
             self.fetch_pool
-                .add_source_after(hash, source, UPLOAD_GRACE)
+                .add_source_after(hash, source, self.upload_grace)
                 .await
         } else {
             self.fetch_pool.add_source(hash, source).await

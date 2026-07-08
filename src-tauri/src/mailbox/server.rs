@@ -58,6 +58,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         node.blob_downloader(),
         endpoint,
         None,
+        None,
         peer_addr_tx,
     )
     .await?;

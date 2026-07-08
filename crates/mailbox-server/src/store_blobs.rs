@@ -157,8 +157,10 @@ mod tests {
             .await
             .is_none());
 
-        tokio::time::advance(crate::blob_sync::UPLOAD_GRACE + std::time::Duration::from_secs(1))
-            .await;
+        tokio::time::advance(
+            crate::blob_sync::DEFAULT_UPLOAD_GRACE + std::time::Duration::from_secs(1),
+        )
+        .await;
         let (got, sources) = blob_sync
             .fetch_pool_for_test()
             .next_untried(&tried)
@@ -186,8 +188,10 @@ mod tests {
         blob_sync.store_pushed_blob(data.clone()).await.unwrap();
         blob_sync.clear_pending_fetch(h).await;
 
-        tokio::time::advance(crate::blob_sync::UPLOAD_GRACE + std::time::Duration::from_secs(1))
-            .await;
+        tokio::time::advance(
+            crate::blob_sync::DEFAULT_UPLOAD_GRACE + std::time::Duration::from_secs(1),
+        )
+        .await;
         assert!(blob_sync
             .fetch_pool_for_test()
             .next_untried(&HashSet::new())
