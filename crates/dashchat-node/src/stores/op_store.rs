@@ -45,6 +45,7 @@ impl OpStore {
         let store = SqliteStore::from_pool(pool);
         Ok(Self {
             store,
+            #[cfg(feature = "testing")]
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -52,6 +53,7 @@ impl OpStore {
     pub fn from_sqlite(store: SqliteStore) -> Self {
         Self {
             store,
+            #[cfg(feature = "testing")]
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
         }
     }
