@@ -65,7 +65,10 @@ mod expires_at_hours {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<DateTime<Utc>, D::Error> {
         let hours = i64::deserialize(d)?;
-        DateTime::from_timestamp(hours * 3600, 0)
+        let secs = hours
+            .checked_mul(3600)
+            .ok_or_else(|| serde::de::Error::custom("expires_at hours out of range"))?;
+        DateTime::from_timestamp(secs, 0)
             .ok_or_else(|| serde::de::Error::custom("expires_at hours out of range"))
     }
 }
