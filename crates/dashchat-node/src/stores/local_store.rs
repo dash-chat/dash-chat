@@ -326,7 +326,7 @@ impl LocalStore {
     }
 
     /// Inbox topics this node created and advertises via its QR code.
-    pub async fn get_active_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
+    pub async fn get_advertised_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
         self.get_inbox_topics(InboxRole::Advertised).await
     }
 
@@ -700,13 +700,13 @@ mod tests {
             store.add_active_inbox_topic(t.clone()).await.unwrap();
         }
 
-        let loaded_topics = store.get_active_inbox_topics().await.unwrap();
+        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
 
         store.prune_expired_active_inbox_topics(now).await.unwrap();
         topics.pop_first().unwrap();
 
-        let loaded_topics = store.get_active_inbox_topics().await.unwrap();
+        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
 
         store
@@ -715,7 +715,7 @@ mod tests {
             .unwrap();
         topics.pop_first().unwrap();
 
-        let loaded_topics = store.get_active_inbox_topics().await.unwrap();
+        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
     }
 }

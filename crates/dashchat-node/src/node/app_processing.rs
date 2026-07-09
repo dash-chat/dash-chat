@@ -429,15 +429,16 @@ impl Node {
 
             Payload::Inbox(invitation) => {
                 let topic_id = TopicId::from(topic);
-                let owned = self.local_store.get_active_inbox_topics().await?;
-                let owned_topic = owned.iter().any(|it| *it.topic == topic_id);
+                let all_advertised_topics = self.local_store.get_advertised_inbox_topics().await?;
+                let is_advertised_topic =
+                    all_advertised_topics.iter().any(|it| *it.topic == topic_id);
                 let is_reply = self
                     .local_store
                     .get_reply_inbox_topics()
                     .await?
                     .iter()
                     .any(|it| *it.topic == topic_id);
-                if !owned_topic && !is_reply {
+                if !is_advertised_topic && !is_reply {
                     // not for me (e.g. another scanner's request on a shared
                     // advertised inbox we only transiently synced): ignore.
                     return Ok(());
@@ -458,7 +459,7 @@ impl Node {
                         // scanner's device key (author), so we map that device to
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
-                        if owned_topic && !matches!(source, Source::LocalStore) {
+                        if is_advertised_topic && !matches!(source, Source::LocalStore) {
                             self.local_store
                                 .save_agent_mapping(author, *agent_id)
                                 .await?;

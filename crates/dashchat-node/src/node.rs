@@ -434,7 +434,7 @@ impl Node {
 
     pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
         self.local_store
-            .get_active_inbox_topics()
+            .get_advertised_inbox_topics()
             .await
             .map_err(|err| Error::GetActiveInboxes(format!("{err}")))
     }
@@ -1423,7 +1423,7 @@ impl Node {
         &self,
         agent_id: AgentId,
     ) -> anyhow::Result<Option<Topic<kind::Inbox>>> {
-        for inbox in self.local_store.get_active_inbox_topics().await? {
+        for inbox in self.local_store.get_advertised_inbox_topics().await? {
             let log_id = LogId::from_topic(*inbox.topic);
             for author in self.op_store.get_authors(log_id).await? {
                 for op in self.op_store.get_log(&author, &log_id, None).await? {
@@ -1530,7 +1530,7 @@ impl Node {
         )
         .await?;
 
-        for topic in self.local_store.get_active_inbox_topics().await?.iter() {
+        for topic in self.local_store.get_advertised_inbox_topics().await?.iter() {
             self.initialize_topic(
                 *topic
                     .topic
