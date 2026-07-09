@@ -280,4 +280,5 @@ export interface ChatSummary {
 	name: string;
 	avatar: string | undefined;
 	lastEvent: ChatSummaryLastEvent;
+	waitingForProfile?: true;
 }

@@ -98,7 +98,7 @@
 			// }
 
 			await contactsStore.client.addContact(contactCode);
-			showToast(m.contactAccepted());
+			showToast(m.contactRequestSent());
 
 			const knownAgent = await contactsStore.client.agentForDevice(
 				contactCode.device_pubkey,

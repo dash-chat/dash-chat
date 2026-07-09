@@ -140,6 +140,7 @@ export class ChatsStore {
 				chatId: pendingChatKey(request.devicePubkey),
 				name: '',
 				avatar: undefined,
+				waitingForProfile: true as const,
 				lastEvent: {
 					kind: 'contact_request',
 					timestamp: request.timestamp,
