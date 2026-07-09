@@ -467,7 +467,7 @@ impl Node {
                     timestamp: edit_ts,
                     self_hash: Some(hash),
                 };
-                if let Err(err) = validate_edit(&valid_ops, &candidate) {
+                if let Err(err) = valid_ops.validate_edit(&candidate) {
                     warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
                     return Ok(());
                 }
