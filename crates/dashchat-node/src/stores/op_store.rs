@@ -170,16 +170,6 @@ impl OpStore {
             .or_default()
             .insert(hash.clone());
     }
-
-    #[cfg(feature = "testing")]
-    pub fn is_op_processed(&self, topic: &TopicId, hash: &Hash) -> bool {
-        self.processed_ops
-            .read()
-            .unwrap()
-            .get(topic)
-            .map(|s| s.contains(hash))
-            .unwrap_or(false)
-    }
 }
 
 #[async_trait::async_trait]
