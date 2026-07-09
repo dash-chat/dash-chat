@@ -465,6 +465,25 @@ impl Node {
                             self.local_store
                                 .save_profile(*agent_id, profile.clone())
                                 .await?;
+
+                            // Mutual add: if we also sent this peer a contact
+                            // request, their incoming request is an implicit
+                            // acceptance — complete the exchange automatically
+                            // rather than waiting for a manual tap. Spawned so we
+                            // don't await publishing (which needs this same
+                            // processor) and deadlock.
+                            if self.has_outgoing_pending_request(author).await? {
+                                let node = self.clone();
+                                let agent_id = *agent_id;
+                                tokio::spawn(async move {
+                                    if let Err(err) = node.accept_contact(agent_id).await {
+                                        tracing::warn!(
+                                            ?err,
+                                            "failed to auto-accept mutual contact request"
+                                        );
+                                    }
+                                });
+                            }
                         }
                     }
                     InboxPayload::ContactRequestAck { profile, agent_id } => {

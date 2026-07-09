@@ -1394,6 +1394,28 @@ impl Node {
         Ok(())
     }
 
+    /// Returns true if we have an outgoing contact request recorded for
+    /// `device_pubkey` (i.e. we scanned their code and are awaiting their ack).
+    pub(crate) async fn has_outgoing_pending_request(
+        &self,
+        device_pubkey: DeviceId,
+    ) -> anyhow::Result<bool> {
+        let found = self
+            .op_store
+            .get_interleaved_logs(self.device_group_topic().into(), vec![self.device_id()])
+            .await?
+            .into_iter()
+            .any(|(_, payload)| {
+                matches!(
+                    payload,
+                    Some(Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
+                        device_pubkey: dp,
+                    })) if dp == device_pubkey
+                )
+            });
+        Ok(found)
+    }
+
     /// Scan our advertised inbox logs for a pending [`InboxPayload::ContactRequest`]
     /// from `agent_id` and return its private reply topic, so [`Self::accept_contact`]
     /// can send our acceptance there. Returns `None` if no matching request is stored.
