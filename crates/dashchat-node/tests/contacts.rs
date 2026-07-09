@@ -185,6 +185,25 @@ async fn test_inbox_two_way_flow() {
         .unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
+    // Alice waits for Bobbi's contact request and explicitly accepts it. Since
+    // an owner no longer discloses its profile until it accepts, the ack (and
+    // thus the reply over the same inbox) is only sent on acceptance.
+    let requester = alice
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(Duration::from_secs(30), |n: &Notification| {
+            let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) = &n.payload
+            else {
+                return None;
+            };
+            Some(*agent_id)
+        })
+        .await
+        .expect("Alice should receive Bobbi's contact request");
+    assert_eq!(requester, bobbi.agent_id());
+    alice.accept_contact(requester).await.unwrap();
+
     // Bobbi should receive Alice's reply over the same inbox, carrying her
     // profile — proving the inbox channel is bidirectional.
     let acked_profile = bobbi
