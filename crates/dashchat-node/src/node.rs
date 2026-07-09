@@ -1113,6 +1113,37 @@ impl Node {
         Ok(header)
     }
 
+    /// Delete a previously-sent message only for my own device group.
+    ///
+    /// Unlike [`Self::delete_message`] (delete for everyone), this publishes a
+    /// `DeleteForMe` operation to the private device group topic, so only my own
+    /// devices see it and the deletion eventually syncs to all of them. There is
+    /// no delete window and no authorship restriction — any message (mine or a
+    /// peer's) can be deleted from my own devices. Processing tombstones the full
+    /// edit chain locally; the message stays visible to the other participants.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn delete_message_for_me(
+        &self,
+        topic: impl Into<ChatId>,
+        target: Hash,
+    ) -> Result<Header, DeleteMessageError> {
+        let chat_id = topic.into();
+        let ops = self.valid_chat_ops(chat_id).await?;
+        let hashes = collect_edit_chain_hashes(&ops, &target)?;
+
+        let header = self
+            .publish(
+                self.device_group_topic(),
+                Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(
+                    crate::payload::DeleteForMePayload { chat_id, hashes },
+                )),
+                Some(&format!("delete_message_for_me({:?})", chat_id.aliased())),
+            )
+            .await?;
+
+        Ok(header)
+    }
+
     /// Publish a delete without validating it. For testing the receiving-side
     /// handling of invalid deletes, which the author-side validation would
     /// otherwise prevent from ever being created.

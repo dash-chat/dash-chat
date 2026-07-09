@@ -51,13 +51,39 @@ describe('Deleting messages', () => {
 		);
 	});
 
-	it('does not offer Delete on the peer’s messages', async () => {
-		await agent2.directChatPage.sendMessage("Bob's message stays");
-		await agent1.directChatPage.messages.waitForMessage("Bob's message stays");
+	it('deletes a message only for me, leaving no placeholder', async () => {
+		await agent1.directChatPage.sendMessage('Just for me');
+		await agent1.directChatPage.messages.waitForMessage('Just for me');
+		await agent2.directChatPage.messages.waitForMessage('Just for me');
 
-		await agent1.directChatPage.messages.openActions("Bob's message stays");
+		await agent1.directChatPage.messages.deleteMessageForMe('Just for me');
+
+		// Gone on my side (no placeholder, unlike delete-for-everyone)...
+		await agent1.directChatPage.messages.waitForMessageGone('Just for me');
+		// ...but still visible for the peer.
 		expect(
-			await agent1.directChatPage.messages.quickDeleteButton.isExisting(),
+			await agent2.directChatPage.messages.messageAreaContains('Just for me'),
+		).toBe(true);
+	});
+
+	it('offers Delete for me (but not Delete for everyone) on the peer’s messages', async () => {
+		await agent2.directChatPage.sendMessage("Bob's message");
+		await agent1.directChatPage.messages.waitForMessage("Bob's message");
+
+		await agent1.directChatPage.messages.openActions("Bob's message");
+		await agent1.directChatPage.messages.quickDeleteButton.waitForClickable();
+		await agent1.directChatPage.messages.quickDeleteButton.click();
+
+		// Only "Delete for me" is available for a received message.
+		await agent1.directChatPage.messages.deleteForMeConfirmButton.waitForExist();
+		expect(
+			await agent1.directChatPage.messages.deleteConfirmButton.isExisting(),
 		).toBe(false);
+
+		await agent1.directChatPage.messages.deleteForMeConfirmButton.click();
+		await agent1.directChatPage.messages.waitForMessageGone("Bob's message");
+		expect(
+			await agent2.directChatPage.messages.messageAreaContains("Bob's message"),
+		).toBe(true);
 	});
 });

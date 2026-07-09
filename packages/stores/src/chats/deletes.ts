@@ -1,7 +1,7 @@
 import type { Message } from '../direct-chats/direct-chat-store';
 import type { SimplifiedOperation } from '../p2panda/simplified-types';
 import type { DeviceId, Hash } from '../p2panda/types';
-import type { Payload } from '../types';
+import type { ChatId, Payload } from '../types';
 
 /** The window during which a message may be deleted for everyone, measured
  * from the original message timestamp. Mirrors `DELETE_WINDOW_MICROS` in
@@ -72,4 +72,38 @@ export function applyDeletes(
 			deleted: true,
 		};
 	}
+}
+
+/** Collect the operation hashes deleted "for me" for `chatId` from the device
+ * group log. Unlike delete-for-everyone, `DeleteForMe` operations live in the
+ * private device group topic (mirroring how reads are tracked), so they're read
+ * from there rather than the chat log. */
+export function collectDeleteForMeHashes(
+	chatId: ChatId,
+	deviceGroupLog: Record<DeviceId, SimplifiedOperation<Payload>[]>,
+): Set<Hash> {
+	const hashes = new Set<Hash>();
+	for (const operations of Object.values(deviceGroupLog)) {
+		for (const op of operations) {
+			const body = op.body;
+			if (
+				body?.payload?.type === 'DeleteForMe' &&
+				body.payload.payload.chat_id === chatId
+			) {
+				for (const hash of body.payload.payload.hashes) hashes.add(hash);
+			}
+		}
+	}
+	return hashes;
+}
+
+/** Remove every message deleted "for me" from the already-built `messages` map,
+ * in place. Following Signal, a delete-for-me leaves no placeholder — the
+ * message simply disappears from this device (and, once synced, the rest of the
+ * device group). */
+export function applyDeletesForMe(
+	messages: Record<Hash, Message>,
+	deletedForMeHashes: Set<Hash>,
+): void {
+	deletedForMeHashes.forEach(hash => delete messages[hash]);
 }

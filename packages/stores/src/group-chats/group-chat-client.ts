@@ -24,6 +24,7 @@ export interface IGroupChatClient {
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
 	editMessage(chatId: ChatId, editHash: Hash, message: string): Promise<Hash>;
 	deleteMessage(chatId: ChatId, targetHash: Hash): Promise<Hash>;
+	deleteMessageForMe(chatId: ChatId, targetHash: Hash): Promise<Hash>;
 	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void>;
 
 	setInfo(chatId: ChatId, info: GroupInfo): Promise<void>;
@@ -66,6 +67,9 @@ export class GroupChatClient implements IGroupChatClient {
 	}
 	deleteMessage(chatId: ChatId, targetHash: Hash): Promise<Hash> {
 		return invokeAfterSetup('delete_message', { chatId, targetHash });
+	}
+	deleteMessageForMe(chatId: ChatId, targetHash: Hash): Promise<Hash> {
+		return invokeAfterSetup('delete_message_for_me', { chatId, targetHash });
 	}
 	setInfo(chatId: ChatId, info: GroupInfo): Promise<void> {
 		return invokeAfterSetup('set_group_info', { chatId, info });

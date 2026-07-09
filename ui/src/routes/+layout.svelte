@@ -126,7 +126,12 @@
 			logsStore,
 			contactsStore,
 			mockChatsClient,
-			() => new MockDirectChatClient(mockLogsClient, DEMO_IDS.MY_AGENT_ID),
+			() =>
+				new MockDirectChatClient(
+					mockLogsClient,
+					DEMO_IDS.MY_AGENT_ID,
+					DEMO_IDS.DEVICE_GROUP_TOPIC,
+				),
 			() => new MockGroupChatClient(),
 		);
 

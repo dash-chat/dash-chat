@@ -133,12 +133,29 @@ pub struct ReadMessagesPayload {
     pub message_hashes: Vec<Hash>,
 }
 
+/// Deletes a previously-sent message only for the author's own device group.
+///
+/// Unlike `DeleteMessage` (delete for everyone), this lives in the private
+/// device group topic, so it is only ever seen by the author's own devices and
+/// syncs the deletion between them. `hashes` is the complete edit chain of the
+/// message being deleted (the same set `DeleteMessage` uses); `chat_id`
+/// identifies the chat topic the operations live in, since the delete itself is
+/// stored in a different topic. Processing tombstones every referenced
+/// operation locally, without scrubbing the shared chat mailbox — the message
+/// remains visible to the other chat participants.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DeleteForMePayload {
+    pub chat_id: ChatId,
+    pub hashes: BTreeSet<Hash>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
     AddContact(QrCode),
     RejectContactRequest(AgentId),
     ReadMessages(ReadMessagesPayload),
+    DeleteForMe(DeleteForMePayload),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

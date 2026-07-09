@@ -1,5 +1,5 @@
 import type { IDirectChatClient } from '../direct-chats/direct-chat-client';
-import type { AgentId, Hash } from '../p2panda/types';
+import type { AgentId, Hash, TopicId } from '../p2panda/types';
 import type { ChatId, ChatReaction, OutgoingMedia } from '../types';
 import { type LocalStorageLogsClient, hash } from './client';
 
@@ -7,6 +7,7 @@ export class MockDirectChatClient implements IDirectChatClient {
 	constructor(
 		private logsClient: LocalStorageLogsClient,
 		private agentId: AgentId,
+		private deviceGroupTopicId: TopicId,
 	) {}
 
 	async chatId(peer: AgentId): Promise<ChatId> {
@@ -53,11 +54,14 @@ export class MockDirectChatClient implements IDirectChatClient {
 		});
 	}
 
-	async deleteMessage(chatId: ChatId, targetHash: Hash): Promise<Hash> {
+	// Walk the edit chain from the target back to the original message so a
+	// delete covers the whole chain, mirroring the backend.
+	private async editChainHashes(
+		chatId: ChatId,
+		targetHash: Hash,
+	): Promise<Hash[]> {
 		const author = await this.logsClient.myPubKey();
 		const log = await this.logsClient.getLog(chatId, author);
-		// Walk the edit chain from the target back to the original message so
-		// the delete covers the whole chain, mirroring the backend.
 		const hashes = [targetHash];
 		let current = targetHash;
 		for (;;) {
@@ -67,9 +71,22 @@ export class MockDirectChatClient implements IDirectChatClient {
 			current = body.payload.payload.edit_hash;
 			hashes.push(current);
 		}
+		return hashes;
+	}
+
+	async deleteMessage(chatId: ChatId, targetHash: Hash): Promise<Hash> {
+		const hashes = await this.editChainHashes(chatId, targetHash);
 		return this.logsClient.create(chatId, {
 			type: 'Chat',
 			payload: { type: 'DeleteMessage', payload: { hashes } },
+		});
+	}
+
+	async deleteMessageForMe(chatId: ChatId, targetHash: Hash): Promise<Hash> {
+		const hashes = await this.editChainHashes(chatId, targetHash);
+		return this.logsClient.create(this.deviceGroupTopicId, {
+			type: 'DeviceGroupPayload',
+			payload: { type: 'DeleteForMe', payload: { chat_id: chatId, hashes } },
 		});
 	}
 }

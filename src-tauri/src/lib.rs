@@ -135,6 +135,7 @@ pub fn run() {
             commands::chats::send_message,
             commands::chats::edit_message,
             commands::chats::delete_message,
+            commands::chats::delete_message_for_me,
             commands::chats::send_reaction,
             commands::chats::mark_messages_read,
             commands::chats::create_group,

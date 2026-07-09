@@ -13,6 +13,7 @@ export interface IDirectChatClient {
 	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void>;
 	editMessage(chatId: ChatId, editHash: Hash, message: string): Promise<Hash>;
 	deleteMessage(chatId: ChatId, targetHash: Hash): Promise<Hash>;
+	deleteMessageForMe(chatId: ChatId, targetHash: Hash): Promise<Hash>;
 }
 
 export class DirectChatClient implements IDirectChatClient {
@@ -58,6 +59,13 @@ export class DirectChatClient implements IDirectChatClient {
 
 	deleteMessage(chatId: ChatId, targetHash: Hash): Promise<Hash> {
 		return invokeAfterSetup('delete_message', {
+			chatId,
+			targetHash,
+		});
+	}
+
+	deleteMessageForMe(chatId: ChatId, targetHash: Hash): Promise<Hash> {
+		return invokeAfterSetup('delete_message_for_me', {
 			chatId,
 			targetHash,
 		});

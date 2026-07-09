@@ -188,10 +188,18 @@ export interface ReadMessagesPayload {
 	message_hashes: Hash[];
 }
 
+export interface DeleteForMePayload {
+	chat_id: ChatId;
+	/** The complete edit chain being deleted (a single hash when the message
+	 * was never edited), mirroring `DeleteMessagePayload`. */
+	hashes: Hash[];
+}
+
 export type DeviceGroupPayload =
 	| { type: 'AddContact'; payload: ContactCode }
 	| { type: 'RejectContactRequest'; payload: AgentId }
-	| { type: 'ReadMessages'; payload: ReadMessagesPayload };
+	| { type: 'ReadMessages'; payload: ReadMessagesPayload }
+	| { type: 'DeleteForMe'; payload: DeleteForMePayload };
 
 export type InboxPayload = {
 	type: 'ContactRequest';
@@ -232,6 +240,7 @@ export interface MessagesStore {
 	}): Promise<Hash>;
 	editMessage(message: Message, newText: string): Promise<Hash>;
 	deleteMessage(message: Message): Promise<Hash>;
+	deleteMessageForMe(message: Message): Promise<Hash>;
 	sendReaction(reaction: ChatReaction): Promise<void>;
 }
 

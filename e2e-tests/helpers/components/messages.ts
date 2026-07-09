@@ -32,6 +32,7 @@ export class Messages extends TestHelper {
 	quickEditButton = this.el(tid('quick-edit-button'));
 	quickDeleteButton = this.el(tid('quick-delete-button'));
 	deleteConfirmButton = this.el(tid('delete-message-confirm'));
+	deleteForMeConfirmButton = this.el(tid('delete-for-me-confirm'));
 	editHistorySheet = this.el(tid('edit-history-sheet'));
 
 	async unreadBadgeText(): Promise<string | null> {
@@ -347,6 +348,28 @@ export class Messages extends TestHelper {
 		await this.quickDeleteButton.click();
 		await this.deleteConfirmButton.waitForClickable();
 		await this.deleteConfirmButton.click();
+	}
+
+	/** Open the quick-action bar on the message with `text`, tap Delete, and
+	 * confirm "Delete for me" in the dialog. */
+	async deleteMessageForMe(text: string): Promise<void> {
+		await this.openActions(text);
+		await this.quickDeleteButton.waitForClickable();
+		await this.quickDeleteButton.click();
+		await this.deleteForMeConfirmButton.waitForClickable();
+		await this.deleteForMeConfirmButton.click();
+	}
+
+	/** Wait until `text` is no longer present anywhere in the message list.
+	 * Delete-for-me removes the message with no placeholder (Signal UX). */
+	async waitForMessageGone(
+		text: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => !(await this.messageAreaContains(text)),
+			{ timeout, timeoutMsg: `Message "${text}" was still present` },
+		);
 	}
 
 	/** Wait until `originalText` is gone from the message list and a

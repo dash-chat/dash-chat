@@ -84,6 +84,16 @@
 		}
 	}
 
+	async function deleteForMe(message: Message) {
+		deletingMessage = undefined;
+		try {
+			await store.deleteMessageForMe(message);
+		} catch (e) {
+			console.error(e);
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
+	}
+
 	let historyMessage: Message | undefined = $state(undefined);
 	let showHistory = $state(false);
 
@@ -284,7 +294,7 @@
 														onShowHistory={() => openHistory(message)}
 														canEdit={canEditMessage(message, myDeviceId)}
 														onEdit={() => editing.start(message)}
-														canDelete={canDeleteMessage(message, myDeviceId)}
+														canDelete
 														onDelete={() => (deletingMessage = message)}
 													/>
 												</div>
@@ -310,6 +320,8 @@
 															position === 'single'}
 														onShowHistory={() => openHistory(message)}
 														showAvatar
+														canDelete
+														onDelete={() => (deletingMessage = message)}
 													/>
 												</div>
 											{/if}
@@ -378,11 +390,22 @@
 				{m.cancel()}
 			</DialogButton>
 			<DialogButton
-				data-testid="delete-message-confirm"
-				onClick={() => deletingMessage && deleteForEveryone(deletingMessage)}
+				data-testid="delete-for-me-confirm"
+				onClick={() => deletingMessage && deleteForMe(deletingMessage)}
 			>
-				{m.deleteForEveryone()}
+				{m.deleteForMe()}
 			</DialogButton>
+			{#await $myDeviceId then myDeviceId}
+				{#if deletingMessage && canDeleteMessage(deletingMessage, myDeviceId)}
+					<DialogButton
+						data-testid="delete-message-confirm"
+						onClick={() =>
+							deletingMessage && deleteForEveryone(deletingMessage)}
+					>
+						{m.deleteForEveryone()}
+					</DialogButton>
+				{/if}
+			{/await}
 		{/snippet}
 	</Dialog>
 </div>

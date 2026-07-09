@@ -1,6 +1,10 @@
 import { reactive } from 'signalium';
 
-import { applyDeletes } from '../chats/deletes';
+import {
+	applyDeletes,
+	applyDeletesForMe,
+	collectDeleteForMeHashes,
+} from '../chats/deletes';
 import { MessageVersion, applyEdits } from '../chats/edits';
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
@@ -110,7 +114,15 @@ export class DirectChatStore implements MessagesStore {
 		}
 		applyEdits(messages, logs);
 		applyDeletes(messages, logs);
+		applyDeletesForMe(messages, await this.deletedForMeHashes());
 		return messages;
+	});
+
+	deletedForMeHashes = reactive(async () => {
+		const chatId = await this.chatId();
+		const deviceGroupLog =
+			await this.contactsStore.devicesStore.myDeviceGroupTopic();
+		return collectDeleteForMeHashes(chatId, deviceGroupLog);
 	});
 
 	messageSets = reactive(async () => {
@@ -252,5 +264,11 @@ export class DirectChatStore implements MessagesStore {
 		const chatId = await this.chatId();
 		const target = message.latestEditHash ?? message.hash;
 		return this.client.deleteMessage(chatId, target);
+	}
+
+	async deleteMessageForMe(message: Message): Promise<Hash> {
+		const chatId = await this.chatId();
+		const target = message.latestEditHash ?? message.hash;
+		return this.client.deleteMessageForMe(chatId, target);
 	}
 }

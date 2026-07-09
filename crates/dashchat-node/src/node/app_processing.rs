@@ -309,6 +309,34 @@ impl Node {
         Ok(())
     }
 
+    /// Apply a delete-for-me: tombstone every operation in the edit chain in the
+    /// *chat* topic, undo their local effects, and drop their stored payloads.
+    ///
+    /// Unlike [`Self::apply_delete`], this is purely local — it does not scrub
+    /// the shared chat mailbox (the message stays visible to the other
+    /// participants) and imposes no authorship restriction, since a delete-for-me
+    /// lives in the author's own device group and may target any message. The
+    /// tombstone is recorded against `chat_topic`, so if a peer or mailbox later
+    /// re-syncs a tombstoned operation, [`Self::enforce_tombstone`] drops it
+    /// again.
+    async fn apply_delete_for_me(
+        &self,
+        chat_topic: TopicId,
+        hashes: &std::collections::BTreeSet<Hash>,
+    ) -> anyhow::Result<()> {
+        for hash in hashes {
+            self.local_store.add_tombstone(chat_topic, *hash).await?;
+            let Some(op) = self.op_store.get_operation(hash).await? else {
+                continue;
+            };
+            if op.body.is_some() {
+                self.unprocess_app(&op).await?;
+                self.op_store.delete_body(hash).await?;
+            }
+        }
+        Ok(())
+    }
+
     /// Note that this is a function that processes operations which could have deleted payloads.
     /// This function currently doesn't do anything with payloads, so we don't check for tombstones here.
     /// If this function is modified to process payloads, then we should call
@@ -619,6 +647,16 @@ impl Node {
                 {
                     tracing::warn!(?err, "failed to save capabilities from SetCapabilities");
                 }
+            }
+
+            Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(delete)) => {
+                // Tombstone the referenced chat operations locally. The frontend
+                // learns of the deletion through the device group topic (this
+                // op's own topic), which the fall-through `notify_payload` below
+                // emits — its chat view filters out messages covered by a
+                // `DeleteForMe` in the device group log.
+                let chat_topic: TopicId = delete.chat_id.into();
+                self.apply_delete_for_me(chat_topic, &delete.hashes).await?;
             }
 
             Payload::DeviceGroup(_) => {

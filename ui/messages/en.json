@@ -12,6 +12,7 @@
 	"editMessageHistory": "Edit history",
 	"deleteMessageTitle": "Delete message?",
 	"deleteForEveryone": "Delete for everyone",
+	"deleteForMe": "Delete for me",
 	"youDeletedThisMessage": "You deleted this message.",
 	"thisMessageWasDeleted": "This message was deleted.",
 	"messageDeleted": "Message deleted",

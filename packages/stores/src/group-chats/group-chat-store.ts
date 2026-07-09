@@ -1,6 +1,10 @@
 import { reactive, signal } from 'signalium';
 
-import { applyDeletes } from '../chats/deletes';
+import {
+	applyDeletes,
+	applyDeletesForMe,
+	collectDeleteForMeHashes,
+} from '../chats/deletes';
 import { applyEdits } from '../chats/edits';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
@@ -129,7 +133,14 @@ export class GroupChatStore implements MessagesStore {
 		}
 		applyEdits(messages, logs);
 		applyDeletes(messages, logs);
+		applyDeletesForMe(messages, await this.deletedForMeHashes());
 		return messages;
+	});
+
+	deletedForMeHashes = reactive(async () => {
+		const deviceGroupLog =
+			await this.contactsStore.devicesStore.myDeviceGroupTopic();
+		return collectDeleteForMeHashes(this.chatId, deviceGroupLog);
 	});
 
 	private nameForDevice = reactive(
@@ -385,6 +396,11 @@ export class GroupChatStore implements MessagesStore {
 	async deleteMessage(message: Message): Promise<Hash> {
 		const target = message.latestEditHash ?? message.hash;
 		return this.client.deleteMessage(this.chatId, target);
+	}
+
+	async deleteMessageForMe(message: Message): Promise<Hash> {
+		const target = message.latestEditHash ?? message.hash;
+		return this.client.deleteMessageForMe(this.chatId, target);
 	}
 
 	async sendReaction(reaction: ChatReaction) {

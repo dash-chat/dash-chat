@@ -32,6 +32,8 @@
 		showSenderName = false,
 		onShowHistory,
 		showAvatar = false,
+		canDelete = false,
+		onDelete,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -42,6 +44,8 @@
 		showSenderName?: boolean;
 		onShowHistory?: () => void;
 		showAvatar?: boolean;
+		canDelete?: boolean;
+		onDelete?: () => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -147,6 +151,8 @@
 <QuickReactionBar
 	{message}
 	{myDeviceId}
+	{canDelete}
+	{onDelete}
 	bind:opened={reactionsOpened}
 	target={messageEl}
 />
