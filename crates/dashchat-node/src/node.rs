@@ -1274,8 +1274,11 @@ impl Node {
         // inbox we scanned — only the owner keeps camping on that — so other
         // scanners of the same QR never share a return channel with us.
         let reply_inbox = InboxTopic {
-            topic: Topic::inbox()
-                .alias_named(&format!("reply_inbox({:?})", self.device_id().aliased())),
+            topic: Topic::inbox().alias_named(&format!(
+                "reply_inbox({:?},peer={})",
+                self.device_id().aliased(),
+                &hex::encode(&contact.device_pubkey.as_bytes()[..4])
+            )),
             expires_at: Utc::now() + self.config.contact_code_expiry,
         };
         self.initialize_topic(*reply_inbox.topic)
@@ -1540,13 +1543,17 @@ impl Node {
             .await?;
         }
 
-        for topic in self.local_store.get_reply_inbox_topics().await?.iter() {
-            self.initialize_topic(
-                *topic
-                    .topic
-                    .clone()
-                    .alias_named(&format!("reply_inbox({:?})", self.device_id().aliased())),
-            )
+        for (topic, peer_device) in self
+            .local_store
+            .get_reply_inbox_topics_with_author()
+            .await?
+            .iter()
+        {
+            self.initialize_topic(*topic.topic.clone().alias_named(&format!(
+                "reply_inbox({:?},peer={})",
+                self.device_id().aliased(),
+                &hex::encode(&peer_device.as_bytes()[..4])
+            )))
             .await?;
         }
 

@@ -339,6 +339,29 @@ impl LocalStore {
         self.get_inbox_topics(InboxRole::Reply).await
     }
 
+    pub async fn get_reply_inbox_topics_with_author(
+        &self,
+    ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
+        let rows: Vec<(Topic, i64, DeviceId)> = sqlx::query_as(
+            "SELECT topic_id, expires_at_nanos, expected_ack_author FROM active_inboxes WHERE role = ?",
+        )
+        .bind(InboxRole::Reply)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(topic, nanos, author)| {
+                (
+                    InboxTopic {
+                        expires_at: DateTime::from_timestamp_nanos(nanos),
+                        topic: topic.upcast::<kind::Inbox>(),
+                    },
+                    author,
+                )
+            })
+            .collect())
+    }
+
     async fn get_inbox_topics(&self, role: InboxRole) -> anyhow::Result<BTreeSet<InboxTopic>> {
         let rows: Vec<(Topic, i64)> =
             sqlx::query_as("SELECT topic_id, expires_at_nanos FROM active_inboxes WHERE role = ?")
