@@ -80,11 +80,9 @@ impl OpStore {
         use p2panda_store::cursors::CursorStore;
         // The ack cursor is persisted by p2panda under the topic's string
         // representation (see `StreamSubscription`'s internal `Acked`).
-        let cursor = CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor(
-            &self.store,
-            topic.to_string(),
-        )
-        .await?;
+        let cursor =
+            CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor(&self.store, topic.to_string())
+                .await?;
         Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
     }
 
@@ -324,7 +322,13 @@ mod tests {
     /// Advance p2panda's ack cursor for `author`'s log to `seq`, mimicking what
     /// `ProcessedOperation::ack` persists once application-layer processing has
     /// finished (see `OpStore::acked_log_height`).
-    async fn ack_up_to(store: &OpStore, topic: &TopicId, author: &DeviceId, log_id: LogId, seq: u64) {
+    async fn ack_up_to(
+        store: &OpStore,
+        topic: &TopicId,
+        author: &DeviceId,
+        log_id: LogId,
+        seq: u64,
+    ) {
         use p2panda_core::Cursor;
         use p2panda_core::logs::LogHeights;
         use p2panda_store::cursors::CursorStore;
@@ -338,7 +342,9 @@ mod tests {
         .unwrap_or_else(|| Cursor::new(topic.to_string(), LogHeights::default()));
         cursor.advance(**author, log_id, seq);
         let permit = store.store.begin().await.unwrap();
-        CursorStore::set_cursor(&store.store, &cursor).await.unwrap();
+        CursorStore::set_cursor(&store.store, &cursor)
+            .await
+            .unwrap();
         store.store.commit(permit).await.unwrap();
     }
 

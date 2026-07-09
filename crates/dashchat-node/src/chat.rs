@@ -1,10 +1,8 @@
 mod compat_tests;
-mod delete;
-mod edit;
 mod message;
-pub use delete::*;
-pub use edit::*;
+mod validation;
 pub use message::*;
+pub use validation::*;
 
 use crate::Topic;
 

@@ -531,7 +531,7 @@ impl Node {
                     timestamp: edit_ts,
                     self_hash: Some(hash),
                 };
-                if let Err(err) = valid_ops.validate_edit(&candidate) {
+                if let Err(err) = candidate.validate(&valid_ops) {
                     warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
                     return Ok(());
                 }
@@ -562,12 +562,14 @@ impl Node {
                     let valid_ops = self.valid_chat_ops(chat_id).await?;
                     if hashes.iter().all(|h| valid_ops.contains_key(h)) {
                         let delete_ts: u64 = operation.processed().header().timestamp.into();
-                        if let Err(err) = valid_ops.validate_delete(&DeleteCandidate {
+                        if let Err(err) = (DeleteCandidate {
                             hashes: hashes.clone(),
                             deleter: author,
                             delete_timestamp: delete_ts,
                             self_hash: Some(hash),
-                        }) {
+                        })
+                        .validate(&valid_ops)
+                        {
                             warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
                             return Ok(());
                         }
