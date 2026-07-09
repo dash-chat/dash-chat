@@ -461,8 +461,13 @@ impl Node {
                 let chat_id = ChatId::from_topic_id(topic)?;
                 let valid_ops = self.valid_chat_ops(chat_id).await?;
                 let edit_ts: u64 = operation.processed().header().timestamp.into();
-                if let Err(err) = validate_edit(&valid_ops, edit_hash, author, edit_ts, Some(&hash))
-                {
+                let candidate = EditCandidate {
+                    target: *edit_hash,
+                    editor: author,
+                    timestamp: edit_ts,
+                    self_hash: Some(hash),
+                };
+                if let Err(err) = validate_edit(&valid_ops, &candidate) {
                     warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
                     return Ok(());
                 }

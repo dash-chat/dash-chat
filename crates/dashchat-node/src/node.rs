@@ -29,7 +29,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
-use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, validate_edit};
+use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, validate_edit};
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
@@ -1023,7 +1023,15 @@ impl Node {
         let topic = topic.into();
         let ops = self.valid_chat_ops(topic).await?;
         let now = u64::from(p2panda_core::Timestamp::now());
-        validate_edit(&ops, &edit_hash, self.device_id(), now, None)?;
+        validate_edit(
+            &ops,
+            &EditCandidate {
+                target: edit_hash,
+                editor: self.device_id(),
+                timestamp: now,
+                self_hash: None,
+            },
+        )?;
 
         let header = self
             .publish(
@@ -1124,7 +1132,13 @@ impl Node {
                 else {
                     unreachable!()
                 };
-                if validate_edit(&ops, &edit_hash, editor, timestamp, Some(&hash)).is_err() {
+                let candidate = EditCandidate {
+                    target: edit_hash,
+                    editor,
+                    timestamp,
+                    self_hash: Some(hash),
+                };
+                if validate_edit(&ops, &candidate).is_err() {
                     ops.remove(&hash);
                     removed_any = true;
                 }
