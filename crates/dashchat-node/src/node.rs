@@ -1282,7 +1282,7 @@ impl Node {
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.local_store
-            .add_reply_inbox_topic(reply_inbox.clone())
+            .add_reply_inbox_topic(reply_inbox.clone(), contact.device_pubkey)
             .await
             .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
         let code = self

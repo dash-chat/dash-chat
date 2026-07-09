@@ -488,13 +488,26 @@ impl Node {
                         }
                     }
                     InboxPayload::ContactRequestAck { profile, agent_id } => {
-                        // The scanner learns the owner's agent_id and profile
-                        // over its private reply topic. The op is signed by the
-                        // owner's device key (author), so establish the contact
-                        // directly rather than relying on the QR code's agent_id.
-                        // The scanner initiated contact, so record it immediately
-                        // (spawned, since publishing needs this same processor).
+                        // The op must arrive on our private reply topic and be
+                        // signed by the device whose QR we scanned. Verifying
+                        // Verifying author == expected_ack_author prevents a
+                        // third party that transiently synced the advertised
+                        // inbox (and thus learned the reply topic embedded in
+                        // our ContactRequest) from injecting a spoofed ack with
+                        // an attacker-chosen agent_id/profile.
                         if is_reply && !matches!(source, Source::LocalStore) {
+                            let expected = self
+                                .local_store
+                                .get_reply_inbox_expected_ack_author(topic_id)
+                                .await?;
+                            if expected.as_ref() != Some(&author) {
+                                tracing::warn!(
+                                    ?author,
+                                    ?expected,
+                                    "ContactRequestAck author does not match expected; ignoring"
+                                );
+                                return Ok(());
+                            }
                             self.establish_contact(author, *agent_id).await?;
                             self.local_store
                                 .save_profile(*agent_id, profile.clone())

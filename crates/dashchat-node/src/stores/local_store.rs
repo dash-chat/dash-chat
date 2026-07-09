@@ -52,7 +52,8 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS active_inboxes (
         topic_id BLOB NOT NULL PRIMARY KEY,
         expires_at_nanos INTEGER NOT NULL,
-        role INTEGER NOT NULL DEFAULT 0
+        role INTEGER NOT NULL DEFAULT 0,
+        expected_ack_author BLOB NULL
     )",
     "CREATE TABLE IF NOT EXISTS group_chats (
         chat_id BLOB NOT NULL PRIMARY KEY
@@ -358,8 +359,40 @@ impl LocalStore {
             .await
     }
 
-    pub async fn add_reply_inbox_topic(&self, inbox_topic: InboxTopic) -> anyhow::Result<()> {
-        self.add_inbox_topic(inbox_topic, InboxRole::Reply).await
+    pub async fn add_reply_inbox_topic(
+        &self,
+        inbox_topic: InboxTopic,
+        expected_ack_author: DeviceId,
+    ) -> anyhow::Result<()> {
+        let nanos = inbox_topic
+            .expires_at
+            .timestamp_nanos_opt()
+            .unwrap_or(0)
+            .max(0);
+        sqlx::query(
+            "INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos, role, expected_ack_author) VALUES (?, ?, ?, ?)",
+        )
+        .bind(inbox_topic.topic.to_vec())
+        .bind(nanos)
+        .bind(InboxRole::Reply)
+        .bind(expected_ack_author)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_reply_inbox_expected_ack_author(
+        &self,
+        topic: TopicId,
+    ) -> anyhow::Result<Option<DeviceId>> {
+        let row: Option<(DeviceId,)> = sqlx::query_as(
+            "SELECT expected_ack_author FROM active_inboxes WHERE topic_id = ? AND role = ?",
+        )
+        .bind(topic.as_bytes().to_vec())
+        .bind(InboxRole::Reply)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|(id,)| id))
     }
 
     async fn add_inbox_topic(
