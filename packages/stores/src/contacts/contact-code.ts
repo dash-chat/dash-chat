@@ -5,7 +5,9 @@ import { decode, encode } from 'cbor-web';
 import { ContactCode } from '../types';
 
 function hexToBytes(hex: string): Uint8Array {
-	return Uint8Array.from((hex.match(/.{1,2}/g) ?? []).map(byte => parseInt(byte, 16)));
+	return Uint8Array.from(
+		(hex.match(/.{1,2}/g) ?? []).map(byte => parseInt(byte, 16)),
+	);
 }
 
 function bytesToHex(bytes: Uint8Array): string {
