@@ -675,22 +675,39 @@
 						title={m.deleteMessageTitle()}
 					>
 						{#snippet buttons()}
-							<DialogButton onClick={() => (deletingMessage = undefined)}>
-								{m.cancel()}
-							</DialogButton>
-							<DialogButton
-								data-testid="delete-for-me-confirm"
-								onClick={() => deletingMessage && deleteForMe(deletingMessage)}
-							>
-								{m.deleteForMe()}
-							</DialogButton>
 							{#if deletingMessage && canDeleteMessage(deletingMessage, myDeviceId)}
+								<div class="flex flex-col w-full">
+									<DialogButton
+										class="!text-red-500"
+										data-testid="delete-message-confirm"
+										onClick={() =>
+											deletingMessage && deleteForEveryone(deletingMessage)}
+									>
+										{m.deleteForEveryone()}
+									</DialogButton>
+									<DialogButton onClick={() => (deletingMessage = undefined)}>
+										{m.cancel()}
+									</DialogButton>
+									<DialogButton
+										class="!text-red-500"
+										data-testid="delete-for-me-confirm"
+										onClick={() =>
+											deletingMessage && deleteForMe(deletingMessage)}
+									>
+										{m.deleteForMe()}
+									</DialogButton>
+								</div>
+							{:else}
+								<DialogButton onClick={() => (deletingMessage = undefined)}>
+									{m.cancel()}
+								</DialogButton>
 								<DialogButton
-									data-testid="delete-message-confirm"
+									class="!text-red-500"
+									data-testid="delete-for-me-confirm"
 									onClick={() =>
-										deletingMessage && deleteForEveryone(deletingMessage)}
+										deletingMessage && deleteForMe(deletingMessage)}
 								>
-									{m.deleteForEveryone()}
+									{m.deleteForMe()}
 								</DialogButton>
 							{/if}
 						{/snippet}
