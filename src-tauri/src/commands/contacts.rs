@@ -34,6 +34,9 @@ pub async fn agent_for_device(
 
 #[tauri::command]
 pub async fn add_contact(contact_code: QrCode, app_node: State<'_, AppNode>) -> Result<(), Error> {
+    if contact_code.share_intent == ShareIntent::AddDevice {
+        return Err(Error::AddDeviceNotSupported);
+    }
     let node = app_node.get().await?;
     node.add_contact(contact_code).await?;
     Ok(())
