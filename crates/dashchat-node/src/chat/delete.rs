@@ -4,7 +4,7 @@ use p2panda::Hash;
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::DeviceId;
+use crate::{DeviceId, ValidChatOps};
 
 use super::edit::{ChatOp, ChatOpKind, EDIT_WINDOW_MICROS};
 
@@ -82,95 +82,105 @@ pub fn collect_edit_chain(
     Err(DeleteError::IncompleteChain)
 }
 
-/// Validate that a delete may be applied to the operations in `hashes`.
-///
-/// `valid_ops` is the reduced set of all valid chat operations in the topic,
-/// keyed by hash. `deleter` and `delete_timestamp` describe the delete itself.
-/// `self_hash` is the hash of the delete operation when validating a delete
-/// that is already in `valid_ops` (the receiving side); it is `None` when an
-/// author validates before publishing.
-///
-/// Rules:
-/// - every hash must resolve to a `Message` or `EditMessage` operation,
-/// - the set must be exactly one complete edit chain (one original message,
-///   every edit of any member included, no gaps, no extras),
-/// - no other delete may already cover any of the hashes,
-/// - the deleter must be the author of every operation in the set,
-/// - the delete must fall within [`DELETE_WINDOW_MICROS`] of the original
-///   message.
-pub fn validate_delete(
-    valid_ops: &HashMap<Hash, ChatOp>,
-    hashes: &BTreeSet<Hash>,
-    deleter: DeviceId,
-    delete_timestamp: u64,
-    self_hash: Option<&Hash>,
-) -> Result<(), DeleteError> {
-    if hashes.is_empty() {
-        return Err(DeleteError::IncompleteChain);
-    }
+pub struct DeleteCandidate {
+    pub hashes: BTreeSet<Hash>,
+    pub deleter: DeviceId,
+    pub delete_timestamp: u64,
+    pub self_hash: Option<Hash>,
+}
 
-    let mut root = None;
-    for hash in hashes {
-        let op = valid_ops.get(hash).ok_or(DeleteError::TargetNotFound)?;
-        match &op.kind {
-            ChatOpKind::Message => {
-                // Exactly one original message per chain.
-                if root.replace((*hash, op)).is_some() {
-                    return Err(DeleteError::IncompleteChain);
+impl ValidChatOps {
+    /// Validate that a delete may be applied to the operations in `hashes`.
+    ///
+    /// `valid_ops` is the reduced set of all valid chat operations in the topic,
+    /// keyed by hash. `deleter` and `delete_timestamp` describe the delete itself.
+    /// `self_hash` is the hash of the delete operation when validating a delete
+    /// that is already in `valid_ops` (the receiving side); it is `None` when an
+    /// author validates before publishing.
+    ///
+    /// Rules:
+    /// - every hash must resolve to a `Message` or `EditMessage` operation,
+    /// - the set must be exactly one complete edit chain (one original message,
+    ///   every edit of any member included, no gaps, no extras),
+    /// - no other delete may already cover any of the hashes,
+    /// - the deleter must be the author of every operation in the set,
+    /// - the delete must fall within [`DELETE_WINDOW_MICROS`] of the original
+    ///   message.
+    pub fn validate_delete(&self, candidate: &DeleteCandidate) -> Result<(), DeleteError> {
+        let DeleteCandidate {
+            hashes,
+            deleter,
+            delete_timestamp,
+            self_hash,
+        } = candidate;
+        if hashes.is_empty() {
+            return Err(DeleteError::IncompleteChain);
+        }
+
+        let mut root = None;
+        for hash in hashes {
+            let op = self.get(hash).ok_or(DeleteError::TargetNotFound)?;
+            match &op.kind {
+                ChatOpKind::Message => {
+                    // Exactly one original message per chain.
+                    if root.replace((*hash, op)).is_some() {
+                        return Err(DeleteError::IncompleteChain);
+                    }
+                }
+                ChatOpKind::Edit(target) => {
+                    // No gaps: each edit's target is part of the set too.
+                    if !hashes.contains(target) {
+                        return Err(DeleteError::IncompleteChain);
+                    }
+                }
+                ChatOpKind::Delete(_) | ChatOpKind::Other => {
+                    return Err(DeleteError::TargetNotDeletable);
                 }
             }
-            ChatOpKind::Edit(target) => {
-                // No gaps: each edit's target is part of the set too.
-                if !hashes.contains(target) {
-                    return Err(DeleteError::IncompleteChain);
-                }
-            }
-            ChatOpKind::Delete(_) | ChatOpKind::Other => {
-                return Err(DeleteError::TargetNotDeletable);
+            if op.author != *deleter {
+                return Err(DeleteError::NotAuthor);
             }
         }
-        if op.author != deleter {
-            return Err(DeleteError::NotAuthor);
-        }
-    }
-    let Some((_, root)) = root else {
-        return Err(DeleteError::IncompleteChain);
-    };
-
-    // Complete up to the tip: no valid edit of any member may be left out.
-    let leaves_an_edit_out = valid_ops.iter().any(|(hash, op)| {
-        matches!(&op.kind, ChatOpKind::Edit(t) if hashes.contains(t)) && !hashes.contains(hash)
-    });
-    if leaves_an_edit_out {
-        return Err(DeleteError::IncompleteChain);
-    }
-
-    // Competing deletes resolve exactly like competing edits: the delete
-    // published earliest (lowest seq_num, hash as tiebreaker) survives; any
-    // later delete covering one of the same operations is invalid. On the
-    // author side (`self_hash` is `None`) any existing delete blocks outright.
-    let self_order = self_hash.and_then(|h| valid_ops.get(h).map(|op| (op.seq_num, h)));
-    let already_deleted = valid_ops.iter().any(|(hash, op)| {
-        let ChatOpKind::Delete(covered) = &op.kind else {
-            return false;
+        let Some((_, root)) = root else {
+            return Err(DeleteError::IncompleteChain);
         };
-        if covered.is_disjoint(hashes) {
-            return false;
-        }
-        match self_order {
-            Some(self_order) => (op.seq_num, hash) < self_order,
-            None => true,
-        }
-    });
-    if already_deleted {
-        return Err(DeleteError::AlreadyDeleted);
-    }
 
-    if delete_timestamp.saturating_sub(root.timestamp) > DELETE_WINDOW_MICROS {
-        return Err(DeleteError::WindowExpired);
-    }
+        // Complete up to the tip: no valid edit of any member may be left out.
+        let leaves_an_edit_out = self.iter().any(|(hash, op)| {
+            matches!(&op.kind, ChatOpKind::Edit(t) if hashes.contains(t)) && !hashes.contains(hash)
+        });
+        if leaves_an_edit_out {
+            return Err(DeleteError::IncompleteChain);
+        }
 
-    Ok(())
+        // Competing deletes resolve exactly like competing edits: the delete
+        // published earliest (lowest seq_num, hash as tiebreaker) survives; any
+        // later delete covering one of the same operations is invalid. On the
+        // author side (`self_hash` is `None`) any existing delete blocks outright.
+        let self_order_key = self_hash.and_then(|h| self.get(&h).map(|op| (op.seq_num, h)));
+        let already_deleted = self.iter().any(|(hash, op)| {
+            let ChatOpKind::Delete(covered) = &op.kind else {
+                return false;
+            };
+            if covered.is_disjoint(hashes) {
+                return false;
+            }
+            let conflicing_order_key = (op.seq_num, *hash);
+            match self_order_key {
+                Some(self_order_key) => conflicing_order_key < self_order_key,
+                None => true,
+            }
+        });
+        if already_deleted {
+            return Err(DeleteError::AlreadyDeleted);
+        }
+
+        if delete_timestamp.saturating_sub(root.timestamp) > DELETE_WINDOW_MICROS {
+            return Err(DeleteError::WindowExpired);
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -225,14 +235,14 @@ mod tests {
     #[test]
     fn collect_chain_of_unedited_message() {
         let alice = device(1);
-        let ops = HashMap::from([(hash(1), message(alice, 1000, 0))]);
+        let ops = ValidChatOps::new([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(collect_edit_chain(&ops, &hash(1)), Ok(btreeset![hash(1)]));
     }
 
     #[test]
     fn collect_chain_walks_edits_to_root() {
         let alice = device(1);
-        let ops = HashMap::from([
+        let ops = ValidChatOps::new([
             (hash(1), message(alice, 1000, 0)),
             (hash(2), edit(alice, 2000, 1, hash(1))),
             (hash(3), edit(alice, 3000, 2, hash(2))),
@@ -246,7 +256,7 @@ mod tests {
     #[test]
     fn collect_chain_rejects_non_tip_target() {
         let alice = device(1);
-        let ops = HashMap::from([
+        let ops = ValidChatOps::new([
             (hash(1), message(alice, 1000, 0)),
             (hash(2), edit(alice, 2000, 1, hash(1))),
         ]);
@@ -260,7 +270,7 @@ mod tests {
     #[test]
     fn collect_chain_rejects_non_message_target() {
         let alice = device(1);
-        let ops = HashMap::from([(hash(1), other(alice, 1000, 0))]);
+        let ops = ValidChatOps::new([(hash(1), other(alice, 1000, 0))]);
         assert_eq!(
             collect_edit_chain(&ops, &hash(1)),
             Err(DeleteError::TargetNotDeletable)
@@ -270,9 +280,14 @@ mod tests {
     #[test]
     fn valid_delete_of_unedited_message() {
         let alice = device(1);
-        let ops = HashMap::from([(hash(1), message(alice, 1000, 0))]);
+        let ops = ValidChatOps::new([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(
-            validate_delete(&ops, &btreeset![hash(1)], alice, 2000, None),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: btreeset![hash(1)],
+                deleter: alice,
+                delete_timestamp: 2000,
+                self_hash: None,
+            }),
             Ok(())
         );
     }
@@ -280,12 +295,17 @@ mod tests {
     #[test]
     fn valid_delete_of_full_chain() {
         let alice = device(1);
-        let ops = HashMap::from([
+        let ops = ValidChatOps::new([
             (hash(1), message(alice, 1000, 0)),
             (hash(2), edit(alice, 2000, 1, hash(1))),
         ]);
         assert_eq!(
-            validate_delete(&ops, &btreeset![hash(1), hash(2)], alice, 3000, None),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: btreeset![hash(1), hash(2)],
+                deleter: alice,
+                delete_timestamp: 3000,
+                self_hash: None,
+            }),
             Ok(())
         );
     }
@@ -293,9 +313,14 @@ mod tests {
     #[test]
     fn delete_missing_op_is_rejected() {
         let alice = device(1);
-        let ops = HashMap::from([(hash(1), message(alice, 1000, 0))]);
+        let ops = ValidChatOps::new([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(
-            validate_delete(&ops, &btreeset![hash(9)], alice, 2000, None),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: btreeset![hash(9)],
+                deleter: alice,
+                delete_timestamp: 2000,
+                self_hash: None,
+            }),
             Err(DeleteError::TargetNotFound)
         );
     }
@@ -303,9 +328,14 @@ mod tests {
     #[test]
     fn delete_of_non_message_is_rejected() {
         let alice = device(1);
-        let ops = HashMap::from([(hash(1), other(alice, 1000, 0))]);
+        let ops = ValidChatOps::new([(hash(1), other(alice, 1000, 0))]);
         assert_eq!(
-            validate_delete(&ops, &btreeset![hash(1)], alice, 2000, None),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: btreeset![hash(1)],
+                deleter: alice,
+                delete_timestamp: 2000,
+                self_hash: None,
+            }),
             Err(DeleteError::TargetNotDeletable)
         );
     }
@@ -313,13 +343,18 @@ mod tests {
     #[test]
     fn delete_leaving_out_an_edit_is_rejected() {
         let alice = device(1);
-        let ops = HashMap::from([
+        let ops = ValidChatOps::new([
             (hash(1), message(alice, 1000, 0)),
             (hash(2), edit(alice, 2000, 1, hash(1))),
         ]);
         // The set covers the original but not its edit.
         assert_eq!(
-            validate_delete(&ops, &btreeset![hash(1)], alice, 3000, None),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: btreeset![hash(1)],
+                deleter: alice,
+                delete_timestamp: 3000,
+                self_hash: None,
+            }),
             Err(DeleteError::IncompleteChain)
         );
     }
@@ -327,13 +362,18 @@ mod tests {
     #[test]
     fn delete_leaving_out_the_root_is_rejected() {
         let alice = device(1);
-        let ops = HashMap::from([
+        let ops = ValidChatOps::new([
             (hash(1), message(alice, 1000, 0)),
             (hash(2), edit(alice, 2000, 1, hash(1))),
         ]);
         // The set covers the edit but not the original it points at.
         assert_eq!(
-            validate_delete(&ops, &btreeset![hash(2)], alice, 3000, None),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: btreeset![hash(2)],
+                deleter: alice,
+                delete_timestamp: 3000,
+                self_hash: None,
+            }),
             Err(DeleteError::IncompleteChain)
         );
     }
@@ -341,12 +381,17 @@ mod tests {
     #[test]
     fn delete_spanning_two_chains_is_rejected() {
         let alice = device(1);
-        let ops = HashMap::from([
+        let ops = ValidChatOps::new([
             (hash(1), message(alice, 1000, 0)),
             (hash(2), message(alice, 1000, 1)),
         ]);
         assert_eq!(
-            validate_delete(&ops, &btreeset![hash(1), hash(2)], alice, 2000, None),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: btreeset![hash(1), hash(2)],
+                deleter: alice,
+                delete_timestamp: 2000,
+                self_hash: None,
+            }),
             Err(DeleteError::IncompleteChain)
         );
     }
@@ -355,9 +400,14 @@ mod tests {
     fn delete_by_non_author_is_rejected() {
         let alice = device(1);
         let bobbi = device(2);
-        let ops = HashMap::from([(hash(1), message(alice, 1000, 0))]);
+        let ops = ValidChatOps::new([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(
-            validate_delete(&ops, &btreeset![hash(1)], bobbi, 2000, None),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: btreeset![hash(1)],
+                deleter: bobbi,
+                delete_timestamp: 2000,
+                self_hash: None,
+            }),
             Err(DeleteError::NotAuthor)
         );
     }
@@ -365,12 +415,17 @@ mod tests {
     #[test]
     fn double_delete_is_rejected() {
         let alice = device(1);
-        let ops = HashMap::from([
+        let ops = ValidChatOps::new([
             (hash(1), message(alice, 1000, 0)),
             (hash(3), delete(alice, 2000, 1, btreeset![hash(1)])),
         ]);
         assert_eq!(
-            validate_delete(&ops, &btreeset![hash(1)], alice, 3000, None),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: btreeset![hash(1)],
+                deleter: alice,
+                delete_timestamp: 3000,
+                self_hash: None,
+            }),
             Err(DeleteError::AlreadyDeleted)
         );
     }
@@ -378,17 +433,27 @@ mod tests {
     #[test]
     fn competing_deletes_earliest_seq_num_wins() {
         let alice = device(1);
-        let ops = HashMap::from([
+        let ops = ValidChatOps::new([
             (hash(1), message(alice, 1000, 0)),
             (hash(2), delete(alice, 2000, 2, btreeset![hash(1)])),
             (hash(3), delete(alice, 2000, 1, btreeset![hash(1)])),
         ]);
         assert_eq!(
-            validate_delete(&ops, &btreeset![hash(1)], alice, 2000, Some(&hash(3))),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: btreeset![hash(1)],
+                deleter: alice,
+                delete_timestamp: 2000,
+                self_hash: Some(hash(3)),
+            }),
             Ok(())
         );
         assert_eq!(
-            validate_delete(&ops, &btreeset![hash(1)], alice, 2000, Some(&hash(2))),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: btreeset![hash(1)],
+                deleter: alice,
+                delete_timestamp: 2000,
+                self_hash: Some(hash(2)),
+            }),
             Err(DeleteError::AlreadyDeleted)
         );
     }
@@ -396,17 +461,27 @@ mod tests {
     #[test]
     fn window_measured_from_root_message() {
         let alice = device(1);
-        let ops = HashMap::from([
+        let ops = ValidChatOps::new([
             (hash(1), message(alice, 1000, 0)),
             (hash(2), edit(alice, 2000, 1, hash(1))),
         ]);
         let set = btreeset![hash(1), hash(2)];
         assert_eq!(
-            validate_delete(&ops, &set, alice, 1000 + DELETE_WINDOW_MICROS, None),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: set.clone(),
+                deleter: alice,
+                delete_timestamp: 1000 + DELETE_WINDOW_MICROS,
+                self_hash: None,
+            }),
             Ok(())
         );
         assert_eq!(
-            validate_delete(&ops, &set, alice, 1000 + DELETE_WINDOW_MICROS + 1, None),
+            ops.validate_delete(&DeleteCandidate {
+                hashes: set.clone(),
+                deleter: alice,
+                delete_timestamp: 1000 + DELETE_WINDOW_MICROS + 1,
+                self_hash: None,
+            }),
             Err(DeleteError::WindowExpired)
         );
     }

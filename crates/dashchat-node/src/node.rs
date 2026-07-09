@@ -31,7 +31,7 @@ use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
 use crate::chat::{
-    ChatMessageContent, ChatOp, ChatOpKind, collect_edit_chain, validate_delete, validate_edit,
+    ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps, collect_edit_chain,
 };
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
@@ -39,9 +39,9 @@ use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, P
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DeleteMessageError, DeviceGroupId, DeviceGroupPayload,
-    DeviceId, DirectChatId, EditMessageError, MediaBundle, MediaMetaKind, MediaMetadata,
-    OutgoingFile, OutgoingMedia,
+    AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
+    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, MediaBundle, MediaMetaKind,
+    MediaMetadata, OutgoingFile, OutgoingMedia,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
@@ -1029,9 +1029,14 @@ impl Node {
         message: impl Into<String>,
     ) -> Result<Header, EditMessageError> {
         let topic = topic.into();
-        let ops = self.valid_chat_ops(topic).await?;
+        let valid_ops = self.valid_chat_ops(topic).await?;
         let now = u64::from(p2panda_core::Timestamp::now());
-        validate_edit(&ops, &edit_hash, self.device_id(), now, None)?;
+        valid_ops.validate_edit(&EditCandidate {
+            target: edit_hash,
+            editor: self.device_id(),
+            timestamp: now,
+            self_hash: None,
+        })?;
 
         let header = self
             .publish(
@@ -1088,7 +1093,12 @@ impl Node {
         let ops = self.valid_chat_ops(topic).await?;
         let hashes = collect_edit_chain(&ops, &target)?;
         let now = u64::from(p2panda_core::Timestamp::now());
-        validate_delete(&ops, &hashes, self.device_id(), now, None)?;
+        ops.validate_delete(&DeleteCandidate {
+            hashes: hashes.clone(),
+            deleter: self.device_id(),
+            delete_timestamp: now,
+            self_hash: None,
+        })?;
 
         let header = self
             .publish(
@@ -1127,10 +1137,7 @@ impl Node {
     // TODO: performance: this triggers a full log traversal on processing every
     // edit operation. We can improve this by building up the parallel ChatOp list
     // reduced state as part of the ACID refactors.
-    pub(crate) async fn valid_chat_ops(
-        &self,
-        topic: ChatId,
-    ) -> anyhow::Result<std::collections::HashMap<Hash, ChatOp>> {
+    pub(crate) async fn valid_chat_ops(&self, topic: ChatId) -> anyhow::Result<ValidChatOps> {
         let log_id = LogId::from(topic);
         let authors = self.op_store.get_authors(log_id).await?;
 
@@ -1161,48 +1168,8 @@ impl Node {
             }
         }
 
-        // Strip edit and delete ops that don't pass validation so callers
-        // always work with a consistent, cheat-proof view. An invalid op (wrong
-        // author, expired window, or broken chain) must not poison the scan for
-        // legitimate ones. Removals cascade — a chained edit whose target gets
-        // stripped is itself invalid — so iterate to a fixpoint. Validation
-        // depends only on the op set, not arrival order, so every peer
-        // converges on the same reduced view. (A delete that has already been
-        // applied gets stripped too — its targets' bodies are gone — which is
-        // harmless: the dropped bodies themselves block any further edit or
-        // delete of those operations.)
-        loop {
-            let candidates: Vec<Hash> = ops
-                .iter()
-                .filter_map(|(hash, op)| {
-                    matches!(op.kind, ChatOpKind::Edit(_) | ChatOpKind::Delete(_)).then_some(*hash)
-                })
-                .collect();
-            let mut removed_any = false;
-            for hash in candidates {
-                let Some(op) = ops.get(&hash) else {
-                    continue;
-                };
-                let (kind, author, timestamp) = (op.kind.clone(), op.author, op.timestamp);
-                let valid = match kind {
-                    ChatOpKind::Edit(edit_hash) => {
-                        validate_edit(&ops, &edit_hash, author, timestamp, Some(&hash)).is_ok()
-                    }
-                    ChatOpKind::Delete(hashes) => {
-                        validate_delete(&ops, &hashes, author, timestamp, Some(&hash)).is_ok()
-                    }
-                    _ => unreachable!(),
-                };
-                if !valid {
-                    ops.remove(&hash);
-                    removed_any = true;
-                }
-            }
-            if !removed_any {
-                break;
-            }
-        }
-
+        let mut ops = ValidChatOps::new(ops);
+        ops.prune();
         Ok(ops)
     }
 
@@ -1231,7 +1198,7 @@ impl Node {
                     continue;
                 };
                 let op_hash = op.header.hash();
-                if valid_ops.contains_key(&op_hash) {
+                if valid_ops.contains(&op_hash) {
                     edits.push(crate::chat::ValidEdit {
                         op_hash,
                         target: edit_hash,

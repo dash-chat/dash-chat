@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
+use crate::DeleteCandidate;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
 use crate::topic::AutoRegisteredTopic;
 
@@ -524,8 +525,13 @@ impl Node {
                 let chat_id = ChatId::from_topic_id(topic)?;
                 let valid_ops = self.valid_chat_ops(chat_id).await?;
                 let edit_ts: u64 = operation.processed().header().timestamp.into();
-                if let Err(err) = validate_edit(&valid_ops, edit_hash, author, edit_ts, Some(&hash))
-                {
+                let candidate = EditCandidate {
+                    target: *edit_hash,
+                    editor: author,
+                    timestamp: edit_ts,
+                    self_hash: Some(hash),
+                };
+                if let Err(err) = valid_ops.validate_edit(&candidate) {
                     warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
                     return Ok(());
                 }
@@ -556,9 +562,12 @@ impl Node {
                     let valid_ops = self.valid_chat_ops(chat_id).await?;
                     if hashes.iter().all(|h| valid_ops.contains_key(h)) {
                         let delete_ts: u64 = operation.processed().header().timestamp.into();
-                        if let Err(err) =
-                            validate_delete(&valid_ops, hashes, author, delete_ts, Some(&hash))
-                        {
+                        if let Err(err) = valid_ops.validate_delete(&DeleteCandidate {
+                            hashes: hashes.clone(),
+                            deleter: author,
+                            delete_timestamp: delete_ts,
+                            self_hash: Some(hash),
+                        }) {
                             warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
                             return Ok(());
                         }
