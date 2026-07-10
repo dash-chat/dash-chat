@@ -517,7 +517,8 @@ impl Node {
     /// is a one-way switch intended only for e2e tests that must observe
     /// pre-sync UI state without racing a direct p2p connection between two
     /// agents running on the same machine.
-    pub async fn disconnect_p2p(&self) -> Result<()> {
+    #[cfg(feature = "testing")]
+    pub async fn close_iroh_endpoint(&self) -> Result<()> {
         self.endpoint.endpoint().await?.close().await;
         Ok(())
     }
