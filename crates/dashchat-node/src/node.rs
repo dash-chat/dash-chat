@@ -510,6 +510,18 @@ impl Node {
         Ok(self.endpoint.endpoint().await?)
     }
 
+    /// Tear down all p2p connectivity by closing the iroh endpoint. Afterwards
+    /// the node can neither dial nor accept peer connections, so no gossip sync
+    /// happens; local reads and writes against the op store keep working. This
+    /// is a one-way switch intended only for e2e tests that must observe
+    /// pre-sync UI state without racing a direct p2p connection between two
+    /// agents running on the same machine.
+    #[cfg(feature = "testing")]
+    pub async fn close_iroh_endpoint(&self) -> Result<()> {
+        self.endpoint.endpoint().await?.close().await;
+        Ok(())
+    }
+
     /// Add (or refresh) a peer's dialing address (relay + direct addresses) in
     /// the p2panda address book so the iroh blob downloader can reach that peer
     /// by its EndpointId. Used for mailbox `/health` self-addresses and for peer
