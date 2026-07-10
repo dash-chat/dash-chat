@@ -6,6 +6,7 @@ use tauri::State;
 /// `e2e-tests` feature; used by specs that must observe pre-sync UI state
 /// without racing a direct p2p connection between two agents on one machine.
 #[tauri::command]
+#[cfg(feature = "e2e-tests")]
 pub async fn close_iroh_endpoint(node: State<'_, Node>) -> Result<(), String> {
     node.close_iroh_endpoint().await.map_err(|e| e.to_string())
 }
