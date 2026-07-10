@@ -35,13 +35,17 @@ impl Behavior {
         // ack (it learns our agent_id only then), so wait for it to land before
         // returning a fully-established mutual contact.
         let me = self.node.agent_id();
-        let deadline = std::time::Instant::now() + Duration::from_secs(15);
-        while !other.get_contacts().await?.contains(&me) {
-            if std::time::Instant::now() >= deadline {
-                anyhow::bail!("scanner did not record the contact in time");
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
+        PollConfig::seconds(15)
+            .wait_for(|| async {
+                if other.get_contacts().await?.contains(&me) {
+                    Ok(())
+                } else {
+                    Err(anyhow::anyhow!(
+                        "scanner did not record the contact in time"
+                    ))
+                }
+            })
+            .await?;
         Ok(())
     }
 
