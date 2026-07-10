@@ -440,7 +440,7 @@ impl Node {
                     .any(|it| *it.topic == topic_id);
                 if !is_advertised_topic && !is_reply {
                     // not for me (e.g. another scanner's request on a shared
-                    // advertised inbox we only transiently synced): ignore.
+                    // advertised inbox we only synced as an intermediary): ignore.
                     return Ok(());
                 }
                 match invitation {
