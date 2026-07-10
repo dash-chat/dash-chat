@@ -1,10 +1,9 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import 'emoji-picker-element';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { getContext, onMount, tick } from 'svelte';
+	import { getContext, setContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
@@ -14,7 +13,6 @@
 		type ContactsStore,
 		type DeviceId,
 		type Hash,
-		type Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
@@ -35,13 +33,10 @@
 		Navbar,
 		NavbarBackLink,
 		Button,
-		Sheet,
 		Dialog,
 		DialogButton,
 		useTheme,
 		Link,
-		Chip,
-		Block,
 	} from 'konsta/svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
@@ -51,12 +46,8 @@
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
-	import MessageInput from '$lib/components/MessageInput.svelte';
-	import { condenseReactions } from '$lib/utils/emojis';
-	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
-	import QuickReactionBar from '$lib/components/messages/QuickReactionBar.svelte';
+	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import { longpress } from '$lib/actions/longpress';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
@@ -71,6 +62,7 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
+	setContext('messages-store', store);
 
 	const readTracker = createReadMessagesTracker(store);
 	const readMessageOnObserve = readTracker.observe;
@@ -124,11 +116,6 @@
 		}
 	}
 
-	let messageText = $state('');
-	let showQuickBar = $state(false);
-	let showFullPicker = $state(false);
-	let emojiTargetedMessage: Message | undefined = $state(undefined);
-	let reactionTargetElement: HTMLElement | null = $state(null);
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -161,28 +148,19 @@
 		$state();
 	let parentDivEl: HTMLDivElement | null = $state(null);
 
-	async function sendMessage() {
-		const message = messageText;
-
-		if (!message || message.trim() === '') return;
-
-		try {
-			await store.sendMessage(message);
-			messageText = '';
-			capturedUnreadHash = null;
-			unreadDividerCaptured = false;
-			// Defer the scroll one macrotask: store.sendMessage resolves once
-			// the operation is confirmed in the local log, but signalium still
-			// needs a turn for its subscriber chain to push the new message
-			// through messagesSets and Svelte to render the bubble. tick() only
-			// flushes pending Svelte updates synchronously, so it isn't enough
-			// here. Without this, scrollToBottom fires against the old layout
-			// and `overflow-anchor: none` leaves the just-rendered bubble
-			// hidden behind the input bar.
+	// Scroll the message we just sent into view once its bubble mounts.
+	let justSentMessageHash: Hash | null = $state(null);
+	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
+		if (hash === justSentMessageHash) {
+			justSentMessageHash = null;
 			setTimeout(() => reverseScrollPage?.scrollToBottom());
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
+	};
+
+	function onMessageSent(messageHash: Hash) {
+		justSentMessageHash = messageHash;
+		capturedUnreadHash = null;
+		unreadDividerCaptured = false;
 	}
 
 	onMount(() => {
@@ -204,7 +182,7 @@
 			const matches: Hash[] = [];
 			els.forEach(el => {
 				const hash = el.getAttribute('data-message-hash') as Hash;
-				const text = el.querySelector('.flex-1')?.textContent || '';
+				const text = el.querySelector('[data-message-text]')?.textContent || '';
 				if (text.toLowerCase().includes(lowerQ)) matches.push(hash);
 			});
 			matchingHashes = matches;
@@ -265,51 +243,6 @@
 			}
 		}
 		closest?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-	}
-
-	function showQuickReactionBar(e: MouseEvent | TouchEvent, message: Message) {
-		const el = e.target as HTMLElement;
-		const target =
-			(el.closest('.message') as HTMLElement) ??
-			(el.querySelector('.message') as HTMLElement);
-		if (!target) return;
-		emojiTargetedMessage = message;
-		reactionTargetElement = target;
-		target.parentElement?.classList.add('message-highlighted');
-		showQuickBar = true;
-	}
-
-	function hideReactionUI() {
-		reactionTargetElement?.parentElement?.classList.remove(
-			'message-highlighted',
-		);
-		showQuickBar = false;
-		showFullPicker = false;
-		emojiTargetedMessage = undefined;
-		reactionTargetElement = null;
-	}
-
-	function expandToFullPicker() {
-		reactionTargetElement?.parentElement?.classList.remove(
-			'message-highlighted',
-		);
-		showQuickBar = false;
-		showFullPicker = true;
-	}
-
-	async function toggleReaction(
-		message: Message,
-		emoji: string,
-		deviceId: DeviceId,
-	) {
-		const currentReaction = message.reactions[deviceId];
-		const newEmoji = currentReaction === emoji ? null : emoji;
-		try {
-			await store.sendReaction({ target: message.hash, emoji: newEmoji });
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-		hideReactionUI();
 	}
 
 	const theme = $derived(useTheme());
@@ -396,6 +329,7 @@
 											placeholder={m.searchMessages()}
 											bind:value={searchQuery}
 											use:focusOnMount
+											data-testid="direct-chat-search-input"
 										/>
 									</div>
 								{/snippet}
@@ -589,10 +523,7 @@
 														<div
 															class="self-end max-w-[85%]"
 															data-message-hash={hash}
-															use:longpress={{
-																onLongPress: e =>
-																	showQuickReactionBar(e, message),
-															}}
+															use:scrollToBottomOnMount={hash}
 														>
 															{#await $chatId then chatId}
 																<MessageFromMe
@@ -601,8 +532,6 @@
 																	{myDeviceId}
 																	{chatId}
 																	searchQuery={searchMode ? searchQuery : ''}
-																	onToggleReaction={emoji =>
-																		toggleReaction(message, emoji, myDeviceId)}
 																/>
 															{/await}
 														</div>
@@ -613,10 +542,6 @@
 															use:readMessageOnObserve={readHashes?.has(hash)
 																? null
 																: hash}
-															use:longpress={{
-																onLongPress: e =>
-																	showQuickReactionBar(e, message),
-															}}
 														>
 															{#await $chatId then chatId}
 																<MessageFromOthers
@@ -625,8 +550,7 @@
 																	{myDeviceId}
 																	{chatId}
 																	searchQuery={searchMode ? searchQuery : ''}
-																	onToggleReaction={emoji =>
-																		toggleReaction(message, emoji, myDeviceId)}
+																	sender={profile}
 																/>
 															{/await}
 														</div>
@@ -683,64 +607,6 @@
 							{/snippet}
 						</Dialog>
 					{/if}
-					{#if emojiTargetedMessage && reactionTargetElement && myDeviceId}
-						<QuickReactionBar
-							message={emojiTargetedMessage}
-							targetElement={reactionTargetElement}
-							opened={showQuickBar}
-							isOwnMessage={myDeviceId === emojiTargetedMessage.author}
-							{myDeviceId}
-							onReaction={emoji =>
-								toggleReaction(emojiTargetedMessage!, emoji, myDeviceId)}
-							onExpand={expandToFullPicker}
-							onClose={hideReactionUI}
-						/>
-					{/if}
-					<Sheet
-						class="pb-safe text-lg"
-						opened={showFullPicker}
-						onBackdropClick={hideReactionUI}
-					>
-						<div class="flex flex-col items-center">
-							<div class="sheet-handle"></div>
-						</div>
-						{#if emojiTargetedMessage && myDeviceId}
-							{#if Object.values(emojiTargetedMessage.reactions).length > 0}
-								<Block>
-									{#each condenseReactions(emojiTargetedMessage.reactions, myDeviceId) as reaction}
-										<button
-											class="me-2 text-lg"
-											onclick={() =>
-												toggleReaction(
-													emojiTargetedMessage!,
-													reaction.emoji,
-													myDeviceId!,
-												)}
-										>
-											<Chip class="border !border-white dark:!border-black">
-												{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
-											</Chip>
-										</button>
-									{/each}
-								</Block>
-							{/if}
-							<Block>
-								<EmojiPickerWrapper
-									onEmojiSelected={emoji =>
-										toggleReaction(emojiTargetedMessage!, emoji, myDeviceId!)}
-								></EmojiPickerWrapper>
-							</Block>
-						{:else}
-							<Block>
-								<EmojiPickerWrapper
-									onEmojiSelected={emoji => {
-										messageText += emoji;
-										hideReactionUI();
-									}}
-								></EmojiPickerWrapper>
-							</Block>
-						{/if}
-					</Sheet>
 
 					<SafetyTipsSheet
 						opened={showSecurityTips}
@@ -770,12 +636,11 @@
 
 				<div
 					bind:clientHeight={bottomBarHeight}
-					class="absolute bottom-0 inset-x-0 z-10"
-					class:bg-md-light-surface={theme === 'material'}
-					class:dark:bg-md-dark-surface={theme === 'material'}
+					class="absolute bottom-0 inset-x-0 z-30"
+					class:bg-page-surface={theme === 'material'}
 				>
 					{#if searchMode}
-						<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
+						<div class="pb-safe bg-page-surface">
 							<div
 								class="mx-4 border-t border-gray-300 dark:border-gray-600"
 								style="margin: 0 auto"
@@ -797,7 +662,10 @@
 									bind:this={dateInput}
 									onchange={e => jumpToDate(e.currentTarget.value)}
 								/>
-								<span class="flex-1 text-center text-sm quiet">
+								<span
+									class="flex-1 text-center text-sm quiet"
+									data-testid="search-results-count"
+								>
 									{#if !searchQuery}
 										<!-- empty -->
 									{:else if matchingHashes.length === 0}
@@ -828,7 +696,7 @@
 							</div>
 						</div>
 					{:else if contactRequest}
-						<div class="pb-safe bg-md-light-surface dark:bg-md-dark-surface">
+						<div class="pb-safe bg-page-surface">
 							<div
 								class="mx-4 border-t border-gray-300 dark:border-gray-600"
 								style="margin: 0 auto"
@@ -874,10 +742,10 @@
 							</div>
 						</div>
 					{:else}
-						<MessageInput
-							bind:value={messageText}
-							onSend={sendMessage}
-							onEmojiClick={() => (showFullPicker = true)}
+						<MessageComposer
+							{store}
+							destinationName={profile ? fullName(profile) : undefined}
+							onSent={onMessageSent}
 						/>
 					{/if}
 				</div>

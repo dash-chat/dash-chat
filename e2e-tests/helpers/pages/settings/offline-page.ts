@@ -1,12 +1,12 @@
 import { tid } from '../../selectors';
-import { TestPage } from '../test-page';
+import { TestHelper } from '../test-helper';
 
 const TOGGLE_INPUT_SELECTOR = `${tid('offline-local-mailbox-toggle')} input[type="checkbox"]`;
 
-export class OfflinePage extends TestPage {
-	back = this.agent.$(tid('offline-back'));
-	localMailboxToggle = this.agent.$(tid('offline-local-mailbox-toggle'));
-	toggleInput = this.agent.$(TOGGLE_INPUT_SELECTOR);
+export class OfflinePage extends TestHelper {
+	back = this.el(tid('offline-back'));
+	localMailboxToggle = this.el(tid('offline-local-mailbox-toggle'));
+	toggleInput = this.el(TOGGLE_INPUT_SELECTOR);
 
 	async ready() {
 		await this.localMailboxToggle.waitForExist();

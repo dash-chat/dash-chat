@@ -15,7 +15,7 @@ use mailbox_client::MailboxClient;
 use crate::{
     AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
     filesystem::Filesystem, mailbox::MailboxOperation, node::Node, stores::LocalStore,
-    testing::behavior::Behavior, topic::TopicId,
+    testing::TestMailbox, testing::behavior::Behavior, topic::TopicId,
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::Debug)]
@@ -40,7 +40,7 @@ impl TestNode {
         let local_store = LocalStore::new(filesystem.local_store_path())
             .await
             .unwrap();
-        if config.use_named_id {
+        if config.use_alias {
             local_store.device_id().await.unwrap().alias_named(name);
             local_store.agent_id().await.unwrap().alias_named(name);
         }
@@ -115,6 +115,11 @@ impl TestNode {
         self.clone()
     }
 
+    pub async fn add_mailbox(&self, mailbox: &TestMailbox) -> Self {
+        mailbox.register_on(&self.node).await;
+        self.clone()
+    }
+
     pub async fn clear_mailboxes(&self) {
         self.node.mailboxes.clear().await;
     }
@@ -176,7 +181,7 @@ pub struct TestNodeConfig {
     /// Create an initial profile before returning
     pub create_profile: bool,
     /// Use a named-id for the device and agent IDs
-    pub use_named_id: bool,
+    pub use_alias: bool,
 }
 
 impl Default for TestNodeConfig {
@@ -184,7 +189,7 @@ impl Default for TestNodeConfig {
         Self {
             node_config: NodeConfig::testing(),
             create_profile: true,
-            use_named_id: true,
+            use_alias: true,
         }
     }
 }
@@ -215,6 +220,15 @@ impl Default for PollConfig {
 }
 
 impl PollConfig {
+    pub fn seconds(seconds: u64) -> Self {
+        let poll_timeout = Duration::from_secs(seconds);
+        let poll_interval = poll_timeout / 10;
+        Self {
+            poll_interval,
+            poll_timeout,
+        }
+    }
+
     pub async fn consistency(
         &self,
         nodes: impl IntoIterator<Item = &TestNode>,

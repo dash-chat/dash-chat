@@ -1,16 +1,25 @@
 set working-directory := '..'
 
-# run the app in development mode
+# run the app in development mode. --host makes Tauri set TAURI_DEV_HOST and
+# serve the dev URL on the LAN IP so a physical device can reach Vite + HMR.
 dev:
-    nix develop git+file:.#androidDev --command pnpm tauri android dev
+    nix develop git+file:.#androidDev --command pnpm tauri android dev --host
 
-# install the android app via adb
+# install a release build via adb
 install:
     nix develop git+file:.#androidDev --command bash -c "adb install src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"
+
+# install a debug build via adb
+install-debug:
+    nix develop git+file:.#androidDev --command bash -c "adb install src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
 
 # build the android app in an APK format
 build TARGETS='aarch64 armv7 i686 x86_64':
     nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build --apk -t {{TARGETS}}"
+
+# build the android app in an APK format in debug mode
+build-debug TARGETS='aarch64 armv7 i686 x86_64':
+    nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build --debug --apk -t {{TARGETS}}"
 
 # build the android app in AAB format
 bundle:

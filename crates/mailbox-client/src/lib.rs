@@ -4,6 +4,8 @@ pub mod store;
 pub mod sync_tracker;
 pub mod toy;
 
+pub use mailbox_server::RegisterPeerRequest;
+
 #[cfg(test)]
 pub mod testing;
 
@@ -30,6 +32,11 @@ pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
 #[async_trait::async_trait]
 pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     fn id(&self) -> MailboxId;
+
+    /// The base URL this client talks to, if it has one.
+    fn url(&self) -> Option<String> {
+        None
+    }
 
     /// Publish an operation to the mailbox for the given topic.
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error>;
@@ -103,8 +110,30 @@ pub trait MailboxItem:
     fn hash(&self) -> Self::Hash;
     fn author(&self) -> Self::Author;
     fn topic(&self) -> Self::Topic;
+    fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
+        Vec::new()
+    }
 }
 
 /// Extra traits for ItemTraits which are feature-dependent.
 pub trait OptionalItemTraits {}
 impl<T> OptionalItemTraits for T {}
+
+/// Node-side sink for per-mailbox unfetched blob-hash tracking. Implemented in
+/// `dashchat-node` over `LocalStore`; kept as a trait here so this crate stays
+/// free of node types.
+#[async_trait::async_trait]
+pub trait UnfetchedBlobTracker: Send + Sync + 'static {
+    async fn record(&self, mailbox_id: &MailboxId, hashes: &[iroh_blobs::Hash]);
+    async fn remove(&self, mailbox_id: &MailboxId, hashes: &[iroh_blobs::Hash]);
+}
+
+/// No-op tracker for tests and contexts that don't persist unfetched blobs.
+#[derive(Clone, Default)]
+pub struct NoopUnfetchedBlobTracker;
+
+#[async_trait::async_trait]
+impl UnfetchedBlobTracker for NoopUnfetchedBlobTracker {
+    async fn record(&self, _mailbox_id: &MailboxId, _hashes: &[iroh_blobs::Hash]) {}
+    async fn remove(&self, _mailbox_id: &MailboxId, _hashes: &[iroh_blobs::Hash]) {}
+}

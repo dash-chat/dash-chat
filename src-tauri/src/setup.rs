@@ -1,36 +1,55 @@
-use std::path::PathBuf;
-
+use dashchat_node::mailbox::fetch_mailbox_health;
 use dashchat_node::Node;
-use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::AppHandle;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
-use crate::{commands::logs::simplify, filesystem::FileSystem};
+use crate::filesystem::FileSystem;
 
-pub(crate) async fn build_node(
-    data_path: PathBuf,
-    notification_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::Notification>>,
-    topic_subscribed_tx: Option<tokio::sync::mpsc::Sender<dashchat_node::topic::TopicId>>,
-) -> anyhow::Result<Node> {
-    let config = if cfg!(feature = "e2e-tests") {
-        let mut config = dashchat_node::NodeConfig::default();
-        config.mailboxes_config.active_interval = std::time::Duration::from_millis(1000);
-        config.mailboxes_config.between_polls_delay = std::time::Duration::from_millis(100);
-        config.mdns_mode = p2panda::network::MdnsDiscoveryMode::Disabled;
-        config
-    } else {
-        dashchat_node::NodeConfig::default()
-    };
-    let node = Node::new(data_path, config, notification_tx, topic_subscribed_tx).await?;
-
+/// Resolve the cloud mailbox id from its `/health` endpoint and register it as a
+/// sync source on the node so operations and blobs can be fetched from it,
+/// returning the resolved mailbox URL. Returns an error (registering nothing)
+/// when the server is unreachable — there is intentionally no fallback id, so
+/// callers retry until the real id is known. `Mailboxes::register` is idempotent.
+pub(crate) async fn track_cloud_mailbox(node: &Node) -> anyhow::Result<String> {
     let mailbox_url = crate::mailbox::default_mailbox_url();
-    let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
-        crate::mailbox::PRODUCTION_MAILBOX_ID.to_string(),
-        mailbox_url,
-    );
-    node.mailboxes.register(mailbox_client).await;
+    let health = fetch_mailbox_health(&mailbox_url).await?;
+    // Add the mailbox's dialing address to the p2panda address book so the iroh
+    // blob downloader can reach it by EndpointId; without this the mailbox is
+    // known only by id and is not dialable.
+    node.insert_peer_addr(health.endpoint_addr).await?;
+    if !node.mailboxes.is_tracked(&health.mailbox_id).await {
+        let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
+            health.mailbox_id,
+            mailbox_url.clone(),
+            node.endpoint_id(),
+            node.unfetched_blob_tracker(),
+        );
+        node.mailboxes.register(mailbox_client).await;
+    }
+    Ok(mailbox_url)
+}
 
-    Ok(node)
+/// Track the cloud mailbox (so we can fetch from it) and additionally register
+/// our own dialing address with it so its blob fetch pool can dial us to fetch
+/// blobs we publish. The endpoint-online wait and self-registration are only
+/// needed when we act as a blob *source*, so the iOS push extension — which only
+/// fetches and runs under a ~30s budget — calls [`track_cloud_mailbox`] directly
+/// to avoid the up-to-10s `wait_endpoint_online` stall.
+pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
+    let mailbox_url = track_cloud_mailbox(node).await?;
+    // Tell the mailbox our own dialing address so its blob fetch pool can reach
+    // us as a source (without this the mailbox knows our EndpointId from blip
+    // uploads but cannot dial us). Wait for the relay first so the address we
+    // send includes our relay URL; otherwise a NAT'd mailbox cannot dial us
+    // back. On failure we return Err so the retry wrapper runs us again.
+    dashchat_utils::endpoint::wait_endpoint_online(
+        node.config.use_relay,
+        &node.iroh_endpoint().await?,
+        std::time::Duration::from_secs(10),
+    )
+    .await?;
+    node.register_with_mailbox(&mailbox_url).await?;
+    Ok(())
 }
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
@@ -44,11 +63,6 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let fs = FileSystem::new(&app_handle)?;
     let local_data_path = fs.app_data_dir().clone();
-
-    let notified_operations_store =
-        crate::notifications::NotifiedOperationsStore::open(&fs.notified_operations_db_path())
-            .await?;
-    app_handle.manage(notified_operations_store);
 
     #[cfg(not(mobile))]
     {
@@ -68,32 +82,12 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         }
     }
 
-    let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
-
-    #[cfg(mobile)]
-    let (topic_subscribed_tx, topic_subscribed_rx) = tokio::sync::mpsc::channel(100);
-
-    let node = build_node(
-        local_data_path,
-        Some(notification_tx),
-        #[cfg(mobile)]
-        Some(topic_subscribed_tx),
-        #[cfg(not(mobile))]
-        None,
-    )
-    .await?;
-
-    app_handle.manage(node.clone());
-
-    #[cfg(mobile)]
-    {
-        crate::notifications::push_notifications::setup_push_notifications(
-            app_handle.clone(),
-            topic_subscribed_rx,
-        )?;
-    }
-
-    crate::mailbox::spawn_local_mailbox_mdns_discovery(&app_handle, node)?;
+    // Keep the node behind a swappable container so it can be torn down when the
+    // iOS app is backgrounded (releasing SQLite locks) and rebuilt on foreground.
+    // AppNode::spawn owns the notification and topic-subscribed channels and wires
+    // up the notification loop and push notifications internally.
+    let app_node = crate::app_node::AppNode::spawn(&app_handle, local_data_path).await?;
+    app_handle.manage(app_node);
 
     // Start the local mailbox server after the node is managed so it can
     // derive a stable mDNS instance name from the device id.
@@ -101,8 +95,6 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     if crate::settings::load_mailbox_enabled(&app_handle) {
         crate::mailbox::server::set_local_mailbox_server_enabled(&app_handle, true).await?;
     }
-
-    spawn_notification_loop(app_handle.clone(), notification_rx);
 
     Ok(())
 }
@@ -162,51 +154,9 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
             ])
             .build(),
     )?;
+
+    // Now that the log plugin is registered, route panics through it.
+    crate::utils::install_panic_hook();
+
     Ok(())
-}
-
-fn spawn_notification_loop(
-    app_handle: AppHandle,
-    mut notification_rx: tokio::sync::mpsc::Receiver<dashchat_node::Notification>,
-) {
-    tauri::async_runtime::spawn(async move {
-        while let Some(notification) = notification_rx.recv().await {
-            log::info!("Received notification: {:?}", notification);
-
-            let body = match notification.payload.as_ref() {
-                Some(payload) => match encode_cbor(payload) {
-                    Ok(bytes) => Some(Body::new(&bytes[..])),
-                    Err(err) => {
-                        log::error!("Failed to serialize payload: {err:?}");
-                        continue;
-                    }
-                },
-                None => None,
-            };
-            let simplified_operation = match simplify(
-                notification.topic,
-                notification.header.hash(),
-                notification.header.clone(),
-                body,
-            ) {
-                Ok(o) => o,
-                Err(err) => {
-                    log::error!("Failed to simplify operation: {err:?}");
-                    continue;
-                }
-            };
-
-            if let Err(err) = app_handle.emit("p2panda://new-operation", simplified_operation) {
-                log::error!("Failed to emit operation: {err:?}");
-            }
-
-            crate::notifications::show_sync_notification(&app_handle, &notification).await;
-
-            // Small delay between emissions to avoid overwhelming the WebKitGTK
-            // event loop with rapid-fire events (which can freeze the webview).
-            if cfg!(feature = "e2e-tests") {
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            }
-        }
-    });
 }

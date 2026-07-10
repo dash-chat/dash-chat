@@ -15,8 +15,8 @@
 
 	const actionColors = {
 		primary: {
-			primaryTextIos: 'text-blue-500',
-			primaryTextMaterial: 'text-blue-600',
+			primaryTextIos: 'text-brand-primary',
+			primaryTextMaterial: 'text-brand-primary',
 		},
 		normal: {},
 		danger: {

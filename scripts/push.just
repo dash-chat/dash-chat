@@ -5,7 +5,7 @@ server:
     #!/usr/bin/env bash
     set -euo pipefail
     test -f crates/push-notifications-server/service-account-key.json || { echo "ERROR: crates/push-notifications-server/service-account-key.json not found"; exit 1; }
-    cargo run -p push-notifications-server -- --db-path "$PWD/.dbs/dev/push-notifications-server/server.db" --service-account-key crates/push-notifications-server/service-account-key.json --addr 0.0.0.0:3001
+    cargo run -p push-notifications-server -- --db-path "$PWD/.dbs/dev/push-notifications-server/server.db" --service-account-key crates/push-notifications-server/service-account-key.json --addr "0.0.0.0:${PUSH_NOTIFICATIONS_SERVER_PORT:-3001}"
 
 # copy a Google service account key to the push notifications server and restart it
 deploy-service-account-key file="crates/push-notifications-server/service-account-key.json":

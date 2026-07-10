@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/badge/badge.js';
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
-	import { type ChatSummary } from 'dash-chat-stores';
+	import { type ChatSummary, type MediaAttachment } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Badge } from 'konsta/svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
@@ -21,6 +21,17 @@
 		s.type === 'GroupChat'
 			? `/group-chat/${s.chatId}`
 			: `/direct-chats/${s.chatId}`;
+
+	function summarizeMessage(content: {
+		message: string;
+		media: MediaAttachment | null;
+	}): string {
+		if (content.message) return content.message;
+		if (!content.media) return '';
+		if (content.media.kind === 'file') return content.media.file.name;
+		const n = content.media.photos.length;
+		return n > 1 ? m.photosCount({ count: n }) : m.photo();
+	}
 </script>
 
 <TitleTruncatedListItem
@@ -74,9 +85,9 @@
 				{:else if summary.lastEvent.kind === 'message'}
 					{#if summary.type === 'GroupChat'}
 						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
-						{summary.lastEvent.text}
+						{summarizeMessage(summary.lastEvent.content)}
 					{:else}
-						{summary.lastEvent.text}
+						{summarizeMessage(summary.lastEvent.content)}
 					{/if}
 				{:else}
 					{groupEventText(summary.lastEvent)}

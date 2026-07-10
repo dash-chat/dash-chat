@@ -1,15 +1,14 @@
+import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
 export type ConnectionStatus = 'connected' | 'local' | 'disconnected';
 
-export class ConnectionStatusIndicator {
-	constructor(private agent: WebdriverIO.Browser) {}
-
-	chip = this.agent.$(tid('connection-status'));
-	dialog = this.agent.$(tid('connection-status-dialog'));
-	dialogTitle = this.agent.$(tid('connection-status-dialog-title'));
-	dialogDescription = this.agent.$(tid('connection-status-dialog-description'));
-	dialogCloseButton = this.agent.$(tid('connection-status-dialog-close'));
+export class ConnectionStatusIndicator extends TestHelper {
+	chip = this.el(tid('connection-status'));
+	dialog = this.el(tid('connection-status-dialog'));
+	dialogTitle = this.el(tid('connection-status-dialog-title'));
+	dialogDescription = this.el(tid('connection-status-dialog-description'));
+	dialogCloseButton = this.el(tid('connection-status-dialog-close'));
 
 	/** Read the chip's data-status. Absence === 'connected'. */
 	async status(): Promise<ConnectionStatus> {

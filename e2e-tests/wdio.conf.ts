@@ -4,13 +4,16 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
+import { UI_TIMEOUT } from './helpers/timeouts';
 import { allocateDriverPorts, allocatePort } from './setup/allocate-port';
 import {
-	killAndWait,
 	killAllE2EProcesses,
+	killAndWait,
 	killLeftoverMailboxServers,
 	killPortHolders,
 } from './setup/cleanup';
+import { spawnMailboxServer } from './setup/mailbox-server';
+import { remoteMailboxUrl } from './setup/test-env';
 import { waitForPortFree, waitForPortListening } from './setup/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -81,7 +84,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	},
 
 	logLevel: 'warn',
-	waitforTimeout: 10_000,
+	waitforTimeout: UI_TIMEOUT,
 
 	framework: 'mocha',
 	mochaOpts: {
@@ -105,6 +108,24 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		killLeftoverMailboxServers();
 		killPortHolders(ALL_PORTS);
 
+		const mailboxInfoPath = path.join(ROOT, '.dbs', 'e2e', 'mailbox-info.json');
+
+		// When MAILBOX_URL names an allowlisted deployment environment, run
+		// against its cloud mailbox instead of spawning a local server. Specs
+		// that drive the mailbox's lifecycle skip themselves via
+		// isRemoteMailbox().
+		const remoteUrl = remoteMailboxUrl();
+		if (remoteUrl !== null) {
+			process.env.MAILBOX_URL = remoteUrl;
+			mkdirSync(path.dirname(mailboxInfoPath), { recursive: true });
+			writeFileSync(
+				mailboxInfoPath,
+				JSON.stringify({ remote: true, url: remoteUrl }),
+			);
+			console.log(`Using remote mailbox at ${remoteUrl}`);
+			return;
+		}
+
 		// Start a local mailbox server so e2e tests don't hit the internet.
 		const mailboxPort = allocatePort();
 		const mailboxUrl = `http://localhost:${mailboxPort}`;
@@ -118,24 +139,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		mkdirSync(path.dirname(mailboxDb), { recursive: true });
 
 		console.log(`Starting local mailbox server on ${mailboxUrl}...`);
-		// `detached: true` puts the mailbox (cargo + its mailbox-server child) in
-		// its OWN process group. Without this, the mailbox sits in the wdio
-		// launcher's process group; when a worker crashes mid-spec and wdio kills
-		// its worker group on retry, mailbox can get reaped as collateral damage.
-		mailboxServer = spawn(
-			'cargo',
-			[
-				'run',
-				'-p',
-				'mailbox-server',
-				'--',
-				'--db-path',
-				mailboxDb,
-				'--addr',
-				`0.0.0.0:${mailboxPort}`,
-			],
-			{ cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'], detached: true },
-		);
+		mailboxServer = spawnMailboxServer(mailboxPort, mailboxDb);
 		console.log(`[mailbox-server] spawned (cargo pid=${mailboxServer.pid})`);
 		mailboxServer.stderr?.on('data', (data: Buffer) => {
 			console.error(`[mailbox-server] ${data.toString().trim()}`);
@@ -169,7 +173,6 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 		// Persist mailbox info so individual specs can suspend/resume it to
 		// drive the offline-UX state transitions.
-		const mailboxInfoPath = path.join(ROOT, '.dbs', 'e2e', 'mailbox-info.json');
 		writeFileSync(
 			mailboxInfoPath,
 			JSON.stringify({

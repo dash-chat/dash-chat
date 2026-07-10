@@ -3,20 +3,20 @@ import { reactive, signal } from 'signalium';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
-import { waitForOperation } from '../p2panda/logs-client';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
 import {
 	ChatId,
+	ChatReaction,
 	ChatSummary,
 	ChatSummaryLastEvent,
 	GroupControlEvent,
 	GroupInfo,
-	MessageContent,
+	MessagesStore,
+	OutgoingMedia,
 	Payload,
-	ReadMessagesStore,
-	getMessageText,
+	mediaBundleToAttachment,
 } from '../types';
 import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
 import { type IGroupChatClient } from './group-chat-client';
@@ -33,7 +33,7 @@ export interface GroupMemberWithProfile {
 	member: boolean;
 }
 
-export class GroupChatStore implements ReadMessagesStore {
+export class GroupChatStore implements MessagesStore {
 	private membersVersion = signal(0);
 
 	constructor(
@@ -92,7 +92,10 @@ export class GroupChatStore implements ReadMessagesStore {
 					if (body.payload.type === 'Message') {
 						messages[operation.hash] = {
 							hash: operation.hash,
-							content: getMessageText(body.payload.payload),
+							content: {
+								message: body.payload.payload.message,
+								media: mediaBundleToAttachment(body.payload.payload.media),
+							},
 							author,
 							seqNum: operation.header.seq_num,
 							timestamp: operation.header.timestamp,
@@ -227,7 +230,7 @@ export class GroupChatStore implements ReadMessagesStore {
 		const messageEvent: ChatSummaryLastEvent | undefined = lastMessage
 			? {
 					kind: 'message',
-					text: lastMessage.content,
+					content: lastMessage.content,
 					authorName: await this.nameForDevice(lastMessage.author),
 					timestamp: lastMessage.timestamp,
 				}
@@ -362,19 +365,15 @@ export class GroupChatStore implements ReadMessagesStore {
 		await this.client.markMessagesRead(this.chatId, messageHashes);
 	}
 
-	async sendMessage(text: string) {
-		const myDeviceId = await this.contactsStore.myDeviceId();
-		const content: MessageContent = { v: '1', message: text, media: null };
-		await Promise.all([
-			waitForOperation(this.logsStore.logsClient, (op, topicId) => {
-				if (topicId !== this.chatId) return false;
-				if (op.body?.payload.type !== 'Message') return false;
-				if (op.header.verifying_key !== myDeviceId) return false;
-				if (getMessageText(op.body.payload.payload) !== text) return false;
-				return true;
-			}),
-			this.client.sendMessage(this.chatId, content),
-		]);
+	async sendMessage(input: {
+		message: string;
+		media: OutgoingMedia | null;
+	}): Promise<Hash> {
+		return this.client.sendMessage(this.chatId, input.message, input.media);
+	}
+
+	async sendReaction(reaction: ChatReaction) {
+		await this.client.sendReaction(this.chatId, reaction);
 	}
 }
 

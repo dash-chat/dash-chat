@@ -41,9 +41,9 @@ export class SettingsStore {
 		return 'system';
 	});
 
-	qrColor = reactive(async () => {
+	qrColor = reactive(async (): Promise<string | null> => {
 		const settings = await this.settings();
-		return settings.qr_color || '#007aff';
+		return settings.qr_color || null;
 	});
 
 	localMailboxEnabled = reactive(async () => {

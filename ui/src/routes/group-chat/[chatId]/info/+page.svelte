@@ -84,6 +84,28 @@
 	// 	loading = false;
 	// }
 
+	async function handleRemove() {
+		if (!dialogActorId) {
+			return {
+				success: false as const,
+				error: m.errorUnexpected(),
+			};
+		}
+
+		try {
+			await groupChatStore.client.removeMember(chatId, dialogActorId);
+			dialogType = null;
+			dialogActorId = null;
+			return { success: true as const };
+		} catch (e) {
+			console.error(e);
+			return {
+				success: false as const,
+				error: m.errorUnexpected(),
+			};
+		}
+	}
+
 	async function handleLeaveGroup() {
 		try {
 			await chatsStore.leaveGroup(chatId);
@@ -173,9 +195,14 @@
 							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
 						</Avatar>
 
-						<span class="text-xl font-semibold">{info.name}</span>
+						<span
+							class="text-xl font-semibold break-words text-center max-w-full"
+							>{info.name}</span
+						>
 
-						<span class="quiet">{info.description}</span>
+						<span class="quiet break-words text-center max-w-full"
+							>{info.description}</span
+						>
 					</div>
 
 					{#await $members then members}
@@ -195,11 +222,15 @@
 							{/if}
 
 							{#each Object.entries(members) as [actorId, member]}
-								<!--
-								  For member actions, put back:
-									onclick={() => (sheetOpenFor = actorId)}
-							  -->
-								<ListItem link chevron={false} title={member.profile?.name}>
+								<ListItem
+									link
+									chevron={false}
+									title={member.profile?.name}
+									data-testid={`group-info-member-${member.profile?.name}`}
+									onclick={me.admin
+										? () => (sheetOpenFor = actorId)
+										: undefined}
+								>
 									{#snippet media()}
 										<Avatar
 											image={member.profile?.avatar}
@@ -214,60 +245,6 @@
 										{/if}
 									{/snippet}
 								</ListItem>
-
-								<Sheet
-									class="pb-safe"
-									opened={sheetOpenFor === actorId}
-									onBackdropClick={() => (sheetOpenFor = null)}
-								>
-									<div
-										class="flex-col gap-4 py-4"
-										style="display: flex; align-items: center;"
-									>
-										<Avatar
-											image={member.profile?.avatar}
-											initials={member.profile?.name.slice(0, 2)}
-											size={32}
-										/>
-										<span class="font-semibold">{member.profile?.name}</span>
-									</div>
-
-									<ActionList>
-										{#if me.admin}
-											{#if member.admin}
-												<ListAction
-													title={m.demoteFromAdministrator()}
-													onClick={() => {
-														dialogType = 'demote';
-														dialogActorId = actorId;
-														sheetOpenFor = null;
-													}}
-													icon={mdiKeyVariant}
-												/>
-											{:else}
-												<ListAction
-													title={m.promoteToAdministrator()}
-													onClick={() => {
-														dialogType = 'promote';
-														dialogActorId = actorId;
-														sheetOpenFor = null;
-													}}
-													icon={mdiKeyVariant}
-												/>
-											{/if}
-
-											<ListAction
-												title={m.removeMember()}
-												onClick={() => {
-													dialogType = 'remove';
-													dialogActorId = actorId;
-													sheetOpenFor = null;
-												}}
-												icon={mdiDelete}
-											/>
-										{/if}
-									</ActionList>
-								</Sheet>
 							{/each}
 						</ActionList>
 
@@ -289,6 +266,74 @@
 							/> -->
 							</ActionList>
 						{/if}
+
+						{@const sheetMember = sheetOpenFor ? members[sheetOpenFor] : null}
+						<Sheet
+							class="pb-safe"
+							opened={sheetOpenFor !== null}
+							onBackdropClick={() => (sheetOpenFor = null)}
+						>
+							{#if sheetMember}
+								<div
+									class="flex-col gap-4 py-4"
+									style="display: flex; align-items: center;"
+								>
+									<Avatar
+										image={sheetMember.profile?.avatar}
+										initials={sheetMember.profile?.name.slice(0, 2)}
+										size={32}
+									/>
+									<span class="font-semibold">{sheetMember.profile?.name}</span>
+								</div>
+
+								<ActionList>
+									{#if me.admin}
+										<!-- {#if sheetMember.admin}
+											<ListAction
+												title={m.demoteFromAdministrator()}
+												onClick={() => {
+													dialogType = 'demote';
+													dialogActorId = sheetOpenFor;
+													sheetOpenFor = null;
+												}}
+												icon={mdiKeyVariant}
+											/>
+										{:else}
+											<ListAction
+												title={m.promoteToAdministrator()}
+												onClick={() => {
+													dialogType = 'promote';
+													dialogActorId = sheetOpenFor;
+													sheetOpenFor = null;
+												}}
+												icon={mdiKeyVariant}
+											/>
+										{/if} -->
+
+										{#if sheetOpenFor === me.agentId}
+											<ListAction
+												title={m.leaveGroup()}
+												actionType="danger"
+												icon={mdiExport}
+												onClick={() => (dialogType = 'leave')}
+												data-testid="group-info-leave-self"
+											/>
+										{:else}
+											<ListAction
+												title={m.removeMember()}
+												onClick={() => {
+													dialogType = 'remove';
+													dialogActorId = sheetOpenFor;
+													sheetOpenFor = null;
+												}}
+												icon={mdiDelete}
+												data-testid="group-info-remove-member"
+											/>
+										{/if}
+									{/if}
+								</ActionList>
+							{/if}
+						</Sheet>
 					{/await}
 				</div>
 			</div>
@@ -351,33 +396,19 @@
 			{/snippet}
 		</Dialog> -->
 
-		<!-- <Dialog
+		<ActionDialog
 			opened={dialogType === 'remove' && dialogActorId !== null}
-			onBackdropClick={() => {
+			onCancel={() => {
 				dialogType = null;
 				dialogActorId = null;
 			}}
+			onConfirm={handleRemove}
 			title={m.removeMember()}
+			confirmText={m.remove()}
+			confirmTestId="group-info-remove-member-confirm"
 		>
 			<span>{m.areYouSureRemoveMember()}</span>
-			{#snippet buttons()}
-				<DialogButton
-					onClick={() => {
-						dialogType = null;
-						dialogActorId = null;
-					}}
-				>
-					{m.cancel()}
-				</DialogButton>
-				<DialogButton
-					strong
-					onClick={() => dialogActorId && handleRemove(dialogActorId)}
-					disabled={loading}
-				>
-					{loading ? '...' : m.remove()}
-				</DialogButton>
-			{/snippet}
-		</Dialog> -->
+		</ActionDialog>
 
 		<ActionDialog
 			opened={dialogType === 'leave'}

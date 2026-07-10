@@ -2,7 +2,8 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { getContext } from 'svelte';
+	import { getContext, setContext } from 'svelte';
+	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
 	import type {
 		ChatsStore,
@@ -22,14 +23,10 @@
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
-	import MessageInput from '$lib/components/MessageInput.svelte';
+	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import {
-		messagePosition,
-		senderColor,
-	} from '$lib/components/messages/message-helpers';
-	import { showToast } from '$lib/utils/toasts';
+	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
@@ -39,6 +36,7 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
+	setContext('messages-store', store);
 
 	const readTracker = createReadMessagesTracker(store);
 	const readMessageOnObserve = readTracker.observe;
@@ -50,7 +48,6 @@
 	const readMessageHashes = useReactivePromise(store.readMessageHashes);
 	const unreadCount = useReactivePromise(store.unreadCount);
 
-	let messageText = $state('');
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
 	let reverseScrollPage: ReturnType<typeof ReverseScrollPage> | undefined =
@@ -59,20 +56,19 @@
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
-	async function sendMessage() {
-		const text = messageText;
-		if (!text || text.trim() === '') return;
-		messageText = '';
-		try {
-			await store.sendMessage(text);
-			capturedUnreadHash = null;
-			unreadDividerCaptured = false;
+	// Scroll the message we just sent into view once its bubble mounts.
+	let justSentMessageHash: Hash | null = $state(null);
+	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
+		if (hash === justSentMessageHash) {
+			justSentMessageHash = null;
 			setTimeout(() => reverseScrollPage?.scrollToBottom());
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-			console.error('Failed to send group message', e);
-			messageText = text;
 		}
+	};
+
+	function onMessageSent(messageHash: Hash) {
+		justSentMessageHash = messageHash;
+		capturedUnreadHash = null;
+		unreadDividerCaptured = false;
 	}
 
 	const theme = $derived(useTheme());
@@ -241,6 +237,7 @@
 												<div
 													class="self-end max-w-[85%]"
 													data-message-hash={hash}
+													use:scrollToBottomOnMount={hash}
 												>
 													<MessageFromMe
 														{message}
@@ -248,7 +245,6 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
-														onToggleReaction={() => {}}
 													/>
 												</div>
 											{:else}
@@ -256,36 +252,22 @@
 													m.deviceIds.includes(message.author),
 												)}
 												<div
-													class="row items-end gap-2 self-start max-w-[85%]"
+													class="self-start max-w-[85%]"
 													data-message-hash={hash}
 													use:readMessageOnObserve={readHashes?.has(hash)
 														? null
 														: hash}
 												>
-													{#if position === 'last' || position === 'single'}
-														<Avatar
-															image={author?.profile?.avatar}
-															initials={author?.profile?.name.slice(0, 2)}
-															size="2rem"
-														/>
-													{:else}
-														<div class="shrink-0" style="width: 2rem"></div>
-													{/if}
 													<MessageFromOthers
 														{message}
 														{position}
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
-														onToggleReaction={() => {}}
-														sender={(position === 'first' ||
-															position === 'single') &&
-														author?.profile?.name
-															? {
-																	name: author.profile.name,
-																	color: senderColor(message.author),
-																}
-															: undefined}
+														sender={author?.profile}
+														showSenderName={position === 'first' ||
+															position === 'single'}
+														showAvatar
 													/>
 												</div>
 											{/if}
@@ -313,17 +295,24 @@
 
 	<div
 		bind:clientHeight={bottomBarHeight}
-		class="absolute bottom-0 inset-x-0 z-20"
-		class:bg-md-light-surface={theme === 'material'}
-		class:dark:bg-md-dark-surface={theme === 'material'}
+		class="absolute bottom-0 inset-x-0 z-30"
+		class:bg-page-surface={theme === 'material'}
 	>
-		{#await $me then me}
-			<MessageInput
-				bind:value={messageText}
-				onSend={sendMessage}
-				disabled={!me.member}
-				placeholder={me.member ? m.typeMessage() : m.youAreNoLongerAMember()}
-			/>
+		{#await Promise.all([$me, $info]) then [me, info]}
+			{#if me.member}
+				<MessageComposer
+					{store}
+					destinationName={info.name}
+					onSent={onMessageSent}
+				/>
+			{:else}
+				<div
+					class="pb-safe-4 quiet px-6 pt-4 text-center text-sm"
+					data-testid="group-chat-not-member"
+				>
+					{m.youAreNoLongerAMember()}
+				</div>
+			{/if}
 		{/await}
 	</div>
 </div>

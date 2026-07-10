@@ -1,8 +1,13 @@
+mod app_node;
+mod blob_protocol;
 mod commands;
 mod device_info;
+mod error;
 mod filesystem;
 mod i18n;
 mod mailbox;
+#[cfg(desktop)]
+mod media_drop;
 mod notifications;
 mod settings;
 mod setup;
@@ -37,7 +42,46 @@ pub fn run() {
         builder = builder
             .plugin(tauri_plugin_virtual_keyboard_padding::init())
             .plugin(tauri_plugin_barcode_scanner::init())
+            .plugin(tauri_plugin_view::init())
             .plugin(tauri_plugin_system_bars_styles::init());
+    }
+    #[cfg(target_os = "android")]
+    {
+        // Registered first so it binds the process to the default network before
+        // the iroh endpoint creates its sockets (bindProcessToNetwork only
+        // affects sockets opened after the bind).
+        builder = builder.plugin(tauri_plugin_android_fs::init());
+        builder = builder.plugin(tauri_plugin_medialibrary::init());
+    }
+    #[cfg(target_os = "ios")]
+    {
+        builder = builder.plugin(tauri_plugin_ios_photos::init());
+        // Quiesce the node (release SQLite locks) on background and rebuild it on
+        // foreground so iOS can suspend the app without a 0xdead10cc kill.
+        builder = builder.plugin(
+            tauri_plugin_ios_lifecycle::Builder::new()
+                .on_pause(|app| async move {
+                    use tauri::Manager;
+                    if let Some(app_node) = app
+                        .try_state::<app_node::AppNode>()
+                        .map(|s| s.inner().clone())
+                    {
+                        app_node.pause().await;
+                    }
+                })
+                .on_resume(|app| async move {
+                    use tauri::Manager;
+                    if let Some(app_node) = app
+                        .try_state::<app_node::AppNode>()
+                        .map(|s| s.inner().clone())
+                    {
+                        if let Err(err) = app_node.resume(&app).await {
+                            log::error!("Failed to rebuild node on foreground: {err:?}");
+                        }
+                    }
+                })
+                .build(),
+        );
     }
     #[cfg(not(mobile))]
     {
@@ -48,6 +92,8 @@ pub fn run() {
             // MCP for Claude Code to control the tauri app
             builder = builder.plugin(tauri_plugin_mcp_bridge::init());
         } else {
+            // single-instance must be registered before deep-link so it can
+            // forward deep link URLs from a second process to this one.
             builder = builder
                 .plugin(tauri_plugin_single_instance::init(
                     move |app, _argv, _cwd| {
@@ -70,6 +116,7 @@ pub fn run() {
     }
 
     builder
+        .register_asynchronous_uri_scheme_protocol("irohblob", blob_protocol::handle)
         .invoke_handler(tauri::generate_handler![
             device_info::display::log_webview_info,
             commands::logs::get_log,
@@ -91,6 +138,7 @@ pub fn run() {
             commands::chats::create_group,
             commands::chats::set_group_info,
             commands::chats::add_group_member,
+            commands::chats::remove_group_member,
             commands::chats::leave_group,
             commands::chats::get_group_chats,
             commands::chats::get_group_members,
@@ -102,8 +150,12 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_all_ids,
             commands::mailbox_state::mailbox_subscribe_connection_state,
             commands::mailbox_state::mailbox_subscribe_sync_state,
+            commands::mailbox_state::mailbox_subscribe_cloud_id,
+            commands::media::save_blob_to_cache,
+            #[cfg(feature = "e2e-tests")]
+            commands::testing::close_iroh_endpoint,
         ])
-        // .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
@@ -112,7 +164,22 @@ pub fn run() {
         .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
+        .on_window_event(|window, event| match event {
+            #[cfg(desktop)]
+            tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {
+                media_drop::handle_drop_event(window, paths)
+            }
+            _ => {}
+        })
         .setup(move |app| {
+            #[cfg(any(target_os = "linux", windows))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                if let Err(err) = app.deep_link().register_all() {
+                    log::error!("Failed to register deep links: {err:?}");
+                }
+            }
+
             let handle = app.handle().clone();
 
             let result: anyhow::Result<()> =

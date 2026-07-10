@@ -1,29 +1,34 @@
+import { Composer } from '../../components/composer';
 import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
+import { Messages } from '../../components/messages';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
-import { TestPage } from '../test-page';
+import { TestHelper } from '../test-helper';
 
 export type MessageStatus = 'sending' | 'local' | 'cloud';
 export type { ConnectionStatus } from '../../components/connection-status-indicator';
 
-export class DirectChatPage extends TestPage {
-	page = this.agent.$(tid('direct-chat-page'));
-	back = this.agent.$(tid('direct-chat-back'));
-	searchBack = this.agent.$(tid('direct-chat-search-back'));
-	settingsLink = this.agent.$(tid('direct-chat-settings-link'));
-	peerName = this.agent.$(tid('direct-chat-peer-name'));
-	peerHeader = this.agent.$(tid('direct-chat-peer-header'));
-	scrollBottom = this.agent.$(tid('chat-scroll-bottom'));
-	unreadBadge = this.agent.$(tid('chat-unread-badge'));
-	unreadDivider = this.agent.$(tid('direct-chat-unread-divider'));
-	acceptButton = this.agent.$(tid('direct-chat-accept-btn'));
-	rejectButton = this.agent.$(tid('direct-chat-reject-btn'));
-	acceptConfirm = this.agent.$(tid('direct-chat-accept-confirm'));
-	rejectConfirm = this.agent.$(tid('direct-chat-reject-confirm'));
-	messages = this.agent.$(tid('direct-chat-messages'));
-	messageInput = this.agent.$(tid('message-input-textarea'));
-	emojiButton = this.agent.$(tid('message-input-emoji'));
-	messageStatus = this.agent.$(tid('message-status'));
+export class DirectChatPage extends TestHelper {
+	page = this.el(tid('direct-chat-page'));
+	back = this.el(tid('direct-chat-back'));
+	searchBack = this.el(tid('direct-chat-search-back'));
+	searchInput = this.el(tid('direct-chat-search-input'));
+	searchResultsCount = this.el(tid('search-results-count'));
+	settingsLink = this.el(tid('direct-chat-settings-link'));
+	peerName = this.el(tid('direct-chat-peer-name'));
+	peerHeader = this.el(tid('direct-chat-peer-header'));
+	acceptButton = this.el(tid('direct-chat-accept-btn'));
+	rejectButton = this.el(tid('direct-chat-reject-btn'));
+	acceptConfirm = this.el(tid('direct-chat-accept-confirm'));
+	rejectConfirm = this.el(tid('direct-chat-reject-confirm'));
+	messageStatus = this.el(tid('message-status'));
+	readMore = this.el(tid('message-read-more'));
+	messages = new Messages(
+		this.agent,
+		'direct-chat-messages',
+		'direct-chat-unread-divider',
+	);
+	composer = new Composer(this.agent);
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
 
@@ -48,17 +53,9 @@ export class DirectChatPage extends TestPage {
 		}, tid('message-input-textarea'));
 	}
 
-	async waitForMessage(text: string, timeout = 25_000) {
-		await this.agent.waitUntil(
-			async () =>
-				this.agent.execute(
-					(sel: string, t: string) =>
-						document.querySelector(sel)?.textContent?.includes(t) ?? false,
-					tid('direct-chat-messages'),
-					text,
-				),
-			{ timeout, timeoutMsg: `Message "${text}" not found` },
-		);
+	async searchFor(query: string) {
+		await this.searchInput.waitForExist();
+		await this.typeInto(tid('direct-chat-search-input'), query);
 	}
 
 	/** Read the data-status of the most recent message-status indicator. */
@@ -73,18 +70,28 @@ export class DirectChatPage extends TestPage {
 		}, tid('message-status'));
 	}
 
-	scrollBottomButtonVisible(): Promise<boolean> {
-		return this.scrollBottom.isExisting();
-	}
-
-	async unreadBadgeText(): Promise<string | null> {
-		if (!(await this.unreadBadge.isExisting())) return null;
-		const text = (await this.unreadBadge.getText()).trim();
-		return text === '' ? null : text;
-	}
-
-	async clickScrollBottomButton(): Promise<void> {
-		await this.scrollBottom.click();
+	/** Read the data-status of the status indicator inside the bubble whose text contains `text`. */
+	async messageStatusFor(text: string): Promise<MessageStatus | null> {
+		return this.agent.execute(
+			(messagesSel: string, statusSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (!wrapper.textContent?.includes(t)) continue;
+					const el = wrapper.querySelector(statusSel) as HTMLElement | null;
+					const status = el?.dataset.status;
+					if (status === 'sending' || status === 'local' || status === 'cloud') {
+						return status;
+					}
+					return null;
+				}
+				return null;
+			},
+			tid('direct-chat-messages'),
+			tid('message-status'),
+			text,
+		);
 	}
 
 	isPeerNamePresent(): Promise<boolean> {

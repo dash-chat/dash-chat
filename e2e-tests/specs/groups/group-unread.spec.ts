@@ -1,4 +1,5 @@
 import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
+import { UI_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgent } from '../../setup/setup-agents';
 
 describe('Group unread messages', () => {
@@ -26,14 +27,21 @@ describe('Group unread messages', () => {
 		let overflow = await agent1.groupChatPage.scroll.overflow();
 		while (overflow < REQUIRED_OVERFLOW && i < MAX_FILLER) {
 			await agent1.groupChatPage.sendMessage(`filler ${i}`);
-			await agent1.groupChatPage.waitForMessage(`filler ${i}`, 10_000);
+			await agent1.groupChatPage.messages.waitForMessage(
+				`filler ${i}`,
+				UI_TIMEOUT,
+			);
 			overflow = await agent1.groupChatPage.scroll.overflow();
 			i++;
 		}
 		expect(overflow).toBeGreaterThanOrEqual(REQUIRED_OVERFLOW);
-		await agent1.waitUntil(async () => agent1.groupChatPage.scroll.isAtBottom());
-		await agent2.groupChatPage.waitForMessage(`filler ${i - 1}`);
-		await agent2.waitUntil(async () => agent2.groupChatPage.scroll.isAtBottom());
+		await agent1.waitUntil(async () =>
+			agent1.groupChatPage.scroll.isAtBottom(),
+		);
+		await agent2.groupChatPage.messages.waitForMessage(`filler ${i - 1}`);
+		await agent2.waitUntil(async () =>
+			agent2.groupChatPage.scroll.isAtBottom(),
+		);
 	});
 
 	it('shows unread badge when a peer message arrives while scrolled up', async () => {
@@ -41,32 +49,46 @@ describe('Group unread messages', () => {
 		expect(await agent2.groupChatPage.scroll.isAtBottom()).toBe(false);
 
 		await agent1.groupChatPage.sendMessage('peer while scrolled up');
-		await agent2.groupChatPage.waitForMessage('peer while scrolled up');
+		await agent2.groupChatPage.messages.waitForMessage(
+			'peer while scrolled up',
+		);
 
 		expect(await agent2.groupChatPage.scroll.isAtBottom()).toBe(false);
-		expect(await agent2.groupChatPage.scrollBottomButtonVisible()).toBe(true);
-		expect(await agent2.groupChatPage.unreadBadgeText()).toBeTruthy();
+		expect(await agent2.groupChatPage.messages.scrollBottom.isExisting()).toBe(
+			true,
+		);
+		expect(await agent2.groupChatPage.messages.unreadBadgeText()).toBeTruthy();
 
-		await agent2.groupChatPage.unreadDivider.waitForExist();
+		await agent2.groupChatPage.messages.unreadDivider.waitForExist();
 		expect(
-			await agent2.groupChatPage.unreadDividerPrecedes('peer while scrolled up'),
+			await agent2.groupChatPage.messages.unreadDividerPrecedes(
+				'peer while scrolled up',
+			),
 		).toBe(true);
 	});
 
 	it('clicking scroll-to-bottom returns to bottom and clears unread badge', async () => {
 		await agent2.groupChatPage.scroll.scrollUp();
 		await agent1.groupChatPage.sendMessage('unread badge precondition');
-		await agent2.groupChatPage.waitForMessage('unread badge precondition');
-		await agent2.waitUntil(
-			async () => (await agent2.groupChatPage.unreadBadgeText()) !== null,
+		await agent2.groupChatPage.messages.waitForMessage(
+			'unread badge precondition',
 		);
-		expect(await agent2.groupChatPage.scrollBottomButtonVisible()).toBe(true);
-
-		await agent2.groupChatPage.clickScrollBottomButton();
-
-		await agent2.waitUntil(async () => agent2.groupChatPage.scroll.isAtBottom());
 		await agent2.waitUntil(
-			async () => (await agent2.groupChatPage.unreadBadgeText()) === null,
+			async () =>
+				(await agent2.groupChatPage.messages.unreadBadgeText()) !== null,
+		);
+		expect(await agent2.groupChatPage.messages.scrollBottom.isExisting()).toBe(
+			true,
+		);
+
+		await agent2.groupChatPage.messages.scrollBottom.click();
+
+		await agent2.waitUntil(async () =>
+			agent2.groupChatPage.scroll.isAtBottom(),
+		);
+		await agent2.waitUntil(
+			async () =>
+				(await agent2.groupChatPage.messages.unreadBadgeText()) === null,
 		);
 	});
 });

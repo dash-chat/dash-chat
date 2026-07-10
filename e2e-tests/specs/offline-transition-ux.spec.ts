@@ -10,7 +10,13 @@
  *   - Navbar chip:    hidden (connected) → disconnected → local → hidden (connected)
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { resumeMailbox, suspendMailbox } from '../setup/mailbox-control';
+import {
+	isRemoteMailbox,
+	killMailbox,
+	restartMailbox,
+	resumeMailbox,
+	suspendMailbox,
+} from '../setup/mailbox-control';
 import { type Agent, setupAgent } from '../setup/setup-agents';
 
 async function openOfflineSettings(agent: Agent): Promise<void> {
@@ -39,6 +45,9 @@ describe('Offline UX', () => {
 
 	before(async function () {
 		this.timeout(120_000);
+		// The whole suite toggles the mailbox server's lifecycle, which is
+		// impossible against a remote environment mailbox.
+		if (isRemoteMailbox()) this.skip();
 		[agent1, agent2] = await Promise.all([
 			setupAgent('agent1'),
 			setupAgent('agent2'),
@@ -65,12 +74,15 @@ describe('Offline UX', () => {
 	describe('cloud mailbox online', () => {
 		it('sends a message, peer receives it, sender shows the cloud check, and the navbar chip stays hidden', async () => {
 			await agent1.directChatPage.sendMessage('online hello');
-			await agent2.directChatPage.waitForMessage('online hello');
+			await agent2.directChatPage.messages.waitForMessage('online hello');
 
 			await agent1.waitUntil(
 				async () =>
 					(await agent1.directChatPage.lastMessageStatus()) === 'cloud',
 			);
+			expect(
+				await agent1.directChatPage.messageStatusFor('online hello'),
+			).toBe('cloud');
 			expect(
 				await agent1.directChatPage.connectionStatusIndicator.status(),
 			).toBe('connected');
@@ -113,10 +125,10 @@ describe('Offline UX', () => {
 
 			await indicator.chip.click();
 			await agent1.waitUntil(() => indicator.isDialogOpen());
-			expect(await indicator.dialogTitle.getText()).toBe(
+			await expect(indicator.dialogTitle).toHaveText(
 				await agent1.tr('connectionStatusDisconnectedTitle'),
 			);
-			expect(await indicator.dialogDescription.getText()).toBe(
+			await expect(indicator.dialogDescription).toHaveText(
 				await agent1.tr('connectionStatusDisconnectedDescription'),
 			);
 
@@ -147,10 +159,10 @@ describe('Offline UX', () => {
 
 				await indicator.chip.click();
 				await agent1.waitUntil(() => indicator.isDialogOpen());
-				expect(await indicator.dialogTitle.getText()).toBe(
+				await expect(indicator.dialogTitle).toHaveText(
 					await agent1.tr('connectionStatusLocalTitle'),
 				);
-				expect(await indicator.dialogDescription.getText()).toBe(
+				await expect(indicator.dialogDescription).toHaveText(
 					await agent1.tr('connectionStatusLocalDescription', { count: 1 }),
 				);
 
@@ -182,7 +194,62 @@ describe('Offline UX', () => {
 					(await agent1.directChatPage.lastMessageStatus()) === 'cloud',
 				{ timeout: 30_000 },
 			);
-			await agent2.directChatPage.waitForMessage('offline hello');
+			await agent2.directChatPage.messages.waitForMessage('offline hello');
+		});
+	});
+
+	// Regression: a message delivered to the cloud must still read as delivered
+	// after the app restarts while the cloud mailbox is unreachable. The cloud
+	// mailbox id is resolved from the live server, so on a cold start against an
+	// unreachable server it can't be re-resolved — but the delivered status is
+	// recorded in persisted sync state and must survive regardless.
+	describe('app restarts while the cloud mailbox is unreachable', () => {
+		let mailboxKilled = false;
+
+		after(async function () {
+			if (!mailboxKilled) return;
+			this.timeout(60_000);
+			await restartMailbox();
+			mailboxKilled = false;
+		});
+
+		it('a delivered message still shows the cloud check after restarting with the mailbox down', async function () {
+			this.timeout(120_000);
+			// Deliver a fresh message to the cloud right now (mailbox is online).
+			await agent1.directChatPage.sendMessage('restart hello');
+			await agent1.waitUntil(
+				async () =>
+					(await agent1.directChatPage.messageStatusFor('restart hello')) ===
+					'cloud',
+				{ timeout: 30_000 },
+			);
+
+			// Kill the cloud mailbox so it is unreachable, then cold-start the app.
+			// On boot the app re-resolves the cloud mailbox id from the live server;
+			// with the server down it never can, but the delivered status lives in
+			// persisted sync state and must survive.
+			killMailbox();
+			mailboxKilled = true;
+			await agent1.restart();
+
+			await agent1.homePage.ready();
+			await agent1.homePage.openChat('Bob');
+			await agent1.directChatPage.ready();
+
+			let status = await agent1.directChatPage.messageStatusFor('restart hello');
+			await agent1.waitUntil(
+				async () => {
+					status =
+						await agent1.directChatPage.messageStatusFor('restart hello');
+					return status !== null;
+				},
+				{
+					timeout: 15_000,
+					interval: 500,
+					timeoutMsg: 'message status indicator never rendered after restart',
+				},
+			);
+			expect(status).toBe('cloud');
 		});
 	});
 });

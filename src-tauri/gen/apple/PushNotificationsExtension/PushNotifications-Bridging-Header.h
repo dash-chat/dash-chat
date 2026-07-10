@@ -17,6 +17,7 @@ struct push_notification * receive_notification(RustByteSlice notification, Rust
 
 void notification_destroy(struct push_notification *data);
 
+int32_t notification_id(const struct push_notification *data);
 RustByteSlice notification_title(const struct push_notification *data);
 RustByteSlice notification_body(const struct push_notification *data);
 RustByteSlice notification_route(const struct push_notification *data);

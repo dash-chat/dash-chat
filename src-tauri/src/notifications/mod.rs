@@ -33,22 +33,45 @@ pub(crate) async fn show_sync_notification(
         return;
     }
 
-    let store = app_handle.state::<NotifiedOperationsStore>();
-    match store
-        .record_notified_operation(notification.header.hash())
-        .await
+    let Some(app_node) = app_handle.try_state::<crate::app_node::AppNode>() else {
+        return;
+    };
+
+    // On iOS the foreground sync path is the only one that can show a banner:
+    // `willPresent` unconditionally drops the NSE's push while the app is
+    // foregrounded, and a backgrounded app is suspended so this loop isn't
+    // running. Sharing the dedup token with the NSE here would let the NSE win
+    // the race and silence this banner (push suppressed + sync skipped = nothing
+    // shown), so on iOS we always show and leave push/sync dedup to `willPresent`.
+    // Other platforms can display both paths, so they keep the cross-path dedup.
+    //
+    // TODO(usernotifications.filtering entitlement): once Apple grants
+    // `com.apple.developer.usernotifications.filtering`, the NSE can suppress its
+    // own push when the main app is alive, so the foreground push/sync collision
+    // goes away. At that point delete this iOS bypass *and* the unconditional
+    // push-suppression in the plugin's `willPresent` (NotificationHandler.swift),
+    // and let every platform share the single cross-path dedup again.
+    #[cfg(not(target_os = "ios"))]
     {
-        Ok(false) => {
-            log::debug!("Skipping sync notification: op already notified");
-            return;
-        }
-        Ok(true) => {}
-        Err(err) => {
-            log::error!("Failed to record notified operation: {err:?} — proceeding anyway");
+        match app_node
+            .notified_operations_store()
+            .record_notified_operation(notification.header.hash())
+            .await
+        {
+            Ok(false) => {
+                log::debug!("Skipping sync notification: op already notified");
+                return;
+            }
+            Ok(true) => {}
+            Err(err) => {
+                log::error!("Failed to record notified operation: {err:?} — proceeding anyway");
+            }
         }
     }
 
-    let node = app_handle.state::<Node>();
+    let Ok(node) = app_node.get().await else {
+        return;
+    };
     let topic = *notification.topic;
     let data = build_notification_data(
         &node,
@@ -96,7 +119,7 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
 /// Build the system notification for a freshly-processed p2panda operation.
 ///
 /// Shared between the FCM/APNs entry point (`receive_push_notification`) and the
-/// foreground sync loop (`spawn_notification_loop` in `setup.rs`). Returns `None`
+/// foreground sync loop (`notification_loop` in `app_node.rs`). Returns `None`
 /// when the op should not produce a user-facing notification (own message, payload
 /// variant we don't surface, etc.).
 pub async fn build_notification_data(

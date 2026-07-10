@@ -4,9 +4,9 @@
 
 	import '../app.css';
 	import { setContext } from 'svelte';
-	import { invoke } from '@tauri-apps/api/core';
 
 	import {
+		invokeAfterSetup,
 		ChatsClient,
 		ChatsStore,
 		LogsStore,
@@ -43,7 +43,13 @@
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
+	import { trackKeyboardHeight } from '$lib/utils/keyboard.svelte';
 	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
+	import {
+		listenForDeepLinks,
+		handleLaunchDeepLink,
+		handleUrls,
+	} from '$lib/utils/deep-links';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, type Locale, setLocale } from '$lib/paraglide/runtime';
@@ -65,8 +71,12 @@
 		// Paraglide types setLocale with a string-literal union; we widen to
 		// plain `string` at the test boundary since invalid locales fail at
 		// runtime anyway.
-		registerTestUtils(goto, setLocale as (locale: string) => void, m, () =>
-			previewFeatures.enable(),
+		registerTestUtils(
+			goto,
+			setLocale as (locale: string) => void,
+			m,
+			() => previewFeatures.enable(),
+			url => handleUrls([url]),
 		),
 	);
 
@@ -137,9 +147,9 @@
 
 		mailboxTrackerStore = new MailboxTrackerStore();
 
-		invoke('log_webview_info', { userAgent: navigator.userAgent }).catch(
-			() => {},
-		);
+		invokeAfterSetup('log_webview_info', {
+			userAgent: navigator.userAgent,
+		}).catch(() => {});
 	}
 
 	setContext('settings-store', settingsStore);
@@ -165,6 +175,10 @@
 	});
 
 	$effect(() => {
+		if (isMobile) trackKeyboardHeight();
+	});
+
+	$effect(() => {
 		const handler = (event: CustomEvent) => {
 			theme = event.detail.theme;
 		};
@@ -187,6 +201,14 @@
 			'wide-layout',
 			isWideScreen.value,
 		);
+	});
+
+	if (isTauriEnv()) {
+		handleLaunchDeepLink();
+	}
+	$effect(() => {
+		if (!isTauriEnv()) return;
+		return listenForDeepLinks();
 	});
 </script>
 

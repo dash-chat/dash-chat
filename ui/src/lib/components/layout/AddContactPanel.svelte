@@ -8,7 +8,7 @@
 		type ContactsStore,
 		type SettingsStore,
 	} from 'dash-chat-stores';
-	import type { AddContactError } from 'dash-chat-stores';
+	import type { AddContactError, ContactCode } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -27,9 +27,11 @@
 		TabbarLink,
 		Tabbar,
 	} from 'konsta/svelte';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
+	import { defaultQrColor } from '$lib/utils/qrcode';
 	import SelectColor from './SelectColor.svelte';
 	import MyQrCodeCard from '$lib/components/contacts/MyQrCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
@@ -51,10 +53,30 @@
 	let scannerRef: QrCodeScanner | null = $state(null);
 	let uploaderRef: QrCodeUploader | null = $state(null);
 
-	async function receiveCode(code: string) {
-		try {
-			const contactCode = decodeContactCode(code);
+	$effect(() => {
+		const code = page.url.searchParams.get('code');
+		if (code) void handleCodeFromQueryParam(code);
+	});
 
+	async function handleCodeFromQueryParam(code: string) {
+		const url = new URL(page.url);
+		url.searchParams.delete('code');
+		replaceState(url, page.state);
+
+		await receiveCode(code);
+	}
+
+	async function receiveCode(code: string) {
+		let contactCode: ContactCode;
+		try {
+			contactCode = decodeContactCode(code);
+		} catch (e) {
+			console.error('Error decoding contact code', e);
+			showToast(m.errorAddContactInvalidCode(), 'error');
+			return;
+		}
+
+		try {
 			const myCodeString = await myCode;
 
 			if (code === myCodeString) {
@@ -100,7 +122,7 @@
 
 	const qrColor = useReactivePromise(settingsStore.qrColor);
 	let colorPickerOpen = $state(false);
-	let colorForPicker = $state('#007aff');
+	let colorForPicker = $state(defaultQrColor());
 
 	async function getMyName(): Promise<string> {
 		const profile = await contactsStore.myProfile();
@@ -110,7 +132,7 @@
 	async function shareCode(code: string) {
 		try {
 			const name = await getMyName();
-			const color = await settingsStore.qrColor();
+			const color = (await settingsStore.qrColor()) ?? defaultQrColor();
 			await shareQrCode(code, color, name);
 		} catch (e) {
 			console.error(e);
@@ -119,14 +141,14 @@
 	}
 
 	async function openColorPicker() {
-		colorForPicker = await settingsStore.qrColor();
+		colorForPicker = (await settingsStore.qrColor()) ?? defaultQrColor();
 		colorPickerOpen = true;
 	}
 
 	async function saveCode(code: string, color: string) {
 		try {
 			const name = await getMyName();
-			await saveQrCode(code, color ?? '#007aff', name);
+			await saveQrCode(code, color ?? defaultQrColor(), name);
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
@@ -240,7 +262,8 @@
 					<Preloader />
 				</div>
 			{:then code}
-				{#await $qrColor then color}
+				{#await $qrColor then savedColor}
+					{@const color = savedColor ?? defaultQrColor()}
 					<div class="column" style="flex:1">
 						<div class="column center-in-desktop gap-4 mx-4 mt-4">
 							<MyQrCodeCard {code} {color} />

@@ -54,6 +54,17 @@ class NotificationService: UNNotificationServiceExtension {
     private var pendingContentHandler: ((UNNotificationContent) -> Void)?
     private var pendingBestAttemptContent: UNMutableNotificationContent?
 
+    /// The extension's delivery outcome, stamped into every delivered
+    /// notification's userInfo by `deliver(_:)`. Starts as `"fallback"` and is
+    /// upgraded to `"delivered"` once real content is decoded. When iOS kills
+    /// this extension before it can respond (exceeded time/memory budget) it
+    /// delivers the raw APNS payload — topic_id / author:seq — which never
+    /// passes through `deliver(_:)`, so it arrives with this key absent. The
+    /// app's foreground `willPresent` presents only `"delivered"` pushes and
+    /// drops the rest. This is a permanent success/failure signal, independent
+    /// of the temporary `__notification_dedup_id__` dedup shim.
+    private var contentStatus = "fallback"
+
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
         log.info("didReceive fired")
         guard let bestAttemptContent = request.content.mutableCopy() as? UNMutableNotificationContent else {
@@ -105,6 +116,7 @@ class NotificationService: UNNotificationServiceExtension {
         let largeIconBytes = notification_large_icon_bytes(n).asString()
         let conversationSenderId = notification_conversation_sender_id(n).asString()
         let conversationTitle = notification_conversation_title(n).asString()
+        let dedupId = notification_id(n)
 
         notification_destroy(n)
         log.info("decoded title=\(title ?? "<nil>", privacy: .private) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .private) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
@@ -113,13 +125,17 @@ class NotificationService: UNNotificationServiceExtension {
             self.deliverGenericFallback()
             return
         }
+        self.contentStatus = "delivered"
         if let title { bestAttemptContent.title = title }
         if let body { bestAttemptContent.body = body }
+        var userInfo = bestAttemptContent.userInfo
+        // Stable per-message id so the plugin's `willPresent` can dedup this push
+        // against the main app's local (sync-path) notification for the same op.
+        userInfo["__notification_dedup_id__"] = String(dedupId)
         if let route, !route.isEmpty {
-            var userInfo = bestAttemptContent.userInfo
             userInfo["__notification_route__"] = route
-            bestAttemptContent.userInfo = userInfo
         }
+        bestAttemptContent.userInfo = userInfo
 
         // Decode the avatar once — both the Communication Notification path
         // (iOS 15+) and the legacy attachment fallback need the same bytes.
@@ -270,6 +286,7 @@ class NotificationService: UNNotificationServiceExtension {
         }
         bestAttemptContent.title = "New message"
         bestAttemptContent.body = ""
+        self.contentStatus = "fallback"
         self.deliver(bestAttemptContent)
     }
 
@@ -283,7 +300,19 @@ class NotificationService: UNNotificationServiceExtension {
         }
         self.pendingContentHandler = nil
         self.pendingBestAttemptContent = nil
-        handler(content)
+        // Stamp the delivery outcome so the app's foreground `willPresent` can
+        // distinguish this NSE-produced notification from the raw APNS payload
+        // iOS delivers when the extension is killed. Done here (the single
+        // delivery funnel) so it also covers the Communication Notification path,
+        // whose `updating(from:)` result we can't assume preserves userInfo.
+        guard let mutable = content.mutableCopy() as? UNMutableNotificationContent else {
+            handler(content)
+            return
+        }
+        var userInfo = mutable.userInfo
+        userInfo["__nse_content_status__"] = self.contentStatus
+        mutable.userInfo = userInfo
+        handler(mutable)
     }
 
 }

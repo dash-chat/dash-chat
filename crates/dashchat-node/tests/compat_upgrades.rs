@@ -1,7 +1,6 @@
 use dashchat_node::ChatMessageContent;
-use dashchat_node::testing::{PollConfig, TestNode, TestNodeConfig};
+use dashchat_node::testing::{PollConfig, TestMailbox, TestNode, TestNodeConfig};
 use dashchat_node::{ShareIntent, compat::Capabilities, node::NodeConfig};
-use mailbox_client::mem::MemMailbox;
 
 /// Capability upgrade in a direct chat:
 /// - Start with both nodes at zero capabilities, exchange messages (V0)
@@ -17,14 +16,14 @@ async fn direct_chat_capability_upgrade() {
     bobbi_config.node_config.capabilities = Capabilities::zero();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(alice_config, "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(bobbi_config, "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     alice
@@ -37,7 +36,7 @@ async fn direct_chat_capability_upgrade() {
 
     // Both start at zero capabilities, so messages are V0.
     alice
-        .send_message(chat, ChatMessageContent::text_only("v0-msg-1"))
+        .send_message_raw(chat, ChatMessageContent::text_only("v0-msg-1"))
         .await
         .unwrap();
 
@@ -67,7 +66,7 @@ async fn direct_chat_capability_upgrade() {
         alice_dir,
     )
     .await
-    .add_mailbox_client(mailbox.client())
+    .add_mailbox(&mailbox)
     .await;
 
     // Wait for bobbi to learn alice's updated capabilities via the mailbox.
@@ -111,11 +110,11 @@ async fn direct_chat_capability_upgrade() {
     );
 
     alice
-        .send_message(chat, ChatMessageContent::text_only("v0-msg-2"))
+        .send_message_raw(chat, ChatMessageContent::text_only("v0-msg-2"))
         .await
         .unwrap();
     bobbi
-        .send_message(chat, ChatMessageContent::text_only("v0-msg-3"))
+        .send_message_raw(chat, ChatMessageContent::text_only("v0-msg-3"))
         .await
         .unwrap();
 
@@ -149,7 +148,7 @@ async fn direct_chat_capability_upgrade() {
         bobbi_dir,
     )
     .await
-    .add_mailbox_client(mailbox.client())
+    .add_mailbox(&mailbox)
     .await;
 
     // Wait for alice to learn bobbi's updated capabilities.
@@ -176,11 +175,11 @@ async fn direct_chat_capability_upgrade() {
     );
 
     alice
-        .send_message(chat, ChatMessageContent::text_only("v1-msg-4"))
+        .send_message_raw(chat, ChatMessageContent::text_only("v1-msg-4"))
         .await
         .unwrap();
     bobbi
-        .send_message(chat, ChatMessageContent::text_only("v1-msg-5"))
+        .send_message_raw(chat, ChatMessageContent::text_only("v1-msg-5"))
         .await
         .unwrap();
 
@@ -223,18 +222,18 @@ async fn group_chat_capability_upgrade() {
     cammy_config.node_config.capabilities = Capabilities::zero();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(alice_config, "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(bobbi_config, "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let cammy = TestNode::new(cammy_config, "cammy")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     println!(
@@ -307,7 +306,7 @@ async fn group_chat_capability_upgrade() {
 
     // All three are at zero; messages should be V0.
     alice
-        .send_message(chat_id, ChatMessageContent::text_only("zero-msg-1"))
+        .send_message_raw(chat_id, ChatMessageContent::text_only("zero-msg-1"))
         .await
         .unwrap();
 
@@ -347,7 +346,7 @@ async fn group_chat_capability_upgrade() {
         alice_dir,
     )
     .await
-    .add_mailbox_client(mailbox.client())
+    .add_mailbox(&mailbox)
     .await;
 
     println!("### {:3.1?} bobbi upgrading", start.elapsed());
@@ -362,7 +361,7 @@ async fn group_chat_capability_upgrade() {
         bobbi_dir,
     )
     .await
-    .add_mailbox_client(mailbox.client())
+    .add_mailbox(&mailbox)
     .await;
 
     println!(
@@ -415,7 +414,7 @@ async fn group_chat_capability_upgrade() {
 
     // Bobbi sends (bobbi has full visibility of all members' capabilities).
     bobbi
-        .send_message(chat_id, ChatMessageContent::text_only("still-zero-msg-2"))
+        .send_message_raw(chat_id, ChatMessageContent::text_only("still-zero-msg-2"))
         .await
         .unwrap();
 
@@ -455,7 +454,7 @@ async fn group_chat_capability_upgrade() {
         cammy_dir,
     )
     .await
-    .add_mailbox_client(mailbox.client())
+    .add_mailbox(&mailbox)
     .await;
 
     // Wait for bobbi to learn cammy's updated capabilities (bobbi knows cammy).
@@ -490,7 +489,7 @@ async fn group_chat_capability_upgrade() {
     println!("### {:3.1?} bobbi sending v1-msg-3", start.elapsed());
 
     bobbi
-        .send_message(chat_id, ChatMessageContent::text_only("v1-msg-3"))
+        .send_message_raw(chat_id, ChatMessageContent::text_only("v1-msg-3"))
         .await
         .unwrap();
 
@@ -519,7 +518,7 @@ async fn group_chat_capability_upgrade() {
     danae_config.node_config.capabilities = Capabilities::zero();
     let danae = TestNode::new(danae_config, "danae")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     danae
@@ -579,7 +578,7 @@ async fn group_chat_capability_upgrade() {
 
     // Bobbi sends (bobbi has full visibility of all members' capabilities).
     bobbi
-        .send_message(chat_id, ChatMessageContent::text_only("back-to-zero-msg-4"))
+        .send_message_raw(chat_id, ChatMessageContent::text_only("back-to-zero-msg-4"))
         .await
         .unwrap();
 

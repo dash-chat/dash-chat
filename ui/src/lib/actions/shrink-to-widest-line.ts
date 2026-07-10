@@ -39,11 +39,17 @@ export const shrinkToWidestLine: Action<HTMLElement> = node => {
 			fit();
 	});
 
-	// Content changes (e.g. the timestamp spacer unmounting when the message
-	// stops being last) don't resize the explicitly-sized box, so the
-	// ResizeObserver misses them. Attributes are left unobserved so that
-	// `fit` setting the width doesn't retrigger the observer.
-	const mutationObserver = new MutationObserver(fit);
+	// Content changes (the timestamp spacer mounting/unmounting as the message
+	// becomes/stops being last) and the spacer's width attribute updating (its
+	// width tracks the metadata, which grows when the delivery status resolves)
+	// don't resize the explicitly-sized box, so the ResizeObserver misses them.
+	// Watch the subtree including `style` attributes, but ignore the width
+	// writes `fit` makes on the node itself so they don't retrigger the observer.
+	const mutationObserver = new MutationObserver(mutations => {
+		if (mutations.every(m => m.type === 'attributes' && m.target === node))
+			return;
+		fit();
+	});
 
 	// Widening the window never resizes an already-fitted block, so the
 	// observer alone would keep bubbles narrow forever; re-fit after resizes.
@@ -58,6 +64,8 @@ export const shrinkToWidestLine: Action<HTMLElement> = node => {
 		childList: true,
 		subtree: true,
 		characterData: true,
+		attributes: true,
+		attributeFilter: ['style'],
 	});
 	window.addEventListener('resize', onWindowResize);
 	document.fonts.ready.then(fit);

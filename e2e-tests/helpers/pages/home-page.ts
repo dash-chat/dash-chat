@@ -1,5 +1,5 @@
 import { tid } from '../selectors';
-import { TestPage } from './test-page';
+import { TestHelper } from './test-helper';
 
 const GET_STARTED_CARD_IDS = [
 	'add-contact',
@@ -10,19 +10,19 @@ const GET_STARTED_CARD_IDS = [
 
 type GetStartedCardId = (typeof GET_STARTED_CARD_IDS)[number];
 
-export class HomePage extends TestPage {
-	settingsLink = this.agent.$(tid('home-settings-link'));
-	newMessageButton = this.agent.$(tid('home-new-message-btn'));
-	firstChatTooltip = this.agent.$(tid('first-chat-tooltip'));
-	chatList = this.agent.$(tid('all-chats-list'));
-	chatRow = this.agent.$(tid('all-chats-row'));
-	emptyState = this.agent.$(tid('all-chats-empty'));
+export class HomePage extends TestHelper {
+	settingsLink = this.el(tid('home-settings-link'));
+	newMessageButton = this.el(tid('home-new-message-btn'));
+	firstChatTooltip = this.el(tid('first-chat-tooltip'));
+	chatList = this.el(tid('all-chats-list'));
+	chatRow = this.el(tid('all-chats-row'));
+	emptyState = this.el(tid('all-chats-empty'));
 
 	async ready() {
-		await Promise.race([
-			this.chatList.waitForExist(),
-			this.emptyState.waitForExist(),
-		]);
+		await this.agent.waitUntil(() => this.isLoaded(), {
+			timeout: 30_000,
+			timeoutMsg: 'Home chat list (or empty state) did not render',
+		});
 	}
 
 	async isLoaded(): Promise<boolean> {

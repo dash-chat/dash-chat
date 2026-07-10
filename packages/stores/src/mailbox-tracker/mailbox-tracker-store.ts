@@ -1,13 +1,11 @@
-import { Channel, invoke } from '@tauri-apps/api/core';
-import { ReactivePromise, reactive, relay } from 'signalium';
+import { ReactivePromise, reactive } from 'signalium';
 
 import type { DeviceId, TopicId } from '../p2panda/types';
-import { unregisterChannel } from '../utils/tauri-channel';
+import { subscribeChannel } from '../utils/tauri-channel';
 import {
 	type MailboxConnectionState,
 	type MailboxId,
 	type MailboxSyncState,
-	PRODUCTION_MAILBOX_ID,
 } from './types';
 
 // Flip the UI to "disconnected" after this many consecutive errors. Intentionally
@@ -34,43 +32,23 @@ export interface IMailboxTrackerStore {
 }
 
 export class MailboxTrackerStore implements IMailboxTrackerStore {
-	activeMailboxIds = reactive(
-		(): ReactivePromise<MailboxId[]> =>
-			relay<MailboxId[]>(state => {
-				const channel = new Channel<MailboxId[]>();
-				channel.onmessage = v => {
-					state.value = v;
-				};
-				invoke('mailbox_subscribe_active_ids', { onEvent: channel });
-				return () => unregisterChannel(channel);
-			}),
+	activeMailboxIds = reactive(() =>
+		subscribeChannel<MailboxId[]>('mailbox_subscribe_active_ids'),
 	);
 
-	allMailboxIds = reactive(
-		(): ReactivePromise<MailboxId[]> =>
-			relay<MailboxId[]>(state => {
-				const channel = new Channel<MailboxId[]>();
-				channel.onmessage = v => {
-					state.value = v;
-				};
-				invoke('mailbox_subscribe_all_ids', { onEvent: channel });
-				return () => unregisterChannel(channel);
-			}),
+	allMailboxIds = reactive(() =>
+		subscribeChannel<MailboxId[]>('mailbox_subscribe_all_ids'),
 	);
 
-	connectionState = reactive(
-		(mailboxId: MailboxId): ReactivePromise<MailboxConnectionState> =>
-			relay<MailboxConnectionState>(state => {
-				const channel = new Channel<MailboxConnectionState>();
-				channel.onmessage = v => {
-					state.value = v;
-				};
-				invoke('mailbox_subscribe_connection_state', {
-					onEvent: channel,
-					mailboxId,
-				});
-				return () => unregisterChannel(channel);
-			}),
+	connectionState = reactive((mailboxId: MailboxId) =>
+		subscribeChannel<MailboxConnectionState>(
+			'mailbox_subscribe_connection_state',
+			{ mailboxId },
+		),
+	);
+
+	cloudMailboxId = reactive(() =>
+		subscribeChannel<MailboxId | null>('mailbox_subscribe_cloud_id'),
 	);
 
 	connectionStatus = reactive(async () => {
@@ -80,8 +58,9 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 			activeMailboxIds.map(mailboxId => this.connectionState(mailboxId)),
 		);
 
+		const cloudId = await this.cloudMailboxId();
 		const cloudMailboxIndex = activeMailboxIds.findIndex(
-			mailboxId => mailboxId === PRODUCTION_MAILBOX_ID,
+			mailboxId => mailboxId === cloudId,
 		);
 
 		const connectedToCloudMailboxServer =
@@ -111,19 +90,10 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 		};
 	});
 
-	syncState = reactive(
-		(mailboxId: MailboxId): ReactivePromise<MailboxSyncState> =>
-			relay<MailboxSyncState>(state => {
-				const channel = new Channel<MailboxSyncState>();
-				channel.onmessage = v => {
-					state.value = v;
-				};
-				invoke('mailbox_subscribe_sync_state', {
-					onEvent: channel,
-					mailboxId,
-				});
-				return () => unregisterChannel(channel);
-			}),
+	syncState = reactive((mailboxId: MailboxId) =>
+		subscribeChannel<MailboxSyncState>('mailbox_subscribe_sync_state', {
+			mailboxId,
+		}),
 	);
 
 	/// Per-(topic, author) view across every mailbox we've ever synced with.
@@ -168,13 +138,13 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 				seq,
 			);
 
+			const cloudId = await this.cloudMailboxId();
 			const localMailboxes = syncedMailboxes.filter(
-				mailbox => mailbox !== PRODUCTION_MAILBOX_ID,
+				mailbox => mailbox !== cloudId,
 			);
 
-			const syncedWithCloudMailbox = syncedMailboxes.includes(
-				PRODUCTION_MAILBOX_ID,
-			);
+			const syncedWithCloudMailbox =
+				cloudId != null && syncedMailboxes.includes(cloudId);
 			const syncedWithAnyLocalMailbox = localMailboxes.length > 0;
 
 			return {

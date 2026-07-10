@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use mailbox_server::{Blob, GetBlobsRequest, GetBlobsResponse, StoreBlobsRequest};
+use mailbox_server::{Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest};
 
 use super::*;
 
@@ -16,21 +16,76 @@ use super::*;
 pub trait ToyItemTraits: ItemTraits + Serialize + DeserializeOwned {}
 impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {}
 
+/// POST blob hashes to a mailbox's `/blobs/store`, returning the subset the
+/// mailbox reports it already has stored.
+pub async fn send_store_blobs(
+    base_url: &str,
+    hashes: Vec<iroh_blobs::Hash>,
+    sender_pubkey: iroh::EndpointId,
+) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
+    if hashes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let request = mailbox_server::StoreBlobsRequest {
+        blob_hashes: hashes,
+        sender_pubkey,
+        signature: Vec::new(),
+    };
+    let response = HTTP_CLIENT
+        .post(format!("{base_url}/blobs/store"))
+        .json(&request)
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("Failed to store blobs: {status} - {body}");
+    }
+    let response: mailbox_server::StoreBlobsResponse = response.json().await?;
+    Ok(response.already_stored)
+}
+
 /// A client for the toy mailbox server.
 #[derive(Clone)]
 pub struct ToyMailboxClient<Item: MailboxItem> {
     id: MailboxId,
     base_url: String,
+    sender_pubkey: iroh::EndpointId,
+    tracker: std::sync::Arc<dyn crate::UnfetchedBlobTracker>,
     phantom: std::marker::PhantomData<Item>,
 }
 
 impl<Item: MailboxItem> ToyMailboxClient<Item> {
-    pub fn new(id: MailboxId, base_url: impl Into<String>) -> Self {
+    pub fn new(
+        id: MailboxId,
+        base_url: impl Into<String>,
+        sender_pubkey: iroh::EndpointId,
+        tracker: std::sync::Arc<dyn crate::UnfetchedBlobTracker>,
+    ) -> Self {
         Self {
             id,
             base_url: base_url.into(),
+            sender_pubkey,
+            tracker,
             phantom: std::marker::PhantomData,
         }
+    }
+
+    /// Announce blob hashes to this mailbox and reconcile the unfetched tracker:
+    /// record hashes the mailbox still needs, remove any it already has.
+    async fn store_blobs(&self, hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
+        if hashes.is_empty() {
+            return Ok(());
+        }
+        let already_stored =
+            send_store_blobs(&self.base_url, hashes.clone(), self.sender_pubkey).await?;
+        let not_stored: Vec<_> = hashes
+            .into_iter()
+            .filter(|h| !already_stored.contains(h))
+            .collect();
+        self.tracker.record(&self.id, &not_stored).await;
+        self.tracker.remove(&self.id, &already_stored).await;
+        Ok(())
     }
 }
 
@@ -44,42 +99,54 @@ where
         self.id.clone()
     }
 
+    fn url(&self) -> Option<String> {
+        Some(self.base_url.clone())
+    }
+
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error> {
         if ops.is_empty() {
             return Ok(());
         }
 
         // Group operations by topic -> author -> seq_num
-        let mut blobs: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blob>>> = BTreeMap::new();
+        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blip>>> = BTreeMap::new();
+
+        let blob_hashes: Vec<iroh_blobs::Hash> =
+            ops.iter().flat_map(|op| op.blob_hashes()).collect();
 
         for op in ops {
             let topic_id = Self::encode_topic_id(&op.topic());
             let log_id = Self::device_id_to_log_id(&op.author());
             let seq_num = op.seq_num();
-            let blob = Self::serialize_operation(&op)?;
+            let blip = Self::serialize_operation(&op)?;
 
-            blobs
+            blips
                 .entry(topic_id)
                 .or_default()
                 .entry(log_id)
                 .or_default()
-                .insert(seq_num, blob);
+                .insert(seq_num, blip);
         }
 
-        let request = StoreBlobsRequest { blobs };
+        let request = StoreBlipsRequest {
+            blips,
+            sender_pubkey: Some(self.sender_pubkey),
+            signature: Vec::new(),
+        };
         let response = HTTP_CLIENT
-            .post(format!("{}/blobs/store", self.base_url))
+            .post(format!("{}/blips/store", self.base_url))
             .json(&request)
             .send()
             .await?;
 
         if response.status().is_success() {
+            self.store_blobs(blob_hashes).await?;
             Ok(())
         } else {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             Err(anyhow::anyhow!(
-                "Failed to store blobs: {} - {}",
+                "Failed to store blips: {} - {}",
                 status,
                 body
             ))
@@ -90,7 +157,7 @@ where
         &self,
         request: FetchRequest<Item>,
     ) -> Result<FetchResponse<Item>, anyhow::Error> {
-        // Convert FetchRequest to GetBlobsRequest
+        // Convert FetchRequest to GetBlipsRequest
         let mut topics: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
 
         for (log_id, authors) in request.0.iter() {
@@ -105,9 +172,9 @@ where
             topics.insert(topic_id, log_map);
         }
 
-        let get_request = GetBlobsRequest { topics };
+        let get_request = GetBlipsRequest { topics };
         let response = HTTP_CLIENT
-            .post(format!("{}/blobs/get", self.base_url))
+            .post(format!("{}/blips/get", self.base_url))
             .json(&get_request)
             .send()
             .await?;
@@ -116,25 +183,25 @@ where
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!(
-                "Failed to fetch blobs: {} - {}",
+                "Failed to fetch blips: {} - {}",
                 status,
                 body
             ));
         }
 
-        let response = response.json::<GetBlobsResponse>().await?;
+        let response = response.json::<GetBlipsResponse>().await?;
 
-        // Convert GetBlobsResponse to FetchResponse
+        // Convert GetBlipsResponse to FetchResponse
         let mut result: BTreeMap<Item::Topic, FetchTopicResponse<Item>> = BTreeMap::new();
 
-        for (topic_id_str, topic_response) in response.blobs_by_topic {
+        for (topic_id_str, topic_response) in response.blips_by_topic {
             let log_id = Self::log_id_from_string(&topic_id_str)?;
 
-            // Deserialize blobs to operations
+            // Deserialize blips to operations
             let mut items = Vec::new();
-            for (_author_str, seq_blobs) in topic_response.blobs {
-                for (_seq, blob) in seq_blobs {
-                    items.push(Self::deserialize_operation(&blob)?);
+            for (_author_str, seq_blips) in topic_response.blips {
+                for (_seq, blip) in seq_blips {
+                    items.push(Self::deserialize_operation(&blip)?);
                 }
             }
 
@@ -175,13 +242,13 @@ where
         Ok(author)
     }
 
-    fn serialize_operation(item: &Item) -> Result<Blob, anyhow::Error> {
+    fn serialize_operation(item: &Item) -> Result<Blip, anyhow::Error> {
         let bytes = p2panda_core::cbor::encode_cbor(item)?;
-        Ok(Blob::new(bytes))
+        Ok(Blip::new(bytes))
     }
 
-    fn deserialize_operation(blob: &Blob) -> Result<Item, anyhow::Error> {
-        Ok(p2panda_core::cbor::decode_cbor(blob.as_slice())?)
+    fn deserialize_operation(blip: &Blip) -> Result<Item, anyhow::Error> {
+        Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
     }
 }
 
@@ -195,6 +262,21 @@ pub fn stringify(value: impl Serialize) -> String {
 pub fn unstringify<T: DeserializeOwned>(s: &str) -> Result<T, anyhow::Error> {
     serde_json::from_str(&format!("\"{}\"", s))
         .map_err(|e| anyhow::anyhow!("Failed to unstringify: {}", e))
+}
+
+/// Poll the mailbox `/health` endpoint until it responds, confirming the server
+/// is listening before clients try to use it.
+pub async fn wait_for_mailbox_health(url: &str) {
+    let health = format!("{url}/health");
+    for _ in 0..100 {
+        if let Ok(resp) = crate::HTTP_CLIENT.get(&health).send().await {
+            if resp.status().is_success() {
+                return;
+            }
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+    panic!("mailbox /health never became ready at {health}");
 }
 
 #[cfg(test)]
@@ -233,5 +315,64 @@ mod tests {
         assert_eq!(topic_str, "abcdefghij");
         let topic_unstr = unstringify(&topic_str).unwrap();
         assert_eq!(topic, topic_unstr);
+    }
+
+    #[tokio::test]
+    async fn store_blobs_records_not_stored_and_removes_already_stored() {
+        use std::sync::Mutex as StdMutex;
+
+        #[derive(Default)]
+        struct RecordingTracker {
+            recorded: StdMutex<Vec<(String, Vec<iroh_blobs::Hash>)>>,
+            removed: StdMutex<Vec<(String, Vec<iroh_blobs::Hash>)>>,
+        }
+        #[async_trait::async_trait]
+        impl crate::UnfetchedBlobTracker for RecordingTracker {
+            async fn record(&self, id: &crate::MailboxId, hashes: &[iroh_blobs::Hash]) {
+                self.recorded
+                    .lock()
+                    .unwrap()
+                    .push((id.clone(), hashes.to_vec()));
+            }
+            async fn remove(&self, id: &crate::MailboxId, hashes: &[iroh_blobs::Hash]) {
+                self.removed
+                    .lock()
+                    .unwrap()
+                    .push((id.clone(), hashes.to_vec()));
+            }
+        }
+
+        // Server that reports h_stored as already stored, h_new as not.
+        let h_stored = iroh_blobs::Hash::new([1; 32]);
+        let h_new = iroh_blobs::Hash::new([2; 32]);
+        let app = axum::Router::new().route(
+            "/blobs/store",
+            axum::routing::post(
+                move |axum::Json(req): axum::Json<mailbox_server::StoreBlobsRequest>| async move {
+                    let already_stored: Vec<_> = req
+                        .blob_hashes
+                        .into_iter()
+                        .filter(|h| *h == h_stored)
+                        .collect();
+                    axum::Json(mailbox_server::StoreBlobsResponse { already_stored })
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+
+        let tracker = std::sync::Arc::new(RecordingTracker::default());
+        let already = crate::toy::send_store_blobs(
+            &base_url,
+            vec![h_stored, h_new],
+            iroh::SecretKey::from_bytes(&[3; 32]).public(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(already, vec![h_stored]);
     }
 }

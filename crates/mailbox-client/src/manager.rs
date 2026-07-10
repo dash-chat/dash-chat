@@ -144,7 +144,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         }
     }
 
-    async fn client(&self) -> Arc<dyn MailboxClient<Item>> {
+    pub async fn client(&self) -> Arc<dyn MailboxClient<Item>> {
         self.client.lock().await.clone()
     }
 
@@ -224,6 +224,10 @@ where
         &self.sync_tracker
     }
 
+    pub async fn is_tracked(&self, id: &MailboxId) -> bool {
+        self.mailboxes.lock().await.contains_key(id)
+    }
+
     pub async fn tracked_mailbox(&self, id: &MailboxId) -> Option<Arc<TrackedMailbox<Item>>> {
         self.mailboxes.lock().await.get(id).cloned()
     }
@@ -233,6 +237,15 @@ where
         // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.
         let id = mailbox.id();
         let new_client: Arc<dyn MailboxClient<Item>> = Arc::new(mailbox);
+
+        // Persist the mailbox's URL so it can be re-identified by URL after a
+        // restart even when it is not currently registered (e.g. the cloud
+        // mailbox whose id is otherwise only resolvable from its live server).
+        if let Some(url) = new_client.url() {
+            if let Err(err) = self.sync_tracker.record_url(&id, &url).await {
+                tracing::error!(?err, mailbox = %id, "failed to record mailbox url");
+            }
+        }
 
         let mut mailboxes = self.mailboxes.lock().await;
         if let Some(tm) = mailboxes.get(&id).cloned() {
@@ -278,6 +291,18 @@ where
         self.topics.lock().await.keys().cloned().collect()
     }
 
+    /// Returns the iroh EndpointIds of mailboxes currently tracking `topic`.
+    pub async fn get_sources(&self, topic: &Item::Topic) -> anyhow::Result<Vec<iroh::EndpointId>> {
+        if !self.topics.lock().await.contains_key(topic) {
+            return Ok(Vec::new());
+        }
+        let ids: Vec<MailboxId> = self.mailboxes.lock().await.keys().cloned().collect();
+        Ok(ids
+            .into_iter()
+            .filter_map(|id| mailbox_server::decode_mailbox_id(&id).ok())
+            .collect())
+    }
+
     pub fn trigger_sync(&self) {
         _ = self.trigger.try_send(None);
     }
@@ -285,6 +310,14 @@ where
     /// Immediately activate and sync a specific mailbox, resetting any backoff.
     pub fn wakeup(&self, id: MailboxId) {
         _ = self.trigger.try_send(Some(id));
+    }
+
+    /// Immediately activate and sync every registered mailbox, resetting any backoff.
+    pub async fn wakeup_all(&self) {
+        for tracked_mailbox in self.mailboxes.lock().await.values() {
+            tracked_mailbox.wakeup();
+        }
+        self.trigger_sync();
     }
 
     pub async fn subscribe(

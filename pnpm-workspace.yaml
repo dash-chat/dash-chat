@@ -3,10 +3,17 @@ packages:
   - packages/*
   - e2e-tests
 
+# Verify node_modules against the lockfile before `pnpm run`/`pnpm exec` and
+# auto-install only when it is stale, so `just dev` installs new deps yet skips
+# the install when everything is already up to date.
+verifyDepsBeforeRun: install
+
 allowBuilds:
   edgedriver: true
   esbuild: true
   geckodriver: true
+  # Builds dist-js via its `prepare` script when installed from the git fork.
+  "@gbyte/tauri-plugin-ios-photos": true
 
 patchedDependencies:
   konsta@5.0.6: patches/konsta@5.0.6.patch

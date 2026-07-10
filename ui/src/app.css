@@ -3,12 +3,13 @@
 @import 'konsta/svelte/theme.css';
 
 @theme {
-	--color-brand-primary: #007aff;
+	--color-brand-primary: #6e7bff;
 	--color-brand-red: #ff0000;
 	--color-brand-green: #00ff00;
 
 	--color-desktop-sidebar-bg: #f5f4f7;
 	--color-desktop-main-bg: #ffffff;
+	--color-page-surface: var(--color-md-light-surface);
 	--background-color: var(--color-md-light-surface);
 
 	--text-sm: 1rem; /* default: 0.875rem */
@@ -19,6 +20,23 @@
 	--background-color: var(--color-md-dark-surface);
 	--color-desktop-sidebar-bg: var(--color-md-dark-surface-2);
 	--color-desktop-main-bg: var(--color-md-dark-surface);
+	--color-page-surface: var(--color-md-dark-surface);
+}
+
+.k-ios {
+	--color-page-surface: var(--color-ios-light-surface);
+}
+
+:root.dark .k-ios {
+	--color-page-surface: var(--color-ios-dark-surface);
+}
+
+:root.wide-layout {
+	--color-page-surface: var(--color-desktop-main-bg);
+}
+
+:root.wide-layout .k-ios {
+	--color-page-surface: var(--color-desktop-main-bg);
 }
 
 .wide-layout {
@@ -125,11 +143,6 @@ li.plain span {
 	border: none !important;
 }
 
-.message-highlighted {
-	position: relative;
-	z-index: 51;
-}
-
 .qr-card > div {
 	/* Padding for the copy button below the QR code in add-contact */
 	padding-bottom: 8px;
@@ -182,18 +195,6 @@ li.plain span {
 
 .small-icon {
 	font-size: 16px;
-}
-
-.sheet-handle {
-	width: 2.5rem;
-	height: 2px;
-	border-radius: 9999px;
-	background-color: #d1d5db;
-	margin-top: 0.5rem;
-}
-
-:where(.dark) .sheet-handle {
-	background-color: #4b5563;
 }
 
 .neutral-tonal-button.k-button {
@@ -339,4 +340,17 @@ emoji-picker {
 	   sit at the row's edges. Title is non-interactive text — let pointer events
 	   pass through to the buttons underneath. */
 	pointer-events: none;
+}
+
+/* Tailwind's preflight resets `padding: 0` on every element, which beats
+   WebAwesome's `:host { padding }` and collapses dropdown items to the height
+   of their text. */
+wa-dropdown-item {
+	padding-inline-start: 0.5em;
+	padding-inline-end: 1em;
+	padding-block: 0.5em;
+}
+
+wa-dropdown-item::part(icon) {
+	width: 42px;
 }
