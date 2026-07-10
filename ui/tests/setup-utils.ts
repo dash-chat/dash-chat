@@ -47,11 +47,11 @@ function hasText(selector: string, text: string): boolean {
 }
 
 /** Close this agent's iroh endpoint so it can no longer sync with peers over
- * p2p. Backed by the `disable_p2p` command (only registered under the
+ * p2p. Backed by the `close_iroh_endpoint` command (only registered under the
  * `e2e-tests` feature). One-way — the agent stays p2p-disconnected until it
  * restarts. */
 function disableP2p(): Promise<void> {
-	return invokeAfterSetup('disable_p2p');
+	return invokeAfterSetup('close_iroh_endpoint');
 }
 export interface TestFileSpec {
 	name: string;
