@@ -5,12 +5,15 @@
 	import { getContext, setContext } from 'svelte';
 	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
-	import type {
-		ChatsStore,
-		ContactsStore,
-		DeviceId,
-		Hash,
-		Message,
+	import {
+		fullName,
+		type AgentId,
+		type ChatsStore,
+		type ContactsStore,
+		type DeviceId,
+		type GroupMemberWithProfile,
+		type Hash,
+		type Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import {
@@ -73,6 +76,55 @@
 
 	const editing = new MessageEditing(store);
 	let deletingMessage: Message | undefined = $state(undefined);
+	let replying: Message | undefined = $state(undefined);
+
+	// Replying and editing are mutually exclusive composer states.
+	function startReply(message: Message) {
+		editing.cancel();
+		replying = message;
+	}
+
+	function startEdit(message: Message) {
+		replying = undefined;
+		editing.start(message);
+	}
+
+	function deviceDisplayName(
+		deviceId: DeviceId,
+		myDeviceId: DeviceId,
+		members: Record<AgentId, GroupMemberWithProfile>,
+	): string {
+		if (deviceId === myDeviceId) return m.you();
+		const member = Object.values(members).find(mm =>
+			mm.deviceIds.includes(deviceId),
+		);
+		return member?.profile ? fullName(member.profile) : m.unknownSender();
+	}
+
+	function quotedAuthorName(
+		message: Message,
+		myDeviceId: DeviceId,
+		members: Record<AgentId, GroupMemberWithProfile>,
+	): string | undefined {
+		if (message.reply?.kind !== 'content') return undefined;
+		return deviceDisplayName(message.reply.author, myDeviceId, members);
+	}
+
+	let pageEl: HTMLDivElement | null = $state(null);
+
+	function scrollToMessage(hash: Hash) {
+		const el = pageEl?.querySelector(`[data-message-hash="${hash}"]`);
+		if (!el) return;
+		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		// Remove flash from any previously flashing message
+		pageEl
+			?.querySelectorAll('.search-flash')
+			.forEach(e => e.classList.remove('search-flash'));
+		// Flash the message card
+		const card = el.closest('.message') ?? el.querySelector('.message') ?? el;
+		void (card as HTMLElement).offsetWidth;
+		card.classList.add('search-flash');
+	}
 
 	async function deleteForEveryone(message: Message) {
 		deletingMessage = undefined;
@@ -170,7 +222,7 @@
 	}
 </script>
 
-<div class="absolute inset-0" data-testid="group-chat-page">
+<div bind:this={pageEl} class="absolute inset-0" data-testid="group-chat-page">
 	<ReverseScrollPage
 		bind:this={reverseScrollPage}
 		bind:isAtBottom
@@ -293,9 +345,16 @@
 														searchQuery=""
 														onShowHistory={() => openHistory(message)}
 														canEdit={canEditMessage(message, myDeviceId)}
-														onEdit={() => editing.start(message)}
+														onEdit={() => startEdit(message)}
 														canDelete
 														onDelete={() => (deletingMessage = message)}
+														onReply={() => startReply(message)}
+														replyAuthorName={quotedAuthorName(
+															message,
+															myDeviceId,
+															members,
+														)}
+														onNavigateToMessage={scrollToMessage}
 													/>
 												</div>
 											{:else}
@@ -322,6 +381,13 @@
 														showAvatar
 														canDelete
 														onDelete={() => (deletingMessage = message)}
+														onReply={() => startReply(message)}
+														replyAuthorName={quotedAuthorName(
+															message,
+															myDeviceId,
+															members,
+														)}
+														onNavigateToMessage={scrollToMessage}
 													/>
 												</div>
 											{/if}
@@ -352,7 +418,7 @@
 		class="absolute bottom-0 inset-x-0 z-30"
 		class:bg-page-surface={theme === 'material'}
 	>
-		{#await Promise.all([$me, $info]) then [me, info]}
+		{#await Promise.all( [$me, $info, $myDeviceId, $allMembers], ) then [me, info, myDeviceId, members]}
 			{#if me.member}
 				<MessageComposer
 					{store}
@@ -360,6 +426,11 @@
 					editing={editing.editing}
 					onEdit={editing.submit}
 					onCancelEdit={() => editing.cancel()}
+					{replying}
+					replyingToName={replying
+						? deviceDisplayName(replying.author, myDeviceId, members)
+						: ''}
+					onCancelReply={() => (replying = undefined)}
 					destinationName={info.name}
 					onSent={onMessageSent}
 				/>

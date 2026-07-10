@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { QUICK_EMOJIS, condenseReactions } from '$lib/utils/emojis';
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiDotsHorizontal, mdiPencil, mdiTrashCanOutline } from '@mdi/js';
+	import {
+		mdiDotsHorizontal,
+		mdiPencil,
+		mdiReply,
+		mdiTrashCanOutline,
+	} from '@mdi/js';
 	import { Popover, Sheet, Block, Chip } from 'konsta/svelte';
 	import { getContext } from 'svelte';
 	import type { Message, DeviceId, MessagesStore } from 'dash-chat-stores';
@@ -23,6 +28,8 @@
 		/** Whether to offer a delete action (author, within the delete window). */
 		canDelete?: boolean;
 		onDelete?: () => void;
+		/** Start composing a reply to this message. */
+		onReply?: () => void;
 	}
 
 	let {
@@ -34,6 +41,7 @@
 		onEdit,
 		canDelete = false,
 		onDelete,
+		onReply,
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
@@ -76,6 +84,11 @@
 		onEdit?.();
 	}
 
+	function reply() {
+		close();
+		onReply?.();
+	}
+
 	function del() {
 		close();
 		onDelete?.();
@@ -112,6 +125,15 @@
 				{emoji}
 			</button>
 		{/each}
+		{#if onReply}
+			<IconButton
+				icon={mdiReply}
+				onClick={reply}
+				label={m.reply()}
+				testid="quick-reply-button"
+				iconClass="text-xl"
+			/>
+		{/if}
 		{#if canEdit}
 			<IconButton
 				icon={mdiPencil}

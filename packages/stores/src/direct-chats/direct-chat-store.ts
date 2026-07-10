@@ -6,6 +6,7 @@ import {
 	collectDeleteForMeHashes,
 } from '../chats/deletes';
 import { MessageVersion, applyEdits } from '../chats/edits';
+import { MessageReply, applyReplies } from '../chats/replies';
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
@@ -41,6 +42,10 @@ export interface Message {
 	latestEditHash?: Hash;
 	/** Whether the message was deleted for everyone; rendered as a placeholder. */
 	deleted?: boolean;
+	/** Raw hash of the operation this message replies to, straight from the log. */
+	replyTo?: Hash;
+	/** The reply resolved for rendering; unset when the annotation is invalid. */
+	reply?: MessageReply;
 }
 
 // Store tied to a specific direct chat
@@ -86,6 +91,7 @@ export class DirectChatStore implements MessagesStore {
 							seqNum: operation.header.seq_num,
 							timestamp: operation.header.timestamp,
 							reactions: {},
+							replyTo: body.payload.payload.reply,
 						};
 					}
 				}
@@ -112,9 +118,11 @@ export class DirectChatStore implements MessagesStore {
 				}
 			}
 		}
+		const deletedForMeHashes = await this.deletedForMeHashes();
 		applyEdits(messages, logs);
 		applyDeletes(messages, logs);
-		applyDeletesForMe(messages, await this.deletedForMeHashes());
+		applyDeletesForMe(messages, deletedForMeHashes);
+		applyReplies(messages, logs, deletedForMeHashes);
 		return messages;
 	});
 
@@ -173,10 +181,16 @@ export class DirectChatStore implements MessagesStore {
 	async sendMessage(input: {
 		message: string;
 		media: OutgoingMedia | null;
+		replyTo?: Message | null;
 	}): Promise<Hash> {
 		const chatId = await this.chatId();
 
-		return this.client.sendMessage(chatId, input.message, input.media);
+		// A reply targets the latest known edit of the message, like edits and
+		// deletes do.
+		const reply = input.replyTo
+			? (input.replyTo.latestEditHash ?? input.replyTo.hash)
+			: null;
+		return this.client.sendMessage(chatId, input.message, input.media, reply);
 	}
 
 	readMessageHashes = reactive(async () => {

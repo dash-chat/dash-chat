@@ -147,6 +147,7 @@ mod tests {
                 kind: MediaMetaKind::Photo,
                 hash: media_hash,
             }]),
+            None,
         );
         let payload = Payload::Chat(ChatPayload::Message(content));
         let body = payload.try_into_body().unwrap();

@@ -14,6 +14,7 @@
 		type DeviceId,
 		type Hash,
 		type Message,
+		type Profile,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
@@ -125,6 +126,36 @@
 
 	const editing = new MessageEditing(store);
 	let deletingMessage: Message | undefined = $state(undefined);
+	let replying: Message | undefined = $state(undefined);
+
+	// Replying and editing are mutually exclusive composer states.
+	function startReply(message: Message) {
+		editing.cancel();
+		replying = message;
+	}
+
+	function startEdit(message: Message) {
+		replying = undefined;
+		editing.start(message);
+	}
+
+	function deviceDisplayName(
+		deviceId: DeviceId,
+		myDeviceId: DeviceId,
+		profile: Profile | undefined,
+	): string {
+		if (deviceId === myDeviceId) return m.you();
+		return profile ? fullName(profile) : m.unknownSender();
+	}
+
+	function quotedAuthorName(
+		message: Message,
+		myDeviceId: DeviceId,
+		profile: Profile | undefined,
+	): string | undefined {
+		if (message.reply?.kind !== 'content') return undefined;
+		return deviceDisplayName(message.reply.author, myDeviceId, profile);
+	}
 
 	async function deleteForEveryone(message: Message) {
 		deletingMessage = undefined;
@@ -223,9 +254,7 @@
 		});
 	});
 
-	function scrollToMatch() {
-		if (!matchingHashes.length) return;
-		const hash = matchingHashes[currentMatchIndex];
+	function scrollToMessage(hash: Hash) {
 		const el = parentDivEl?.querySelector(`[data-message-hash="${hash}"]`);
 		if (!el) return;
 		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -233,10 +262,15 @@
 		parentDivEl
 			?.querySelectorAll('.search-flash')
 			.forEach(e => e.classList.remove('search-flash'));
-		// Flash the current match's message card
+		// Flash the message card
 		const card = el.closest('.message') ?? el.querySelector('.message') ?? el;
 		void (card as HTMLElement).offsetWidth;
 		card.classList.add('search-flash');
+	}
+
+	function scrollToMatch() {
+		if (!matchingHashes.length) return;
+		scrollToMessage(matchingHashes[currentMatchIndex]);
 	}
 
 	function goToPreviousMatch() {
@@ -571,9 +605,16 @@
 																	searchQuery={searchMode ? searchQuery : ''}
 																	onShowHistory={() => openHistory(message)}
 																	canEdit={canEditMessage(message, myDeviceId)}
-																	onEdit={() => editing.start(message)}
+																	onEdit={() => startEdit(message)}
 																	canDelete
 																	onDelete={() => (deletingMessage = message)}
+																	onReply={() => startReply(message)}
+																	replyAuthorName={quotedAuthorName(
+																		message,
+																		myDeviceId,
+																		profile,
+																	)}
+																	onNavigateToMessage={scrollToMessage}
 																/>
 															{/await}
 														</div>
@@ -596,6 +637,13 @@
 																	onShowHistory={() => openHistory(message)}
 																	canDelete
 																	onDelete={() => (deletingMessage = message)}
+																	onReply={() => startReply(message)}
+																	replyAuthorName={quotedAuthorName(
+																		message,
+																		myDeviceId,
+																		profile,
+																	)}
+																	onNavigateToMessage={scrollToMessage}
 																/>
 															{/await}
 														</div>
@@ -842,6 +890,11 @@
 							editing={editing.editing}
 							onEdit={editing.submit}
 							onCancelEdit={() => editing.cancel()}
+							{replying}
+							replyingToName={replying
+								? deviceDisplayName(replying.author, myDeviceId, profile)
+								: ''}
+							onCancelReply={() => (replying = undefined)}
 							destinationName={profile ? fullName(profile) : undefined}
 							onSent={onMessageSent}
 						/>

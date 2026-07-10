@@ -20,6 +20,7 @@ export interface IGroupChatClient {
 		chatId: ChatId,
 		message: string,
 		media: OutgoingMedia | null,
+		reply: Hash | null,
 	): Promise<Hash>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
 	editMessage(chatId: ChatId, editHash: Hash, message: string): Promise<Hash>;
@@ -49,11 +50,13 @@ export class GroupChatClient implements IGroupChatClient {
 		chatId: ChatId,
 		message: string,
 		media: OutgoingMedia | null,
+		reply: Hash | null,
 	): Promise<Hash> {
 		return invokeAfterSetup('send_message', {
 			chatId,
 			message,
 			media,
+			reply,
 		});
 	}
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void> {

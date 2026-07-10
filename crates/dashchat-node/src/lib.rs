@@ -24,6 +24,7 @@ pub use chat::*;
 pub use contact::{QrCode, ShareIntent};
 pub use error::{
     AddContactError, DeleteMessageError, EditMessageError, Error, RemoveGroupMemberError,
+    SendMessageError,
 };
 pub use id::*;
 pub use node::{Node, NodeConfig, Notification};

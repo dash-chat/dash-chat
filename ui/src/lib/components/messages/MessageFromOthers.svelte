@@ -4,6 +4,7 @@
 		fullName,
 		type ChatId,
 		type DeviceId,
+		type Hash,
 		type MailboxTrackerStore,
 		type Message,
 		type MessagesStore,
@@ -11,6 +12,7 @@
 	} from 'dash-chat-stores';
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
+	import ReplyQuote from './ReplyQuote.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
@@ -34,6 +36,9 @@
 		showAvatar = false,
 		canDelete = false,
 		onDelete,
+		onReply,
+		replyAuthorName,
+		onNavigateToMessage,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -46,6 +51,12 @@
 		showAvatar?: boolean;
 		canDelete?: boolean;
 		onDelete?: () => void;
+		/** Start composing a reply to this message. */
+		onReply?: () => void;
+		/** Display name of the author quoted in this message's reply. */
+		replyAuthorName?: string;
+		/** Scroll the chat to the quoted message. */
+		onNavigateToMessage?: (target: Hash) => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -126,6 +137,13 @@
 					{/if}
 				</div>
 			{:else}
+				{#if message.reply}
+					<ReplyQuote
+						reply={message.reply}
+						authorName={replyAuthorName}
+						onNavigate={onNavigateToMessage}
+					/>
+				{/if}
 				<MessageContent
 					{message}
 					{searchQuery}
@@ -153,6 +171,7 @@
 	{myDeviceId}
 	{canDelete}
 	{onDelete}
+	{onReply}
 	bind:opened={reactionsOpened}
 	target={messageEl}
 />

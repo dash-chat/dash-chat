@@ -19,7 +19,7 @@
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiClose, mdiPencil } from '@mdi/js';
+	import { mdiClose, mdiPencil, mdiReply } from '@mdi/js';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
@@ -48,6 +48,12 @@
 		onEdit?: (message: Message, text: string) => Promise<void>;
 		/** Called when the user cancels an in-progress edit. */
 		onCancelEdit?: () => void;
+		/** When set, the next send is a reply to this message. */
+		replying?: Message | null;
+		/** Display name of the author being replied to, for the banner. */
+		replyingToName?: string;
+		/** Called when the user cancels the staged reply (also after sending). */
+		onCancelReply?: () => void;
 	}
 
 	let {
@@ -59,6 +65,9 @@
 		editing = null,
 		onEdit,
 		onCancelEdit,
+		replying = null,
+		replyingToName = '',
+		onCancelReply,
 	}: Props = $props();
 
 	const theme = $derived(useTheme());
@@ -101,15 +110,21 @@
 		sending = true;
 		const message = value;
 		const draft = media;
+		const replyTo = replying;
 		try {
 			const wireMedia = draft ? await draftToMedia(draft) : null;
-			const hash = await store.sendMessage({ message, media: wireMedia });
+			const hash = await store.sendMessage({
+				message,
+				media: wireMedia,
+				replyTo,
+			});
 			// Only clear what this send actually consumed: the user may have
 			// typed or staged new attachments while the send was confirming.
 			if (value === message) value = '';
 			if (media === draft) {
 				media = undefined;
 			}
+			if (replyTo) onCancelReply?.();
 			messageInput?.reset();
 			onSent?.(hash);
 			return true;
@@ -205,8 +220,43 @@
 					></wa-icon>
 				</button>
 			</div>
-		{:else if !isMobile}
-			<StagedAttachments bind:media onFiles={stage} />
+		{:else}
+			{#if replying}
+				<div
+					class="row items-center gap-2 px-3 pt-2 text-sm"
+					data-testid="composer-reply-banner"
+				>
+					<wa-icon
+						class="quiet"
+						src={wrapPathInSvg(mdiReply)}
+						style="font-size: 1rem"
+					></wa-icon>
+					<span class="column min-w-0 flex-1">
+						<span class="quiet truncate font-semibold">
+							{m.replyingTo({ name: replyingToName })}
+						</span>
+						<span class="quiet truncate" data-testid="composer-reply-preview">
+							{replying.content.message ||
+								(replying.content.media?.kind === 'photos'
+									? m.photo()
+									: (replying.content.media?.file.name ?? ''))}
+						</span>
+					</span>
+					<button
+						type="button"
+						class="quiet flex h-7 w-7 items-center justify-center"
+						aria-label={m.cancel()}
+						data-testid="composer-cancel-reply"
+						onclick={() => onCancelReply?.()}
+					>
+						<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 1.1rem"
+						></wa-icon>
+					</button>
+				</div>
+			{/if}
+			{#if !isMobile}
+				<StagedAttachments bind:media onFiles={stage} />
+			{/if}
 		{/if}
 
 		<div class="m-2 row gap-2" style="align-items: center;">

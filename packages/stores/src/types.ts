@@ -133,6 +133,10 @@ export type MessageContentV1 = {
 	 * store, fetched lazily via `irohblob://`). `mediaBundleToAttachment` turns this
 	 * into the renderable `MediaAttachment`. */
 	media: MediaBundle | null;
+	/** Hash of the operation this message replies to (a `Message` or
+	 * `EditMessage` in the same chat, any author's log). Absent on the wire
+	 * for non-replies. */
+	reply?: Hash;
 };
 export type MessageContent = MessageContentV1;
 
@@ -233,10 +237,12 @@ export type MessageId = string;
 export interface MessagesStore {
 	markAsRead(messageHashes: Hash[]): Promise<void>;
 	/** Sends the message and resolves with the operation id of the created
-	 * message once it is confirmed in the local log. */
+	 * message once it is confirmed in the local log. When `replyTo` is set,
+	 * the message is sent as a reply to that message's latest known edit. */
 	sendMessage(input: {
 		message: string;
 		media: OutgoingMedia | null;
+		replyTo?: Message | null;
 	}): Promise<Hash>;
 	editMessage(message: Message, newText: string): Promise<Hash>;
 	deleteMessage(message: Message): Promise<Hash>;

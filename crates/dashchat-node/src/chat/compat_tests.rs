@@ -39,7 +39,11 @@ mod tests {
             kind: MediaMetaKind::Photo,
             hash: iroh_blobs::Hash::new(b"hashhashhash"),
         };
-        let v1 = ChatMessageContent::new("hello", Some(MediaBundle::from(vec![item.clone()])));
+        let v1 = ChatMessageContent::new(
+            "hello",
+            Some(MediaBundle::from(vec![item.clone()])),
+            None,
+        );
         let bytes = encode_cbor(&v1).unwrap();
         let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
         assert_eq!(decoded, v1);
@@ -51,6 +55,30 @@ mod tests {
             json["media"][0]["hash"],
             serde_json::json!(item.hash.to_string())
         );
+    }
+
+    #[test]
+    fn chat_message_v1_reply_roundtrip() {
+        let target = p2panda::Hash::from_bytes([7; 32]);
+        let v1 = ChatMessageContent::new("hello", None, Some(target));
+        let bytes = encode_cbor(&v1).unwrap();
+        let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
+        assert_eq!(decoded, v1);
+        assert_eq!(decoded.reply(), Some(target));
+
+        // The frontend reads the reply hash from JSON, where it must be a hex
+        // string (matching the `Hash` TS type), not a byte array.
+        let json = serde_json::to_value(&v1).unwrap();
+        assert_eq!(json["reply"], serde_json::json!(target.to_hex()));
+    }
+
+    #[test]
+    fn chat_message_without_reply_keeps_pre_reply_wire_form() {
+        // `reply` must be absent (not null) so old clients decode new
+        // non-reply messages byte-for-byte identically.
+        let v1 = ChatMessageContent::text_only("hello");
+        let json = serde_json::to_value(&v1).unwrap();
+        assert!(json.get("reply").is_none());
     }
 
     #[test]
@@ -81,8 +109,16 @@ mod tests {
 
     #[test]
     fn version_convert_v1_to_v0_lossy() {
-        let v1_empty = ChatMessageContent::new("anything", Some(MediaBundle::from(vec![])));
+        let v1_empty = ChatMessageContent::new("anything", Some(MediaBundle::from(vec![])), None);
         let result = v1_empty.to_version(&Capabilities::zero());
+        assert_eq!(result, Err(VersionConvertError::Lossy));
+    }
+
+    #[test]
+    fn version_convert_v1_to_v0_lossy_reply() {
+        let target = p2panda::Hash::from_bytes([7; 32]);
+        let v1 = ChatMessageContent::new("anything", None, Some(target));
+        let result = v1.to_version(&Capabilities::zero());
         assert_eq!(result, Err(VersionConvertError::Lossy));
     }
 

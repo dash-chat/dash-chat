@@ -6,6 +6,7 @@ import {
 	collectDeleteForMeHashes,
 } from '../chats/deletes';
 import { applyEdits } from '../chats/edits';
+import { applyReplies } from '../chats/replies';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { Message } from '../direct-chats/direct-chat-store';
@@ -106,6 +107,7 @@ export class GroupChatStore implements MessagesStore {
 							seqNum: operation.header.seq_num,
 							timestamp: operation.header.timestamp,
 							reactions: {},
+							replyTo: body.payload.payload.reply,
 						};
 					}
 				}
@@ -131,9 +133,11 @@ export class GroupChatStore implements MessagesStore {
 				}
 			}
 		}
+		const deletedForMeHashes = await this.deletedForMeHashes();
 		applyEdits(messages, logs);
 		applyDeletes(messages, logs);
-		applyDeletesForMe(messages, await this.deletedForMeHashes());
+		applyDeletesForMe(messages, deletedForMeHashes);
+		applyReplies(messages, logs, deletedForMeHashes);
 		return messages;
 	});
 
@@ -384,8 +388,19 @@ export class GroupChatStore implements MessagesStore {
 	async sendMessage(input: {
 		message: string;
 		media: OutgoingMedia | null;
+		replyTo?: Message | null;
 	}): Promise<Hash> {
-		return this.client.sendMessage(this.chatId, input.message, input.media);
+		// A reply targets the latest known edit of the message, like edits and
+		// deletes do.
+		const reply = input.replyTo
+			? (input.replyTo.latestEditHash ?? input.replyTo.hash)
+			: null;
+		return this.client.sendMessage(
+			this.chatId,
+			input.message,
+			input.media,
+			reply,
+		);
 	}
 
 	async editMessage(message: Message, newText: string): Promise<Hash> {

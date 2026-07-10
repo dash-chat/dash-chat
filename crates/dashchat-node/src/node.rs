@@ -31,7 +31,8 @@ use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
 use crate::chat::{
-    ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps, collect_edit_chain_hashes,
+    ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ReplyCandidate, ValidChatOps,
+    collect_edit_chain_hashes,
 };
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
@@ -41,7 +42,7 @@ use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
     DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, MediaBundle, MediaMetaKind,
-    MediaMetadata, OutgoingFile, OutgoingMedia,
+    MediaMetadata, OutgoingFile, OutgoingMedia, SendMessageError,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
@@ -935,14 +936,34 @@ impl Node {
         Ok(messages)
     }
 
+    /// Send a message to a chat, optionally as a reply to a previous message.
+    ///
+    /// `reply` must refer to a `Message` or `EditMessage` operation in this
+    /// chat (any author's log, unlike edits and deletes) that is not deleted,
+    /// is older than now, and is the latest edit of its chain that we know of.
+    /// The reply is validated before publishing; see
+    /// [`ReplyError`](crate::chat::ReplyError).
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn send_message(
         &self,
         topic: impl Into<ChatId>,
         message: impl Into<String>,
         media: Option<OutgoingMedia>,
-    ) -> anyhow::Result<Header> {
+        reply: Option<Hash>,
+    ) -> Result<Header, SendMessageError> {
         let chat_id: ChatId = topic.into();
+
+        if let Some(target) = reply {
+            let valid_ops = self.valid_chat_ops(chat_id).await?;
+            let now = u64::from(p2panda_core::Timestamp::now());
+            ReplyCandidate {
+                target,
+                timestamp: now,
+                self_hash: None,
+            }
+            .validate(&valid_ops)?;
+        }
+
         let meta = if let Some(media) = media {
             Some(
                 self.store_media(chat_id.into(), SENTINEL_OP_HASH, media)
@@ -951,7 +972,7 @@ impl Node {
         } else {
             None
         };
-        let message = ChatMessageContent::new(message, meta.clone());
+        let message = ChatMessageContent::new(message, meta.clone(), reply);
         let header = self.send_message_raw(chat_id, message).await?;
         if let Some(bundle) = meta {
             let topic_id: TopicId = chat_id.into();
@@ -1242,6 +1263,52 @@ impl Node {
         }
 
         Ok(edits)
+    }
+
+    /// Return every message in the topic carrying a reply annotation that
+    /// passes receiving-side validation — i.e. the replies an honest node
+    /// would render as quotes rather than ignore. Mirrors the rule applied in
+    /// `process_app`, exposed for tests.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn valid_replies(
+        &self,
+        topic: impl Into<ChatId>,
+    ) -> anyhow::Result<Vec<crate::chat::ValidReply>> {
+        let topic = topic.into();
+        let valid_ops = self.valid_chat_ops(topic).await?;
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+
+        let mut replies = Vec::new();
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
+                let Ok(Payload::Chat(ChatPayload::Message(message))) = Payload::try_from_body(body)
+                else {
+                    continue;
+                };
+                let Some(target) = message.reply() else {
+                    continue;
+                };
+                let op_hash = op.header.hash();
+                let candidate = ReplyCandidate {
+                    target,
+                    timestamp: op.header.timestamp.into(),
+                    self_hash: Some(op_hash),
+                };
+                if candidate.validate(&valid_ops).is_ok() {
+                    replies.push(crate::chat::ValidReply {
+                        op_hash,
+                        target,
+                        text: message.message().to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(replies)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]

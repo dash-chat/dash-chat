@@ -24,6 +24,13 @@ pub enum ChatMessageContentV {
 pub struct ChatMessageContentV1 {
     pub message: String,
     pub media: Option<MediaBundle>,
+    /// Hash of the operation this message replies to: a `Message` or
+    /// `EditMessage` in the same topic (any author's log). When the target has
+    /// been edited, an honest node replies to the latest edit it knows of.
+    /// Absent on the wire for non-replies, so old clients keep decoding V1
+    /// messages unchanged (and silently drop the reply on newer ones).
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "reply_hash")]
+    pub reply: Option<Hash>,
 }
 
 /// A photo attachment. `data` is the raw bytes of the encoded image (JPEG,
@@ -76,6 +83,66 @@ pub struct MediaMetadata {
     //       not really getting what we want from Compat anyway.
     #[serde(with = "hash_bytes")]
     pub hash: iroh_blobs::Hash,
+}
+
+/// Serde for the optional reply hash. Same situation as `hash_bytes` below:
+/// `p2panda::Hash` writes a CBOR byte string but decides how to *read* based on
+/// `is_human_readable`, which serde's untagged/internally-tagged buffering
+/// (used by `dashchat_compat::Compat` and the `"v"` tag) misreports as `true`
+/// for CBOR — so its own impl can't decode itself through the buffer. Dispatch
+/// on the value shape instead.
+mod reply_hash {
+    use std::fmt;
+
+    use p2panda::Hash;
+    use serde::{Deserializer, Serialize, Serializer, de};
+
+    pub fn serialize<S: Serializer>(
+        hash: &Option<Hash>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        // `skip_serializing_if` means this is only reached for `Some`.
+        let hash = hash.as_ref().expect("None is skipped by the field attr");
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&hash.to_hex())
+        } else {
+            serde_bytes::Bytes::new(hash.as_bytes()).serialize(serializer)
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Hash>, D::Error> {
+        struct HashVisitor;
+
+        impl<'de> de::Visitor<'de> for HashVisitor {
+            type Value = Hash;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("an operation hash as a hex string or 32 bytes")
+            }
+
+            fn visit_str<E: de::Error>(self, s: &str) -> Result<Hash, E> {
+                s.parse().map_err(E::custom)
+            }
+
+            fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Hash, E> {
+                Hash::try_from(bytes).map_err(E::custom)
+            }
+
+            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Hash, A::Error> {
+                let mut arr = [0u8; 32];
+                for (i, slot) in arr.iter_mut().enumerate() {
+                    *slot = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(i, &self))?;
+                }
+                Ok(Hash::from_bytes(arr))
+            }
+        }
+
+        deserializer.deserialize_any(HashVisitor).map(Some)
+    }
 }
 
 mod hash_bytes {
@@ -147,11 +214,16 @@ pub enum MediaMetaKind {
 pub struct ChatMessageContent(dashchat_compat::Compat<ChatMessageContentV0, ChatMessageContentV>);
 
 impl ChatMessageContent {
-    pub fn new(message: impl Into<String>, media: Option<MediaBundle>) -> Self {
+    pub fn new(
+        message: impl Into<String>,
+        media: Option<MediaBundle>,
+        reply: Option<Hash>,
+    ) -> Self {
         Self(dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(
             ChatMessageContentV1 {
                 message: message.into(),
                 media,
+                reply,
             },
         )))
     }
@@ -161,6 +233,7 @@ impl ChatMessageContent {
             ChatMessageContentV1 {
                 message: message.into(),
                 media: None,
+                reply: None,
             },
         )))
     }
@@ -176,6 +249,13 @@ impl ChatMessageContent {
         match &self.0 {
             dashchat_compat::Compat::Unversioned(_) => None,
             dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => v1.media.as_ref(),
+        }
+    }
+
+    pub fn reply(&self) -> Option<Hash> {
+        match &self.0 {
+            dashchat_compat::Compat::Unversioned(_) => None,
+            dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => v1.reply,
         }
     }
 
@@ -195,7 +275,11 @@ impl From<&str> for ChatMessageContent {
 
 impl PartialOrd for ChatMessageContent {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (self.message(), self.media()).partial_cmp(&(other.message(), other.media()))
+        (self.message(), self.media(), self.reply()).partial_cmp(&(
+            other.message(),
+            other.media(),
+            other.reply(),
+        ))
     }
 }
 
@@ -208,7 +292,7 @@ impl VersionConvert for ChatMessageContent {
             (Compat::Unversioned(_), 0) => Ok(self.clone()),
 
             (Compat::Versioned(ChatMessageContentV::V1(v1)), 0) => {
-                if v1.media.is_some() {
+                if v1.media.is_some() || v1.reply.is_some() {
                     Err(VersionConvertError::Lossy)
                 } else {
                     Ok(Compat::Unversioned(ChatMessageContentV0(v1.message.clone())).into())
@@ -219,6 +303,7 @@ impl VersionConvert for ChatMessageContent {
                 ChatMessageContentV1 {
                     message: v0.0.clone(),
                     media: None,
+                    reply: None,
                 },
             ))
             .into()),

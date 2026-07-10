@@ -31,6 +31,7 @@ export class Messages extends TestHelper {
 	private composer = new Composer(this.agent);
 	quickEditButton = this.el(tid('quick-edit-button'));
 	quickDeleteButton = this.el(tid('quick-delete-button'));
+	quickReplyButton = this.el(tid('quick-reply-button'));
 	deleteConfirmButton = this.el(tid('delete-message-confirm'));
 	deleteForMeConfirmButton = this.el(tid('delete-for-me-confirm'));
 	editHistorySheet = this.el(tid('edit-history-sheet'));
@@ -338,6 +339,94 @@ export class Messages extends TestHelper {
 		await this.composer.editingBanner.waitForExist();
 		await this.composer.type(newText);
 		await this.composer.send();
+	}
+
+	/** Open the quick-action bar on the message with `targetText`, tap Reply,
+	 * type `replyText`, and send. */
+	async replyToMessage(targetText: string, replyText: string): Promise<void> {
+		await this.openActions(targetText);
+		await this.quickReplyButton.waitForClickable();
+		await this.quickReplyButton.click();
+		await this.composer.replyBanner.waitForExist();
+		await this.composer.type(replyText);
+		await this.composer.send();
+	}
+
+	/** The reply quote element inside the message containing `messageText`
+	 * (matched on the message's own text, not the quoted text). */
+	private async replyQuoteIn(messageText: string) {
+		const wrapper = await this.messageBubbleWithText(messageText);
+		if (!wrapper) return null;
+		const quote = wrapper.$(tid('reply-quote'));
+		return (await quote.isExisting()) ? quote : null;
+	}
+
+	/** Trimmed text of the reply quote on the message containing `messageText`,
+	 * or null when the message has no quote. */
+	async replyQuoteText(messageText: string): Promise<string | null> {
+		const quote = await this.replyQuoteIn(messageText);
+		if (!quote) return null;
+		return (await quote.getText()).trim();
+	}
+
+	/** Wait until the message containing `messageText` renders a reply quote
+	 * whose content includes `quotedText`. */
+	async waitForReplyQuote(
+		messageText: string,
+		quotedText: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => {
+				const text = await this.replyQuoteText(messageText);
+				return text !== null && text.includes(quotedText);
+			},
+			{
+				timeout,
+				timeoutMsg: `Reply quote "${quotedText}" on "${messageText}" not found`,
+			},
+		);
+	}
+
+	/** Click the reply quote on the message containing `messageText`. */
+	async clickReplyQuote(messageText: string): Promise<void> {
+		const quote = await this.replyQuoteIn(messageText);
+		if (!quote) throw new Error(`No reply quote on "${messageText}"`);
+		await quote.click();
+	}
+
+	/** Whether the quote on `messageText` shows the deleted-message tombstone. */
+	async replyQuoteIsDeleted(messageText: string): Promise<boolean> {
+		const wrapper = await this.messageBubbleWithText(messageText);
+		if (!wrapper) return false;
+		return wrapper.$(tid('reply-quote-deleted')).isExisting();
+	}
+
+	/** Whether the quote on `messageText` shows the deleted-for-me warning. */
+	async replyQuoteIsDeletedForMe(messageText: string): Promise<boolean> {
+		const wrapper = await this.messageBubbleWithText(messageText);
+		if (!wrapper) return false;
+		return wrapper.$(tid('reply-quote-deleted-for-me')).isExisting();
+	}
+
+	/** Whether the message containing `text` is currently flash-highlighted
+	 * (the effect applied after scrolling to a message). */
+	async isFlashed(text: string): Promise<boolean> {
+		return this.agent.execute(
+			(messagesSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return !!wrapper.querySelector('.search-flash');
+					}
+				}
+				return false;
+			},
+			this.messagesSelector,
+			text,
+		);
 	}
 
 	/** Open the quick-action bar on the message with `text`, tap Delete, and

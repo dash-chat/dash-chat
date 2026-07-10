@@ -73,11 +73,12 @@ pub async fn send_message(
     chat_id: ChatId,
     message: String,
     media: Option<OutgoingMedia>,
+    reply: Option<Hash>,
     app_node: State<'_, AppNode>,
 ) -> Result<Hash, String> {
     let node = app_node.get().await?;
     let header = node
-        .send_message(chat_id, message, media)
+        .send_message(chat_id, message, media, reply)
         .await
         .map_err(|err| format!("{err:?}"))?;
     Ok(header.hash())

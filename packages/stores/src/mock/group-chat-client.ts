@@ -23,6 +23,7 @@ export class MockGroupChatClient implements IGroupChatClient {
 		_chatId: ChatId,
 		_message: string,
 		_media: OutgoingMedia | null,
+		_reply: Hash | null,
 	): Promise<Hash> {
 		return '';
 	}
