@@ -404,6 +404,17 @@ impl LocalStore {
         Ok(())
     }
 
+    pub async fn has_pending_reply_inbox_for(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+        let row: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ?",
+        )
+        .bind(device_id)
+        .bind(InboxRole::Reply)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.is_some())
+    }
+
     pub async fn get_reply_inbox_expected_ack_author(
         &self,
         topic: TopicId,

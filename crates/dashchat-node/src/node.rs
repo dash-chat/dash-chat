@@ -1386,22 +1386,11 @@ impl Node {
     /// `device_pubkey` (i.e. we scanned their code and are awaiting their ack).
     pub(crate) async fn has_outgoing_pending_request(
         &self,
-        device_pubkey: DeviceId,
+        device_id: DeviceId,
     ) -> anyhow::Result<bool> {
-        let found = self
-            .op_store
-            .get_interleaved_logs(self.device_group_topic().into(), vec![self.device_id()])
-            .await?
-            .into_iter()
-            .any(|(_, payload)| {
-                matches!(
-                    payload,
-                    Some(Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
-                        device_pubkey: dp,
-                    })) if dp == device_pubkey
-                )
-            });
-        Ok(found)
+        self.local_store
+            .has_pending_reply_inbox_for(device_id)
+            .await
     }
 
     /// Scan our advertised inbox logs for a pending [`InboxPayload::ContactRequest`]
