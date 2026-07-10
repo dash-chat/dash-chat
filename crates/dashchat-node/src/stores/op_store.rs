@@ -1,7 +1,9 @@
 pub mod queries;
 
+use std::collections::{BTreeMap, HashSet};
+#[cfg(feature = "testing")]
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, RwLock},
 };
 
@@ -58,6 +60,7 @@ impl OpStore {
         }
     }
 
+    #[cfg(feature = "testing")]
     pub async fn temporary_sqlite() -> anyhow::Result<Self> {
         let store = SqliteStore::temporary().await;
         Ok(Self::from_sqlite(store))

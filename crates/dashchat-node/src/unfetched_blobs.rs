@@ -52,7 +52,11 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
             return;
         }
     };
-    let self_endpoint = node.endpoint_id();
+    let self_endpoint = node
+        .iroh_endpoint()
+        .await
+        .expect("node has an iroh endpoint")
+        .id();
     for (mailbox_id, hashes) in by_mailbox {
         let Some(tracked) = node.mailboxes.tracked_mailbox(&mailbox_id).await else {
             continue; // mailbox not currently registered; retry when it returns
