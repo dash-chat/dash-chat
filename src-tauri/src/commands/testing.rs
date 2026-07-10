@@ -1,4 +1,6 @@
+#[cfg(feature = "e2e-tests")]
 use dashchat_node::Node;
+#[cfg(feature = "e2e-tests")]
 use tauri::State;
 
 /// Close this node's iroh endpoint so it can no longer sync with peers over
