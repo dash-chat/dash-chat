@@ -46,30 +46,28 @@ pub enum ShareIntent {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct InboxTopic {
     // NOTE: order of these fields matters! expires_at, then topic.
-    /// Expiry date. Serialized as a whole number of hours since the Unix epoch
-    /// to keep the QR code short; sub-hour precision is not needed for expiry.
-    #[serde(with = "expires_at_hours")]
+    /// Expiry date. Serialized as a whole number of minutes since the Unix epoch.
+    #[serde(with = "expires_at_minutes")]
     pub expires_at: DateTime<Utc>,
     pub topic: Topic<kind::Inbox>,
 }
 
-/// Serialize a `DateTime<Utc>` as an `i64` count of whole hours since the Unix
-/// epoch. Truncates toward the epoch; used only for coarse expiry timestamps.
-mod expires_at_hours {
+/// Serialize a `DateTime<Utc>` as a `u64` count of whole minutes since the Unix epoch.
+mod expires_at_minutes {
     use chrono::{DateTime, Utc};
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(dt: &DateTime<Utc>, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_i64(dt.timestamp().div_euclid(3600))
+        s.serialize_u64(dt.timestamp().div_euclid(60) as u64)
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<DateTime<Utc>, D::Error> {
-        let hours = i64::deserialize(d)?;
-        let secs = hours
-            .checked_mul(3600)
-            .ok_or_else(|| serde::de::Error::custom("expires_at hours out of range"))?;
-        DateTime::from_timestamp(secs, 0)
-            .ok_or_else(|| serde::de::Error::custom("expires_at hours out of range"))
+        let minutes = u64::deserialize(d)?;
+        let secs = minutes
+            .checked_mul(60)
+            .ok_or_else(|| serde::de::Error::custom("expires_at minutes out of range"))?;
+        DateTime::from_timestamp(secs as i64, 0)
+            .ok_or_else(|| serde::de::Error::custom("expires_at minutes out of range"))
     }
 }
 
@@ -121,9 +119,8 @@ mod tests {
             device_pubkey: DeviceId::from(pubkey),
             inbox_topic: Some(InboxTopic {
                 topic: Topic::inbox(),
-                // Hour-aligned so it survives the coarse (hours-since-epoch)
-                // serialization used to keep the QR code short.
-                expires_at: DateTime::from_timestamp(1_700_000_000 / 3600 * 3600, 0).unwrap(),
+                // Minute-aligned so it survives the (minutes-since-epoch) serialization.
+                expires_at: DateTime::from_timestamp(1_700_000_000 / 60 * 60, 0).unwrap(),
             }),
             share_intent: ShareIntent::AddDevice,
         };
