@@ -80,6 +80,10 @@ export type Agent = WebdriverIO.Browser & {
 	setDarkMode(value: boolean): Promise<void>;
 	/** Enable preview features so gated UI (e.g. new-group) becomes visible. */
 	enablePreviewFeatures(): Promise<void>;
+	/** Close this agent's iroh endpoint so it can no longer sync over p2p.
+	 *  One-way for the life of the process; the agent still reads/writes
+	 *  locally and talks to a mailbox. */
+	disableP2p(): Promise<void>;
 };
 
 /** (Re)build every page object against `b`. Called on first setup and again
@@ -160,6 +164,11 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	};
 	agent.enablePreviewFeatures = async () => {
 		await b.execute(() => window.__test.enablePreviewFeatures());
+	};
+	agent.disableP2p = async () => {
+		await b.executeAsync((done: () => void) =>
+			window.__test.disableP2p().then(done, done),
+		);
 	};
 	agent.restart = async () => {
 		await b.reloadSession();
