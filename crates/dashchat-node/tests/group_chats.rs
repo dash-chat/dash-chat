@@ -302,7 +302,7 @@ async fn test_group_chat() {
     .unwrap();
 
     let alice_profile = cammy
-        .local_store
+        .derived_store
         .get_profile(alice.agent_id())
         .await
         .unwrap();
@@ -317,7 +317,7 @@ async fn test_group_chat() {
     );
 
     let cammy_profile = alice
-        .local_store
+        .derived_store
         .get_profile(cammy.agent_id())
         .await
         .unwrap();

@@ -25,7 +25,7 @@ pub async fn create_group(
     let mut members = std::collections::BTreeMap::new();
     for agent_id in initial_members {
         let device_id = node
-            .local_store
+            .derived_store
             .lookup_contact_by_agent_id(agent_id)
             .await
             .map_err(|e| format!("Failed to look up contact: {e:?}"))?
@@ -58,7 +58,7 @@ pub async fn add_group_member(
 ) -> Result<(), String> {
     let node = app_node.get().await?;
     let device_id = node
-        .local_store
+        .derived_store
         .lookup_contact_by_agent_id(agent_id)
         .await
         .map_err(|e| format!("Failed to look up contact: {e:?}"))?
@@ -134,7 +134,7 @@ pub async fn get_group_members(
         let agent_id = if device_id == my_device_id {
             my_agent_id
         } else {
-            node.local_store
+            node.derived_store
                 .lookup_contact_by_device_id(device_id)
                 .await
                 .map_err(|e| format!("Failed to lookup contact: {e:?}"))?
@@ -163,7 +163,7 @@ pub async fn remove_group_member(
 ) -> Result<(), String> {
     let node = app_node.get().await?;
     let device_id = node
-        .local_store
+        .derived_store
         .lookup_contact_by_agent_id(agent_id)
         .await
         .map_err(|e| format!("{e:?}"))?

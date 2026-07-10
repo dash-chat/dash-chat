@@ -287,7 +287,7 @@ impl Node {
         // @TODO: this requires a reliable way to know the agent id from the device id
         // even if they're not a contact.
         let known = self
-            .local_store
+            .derived_store
             .lookup_contacts(member_device_ids.iter())
             .await?;
 
@@ -385,6 +385,10 @@ impl Node {
             return Ok(());
         }
 
+        self.derived_store
+            .reduce(self.agent_id(), &operation)
+            .await?;
+
         let hash = operation.id();
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
@@ -394,15 +398,7 @@ impl Node {
                 // Nothing to do.
             }
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
-                for (device_id, agent_id) in agents {
-                    if let Err(err) = self.reducer.save_agent_mapping(*device_id, *agent_id).await {
-                        tracing::warn!(
-                            ?err,
-                            device_id = ?device_id.aliased(),
-                            agent_id = ?agent_id.aliased(),
-                            "failed to save agent mapping from IntroduceAgents"
-                        );
-                    }
+                for (_, agent_id) in agents {
                     if agent_id == &self.agent_id() {
                         continue;
                     }
@@ -423,26 +419,9 @@ impl Node {
                 }
             }
 
-            Payload::Inbox(invitation) => {
-                let active_topics = self.reducer.get_active_inbox_topics().await?;
-                if !active_topics
-                    .iter()
-                    .any(|it| *it.topic == TopicId::from(topic))
-                {
-                    // not for me, ignore
-                    return Ok(());
-                }
-                match invitation {
-                    InboxPayload::ContactRequest { .. } => {
-                        // Nothing to do.
-                    }
-                }
-            }
-
             Payload::Chat(ChatPayload::Message(m)) => {
                 if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                     for item in media.iter() {
-                        // TODO: revisit during ACID review (replay)
                         blob_sync
                             .add_to_fetch_pool(topic.into(), author, hash, item.hash)
                             .await?;
@@ -450,46 +429,7 @@ impl Node {
                 }
             }
 
-            Payload::Chat(ChatPayload::Reaction(_) | ChatPayload::GroupInfo(_)) => {
-                // Nothing to do.
-            }
-
-            Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
-                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
-
-                tracing::info!(me = ?self.agent_id().aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
-
-                if let Err(err) = self.reducer.save_profile(agent_id, profile.clone()).await {
-                    tracing::warn!(?err, "failed to save profile from SetProfile");
-                }
-            }
-
-            Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
-                // Save the device_id -> agent_id mapping so group members can look each other up.
-
-                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
-                if let Err(err) = self.reducer.save_agent_mapping(author, agent_id).await {
-                    tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
-                }
-
-                if let Err(err) = self
-                    .reducer
-                    .save_capabilities(author, capabilities.clone())
-                    .await
-                {
-                    tracing::warn!(?err, "failed to save capabilities from SetCapabilities");
-                }
-            }
-
-            Payload::DeviceGroup(_) => {
+            _ => {
                 // Nothing to do.
             }
         }

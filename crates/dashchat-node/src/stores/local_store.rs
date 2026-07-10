@@ -12,7 +12,6 @@ use sqlx::{
 };
 
 use crate::{
-    compat::Capabilities,
     contact::InboxTopic,
     topic::{AutoRegisteredTopic, kind},
     *,
@@ -26,24 +25,12 @@ const MIGRATIONS: &[&str] = &[
         key TEXT PRIMARY KEY,
         value BLOB NOT NULL
     )",
-    "CREATE TABLE IF NOT EXISTS devices (
-        device_id BLOB PRIMARY KEY,
-        agent_id BLOB NOT NULL,
-        capabilities BLOB NULL
-    )",
-    "CREATE TABLE IF NOT EXISTS agents (
-        agent_id BLOB PRIMARY KEY,
-        profile BLOB NULL
-    )",
     "CREATE TABLE IF NOT EXISTS subscribed_topics (
         topic_id BLOB PRIMARY KEY
     )",
     "CREATE TABLE IF NOT EXISTS active_inboxes (
         topic_id BLOB NOT NULL PRIMARY KEY,
         expires_at_nanos INTEGER NOT NULL
-    )",
-    "CREATE TABLE IF NOT EXISTS group_chats (
-        chat_id BLOB NOT NULL PRIMARY KEY
     )",
     "CREATE TABLE IF NOT EXISTS tombstones (
         topic_id BLOB NOT NULL,
@@ -75,14 +62,7 @@ pub struct LocalStore {
 }
 
 impl LocalStore {
-    pub async fn new(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let path = path.as_ref().to_path_buf();
-        let opts = SqliteConnectOptions::new()
-            .filename(&path)
-            .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Wal)
-            .busy_timeout(Duration::from_secs(30));
-        let pool = SqlitePoolOptions::new().connect_with(opts).await?;
+    pub async fn new(pool: SqlitePool) -> anyhow::Result<Self> {
         for sql in MIGRATIONS {
             sqlx::query(sql).execute(&pool).await?;
         }
@@ -135,71 +115,6 @@ impl LocalStore {
             .fetch_all(&self.pool)
             .await?;
         Ok(rows.into_iter().map(|(id,)| *id).collect())
-    }
-
-    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        let rows: Vec<(AgentId,)> = sqlx::query_as("SELECT agent_id FROM devices")
-            .fetch_all(&self.pool)
-            .await?;
-        let mut agent_ids: Vec<AgentId> = rows.into_iter().map(|(id,)| id).collect();
-        // Deduplicate since multiple devices can map to the same agent
-        agent_ids.sort();
-        agent_ids.dedup();
-        Ok(agent_ids)
-    }
-
-    pub async fn lookup_contact_by_device_id(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<Option<AgentId>> {
-        let row: Option<(AgentId,)> =
-            sqlx::query_as("SELECT agent_id FROM devices WHERE device_id = ?")
-                .bind(device_id)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.map(|(id,)| id))
-    }
-
-    /// Look up the device ID for a given agent ID.
-    ///
-    /// This is temporary, and will not be needed once device gropus are
-    /// implemented and [ChatMember] becomes [AgentId].
-    pub async fn lookup_contact_by_agent_id(
-        &self,
-        agent_id: AgentId,
-    ) -> anyhow::Result<Option<DeviceId>> {
-        let row: Option<(DeviceId,)> =
-            sqlx::query_as("SELECT device_id FROM devices WHERE agent_id = ?")
-                .bind(agent_id)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.map(|(id,)| id))
-    }
-
-    /// Look up multiple contacts in a single query.
-    ///
-    /// Returns a map from `DeviceId` to its `AgentId`. Devices that have no
-    /// contact entry are simply absent from the map — the caller can compare
-    /// against the input slice to find which lookups missed.
-    pub async fn lookup_contacts(
-        &self,
-        device_ids: impl IntoIterator<Item = &DeviceId>,
-    ) -> anyhow::Result<HashMap<DeviceId, AgentId>> {
-        let device_ids = device_ids.into_iter().collect::<Vec<_>>();
-        if device_ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-        let placeholders = std::iter::repeat("?")
-            .take(device_ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql =
-            format!("SELECT device_id, agent_id FROM devices WHERE device_id IN ({placeholders})");
-        let mut q = sqlx::query_as::<_, (DeviceId, AgentId)>(&sql);
-        for id in device_ids {
-            q = q.bind(*id);
-        }
-        Ok(q.fetch_all(&self.pool).await?.into_iter().collect())
     }
 
     pub async fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
@@ -437,14 +352,16 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::topic::Topic;
+    use crate::{stores::create_sqlite_pool, topic::Topic};
     use chrono::{Duration, Utc};
 
     #[tokio::test]
     async fn test_initialize_idempotent() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_initialize_random.db");
-        let store = LocalStore::new(&path).await.unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_initialize_random.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool.clone()).await.unwrap();
         let private_key = store.private_key().await.unwrap();
         let agent_id = store.agent_id().await.unwrap();
         store.ensure_initialized().await.unwrap();
@@ -455,8 +372,12 @@ mod tests {
         assert_eq!(store.agent_id().await.unwrap(), agent_id);
 
         drop(store);
+        pool.close().await;
 
-        let store = LocalStore::new(path).await.unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_initialize_random.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool).await.unwrap();
         assert_eq!(
             store.private_key().await.unwrap().as_bytes(),
             private_key.as_bytes()
@@ -467,8 +388,10 @@ mod tests {
     #[tokio::test]
     async fn test_tombstones_per_topic() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_tombstones.db");
-        let store = LocalStore::new(&path).await.unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool.clone()).await.unwrap();
 
         let topic_a = *Topic::<kind::Untyped>::new([1; 32]);
         let topic_b = *Topic::<kind::Untyped>::new([2; 32]);
@@ -500,7 +423,12 @@ mod tests {
 
         // Tombstones persist across reopening the database.
         drop(store);
-        let store = LocalStore::new(&path).await.unwrap();
+        pool.close().await;
+
+        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool).await.unwrap();
         assert!(store.is_tombstoned(topic_a, hash1).await.unwrap());
         assert_eq!(
             store.tombstoned_hashes(topic_a).await.unwrap(),
@@ -511,8 +439,10 @@ mod tests {
     #[tokio::test]
     async fn test_unfetched_blob_hashes_crud() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_unfetched.db");
-        let store = LocalStore::new(&path).await.unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_unfetched.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool.clone()).await.unwrap();
 
         let mbx_a = "mailbox-a";
         let mbx_b = "mailbox-b";
@@ -541,7 +471,11 @@ mod tests {
 
         // Persists across reopen.
         drop(store);
-        let store = LocalStore::new(&path).await.unwrap();
+        pool.close().await;
+        let pool = create_sqlite_pool(dir.path().join("test_unfetched.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool).await.unwrap();
         let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
         assert_eq!(by_mailbox.get(mbx_b).unwrap(), &vec![h1]);
     }
@@ -549,8 +483,10 @@ mod tests {
     #[tokio::test]
     async fn test_remove_unfetched_blobs_all_mailboxes() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_unfetched_all.db");
-        let store = LocalStore::new(&path).await.unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_unfetched_all.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool.clone()).await.unwrap();
 
         let h1 = iroh_blobs::Hash::new([1; 32]);
         let h2 = iroh_blobs::Hash::new([2; 32]);
@@ -572,8 +508,10 @@ mod tests {
     #[tokio::test]
     async fn test_prune_expired_active_inbox_topics() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_prune_inbox_topics.db");
-        let store = LocalStore::new(&path).await.unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_prune_inbox_topics.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool.clone()).await.unwrap();
 
         let now = Utc::now();
         let expired = now - Duration::days(1);

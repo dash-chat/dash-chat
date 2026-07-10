@@ -188,7 +188,11 @@ async fn chat_message_notification(
     };
 
     let sender_profile = if let Some(agent_id) = sender_agent_id {
-        node.local_store.get_profile(agent_id).await.ok().flatten()
+        node.derived_store
+            .get_profile(agent_id)
+            .await
+            .ok()
+            .flatten()
     } else {
         None
     };

@@ -33,7 +33,7 @@ use crate::chat::ChatMessageContent;
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
-use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore, Reducer};
+use crate::stores::{DerivedStore, GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
@@ -185,7 +185,7 @@ pub struct Node {
     registered_bootstraps: Arc<Mutex<HashSet<(NodeId, RelayUrl)>>>,
 
     pub local_store: LocalStore,
-    pub reducer: Reducer,
+    pub derived_store: DerivedStore,
     group_store: GroupStore,
     node_keys: NodeKeys,
 
@@ -220,12 +220,15 @@ impl Node {
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
-        let local_store = LocalStore::new(filesystem.local_store_path()).await?;
+        let pool = crate::stores::create_sqlite_pool(filesystem.local_store_path()).await?;
+        let local_store = LocalStore::new(pool.clone()).await?;
+        let reducer = DerivedStore::new(pool.clone()).await?;
         let node_keys = local_store.node_keys().await?;
 
         Self::init(
             filesystem,
             local_store,
+            reducer,
             node_keys,
             config,
             notification_tx,
@@ -238,6 +241,7 @@ impl Node {
     pub async fn init(
         filesystem: Filesystem,
         local_store: LocalStore,
+        derived_store: DerivedStore,
         node_keys: NodeKeys,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
@@ -298,7 +302,6 @@ impl Node {
         // p2panda or finding alternative routes to achieve the same queries.
         let group_store = GroupStore::new(store.clone());
         let op_store = OpStore::from_sqlite(store.clone());
-        let reducer = Reducer::from_op_store(op_store.clone());
 
         // === mailboxes === //
 
@@ -365,7 +368,7 @@ impl Node {
             config,
             filesystem,
             local_store,
-            reducer,
+            derived_store,
             group_store,
             node_keys,
             notification_tx,
@@ -615,7 +618,7 @@ impl Node {
         self.register_topic(topic).await?;
 
         let other_device_id = self
-            .local_store
+            .derived_store
             .lookup_contact_by_agent_id(other)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
@@ -662,7 +665,7 @@ impl Node {
             .map(|verifying_key| DeviceId::from(*verifying_key))
             .collect();
 
-        let contacts = self.local_store.lookup_contacts(&device_ids).await?;
+        let contacts = self.derived_store.lookup_contacts(&device_ids).await?;
         let device_to_agent: BTreeMap<DeviceId, AgentId> = device_ids
             .iter()
             .filter_map(|did| match contacts.get(did) {
@@ -781,7 +784,7 @@ impl Node {
         .await?;
 
         let agent_id = self
-            .local_store
+            .derived_store
             .lookup_contact_by_device_id(DeviceId::from(member))
             .await?;
         if let Some(agent_id) = agent_id {
@@ -897,17 +900,17 @@ impl Node {
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        self.local_store.get_profile(self.agent_id()).await
+        self.derived_store.get_profile(self.agent_id()).await
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        self.local_store
+        self.derived_store
             .lookup_contact_by_device_id(device_id)
             .await
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        self.local_store.all_contact_agent_ids().await
+        self.derived_store.all_contact_agent_ids().await
     }
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
@@ -1190,11 +1193,6 @@ impl Node {
             "adding contact",
         );
 
-        self.local_store
-            .save_contact(contact.clone())
-            .await
-            .map_err(|e| AddContactError::StoreContact(e.to_string()))?;
-
         // Register the scanned contact as a bootstrap so p2panda discovery can
         // reach it directly over the internet (relay + pkarr), rather than
         // depending on a mutually-reachable mailbox to introduce the two nodes.
@@ -1384,7 +1382,10 @@ impl Node {
         capabilities: Capabilities,
     ) -> anyhow::Result<()> {
         let announcements = Topic::announcements(self.agent_id());
-        let latest_capability = self.local_store.get_capabilities(self.device_id()).await?;
+        let latest_capability = self
+            .derived_store
+            .get_capabilities(self.device_id())
+            .await?;
 
         // If the capability is unset or different from the current one, set it now.
         if latest_capability != Some(capabilities) {
@@ -1425,7 +1426,7 @@ impl Node {
         let caps = futures::future::join_all(
             devices
                 .into_iter()
-                .map(|device| self.local_store.get_capabilities(device)),
+                .map(|device| self.derived_store.get_capabilities(device)),
         )
         .await
         .into_iter()

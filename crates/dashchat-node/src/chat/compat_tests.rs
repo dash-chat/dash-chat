@@ -112,13 +112,13 @@ mod tests {
             .await;
 
         let ac = alice
-            .local_store
+            .derived_store
             .get_capabilities(alice.device_id())
             .await
             .unwrap()
             .unwrap();
         let bc = bobbi
-            .local_store
+            .derived_store
             .get_capabilities(bobbi.device_id())
             .await
             .unwrap()
@@ -163,13 +163,13 @@ mod tests {
 
         // Both nodes see each others' capabilities
         let alice_bobbi_caps = alice
-            .local_store
+            .derived_store
             .get_capabilities(bobbi.device_id())
             .await
             .unwrap()
             .unwrap();
         let bobbi_alice_caps = bobbi
-            .local_store
+            .derived_store
             .get_capabilities(alice.device_id())
             .await
             .unwrap()
