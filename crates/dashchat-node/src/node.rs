@@ -30,7 +30,7 @@ use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
 use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps};
-use crate::contact::{InboxTopic, QrCode, ShareIntent};
+use crate::contact::{InboxTopic, QrCode, ShareIntent, derive_inbox_topic};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
@@ -447,9 +447,11 @@ impl Node {
         share_intent: ShareIntent,
         inbox: bool,
     ) -> Result<QrCode, crate::Error> {
-        let inbox_topic = if inbox {
+        let inbox_nonce = if inbox {
+            let nonce: [u8; 8] = rand::random();
+            let topic_bytes = derive_inbox_topic(&self.device_id(), &nonce);
             let inbox_topic = InboxTopic {
-                topic: Topic::inbox()
+                topic: Topic::new(topic_bytes)
                     .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
                 expires_at: Utc::now() + self.config.contact_code_expiry,
             };
@@ -460,15 +462,15 @@ impl Node {
                 .add_active_inbox_topic(inbox_topic.clone())
                 .await
                 .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
-            Some(inbox_topic)
+            Some(nonce)
         } else {
             None
         };
 
         Ok(QrCode {
             device_pubkey: self.device_id(),
-            inbox_topic,
             share_intent,
+            inbox_nonce,
         })
     }
 
@@ -1371,14 +1373,24 @@ impl Node {
     pub async fn add_contact(&self, contact: QrCode) -> Result<(), AddContactError> {
         tracing::debug!(
             device_pub_key = ?contact.device_pubkey.aliased(),
-            inbox_topic = ?contact.inbox_topic,
+            inbox_nonce = ?contact.inbox_nonce,
             "adding contact",
         );
 
-        let Some(inbox_topic) = contact.inbox_topic.clone() else {
+        let Some(inbox_nonce) = contact.inbox_nonce else {
             return Err(AddContactError::CreateQrCode(
-                "contact code has no inbox to send a request to".to_string(),
+                "contact code has no inbox nonce to send a request to".to_string(),
             ));
+        };
+
+        let inbox_topic = InboxTopic {
+            topic: Topic::new(derive_inbox_topic(&contact.device_pubkey, &inbox_nonce))
+                .alias_named(&format!(
+                    "inbox({:?},nonce={})",
+                    self.device_id().aliased(),
+                    hex::encode(inbox_nonce)
+                )),
+            expires_at: Utc::now() + self.config.contact_code_expiry,
         };
 
         // TODO: use all of this commented out stuff when spaces are possible again

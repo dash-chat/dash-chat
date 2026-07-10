@@ -1,7 +1,7 @@
 import type { IContactsClient, Profile } from '../contacts/contacts-client';
 import type { AgentId, DeviceId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
-import type { ContactCode, InboxTopic } from '../types';
+import type { ContactCode } from '../types';
 import { ShareIntent } from '../types';
 import type { LocalStorageLogsClient } from './client';
 
@@ -36,10 +36,10 @@ export class MockContactsClient implements IContactsClient {
 	async createContactCode(): Promise<ContactCode> {
 		return {
 			device_pubkey: this.deviceId,
-			inbox_topic: this.inboxTopics[0]
-				? { topic: this.inboxTopics[0], expires_at: Date.now() + 86400000 }
-				: undefined,
 			share_intent: ShareIntent.AddContact,
+			inbox_nonce: Array.from(crypto.getRandomValues(new Uint8Array(8)), b =>
+				b.toString(16).padStart(2, '0'),
+			).join(''),
 		};
 	}
 

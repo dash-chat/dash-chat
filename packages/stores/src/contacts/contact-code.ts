@@ -10,23 +10,26 @@ function hexToBytes(hex: string): Uint8Array {
 	);
 }
 
+function toBytes(value: string | Uint8Array | number[]): Uint8Array {
+	if (typeof value === 'string') {
+		return hexToBytes(value);
+	}
+	if (value instanceof Uint8Array) {
+		return value;
+	}
+	return Uint8Array.from(value);
+}
+
 function bytesToHex(bytes: Uint8Array): string {
 	return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// The hex string keys (device_pubkey, inbox_topic.topic) are converted to raw
-// bytes before CBOR encoding so each 32-byte key costs 32 bytes rather than a
-// 64-char text string, roughly halving the encoded contact code.
+// The hex string keys are converted to raw bytes before CBOR encoding.
+// The inbox topic is replaced by an 8-byte nonce, cutting the code length by ~30%.
 export function encodeContactCode(contactCode: ContactCode): string {
-	const inboxTopic = contactCode.inbox_topic
-		? [
-				contactCode.inbox_topic.expires_at,
-				hexToBytes(contactCode.inbox_topic.topic),
-			]
-		: null;
 	const bin = encode([
-		hexToBytes(contactCode.device_pubkey),
-		inboxTopic,
+		toBytes(contactCode.device_pubkey),
+		contactCode.inbox_nonce ? toBytes(contactCode.inbox_nonce) : null,
 		contactCode.share_intent,
 	]);
 	return fromByteArray(bin);
@@ -34,14 +37,10 @@ export function encodeContactCode(contactCode: ContactCode): string {
 
 export function decodeContactCode(contactCodeString: string): ContactCode {
 	const bin = toByteArray(contactCodeString);
-	const [device_pubkey, inbox_topic, share_intent] = decode(bin);
-	return {
-		device_pubkey: bytesToHex(device_pubkey),
-		inbox_topic: inbox_topic
-			? { expires_at: inbox_topic[0], topic: bytesToHex(inbox_topic[1]) }
-			: undefined,
-		share_intent,
-	};
+	const [device_pubkey_bytes, inbox_nonce_bytes, share_intent] = decode(bin);
+	const device_pubkey = bytesToHex(device_pubkey_bytes);
+	const inbox_nonce = inbox_nonce_bytes ? bytesToHex(inbox_nonce_bytes) : undefined;
+	return { device_pubkey, share_intent, inbox_nonce };
 }
 
 export const compress = async (

@@ -165,9 +165,11 @@ export const ShareIntent = {
 export interface ContactCode {
 	/// Pubkey of this node: allows adding this node to groups.
 	device_pubkey: DeviceId;
-	inbox_topic: InboxTopic | undefined;
 	/// The intent of the QR code: whether to add this node as a contact or a device.
 	share_intent: ShareIntent;
+	/// 8-byte nonce (hex string) used with blake3(device_pubkey || nonce) to derive
+	/// the inbox topic. Absent on reply codes.
+	inbox_nonce?: string;
 }
 
 export interface ReadMessagesPayload {
