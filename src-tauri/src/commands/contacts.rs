@@ -29,7 +29,10 @@ pub async fn agent_for_device(
     app_node: State<'_, AppNode>,
 ) -> Result<Option<AgentId>, Error> {
     let node = app_node.get().await?;
-    Ok(node.agent_for_device(device_pubkey).await?)
+    Ok(node
+        .lookup_contact(device_pubkey)
+        .await
+        .map_err(|e| dashchat_node::Error::AuthorOperation(e.to_string()))?)
 }
 
 #[tauri::command]

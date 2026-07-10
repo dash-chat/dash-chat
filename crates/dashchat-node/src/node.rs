@@ -439,21 +439,6 @@ impl Node {
             .map_err(|err| Error::GetActiveInboxes(format!("{err}")))
     }
 
-    /// Resolve the agent id we've recorded for a device pubkey, if any. Returns
-    /// `None` until the contact is established (e.g. while an outgoing contact
-    /// request is still pending its ack).
-    pub async fn agent_for_device(
-        &self,
-        device_pubkey: DeviceId,
-    ) -> Result<Option<AgentId>, Error> {
-        let map = self
-            .local_store
-            .lookup_contacts([&device_pubkey])
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
-        Ok(map.get(&device_pubkey).copied())
-    }
-
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
     pub async fn new_qr_code(
