@@ -24,6 +24,17 @@ function bytesToHex(bytes: Uint8Array): string {
 	return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function toPaddedBase64(base64: string): string {
+	const remainder = base64.length % 4;
+	if (remainder === 0) {
+		return base64;
+	}
+	if (remainder === 1) {
+		throw new Error('Invalid base64 contact code');
+	}
+	return base64.padEnd(base64.length + (4 - remainder), '=');
+}
+
 // The hex string keys are converted to raw bytes before CBOR encoding.
 // The inbox topic is replaced by an 8-byte nonce, cutting the code length by ~30%.
 export function encodeContactCode(contactCode: ContactCode): string {
@@ -32,14 +43,16 @@ export function encodeContactCode(contactCode: ContactCode): string {
 		contactCode.inbox_nonce ? toBytes(contactCode.inbox_nonce) : null,
 		contactCode.share_intent,
 	]);
-	return fromByteArray(bin);
+	return fromByteArray(bin).replace(/=+$/, '');
 }
 
 export function decodeContactCode(contactCodeString: string): ContactCode {
-	const bin = toByteArray(contactCodeString);
+	const bin = toByteArray(toPaddedBase64(contactCodeString));
 	const [device_pubkey_bytes, inbox_nonce_bytes, share_intent] = decode(bin);
 	const device_pubkey = bytesToHex(device_pubkey_bytes);
-	const inbox_nonce = inbox_nonce_bytes ? bytesToHex(inbox_nonce_bytes) : undefined;
+	const inbox_nonce = inbox_nonce_bytes
+		? bytesToHex(inbox_nonce_bytes)
+		: undefined;
 	return { device_pubkey, share_intent, inbox_nonce };
 }
 
