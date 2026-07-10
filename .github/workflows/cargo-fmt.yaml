@@ -31,5 +31,5 @@ jobs:
           components: rustfmt
           rustflags: ''
 
-      - name: Check Rust formatting
+      - name: Check dashchat-node with default features
         run: cargo check -p dashchat-node
