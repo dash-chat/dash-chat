@@ -166,7 +166,9 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 		await b.execute(() => window.__test.enablePreviewFeatures());
 	};
 	agent.disableP2p = async () => {
-		await b.execute(() => window.__test.disableP2p());
+		await b.executeAsync((done: () => void) =>
+			window.__test.disableP2p().then(done, done),
+		);
 	};
 	agent.restart = async () => {
 		await b.reloadSession();
