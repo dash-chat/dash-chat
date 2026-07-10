@@ -491,9 +491,7 @@ impl Node {
                         // The op must arrive on our private reply topic and be
                         // signed by the device whose QR we scanned. Verifying
                         // Verifying author == expected_ack_author prevents a
-                        // third party that transiently synced the advertised
-                        // inbox (and thus learned the reply topic embedded in
-                        // our ContactRequest) from injecting a spoofed ack with
+                        // third party from injecting a spoofed ack with
                         // an attacker-chosen agent_id/profile.
                         if is_reply && !matches!(source, Source::LocalStore) {
                             let expected = self
