@@ -480,6 +480,10 @@ impl Node {
         self.node_keys.device_id()
     }
 
+    pub fn blob_sync_optional(&self) -> Option<&crate::blob_sync::BlobSync> {
+        self.blob_sync.as_ref()
+    }
+
     #[cfg(feature = "testing")]
     pub fn blob_sync(&self) -> &crate::blob_sync::BlobSync {
         self.blob_sync
@@ -499,7 +503,12 @@ impl Node {
         self.unfetched_blob_trigger.notify_one();
     }
 
-    #[cfg(feature = "testing")]
+    /// Use the node's device ID as an iroh endpoint id.
+    ///
+    /// This is equivalent to `self.iroh_endpoint().await.unwrap().id()`,
+    /// but avoids the async call.
+    ///
+    /// PANICS if the device ID is not a valid verifying key.
     pub fn endpoint_id(&self) -> iroh::EndpointId {
         iroh::EndpointId::from_bytes(self.device_id().as_bytes())
             .expect("device id is a valid endpoint id")

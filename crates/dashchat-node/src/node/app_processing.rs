@@ -167,8 +167,9 @@ impl Node {
                                     }
                                 }
 
-                                // @TODO: this is required for tests, but nowhere else, it can be placed behind the
-                                // testing flag.
+                                #[cfg(feature = "testing")]
+                                // Mark the operation as processed so it can be awaited by
+                                // [`crate::testing::PollConfig::consistency`]
                                 node.op_store.mark_op_processed(topic, &id);
 
                             },
@@ -190,12 +191,11 @@ impl Node {
                                     if let Err(err) = processed_tx.send(result) {
                                         tracing::error!(?err, "processed_tx send error")
                                     }
-
-
                                 }
 
-                                // @TODO: this is required for tests, but nowhere else, it can be placed behind the
-                                // testing flag.
+                                #[cfg(feature = "testing")]
+                                // Mark the operation as processed so it can be awaited by
+                                // [`crate::testing::PollConfig::consistency`]
                                 node.op_store.mark_op_processed(topic, &id);
 
                             },
