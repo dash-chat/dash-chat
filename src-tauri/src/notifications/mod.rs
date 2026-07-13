@@ -315,7 +315,7 @@ async fn auth_control_op_notification(
     let sender_agent_id = node.lookup_contact(sender_device_id).await.ok().flatten();
     let sender_name = match sender_agent_id {
         Some(agent_id) => node
-            .local_store
+            .derived_store
             .get_profile(agent_id)
             .await
             .ok()

@@ -1,5 +1,6 @@
 use aliased::Aliasing;
 use p2panda::streams::ProcessedOperation;
+use p2panda_auth::group::GroupAction;
 use p2panda_auth::processor::GroupsArgs;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -193,12 +194,25 @@ impl DerivedStore {
                     .await?;
             }
 
-            // We define group chats as topics which contain any group control operations.
+            // We define group chats as topics which contain a CreateGroup that makes at least
+            // one member an admin.
+            //
+            // 1:1 chats are also group chats, but both members have only Write access,
+            // meaning nobody will ever have admin access.
+            //
             // TODO: this needs to be much more clearly defined, see https://hackmd.io/1S2xtZfXTo6N5WinzCnqWw
-            Payload::GroupControl(GroupsArgs { .. }) => {
-                self.mark_group_as_group_chat(ChatId::from_topic_id(topic)?)
-                    .await?;
-            }
+            Payload::GroupControl(GroupsArgs { action, .. }) => match action {
+                GroupAction::Create { initial_members } => {
+                    for (_, access) in initial_members {
+                        if *access == p2panda_auth::Access::manage() {
+                            self.mark_group_as_group_chat(ChatId::from_topic_id(topic)?)
+                                .await?;
+                            break;
+                        }
+                    }
+                }
+                _ => (),
+            },
 
             _ => {
                 // Nothing to do.

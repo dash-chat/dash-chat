@@ -290,6 +290,10 @@ impl Node {
     ) -> anyhow::Result<()> {
         self.register_bootstrap(&operation, source).await?;
 
+        self.derived_store
+            .reduce(self.agent_id(), &operation)
+            .await?;
+
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
         let topic = ChatId::from_topic_id(topic)?;
