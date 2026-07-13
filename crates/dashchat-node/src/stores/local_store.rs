@@ -1,15 +1,8 @@
-use std::{
-    collections::{BTreeSet, HashMap},
-    path::Path,
-    time::Duration,
-};
+use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
 use p2panda::Hash;
-use sqlx::{
-    SqlitePool,
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
-};
+use sqlx::SqlitePool;
 
 use crate::{
     contact::InboxTopic,
@@ -56,6 +49,10 @@ impl NodeKeys {
     }
 }
 
+/// The [`LocalStore`] stores only information that is specific to the operation of this device.
+/// It is completely independent and orthogonal to the [`crate::stores::OpStore`] and [`crate::stores::DerivedStore`].
+/// If data doesn't belong in a log to be synced with other devices (including in one's own device group),
+/// it probably belongs here.
 #[derive(Clone)]
 pub struct LocalStore {
     pool: SqlitePool,

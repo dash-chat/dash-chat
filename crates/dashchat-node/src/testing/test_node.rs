@@ -45,7 +45,7 @@ impl TestNode {
             .await
             .unwrap();
         let local_store = LocalStore::new(pool.clone()).await.unwrap();
-        let _reducer = DerivedStore::new(pool.clone()).await.unwrap();
+        let _derived_store = DerivedStore::new(pool.clone()).await.unwrap();
         if config.use_alias {
             local_store.device_id().await.unwrap().alias_named(name);
             local_store.agent_id().await.unwrap().alias_named(name);
@@ -94,7 +94,7 @@ impl TestNode {
             .await
             .unwrap();
         let local_store = LocalStore::new(pool.clone()).await.unwrap();
-        let _reducer = DerivedStore::new(pool).await.unwrap();
+        let _derived_store = DerivedStore::new(pool).await.unwrap();
         local_store.device_id().await.unwrap().alias_named(name);
         local_store.agent_id().await.unwrap().alias_named(name);
         drop(local_store);

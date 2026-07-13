@@ -28,6 +28,14 @@ const MIGRATIONS: &[&str] = &[
     )",
 ];
 
+/// The [`DerivedStore`] is a read-only store that is used to make streamlined queries against the [`crate::stores::OpStore`].
+/// It only contains data already present in the operations, just reshaped to be more queryable.
+///
+/// - Writes only occur in the [`Self::reduce`] method.
+/// - The store is populated by streaming operations through [`Self::reduce`].
+/// - The store can be purged and rebuilt by replaying operation streams.
+/// - If a log is partially purged, the DerivedStore can be deleted and the streams replayed from their new starting point.
+/// - To achieve ACID compliance, every write must be idempotent in case operations need to be replayed.
 #[derive(Clone)]
 pub struct DerivedStore {
     pool: SqlitePool,

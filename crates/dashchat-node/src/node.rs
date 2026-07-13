@@ -222,13 +222,13 @@ impl Node {
         let filesystem = Filesystem::new(data_path);
         let pool = crate::stores::create_sqlite_pool(filesystem.local_store_path()).await?;
         let local_store = LocalStore::new(pool.clone()).await?;
-        let reducer = DerivedStore::new(pool.clone()).await?;
+        let derived_store = DerivedStore::new(pool.clone()).await?;
         let node_keys = local_store.node_keys().await?;
 
         Self::init(
             filesystem,
             local_store,
-            reducer,
+            derived_store,
             node_keys,
             config,
             notification_tx,
