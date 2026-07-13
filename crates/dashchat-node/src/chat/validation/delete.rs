@@ -52,7 +52,7 @@ pub enum DeleteError {
 ///
 /// This is the author-side helper that builds the hash set for a
 /// `DeleteMessage` payload. Note that the set is unordered.
-pub fn collect_edit_chain_hashes(
+pub fn collect_deletable_edit_chain(
     valid_ops: &HashMap<Hash, ChatOp>,
     target: &Hash,
 ) -> Result<BTreeSet<Hash>, DeleteError> {
@@ -260,7 +260,7 @@ mod tests {
         let alice = device(1);
         let ops = ValidChatOps::new([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(
-            collect_edit_chain_hashes(&ops, &hash(1)),
+            collect_deletable_edit_chain(&ops, &hash(1)),
             Ok(btreeset![hash(1)])
         );
     }
@@ -274,7 +274,7 @@ mod tests {
             (hash(3), edit(alice, 3000, 2, hash(2))),
         ]);
         assert_eq!(
-            collect_edit_chain_hashes(&ops, &hash(3)),
+            collect_deletable_edit_chain(&ops, &hash(3)),
             Ok(btreeset![hash(1), hash(2), hash(3)])
         );
     }
@@ -288,7 +288,7 @@ mod tests {
         ]);
         // The original message has been edited, so it is not the tip.
         assert_eq!(
-            collect_edit_chain_hashes(&ops, &hash(1)),
+            collect_deletable_edit_chain(&ops, &hash(1)),
             Err(DeleteError::NotLatestEdit)
         );
     }
@@ -298,7 +298,7 @@ mod tests {
         let alice = device(1);
         let ops = ValidChatOps::new([(hash(1), other(alice, 1000, 0))]);
         assert_eq!(
-            collect_edit_chain_hashes(&ops, &hash(1)),
+            collect_deletable_edit_chain(&ops, &hash(1)),
             Err(DeleteError::TargetNotDeletable)
         );
     }

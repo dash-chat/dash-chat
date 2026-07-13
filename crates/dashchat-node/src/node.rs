@@ -31,7 +31,8 @@ use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
 use crate::chat::{
-    ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps, collect_edit_chain_hashes,
+    ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps,
+    collect_deletable_edit_chain,
 };
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
@@ -1113,7 +1114,7 @@ impl Node {
     ) -> Result<Header, DeleteMessageError> {
         let topic = topic.into();
         let ops = self.valid_chat_ops(topic).await?;
-        let hashes = collect_edit_chain_hashes(&ops, &target)?;
+        let hashes = collect_deletable_edit_chain(&ops, &target)?;
         let now = u64::from(p2panda_core::Timestamp::now());
         DeleteCandidate {
             hashes: hashes.clone(),
