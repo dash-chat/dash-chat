@@ -62,7 +62,7 @@ tempfile = "3"
 p2panda-store = { workspace = true, features = ["test_utils"] }
 
 [features]
-default = ["testing", "instrument"]
+default = ["instrument"]
 instrument = []
 testing = ["tempfile", "nanoid", "regex", "p2panda-store/test_utils"]
 p2p = []

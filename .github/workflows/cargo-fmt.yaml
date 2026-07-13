@@ -1,4 +1,4 @@
-name: "cargo fmt"
+name: "cargo fmt and check"
 on:
   push:
     branches: [ main, 'main-**', develop ]
@@ -19,3 +19,17 @@ jobs:
 
       - name: Check Rust formatting
         run: cargo fmt --check
+  
+  cargo-check-node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt
+          rustflags: ''
+
+      - name: Check dashchat-node, no default features
+        run: cargo check -p dashchat-node --no-default-features
