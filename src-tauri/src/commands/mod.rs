@@ -11,3 +11,6 @@ pub mod direct_chats;
 pub mod mailbox_state;
 pub mod media;
 pub mod settings;
+
+#[cfg(feature = "e2e-tests")]
+pub mod testing;
