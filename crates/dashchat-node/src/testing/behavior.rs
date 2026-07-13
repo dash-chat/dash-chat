@@ -31,30 +31,46 @@ impl Behavior {
         other.add_contact(qr).await?;
         self.accept_next_contact().await?;
         self.await_first_capabilities(other.device_id()).await?;
+        // The scanner records the contact asynchronously when it receives our
+        // ack (it learns our agent_id only then), so wait for it to land before
+        // returning a fully-established mutual contact.
+        let me = self.node.agent_id();
+        PollConfig::seconds(15)
+            .wait_for(|| async {
+                if other.get_contacts().await?.contains(&me) {
+                    Ok(())
+                } else {
+                    Err(anyhow::anyhow!(
+                        "scanner did not record the contact in time"
+                    ))
+                }
+            })
+            .await?;
         Ok(())
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
-    pub async fn accept_next_contact(&self) -> anyhow::Result<QrCode> {
+    pub async fn accept_next_contact(&self) -> anyhow::Result<AgentId> {
         let mut watcher = self.watcher.lock().await;
-        let qr = watcher
+        let agent_id = watcher
             .watch_mapped(Duration::from_secs(30), |n: &Notification| {
                 tracing::debug!(
                     hash = ?n.header.hash(),
                     "checking for contact invitation"
                 );
-                let Some(Payload::Inbox(InboxPayload::ContactRequest { code, .. })) = &n.payload
+                let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) =
+                    &n.payload
                 else {
                     return None;
                 };
-                Some(code.clone())
+                Some(*agent_id)
             })
             .await
             .context("no contact invitation found")?;
 
-        self.node.add_contact(qr.clone()).await?;
+        self.node.accept_contact(agent_id).await?;
 
-        Ok(qr)
+        Ok(agent_id)
     }
 
     // NOTE: we technically want to wait for the *last* capabilities announcement.
