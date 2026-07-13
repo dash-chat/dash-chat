@@ -157,18 +157,22 @@ impl Node {
                                 let operation_clone = operation.clone();
 
                                 let result = node.process_groups(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
-                                if let Err(err) = result.as_ref() {
-                                    tracing::error!(?err, "process groups operation error");
-                                };
 
                                 // Signal that the operation has been fully processed. This will
                                 // allow the ProcessFuture to complete. We return a result here so
                                 // that any errors can be reacted to by the waiter.
                                 if let Some(processed_tx) = processed_tx {
-                                    if let Err(err) = processed_tx.send(result) {
+                                    if let Err(err) = processed_tx.send(result.clone()) {
                                         tracing::error!(?err, "processed_tx send error")
                                     }
                                 }
+
+                                // Don't continue to acknowledgement if there was an error processing,
+                                // so that the operation will be replayed another time.
+                                if let Err(err) = result {
+                                    tracing::error!(?err, "process groups operation error");
+                                    continue;
+                                };
 
                                 // Acknowledge the operation now that application-layer
                                 // processing has finished. The node uses an `Explicit`
@@ -195,21 +199,23 @@ impl Node {
 
                                 // Process the operation.
                                 let result = node.process_app(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
-                                if let Err(err) = result.as_ref() {
-                                    // TODO: There is no retry path other than restarting the app and hoping the replay succeeds.
-                                    // TODO: Op replay (explicit ACKs) is in another branch, when merged remove this line.
-                                    // Any persistent failure here results in a permanent loss of functionality.
-                                    tracing::error!(?err, "process operation error");
-                                }
 
                                 // Signal that the operation has been fully processed. This will
                                 // allow the ProcessFuture to complete. We return a result here so
                                 // that any errors can be reacted to by the waiter.
                                 if let Some(processed_tx) = processed_tx {
-                                    if let Err(err) = processed_tx.send(result) {
+                                    if let Err(err) = processed_tx.send(result.clone()) {
                                         tracing::error!(?err, "processed_tx send error")
                                     }
                                 }
+
+                                // Don't continue to acknowledgement if there was an error processing,
+                                // so that the operation will be replayed another time.
+                                if let Err(err) = result {
+                                    tracing::error!(?err, "process operation error");
+                                    continue;
+                                }
+
 
                                 #[cfg(feature = "testing")]
                                 // Mark the operation as processed so it can be awaited by
