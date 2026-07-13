@@ -52,10 +52,11 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     // its EndpointId equals the node's device id and relayed blobs are served
     // from the same store on the same endpoint. The mDNS instance name therefore
     // encodes that EndpointId and resolves to this shared endpoint.
+    let blob_sync = node.blob_sync_optional().expect("blob sync is enabled");
     let server = mailbox_local_server::spawn_local_mailbox_server(
         path,
-        node.blobs(),
-        node.blob_downloader(),
+        blob_sync.blobs.clone(),
+        blob_sync.downloader(),
         endpoint,
         None,
         peer_addr_tx,

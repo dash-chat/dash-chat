@@ -1,7 +1,9 @@
 pub mod queries;
 
+use std::collections::{BTreeMap, HashSet};
+#[cfg(feature = "testing")]
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, RwLock},
 };
 
@@ -45,6 +47,7 @@ impl OpStore {
         let store = SqliteStore::from_pool(pool);
         Ok(Self {
             store,
+            #[cfg(feature = "testing")]
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -52,10 +55,12 @@ impl OpStore {
     pub fn from_sqlite(store: SqliteStore) -> Self {
         Self {
             store,
+            #[cfg(feature = "testing")]
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
+    #[cfg(feature = "testing")]
     pub async fn temporary_sqlite() -> anyhow::Result<Self> {
         let store = SqliteStore::temporary().await;
         Ok(Self::from_sqlite(store))
@@ -167,16 +172,6 @@ impl OpStore {
             .entry(topic)
             .or_default()
             .insert(hash.clone());
-    }
-
-    #[cfg(feature = "testing")]
-    pub fn is_op_processed(&self, topic: &TopicId, hash: &Hash) -> bool {
-        self.processed_ops
-            .read()
-            .unwrap()
-            .get(topic)
-            .map(|s| s.contains(hash))
-            .unwrap_or(false)
     }
 }
 
