@@ -268,9 +268,7 @@ impl Node {
     }
 
     /// Apply a delete: tombstone every operation in the edit chain, undo their
-    /// local effects, drop their stored payloads, and overwrite the mailbox
-    /// copies with body-less versions so mailboxes stop serving the deleted
-    /// payloads to peers that don't have them yet.
+    /// local effects, and drop their stored payloads
     ///
     /// Each operation is guarded by an authorship check — a delete may only
     /// ever drop its own author's operations — so this is safe to call even
@@ -282,7 +280,6 @@ impl Node {
         deleter: DeviceId,
         hashes: &std::collections::BTreeSet<Hash>,
     ) -> anyhow::Result<()> {
-        let mut scrubbed = Vec::new();
         for hash in hashes {
             let Some(op) = self.op_store.get_operation(hash).await? else {
                 warn!(op = ?hash.aliased(), "delete references an unknown operation; skipping");
@@ -297,14 +294,6 @@ impl Node {
                 self.unprocess_app(&op).await?;
                 self.op_store.delete_body(hash).await?;
             }
-            scrubbed.push(MailboxOperation {
-                topic,
-                header: op.header,
-                body: None,
-            });
-        }
-        if !scrubbed.is_empty() {
-            self.mailboxes.publish_to_all(scrubbed).await;
         }
         Ok(())
     }
