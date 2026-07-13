@@ -268,7 +268,10 @@ impl Node {
             .network_id(config.network_id)
             .signing_key(node_keys.private_key.clone())
             .database_url(&url)
-            .mdns_mode(config.mdns_mode.clone());
+            .mdns_mode(config.mdns_mode.clone())
+            // Acknowledge operations explicitly, only once application-layer
+            // processing has finished (see `spawn_application_processor_task`).
+            .ack_policy(p2panda::node::AckPolicy::Explicit);
 
         if config.use_relay {
             builder = builder.relay_url(RELAY_URL.clone());
