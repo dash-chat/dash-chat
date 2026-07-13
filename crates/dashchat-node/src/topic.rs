@@ -223,10 +223,6 @@ impl Topic<kind::Chat> {
         Self::new(*pk.as_bytes())
     }
 
-    pub fn from_group_pubkey(pubkey: VerifyingKey) -> Self {
-        Self::new(*pubkey.as_bytes())
-    }
-
     /// Instantiate a chat topic from a TopicId.
     ///
     /// This can fail if the topic id bytes do not actually represent a valid Ed25519 public key.

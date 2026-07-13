@@ -1,10 +1,11 @@
 use aliased::Aliasing;
 use p2panda::streams::ProcessedOperation;
+use p2panda_auth::processor::GroupsArgs;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 
 use crate::{AgentId, DeviceId, Profile, compat::Capabilities};
-use crate::{AnnouncementsPayload, ChatPayload, DeviceGroupPayload, Payload};
+use crate::{AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, Payload, Topic};
 
 const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS devices (
@@ -137,6 +138,15 @@ impl DerivedStore {
         Ok(row.and_then(|(profile,)| profile))
     }
 
+    pub async fn get_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
+        let rows: Vec<(Topic,)> = sqlx::query_as("SELECT chat_id FROM group_chats")
+            .fetch_all(&self.pool)
+            .await?;
+        rows.into_iter()
+            .map(|(id,)| Topic::<crate::topic::kind::Chat>::from_topic_id(crate::TopicId::from(id)))
+            .collect()
+    }
+
     pub async fn reduce(
         &self,
         me: AgentId,
@@ -145,6 +155,7 @@ impl DerivedStore {
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
         let topic = operation.topic();
+        let header = operation.event.header();
 
         match &payload {
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
@@ -179,6 +190,13 @@ impl DerivedStore {
 
             Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact)) => {
                 self.save_agent_mapping(contact.device_pubkey, contact.agent_id)
+                    .await?;
+            }
+
+            // We define group chats as topics which contain any group control operations.
+            // TODO: this needs to be much more clearly defined, see https://hackmd.io/1S2xtZfXTo6N5WinzCnqWw
+            Payload::GroupControl(GroupsArgs { .. }) => {
+                self.mark_group_as_group_chat(ChatId::from_topic_id(topic)?)
                     .await?;
             }
 
@@ -229,6 +247,16 @@ impl DerivedStore {
             .bind(profile)
             .execute(&self.pool)
             .await?;
+        Ok(())
+    }
+
+    async fn mark_group_as_group_chat(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
+            .bind(chat_id.to_vec())
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 }

@@ -206,29 +206,6 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn save_group_chat_subscribed(&self, chat_id: ChatId) -> anyhow::Result<()> {
-        let mut tx = self.pool.begin().await?;
-        sqlx::query("INSERT OR IGNORE INTO subscribed_topics (topic_id) VALUES (?)")
-            .bind(chat_id.to_vec())
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
-            .bind(chat_id.to_vec())
-            .execute(&mut *tx)
-            .await?;
-        tx.commit().await?;
-        Ok(())
-    }
-
-    pub async fn get_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
-        let rows: Vec<(Topic,)> = sqlx::query_as("SELECT chat_id FROM group_chats")
-            .fetch_all(&self.pool)
-            .await?;
-        rows.into_iter()
-            .map(|(id,)| Topic::<kind::Chat>::from_topic_id(TopicId::from(id)))
-            .collect()
-    }
-
     /// Record an operation hash in the per-topic tombstone set. Payloads for
     /// tombstoned operations must never be stored or synced.
     pub async fn add_tombstone(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<()> {

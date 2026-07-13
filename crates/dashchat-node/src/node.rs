@@ -721,9 +721,6 @@ impl Node {
         self.introduce_agents_to_group(chat_id, introduced_agents)
             .await?;
 
-        self.local_store.save_group_chat_subscribed(chat_id).await?;
-        self.initialize_topic(*chat_id).await?;
-
         for agent in agents {
             self.invite_to_group(chat_id, agent).await?;
         }
@@ -891,11 +888,11 @@ impl Node {
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
         self.register_topic(chat_id).await?;
-        self.local_store.save_group_chat_subscribed(chat_id).await
+        Ok(())
     }
 
     pub async fn get_groups(&self) -> anyhow::Result<Vec<ChatId>> {
-        self.local_store.get_group_chat_ids().await
+        self.derived_store.get_group_chat_ids().await
     }
 
     pub async fn set_profile(&self, profile: Profile) -> Result<Header, crate::Error> {
