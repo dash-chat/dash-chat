@@ -141,14 +141,7 @@ impl DerivedStore {
         match &payload {
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
                 for (device_id, agent_id) in agents {
-                    if let Err(err) = self.save_agent_mapping(*device_id, *agent_id).await {
-                        tracing::warn!(
-                            ?err,
-                            device_id = ?device_id.aliased(),
-                            agent_id = ?agent_id.aliased(),
-                            "failed to save agent mapping from IntroduceAgents"
-                        );
-                    }
+                    self.save_agent_mapping(*device_id, *agent_id).await?;
                 }
             }
 
@@ -161,9 +154,7 @@ impl DerivedStore {
 
                 tracing::info!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
 
-                if let Err(err) = self.save_profile(agent_id, profile.clone()).await {
-                    tracing::warn!(?err, "failed to save profile from SetProfile");
-                }
+                self.save_profile(agent_id, profile.clone()).await?;
             }
 
             Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
@@ -174,22 +165,13 @@ impl DerivedStore {
                     AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
                         anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
                     })?);
-                if let Err(err) = self.save_agent_mapping(author, agent_id).await {
-                    tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
-                }
-
-                if let Err(err) = self.save_capabilities(author, capabilities.clone()).await {
-                    tracing::warn!(?err, "failed to save capabilities from SetCapabilities");
-                }
+                self.save_agent_mapping(author, agent_id).await?;
+                self.save_capabilities(author, capabilities.clone()).await?;
             }
 
             Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact)) => {
-                if let Err(err) = self
-                    .save_agent_mapping(contact.device_pubkey, contact.agent_id)
-                    .await
-                {
-                    tracing::warn!(?err, "failed to save agent mapping from AddContact");
-                }
+                self.save_agent_mapping(contact.device_pubkey, contact.agent_id)
+                    .await?;
             }
 
             _ => {

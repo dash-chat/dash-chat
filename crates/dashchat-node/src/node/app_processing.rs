@@ -180,6 +180,9 @@ impl Node {
                                 // Process the operation.
                                 let result = node.process_app(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
                                 if let Err(err) = result.as_ref() {
+                                    // TODO: There is no retry path other than restarting the app and hoping the replay succeeds.
+                                    // TODO: Op replay (explicit ACKs) is in another branch, when merged remove this line.
+                                    // Any persistent failure here results in a permanent loss of functionality.
                                     tracing::error!(?err, "process operation error");
                                 }
 
@@ -190,8 +193,6 @@ impl Node {
                                     if let Err(err) = processed_tx.send(result) {
                                         tracing::error!(?err, "processed_tx send error")
                                     }
-
-
                                 }
 
                                 // @TODO: this is required for tests, but nowhere else, it can be placed behind the
@@ -394,29 +395,32 @@ impl Node {
         let payload = operation.message();
 
         match &payload {
-            Payload::GroupControl(_) => {
-                // Nothing to do.
+            Payload::Inbox(_) => {
+                let active_topics = self.local_store.get_active_inbox_topics().await?;
+                if !active_topics
+                    .iter()
+                    .any(|it| *it.topic == TopicId::from(topic))
+                {
+                    // not for me, ignore and return before sending a notification
+                    return Ok(());
+                }
             }
+
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
                 for (_, agent_id) in agents {
                     if agent_id == &self.agent_id() {
                         continue;
                     }
-                    if let Err(err) = self.register_topic(Topic::announcements(*agent_id)).await {
-                        tracing::error!(
-                            ?err,
-                            agent_id = ?agent_id.aliased(),
-                            "failed to register announcements topic for IntroduceAgents"
-                        );
-                    }
+                    self.register_topic(Topic::announcements(*agent_id))
+                        .await
+                        .context("failed to register announcements topic for IntroduceAgents")?;
                 }
             }
 
             Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
-                if let Err(err) = self.join_group(*chat_id).await {
-                    // TODO: no retry path — device ends up with no topic registered for this group.
-                    tracing::error!(?err, "failed to join group from invitation");
-                }
+                self.join_group(*chat_id)
+                    .await
+                    .context("failed to join group from invitation")?;
             }
 
             Payload::Chat(ChatPayload::Message(m)) => {
