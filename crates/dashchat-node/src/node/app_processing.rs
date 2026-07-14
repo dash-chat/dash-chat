@@ -153,10 +153,8 @@ impl Node {
                                     continue;
                                 };
 
-                                // TODO: add accessor to `Acked` to avoid cloning the entire operation.
-                                let operation_clone = operation.clone();
 
-                                let result = node.process_groups(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
+                                let result = node.process_groups(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
 
                                 // Signal that the operation has been fully processed. This will
                                 // allow the ProcessFuture to complete. We return a result here so
@@ -174,20 +172,9 @@ impl Node {
                                     continue;
                                 };
 
-                                // Acknowledge the operation now that application-layer
-                                // processing has finished. The node uses an `Explicit`
-                                // ack policy, so this persisted ack is what makes the
-                                // operation eligible for mailbox transmission (see
-                                // `OpStore::acked_log_height`).
-                                if let Err(err) = operation_clone.ack().await {
+                                if let Err(err) = node.ack_operation(&operation).await {
                                     tracing::error!(?err, "failed to acknowledge operation");
                                 }
-
-                                #[cfg(feature = "testing")]
-                                // Mark the operation as processed so it can be awaited by
-                                // [`crate::testing::PollConfig::consistency`]
-                                node.op_store.mark_op_processed(topic, &id);
-
                             },
                             ProcessorEvent::App { operation, source, processed_tx } => {
                                 let topic = operation.topic();
@@ -215,18 +202,7 @@ impl Node {
                                 }
 
 
-                                #[cfg(feature = "testing")]
-                                // Mark the operation as processed so it can be awaited by
-                                // [`crate::testing::PollConfig::consistency`]
-                                node.op_store.mark_op_processed(topic, &id);
-
-
-                                // Acknowledge the operation now that application-layer
-                                // processing has finished. The node uses an `Explicit`
-                                // ack policy, so this persisted ack is what makes the
-                                // operation eligible for mailbox transmission (see
-                                // `OpStore::acked_log_height`).
-                                if let Err(err) = operation.ack().await {
+                                if let Err(err) = node.ack_operation(&operation).await {
                                     tracing::error!(?err, "failed to acknowledge operation");
                                 }
 
@@ -250,6 +226,23 @@ impl Node {
         });
 
         handle
+    }
+
+    async fn ack_operation(&self, operation: &ProcessedOperation<Payload>) -> anyhow::Result<()> {
+        // Mark the operation as processed so it can be awaited by
+        // [`crate::testing::PollConfig::consistency`]
+        #[cfg(feature = "testing")]
+        self.op_store
+            .mark_op_processed(operation.topic(), &operation.id());
+
+        // Acknowledge the operation now that application-layer
+        // processing has finished. The node uses an `Explicit`
+        // ack policy, so this persisted ack is what makes the
+        // operation eligible for mailbox transmission (see
+        // `OpStore::acked_log_height`).
+        operation.ack().await?;
+
+        Ok(())
     }
 
     /// Enforce the topic's tombstone set on a received operation: if its hash
