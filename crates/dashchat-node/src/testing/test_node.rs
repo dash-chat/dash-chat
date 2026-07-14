@@ -144,7 +144,9 @@ impl TestNode {
             .await?
             .into_iter()
             .filter_map(|(_, payload)| match payload {
-                Some(Payload::DeviceGroup(DeviceGroupPayload::AddContact(qr))) => Some(qr.agent_id),
+                Some(Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id })) => {
+                    Some(agent_id)
+                }
                 _ => None,
             })
             .collect();

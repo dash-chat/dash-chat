@@ -185,12 +185,15 @@ async fn handle_browse_events(
 
                     let url = format!("http://{host}:{port}");
                     node.mailboxes
-                        .register(mailbox_client::toy::ToyMailboxClient::new(
-                            mailbox_id.clone(),
-                            url.clone(),
-                            node.endpoint_id(),
-                            node.unfetched_blob_tracker(),
-                        ))
+                        .register(
+                            mailbox_client::toy::ToyMailboxClient::new(
+                                mailbox_id.clone(),
+                                url.clone(),
+                                node.endpoint_id(),
+                                node.unfetched_blob_tracker(),
+                            )
+                            .with_blob_reader(node.blob_reader()),
+                        )
                         .await;
                     // Add the mailbox's dialing address to the address book so
                     // the blob downloader can reach it by EndpointId rather than

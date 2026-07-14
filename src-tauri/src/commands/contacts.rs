@@ -24,9 +24,31 @@ pub async fn my_device_id(app_node: State<'_, AppNode>) -> Result<DeviceId, Stri
 }
 
 #[tauri::command]
+pub async fn agent_for_device(
+    device_pubkey: DeviceId,
+    app_node: State<'_, AppNode>,
+) -> Result<Option<AgentId>, Error> {
+    let node = app_node.get().await?;
+    Ok(node
+        .lookup_contact(device_pubkey)
+        .await
+        .map_err(|e| dashchat_node::Error::AuthorOperation(e.to_string()))?)
+}
+
+#[tauri::command]
 pub async fn add_contact(contact_code: QrCode, app_node: State<'_, AppNode>) -> Result<(), Error> {
+    if contact_code.share_intent == ShareIntent::AddDevice {
+        return Err(Error::AddDeviceNotSupported);
+    }
     let node = app_node.get().await?;
     node.add_contact(contact_code).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn accept_contact(agent_id: AgentId, app_node: State<'_, AppNode>) -> Result<(), Error> {
+    let node = app_node.get().await?;
+    node.accept_contact(agent_id).await?;
     Ok(())
 }
 

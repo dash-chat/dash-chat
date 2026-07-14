@@ -24,8 +24,7 @@
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
-		MockDirectChatClient,
-		MockGroupChatClient,
+		MockChatsStore,
 		MockMailboxTrackerStore,
 		MockSettingsClient,
 		seedDemoData,
@@ -122,12 +121,12 @@
 		);
 
 		const mockChatsClient = new MockChatsClient();
-		chatsStore = new ChatsStore(
+		chatsStore = new MockChatsStore(
 			logsStore,
 			contactsStore,
 			mockChatsClient,
-			() => new MockDirectChatClient(mockLogsClient, DEMO_IDS.MY_AGENT_ID),
-			() => new MockGroupChatClient(),
+			mockLogsClient,
+			DEMO_IDS.MY_AGENT_ID,
 		);
 
 		mailboxTrackerStore = new MockMailboxTrackerStore();

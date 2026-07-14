@@ -6,7 +6,9 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 
 use crate::{AgentId, DeviceId, Profile, compat::Capabilities};
-use crate::{AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, Payload, Topic};
+use crate::{
+    AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
+};
 
 const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS devices (
@@ -189,9 +191,16 @@ impl DerivedStore {
                 self.save_capabilities(author, capabilities.clone()).await?;
             }
 
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact)) => {
-                self.save_agent_mapping(contact.device_pubkey, contact.agent_id)
-                    .await?;
+            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }) => {
+                self.save_agent_mapping(author, *agent_id).await?;
+            }
+
+            Payload::Inbox(InboxPayload::ContactRequest {
+                agent_id, profile, ..
+            })
+            | Payload::Inbox(InboxPayload::ContactRequestAck { agent_id, profile }) => {
+                self.save_agent_mapping(author, *agent_id).await?;
+                self.save_profile(*agent_id, profile.clone()).await?;
             }
 
             // We define group chats as topics which contain a CreateGroup that makes at least

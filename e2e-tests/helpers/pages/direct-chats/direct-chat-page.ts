@@ -3,6 +3,7 @@ import { ConnectionStatusIndicator } from '../../components/connection-status-in
 import { Messages } from '../../components/messages';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
+import { SYNC_TIMEOUT } from '../../timeouts';
 import { TestHelper } from '../test-helper';
 
 export type MessageStatus = 'sending' | 'local' | 'cloud';
@@ -37,6 +38,9 @@ export class DirectChatPage extends TestHelper {
 	}
 
 	async sendMessage(text: string) {
+		// The composer only mounts once the chat leaves the pending state, which
+		// depends on the peer's profile syncing peer-to-peer through the mailbox.
+		await this.composer.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
 		await this.typeInto(tid('message-input-textarea'), text);
 		await this.agent.pause(50);
 		await this.agent.execute((sel: string) => {
@@ -81,7 +85,11 @@ export class DirectChatPage extends TestHelper {
 					if (!wrapper.textContent?.includes(t)) continue;
 					const el = wrapper.querySelector(statusSel) as HTMLElement | null;
 					const status = el?.dataset.status;
-					if (status === 'sending' || status === 'local' || status === 'cloud') {
+					if (
+						status === 'sending' ||
+						status === 'local' ||
+						status === 'cloud'
+					) {
 						return status;
 					}
 					return null;
