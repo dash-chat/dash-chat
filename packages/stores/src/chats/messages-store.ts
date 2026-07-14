@@ -79,7 +79,10 @@ export class MessagesStore {
 		}
 
 		for (const target of Object.keys(deletesByTarget)) {
-			messages[target].deleted = true;
+			const message = messages[target];
+			if (message !== undefined) {
+				message.deleted = true;
+			}
 		}
 
 		return messages;
