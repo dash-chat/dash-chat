@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.8", features = ["json"] }
+bytes = { workspace = true }
 futures = "0.3"
 tokio = { version = "1", features = ["full"] }
 p2panda-net = { workspace = true }
