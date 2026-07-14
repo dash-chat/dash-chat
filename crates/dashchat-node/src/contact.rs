@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
 use aliased::Aliasing;
+use chrono::{DateTime, Utc};
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -97,8 +97,13 @@ impl InboxTopic {
         expires_at: DateTime<Utc>,
     ) -> Self {
         Self {
-            topic: Topic::new(derive_inbox_topic(device_pubkey, &nonce.as_bytes()))
-                .alias_named(&format!("inbox({:?},nonce={})", device_pubkey.aliased(), hex::encode(nonce.as_bytes()))),
+            topic: Topic::new(derive_inbox_topic(device_pubkey, &nonce.as_bytes())).alias_named(
+                &format!(
+                    "inbox({:?},nonce={})",
+                    device_pubkey.aliased(),
+                    hex::encode(nonce.as_bytes())
+                ),
+            ),
             expires_at,
         }
     }
@@ -136,8 +141,11 @@ impl FromStr for QrCode {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = hex::decode(s)?;
-        let (device_pubkey, inbox_nonce_raw, share_intent): (DeviceId, Option<[u8; 8]>, ShareIntent) =
-            decode_cbor(bytes.as_slice())?;
+        let (device_pubkey, inbox_nonce_raw, share_intent): (
+            DeviceId,
+            Option<[u8; 8]>,
+            ShareIntent,
+        ) = decode_cbor(bytes.as_slice())?;
         Ok(QrCode {
             device_pubkey,
             share_intent,
