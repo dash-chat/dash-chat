@@ -50,6 +50,7 @@ export class GroupChatStore {
 			contactsStore,
 			reactive(async () => chatId),
 			messagesClient,
+			this.agentIdForDeviceId,
 		);
 		this.logsStore.logsClient.onNewOperation((topicId, op) => {
 			if (topicId === this.chatId && op.header.auth) {

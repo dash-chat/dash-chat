@@ -3,7 +3,7 @@ import { type ReactiveFn, reactive } from 'signalium';
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { DeviceId, Hash } from '../p2panda/types';
+import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import {
 	ChatId,
 	ChatReaction,
@@ -35,6 +35,11 @@ export class MessagesStore {
 		/** Resolves to '' while a pending direct chat has no topic yet. */
 		public chatId: ReactiveFn<Promise<ChatId>, []>,
 		public client: IMessagesClient,
+		/** Resolves the agent owning the given device among this chat's participants. */
+		public agentIdForDeviceId: ReactiveFn<
+			Promise<AgentId | undefined>,
+			[DeviceId]
+		>,
 	) {}
 
 	messages = reactive(async () => {

@@ -31,6 +31,7 @@ export class DirectChatStore {
 			contactsStore,
 			this.chatId,
 			messagesClient,
+			this.agentIdForDeviceId,
 		);
 	}
 
