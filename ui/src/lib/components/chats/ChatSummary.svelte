@@ -35,8 +35,8 @@
 </script>
 
 <TitleTruncatedListItem
-	title={summary.name || m.waitingForProfile()}
-	titleWrapClass={summary.name ? '' : 'quiet'}
+	title={summary.waitingForProfile ? m.waitingForProfile() : summary.name}
+	titleWrapClass={summary.waitingForProfile ? 'quiet' : ''}
 	link
 	class={active ? 'active' : ''}
 	linkProps={{ href: chatHref(summary) }}

@@ -80,6 +80,7 @@
 	"shareQrCodeSubtitle": "Scan this QR code to chat with me on Dash Chat.",
 	"contactAdded": "{{name}} was added to your contacts.",
 	"contactAccepted": "Contact added.",
+	"contactRequestSent": "Contact request sent.",
 	"contactRequestRejected": "Contact request was rejected.",
 	"someone": "Someone",
 	"groupCreated": "Group created.",

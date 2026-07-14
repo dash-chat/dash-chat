@@ -481,17 +481,96 @@ impl Node {
             }
 
             Payload::Inbox(invitation) => {
-                let active_topics = self.local_store.get_active_inbox_topics().await?;
-                if !active_topics
+                let topic_id = TopicId::from(topic);
+                let all_advertised_topics = self.local_store.get_advertised_inbox_topics().await?;
+                let is_advertised_topic =
+                    all_advertised_topics.iter().any(|it| *it.topic == topic_id);
+                let is_reply = self
+                    .local_store
+                    .get_reply_inbox_topics()
+                    .await?
                     .iter()
-                    .any(|it| *it.topic == TopicId::from(topic))
-                {
-                    // not for me, ignore
+                    .any(|it| *it.topic == topic_id);
+                if !is_advertised_topic && !is_reply {
+                    // not for me (e.g. another scanner's request on a shared
+                    // advertised inbox we only synced as an intermediary): ignore.
                     return Ok(());
                 }
                 match invitation {
-                    InboxPayload::ContactRequest { .. } => {
-                        // Nothing to do.
+                    InboxPayload::ContactRequest {
+                        agent_id, profile, ..
+                    } => {
+                        // A request arrived on our advertised inbox. Persist the
+                        // requester's identity + profile locally so the UI can
+                        // render the pending request, but perform no network
+                        // side-effects (bootstrap registration, topic
+                        // subscriptions) and disclose nothing about us until the
+                        // user explicitly accepts (see `accept_contact`). This
+                        // keeps an unsolicited request — e.g. anyone scanning a
+                        // shared QR — from amplifying our resources or handing our
+                        // profile to every scanner. The request is signed by the
+                        // scanner's device key (author), so we map that device to
+                        // the requester's agent_id directly rather than trusting
+                        // the embedded QR code's agent_id.
+                        if is_advertised_topic && !matches!(source, Source::LocalStore) {
+                            self.local_store
+                                .save_agent_mapping(author, *agent_id)
+                                .await?;
+                            self.local_store
+                                .save_profile(*agent_id, profile.clone())
+                                .await?;
+
+                            // Mutual add: if we also sent this peer a contact
+                            // request, their incoming request is an implicit
+                            // acceptance — complete the exchange automatically
+                            // rather than waiting for a manual tap. Spawned so we
+                            // don't await publishing (which needs this same
+                            // processor) and deadlock.
+                            if self.has_outgoing_pending_request(author).await? {
+                                let node = self.clone();
+                                let agent_id = *agent_id;
+                                tokio::spawn(async move {
+                                    if let Err(err) = node.accept_contact(agent_id).await {
+                                        tracing::warn!(
+                                            ?err,
+                                            "failed to auto-accept mutual contact request"
+                                        );
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    InboxPayload::ContactRequestAck { profile, agent_id } => {
+                        // The op must arrive on our private reply topic and be
+                        // signed by the device whose QR we scanned. Verifying
+                        // Verifying author == expected_ack_author prevents a
+                        // third party from injecting a spoofed ack with
+                        // an attacker-chosen agent_id/profile.
+                        if is_reply && !matches!(source, Source::LocalStore) {
+                            let expected = self
+                                .local_store
+                                .get_reply_inbox_expected_ack_author(topic_id)
+                                .await?;
+                            if expected.as_ref() != Some(&author) {
+                                tracing::warn!(
+                                    ?author,
+                                    ?expected,
+                                    "ContactRequestAck author does not match expected; ignoring"
+                                );
+                                return Ok(());
+                            }
+                            self.establish_contact(author, *agent_id).await?;
+                            self.local_store
+                                .save_profile(*agent_id, profile.clone())
+                                .await?;
+                            let node = self.clone();
+                            let agent_id = *agent_id;
+                            tokio::spawn(async move {
+                                if let Err(err) = node.publish_add_contact(agent_id).await {
+                                    tracing::warn!(?err, "failed to record accepted contact");
+                                }
+                            });
+                        }
                     }
                 }
             }

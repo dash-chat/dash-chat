@@ -171,13 +171,16 @@ export interface InboxTopic {
 	topic: TopicId;
 }
 
-export type ShareIntent = 'AddDevice' | 'AddContact';
+/** Numeric discriminant matching `dashchat_node::ShareIntent` (serde_repr u8). */
+export type ShareIntent = 0 | 1;
+export const ShareIntent = {
+	AddDevice: 0,
+	AddContact: 1,
+} as const;
 
 export interface ContactCode {
 	/// Pubkey of this node: allows adding this node to groups.
 	device_pubkey: DeviceId;
-	/// Agent ID to add to spaces
-	agent_id: AgentId;
 	inbox_topic: InboxTopic | undefined;
 	/// The intent of the QR code: whether to add this node as a contact or a device.
 	share_intent: ShareIntent;
@@ -189,7 +192,8 @@ export interface ReadMessagesPayload {
 }
 
 export type DeviceGroupPayload =
-	| { type: 'AddContact'; payload: ContactCode }
+	| { type: 'AddContact'; payload: { agent_id: AgentId } }
+	| { type: 'PendingContactRequest'; payload: { device_pubkey: DeviceId } }
 	| { type: 'RejectContactRequest'; payload: AgentId }
 	| { type: 'ReadMessages'; payload: ReadMessagesPayload };
 
@@ -198,6 +202,8 @@ export type InboxPayload = {
 	payload: {
 		code: ContactCode;
 		profile: Profile;
+		agent_id: AgentId;
+		reply_topic: TopicId;
 	};
 };
 
@@ -293,4 +299,5 @@ export interface ChatSummary {
 	name: string;
 	avatar: string | undefined;
 	lastEvent: ChatSummaryLastEvent;
+	waitingForProfile?: true;
 }
