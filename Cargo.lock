@@ -5426,8 +5426,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dashchat-utils",
- "futures",
- "if-watch",
  "iroh",
  "iroh-blobs",
  "log",
