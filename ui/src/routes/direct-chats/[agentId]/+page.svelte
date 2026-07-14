@@ -80,7 +80,7 @@
 	const chatId = useReactivePromise(store.chatId);
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const contactRequest = useReactivePromise(store.contactRequest);
-	const messagesSets = useReactivePromise(store.groupedMessages);
+	const messageGroups = useReactivePromise(store.groupedMessages);
 	const readMessageHashes = useReactivePromise(
 		store.messages.readMessageHashes,
 	);
@@ -257,11 +257,11 @@
 	const theme = $derived(useTheme());
 
 	function getUnreadDividerInfo(
-		messagesSetsInDays: Awaited<typeof $messagesSets>,
+		messageGroupsInDays: Awaited<typeof $messageGroups>,
 		readHashes: Set<Hash> | undefined,
 		deviceId: DeviceId | undefined,
 	): { hash: Hash | null; count: number } {
-		if (!messagesSetsInDays || !readHashes || !deviceId) {
+		if (!messageGroupsInDays || !readHashes || !deviceId) {
 			return { hash: null, count: 0 };
 		}
 
@@ -269,9 +269,9 @@
 			capturedUnreadHash === null &&
 			(!unreadDividerCaptured || !isAtBottom)
 		) {
-			for (const day of messagesSetsInDays) {
-				for (const messageSet of day.eventsSets) {
-					for (const [hash, message] of messageSet) {
+			for (const day of messageGroupsInDays) {
+				for (const messageGroup of day.eventsGroups) {
+					for (const [hash, message] of messageGroup) {
 						if (message.author !== deviceId && !readHashes.has(hash)) {
 							capturedUnreadHash = hash;
 							break;
@@ -291,9 +291,9 @@
 		// and increases when new messages arrive.
 		let count = 0;
 		let found = false;
-		for (const day of messagesSetsInDays) {
-			for (const messageSet of day.eventsSets) {
-				for (const [hash, message] of messageSet) {
+		for (const day of messageGroupsInDays) {
+			for (const messageGroup of day.eventsGroups) {
+				for (const [hash, message] of messageGroup) {
 					if (hash === capturedUnreadHash) found = true;
 					if (found && message.author !== deviceId) count++;
 				}
@@ -408,9 +408,9 @@
 						</div>
 					{:else}
 						{#await $readMessageHashes then readHashes}
-							{#await $messagesSets then messagesSetsInDays}
+							{#await $messageGroups then messageGroupsInDays}
 								{@const unreadDivider = getUnreadDividerInfo(
-									messagesSetsInDays,
+									messageGroupsInDays,
 									readHashes,
 									myDeviceId,
 								)}
@@ -523,14 +523,14 @@
 										class="column m-2 gap-1"
 										data-testid="direct-chat-messages"
 									>
-										{#each messagesSetsInDays as messageSetInDay}
+										{#each messageGroupsInDays as messageGroupsInDay}
 											<div use:navbarSticky class="self-center z-10">
-												<DayTag class="quiet" day={messageSetInDay.day} />
+												<DayTag class="quiet" day={messageGroupsInDay.day} />
 											</div>
 
-											{#each messageSetInDay.eventsSets as messageSet}
+											{#each messageGroupsInDay.eventsGroups as messageGroup}
 												<div class="column" style="gap: 1px">
-													{#each messageSet as [hash, message], i (hash)}
+													{#each messageGroup as [hash, message], i (hash)}
 														{#if unreadDivider.hash === hash}
 															<div
 																class="unread-divider"
@@ -542,7 +542,7 @@
 															</div>
 														{/if}
 														{@const position = messagePosition(
-															messageSet.length,
+															messageGroup.length,
 															i,
 														)}
 														{#if myDeviceId == message.author}
