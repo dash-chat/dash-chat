@@ -261,29 +261,11 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Open the quick-action bar for the message containing `text` by
-	 * dispatching a contextmenu event (the path `longpress` uses on desktop). */
+	/** Open the quick-action bar for the message containing `text` and wait for
+	 * it to be displayed. Same gesture as `openReactions`; the bar carries the
+	 * reaction emojis and, on own messages, the Edit action. */
 	async openActions(text: string): Promise<void> {
-		await this.agent.execute(
-			(messagesSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						wrapper.dispatchEvent(
-							new MouseEvent('contextmenu', {
-								bubbles: true,
-								cancelable: true,
-							}),
-						);
-						return;
-					}
-				}
-			},
-			this.messagesSelector,
-			text,
-		);
+		await this.openReactions(text);
 	}
 
 	/** Whether the message containing `text` shows the "Edited" indicator. */

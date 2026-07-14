@@ -27,8 +27,6 @@ export * from './chats/chat-key.js';
 export * from './chats/messages-store.js';
 export * from './chats/messages-client.js';
 
-export * from './chats/edits.js';
-
 export * from './settings/settings-client.js';
 export * from './settings/settings-store.js';
 

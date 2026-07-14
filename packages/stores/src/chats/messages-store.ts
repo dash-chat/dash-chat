@@ -12,8 +12,19 @@ import {
 	Payload,
 	mediaBundleToAttachment,
 } from '../types';
-import { MessageVersion, applyEdits } from './edits';
 import { type IMessagesClient } from './messages-client';
+
+/** The window during which a message may be edited, measured from the original
+ * message timestamp. Frontend operation timestamps are milliseconds since the
+ * UNIX epoch (the backend serializes them as such), so this is 24h in ms.
+ * Mirrors `EDIT_WINDOW_MICROS` in `crates/dashchat-node/src/chat/edit.rs`. */
+export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** A single version of a message's text, with the time it was authored. */
+export interface MessageVersion {
+	text: string;
+	timestamp: number;
+}
 
 export interface Message {
 	hash: string;
@@ -49,7 +60,8 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const { messages, reactionsByTarget } = collectMessageActionsByType(logs);
+		const { messages, reactionsByTarget, editsByTarget } =
+			collectMessageActionsByType(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
 			const message = messages[target];
@@ -60,7 +72,10 @@ export class MessagesStore {
 			}
 		}
 
-		applyEdits(messages, logs);
+		for (const [hash, message] of Object.entries(messages)) {
+			messages[hash] = applyEdits(message, editsByTarget);
+		}
+
 		return messages;
 	});
 
@@ -136,14 +151,23 @@ export class MessagesStore {
 	}
 }
 
+/** An edit op: the new text, keyed in `editsByTarget` by the hash it edits. */
+interface Edit {
+	hash: Hash;
+	text: string;
+	timestamp: number;
+}
+
 function collectMessageActionsByType(
 	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
 ): {
 	messages: Record<Hash, Message>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
+	editsByTarget: Record<Hash, Edit>;
 } {
 	const messages: Record<Hash, Message> = {};
 	const reactions: Record<Hash, Record<DeviceId, string>> = {};
+	const edits: Record<Hash, Edit> = {};
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
@@ -171,9 +195,45 @@ function collectMessageActionsByType(
 				} else {
 					delete reactions[target][author];
 				}
+			} else if (body.payload.type === 'EditMessage') {
+				edits[body.payload.payload.edit_hash] = {
+					hash: operation.hash,
+					text: body.payload.payload.message,
+					timestamp: operation.header.timestamp,
+				};
 			}
 		}
 	}
 
-	return { messages, reactionsByTarget: reactions };
+	return { messages, reactionsByTarget: reactions, editsByTarget: edits };
+}
+
+// Apply the message's edit chain and return the resulting message
+function applyEdits(
+	message: Message,
+	editsByTarget: Record<Hash, Edit>,
+): Message {
+	const versions: Edit[] = [];
+	const seen = new Set<Hash>([message.hash]);
+	for (
+		let edit = editsByTarget[message.hash];
+		edit !== undefined && !seen.has(edit.hash);
+		edit = editsByTarget[edit.hash]
+	) {
+		seen.add(edit.hash);
+		versions.push(edit);
+	}
+	if (versions.length === 0) return message;
+
+	const latest = versions[versions.length - 1];
+	return {
+		...message,
+		content: { ...message.content, message: latest.text },
+		history: [
+			{ text: message.content.message, timestamp: message.timestamp },
+			...versions.map(({ text, timestamp }) => ({ text, timestamp })),
+		],
+		editedAt: latest.timestamp,
+		latestEditHash: latest.hash,
+	};
 }
