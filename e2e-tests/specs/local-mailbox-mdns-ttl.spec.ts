@@ -34,7 +34,6 @@ describe('Local mailbox connection survives the mDNS announcement TTL', function
 			setupAgent('agent1'),
 			setupAgent('agent2'),
 		]);
-		await agent2.enablePreviewFeatures();
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
 
