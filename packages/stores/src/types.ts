@@ -150,11 +150,6 @@ export type ChatPayload =
 	| { type: 'JoinGroup'; payload: { chat_id: string } }
 	| { type: 'GroupInfo'; payload: GroupInfo };
 
-export interface InboxTopic {
-	expires_at: number;
-	topic: TopicId;
-}
-
 /** Numeric discriminant matching `dashchat_node::ShareIntent` (serde_repr u8). */
 export type ShareIntent = 0 | 1;
 export const ShareIntent = {
