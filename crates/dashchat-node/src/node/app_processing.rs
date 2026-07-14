@@ -194,11 +194,9 @@ impl Node {
                                 let id = operation.id();
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
 
-                                // TODO: add accessor to `Acked` to avoid cloning the entire operation.
-                                let operation_clone = operation.clone();
 
                                 // Process the operation.
-                                let result = node.process_app(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
+                                let result = node.process_app(&operation, &source).await.map_err(|err| ProcessorError::App(err.to_string()));
 
                                 // Signal that the operation has been fully processed. This will
                                 // allow the ProcessFuture to complete. We return a result here so
@@ -228,7 +226,7 @@ impl Node {
                                 // ack policy, so this persisted ack is what makes the
                                 // operation eligible for mailbox transmission (see
                                 // `OpStore::acked_log_height`).
-                                if let Err(err) = operation_clone.ack().await {
+                                if let Err(err) = operation.ack().await {
                                     tracing::error!(?err, "failed to acknowledge operation");
                                 }
 
@@ -285,13 +283,13 @@ impl Node {
     /// [`Self::enforce_tombstone`] before processing.
     async fn process_groups(
         &self,
-        operation: ProcessedOperation<Payload>,
+        operation: &ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
-        self.register_bootstrap(&operation, source).await?;
+        self.register_bootstrap(operation, source).await?;
 
         self.derived_store
-            .reduce(self.agent_id(), &operation)
+            .reduce(self.agent_id(), operation)
             .await?;
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
@@ -346,7 +344,7 @@ impl Node {
             crate::Topic::<crate::topic::kind::Untyped>::new(*operation.topic().as_bytes());
         self.notify_payload(
             dashchat_topic,
-            &operation.processed().header(),
+            operation.processed().header(),
             operation.message(),
         )
         .await?;
@@ -402,10 +400,10 @@ impl Node {
 
     async fn process_app(
         &self,
-        operation: ProcessedOperation<Payload>,
+        operation: &ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
-        self.register_bootstrap(&operation, source).await?;
+        self.register_bootstrap(operation, source).await?;
         let topic = operation.topic();
         let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         let header = operation.processed().header();
@@ -424,7 +422,7 @@ impl Node {
         }
 
         self.derived_store
-            .reduce(self.agent_id(), &operation)
+            .reduce(self.agent_id(), operation)
             .await?;
 
         let hash = operation.id();
