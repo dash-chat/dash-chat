@@ -9,7 +9,6 @@
  * the "local" icon once agent1's server is discovered. The chip must still
  * read "local" after 3 minutes — comfortably past the TTL.
  */
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import {
 	isRemoteMailbox,
 	resumeMailbox,
@@ -17,13 +16,17 @@ import {
 } from '../setup/mailbox-control';
 import { type Agent, setupAgent } from '../setup/setup-agents';
 
-describe('Local mailbox connection survives the mDNS announcement TTL', () => {
+// wdio arms its per-test abort timer from the mocha timeout at invocation
+// time, so `this.timeout()` inside a test body comes too late — the timeout
+// must be set suite-wide, before the tests start.
+describe('Local mailbox connection survives the mDNS announcement TTL', function () {
+	this.timeout(240_000);
+
 	let agent1: Agent;
 	let agent2: Agent;
 	let mailboxSuspended = false;
 
 	before(async function () {
-		this.timeout(120_000);
 		// The suite suspends the cloud mailbox server's process, which is
 		// impossible against a remote environment mailbox.
 		if (isRemoteMailbox()) this.skip();
@@ -31,19 +34,28 @@ describe('Local mailbox connection survives the mDNS announcement TTL', () => {
 			setupAgent('agent1'),
 			setupAgent('agent2'),
 		]);
+		await agent2.enablePreviewFeatures();
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		// exchangeContacts leaves agent2 inside its direct chat with Alice —
-		// that's where ConnectionStatusIndicator is mounted.
-		await exchangeContacts(agent1, agent2);
 
-		await agent1.directChatPage.back.click();
-		await agent1.homePage.ready();
+		// agent1 hosts the local mailbox server.
 		await agent1.homePage.settingsLink.click();
 		await agent1.settingsPage.ready();
 		await agent1.settingsPage.offlineLink.click();
 		await agent1.offlinePage.ready();
 		await agent1.offlinePage.setLocalMailboxEnabled(true);
+
+		// agent2 opens a members-less group chat — the cheapest way to a page
+		// where ConnectionStatusIndicator is mounted.
+		await agent2.homePage.newMessageButton.click();
+		await agent2.newMessagePage.ready();
+		await agent2.newMessagePage.newGroup.click();
+		await agent2.newGroupPage.addMembersStep.ready();
+		await agent2.newGroupPage.addMembersStep.nextButton.click();
+		await agent2.newGroupPage.groupInfoStep.ready();
+		await agent2.newGroupPage.groupInfoStep.setName('Solo Group');
+		await agent2.newGroupPage.groupInfoStep.createButton.click();
+		await agent2.groupChatPage.ready();
 
 		suspendMailbox();
 		mailboxSuspended = true;
@@ -63,18 +75,16 @@ describe('Local mailbox connection survives the mDNS announcement TTL', () => {
 	// connect_timeout=5s + timeout=10s per hanging cloud request, and the UI
 	// flips after 2 consecutive errors; pad for mDNS discovery of the local
 	// mailbox on top.
-	it('client shows the local mailbox icon once connected to the peer server', async function () {
-		this.timeout(120_000);
-		const indicator = agent2.directChatPage.connectionStatusIndicator;
+	it('client shows the local mailbox icon once connected to the peer server', async () => {
+		const indicator = agent2.groupChatPage.connectionStatusIndicator;
 		await agent2.waitUntil(
 			async () => (await indicator.status()) === 'local',
 			{ timeout: 90_000, interval: 1_000 },
 		);
 	});
 
-	it('keeps showing the local mailbox icon for 3 minutes, outliving the mDNS TTL', async function () {
-		this.timeout(240_000);
-		const indicator = agent2.directChatPage.connectionStatusIndicator;
+	it('keeps showing the local mailbox icon for 3 minutes, outliving the mDNS TTL', async () => {
+		const indicator = agent2.groupChatPage.connectionStatusIndicator;
 		const deadline = Date.now() + 180_000;
 		while (Date.now() < deadline) {
 			expect(await indicator.status()).toBe('local');
