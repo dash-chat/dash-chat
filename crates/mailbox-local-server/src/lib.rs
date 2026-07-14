@@ -42,8 +42,7 @@ impl LocalMailboxServer {
 /// `endpoint_id`. A free port is allocated automatically.
 ///
 /// The returned [`LocalMailboxServer`] is not yet announced on the LAN; pair it
-/// with [`register_mdns_with_retry`] and [`spawn_interface_watcher`] for
-/// discovery.
+/// with [`register_mdns_with_retry`] for discovery.
 ///
 /// `upload_grace` overrides how long the mailbox defers dialing a blob's source
 /// after an announce that expects an inline upload; `None` uses the production
