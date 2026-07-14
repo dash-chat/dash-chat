@@ -10,16 +10,6 @@ function hexToBytes(hex: string): Uint8Array {
 	);
 }
 
-function toBytes(value: string | Uint8Array | number[]): Uint8Array {
-	if (typeof value === 'string') {
-		return hexToBytes(value);
-	}
-	if (value instanceof Uint8Array) {
-		return value;
-	}
-	return Uint8Array.from(value);
-}
-
 function bytesToHex(bytes: Uint8Array): string {
 	return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
@@ -39,8 +29,8 @@ function toPaddedBase64(base64: string): string {
 // The inbox topic is replaced by an 8-byte nonce, cutting the code length by ~30%.
 export function encodeContactCode(contactCode: ContactCode): string {
 	const bin = encode([
-		toBytes(contactCode.device_pubkey),
-		toBytes(contactCode.inbox_nonce),
+		hexToBytes(contactCode.device_pubkey),
+		hexToBytes(contactCode.inbox_nonce),
 		contactCode.share_intent,
 	]);
 	return fromByteArray(bin).replace(/=+$/, '');
