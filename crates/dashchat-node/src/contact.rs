@@ -189,4 +189,19 @@ mod tests {
 
         assert_eq!(contact, decoded);
     }
+
+    #[test]
+    fn test_contact_roundtrip_no_nonce() {
+        let pubkey = VerifyingKey::from_bytes(&[22; 32]).unwrap();
+        let device_pubkey = DeviceId::from(pubkey);
+        let contact = QrCode {
+            device_pubkey,
+            share_intent: ShareIntent::AddDevice,
+            inbox_nonce: None,
+        };
+        let encoded = contact.to_string();
+        let decoded = QrCode::from_str(&encoded).unwrap();
+
+        assert_eq!(contact, decoded);
+    }
 }
