@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use crate::chat::ChatId;
 use crate::compat::Capabilities;
 use crate::contact::QrCode;
+use crate::topic::{Topic, kind};
 use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, DeviceId};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,8 +43,24 @@ pub enum AnnouncementsPayload {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum InboxPayload {
-    /// Invites the recipient to add the sender as a contact.
-    ContactRequest { code: QrCode, profile: Profile },
+    /// Invites the recipient to add the sender as a contact. `reply_topic` is a
+    /// private inbox the sender created for this exchange; the recipient sends
+    /// its `ContactRequestAck` there rather than on the (possibly shared)
+    /// advertised inbox, so other scanners of the same QR code never see it.
+    /// `agent_id` is the sender's agent id; the recipient records it against the
+    /// op author (device_pubkey)
+    ContactRequest {
+        code: QrCode,
+        profile: Profile,
+        agent_id: AgentId,
+        reply_topic: Topic<kind::Inbox>,
+    },
+    /// Sent by the inbox owner back to the scanner over the scanner's private
+    /// reply topic, carrying the owner's profile so the scanner learns it
+    /// immediately rather than waiting for announcements sync. `agent_id` is the
+    /// owner's agent id; the scanner records it against the op author
+    /// (device_pubkey), a step toward dropping `agent_id` from the QR code.
+    ContactRequestAck { profile: Profile, agent_id: AgentId },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,7 +141,18 @@ pub struct ReadMessagesPayload {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
-    AddContact(QrCode),
+    AddContact {
+        agent_id: AgentId,
+    },
+    /// Recorded by the scanner the moment it sends a contact request, before it
+    /// knows the owner's agent id (the QR code no longer carries it). Keyed on
+    /// the owner's device pubkey — the only identity the scanner has at that
+    /// point — so the UI can show a "waiting for profile" placeholder chat.
+    /// Superseded by the `AddContact` marker once the owner's ack arrives and
+    /// the device -> agent mapping is known.
+    PendingContactRequest {
+        device_pubkey: DeviceId,
+    },
     RejectContactRequest(AgentId),
     ReadMessages(ReadMessagesPayload),
 }
