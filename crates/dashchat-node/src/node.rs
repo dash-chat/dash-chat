@@ -1452,10 +1452,6 @@ impl Node {
             .add_reply_inbox_topic(reply_inbox.clone(), contact.device_pubkey)
             .await
             .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
-        let code = self
-            .new_qr_code(ShareIntent::AddContact, false)
-            .await
-            .map_err(|e| AddContactError::CreateQrCode(e.to_string()))?;
         let Some(profile) = self
             .my_profile()
             .await
@@ -1466,7 +1462,6 @@ impl Node {
         self.publish(
             inbox_topic.topic,
             Payload::Inbox(InboxPayload::ContactRequest {
-                code,
                 profile,
                 agent_id: self.agent_id(),
                 reply_topic: reply_inbox.topic.clone(),

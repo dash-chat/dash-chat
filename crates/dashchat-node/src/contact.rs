@@ -47,21 +47,6 @@ pub fn derive_inbox_topic(device_pubkey: &DeviceId, nonce: &[u8; 8]) -> [u8; 32]
 }
 
 /// The content for a QR code or deep link.
-///
-/// These codes are used to introduce two nodes for the purpose of either establishing
-/// mutual friendship, or linking these two devices together under the same identity.
-///
-/// The flow has some similarities in either case. In both cases, an "inbox" is established
-/// for the lifetime of the QR code, so that the QR code recipient can send its own
-/// data back to the sender, without needing to exchange QR codes in both directions.
-///
-/// When linking a device, the QR code sender adds the recipient to the device group.
-/// Whenever a person joins a chat group, they join with their device group, so that all of
-/// their devices can participate in the chat. The ActorId of the group is the unified
-/// identity which that person uses to join chat groups.
-///
-/// When adding a contact, no groups are joined, it's only for the purpose of exchanging
-/// pubkeys and key bundles, so that chat groups can be joined in the future.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 // #[serde(into = "String", try_from = "String")]
 pub struct QrCode {
