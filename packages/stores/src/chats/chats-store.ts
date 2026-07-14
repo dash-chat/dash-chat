@@ -18,6 +18,7 @@ import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
 import { pendingChatKey } from './chat-key';
 import { type IChatsClient } from './chats-client';
+import { type IMessagesClient, MessagesClient } from './messages-client';
 
 export class ChatsStore {
 	private groupChatVersion = signal(0);
@@ -26,16 +27,24 @@ export class ChatsStore {
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		public client: IChatsClient,
-		private directChatClientFactory: () => IDirectChatClient = () =>
-			new DirectChatClient(),
-		private groupChatClientFactory: () => IGroupChatClient = () =>
-			new GroupChatClient(),
 	) {
 		this.logsStore.logsClient.onNewOperation((_topicId, op) => {
 			if (op.body?.type === 'Chat' && op.body.payload.type === 'JoinGroup') {
 				this.groupChatVersion.value++;
 			}
 		});
+	}
+
+	protected directChatClient(): IDirectChatClient {
+		return new DirectChatClient();
+	}
+
+	protected groupChatClient(): IGroupChatClient {
+		return new GroupChatClient();
+	}
+
+	protected messagesClient(): IMessagesClient {
+		return new MessagesClient();
 	}
 
 	private groupChatIds = reactive(async () => {
@@ -63,8 +72,9 @@ export class ChatsStore {
 			new GroupChatStore(
 				this.logsStore,
 				this.contactsStore,
-				this.groupChatClientFactory(),
+				this.groupChatClient(),
 				chatId,
+				this.messagesClient(),
 			),
 	);
 
@@ -73,8 +83,9 @@ export class ChatsStore {
 			new DirectChatStore(
 				this.logsStore,
 				this.contactsStore,
-				this.directChatClientFactory(),
+				this.directChatClient(),
 				peer,
+				this.messagesClient(),
 			),
 	);
 

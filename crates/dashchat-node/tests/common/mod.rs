@@ -1,8 +1,13 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use dashchat_node::testing::TestNode;
 use mailbox_local_server::LocalMailboxServer;
 use mailbox_server::FetchConfig;
+
+/// Short blob-fetch grace window for tests, so the mailbox's fetch backstop
+/// fires quickly instead of waiting out the production default.
+pub const TEST_UPLOAD_GRACE: Duration = Duration::from_millis(500);
 
 /// Spawn an in-process local mailbox server that shares `relay`'s iroh endpoint
 /// and blob store, wait for it to become healthy, and forward any peer address
@@ -22,6 +27,7 @@ pub async fn spawn_relay_mailbox(
         blob_sync.downloader(),
         relay.iroh_endpoint().await.unwrap(),
         Some(fetch_config),
+        Some(TEST_UPLOAD_GRACE),
         peer_addr_tx,
     )
     .await

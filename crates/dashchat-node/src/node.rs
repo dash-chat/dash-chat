@@ -506,6 +506,16 @@ impl Node {
         crate::LocalStoreBlobTracker::new(self.local_store.clone())
     }
 
+    /// A blob-bytes source backed by this node's blob store, for the toy mailbox
+    /// client to upload blob bytes inline. Reads error when blob sync is disabled
+    /// (e.g. the push extension), which makes the client fall back to announcing
+    /// hashes only.
+    pub fn blob_reader(&self) -> std::sync::Arc<dyn mailbox_client::BlobReader> {
+        std::sync::Arc::new(NodeBlobReader {
+            blob_sync: self.blob_sync.clone(),
+        })
+    }
+
     /// Wake the unfetched-blob followup task to run a reconciliation pass now
     /// (e.g. on unpause / network change).
     pub fn notify_unfetched_blob_followup(&self) {
@@ -1960,6 +1970,22 @@ impl Node {
                 .collect();
             return Ok(OutgoingMedia::Photos { photos });
         }
+    }
+}
+
+/// [`mailbox_client::BlobReader`] backed by the node's blob store.
+struct NodeBlobReader {
+    blob_sync: Option<BlobSync>,
+}
+
+#[async_trait::async_trait]
+impl mailbox_client::BlobReader for NodeBlobReader {
+    async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
+        let blob_sync = self
+            .blob_sync
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("blob sync disabled"))?;
+        Ok(blob_sync.blobs.get_bytes(hash).await?)
     }
 }
 

@@ -1,7 +1,7 @@
-import type { Message } from '../direct-chats/direct-chat-store';
 import type { SimplifiedOperation } from '../p2panda/simplified-types';
 import type { DeviceId, Hash } from '../p2panda/types';
 import type { Payload } from '../types';
+import type { Message } from './messages-store';
 
 /** The window during which a message may be edited, measured from the original
  * message timestamp. Frontend operation timestamps are milliseconds since the

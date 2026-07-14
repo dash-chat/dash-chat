@@ -1,26 +1,24 @@
 import { reactive, signal } from 'signalium';
 
-import { applyDeletes } from '../chats/deletes';
-import { applyEdits } from '../chats/edits';
+import { type IMessagesClient } from '../chats/messages-client';
+import { Message, MessagesStore } from '../chats/messages-store';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
-import { Message } from '../direct-chats/direct-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
 import {
 	ChatId,
-	ChatReaction,
 	ChatSummary,
 	ChatSummaryLastEvent,
 	GroupControlEvent,
 	GroupInfo,
-	MessagesStore,
-	OutgoingMedia,
 	Payload,
-	mediaBundleToAttachment,
 } from '../types';
-import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
+import {
+	EventWithProvenance,
+	groupEventsInDays,
+} from '../utils/group-events-in-days';
 import { type IGroupChatClient } from './group-chat-client';
 
 export type ChatEvent =
@@ -35,15 +33,24 @@ export interface GroupMemberWithProfile {
 	member: boolean;
 }
 
-export class GroupChatStore implements MessagesStore {
+export class GroupChatStore {
 	private membersVersion = signal(0);
+
+	messages: MessagesStore;
 
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		public client: IGroupChatClient,
 		public chatId: ChatId,
+		messagesClient: IMessagesClient,
 	) {
+		this.messages = new MessagesStore(
+			logsStore,
+			contactsStore,
+			reactive(async () => chatId),
+			messagesClient,
+		);
 		this.logsStore.logsClient.onNewOperation((topicId, op) => {
 			if (topicId === this.chatId && op.header.auth) {
 				this.membersVersion.value++;
@@ -82,56 +89,6 @@ export class GroupChatStore implements MessagesStore {
 		return info;
 	});
 
-	messages = reactive(async () => {
-		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
-
-		const messages: Record<Hash, Message> = {};
-
-		for (const [author, operations] of Object.entries(logs)) {
-			for (const operation of operations) {
-				const body = operation.body;
-				if (body?.type === 'Chat') {
-					if (body.payload.type === 'Message') {
-						messages[operation.hash] = {
-							hash: operation.hash,
-							content: {
-								message: body.payload.payload.message,
-								media: mediaBundleToAttachment(body.payload.payload.media),
-							},
-							author,
-							seqNum: operation.header.seq_num,
-							timestamp: operation.header.timestamp,
-							reactions: {},
-						};
-					}
-				}
-			}
-		}
-		for (const [author, operations] of Object.entries(logs)) {
-			for (const operation of operations) {
-				const body = operation.body;
-				if (body?.type === 'Chat') {
-					if (body.payload.type === 'Reaction') {
-						const payload = body.payload.payload;
-						let message = messages[payload.target];
-						if (message) {
-							if (payload.emoji) {
-								message.reactions[author] = payload.emoji;
-							} else {
-								delete message.reactions[author];
-							}
-						} else {
-							console.warn('reaction for missing message');
-						}
-					}
-				}
-			}
-		}
-		applyEdits(messages, logs);
-		applyDeletes(messages, logs);
-		return messages;
-	});
-
 	private nameForDevice = reactive(
 		async (deviceId: DeviceId): Promise<string | undefined> => {
 			const members = await this.allMembers();
@@ -156,8 +113,8 @@ export class GroupChatStore implements MessagesStore {
 		return events;
 	});
 
-	messageSets = reactive(async () => {
-		const messages = await this.messages();
+	groupedEvents = reactive(async () => {
+		const messages = await this.messages.messages();
 		const controlEvents = await this.controlEvents();
 
 		const eventsWithProvenance: Record<
@@ -196,21 +153,12 @@ export class GroupChatStore implements MessagesStore {
 
 		const agentsSets = Array.from(devices).map(a => [a]);
 
-		return orderInEventSets(eventsWithProvenance, agentsSets);
-	});
-
-	lastMessage = reactive(async () => {
-		const messages = await this.messages();
-
-		const sortedMessages = Object.values(messages).sort(
-			(m1, m2) => m2.timestamp - m1.timestamp,
-		);
-		return sortedMessages.length > 0 ? sortedMessages[0] : undefined;
+		return groupEventsInDays(eventsWithProvenance, agentsSets);
 	});
 
 	lastEvent = reactive(async (): Promise<ChatSummaryLastEvent | undefined> => {
 		const controlEvents = await this.controlEvents();
-		const lastMessage = await this.lastMessage();
+		const lastMessage = await this.messages.lastMessage();
 
 		let bestAuth: GroupControlEvent | undefined;
 		let createdByMe = false;
@@ -302,46 +250,11 @@ export class GroupChatStore implements MessagesStore {
 		},
 	);
 
-	readMessageHashes = reactive(async () => {
-		const myDeviceGroupTopic =
-			await this.contactsStore.devicesStore.myDeviceGroupTopic();
-		const readHashes: Set<Hash> = new Set();
-
-		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
-			for (const op of ops) {
-				if (
-					op.body?.payload?.type === 'ReadMessages' &&
-					op.body.payload.payload.chat_id === this.chatId
-				) {
-					for (const hash of op.body.payload.payload.message_hashes) {
-						readHashes.add(hash);
-					}
-				}
-			}
-		}
-
-		return readHashes;
-	});
-
-	unreadCount = reactive(async () => {
-		const messages = await this.messages();
-		const readHashes = await this.readMessageHashes();
-		const myDeviceId = await this.contactsStore.myDeviceId();
-
-		let count = 0;
-		for (const [hash, message] of Object.entries(messages)) {
-			if (message.author !== myDeviceId && !readHashes.has(hash)) {
-				count++;
-			}
-		}
-		return count;
-	});
-
 	summary = reactive(async (): Promise<ChatSummary | undefined> => {
 		const last = await this.lastEvent();
 		if (!last) return undefined;
 		const info = await this.info();
-		const unread = await this.unreadCount();
+		const unread = await this.messages.unreadCount();
 
 		return {
 			type: 'GroupChat',
@@ -364,31 +277,6 @@ export class GroupChatStore implements MessagesStore {
 
 	async setInfo(info: GroupInfo): Promise<void> {
 		await this.client.setInfo(this.chatId, info);
-	}
-
-	async markAsRead(messageHashes: Hash[]): Promise<void> {
-		await this.client.markMessagesRead(this.chatId, messageHashes);
-	}
-
-	async sendMessage(input: {
-		message: string;
-		media: OutgoingMedia | null;
-	}): Promise<Hash> {
-		return this.client.sendMessage(this.chatId, input.message, input.media);
-	}
-
-	async editMessage(message: Message, newText: string): Promise<Hash> {
-		const target = message.latestEditHash ?? message.hash;
-		return this.client.editMessage(this.chatId, target, newText);
-	}
-
-	async deleteMessage(message: Message): Promise<Hash> {
-		const target = message.latestEditHash ?? message.hash;
-		return this.client.deleteMessage(this.chatId, target);
-	}
-
-	async sendReaction(reaction: ChatReaction) {
-		await this.client.sendReaction(this.chatId, reaction);
 	}
 }
 

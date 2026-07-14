@@ -1,4 +1,4 @@
-import type { Message } from '../direct-chats/direct-chat-store';
+import type { Message } from './messages-store';
 import type { SimplifiedOperation } from '../p2panda/simplified-types';
 import type { DeviceId, Hash } from '../p2panda/types';
 import type { Payload } from '../types';

@@ -1,5 +1,4 @@
 import { Profile } from './contacts/contacts-client';
-import type { Message } from './direct-chats/direct-chat-store';
 import { AgentId, DeviceId, Hash, TopicId } from './p2panda/types';
 
 export type ChatId = TopicId;
@@ -227,19 +226,6 @@ export type MessageId = string;
 // 	author: VerifyingKey;
 // 	timestamp: number;
 // }
-
-export interface MessagesStore {
-	markAsRead(messageHashes: Hash[]): Promise<void>;
-	/** Sends the message and resolves with the operation id of the created
-	 * message once it is confirmed in the local log. */
-	sendMessage(input: {
-		message: string;
-		media: OutgoingMedia | null;
-	}): Promise<Hash>;
-	editMessage(message: Message, newText: string): Promise<Hash>;
-	deleteMessage(message: Message): Promise<Hash>;
-	sendReaction(reaction: ChatReaction): Promise<void>;
-}
 
 export type GroupControlEvent =
 	| {
