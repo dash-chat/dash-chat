@@ -186,7 +186,6 @@ export type DeviceGroupPayload =
 export type InboxPayload = {
 	type: 'ContactRequest';
 	payload: {
-		code: ContactCode;
 		profile: Profile;
 		agent_id: AgentId;
 		reply_topic: TopicId;
