@@ -23,7 +23,8 @@ pub(crate) async fn track_cloud_mailbox(node: &Node) -> anyhow::Result<String> {
             mailbox_url.clone(),
             node.endpoint_id(),
             node.unfetched_blob_tracker(),
-        );
+        )
+        .with_blob_reader(node.blob_reader());
         node.mailboxes.register(mailbox_client).await;
     }
     Ok(mailbox_url)

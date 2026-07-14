@@ -68,7 +68,7 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
-	setContext('messages-store', store);
+	setContext('messages-store', store.messages);
 
 	const isPendingChat = store.isPending;
 
@@ -79,16 +79,18 @@
 		if (agent) goto(`/direct-chats/${agent}`, { replaceState: true });
 	});
 
-	const readTracker = createReadMessagesTracker(store);
+	const readTracker = createReadMessagesTracker(store.messages);
 	const readMessageOnObserve = readTracker.observe;
 
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 	const chatId = useReactivePromise(store.chatId);
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const contactRequest = useReactivePromise(store.contactRequest);
-	const messagesSets = useReactivePromise(store.messageSets);
-	const readMessageHashes = useReactivePromise(store.readMessageHashes);
-	const unreadCount = useReactivePromise(store.unreadCount);
+	const messageGroups = useReactivePromise(store.groupedMessages);
+	const readMessageHashes = useReactivePromise(
+		store.messages.readMessageHashes,
+	);
+	const unreadCount = useReactivePromise(store.messages.unreadCount);
 
 	async function acceptContactRequest(contactRequest: ContactRequest) {
 		try {
@@ -129,7 +131,7 @@
 		}
 	}
 
-	const editing = new MessageEditing(store);
+	const editing = new MessageEditing(store.messages);
 	let historyMessage: Message | undefined = $state(undefined);
 	let showHistory = $state(false);
 	let showSecurityTips = $state(false);
@@ -269,11 +271,11 @@
 	const theme = $derived(useTheme());
 
 	function getUnreadDividerInfo(
-		messagesSetsInDays: Awaited<typeof $messagesSets>,
+		messageGroupsInDays: Awaited<typeof $messageGroups>,
 		readHashes: Set<Hash> | undefined,
 		deviceId: DeviceId | undefined,
 	): { hash: Hash | null; count: number } {
-		if (!messagesSetsInDays || !readHashes || !deviceId) {
+		if (!messageGroupsInDays || !readHashes || !deviceId) {
 			return { hash: null, count: 0 };
 		}
 
@@ -281,9 +283,9 @@
 			capturedUnreadHash === null &&
 			(!unreadDividerCaptured || !isAtBottom)
 		) {
-			for (const day of messagesSetsInDays) {
-				for (const messageSet of day.eventsSets) {
-					for (const [hash, message] of messageSet) {
+			for (const day of messageGroupsInDays) {
+				for (const messageGroup of day.eventsGroups) {
+					for (const [hash, message] of messageGroup) {
 						if (message.author !== deviceId && !readHashes.has(hash)) {
 							capturedUnreadHash = hash;
 							break;
@@ -303,9 +305,9 @@
 		// and increases when new messages arrive.
 		let count = 0;
 		let found = false;
-		for (const day of messagesSetsInDays) {
-			for (const messageSet of day.eventsSets) {
-				for (const [hash, message] of messageSet) {
+		for (const day of messageGroupsInDays) {
+			for (const messageGroup of day.eventsGroups) {
+				for (const [hash, message] of messageGroup) {
 					if (hash === capturedUnreadHash) found = true;
 					if (found && message.author !== deviceId) count++;
 				}
@@ -410,184 +412,19 @@
 								style="align-items: center"
 								data-testid="direct-chat-peer-header"
 							>
-								<div
-									class="column min-w-0"
-									style="align-items: center"
-									data-testid="direct-chat-peer-header"
-								>
-									{#if profile}
-										<Link
-											class="column my-6 gap-2 items-center max-w-full px-4"
-											onclick={() => (showPeerProfile = true)}
-										>
-											<Avatar
-												image={profile.avatar}
-												initials={profile.name.slice(0, 2)}
-												size={80}
-											/>
-											<div class="flex items-center gap-1 max-w-full">
-												<span
-													class="text-xl font-semibold break-words text-center min-w-0"
-													>{fullName(profile)}</span
-												>
-												<wa-icon
-													class="small-icon quiet shrink-0"
-													src={wrapPathInSvg(mdiChevronRight)}
-												></wa-icon>
-											</div>
-										</Link>
-									{:else}
-										<div class="column my-6 gap-2 items-center">
-											<Avatar waitingForProfile size={80} />
-											<span class="quiet text-xl">
-												{m.waitingForProfile()}
-											</span>
-										</div>
-									{/if}
-								</div>
-								<div class="row justify-center mb-4">
-									<div class="outline-card" style="border-radius: 0.75rem;">
-										<div
-											class="flex flex-col gap-1 items-center p-3 text-center"
-										>
-											{#if contactRequest}
-												<div class="flex items-center gap-2 text-amber-600">
-													<wa-icon
-														class="small-icon"
-														src={wrapPathInSvg(mdiAlert)}
-													></wa-icon>
-													<span class="font-semibold"
-														>{m.reviewCarefully()}</span
-													>
-												</div>
-											{/if}
-											<div
-												class="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300"
-											>
-												<div
-													class="flex items-center justify-center gap-2"
-													role="button"
-													tabindex="0"
-													onclick={() => (profileNamesSheetOpen = true)}
-													onkeydown={onActivate(
-														() => (profileNamesSheetOpen = true),
-													)}
-												>
-													<wa-icon
-														class="small-icon"
-														src={wrapPathInSvg(mdiAccountQuestion)}
-													></wa-icon>
-													<span
-														><u>{m.profileNames()}</u>{m.areNotVerified()}</span
-													>
-												</div>
-												<div class="flex items-center justify-center gap-2">
-													<wa-icon
-														class="small-icon"
-														src={wrapPathInSvg(mdiAccountGroup)}
-													></wa-icon>
-													<span>{m.noGroupsInCommon()}</span>
-												</div>
-											</div>
-											{#if contactRequest}
-												<div class="row pt-1 justify-center">
-													<Button
-														rounded
-														tonal
-														small
-														onClick={() => (showSecurityTips = true)}
-													>
-														{m.securityTips()}
-													</Button>
-												</div>
-											{/if}
-										</div>
-									</div>
-								</div>
-
-								<ProfileNamesSheet
-									opened={profileNamesSheetOpen}
-									onClose={() => (profileNamesSheetOpen = false)}
-								/>
-
-								<div
-									class="column m-2 gap-1"
-									data-testid="direct-chat-messages"
-								>
-									{#each messagesSetsInDays as messageSetInDay}
-										<div use:navbarSticky class="self-center z-10">
-											<DayTag class="quiet" day={messageSetInDay.day} />
-										</div>
-
-										{#each messageSetInDay.eventsSets as messageSet}
-											<div class="column" style="gap: 1px">
-												{#each messageSet as [hash, message], i (hash)}
-													{#if unreadDivider.hash === hash}
-														<div
-															class="unread-divider"
-															data-testid="direct-chat-unread-divider"
-														>
-															{m.unreadMessages({
-																count: unreadDivider.count,
-															})}
-														</div>
-													{/if}
-													{@const position = messagePosition(
-														messageSet.length,
-														i,
-													)}
-													{#if myDeviceId == message.author}
-														<div
-															class="self-end max-w-[85%]"
-															data-message-hash={hash}
-															use:scrollToBottomOnMount={hash}
-														>
-															{#await $chatId then chatId}
-																<MessageFromMe
-																	{message}
-																	{position}
-																	{myDeviceId}
-																	{chatId}
-																	searchQuery={searchMode ? searchQuery : ''}
-																	onShowHistory={() => openHistory(message)}
-																	canEdit={canEditMessage(message, myDeviceId)}
-																	onEdit={() => editing.start(message)}
-																/>
-															{/await}
-														</div>
-													{:else}
-														<div
-															class="self-start max-w-[85%]"
-															data-message-hash={hash}
-															use:readMessageOnObserve={readHashes?.has(hash)
-																? null
-																: hash}
-														>
-															{#await $chatId then chatId}
-																<MessageFromOthers
-																	{message}
-																	{position}
-																	{myDeviceId}
-																	{chatId}
-																	searchQuery={searchMode ? searchQuery : ''}
-																	sender={profile}
-																	onShowHistory={() => openHistory(message)}
-																/>
-															{/await}
-														</div>
-													{/if}
-												{/each}
-											</div>
-										{/each}
-									{/each}
+								<div class="column my-6 gap-2 items-center">
+									<Avatar waitingForProfile size={80} />
+									<span class="quiet text-xl">
+										{m.waitingForProfile()}
+									</span>
 								</div>
 							</div>
 						</div>
 					{:else}
 						{#await $readMessageHashes then readHashes}
-							{#await $messagesSets then messagesSetsInDays}
+							{#await $messageGroups then messageGroupsInDays}
 								{@const unreadDivider = getUnreadDividerInfo(
-									messagesSetsInDays,
+									messageGroupsInDays,
 									readHashes,
 									myDeviceId,
 								)}
@@ -700,14 +537,14 @@
 										class="column m-2 gap-1"
 										data-testid="direct-chat-messages"
 									>
-										{#each messagesSetsInDays as messageSetInDay}
+										{#each messageGroupsInDays as messageGroupsInDay}
 											<div use:navbarSticky class="self-center z-10">
-												<DayTag class="quiet" day={messageSetInDay.day} />
+												<DayTag class="quiet" day={messageGroupsInDay.day} />
 											</div>
 
-											{#each messageSetInDay.eventsSets as messageSet}
+											{#each messageGroupsInDay.eventsGroups as messageGroup}
 												<div class="column" style="gap: 1px">
-													{#each messageSet as [hash, message], i (hash)}
+													{#each messageGroup as [hash, message], i (hash)}
 														{#if unreadDivider.hash === hash}
 															<div
 																class="unread-divider"
@@ -719,7 +556,7 @@
 															</div>
 														{/if}
 														{@const position = messagePosition(
-															messageSet.length,
+															messageGroup.length,
 															i,
 														)}
 														{#if myDeviceId == message.author}
@@ -735,6 +572,12 @@
 																		{myDeviceId}
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
+																		onShowHistory={() => openHistory(message)}
+																		canEdit={canEditMessage(
+																			message,
+																			myDeviceId,
+																		)}
+																		onEdit={() => editing.start(message)}
 																	/>
 																{/await}
 															</div>
@@ -754,6 +597,7 @@
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
 																		sender={profile}
+																		onShowHistory={() => openHistory(message)}
 																	/>
 																{/await}
 															</div>
@@ -965,7 +809,7 @@
 						</div>
 					{:else}
 						<MessageComposer
-							{store}
+							store={store.messages}
 							bind:value={editing.value}
 							editing={editing.editing}
 							onEdit={editing.submit}
