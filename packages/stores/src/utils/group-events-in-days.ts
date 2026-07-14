@@ -2,9 +2,9 @@ import { DeviceId, Hash } from '../p2panda/types';
 
 export const MESSAGE_SET_TIMEFRAME_INTERVAL_MS = 60 * 1000; // 1 minute
 
-export interface EventSetsInDay<T> {
+export interface EventGroupsInDay<T> {
 	day: Date;
-	eventsSets: Array<EventSet<T>>;
+	eventsGroups: Array<EventGroup<T>>;
 }
 
 export interface EventWithProvenance<T> {
@@ -14,33 +14,36 @@ export interface EventWithProvenance<T> {
 	type: string;
 }
 
-export type EventSet<T> = Array<[Hash, T]>;
+export type EventGroup<T> = Array<[Hash, T]>;
 
-export function orderInEventSets<T>(
+export function groupEventsInDays<T>(
 	events: Record<Hash, EventWithProvenance<T>>,
 	agentSets: Array<Array<DeviceId>>,
-): Array<EventSetsInDay<T>> {
-	const eventsSetsInDay: EventSetsInDay<EventWithProvenance<T>>[] = [];
+): Array<EventGroupsInDay<T>> {
+	const eventsGroupsInDay: EventGroupsInDay<EventWithProvenance<T>>[] = [];
 	const orderedAscendingEvents = Object.entries(events).sort(
 		(m1, m2) => m1[1].timestamp - m2[1].timestamp,
 	);
 	for (const [eventHash, event] of orderedAscendingEvents) {
-		if (eventsSetsInDay.length === 0) {
+		if (eventsGroupsInDay.length === 0) {
 			const date = new Date(event.timestamp);
 			date.setHours(0);
 			date.setMinutes(0);
 			date.setSeconds(0);
 			date.setMilliseconds(0);
-			eventsSetsInDay.push({
-				eventsSets: [[[eventHash, event]]],
+			eventsGroupsInDay.push({
+				eventsGroups: [[[eventHash, event]]],
 				day: date,
 			});
 		} else {
-			const lastEventSetsInDay = eventsSetsInDay[eventsSetsInDay.length - 1];
-			const lastEventSet =
-				lastEventSetsInDay.eventsSets[lastEventSetsInDay.eventsSets.length - 1];
+			const lastEventGroupsInDay =
+				eventsGroupsInDay[eventsGroupsInDay.length - 1];
+			const lastEventGroup =
+				lastEventGroupsInDay.eventsGroups[
+					lastEventGroupsInDay.eventsGroups.length - 1
+				];
 
-			const lastEvent = lastEventSet[lastEventSet.length - 1][1];
+			const lastEvent = lastEventGroup[lastEventGroup.length - 1][1];
 
 			const lastMessageAgentSet = agentSets.find(agents =>
 				agents.some(agent => agent === lastEvent.author),
@@ -65,25 +68,27 @@ export function orderInEventSets<T>(
 			date.setSeconds(0);
 			date.setMilliseconds(0);
 
-			if (date.valueOf() === lastEventSetsInDay.day.valueOf()) {
+			if (date.valueOf() === lastEventGroupsInDay.day.valueOf()) {
 				if (sameProvenance && sameTimeframe && sameType) {
-					lastEventSet.push([eventHash, event]);
+					lastEventGroup.push([eventHash, event]);
 				} else {
-					lastEventSetsInDay.eventsSets.push([[eventHash, event]]);
+					lastEventGroupsInDay.eventsGroups.push([[eventHash, event]]);
 				}
 			} else {
-				eventsSetsInDay.push({
-					eventsSets: [[[eventHash, event]]],
+				eventsGroupsInDay.push({
+					eventsGroups: [[[eventHash, event]]],
 					day: date,
 				});
 			}
 		}
 	}
-	const eventsSets: EventSetsInDay<T>[] = eventsSetsInDay.map(eventSet => ({
-		day: eventSet.day,
-		eventsSets: eventSet.eventsSets.map(set =>
-			set.map(([hash, e]) => [hash, e.event]),
-		),
-	}));
-	return eventsSets;
+	const eventsGroups: EventGroupsInDay<T>[] = eventsGroupsInDay.map(
+		eventGroup => ({
+			day: eventGroup.day,
+			eventsGroups: eventGroup.eventsGroups.map(group =>
+				group.map(([hash, e]) => [hash, e.event]),
+			),
+		}),
+	);
+	return eventsGroups;
 }
