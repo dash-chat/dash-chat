@@ -33,6 +33,10 @@ impl<'de> Deserialize<'de> for InboxNonce {
 }
 
 impl InboxNonce {
+    pub fn random() -> Self {
+        InboxNonce(rand::random())
+    }
+
     pub fn as_bytes(&self) -> [u8; 8] {
         self.0
     }
@@ -55,8 +59,7 @@ pub struct QrCode {
     /// The intent of the QR code: whether to add this node as a contact or a device.
     pub share_intent: ShareIntent,
     /// 8-byte nonce used with `derive_inbox_topic` to reconstruct the inbox topic.
-    /// Absent on reply codes.
-    pub inbox_nonce: Option<InboxNonce>,
+    pub inbox_nonce: InboxNonce,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
@@ -76,6 +79,11 @@ pub struct InboxTopic {
 }
 
 impl InboxTopic {
+    pub fn new_random(device_pubkey: &DeviceId, expires_at: DateTime<Utc>) -> (Self, InboxNonce) {
+        let nonce = InboxNonce::random();
+        (Self::from_nonce(device_pubkey, &nonce, expires_at), nonce)
+    }
+
     pub fn from_nonce(
         device_pubkey: &DeviceId,
         nonce: &InboxNonce,
@@ -115,9 +123,12 @@ mod expires_at_minutes {
 
 impl std::fmt::Display for QrCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let inbox_nonce_raw = self.inbox_nonce.map(|n| n.as_bytes());
-        let bytes = encode_cbor(&(&self.device_pubkey, &inbox_nonce_raw, &self.share_intent))
-            .map_err(|_| std::fmt::Error)?;
+        let bytes = encode_cbor(&(
+            &self.device_pubkey,
+            &self.inbox_nonce.as_bytes(),
+            &self.share_intent,
+        ))
+        .map_err(|_| std::fmt::Error)?;
         write!(f, "{}", hex::encode(bytes))
     }
 }
@@ -126,15 +137,12 @@ impl FromStr for QrCode {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = hex::decode(s)?;
-        let (device_pubkey, inbox_nonce_raw, share_intent): (
-            DeviceId,
-            Option<[u8; 8]>,
-            ShareIntent,
-        ) = decode_cbor(bytes.as_slice())?;
+        let (device_pubkey, inbox_nonce_raw, share_intent): (DeviceId, [u8; 8], ShareIntent) =
+            decode_cbor(bytes.as_slice())?;
         Ok(QrCode {
             device_pubkey,
             share_intent,
-            inbox_nonce: inbox_nonce_raw.map(InboxNonce),
+            inbox_nonce: InboxNonce(inbox_nonce_raw),
         })
     }
 }
@@ -167,22 +175,7 @@ mod tests {
         let contact = QrCode {
             device_pubkey,
             share_intent: ShareIntent::AddDevice,
-            inbox_nonce: Some(InboxNonce(nonce)),
-        };
-        let encoded = contact.to_string();
-        let decoded = QrCode::from_str(&encoded).unwrap();
-
-        assert_eq!(contact, decoded);
-    }
-
-    #[test]
-    fn test_contact_roundtrip_no_nonce() {
-        let pubkey = VerifyingKey::from_bytes(&[22; 32]).unwrap();
-        let device_pubkey = DeviceId::from(pubkey);
-        let contact = QrCode {
-            device_pubkey,
-            share_intent: ShareIntent::AddDevice,
-            inbox_nonce: None,
+            inbox_nonce: InboxNonce(nonce),
         };
         let encoded = contact.to_string();
         let decoded = QrCode::from_str(&encoded).unwrap();

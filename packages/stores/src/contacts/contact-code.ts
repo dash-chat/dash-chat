@@ -40,7 +40,7 @@ function toPaddedBase64(base64: string): string {
 export function encodeContactCode(contactCode: ContactCode): string {
 	const bin = encode([
 		toBytes(contactCode.device_pubkey),
-		contactCode.inbox_nonce ? toBytes(contactCode.inbox_nonce) : null,
+		toBytes(contactCode.inbox_nonce),
 		contactCode.share_intent,
 	]);
 	return fromByteArray(bin).replace(/=+$/, '');
@@ -50,9 +50,7 @@ export function decodeContactCode(contactCodeString: string): ContactCode {
 	const bin = toByteArray(toPaddedBase64(contactCodeString));
 	const [device_pubkey_bytes, inbox_nonce_bytes, share_intent] = decode(bin);
 	const device_pubkey = bytesToHex(device_pubkey_bytes);
-	const inbox_nonce = inbox_nonce_bytes
-		? bytesToHex(inbox_nonce_bytes as Uint8Array)
-		: undefined;
+	const inbox_nonce = bytesToHex(inbox_nonce_bytes as Uint8Array);
 	return { device_pubkey, share_intent, inbox_nonce };
 }
 

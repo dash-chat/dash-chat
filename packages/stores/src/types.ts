@@ -168,8 +168,8 @@ export interface ContactCode {
 	/// The intent of the QR code: whether to add this node as a contact or a device.
 	share_intent: ShareIntent;
 	/// 8-byte nonce used with blake3(device_pubkey || nonce) to derive
-	/// the inbox topic. Absent on reply codes.
-	inbox_nonce?: string;
+	/// the inbox topic.
+	inbox_nonce: string;
 }
 
 export interface ReadMessagesPayload {
