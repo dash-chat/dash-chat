@@ -151,7 +151,6 @@ export class MessagesStore {
 	}
 }
 
-/** An edit op: the new text, keyed in `editsByTarget` by the hash it edits. */
 interface Edit {
 	hash: Hash;
 	text: string;
@@ -163,11 +162,11 @@ function collectMessageActionsByType(
 ): {
 	messages: Record<Hash, Message>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
-	editsByTarget: Record<Hash, Edit>;
+	editsByTarget: Record<Hash, Record<Hash, Edit>>;
 } {
 	const messages: Record<Hash, Message> = {};
 	const reactions: Record<Hash, Record<DeviceId, string>> = {};
-	const edits: Record<Hash, Edit> = {};
+	const edits: Record<Hash, Record<Hash, Edit>> = {};
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
@@ -196,7 +195,11 @@ function collectMessageActionsByType(
 					delete reactions[target][author];
 				}
 			} else if (body.payload.type === 'EditMessage') {
-				edits[body.payload.payload.edit_hash] = {
+				const target = body.payload.payload.edit_hash;
+				if (edits[target] === undefined) {
+					edits[target] = {};
+				}
+				edits[target][operation.hash] = {
 					hash: operation.hash,
 					text: body.payload.payload.message,
 					timestamp: operation.header.timestamp,
@@ -208,21 +211,27 @@ function collectMessageActionsByType(
 	return { messages, reactionsByTarget: reactions, editsByTarget: edits };
 }
 
-// Apply the message's edit chain and return the resulting message
+// Apply the message's edits and return the resulting message. Every edit
+// reachable from the message — following chains through `editsByTarget`,
+// across forks — becomes a version; the one with the highest timestamp is the
+// displayed text.
 function applyEdits(
 	message: Message,
-	editsByTarget: Record<Hash, Edit>,
+	editsByTarget: Record<Hash, Record<Hash, Edit>>,
 ): Message {
 	const versions: Edit[] = [];
 	const seen = new Set<Hash>([message.hash]);
-	let edit = editsByTarget[message.hash];
-	while (edit !== undefined && !seen.has(edit.hash)) {
-		versions.push(edit);
+	const pending = Object.values(editsByTarget[message.hash] ?? {});
+	while (pending.length > 0) {
+		const edit = pending.pop();
+		if (edit === undefined || seen.has(edit.hash)) continue;
 		seen.add(edit.hash);
-		edit = editsByTarget[edit.hash];
+		versions.push(edit);
+		pending.push(...Object.values(editsByTarget[edit.hash] ?? {}));
 	}
 	if (versions.length === 0) return message;
 
+	versions.sort((v1, v2) => v1.timestamp - v2.timestamp);
 	const latest = versions[versions.length - 1];
 	return {
 		...message,

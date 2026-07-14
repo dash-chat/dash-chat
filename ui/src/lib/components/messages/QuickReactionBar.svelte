@@ -83,47 +83,42 @@
 	onBackdropClick={close}
 	class={`!z-50 !w-auto !rounded-full ${expanded ? '!opacity-0 !pointer-events-none' : ''}`}
 >
-	<!-- Konsta keeps closed popovers mounted, so gate the content on `opened`:
-	     one hidden action bar per bubble would bloat the DOM, and the edit
-	     button must only exist for the message the user actually long-pressed. -->
-	{#if opened}
-		<div
-			class="flex items-center gap-1 px-1 py-0.5"
-			role="group"
-			aria-label={m.quickReactions()}
-			data-testid="quick-reaction-bar"
-		>
-			{#each QUICK_EMOJIS as emoji}
-				<button
-					class="flex h-9 w-9 items-center justify-center rounded-full text-xl transition-transform hover:scale-110 {hasReacted(
-						emoji,
-					)
-						? 'bg-blue-100 dark:bg-blue-900'
-						: ''}"
-					onclick={() => react(emoji)}
-					data-testid={`quick-reaction-${emoji}`}
-				>
-					{emoji}
-				</button>
-			{/each}
-			{#if canEdit}
-				<IconButton
-					icon={mdiPencil}
-					onClick={edit}
-					label={m.edit()}
-					testid="quick-edit-button"
-					iconClass="text-xl"
-				/>
-			{/if}
+	<div
+		class="flex items-center gap-1 px-1 py-0.5"
+		role="group"
+		aria-label={m.quickReactions()}
+		data-testid="quick-reaction-bar"
+	>
+		{#each QUICK_EMOJIS as emoji}
+			<button
+				class="flex h-9 w-9 items-center justify-center rounded-full text-xl transition-transform hover:scale-110 {hasReacted(
+					emoji,
+				)
+					? 'bg-blue-100 dark:bg-blue-900'
+					: ''}"
+				onclick={() => react(emoji)}
+				data-testid={`quick-reaction-${emoji}`}
+			>
+				{emoji}
+			</button>
+		{/each}
+		{#if canEdit}
 			<IconButton
-				icon={mdiDotsHorizontal}
-				onClick={() => (expanded = true)}
-				label={m.moreReactions()}
-				testid="quick-reaction-more"
+				icon={mdiPencil}
+				onClick={edit}
+				label={m.edit()}
+				testid="quick-edit-button"
 				iconClass="text-xl"
 			/>
-		</div>
-	{/if}
+		{/if}
+		<IconButton
+			icon={mdiDotsHorizontal}
+			onClick={() => (expanded = true)}
+			label={m.moreReactions()}
+			testid="quick-reaction-more"
+			iconClass="text-xl"
+		/>
+	</div>
 </Popover>
 
 {#if opened}
