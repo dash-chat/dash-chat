@@ -289,4 +289,3 @@ fn strip_collision_suffix(name: &str) -> &str {
         name
     }
 }
-

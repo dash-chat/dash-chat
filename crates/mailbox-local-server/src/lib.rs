@@ -7,7 +7,6 @@
 //! the Tauri host crate uses it in production.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use iroh::EndpointId;

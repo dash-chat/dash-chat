@@ -90,7 +90,10 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
     };
     log::info!("Sending stop signal to local mailbox...");
     state.server.stop().await;
-    if let Err(e) = handle.state::<ServiceDaemon>().unregister(&state.mdns_fullname) {
+    if let Err(e) = handle
+        .state::<ServiceDaemon>()
+        .unregister(&state.mdns_fullname)
+    {
         log::error!("Failed to unregister MDNS service: {e:?}");
     }
 
