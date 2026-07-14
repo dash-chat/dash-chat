@@ -42,11 +42,9 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const { messages, reactionsForReactedMessages: reactions } =
-			collectMessageActionsByType(logs);
+		const { messages, reactionsByTarget } = collectMessageActionsByType(logs);
 
-		// Reduce: attach the grouped reactions to their messages.
-		for (const [target, byAuthor] of Object.entries(reactions)) {
+		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
 			const message = messages[target];
 			if (message) {
 				message.reactions = byAuthor;
@@ -128,7 +126,7 @@ function collectMessageActionsByType(
 	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
 ): {
 	messages: Record<Hash, Message>;
-	reactionsForReactedMessages: Record<Hash, Record<DeviceId, string>>;
+	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
 } {
 	const messages: Record<Hash, Message> = {};
 	const reactions: Record<Hash, Record<DeviceId, string>> = {};
@@ -163,5 +161,5 @@ function collectMessageActionsByType(
 		}
 	}
 
-	return { messages, reactionsForReactedMessages: reactions };
+	return { messages, reactionsByTarget: reactions };
 }
