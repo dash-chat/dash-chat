@@ -17,7 +17,7 @@ import {
 } from '../types';
 import {
 	EventWithProvenance,
-	groupEventsInDay,
+	groupEventsInDays,
 } from '../utils/group-events-in-days';
 import { type IGroupChatClient } from './group-chat-client';
 
@@ -153,7 +153,7 @@ export class GroupChatStore {
 
 		const agentsSets = Array.from(devices).map(a => [a]);
 
-		return groupEventsInDay(eventsWithProvenance, agentsSets);
+		return groupEventsInDays(eventsWithProvenance, agentsSets);
 	});
 
 	lastEvent = reactive(async (): Promise<ChatSummaryLastEvent | undefined> => {

@@ -16,7 +16,7 @@ export interface EventWithProvenance<T> {
 
 export type EventGroup<T> = Array<[Hash, T]>;
 
-export function groupEventsInDay<T>(
+export function groupEventsInDays<T>(
 	events: Record<Hash, EventWithProvenance<T>>,
 	agentSets: Array<Array<DeviceId>>,
 ): Array<EventGroupsInDay<T>> {

@@ -11,7 +11,7 @@ import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import { ChatSummary, Payload } from '../types';
 import {
 	EventWithProvenance,
-	groupEventsInDay,
+	groupEventsInDays,
 } from '../utils/group-events-in-days';
 import { type IDirectChatClient } from './direct-chat-client';
 
@@ -83,7 +83,7 @@ export class DirectChatStore {
 
 		const agentsSets = Array.from(devices).map(a => [a]);
 
-		const messagesWithProvenance = groupEventsInDay(
+		const messagesWithProvenance = groupEventsInDays(
 			eventsWithProvenance,
 			agentsSets,
 		);
