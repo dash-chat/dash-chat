@@ -4,7 +4,6 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use dashchat_utils::RELAY_URL;
 use push_notifications_client::client::PushNotificationsClient;
 use redb::Database;
 use serde::{Deserialize, Serialize};
@@ -19,6 +18,7 @@ mod blob_sync;
 mod cleanup;
 mod get_blips;
 mod notify_topics_subscribers;
+mod register_hashes;
 mod register_peer;
 mod server_key;
 mod store_blips;
@@ -40,6 +40,10 @@ pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
 pub use dashchat_utils::FetchConfig;
 pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
+};
+pub use register_hashes::{
+    record_blob_sources, register_hashes, upload_blob, RegisterHashesRequest,
+    RegisterHashesResponse, UploadBlobResponse,
 };
 pub use register_peer::RegisterPeerRequest;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
@@ -75,13 +79,13 @@ pub struct AppState {
 }
 
 #[derive(Serialize, Deserialize)]
-struct HealthResponse {
-    status: String,
-    endpoint_id: String,
+pub struct HealthResponse {
+    pub status: String,
+    pub endpoint_id: String,
     /// The mailbox endpoint's dialing address (relay + direct addresses), so
     /// clients can add it to their p2panda address book and dial this mailbox
     /// by its EndpointId rather than only knowing the bare id.
-    endpoint_addr: iroh::EndpointAddr,
+    pub endpoint_addr: iroh::EndpointAddr,
 }
 
 fn db_path_blobs_dir(db_path: &std::path::Path) -> std::path::PathBuf {
@@ -96,12 +100,11 @@ pub async fn spawn_server(
     addr: String,
     push_notifications_url: Option<String>,
     blob_sync: Option<BlobSync>,
+    relay_url: Option<iroh::RelayUrl>,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = init_db(db_path.clone())?;
     let db_arc = Arc::new(db);
-
-    let relay_url = Some(RELAY_URL.clone());
 
     // Spawn background cleanup task
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
@@ -205,6 +208,11 @@ pub fn create_app(
     Router::new()
         .route("/health", get(health_check))
         .route("/blips/store", post(store_blips))
+        .route(
+            "/blobs/register-hashes",
+            post(register_hashes::register_hashes),
+        )
+        .route("/blobs/upload", post(register_hashes::upload_blob))
         .route("/blips/get", post(get_blips_for_topics))
         .route("/peers/register", post(register_peer::register_peer))
         .layer(CorsLayer::permissive())

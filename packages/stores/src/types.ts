@@ -1,5 +1,3 @@
-import type { ReactivePromise } from 'signalium';
-
 import { Profile } from './contacts/contacts-client';
 import { AgentId, DeviceId, Hash, TopicId } from './p2panda/types';
 
@@ -157,13 +155,16 @@ export interface InboxTopic {
 	topic: TopicId;
 }
 
-export type ShareIntent = 'AddDevice' | 'AddContact';
+/** Numeric discriminant matching `dashchat_node::ShareIntent` (serde_repr u8). */
+export type ShareIntent = 0 | 1;
+export const ShareIntent = {
+	AddDevice: 0,
+	AddContact: 1,
+} as const;
 
 export interface ContactCode {
 	/// Pubkey of this node: allows adding this node to groups.
 	device_pubkey: DeviceId;
-	/// Agent ID to add to spaces
-	agent_id: AgentId;
 	inbox_topic: InboxTopic | undefined;
 	/// The intent of the QR code: whether to add this node as a contact or a device.
 	share_intent: ShareIntent;
@@ -175,7 +176,8 @@ export interface ReadMessagesPayload {
 }
 
 export type DeviceGroupPayload =
-	| { type: 'AddContact'; payload: ContactCode }
+	| { type: 'AddContact'; payload: { agent_id: AgentId } }
+	| { type: 'PendingContactRequest'; payload: { device_pubkey: DeviceId } }
 	| { type: 'RejectContactRequest'; payload: AgentId }
 	| { type: 'ReadMessages'; payload: ReadMessagesPayload };
 
@@ -184,6 +186,8 @@ export type InboxPayload = {
 	payload: {
 		code: ContactCode;
 		profile: Profile;
+		agent_id: AgentId;
+		reply_topic: TopicId;
 	};
 };
 
@@ -207,19 +211,6 @@ export type MessageId = string;
 // 	author: VerifyingKey;
 // 	timestamp: number;
 // }
-
-export interface MessagesStore {
-	markAsRead(messageHashes: Hash[]): Promise<void>;
-	/** Sends the message and resolves with the operation id of the created
-	 * message once it is confirmed in the local log. */
-	sendMessage(input: {
-		message: string;
-		media: OutgoingMedia | null;
-	}): Promise<Hash>;
-	sendReaction(reaction: ChatReaction): Promise<void>;
-	/** Resolves the agent owning the given device among this chat's participants. */
-	agentIdForDeviceId(deviceId: DeviceId): ReactivePromise<AgentId | undefined>;
-}
 
 export type GroupControlEvent =
 	| {
@@ -278,4 +269,5 @@ export interface ChatSummary {
 	name: string;
 	avatar: string | undefined;
 	lastEvent: ChatSummaryLastEvent;
+	waitingForProfile?: true;
 }

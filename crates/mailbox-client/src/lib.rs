@@ -38,7 +38,9 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
         None
     }
 
-    /// Publish an operation to the mailbox for the given topic.
+    /// Publish operations to the mailbox during topic sync.
+    /// Different mailbox implementations have different semantics for this,
+    /// for instance separate storage for logs vs blobs.
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error>;
 
     /// Fetch operations from the mailbox for the given topics.
@@ -118,3 +120,30 @@ pub trait MailboxItem:
 /// Extra traits for ItemTraits which are feature-dependent.
 pub trait OptionalItemTraits {}
 impl<T> OptionalItemTraits for T {}
+
+/// Node-side sink for per-mailbox unfetched blob-hash tracking. Implemented in
+/// `dashchat-node` over `LocalStore`; kept as a trait here so this crate stays
+/// free of node types.
+#[async_trait::async_trait]
+pub trait UnfetchedBlobTracker: Send + Sync + 'static {
+    async fn record(&self, mailbox_id: &MailboxId, hashes: &[iroh_blobs::Hash]);
+    async fn remove(&self, mailbox_id: &MailboxId, hashes: &[iroh_blobs::Hash]);
+}
+
+/// Node-side source of blob bytes by hash. Implemented in `dashchat-node` over
+/// the node's blob store; kept as a trait here so this crate stays free of node
+/// types. Used by the toy client to upload blob bytes inline to a mailbox.
+#[async_trait::async_trait]
+pub trait BlobReader: Send + Sync + 'static {
+    async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes>;
+}
+
+/// No-op tracker for tests and contexts that don't persist unfetched blobs.
+#[derive(Clone, Default)]
+pub struct NoopUnfetchedBlobTracker;
+
+#[async_trait::async_trait]
+impl UnfetchedBlobTracker for NoopUnfetchedBlobTracker {
+    async fn record(&self, _mailbox_id: &MailboxId, _hashes: &[iroh_blobs::Hash]) {}
+    async fn remove(&self, _mailbox_id: &MailboxId, _hashes: &[iroh_blobs::Hash]) {}
+}

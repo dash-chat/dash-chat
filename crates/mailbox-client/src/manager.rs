@@ -312,6 +312,14 @@ where
         _ = self.trigger.try_send(Some(id));
     }
 
+    /// Immediately activate and sync every registered mailbox, resetting any backoff.
+    pub async fn wakeup_all(&self) {
+        for tracked_mailbox in self.mailboxes.lock().await.values() {
+            tracked_mailbox.wakeup();
+        }
+        self.trigger_sync();
+    }
+
     pub async fn subscribe(
         &self,
         topic: Item::Topic,
@@ -542,6 +550,7 @@ where
         }
 
         // For ops we successfully publish, the mailbox now has at least their seq_num.
+        // ACID: a power cut here would lose these ops_to_publish.
         let publish_acks: Vec<(Item::Topic, Item::Author, u64)> = ops_to_publish
             .iter()
             .map(|op| (op.topic(), op.author(), op.seq_num()))

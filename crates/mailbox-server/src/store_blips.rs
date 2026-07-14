@@ -5,29 +5,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     notify_topics_subscribers::notify_topics_subscribers, AppState, Author, Blip, BlipsKey,
-    BlipsKeyPrefix, BlobSync, SequenceNumber, TopicId, WatermarksKey, BLIPS_TABLE,
-    WATERMARKS_TABLE,
+    BlipsKeyPrefix, SequenceNumber, TopicId, WatermarksKey, BLIPS_TABLE, WATERMARKS_TABLE,
 };
 
 #[derive(Serialize, Deserialize)]
 pub struct StoreBlipsRequest {
     pub blips: BTreeMap<TopicId, BTreeMap<Author, BTreeMap<SequenceNumber, Blip>>>,
     #[serde(default)]
-    pub blob_hashes: Vec<iroh_blobs::Hash>,
-    #[serde(default)]
     pub sender_pubkey: Option<iroh::EndpointId>,
     #[serde(default)]
     pub signature: Vec<u8>,
-}
-
-pub async fn record_blob_sources(
-    blob_sync: &BlobSync,
-    hashes: &[iroh_blobs::Hash],
-    source: iroh::EndpointId,
-) {
-    for hash in hashes {
-        blob_sync.fetch_pool().add_source(*hash, source).await;
-    }
 }
 
 pub async fn store_blips(
@@ -35,8 +22,6 @@ pub async fn store_blips(
     Json(payload): Json<StoreBlipsRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let db = state.db.clone();
-    let blob_hashes = payload.blob_hashes.clone();
-    let sender_pubkey = payload.sender_pubkey;
     // Use spawn_blocking because redb's begin_write() is a blocking call that waits
     // for exclusive write access. Running this directly in async context would block
     // tokio worker threads and cause deadlocks under concurrent load.
@@ -58,9 +43,6 @@ pub async fn store_blips(
                 )
             })?;
 
-    if let Some(pubkey) = sender_pubkey {
-        record_blob_sources(&state.blob_sync, &blob_hashes, pubkey).await;
-    }
     notify_topics_subscribers(&state, topics_with_new_blips).await;
 
     Ok(StatusCode::CREATED)
@@ -217,33 +199,4 @@ fn blip_exists(
         .map_err(|e| format!("Failed to create iterator: {}", e))?;
 
     Ok(iter.next().is_some())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
-
-    use super::*;
-
-    #[tokio::test(start_paused = true)]
-    async fn store_records_blob_sources() {
-        let dir = tempfile::tempdir().unwrap();
-        let key = iroh::SecretKey::generate();
-        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf(), None)
-            .await
-            .unwrap();
-        let source = iroh::SecretKey::from_bytes(&[7; 32]).public();
-        let h = iroh_blobs::Hash::new([9; 32]);
-
-        record_blob_sources(&blob_sync, &[h], source).await;
-
-        let tried = HashSet::new();
-        let (got, sources) = blob_sync
-            .fetch_pool_for_test()
-            .next_untried(&tried)
-            .await
-            .unwrap();
-        assert_eq!(got, h);
-        assert!(sources.contains(&source));
-    }
 }

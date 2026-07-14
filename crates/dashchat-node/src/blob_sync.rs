@@ -4,6 +4,9 @@ use aliased::Aliasing;
 use derive_more::derive::Constructor;
 use futures::Stream;
 use iroh_blobs::api::downloader::Downloader;
+use iroh_blobs::provider::events::{
+    ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
+};
 use mailbox_client::manager::Mailboxes;
 use p2panda::operation::{LogId, Operation};
 use p2panda_store::{SqliteStore, topics::TopicStore};
@@ -24,7 +27,9 @@ use dashchat_utils::FetchPool;
 pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 
 use crate::{
-    AsBody, ChatPayload, DeviceId, Payload, TopicId, mailbox::MailboxOperation, stores::OpStore,
+    AsBody, ChatPayload, DeviceId, Payload, TopicId,
+    mailbox::MailboxOperation,
+    stores::{LocalStore, OpStore},
 };
 
 /// Drop a pending fetch entry after this many consecutive failed passes, so a
@@ -52,9 +57,19 @@ impl BlobSync {
         root: PathBuf,
         blob_fetch: BlobFetchPool,
         sources: MixedSourceLookup,
+        local_store: LocalStore,
     ) -> anyhow::Result<Self> {
         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
-        let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+
+        let mask = EventMask {
+            connected: ConnectMode::Notify,
+            get: RequestMode::NotifyLog,
+            ..EventMask::DEFAULT
+        };
+        let (events, rx) = EventSender::channel(256, mask);
+        spawn_download_event_listener(rx, local_store);
+
+        let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events));
         let mixed_alpn =
             p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, endpoint.network_id());
         endpoint.accept(iroh_blobs::ALPN, blobs.clone()).await?;
@@ -242,6 +257,51 @@ impl BlobSync {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
     }
+}
+
+/// Consume provider events on this node's blob endpoint. When a remote endpoint
+/// finishes downloading a blob from us, drop the matching `unfetched_blob_hashes`
+/// row for that mailbox — the mailbox now has the blob.
+fn spawn_download_event_listener(
+    mut rx: tokio::sync::mpsc::Receiver<ProviderMessage>,
+    local_store: LocalStore,
+) {
+    tokio::spawn(async move {
+        let mut connections: HashMap<u64, iroh::EndpointId> = HashMap::new();
+        while let Some(msg) = rx.recv().await {
+            match msg {
+                ProviderMessage::ClientConnectedNotify(msg) => {
+                    if let Some(id) = msg.inner.endpoint_id {
+                        connections.insert(msg.inner.connection_id, id);
+                    }
+                }
+                ProviderMessage::ConnectionClosed(msg) => {
+                    connections.remove(&msg.inner.connection_id);
+                }
+                ProviderMessage::GetRequestReceivedNotify(msg) => {
+                    let hash = msg.inner.request.hash;
+                    let endpoint = connections.get(&msg.inner.connection_id).copied();
+                    let local_store = local_store.clone();
+                    let mut updates = msg.rx;
+                    tokio::spawn(async move {
+                        while let Ok(Some(update)) = updates.recv().await {
+                            if let RequestUpdate::Completed(_) = update {
+                                if let Some(endpoint) = endpoint {
+                                    let mailbox_id = mailbox_server::encode_mailbox_id(endpoint);
+                                    if let Err(err) =
+                                        local_store.remove_unfetched_blob(&mailbox_id, hash).await
+                                    {
+                                        tracing::error!(?err, %hash, "failed to clear unfetched blob after download");
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+                _ => {}
+            }
+        }
+    });
 }
 
 fn blob_tag_name(

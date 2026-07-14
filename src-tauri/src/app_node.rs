@@ -107,7 +107,9 @@ impl AppNode {
     /// process, and if both connect to the relay with the same endpoint id they
     /// continuously tear down each other's sync sessions and cancel in-flight
     /// ingest transactions — poisoning the shared SQLite store. The extension
-    /// only needs the mailbox to fetch the operation, so it uses `no_p2p`.
+    /// only needs the mailbox to fetch the operation, so it uses `no_p2p`. It
+    /// also disables blob sync: opening the iroh-blobs store would deadlock on
+    /// the exclusive `redb` lock the main app's process already holds.
     pub(crate) fn node_config(no_p2p: bool) -> dashchat_node::NodeConfig {
         let config = if cfg!(feature = "e2e-tests") {
             let mut config = dashchat_node::NodeConfig::default();
@@ -117,6 +119,12 @@ impl AppNode {
             dashchat_node::NodeConfig::default()
         };
         if no_p2p {
+            config.no_p2p().no_blob_sync()
+        } else if std::env::var_os("DASHCHAT_NO_P2P").is_some() {
+            // Dev/testing escape hatch: force all communication through mailbox
+            // servers so peers can't sync directly over p2p. Keeps blob sync so
+            // media still flows over the mailbox.
+            log::warn!("DASHCHAT_NO_P2P set: disabling peer-to-peer connectivity");
             config.no_p2p()
         } else {
             config

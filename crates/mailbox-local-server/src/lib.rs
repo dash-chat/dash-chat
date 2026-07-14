@@ -8,6 +8,7 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
 
 use iroh::EndpointId;
 use iroh_blobs::api::downloader::Downloader;
@@ -44,12 +45,17 @@ impl LocalMailboxServer {
 /// The returned [`LocalMailboxServer`] is not yet announced on the LAN; pair it
 /// with [`register_mdns_with_retry`] and [`spawn_interface_watcher`] for
 /// discovery.
+///
+/// `upload_grace` overrides how long the mailbox defers dialing a blob's source
+/// after an announce that expects an inline upload; `None` uses the production
+/// default. Tests pass a short window to keep the fetch backstop fast.
 pub async fn spawn_local_mailbox_server(
     db_path: PathBuf,
     blobs: BlobsProtocol,
     downloader: Downloader,
     endpoint: iroh::Endpoint,
     fetch_config: Option<FetchConfig>,
+    upload_grace: Option<Duration>,
     peer_addr_tx: UnboundedSender<iroh::EndpointAddr>,
 ) -> anyhow::Result<LocalMailboxServer> {
     let port = free_port()?;
@@ -57,6 +63,9 @@ pub async fn spawn_local_mailbox_server(
     let mut blob_sync = BlobSync::shared(blobs, downloader, endpoint, peer_addr_tx);
     if let Some(fetch_config) = fetch_config {
         blob_sync = blob_sync.with_fetch_config(fetch_config);
+    }
+    if let Some(upload_grace) = upload_grace {
+        blob_sync = blob_sync.with_upload_grace(upload_grace);
     }
 
     let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel::<()>();
@@ -71,7 +80,7 @@ pub async fn spawn_local_mailbox_server(
             let _ = stop_signal_rx.await;
         };
         if let Err(e) =
-            mailbox_server::spawn_server(db_path, addr, None, Some(blob_sync), signal).await
+            mailbox_server::spawn_server(db_path, addr, None, Some(blob_sync), None, signal).await
         {
             log::error!("Local mailbox server failed: {e:?}");
         }

@@ -21,6 +21,10 @@ export interface IContactsClient {
 
 	myDeviceId(): Promise<DeviceId>;
 
+	// Resolve the agent id recorded for a device pubkey, if the contact is
+	// established. Undefined while an outgoing request is still pending.
+	agentForDevice(devicePubkey: DeviceId): Promise<AgentId | undefined>;
+
 	// Sets the profile for this user
 	setProfile(profile: Profile): Promise<void>;
 
@@ -35,6 +39,9 @@ export interface IContactsClient {
 
 	// Add contact
 	addContact(code: ContactCode): Promise<void>;
+
+	// Accept an incoming contact request
+	acceptContact(agentId: AgentId): Promise<void>;
 
 	// Reject contact request
 	rejectContactRequest(agentId: AgentId): Promise<void>;
@@ -68,6 +75,14 @@ export class ContactsClient implements IContactsClient {
 		return invokeAfterSetup('my_device_id');
 	}
 
+	async agentForDevice(devicePubkey: DeviceId): Promise<AgentId | undefined> {
+		return (
+			(await invokeAfterSetup<AgentId | null>('agent_for_device', {
+				devicePubkey,
+			})) ?? undefined
+		);
+	}
+
 	async setProfile(profile: Profile): Promise<void> {
 		return invokeAfterSetup('set_profile', {
 			profile,
@@ -83,13 +98,17 @@ export class ContactsClient implements IContactsClient {
 	}
 
 	async addContact(contactCode: ContactCode): Promise<void> {
+		await invokeAfterSetup('add_contact', { contactCode });
+	}
+
+	async acceptContact(agentId: AgentId): Promise<void> {
 		await Promise.all([
-			invokeAfterSetup('add_contact', { contactCode }),
+			invokeAfterSetup('accept_contact', { agentId }),
 			waitForOperation(
 				this.logsClient,
 				op =>
 					op.body?.payload.type === 'AddContact' &&
-					op.body.payload.payload.agent_id === contactCode.agent_id,
+					op.body.payload.payload.agent_id === agentId,
 			),
 		]);
 	}

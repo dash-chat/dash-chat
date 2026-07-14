@@ -36,17 +36,19 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
-	setContext('messages-store', store);
+	setContext('messages-store', store.messages);
 
-	const readTracker = createReadMessagesTracker(store);
+	const readTracker = createReadMessagesTracker(store.messages);
 	const readMessageOnObserve = readTracker.observe;
 
-	const messageSets = useReactivePromise(store.messageSets);
+	const messageGroups = useReactivePromise(store.groupedEvents);
 	const info = useReactivePromise(store.info);
 	const allMembers = useReactivePromise(store.allMembers);
 	const me = useReactivePromise(store.me);
-	const readMessageHashes = useReactivePromise(store.readMessageHashes);
-	const unreadCount = useReactivePromise(store.unreadCount);
+	const readMessageHashes = useReactivePromise(
+		store.messages.readMessageHashes,
+	);
+	const unreadCount = useReactivePromise(store.messages.unreadCount);
 
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
@@ -74,11 +76,11 @@
 	const theme = $derived(useTheme());
 
 	function getUnreadDividerInfo(
-		messagesSetsInDays: Awaited<typeof $messageSets>,
+		messageGroupsInDays: Awaited<typeof $messageGroups>,
 		readHashes: Set<Hash> | undefined,
 		deviceId: DeviceId | undefined,
 	): { hash: Hash | null; count: number } {
-		if (!messagesSetsInDays || !readHashes || !deviceId) {
+		if (!messageGroupsInDays || !readHashes || !deviceId) {
 			return { hash: null, count: 0 };
 		}
 
@@ -86,9 +88,9 @@
 			capturedUnreadHash === null &&
 			(!unreadDividerCaptured || !isAtBottom)
 		) {
-			for (const day of messagesSetsInDays) {
-				for (const messageSet of day.eventsSets) {
-					for (const [hash, item] of messageSet) {
+			for (const day of messageGroupsInDays) {
+				for (const messageGroup of day.eventsGroups) {
+					for (const [hash, item] of messageGroup) {
 						if (item.kind !== 'message') continue;
 						if (item.message.author !== deviceId && !readHashes.has(hash)) {
 							capturedUnreadHash = hash;
@@ -106,9 +108,9 @@
 
 		let count = 0;
 		let found = false;
-		for (const day of messagesSetsInDays) {
-			for (const messageSet of day.eventsSets) {
-				for (const [hash, item] of messageSet) {
+		for (const day of messageGroupsInDays) {
+			for (const messageGroup of day.eventsGroups) {
+				for (const [hash, item] of messageGroup) {
 					if (hash === capturedUnreadHash) found = true;
 					if (
 						found &&
@@ -206,20 +208,20 @@
 
 			<div class="column m-2 gap-1" data-testid="group-chat-messages">
 				{#await $readMessageHashes then readHashes}
-					{#await Promise.all( [$myDeviceId, $messageSets, $allMembers], ) then [myDeviceId, messageSetsInDays, members]}
+					{#await Promise.all( [$myDeviceId, $messageGroups, $allMembers], ) then [myDeviceId, messageGroupsInDays, members]}
 						{@const unreadDivider = getUnreadDividerInfo(
-							messageSetsInDays,
+							messageGroupsInDays,
 							readHashes,
 							myDeviceId,
 						)}
-						{#each messageSetsInDays as messageSetInDay}
+						{#each messageGroupsInDays as messageGroupsInDay}
 							<div class="self-center z-10">
-								<DayTag class="quiet" day={messageSetInDay.day} />
+								<DayTag class="quiet" day={messageGroupsInDay.day} />
 							</div>
 
-							{#each messageSetInDay.eventsSets as messageSet}
+							{#each messageGroupsInDay.eventsGroups as messageGroup}
 								<div class="column" style="gap: 1px">
-									{#each messageSet as [hash, item], i (hash)}
+									{#each messageGroup as [hash, item], i (hash)}
 										{#if unreadDivider.hash === hash}
 											<div
 												class="unread-divider"
@@ -232,7 +234,10 @@
 											<SystemMessage event={item.event} />
 										{:else}
 											{@const message = item.message}
-											{@const position = messagePosition(messageSet.length, i)}
+											{@const position = messagePosition(
+												messageGroup.length,
+												i,
+											)}
 											{#if myDeviceId === message.author}
 												<div
 													class="self-end max-w-[85%]"
@@ -252,21 +257,12 @@
 													m.deviceIds.includes(message.author),
 												)}
 												<div
-													class="row items-end gap-2 self-start max-w-[85%]"
+													class="self-start max-w-[85%]"
 													data-message-hash={hash}
 													use:readMessageOnObserve={readHashes?.has(hash)
 														? null
 														: hash}
 												>
-													{#if position === 'last' || position === 'single'}
-														<Avatar
-															image={author?.profile?.avatar}
-															initials={author?.profile?.name.slice(0, 2)}
-															size="2rem"
-														/>
-													{:else}
-														<div class="shrink-0" style="width: 2rem"></div>
-													{/if}
 													<MessageFromOthers
 														{message}
 														{position}
@@ -276,6 +272,7 @@
 														sender={author?.profile}
 														showSenderName={position === 'first' ||
 															position === 'single'}
+														showAvatar
 													/>
 												</div>
 											{/if}
@@ -309,7 +306,7 @@
 		{#await Promise.all([$me, $info]) then [me, info]}
 			{#if me.member}
 				<MessageComposer
-					{store}
+					store={store.messages}
 					destinationName={info.name}
 					onSent={onMessageSent}
 				/>
