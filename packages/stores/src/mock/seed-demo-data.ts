@@ -220,7 +220,7 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 				payload: {
 					code: {
 						device_pubkey: EVE.deviceId,
-						inbox_topic: undefined,
+						inbox_nonce: 'ee'.repeat(8),
 						share_intent: ShareIntent.AddContact,
 					},
 					agent_id: EVE.agentId,
