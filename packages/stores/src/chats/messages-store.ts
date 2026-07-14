@@ -12,9 +12,25 @@ import {
 	Payload,
 	mediaBundleToAttachment,
 } from '../types';
-import { applyDeletes } from './deletes';
-import { MessageVersion, applyEdits } from './edits';
 import { type IMessagesClient } from './messages-client';
+
+/** The window during which a message may be edited, measured from the original
+ * message timestamp. Frontend operation timestamps are milliseconds since the
+ * UNIX epoch (the backend serializes them as such), so this is 24h in ms.
+ * Mirrors `EDIT_WINDOW_MICROS` in `crates/dashchat-node/src/chat/edit.rs`. */
+export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** The window during which a message may be deleted for everyone, measured
+ * from the original message timestamp. Mirrors `DELETE_WINDOW_MICROS` in
+ * `crates/dashchat-node/src/chat/validation/delete.rs` (frontend timestamps
+ * are ms). */
+export const DELETE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** A single version of a message's text, with the time it was authored. */
+export interface MessageVersion {
+	text: string;
+	timestamp: number;
+}
 
 export interface Message {
 	hash: string;
@@ -52,7 +68,8 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const { messages, reactionsByTarget } = collectMessageActionsByType(logs);
+		const { messages, reactionsByTarget, editsByTarget, deletes, opHeaders } =
+			collectMessageActionsByType(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
 			const message = messages[target];
@@ -63,8 +80,19 @@ export class MessagesStore {
 			}
 		}
 
-		applyEdits(messages, logs);
-		applyDeletes(messages, logs);
+		for (const [hash, message] of Object.entries(messages)) {
+			messages[hash] = applyEdits(message, editsByTarget);
+		}
+
+		for (const hashes of deletes) {
+			const placeholder = deletedPlaceholder(hashes, opHeaders);
+			if (placeholder === undefined) continue;
+			for (const hash of hashes) {
+				delete messages[hash];
+			}
+			messages[placeholder.hash] = placeholder;
+		}
+
 		return messages;
 	});
 
@@ -146,17 +174,42 @@ export class MessagesStore {
 	}
 }
 
+interface Edit {
+	hash: Hash;
+	text: string;
+	timestamp: number;
+}
+
+interface OpHeaderInfo {
+	author: DeviceId;
+	timestamp: number;
+	seqNum: number;
+}
+
 function collectMessageActionsByType(
 	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
 ): {
 	messages: Record<Hash, Message>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
+	editsByTarget: Record<Hash, Record<Hash, Edit>>;
+	/** The hash sets covered by each `DeleteMessage` op. */
+	deletes: Hash[][];
+	/** Header info for every op, including body-less (tombstoned) ones. */
+	opHeaders: Record<Hash, OpHeaderInfo>;
 } {
 	const messages: Record<Hash, Message> = {};
 	const reactions: Record<Hash, Record<DeviceId, string>> = {};
+	const edits: Record<Hash, Record<Hash, Edit>> = {};
+	const deletes: Hash[][] = [];
+	const opHeaders: Record<Hash, OpHeaderInfo> = {};
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
+			opHeaders[operation.hash] = {
+				author: operation.header.verifying_key,
+				timestamp: operation.header.timestamp,
+				seqNum: operation.header.seq_num,
+			};
 			const body = operation.body;
 			if (body?.type !== 'Chat') continue;
 			if (body.payload.type === 'Message') {
@@ -181,9 +234,93 @@ function collectMessageActionsByType(
 				} else {
 					delete reactions[target][author];
 				}
+			} else if (body.payload.type === 'EditMessage') {
+				const target = body.payload.payload.edit_hash;
+				if (edits[target] === undefined) {
+					edits[target] = {};
+				}
+				edits[target][operation.hash] = {
+					hash: operation.hash,
+					text: body.payload.payload.message,
+					timestamp: operation.header.timestamp,
+				};
+			} else if (body.payload.type === 'DeleteMessage') {
+				deletes.push(body.payload.payload.hashes);
 			}
 		}
 	}
 
-	return { messages, reactionsByTarget: reactions };
+	return {
+		messages,
+		reactionsByTarget: reactions,
+		editsByTarget: edits,
+		deletes,
+		opHeaders,
+	};
+}
+
+// Apply the message's edits and return the resulting message. Every edit
+// reachable from the message — following chains through `editsByTarget`,
+// across forks — becomes a version; the one with the highest timestamp is the
+// displayed text.
+function applyEdits(
+	message: Message,
+	editsByTarget: Record<Hash, Record<Hash, Edit>>,
+): Message {
+	const versions: Edit[] = [];
+	const seen = new Set<Hash>([message.hash]);
+	const pending = Object.values(editsByTarget[message.hash] ?? {});
+	while (pending.length > 0) {
+		const edit = pending.pop();
+		if (edit === undefined || seen.has(edit.hash)) continue;
+		seen.add(edit.hash);
+		versions.push(edit);
+		pending.push(...Object.values(editsByTarget[edit.hash] ?? {}));
+	}
+	if (versions.length === 0) return message;
+
+	versions.sort((v1, v2) => v1.timestamp - v2.timestamp);
+	const latest = versions[versions.length - 1];
+	return {
+		...message,
+		content: { ...message.content, message: latest.text },
+		history: [
+			{ text: message.content.message, timestamp: message.timestamp },
+			...versions.map(({ text, timestamp }) => ({ text, timestamp })),
+		],
+		editedAt: latest.timestamp,
+		latestEditHash: latest.hash,
+	};
+}
+
+/** The "deleted" placeholder replacing the chain covered by a delete op,
+ * anchored at the chain's root operation — regardless of whether the deleted
+ * payloads are still present locally: the backend tombstones them, and a
+ * member that joined after the delete only ever sees body-less operations.
+ * The whole chain lives in its author's log, published in order, so the root
+ * is the covered op with the lowest seq number. `undefined` when none of the
+ * covered ops are known locally. */
+function deletedPlaceholder(
+	hashes: Hash[],
+	opHeaders: Record<Hash, OpHeaderInfo>,
+): Message | undefined {
+	let root: { hash: Hash; header: OpHeaderInfo } | undefined;
+	for (const hash of hashes) {
+		const header = opHeaders[hash];
+		if (header === undefined) continue;
+		if (root === undefined || header.seqNum < root.header.seqNum) {
+			root = { hash, header };
+		}
+	}
+	if (root === undefined) return undefined;
+
+	return {
+		hash: root.hash,
+		content: { message: '', media: null },
+		author: root.header.author,
+		seqNum: root.header.seqNum,
+		timestamp: root.header.timestamp,
+		reactions: {},
+		deleted: true,
+	};
 }
