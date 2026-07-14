@@ -4,11 +4,29 @@ import { decode, encode } from 'cbor-web';
 
 import { ContactCode } from '../types';
 
+function hexToBytes(hex: string): Uint8Array {
+	return Uint8Array.from(
+		(hex.match(/.{1,2}/g) ?? []).map(byte => parseInt(byte, 16)),
+	);
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+	return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// The hex string keys (device_pubkey, inbox_topic.topic) are converted to raw
+// bytes before CBOR encoding so each 32-byte key costs 32 bytes rather than a
+// 64-char text string, roughly halving the encoded contact code.
 export function encodeContactCode(contactCode: ContactCode): string {
+	const inboxTopic = contactCode.inbox_topic
+		? [
+				contactCode.inbox_topic.expires_at,
+				hexToBytes(contactCode.inbox_topic.topic),
+			]
+		: null;
 	const bin = encode([
-		contactCode.device_pubkey,
-		contactCode.agent_id,
-		contactCode.inbox_topic,
+		hexToBytes(contactCode.device_pubkey),
+		inboxTopic,
 		contactCode.share_intent,
 	]);
 	return fromByteArray(bin);
@@ -16,11 +34,12 @@ export function encodeContactCode(contactCode: ContactCode): string {
 
 export function decodeContactCode(contactCodeString: string): ContactCode {
 	const bin = toByteArray(contactCodeString);
-	const [device_pubkey, agent_id, inbox_topic, share_intent] = decode(bin);
+	const [device_pubkey, inbox_topic, share_intent] = decode(bin);
 	return {
-		device_pubkey,
-		agent_id,
-		inbox_topic,
+		device_pubkey: bytesToHex(device_pubkey),
+		inbox_topic: inbox_topic
+			? { expires_at: inbox_topic[0], topic: bytesToHex(inbox_topic[1]) }
+			: undefined,
 		share_intent,
 	};
 }

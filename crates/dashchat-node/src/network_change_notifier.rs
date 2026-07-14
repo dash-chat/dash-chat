@@ -1,28 +1,40 @@
-//! Forwards OS network changes to iroh.
+//! Reacts to OS network changes: wakes the mailbox poller everywhere, and
+//! forwards the change to iroh on Android.
+//!
+//! The mailbox manager backs off to slow polling (up to `stopped_interval`)
+//! while offline, so without a nudge a restored connection waits out the full
+//! backoff before the next sync. `wakeup_all()` resets every mailbox to an
+//! immediate poll, making reconnection feel instant on all platforms.
 //!
 //! iroh cannot detect network changes by itself on Android — its native network
 //! monitor has no working backend there (see [`iroh::Endpoint::network_change`]).
 //! Without this, after a WiFi/cellular switch iroh keeps stale addresses and
-//! sockets and never reconnects until the process restarts. `if_watch` does
-//! surface interface up/down events on Android; a single transition emits a
+//! sockets and never reconnects until the process restarts. Non-Android
+//! platforms detect changes natively, so iroh is only notified on Android.
+//!
+//! `if_watch` surfaces interface up/down events; a single transition emits a
 //! burst of them, often mid-switch before the new network is usable, and iroh
 //! rebinds only once per notification (iroh#4289), so we debounce: wait until
-//! the interfaces go quiet, then notify iroh once. Non-Android platforms detect
-//! changes natively, so this is a no-op there.
+//! the interfaces go quiet, then react once.
 
-#[allow(unused_imports)]
+use futures::StreamExt;
+use std::time::Duration;
 use tokio::task::JoinHandle;
 
-/// Spawn the network-change notifier for the given endpoint.
-#[cfg(target_os = "android")]
-pub(crate) fn spawn(endpoint: p2panda::Endpoint) -> JoinHandle<()> {
-    use futures::StreamExt;
-    use std::time::Duration;
+use mailbox_client::manager::Mailboxes;
 
-    // How long interfaces must stay quiet before we treat the transition as
-    // settled and notify iroh.
-    const SETTLE: Duration = Duration::from_millis(1500);
+use crate::mailbox::MailboxOperation;
+use crate::stores::OpStore;
 
+// How long interfaces must stay quiet before we treat the transition as
+// settled.
+const SETTLE: Duration = Duration::from_millis(1500);
+
+/// Spawn the network-change notifier for the given endpoint and mailboxes.
+pub(crate) fn spawn(
+    endpoint: p2panda::Endpoint,
+    mailboxes: Mailboxes<MailboxOperation, OpStore>,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut watcher = match if_watch::tokio::IfWatcher::new() {
             Ok(watcher) => watcher,
@@ -61,27 +73,31 @@ pub(crate) fn spawn(endpoint: p2panda::Endpoint) -> JoinHandle<()> {
                 }
             }
 
-            match endpoint.endpoint().await {
-                Ok(iroh) => {
-                    tracing::info!("network-change notifier: network settled, notifying iroh");
-                    iroh.network_change().await;
-                    // Brief, bounded wait for iroh to re-establish; the offline-LAN
-                    // case never goes "online", so don't block the loop on it.
-                    let _ = tokio::time::timeout(Duration::from_secs(5), iroh.online()).await;
-                }
-                Err(err) => {
-                    tracing::warn!(
-                        ?err,
-                        "network-change notifier: could not access iroh endpoint"
-                    );
-                }
-            }
+            tracing::info!("network-change notifier: network settled, waking mailbox sync");
+            mailboxes.wakeup_all().await;
+            notify_iroh(&endpoint).await;
         }
     })
 }
 
-#[cfg(not(target_os = "android"))]
-pub(crate) fn spawn(_endpoint: p2panda::Endpoint) -> JoinHandle<()> {
-    // iroh detects network changes itself on non-Android platforms.
-    tokio::spawn(async {})
+#[cfg(target_os = "android")]
+async fn notify_iroh(endpoint: &p2panda::Endpoint) {
+    match endpoint.endpoint().await {
+        Ok(iroh) => {
+            tracing::info!("network-change notifier: notifying iroh");
+            iroh.network_change().await;
+            // Brief, bounded wait for iroh to re-establish; the offline-LAN
+            // case never goes "online", so don't block the loop on it.
+            let _ = tokio::time::timeout(Duration::from_secs(5), iroh.online()).await;
+        }
+        Err(err) => {
+            tracing::warn!(
+                ?err,
+                "network-change notifier: could not access iroh endpoint"
+            );
+        }
+    }
 }
+
+#[cfg(not(target_os = "android"))]
+async fn notify_iroh(_endpoint: &p2panda::Endpoint) {}

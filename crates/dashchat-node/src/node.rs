@@ -34,7 +34,7 @@ use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
-use crate::topic::{Topic, TopicId};
+use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
     DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
@@ -397,7 +397,8 @@ impl Node {
 
         // === network change notifier === //
 
-        let network_change_handle = crate::network_change_notifier::spawn(node.endpoint.clone());
+        let network_change_handle =
+            crate::network_change_notifier::spawn(node.endpoint.clone(), node.mailboxes.clone());
         node.network_change_handle
             .lock()
             .await
@@ -433,7 +434,7 @@ impl Node {
 
     pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
         self.local_store
-            .get_active_inbox_topics()
+            .get_advertised_inbox_topics()
             .await
             .map_err(|err| Error::GetActiveInboxes(format!("{err}")))
     }
@@ -466,7 +467,6 @@ impl Node {
         Ok(QrCode {
             device_pubkey: self.device_id(),
             inbox_topic,
-            agent_id: self.node_keys.agent_id,
             share_intent,
         })
     }
@@ -477,6 +477,10 @@ impl Node {
 
     pub fn device_id(&self) -> DeviceId {
         self.node_keys.device_id()
+    }
+
+    pub fn blob_sync_optional(&self) -> Option<&crate::blob_sync::BlobSync> {
+        self.blob_sync.as_ref()
     }
 
     #[cfg(feature = "testing")]
@@ -498,7 +502,12 @@ impl Node {
         self.unfetched_blob_trigger.notify_one();
     }
 
-    #[cfg(feature = "testing")]
+    /// Use the node's device ID as an iroh endpoint id.
+    ///
+    /// This is equivalent to `self.iroh_endpoint().await.unwrap().id()`,
+    /// but avoids the async call.
+    ///
+    /// PANICS if the device ID is not a valid verifying key.
     pub fn endpoint_id(&self) -> iroh::EndpointId {
         iroh::EndpointId::from_bytes(self.device_id().as_bytes())
             .expect("device id is a valid endpoint id")
@@ -508,6 +517,18 @@ impl Node {
     /// `/health` response advertises the node's dialing address.
     pub async fn iroh_endpoint(&self) -> Result<iroh::Endpoint> {
         Ok(self.endpoint.endpoint().await?)
+    }
+
+    /// Tear down all p2p connectivity by closing the iroh endpoint. Afterwards
+    /// the node can neither dial nor accept peer connections, so no gossip sync
+    /// happens; local reads and writes against the op store keep working. This
+    /// is a one-way switch intended only for e2e tests that must observe
+    /// pre-sync UI state without racing a direct p2p connection between two
+    /// agents running on the same machine.
+    #[cfg(feature = "testing")]
+    pub async fn close_iroh_endpoint(&self) -> Result<()> {
+        self.endpoint.endpoint().await?.close().await;
+        Ok(())
     }
 
     /// Add (or refresh) a peer's dialing address (relay + direct addresses) in
@@ -1160,40 +1181,55 @@ impl Node {
         Ok(())
     }
 
+    /// Register the shared, idempotent state for a contact identified by their
+    /// device pubkey and agent id: record the device -> agent mapping, register
+    /// them as a bootstrap peer, and subscribe to their announcements and our
+    /// direct-chat topic. Safe to call repeatedly, so both the initiating
+    /// `add_contact` path and the inbox request/ack handlers can call it.
+    pub(crate) async fn establish_contact(
+        &self,
+        device_pubkey: DeviceId,
+        agent_id: AgentId,
+    ) -> Result<(), Error> {
+        self.local_store
+            .save_agent_mapping(device_pubkey, agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        // Register the contact as a bootstrap so p2panda discovery can reach it
+        // directly over the internet (relay + pkarr), rather than depending on a
+        // mutually-reachable mailbox to introduce the two nodes.
+        self.register_bootstrap_node(*device_pubkey)
+            .await
+            .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
+        // Subscribe to the contact's announcements to receive their group
+        // control messages, and to our shared direct-chat topic.
+        self.register_topic(Topic::announcements(agent_id))
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        self.register_topic(self.direct_chat_topic(agent_id))
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        Ok(())
+    }
+
     /// Store someone as a contact, and:
     /// - register their spaces keybundle so we can add them to spaces
     /// - subscribe to their inbox
     /// - store them in the contacts map
     /// - send an invitation to them to do the same
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn add_contact(&self, contact: QrCode) -> Result<AgentId, AddContactError> {
+    pub async fn add_contact(&self, contact: QrCode) -> Result<(), AddContactError> {
         tracing::debug!(
             device_pub_key = ?contact.device_pubkey.aliased(),
-            agent_id = ?contact.agent_id.aliased(),
             inbox_topic = ?contact.inbox_topic,
             "adding contact",
         );
 
-        self.local_store
-            .save_contact(contact.clone())
-            .await
-            .map_err(|e| AddContactError::StoreContact(e.to_string()))?;
-
-        // Register the scanned contact as a bootstrap so p2panda discovery can
-        // reach it directly over the internet (relay + pkarr), rather than
-        // depending on a mutually-reachable mailbox to introduce the two nodes.
-        self.register_bootstrap_node(*contact.device_pubkey)
-            .await
-            .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
-
-        // SPACES: Register the member in the spaces manager
-
-        // Must subscribe to the new member's device group in order to receive their
-        // group control messages.
-        // TODO: is this idempotent? If not we must make sure to do this only once.
-        self.register_topic(Topic::announcements(contact.agent_id))
-            .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        let Some(inbox_topic) = contact.inbox_topic.clone() else {
+            return Err(AddContactError::CreateQrCode(
+                "contact code has no inbox to send a request to".to_string(),
+            ));
+        };
 
         // TODO: use all of this commented out stuff when spaces are possible again
         // // XXX: there should be a better way to wait for the device group to be created,
@@ -1236,55 +1272,206 @@ impl Node {
         // // XXX: need sleep a little more for all the messages to be processed
         // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
 
-        let agent = contact.agent_id;
-        let direct_topic = self.direct_chat_topic(agent);
-        self.register_topic(direct_topic)
+        self.initialize_topic(*inbox_topic.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-
+        // Mint a private reply inbox for this exchange and listen on it for
+        // the owner's ack. We do NOT persist the (possibly shared) advertised
+        // inbox we scanned — only the owner keeps camping on that — so other
+        // scanners of the same QR never share a return channel with us.
+        let reply_inbox = InboxTopic {
+            topic: Topic::inbox().alias_named(&format!(
+                "reply_inbox({:?},peer={})",
+                self.device_id().aliased(),
+                &hex::encode(&contact.device_pubkey.as_bytes()[..4])
+            )),
+            expires_at: Utc::now() + self.config.contact_code_expiry,
+        };
+        self.initialize_topic(*reply_inbox.topic)
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        self.local_store
+            .add_reply_inbox_topic(reply_inbox.clone(), contact.device_pubkey)
+            .await
+            .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
+        let code = self
+            .new_qr_code(ShareIntent::AddContact, false)
+            .await
+            .map_err(|e| AddContactError::CreateQrCode(e.to_string()))?;
+        let Some(profile) = self
+            .my_profile()
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+        else {
+            return Err(AddContactError::ProfileNotCreated);
+        };
         self.publish(
-            self.device_group_topic(),
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact.clone())),
-            Some(&format!("add_contact/add_contact({:?})", agent.aliased())),
+            inbox_topic.topic,
+            Payload::Inbox(InboxPayload::ContactRequest {
+                code,
+                profile,
+                agent_id: self.agent_id(),
+                reply_topic: reply_inbox.topic.clone(),
+            }),
+            Some(&format!(
+                "add_contact/contact_request({:?})",
+                contact.device_pubkey.aliased()
+            )),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
-        if let Some(inbox_topic) = contact.inbox_topic.clone() {
-            self.initialize_topic(*inbox_topic.topic)
-                .await
-                .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-            let code = self
-                .new_qr_code(ShareIntent::AddContact, false)
-                .await
-                .map_err(|e| AddContactError::CreateQrCode(e.to_string()))?;
-            let Some(profile) = self
-                .my_profile()
-                .await
-                .map_err(|e| Error::AuthorOperation(e.to_string()))?
-            else {
-                return Err(AddContactError::ProfileNotCreated);
-            };
-            self.publish(
-                inbox_topic.topic,
-                Payload::Inbox(InboxPayload::ContactRequest { code, profile }),
-                Some(&format!(
-                    "add_contact/contact_request({:?})",
-                    agent.aliased()
-                )),
-            )
+        // Record a pending request in our own device group so the UI can show a
+        // placeholder chat until the owner's ack arrives. Keyed on the owner's
+        // device pubkey, since we don't know their agent id yet.
+        self.publish(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
+                device_pubkey: contact.device_pubkey,
+            }),
+            Some(&format!(
+                "add_contact/pending({:?})",
+                contact.device_pubkey.aliased()
+            )),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Record a mutual contact by publishing the contact marker into our own
+    /// device group. Contact establishment (mapping, topics, bootstrap) is done
+    /// separately via [`Self::establish_contact`].
+    pub(crate) async fn publish_add_contact(&self, agent_id: AgentId) -> Result<(), Error> {
+        self.publish(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }),
+            Some(&format!("add_contact({:?})", agent_id.aliased())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Accept a contact request that was received over our advertised inbox.
+    /// On receipt we only recorded the requester's identity + profile locally;
+    /// accepting now performs the network establishment we deliberately deferred
+    /// — registering the requester as a bootstrap node and subscribing to their
+    /// topics — replies with our profile (which also signals acceptance so the
+    /// requester can complete their side), publishes the contact marker, and
+    /// creates the shared direct-chat space.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn accept_contact(&self, agent_id: AgentId) -> Result<(), AddContactError> {
+        // The requester's device was mapped to their agent_id when the request
+        // arrived; recover it to establish their network presence.
+        let device_pubkey = self
+            .local_store
+            .lookup_contact_by_agent_id(agent_id)
             .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            .ok_or_else(|| {
+                AddContactError::CreateDirectChat(format!(
+                    "no pending contact request found for agent {:?}",
+                    agent_id.aliased()
+                ))
+            })?;
+        self.establish_contact(device_pubkey, agent_id).await?;
+
+        // Reply to the requester with our profile over their private reply
+        // topic. This is the point at which we first disclose our profile and
+        // signals that we accepted, letting them complete the exchange.
+        if let Some(reply_topic) = self
+            .find_contact_request_reply_topic(agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+        {
+            self.reply_to_contact_request(reply_topic).await?;
+        } else {
+            tracing::warn!(
+                agent_id = ?agent_id.aliased(),
+                "accepted contact but found no request to reply to"
+            );
         }
 
-        // Only the initiator of contactship should create the direct chat space
-        if contact.share_intent == ShareIntent::AddContact && contact.inbox_topic.is_none() {
-            self.create_direct_chat_space(agent)
-                .await
-                .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
-        }
+        self.publish_add_contact(agent_id).await?;
 
-        Ok(agent)
+        self.create_direct_chat_space(agent_id)
+            .await
+            .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Returns true if we have an outgoing contact request recorded for
+    /// `device_pubkey` (i.e. we scanned their code and are awaiting their ack).
+    pub(crate) async fn has_outgoing_pending_request(
+        &self,
+        device_id: DeviceId,
+    ) -> anyhow::Result<bool> {
+        self.local_store
+            .has_pending_reply_inbox_for(device_id)
+            .await
+    }
+
+    /// Scan our advertised inbox logs for a pending [`InboxPayload::ContactRequest`]
+    /// from `agent_id` and return its private reply topic, so [`Self::accept_contact`]
+    /// can send our acceptance there. Returns `None` if no matching request is stored.
+    async fn find_contact_request_reply_topic(
+        &self,
+        agent_id: AgentId,
+    ) -> anyhow::Result<Option<Topic<kind::Inbox>>> {
+        for inbox in self.local_store.get_advertised_inbox_topics().await? {
+            let log_id = LogId::from_topic(*inbox.topic);
+            for author in self.op_store.get_authors(log_id).await? {
+                for op in self.op_store.get_log(&author, &log_id, None).await? {
+                    let Some(body) = op.body else { continue };
+                    let Ok(Payload::Inbox(InboxPayload::ContactRequest {
+                        agent_id: req_agent,
+                        reply_topic,
+                        ..
+                    })) = Payload::try_from_body(&body)
+                    else {
+                        continue;
+                    };
+                    if req_agent == agent_id {
+                        return Ok(Some(reply_topic));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Reply to an incoming contact request by sending our profile to the
+    /// scanner's private reply topic, so the scanner learns it immediately over
+    /// the inbox rather than waiting for announcements sync. We subscribe to the
+    /// reply topic just long enough to publish to it.
+    pub(crate) async fn reply_to_contact_request(
+        &self,
+        reply_topic: Topic<kind::Inbox>,
+    ) -> Result<(), Error> {
+        let Some(profile) = self
+            .my_profile()
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+        else {
+            return Ok(());
+        };
+        self.initialize_topic(*reply_topic)
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        self.publish(
+            reply_topic,
+            Payload::Inbox(InboxPayload::ContactRequestAck {
+                profile,
+                agent_id: self.agent_id(),
+            }),
+            Some("reply_to_contact_request"),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        Ok(())
     }
 
     /// Reject a contact request from the given agent.
@@ -1341,13 +1528,27 @@ impl Node {
         )
         .await?;
 
-        for topic in self.local_store.get_active_inbox_topics().await?.iter() {
+        for topic in self.local_store.get_advertised_inbox_topics().await?.iter() {
             self.initialize_topic(
                 *topic
                     .topic
                     .clone()
                     .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
             )
+            .await?;
+        }
+
+        for (topic, peer_device) in self
+            .local_store
+            .get_reply_inbox_topics_with_author()
+            .await?
+            .iter()
+        {
+            self.initialize_topic(*topic.topic.clone().alias_named(&format!(
+                "reply_inbox({:?},peer={})",
+                self.device_id().aliased(),
+                &hex::encode(&peer_device.as_bytes()[..4])
+            )))
             .await?;
         }
 
