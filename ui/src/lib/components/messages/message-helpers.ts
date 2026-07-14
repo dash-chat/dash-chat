@@ -1,9 +1,4 @@
-import {
-	DELETE_WINDOW_MS,
-	type DeviceId,
-	EDIT_WINDOW_MS,
-	type Message,
-} from 'dash-chat-stores';
+import { type DeviceId, EDIT_WINDOW_MS, type Message } from 'dash-chat-stores';
 
 export type MessagePosition = 'first' | 'middle' | 'last' | 'single';
 
@@ -22,9 +17,7 @@ export function canDeleteMessage(
 	myDeviceId: DeviceId,
 ): boolean {
 	if (message.deleted) return false;
-	if (message.author !== myDeviceId) return false;
-	const rootTimestamp = message.history?.[0]?.timestamp ?? message.timestamp;
-	return Date.now() - rootTimestamp <= DELETE_WINDOW_MS;
+	return message.author === myDeviceId;
 }
 
 export function messagePosition(

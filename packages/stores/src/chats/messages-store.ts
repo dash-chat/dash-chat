@@ -20,12 +20,6 @@ import { type IMessagesClient } from './messages-client';
  * Mirrors `EDIT_WINDOW_MICROS` in `crates/dashchat-node/src/chat/edit.rs`. */
 export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** The window during which a message may be deleted for everyone, measured
- * from the original message timestamp. Mirrors `DELETE_WINDOW_MICROS` in
- * `crates/dashchat-node/src/chat/validation/delete.rs` (frontend timestamps
- * are ms). */
-export const DELETE_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 /** A single version of a message's text, with the time it was authored. */
 export interface MessageVersion {
 	text: string;
@@ -68,7 +62,7 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const { messages, reactionsByTarget, editsByTarget, deletes, opHeaders } =
+		const { messages, reactionsByTarget, editsByTarget, deletesByTarget } =
 			collectMessageActionsByType(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
@@ -84,13 +78,8 @@ export class MessagesStore {
 			messages[hash] = applyEdits(message, editsByTarget);
 		}
 
-		for (const hashes of deletes) {
-			const placeholder = deletedPlaceholder(hashes, opHeaders);
-			if (placeholder === undefined) continue;
-			for (const hash of hashes) {
-				delete messages[hash];
-			}
-			messages[placeholder.hash] = placeholder;
+		for (const target of Object.keys(deletesByTarget)) {
+			messages[target].deleted = true;
 		}
 
 		return messages;
@@ -180,6 +169,15 @@ interface Edit {
 	timestamp: number;
 }
 
+/** A delete op, keyed in `deletesByTarget` by the original message it
+ * deletes. */
+interface Delete {
+	hash: Hash;
+	timestamp: number;
+	/** The complete chain covered: the original message plus every edit. */
+	hashes: Hash[];
+}
+
 interface OpHeaderInfo {
 	author: DeviceId;
 	timestamp: number;
@@ -192,24 +190,16 @@ function collectMessageActionsByType(
 	messages: Record<Hash, Message>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
 	editsByTarget: Record<Hash, Record<Hash, Edit>>;
-	/** The hash sets covered by each `DeleteMessage` op. */
-	deletes: Hash[][];
-	/** Header info for every op, including body-less (tombstoned) ones. */
-	opHeaders: Record<Hash, OpHeaderInfo>;
+	/** The delete ops deleting each original message, keyed by its hash. */
+	deletesByTarget: Record<Hash, Record<Hash, Delete>>;
 } {
 	const messages: Record<Hash, Message> = {};
-	const reactions: Record<Hash, Record<DeviceId, string>> = {};
-	const edits: Record<Hash, Record<Hash, Edit>> = {};
-	const deletes: Hash[][] = [];
-	const opHeaders: Record<Hash, OpHeaderInfo> = {};
+	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
+	const editsByTarget: Record<Hash, Record<Hash, Edit>> = {};
+	const deletesByTarget: Record<Hash, Record<Hash, Delete>> = {};
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
-			opHeaders[operation.hash] = {
-				author: operation.header.verifying_key,
-				timestamp: operation.header.timestamp,
-				seqNum: operation.header.seq_num,
-			};
 			const body = operation.body;
 			if (body?.type !== 'Chat') continue;
 			if (body.payload.type === 'Message') {
@@ -226,36 +216,44 @@ function collectMessageActionsByType(
 				};
 			} else if (body.payload.type === 'Reaction') {
 				const { target, emoji } = body.payload.payload;
-				if (reactions[target] === undefined) {
-					reactions[target] = {};
+				if (reactionsByTarget[target] === undefined) {
+					reactionsByTarget[target] = {};
 				}
 				if (emoji) {
-					reactions[target][author] = emoji;
+					reactionsByTarget[target][author] = emoji;
 				} else {
-					delete reactions[target][author];
+					delete reactionsByTarget[target][author];
 				}
 			} else if (body.payload.type === 'EditMessage') {
 				const target = body.payload.payload.edit_hash;
-				if (edits[target] === undefined) {
-					edits[target] = {};
+				if (editsByTarget[target] === undefined) {
+					editsByTarget[target] = {};
 				}
-				edits[target][operation.hash] = {
+				editsByTarget[target][operation.hash] = {
 					hash: operation.hash,
 					text: body.payload.payload.message,
 					timestamp: operation.header.timestamp,
 				};
 			} else if (body.payload.type === 'DeleteMessage') {
-				deletes.push(body.payload.payload.hashes);
+				for (const target of body.payload.payload.hashes) {
+					if (deletesByTarget[target] === undefined) {
+						deletesByTarget[target] = {};
+					}
+					deletesByTarget[target][operation.hash] = {
+						hash: operation.hash,
+						timestamp: operation.header.timestamp,
+						hashes: body.payload.payload.hashes,
+					};
+				}
 			}
 		}
 	}
 
 	return {
 		messages,
-		reactionsByTarget: reactions,
-		editsByTarget: edits,
-		deletes,
-		opHeaders,
+		reactionsByTarget,
+		editsByTarget,
+		deletesByTarget,
 	};
 }
 
@@ -293,33 +291,16 @@ function applyEdits(
 	};
 }
 
-/** The "deleted" placeholder replacing the chain covered by a delete op,
- * anchored at the chain's root operation — regardless of whether the deleted
- * payloads are still present locally: the backend tombstones them, and a
- * member that joined after the delete only ever sees body-less operations.
- * The whole chain lives in its author's log, published in order, so the root
- * is the covered op with the lowest seq number. `undefined` when none of the
- * covered ops are known locally. */
-function deletedPlaceholder(
-	hashes: Hash[],
-	opHeaders: Record<Hash, OpHeaderInfo>,
-): Message | undefined {
-	let root: { hash: Hash; header: OpHeaderInfo } | undefined;
-	for (const hash of hashes) {
-		const header = opHeaders[hash];
-		if (header === undefined) continue;
-		if (root === undefined || header.seqNum < root.header.seqNum) {
-			root = { hash, header };
-		}
-	}
-	if (root === undefined) return undefined;
-
+/** The placeholder shown in place of a deleted message, built from the root
+ * op's header alone: the backend tombstones deleted payloads, and a member
+ * that joined after the delete only ever sees body-less operations. */
+function deletedPlaceholder(hash: Hash, header: OpHeaderInfo): Message {
 	return {
-		hash: root.hash,
+		hash,
 		content: { message: '', media: null },
-		author: root.header.author,
-		seqNum: root.header.seqNum,
-		timestamp: root.header.timestamp,
+		author: header.author,
+		seqNum: header.seqNum,
+		timestamp: header.timestamp,
 		reactions: {},
 		deleted: true,
 	};
