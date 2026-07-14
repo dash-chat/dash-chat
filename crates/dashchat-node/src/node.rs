@@ -30,7 +30,7 @@ use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
 use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps};
-use crate::contact::{InboxTopic, QrCode, ShareIntent, derive_inbox_topic};
+use crate::contact::{InboxNonce, InboxTopic, QrCode, ShareIntent, derive_inbox_topic};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
@@ -462,7 +462,7 @@ impl Node {
                 .add_active_inbox_topic(inbox_topic.clone())
                 .await
                 .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
-            Some(nonce)
+            Some(InboxNonce(nonce))
         } else {
             None
         };
@@ -1383,15 +1383,11 @@ impl Node {
             ));
         };
 
-        let inbox_topic = InboxTopic {
-            topic: Topic::new(derive_inbox_topic(&contact.device_pubkey, &inbox_nonce))
-                .alias_named(&format!(
-                    "inbox({:?},nonce={})",
-                    self.device_id().aliased(),
-                    hex::encode(inbox_nonce)
-                )),
-            expires_at: Utc::now() + self.config.contact_code_expiry,
-        };
+        let inbox_topic = InboxTopic::from_nonce(
+            &contact.device_pubkey,
+            &inbox_nonce,
+            Utc::now() + self.config.contact_code_expiry,
+        );
 
         // TODO: use all of this commented out stuff when spaces are possible again
         // // XXX: there should be a better way to wait for the device group to be created,

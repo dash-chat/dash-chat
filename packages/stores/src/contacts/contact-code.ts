@@ -51,7 +51,7 @@ export function decodeContactCode(contactCodeString: string): ContactCode {
 	const [device_pubkey_bytes, inbox_nonce_bytes, share_intent] = decode(bin);
 	const device_pubkey = bytesToHex(device_pubkey_bytes);
 	const inbox_nonce = inbox_nonce_bytes
-		? bytesToHex(inbox_nonce_bytes)
+		? bytesToHex(inbox_nonce_bytes as Uint8Array)
 		: undefined;
 	return { device_pubkey, share_intent, inbox_nonce };
 }

@@ -167,7 +167,7 @@ export interface ContactCode {
 	device_pubkey: DeviceId;
 	/// The intent of the QR code: whether to add this node as a contact or a device.
 	share_intent: ShareIntent;
-	/// 8-byte nonce (hex string) used with blake3(device_pubkey || nonce) to derive
+	/// 8-byte nonce used with blake3(device_pubkey || nonce) to derive
 	/// the inbox topic. Absent on reply codes.
 	inbox_nonce?: string;
 }
