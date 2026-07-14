@@ -36,17 +36,19 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
-	setContext('messages-store', store);
+	setContext('messages-store', store.messages);
 
-	const readTracker = createReadMessagesTracker(store);
+	const readTracker = createReadMessagesTracker(store.messages);
 	const readMessageOnObserve = readTracker.observe;
 
-	const messageSets = useReactivePromise(store.messageSets);
+	const messageSets = useReactivePromise(store.groupedEvents);
 	const info = useReactivePromise(store.info);
 	const allMembers = useReactivePromise(store.allMembers);
 	const me = useReactivePromise(store.me);
-	const readMessageHashes = useReactivePromise(store.readMessageHashes);
-	const unreadCount = useReactivePromise(store.unreadCount);
+	const readMessageHashes = useReactivePromise(
+		store.messages.readMessageHashes,
+	);
+	const unreadCount = useReactivePromise(store.messages.unreadCount);
 
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
@@ -301,7 +303,7 @@
 		{#await Promise.all([$me, $info]) then [me, info]}
 			{#if me.member}
 				<MessageComposer
-					{store}
+					store={store.messages}
 					destinationName={info.name}
 					onSent={onMessageSent}
 				/>

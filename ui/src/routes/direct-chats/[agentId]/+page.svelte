@@ -62,7 +62,7 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
-	setContext('messages-store', store);
+	setContext('messages-store', store.messages);
 
 	const isPendingChat = store.isPending;
 
@@ -73,16 +73,18 @@
 		if (agent) goto(`/direct-chats/${agent}`, { replaceState: true });
 	});
 
-	const readTracker = createReadMessagesTracker(store);
+	const readTracker = createReadMessagesTracker(store.messages);
 	const readMessageOnObserve = readTracker.observe;
 
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 	const chatId = useReactivePromise(store.chatId);
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const contactRequest = useReactivePromise(store.contactRequest);
-	const messagesSets = useReactivePromise(store.messageSets);
-	const readMessageHashes = useReactivePromise(store.readMessageHashes);
-	const unreadCount = useReactivePromise(store.unreadCount);
+	const messagesSets = useReactivePromise(store.groupedMessages);
+	const readMessageHashes = useReactivePromise(
+		store.messages.readMessageHashes,
+	);
+	const unreadCount = useReactivePromise(store.messages.unreadCount);
 
 	async function acceptContactRequest(contactRequest: ContactRequest) {
 		try {
@@ -781,7 +783,7 @@
 						</div>
 					{:else}
 						<MessageComposer
-							{store}
+							store={store.messages}
 							destinationName={profile ? fullName(profile) : undefined}
 							onSent={onMessageSent}
 						/>

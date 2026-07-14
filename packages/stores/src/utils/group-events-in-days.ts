@@ -2,7 +2,7 @@ import { DeviceId, Hash } from '../p2panda/types';
 
 export const MESSAGE_SET_TIMEFRAME_INTERVAL_MS = 60 * 1000; // 1 minute
 
-export interface EventSetsInDay<T> {
+export interface EventGroupsInDay<T> {
 	day: Date;
 	eventsSets: Array<EventSet<T>>;
 }
@@ -16,11 +16,11 @@ export interface EventWithProvenance<T> {
 
 export type EventSet<T> = Array<[Hash, T]>;
 
-export function orderInEventSets<T>(
+export function groupEventsInDay<T>(
 	events: Record<Hash, EventWithProvenance<T>>,
 	agentSets: Array<Array<DeviceId>>,
-): Array<EventSetsInDay<T>> {
-	const eventsSetsInDay: EventSetsInDay<EventWithProvenance<T>>[] = [];
+): Array<EventGroupsInDay<T>> {
+	const eventsSetsInDay: EventGroupsInDay<EventWithProvenance<T>>[] = [];
 	const orderedAscendingEvents = Object.entries(events).sort(
 		(m1, m2) => m1[1].timestamp - m2[1].timestamp,
 	);
@@ -79,7 +79,7 @@ export function orderInEventSets<T>(
 			}
 		}
 	}
-	const eventsSets: EventSetsInDay<T>[] = eventsSetsInDay.map(eventSet => ({
+	const eventsSets: EventGroupsInDay<T>[] = eventsSetsInDay.map(eventSet => ({
 		day: eventSet.day,
 		eventsSets: eventSet.eventsSets.map(set =>
 			set.map(([hash, e]) => [hash, e.event]),

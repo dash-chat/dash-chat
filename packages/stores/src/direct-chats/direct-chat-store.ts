@@ -1,43 +1,38 @@
 import { reactive } from 'signalium';
 
 import { isPendingChatKey, pendingChatKeyDevice } from '../chats/chat-key';
+import { type IMessagesClient } from '../chats/messages-client';
+import { Message, MessagesStore } from '../chats/messages-store';
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
+import { ChatSummary, Payload } from '../types';
 import {
-	ChatReaction,
-	ChatSummary,
-	MediaAttachment,
-	MessagesStore,
-	OutgoingMedia,
-	Payload,
-	mediaBundleToAttachment,
-} from '../types';
-import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
+	EventWithProvenance,
+	groupEventsInDay,
+} from '../utils/group-events-in-days';
 import { type IDirectChatClient } from './direct-chat-client';
 
-export interface Message {
-	hash: string;
-	content: {
-		message: string;
-		media: MediaAttachment | null;
-	};
-	timestamp: number;
-	author: DeviceId;
-	seqNum: number;
-	reactions: Record<DeviceId, string>;
-}
-
 // Store tied to a specific direct chat
-export class DirectChatStore implements MessagesStore {
+export class DirectChatStore {
+	messages: MessagesStore;
+
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		public client: IDirectChatClient,
 		public peer: AgentId,
-	) {}
+		messagesClient: IMessagesClient,
+	) {
+		this.messages = new MessagesStore(
+			logsStore,
+			contactsStore,
+			this.chatId,
+			messagesClient,
+		);
+	}
 
 	get isPending(): boolean {
 		return isPendingChatKey(this.peer);
@@ -70,59 +65,8 @@ export class DirectChatStore implements MessagesStore {
 		return contactRequests.find(cr => cr.agentId === this.peer);
 	});
 
-	messages = reactive(async () => {
-		if (this.isPending) return {} as Record<Hash, Message>;
-		const chatId = await this.chatId();
-		const logs = await this.logsStore.logsForAllAuthors(chatId);
-
-		const messages: Record<Hash, Message> = {};
-
-		for (const [author, operations] of Object.entries(logs)) {
-			for (const operation of operations) {
-				const body = operation.body;
-				if (body?.type === 'Chat') {
-					if (body.payload.type === 'Message') {
-						messages[operation.hash] = {
-							hash: operation.hash,
-							content: {
-								message: body.payload.payload.message,
-								media: mediaBundleToAttachment(body.payload.payload.media),
-							},
-							author,
-							seqNum: operation.header.seq_num,
-							timestamp: operation.header.timestamp,
-							reactions: {},
-						};
-					}
-				}
-			}
-		}
-		// reactions applied in second loop after messages are fully resolved
-		for (const [author, operations] of Object.entries(logs)) {
-			for (const operation of operations) {
-				const body = operation.body;
-				if (body?.type === 'Chat') {
-					if (body.payload.type === 'Reaction') {
-						const payload = body.payload.payload;
-						let message = messages[payload.target];
-						if (message) {
-							if (payload.emoji) {
-								message.reactions[author] = payload.emoji;
-							} else {
-								delete message.reactions[author];
-							}
-						} else {
-							console.warn('reaction for missing message');
-						}
-					}
-				}
-			}
-		}
-		return messages;
-	});
-
-	messageSets = reactive(async () => {
-		const messages = await this.messages();
+	groupedMessages = reactive(async () => {
+		const messages = await this.messages.messages();
 
 		const eventsWithProvenance: Record<Hash, EventWithProvenance<Message>> = {};
 		const devices = new Set<DeviceId>();
@@ -139,20 +83,11 @@ export class DirectChatStore implements MessagesStore {
 
 		const agentsSets = Array.from(devices).map(a => [a]);
 
-		const messagesWithProvenance = orderInEventSets(
+		const messagesWithProvenance = groupEventsInDay(
 			eventsWithProvenance,
 			agentsSets,
 		);
 		return messagesWithProvenance;
-	});
-
-	lastMessage = reactive(async () => {
-		const messages = await this.messages();
-
-		const sortedMessages = Object.values(messages).sort(
-			(m1, m2) => m2.timestamp - m1.timestamp,
-		);
-		return sortedMessages.length > 0 ? sortedMessages[0] : undefined;
 	});
 
 	onNewMessage(
@@ -166,56 +101,10 @@ export class DirectChatStore implements MessagesStore {
 		});
 	}
 
-	async sendMessage(input: {
-		message: string;
-		media: OutgoingMedia | null;
-	}): Promise<Hash> {
-		const chatId = await this.chatId();
-
-		return this.client.sendMessage(chatId, input.message, input.media);
-	}
-
-	readMessageHashes = reactive(async () => {
-		const chatId = await this.chatId();
-		const myDeviceGroupTopic =
-			await this.contactsStore.devicesStore.myDeviceGroupTopic();
-		const readHashes: Set<Hash> = new Set();
-
-		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
-			for (const op of ops) {
-				if (
-					op.body?.payload?.type === 'ReadMessages' &&
-					op.body.payload.payload.chat_id === chatId
-				) {
-					for (const hash of op.body.payload.payload.message_hashes) {
-						readHashes.add(hash);
-					}
-				}
-			}
-		}
-
-		return readHashes;
-	});
-
-	unreadCount = reactive(async () => {
-		const messages = await this.messages();
-		const readHashes = await this.readMessageHashes();
-		const myDeviceId = await this.contactsStore.myDeviceId();
-
-		let count = 0;
-		for (const [hash, message] of Object.entries(messages)) {
-			// Only count messages from others (not our own)
-			if (message.author !== myDeviceId && !readHashes.has(hash)) {
-				count++;
-			}
-		}
-		return count;
-	});
-
 	summary = reactive(async (): Promise<ChatSummary> => {
 		const profile = await this.peerProfile();
-		const message = await this.lastMessage();
-		const unreadCount = await this.unreadCount();
+		const message = await this.messages.lastMessage();
+		const unreadCount = await this.messages.unreadCount();
 
 		const lastEvent: ChatSummary['lastEvent'] = message
 			? {
@@ -238,14 +127,4 @@ export class DirectChatStore implements MessagesStore {
 			unreadMessages: unreadCount,
 		};
 	});
-
-	async markAsRead(messageHashes: Hash[]): Promise<void> {
-		const chatId = await this.chatId();
-		await this.client.markMessagesRead(chatId, messageHashes);
-	}
-
-	async sendReaction(reaction: ChatReaction) {
-		const chatId = await this.chatId();
-		await this.client.sendReaction(chatId, reaction);
-	}
 }
