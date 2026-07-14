@@ -1,5 +1,6 @@
 import { reactive } from 'signalium';
 
+import { isPendingChatKey, pendingChatKeyDevice } from '../chats/chat-key';
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
@@ -38,9 +39,27 @@ export class DirectChatStore implements MessagesStore {
 		public peer: AgentId,
 	) {}
 
-	chatId = reactive(async () => await this.client.chatId(this.peer));
+	get isPending(): boolean {
+		return isPendingChatKey(this.peer);
+	}
+
+	resolvedPendingAgent = reactive(async () => {
+		const device = pendingChatKeyDevice(this.peer);
+		if (device === undefined) return undefined;
+		// Depend on the reactive contacts list so this re-runs once the contact
+		// is established (the device→agent mapping is saved around the same time
+		// the AddContact marker is published).
+		await this.contactsStore.contactsAgentIds();
+		return await this.contactsStore.client.agentForDevice(device);
+	});
+
+	chatId = reactive(async () => {
+		if (this.isPending) return '';
+		return await this.client.chatId(this.peer);
+	});
 
 	peerProfile = reactive(async () => {
+		if (this.isPending) return undefined;
 		const request = await this.contactRequest();
 		if (request) return request.profile;
 		return await this.contactsStore.profiles(this.peer);
@@ -48,10 +67,11 @@ export class DirectChatStore implements MessagesStore {
 
 	contactRequest = reactive(async () => {
 		const contactRequests = await this.contactsStore.contactRequests();
-		return contactRequests.find(cr => cr.code.agent_id === this.peer);
+		return contactRequests.find(cr => cr.agentId === this.peer);
 	});
 
 	messages = reactive(async () => {
+		if (this.isPending) return {} as Record<Hash, Message>;
 		const chatId = await this.chatId();
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 

@@ -16,6 +16,7 @@ import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, VerifyingKey } from '../p2panda/types';
 import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
+import { pendingChatKey } from './chat-key';
 import { type IChatsClient } from './chats-client';
 
 export class ChatsStore {
@@ -84,12 +85,13 @@ export class ChatsStore {
 	});
 
 	allChatsSummaries = reactive(async () => {
-		const [direct, groups, pending] = await Promise.all([
+		const [direct, groups, pending, outgoing] = await Promise.all([
 			this.allDirectChatSummaries(),
 			this.allGroupChatSummaries(),
 			this.allPendingRequestSummaries(),
+			this.allOutgoingPendingSummaries(),
 		]);
-		const summaries = [...direct, ...groups, ...pending];
+		const summaries = [...direct, ...groups, ...pending, ...outgoing];
 		summaries.sort((a, b) => b.lastEvent.timestamp - a.lastEvent.timestamp);
 		return summaries;
 	});
@@ -114,12 +116,11 @@ export class ChatsStore {
 			const pendingRequests = await this.contactsStore.contactRequests();
 			const unique = pendingRequests.filter(
 				(request, index, self) =>
-					self.findIndex(r => r.code.agent_id === request.code.agent_id) ===
-					index,
+					self.findIndex(r => r.agentId === request.agentId) === index,
 			);
 			return unique.map(pendingRequest => ({
 				type: 'DirectChat',
-				chatId: pendingRequest.code.agent_id,
+				chatId: pendingRequest.agentId,
 				name: fullName(pendingRequest.profile),
 				avatar: pendingRequest.profile.avatar,
 				lastEvent: {
@@ -127,6 +128,24 @@ export class ChatsStore {
 					timestamp: pendingRequest.timestamp,
 				},
 				unreadMessages: 1,
+			}));
+		},
+	);
+
+	private allOutgoingPendingSummaries = reactive(
+		async (): Promise<ChatSummary[]> => {
+			const pending = await this.contactsStore.outgoingPendingRequests();
+			return pending.map(request => ({
+				type: 'DirectChat',
+				chatId: pendingChatKey(request.devicePubkey),
+				name: '',
+				avatar: undefined,
+				waitingForProfile: true as const,
+				lastEvent: {
+					kind: 'contact_request',
+					timestamp: request.timestamp,
+				},
+				unreadMessages: 0,
 			}));
 		},
 	);
