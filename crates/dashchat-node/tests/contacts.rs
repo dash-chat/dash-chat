@@ -199,7 +199,16 @@ async fn test_inbox_two_way_flow() {
         .await
         .expect("Alice should receive Bobbi's contact request");
     assert_eq!(requester, bobbi.agent_id());
-    alice.accept_contact(requester).await.unwrap();
+    alice
+        .accept_contact(
+            bobbi.agent_id(),
+            Some((
+                bobbi.device_id(),
+                bobbi.my_profile().await.unwrap().unwrap(),
+            )),
+        )
+        .await
+        .unwrap();
 
     // Bobbi should receive Alice's reply over the same inbox, carrying her
     // profile — proving the inbox channel is bidirectional.

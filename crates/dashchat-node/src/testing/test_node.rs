@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, mpsc::Receiver};
 use mailbox_client::MailboxClient;
 
 use crate::{
-    AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
+    AddContactPayload, AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
     filesystem::Filesystem,
     mailbox::MailboxOperation,
     node::Node,
@@ -138,18 +138,18 @@ impl TestNode {
 
     pub async fn get_contacts(&self) -> anyhow::Result<Vec<AgentId>> {
         // FIXME: use all local device IDs
-        let ids = self
-            .op_store
-            .get_interleaved_logs(self.device_group_topic().into(), vec![self.device_id()])
-            .await?
-            .into_iter()
-            .filter_map(|(_, payload)| match payload {
-                Some(Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id })) => {
-                    Some(agent_id)
-                }
-                _ => None,
-            })
-            .collect();
+        let ids =
+            self.op_store
+                .get_interleaved_logs(self.device_group_topic().into(), vec![self.device_id()])
+                .await?
+                .into_iter()
+                .filter_map(|(_, payload)| match payload {
+                    Some(Payload::DeviceGroup(DeviceGroupPayload::AddContact(
+                        AddContactPayload { agent_id, .. },
+                    ))) => Some(agent_id),
+                    _ => None,
+                })
+                .collect();
         Ok(ids)
     }
 

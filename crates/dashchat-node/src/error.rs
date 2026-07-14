@@ -33,6 +33,9 @@ pub enum AddContactError {
     #[error("Failed to create direct chat: {0}")]
     CreateDirectChat(String),
 
+    #[error("Failed to lookup contact info by agent id: {0}")]
+    ContactInfoNotFound(String),
+
     #[error(transparent)]
     #[serde(untagged)]
     Common(#[from] Error),

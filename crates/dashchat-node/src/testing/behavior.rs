@@ -52,23 +52,29 @@ impl Behavior {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
     pub async fn accept_next_contact(&self) -> anyhow::Result<AgentId> {
         let mut watcher = self.watcher.lock().await;
-        let agent_id = watcher
+        let (agent_id, device_id, profile) = watcher
             .watch_mapped(Duration::from_secs(30), |n: &Notification| {
                 tracing::debug!(
                     hash = ?n.header.hash(),
                     "checking for contact invitation"
                 );
-                let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) =
-                    &n.payload
+                let Some(Payload::Inbox(InboxPayload::ContactRequest {
+                    agent_id,
+                    profile,
+                    code,
+                    ..
+                })) = &n.payload
                 else {
                     return None;
                 };
-                Some(*agent_id)
+                Some((*agent_id, code.device_pubkey, profile.clone()))
             })
             .await
             .context("no contact invitation found")?;
 
-        self.node.accept_contact(agent_id).await?;
+        self.node
+            .accept_contact(agent_id, Some((device_id, profile)))
+            .await?;
 
         Ok(agent_id)
     }

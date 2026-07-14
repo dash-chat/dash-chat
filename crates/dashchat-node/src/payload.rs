@@ -127,11 +127,23 @@ pub struct ReadMessagesPayload {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AddContactPayload {
+    pub agent_id: AgentId,
+
+    /// The device ID is included to make the initial device->agent mapping deterministic
+    /// when this operation is replayed.
+    pub device_id: DeviceId,
+
+    /// The profile is included to make the initial profile save deterministic,
+    /// which matters in case the contact was accepted but sync was never established
+    /// with the contact's announcements topic.
+    pub profile: Profile,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
-    AddContact {
-        agent_id: AgentId,
-    },
+    AddContact(AddContactPayload),
     /// Recorded by the scanner the moment it sends a contact request, before it
     /// knows the owner's agent id (the QR code no longer carries it). Keyed on
     /// the owner's device pubkey — the only identity the scanner has at that

@@ -487,8 +487,11 @@ impl Node {
                             if self.has_outgoing_pending_request(author).await? {
                                 let node = self.clone();
                                 let agent_id = *agent_id;
+                                let profile = profile.clone();
                                 tokio::spawn(async move {
-                                    if let Err(err) = node.accept_contact(agent_id).await {
+                                    if let Err(err) =
+                                        node.accept_contact(agent_id, Some((author, profile))).await
+                                    {
                                         tracing::warn!(
                                             ?err,
                                             "failed to auto-accept mutual contact request"
@@ -498,7 +501,7 @@ impl Node {
                             }
                         }
                     }
-                    InboxPayload::ContactRequestAck { agent_id, .. } => {
+                    InboxPayload::ContactRequestAck { agent_id, profile } => {
                         // The op must arrive on our private reply topic and be
                         // signed by the device whose QR we scanned. Verifying
                         // Verifying author == expected_ack_author prevents a
@@ -521,8 +524,13 @@ impl Node {
 
                             let node = self.clone();
                             let agent_id = *agent_id;
+                            let contact = AddContactPayload {
+                                agent_id,
+                                device_id: author,
+                                profile: profile.clone(),
+                            };
                             tokio::spawn(async move {
-                                if let Err(err) = node.publish_add_contact(agent_id).await {
+                                if let Err(err) = node.publish_add_contact(contact).await {
                                     tracing::warn!(?err, "failed to record accepted contact");
                                 }
                             });

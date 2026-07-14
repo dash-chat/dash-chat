@@ -36,8 +36,8 @@ use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, P
 use crate::stores::{DerivedStore, GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
+    AddContactPayload, AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload,
+    DeviceId, DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
@@ -1198,7 +1198,7 @@ impl Node {
     }
 
     /// Register the shared, idempotent state for a contact identified by their
-    /// device pubkey and agent id:
+    /// device id and agent id:
     /// - register the contact as a bootstrap peer,
     /// - subscribe to their announcements, and
     /// - subscribe to our direct-chat topic.
@@ -1207,13 +1207,13 @@ impl Node {
     /// inbox request/ack handlers can call it.
     pub(crate) async fn establish_contact(
         &self,
-        device_pubkey: DeviceId,
+        device_id: DeviceId,
         agent_id: AgentId,
     ) -> Result<(), Error> {
         // Register the contact as a bootstrap so p2panda discovery can reach it
         // directly over the internet (relay + pkarr), rather than depending on a
         // mutually-reachable mailbox to introduce the two nodes.
-        self.register_bootstrap_node(*device_pubkey)
+        self.register_bootstrap_node(*device_id)
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
         // Subscribe to the contact's announcements to receive their group
@@ -1373,10 +1373,14 @@ impl Node {
     /// Record a mutual contact by publishing the contact marker into our own
     /// device group. Contact establishment (mapping, topics, bootstrap) is done
     /// separately via [`Self::establish_contact`].
-    pub(crate) async fn publish_add_contact(&self, agent_id: AgentId) -> Result<(), Error> {
+    pub(crate) async fn publish_add_contact(
+        &self,
+        contact: AddContactPayload,
+    ) -> Result<(), Error> {
+        let agent_id = contact.agent_id.clone();
         self.publish(
             self.device_group_topic(),
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }),
+            Payload::DeviceGroup(DeviceGroupPayload::AddContact(contact)),
             Some(&format!("add_contact({:?})", agent_id.aliased())),
         )
         .await
@@ -1385,28 +1389,51 @@ impl Node {
     }
 
     /// Accept a contact request that was received over our advertised inbox.
-    /// On receipt we only recorded the requester's identity + profile locally;
-    /// accepting now performs the network establishment we deliberately deferred
+    ///
+    /// Here we perform the network establishment we deliberately deferred
     /// — registering the requester as a bootstrap node and subscribing to their
     /// topics — replies with our profile (which also signals acceptance so the
     /// requester can complete their side), publishes the contact marker, and
     /// creates the shared direct-chat space.
+    ///
+    /// Publishing the contact marker records the acceptance in our own device group log and allows
+    /// the initial device->agent mapping and profile to be deterministically recorded.
+    ///
+    /// Depending on the context, we may need to pass in the device id and profile info.
+    /// If we don't pass in the info, we're expecting that it's already stored
+    /// in the [`crate::stores::DerivedStore`] and can be retrieved by agent ID lookup.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn accept_contact(&self, agent_id: AgentId) -> Result<(), AddContactError> {
+    pub async fn accept_contact(
+        &self,
+        agent_id: AgentId,
+        agent_info: Option<(DeviceId, Profile)>,
+    ) -> Result<(), AddContactError> {
+        let (device_id, profile) = match agent_info {
+            Some((device_id, profile)) => (device_id, profile),
+            None => {
+                let device_id = self
+                    .derived_store
+                    .lookup_contact_by_agent_id(agent_id)
+                    .await
+                    .map_err(|e| AddContactError::ContactInfoNotFound(e.to_string()))?
+                    .ok_or_else(|| {
+                        AddContactError::ContactInfoNotFound("Device ID not found".to_string())
+                    })?;
+                let profile = self
+                    .derived_store
+                    .get_profile(agent_id)
+                    .await
+                    .map_err(|e| AddContactError::ContactInfoNotFound(e.to_string()))?
+                    .ok_or_else(|| {
+                        AddContactError::ContactInfoNotFound("Profile not found".to_string())
+                    })?;
+                (device_id, profile)
+            }
+        };
+
         // The requester's device was mapped to their agent_id when the request
         // arrived; recover it to establish their network presence.
-        let device_pubkey = self
-            .derived_store
-            .lookup_contact_by_agent_id(agent_id)
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?
-            .ok_or_else(|| {
-                AddContactError::CreateDirectChat(format!(
-                    "no pending contact request found for agent {:?}",
-                    agent_id.aliased()
-                ))
-            })?;
-        self.establish_contact(device_pubkey, agent_id).await?;
+        self.establish_contact(device_id, agent_id).await?;
 
         // Reply to the requester with our profile over their private reply
         // topic. This is the point at which we first disclose our profile and
@@ -1424,7 +1451,14 @@ impl Node {
             );
         }
 
-        self.publish_add_contact(agent_id).await?;
+        // ACID: power loss here would prevent the contact from ever being established.
+
+        self.publish_add_contact(AddContactPayload {
+            agent_id,
+            device_id,
+            profile,
+        })
+        .await?;
 
         self.create_direct_chat_space(agent_id)
             .await
