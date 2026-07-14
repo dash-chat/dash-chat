@@ -445,29 +445,6 @@ mod tests {
 
     #[tokio::test]
     async fn register_hashes_records_not_stored_and_removes_already_stored() {
-        use std::sync::Mutex as StdMutex;
-
-        #[derive(Default)]
-        struct RecordingTracker {
-            recorded: StdMutex<Vec<(String, Vec<iroh_blobs::Hash>)>>,
-            removed: StdMutex<Vec<(String, Vec<iroh_blobs::Hash>)>>,
-        }
-        #[async_trait::async_trait]
-        impl crate::UnfetchedBlobTracker for RecordingTracker {
-            async fn record(&self, id: &crate::MailboxId, hashes: &[iroh_blobs::Hash]) {
-                self.recorded
-                    .lock()
-                    .unwrap()
-                    .push((id.clone(), hashes.to_vec()));
-            }
-            async fn remove(&self, id: &crate::MailboxId, hashes: &[iroh_blobs::Hash]) {
-                self.removed
-                    .lock()
-                    .unwrap()
-                    .push((id.clone(), hashes.to_vec()));
-            }
-        }
-
         // Server that reports h_stored as already stored, h_new as not.
         let h_stored = iroh_blobs::Hash::new([1; 32]);
         let h_new = iroh_blobs::Hash::new([2; 32]);
@@ -491,7 +468,6 @@ mod tests {
         });
         let base_url = format!("http://{addr}");
 
-        let _tracker = std::sync::Arc::new(RecordingTracker::default());
         let already = crate::toy::send_register_hashes(
             &base_url,
             vec![h_stored, h_new],

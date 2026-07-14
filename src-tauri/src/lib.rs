@@ -127,8 +127,10 @@ pub fn run() {
             commands::devices::my_device_group_topic,
             commands::contacts::my_device_id,
             commands::contacts::my_agent_id,
+            commands::contacts::agent_for_device,
             commands::contacts::create_contact_code,
             commands::contacts::add_contact,
+            commands::contacts::accept_contact,
             commands::contacts::active_inbox_topics,
             commands::contacts::reject_contact_request,
             commands::direct_chats::direct_chat_id,
@@ -152,6 +154,8 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
             commands::media::save_blob_to_cache,
+            #[cfg(feature = "e2e-tests")]
+            commands::testing::close_iroh_endpoint,
         ])
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())

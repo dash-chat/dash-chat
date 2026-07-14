@@ -1,9 +1,10 @@
 use chrono::{DateTime, Utc};
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::str::FromStr;
 
-use crate::{AgentId, DeviceId, Topic, topic::kind};
+use crate::{DeviceId, Topic, topic::kind};
 
 /// The content for a QR code or deep link.
 ///
@@ -26,8 +27,6 @@ use crate::{AgentId, DeviceId, Topic, topic::kind};
 pub struct QrCode {
     /// Pubkey of this node: allows adding this node to groups.
     pub device_pubkey: DeviceId,
-    /// Agent ID to add to spaces
-    pub agent_id: AgentId,
     /// Topic for receiving messages from this node during the lifetime of the QR code.
     /// The initiator will specify an InboxTopic, and the recipient will send back a QR
     /// code without an associated inbox, because after this exchange the two nodes
@@ -37,29 +36,45 @@ pub struct QrCode {
     pub share_intent: ShareIntent,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[repr(u8)]
 pub enum ShareIntent {
-    AddDevice,
-    AddContact,
+    AddDevice = 0,
+    AddContact = 1,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct InboxTopic {
     // NOTE: order of these fields matters! expires_at, then topic.
-    /// Expiry date must be within the valid range expressible by DateTime::from_timestamp_nanos
+    /// Expiry date. Serialized as a whole number of minutes since the Unix epoch.
+    #[serde(with = "expires_at_minutes")]
     pub expires_at: DateTime<Utc>,
     pub topic: Topic<kind::Inbox>,
 }
 
+/// Serialize a `DateTime<Utc>` as a `u64` count of whole minutes since the Unix epoch.
+mod expires_at_minutes {
+    use chrono::{DateTime, Utc};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(dt: &DateTime<Utc>, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(dt.timestamp().div_euclid(60) as u64)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<DateTime<Utc>, D::Error> {
+        let minutes = u64::deserialize(d)?;
+        let secs = minutes
+            .checked_mul(60)
+            .ok_or_else(|| serde::de::Error::custom("expires_at minutes out of range"))?;
+        DateTime::from_timestamp(secs as i64, 0)
+            .ok_or_else(|| serde::de::Error::custom("expires_at minutes out of range"))
+    }
+}
+
 impl std::fmt::Display for QrCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let bytes = encode_cbor(&(
-            &self.device_pubkey,
-            &self.inbox_topic,
-            &self.agent_id,
-            &self.share_intent,
-        ))
-        .map_err(|_| std::fmt::Error)?;
+        let bytes = encode_cbor(&(&self.device_pubkey, &self.inbox_topic, &self.share_intent))
+            .map_err(|_| std::fmt::Error)?;
         write!(f, "{}", hex::encode(bytes))
     }
 }
@@ -68,11 +83,10 @@ impl FromStr for QrCode {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = hex::decode(s)?;
-        let (device_pubkey, inbox_topic, agent_id, share_intent) = decode_cbor(bytes.as_slice())?;
+        let (device_pubkey, inbox_topic, share_intent) = decode_cbor(bytes.as_slice())?;
         Ok(QrCode {
             device_pubkey,
             inbox_topic,
-            agent_id,
             share_intent,
         })
     }
@@ -95,21 +109,19 @@ impl TryFrom<String> for QrCode {
 mod tests {
 
     use p2panda::VerifyingKey;
-    use p2panda_spaces::ActorId;
 
     use super::*;
 
     #[test]
     fn test_contact_roundtrip() {
         let pubkey = VerifyingKey::from_bytes(&[11; 32]).unwrap();
-        let agent_id = AgentId::from(ActorId::from_bytes(&[22; 32]).unwrap());
         let contact = QrCode {
             device_pubkey: DeviceId::from(pubkey),
             inbox_topic: Some(InboxTopic {
                 topic: Topic::inbox(),
-                expires_at: Utc::now() + chrono::Duration::seconds(3600),
+                // Minute-aligned so it survives the (minutes-since-epoch) serialization.
+                expires_at: DateTime::from_timestamp(1_700_000_000 / 60 * 60, 0).unwrap(),
             }),
-            agent_id,
             share_intent: ShareIntent::AddDevice,
         };
         let encoded = contact.to_string();

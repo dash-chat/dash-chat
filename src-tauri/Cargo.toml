@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.19.9"
+version = "0.19.10"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -128,7 +128,7 @@ mailbox-server = { path = "../crates/mailbox-server" }
 mailbox-local-server = { workspace = true }
 
 [features]
-e2e-tests = []
+e2e-tests = ["dashchat-node/testing"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
