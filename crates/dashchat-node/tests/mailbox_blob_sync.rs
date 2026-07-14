@@ -262,6 +262,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
             pass_interval: Duration::from_millis(200),
             retry_cooldown: Duration::from_millis(200),
         }),
+        Some(common::TEST_UPLOAD_GRACE),
         peer_addr_tx,
     )
     .await
