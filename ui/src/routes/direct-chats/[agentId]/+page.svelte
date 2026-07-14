@@ -753,6 +753,17 @@
 																		{myDeviceId}
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
+																		onShowHistory={() => openHistory(message)}
+																		canEdit={canEditMessage(
+																			message,
+																			myDeviceId,
+																		)}
+																		onEdit={() => editing.start(message)}
+																		canDelete={canDeleteMessage(
+																			message,
+																			myDeviceId,
+																		)}
+																		onDelete={() => (deletingMessage = message)}
 																	/>
 																{/await}
 															</div>
@@ -772,6 +783,7 @@
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
 																		sender={profile}
+																		onShowHistory={() => openHistory(message)}
 																	/>
 																{/await}
 															</div>
