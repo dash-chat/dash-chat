@@ -6,8 +6,8 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 
 use crate::{
-    AddContactPayload, AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload,
-    Payload, Topic,
+    AddContactPayload, AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, Payload,
+    Topic,
 };
 use crate::{AgentId, DeviceId, Profile, compat::Capabilities};
 
@@ -200,18 +200,6 @@ impl DerivedStore {
                 ..
             })) => {
                 self.save_agent_mapping(*device_id, *agent_id).await?;
-            }
-
-            Payload::Inbox(InboxPayload::ContactRequest {
-                agent_id, profile, ..
-            })
-            | Payload::Inbox(InboxPayload::ContactRequestAck { agent_id, profile }) => {
-                if let Some(author_agent) = self.lookup_contact_by_device_id(author).await? {
-                    if author_agent == me {
-                        self.save_agent_mapping(author, *agent_id).await?;
-                        self.save_profile(*agent_id, profile.clone()).await?;
-                    }
-                }
             }
 
             // We define group chats as topics which contain a CreateGroup that makes at least
