@@ -178,19 +178,12 @@ interface Delete {
 	hashes: Hash[];
 }
 
-interface OpHeaderInfo {
-	author: DeviceId;
-	timestamp: number;
-	seqNum: number;
-}
-
 function collectMessageActionsByType(
 	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
 ): {
 	messages: Record<Hash, Message>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
 	editsByTarget: Record<Hash, Record<Hash, Edit>>;
-	/** The delete ops deleting each original message, keyed by its hash. */
 	deletesByTarget: Record<Hash, Record<Hash, Delete>>;
 } {
 	const messages: Record<Hash, Message> = {};
@@ -288,20 +281,5 @@ function applyEdits(
 		],
 		editedAt: latest.timestamp,
 		latestEditHash: latest.hash,
-	};
-}
-
-/** The placeholder shown in place of a deleted message, built from the root
- * op's header alone: the backend tombstones deleted payloads, and a member
- * that joined after the delete only ever sees body-less operations. */
-function deletedPlaceholder(hash: Hash, header: OpHeaderInfo): Message {
-	return {
-		hash,
-		content: { message: '', media: null },
-		author: header.author,
-		seqNum: header.seqNum,
-		timestamp: header.timestamp,
-		reactions: {},
-		deleted: true,
 	};
 }
