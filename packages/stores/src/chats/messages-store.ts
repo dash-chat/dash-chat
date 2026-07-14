@@ -215,13 +215,11 @@ function applyEdits(
 ): Message {
 	const versions: Edit[] = [];
 	const seen = new Set<Hash>([message.hash]);
-	for (
-		let edit = editsByTarget[message.hash];
-		edit !== undefined && !seen.has(edit.hash);
-		edit = editsByTarget[edit.hash]
-	) {
-		seen.add(edit.hash);
+	let edit = editsByTarget[message.hash];
+	while (edit !== undefined && !seen.has(edit.hash)) {
 		versions.push(edit);
+		seen.add(edit.hash);
+		edit = editsByTarget[edit.hash];
 	}
 	if (versions.length === 0) return message;
 
