@@ -39,7 +39,9 @@ const MIGRATIONS: &[&str] = &[
 /// - The store is populated by streaming operations through [`Self::reduce`].
 /// - The store can be purged and rebuilt by replaying operation streams.
 /// - If a log is partially purged, the DerivedStore can be deleted and the streams replayed from their new starting point.
-/// - To achieve ACID compliance, every write must be idempotent in case operations need to be replayed.
+/// - To achieve ACID compliance:
+///   - every write must be idempotent in case operations need to be replayed.
+///   - every write must be deterministic: e.g. a write cannot depend on [`crate::stores::LocalStore`] state.
 #[derive(Clone)]
 pub struct DerivedStore {
     pool: SqlitePool,

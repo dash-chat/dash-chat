@@ -441,6 +441,12 @@ impl Node {
                 }
             }
 
+            Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
+                self.join_group(*chat_id)
+                    .await
+                    .context("failed to join group from invitation")?;
+            }
+
             Payload::Inbox(invitation) => {
                 let topic_id = TopicId::from(topic);
                 let all_advertised_topics = self.local_store.get_advertised_inbox_topics().await?;
@@ -523,12 +529,6 @@ impl Node {
                         }
                     }
                 }
-            }
-
-            Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
-                self.join_group(*chat_id)
-                    .await
-                    .context("failed to join group from invitation")?;
             }
 
             Payload::Chat(ChatPayload::Message(m)) => {
