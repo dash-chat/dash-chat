@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page Not Found - Dark Soil Studio</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Page Not Found</h1>
+        <p>The page you're looking for doesn't exist.</p>
+        <a href="/" class="btn">Go Home</a>
+    </div>
+
+    <script src="clean-urls.js"></script>
+    <script>
+      // Intercept deep-link paths: /add-contact/CODE → /add-contact/?code=CODE
+      (function () {
+        var path = window.location.pathname;
+        var m = path.match(/^\/add-contact\/([^/]+)\/?$/);
+        if (m) {
+          var code = m[1];
+          window.location.replace('/add-contact/?code=' + encodeURIComponent(code));
+        }
+      })();
+    </script>
+</body>
+</html>

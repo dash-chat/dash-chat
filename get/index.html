@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Keep this page out of search engines. NOTE: the spec also asks for an
+         `X-Robots-Tag: noindex` HTTP header, but dashchat.org is served by
+         GitHub Pages, which cannot set custom response headers. The meta tag
+         below is the static-hosting equivalent; we also keep /get out of
+         sitemap.xml, never link to it, and do NOT add it to robots.txt
+         (disallowing would block the crawl and prevent this noindex being seen).
+         If /get is ever moved behind Cloudflare, add the header there too. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Get Dash Chat</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+    <!--
+      Device detection runs as early as possible so iOS/Android visitors are
+      sent to their store before the page paints (no redirect flash). Desktop,
+      unknown, no-JS, and bot visitors fall through to the buttons in <body>.
+
+      This is the static-hosting path from the spec: GitHub Pages has no server
+      runtime, so detection + redirect happen client-side. The manual buttons
+      and <noscript> block below cover the no-JS / blocked-redirect cases.
+    -->
+    <script>
+      (function () {
+        "use strict";
+
+        // ---- Destinations -------------------------------------------------
+        // Only iOS/Android auto-redirect; everyone else sees the buttons below.
+        var URLS = {
+          ios: "https://apps.apple.com/us/app/dash-chat-messenger/id6759798505",
+          android: "https://play.google.com/store/apps/details?id=studio.darksoil.dashchat"
+        };
+
+        // ---- Aggregate, privacy-preserving scan count ---------------------
+        // Fire-and-forget. Sends ONLY the device class (ios/android/desktop) to
+        // our own Cloudflare Worker, which derives the country from the edge
+        // (request.cf.country) and the month server-side, then increments an
+        // aggregate counter. No IP, no cookie, no id, no timestamp, no UA is
+        // ever sent or stored. See cloudflare-get-counter/ in this repo.
+        // TODO: set this to your deployed Worker URL, e.g.
+        //   https://dashchat-get-counter.<your-subdomain>.workers.dev/count
+        var COUNT_ENDPOINT = "https://dashchat-get-counter.ericbearludwig.workers.dev/count";
+
+        function countScan(deviceClass) {
+          // Skip until the Worker URL is filled in, so the pre-deploy page
+          // doesn't emit failed requests. The redirect happens regardless.
+          if (!COUNT_ENDPOINT || COUNT_ENDPOINT.indexOf("TODO") !== -1) return;
+          try {
+            // sendBeacon: non-blocking POST that survives the navigation that
+            // follows. text/plain keeps it a CORS-simple request (no preflight).
+            // We never read the response.
+            if (navigator.sendBeacon) {
+              navigator.sendBeacon(COUNT_ENDPOINT, new Blob([deviceClass], { type: "text/plain" }));
+            } else {
+              // Older browsers: keepalive fetch, fully fire-and-forget.
+              fetch(COUNT_ENDPOINT, {
+                method: "POST",
+                mode: "no-cors",
+                keepalive: true,
+                headers: { "Content-Type": "text/plain" },
+                body: deviceClass
+              }).catch(function () {});
+            }
+          } catch (e) {
+            // Analytics must NEVER block or break the redirect. Swallow.
+          }
+        }
+
+        // ---- Device detection (handles the iPadOS-as-Macintosh case) ------
+        var ua = navigator.userAgent || "";
+        var isIOS =
+          /iPhone|iPad|iPod/i.test(ua) ||
+          (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+        var isAndroid = /Android/i.test(ua);
+
+        var deviceClass = isIOS ? "ios" : isAndroid ? "android" : "desktop";
+        var target = URLS[deviceClass]; // undefined for desktop -> no redirect
+
+        // Count first (fire-and-forget), then redirect. Counting can't delay it.
+        countScan(deviceClass);
+
+        // Only auto-redirect mobile visitors. Desktop / unknown / iPad-as-Mac
+        // fall through to the buttons below (which include a manual App Store
+        // link, covering the iPad case).
+        if (target) {
+          // 302-equivalent for static hosting: replace() leaves no history
+          // entry, so Back doesn't trap the user on /get.
+          window.location.replace(target);
+        }
+      })();
+    </script>
+
+    <style>
+      :root {
+        --bg: #fcfcfc; --surface: #fff; --surface-2: #f6f7f9;
+        --text: #111; --muted: #555; --faint: #888; --border: #e5e7eb;
+        --accent: #6E7BFF; --accent-hover: #5662E6;
+        --focus-ring: color-mix(in srgb, var(--accent) 22%, transparent);
+        --shadow-soft: 0 16px 40px rgba(17, 24, 39, 0.08);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b0c0f; --surface: #111318; --surface-2: #0f1116;
+          --text: #e5e7eb; --muted: #94a3b8; --faint: #64748b; --border: #1e293b;
+          --accent: #8C97FF; --accent-hover: #B0B8FF;
+        }
+      }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: "Rubik", system-ui, sans-serif;
+        background: var(--bg); color: var(--text); line-height: 1.62;
+        -webkit-font-smoothing: antialiased;
+        min-height: 100vh; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; padding: 32px 20px;
+      }
+      a:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+
+      .card {
+        width: 100%; max-width: 380px; text-align: center;
+      }
+      .logo {
+        width: 64px; height: 64px; margin: 0 auto 18px; display: block;
+      }
+      .app-name {
+        font-size: 1.5rem; font-weight: 700; margin-bottom: 4px;
+      }
+      .tagline {
+        font-size: 0.95rem; color: var(--muted); margin-bottom: 28px;
+      }
+
+      .stores { display: flex; flex-direction: column; gap: 12px; }
+      .store-btn {
+        display: flex; align-items: center; gap: 14px;
+        padding: 14px 18px;
+        background: var(--surface); color: var(--text);
+        border: 1px solid var(--border); border-radius: 12px;
+        text-decoration: none; font-weight: 600; font-size: 1rem;
+        box-shadow: var(--shadow-soft);
+        transition: transform 0.15s, border-color 0.15s;
+      }
+      .store-btn:hover { transform: translateY(-1px); border-color: var(--accent); }
+      .store-btn .icon {
+        flex: 0 0 28px; width: 28px; height: 28px;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .store-btn .icon svg { width: 28px; height: 28px; display: block; }
+      .store-btn .label { flex: 1 1 auto; text-align: start; }
+
+      .footnote {
+        margin-top: 26px; font-size: 0.8rem; color: var(--faint);
+      }
+      noscript .ns-note {
+        display: block; margin-bottom: 16px;
+        font-size: 0.9rem; color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <!-- App mark -->
+      <img class="logo" src="/dashchat-icon.png" alt="Dash Chat" width="64" height="64" />
+      <div class="app-name">Dash Chat</div>
+      <div class="tagline" dir="auto">Stay connected when systems fail.</div>
+
+      <!--
+        Manual buttons are ALWAYS rendered (icon-forward, minimal text) so that
+        desktop, no-JS, blocked-redirect, and iPad-as-Mac visitors all have a
+        working path. Store names are global brand marks, not English copy.
+      -->
+      <noscript>
+        <span class="ns-note" dir="auto">Choose your platform:</span>
+      </noscript>
+
+      <div class="stores">
+        <a class="store-btn" href="https://apps.apple.com/us/app/dash-chat-messenger/id6759798505" rel="noopener">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.365 1.43c0 1.14-.42 2.2-1.11 3-.74.85-1.96 1.5-3 .9-.13-1.1.4-2.24 1.07-3 .73-.85 2.01-1.46 3.04-1.5-.01.2 0 .4 0 .6zM20.5 17.1c-.5 1.16-.74 1.67-1.39 2.69-.9 1.42-2.18 3.2-3.76 3.21-1.4.01-1.76-.92-3.66-.91-1.9.01-2.3.92-3.7.91-1.58-.01-2.79-1.61-3.69-3.03-2.52-3.98-2.78-8.65-1.23-11.13 1.1-1.77 2.84-2.8 4.47-2.8 1.66 0 2.71.92 4.08.92 1.33 0 2.14-.92 4.07-.92 1.46 0 3.01.8 4.11 2.18-3.61 1.98-3.02 7.13.4 8.88z"/></svg>
+          </span>
+          <span class="label">App Store</span>
+        </a>
+
+        <a class="store-btn" href="https://play.google.com/store/apps/details?id=studio.darksoil.dashchat" rel="noopener">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M3.6 2.3a1.2 1.2 0 0 0-.6 1.06v17.28c0 .45.24.85.62 1.05L13.2 12 3.6 2.3z" fill="#2196F3"/><path d="M16.9 8.35 13.2 12l3.7 3.65 4.3-2.45c.78-.45.78-1.95 0-2.4L16.9 8.35z" fill="#FFC107"/><path d="m3.6 2.3 9.6 9.7 3.7-3.65L5.1 1.78a1.2 1.2 0 0 0-1.5.52z" fill="#4CAF50"/><path d="m13.2 12-9.6 9.7c.4.42 1.02.5 1.5.23l11.8-6.73L13.2 12z" fill="#F44336"/></svg>
+          </span>
+          <span class="label">Google Play</span>
+        </a>
+
+        <!-- Desktop installers + direct Android APK (for those who can't reach
+             Play) live on /download, which picks the right build per OS. -->
+        <a class="store-btn" href="/download" rel="noopener">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="12.5" rx="1.5"/><path d="M8.5 20.5h7M12 16.5v4"/></svg>
+          </span>
+          <span class="label">Desktop &amp; other downloads</span>
+        </a>
+      </div>
+
+      <p class="footnote" dir="auto">End-to-end encrypted &middot; Open source</p>
+    </main>
+  </body>
+</html>

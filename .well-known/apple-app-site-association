@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["4XN3VLHC68.studio.darksoil.dashchat"],
+        "components": [
+          {
+            "/": "/add-contact/*",
+            "comment": "Matches any URL whose path starts with /add-contact/"
+          }
+        ]
+      }
+    ]
+  }
+}

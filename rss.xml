@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Dash Chat</title>
+    <link>https://dashchat.org</link>
+    <description>Updates from Dash Chat</description>
+    <language>en</language>
+    <atom:link href="https://dashchat.org/rss.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Hello from Dash Chat</title>
+      <link>https://dashchat.org/hello-world</link>
+      <guid>https://dashchat.org/hello-world</guid>
+      <pubDate>Wed, 27 May 2026 00:00:00 GMT</pubDate>
+      <description>We're building a secure messenger that works without internet. Here's what we're up to and how you can get involved.</description>
+    </item>
+  </channel>
+</rss>

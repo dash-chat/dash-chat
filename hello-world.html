@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hello from Dash Chat — Dash Chat</title>
+  <meta name="description" content="We're building a secure messenger that works without internet. Here's what we're up to and how you can get involved." />
+  <link rel="canonical" href="https://dashchat.org/hello-world" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="alternate" type="application/rss+xml" title="Dash Chat RSS" href="https://dashchat.org/rss.xml" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="Hello from Dash Chat" />
+  <meta property="og:description" content="We're building a secure messenger that works without internet. Here's what we're up to and how you can get involved." />
+  <meta property="og:url" content="https://dashchat.org/hello-world" />
+  <meta property="article:published_time" content="2026-05-27" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Hello from Dash Chat" />
+  <meta name="twitter:description" content="We're building a secure messenger that works without internet. Here's what we're up to and how you can get involved." />
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://dashchat.org/#website","url":"https://dashchat.org","name":"Dash Chat"},{"@type":"Organization","@id":"https://dashchat.org/#organization","name":"Dash Chat","url":"https://dashchat.org"},{"@type":"WebPage","@id":"https://dashchat.org/hello-world/#webpage","url":"https://dashchat.org/hello-world","name":"Hello from Dash Chat","isPartOf":{"@id":"https://dashchat.org/#website"},"datePublished":"2026-05-27"},{"@type":"BlogPosting","@id":"https://dashchat.org/hello-world/#article","mainEntityOfPage":{"@id":"https://dashchat.org/hello-world/#webpage"},"headline":"Hello from Dash Chat","description":"We're building a secure messenger that works without internet. Here's what we're up to and how you can get involved.","datePublished":"2026-05-27","author":{"@type":"Person","name":"Eric Bear"},"publisher":{"@id":"https://dashchat.org/#organization"}}]}</script>
+
+  <style>
+    
+    :root {
+      --bg: #fcfcfc;
+      --surface: #fff;
+      --text: #111;
+      --muted: #555;
+      --faint: #888;
+      --border: #e5e7eb;
+      --accent: #6E7BFF;
+      --accent-hover: #5662E6;
+      --accent-light: #dbeafe;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b0c0f;
+        --surface: #111318;
+        --text: #e5e7eb;
+        --muted: #94a3b8;
+        --faint: #64748b;
+        --border: #1e293b;
+        --accent: #8C97FF;
+        --accent-hover: #B0B8FF;
+        --accent-light: #1e3a5f;
+      }
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: "Rubik", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    @supports (backdrop-filter: blur(12px)) {
+      nav { background: color-mix(in srgb, var(--bg) 85%, transparent); }
+    }
+    .nav-inner {
+      max-width: 960px; margin: 0 auto; padding: 0 24px;
+      height: 56px; display: flex; align-items: center; justify-content: flex-end;
+    }
+    .nav-links { display: flex; align-items: center; gap: 20px; }
+    .nav-links a {
+      font-size: 0.9rem; font-weight: 500;
+      color: var(--muted); text-decoration: none; transition: color 0.15s;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .nav-links .gh-link { display: flex; align-items: center; color: var(--muted); transition: color 0.15s; }
+    .nav-links .gh-link:hover { color: var(--text); }
+    .nav-links .gh-link svg { display: block; }
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 24px; text-align: center;
+      font-size: 0.85rem; color: var(--faint);
+    }
+    footer a { color: var(--faint); text-decoration: underline; text-underline-offset: 2px; }
+    footer a:hover { color: var(--muted); }
+  
+    .post-container {
+      max-width: 720px; margin: 0 auto; padding: 0 24px;
+    }
+    .post-header {
+      padding: 100px 0 40px;
+    }
+    .post-header h1 {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 700; line-height: 1.2;
+      letter-spacing: -0.02em; margin-bottom: 12px;
+    }
+    .post-meta {
+      color: var(--muted); font-size: 0.9rem;
+    }
+    .post-content {
+      padding-bottom: 80px;
+    }
+    .post-content h2 {
+      font-size: 1.5rem; font-weight: 600;
+      margin: 40px 0 16px; letter-spacing: -0.01em;
+    }
+    .post-content h3 {
+      font-size: 1.2rem; font-weight: 600;
+      margin: 32px 0 12px;
+    }
+    .post-content p {
+      margin-bottom: 16px; color: var(--text);
+      font-size: 1.05rem; line-height: 1.7;
+    }
+    .post-content ul, .post-content ol {
+      margin: 0 0 16px 24px; font-size: 1.05rem; line-height: 1.7;
+    }
+    .post-content li { margin-bottom: 6px; }
+    .post-content blockquote {
+      border-left: 3px solid var(--accent);
+      padding: 12px 20px; margin: 24px 0;
+      color: var(--muted); font-style: italic;
+      background: var(--surface); border-radius: 0 6px 6px 0;
+    }
+    .post-content code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 2px 6px; border-radius: 4px; font-size: 0.9em;
+    }
+    .post-content pre {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 16px 20px;
+      overflow-x: auto; margin: 24px 0;
+    }
+    .post-content pre code {
+      background: none; border: none; padding: 0;
+      font-size: 0.88rem; line-height: 1.6;
+    }
+    .post-content img {
+      max-width: 100%; height: auto;
+      border-radius: 8px; margin: 24px 0;
+    }
+    .post-content hr {
+      border: none; border-top: 1px solid var(--border);
+      margin: 40px 0;
+    }
+    .post-content a {
+      color: var(--accent); text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .post-content a:hover { color: var(--accent-hover); }
+    .back-link {
+      display: inline-block; margin-top: 16px; margin-bottom: 32px;
+      font-size: 0.9rem; color: var(--muted); text-decoration: none;
+    }
+    .back-link:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+  
+  <nav>
+    <div class="nav-inner">
+      <div class="nav-links">
+        <a href="/blog">Blog</a>
+        <a href="/#get-involved">Get involved</a>
+        <a href="https://github.com/dash-chat" target="_blank" rel="noopener noreferrer" class="gh-link" title="GitHub">
+          <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <article>
+    <div class="post-container">
+      <header class="post-header">
+        <a href="/blog" class="back-link">&larr; All posts</a>
+        <h1>Hello from Dash Chat</h1>
+        <div class="post-meta">Eric Bear &middot; May 27, 2026</div>
+      </header>
+      <div class="post-content">
+        <p>We&#39;re building Dash Chat — a secure messaging app that keeps working when the internet doesn&#39;t.</p>
+<h2>Why we&#39;re building this</h2>
+<p>When the internet stops working, Signal, WhatsApp, and Telegram all stop working. For communities that depend on secure communication during shutdowns, disasters, or in areas with unreliable infrastructure, that&#39;s not good enough.</p>
+<h2>What&#39;s next</h2>
+<p>Dash Chat is in active development. We&#39;re currently testing with partners and community members. If you&#39;re interested in getting involved, <a href="/#get-involved">get in touch</a>.</p>
+
+      </div>
+    </div>
+  </article>
+
+  
+  <footer>
+    Open source under the <a href="https://github.com/dash-chat/dash-chat/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">AGPL-3.0</a> license.
+  </footer>
+</body>
+</html>

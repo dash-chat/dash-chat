@@ -1,0 +1,28 @@
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test</title>
+</head>
+<body>
+  <h1>Test</h1>
+  <input type="text" id="code" placeholder="Enter code" oninput="update(this.value)">
+  <br><br>
+  <a id="link"></a>
+  <br><br>
+  <a id="link2"></a>
+  <script>
+    function update(val) {
+      const link = document.getElementById('link');
+      const url = 'https://dashchat.org/add-contact/' + val;
+      link.href = val ? url : '';
+      link.textContent = val ? url : '';
+
+      const link2 = document.getElementById('link2');
+      const url2 = 'dash-chat://add-contact/' + val;
+      link2.href = val ? url2 : '';
+      link2.textContent = val ? url2 : '';
+    }
+  </script>
+
+</body>
+</html>

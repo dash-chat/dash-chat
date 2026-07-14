@@ -1,67 +1,276 @@
-<html class="sl-theme-dark">
-	<head>
-		<link
-			href="https://fonts.googleapis.com/css?family=Rubik"
-			rel="stylesheet"
-		/>
-		
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<script type="module" crossorigin src="/dash-chat/assets/index-9b72a38f.js"></script>
-		<link rel="stylesheet" href="/dash-chat/assets/index-ec2939f0.css">
-	</head>
-	<body>
-		<div class="parallax">
-			<div
-				class="parallax__layer parallax__layer--back darksoil-background"
-			></div>
-			<div class="parallax__layer parallax__layer--base">
-				<rocket-content-area>
-					<h2 class="area-headline">dash chat<br /></h2>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dash Chat</title>
+    <meta name="description" content="Secure messaging that keeps working when the internet doesn't. Dash Chat is an offline-first, end-to-end encrypted messenger for communities that need to stay connected." />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <style>
+      :root {
+        --bg: #fcfcfc; --surface: #fff; --surface-2: #f6f7f9;
+        --text: #111; --muted: #555; --faint: #888; --border: #e5e7eb; --input-bg: #fff;
+        --accent: #6E7BFF; --accent-hover: #5662E6; --accent-light: #dbeafe;
+        --ok: #10b981; --warn: #f59e0b; --dot: rgba(110,123,255,0.12);
+        --focus-ring: color-mix(in srgb, var(--accent) 22%, transparent);
+        --shadow-soft: 0 16px 40px rgba(17, 24, 39, 0.08);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b0c0f; --surface: #111318; --surface-2: #0f1116;
+          --text: #e5e7eb; --muted: #94a3b8; --faint: #64748b; --border: #1e293b; --input-bg: #0f172a;
+          --accent: #8C97FF; --accent-hover: #B0B8FF; --accent-light: #1e3a5f;
+          --ok: #34d399; --warn: #fbbf24; --dot: rgba(140,151,255,0.14);
+        }
+      }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html { scroll-behavior: smooth; }
+      body { font-family: "Rubik", system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.62; -webkit-font-smoothing: antialiased; }
+      nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: var(--bg); border-bottom: 1px solid var(--border); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+      @supports (backdrop-filter: blur(12px)) { nav { background: color-mix(in srgb, var(--bg) 82%, transparent); } }
+      .nav-inner { max-width: 1000px; margin: 0 auto; padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: flex-end; }
+      .nav-links { display: flex; align-items: center; gap: 22px; }
+      .nav-links a { font-size: 0.92rem; font-weight: 500; color: var(--muted); text-decoration: none; transition: color 0.15s; }
+      .nav-links a:hover { color: var(--text); }
+      .nav-links .gh-link { display: flex; align-items: center; color: var(--muted); transition: color 0.15s; }
+      .nav-links .gh-link:hover { color: var(--text); }
+      .nav-links .gh-link svg { display: block; }
+      .container { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+      .container-wide { max-width: 920px; margin: 0 auto; padding: 0 24px; }
+      .team-section .container-wide { width: min(920px, calc(100% - 48px)); margin-left: max(24px, calc((100% - 760px) / 2 + 24px)); margin-right: auto; padding: 0; }
+      a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+      section { padding: 84px 0; }
+      .section-alt { background: var(--bg); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+      h2 { font-size: clamp(1.5rem, 3vw, 1.9rem); font-weight: 700; letter-spacing: 0; line-height: 1.2; margin-bottom: 22px; }
+      .section-body p { color: var(--muted); font-size: 1.05rem; line-height: 1.72; margin-bottom: 18px; max-width: 60ch; }
+      .section-body p:last-child { margin-bottom: 0; }
+      .section-body p strong { color: var(--text); font-weight: 600; }
+      .hero { position: relative; padding: 156px 0 92px; text-align: center; overflow: hidden; border-bottom: 1px solid var(--border); }
+      .hero .container { position: relative; }
+      .hero-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; margin-top: 0; font-size: 0.82rem; font-weight: 500; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; }
+      .hero-badge .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); animation: pulse 2.4s infinite; }
+      @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); } 70% { box-shadow: 0 0 0 9px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+      .hero h1 { font-size: clamp(2.2rem, 5.5vw, 3.4rem); font-weight: 700; line-height: 1.1; letter-spacing: 0; margin-bottom: 20px; }
+      .hero .subtitle { font-size: clamp(1.1rem, 2.5vw, 1.3rem); color: var(--muted); max-width: 540px; margin: 0 auto 36px; line-height: 1.5; }
+      .hero-actions { display: flex; flex-direction: column; align-items: center; gap: 24px; padding-bottom: 20px; }
+      .cta { display: inline-flex; align-items: center; gap: 8px; padding: 13px 30px; font-size: 1rem; font-weight: 600; font-family: inherit; color: #fff; background: var(--accent); border: none; border-radius: 8px; text-decoration: none; transition: background 0.15s, transform 0.15s; }
+      .cta:hover { background: var(--accent-hover); transform: translateY(-1px); }
+      .form-card { margin-top: 30px; padding: 26px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; max-width: 520px; box-shadow: var(--shadow-soft); }
+      form { display: flex; flex-direction: column; gap: 13px; }
+      form input[type="text"], form input[type="email"], form textarea { width: 100%; padding: 11px 13px; font-size: 0.95rem; font-family: inherit; color: var(--text); background: var(--input-bg); border: 1px solid var(--border); border-radius: 8px; outline: none; transition: border-color 0.15s, box-shadow 0.15s; }
+      form input:focus, form textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-ring); }
+      form textarea { resize: vertical; min-height: 100px; }
+      .form-label { font-weight: 600; font-size: 0.95rem; margin-top: 4px; }
+      .form-checkboxes { display: flex; flex-direction: column; gap: 10px; }
+      .form-checkboxes label { display: flex; align-items: center; gap: 9px; cursor: pointer; font-size: 0.95rem; }
+      .form-checkboxes label input { margin: 0; width: 16px; height: 16px; accent-color: var(--accent); }
+      form .submit-btn { align-self: flex-start; margin-top: 4px; padding: 12px 28px; font-size: 0.95rem; font-weight: 600; font-family: inherit; color: #fff; background: var(--accent); border: none; border-radius: 8px; cursor: pointer; transition: background 0.15s, transform 0.15s, opacity 0.15s; }
+      form .submit-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+      form .submit-btn:disabled { cursor: not-allowed; opacity: 0.68; transform: none; }
+      .form-hint { font-size: 0.85rem; color: #b45309; margin: 0; line-height: 1.4; }
+      #captcha-wrap { min-height: 65px; }
+      #formSuccess { display: none; margin-top: 30px; padding: 22px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); max-width: 520px; box-shadow: var(--shadow-soft); }
+      #formSuccess strong { display: block; margin-bottom: 4px; font-size: 1.05rem; }
+      #formSuccess span { color: var(--muted); }
+      .team-section h3 { font-size: 0.82rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); margin-bottom: 22px; }
+      .team-section h3:not(:first-of-type) { margin-top: 52px; }
+      .people-grid { display: grid; grid-template-columns: repeat(auto-fill, 150px); gap: 28px 34px; justify-content: start; }
+      .person { display: flex; flex-direction: column; align-items: flex-start; }
+      .person .avatar, .person .avatar-placeholder { width: 60px; height: 60px; border-radius: 50%; margin-bottom: 10px; background: var(--border); transition: transform 0.15s; }
+      .person .avatar { object-fit: cover; }
+      .person .avatar-placeholder { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+      .person:hover .avatar, .person:hover .avatar-placeholder { transform: translateY(-2px); }
+      .person .name { font-weight: 600; font-size: 0.95rem; line-height: 1.3; }
+      .person .role { color: var(--muted); font-size: 0.85rem; line-height: 1.35; margin-top: 2px; }
+      footer { border-top: 1px solid var(--border); padding: 40px 24px; text-align: center; font-size: 0.85rem; color: var(--faint); }
+      footer a { color: var(--accent); text-decoration: none; }
+      footer a:hover { text-decoration: underline; text-underline-offset: 2px; }
+      @media (max-width: 480px) {
+        .container, .container-wide { padding: 0 20px; }
+        .team-section .container-wide { width: calc(100% - 40px); margin-left: 20px; padding: 0; }
+        .nav-inner { padding: 0 20px; }
+        .nav-links { gap: 18px; }
+        .people-grid { grid-template-columns: repeat(2, 1fr); gap: 26px 18px; }
+        .hero { padding: 134px 0 68px; }
+        section { padding: 62px 0; }
+        .form-card { padding: 20px; }
+        #captcha-wrap { transform: scale(0.92); transform-origin: left top; min-height: 60px; }
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <div class="nav-inner">
+        <div class="nav-links">
+          <a href="/blog">Blog</a>
+          <a href="#get-involved">Get involved</a>
+          <a href="https://github.com/dash-chat" target="_blank" rel="noopener noreferrer" class="gh-link" title="GitHub">
+            <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          </a>
+        </div>
+      </div>
+    </nav>
+    <section class="hero">
+      <div class="container">
+        <h1>Stay connected<br>when systems fail.</h1>
+        <p class="subtitle">Secure messaging that keeps working when the internet doesn't.</p>
+        <div class="hero-actions">
+          <a href="#get-involved" class="cta">Get involved &rarr;</a>
+        </div>
+      </div>
+    </section>
+    <section class="how">
+      <div class="container section-body">
+        <h2>With and without internet</h2>
+        <p>When the internet stops working, Signal, WhatsApp, and Telegram all stop working. Dash Chat is built for exactly those moments.</p>
+        <p>When there's internet, Dash Chat works like the tools you already know — end-to-end encrypted messages and voice notes. When the internet goes down, it keeps going over the connections around you.</p>
+      </div>
+    </section>
+    <section class="how section-alt">
+      <div class="container section-body">
+        <h2>Our priorities</h2>
+        <p><strong>Usable, Reliable, and Secure... and in that order</strong></p>
+        <p>A tool that isn't used can't provide any security at all. Dash Chat is designed to feel like the messaging apps people already know — because people don't build habits around software that frustrates them. End-to-end encryption is the baseline, not a feature.</p>
+      </div>
+    </section>
+    <section class="involved" id="get-involved">
+      <div class="container section-body">
+        <h2>Get involved</h2>
+        <div class="form-card">
+          <form action="https://script.google.com/macros/s/AKfycbxU6pLZhgvSSZ1mBpbpf3FueAYWNNcqomWjNmp2L3wBbgNY2MRXVVY28_YNOX8XrIUcew/exec" method="POST" id="stayConnectedForm">
+            <input type="email" id="email" name="email" required placeholder="Email*" />
+            <input type="text" id="name" name="name" placeholder="Name (optional)" />
+            <div class="form-label">I'd like to…</div>
+            <div class="form-checkboxes">
+              <label><input type="checkbox" id="opt_newsletter" name="newsletter" value="yes" /><span>Receive Newsletter</span></label>
+              <label><input type="checkbox" id="opt_test" name="test" value="yes" /><span>Test Dash Chat</span></label>
+              <label><input type="checkbox" id="opt_partner" name="partner" value="yes" /><span>Explore Partnership</span></label>
+            </div>
+            <div id="pilotPartnerDetails" style="display: none;">
+              <div class="form-label" style="margin-bottom: 6px;">Tell us a bit?</div>
+              <textarea id="details" name="details" rows="4" placeholder="Org/group, size, Android/iOS mix, what you have in mind."></textarea>
+            </div>
+            <div id="captcha-wrap"><div class="cf-turnstile" data-sitekey="0x4AAAAAADbVh65lg2g7DAvL" data-callback="dashChatCaptchaDone"></div></div>
+            <p id="captcha-hint" class="form-hint" hidden></p>
+            <button type="submit" class="submit-btn">Send &rarr;</button>
+          </form>
+        </div>
+        <div id="formSuccess">
+          <strong>Thanks for reaching out!</strong>
+          <span>We received your message and will be in touch.</span>
+        </div>
+      </div>
+    </section>
+    <section class="team-section section-alt">
+      <div class="container-wide">
+        <h2>Team &amp; advisors</h2>
+        <h3>Team</h3>
+        <div class="people-grid">
+          <div class="person"><img src="/assets/eric_bw_circle_smile-709be6cc.png" alt="Eric Bear" class="avatar" /><span class="name">Eric Bear</span><span class="role">Lead</span></div>
+          <div class="person"><img src="/assets/guillem_bw-5cf615eb.png" alt="Guillem Córdoba" class="avatar" /><span class="name">Guillem Córdoba</span><span class="role">Engineering</span></div>
+          <div class="person"><div class="avatar-placeholder"><svg width="26" height="26" viewBox="0 0 24 24"><rect x="4" y="4" width="8" height="8" fill="#8C97FF"/><circle cx="17" cy="17" r="5" fill="#f59e0b"/></svg></div><span class="name">Jade Ambrose</span><span class="role">Engineering</span></div>
+          <div class="person"><img src="/assets/michael_bw-5c920678.png" alt="Michael Dougherty" class="avatar" /><span class="name">Michael Dougherty</span><span class="role">Engineering</span></div>
+          <div class="person"><div class="avatar-placeholder"><svg width="26" height="26" viewBox="0 0 24 24"><rect x="3" y="10" width="8" height="8" fill="#e63946"/><circle cx="16" cy="8" r="6" fill="#8C97FF"/><polygon points="6,2 12,2 9,8" fill="#f59e0b"/></svg></div><span class="name">Jun Nguyen</span><span class="role">UI/UX Design &amp; Research</span></div>
+          <div class="person"><div class="avatar-placeholder"><svg width="26" height="26" viewBox="0 0 24 24"><circle cx="8" cy="12" r="6" fill="#10b981"/><rect x="14" y="6" width="6" height="12" fill="#f59e0b"/></svg></div><span class="name">Carolyn Beer</span><span class="role">Project Coordinator</span></div>
+          <div class="person"><div class="avatar-placeholder"><svg width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5" fill="#8b5cf6"/><rect x="5" y="14" width="14" height="6" rx="2" fill="#8C97FF"/></svg></div><span class="name">Em Michaud</span></div>
+        </div>
+        <h3>Advisors</h3>
+        <div class="people-grid">
+          <div class="person"><div class="avatar-placeholder"><svg width="26" height="26" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="3" fill="#e63946"/><rect x="2" y="10" width="20" height="3" fill="#f59e0b"/><rect x="2" y="15" width="20" height="3" fill="#8C97FF"/></svg></div><span class="name">Scott Garrison (Nanomonkey)</span><span class="role">Disaster Radio, TinySSB</span></div>
+          <div class="person"><div class="avatar-placeholder"><svg width="26" height="26" viewBox="0 0 24 24"><circle cx="8" cy="8" r="6" fill="#8C97FF"/><rect x="14" y="14" width="8" height="8" fill="#e63946"/></svg></div><span class="name">Andreas Dzialocha</span><span class="role">p2panda, Delta Chat</span></div>
+          <div class="person"><img src="/assets/shoeb-b2d6326e.jpeg" alt="Shoeb Abdullah" class="avatar" /><span class="name">Shoeb Abdullah</span><span class="role">Activate Rights</span></div>
+          <div class="person"><div class="avatar-placeholder"><svg width="26" height="26" viewBox="0 0 24 24"><polygon points="12,3 21,19 3,19" fill="#f59e0b"/></svg></div><span class="name">Holmes Wilson</span><span class="role">Quiet</span></div>
+          <div class="person"><div class="avatar-placeholder"><svg width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#8b5cf6"/><rect x="7" y="7" width="10" height="10" fill="#10b981"/><circle cx="12" cy="12" r="3" fill="#f59e0b"/></svg></div><span class="name">Michael Suantak</span><span class="role">Association for Progressive Communication</span></div>
+          <div class="person"><div class="avatar-placeholder"><svg width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#e63946"/><polygon points="12,4 16,20 8,20" fill="#f59e0b"/><rect x="10" y="16" width="4" height="2" fill="#8C97FF"/></svg></div><span class="name">Alex Linton</span><span class="role">Session</span></div>
+          <div class="person"><div class="avatar-placeholder"><svg width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#e63946"/><rect x="7" y="7" width="10" height="3" fill="#f59e0b"/><rect x="7" y="13" width="10" height="3" fill="#8C97FF"/></svg></div><span class="name">Mark Kiggundu</span><span class="role">Defend Defenders</span></div>
+          <div class="person"><div class="avatar-placeholder"><svg width="26" height="26" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" fill="#8b5cf6"/><circle cx="12" cy="12" r="6" fill="#f59e0b"/><polygon points="12,6 15,18 9,18" fill="#8C97FF"/></svg></div><span class="name">Laura Guntrum</span><span class="role">Researcher</span></div>
+        </div>
+      </div>
+    </section>
+    <footer>
+      Open source under the <a href="https://github.com/dash-chat/dash-chat/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">AGPL-3.0</a> license.
+    </footer>
+    <script>
+      (function () {
+        var test = document.getElementById('opt_test');
+        var partner = document.getElementById('opt_partner');
+        var details = document.getElementById('pilotPartnerDetails');
+        function toggleDetails() {
+          details.style.display = (test && test.checked) || (partner && partner.checked) ? 'block' : 'none';
+        }
+        if (test) test.addEventListener('change', toggleDetails);
+        if (partner) partner.addEventListener('change', toggleDetails);
 
-					<rocket-columns style="align-items: center">
-						<rocket-card style="flex: 1">
-							<p>dash chat is an offline-first peer-to-peer chat app</p>
-						</rocket-card>
-						<div class="column" style="margin-bottom: 64px; flex: 1">
-							<div
-								style="
-									flex: 1;
-									justify-content: center;
-									display: flex;
-									flex-direction: row;
-								"
-							>
-								<div style="display: flex; flex-direction: column; gap: 16px">
-									<download-installer-button
-										windows-url="https://github.com/darksoil-studio/dash-chat/releases/download/v0.10.0/Dash.Chat_0.10.0_x64_en-US.msi"
-										nix-command="nix run github:darksoil-studio/dash-chat/v0.10.0"
-										macos-intel-url="https://github.com/darksoil-studio/dash-chat/releases/download/v0.10.0/Dash.Chat_0.10.0_x64.dmg"
-										macos-silicon-url="https://github.com/darksoil-studio/dash-chat/releases/download/v0.10.0/Dash.Chat_0.10.0_aarch64.dmg"
-										linux-url="https://github.com/darksoil-studio/dash-chat/releases/download/v0.10.0/Dash.Chat_0.10.0_amd64.AppImage"
-									>
-									</download-installer-button>
-								</div>
-							</div>
-						</div>
-					</rocket-columns>
+        var form = document.getElementById('stayConnectedForm');
+        var successBox = document.getElementById('formSuccess');
+        var captchaHint = document.getElementById('captcha-hint');
+        if (!form) return;
 
-					<div>
-						<h2 id="darksoil" link-text="darksoil.studio">
-							a darksoil studio project
-						</h2>
-						<p>
-							dash chat is a darksoil studio project.
-							<br />
-							<br />
-							Learn more about darksoil at
-							<a href="https://darksoil.studio">darksoil.studio</a>.
-						</p>
-					</div>
-				</rocket-content-area>
-			</div>
-		</div>
-		
-		
-		
-	</body>
+        function showHint(message) {
+          if (!captchaHint) return;
+          captchaHint.hidden = false;
+          captchaHint.textContent = message;
+        }
+        function resetCaptcha() {
+          if (typeof turnstile !== 'undefined' && turnstile.reset) turnstile.reset();
+        }
+
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+          var submitBtn = form.querySelector('.submit-btn');
+
+          if (typeof turnstile === 'undefined' || !turnstile.getResponse) {
+            showHint('The captcha did not load. Please refresh the page and try again.');
+            return;
+          }
+          var token = turnstile.getResponse();
+          if (!token) {
+            showHint('Please complete the captcha before sending.');
+            return;
+          }
+          if (captchaHint) captchaHint.hidden = true;
+          if (submitBtn) submitBtn.disabled = true;
+
+          var body = new FormData(form);
+          body.set('cf-turnstile-response', token);
+
+          // The Google Apps Script web app does not send CORS headers, so we POST
+          // with mode:'no-cors'. The request still reaches the server and the row
+          // is written; the response is opaque, so we treat resolution as success
+          // and rely on the server-side Turnstile check to reject bots.
+          fetch(form.action, { method: 'POST', mode: 'no-cors', body: body })
+            .then(function () {
+              var card = form.closest('.form-card');
+              (card || form).style.display = 'none';
+              successBox.style.display = 'block';
+            })
+            .catch(function () {
+              showHint('Network error. Please try again.');
+              resetCaptcha();
+              if (submitBtn) submitBtn.disabled = false;
+            });
+        });
+
+        // Turnstile calls this once the challenge succeeds.
+        window.dashChatCaptchaDone = function () {
+          if (captchaHint) captchaHint.hidden = true;
+        };
+
+        window.setTimeout(function () {
+          var wrap = document.getElementById('captcha-wrap');
+          if (!wrap) return;
+          // Turnstile may render inside a closed shadow DOM, so an iframe check
+          // alone gives false negatives; the hidden response input is injected
+          // into the container itself once the widget has rendered.
+          if (wrap.querySelector('iframe, input[name="cf-turnstile-response"]')) return;
+          try {
+            if (typeof turnstile !== 'undefined' && turnstile.getResponse && turnstile.getResponse()) return;
+          } catch (err) { /* widget not rendered yet; fall through to the hint */ }
+          showHint('The captcha did not load. Please refresh the page and try again.');
+        }, 8000);
+      })();
+    </script>
+  </body>
 </html>

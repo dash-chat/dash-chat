@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "studio.darksoil.dashchat",
+      "sha256_cert_fingerprints": [
+        "3A:AC:81:A0:80:7B:6D:68:05:6C:3E:8B:D7:94:73:0C:79:3C:9B:FF:C1:74:35:C5:EE:94:E8:A8:F6:A0:7A:8B",
+        "6F:B6:BF:85:16:82:8E:C9:74:A6:50:6C:25:E9:84:07:9F:2E:65:B7:D6:EE:18:05:8E:84:C6:BC:9B:E7:22:6F"
+      ]
+    }
+  }
+]

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Add Contact – Dash Chat</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #fcfcfc; --surface: #fff; --surface-2: #f6f7f9;
+        --text: #111; --muted: #555; --faint: #888; --border: #e5e7eb;
+        --accent: #6E7BFF; --accent-hover: #5662E6;
+        --focus-ring: color-mix(in srgb, var(--accent) 22%, transparent);
+        --shadow-soft: 0 16px 40px rgba(17, 24, 39, 0.08);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b0c0f; --surface: #111318; --surface-2: #0f1116;
+          --text: #e5e7eb; --muted: #94a3b8; --faint: #64748b; --border: #1e293b;
+          --accent: #8C97FF; --accent-hover: #B0B8FF;
+        }
+      }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: "Rubik", system-ui, sans-serif;
+        background: var(--bg); color: var(--text); line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+        min-height: 100vh; display: flex; flex-direction: column;
+        align-items: center; justify-content: flex-start; padding: 56px 20px;
+      }
+      a:focus-visible, button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+      .card { width: 100%; max-width: 420px; text-align: center; }
+      .logo { width: 60px; height: 60px; margin: 0 auto 16px; display: block; }
+      h1 { font-size: 1.55rem; font-weight: 700; margin-bottom: 6px; }
+      .tagline { font-size: 0.96rem; color: var(--muted); margin-bottom: 32px; }
+      .btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        padding: 14px 28px; border-radius: 10px; text-decoration: none;
+        font-weight: 600; font-size: 1rem; font-family: inherit; line-height: 1.25;
+        border: 1px solid transparent; transition: background .15s, transform .15s, border-color .15s;
+        cursor: pointer; width: 100%;
+      }
+      .btn:hover { transform: translateY(-1px); }
+      .btn-primary { background: var(--accent); color: #fff; box-shadow: var(--shadow-soft); }
+      .btn-primary:hover { background: var(--accent-hover); }
+      .fallback {
+        margin-top: 22px; padding: 16px 18px; border-radius: 10px;
+        border: 1px solid var(--border); background: var(--surface);
+        font-size: 0.9rem; color: var(--muted); line-height: 1.55;
+        display: none;
+      }
+      .fallback a { color: var(--accent); text-decoration: none; font-weight: 500; }
+      .fallback a:hover { text-decoration: underline; text-underline-offset: 2px; }
+      .mobile-msg {
+        margin-top: 22px; padding: 16px 18px; border-radius: 10px;
+        border: 1px solid var(--border); background: var(--surface);
+        font-size: 0.9rem; color: var(--muted); line-height: 1.55;
+        display: none;
+      }
+      .hidden { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <img class="logo" src="/dashchat-icon.png" alt="Dash Chat" width="60" height="60" />
+      <h1>Add Contact</h1>
+      <p class="tagline">Open Dash Chat to add this contact.</p>
+
+      <!-- Static fallback: works without JS. JS will update href and handle auto-open. -->
+      <a id="open-btn" class="btn btn-primary" href="dash-chat://add-contact/">
+        Open Dash Chat
+      </a>
+
+      <div class="fallback" id="fallback">
+        Didn't open? Make sure
+        <a href="/download/">Dash Chat is installed</a>,
+        then try the button above.
+      </div>
+
+      <div class="mobile-msg" id="mobile-msg">
+        To add this contact, open this link in your default browser
+        so Dash Chat can handle it automatically.
+      </div>
+    </main>
+
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var code = params.get('code') || '';
+
+        var schemeUrl = 'dash-chat://add-contact/' + code;
+
+        var btn = document.getElementById('open-btn');
+        btn.href = schemeUrl;
+
+        var ua = navigator.userAgent;
+        var isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
+
+        if (isMobile) {
+          btn.classList.add('hidden');
+          document.getElementById('mobile-msg').style.display = 'block';
+          return;
+        }
+
+        // Auto-attempt on desktop (except Firefox, which commonly blocks
+        // non-user-initiated custom protocol launches).
+        var appOpened = false;
+        document.addEventListener('visibilitychange', function () {
+          if (document.hidden) appOpened = true;
+        });
+
+        var isFirefox = /Firefox\//i.test(ua) && !/Seamonkey\//i.test(ua);
+
+        if (!isFirefox) {
+          setTimeout(function () {
+            window.location.href = schemeUrl;
+          }, 50);
+        }
+
+        setTimeout(function () {
+          if (!appOpened && !document.hidden) {
+            document.getElementById('fallback').style.display = 'block';
+          }
+        }, 1550);
+      })();
+    </script>
+  </body>
+</html>
