@@ -29,7 +29,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
-use crate::chat::ChatMessageContent;
+use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps};
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
@@ -37,7 +37,8 @@ use crate::stores::{DerivedStore, GroupStore, LocalStore, NodeKeys, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
+    DirectChatId, EditMessageError, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile,
+    OutgoingMedia,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
@@ -1041,6 +1042,145 @@ impl Node {
             .await?;
 
         Ok(header)
+    }
+
+    /// Edit the text content of a previously-sent message.
+    ///
+    /// `edit_hash` must refer to a `Message` or `EditMessage` operation in this
+    /// chat authored by us, within the edit window, and not already edited. The
+    /// edit is validated before publishing; see [`EditError`](crate::EditError).
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn edit_message(
+        &self,
+        topic: impl Into<ChatId>,
+        edit_hash: Hash,
+        message: impl Into<String>,
+    ) -> Result<Header, EditMessageError> {
+        let topic = topic.into();
+        let valid_ops = self.valid_chat_ops(topic).await?;
+        let now = u64::from(p2panda_core::Timestamp::now());
+        valid_ops.validate_edit(&EditCandidate {
+            target: edit_hash,
+            editor: self.device_id(),
+            timestamp: now,
+            self_hash: None,
+        })?;
+
+        let header = self
+            .publish(
+                topic,
+                Payload::Chat(ChatPayload::EditMessage {
+                    message: message.into(),
+                    edit_hash,
+                }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Publish an edit without validating it. For testing the receiving-side
+    /// handling of invalid edits, which the author-side validation would
+    /// otherwise prevent from ever being created.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn edit_message_raw(
+        &self,
+        topic: impl Into<ChatId>,
+        edit_hash: Hash,
+        message: impl Into<String>,
+    ) -> anyhow::Result<Header> {
+        let header = self
+            .publish(
+                topic.into(),
+                Payload::Chat(ChatPayload::EditMessage {
+                    message: message.into(),
+                    edit_hash,
+                }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Collect all chat operations in a topic, reduced to the fields edit
+    /// validation needs, keyed by operation hash.
+    //
+    // TODO: performance: this triggers a full log traversal on processing every
+    // edit operation. We can improve this by building up the parallel ChatOp list
+    // reduced state as part of the ACID refactors.
+    pub(crate) async fn valid_chat_ops(&self, topic: ChatId) -> anyhow::Result<ValidChatOps> {
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+
+        let mut ops = std::collections::HashMap::new();
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
+                let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
+                    continue;
+                };
+                let kind = match chat {
+                    ChatPayload::Message(_) => ChatOpKind::Message,
+                    ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
+                    _ => ChatOpKind::Other,
+                };
+                ops.insert(
+                    op.header.hash(),
+                    ChatOp {
+                        author: DeviceId::from(op.header.verifying_key),
+                        timestamp: op.header.timestamp.into(),
+                        seq_num: op.header.seq_num,
+                        kind,
+                    },
+                );
+            }
+        }
+
+        let mut ops = ValidChatOps::new(ops);
+        ops.prune();
+        Ok(ops)
+    }
+
+    /// Return every edit operation in the topic that passes validation — i.e.
+    /// the edits a receiving node would honor rather than ignore. Mirrors the
+    /// rule applied in `process_app`, exposed for tests.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn valid_edits(
+        &self,
+        topic: impl Into<ChatId>,
+    ) -> anyhow::Result<Vec<crate::chat::ValidEdit>> {
+        let topic = topic.into();
+        let valid_ops = self.valid_chat_ops(topic).await?;
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+
+        let mut edits = Vec::new();
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
+                let Ok(Payload::Chat(ChatPayload::EditMessage { message, edit_hash })) =
+                    Payload::try_from_body(body)
+                else {
+                    continue;
+                };
+                let op_hash = op.header.hash();
+                if valid_ops.contains(&op_hash) {
+                    edits.push(crate::chat::ValidEdit {
+                        op_hash,
+                        target: edit_hash,
+                        text: message,
+                    });
+                }
+            }
+        }
+
+        Ok(edits)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]

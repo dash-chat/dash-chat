@@ -12,7 +12,7 @@ import {
 	killLeftoverMailboxServers,
 	killPortHolders,
 } from './setup/cleanup';
-import { spawnMailboxServer } from './setup/mailbox-server';
+import { mailboxLogFile, spawnMailboxServer } from './setup/mailbox-server';
 import { remoteMailboxUrl } from './setup/test-env';
 import { waitForPortFree, waitForPortListening } from './setup/wait-for-port';
 
@@ -38,6 +38,7 @@ let tauriDriver1: ChildProcess;
 let tauriDriver2: ChildProcess;
 let agent1Logger: ChildProcess | null = null;
 let agent2Logger: ChildProcess | null = null;
+let mailboxLogger: ChildProcess | null = null;
 
 function startAgentLogger(agent: string, logFile: string): ChildProcess {
 	// Pre-create the log file so `tail` doesn't error before the agent boots.
@@ -139,11 +140,14 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		mkdirSync(path.dirname(mailboxDb), { recursive: true });
 
 		console.log(`Starting local mailbox server on ${mailboxUrl}...`);
+		// Tail the server's log file (cargo output + the server's tracing, which
+		// goes to stdout) and echo it with a prefix, like the agent logs.
+		mailboxLogger = startAgentLogger(
+			'mailbox-server',
+			mailboxLogFile(mailboxDb),
+		);
 		mailboxServer = spawnMailboxServer(mailboxPort, mailboxDb);
 		console.log(`[mailbox-server] spawned (cargo pid=${mailboxServer.pid})`);
-		mailboxServer.stderr?.on('data', (data: Buffer) => {
-			console.error(`[mailbox-server] ${data.toString().trim()}`);
-		});
 		mailboxServer.on('exit', (code, signal) => {
 			console.error(
 				`[mailbox-server] EXITED code=${code} signal=${signal} at ${new Date().toISOString()}`,
@@ -269,5 +273,6 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		killPortHolders(ALL_PORTS);
 		agent1Logger?.kill();
 		agent2Logger?.kill();
+		mailboxLogger?.kill();
 	},
 };

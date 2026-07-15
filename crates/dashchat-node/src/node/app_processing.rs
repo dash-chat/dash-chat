@@ -541,6 +541,25 @@ impl Node {
                 }
             }
 
+            Payload::Chat(ChatPayload::EditMessage { edit_hash, .. }) => {
+                // Mirror the author-side validation: an edit that breaks the
+                // linear-chain / authorship / window rules is ignored (not
+                // forwarded to the frontend) with a warning.
+                let chat_id = ChatId::from_topic_id(topic)?;
+                let valid_ops = self.valid_chat_ops(chat_id).await?;
+                let edit_ts: u64 = operation.processed().header().timestamp.into();
+                let candidate = EditCandidate {
+                    target: *edit_hash,
+                    editor: author,
+                    timestamp: edit_ts,
+                    self_hash: Some(hash),
+                };
+                if let Err(err) = valid_ops.validate_edit(&candidate) {
+                    warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
+                    return Ok(());
+                }
+            }
+
             _ => {
                 // Nothing to do.
             }
