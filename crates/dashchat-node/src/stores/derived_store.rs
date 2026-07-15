@@ -197,6 +197,8 @@ impl DerivedStore {
                 self.save_agent_mapping(author, *agent_id).await?;
             }
 
+            // ACID: TODO: it's not correct to unconditionally save contact info here.
+            //             This needs to be limited to only accepted requests.
             Payload::Inbox(InboxPayload::ContactRequest {
                 agent_id, profile, ..
             })
