@@ -303,3 +303,67 @@ impl OpProjection {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{SigningKey, stores::create_sqlite_pool};
+
+    #[tokio::test]
+    async fn save_capabilities_keeps_highest_seq_num() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = create_sqlite_pool(dir.path().join("proj.db"))
+            .await
+            .unwrap();
+        let projection = OpProjection::new(pool).await.unwrap();
+
+        let device = DeviceId::from(SigningKey::generate().verifying_key());
+        let agent = AgentId::from(crate::ActorId::from(SigningKey::generate().verifying_key()));
+
+        // The device row must exist before capabilities can be recorded, since
+        // `save_capabilities` is an UPDATE keyed on `device_id`.
+        projection.save_agent_mapping(device, agent).await.unwrap();
+
+        // A newer op (seq 5) records `current`.
+        projection
+            .save_capabilities(device, Capabilities::current(), 5)
+            .await
+            .unwrap();
+        assert_eq!(
+            projection.get_capabilities(device).await.unwrap(),
+            Some(Capabilities::current())
+        );
+
+        // A replayed older op (seq 3) must not clobber the newer value.
+        projection
+            .save_capabilities(device, Capabilities::zero(), 3)
+            .await
+            .unwrap();
+        assert_eq!(
+            projection.get_capabilities(device).await.unwrap(),
+            Some(Capabilities::current()),
+            "a replayed older SetCapabilities must not overwrite a newer one"
+        );
+
+        // Re-applying the op already recorded (seq 5) is an idempotent no-op.
+        projection
+            .save_capabilities(device, Capabilities::zero(), 5)
+            .await
+            .unwrap();
+        assert_eq!(
+            projection.get_capabilities(device).await.unwrap(),
+            Some(Capabilities::current())
+        );
+
+        // A genuinely newer op (seq 7) wins, e.g. a later change once a
+        // zero-capability member joins the group.
+        projection
+            .save_capabilities(device, Capabilities::zero(), 7)
+            .await
+            .unwrap();
+        assert_eq!(
+            projection.get_capabilities(device).await.unwrap(),
+            Some(Capabilities::zero())
+        );
+    }
+}
