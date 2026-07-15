@@ -221,7 +221,7 @@ async fn group_chat_capability_upgrade() {
     let mut cammy_config = TestNodeConfig::default();
     cammy_config.node_config.capabilities = Capabilities::zero();
 
-    let poll = PollConfig::default();
+    let poll = PollConfig::seconds(20);
     let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(alice_config, "alice")
         .await
