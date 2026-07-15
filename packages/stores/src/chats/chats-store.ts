@@ -29,7 +29,14 @@ export class ChatsStore {
 		public client: IChatsClient,
 	) {
 		this.logsStore.logsClient.onNewOperation((_topicId, op) => {
-			if (op.body?.type === 'Chat' && op.body.payload.type === 'JoinGroup') {
+			// GroupControl bumps are what reveal a newly joined group: the backend
+			// marks a chat as a group chat while reducing the group's Create op
+			// (before emitting this notification), which happens after the
+			// JoinGroup notification has already triggered a (too early) refetch.
+			if (
+				(op.body?.type === 'Chat' && op.body.payload.type === 'JoinGroup') ||
+				op.body?.type === 'GroupControl'
+			) {
 				this.groupChatVersion.value++;
 			}
 		});
