@@ -2,7 +2,7 @@ import { fromByteArray, toByteArray } from 'base64-js';
 // @ts-ignore
 import { decode, encode } from 'cbor-web';
 
-import { ContactCode } from '../types';
+import { ContactCode, ShareIntent } from '../types';
 
 function hexToBytes(hex: string): Uint8Array {
 	return Uint8Array.from(
@@ -26,7 +26,6 @@ function toPaddedBase64(base64: string): string {
 }
 
 // The hex string keys are converted to raw bytes before CBOR encoding.
-// The inbox topic is replaced by an 8-byte nonce, cutting the code length by ~30%.
 export function encodeContactCode(contactCode: ContactCode): string {
 	const bin = encode([
 		hexToBytes(contactCode.device_pubkey),
@@ -38,9 +37,11 @@ export function encodeContactCode(contactCode: ContactCode): string {
 
 export function decodeContactCode(contactCodeString: string): ContactCode {
 	const bin = toByteArray(toPaddedBase64(contactCodeString));
-	const [device_pubkey_bytes, inbox_nonce_bytes, share_intent] = decode(bin);
+	const [device_pubkey_bytes, inbox_nonce_bytes, share_intent] = decode(
+		bin,
+	) as [Uint8Array, Uint8Array, ShareIntent];
 	const device_pubkey = bytesToHex(device_pubkey_bytes);
-	const inbox_nonce = bytesToHex(inbox_nonce_bytes as Uint8Array);
+	const inbox_nonce = bytesToHex(inbox_nonce_bytes);
 	return { device_pubkey, share_intent, inbox_nonce };
 }
 
