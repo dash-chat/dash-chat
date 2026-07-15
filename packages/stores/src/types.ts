@@ -1,5 +1,11 @@
 import { Profile } from './contacts/contacts-client';
-import { AgentId, DeviceId, Hash, TopicId, VerifyingKey } from './p2panda/types';
+import {
+	AgentId,
+	DeviceId,
+	Hash,
+	TopicId,
+	VerifyingKey,
+} from './p2panda/types';
 
 export type ChatId = TopicId;
 
