@@ -14,7 +14,8 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS devices (
         device_id BLOB PRIMARY KEY,
         agent_id BLOB NOT NULL,
-        capabilities BLOB NULL
+        capabilities BLOB NULL,
+        capabilities_seq INTEGER NULL
     )",
     "CREATE TABLE IF NOT EXISTS agents (
         agent_id BLOB PRIMARY KEY,
@@ -190,7 +191,8 @@ impl OpProjection {
                         anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
                     })?);
                 self.save_agent_mapping(author, agent_id).await?;
-                self.save_capabilities(author, capabilities.clone()).await?;
+                self.save_capabilities(author, capabilities.clone(), header.seq_num)
+                    .await?;
             }
 
             Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }) => {
@@ -255,16 +257,30 @@ impl OpProjection {
         Ok(())
     }
 
+    /// Record a device's announced capabilities, keyed by the announcing
+    /// operation's `seq_num`. All of a device's `SetCapabilities` ops are
+    /// authored by that device on its own announcements log, so `seq_num` is a
+    /// total order over them; keeping only the highest-seq value makes this
+    /// write order-independent and idempotent under replay, which the
+    /// [`OpProjection`] requires. A blind overwrite would let an older op
+    /// (e.g. a pre-upgrade `zero`) clobber a newer one (`current`) on replay.
     async fn save_capabilities(
         &self,
         device_id: DeviceId,
         capabilities: Capabilities,
+        seq_num: u64,
     ) -> anyhow::Result<()> {
-        sqlx::query("UPDATE devices SET capabilities = ? WHERE device_id = ?")
-            .bind(capabilities)
-            .bind(device_id)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "UPDATE devices SET capabilities = ?, capabilities_seq = ?
+             WHERE device_id = ?
+               AND (capabilities_seq IS NULL OR capabilities_seq < ?)",
+        )
+        .bind(capabilities)
+        .bind(seq_num as i64)
+        .bind(device_id)
+        .bind(seq_num as i64)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
