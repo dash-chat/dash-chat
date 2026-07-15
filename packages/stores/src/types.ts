@@ -150,23 +150,6 @@ export type ChatPayload =
 	| { type: 'JoinGroup'; payload: { chat_id: string } }
 	| { type: 'GroupInfo'; payload: GroupInfo };
 
-/** Numeric discriminant matching `dashchat_node::ShareIntent` (serde_repr u8). */
-export type ShareIntent = 0 | 1;
-export const ShareIntent = {
-	AddDevice: 0,
-	AddContact: 1,
-} as const;
-
-export interface ContactCode {
-	/// Pubkey of this node: allows adding this node to groups.
-	device_pubkey: DeviceId;
-	/// The intent of the QR code: whether to add this node as a contact or a device.
-	share_intent: ShareIntent;
-	/// 8-byte nonce used with blake3(device_pubkey || nonce) to derive
-	/// the inbox topic.
-	inbox_nonce: string;
-}
-
 export interface ReadMessagesPayload {
 	chat_id: ChatId;
 	message_hashes: Hash[];
