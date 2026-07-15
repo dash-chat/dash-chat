@@ -1,90 +1,83 @@
-import { type ChildProcess, execSync, spawn } from 'node:child_process';
+/**
+ * Unified e2e config. The AGENT_1/AGENT_2 env vars pick each agent's platform
+ * — `desktop` (default, tauri-driver against the built binary), `android`
+ * (physical device via Appium) or `android-emulator` (running emulator via
+ * Appium) — so any combo runs through this one config, e.g.
+ * `AGENT_1=android just test e2e run send-messages` for phone + desktop.
+ */
+import { type ChildProcess } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 import { UI_TIMEOUT } from './helpers/timeouts';
-import { allocateDriverPorts, allocatePort } from './setup/allocate-port';
+import { killLeftoverMailboxServers } from './setup/cleanup';
+import { startLocalMailboxServer } from './setup/mailbox-server';
+import { AndroidPlatform, type AndroidKind } from './setup/platforms/android';
+import { DesktopPlatform } from './setup/platforms/desktop';
+import type { AgentPlatform } from './setup/platforms/platform';
 import {
-	killAllE2EProcesses,
-	killAndWait,
-	killLeftoverMailboxServers,
-	killPortHolders,
-} from './setup/cleanup';
-import { spawnMailboxServer } from './setup/mailbox-server';
-import { remoteMailboxUrl } from './setup/test-env';
-import { waitForPortFree, waitForPortListening } from './setup/wait-for-port';
+	agentPlatform,
+	type AgentPlatformName,
+	getSpecFileRetries,
+	remoteMailboxUrl,
+} from './setup/test-env';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
-function getSpecFileRetries(): number {
-	const rawRetries = process.env.E2E_SPEC_FILE_RETRIES ?? '1';
-	const retries = Number.parseInt(rawRetries, 10);
-	if (Number.isNaN(retries) || retries < 0) {
-		throw new Error(
-			`E2E_SPEC_FILE_RETRIES must be a non-negative integer, got ${rawRetries}`,
-		);
-	}
-	return retries;
+const nameBySlot = new Map<number, AgentPlatformName>(
+	[1, 2].map(slot => [slot, agentPlatform(slot)]),
+);
+
+const desktopSlots = [...nameBySlot]
+	.filter(([, name]) => name === 'desktop')
+	.map(([slot]) => slot);
+const androidKinds = new Map<number, AndroidKind>(
+	[...nameBySlot].filter(
+		(entry): entry is [number, AndroidKind] => entry[1] !== 'desktop',
+	),
+);
+
+const android = androidKinds.size > 0 ? new AndroidPlatform(androidKinds) : null;
+const desktop =
+	desktopSlots.length > 0 ? new DesktopPlatform(desktopSlots) : null;
+const platforms: AgentPlatform[] = [];
+if (desktop !== null) platforms.push(desktop);
+if (android !== null) platforms.push(android);
+
+function agentEntry(slot: number) {
+	const platform = platforms.find(p => p.slots.includes(slot))!;
+	return platform.remoteOptions(slot);
 }
 
-const { port1, nativePort1, port2, nativePort2 } = allocateDriverPorts();
-const ALL_PORTS = [port1, nativePort1, port2, nativePort2];
+// Only specs proven to work on-device. Grow this list as specs are ported.
+const ON_DEVICE_SPECS = ['./specs/send-messages.spec.ts'];
 
-let mailboxServer: ChildProcess;
-let tauriDriver1: ChildProcess;
-let tauriDriver2: ChildProcess;
-let agent1Logger: ChildProcess | null = null;
-let agent2Logger: ChildProcess | null = null;
-
-function startAgentLogger(agent: string, logFile: string): ChildProcess {
-	// Pre-create the log file so `tail` doesn't error before the agent boots.
-	mkdirSync(path.dirname(logFile), { recursive: true });
-	writeFileSync(logFile, '');
-
-	const proc = spawn('tail', ['-n', '0', '-F', logFile], {
-		stdio: ['ignore', 'pipe', 'ignore'],
-	});
-	const rl = createInterface({ input: proc.stdout! });
-	rl.on('line', (line: string) => {
-		console.log(`[${agent}] ${line}`);
-	});
-	return proc;
-}
+let mailboxServer: ChildProcess | undefined;
 
 export const config: WebdriverIO.MultiremoteConfig = {
 	runner: 'local',
 
-	specs: ['./specs/**/*.spec.ts'],
+	specs: android !== null ? ON_DEVICE_SPECS : ['./specs/**/*.spec.ts'],
 	exclude: ['./specs/compat-*.spec.ts'],
 	maxInstances: 1,
 	specFileRetries: getSpecFileRetries(),
 
 	capabilities: {
-		agent1: {
-			port: port1,
-			capabilities: {
-				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
-				'tauri:options': {
-					application: path.join(__dirname, 'setup', 'launch-agent1.sh'),
-				},
-			} as WebdriverIO.Capabilities,
-		},
-		agent2: {
-			port: port2,
-			capabilities: {
-				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
-				'tauri:options': {
-					application: path.join(__dirname, 'setup', 'launch-agent2.sh'),
-				},
-			} as WebdriverIO.Capabilities,
-		},
+		agent1: agentEntry(1),
+		agent2: agentEntry(2),
 	},
+
+	services:
+		android !== null
+			? [['appium', { args: { port: android.appiumPort } }]]
+			: [],
 
 	logLevel: 'warn',
 	waitforTimeout: UI_TIMEOUT,
+	// Android session creation installs the APK and boots UiAutomator2 — slow.
+	connectionRetryTimeout: 300_000,
 
 	framework: 'mocha',
 	mochaOpts: {
@@ -95,164 +88,65 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	reporters: ['spec'],
 
 	async onPrepare() {
-		// Clean up leftover databases from previous interrupted runs
-		const dataDir = path.join(ROOT, '.dbs', 'e2e');
+		// A failed onPrepare must abort the run: wdio only logs hook errors and
+		// would carry on into sessions doomed to hang out their timeouts.
 		try {
-			rmSync(dataDir, { recursive: true, force: true });
-		} catch {
-			// ignore
-		}
-
-		// Kill any leftover processes from previous interrupted runs
-		killAllE2EProcesses();
-		killLeftoverMailboxServers();
-		killPortHolders(ALL_PORTS);
-
-		const mailboxInfoPath = path.join(ROOT, '.dbs', 'e2e', 'mailbox-info.json');
-
-		// When MAILBOX_URL names an allowlisted deployment environment, run
-		// against its cloud mailbox instead of spawning a local server. Specs
-		// that drive the mailbox's lifecycle skip themselves via
-		// isRemoteMailbox().
-		const remoteUrl = remoteMailboxUrl();
-		if (remoteUrl !== null) {
-			process.env.MAILBOX_URL = remoteUrl;
-			mkdirSync(path.dirname(mailboxInfoPath), { recursive: true });
-			writeFileSync(
-				mailboxInfoPath,
-				JSON.stringify({ remote: true, url: remoteUrl }),
-			);
-			console.log(`Using remote mailbox at ${remoteUrl}`);
-			return;
-		}
-
-		// Start a local mailbox server so e2e tests don't hit the internet.
-		const mailboxPort = allocatePort();
-		const mailboxUrl = `http://localhost:${mailboxPort}`;
-		const mailboxDb = path.join(
-			ROOT,
-			'.dbs',
-			'e2e',
-			'mailbox-server',
-			'mailbox.db',
-		);
-		mkdirSync(path.dirname(mailboxDb), { recursive: true });
-
-		console.log(`Starting local mailbox server on ${mailboxUrl}...`);
-		mailboxServer = spawnMailboxServer(mailboxPort, mailboxDb);
-		console.log(`[mailbox-server] spawned (cargo pid=${mailboxServer.pid})`);
-		mailboxServer.stderr?.on('data', (data: Buffer) => {
-			console.error(`[mailbox-server] ${data.toString().trim()}`);
-		});
-		mailboxServer.on('exit', (code, signal) => {
-			console.error(
-				`[mailbox-server] EXITED code=${code} signal=${signal} at ${new Date().toISOString()}`,
-			);
-		});
-		mailboxServer.on('error', err => {
-			console.error(`[mailbox-server] ERROR ${err.message}`);
-		});
-
-		// Wait for the mailbox server to be ready.
-		const deadline = Date.now() + 30_000;
-		let ready = false;
-		while (Date.now() < deadline) {
+			// Clean up leftover databases from previous interrupted runs
+			const dataDir = path.join(ROOT, '.dbs', 'e2e');
 			try {
-				execSync(`curl -s ${mailboxUrl}`, { stdio: 'ignore' });
-				ready = true;
-				break;
+				rmSync(dataDir, { recursive: true, force: true });
 			} catch {
-				await new Promise(r => setTimeout(r, 1000));
+				// ignore
 			}
+
+			killLeftoverMailboxServers();
+
+			const mailboxInfoPath = path.join(
+				ROOT,
+				'.dbs',
+				'e2e',
+				'mailbox-info.json',
+			);
+
+			// When MAILBOX_URL names an allowlisted deployment environment, run
+			// against its cloud mailbox instead of spawning a local server. Specs
+			// that drive the mailbox's lifecycle skip themselves via
+			// isRemoteMailbox().
+			const remoteUrl = remoteMailboxUrl();
+			let mailboxPort: number | null = null;
+			if (remoteUrl !== null) {
+				process.env.MAILBOX_URL = remoteUrl;
+				mkdirSync(path.dirname(mailboxInfoPath), { recursive: true });
+				writeFileSync(
+					mailboxInfoPath,
+					JSON.stringify({ remote: true, url: remoteUrl }),
+				);
+				console.log(`Using remote mailbox at ${remoteUrl}`);
+			} else {
+				// Start a local mailbox server so e2e tests don't hit the internet.
+				({ proc: mailboxServer, port: mailboxPort } =
+					await startLocalMailboxServer());
+			}
+
+			for (const platform of platforms) {
+				await platform.onPrepare({ mailboxPort });
+			}
+		} catch (err) {
+			console.error('onPrepare failed, aborting run:', err);
+			process.exit(1);
 		}
-		if (!ready) throw new Error('Mailbox server failed to start');
-
-		// Expose the URL so launch scripts pass it to the Tauri agents.
-		process.env.MAILBOX_URL = mailboxUrl;
-		console.log(`Mailbox server ready at ${mailboxUrl}`);
-
-		// Persist mailbox info so individual specs can suspend/resume it to
-		// drive the offline-UX state transitions.
-		writeFileSync(
-			mailboxInfoPath,
-			JSON.stringify({
-				pid: mailboxServer.pid,
-				port: mailboxPort,
-				url: mailboxUrl,
-				dbPath: mailboxDb,
-			}),
-		);
 	},
 
 	async beforeSession() {
-		// Force-kill any leftover processes from the previous session.
-		await Promise.all([killAndWait(tauriDriver1), killAndWait(tauriDriver2)]);
-		killAllE2EProcesses();
-		// Kill anything still holding our specific ports (handles orphaned
-		// dash-chat processes that inherited tauri-driver's listening sockets).
-		killPortHolders(ALL_PORTS);
-		// Wait for ports to be fully released after SIGKILL.
-		await Promise.all(ALL_PORTS.map(p => waitForPortFree(p)));
-
-		// Clean all agent data for a fresh start (important for specFileRetries).
-		// Must remove the entire agent directory, not just the Rust backend data,
-		// because WebKitGTK stores localStorage/IndexedDB under the XDG dirs
-		// (.local/share/, .config/, .cache/) inside the agent directory.
-		for (const agent of ['agent-1', 'agent-2']) {
-			const agentDir = path.join(ROOT, '.dbs', 'e2e', agent);
-			try {
-				rmSync(agentDir, { recursive: true, force: true });
-			} catch {
-				/* ignore */
-			}
+		for (const platform of platforms) {
+			await platform.beforeSession();
 		}
-
-		// Tail each agent's stdout/stderr (written by launch-agent.sh) and
-		// echo lines to the test runner's stdout with an agent-specific prefix.
-		agent1Logger = startAgentLogger(
-			'agent-1',
-			path.join(ROOT, '.dbs', 'e2e', 'agent-1', 'agent.log'),
-		);
-		agent2Logger = startAgentLogger(
-			'agent-2',
-			path.join(ROOT, '.dbs', 'e2e', 'agent-2', 'agent.log'),
-		);
-
-		tauriDriver1 = spawn(
-			'tauri-driver',
-			['--port', String(port1), '--native-port', String(nativePort1)],
-			{ stdio: ['ignore', 'ignore', 'pipe'] },
-		);
-		tauriDriver1.stderr?.on('data', (data: Buffer) => {
-			console.error(`[tauri-driver:${port1}] ${data.toString().trim()}`);
-		});
-
-		tauriDriver2 = spawn(
-			'tauri-driver',
-			['--port', String(port2), '--native-port', String(nativePort2)],
-			{ stdio: ['ignore', 'ignore', 'pipe'] },
-		);
-		tauriDriver2.stderr?.on('data', (data: Buffer) => {
-			console.error(`[tauri-driver:${port2}] ${data.toString().trim()}`);
-		});
-
-		// Wait for tauri-driver instances to accept connections.
-		await Promise.all([
-			waitForPortListening(port1),
-			waitForPortListening(port2),
-		]);
 	},
 
 	async afterSession() {
-		// SIGKILL tauri-drivers and wait for exit to free ports.
-		await Promise.all([killAndWait(tauriDriver1), killAndWait(tauriDriver2)]);
-		// Kill orphaned dash-chat E2E instances and anything holding our ports.
-		killAllE2EProcesses();
-		killPortHolders(ALL_PORTS);
-		agent1Logger?.kill();
-		agent2Logger?.kill();
-		agent1Logger = null;
-		agent2Logger = null;
+		for (const platform of platforms) {
+			await platform.afterSession();
+		}
 	},
 
 	onComplete() {
@@ -265,9 +159,8 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				/* already gone */
 			}
 		}
-		killAllE2EProcesses();
-		killPortHolders(ALL_PORTS);
-		agent1Logger?.kill();
-		agent2Logger?.kill();
+		for (const platform of platforms) {
+			platform.onComplete();
+		}
 	},
 };

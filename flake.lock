@@ -234,6 +234,38 @@
         "type": "github"
       }
     },
+    "nixpkgs-chromedriver-124": {
+      "locked": {
+        "lastModified": 1714953413,
+        "narHash": "sha256-etkqplp5Ah2mw7aZSh96c1FeakzsU7HoygE9Np8WGss=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "fcc7d2be753560cdf34228a398f7a44202f09aaa",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "fcc7d2be753560cdf34228a398f7a44202f09aaa",
+        "type": "github"
+      }
+    },
+    "nixpkgs-chromedriver-149": {
+      "locked": {
+        "lastModified": 1781913064,
+        "narHash": "sha256-dH4bn/TfMV6+B6IA5dp6xpYdeE0RK3WqB5bcsMx6rqo=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "d25a391ba507bc1cb32a8a732a2deb0d9dd16ad6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "d25a391ba507bc1cb32a8a732a2deb0d9dd16ad6",
+        "type": "github"
+      }
+    },
     "nixpkgs-lib": {
       "locked": {
         "lastModified": 1777168982,
@@ -332,6 +364,8 @@
         "crane": "crane",
         "flake-parts": "flake-parts",
         "nixpkgs": "nixpkgs",
+        "nixpkgs-chromedriver-124": "nixpkgs-chromedriver-124",
+        "nixpkgs-chromedriver-149": "nixpkgs-chromedriver-149",
         "rust-overlay": "rust-overlay",
         "tauri-driver": "tauri-driver",
         "tauri-plugin-holochain": "tauri-plugin-holochain"

@@ -1,3 +1,4 @@
+import { SYNC_TIMEOUT } from '../timeouts';
 import { tid } from '../selectors';
 import { TestHelper } from './test-helper';
 
@@ -15,6 +16,11 @@ export class CreateProfilePage extends TestHelper {
 		await this.typeInto(`${tid('create-profile-name')} input`, name);
 		await this.typeInto(`${tid('create-profile-surname')} input`, surname);
 		await this.createButton.click();
-		await this.agent.$(tid('all-chats-empty')).waitForExist();
+		// Profile creation bootstraps the whole node (device group, spaces,
+		// persistence) before the home page renders — on a phone this can take
+		// longer than the default UI timeout.
+		await this.agent
+			.$(tid('all-chats-empty'))
+			.waitForExist({ timeout: SYNC_TIMEOUT });
 	}
 }

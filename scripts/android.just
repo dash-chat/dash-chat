@@ -25,6 +25,15 @@ build-debug TARGETS='aarch64 armv7 i686 x86_64':
 bundle:
     nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build"
 
+# boot a headless Android emulator (keeps running in the background); it then
+# counts as a connected device, e.g. for `AGENT_1=android-emulator just test e2e`
+boot-emulator:
+    nix develop git+file:.#androidDev --command bash ./scripts/android-emulator.sh
+
+# kill all running Android emulators
+kill-emulator:
+    nix develop git+file:.#androidDev --command bash -c 'for e in $(adb devices | grep "^emulator-" | cut -f1); do adb -s "$e" emu kill; done'
+
 # uninstall the android app via adb
 uninstall:
     nix develop git+file:.#androidDev --command adb uninstall studio.darksoil.dashchat

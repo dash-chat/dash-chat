@@ -12,7 +12,7 @@ import {
 	switchCombo,
 } from '../helpers/review/runner';
 import { visitAllPages } from '../helpers/review/visit-all-pages';
-import { type Agent, setLocale, setupAgent } from '../setup/setup-agents';
+import { type Agent, setLocale, setupAgents } from '../setup/setup-agents';
 
 describe('Review checks', function () {
 	this.timeout(240_000);
@@ -23,10 +23,10 @@ describe('Review checks', function () {
 	before(async function () {
 		this.timeout(180_000);
 
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
-		]);
+		({ agent1, agent2 } = await setupAgents(this, {
+			agent1: 'any',
+			agent2: 'any',
+		}));
 
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Tester');

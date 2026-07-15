@@ -1,0 +1,86 @@
+name: E2E Android Tests
+
+on:
+  pull_request:
+    branches: [main, 'main-**', develop]
+
+jobs:
+  e2e-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # The headless emulators need hardware acceleration; runners have
+      # /dev/kvm but it's not accessible to the runner user by default.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install nix
+        uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          nix_path: nixpkgs=channel:nixos-25.11
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+          cache: true
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: holochain-ci
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: darksoil-studio
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: dash-chat
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      # The default dev shell provides just/pnpm/node/cargo; run-e2e.sh enters
+      # the androidDev shell itself for the adb/Appium parts, same as locally.
+      - name: Load nix dev shell environment
+        uses: nicknovitski/nix-develop@v1
+        with:
+          arguments: --accept-flake-config .
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          shared-key: e2e-android
+
+      - name: Install pnpm dependencies
+        run: pnpm install
+
+      - name: Build UI packages
+        run: pnpm -F ./packages/stores build
+
+      - name: Run E2E tests on two Android emulators
+        env:
+          AGENT_1: android-emulator
+          AGENT_2: android-emulator
+        run: set -o pipefail && just test e2e 2>&1 | tee e2e-android-output.log
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-android-logs
+          path: |
+            e2e-android-output.log
+            .dbs/e2e/emulator.log
+          retention-days: 7
+
+      - name: Cleanup E2E data
+        if: always()
+        run: rm -rf .dbs/e2e

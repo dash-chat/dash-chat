@@ -1,10 +1,10 @@
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('UpdaterBanner', () => {
 	let agent: Agent;
 
-	before(async () => {
-		agent = await setupAgent('agent1');
+	before(async function () {
+		({ agent1: agent } = await setupAgents(this, { agent1: 'desktop' }));
 		await agent.createProfilePage.createProfile('Updater', 'Test');
 	});
 

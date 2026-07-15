@@ -4,8 +4,7 @@
  *
  * wdio.conf.ts spawns the mailbox server in its own process group (`detached:
  * true`) during `onPrepare` and writes its pid + port to a JSON file. These
- * helpers use that pid to signal the whole group, so SIGSTOP/SIGCONT reach
- * the `mailbox-server` binary under the `cargo run` wrapper.
+ * helpers use that pid to signal the whole group.
  *
  * Unix-only — relies on POSIX signal semantics.
  */
@@ -63,8 +62,6 @@ function localInfo(): { pid: number; port: number; url: string; dbPath: string }
 }
 
 function signalGroup(pid: number, sig: NodeJS.Signals): void {
-	// Negative pid → signal the whole process group, which includes the
-	// `mailbox-server` child spawned by `cargo run`.
 	process.kill(-pid, sig);
 }
 

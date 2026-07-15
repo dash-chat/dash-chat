@@ -33,8 +33,8 @@ export class DirectChatPage extends TestHelper {
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
 
-	async ready() {
-		await this.page.waitForExist();
+	async ready(timeout?: number) {
+		await this.page.waitForExist(timeout === undefined ? {} : { timeout });
 	}
 
 	async sendMessage(text: string) {

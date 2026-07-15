@@ -1,10 +1,12 @@
 /**
  * Shared helpers for E2E test setup.
  *
- * `setupAgent('agent1')` returns an `Agent` — a `WebdriverIO.Browser` plus
- * page-object instances (`agent.homePage`, `agent.directChatPage`, …) and a
- * small set of agent-level helpers that proxy to the browser-side test
- * registry (`agent.tr`, `agent.goto`, `agent.setLocale`, …).
+ * `setupAgents(this, { agent1: 'any', agent2: 'desktop' })` returns the named
+ * `Agent`s — each a `WebdriverIO.Browser` plus page-object instances
+ * (`agent.homePage`, `agent.directChatPage`, …) and a small set of agent-level
+ * helpers that proxy to the browser-side test registry (`agent.tr`,
+ * `agent.goto`, `agent.setLocale`, …) — or skips the suite when an agent's
+ * platform requirement isn't fulfilled by the current AGENT_1/AGENT_2 combo.
  */
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { Toast } from '../helpers/components/toast';
@@ -32,6 +34,7 @@ import { EditPhotoPage } from '../helpers/pages/settings/profile/edit-photo-page
 import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { checkOverflow } from '../helpers/review/checks';
+import { agentPlatform, type AgentPlatformName } from './test-env';
 
 export type Agent = WebdriverIO.Browser & {
 	accountPage: AccountPage;
@@ -197,12 +200,52 @@ export async function waitForTestUtils(
 /** Build an agent by capability name and wait for window.__test to be ready.
  *  Defaults to narrow (mobile) layout so back buttons and FABs render — review
  *  checks switch to wide explicitly when they need the desktop two-panel UI. */
-export async function setupAgent(agentName: string): Promise<Agent> {
+async function setupAgent(agentName: string): Promise<Agent> {
 	const b = browser.getInstance(agentName);
 	await waitForTestUtils(b);
 	const agent = makeAgent(b);
 	await agent.setWideScreen(false);
 	return agent;
+}
+
+/** What a spec requires of one agent's platform. 'android' is fulfilled by a
+ *  physical device or an emulator; no platform fulfills 'ios' yet. */
+export type PlatformRequirement = 'desktop' | 'android' | 'ios' | 'any';
+
+function fulfills(
+	requirement: PlatformRequirement,
+	platform: AgentPlatformName,
+): boolean {
+	if (requirement === 'any') return true;
+	if (requirement === 'desktop') return platform === 'desktop';
+	if (requirement === 'android') {
+		return platform === 'android' || platform === 'android-emulator';
+	}
+	return false;
+}
+
+/**
+ * Build the requested agents, skipping the suite when an agent's platform
+ * requirement isn't fulfilled by the current AGENT_1/AGENT_2 combo. Call from
+ * a `before(async function () { ... })` hook (not an arrow function — `this`
+ * must be the mocha context so the suite can be skipped).
+ */
+export async function setupAgents<K extends 'agent1' | 'agent2'>(
+	ctx: Mocha.Context,
+	requirements: Record<K, PlatformRequirement>,
+): Promise<Record<K, Agent>> {
+	const names = Object.keys(requirements) as K[];
+	for (const name of names) {
+		const slot = Number(name.replace('agent', ''));
+		if (!fulfills(requirements[name], agentPlatform(slot))) {
+			ctx.skip();
+		}
+	}
+	const agents = await Promise.all(names.map(name => setupAgent(name)));
+	return Object.fromEntries(names.map((name, i) => [name, agents[i]])) as Record<
+		K,
+		Agent
+	>;
 }
 
 /**

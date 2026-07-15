@@ -17,7 +17,7 @@ import {
 	resumeMailbox,
 	suspendMailbox,
 } from '../setup/mailbox-control';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 async function openOfflineSettings(agent: Agent): Promise<void> {
 	await agent.directChatPage.back.click();
@@ -48,10 +48,10 @@ describe('Offline UX', () => {
 		// The whole suite toggles the mailbox server's lifecycle, which is
 		// impossible against a remote environment mailbox.
 		if (isRemoteMailbox()) this.skip();
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
-		]);
+		({ agent1, agent2 } = await setupAgents(this, {
+			agent1: 'any',
+			agent2: 'any',
+		}));
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
 		// exchangeContacts leaves agent1 inside its direct chat with Bob —
