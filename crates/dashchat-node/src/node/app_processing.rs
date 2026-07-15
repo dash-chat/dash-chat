@@ -281,9 +281,7 @@ impl Node {
     ) -> anyhow::Result<()> {
         self.register_bootstrap(operation, source).await?;
 
-        self.derived_store
-            .reduce(self.agent_id(), operation)
-            .await?;
+        self.projection.reduce(self.agent_id(), operation).await?;
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
@@ -316,7 +314,7 @@ impl Node {
         // @TODO: this requires a reliable way to know the agent id from the device id
         // even if they're not a contact.
         let known = self
-            .derived_store
+            .projection
             .lookup_contacts(member_device_ids.iter())
             .await?;
 
@@ -414,9 +412,7 @@ impl Node {
             return Ok(());
         }
 
-        self.derived_store
-            .reduce(self.agent_id(), operation)
-            .await?;
+        self.projection.reduce(self.agent_id(), operation).await?;
 
         let hash = operation.id();
         let author = DeviceId::from(operation.author());

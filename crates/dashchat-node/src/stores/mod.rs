@@ -1,13 +1,13 @@
 mod author_store;
-mod derived_store;
 mod group_store;
 mod local_store;
+mod op_projection;
 mod op_store;
 
 pub use author_store::*;
-pub use derived_store::*;
 pub use group_store::*;
 pub use local_store::*;
+pub use op_projection::*;
 pub use op_store::*;
 
 use sqlx::{

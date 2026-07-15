@@ -136,7 +136,7 @@ async fn test_direct_chat() {
 
     // A direct chat must never be registered as a group chat.
     for node in [&alice, &bobbi] {
-        let ids = node.derived_store.get_group_chat_ids().await.unwrap();
+        let ids = node.projection.get_group_chat_ids().await.unwrap();
         assert!(!ids.contains(&chat_id));
     }
 }
@@ -300,7 +300,7 @@ async fn test_group_chat() {
     .unwrap();
 
     let alice_profile = cammy
-        .derived_store
+        .projection
         .get_profile(alice.agent_id())
         .await
         .unwrap();
@@ -315,7 +315,7 @@ async fn test_group_chat() {
     );
 
     let cammy_profile = alice
-        .derived_store
+        .projection
         .get_profile(cammy.agent_id())
         .await
         .unwrap();
@@ -338,7 +338,7 @@ async fn test_group_chat() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_group_chat_registered_in_derived_store() {
+async fn test_group_chat_registered_in_op_projection() {
     setup();
 
     let poll = PollConfig::default();
@@ -372,7 +372,7 @@ async fn test_group_chat_registered_in_derived_store() {
 
     for node in [&alice, &bobbi] {
         poll.wait_for(|| async {
-            let ids = node.derived_store.get_group_chat_ids().await.unwrap();
+            let ids = node.projection.get_group_chat_ids().await.unwrap();
             ids.contains(&chat_id).then_some(()).ok_or(ids)
         })
         .await

@@ -33,7 +33,7 @@ use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidCh
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
-use crate::stores::{DerivedStore, GroupStore, LocalStore, NodeKeys, OpStore};
+use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
@@ -186,7 +186,7 @@ pub struct Node {
     registered_bootstraps: Arc<Mutex<HashSet<(NodeId, RelayUrl)>>>,
 
     pub local_store: LocalStore,
-    pub derived_store: DerivedStore,
+    pub projection: OpProjection,
     group_store: GroupStore,
     node_keys: NodeKeys,
 
@@ -223,13 +223,13 @@ impl Node {
         let filesystem = Filesystem::new(data_path);
         let pool = crate::stores::create_sqlite_pool(filesystem.local_store_path()).await?;
         let local_store = LocalStore::new(pool.clone()).await?;
-        let derived_store = DerivedStore::new(pool.clone()).await?;
+        let projection = OpProjection::new(pool.clone()).await?;
         let node_keys = local_store.node_keys().await?;
 
         Self::init(
             filesystem,
             local_store,
-            derived_store,
+            projection,
             node_keys,
             config,
             notification_tx,
@@ -242,7 +242,7 @@ impl Node {
     pub async fn init(
         filesystem: Filesystem,
         local_store: LocalStore,
-        derived_store: DerivedStore,
+        projection: OpProjection,
         node_keys: NodeKeys,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
@@ -372,7 +372,7 @@ impl Node {
             config,
             filesystem,
             local_store,
-            derived_store,
+            projection,
             group_store,
             node_keys,
             notification_tx,
@@ -640,7 +640,7 @@ impl Node {
         self.register_topic(topic).await?;
 
         let other_device_id = self
-            .derived_store
+            .projection
             .lookup_contact_by_agent_id(other)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
@@ -687,7 +687,7 @@ impl Node {
             .map(|verifying_key| DeviceId::from(*verifying_key))
             .collect();
 
-        let contacts = self.derived_store.lookup_contacts(&device_ids).await?;
+        let contacts = self.projection.lookup_contacts(&device_ids).await?;
         let device_to_agent: BTreeMap<DeviceId, AgentId> = device_ids
             .iter()
             .filter_map(|did| match contacts.get(did) {
@@ -803,7 +803,7 @@ impl Node {
         .await?;
 
         let agent_id = self
-            .derived_store
+            .projection
             .lookup_contact_by_device_id(DeviceId::from(member))
             .await?;
         if let Some(agent_id) = agent_id {
@@ -902,7 +902,7 @@ impl Node {
     }
 
     pub async fn get_groups(&self) -> anyhow::Result<Vec<ChatId>> {
-        self.derived_store.get_group_chat_ids().await
+        self.projection.get_group_chat_ids().await
     }
 
     pub async fn set_profile(&self, profile: Profile) -> Result<Header, crate::Error> {
@@ -919,17 +919,15 @@ impl Node {
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        self.derived_store.get_profile(self.agent_id()).await
+        self.projection.get_profile(self.agent_id()).await
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        self.derived_store
-            .lookup_contact_by_device_id(device_id)
-            .await
+        self.projection.lookup_contact_by_device_id(device_id).await
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        self.derived_store.all_contact_agent_ids().await
+        self.projection.all_contact_agent_ids().await
     }
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
@@ -1536,7 +1534,7 @@ impl Node {
         // The requester's device was mapped to their agent_id when the request
         // arrived; recover it to establish their network presence.
         let device_pubkey = self
-            .derived_store
+            .projection
             .lookup_contact_by_agent_id(agent_id)
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
@@ -1739,10 +1737,7 @@ impl Node {
         capabilities: Capabilities,
     ) -> anyhow::Result<()> {
         let announcements = Topic::announcements(self.agent_id());
-        let latest_capability = self
-            .derived_store
-            .get_capabilities(self.device_id())
-            .await?;
+        let latest_capability = self.projection.get_capabilities(self.device_id()).await?;
 
         // If the capability is unset or different from the current one, set it now.
         if latest_capability != Some(capabilities) {
@@ -1783,7 +1778,7 @@ impl Node {
         let caps = futures::future::join_all(
             devices
                 .into_iter()
-                .map(|device| self.derived_store.get_capabilities(device)),
+                .map(|device| self.projection.get_capabilities(device)),
         )
         .await
         .into_iter()

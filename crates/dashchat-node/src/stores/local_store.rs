@@ -63,7 +63,7 @@ impl NodeKeys {
 }
 
 /// The [`LocalStore`] stores only information that is specific to the operation of this device.
-/// It is completely independent and orthogonal to the [`crate::stores::OpStore`] and [`crate::stores::DerivedStore`].
+/// It is completely independent and orthogonal to the [`crate::stores::OpStore`] and [`crate::stores::OpProjection`].
 /// If data doesn't belong in a log to be synced with other devices (including in one's own device group),
 /// it probably belongs here.
 #[derive(Clone)]
