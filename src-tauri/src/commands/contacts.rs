@@ -72,6 +72,18 @@ pub async fn reject_contact_request(
     Ok(node.reject_contact_request(agent_id).await?)
 }
 
+#[tauri::command]
+pub async fn block_contact(agent_id: AgentId, app_node: State<'_, AppNode>) -> Result<(), Error> {
+    let node = app_node.get().await?;
+    Ok(node.block_contact(agent_id).await?)
+}
+
+#[tauri::command]
+pub async fn unblock_contact(agent_id: AgentId, app_node: State<'_, AppNode>) -> Result<(), Error> {
+    let node = app_node.get().await?;
+    Ok(node.unblock_contact(agent_id).await?)
+}
+
 // #[tauri::command]
 // pub async fn remove_contact(
 //     contact_id: VerifyingKey,

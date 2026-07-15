@@ -1,11 +1,20 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiAccountMultiplePlus, mdiAccountPlus } from '@mdi/js';
-	import type { ContactsStore } from 'dash-chat-stores';
+	import {
+		mdiAccountMultiplePlus,
+		mdiAccountPlus,
+		mdiDotsVertical,
+	} from '@mdi/js';
+	import {
+		fullName,
+		type AgentId,
+		type ContactsStore,
+		type Profile,
+	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import {
@@ -16,6 +25,10 @@
 		ListItem,
 		Preloader,
 		Searchbar,
+		Actions,
+		ActionsGroup,
+		ActionsButton,
+		ActionsLabel,
 		useTheme,
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
@@ -26,7 +39,29 @@
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
 	const contacts = useReactivePromise(contactsStore.profilesForAllContacts);
+	const blockedAgentIds = useReactiveValue(
+		contactsStore.blockedContactAgentIds,
+	);
 	const theme = $derived(useTheme());
+
+	let menuFor = $state<{ agentId: AgentId; profile: Profile } | null>(null);
+	let menuIsBlocked = $state(false);
+
+	function openMenu(agentId: AgentId, profile: Profile, blocked: boolean) {
+		menuFor = { agentId, profile };
+		menuIsBlocked = blocked;
+	}
+
+	async function toggleBlock() {
+		if (!menuFor) return;
+		const { agentId } = menuFor;
+		menuFor = null;
+		if (menuIsBlocked) {
+			await contactsStore.client.unblockContact(agentId);
+		} else {
+			await contactsStore.client.blockContact(agentId);
+		}
+	}
 
 	const isAddContact = $derived(
 		page.url.pathname === '/new-message/add-contact',
@@ -112,6 +147,7 @@
 				<Preloader />
 			</div>
 		{:then contacts}
+			{@const blockedSet = $blockedAgentIds ?? new Set<AgentId>()}
 			<List
 				strongIos
 				inset={isWideScreen.value || theme === 'ios'}
@@ -124,6 +160,7 @@
 						profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
 					)}
 					{#each filteredContacts as [actorId, profile]}
+						{@const blocked = blockedSet.has(actorId)}
 						<TitleTruncatedListItem
 							link
 							linkProps={{ href: `/direct-chats/${actorId}` }}
@@ -136,6 +173,23 @@
 									initials={profile.name.slice(0, 2)}
 								/>
 							{/snippet}
+							{#snippet after()}
+								{#if blocked}
+									<span class="quiet me-2 text-xs">{m.blocked()}</span>
+								{/if}
+								<button
+									class="p-1"
+									onclick={e => {
+										e.preventDefault();
+										e.stopPropagation();
+										openMenu(actorId, profile, blocked);
+									}}
+									aria-label={m.block()}
+									data-testid="contact-menu-button"
+								>
+									<wa-icon src={wrapPathInSvg(mdiDotsVertical)}></wa-icon>
+								</button>
+							{/snippet}
 						</TitleTruncatedListItem>
 					{:else}
 						<ListItem title={m.noContactsMatchFilter()} />
@@ -145,6 +199,26 @@
 		{/await}
 	</div>
 </div>
+
+<Actions opened={menuFor !== null} onBackdropClick={() => (menuFor = null)}>
+	<ActionsGroup>
+		{#if menuFor}
+			<ActionsLabel>{fullName(menuFor.profile)}</ActionsLabel>
+		{/if}
+		<ActionsButton
+			bold
+			onClick={toggleBlock}
+			data-testid="contact-block-toggle"
+		>
+			{menuIsBlocked ? m.unblock() : m.block()}
+		</ActionsButton>
+	</ActionsGroup>
+	<ActionsGroup>
+		<ActionsButton onClick={() => (menuFor = null)}>
+			{m.cancel()}
+		</ActionsButton>
+	</ActionsGroup>
+</Actions>
 
 <style>
 	.new-message-panel {

@@ -46,6 +46,12 @@ export interface IContactsClient {
 	// Reject contact request
 	rejectContactRequest(agentId: AgentId): Promise<void>;
 
+	// Block a contact
+	blockContact(agentId: AgentId): Promise<void>;
+
+	// Unblock a contact
+	unblockContact(agentId: AgentId): Promise<void>;
+
 	// Remove contact
 	// removeContact(contact: ContactId): Promise<void>;
 
@@ -123,6 +129,14 @@ export class ContactsClient implements IContactsClient {
 					op.body.payload.payload === agentId,
 			),
 		]);
+	}
+
+	async blockContact(agentId: AgentId): Promise<void> {
+		await invokeAfterSetup('block_contact', { agentId });
+	}
+
+	async unblockContact(agentId: AgentId): Promise<void> {
+		await invokeAfterSetup('unblock_contact', { agentId });
 	}
 
 	// getContacts(): Promise<Array<VerifyingKey>> {

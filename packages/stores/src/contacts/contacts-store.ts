@@ -78,6 +78,36 @@ export class ContactsStore {
 		return Array.from(contacts);
 	});
 
+	blockedContactAgentIds = reactive(async () => {
+		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
+
+		const latestByAgent: Record<
+			AgentId,
+			{ blocked: boolean; timestamp: number }
+		> = {};
+		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				const payload = op.body?.payload;
+				if (payload?.type !== 'BlockAgent' && payload?.type !== 'UnblockAgent')
+					continue;
+				const agentId = payload.payload;
+				const existing = latestByAgent[agentId];
+				if (!existing || op.header.timestamp > existing.timestamp) {
+					latestByAgent[agentId] = {
+						blocked: payload.type === 'BlockAgent',
+						timestamp: op.header.timestamp,
+					};
+				}
+			}
+		}
+
+		const blocked = new Set<AgentId>();
+		for (const [agentId, v] of Object.entries(latestByAgent)) {
+			if (v.blocked) blocked.add(agentId as AgentId);
+		}
+		return blocked;
+	});
+
 	/**
 	 * Outgoing contact requests we've sent but whose ack hasn't arrived yet.
 	 * A pending marker is dropped once its device pubkey resolves to an
