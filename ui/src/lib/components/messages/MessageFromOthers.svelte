@@ -14,7 +14,7 @@
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
-	import QuickReactionBar from './QuickReactionBar.svelte';
+	import MessageActions from './MessageActions.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
@@ -128,7 +128,7 @@
 		</div>
 	{/if}
 </div>
-<QuickReactionBar
+<MessageActions
 	{message}
 	{myDeviceId}
 	bind:opened={reactionsOpened}

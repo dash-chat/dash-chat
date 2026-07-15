@@ -12,7 +12,7 @@
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
-	import QuickReactionBar from './QuickReactionBar.svelte';
+	import MessageActions from './MessageActions.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useReactiveValue } from '$lib/stores/use-signal';
@@ -113,7 +113,7 @@
 		</div>
 	{/if}
 </div>
-<QuickReactionBar
+<MessageActions
 	{message}
 	{myDeviceId}
 	{canEdit}

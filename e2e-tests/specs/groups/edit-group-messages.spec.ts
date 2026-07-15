@@ -52,8 +52,10 @@ describe('Editing group messages', () => {
 		await agent1.groupChatPage.messages.waitForMessage("Bob's message");
 
 		await agent1.groupChatPage.messages.openActions("Bob's message");
+		const messages = agent1.groupChatPage.messages;
+		await (await messages.actionsMenu("Bob's message")).waitForDisplayed();
 		expect(
-			await agent1.groupChatPage.messages.quickEditButton.isExisting(),
+			await (await messages.editAction("Bob's message")).isExisting(),
 		).toBe(false);
 	});
 });

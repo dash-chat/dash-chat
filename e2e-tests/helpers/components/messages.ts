@@ -29,8 +29,27 @@ export class Messages extends TestHelper {
 	lightbox = new Lightbox(this.agent);
 	/** The composer, for driving the type/send step of an in-place edit. */
 	private composer = new Composer(this.agent);
-	quickEditButton = this.el(tid('quick-edit-button'));
 	editHistorySheet = this.el(tid('edit-history-sheet'));
+
+	/** Every message mounts its own (closed) actions popover, so the menu and
+	 * its actions must be resolved scoped to the message containing `text`. */
+	private async messageScoped(text: string, testId: string) {
+		const wrapper = await this.messageBubbleWithText(text);
+		if (!wrapper) throw new Error(`Message "${text}" not found`);
+		return wrapper.$(tid(testId));
+	}
+
+	actionsMenu(text: string) {
+		return this.messageScoped(text, 'message-actions-menu');
+	}
+
+	editAction(text: string) {
+		return this.messageScoped(text, 'message-action-edit');
+	}
+
+	copyAction(text: string) {
+		return this.messageScoped(text, 'message-action-copy');
+	}
 
 	async unreadBadgeText(): Promise<string | null> {
 		if (!(await this.unreadBadge.isExisting())) return null;
@@ -261,9 +280,10 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Open the quick-action bar for the message containing `text` and wait for
-	 * it to be displayed. Same gesture as `openReactions`; the bar carries the
-	 * reaction emojis and, on own messages, the Edit action. */
+	/** Open the message actions UI for the message containing `text` and wait
+	 * for it to be displayed. Same gesture as `openReactions`; alongside the
+	 * quick-reaction bar it shows the actions menu (Copy and, on own editable
+	 * messages, Edit). */
 	async openActions(text: string): Promise<void> {
 		await this.openReactions(text);
 	}
@@ -308,12 +328,13 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Open the quick-action bar on the message with `oldText`, tap Edit, replace
+	/** Open the actions menu on the message with `oldText`, tap Edit, replace
 	 * the text with `newText`, and send. */
 	async editMessage(oldText: string, newText: string): Promise<void> {
 		await this.openActions(oldText);
-		await this.quickEditButton.waitForClickable();
-		await this.quickEditButton.click();
+		const editAction = await this.editAction(oldText);
+		await editAction.waitForClickable();
+		await editAction.click();
 		await this.composer.editingBanner.waitForExist();
 		await this.composer.type(newText);
 		await this.composer.send();

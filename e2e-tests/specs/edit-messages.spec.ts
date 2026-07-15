@@ -50,8 +50,21 @@ describe('Editing messages', () => {
 		await agent1.directChatPage.messages.waitForMessage("Bob's message");
 
 		await agent1.directChatPage.messages.openActions("Bob's message");
+		const messages = agent1.directChatPage.messages;
+		await (await messages.actionsMenu("Bob's message")).waitForDisplayed();
 		expect(
-			await agent1.directChatPage.messages.quickEditButton.isExisting(),
+			await (await messages.editAction("Bob's message")).isExisting(),
 		).toBe(false);
+	});
+
+	it('copies a message to the clipboard from the actions menu', async () => {
+		await agent1.directChatPage.messages.openActions("Bob's message");
+		const copyAction =
+			await agent1.directChatPage.messages.copyAction("Bob's message");
+		await copyAction.waitForClickable();
+		await copyAction.click();
+		await agent1.toast.expectMessage(
+			await agent1.tr('copiedMessageToClipboard'),
+		);
 	});
 });
