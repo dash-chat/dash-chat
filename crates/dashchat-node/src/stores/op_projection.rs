@@ -370,3 +370,111 @@ impl From<anyhow::Error> for ProjectionError {
         Self::Any(error)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+    use crate::stores::create_sqlite_pool;
+
+    fn agent(n: u8) -> AgentId {
+        AgentId::from(crate::ActorId::from(
+            p2panda::SigningKey::from_bytes(&[n; 32]).verifying_key(),
+        ))
+    }
+
+    fn device(n: u8) -> DeviceId {
+        DeviceId::from(p2panda::SigningKey::from_bytes(&[n; 32]).verifying_key())
+    }
+
+    async fn projection() -> OpProjection {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = create_sqlite_pool(dir.path().join("op_projection.db"))
+            .await
+            .unwrap();
+        // Keep the tempdir alive for the duration of the pool by leaking it; the
+        // OS reclaims it when the test process exits.
+        std::mem::forget(dir);
+        OpProjection::new(pool).await.unwrap()
+    }
+
+    /// Blocking an agent blocks every device that maps to it, and unblocking
+    /// restores every device.
+    #[tokio::test]
+    async fn test_block_applies_to_all_devices_of_agent() {
+        let store = projection().await;
+
+        let agent_a = agent(1);
+        let agent_b = agent(2);
+        let (d1, d2, d3) = (device(10), device(11), device(20));
+
+        // agent_a controls two devices, agent_b controls one.
+        store.save_agent_mapping(d1, agent_a).await.unwrap();
+        store.save_agent_mapping(d2, agent_a).await.unwrap();
+        store.save_agent_mapping(d3, agent_b).await.unwrap();
+
+        // Nothing blocked initially.
+        assert!(!store.is_author_blocked(&d1).await.unwrap());
+        assert!(!store.is_author_blocked(&d2).await.unwrap());
+        assert!(!store.is_author_blocked(&d3).await.unwrap());
+
+        store.block_agent(agent_a).await.unwrap();
+
+        // Both of agent_a's devices are blocked; agent_b's device is not.
+        assert!(store.is_author_blocked(&d1).await.unwrap());
+        assert!(store.is_author_blocked(&d2).await.unwrap());
+        assert!(!store.is_author_blocked(&d3).await.unwrap());
+
+        store.unblock_agent(agent_a).await.unwrap();
+
+        // Unblocking restores every device of the agent.
+        assert!(!store.is_author_blocked(&d1).await.unwrap());
+        assert!(!store.is_author_blocked(&d2).await.unwrap());
+        assert!(!store.is_author_blocked(&d3).await.unwrap());
+    }
+
+    /// A device with no contact entry is never considered blocked.
+    #[tokio::test]
+    async fn test_unknown_device_is_not_blocked() {
+        let store = projection().await;
+        assert!(!store.is_author_blocked(&device(99)).await.unwrap());
+    }
+
+    /// A device newly mapped to an already-blocked agent is immediately blocked,
+    /// since the block lives on the agent, not the device.
+    #[tokio::test]
+    async fn test_block_covers_devices_added_after_block() {
+        let store = projection().await;
+        let agent_a = agent(1);
+
+        store.save_agent_mapping(device(10), agent_a).await.unwrap();
+        store.block_agent(agent_a).await.unwrap();
+
+        // A second device shows up for the same agent after the block.
+        store.save_agent_mapping(device(11), agent_a).await.unwrap();
+
+        assert!(store.is_author_blocked(&device(11)).await.unwrap());
+    }
+
+    /// `all_contact_agent_ids` returns one entry per agent, even when an agent
+    /// has multiple devices, and includes blocked agents.
+    #[tokio::test]
+    async fn test_all_contact_agent_ids_dedups_by_agent() {
+        let store = projection().await;
+
+        let agent_a = agent(1);
+        let agent_b = agent(2);
+
+        store.save_agent_mapping(device(10), agent_a).await.unwrap();
+        store.save_agent_mapping(device(11), agent_a).await.unwrap();
+        store.save_agent_mapping(device(20), agent_b).await.unwrap();
+
+        store.block_agent(agent_b).await.unwrap();
+
+        assert_eq!(
+            store.all_contact_agent_ids().await.unwrap(),
+            maplit::btreeset![agent_a, agent_b]
+        );
+    }
+}
