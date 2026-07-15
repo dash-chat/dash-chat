@@ -335,7 +335,13 @@ export class Messages extends TestHelper {
 		const editAction = await this.editAction(oldText);
 		await editAction.waitForClickable();
 		await editAction.click();
+		// The Signal-style editing state: header banner plus the input prefilled
+		// with the message being edited.
 		await this.composer.editingBanner.waitForExist();
+		await this.agent.waitUntil(
+			async () => (await this.composer.messageInput.getValue()) === oldText,
+			{ timeoutMsg: 'Editing input is not prefilled with the original text' },
+		);
 		await this.composer.type(newText);
 		await this.composer.send();
 	}

@@ -31,6 +31,7 @@
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
+	import IconButton from '$lib/components/IconButton.svelte';
 
 	interface Props {
 		value?: string;
@@ -163,6 +164,10 @@
 		if (isMobile && media && !page.state.stagedMedia) media = undefined;
 	});
 
+	$effect(() => {
+		if (editing) messageInput?.focus();
+	});
+
 	function onPaste(event: ClipboardEvent) {
 		const files = event.clipboardData?.files;
 		if (!files || files.length === 0) return;
@@ -183,35 +188,23 @@
 		class="message-input-bar"
 		class:pb-safe={!showMediaPanel && !keyboard.isOpen}
 	>
-		{#if editing}
-			<div
-				class="row items-center gap-2 px-3 pt-2 text-sm"
-				data-testid="composer-editing-banner"
-			>
-				<wa-icon
-					class="quiet"
-					src={wrapPathInSvg(mdiPencil)}
-					style="font-size: 1rem"
-				></wa-icon>
-				<span class="flex-1 quiet truncate">{m.editingMessage()}</span>
-				<button
-					type="button"
-					class="quiet flex h-7 w-7 items-center justify-center"
-					aria-label={m.cancel()}
-					data-testid="composer-cancel-edit"
-					onclick={() => onCancelEdit?.()}
-				>
-					<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 1.1rem"
-					></wa-icon>
-				</button>
-			</div>
-		{:else if !isMobile}
+		{#if !editing && !isMobile}
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
 
 		<div class="m-2 row gap-2" style="align-items: center;">
 			{#if editing}
-				<!-- Media cannot be edited, so the attach button is hidden. -->
+				<!-- Media cannot be edited: the attach button gives way to the cancel
+				     button on mobile; on desktop cancel sits after the input. -->
+				{#if isMobile}
+					<IconButton
+						icon={mdiClose}
+						circle
+						onClick={() => onCancelEdit?.()}
+						label={m.cancel()}
+						testid="composer-cancel-edit"
+					/>
+				{/if}
 			{:else if isMobile}
 				<AttachButton
 					class="h-10 w-10"
@@ -222,23 +215,48 @@
 				<AttachMenuButton onFiles={stage} />
 			{/if}
 			<div
-				class="input-container flex min-h-[42px] min-w-0 flex-1 items-center ps-2 {theme ===
+				class="input-container flex min-h-[42px] min-w-0 flex-1 flex-col justify-center {theme ===
 				'ios'
 					? 'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
 					: 'bg-white dark:bg-gray-800'}"
 				onpaste={onPaste}
 			>
-				<MessageInput
-					bind:this={messageInput}
-					bind:value
-					{placeholder}
-					onSend={send}
-					onEmojiClick={() => (showEmojiPicker = true)}
-				/>
+				{#if editing}
+					<div
+						class="flex items-center gap-1.5 ps-3 pt-2 text-sm font-semibold"
+						data-testid="composer-editing-banner"
+					>
+						<wa-icon src={wrapPathInSvg(mdiPencil)} style="font-size: 0.9rem"
+						></wa-icon>
+						{m.editingMessage()}
+					</div>
+				{/if}
+				<div class="flex w-full items-center ps-2">
+					<MessageInput
+						bind:this={messageInput}
+						bind:value
+						{placeholder}
+						onSend={send}
+						onEmojiClick={() => (showEmojiPicker = true)}
+					/>
+				</div>
 			</div>
 
-			{#if isMobile}
-				<SendButton disabled={!hasContent} onSend={send} />
+			{#if editing && !isMobile}
+				<IconButton
+					icon={mdiClose}
+					circle
+					onClick={() => onCancelEdit?.()}
+					label={m.cancel()}
+					testid="composer-cancel-edit"
+				/>
+			{/if}
+			{#if isMobile || editing}
+				<SendButton
+					disabled={!hasContent}
+					onSend={send}
+					editing={editing !== null}
+				/>
 			{/if}
 		</div>
 	</div>

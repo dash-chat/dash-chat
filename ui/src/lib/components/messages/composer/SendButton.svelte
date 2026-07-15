@@ -3,14 +3,16 @@
 	import { Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiSend } from '@mdi/js';
+	import { mdiCheck, mdiSend } from '@mdi/js';
 
 	interface Props {
 		disabled?: boolean;
 		onSend: () => Promise<boolean>;
+		/** Show a checkmark (save edit) instead of the send arrow. */
+		editing?: boolean;
 	}
 
-	let { disabled = false, onSend }: Props = $props();
+	let { disabled = false, onSend, editing = false }: Props = $props();
 
 	let loading = $state(false);
 
@@ -32,10 +34,16 @@
 	class:enabled={!disabled}
 	onclick={handleClick}
 	disabled={disabled || loading}
-	aria-label={m.send()}
+	aria-label={editing ? m.save() : m.send()}
 >
 	{#if loading}
 		<Preloader class="h-[22px] w-[22px] !text-white" />
+	{:else if editing}
+		<wa-icon
+			class="no-offset"
+			style="font-size: 24px"
+			src={wrapPathInSvg(mdiCheck)}
+		></wa-icon>
 	{:else}
 		<wa-icon style="font-size: 24px" src={wrapPathInSvg(mdiSend)}></wa-icon>
 	{/if}
@@ -77,5 +85,9 @@
 		width: 22px;
 		height: 22px;
 		margin-inline-start: 2px; /* Optical centering for send arrow */
+	}
+
+	.send-button :global(wa-icon.no-offset) {
+		margin-inline-start: 0;
 	}
 </style>

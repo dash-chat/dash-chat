@@ -23,6 +23,13 @@
 		textarea.style.height = 'auto';
 	}
 
+	/** Focus the input with the cursor at the end, sized to the current text. */
+	export function focus() {
+		textarea.focus();
+		textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+		autoResize();
+	}
+
 	function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
