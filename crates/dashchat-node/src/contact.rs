@@ -156,7 +156,7 @@ impl From<QrCode> for String {
 impl TryFrom<String> for QrCode {
     type Error = anyhow::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        Ok(QrCode::from_str(&value).unwrap())
+        Ok(QrCode::from_str(&value)?)
     }
 }
 

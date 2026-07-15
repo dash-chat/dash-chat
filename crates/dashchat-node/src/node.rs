@@ -1361,7 +1361,6 @@ impl Node {
     pub async fn add_contact(&self, contact: QrCode) -> Result<(), AddContactError> {
         tracing::debug!(
             device_pub_key = ?contact.device_pubkey.aliased(),
-            inbox_nonce = ?contact.inbox_nonce,
             "adding contact",
         );
 
