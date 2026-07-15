@@ -154,6 +154,8 @@ pub enum DeviceGroupPayload {
         device_pubkey: DeviceId,
     },
     RejectContactRequest(AgentId),
+    BlockAgent(AgentId),
+    UnblockAgent(AgentId),
     ReadMessages(ReadMessagesPayload),
 }
 

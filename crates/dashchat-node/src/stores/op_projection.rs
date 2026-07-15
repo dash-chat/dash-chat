@@ -3,13 +3,15 @@ use p2panda::streams::ProcessedOperation;
 use p2panda_auth::group::GroupAction;
 use p2panda_auth::processor::GroupsArgs;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::{AgentId, DeviceId, Profile, compat::Capabilities};
 use crate::{
     AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
 };
 
+// TODO: rework this not as migrations, but as a single schema that, when changed,
+//       triggers a re-projection of the store.
 const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS devices (
         device_id BLOB PRIMARY KEY,
@@ -18,7 +20,8 @@ const MIGRATIONS: &[&str] = &[
     )",
     "CREATE TABLE IF NOT EXISTS agents (
         agent_id BLOB PRIMARY KEY,
-        profile BLOB NULL
+        profile BLOB NULL,
+        blocked BOOLEAN NOT NULL DEFAULT FALSE
     )",
     "CREATE TABLE IF NOT EXISTS subscribed_topics (
         topic_id BLOB PRIMARY KEY
@@ -57,15 +60,11 @@ impl OpProjection {
         Ok(store)
     }
 
-    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        let rows: Vec<(AgentId,)> = sqlx::query_as("SELECT agent_id FROM devices")
+    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
+        let rows: Vec<(AgentId,)> = sqlx::query_as("SELECT agent_id FROM agents")
             .fetch_all(&self.pool)
             .await?;
-        let mut agent_ids: Vec<AgentId> = rows.into_iter().map(|(id,)| id).collect();
-        // Deduplicate since multiple devices can map to the same agent
-        agent_ids.sort();
-        agent_ids.dedup();
-        Ok(agent_ids)
+        Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
     pub async fn lookup_contact_by_device_id(
@@ -122,6 +121,20 @@ impl OpProjection {
         Ok(q.fetch_all(&self.pool).await?.into_iter().collect())
     }
 
+    pub async fn is_author_blocked(&self, device_id: &DeviceId) -> anyhow::Result<bool> {
+        let row: Option<(bool,)> = sqlx::query_as(
+            "
+            SELECT blocked FROM agents
+            JOIN devices ON agents.agent_id = devices.agent_id
+            WHERE devices.device_id = ?
+            ",
+        )
+        .bind(device_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|(blocked,)| blocked).unwrap_or(false))
+    }
+
     pub async fn get_capabilities(
         &self,
         device_id: DeviceId,
@@ -156,11 +169,12 @@ impl OpProjection {
         &self,
         me: AgentId,
         operation: &ProcessedOperation<Payload>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), ProjectionError> {
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
         let topic = operation.topic();
-        let header = operation.event.header();
+
+        self.enforce_blocklist(operation).await?;
 
         match &payload {
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
@@ -193,9 +207,18 @@ impl OpProjection {
                 self.save_capabilities(author, capabilities.clone()).await?;
             }
 
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }) => {
-                self.save_agent_mapping(author, *agent_id).await?;
-            }
+            Payload::DeviceGroup(p) => match p {
+                DeviceGroupPayload::AddContact { agent_id } => {
+                    self.save_agent_mapping(author, *agent_id).await?;
+                }
+                DeviceGroupPayload::BlockAgent(agent_id) => {
+                    self.block_agent(*agent_id).await?;
+                }
+                DeviceGroupPayload::UnblockAgent(agent_id) => {
+                    self.unblock_agent(*agent_id).await?;
+                }
+                _ => (),
+            },
 
             // ACID: TODO: it's not correct to unconditionally save contact info here.
             //             This needs to be limited to only accepted requests.
@@ -232,6 +255,32 @@ impl OpProjection {
             }
         }
 
+        Ok(())
+    }
+
+    // === helpers === //
+
+    /// While the contact is blocked, invalidate all operations from them except for the necessary ones.
+    async fn enforce_blocklist(
+        &self,
+        operation: &ProcessedOperation<Payload>,
+    ) -> Result<(), ProjectionError> {
+        let author = DeviceId::from(operation.author());
+        if self.is_author_blocked(&author).await? {
+            let allow = match operation.message() {
+                // Group control messages are necessary to maintain group chats.
+                Payload::GroupControl(_) => true,
+                // Group info messages are necessary to maintain group chats.
+                Payload::Chat(ChatPayload::GroupInfo(_)) => true,
+                // All other operations are invalid.
+                _ => false,
+            };
+            if !allow {
+                return Err(ProjectionError::invalid(format!(
+                    "author {author} is blocked"
+                )));
+            }
+        };
         Ok(())
     }
 
@@ -277,6 +326,22 @@ impl OpProjection {
         Ok(())
     }
 
+    async fn block_agent(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        sqlx::query("UPDATE agents SET blocked = TRUE WHERE agent_id = ?")
+            .bind(agent_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn unblock_agent(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        sqlx::query("UPDATE agents SET blocked = FALSE WHERE agent_id = ?")
+            .bind(agent_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     async fn mark_group_as_group_chat(&self, chat_id: ChatId) -> anyhow::Result<()> {
         let mut tx = self.pool.begin().await?;
         sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
@@ -285,5 +350,23 @@ impl OpProjection {
             .await?;
         tx.commit().await?;
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub enum ProjectionError {
+    InvalidOp(String),
+    Any(anyhow::Error),
+}
+
+impl ProjectionError {
+    pub fn invalid(msg: impl Into<String>) -> Self {
+        Self::InvalidOp(msg.into())
+    }
+}
+
+impl From<anyhow::Error> for ProjectionError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Any(error)
     }
 }

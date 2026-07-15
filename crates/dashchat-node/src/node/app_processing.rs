@@ -8,6 +8,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
 use crate::node::actor::{ProcessorError, ProcessorEvent};
+use crate::stores::ProjectionError;
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
@@ -281,7 +282,23 @@ impl Node {
     ) -> anyhow::Result<()> {
         self.register_bootstrap(operation, source).await?;
 
-        self.projection.reduce(self.agent_id(), operation).await?;
+        // If an operation is invalided by the projection layer, we don't process it,
+        // but still allow it to be acknowledged as processed.
+        match self.projection.reduce(self.agent_id(), operation).await {
+            // Continue processing.
+            Ok(_) => (),
+
+            // Don't process but allow the log to proceed.
+            Err(ProjectionError::InvalidOp(msg)) => {
+                tracing::info!(msg, "invalid operation");
+                return Ok(());
+            }
+
+            // Bubble up the error: the log won't proceed.
+            Err(ProjectionError::Any(err)) => {
+                return Err(err);
+            }
+        }
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
@@ -412,7 +429,23 @@ impl Node {
             return Ok(());
         }
 
-        self.projection.reduce(self.agent_id(), operation).await?;
+        // If an operation is invalided by the projection layer, we don't process it,
+        // but still allow it to be acknowledged as processed.
+        match self.projection.reduce(self.agent_id(), operation).await {
+            // Continue processing.
+            Ok(_) => (),
+
+            // Don't process but allow the log to proceed.
+            Err(ProjectionError::InvalidOp(msg)) => {
+                tracing::info!(msg, "invalid operation");
+                return Ok(());
+            }
+
+            // Bubble up the error: the log won't proceed.
+            Err(ProjectionError::Any(err)) => {
+                return Err(err);
+            }
+        }
 
         let hash = operation.id();
         let author = DeviceId::from(operation.author());

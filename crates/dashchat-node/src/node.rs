@@ -926,7 +926,7 @@ impl Node {
         self.projection.lookup_contact_by_device_id(device_id).await
     }
 
-    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
+    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
         self.projection.all_contact_agent_ids().await
     }
 
