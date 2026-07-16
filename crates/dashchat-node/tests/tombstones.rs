@@ -73,7 +73,10 @@ async fn tombstone_drops_payload_received_by_sync() {
     setup_tracing();
 
     let poll = PollConfig::default();
-    let config = NodeConfig::testing();
+    // no_p2p: with p2p enabled the mailbox introduces the two nodes and they
+    // establish a direct channel, so clear_mailboxes() would not actually take
+    // bobbi offline and the secret op could arrive before the tombstone.
+    let config = NodeConfig::testing().no_p2p();
     let mb = TestMailbox::from_env();
 
     let alice = TestNode::new(config.clone(), "alice")
