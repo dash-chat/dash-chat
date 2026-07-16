@@ -5,11 +5,11 @@
 
 	interface Props {
 		onClick?: () => void;
-		/** Bindable; forwarded to AttachButton. Omit to let the button own it. */
+		/** Reflects the open state of the menu/panel the caller opens. */
 		expanded?: boolean;
 	}
 
-	let { onClick = () => {}, expanded = $bindable(false) }: Props = $props();
+	let { onClick = () => {}, expanded = false }: Props = $props();
 
 	const theme = $derived(useTheme());
 	const glass = $derived(theme === 'ios');
@@ -26,7 +26,7 @@
 
 <AttachButton
 	{onClick}
-	bind:expanded
+	{expanded}
 	class={surfaceClass}
 	iconClass={brand ? 'text-white' : ''}
 />

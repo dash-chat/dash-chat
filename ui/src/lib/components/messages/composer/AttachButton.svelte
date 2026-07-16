@@ -7,6 +7,9 @@
 
 	interface Props {
 		onClick?: () => void;
+		/** Reflects the open state of the menu/panel the caller opens. The caller
+		 * owns this: the panel can close without a button click (file pick, the
+		 * keyboard reclaiming the slot), so button-local state would desync. */
 		expanded?: boolean;
 		class?: string;
 		iconClass?: string;
@@ -14,22 +17,17 @@
 
 	let {
 		onClick = () => {},
-		expanded = $bindable(false),
+		expanded = false,
 		class: className = '',
 		iconClass = '',
 	}: Props = $props();
-
-	function handleClick() {
-		expanded = !expanded;
-		onClick();
-	}
 </script>
 
 <!-- The plus rotates into an X instead of swapping to a close icon: changing
      wa-icon's src loads the new SVG asynchronously, which blanks the icon the
      first time the menu opens. -->
 <IconButton
-	onClick={handleClick}
+	{onClick}
 	{expanded}
 	testid="message-input-attach"
 	label={m.attachMenu()}

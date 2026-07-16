@@ -65,10 +65,11 @@
 			showMediaPanel = true;
 			return;
 		}
-		// Don't close the panel here: focusing the input makes renderBelowKeyboard
-		// yield the panel's slot to the rising keyboard in lockstep (keeping the
-		// input bar pinned) and clear `showMediaPanel` once the swap completes —
-		// including when no keyboard rises (its yield backstop).
+		// Flip the intent right away so the attach button reacts instantly, then
+		// hand focus to the input: renderBelowKeyboard sees the close arrive with
+		// an input focused and keeps the panel's slot until the rising keyboard
+		// claims it, so the input bar stays pinned during the swap.
+		showMediaPanel = false;
 		messageInput?.focus();
 	}
 
