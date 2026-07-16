@@ -72,7 +72,7 @@ jobs:
         run: set -o pipefail && just test e2e 2>&1 | tee e2e-android-output.log
 
       - name: Upload test logs on failure
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-android-logs
