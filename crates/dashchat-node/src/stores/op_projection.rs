@@ -3,13 +3,15 @@ use p2panda::streams::ProcessedOperation;
 use p2panda_auth::group::GroupAction;
 use p2panda_auth::processor::GroupsArgs;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::{AgentId, DeviceId, Profile};
 use crate::{
     AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
 };
 
+// TODO: rework this not as migrations, but as a single schema that, when changed,
+//       triggers a re-projection of the store.
 const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS devices (
         device_id BLOB PRIMARY KEY,
@@ -17,7 +19,8 @@ const MIGRATIONS: &[&str] = &[
     )",
     "CREATE TABLE IF NOT EXISTS agents (
         agent_id BLOB PRIMARY KEY,
-        profile BLOB NULL
+        profile BLOB NULL,
+        blocked BOOLEAN NOT NULL DEFAULT FALSE
     )",
     "CREATE TABLE IF NOT EXISTS subscribed_topics (
         topic_id BLOB PRIMARY KEY
@@ -56,15 +59,11 @@ impl OpProjection {
         Ok(store)
     }
 
-    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        let rows: Vec<(AgentId,)> = sqlx::query_as("SELECT agent_id FROM devices")
+    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
+        let rows: Vec<(AgentId,)> = sqlx::query_as("SELECT agent_id FROM agents")
             .fetch_all(&self.pool)
             .await?;
-        let mut agent_ids: Vec<AgentId> = rows.into_iter().map(|(id,)| id).collect();
-        // Deduplicate since multiple devices can map to the same agent
-        agent_ids.sort();
-        agent_ids.dedup();
-        Ok(agent_ids)
+        Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
     pub async fn lookup_contact_by_device_id(
@@ -121,6 +120,20 @@ impl OpProjection {
         Ok(q.fetch_all(&self.pool).await?.into_iter().collect())
     }
 
+    pub async fn is_author_blocked(&self, device_id: &DeviceId) -> anyhow::Result<bool> {
+        let row: Option<(bool,)> = sqlx::query_as(
+            "
+            SELECT blocked FROM agents
+            JOIN devices ON agents.agent_id = devices.agent_id
+            WHERE devices.device_id = ?
+            ",
+        )
+        .bind(device_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|(blocked,)| blocked).unwrap_or(false))
+    }
+
     pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
         let row: Option<(Option<Profile>,)> =
             sqlx::query_as("SELECT profile FROM agents WHERE agent_id = ?")
@@ -143,10 +156,12 @@ impl OpProjection {
         &self,
         me: AgentId,
         operation: &ProcessedOperation<Payload>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), ProjectionError> {
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
         let topic = operation.topic();
+
+        self.enforce_blocklist(operation).await?;
 
         match &payload {
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
@@ -167,9 +182,18 @@ impl OpProjection {
                 self.save_profile(agent_id, profile.clone()).await?;
             }
 
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }) => {
-                self.save_agent_mapping(author, *agent_id).await?;
-            }
+            Payload::DeviceGroup(p) => match p {
+                DeviceGroupPayload::AddContact { agent_id } => {
+                    self.save_agent_mapping(author, *agent_id).await?;
+                }
+                DeviceGroupPayload::BlockAgent(agent_id) => {
+                    self.block_agent(*agent_id).await?;
+                }
+                DeviceGroupPayload::UnblockAgent(agent_id) => {
+                    self.unblock_agent(*agent_id).await?;
+                }
+                _ => (),
+            },
 
             // ACID: TODO: it's not correct to unconditionally save contact info here.
             //             This needs to be limited to only accepted requests.
@@ -209,6 +233,32 @@ impl OpProjection {
         Ok(())
     }
 
+    // === helpers === //
+
+    /// While the contact is blocked, invalidate all operations from them except for the necessary ones.
+    async fn enforce_blocklist(
+        &self,
+        operation: &ProcessedOperation<Payload>,
+    ) -> Result<(), ProjectionError> {
+        let author = DeviceId::from(operation.author());
+        if self.is_author_blocked(&author).await? {
+            let allow = match operation.message() {
+                // Group control messages are necessary to maintain group chats.
+                Payload::GroupControl(_) => true,
+                // Group info messages are necessary to maintain group chats.
+                Payload::Chat(ChatPayload::GroupInfo(_)) => true,
+                // All other operations are invalid.
+                _ => false,
+            };
+            if !allow {
+                return Err(ProjectionError::invalid(format!(
+                    "author {author} is blocked"
+                )));
+            }
+        };
+        Ok(())
+    }
+
     // === setters === //
 
     async fn save_agent_mapping(
@@ -230,9 +280,30 @@ impl OpProjection {
     }
 
     async fn save_profile(&self, agent_id: AgentId, profile: Profile) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR REPLACE INTO agents (agent_id, profile) VALUES (?, ?)")
+        sqlx::query(
+            "
+            INSERT INTO agents (agent_id, profile) VALUES (?, ?) 
+            ON CONFLICT(agent_id) DO UPDATE SET profile = excluded.profile
+        ",
+        )
+        .bind(agent_id)
+        .bind(profile)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn block_agent(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        sqlx::query("UPDATE agents SET blocked = TRUE WHERE agent_id = ?")
             .bind(agent_id)
-            .bind(profile)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn unblock_agent(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        sqlx::query("UPDATE agents SET blocked = FALSE WHERE agent_id = ?")
+            .bind(agent_id)
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -246,5 +317,131 @@ impl OpProjection {
             .await?;
         tx.commit().await?;
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub enum ProjectionError {
+    InvalidOp(String),
+    Any(anyhow::Error),
+}
+
+impl ProjectionError {
+    pub fn invalid(msg: impl Into<String>) -> Self {
+        Self::InvalidOp(msg.into())
+    }
+}
+
+impl From<anyhow::Error> for ProjectionError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Any(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+    use crate::stores::create_sqlite_pool;
+
+    fn agent(n: u8) -> AgentId {
+        AgentId::from(crate::ActorId::from(
+            p2panda::SigningKey::from_bytes(&[n; 32]).verifying_key(),
+        ))
+    }
+
+    fn device(n: u8) -> DeviceId {
+        DeviceId::from(p2panda::SigningKey::from_bytes(&[n; 32]).verifying_key())
+    }
+
+    async fn projection() -> OpProjection {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = create_sqlite_pool(dir.path().join("op_projection.db"))
+            .await
+            .unwrap();
+        // Keep the tempdir alive for the duration of the pool by leaking it; the
+        // OS reclaims it when the test process exits.
+        std::mem::forget(dir);
+        OpProjection::new(pool).await.unwrap()
+    }
+
+    /// Blocking an agent blocks every device that maps to it, and unblocking
+    /// restores every device.
+    #[tokio::test]
+    async fn test_block_applies_to_all_devices_of_agent() {
+        let store = projection().await;
+
+        let agent_a = agent(1);
+        let agent_b = agent(2);
+        let (d1, d2, d3) = (device(10), device(11), device(20));
+
+        // agent_a controls two devices, agent_b controls one.
+        store.save_agent_mapping(d1, agent_a).await.unwrap();
+        store.save_agent_mapping(d2, agent_a).await.unwrap();
+        store.save_agent_mapping(d3, agent_b).await.unwrap();
+
+        // Nothing blocked initially.
+        assert!(!store.is_author_blocked(&d1).await.unwrap());
+        assert!(!store.is_author_blocked(&d2).await.unwrap());
+        assert!(!store.is_author_blocked(&d3).await.unwrap());
+
+        store.block_agent(agent_a).await.unwrap();
+
+        // Both of agent_a's devices are blocked; agent_b's device is not.
+        assert!(store.is_author_blocked(&d1).await.unwrap());
+        assert!(store.is_author_blocked(&d2).await.unwrap());
+        assert!(!store.is_author_blocked(&d3).await.unwrap());
+
+        store.unblock_agent(agent_a).await.unwrap();
+
+        // Unblocking restores every device of the agent.
+        assert!(!store.is_author_blocked(&d1).await.unwrap());
+        assert!(!store.is_author_blocked(&d2).await.unwrap());
+        assert!(!store.is_author_blocked(&d3).await.unwrap());
+    }
+
+    /// A device with no contact entry is never considered blocked.
+    #[tokio::test]
+    async fn test_unknown_device_is_not_blocked() {
+        let store = projection().await;
+        assert!(!store.is_author_blocked(&device(99)).await.unwrap());
+    }
+
+    /// A device newly mapped to an already-blocked agent is immediately blocked,
+    /// since the block lives on the agent, not the device.
+    #[tokio::test]
+    async fn test_block_covers_devices_added_after_block() {
+        let store = projection().await;
+        let agent_a = agent(1);
+
+        store.save_agent_mapping(device(10), agent_a).await.unwrap();
+        store.block_agent(agent_a).await.unwrap();
+
+        // A second device shows up for the same agent after the block.
+        store.save_agent_mapping(device(11), agent_a).await.unwrap();
+
+        assert!(store.is_author_blocked(&device(11)).await.unwrap());
+    }
+
+    /// `all_contact_agent_ids` returns one entry per agent, even when an agent
+    /// has multiple devices, and includes blocked agents.
+    #[tokio::test]
+    async fn test_all_contact_agent_ids_dedups_by_agent() {
+        let store = projection().await;
+
+        let agent_a = agent(1);
+        let agent_b = agent(2);
+
+        store.save_agent_mapping(device(10), agent_a).await.unwrap();
+        store.save_agent_mapping(device(11), agent_a).await.unwrap();
+        store.save_agent_mapping(device(20), agent_b).await.unwrap();
+
+        store.block_agent(agent_b).await.unwrap();
+
+        assert_eq!(
+            store.all_contact_agent_ids().await.unwrap(),
+            maplit::btreeset![agent_a, agent_b]
+        );
     }
 }
