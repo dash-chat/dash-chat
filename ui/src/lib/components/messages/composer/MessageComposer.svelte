@@ -20,7 +20,7 @@
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiClose, mdiPencil, mdiPencilOutline } from '@mdi/js';
+	import { mdiClose, mdiPencilOutline } from '@mdi/js';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
@@ -29,6 +29,7 @@
 	import StagedMediaPage from '$lib/components/messages/composer/StagedMediaPage.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
+	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
@@ -237,7 +238,7 @@
 					onClick={() => (showMediaPanel = !showMediaPanel)}
 				/>
 			{:else}
-				<AttachMenuButton onFiles={stage} />
+				<EmojiButton onClick={() => (showEmojiPicker = true)} />
 			{/if}
 			<div
 				class="input-container flex min-h-[42px] min-w-0 flex-1 flex-col justify-center {theme ===
@@ -264,7 +265,9 @@
 						bind:value
 						{placeholder}
 						onSend={send}
-						onEmojiClick={() => (showEmojiPicker = true)}
+						onEmojiClick={isMobile
+							? () => (showEmojiPicker = true)
+							: undefined}
 					/>
 				</div>
 			</div>
@@ -284,6 +287,8 @@
 					onSend={send}
 					editing={editing !== null}
 				/>
+			{:else}
+				<AttachMenuButton onFiles={stage} />
 			{/if}
 		</div>
 	</div>
