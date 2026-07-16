@@ -48,7 +48,10 @@ pub async fn add_contact(
         );
     }
     let device_pubkey = qr.device_pubkey;
-    let node = app_node.get().await?;
+    let node = app_node
+        .get()
+        .await
+        .map_err(|e| dashchat_node::Error::AuthorOperation(e.to_string()))?;
     node.add_contact(qr).await?;
     Ok(device_pubkey)
 }
