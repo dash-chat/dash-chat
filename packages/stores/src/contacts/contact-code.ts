@@ -2,7 +2,7 @@ import { fromByteArray, toByteArray } from 'base64-js';
 // @ts-ignore
 import { decode, encode } from 'cbor-web';
 
-import { ContactCode } from '../types';
+import { ContactCode, ShareIntent } from '../types';
 
 function hexToBytes(hex: string): Uint8Array {
 	return Uint8Array.from(
@@ -14,34 +14,35 @@ function bytesToHex(bytes: Uint8Array): string {
 	return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// The hex string keys (device_pubkey, inbox_topic.topic) are converted to raw
-// bytes before CBOR encoding so each 32-byte key costs 32 bytes rather than a
-// 64-char text string, roughly halving the encoded contact code.
+function toPaddedBase64(base64: string): string {
+	const remainder = base64.length % 4;
+	if (remainder === 0) {
+		return base64;
+	}
+	if (remainder === 1) {
+		throw new Error('Invalid base64 contact code');
+	}
+	return base64.padEnd(base64.length + (4 - remainder), '=');
+}
+
+// The hex string keys are converted to raw bytes before CBOR encoding.
 export function encodeContactCode(contactCode: ContactCode): string {
-	const inboxTopic = contactCode.inbox_topic
-		? [
-				contactCode.inbox_topic.expires_at,
-				hexToBytes(contactCode.inbox_topic.topic),
-			]
-		: null;
 	const bin = encode([
 		hexToBytes(contactCode.device_pubkey),
-		inboxTopic,
+		hexToBytes(contactCode.inbox_nonce),
 		contactCode.share_intent,
 	]);
-	return fromByteArray(bin);
+	return fromByteArray(bin).replace(/=+$/, '');
 }
 
 export function decodeContactCode(contactCodeString: string): ContactCode {
-	const bin = toByteArray(contactCodeString);
-	const [device_pubkey, inbox_topic, share_intent] = decode(bin);
-	return {
-		device_pubkey: bytesToHex(device_pubkey),
-		inbox_topic: inbox_topic
-			? { expires_at: inbox_topic[0], topic: bytesToHex(inbox_topic[1]) }
-			: undefined,
-		share_intent,
-	};
+	const bin = toByteArray(toPaddedBase64(contactCodeString));
+	const [device_pubkey_bytes, inbox_nonce_bytes, share_intent] = decode(
+		bin,
+	) as [Uint8Array, Uint8Array, ShareIntent];
+	const device_pubkey = bytesToHex(device_pubkey_bytes);
+	const inbox_nonce = bytesToHex(inbox_nonce_bytes);
+	return { device_pubkey, share_intent, inbox_nonce };
 }
 
 export const compress = async (
