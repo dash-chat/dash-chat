@@ -5,7 +5,6 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 
 	interface Props {
-		/** mdi path rendered as the icon. Ignored when `children` is given. */
 		icon?: string;
 		onClick: () => void;
 		label: string;
@@ -15,7 +14,6 @@
 		/** Give the button a translucent surface background. */
 		filled?: boolean;
 		class?: string;
-		/** Custom icon content; wins over `icon`. */
 		children?: Snippet;
 	}
 
@@ -37,9 +35,6 @@
 	);
 </script>
 
-<!-- Default 40px size as an inline style: it beats Konsta's own button height
-     class by CSS precedence (not stylesheet order), while callers can still
-     shrink or grow it with !important utilities (e.g. class="!h-9 !w-9"). -->
 <Button
 	clear
 	inline
