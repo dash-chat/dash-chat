@@ -1,7 +1,9 @@
 <script lang="ts">
+	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { tick } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiTrashCanOutline, mdiPlusBoxOutline } from '@mdi/js';
+	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { type DraftMedia, MAX_STAGED_PHOTOS } from '$lib/utils/media';
 	import { objectUrl } from '$lib/actions/object-url';
 	import IconButton from '$lib/components/IconButton.svelte';
@@ -107,13 +109,14 @@
 							class="absolute inset-0 flex items-center justify-center bg-black/45"
 						>
 							<IconButton
-								icon={mdiTrashCanOutline}
 								onClick={() => removePhoto(i)}
 								label={m.removeAttachment()}
 								testid="staged-media-remove-{i}"
-								iconClass="text-xl"
 								class="!text-white opacity-100"
-							/>
+							>
+								<wa-icon class="text-xl" src={wrapPathInSvg(mdiTrashCanOutline)}
+								></wa-icon>
+							</IconButton>
 						</div>
 					{/if}
 				</div>
@@ -126,7 +129,7 @@
 					onClick={onAddMore}
 					label={m.addMoreAttachments()}
 					testid="staged-media-add-more"
-					class="!h-10 !w-10 shrink-0 !bg-[#3a3a3c] !opacity-100 hover:!bg-[#4a4a4c]"
+					class="shrink-0 !bg-[#3a3a3c] !opacity-100 hover:!bg-[#4a4a4c]"
 				/>
 			</div>
 		{/if}

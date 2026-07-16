@@ -1,7 +1,9 @@
 <script lang="ts">
+	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { QUICK_EMOJIS, condenseReactions } from '$lib/utils/emojis';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiDotsHorizontal } from '@mdi/js';
+	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { Popover, Sheet, Block, Chip } from 'konsta/svelte';
 	import { getContext } from 'svelte';
 	import type { Message, DeviceId, MessagesStore } from 'dash-chat-stores';
@@ -88,12 +90,13 @@
 			</button>
 		{/each}
 		<IconButton
-			icon={mdiDotsHorizontal}
 			onClick={() => (expanded = true)}
 			label={m.moreReactions()}
 			testid="quick-reaction-more"
-			iconClass="text-xl"
-		/>
+			class="!h-9 !w-9"
+		>
+			<wa-icon class="text-xl" src={wrapPathInSvg(mdiDotsHorizontal)}></wa-icon>
+		</IconButton>
 	</div>
 </Popover>
 
