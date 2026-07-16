@@ -55,7 +55,6 @@ pub fn derive_inbox_topic(device_pubkey: &DeviceId, nonce: &[u8; 8]) -> [u8; 32]
 
 /// The content for a QR code or deep link.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-// #[serde(into = "String", try_from = "String")]
 pub struct QrCode {
     /// Pubkey of this node: allows adding this node to groups.
     pub device_pubkey: DeviceId,
