@@ -445,33 +445,23 @@ impl Node {
 
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
-    pub async fn new_qr_code(
-        &self,
-        share_intent: ShareIntent,
-        inbox: bool,
-    ) -> Result<QrCode, crate::Error> {
-        let inbox_topic = if inbox {
-            let inbox_topic = InboxTopic {
-                topic: Topic::inbox()
-                    .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
-                expires_at: Utc::now() + self.config.contact_code_expiry,
-            };
-            self.initialize_topic(*inbox_topic.topic)
-                .await
-                .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
-            self.local_store
-                .add_active_inbox_topic(inbox_topic.clone())
-                .await
-                .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
-            Some(inbox_topic)
-        } else {
-            None
-        };
+    pub async fn new_qr_code(&self, share_intent: ShareIntent) -> Result<QrCode, crate::Error> {
+        let (inbox_topic, nonce) = InboxTopic::new_random(
+            &self.device_id(),
+            Utc::now() + self.config.contact_code_expiry,
+        );
+        self.initialize_topic(*inbox_topic.topic)
+            .await
+            .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
+        self.local_store
+            .add_active_inbox_topic(inbox_topic.clone())
+            .await
+            .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
 
         Ok(QrCode {
             device_pubkey: self.device_id(),
-            inbox_topic,
             share_intent,
+            inbox_nonce: nonce,
         })
     }
 
@@ -1349,7 +1339,6 @@ impl Node {
     pub async fn add_contact(&self, contact: QrCode) -> Result<(), AddContactError> {
         tracing::debug!(
             device_pub_key = ?contact.device_pubkey.aliased(),
-            inbox_topic = ?contact.inbox_topic,
             "adding contact",
         );
 
@@ -1362,11 +1351,11 @@ impl Node {
 
         // SPACES: Register the member in the spaces manager
 
-        let Some(inbox_topic) = contact.inbox_topic.clone() else {
-            return Err(AddContactError::CreateQrCode(
-                "contact code has no inbox to send a request to".to_string(),
-            ));
-        };
+        let inbox_topic = InboxTopic::from_nonce(
+            &contact.device_pubkey,
+            &contact.inbox_nonce,
+            Utc::now() + self.config.contact_code_expiry,
+        );
 
         // TODO: use all of this commented out stuff when spaces are possible again
         // // XXX: there should be a better way to wait for the device group to be created,
@@ -1434,12 +1423,6 @@ impl Node {
             .add_reply_inbox_topic(reply_inbox.clone(), contact.device_pubkey)
             .await
             .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
-
-        let code = self
-            .new_qr_code(ShareIntent::AddContact, false)
-            .await
-            .map_err(|e| AddContactError::CreateQrCode(e.to_string()))?;
-
         let Some(profile) = self
             .my_profile()
             .await
@@ -1451,7 +1434,6 @@ impl Node {
         self.publish(
             inbox_topic.topic,
             Payload::Inbox(InboxPayload::ContactRequest {
-                code,
                 profile,
                 agent_id: self.agent_id(),
                 reply_topic: reply_inbox.topic.clone(),

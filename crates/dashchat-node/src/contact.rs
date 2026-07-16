@@ -1,3 +1,4 @@
+use aliased::Aliasing;
 use chrono::{DateTime, Utc};
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
@@ -6,34 +7,59 @@ use std::str::FromStr;
 
 use crate::{DeviceId, Topic, topic::kind};
 
+/// An 8-byte nonce serialized as a hex string at the JSON/Tauri boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct InboxNonce(#[serde(with = "hex::serde")] pub [u8; 8]);
+
+impl<'de> Deserialize<'de> for InboxNonce {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Vis;
+        impl serde::de::Visitor<'_> for Vis {
+            type Value = InboxNonce;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a 16-character hex string")
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                let bytes = hex::decode(v).map_err(serde::de::Error::custom)?;
+                let arr: [u8; 8] = bytes.try_into().map_err(|_| {
+                    serde::de::Error::custom("expected exactly 8 bytes (16 hex chars)")
+                })?;
+                Ok(InboxNonce(arr))
+            }
+        }
+        deserializer.deserialize_str(Vis)
+    }
+}
+
+impl InboxNonce {
+    pub fn random() -> Self {
+        InboxNonce(rand::random())
+    }
+
+    pub fn as_bytes(&self) -> [u8; 8] {
+        self.0
+    }
+}
+
+/// Derive an inbox topic's 32-byte ID from the code owner's device pubkey and a short nonce.
+pub fn derive_inbox_topic(device_pubkey: &DeviceId, nonce: &[u8; 8]) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(device_pubkey.as_bytes());
+    hasher.update(nonce);
+    *hasher.finalize().as_bytes()
+}
+
 /// The content for a QR code or deep link.
-///
-/// These codes are used to introduce two nodes for the purpose of either establishing
-/// mutual friendship, or linking these two devices together under the same identity.
-///
-/// The flow has some similarities in either case. In both cases, an "inbox" is established
-/// for the lifetime of the QR code, so that the QR code recipient can send its own
-/// data back to the sender, without needing to exchange QR codes in both directions.
-///
-/// When linking a device, the QR code sender adds the recipient to the device group.
-/// Whenever a person joins a chat group, they join with their device group, so that all of
-/// their devices can participate in the chat. The ActorId of the group is the unified
-/// identity which that person uses to join chat groups.
-///
-/// When adding a contact, no groups are joined, it's only for the purpose of exchanging
-/// pubkeys and key bundles, so that chat groups can be joined in the future.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 // #[serde(into = "String", try_from = "String")]
 pub struct QrCode {
     /// Pubkey of this node: allows adding this node to groups.
     pub device_pubkey: DeviceId,
-    /// Topic for receiving messages from this node during the lifetime of the QR code.
-    /// The initiator will specify an InboxTopic, and the recipient will send back a QR
-    /// code without an associated inbox, because after this exchange the two nodes
-    /// can communicate directly.
-    pub inbox_topic: Option<InboxTopic>,
     /// The intent of the QR code: whether to add this node as a contact or a device.
     pub share_intent: ShareIntent,
+    /// 8-byte nonce used with `derive_inbox_topic` to reconstruct the inbox topic.
+    pub inbox_nonce: InboxNonce,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
@@ -50,6 +76,30 @@ pub struct InboxTopic {
     #[serde(with = "expires_at_minutes")]
     pub expires_at: DateTime<Utc>,
     pub topic: Topic<kind::Inbox>,
+}
+
+impl InboxTopic {
+    pub fn new_random(device_pubkey: &DeviceId, expires_at: DateTime<Utc>) -> (Self, InboxNonce) {
+        let nonce = InboxNonce::random();
+        (Self::from_nonce(device_pubkey, &nonce, expires_at), nonce)
+    }
+
+    pub fn from_nonce(
+        device_pubkey: &DeviceId,
+        nonce: &InboxNonce,
+        expires_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            topic: Topic::new(derive_inbox_topic(device_pubkey, &nonce.as_bytes())).alias_named(
+                &format!(
+                    "inbox({:?},nonce={})",
+                    device_pubkey.aliased(),
+                    hex::encode(nonce.as_bytes())
+                ),
+            ),
+            expires_at,
+        }
+    }
 }
 
 /// Serialize a `DateTime<Utc>` as a `u64` count of whole minutes since the Unix epoch.
@@ -73,8 +123,12 @@ mod expires_at_minutes {
 
 impl std::fmt::Display for QrCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let bytes = encode_cbor(&(&self.device_pubkey, &self.inbox_topic, &self.share_intent))
-            .map_err(|_| std::fmt::Error)?;
+        let bytes = encode_cbor(&(
+            &self.device_pubkey,
+            &self.inbox_nonce.as_bytes(),
+            &self.share_intent,
+        ))
+        .map_err(|_| std::fmt::Error)?;
         write!(f, "{}", hex::encode(bytes))
     }
 }
@@ -83,11 +137,12 @@ impl FromStr for QrCode {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = hex::decode(s)?;
-        let (device_pubkey, inbox_topic, share_intent) = decode_cbor(bytes.as_slice())?;
+        let (device_pubkey, inbox_nonce_raw, share_intent): (DeviceId, [u8; 8], ShareIntent) =
+            decode_cbor(bytes.as_slice())?;
         Ok(QrCode {
             device_pubkey,
-            inbox_topic,
             share_intent,
+            inbox_nonce: InboxNonce(inbox_nonce_raw),
         })
     }
 }
@@ -101,7 +156,7 @@ impl From<QrCode> for String {
 impl TryFrom<String> for QrCode {
     type Error = anyhow::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        Ok(QrCode::from_str(&value).unwrap())
+        Ok(QrCode::from_str(&value)?)
     }
 }
 
@@ -115,14 +170,12 @@ mod tests {
     #[test]
     fn test_contact_roundtrip() {
         let pubkey = VerifyingKey::from_bytes(&[11; 32]).unwrap();
+        let device_pubkey = DeviceId::from(pubkey);
+        let nonce: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
         let contact = QrCode {
-            device_pubkey: DeviceId::from(pubkey),
-            inbox_topic: Some(InboxTopic {
-                topic: Topic::inbox(),
-                // Minute-aligned so it survives the (minutes-since-epoch) serialization.
-                expires_at: DateTime::from_timestamp(1_700_000_000 / 60 * 60, 0).unwrap(),
-            }),
+            device_pubkey,
             share_intent: ShareIntent::AddDevice,
+            inbox_nonce: InboxNonce(nonce),
         };
         let encoded = contact.to_string();
         let decoded = QrCode::from_str(&encoded).unwrap();

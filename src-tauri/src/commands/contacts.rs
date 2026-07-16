@@ -8,7 +8,7 @@ use crate::error::Error;
 #[tauri::command]
 pub async fn create_contact_code(app_node: State<'_, AppNode>) -> Result<QrCode, Error> {
     let node = app_node.get().await?;
-    Ok(node.new_qr_code(ShareIntent::AddContact, true).await?)
+    Ok(node.new_qr_code(ShareIntent::AddContact).await?)
 }
 
 #[tauri::command]

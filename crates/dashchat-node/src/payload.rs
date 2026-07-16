@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::chat::ChatId;
-use crate::contact::QrCode;
 use crate::topic::{Topic, kind};
 use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, DeviceId};
 
@@ -38,7 +37,6 @@ pub enum InboxPayload {
     /// `agent_id` is the sender's agent id; the recipient records it against the
     /// op author (device_pubkey)
     ContactRequest {
-        code: QrCode,
         profile: Profile,
         agent_id: AgentId,
         reply_topic: Topic<kind::Inbox>,
