@@ -37,13 +37,14 @@
 		if (opened) spotlighted = true;
 	});
 
-	// Spotlight the target: raise it above the dimming backdrop (z-40), while
-	// the anchored popovers sit above it (z-50). Matches Signal's
-	// focused-message lift.
+	// The whole spotlight scene lives between the page chrome (z <= 30) and
+	// Konsta's modal layer (z-40): backdrop 32, lifted target 34, anchored
+	// popovers 36. Sheets/dialogs (40) and toasts (50) always cover it.
+	// Matches Signal's focused-message lift.
 	$effect(() => {
 		if (!spotlighted || !target) return;
 		target.style.position = 'relative';
-		target.style.zIndex = '45';
+		target.style.zIndex = '34';
 		return () => {
 			target.style.position = '';
 			target.style.zIndex = '';
@@ -64,7 +65,7 @@
 
 {#if opened}
 	<button
-		class="fixed inset-0 z-40 h-full w-full cursor-default bg-black/50"
+		class="fixed inset-0 z-[32] h-full w-full cursor-default bg-black/50"
 		aria-label={m.close()}
 		transition:fade={{ duration: 200 }}
 		onclick={onClose}
@@ -93,7 +94,7 @@
 	opened={opened && !contentHidden && aboveAnchor !== undefined}
 	target={aboveAnchor}
 	backdrop={false}
-	class="!z-50 !w-auto !rounded-full"
+	class="!z-[36] !w-auto !rounded-full"
 >
 	{@render above()}
 </Popover>
@@ -102,7 +103,7 @@
 	opened={opened && !contentHidden && belowAnchor !== undefined}
 	target={belowAnchor}
 	backdrop={false}
-	class="!z-50 !w-auto !min-w-44 [&>div]:!rounded-2xl"
+	class="!z-[36] !w-auto !min-w-44 [&>div]:!rounded-2xl"
 >
 	{@render below()}
 </Popover>
