@@ -59,7 +59,6 @@
 		messagePosition,
 		canEditMessage,
 	} from '$lib/components/messages/message-helpers';
-	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	let agentId = page.params.agentId!;
 
@@ -130,7 +129,7 @@
 		}
 	}
 
-	const editing = new MessageEditing(store.messages);
+	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 	let historyMessage: Message | undefined = $state(undefined);
 	let showHistory = $state(false);
 	let showSecurityTips = $state(false);
@@ -576,7 +575,8 @@
 																			message,
 																			myDeviceId,
 																		)}
-																		onEdit={() => editing.start(message)}
+																		onEdit={() =>
+																			composer?.editMessage(message)}
 																	/>
 																{/await}
 															</div>
@@ -808,11 +808,8 @@
 						</div>
 					{:else}
 						<MessageComposer
+							bind:this={composer}
 							store={store.messages}
-							bind:value={editing.value}
-							editing={editing.editing}
-							onEdit={editing.submit}
-							onCancelEdit={() => editing.cancel()}
 							destinationName={profile ? fullName(profile) : undefined}
 							onSent={onMessageSent}
 						/>

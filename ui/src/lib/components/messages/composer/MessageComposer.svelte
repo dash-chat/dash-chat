@@ -42,13 +42,6 @@
 		destinationName?: string;
 		/** Called after a message is successfully sent (e.g. to scroll the chat). */
 		onSent?: (messageHash: Hash) => void;
-		/** When set, the composer edits this message's text instead of sending a
-		 * new message. Media attachments are disabled while editing. */
-		editing?: Message | null;
-		/** Submit an edit of `message` with the new `text`. */
-		onEdit?: (message: Message, text: string) => Promise<void>;
-		/** Called when the user cancels an in-progress edit. */
-		onCancelEdit?: () => void;
 	}
 
 	let {
@@ -57,9 +50,6 @@
 		store,
 		destinationName,
 		onSent,
-		editing = null,
-		onEdit,
-		onCancelEdit,
 	}: Props = $props();
 
 	const theme = $derived(useTheme());
@@ -72,17 +62,31 @@
 
 	let showMediaPanel = $state(false);
 
+	let editing = $state<Message | null>(null);
+
+	/** Switch the composer to editing `message`'s text instead of sending a
+	 * new message. Media attachments are disabled while editing. */
+	export function editMessage(message: Message) {
+		editing = message;
+		value = message.content.message;
+	}
+
+	function cancelEdit() {
+		editing = null;
+		value = '';
+	}
+
 	async function submitEdit() {
 		const target = editing;
-		if (!target || !onEdit) return;
+		if (!target) return;
 		const text = value.trim();
 		if (!text || text === target.content.message) {
-			onCancelEdit?.();
+			cancelEdit();
 			return;
 		}
 		try {
-			await onEdit(target, text);
-			onCancelEdit?.();
+			await store.editMessage(target, text);
+			cancelEdit();
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to edit message', e);
@@ -192,7 +196,7 @@
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
 
-		<div class="m-2 row gap-2" style="align-items: center;">
+		<div class="m-2 row gap-2" style="align-items: flex-end;">
 			{#if editing}
 				<!-- Media cannot be edited: the attach button gives way to the cancel
 				     button on mobile; on desktop cancel sits after the input. -->
@@ -200,7 +204,7 @@
 					<IconButton
 						icon={mdiClose}
 						circle
-						onClick={() => onCancelEdit?.()}
+						onClick={cancelEdit}
 						label={m.cancel()}
 						testid="composer-cancel-edit"
 					/>
@@ -246,7 +250,7 @@
 				<IconButton
 					icon={mdiClose}
 					circle
-					onClick={() => onCancelEdit?.()}
+					onClick={cancelEdit}
 					label={m.cancel()}
 					testid="composer-cancel-edit"
 				/>

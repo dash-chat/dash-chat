@@ -32,7 +32,6 @@
 		messagePosition,
 		canEditMessage,
 	} from '$lib/components/messages/message-helpers';
-	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
@@ -64,7 +63,7 @@
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
-	const editing = new MessageEditing(store.messages);
+	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 	let historyMessage: Message | undefined = $state(undefined);
 	let showHistory = $state(false);
 
@@ -267,7 +266,7 @@
 														searchQuery=""
 														onShowHistory={() => openHistory(message)}
 														canEdit={canEditMessage(message, myDeviceId)}
-														onEdit={() => editing.start(message)}
+														onEdit={() => composer?.editMessage(message)}
 													/>
 												</div>
 											{:else}
@@ -325,11 +324,8 @@
 		{#await Promise.all([$me, $info]) then [me, info]}
 			{#if me.member}
 				<MessageComposer
+					bind:this={composer}
 					store={store.messages}
-					bind:value={editing.value}
-					editing={editing.editing}
-					onEdit={editing.submit}
-					onCancelEdit={() => editing.cancel()}
 					destinationName={info.name}
 					onSent={onMessageSent}
 				/>
