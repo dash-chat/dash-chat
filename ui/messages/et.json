@@ -318,5 +318,6 @@
     "errorAttachmentTooLarge": "Manus on liiga mahukas. Sõnumikohane mahu ülempiir on {{max}}.",
     "errorTooManyAttachments": "Siia sõnumisse ei saa rohkem manuseid lisada.",
     "fileDownloadFailed": "Faili allalaadimine ei õnnestunud.",
-    "contactRequestSent": "Kontaktipäring on saadetud."
+    "contactRequestSent": "Kontaktipäring on saadetud.",
+    "errorAddContactDeviceLinkingNotSupported": "See kood on mõeldud seadme sidumiseks, mitte kontakti lisamiseks."
 }
