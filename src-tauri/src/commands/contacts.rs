@@ -1,14 +1,14 @@
 use dashchat_node::{topic::kind::Inbox, AgentId, DeviceId, QrCode, ShareIntent, Topic};
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, str::FromStr};
 use tauri::State;
 
 use crate::app_node::AppNode;
 use crate::error::Error;
 
 #[tauri::command]
-pub async fn create_contact_code(app_node: State<'_, AppNode>) -> Result<QrCode, Error> {
+pub async fn create_contact_code(app_node: State<'_, AppNode>) -> Result<String, Error> {
     let node = app_node.get().await?;
-    Ok(node.new_qr_code(ShareIntent::AddContact).await?)
+    Ok(node.new_qr_code(ShareIntent::AddContact).await?.to_string())
 }
 
 #[tauri::command]
@@ -36,13 +36,19 @@ pub async fn agent_for_device(
 }
 
 #[tauri::command]
-pub async fn add_contact(contact_code: QrCode, app_node: State<'_, AppNode>) -> Result<(), Error> {
-    if contact_code.share_intent == ShareIntent::AddDevice {
+pub async fn add_contact(
+    contact_code: String,
+    app_node: State<'_, AppNode>,
+) -> Result<DeviceId, Error> {
+    let qr = QrCode::from_str(&contact_code)
+        .map_err(|e| dashchat_node::AddContactError::InvalidContactCode(e.to_string()))?;
+    if qr.share_intent == ShareIntent::AddDevice {
         return Err(Error::AddDeviceNotSupported);
     }
+    let device_pubkey = qr.device_pubkey;
     let node = app_node.get().await?;
-    node.add_contact(contact_code).await?;
-    Ok(())
+    node.add_contact(qr).await?;
+    Ok(device_pubkey)
 }
 
 #[tauri::command]
