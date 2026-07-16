@@ -3,7 +3,7 @@
 	import { Sheet, Block, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
-	import { isMobile } from '$lib/utils/environment';
+	import { isIos, isMobile } from '$lib/utils/environment';
 	import { keyboard } from '$lib/utils/keyboard.svelte';
 	import {
 		type DraftMedia,
@@ -24,7 +24,8 @@
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
 	import StagedMediaPage from '$lib/components/messages/composer/StagedMediaPage.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
-	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
+	import StandaloneAttachButton from '$lib/components/messages/composer/StandaloneAttachButton.svelte';
+	import InlineAttachButton from '$lib/components/messages/composer/InlineAttachButton.svelte';
 	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
@@ -60,7 +61,15 @@
 	let showMediaPanel = $state(false);
 
 	function toggleMediaPanel() {
-		showMediaPanel = !showMediaPanel;
+		if (!showMediaPanel) {
+			showMediaPanel = true;
+			return;
+		}
+		// Don't close the panel here: focusing the input makes renderBelowKeyboard
+		// yield the panel's slot to the rising keyboard in lockstep (keeping the
+		// input bar pinned) and clear `showMediaPanel` once the swap completes —
+		// including when no keyboard rises (its yield backstop).
+		messageInput?.focus();
 	}
 
 	/** Returns whether the message was sent (so callers can keep the draft on failure). */
@@ -144,6 +153,10 @@
 
 <MediaDropOverlay onFiles={stage} />
 
+{#snippet emojiButton()}
+	<EmojiButton onClick={() => (showEmojiPicker = true)} />
+{/snippet}
+
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<!-- Safe-area padding only when the bar is the bottom-most surface (nothing
 	     below it): no panel and no keyboard. Keying it off the panel alone bumps
@@ -161,8 +174,7 @@
 		<div class="m-2 row gap-2" style="align-items: center;">
 			{#if isMobile}
 				{#if theme === 'ios'}
-					<AttachButton
-						class="!h-[42px] !w-[42px] !bg-ios-light-glass !opacity-100 shadow-ios-light-glass backdrop-blur-lg dark:!bg-ios-dark-glass dark:shadow-ios-dark-glass"
+					<StandaloneAttachButton
 						expanded={showMediaPanel}
 						onClick={toggleMediaPanel}
 					/>
@@ -170,36 +182,29 @@
 			{:else}
 				<EmojiButton onClick={() => (showEmojiPicker = true)} />
 			{/if}
-			<div
-				class="input-container flex min-h-[42px] min-w-0 flex-1 items-center ps-2 {theme ===
-				'ios'
-					? 'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-					: 'bg-white dark:bg-gray-800'}"
+			<MessageInput
+				bind:this={messageInput}
+				bind:value
+				{placeholder}
+				onSend={send}
 				onpaste={onPaste}
+				before={isMobile && !isIos ? emojiButton : undefined}
 			>
-				<MessageInput
-					bind:this={messageInput}
-					bind:value
-					{placeholder}
-					onSend={send}
-					onEmojiClick={isMobile ? () => (showEmojiPicker = true) : undefined}
-				/>
-				{#if isMobile && theme !== 'ios' && hasContent}
-					<AttachButton
-						class="me-1"
-						expanded={showMediaPanel}
-						onClick={toggleMediaPanel}
-					/>
-				{/if}
-			</div>
+				{#snippet after()}
+					{#if isMobile && theme === 'material' && hasContent}
+						<InlineAttachButton
+							expanded={showMediaPanel}
+							onClick={toggleMediaPanel}
+						/>
+					{/if}
+				{/snippet}
+			</MessageInput>
 
 			{#if isMobile}
 				{#if hasContent}
 					<SendButton onSend={send} />
 				{:else if theme !== 'ios'}
-					<AttachButton
-						class="!h-[42px] !w-[42px] !bg-brand-primary !opacity-100"
-						iconClass="text-2xl text-white"
+					<StandaloneAttachButton
 						expanded={showMediaPanel}
 						onClick={toggleMediaPanel}
 					/>
@@ -249,10 +254,3 @@
 		></EmojiPickerWrapper>
 	</Block>
 </Sheet>
-
-<style>
-	.input-container {
-		border: 1px solid var(--k-hairline-color);
-		border-radius: 22px;
-	}
-</style>

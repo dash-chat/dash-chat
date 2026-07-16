@@ -7,7 +7,7 @@
 	import { mdiImage, mdiFile } from '@mdi/js';
 	import { PHOTO_ACCEPT } from '$lib/utils/media';
 	import { pickFiles } from '$lib/utils/files';
-	import AttachButton from './AttachButton.svelte';
+	import StandaloneAttachButton from './StandaloneAttachButton.svelte';
 
 	interface Props {
 		onFiles: (files: FileList) => void;
@@ -38,7 +38,7 @@
 	onwa-hide={() => (open = false)}
 >
 	<div slot="trigger" class="inline-flex">
-		<AttachButton expanded={open} />
+		<StandaloneAttachButton expanded={open} />
 	</div>
 	<wa-dropdown-item value="photos" data-testid="message-input-attach-photos">
 		<wa-icon slot="icon" src={wrapPathInSvg(mdiImage)}></wa-icon>

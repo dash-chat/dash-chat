@@ -5,12 +5,13 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiArrowRight } from '@mdi/js';
 	import { type DraftMedia } from '$lib/utils/media';
-	import { isAndroid } from '$lib/utils/environment';
+	import { isAndroid, isIos } from '$lib/utils/environment';
 	import { darkOverlay } from '$lib/actions/dark-overlay';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import StagedPhotosCarousel from '$lib/components/messages/composer/StagedPhotosCarousel.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
+	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 
@@ -50,6 +51,10 @@
 </script>
 
 <svelte:window onkeydown={onKeydown} />
+
+{#snippet emojiButton()}
+	<EmojiButton onClick={() => (showEmojiPicker = true)} />
+{/snippet}
 
 <div
 	class="fixed inset-0 z-30 flex flex-col bg-black"
@@ -103,16 +108,12 @@
 
 	<div class="staged-footer shrink-0 pb-safe">
 		<div class="row gap-3 px-4 pt-3 pb-3" style="align-items: center;">
-			<div
-				class="input-container flex min-h-[42px] min-w-0 flex-1 items-center ps-2"
-			>
-				<MessageInput
-					bind:value
-					placeholder={m.typeMessage()}
-					{onSend}
-					onEmojiClick={() => (showEmojiPicker = true)}
-				/>
-			</div>
+			<MessageInput
+				bind:value
+				placeholder={m.typeMessage()}
+				{onSend}
+				before={isIos ? undefined : emojiButton}
+			/>
 			<SendButton {onSend} />
 		</div>
 	</div>
@@ -146,15 +147,5 @@
 	}
 	:global([dir='rtl']) .dir-arrow {
 		transform: scaleX(-1);
-	}
-
-	.input-container {
-		border: 1px solid rgba(255, 255, 255, 0.16);
-		border-radius: 22px;
-		background: rgba(255, 255, 255, 0.1);
-		transition: border-color 0.15s ease;
-	}
-	.input-container:focus-within {
-		border-color: var(--color-brand-primary);
 	}
 </style>
