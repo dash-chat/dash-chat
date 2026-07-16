@@ -25,6 +25,7 @@
 	import StagedMediaPage from '$lib/components/messages/composer/StagedMediaPage.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
+	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
@@ -161,7 +162,7 @@
 					onClick={() => (showMediaPanel = !showMediaPanel)}
 				/>
 			{:else}
-				<AttachMenuButton onFiles={stage} />
+				<EmojiButton onClick={() => (showEmojiPicker = true)} />
 			{/if}
 			<div
 				class="input-container flex min-h-[42px] min-w-0 flex-1 items-center ps-2 {theme ===
@@ -175,12 +176,14 @@
 					bind:value
 					{placeholder}
 					onSend={send}
-					onEmojiClick={() => (showEmojiPicker = true)}
+					onEmojiClick={isMobile ? () => (showEmojiPicker = true) : undefined}
 				/>
 			</div>
 
 			{#if isMobile}
 				<SendButton disabled={!hasContent} onSend={send} />
+			{:else}
+				<AttachMenuButton onFiles={stage} />
 			{/if}
 		</div>
 	</div>
