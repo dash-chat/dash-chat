@@ -7,8 +7,8 @@ export function canEditMessage(
 	myDeviceId: DeviceId,
 ): boolean {
 	if (message.author !== myDeviceId) return false;
-	const rootTimestamp = message.history?.[0]?.timestamp ?? message.timestamp;
-	return Date.now() - rootTimestamp <= EDIT_WINDOW_MS;
+	// `timestamp` is the original message op's; edits never change it.
+	return Date.now() - message.timestamp <= EDIT_WINDOW_MS;
 }
 
 export function messagePosition(

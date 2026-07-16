@@ -1,5 +1,9 @@
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
-import { resumeMailbox, suspendMailbox } from '../setup/mailbox-control';
+import {
+	isRemoteMailbox,
+	resumeMailbox,
+	suspendMailbox,
+} from '../setup/mailbox-control';
 import { type Agent, setupAgent } from '../setup/setup-agents';
 import { tid } from '../helpers/selectors';
 
@@ -26,7 +30,10 @@ describe('Waiting-for-profile placeholder', () => {
 	let contactCode1: string;
 	let mailboxSuspended = false;
 
-	before(async () => {
+	before(async function () {
+		// The placeholder window only exists while the mailbox is suspended,
+		// which is impossible against a remote environment mailbox.
+		if (isRemoteMailbox()) this.skip();
 		[agent1, agent2] = await Promise.all([
 			setupAgent('agent1'),
 			setupAgent('agent2'),

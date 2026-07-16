@@ -96,7 +96,9 @@
 			{message}
 			{searchQuery}
 			senderName={m.you()}
-			editedIndicator={message.editedAt ? editedIndicator : undefined}
+			editedIndicator={message.editHistory.length > 0
+				? editedIndicator
+				: undefined}
 			metadata={isLast ? metadata : undefined}
 		/>
 	</Card>
