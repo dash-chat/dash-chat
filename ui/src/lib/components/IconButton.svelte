@@ -1,18 +1,22 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
+	import type { Snippet } from 'svelte';
 	import { Button } from 'konsta/svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 
 	interface Props {
-		icon: string;
+		/** mdi path rendered as the icon. Ignored when `children` is given. */
+		icon?: string;
 		onClick: () => void;
 		label: string;
 		testid?: string;
+		/** For toggle buttons: announced as aria-expanded. Omit for plain buttons. */
 		expanded?: boolean;
-		/** Render as a filled circular button (fixed size + translucent surface). */
-		circle?: boolean;
-		iconClass?: string;
+		/** Give the button a translucent surface background. */
+		filled?: boolean;
 		class?: string;
+		/** Custom icon content; wins over `icon`. */
+		children?: Snippet;
 	}
 
 	let {
@@ -21,18 +25,21 @@
 		label,
 		testid,
 		expanded,
-		circle = false,
-		iconClass = 'text-2xl',
+		filled = false,
 		class: className = '',
+		children,
 	}: Props = $props();
 
-	const circleClass = $derived(
-		circle
-			? '!h-10 !w-10 !bg-black/10 hover:!bg-black/15 dark:!bg-white/10 dark:hover:!bg-white/20'
+	const filledClass = $derived(
+		filled
+			? '!bg-black/10 hover:!bg-black/15 dark:!bg-white/10 dark:hover:!bg-white/20'
 			: '',
 	);
 </script>
 
+<!-- Default 40px size as an inline style: it beats Konsta's own button height
+     class by CSS precedence (not stylesheet order), while callers can still
+     shrink or grow it with !important utilities (e.g. class="!h-9 !w-9"). -->
 <Button
 	clear
 	inline
@@ -40,7 +47,12 @@
 	aria-label={label}
 	aria-expanded={expanded}
 	data-testid={testid}
-	class="!rounded-full !p-0 !text-inherit opacity-60 transition hover:opacity-90 {circleClass} {className}"
+	style="width: 2.5rem; height: 2.5rem"
+	class="!rounded-full !p-0 !text-inherit opacity-60 transition hover:bg-black/10 dark:hover:bg-white/10 {filledClass} {className}"
 >
-	<wa-icon class={iconClass} src={wrapPathInSvg(icon)}></wa-icon>
+	{#if children}
+		{@render children()}
+	{:else if icon}
+		<wa-icon class="text-2xl" src={wrapPathInSvg(icon)}></wa-icon>
+	{/if}
 </Button>

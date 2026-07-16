@@ -3,7 +3,7 @@
 	import { Sheet, Block, Dialog, DialogButton, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
-	import { isMobile } from '$lib/utils/environment';
+	import { isIos, isMobile } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { keyboard } from '$lib/utils/keyboard.svelte';
 	import {
@@ -28,7 +28,8 @@
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
 	import StagedMediaPage from '$lib/components/messages/composer/StagedMediaPage.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
-	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
+	import StandaloneAttachButton from '$lib/components/messages/composer/StandaloneAttachButton.svelte';
+	import InlineAttachButton from '$lib/components/messages/composer/InlineAttachButton.svelte';
 	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
@@ -112,6 +113,18 @@
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to edit message', e);
 		}
+	}
+
+	function toggleMediaPanel() {
+		if (!showMediaPanel) {
+			showMediaPanel = true;
+			return;
+		}
+		// Don't close the panel here: focusing the input makes renderBelowKeyboard
+		// yield the panel's slot to the rising keyboard in lockstep (keeping the
+		// input bar pinned) and clear `showMediaPanel` once the swap completes —
+		// including when no keyboard rises (its yield backstop).
+		messageInput?.focus();
 	}
 
 	/** Returns whether the message was sent (so callers can keep the draft on failure). */
@@ -203,6 +216,21 @@
 
 <MediaDropOverlay onFiles={stage} />
 
+{#snippet emojiButton()}
+	<EmojiButton onClick={() => (showEmojiPicker = true)} />
+{/snippet}
+
+{#snippet editingBanner()}
+	<div
+		class="flex items-center gap-1.5 ps-3 pt-2 text-sm font-semibold"
+		data-testid="composer-editing-banner"
+	>
+		<wa-icon src={wrapPathInSvg(mdiPencilOutline)} style="font-size: 0.9rem"
+		></wa-icon>
+		{m.editingMessage()}
+	</div>
+{/snippet}
+
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<!-- Safe-area padding only when the bar is the bottom-most surface (nothing
 	     below it): no panel and no keyboard. Keying it off the panel alone bumps
@@ -217,74 +245,66 @@
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
 
-		<div class="m-2 row gap-2" style="align-items: flex-end;">
+		<div class="m-2 row gap-2" style="align-items: center;">
+			<!-- While editing, the cancel button sits before the input in the
+			     narrow layout and after it on wide screens; the attach buttons
+			     hide because media cannot be edited. -->
 			{#if editing}
-				<!-- Media cannot be edited: the attach button gives way to the cancel
-				     button in the narrow layout; on wide screens cancel sits after
-				     the input. -->
 				{#if !isWideScreen.value}
 					<IconButton
 						icon={mdiClose}
-						circle
 						onClick={cancelEdit}
 						label={m.cancel()}
 						testid="composer-cancel-edit"
 					/>
 				{/if}
-			{:else if isMobile}
-				<AttachButton
-					class="h-10 w-10"
+			{:else if isMobile && theme === 'ios'}
+				<StandaloneAttachButton
 					expanded={showMediaPanel}
-					onClick={() => (showMediaPanel = !showMediaPanel)}
+					onClick={toggleMediaPanel}
 				/>
-			{:else}
+			{/if}
+			{#if !isMobile}
 				<EmojiButton onClick={() => (showEmojiPicker = true)} />
 			{/if}
-			<div
-				class="input-container flex min-h-[42px] min-w-0 flex-1 flex-col justify-center {theme ===
-				'ios'
-					? 'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-					: 'bg-white dark:bg-gray-800'}"
+			<MessageInput
+				bind:this={messageInput}
+				bind:value
+				{placeholder}
+				onSend={send}
 				onpaste={onPaste}
+				before={isMobile && !isIos ? emojiButton : undefined}
+				banner={editing !== null ? editingBanner : undefined}
 			>
-				{#if editing}
-					<div
-						class="flex items-center gap-1.5 ps-3 pt-2 text-sm font-semibold"
-						data-testid="composer-editing-banner"
-					>
-						<wa-icon
-							src={wrapPathInSvg(mdiPencilOutline)}
-							style="font-size: 0.9rem"
-						></wa-icon>
-						{m.editingMessage()}
-					</div>
-				{/if}
-				<div class="flex w-full items-center ps-2">
-					<MessageInput
-						bind:this={messageInput}
-						bind:value
-						{placeholder}
-						onSend={send}
-						onEmojiClick={isMobile ? () => (showEmojiPicker = true) : undefined}
-					/>
-				</div>
-			</div>
+				{#snippet after()}
+					{#if !editing && isMobile && theme === 'material' && hasContent}
+						<InlineAttachButton
+							expanded={showMediaPanel}
+							onClick={toggleMediaPanel}
+						/>
+					{/if}
+				{/snippet}
+			</MessageInput>
 
-			{#if editing && isWideScreen.value}
-				<IconButton
-					icon={mdiClose}
-					circle
-					onClick={cancelEdit}
-					label={m.cancel()}
-					testid="composer-cancel-edit"
-				/>
-			{/if}
-			{#if isMobile || editing}
-				<SendButton
-					disabled={!hasContent}
-					onSend={send}
-					editing={editing !== null}
-				/>
+			{#if editing}
+				{#if isWideScreen.value}
+					<IconButton
+						icon={mdiClose}
+						onClick={cancelEdit}
+						label={m.cancel()}
+						testid="composer-cancel-edit"
+					/>
+				{/if}
+				<SendButton onSend={send} editing />
+			{:else if isMobile}
+				{#if hasContent}
+					<SendButton onSend={send} />
+				{:else if theme !== 'ios'}
+					<StandaloneAttachButton
+						expanded={showMediaPanel}
+						onClick={toggleMediaPanel}
+					/>
+				{/if}
 			{:else}
 				<AttachMenuButton onFiles={stage} />
 			{/if}
@@ -353,10 +373,3 @@
 		></EmojiPickerWrapper>
 	</Block>
 </Sheet>
-
-<style>
-	.input-container {
-		border: 1px solid var(--k-hairline-color);
-		border-radius: 22px;
-	}
-</style>
