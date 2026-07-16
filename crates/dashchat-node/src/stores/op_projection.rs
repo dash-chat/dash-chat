@@ -1,11 +1,12 @@
 use aliased::Aliasing;
+use p2panda::Hash;
 use p2panda::streams::ProcessedOperation;
 use p2panda_auth::group::GroupAction;
 use p2panda_auth::processor::GroupsArgs;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
-use crate::{AgentId, DeviceId, Profile};
+use crate::{AgentId, DeviceId, Profile, TopicId};
 use crate::{
     AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
 };
@@ -29,14 +30,19 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS group_chats (
         chat_id BLOB NOT NULL PRIMARY KEY
     )",
+    "CREATE TABLE IF NOT EXISTS tombstones (
+        topic_id BLOB NOT NULL,
+        op_hash BLOB NOT NULL,
+        PRIMARY KEY (topic_id, op_hash)
+    )",
 ];
 
 /// The [`OpProjection`] is a projection of the [`crate::stores::OpStore`] that is used to make streamlined queries.
 /// It only contains data already present in the operations, just reshaped to be more queryable.
 ///
 /// - Writes only occur in the [`Self::reduce`] method.
-/// - The store is populated by streaming operations through [`Self::reduce`].
-/// - The store can be purged and rebuilt by replaying operation streams.
+/// - The projection is populated by streaming operations through [`Self::reduce`].
+/// - The projection can be purged and rebuilt by replaying operation streams.
 /// - If a log is partially purged, the OpProjection can be deleted and the streams replayed from their new starting point.
 /// - To achieve ACID compliance:
 ///   - every write must be idempotent in case operations need to be replayed.
@@ -52,8 +58,8 @@ impl OpProjection {
             sqlx::query(sql).execute(&pool).await?;
         }
 
-        let store = Self { pool };
-        Ok(store)
+        let projection = Self { pool };
+        Ok(projection)
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
@@ -139,6 +145,32 @@ impl OpProjection {
             .collect()
     }
 
+    pub async fn is_tombstoned(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<bool> {
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT 1 FROM tombstones WHERE topic_id = ? AND op_hash = ?")
+                .bind(topic.as_bytes().to_vec())
+                .bind(op_hash.as_bytes().to_vec())
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.is_some())
+    }
+
+    pub async fn tombstoned_hashes(&self, topic: TopicId) -> anyhow::Result<BTreeSet<Hash>> {
+        let rows: Vec<(Vec<u8>,)> =
+            sqlx::query_as("SELECT op_hash FROM tombstones WHERE topic_id = ?")
+                .bind(topic.as_bytes().to_vec())
+                .fetch_all(&self.pool)
+                .await?;
+        rows.into_iter()
+            .map(|(bytes,)| {
+                let arr: [u8; 32] = bytes
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("tombstone op_hash is not 32 bytes"))?;
+                Ok(Hash::from_bytes(arr))
+            })
+            .collect()
+    }
+
     pub async fn reduce(
         &self,
         me: AgentId,
@@ -169,6 +201,10 @@ impl OpProjection {
 
             Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
+            }
+
+            Payload::DeviceGroup(DeviceGroupPayload::TombstoneMessage { topic, hash }) => {
+                self.add_tombstone(*topic, *hash).await?;
             }
 
             // ACID: TODO: it's not correct to unconditionally save contact info here.
@@ -246,5 +282,74 @@ impl OpProjection {
             .await?;
         tx.commit().await?;
         Ok(())
+    }
+
+    /// Record an operation hash in the per-topic tombstone set. Payloads for
+    /// tombstoned operations must never be stored or synced.
+    async fn add_tombstone(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<()> {
+        sqlx::query("INSERT OR IGNORE INTO tombstones (topic_id, op_hash) VALUES (?, ?)")
+            .bind(topic.as_bytes().to_vec())
+            .bind(op_hash.as_bytes().to_vec())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{stores::create_sqlite_pool, topic::kind};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_tombstones_per_topic() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
+            .await
+            .unwrap();
+        let projection = OpProjection::new(pool.clone()).await.unwrap();
+
+        let topic_a = *Topic::<kind::Untyped>::new([1; 32]);
+        let topic_b = *Topic::<kind::Untyped>::new([2; 32]);
+        let hash1 = Hash::digest(b"op1");
+        let hash2 = Hash::digest(b"op2");
+
+        assert!(!projection.is_tombstoned(topic_a, hash1).await.unwrap());
+
+        projection.add_tombstone(topic_a, hash1).await.unwrap();
+        projection.add_tombstone(topic_a, hash2).await.unwrap();
+        projection.add_tombstone(topic_b, hash1).await.unwrap();
+        // Adding the same hash again is idempotent.
+        projection.add_tombstone(topic_a, hash1).await.unwrap();
+
+        assert!(projection.is_tombstoned(topic_a, hash1).await.unwrap());
+        assert!(projection.is_tombstoned(topic_a, hash2).await.unwrap());
+        // Tombstones are scoped per-topic: hash2 in topic_a does not leak into topic_b.
+        assert!(projection.is_tombstoned(topic_b, hash1).await.unwrap());
+        assert!(!projection.is_tombstoned(topic_b, hash2).await.unwrap());
+
+        assert_eq!(
+            projection.tombstoned_hashes(topic_a).await.unwrap(),
+            maplit::btreeset![hash1, hash2]
+        );
+        assert_eq!(
+            projection.tombstoned_hashes(topic_b).await.unwrap(),
+            maplit::btreeset![hash1]
+        );
+
+        // Tombstones persist across reopening the database.
+        drop(projection);
+        pool.close().await;
+
+        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
+            .await
+            .unwrap();
+        let projection = OpProjection::new(pool).await.unwrap();
+        assert!(projection.is_tombstoned(topic_a, hash1).await.unwrap());
+        assert_eq!(
+            projection.tombstoned_hashes(topic_a).await.unwrap(),
+            maplit::btreeset![hash1, hash2]
+        );
     }
 }

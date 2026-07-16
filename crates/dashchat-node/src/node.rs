@@ -1208,9 +1208,15 @@ impl Node {
         let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
             return Ok(());
         };
-        if self.is_tombstoneable(&payload) {
+        if Self::is_tombstoneable(&payload) {
             let hash = operation.hash;
-            self.local_store.add_tombstone(topic, hash.clone()).await?;
+            self.publish(
+                self.device_group_topic(),
+                Payload::DeviceGroup(DeviceGroupPayload::TombstoneMessage { topic, hash }),
+                Some(&format!("tombstone {:?}", hash.aliased())),
+            )
+            .await?;
+
             self.unprocess_app(operation).await?;
             self.op_store.delete_body(&hash).await?;
         } else {

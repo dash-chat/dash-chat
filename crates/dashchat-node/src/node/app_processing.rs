@@ -256,7 +256,7 @@ impl Node {
     ) -> anyhow::Result<bool> {
         let topic = operation.topic();
         let hash = operation.id();
-        if self.local_store.is_tombstoned(topic, hash).await? {
+        if self.projection.is_tombstoned(topic, hash).await? {
             self.unprocess_app(&operation.processed().operation).await?;
             self.op_store.delete_body(&hash).await?;
             Ok(true)
@@ -266,7 +266,7 @@ impl Node {
     }
 
     /// Filter out operations whose payloads are not able to be deleted.
-    pub(crate) fn is_tombstoneable(&self, payload: &Payload) -> bool {
+    pub(crate) fn is_tombstoneable(payload: &Payload) -> bool {
         matches!(payload, Payload::Chat(ChatPayload::Message(_)))
     }
 
@@ -351,7 +351,7 @@ impl Node {
         let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
             return Ok(());
         };
-        if self.is_tombstoneable(&payload) {
+        if Self::is_tombstoneable(&payload) {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     use p2panda_store::topics::TopicStore;
