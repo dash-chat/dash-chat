@@ -30,10 +30,7 @@ async fn test_reject_contact_request() {
     println!("bobbi: {}", bobbi.device_id());
 
     // Alice generates a QR code with inbox
-    let qr = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
+    let qr = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();
 
     // Bobbi scans the QR code and sends a contact request to Alice's inbox
     bobbi.add_contact(qr).await.unwrap();
@@ -91,14 +88,8 @@ async fn test_reject_multiple_contact_requests() {
     println!("### {:3.1?} alice creating QR codes", start.elapsed());
 
     // Alice generates QR codes for both Bobbi and Carol
-    let qr_for_bobbi = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
-    let qr_for_carol = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
+    let qr_for_bobbi = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();
+    let qr_for_carol = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();
 
     println!(
         "### {:3.1?} bobbi and carol scanning QR codes",
@@ -178,10 +169,7 @@ async fn test_inbox_two_way_flow() {
 
     // Alice generates a QR code with an inbox and Bobbi scans it, sending his
     // contact request to Alice's inbox.
-    let qr = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
+    let qr = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
     // Alice waits for Bobbi's contact request and explicitly accepts it. Since

@@ -8,7 +8,6 @@
 	import {
 		fullName,
 		type ChatsStore,
-		type ContactCode,
 		type ContactRequest,
 		type ContactsStore,
 		type DeviceId,

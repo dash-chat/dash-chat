@@ -1,5 +1,11 @@
 import { Profile } from './contacts/contacts-client';
-import { AgentId, DeviceId, Hash, TopicId } from './p2panda/types';
+import {
+	AgentId,
+	DeviceId,
+	Hash,
+	TopicId,
+	VerifyingKey,
+} from './p2panda/types';
 
 export type ChatId = TopicId;
 
@@ -158,26 +164,6 @@ export type ChatPayload =
 	| { type: 'JoinGroup'; payload: { chat_id: string } }
 	| { type: 'GroupInfo'; payload: GroupInfo };
 
-export interface InboxTopic {
-	expires_at: number;
-	topic: TopicId;
-}
-
-/** Numeric discriminant matching `dashchat_node::ShareIntent` (serde_repr u8). */
-export type ShareIntent = 0 | 1;
-export const ShareIntent = {
-	AddDevice: 0,
-	AddContact: 1,
-} as const;
-
-export interface ContactCode {
-	/// Pubkey of this node: allows adding this node to groups.
-	device_pubkey: DeviceId;
-	inbox_topic: InboxTopic | undefined;
-	/// The intent of the QR code: whether to add this node as a contact or a device.
-	share_intent: ShareIntent;
-}
-
 export interface ReadMessagesPayload {
 	chat_id: ChatId;
 	message_hashes: Hash[];
@@ -192,18 +178,24 @@ export type DeviceGroupPayload =
 export type InboxPayload = {
 	type: 'ContactRequest';
 	payload: {
-		code: ContactCode;
 		profile: Profile;
 		agent_id: AgentId;
 		reply_topic: TopicId;
 	};
 };
 
+/** `p2panda_auth::processor::GroupsArgs`; `action` is not modeled here. */
+export interface GroupControlPayload {
+	group_id: VerifyingKey;
+	dependencies: Hash[];
+}
+
 export type Payload =
 	| { type: 'Announcements'; payload: AnnouncementPayload }
 	| { type: 'Chat'; payload: ChatPayload }
 	| { type: 'DeviceGroupPayload'; payload: DeviceGroupPayload }
-	| { type: 'Inbox'; payload: InboxPayload };
+	| { type: 'Inbox'; payload: InboxPayload }
+	| { type: 'GroupControl'; payload: GroupControlPayload };
 
 export type MessageId = string;
 

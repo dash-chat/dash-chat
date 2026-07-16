@@ -72,13 +72,13 @@ async fn direct_chat_capability_upgrade() {
     // Wait for bobbi to learn alice's updated capabilities via the mailbox.
     poll.wait_for(|| async {
         let caps = bobbi
-            .local_store
+            .projection
             .get_capabilities(bobbi.device_id())
             .await
             .unwrap();
         // Also verify alice still sees bobbi as zero
         let alice_sees_bobbi = alice
-            .local_store
+            .projection
             .get_capabilities(bobbi.device_id())
             .await
             .unwrap();
@@ -154,7 +154,7 @@ async fn direct_chat_capability_upgrade() {
     // Wait for alice to learn bobbi's updated capabilities.
     poll.wait_for(|| async {
         let caps = alice
-            .local_store
+            .projection
             .get_capabilities(bobbi.device_id())
             .await
             .unwrap();
@@ -221,7 +221,7 @@ async fn group_chat_capability_upgrade() {
     let mut cammy_config = TestNodeConfig::default();
     cammy_config.node_config.capabilities = Capabilities::zero();
 
-    let poll = PollConfig::default();
+    let poll = PollConfig::seconds(20);
     let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(alice_config, "alice")
         .await
@@ -374,12 +374,12 @@ async fn group_chat_capability_upgrade() {
     // the group infimum will still be zero (cammy is still zero).
     poll.wait_for(|| async {
         let bobbi_sees_alice = bobbi
-            .local_store
+            .projection
             .get_capabilities(alice.device_id())
             .await
             .unwrap();
         let cammy_sees_bobbi = cammy
-            .local_store
+            .projection
             .get_capabilities(bobbi.device_id())
             .await
             .unwrap();
@@ -460,7 +460,7 @@ async fn group_chat_capability_upgrade() {
     // Wait for bobbi to learn cammy's updated capabilities (bobbi knows cammy).
     poll.wait_for(|| async {
         let bobbi_sees_cammy = bobbi
-            .local_store
+            .projection
             .get_capabilities(cammy.device_id())
             .await
             .unwrap();
@@ -545,7 +545,7 @@ async fn group_chat_capability_upgrade() {
     // Wait for bobbi to learn danae's capabilities (danae contacted bobbi, so bobbi knows danae).
     poll.wait_for(|| async {
         let bobbi_sees_danae = bobbi
-            .local_store
+            .projection
             .get_capabilities(danae.device_id())
             .await
             .unwrap();
