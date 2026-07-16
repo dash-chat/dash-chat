@@ -19,6 +19,11 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # cache.garnix.io holds the prebuilt tauri-driver from the
+      # dash-chat/tauri-driver flake. Building it from source here fails
+      # sporadically (crates.io 403s the vendoring downloads from GitHub
+      # runner IPs), so substitute it instead; the dash-chat cachix-action
+      # below then pushes it to dash-chat.cachix.org for every other job.
       - name: Install nix
         uses: cachix/install-nix-action@v27
         with:
@@ -26,6 +31,8 @@ jobs:
           nix_path: nixpkgs=channel:nixos-25.11
           extra_nix_config: |
             accept-flake-config = true
+            extra-substituters = https://cache.garnix.io
+            extra-trusted-public-keys = cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
