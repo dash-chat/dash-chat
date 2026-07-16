@@ -10,30 +10,9 @@ use crate::{DeviceId, Topic, topic::kind};
 
 const QR_CODE_ENCODING_ENGINE: base64::engine::GeneralPurpose = URL_SAFE_NO_PAD;
 
-/// An 8-byte nonce serialized as a hex string at the JSON/Tauri boundary.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(transparent)]
-pub struct InboxNonce(#[serde(with = "hex::serde")] pub [u8; 8]);
-
-impl<'de> Deserialize<'de> for InboxNonce {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Vis;
-        impl serde::de::Visitor<'_> for Vis {
-            type Value = InboxNonce;
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("a 16-character hex string")
-            }
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                let bytes = hex::decode(v).map_err(serde::de::Error::custom)?;
-                let arr: [u8; 8] = bytes.try_into().map_err(|_| {
-                    serde::de::Error::custom("expected exactly 8 bytes (16 hex chars)")
-                })?;
-                Ok(InboxNonce(arr))
-            }
-        }
-        deserializer.deserialize_str(Vis)
-    }
-}
+/// An 8-byte nonce used to derive an inbox topic ID.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InboxNonce(pub [u8; 8]);
 
 impl InboxNonce {
     pub fn random() -> Self {
@@ -54,7 +33,7 @@ pub fn derive_inbox_topic(device_pubkey: &DeviceId, nonce: &[u8; 8]) -> [u8; 32]
 }
 
 /// The content for a QR code or deep link.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QrCode {
     /// Pubkey of this node: allows adding this node to groups.
     pub device_pubkey: DeviceId,
