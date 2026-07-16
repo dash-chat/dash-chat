@@ -174,10 +174,7 @@
 		<div class="m-2 row gap-2" style="align-items: center;">
 			{#if isMobile}
 				{#if theme === 'ios'}
-					<StandaloneAttachButton
-						expanded={showMediaPanel}
-						onClick={toggleMediaPanel}
-					/>
+					<StandaloneAttachButton onClick={toggleMediaPanel} />
 				{/if}
 			{:else}
 				<EmojiButton onClick={() => (showEmojiPicker = true)} />
@@ -192,10 +189,7 @@
 			>
 				{#snippet after()}
 					{#if isMobile && theme === 'material' && hasContent}
-						<InlineAttachButton
-							expanded={showMediaPanel}
-							onClick={toggleMediaPanel}
-						/>
+						<InlineAttachButton onClick={toggleMediaPanel} />
 					{/if}
 				{/snippet}
 			</MessageInput>
@@ -204,10 +198,7 @@
 				{#if hasContent}
 					<SendButton onSend={send} />
 				{:else if theme !== 'ios'}
-					<StandaloneAttachButton
-						expanded={showMediaPanel}
-						onClick={toggleMediaPanel}
-					/>
+					<StandaloneAttachButton onClick={toggleMediaPanel} />
 				{/if}
 			{:else}
 				<AttachMenuButton onFiles={stage} />

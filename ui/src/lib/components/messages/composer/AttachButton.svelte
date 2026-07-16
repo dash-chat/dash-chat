@@ -7,7 +7,6 @@
 
 	interface Props {
 		onClick?: () => void;
-		/** Reflects the open state of the menu/panel the caller opens. */
 		expanded?: boolean;
 		class?: string;
 		iconClass?: string;
@@ -15,17 +14,22 @@
 
 	let {
 		onClick = () => {},
-		expanded = false,
+		expanded = $bindable(false),
 		class: className = '',
 		iconClass = '',
 	}: Props = $props();
+
+	function handleClick() {
+		expanded = !expanded;
+		onClick();
+	}
 </script>
 
 <!-- The plus rotates into an X instead of swapping to a close icon: changing
      wa-icon's src loads the new SVG asynchronously, which blanks the icon the
      first time the menu opens. -->
 <IconButton
-	{onClick}
+	onClick={handleClick}
 	testid="message-input-attach"
 	label={m.attachMenu()}
 	class={className}
