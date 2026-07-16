@@ -215,6 +215,14 @@ function collectMessageActionsByType(
 // reachable from the message — following chains through `editsByTarget`,
 // across forks — becomes a version; the one with the highest timestamp is the
 // displayed text.
+//
+// TODO(after p2panda-spaces integration): this trusts every edit op in the
+// raw logs and enforces none of the backend's edit-validation rules
+// (`ValidChatOps::validate_edit` in crates/dashchat-node/src/chat/edit.rs):
+// author-only, at most one edit per target resolved by (seq_num, hash), the
+// 24h edit window, and target-must-be-editable. A misbehaving peer's ops
+// would therefore render here. Once p2panda-spaces is integrated the
+// frontend should consume validated logs (or mirror validate_edit) instead.
 function applyEdits(
 	message: Message,
 	editsByTarget: Record<Hash, Record<Hash, Edit>>,
