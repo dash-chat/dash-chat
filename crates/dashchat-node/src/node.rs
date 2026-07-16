@@ -14,7 +14,6 @@ use crate::node::actor::{Actor, Command};
 use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
-use dashchat_compat::VersionConvert;
 use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
@@ -429,11 +428,6 @@ impl Node {
         // === topics === //
 
         node.initialize_stored_topics().await?;
-
-        // === announce === //
-
-        node.announce_device_capabilities(node.config.capabilities)
-            .await?;
 
         Ok(node)
     }
@@ -1002,27 +996,8 @@ impl Node {
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
 
-        let (capabilities, num_agents) = self.get_group_capabilities(topic).await?;
-        let capabilities = capabilities.ok_or(anyhow::anyhow!(
-            "no capabilities found for chat: {:?}",
-            topic.aliased()
-        ))?;
-
-        // NOTE: we may need logic for an agent to re-send a downgraded message if they later discover
-        //       intended recipients who don't have the proper capabilities for receiving this message
-        if num_agents == 1 {
-            tracing::warn!(
-                "sending message to group without knowing any other members' capabilities",
-            );
-        }
-        let message = message.to_version(&capabilities)?;
-
         let header = self
-            .publish(
-                topic,
-                Payload::Chat(ChatPayload::Message(message.clone())),
-                None,
-            )
+            .publish(topic, Payload::Chat(ChatPayload::Message(message)), None)
             .await?;
 
         Ok(header)
@@ -1730,64 +1705,6 @@ impl Node {
             .await?;
 
         Ok(())
-    }
-
-    pub async fn announce_device_capabilities(
-        &self,
-        capabilities: Capabilities,
-    ) -> anyhow::Result<()> {
-        let announcements = Topic::announcements(self.agent_id());
-        let latest_capability = self.projection.get_capabilities(self.device_id()).await?;
-
-        // If the capability is unset or different from the current one, set it now.
-        if latest_capability != Some(capabilities) {
-            self.publish(
-                announcements,
-                Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }),
-                Some(&format!(
-                    "set_device_capabilities({:?})",
-                    self.device_id().aliased()
-                )),
-            )
-            .await?;
-        }
-
-        Ok(())
-    }
-
-    /// Find the infimum of the capabilities of all other members of the group with read access or above.
-    ///
-    /// This is dependent on eventual consistency, and as other members join, the capabilities may change.
-    pub async fn get_group_capabilities(
-        &self,
-        topic: ChatId,
-    ) -> anyhow::Result<(Option<Capabilities>, usize)> {
-        let members = self.group_store.members(topic).await?;
-        let mut devices = members
-            .iter()
-            .filter_map(|(member, access)| {
-                // Only include members with read access or above
-                // TODO: make sure this pubkey corresponds to a DeviceId and not an AgentId,
-                //       once device groups are implemented
-                (*access >= Access::read()).then_some(*member)
-            })
-            .collect::<BTreeSet<_>>();
-        devices.insert(self.device_id());
-
-        // Collect capabilities for all agents
-        let caps = futures::future::join_all(
-            devices
-                .into_iter()
-                .map(|device| self.projection.get_capabilities(device)),
-        )
-        .await
-        .into_iter()
-        .collect::<Result<Vec<Option<Capabilities>>>>()?;
-
-        let caps = caps.into_iter().flatten().collect::<Vec<_>>();
-        let num = caps.len();
-
-        Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 
     pub async fn store_media(
