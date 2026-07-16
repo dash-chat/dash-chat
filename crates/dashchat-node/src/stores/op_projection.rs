@@ -5,7 +5,7 @@ use p2panda_auth::processor::GroupsArgs;
 use sqlx::SqlitePool;
 use std::collections::{BTreeSet, HashMap};
 
-use crate::{AgentId, DeviceId, Profile, compat::Capabilities};
+use crate::{AgentId, DeviceId, Profile};
 use crate::{
     AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
 };
@@ -15,8 +15,7 @@ use crate::{
 const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS devices (
         device_id BLOB PRIMARY KEY,
-        agent_id BLOB NOT NULL,
-        capabilities BLOB NULL
+        agent_id BLOB NOT NULL
     )",
     "CREATE TABLE IF NOT EXISTS agents (
         agent_id BLOB PRIMARY KEY,
@@ -135,18 +134,6 @@ impl OpProjection {
         Ok(row.map(|(blocked,)| blocked).unwrap_or(false))
     }
 
-    pub async fn get_capabilities(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<Option<Capabilities>> {
-        let row: Option<(Option<Capabilities>,)> =
-            sqlx::query_as("SELECT capabilities FROM devices WHERE device_id = ?")
-                .bind(device_id)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.and_then(|(capabilities,)| capabilities))
-    }
-
     pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
         let row: Option<(Option<Profile>,)> =
             sqlx::query_as("SELECT profile FROM agents WHERE agent_id = ?")
@@ -193,18 +180,6 @@ impl OpProjection {
                 tracing::info!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
 
                 self.save_profile(agent_id, profile.clone()).await?;
-            }
-
-            Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
-                // Save the device_id -> agent_id mapping so group members can look each other up.
-
-                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
-                self.save_agent_mapping(author, agent_id).await?;
-                self.save_capabilities(author, capabilities.clone()).await?;
             }
 
             Payload::DeviceGroup(p) => match p {
@@ -299,19 +274,6 @@ impl OpProjection {
 
         sqlx::query("INSERT OR IGNORE INTO agents (agent_id) VALUES (?)")
             .bind(agent_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    async fn save_capabilities(
-        &self,
-        device_id: DeviceId,
-        capabilities: Capabilities,
-    ) -> anyhow::Result<()> {
-        sqlx::query("UPDATE devices SET capabilities = ? WHERE device_id = ?")
-            .bind(capabilities)
-            .bind(device_id)
             .execute(&self.pool)
             .await?;
         Ok(())

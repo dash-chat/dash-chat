@@ -1,4 +1,3 @@
-mod compat_tests;
 mod edit;
 mod message;
 pub use edit::*;

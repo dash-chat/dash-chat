@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::chat::ChatId;
-use crate::compat::Capabilities;
 use crate::topic::{Topic, kind};
 use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, DeviceId};
 
@@ -26,17 +25,6 @@ pub struct Profile {
 #[serde(tag = "type", content = "payload")]
 pub enum AnnouncementsPayload {
     SetProfile(Profile),
-
-    /// Sets the capabilities for all devices in the agent's device group.
-    ///
-    /// The agent is responsible for ensuring that the announced capability set
-    /// is the infimum of the capabilities of all devices in the agent's device group.
-    /// Only when the agent updates all of their devices to a higher capability set,
-    /// should they advertise the new capability set.
-    SetCapabilities {
-        /// The new capabilities.
-        capabilities: Capabilities,
-    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

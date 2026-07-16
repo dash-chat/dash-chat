@@ -493,9 +493,7 @@ impl Node {
                     return Ok(());
                 }
                 match invitation {
-                    InboxPayload::ContactRequest {
-                        agent_id, profile, ..
-                    } => {
+                    InboxPayload::ContactRequest { agent_id, .. } => {
                         // A request arrived on our advertised inbox. Perform no network
                         // side-effects (bootstrap registration, topic
                         // subscriptions) and disclose nothing about us until the

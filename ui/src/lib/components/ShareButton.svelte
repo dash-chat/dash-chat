@@ -8,8 +8,6 @@
 		onClick: () => void;
 		label?: string;
 		testid?: string;
-		circle?: boolean;
-		iconClass?: string;
 		class?: string;
 	}
 
@@ -17,8 +15,6 @@
 		onClick,
 		label = m.share(),
 		testid,
-		circle = false,
-		iconClass,
 		class: className = '',
 	}: Props = $props();
 </script>
@@ -28,7 +24,5 @@
 	{onClick}
 	{label}
 	{testid}
-	{circle}
-	{iconClass}
 	class={className}
 />

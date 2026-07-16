@@ -3,7 +3,7 @@
 	import { Sheet, Block, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
-	import { isMobile } from '$lib/utils/environment';
+	import { isIos, isMobile } from '$lib/utils/environment';
 	import { keyboard } from '$lib/utils/keyboard.svelte';
 	import {
 		type DraftMedia,
@@ -24,7 +24,9 @@
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
 	import StagedMediaPage from '$lib/components/messages/composer/StagedMediaPage.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
-	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
+	import StandaloneAttachButton from '$lib/components/messages/composer/StandaloneAttachButton.svelte';
+	import InlineAttachButton from '$lib/components/messages/composer/InlineAttachButton.svelte';
+	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
@@ -57,6 +59,19 @@
 	let sending = false;
 
 	let showMediaPanel = $state(false);
+
+	function toggleMediaPanel() {
+		if (!showMediaPanel) {
+			showMediaPanel = true;
+			return;
+		}
+		// Flip the intent right away so the attach button reacts instantly, then
+		// hand focus to the input: renderBelowKeyboard sees the close arrive with
+		// an input focused and keeps the panel's slot until the rising keyboard
+		// claims it, so the input bar stays pinned during the swap.
+		showMediaPanel = false;
+		messageInput?.focus();
+	}
 
 	/** Returns whether the message was sent (so callers can keep the draft on failure). */
 	async function send(): Promise<boolean> {
@@ -139,6 +154,10 @@
 
 <MediaDropOverlay onFiles={stage} />
 
+{#snippet emojiButton()}
+	<EmojiButton onClick={() => (showEmojiPicker = true)} />
+{/snippet}
+
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<!-- Safe-area padding only when the bar is the bottom-most surface (nothing
 	     below it): no panel and no keyboard. Keying it off the panel alone bumps
@@ -155,32 +174,54 @@
 
 		<div class="m-2 row gap-2" style="align-items: center;">
 			{#if isMobile}
-				<AttachButton
-					class="h-10 w-10"
-					expanded={showMediaPanel}
-					onClick={() => (showMediaPanel = !showMediaPanel)}
-				/>
+				{#if theme === 'ios'}
+					<StandaloneAttachButton
+						expanded={showMediaPanel}
+						onClick={toggleMediaPanel}
+					/>
+				{/if}
 			{:else}
-				<AttachMenuButton onFiles={stage} />
+				<EmojiButton onClick={() => (showEmojiPicker = true)} />
 			{/if}
-			<div
-				class="input-container flex min-h-[42px] min-w-0 flex-1 items-center ps-2 {theme ===
-				'ios'
-					? 'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-					: 'bg-white dark:bg-gray-800'}"
+			<MessageInput
+				bind:this={messageInput}
+				bind:value
+				{placeholder}
+				onSend={send}
 				onpaste={onPaste}
+				before={isMobile && !isIos ? emojiButton : undefined}
 			>
-				<MessageInput
-					bind:this={messageInput}
-					bind:value
-					{placeholder}
-					onSend={send}
-					onEmojiClick={() => (showEmojiPicker = true)}
-				/>
-			</div>
+				{#snippet after()}
+					{#if isMobile && theme === 'material' && hasContent}
+						<InlineAttachButton
+							expanded={showMediaPanel}
+							onClick={toggleMediaPanel}
+						/>
+					{/if}
+				{/snippet}
+			</MessageInput>
 
 			{#if isMobile}
-				<SendButton disabled={!hasContent} onSend={send} />
+				{#if isIos}
+					<div
+						class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {hasContent
+							? 'ms-0 w-[42px] opacity-100'
+							: '-ms-2 w-0 opacity-0'}"
+						style="transform: scale({hasContent ? 1 : 0})"
+						aria-hidden={!hasContent}
+					>
+						<SendButton onSend={send} />
+					</div>
+				{:else if hasContent}
+					<SendButton onSend={send} />
+				{:else if theme !== 'ios'}
+					<StandaloneAttachButton
+						expanded={showMediaPanel}
+						onClick={toggleMediaPanel}
+					/>
+				{/if}
+			{:else}
+				<AttachMenuButton onFiles={stage} />
 			{/if}
 		</div>
 	</div>
@@ -224,10 +265,3 @@
 		></EmojiPickerWrapper>
 	</Block>
 </Sheet>
-
-<style>
-	.input-container {
-		border: 1px solid var(--k-hairline-color);
-		border-radius: 22px;
-	}
-</style>
