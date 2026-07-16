@@ -329,16 +329,16 @@
     },
     "nixpkgs_3": {
       "locked": {
-        "lastModified": 1771903837,
-        "narHash": "sha256-sdaqdnsQCv3iifzxwB22tUwN/fSHoN7j2myFW5EIkGk=",
+        "lastModified": 1784120854,
+        "narHash": "sha256-KesHgItiZPgGX740axSiQLcIQ8D24MDqNpkKYWIek8k=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "e764fc9a405871f1f6ca3d1394fb422e0a0c3951",
+        "rev": "753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
         "type": "github"
       },
       "original": {
         "owner": "nixos",
-        "ref": "nixos-25.11",
+        "ref": "nixos-unstable",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -461,11 +461,11 @@
         "nixpkgs": "nixpkgs_3"
       },
       "locked": {
-        "lastModified": 1784212007,
-        "narHash": "sha256-DVk1Csftgy3XVoj1x65lxy0Qcb53Ru5rMoEOPsbpV90=",
+        "lastModified": 1784213362,
+        "narHash": "sha256-Oji62kHEzTSR4aXvOwcYx4hZXJ05PABgOUV5KVUWHRY=",
         "owner": "dash-chat",
         "repo": "tauri-driver",
-        "rev": "55fb7510cb33ca9fc660af7892f7fcbf3254a93b",
+        "rev": "983dc796f9fb37c9ab55d16a05daae88547cf894",
         "type": "github"
       },
       "original": {
