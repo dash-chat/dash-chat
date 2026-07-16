@@ -165,9 +165,6 @@ async fn test_inbox_two_way_flow() {
         .add_mailbox(&mailbox)
         .await;
 
-    #[cfg(feature = "p2p")]
-    introduce_and_wait([&alice, &bobbi]).await;
-
     // Alice generates a QR code with an inbox and Bobbi scans it, sending his
     // contact request to Alice's inbox.
     let qr = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();

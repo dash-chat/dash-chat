@@ -107,7 +107,8 @@ export class ContactsClient implements IContactsClient {
 			waitForOperation(
 				this.logsClient,
 				op =>
-					op.body?.payload.type === 'AddContact' &&
+					op.body?.type === 'DeviceGroupPayload' &&
+					op.body.payload.type === 'AddContact' &&
 					op.body.payload.payload.agent_id === agentId,
 			),
 		]);
@@ -119,7 +120,8 @@ export class ContactsClient implements IContactsClient {
 			waitForOperation(
 				this.logsClient,
 				op =>
-					op.body?.payload.type === 'RejectContactRequest' &&
+					op.body?.type === 'DeviceGroupPayload' &&
+					op.body.payload.type === 'RejectContactRequest' &&
 					op.body.payload.payload === agentId,
 			),
 		]);
