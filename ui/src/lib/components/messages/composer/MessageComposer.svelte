@@ -265,9 +265,7 @@
 						bind:value
 						{placeholder}
 						onSend={send}
-						onEmojiClick={isMobile
-							? () => (showEmojiPicker = true)
-							: undefined}
+						onEmojiClick={isMobile ? () => (showEmojiPicker = true) : undefined}
 					/>
 				</div>
 			</div>
