@@ -37,6 +37,7 @@
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         ./nix/docker.nix
+        ./nix/android-emulator.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix
         ./crates/push-notifications-server/default.nix

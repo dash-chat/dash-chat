@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_LINK="$ROOT/e2e-tests/.appium/emulator"
 
-nix build --impure --expr '(import (builtins.getFlake "nixpkgs") { system = "x86_64-linux"; config = { allowUnfree = true; android_sdk.accept_license = true; }; }).androidenv.emulateApp { name = "dash-chat-e2e-emulator"; platformVersion = "35"; abiVersion = "x86_64"; systemImageType = "google_apis"; }' --out-link "$OUT_LINK"
+nix build "git+file:$ROOT#android-emulator" --out-link "$OUT_LINK"
 
 # run-test-emulator boots the emulator on the next free port, waits until the
 # device is ready, and exits — the emulator itself keeps running. Detach its
