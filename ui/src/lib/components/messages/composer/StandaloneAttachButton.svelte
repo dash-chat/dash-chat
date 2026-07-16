@@ -24,9 +24,6 @@
 	);
 </script>
 
-<AttachButton
-	{onClick}
-	{expanded}
-	class={surfaceClass}
-	iconClass={brand ? 'text-white' : ''}
-/>
+<div class="contents {brand ? 'text-white' : ''}">
+	<AttachButton {onClick} {expanded} class={surfaceClass} />
+</div>

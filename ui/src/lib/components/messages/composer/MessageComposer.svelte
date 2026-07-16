@@ -120,10 +120,11 @@
 			showMediaPanel = true;
 			return;
 		}
-		// Don't close the panel here: focusing the input makes renderBelowKeyboard
-		// yield the panel's slot to the rising keyboard in lockstep (keeping the
-		// input bar pinned) and clear `showMediaPanel` once the swap completes —
-		// including when no keyboard rises (its yield backstop).
+		// Flip the intent right away so the attach button reacts instantly, then
+		// hand focus to the input: renderBelowKeyboard sees the close arrive with
+		// an input focused and keeps the panel's slot until the rising keyboard
+		// claims it, so the input bar stays pinned during the swap.
+		showMediaPanel = false;
 		messageInput?.focus();
 	}
 
@@ -297,7 +298,17 @@
 				{/if}
 				<SendButton onSend={send} editing />
 			{:else if isMobile}
-				{#if hasContent}
+				{#if isIos}
+					<div
+						class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {hasContent
+							? 'ms-0 w-[42px] opacity-100'
+							: '-ms-2 w-0 opacity-0'}"
+						style="transform: scale({hasContent ? 1 : 0})"
+						aria-hidden={!hasContent}
+					>
+						<SendButton onSend={send} />
+					</div>
+				{:else if hasContent}
 					<SendButton onSend={send} />
 				{:else if theme !== 'ios'}
 					<StandaloneAttachButton

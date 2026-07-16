@@ -10,20 +10,16 @@
 		/** Reflects the open state of the menu/panel the caller opens. */
 		expanded?: boolean;
 		class?: string;
-		iconClass?: string;
 	}
 
 	let {
 		onClick = () => {},
 		expanded = false,
 		class: className = '',
-		iconClass = '',
 	}: Props = $props();
 </script>
 
-<!-- The plus rotates into an X instead of swapping to a close icon: changing
-     wa-icon's src loads the new SVG asynchronously, which blanks the icon the
-     first time the menu opens. -->
+<!-- The plus rotates into an X instead of swapping to a close icon -->
 <IconButton
 	{onClick}
 	{expanded}
@@ -32,7 +28,7 @@
 	class={className}
 >
 	<wa-icon
-		class="text-2xl {iconClass} transition-transform duration-200 {expanded
+		class="text-2xl transition-transform duration-200 {expanded
 			? 'rotate-45'
 			: ''}"
 		src={wrapPathInSvg(mdiPlus)}
