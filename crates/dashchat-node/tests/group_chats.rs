@@ -115,14 +115,6 @@ async fn test_direct_chat() {
         .await
         .unwrap();
 
-    // consistency(
-    //     [&alice, &bobbi],
-    //     &[chat_id.into()],
-    //     &ClusterConfig::default(),
-    // )
-    // .await
-    // .unwrap();
-
     poll.wait_for(|| async {
         let msgs = [
             alice.get_messages(chat_id).await.unwrap().len(),
@@ -141,6 +133,12 @@ async fn test_direct_chat() {
         bobbi_messages.first().map(|m| m.content.clone()),
         Some("Hello".into())
     );
+
+    // A direct chat must never be registered as a group chat.
+    for node in [&alice, &bobbi] {
+        let ids = node.projection.get_group_chat_ids().await.unwrap();
+        assert!(!ids.contains(&chat_id));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -302,7 +300,7 @@ async fn test_group_chat() {
     .unwrap();
 
     let alice_profile = cammy
-        .local_store
+        .projection
         .get_profile(alice.agent_id())
         .await
         .unwrap();
@@ -317,7 +315,7 @@ async fn test_group_chat() {
     );
 
     let cammy_profile = alice
-        .local_store
+        .projection
         .get_profile(cammy.agent_id())
         .await
         .unwrap();
@@ -337,6 +335,49 @@ async fn test_group_chat() {
     let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir).await;
     let alice_members = alice.get_group_members(chat_id).await.unwrap();
     assert_eq!(alice_members, expected_members);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_group_chat_registered_in_op_projection() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    for node in [&alice, &bobbi] {
+        poll.wait_for(|| async {
+            let ids = node.projection.get_group_chat_ids().await.unwrap();
+            ids.contains(&chat_id).then_some(()).ok_or(ids)
+        })
+        .await
+        .unwrap();
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

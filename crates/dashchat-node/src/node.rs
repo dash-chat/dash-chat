@@ -33,7 +33,7 @@ use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidCh
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
-use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
+use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
@@ -186,6 +186,7 @@ pub struct Node {
     registered_bootstraps: Arc<Mutex<HashSet<(NodeId, RelayUrl)>>>,
 
     pub local_store: LocalStore,
+    pub projection: OpProjection,
     group_store: GroupStore,
     node_keys: NodeKeys,
 
@@ -220,12 +221,15 @@ impl Node {
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
-        let local_store = LocalStore::new(filesystem.local_store_path()).await?;
+        let pool = crate::stores::create_sqlite_pool(filesystem.local_store_path()).await?;
+        let local_store = LocalStore::new(pool.clone()).await?;
+        let projection = OpProjection::new(pool.clone()).await?;
         let node_keys = local_store.node_keys().await?;
 
         Self::init(
             filesystem,
             local_store,
+            projection,
             node_keys,
             config,
             notification_tx,
@@ -238,6 +242,7 @@ impl Node {
     pub async fn init(
         filesystem: Filesystem,
         local_store: LocalStore,
+        projection: OpProjection,
         node_keys: NodeKeys,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
@@ -264,7 +269,10 @@ impl Node {
             .network_id(config.network_id)
             .signing_key(node_keys.private_key.clone())
             .database_url(&url)
-            .mdns_mode(config.mdns_mode.clone());
+            .mdns_mode(config.mdns_mode.clone())
+            // Acknowledge operations explicitly, only once application-layer
+            // processing has finished (see `spawn_application_processor_task`).
+            .ack_policy(p2panda::node::AckPolicy::Explicit);
 
         if config.use_relay {
             builder = builder.relay_url(RELAY_URL.clone());
@@ -363,7 +371,8 @@ impl Node {
             mailboxes,
             config,
             filesystem,
-            local_store: local_store.clone(),
+            local_store,
+            projection,
             group_store,
             node_keys,
             notification_tx,
@@ -631,7 +640,7 @@ impl Node {
         self.register_topic(topic).await?;
 
         let other_device_id = self
-            .local_store
+            .projection
             .lookup_contact_by_agent_id(other)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
@@ -678,7 +687,7 @@ impl Node {
             .map(|verifying_key| DeviceId::from(*verifying_key))
             .collect();
 
-        let contacts = self.local_store.lookup_contacts(&device_ids).await?;
+        let contacts = self.projection.lookup_contacts(&device_ids).await?;
         let device_to_agent: BTreeMap<DeviceId, AgentId> = device_ids
             .iter()
             .filter_map(|did| match contacts.get(did) {
@@ -721,9 +730,6 @@ impl Node {
         introduced_agents.insert(self.device_id(), self.agent_id());
         self.introduce_agents_to_group(chat_id, introduced_agents)
             .await?;
-
-        self.local_store.save_group_chat_subscribed(chat_id).await?;
-        self.initialize_topic(*chat_id).await?;
 
         for agent in agents {
             self.invite_to_group(chat_id, agent).await?;
@@ -797,7 +803,7 @@ impl Node {
         .await?;
 
         let agent_id = self
-            .local_store
+            .projection
             .lookup_contact_by_device_id(DeviceId::from(member))
             .await?;
         if let Some(agent_id) = agent_id {
@@ -892,11 +898,11 @@ impl Node {
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
         self.register_topic(chat_id).await?;
-        self.local_store.save_group_chat_subscribed(chat_id).await
+        Ok(())
     }
 
     pub async fn get_groups(&self) -> anyhow::Result<Vec<ChatId>> {
-        self.local_store.get_group_chat_ids().await
+        self.projection.get_group_chat_ids().await
     }
 
     pub async fn set_profile(&self, profile: Profile) -> Result<Header, crate::Error> {
@@ -913,17 +919,15 @@ impl Node {
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        self.local_store.get_profile(self.agent_id()).await
+        self.projection.get_profile(self.agent_id()).await
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        self.local_store
-            .lookup_contact_by_device_id(device_id)
-            .await
+        self.projection.lookup_contact_by_device_id(device_id).await
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        self.local_store.all_contact_agent_ids().await
+        self.projection.all_contact_agent_ids().await
     }
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
@@ -1332,19 +1336,18 @@ impl Node {
     }
 
     /// Register the shared, idempotent state for a contact identified by their
-    /// device pubkey and agent id: record the device -> agent mapping, register
-    /// them as a bootstrap peer, and subscribe to their announcements and our
-    /// direct-chat topic. Safe to call repeatedly, so both the initiating
-    /// `add_contact` path and the inbox request/ack handlers can call it.
+    /// device pubkey and agent id:
+    /// - register the contact as a bootstrap peer,
+    /// - subscribe to their announcements, and
+    /// - subscribe to our direct-chat topic.
+    ///
+    /// Safe to call repeatedly, so both the initiating `add_contact` path and the
+    /// inbox request/ack handlers can call it.
     pub(crate) async fn establish_contact(
         &self,
         device_pubkey: DeviceId,
         agent_id: AgentId,
     ) -> Result<(), Error> {
-        self.local_store
-            .save_agent_mapping(device_pubkey, agent_id)
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
         // Register the contact as a bootstrap so p2panda discovery can reach it
         // directly over the internet (relay + pkarr), rather than depending on a
         // mutually-reachable mailbox to introduce the two nodes.
@@ -1374,6 +1377,15 @@ impl Node {
             inbox_topic = ?contact.inbox_topic,
             "adding contact",
         );
+
+        // Register the scanned contact as a bootstrap so p2panda discovery can
+        // reach it directly over the internet (relay + pkarr), rather than
+        // depending on a mutually-reachable mailbox to introduce the two nodes.
+        self.register_bootstrap_node(*contact.device_pubkey)
+            .await
+            .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
+
+        // SPACES: Register the member in the spaces manager
 
         let Some(inbox_topic) = contact.inbox_topic.clone() else {
             return Err(AddContactError::CreateQrCode(
@@ -1425,6 +1437,7 @@ impl Node {
         self.initialize_topic(*inbox_topic.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+
         // Mint a private reply inbox for this exchange and listen on it for
         // the owner's ack. We do NOT persist the (possibly shared) advertised
         // inbox we scanned — only the owner keeps camping on that — so other
@@ -1437,17 +1450,21 @@ impl Node {
             )),
             expires_at: Utc::now() + self.config.contact_code_expiry,
         };
+
         self.initialize_topic(*reply_inbox.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+
         self.local_store
             .add_reply_inbox_topic(reply_inbox.clone(), contact.device_pubkey)
             .await
             .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
+
         let code = self
             .new_qr_code(ShareIntent::AddContact, false)
             .await
             .map_err(|e| AddContactError::CreateQrCode(e.to_string()))?;
+
         let Some(profile) = self
             .my_profile()
             .await
@@ -1455,6 +1472,7 @@ impl Node {
         else {
             return Err(AddContactError::ProfileNotCreated);
         };
+
         self.publish(
             inbox_topic.topic,
             Payload::Inbox(InboxPayload::ContactRequest {
@@ -1516,7 +1534,7 @@ impl Node {
         // The requester's device was mapped to their agent_id when the request
         // arrived; recover it to establish their network presence.
         let device_pubkey = self
-            .local_store
+            .projection
             .lookup_contact_by_agent_id(agent_id)
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
@@ -1719,7 +1737,7 @@ impl Node {
         capabilities: Capabilities,
     ) -> anyhow::Result<()> {
         let announcements = Topic::announcements(self.agent_id());
-        let latest_capability = self.local_store.get_capabilities(self.device_id()).await?;
+        let latest_capability = self.projection.get_capabilities(self.device_id()).await?;
 
         // If the capability is unset or different from the current one, set it now.
         if latest_capability != Some(capabilities) {
@@ -1760,7 +1778,7 @@ impl Node {
         let caps = futures::future::join_all(
             devices
                 .into_iter()
-                .map(|device| self.local_store.get_capabilities(device)),
+                .map(|device| self.projection.get_capabilities(device)),
         )
         .await
         .into_iter()

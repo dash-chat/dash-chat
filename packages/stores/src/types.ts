@@ -1,5 +1,11 @@
 import { Profile } from './contacts/contacts-client';
-import { AgentId, DeviceId, Hash, TopicId } from './p2panda/types';
+import {
+	AgentId,
+	DeviceId,
+	Hash,
+	TopicId,
+	VerifyingKey,
+} from './p2panda/types';
 
 export type ChatId = TopicId;
 
@@ -191,11 +197,18 @@ export type InboxPayload = {
 	};
 };
 
+/** `p2panda_auth::processor::GroupsArgs`; `action` is not modeled here. */
+export interface GroupControlPayload {
+	group_id: VerifyingKey;
+	dependencies: Hash[];
+}
+
 export type Payload =
 	| { type: 'Announcements'; payload: AnnouncementPayload }
 	| { type: 'Chat'; payload: ChatPayload }
 	| { type: 'DeviceGroupPayload'; payload: DeviceGroupPayload }
-	| { type: 'Inbox'; payload: InboxPayload };
+	| { type: 'Inbox'; payload: InboxPayload }
+	| { type: 'GroupControl'; payload: GroupControlPayload };
 
 export type MessageId = string;
 
