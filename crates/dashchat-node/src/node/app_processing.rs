@@ -253,12 +253,12 @@ impl Node {
     /// fact.
     async fn enforce_tombstone(
         &self,
-        operation: &ProcessedOperation<Payload>,
+        topic: TopicId,
+        tombstoned_op: &Operation,
     ) -> anyhow::Result<bool> {
-        let topic = operation.topic();
-        let hash = operation.id();
+        let hash = tombstoned_op.hash;
         if self.projection.is_tombstoned(topic, hash).await? {
-            self.unprocess_app(&operation.processed().operation).await?;
+            self.unprocess_app(tombstoned_op).await?;
             self.op_store.delete_body(&hash).await?;
             Ok(true)
         } else {
@@ -416,19 +416,6 @@ impl Node {
         let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         let header = operation.processed().header();
 
-        // NOTE: realistically the tombstone will only be enforced here
-        // upon playback of operations. The first time through, it will
-        // have been processed and potentially have modified local state.
-        // Upon tombstoning (or enforcement), it will be "unprocessed"
-        // via [`Self::unprocess_app`] to undo those state changes,
-        // as if it were never processed at all. On playback, the operation
-        // simply doesn't get processed.
-        if self.enforce_tombstone(&operation).await? {
-            // The payload is tombstoned, so there's nothing to process.
-            self.notify_header(dashchat_topic, header).await?;
-            return Ok(());
-        }
-
         // If an operation is invalidated by the projection layer, we don't process it,
         // but still allow it to be acknowledged as processed.
         match self.projection.reduce(self.agent_id(), operation).await {
@@ -452,6 +439,21 @@ impl Node {
         let payload = operation.message();
 
         match &payload {
+            Payload::DeviceGroup(DeviceGroupPayload::TombstoneMessage { topic, hash }) => {
+                // If a node is processing this as the author of the tombstone (and hence the target),
+                // then the target operation needs to be cleared from all storage.
+                // If a receiver is processing this, they may have already received and processed the operation,
+                // or they may receive the operation after this point.
+
+                if let Some(tombstoned_op) = self.op_store.get_operation(hash).await? {
+                    let purged = self.enforce_tombstone(*topic, &tombstoned_op).await?;
+                    assert!(purged);
+                    // The payload is tombstoned, so there's nothing to process.
+                    self.notify_header(dashchat_topic, header).await?;
+                    return Ok(());
+                }
+            }
+
             Payload::GroupControl(_) => {
                 // Nothing to do.
             }

@@ -1216,9 +1216,6 @@ impl Node {
                 Some(&format!("tombstone {:?}", hash.aliased())),
             )
             .await?;
-
-            self.unprocess_app(operation).await?;
-            self.op_store.delete_body(&hash).await?;
         } else {
             tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
         }

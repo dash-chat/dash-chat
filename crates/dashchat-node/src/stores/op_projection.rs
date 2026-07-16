@@ -12,7 +12,7 @@ use crate::{
 };
 
 // TODO: rework this not as migrations, but as a single schema that, when changed,
-//       triggers a re-projection of the store.
+//       triggers a re-projection of the db.
 const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS devices (
         device_id BLOB PRIMARY KEY,
@@ -224,12 +224,11 @@ impl OpProjection {
                 DeviceGroupPayload::UnblockAgent(agent_id) => {
                     self.unblock_agent(*agent_id).await?;
                 }
+                DeviceGroupPayload::TombstoneMessage { topic, hash } => {
+                    self.add_tombstone(*topic, *hash).await?;
+                }
                 _ => (),
             },
-
-            Payload::DeviceGroup(DeviceGroupPayload::TombstoneMessage { topic, hash }) => {
-                self.add_tombstone(*topic, *hash).await?;
-            }
 
             // ACID: TODO: it's not correct to unconditionally save contact info here.
             //             This needs to be limited to only accepted requests.
@@ -362,64 +361,6 @@ impl OpProjection {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::{stores::create_sqlite_pool, topic::kind};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test_tombstones_per_topic() {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
-            .await
-            .unwrap();
-        let projection = OpProjection::new(pool.clone()).await.unwrap();
-
-        let topic_a = *Topic::<kind::Untyped>::new([1; 32]);
-        let topic_b = *Topic::<kind::Untyped>::new([2; 32]);
-        let hash1 = Hash::digest(b"op1");
-        let hash2 = Hash::digest(b"op2");
-
-        assert!(!projection.is_tombstoned(topic_a, hash1).await.unwrap());
-
-        projection.add_tombstone(topic_a, hash1).await.unwrap();
-        projection.add_tombstone(topic_a, hash2).await.unwrap();
-        projection.add_tombstone(topic_b, hash1).await.unwrap();
-        // Adding the same hash again is idempotent.
-        projection.add_tombstone(topic_a, hash1).await.unwrap();
-
-        assert!(projection.is_tombstoned(topic_a, hash1).await.unwrap());
-        assert!(projection.is_tombstoned(topic_a, hash2).await.unwrap());
-        // Tombstones are scoped per-topic: hash2 in topic_a does not leak into topic_b.
-        assert!(projection.is_tombstoned(topic_b, hash1).await.unwrap());
-        assert!(!projection.is_tombstoned(topic_b, hash2).await.unwrap());
-
-        assert_eq!(
-            projection.tombstoned_hashes(topic_a).await.unwrap(),
-            maplit::btreeset![hash1, hash2]
-        );
-        assert_eq!(
-            projection.tombstoned_hashes(topic_b).await.unwrap(),
-            maplit::btreeset![hash1]
-        );
-
-        // Tombstones persist across reopening the database.
-        drop(projection);
-        pool.close().await;
-
-        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
-            .await
-            .unwrap();
-        let projection = OpProjection::new(pool).await.unwrap();
-        assert!(projection.is_tombstoned(topic_a, hash1).await.unwrap());
-        assert_eq!(
-            projection.tombstoned_hashes(topic_a).await.unwrap(),
-            maplit::btreeset![hash1, hash2]
-        );
-    }
-}
-
 #[derive(Debug)]
 pub enum ProjectionError {
     InvalidOp(String),
@@ -443,7 +384,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::stores::create_sqlite_pool;
+    use crate::{stores::create_sqlite_pool, topic::kind};
 
     fn agent(n: u8) -> AgentId {
         AgentId::from(crate::ActorId::from(
@@ -470,78 +411,129 @@ mod tests {
     /// restores every device.
     #[tokio::test]
     async fn test_block_applies_to_all_devices_of_agent() {
-        let store = projection().await;
+        let db = projection().await;
 
         let agent_a = agent(1);
         let agent_b = agent(2);
         let (d1, d2, d3) = (device(10), device(11), device(20));
 
         // agent_a controls two devices, agent_b controls one.
-        store.save_agent_mapping(d1, agent_a).await.unwrap();
-        store.save_agent_mapping(d2, agent_a).await.unwrap();
-        store.save_agent_mapping(d3, agent_b).await.unwrap();
+        db.save_agent_mapping(d1, agent_a).await.unwrap();
+        db.save_agent_mapping(d2, agent_a).await.unwrap();
+        db.save_agent_mapping(d3, agent_b).await.unwrap();
 
         // Nothing blocked initially.
-        assert!(!store.is_author_blocked(&d1).await.unwrap());
-        assert!(!store.is_author_blocked(&d2).await.unwrap());
-        assert!(!store.is_author_blocked(&d3).await.unwrap());
+        assert!(!db.is_author_blocked(&d1).await.unwrap());
+        assert!(!db.is_author_blocked(&d2).await.unwrap());
+        assert!(!db.is_author_blocked(&d3).await.unwrap());
 
-        store.block_agent(agent_a).await.unwrap();
+        db.block_agent(agent_a).await.unwrap();
 
         // Both of agent_a's devices are blocked; agent_b's device is not.
-        assert!(store.is_author_blocked(&d1).await.unwrap());
-        assert!(store.is_author_blocked(&d2).await.unwrap());
-        assert!(!store.is_author_blocked(&d3).await.unwrap());
+        assert!(db.is_author_blocked(&d1).await.unwrap());
+        assert!(db.is_author_blocked(&d2).await.unwrap());
+        assert!(!db.is_author_blocked(&d3).await.unwrap());
 
-        store.unblock_agent(agent_a).await.unwrap();
+        db.unblock_agent(agent_a).await.unwrap();
 
         // Unblocking restores every device of the agent.
-        assert!(!store.is_author_blocked(&d1).await.unwrap());
-        assert!(!store.is_author_blocked(&d2).await.unwrap());
-        assert!(!store.is_author_blocked(&d3).await.unwrap());
+        assert!(!db.is_author_blocked(&d1).await.unwrap());
+        assert!(!db.is_author_blocked(&d2).await.unwrap());
+        assert!(!db.is_author_blocked(&d3).await.unwrap());
     }
 
     /// A device with no contact entry is never considered blocked.
     #[tokio::test]
     async fn test_unknown_device_is_not_blocked() {
-        let store = projection().await;
-        assert!(!store.is_author_blocked(&device(99)).await.unwrap());
+        let db = projection().await;
+        assert!(!db.is_author_blocked(&device(99)).await.unwrap());
     }
 
     /// A device newly mapped to an already-blocked agent is immediately blocked,
     /// since the block lives on the agent, not the device.
     #[tokio::test]
     async fn test_block_covers_devices_added_after_block() {
-        let store = projection().await;
+        let db = projection().await;
         let agent_a = agent(1);
 
-        store.save_agent_mapping(device(10), agent_a).await.unwrap();
-        store.block_agent(agent_a).await.unwrap();
+        db.save_agent_mapping(device(10), agent_a).await.unwrap();
+        db.block_agent(agent_a).await.unwrap();
 
         // A second device shows up for the same agent after the block.
-        store.save_agent_mapping(device(11), agent_a).await.unwrap();
+        db.save_agent_mapping(device(11), agent_a).await.unwrap();
 
-        assert!(store.is_author_blocked(&device(11)).await.unwrap());
+        assert!(db.is_author_blocked(&device(11)).await.unwrap());
     }
 
     /// `all_contact_agent_ids` returns one entry per agent, even when an agent
     /// has multiple devices, and includes blocked agents.
     #[tokio::test]
     async fn test_all_contact_agent_ids_dedups_by_agent() {
-        let store = projection().await;
+        let db = projection().await;
 
         let agent_a = agent(1);
         let agent_b = agent(2);
 
-        store.save_agent_mapping(device(10), agent_a).await.unwrap();
-        store.save_agent_mapping(device(11), agent_a).await.unwrap();
-        store.save_agent_mapping(device(20), agent_b).await.unwrap();
+        db.save_agent_mapping(device(10), agent_a).await.unwrap();
+        db.save_agent_mapping(device(11), agent_a).await.unwrap();
+        db.save_agent_mapping(device(20), agent_b).await.unwrap();
 
-        store.block_agent(agent_b).await.unwrap();
+        db.block_agent(agent_b).await.unwrap();
 
         assert_eq!(
-            store.all_contact_agent_ids().await.unwrap(),
+            db.all_contact_agent_ids().await.unwrap(),
             maplit::btreeset![agent_a, agent_b]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tombstones_per_topic() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
+            .await
+            .unwrap();
+        let db = OpProjection::new(pool.clone()).await.unwrap();
+
+        let topic_a = *Topic::<kind::Untyped>::new([1; 32]);
+        let topic_b = *Topic::<kind::Untyped>::new([2; 32]);
+        let hash1 = Hash::digest(b"op1");
+        let hash2 = Hash::digest(b"op2");
+
+        assert!(!db.is_tombstoned(topic_a, hash1).await.unwrap());
+
+        db.add_tombstone(topic_a, hash1).await.unwrap();
+        db.add_tombstone(topic_a, hash2).await.unwrap();
+        db.add_tombstone(topic_b, hash1).await.unwrap();
+        // Adding the same hash again is idempotent.
+        db.add_tombstone(topic_a, hash1).await.unwrap();
+
+        assert!(db.is_tombstoned(topic_a, hash1).await.unwrap());
+        assert!(db.is_tombstoned(topic_a, hash2).await.unwrap());
+        // Tombstones are scoped per-topic: hash2 in topic_a does not leak into topic_b.
+        assert!(db.is_tombstoned(topic_b, hash1).await.unwrap());
+        assert!(!db.is_tombstoned(topic_b, hash2).await.unwrap());
+
+        assert_eq!(
+            db.tombstoned_hashes(topic_a).await.unwrap(),
+            maplit::btreeset![hash1, hash2]
+        );
+        assert_eq!(
+            db.tombstoned_hashes(topic_b).await.unwrap(),
+            maplit::btreeset![hash1]
+        );
+
+        // Tombstones persist across reopening the database.
+        drop(db);
+        pool.close().await;
+
+        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
+            .await
+            .unwrap();
+        let db = OpProjection::new(pool).await.unwrap();
+        assert!(db.is_tombstoned(topic_a, hash1).await.unwrap());
+        assert_eq!(
+            db.tombstoned_hashes(topic_a).await.unwrap(),
+            maplit::btreeset![hash1, hash2]
         );
     }
 }
