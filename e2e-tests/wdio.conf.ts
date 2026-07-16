@@ -55,6 +55,7 @@ function agentEntry(slot: number) {
 const ON_DEVICE_SPECS = ['./specs/send-messages.spec.ts'];
 
 let mailboxServer: ChildProcess | undefined;
+let mailboxLogger: ChildProcess | undefined;
 
 export const config: WebdriverIO.MultiremoteConfig = {
 	runner: 'local',
@@ -124,8 +125,11 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				console.log(`Using remote mailbox at ${remoteUrl}`);
 			} else {
 				// Start a local mailbox server so e2e tests don't hit the internet.
-				({ proc: mailboxServer, port: mailboxPort } =
-					await startLocalMailboxServer());
+				({
+					proc: mailboxServer,
+					logger: mailboxLogger,
+					port: mailboxPort,
+				} = await startLocalMailboxServer());
 			}
 
 			for (const platform of platforms) {
@@ -151,8 +155,8 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 	onComplete() {
 		if (mailboxServer?.pid) {
-			// Negative PID = signal the entire process group, so we reach the
-			// mailbox-server child that `cargo run` spawned underneath.
+			// Negative PID = signal the entire process group the detached
+			// mailbox server runs in.
 			try {
 				process.kill(-mailboxServer.pid, 'SIGTERM');
 			} catch {
@@ -162,5 +166,6 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		for (const platform of platforms) {
 			platform.onComplete();
 		}
+		mailboxLogger?.kill();
 	},
 };

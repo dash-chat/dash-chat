@@ -59,8 +59,11 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
 
-    // Manage the mDNS service daemon
-    app_handle.manage(mdns_sd::ServiceDaemon::new()?);
+    let mdns = mdns_sd::ServiceDaemon::new()?;
+    if let Err(err) = mdns.set_ip_check_interval(1) {
+        log::warn!("Failed to set mDNS ip check interval: {err:?}");
+    }
+    app_handle.manage(mdns);
 
     let fs = FileSystem::new(&app_handle)?;
     let local_data_path = fs.app_data_dir().clone();

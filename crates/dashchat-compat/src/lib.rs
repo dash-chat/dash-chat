@@ -1,3 +1,12 @@
+//! DEPRECATED. This whole concept needs to be reworked!
+//!
+//! The Capability system is too aggressive.
+//! There's no hard requirement that nodes with different capabilities need
+//! to downgrade to the lowest common denominator.
+//! For instance, if node A supports a media type and node B doesn't,
+//! node A's wire messages serialization should gracefully handle both cases,
+//! and B should be able to deserialize A's message, throwing away the unknown fields.
+
 use serde::de::Deserializer;
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};

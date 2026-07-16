@@ -188,7 +188,7 @@ async fn chat_message_notification(
     };
 
     let sender_profile = if let Some(agent_id) = sender_agent_id {
-        node.local_store.get_profile(agent_id).await.ok().flatten()
+        node.projection.get_profile(agent_id).await.ok().flatten()
     } else {
         None
     };
@@ -311,7 +311,7 @@ async fn auth_control_op_notification(
     let sender_agent_id = node.lookup_contact(sender_device_id).await.ok().flatten();
     let sender_name = match sender_agent_id {
         Some(agent_id) => node
-            .local_store
+            .projection
             .get_profile(agent_id)
             .await
             .ok()

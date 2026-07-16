@@ -14,7 +14,6 @@ use crate::node::actor::{Actor, Command};
 use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
-use dashchat_compat::VersionConvert;
 use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
@@ -29,15 +28,16 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
-use crate::chat::ChatMessageContent;
+use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps};
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
-use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
+use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
+    DirectChatId, EditMessageError, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile,
+    OutgoingMedia,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
@@ -185,6 +185,7 @@ pub struct Node {
     registered_bootstraps: Arc<Mutex<HashSet<(NodeId, RelayUrl)>>>,
 
     pub local_store: LocalStore,
+    pub projection: OpProjection,
     group_store: GroupStore,
     node_keys: NodeKeys,
 
@@ -219,12 +220,15 @@ impl Node {
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
-        let local_store = LocalStore::new(filesystem.local_store_path()).await?;
+        let pool = crate::stores::create_sqlite_pool(filesystem.local_store_path()).await?;
+        let local_store = LocalStore::new(pool.clone()).await?;
+        let projection = OpProjection::new(pool.clone()).await?;
         let node_keys = local_store.node_keys().await?;
 
         Self::init(
             filesystem,
             local_store,
+            projection,
             node_keys,
             config,
             notification_tx,
@@ -237,6 +241,7 @@ impl Node {
     pub async fn init(
         filesystem: Filesystem,
         local_store: LocalStore,
+        projection: OpProjection,
         node_keys: NodeKeys,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
@@ -263,7 +268,10 @@ impl Node {
             .network_id(config.network_id)
             .signing_key(node_keys.private_key.clone())
             .database_url(&url)
-            .mdns_mode(config.mdns_mode.clone());
+            .mdns_mode(config.mdns_mode.clone())
+            // Acknowledge operations explicitly, only once application-layer
+            // processing has finished (see `spawn_application_processor_task`).
+            .ack_policy(p2panda::node::AckPolicy::Explicit);
 
         if config.use_relay {
             builder = builder.relay_url(RELAY_URL.clone());
@@ -362,7 +370,8 @@ impl Node {
             mailboxes,
             config,
             filesystem,
-            local_store: local_store.clone(),
+            local_store,
+            projection,
             group_store,
             node_keys,
             notification_tx,
@@ -420,11 +429,6 @@ impl Node {
 
         node.initialize_stored_topics().await?;
 
-        // === announce === //
-
-        node.announce_device_capabilities(node.config.capabilities)
-            .await?;
-
         Ok(node)
     }
 
@@ -441,33 +445,23 @@ impl Node {
 
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
-    pub async fn new_qr_code(
-        &self,
-        share_intent: ShareIntent,
-        inbox: bool,
-    ) -> Result<QrCode, crate::Error> {
-        let inbox_topic = if inbox {
-            let inbox_topic = InboxTopic {
-                topic: Topic::inbox()
-                    .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
-                expires_at: Utc::now() + self.config.contact_code_expiry,
-            };
-            self.initialize_topic(*inbox_topic.topic)
-                .await
-                .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
-            self.local_store
-                .add_active_inbox_topic(inbox_topic.clone())
-                .await
-                .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
-            Some(inbox_topic)
-        } else {
-            None
-        };
+    pub async fn new_qr_code(&self, share_intent: ShareIntent) -> Result<QrCode, crate::Error> {
+        let (inbox_topic, nonce) = InboxTopic::new_random(
+            &self.device_id(),
+            Utc::now() + self.config.contact_code_expiry,
+        );
+        self.initialize_topic(*inbox_topic.topic)
+            .await
+            .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
+        self.local_store
+            .add_active_inbox_topic(inbox_topic.clone())
+            .await
+            .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
 
         Ok(QrCode {
             device_pubkey: self.device_id(),
-            inbox_topic,
             share_intent,
+            inbox_nonce: nonce,
         })
     }
 
@@ -630,7 +624,7 @@ impl Node {
         self.register_topic(topic).await?;
 
         let other_device_id = self
-            .local_store
+            .projection
             .lookup_contact_by_agent_id(other)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
@@ -677,7 +671,7 @@ impl Node {
             .map(|verifying_key| DeviceId::from(*verifying_key))
             .collect();
 
-        let contacts = self.local_store.lookup_contacts(&device_ids).await?;
+        let contacts = self.projection.lookup_contacts(&device_ids).await?;
         let device_to_agent: BTreeMap<DeviceId, AgentId> = device_ids
             .iter()
             .filter_map(|did| match contacts.get(did) {
@@ -720,9 +714,6 @@ impl Node {
         introduced_agents.insert(self.device_id(), self.agent_id());
         self.introduce_agents_to_group(chat_id, introduced_agents)
             .await?;
-
-        self.local_store.save_group_chat_subscribed(chat_id).await?;
-        self.initialize_topic(*chat_id).await?;
 
         for agent in agents {
             self.invite_to_group(chat_id, agent).await?;
@@ -796,7 +787,7 @@ impl Node {
         .await?;
 
         let agent_id = self
-            .local_store
+            .projection
             .lookup_contact_by_device_id(DeviceId::from(member))
             .await?;
         if let Some(agent_id) = agent_id {
@@ -891,11 +882,11 @@ impl Node {
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
         self.register_topic(chat_id).await?;
-        self.local_store.save_group_chat_subscribed(chat_id).await
+        Ok(())
     }
 
     pub async fn get_groups(&self) -> anyhow::Result<Vec<ChatId>> {
-        self.local_store.get_group_chat_ids().await
+        self.projection.get_group_chat_ids().await
     }
 
     pub async fn set_profile(&self, profile: Profile) -> Result<Header, crate::Error> {
@@ -912,17 +903,15 @@ impl Node {
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        self.local_store.get_profile(self.agent_id()).await
+        self.projection.get_profile(self.agent_id()).await
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        self.local_store
-            .lookup_contact_by_device_id(device_id)
-            .await
+        self.projection.lookup_contact_by_device_id(device_id).await
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        self.local_store.all_contact_agent_ids().await
+        self.projection.all_contact_agent_ids().await
     }
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
@@ -997,27 +986,8 @@ impl Node {
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
 
-        let (capabilities, num_agents) = self.get_group_capabilities(topic).await?;
-        let capabilities = capabilities.ok_or(anyhow::anyhow!(
-            "no capabilities found for chat: {:?}",
-            topic.aliased()
-        ))?;
-
-        // NOTE: we may need logic for an agent to re-send a downgraded message if they later discover
-        //       intended recipients who don't have the proper capabilities for receiving this message
-        if num_agents == 1 {
-            tracing::warn!(
-                "sending message to group without knowing any other members' capabilities",
-            );
-        }
-        let message = message.to_version(&capabilities)?;
-
         let header = self
-            .publish(
-                topic,
-                Payload::Chat(ChatPayload::Message(message.clone())),
-                None,
-            )
+            .publish(topic, Payload::Chat(ChatPayload::Message(message)), None)
             .await?;
 
         Ok(header)
@@ -1035,6 +1005,145 @@ impl Node {
             .await?;
 
         Ok(header)
+    }
+
+    /// Edit the text content of a previously-sent message.
+    ///
+    /// `edit_hash` must refer to a `Message` or `EditMessage` operation in this
+    /// chat authored by us, within the edit window, and not already edited. The
+    /// edit is validated before publishing; see [`EditError`](crate::EditError).
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn edit_message(
+        &self,
+        topic: impl Into<ChatId>,
+        edit_hash: Hash,
+        message: impl Into<String>,
+    ) -> Result<Header, EditMessageError> {
+        let topic = topic.into();
+        let valid_ops = self.valid_chat_ops(topic).await?;
+        let now = u64::from(p2panda_core::Timestamp::now());
+        valid_ops.validate_edit(&EditCandidate {
+            target: edit_hash,
+            editor: self.device_id(),
+            timestamp: now,
+            self_hash: None,
+        })?;
+
+        let header = self
+            .publish(
+                topic,
+                Payload::Chat(ChatPayload::EditMessage {
+                    message: message.into(),
+                    edit_hash,
+                }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Publish an edit without validating it. For testing the receiving-side
+    /// handling of invalid edits, which the author-side validation would
+    /// otherwise prevent from ever being created.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn edit_message_raw(
+        &self,
+        topic: impl Into<ChatId>,
+        edit_hash: Hash,
+        message: impl Into<String>,
+    ) -> anyhow::Result<Header> {
+        let header = self
+            .publish(
+                topic.into(),
+                Payload::Chat(ChatPayload::EditMessage {
+                    message: message.into(),
+                    edit_hash,
+                }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Collect all chat operations in a topic, reduced to the fields edit
+    /// validation needs, keyed by operation hash.
+    //
+    // TODO: performance: this triggers a full log traversal on processing every
+    // edit operation. We can improve this by building up the parallel ChatOp list
+    // reduced state as part of the ACID refactors.
+    pub(crate) async fn valid_chat_ops(&self, topic: ChatId) -> anyhow::Result<ValidChatOps> {
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+
+        let mut ops = std::collections::HashMap::new();
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
+                let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
+                    continue;
+                };
+                let kind = match chat {
+                    ChatPayload::Message(_) => ChatOpKind::Message,
+                    ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
+                    _ => ChatOpKind::Other,
+                };
+                ops.insert(
+                    op.header.hash(),
+                    ChatOp {
+                        author: DeviceId::from(op.header.verifying_key),
+                        timestamp: op.header.timestamp.into(),
+                        seq_num: op.header.seq_num,
+                        kind,
+                    },
+                );
+            }
+        }
+
+        let mut ops = ValidChatOps::new(ops);
+        ops.prune();
+        Ok(ops)
+    }
+
+    /// Return every edit operation in the topic that passes validation — i.e.
+    /// the edits a receiving node would honor rather than ignore. Mirrors the
+    /// rule applied in `process_app`, exposed for tests.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn valid_edits(
+        &self,
+        topic: impl Into<ChatId>,
+    ) -> anyhow::Result<Vec<crate::chat::ValidEdit>> {
+        let topic = topic.into();
+        let valid_ops = self.valid_chat_ops(topic).await?;
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+
+        let mut edits = Vec::new();
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
+                let Ok(Payload::Chat(ChatPayload::EditMessage { message, edit_hash })) =
+                    Payload::try_from_body(body)
+                else {
+                    continue;
+                };
+                let op_hash = op.header.hash();
+                if valid_ops.contains(&op_hash) {
+                    edits.push(crate::chat::ValidEdit {
+                        op_hash,
+                        target: edit_hash,
+                        text: message,
+                    });
+                }
+            }
+        }
+
+        Ok(edits)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
@@ -1192,19 +1301,18 @@ impl Node {
     }
 
     /// Register the shared, idempotent state for a contact identified by their
-    /// device pubkey and agent id: record the device -> agent mapping, register
-    /// them as a bootstrap peer, and subscribe to their announcements and our
-    /// direct-chat topic. Safe to call repeatedly, so both the initiating
-    /// `add_contact` path and the inbox request/ack handlers can call it.
+    /// device pubkey and agent id:
+    /// - register the contact as a bootstrap peer,
+    /// - subscribe to their announcements, and
+    /// - subscribe to our direct-chat topic.
+    ///
+    /// Safe to call repeatedly, so both the initiating `add_contact` path and the
+    /// inbox request/ack handlers can call it.
     pub(crate) async fn establish_contact(
         &self,
         device_pubkey: DeviceId,
         agent_id: AgentId,
     ) -> Result<(), Error> {
-        self.local_store
-            .save_agent_mapping(device_pubkey, agent_id)
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
         // Register the contact as a bootstrap so p2panda discovery can reach it
         // directly over the internet (relay + pkarr), rather than depending on a
         // mutually-reachable mailbox to introduce the two nodes.
@@ -1231,15 +1339,23 @@ impl Node {
     pub async fn add_contact(&self, contact: QrCode) -> Result<(), AddContactError> {
         tracing::debug!(
             device_pub_key = ?contact.device_pubkey.aliased(),
-            inbox_topic = ?contact.inbox_topic,
             "adding contact",
         );
 
-        let Some(inbox_topic) = contact.inbox_topic.clone() else {
-            return Err(AddContactError::CreateQrCode(
-                "contact code has no inbox to send a request to".to_string(),
-            ));
-        };
+        // Register the scanned contact as a bootstrap so p2panda discovery can
+        // reach it directly over the internet (relay + pkarr), rather than
+        // depending on a mutually-reachable mailbox to introduce the two nodes.
+        self.register_bootstrap_node(*contact.device_pubkey)
+            .await
+            .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
+
+        // SPACES: Register the member in the spaces manager
+
+        let inbox_topic = InboxTopic::from_nonce(
+            &contact.device_pubkey,
+            &contact.inbox_nonce,
+            Utc::now() + self.config.contact_code_expiry,
+        );
 
         // TODO: use all of this commented out stuff when spaces are possible again
         // // XXX: there should be a better way to wait for the device group to be created,
@@ -1285,6 +1401,7 @@ impl Node {
         self.initialize_topic(*inbox_topic.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+
         // Mint a private reply inbox for this exchange and listen on it for
         // the owner's ack. We do NOT persist the (possibly shared) advertised
         // inbox we scanned — only the owner keeps camping on that — so other
@@ -1297,17 +1414,15 @@ impl Node {
             )),
             expires_at: Utc::now() + self.config.contact_code_expiry,
         };
+
         self.initialize_topic(*reply_inbox.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+
         self.local_store
             .add_reply_inbox_topic(reply_inbox.clone(), contact.device_pubkey)
             .await
             .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
-        let code = self
-            .new_qr_code(ShareIntent::AddContact, false)
-            .await
-            .map_err(|e| AddContactError::CreateQrCode(e.to_string()))?;
         let Some(profile) = self
             .my_profile()
             .await
@@ -1315,10 +1430,10 @@ impl Node {
         else {
             return Err(AddContactError::ProfileNotCreated);
         };
+
         self.publish(
             inbox_topic.topic,
             Payload::Inbox(InboxPayload::ContactRequest {
-                code,
                 profile,
                 agent_id: self.agent_id(),
                 reply_topic: reply_inbox.topic.clone(),
@@ -1376,7 +1491,7 @@ impl Node {
         // The requester's device was mapped to their agent_id when the request
         // arrived; recover it to establish their network presence.
         let device_pubkey = self
-            .local_store
+            .projection
             .lookup_contact_by_agent_id(agent_id)
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
@@ -1572,64 +1687,6 @@ impl Node {
             .await?;
 
         Ok(())
-    }
-
-    pub async fn announce_device_capabilities(
-        &self,
-        capabilities: Capabilities,
-    ) -> anyhow::Result<()> {
-        let announcements = Topic::announcements(self.agent_id());
-        let latest_capability = self.local_store.get_capabilities(self.device_id()).await?;
-
-        // If the capability is unset or different from the current one, set it now.
-        if latest_capability != Some(capabilities) {
-            self.publish(
-                announcements,
-                Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }),
-                Some(&format!(
-                    "set_device_capabilities({:?})",
-                    self.device_id().aliased()
-                )),
-            )
-            .await?;
-        }
-
-        Ok(())
-    }
-
-    /// Find the infimum of the capabilities of all other members of the group with read access or above.
-    ///
-    /// This is dependent on eventual consistency, and as other members join, the capabilities may change.
-    pub async fn get_group_capabilities(
-        &self,
-        topic: ChatId,
-    ) -> anyhow::Result<(Option<Capabilities>, usize)> {
-        let members = self.group_store.members(topic).await?;
-        let mut devices = members
-            .iter()
-            .filter_map(|(member, access)| {
-                // Only include members with read access or above
-                // TODO: make sure this pubkey corresponds to a DeviceId and not an AgentId,
-                //       once device groups are implemented
-                (*access >= Access::read()).then_some(*member)
-            })
-            .collect::<BTreeSet<_>>();
-        devices.insert(self.device_id());
-
-        // Collect capabilities for all agents
-        let caps = futures::future::join_all(
-            devices
-                .into_iter()
-                .map(|device| self.local_store.get_capabilities(device)),
-        )
-        .await
-        .into_iter()
-        .collect::<Result<Vec<Option<Capabilities>>>>()?;
-
-        let caps = caps.into_iter().flatten().collect::<Vec<_>>();
-        let num = caps.len();
-
-        Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 
     pub async fn store_media(

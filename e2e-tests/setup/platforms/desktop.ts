@@ -1,9 +1,9 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import path from 'node:path';
-import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
+import { startAgentLogger } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
 import { killAllE2EProcesses, killAndWait, killPortHolders } from '../cleanup';
 import { waitForPortFree, waitForPortListening } from '../wait-for-port';
@@ -12,25 +12,6 @@ import type { AgentPlatform } from './platform';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETUP_DIR = path.resolve(__dirname, '..');
 const ROOT = path.resolve(__dirname, '..', '..', '..');
-
-/**
- * Tail an agent's log file (written by launch-agent.sh) and echo lines to the
- * test runner's stdout with an agent-specific prefix.
- */
-function startAgentLogger(agent: string, logFile: string): ChildProcess {
-	// Pre-create the log file so `tail` doesn't error before the agent boots.
-	mkdirSync(path.dirname(logFile), { recursive: true });
-	writeFileSync(logFile, '');
-
-	const proc = spawn('tail', ['-n', '0', '-F', logFile], {
-		stdio: ['ignore', 'pipe', 'ignore'],
-	});
-	const rl = createInterface({ input: proc.stdout! });
-	rl.on('line', (line: string) => {
-		console.log(`[${agent}] ${line}`);
-	});
-	return proc;
-}
 
 interface DesktopAgent {
 	slot: number;

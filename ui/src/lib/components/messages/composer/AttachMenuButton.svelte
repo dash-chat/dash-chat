@@ -30,7 +30,7 @@
 
 <wa-dropdown
 	class="contents"
-	placement="top-start"
+	placement="top-end"
 	distance={8}
 	data-testid="message-input-attach-menu"
 	onwa-select={onSelect}

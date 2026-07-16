@@ -1,5 +1,6 @@
 use dashchat_node::{
-    AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, OutgoingMedia, RemoveGroupMemberError,
+    AgentId, ChatId, ChatReaction, DeviceId, EditMessageError, GroupInfo, Node, OutgoingMedia,
+    RemoveGroupMemberError,
 };
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
@@ -25,7 +26,7 @@ pub async fn create_group(
     let mut members = std::collections::BTreeMap::new();
     for agent_id in initial_members {
         let device_id = node
-            .local_store
+            .projection
             .lookup_contact_by_agent_id(agent_id)
             .await
             .map_err(|e| format!("Failed to look up contact: {e:?}"))?
@@ -58,7 +59,7 @@ pub async fn add_group_member(
 ) -> Result<(), String> {
     let node = app_node.get().await?;
     let device_id = node
-        .local_store
+        .projection
         .lookup_contact_by_agent_id(agent_id)
         .await
         .map_err(|e| format!("Failed to look up contact: {e:?}"))?
@@ -80,6 +81,17 @@ pub async fn send_message(
         .send_message(chat_id, message, media)
         .await
         .map_err(|err| format!("{err:?}"))?;
+    Ok(header.hash())
+}
+
+#[tauri::command]
+pub async fn edit_message(
+    chat_id: ChatId,
+    edit_hash: Hash,
+    message: String,
+    node: State<'_, Node>,
+) -> Result<Hash, EditMessageError> {
+    let header = node.edit_message(chat_id, edit_hash, message).await?;
     Ok(header.hash())
 }
 
@@ -134,7 +146,7 @@ pub async fn get_group_members(
         let agent_id = if device_id == my_device_id {
             my_agent_id
         } else {
-            node.local_store
+            node.projection
                 .lookup_contact_by_device_id(device_id)
                 .await
                 .map_err(|e| format!("Failed to lookup contact: {e:?}"))?
@@ -163,7 +175,7 @@ pub async fn remove_group_member(
 ) -> Result<(), String> {
     let node = app_node.get().await?;
     let device_id = node
-        .local_store
+        .projection
         .lookup_contact_by_agent_id(agent_id)
         .await
         .map_err(|e| format!("{e:?}"))?

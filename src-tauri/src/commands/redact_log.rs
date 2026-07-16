@@ -19,8 +19,8 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"[A-Za-z0-9+/]{40,}={0,2}",
         // DeviceId and AgentId wrappers (must precede bare VerifyingKey/Hash patterns)
         r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
-        // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...])
-        r"(VerifyingKey|Hash|Signature)\(\[[\d, ]+\]\)",
+        // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...]), InboxNonce([...])
+        r"(VerifyingKey|Hash|Signature|InboxNonce)\(\[[\d, ]+\]\)",
         // Timestamps (seconds or microseconds since epoch, 10+ digits)
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
         // Debug format: name/surname/about/description fields with quoted values
@@ -48,6 +48,9 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""(name|surname|about|description)"\s*:\s*"[^"]*""#,
         // JSON format: "content":"..."
         r#""content"\s*:\s*"[^"]*""#,
+        // JSON format: "message":"..." — chat message text and edit text
+        // (ChatMessageContentV1 and EditMessage both serialize a `message` field).
+        r#""message"\s*:\s*"[^"]*""#,
         // JSON format: "emoji":"..."
         r#""emoji"\s*:\s*"[^"]*""#,
         // OS username inside filesystem paths. The whole `/home/<user>` (or
@@ -365,6 +368,27 @@ mod tests {
         assert!(
             !result.contains("private.jpg"),
             "photo name leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_edit_message_debug() {
+        let input = r#"Chat(EditMessage { message: "edited secret", edit_hash: Hash([1, 2, 3]) })"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("edited secret"),
+            "edit text not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_edit_message_json() {
+        let input =
+            r#"{"type":"EditMessage","payload":{"message":"edited secret","edit_hash":"abc"}}"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("edited secret"),
+            "edit text not redacted: {result}"
         );
     }
 
