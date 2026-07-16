@@ -32,7 +32,9 @@ export class MockContactsClient implements IContactsClient {
 	}
 
 	async createContactCode(): Promise<string> {
-		return Math.random().toString(36).slice(2);
+		const bytes = new Uint8Array(45);
+		crypto.getRandomValues(bytes);
+		return btoa(String.fromCharCode(...bytes));
 	}
 
 	async activeInboxTopics(): Promise<TopicId[]> {
