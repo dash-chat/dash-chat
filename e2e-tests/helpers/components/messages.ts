@@ -184,8 +184,9 @@ export class Messages extends TestHelper {
 	}
 
 	/** Long-press (via a synthetic contextmenu) the bubble containing `text` to
-	 * open its quick-reaction bar, and resolve the bar scoped to that message. */
-	async openReactions(text: string) {
+	 * open its message actions UI — the quick-reaction bar plus, on own
+	 * editable messages, the actions menu — and resolve the bubble's wrapper. */
+	async openMessageActions(text: string) {
 		const dispatched = await this.agent.execute(
 			(messagesSel: string, t: string) => {
 				const wrappers = document.querySelectorAll<HTMLElement>(
@@ -220,7 +221,7 @@ export class Messages extends TestHelper {
 
 	/** Open the quick-reaction bar for `text` and tap the given quick emoji. */
 	async reactWith(text: string, emoji: string) {
-		const wrapper = await this.openReactions(text);
+		const wrapper = await this.openMessageActions(text);
 		await wrapper.$(tid(`quick-reaction-${emoji}`)).click();
 	}
 
@@ -279,14 +280,6 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Open the message actions UI for the message containing `text` and wait
-	 * for it to be displayed. Same gesture as `openReactions`; alongside the
-	 * quick-reaction bar it shows the actions menu (Copy and, on own editable
-	 * messages, Edit). */
-	async openActions(text: string): Promise<void> {
-		await this.openReactions(text);
-	}
-
 	/** Whether the message containing `text` shows the "Edited" indicator. */
 	async hasEditedIndicator(text: string): Promise<boolean> {
 		return this.agent.execute(
@@ -310,7 +303,7 @@ export class Messages extends TestHelper {
 	/** Open the actions menu on the message with `oldText`, tap Edit, replace
 	 * the text with `newText`, and send. */
 	async editMessage(oldText: string, newText: string): Promise<void> {
-		await this.openActions(oldText);
+		await this.openMessageActions(oldText);
 		const editAction = await this.editAction(oldText);
 		await editAction.waitForClickable();
 		await editAction.click();

@@ -43,7 +43,7 @@ describe('Editing messages', () => {
 		await agent2.directChatPage.sendMessage("Bob's message");
 		await agent1.directChatPage.messages.waitForMessage("Bob's message");
 
-		await agent1.directChatPage.messages.openActions("Bob's message");
+		await agent1.directChatPage.messages.openMessageActions("Bob's message");
 		const messages = agent1.directChatPage.messages;
 		await (await messages.actionsMenu("Bob's message")).waitForDisplayed();
 		expect(
@@ -52,7 +52,7 @@ describe('Editing messages', () => {
 	});
 
 	it('copies a message to the clipboard from the actions menu', async () => {
-		await agent1.directChatPage.messages.openActions("Bob's message");
+		await agent1.directChatPage.messages.openMessageActions("Bob's message");
 		const copyAction =
 			await agent1.directChatPage.messages.copyAction("Bob's message");
 		await copyAction.waitForClickable();
