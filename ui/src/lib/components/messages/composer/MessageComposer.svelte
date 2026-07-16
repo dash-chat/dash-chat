@@ -229,10 +229,5 @@
 	.input-container {
 		border: 1px solid var(--k-hairline-color);
 		border-radius: 22px;
-		transition: border-color 0.15s ease;
-	}
-
-	.input-container:focus-within {
-		border-color: var(--color-brand-primary);
 	}
 </style>
