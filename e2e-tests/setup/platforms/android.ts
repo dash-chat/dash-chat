@@ -69,6 +69,10 @@ function connectedDevices(): string[] {
  * devices for `android`, `emulator-*` serials for `android-emulator` (the run
  * script boots emulators before wdio starts). `ANDROID_UDID{slot}` overrides
  * the claim for that slot.
+ *
+ * Like allocatePinnedPort, the claim is pinned via `_WDIO_ANDROID_UDID{slot}`
+ * env vars so the launcher and worker config loads agree on the udid->slot
+ * mapping even if `adb devices` ordering changes between them.
  */
 function claimDevices(kindBySlot: Map<number, AndroidKind>): Map<number, string> {
 	const devices = connectedDevices();
@@ -78,11 +82,14 @@ function claimDevices(kindBySlot: Map<number, AndroidKind>): Map<number, string>
 	};
 	const udids = new Map<number, string>();
 	for (const [slot, kind] of kindBySlot) {
-		const override = process.env[`ANDROID_UDID${slot}`];
-		if (override !== undefined) {
-			udids.set(slot, override);
+		const pinned =
+			process.env[`_WDIO_ANDROID_UDID${slot}`] ??
+			process.env[`ANDROID_UDID${slot}`];
+		if (pinned !== undefined) {
+			udids.set(slot, pinned);
+			process.env[`_WDIO_ANDROID_UDID${slot}`] = pinned;
 			for (const pool of Object.values(pools)) {
-				const i = pool.indexOf(override);
+				const i = pool.indexOf(pinned);
 				if (i !== -1) pool.splice(i, 1);
 			}
 			continue;
@@ -99,6 +106,7 @@ function claimDevices(kindBySlot: Map<number, AndroidKind>): Map<number, string>
 						`'just android boot-emulator'.`,
 			);
 		}
+		process.env[`_WDIO_ANDROID_UDID${slot}`] = udid;
 		udids.set(slot, udid);
 	}
 	return udids;
