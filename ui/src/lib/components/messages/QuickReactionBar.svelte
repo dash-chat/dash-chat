@@ -93,6 +93,7 @@
 			label={m.moreReactions()}
 			testid="quick-reaction-more"
 			iconClass="text-xl"
+			class="!h-9 !w-9"
 		/>
 	</div>
 </Popover>

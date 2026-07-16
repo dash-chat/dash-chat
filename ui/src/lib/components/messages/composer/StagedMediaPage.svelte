@@ -69,7 +69,7 @@
 					onClick={onClose}
 					label={m.close()}
 					testid="staged-media-close"
-					class="!p-2 !text-white opacity-85 hover:opacity-100"
+					class="!text-white opacity-85 hover:!bg-white/10"
 				/>
 			{/if}
 			{#if destinationName}

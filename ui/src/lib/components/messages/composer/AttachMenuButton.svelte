@@ -35,10 +35,10 @@
 	data-testid="message-input-attach-menu"
 	onwa-select={onSelect}
 	onwa-show={() => (open = true)}
-	onwa-after-hide={() => (open = false)}
+	onwa-hide={() => (open = false)}
 >
 	<div slot="trigger" class="inline-flex">
-		<AttachButton class="h-10 w-10" expanded={open} />
+		<AttachButton expanded={open} />
 	</div>
 	<wa-dropdown-item value="photos" data-testid="message-input-attach-photos">
 		<wa-icon slot="icon" src={wrapPathInSvg(mdiImage)}></wa-icon>

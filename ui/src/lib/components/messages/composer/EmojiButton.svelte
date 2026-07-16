@@ -16,5 +16,4 @@
 	label={m.emoji()}
 	testid="message-input-emoji"
 	iconClass="text-[22px]"
-	class="h-7 w-7"
 />

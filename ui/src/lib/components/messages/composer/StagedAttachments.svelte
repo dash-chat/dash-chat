@@ -57,6 +57,7 @@
 					label={m.removeAllAttachments()}
 					testid="message-input-clear-attachments"
 					iconClass="text-xl"
+					class="!h-7 !w-7"
 				/>
 			</div>
 		{/if}

@@ -126,7 +126,7 @@
 					onClick={onAddMore}
 					label={m.addMoreAttachments()}
 					testid="staged-media-add-more"
-					class="!h-10 !w-10 shrink-0 !bg-[#3a3a3c] !opacity-100 hover:!bg-[#4a4a4c]"
+					class="shrink-0 !bg-[#3a3a3c] !opacity-100 hover:!bg-[#4a4a4c]"
 				/>
 			</div>
 		{/if}

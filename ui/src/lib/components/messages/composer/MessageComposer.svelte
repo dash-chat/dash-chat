@@ -59,6 +59,10 @@
 
 	let showMediaPanel = $state(false);
 
+	function toggleMediaPanel() {
+		showMediaPanel = !showMediaPanel;
+	}
+
 	/** Returns whether the message was sent (so callers can keep the draft on failure). */
 	async function send(): Promise<boolean> {
 		// Guard against concurrent sends: the button shows a spinner, but the
@@ -156,11 +160,13 @@
 
 		<div class="m-2 row gap-2" style="align-items: center;">
 			{#if isMobile}
-				<AttachButton
-					class="h-10 w-10"
-					expanded={showMediaPanel}
-					onClick={() => (showMediaPanel = !showMediaPanel)}
-				/>
+				{#if theme === 'ios'}
+					<AttachButton
+						class="!h-[42px] !w-[42px] !bg-ios-light-glass !opacity-100 shadow-ios-light-glass backdrop-blur-lg dark:!bg-ios-dark-glass dark:shadow-ios-dark-glass"
+						expanded={showMediaPanel}
+						onClick={toggleMediaPanel}
+					/>
+				{/if}
 			{:else}
 				<EmojiButton onClick={() => (showEmojiPicker = true)} />
 			{/if}
@@ -178,10 +184,26 @@
 					onSend={send}
 					onEmojiClick={isMobile ? () => (showEmojiPicker = true) : undefined}
 				/>
+				{#if isMobile && theme !== 'ios' && hasContent}
+					<AttachButton
+						class="me-1"
+						expanded={showMediaPanel}
+						onClick={toggleMediaPanel}
+					/>
+				{/if}
 			</div>
 
 			{#if isMobile}
-				<SendButton disabled={!hasContent} onSend={send} />
+				{#if hasContent}
+					<SendButton onSend={send} />
+				{:else if theme !== 'ios'}
+					<AttachButton
+						class="!h-[42px] !w-[42px] !bg-brand-primary !opacity-100"
+						iconClass="text-2xl text-white"
+						expanded={showMediaPanel}
+						onClick={toggleMediaPanel}
+					/>
+				{/if}
 			{:else}
 				<AttachMenuButton onFiles={stage} />
 			{/if}
