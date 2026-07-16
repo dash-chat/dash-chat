@@ -178,7 +178,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_contact_roundtrip() {
+    fn test_contact_roundtrip_add_device() {
         let pubkey = VerifyingKey::from_bytes(&[11; 32]).unwrap();
         let device_pubkey = DeviceId::from(pubkey);
         let nonce: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -189,7 +189,28 @@ mod tests {
         };
         let encoded = contact.to_string();
         let decoded = QrCode::from_str(&encoded).unwrap();
-
         assert_eq!(contact, decoded);
+    }
+
+    #[test]
+    fn test_contact_roundtrip_add_contact() {
+        let pubkey = VerifyingKey::from_bytes(&[22; 32]).unwrap();
+        let device_pubkey = DeviceId::from(pubkey);
+        let nonce: [u8; 8] = [8, 7, 6, 5, 4, 3, 2, 1];
+        let contact = QrCode {
+            device_pubkey,
+            share_intent: ShareIntent::AddContact,
+            inbox_nonce: InboxNonce(nonce),
+        };
+        let encoded = contact.to_string();
+        let decoded = QrCode::from_str(&encoded).unwrap();
+        assert_eq!(contact, decoded);
+    }
+
+    #[test]
+    fn test_from_str_rejects_garbage() {
+        assert!(QrCode::from_str("not-a-valid-code").is_err());
+        assert!(QrCode::from_str("").is_err());
+        assert!(QrCode::from_str("!!!").is_err());
     }
 }
