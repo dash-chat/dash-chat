@@ -100,27 +100,6 @@
 		contentWrapPadding="p-2"
 		class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 	>
-<<<<<<< HEAD
-		{#if message.deleted}
-			<div
-				class="flex items-end gap-2.5 px-1 italic"
-				data-testid="deleted-message"
-			>
-				{m.youDeletedThisMessage()}
-				{#if isLast}
-					<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
-				{/if}
-			</div>
-		{:else}
-			<MessageContent
-				{message}
-				{searchQuery}
-				senderName={m.you()}
-				editedIndicator={message.editedAt ? editedIndicator : undefined}
-				metadata={isLast ? metadata : undefined}
-			/>
-		{/if}
-=======
 		<MessageContent
 			{message}
 			{searchQuery}
@@ -130,7 +109,6 @@
 				: undefined}
 			metadata={isLast ? metadata : undefined}
 		/>
->>>>>>> edit-message-frontend
 	</Card>
 	{#if Object.keys(message.reactions).length > 0}
 		<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">

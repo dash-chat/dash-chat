@@ -188,14 +188,14 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
     // undeleted message and its edit are untouched.
     for node in [&alice, &bobbi] {
         for hash in [msg1.hash(), edit1.hash()] {
-            assert!(node.local_store.is_tombstoned(*chat, hash).await.unwrap());
+            assert!(node.projection.is_tombstoned(*chat, hash).await.unwrap());
             assert_eq!(
                 payload_present(node, *chat, alice.device_id(), hash).await,
                 Some(false)
             );
         }
         for hash in [msg2.hash(), edit2.hash()] {
-            assert!(!node.local_store.is_tombstoned(*chat, hash).await.unwrap());
+            assert!(!node.projection.is_tombstoned(*chat, hash).await.unwrap());
             assert_eq!(
                 payload_present(node, *chat, alice.device_id(), hash).await,
                 Some(true)
@@ -401,7 +401,7 @@ async fn invalid_deletes_are_rejected() {
     for node in [&alice, &bobbi] {
         assert!(
             !node
-                .local_store
+                .projection
                 .is_tombstoned(*chat, msg.hash())
                 .await
                 .unwrap()

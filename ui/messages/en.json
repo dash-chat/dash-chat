@@ -8,8 +8,7 @@
 	"moreReactions": "More reactions",
 	"edit": "Edit",
 	"edited": "Edited",
-<<<<<<< HEAD
-	"editingMessage": "Editing message",
+	"editingMessage": "Edit message",
 	"editMessageHistory": "Edit history",
 	"deleteMessageTitle": "Delete message?",
 	"deleteForEveryone": "Delete for everyone",
@@ -17,12 +16,9 @@
 	"thisMessageWasDeleted": "This message was deleted.",
 	"messageDeleted": "Message deleted",
 	"originalMessage": "Original",
-=======
-	"editingMessage": "Edit message",
 	"discardDraftTitle": "Discard draft?",
 	"discardDraftDescription": "This action can't be undone.",
 	"discard": "Discard",
->>>>>>> edit-message-frontend
 	"save": "Save",
 	"send": "Send",
 	"emoji": "Emoji",

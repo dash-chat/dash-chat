@@ -129,25 +129,7 @@
 		}
 	}
 
-<<<<<<< HEAD
-	const editing = new MessageEditing(store.messages);
-	let deletingMessage: Message | undefined = $state(undefined);
-
-	async function deleteForEveryone(message: Message) {
-		deletingMessage = undefined;
-		try {
-			await store.messages.deleteMessage(message);
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-	}
-
-	let historyMessage: Message | undefined = $state(undefined);
-	let showHistory = $state(false);
-=======
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
->>>>>>> edit-message-frontend
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -585,17 +567,14 @@
 																			message,
 																			myDeviceId,
 																		)}
-<<<<<<< HEAD
-																		onEdit={() => editing.start(message)}
+																		onEdit={() =>
+																			composer?.editMessage(message)}
 																		canDelete={canDeleteMessageForEveryone(
 																			message,
 																			myDeviceId,
 																		)}
-																		onDelete={() => (deletingMessage = message)}
-=======
-																		onEdit={() =>
-																			composer?.editMessage(message)}
->>>>>>> edit-message-frontend
+																		onDelete={() =>
+																			composer?.deleteMessage(message)}
 																	/>
 																{/await}
 															</div>
@@ -682,14 +661,8 @@
 						onClose={() => (showPeerProfile = false)}
 						{profile}
 					/>
-<<<<<<< HEAD
 
-					<EditHistorySheet
-						message={historyMessage}
-						opened={showHistory}
-						onClose={() => (showHistory = false)}
-					/>
-
+					<!-- TODO: must it move? -->
 					<Dialog
 						opened={deletingMessage !== undefined}
 						onBackdropClick={() => (deletingMessage = undefined)}
@@ -708,8 +681,6 @@
 							</DialogButton>
 						{/snippet}
 					</Dialog>
-=======
->>>>>>> edit-message-frontend
 				</ReverseScrollPage>
 
 				{#if !isAtBottom}

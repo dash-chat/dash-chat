@@ -9,6 +9,7 @@ use tracing::{debug, warn};
 
 use crate::DeleteCandidate;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
+use crate::stores::ProjectionError;
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
@@ -259,14 +260,16 @@ impl Node {
     /// synced onward. The operation arrives here already written to the op
     /// store (by peers or by mailbox sync), so this deletes the body after the
     /// fact.
+    //
+    // TODO: when device groups exist, test that tombstones are enforced across devices.
     async fn enforce_tombstone(
         &self,
-        operation: &ProcessedOperation<Payload>,
+        topic: TopicId,
+        tombstoned_op: &Operation,
     ) -> anyhow::Result<bool> {
-        let topic = operation.topic();
-        let hash = operation.id();
-        if self.local_store.is_tombstoned(topic, hash).await? {
-            self.unprocess_app(&operation.processed().operation).await?;
+        let hash = tombstoned_op.hash;
+        if self.projection.is_tombstoned(topic, hash).await? {
+            self.unprocess_app(tombstoned_op).await?;
             self.op_store.delete_body(&hash).await?;
             Ok(true)
         } else {
@@ -275,7 +278,7 @@ impl Node {
     }
 
     /// Filter out operations whose payloads are not able to be deleted.
-    pub(crate) fn is_tombstoneable(&self, payload: &Payload) -> bool {
+    pub(crate) fn is_tombstoneable(payload: &Payload) -> bool {
         matches!(
             payload,
             Payload::Chat(ChatPayload::Message(_) | ChatPayload::EditMessage { .. })
@@ -304,11 +307,7 @@ impl Node {
                 warn!(op = ?hash.aliased(), "delete references another author's operation; skipping");
                 continue;
             }
-            self.local_store.add_tombstone(topic, *hash).await?;
-            if op.body.is_some() {
-                self.unprocess_app(&op).await?;
-                self.op_store.delete_body(hash).await?;
-            }
+            self.tombstone_operation(topic, &op).await?;
         }
         Ok(())
     }
@@ -324,7 +323,23 @@ impl Node {
     ) -> anyhow::Result<()> {
         self.register_bootstrap(operation, source).await?;
 
-        self.projection.reduce(self.agent_id(), operation).await?;
+        // If an operation is invalidated by the projection layer, we don't process it,
+        // but still allow it to be acknowledged as processed.
+        match self.projection.reduce(self.agent_id(), operation).await {
+            // Continue processing.
+            Ok(_) => (),
+
+            // Don't process but allow the log to proceed.
+            Err(ProjectionError::InvalidOp(msg)) => {
+                tracing::info!(msg, "invalid operation");
+                return Ok(());
+            }
+
+            // Bubble up the error: the log won't proceed.
+            Err(ProjectionError::Any(err)) => {
+                return Err(err);
+            }
+        }
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
@@ -394,7 +409,7 @@ impl Node {
         let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
             return Ok(());
         };
-        if self.is_tombstoneable(&payload) {
+        if Self::is_tombstoneable(&payload) {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     use p2panda_store::topics::TopicStore;
@@ -442,26 +457,55 @@ impl Node {
         let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         let header = operation.processed().header();
 
-        // NOTE: realistically the tombstone will only be enforced here
-        // upon playback of operations. The first time through, it will
-        // have been processed and potentially have modified local state.
-        // Upon tombstoning (or enforcement), it will be "unprocessed"
-        // via [`Self::unprocess_app`] to undo those state changes,
-        // as if it were never processed at all. On playback, the operation
-        // simply doesn't get processed.
-        if self.enforce_tombstone(operation).await? {
-            // The payload is tombstoned, so there's nothing to process.
+        // If an operation is invalidated by the projection layer, we don't process it,
+        // but still allow it to be acknowledged as processed.
+        match self.projection.reduce(self.agent_id(), operation).await {
+            // Continue processing.
+            Ok(_) => (),
+
+            // Don't process but allow the log to proceed.
+            Err(ProjectionError::InvalidOp(msg)) => {
+                tracing::info!(msg, "invalid operation");
+                return Ok(());
+            }
+
+            // Bubble up the error: the log won't proceed.
+            Err(ProjectionError::Any(err)) => {
+                return Err(err);
+            }
+        }
+
+        // If a receiver is processing this, the tombstone may have been processed prior,
+        // so we want to drop the payload now and not process it.
+        if self
+            .enforce_tombstone(topic, &operation.event.operation)
+            .await?
+        {
+            // The payload is tombstoned, so we must not process it. Return early.
             self.notify_header(dashchat_topic, header).await?;
             return Ok(());
         }
-
-        self.projection.reduce(self.agent_id(), operation).await?;
 
         let hash = operation.id();
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
 
         match &payload {
+            Payload::DeviceGroup(DeviceGroupPayload::TombstoneMessage { topic, hash }) => {
+                // If a node has already processed the target, now that the tombstone has arrived
+                // it's time to purge it.
+                if let Some(tombstoned_op) = self.op_store.get_operation(hash).await? {
+                    let purged = self.enforce_tombstone(*topic, &tombstoned_op).await?;
+                    debug_assert!(
+                        purged,
+                        "operation was expected to be tombstoned but was not"
+                    );
+                    // The payload is tombstoned, so there's nothing to process.
+                    self.notify_header(dashchat_topic, header).await?;
+                    return Ok(());
+                }
+            }
+
             Payload::GroupControl(_) => {
                 // Nothing to do.
             }
@@ -597,14 +641,15 @@ impl Node {
                 }
             }
 
-<<<<<<< HEAD
             Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
                 // On replay (or a duplicate delivery) the delete has already
                 // been applied and its targets' bodies are gone, which would
                 // fail validation; skip silently instead.
+                //
+                // TODO: move this to the projection layer.
                 let mut already_applied = true;
                 for h in hashes {
-                    if !self.local_store.is_tombstoned(topic, *h).await? {
+                    if !self.projection.is_tombstoned(topic, *h).await? {
                         already_applied = false;
                         break;
                     }
@@ -639,53 +684,7 @@ impl Node {
                 }
             }
 
-            Payload::Chat(ChatPayload::Reaction(_) | ChatPayload::GroupInfo(_)) => {
-                // Nothing to do.
-            }
-
-            Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
-                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
-
-                tracing::info!(me = ?self.agent_id().aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
-
-                if let Err(err) = self
-                    .local_store
-                    .save_profile(agent_id, profile.clone())
-                    .await
-                {
-                    tracing::warn!(?err, "failed to save profile from SetProfile");
-                }
-            }
-
-            Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
-                // Save the device_id -> agent_id mapping so group members can look each other up.
-
-                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
-                if let Err(err) = self.local_store.save_agent_mapping(author, agent_id).await {
-                    tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
-                }
-
-                if let Err(err) = self
-                    .local_store
-                    .save_capabilities(author, capabilities.clone())
-                    .await
-                {
-                    tracing::warn!(?err, "failed to save capabilities from SetCapabilities");
-                }
-            }
-
-            Payload::DeviceGroup(_) => {
-=======
             _ => {
->>>>>>> edit-message-frontend
                 // Nothing to do.
             }
         }

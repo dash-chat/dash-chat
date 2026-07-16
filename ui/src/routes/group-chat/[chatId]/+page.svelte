@@ -39,11 +39,6 @@
 		canEditMessage,
 		canDeleteMessageForEveryone,
 	} from '$lib/components/messages/message-helpers';
-<<<<<<< HEAD
-	import { showToast } from '$lib/utils/toasts';
-	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
-=======
->>>>>>> edit-message-frontend
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
@@ -75,30 +70,7 @@
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
-<<<<<<< HEAD
-	const editing = new MessageEditing(store.messages);
-	let deletingMessage: Message | undefined = $state(undefined);
-
-	async function deleteForEveryone(message: Message) {
-		deletingMessage = undefined;
-		try {
-			await store.messages.deleteMessage(message);
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-	}
-
-	let historyMessage: Message | undefined = $state(undefined);
-	let showHistory = $state(false);
-
-	function openHistory(message: Message) {
-		historyMessage = message;
-		showHistory = true;
-	}
-=======
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
->>>>>>> edit-message-frontend
 
 	// Scroll the message we just sent into view once its bubble mounts.
 	let justSentMessageHash: Hash | null = $state(null);
@@ -293,16 +265,12 @@
 														{chatId}
 														searchQuery=""
 														canEdit={canEditMessage(message, myDeviceId)}
-<<<<<<< HEAD
-														onEdit={() => editing.start(message)}
+														onEdit={() => composer?.editMessage(message)}
 														canDelete={canDeleteMessageForEveryone(
 															message,
 															myDeviceId,
 														)}
-														onDelete={() => (deletingMessage = message)}
-=======
-														onEdit={() => composer?.editMessage(message)}
->>>>>>> edit-message-frontend
+														onDelete={() => composer?.deleteMessage(message)}
 													/>
 												</div>
 											{:else}
@@ -374,31 +342,4 @@
 			{/if}
 		{/await}
 	</div>
-<<<<<<< HEAD
-
-	<EditHistorySheet
-		message={historyMessage}
-		opened={showHistory}
-		onClose={() => (showHistory = false)}
-	/>
-
-	<Dialog
-		opened={deletingMessage !== undefined}
-		onBackdropClick={() => (deletingMessage = undefined)}
-		title={m.deleteMessageTitle()}
-	>
-		{#snippet buttons()}
-			<DialogButton onClick={() => (deletingMessage = undefined)}>
-				{m.cancel()}
-			</DialogButton>
-			<DialogButton
-				data-testid="delete-message-confirm"
-				onClick={() => deletingMessage && deleteForEveryone(deletingMessage)}
-			>
-				{m.deleteForEveryone()}
-			</DialogButton>
-		{/snippet}
-	</Dialog>
-=======
->>>>>>> edit-message-frontend
 </div>

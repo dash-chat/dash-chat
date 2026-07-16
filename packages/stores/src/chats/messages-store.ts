@@ -19,7 +19,6 @@ import { type IMessagesClient } from './messages-client';
  * UNIX epoch (the backend serializes them as such), so this is 24h in ms. */
 export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-<<<<<<< HEAD
 /** The window during which a message may be deleted for everyone, measured
  * from the original message timestamp. Deleting a message for yourself is
  * always allowed. Mirrors `DELETE_WINDOW_MICROS` in
@@ -28,8 +27,6 @@ export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const DELETE_FOR_EVERYONE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** A single version of a message's text, with the time it was authored. */
-=======
->>>>>>> edit-message-frontend
 export interface MessageVersion {
 	hash: string;
 	text: string;
@@ -46,18 +43,10 @@ export interface Message {
 	author: DeviceId;
 	seqNum: number;
 	reactions: Record<DeviceId, string>;
-<<<<<<< HEAD
-	/** Timestamp of the latest edit, if the message has been edited. */
-	editedAt?: number;
-	/** Every version of the text, original first, when the message was edited. */
-	history?: MessageVersion[];
-	/** Hash of the latest edit op in the chain; the target for the next edit. */
-	latestEditHash?: Hash;
-	/** Whether the message was deleted for everyone; rendered as a placeholder. */
-	deleted?: boolean;
-=======
 	editHistory: MessageVersion[];
->>>>>>> edit-message-frontend
+	/** Whether the message was deleted for everyone; rendered as a placeholder. */
+	// TODO: recheck
+	deleted?: boolean;
 }
 
 // The messages of a single chat, direct or group alike: the message log with
@@ -169,20 +158,6 @@ export class MessagesStore {
 
 	async editMessage(message: Message, newText: string): Promise<Hash> {
 		const chatId = await this.chatId();
-<<<<<<< HEAD
-		const target = message.latestEditHash ?? message.hash;
-		return this.client.editMessage(chatId, target, newText);
-	}
-
-	async deleteMessage(message: Message): Promise<Hash> {
-		const chatId = await this.chatId();
-		const target = message.latestEditHash ?? message.hash;
-		return this.client.deleteMessage(chatId, target);
-	}
-}
-=======
->>>>>>> edit-message-frontend
-
 		const current = currentVersion(message);
 		return this.client.editMessage(chatId, current.hash, newText);
 	}
@@ -202,21 +177,12 @@ function collectMessageActionsByType(
 ): {
 	messages: Record<Hash, Message>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
-<<<<<<< HEAD
-	editsByTarget: Record<Hash, Record<Hash, Edit>>;
-	deletesByTarget: Record<Hash, Record<Hash, Delete>>;
-} {
-	const messages: Record<Hash, Message> = {};
-	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
-	const editsByTarget: Record<Hash, Record<Hash, Edit>> = {};
-	const deletesByTarget: Record<Hash, Record<Hash, Delete>> = {};
-=======
 	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
 } {
 	const messages: Record<Hash, Message> = {};
 	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
 	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
->>>>>>> edit-message-frontend
+	const deletesByTarget: Record<Hash, Record<Hash, Delete>> = {};
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
@@ -274,10 +240,7 @@ function collectMessageActionsByType(
 		messages,
 		reactionsByTarget,
 		editsByTarget,
-<<<<<<< HEAD
 		deletesByTarget,
-=======
->>>>>>> edit-message-frontend
 	};
 }
 

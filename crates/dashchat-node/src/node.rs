@@ -16,7 +16,6 @@ use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
-use p2panda::node::AckPolicy;
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
@@ -914,7 +913,7 @@ impl Node {
         self.projection.lookup_contact_by_device_id(device_id).await
     }
 
-    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
+    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
         self.projection.all_contact_agent_ids().await
     }
 
@@ -1270,11 +1269,14 @@ impl Node {
         let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
             return Ok(());
         };
-        if self.is_tombstoneable(&payload) {
+        if Self::is_tombstoneable(&payload) {
             let hash = operation.hash;
-            self.local_store.add_tombstone(topic, hash.clone()).await?;
-            self.unprocess_app(operation).await?;
-            self.op_store.delete_body(&hash).await?;
+            self.publish(
+                self.device_group_topic(),
+                Payload::DeviceGroup(DeviceGroupPayload::TombstoneMessage { topic, hash }),
+                Some(&format!("tombstone {:?}", hash.aliased())),
+            )
+            .await?;
         } else {
             tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
         }
@@ -1672,6 +1674,41 @@ impl Node {
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::RejectContactRequest(agent_id)),
             Some(&format!("reject_contact_request({:?})", agent_id.aliased())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Block a contact. While blocked, all operations authored by the contact's
+    /// devices are invalidated by the projection layer (except those needed to
+    /// maintain group chats), so their messages never reach us.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn block_contact(&self, agent_id: AgentId) -> Result<(), Error> {
+        tracing::debug!("blocking contact: {:?}", agent_id.aliased());
+
+        self.publish(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::BlockAgent(agent_id)),
+            Some(&format!("block_contact({:?})", agent_id.aliased())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Unblock a previously blocked contact, allowing their operations to be
+    /// processed again.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn unblock_contact(&self, agent_id: AgentId) -> Result<(), Error> {
+        tracing::debug!("unblocking contact: {:?}", agent_id.aliased());
+
+        self.publish(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::UnblockAgent(agent_id)),
+            Some(&format!("unblock_contact({:?})", agent_id.aliased())),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;

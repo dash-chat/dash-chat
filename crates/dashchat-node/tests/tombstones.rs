@@ -52,13 +52,13 @@ async fn tombstone_drops_existing_payload() {
         payload_present(&node, *topic, node.device_id(), hash).await,
         Some(true)
     );
-    assert!(!node.local_store.is_tombstoned(*topic, hash).await.unwrap());
+    assert!(!node.projection.is_tombstoned(*topic, hash).await.unwrap());
 
     let operation = node.op_store.get_operation(&hash).await.unwrap().unwrap();
     node.tombstone_operation(*topic, &operation).await.unwrap();
 
     // The hash is recorded and the payload is gone, but the header remains.
-    assert!(node.local_store.is_tombstoned(*topic, hash).await.unwrap());
+    assert!(node.projection.is_tombstoned(*topic, hash).await.unwrap());
     assert_eq!(
         payload_present(&node, *topic, node.device_id(), hash).await,
         Some(false)
