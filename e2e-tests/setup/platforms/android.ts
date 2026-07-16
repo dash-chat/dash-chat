@@ -1,9 +1,9 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
+import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
 import type { AgentPlatform, PrepareContext } from './platform';
 
@@ -119,10 +119,7 @@ function startLogcatLogger(agent: string, udid: string): ChildProcess {
 		],
 		{ stdio: ['ignore', 'pipe', 'ignore'] },
 	);
-	const rl = createInterface({ input: proc.stdout! });
-	rl.on('line', (line: string) => {
-		console.log(`[${agent}] ${line}`);
-	});
+	echoLinesWithPrefix(agent, proc.stdout!);
 	return proc;
 }
 
@@ -221,7 +218,7 @@ export class AndroidPlatform implements AgentPlatform {
 		this.loggers.clear();
 	}
 
-	onComplete() {
+	async onComplete() {
 		for (const udid of this.udids.values()) {
 			try {
 				execSync(`adb -s ${udid} reverse --remove tcp:${DEVICE_MAILBOX_PORT}`);

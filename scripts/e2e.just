@@ -19,5 +19,5 @@ build:
 # the host's mailbox via `adb reverse tcp:3200 tcp:<host port>` per device.
 # Debuginfo is dropped and symbols stripped (debug_assertions stays on, which
 # is what makes the webview inspectable) — with them the APK is over 3GB.
-android-build:
-    nix develop git+file:.#androidDev --command bash -c "MAILBOX_URL=http://127.0.0.1:3200 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_DEV_STRIP=symbols pnpm tauri android build --debug --apk --split-per-abi --features e2e-tests --target aarch64 --target armv7 --target x86_64"
+android-build TARGETS='aarch64 armv7 x86_64':
+    nix develop git+file:.#androidDev --command bash -c "MAILBOX_URL=http://127.0.0.1:3200 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_DEV_STRIP=symbols pnpm tauri android build --debug --apk --split-per-abi --features e2e-tests -t {{TARGETS}}"

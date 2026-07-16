@@ -30,11 +30,15 @@ export AGENT_2="${AGENT_2:-desktop}"
 
 has_desktop=false
 has_android=false
+has_physical_android=false
 emulators_needed=0
 for agent in "$AGENT_1" "$AGENT_2"; do
     case "$agent" in
         desktop) has_desktop=true ;;
-        android) has_android=true ;;
+        android)
+            has_android=true
+            has_physical_android=true
+            ;;
         android-emulator)
             has_android=true
             emulators_needed=$((emulators_needed + 1))
@@ -51,7 +55,13 @@ if $has_desktop; then
     just test e2e build
 fi
 if $has_android; then
-    just test e2e android-build
+    # Emulators are x86_64-only; skip the ARM builds unless a physical
+    # device is in the combo.
+    if $has_physical_android; then
+        just test e2e android-build
+    else
+        just test e2e android-build x86_64
+    fi
 fi
 
 # The wdio config spawns this binary for the local mailbox. It must be built

@@ -1,10 +1,10 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import path from 'node:path';
-import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 import { UI_TIMEOUT } from '../helpers/timeouts';
+import { startAgentLogger } from '../setup/agent-logger';
 import { allocatePinnedPort } from '../setup/allocate-port';
 import {
 	killAllE2EProcesses,
@@ -42,19 +42,6 @@ let tauriDriver1: ChildProcess;
 let tauriDriver2: ChildProcess;
 let agent1Logger: ChildProcess | null = null;
 let agent2Logger: ChildProcess | null = null;
-
-function startAgentLogger(agent: string, logFile: string): ChildProcess {
-	mkdirSync(path.dirname(logFile), { recursive: true });
-	writeFileSync(logFile, '');
-	const proc = spawn('tail', ['-n', '0', '-F', logFile], {
-		stdio: ['ignore', 'pipe', 'ignore'],
-	});
-	const rl = createInterface({ input: proc.stdout! });
-	rl.on('line', (line: string) => {
-		console.log(`[${agent}] ${line}`);
-	});
-	return proc;
-}
 
 export const config: WebdriverIO.MultiremoteConfig = {
 	runner: 'local',

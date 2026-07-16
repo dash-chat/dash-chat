@@ -19,5 +19,5 @@ export interface AgentPlatform {
 	onPrepare(ctx: PrepareContext): Promise<void>;
 	beforeSession(): Promise<void>;
 	afterSession(): Promise<void>;
-	onComplete(): void;
+	onComplete(): Promise<void>;
 }

@@ -116,7 +116,7 @@ export class DesktopPlatform implements AgentPlatform {
 		}
 	}
 
-	onComplete() {
+	async onComplete() {
 		killAllE2EProcesses();
 		killPortHolders(this.ports);
 		for (const agent of this.agents) {

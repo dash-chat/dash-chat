@@ -153,7 +153,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		}
 	},
 
-	onComplete() {
+	async onComplete() {
 		if (mailboxServer?.pid) {
 			// Negative PID = signal the entire process group the detached
 			// mailbox server runs in.
@@ -164,7 +164,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			}
 		}
 		for (const platform of platforms) {
-			platform.onComplete();
+			await platform.onComplete();
 		}
 		mailboxLogger?.kill();
 	},
