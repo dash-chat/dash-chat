@@ -12,7 +12,7 @@
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
-	import QuickReactionBar from './QuickReactionBar.svelte';
+	import MessageActions from './MessageActions.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useReactiveValue } from '$lib/stores/use-signal';
@@ -26,7 +26,6 @@
 		myDeviceId,
 		searchQuery,
 		chatId,
-		onShowHistory,
 		canEdit = false,
 		onEdit,
 		canDelete = false,
@@ -37,7 +36,6 @@
 		myDeviceId: DeviceId;
 		chatId: ChatId;
 		searchQuery: string;
-		onShowHistory?: () => void;
 		canEdit?: boolean;
 		onEdit?: () => void;
 		canDelete?: boolean;
@@ -76,7 +74,7 @@
 </script>
 
 {#snippet editedIndicator()}
-	<EditedIndicator class="dark-quiet" {onShowHistory} />
+	<EditedIndicator class="dark-quiet" />
 {/snippet}
 
 {#snippet metadata()}
@@ -102,6 +100,7 @@
 		contentWrapPadding="p-2"
 		class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 	>
+<<<<<<< HEAD
 		{#if message.deleted}
 			<div
 				class="flex items-end gap-2.5 px-1 italic"
@@ -121,6 +120,17 @@
 				metadata={isLast ? metadata : undefined}
 			/>
 		{/if}
+=======
+		<MessageContent
+			{message}
+			{searchQuery}
+			senderName={m.you()}
+			editedIndicator={message.editHistory.length > 0
+				? editedIndicator
+				: undefined}
+			metadata={isLast ? metadata : undefined}
+		/>
+>>>>>>> edit-message-frontend
 	</Card>
 	{#if Object.keys(message.reactions).length > 0}
 		<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
@@ -133,7 +143,7 @@
 		</div>
 	{/if}
 </div>
-<QuickReactionBar
+<MessageActions
 	{message}
 	{myDeviceId}
 	{canEdit}

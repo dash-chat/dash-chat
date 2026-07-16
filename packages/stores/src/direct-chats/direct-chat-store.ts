@@ -96,7 +96,8 @@ export class DirectChatStore {
 		return this.logsStore.logsClient.onNewOperation(async (topicId, op) => {
 			const chatId = await this.chatId();
 			if (topicId !== chatId) return;
-			if (op.body?.payload.type !== 'Message') return;
+			if (!(op.body?.type === 'Chat' && op.body.payload.type === 'Message'))
+				return;
 			handler(op, op.body.payload.payload.message);
 		});
 	}

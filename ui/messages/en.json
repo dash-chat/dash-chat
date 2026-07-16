@@ -8,6 +8,7 @@
 	"moreReactions": "More reactions",
 	"edit": "Edit",
 	"edited": "Edited",
+<<<<<<< HEAD
 	"editingMessage": "Editing message",
 	"editMessageHistory": "Edit history",
 	"deleteMessageTitle": "Delete message?",
@@ -16,6 +17,12 @@
 	"thisMessageWasDeleted": "This message was deleted.",
 	"messageDeleted": "Message deleted",
 	"originalMessage": "Original",
+=======
+	"editingMessage": "Edit message",
+	"discardDraftTitle": "Discard draft?",
+	"discardDraftDescription": "This action can't be undone.",
+	"discard": "Discard",
+>>>>>>> edit-message-frontend
 	"save": "Save",
 	"send": "Send",
 	"emoji": "Emoji",
@@ -77,6 +84,7 @@
 	"contactAlreadyExists": "Contact already exists.",
 	"cantAddYourselfAsContact": "Can't add yourself as contact.",
 	"copiedCodeToClipboard": "Copied code to clipboard.",
+	"copiedMessageToClipboard": "Copied message to clipboard.",
 	"shareQrCodeSubtitle": "Scan this QR code to chat with me on Dash Chat.",
 	"contactAdded": "{{name}} was added to your contacts.",
 	"contactAccepted": "Contact added.",
@@ -229,6 +237,7 @@
 	"errorCreateContactCode": "Failed to create contact code. Please try again.",
 	"errorAddContact": "Failed to add contact. Please try again.",
 	"errorAddContactInvalidCode": "Invalid contact code. Please ask your contact to share their code again.",
+	"errorAddContactDeviceLinkingNotSupported": "This code is for linking a device, not adding a contact.",
 	"errorAddContactProfileRequired": "Please create your profile before adding contacts.",
 	"errorSetProfile": "Failed to save profile. Please try again.",
 	"errorScanningQrCode": "Failed to scan QR code. Please try again.",

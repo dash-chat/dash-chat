@@ -24,6 +24,10 @@ mod droplet 'scripts/droplet.just'
 # build docker images for the mailbox and push notifications servers
 mod docker 'scripts/docker.just'
 
+# Show available recipes.
+_default:
+    @just --list --list-submodules
+
 # build dash chat as a binary
 build:
     pnpm tauri build --no-bundle

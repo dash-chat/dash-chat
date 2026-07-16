@@ -155,58 +155,56 @@ impl Node {
                                 };
 
                                 let result = node.process_groups(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
-                                if let Err(err) = result.as_ref() {
-                                    tracing::error!(?err, "process groups operation error");
-                                };
 
                                 // Signal that the operation has been fully processed. This will
                                 // allow the ProcessFuture to complete. We return a result here so
                                 // that any errors can be reacted to by the waiter.
                                 if let Some(processed_tx) = processed_tx {
-                                    if let Err(err) = processed_tx.send(result) {
+                                    if let Err(err) = processed_tx.send(result.clone()) {
                                         tracing::error!(?err, "processed_tx send error")
                                     }
                                 }
 
-                                #[cfg(feature = "testing")]
-                                // Mark the operation as processed so it can be awaited by
-                                // [`crate::testing::PollConfig::consistency`]
-                                node.op_store.mark_op_processed(topic, &id);
+                                // Don't continue to acknowledgement if there was an error processing,
+                                // so that the operation will be replayed another time.
+                                if let Err(err) = result {
+                                    tracing::error!(?err, "process groups operation error");
+                                    continue;
+                                };
 
-                                // Acknowledge the operation now that application-layer
-                                // processing has finished. The node uses an `Explicit`
-                                // ack policy, so this persisted ack is what makes the
-                                // operation eligible for mailbox transmission (see
-                                // `OpStore::acked_log_height`).
-                                if let Err(err) = operation.ack().await {
+                                if let Err(err) = node.ack_operation(&operation).await {
                                     tracing::error!(?err, "failed to acknowledge operation");
                                 }
-
                             },
                             ProcessorEvent::App { operation, source, processed_tx } => {
                                 let topic = operation.topic();
                                 let id = operation.id();
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
 
+
                                 // Process the operation.
                                 let result = node.process_app(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
-                                if let Err(err) = result.as_ref() {
-                                    tracing::error!(?err, "process operation error");
-                                }
 
                                 // Signal that the operation has been fully processed. This will
                                 // allow the ProcessFuture to complete. We return a result here so
                                 // that any errors can be reacted to by the waiter.
                                 if let Some(processed_tx) = processed_tx {
-                                    if let Err(err) = processed_tx.send(result) {
+                                    if let Err(err) = processed_tx.send(result.clone()) {
                                         tracing::error!(?err, "processed_tx send error")
                                     }
                                 }
 
-                                #[cfg(feature = "testing")]
-                                // Mark the operation as processed so it can be awaited by
-                                // [`crate::testing::PollConfig::consistency`]
-                                node.op_store.mark_op_processed(topic, &id);
+                                // Don't continue to acknowledgement if there was an error processing,
+                                // so that the operation will be replayed another time.
+                                if let Err(err) = result {
+                                    tracing::error!(?err, "process operation error");
+                                    continue;
+                                }
+
+
+                                if let Err(err) = node.ack_operation(&operation).await {
+                                    tracing::error!(?err, "failed to acknowledge operation");
+                                }
 
                                 // Acknowledge the operation now that application-layer
                                 // processing has finished. The node uses an `Explicit`
@@ -237,6 +235,23 @@ impl Node {
         });
 
         handle
+    }
+
+    async fn ack_operation(&self, operation: &ProcessedOperation<Payload>) -> anyhow::Result<()> {
+        // Mark the operation as processed so it can be awaited by
+        // [`crate::testing::PollConfig::consistency`]
+        #[cfg(feature = "testing")]
+        self.op_store
+            .mark_op_processed(operation.topic(), &operation.id());
+
+        // Acknowledge the operation now that application-layer
+        // processing has finished. The node uses an `Explicit`
+        // ack policy, so this persisted ack is what makes the
+        // operation eligible for mailbox transmission (see
+        // `OpStore::acked_log_height`).
+        operation.ack().await?;
+
+        Ok(())
     }
 
     /// Enforce the topic's tombstone set on a received operation: if its hash
@@ -309,6 +324,8 @@ impl Node {
     ) -> anyhow::Result<()> {
         self.register_bootstrap(operation, source).await?;
 
+        self.projection.reduce(self.agent_id(), operation).await?;
+
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
         let topic = ChatId::from_topic_id(topic)?;
@@ -340,7 +357,7 @@ impl Node {
         // @TODO: this requires a reliable way to know the agent id from the device id
         // even if they're not a contact.
         let known = self
-            .local_store
+            .projection
             .lookup_contacts(member_device_ids.iter())
             .await?;
 
@@ -361,7 +378,7 @@ impl Node {
             crate::Topic::<crate::topic::kind::Untyped>::new(*operation.topic().as_bytes());
         self.notify_payload(
             dashchat_topic,
-            &operation.processed().header(),
+            operation.processed().header(),
             operation.message(),
         )
         .await?;
@@ -438,6 +455,8 @@ impl Node {
             return Ok(());
         }
 
+        self.projection.reduce(self.agent_id(), operation).await?;
+
         let hash = operation.id();
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
@@ -447,19 +466,7 @@ impl Node {
                 // Nothing to do.
             }
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
-                for (device_id, agent_id) in agents {
-                    if let Err(err) = self
-                        .local_store
-                        .save_agent_mapping(*device_id, *agent_id)
-                        .await
-                    {
-                        tracing::warn!(
-                            ?err,
-                            device_id = ?device_id.aliased(),
-                            agent_id = ?agent_id.aliased(),
-                            "failed to save agent mapping from IntroduceAgents"
-                        );
-                    }
+                for (_, agent_id) in agents {
                     if agent_id == &self.agent_id() {
                         continue;
                     }
@@ -474,10 +481,9 @@ impl Node {
             }
 
             Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
-                if let Err(err) = self.join_group(*chat_id).await {
-                    // TODO: no retry path — device ends up with no topic registered for this group.
-                    tracing::error!(?err, "failed to join group from invitation");
-                }
+                self.join_group(*chat_id)
+                    .await
+                    .context("failed to join group from invitation")?;
             }
 
             Payload::Inbox(invitation) => {
@@ -497,12 +503,8 @@ impl Node {
                     return Ok(());
                 }
                 match invitation {
-                    InboxPayload::ContactRequest {
-                        agent_id, profile, ..
-                    } => {
-                        // A request arrived on our advertised inbox. Persist the
-                        // requester's identity + profile locally so the UI can
-                        // render the pending request, but perform no network
+                    InboxPayload::ContactRequest { agent_id, .. } => {
+                        // A request arrived on our advertised inbox. Perform no network
                         // side-effects (bootstrap registration, topic
                         // subscriptions) and disclose nothing about us until the
                         // user explicitly accepts (see `accept_contact`). This
@@ -513,13 +515,6 @@ impl Node {
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
                         if is_advertised_topic && !matches!(source, Source::LocalStore) {
-                            self.local_store
-                                .save_agent_mapping(author, *agent_id)
-                                .await?;
-                            self.local_store
-                                .save_profile(*agent_id, profile.clone())
-                                .await?;
-
                             // Mutual add: if we also sent this peer a contact
                             // request, their incoming request is an implicit
                             // acceptance — complete the exchange automatically
@@ -540,7 +535,7 @@ impl Node {
                             }
                         }
                     }
-                    InboxPayload::ContactRequestAck { profile, agent_id } => {
+                    InboxPayload::ContactRequestAck { agent_id, .. } => {
                         // The op must arrive on our private reply topic and be
                         // signed by the device whose QR we scanned. Verifying
                         // Verifying author == expected_ack_author prevents a
@@ -560,9 +555,7 @@ impl Node {
                                 return Ok(());
                             }
                             self.establish_contact(author, *agent_id).await?;
-                            self.local_store
-                                .save_profile(*agent_id, profile.clone())
-                                .await?;
+
                             let node = self.clone();
                             let agent_id = *agent_id;
                             tokio::spawn(async move {
@@ -578,7 +571,6 @@ impl Node {
             Payload::Chat(ChatPayload::Message(m)) => {
                 if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                     for item in media.iter() {
-                        // TODO: revisit during ACID review (replay)
                         blob_sync
                             .add_to_fetch_pool(topic.into(), author, hash, item.hash)
                             .await?;
@@ -605,6 +597,7 @@ impl Node {
                 }
             }
 
+<<<<<<< HEAD
             Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
                 // On replay (or a duplicate delivery) the delete has already
                 // been applied and its targets' bodies are gone, which would
@@ -690,6 +683,9 @@ impl Node {
             }
 
             Payload::DeviceGroup(_) => {
+=======
+            _ => {
+>>>>>>> edit-message-frontend
                 // Nothing to do.
             }
         }

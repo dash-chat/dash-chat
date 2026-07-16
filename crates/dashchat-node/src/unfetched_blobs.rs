@@ -114,7 +114,10 @@ mod tests {
     #[tokio::test]
     async fn tracker_writes_through_to_local_store() {
         let dir = tempfile::tempdir().unwrap();
-        let store = LocalStore::new(dir.path().join("t.db")).await.unwrap();
+        let pool = crate::stores::create_sqlite_pool(dir.path().join("t.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool).await.unwrap();
         let tracker = LocalStoreBlobTracker::new(store.clone());
         let h = iroh_blobs::Hash::new([5; 32]);
 

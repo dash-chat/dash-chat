@@ -41,19 +41,15 @@ describe('Editing group messages', () => {
 		);
 	});
 
-	it('shows the full edit history, original first', async () => {
-		await agent1.groupChatPage.messages.openEditHistory('Hello group');
-		const versions = await agent1.groupChatPage.messages.editHistoryVersions();
-		expect(versions).toEqual(['Hello group', 'Helo group']);
-	});
-
 	it('does not offer Edit on another member’s messages', async () => {
 		await agent2.groupChatPage.sendMessage("Bob's message");
 		await agent1.groupChatPage.messages.waitForMessage("Bob's message");
 
-		await agent1.groupChatPage.messages.openActions("Bob's message");
+		await agent1.groupChatPage.messages.openMessageActions("Bob's message");
+		const messages = agent1.groupChatPage.messages;
+		await (await messages.actionsMenu("Bob's message")).waitForDisplayed();
 		expect(
-			await agent1.groupChatPage.messages.quickEditButton.isExisting(),
+			await (await messages.editAction("Bob's message")).isExisting(),
 		).toBe(false);
 	});
 });

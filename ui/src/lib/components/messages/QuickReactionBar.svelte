@@ -1,22 +1,23 @@
 <script lang="ts">
-	import { QUICK_EMOJIS, condenseReactions } from '$lib/utils/emojis';
+	import '@awesome.me/webawesome/dist/components/icon/icon.js';
+	import { QUICK_EMOJIS } from '$lib/utils/emojis';
 	import { m } from '$lib/paraglide/messages.js';
+<<<<<<< HEAD
 	import { mdiDotsHorizontal, mdiPencil, mdiTrashCanOutline } from '@mdi/js';
 	import { Popover, Sheet, Block, Chip } from 'konsta/svelte';
 	import { getContext } from 'svelte';
 	import type { Message, DeviceId, MessagesStore } from 'dash-chat-stores';
+=======
+	import { mdiDotsHorizontal } from '@mdi/js';
+	import { wrapPathInSvg } from '$lib/utils/icon';
+	import type { Message, DeviceId } from 'dash-chat-stores';
+>>>>>>> edit-message-frontend
 	import IconButton from '$lib/components/IconButton.svelte';
-	import SheetHandle from '$lib/components/SheetHandle.svelte';
-	import EmojiPickerWrapper from './EmojiPickerWrapper.svelte';
-	import { toggleReaction } from '$lib/utils/reactions';
 
 	interface Props {
 		message: Message;
-		/** Whether the reaction UI is showing — drives the popover open/close. */
-		opened: boolean;
-		/** The message bubble the popover anchors to. */
-		target: HTMLElement | undefined;
 		myDeviceId: DeviceId;
+<<<<<<< HEAD
 		/** Whether to offer an edit action (author, within the edit window). */
 		canEdit?: boolean;
 		onEdit?: () => void;
@@ -61,10 +62,19 @@
 	function close() {
 		opened = false;
 	}
+=======
+		onReact: (emoji: string) => void;
+		/** Open the full emoji picker. */
+		onExpand: () => void;
+	}
+
+	let { message, myDeviceId, onReact, onExpand }: Props = $props();
+>>>>>>> edit-message-frontend
 
 	function hasReacted(emoji: string): boolean {
 		return message.reactions[myDeviceId] === emoji;
 	}
+<<<<<<< HEAD
 
 	function react(emoji: string) {
 		toggleReaction(store, message, myDeviceId, emoji);
@@ -82,23 +92,36 @@
 	}
 
 	const condensed = $derived(condenseReactions(message.reactions, myDeviceId));
+=======
+>>>>>>> edit-message-frontend
 </script>
 
-<!-- The popover backdrop is the single, steady dim the whole time the reaction UI
-     is up; while the picker sheet covers it, only the popover card is hidden (two
-     cross-fading backdrops would dip lighter mid-transition). -->
-<Popover
-	{opened}
-	{target}
-	onBackdropClick={close}
-	class={`!z-50 !w-auto !rounded-full ${expanded ? '!opacity-0 !pointer-events-none' : ''}`}
+<div
+	class="flex items-center gap-1 px-1 py-0.5"
+	role="group"
+	aria-label={m.quickReactions()}
+	data-testid="quick-reaction-bar"
 >
-	<div
-		class="flex items-center gap-1 px-1 py-0.5"
-		role="group"
-		aria-label={m.quickReactions()}
-		data-testid="quick-reaction-bar"
+	{#each QUICK_EMOJIS as emoji}
+		<button
+			class="flex h-9 w-9 items-center justify-center rounded-full text-xl transition-transform hover:scale-110 {hasReacted(
+				emoji,
+			)
+				? 'bg-blue-100 dark:bg-blue-900'
+				: ''}"
+			onclick={() => onReact(emoji)}
+			data-testid={`quick-reaction-${emoji}`}
+		>
+			{emoji}
+		</button>
+	{/each}
+	<IconButton
+		onClick={onExpand}
+		label={m.moreReactions()}
+		testid="quick-reaction-more"
+		class="!h-9 !w-9"
 	>
+<<<<<<< HEAD
 		{#each QUICK_EMOJIS as emoji}
 			<button
 				class="flex h-9 w-9 items-center justify-center rounded-full text-xl transition-transform hover:scale-110 {hasReacted(
@@ -163,3 +186,8 @@
 		</Block>
 	</Sheet>
 {/if}
+=======
+		<wa-icon class="text-xl" src={wrapPathInSvg(mdiDotsHorizontal)}></wa-icon>
+	</IconButton>
+</div>
+>>>>>>> edit-message-frontend

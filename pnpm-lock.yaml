@@ -136,15 +136,9 @@ importers:
       '@webbuf/blake3':
         specifier: ^3.0.28
         version: 3.0.28(@webbuf/fixedbuf@3.0.28(@webbuf/webbuf@3.0.28))(@webbuf/webbuf@3.0.28)
-      base64-js:
-        specifier: ^1.5.1
-        version: 1.5.1
       blakejs:
         specifier: ^1.2.1
         version: 1.2.1
-      cbor-web:
-        specifier: ^10.0.11
-        version: 10.0.11
       emittery:
         specifier: ^1.2.0
         version: 1.2.0
@@ -2232,10 +2226,6 @@ packages:
 
   caniuse-lite@1.0.30001768:
     resolution: {integrity: sha512-qY3aDRZC5nWPgHUgIB84WL+nySuo19wk0VJpp/XI9T34lrvkyhRvNVOFJOp2kxClQhiFBu+TaUSudf6oa3vkSA==}
-
-  cbor-web@10.0.11:
-    resolution: {integrity: sha512-bhhIZD2ycDtBWfZsuxri1t2djzzpQAqBpW2sxGWHElTZgaf3kTN3eKNIko0wkxv2OZ3Jl2J2ykhsnNMex8gxzw==}
-    engines: {node: '>=20'}
 
   cbor@10.0.11:
     resolution: {integrity: sha512-vIwORDd/WyB8Nc23o2zNN5RrtFGlR6Fca61TtjkUXueI3Jf2DOZDl1zsshvBntZ3wZHBM9ztjnkXSmzQDaq3WA==}
@@ -6673,8 +6663,6 @@ snapshots:
   camelcase@6.3.0: {}
 
   caniuse-lite@1.0.30001768: {}
-
-  cbor-web@10.0.11: {}
 
   cbor@10.0.11:
     dependencies:

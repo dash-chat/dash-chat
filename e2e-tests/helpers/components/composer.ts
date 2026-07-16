@@ -13,6 +13,9 @@ export class Composer extends TestHelper {
 	addMoreTile = this.el(tid('message-input-add-more'));
 	editingBanner = this.el(tid('composer-editing-banner'));
 	cancelEditButton = this.el(tid('composer-cancel-edit'));
+	discardDraftDialog = this.el(tid('composer-discard-draft-dialog'));
+	discardDraftCancel = this.el(tid('composer-discard-draft-cancel'));
+	discardDraftConfirm = this.el(tid('composer-discard-draft-confirm'));
 	attachButton = this.el(tid('message-input-attach'));
 	mediaPanel = this.el(tid('message-input-media-panel'));
 	recentPhotos = new RecentPhotosStrip(this.agent);

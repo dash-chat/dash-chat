@@ -1,5 +1,4 @@
 import { personalTopicFor } from '../topics';
-import { ShareIntent } from '../types';
 import { LocalStorageLogsClient, hash } from './client';
 
 export const DEMO_IDS = {
@@ -218,11 +217,6 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 			payload: {
 				type: 'ContactRequest',
 				payload: {
-					code: {
-						device_pubkey: EVE.deviceId,
-						inbox_topic: undefined,
-						share_intent: ShareIntent.AddContact,
-					},
 					agent_id: EVE.agentId,
 					reply_topic: DEMO_IDS.INBOX_TOPIC,
 					profile: {

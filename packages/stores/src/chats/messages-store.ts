@@ -16,10 +16,10 @@ import { type IMessagesClient } from './messages-client';
 
 /** The window during which a message may be edited, measured from the original
  * message timestamp. Frontend operation timestamps are milliseconds since the
- * UNIX epoch (the backend serializes them as such), so this is 24h in ms.
- * Mirrors `EDIT_WINDOW_MICROS` in `crates/dashchat-node/src/chat/edit.rs`. */
+ * UNIX epoch (the backend serializes them as such), so this is 24h in ms. */
 export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+<<<<<<< HEAD
 /** The window during which a message may be deleted for everyone, measured
  * from the original message timestamp. Deleting a message for yourself is
  * always allowed. Mirrors `DELETE_WINDOW_MICROS` in
@@ -28,7 +28,10 @@ export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const DELETE_FOR_EVERYONE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** A single version of a message's text, with the time it was authored. */
+=======
+>>>>>>> edit-message-frontend
 export interface MessageVersion {
+	hash: string;
 	text: string;
 	timestamp: number;
 }
@@ -43,6 +46,7 @@ export interface Message {
 	author: DeviceId;
 	seqNum: number;
 	reactions: Record<DeviceId, string>;
+<<<<<<< HEAD
 	/** Timestamp of the latest edit, if the message has been edited. */
 	editedAt?: number;
 	/** Every version of the text, original first, when the message was edited. */
@@ -51,6 +55,9 @@ export interface Message {
 	latestEditHash?: Hash;
 	/** Whether the message was deleted for everyone; rendered as a placeholder. */
 	deleted?: boolean;
+=======
+	editHistory: MessageVersion[];
+>>>>>>> edit-message-frontend
 }
 
 // The messages of a single chat, direct or group alike: the message log with
@@ -162,6 +169,7 @@ export class MessagesStore {
 
 	async editMessage(message: Message, newText: string): Promise<Hash> {
 		const chatId = await this.chatId();
+<<<<<<< HEAD
 		const target = message.latestEditHash ?? message.hash;
 		return this.client.editMessage(chatId, target, newText);
 	}
@@ -172,11 +180,12 @@ export class MessagesStore {
 		return this.client.deleteMessage(chatId, target);
 	}
 }
+=======
+>>>>>>> edit-message-frontend
 
-interface Edit {
-	hash: Hash;
-	text: string;
-	timestamp: number;
+		const current = currentVersion(message);
+		return this.client.editMessage(chatId, current.hash, newText);
+	}
 }
 
 /** A delete op, keyed in `deletesByTarget` by the original message it
@@ -193,6 +202,7 @@ function collectMessageActionsByType(
 ): {
 	messages: Record<Hash, Message>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
+<<<<<<< HEAD
 	editsByTarget: Record<Hash, Record<Hash, Edit>>;
 	deletesByTarget: Record<Hash, Record<Hash, Delete>>;
 } {
@@ -200,6 +210,13 @@ function collectMessageActionsByType(
 	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
 	const editsByTarget: Record<Hash, Record<Hash, Edit>> = {};
 	const deletesByTarget: Record<Hash, Record<Hash, Delete>> = {};
+=======
+	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
+} {
+	const messages: Record<Hash, Message> = {};
+	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
+	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
+>>>>>>> edit-message-frontend
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
@@ -216,6 +233,7 @@ function collectMessageActionsByType(
 					seqNum: operation.header.seq_num,
 					timestamp: operation.header.timestamp,
 					reactions: {},
+					editHistory: [],
 				};
 			} else if (body.payload.type === 'Reaction') {
 				const { target, emoji } = body.payload.payload;
@@ -256,7 +274,10 @@ function collectMessageActionsByType(
 		messages,
 		reactionsByTarget,
 		editsByTarget,
+<<<<<<< HEAD
 		deletesByTarget,
+=======
+>>>>>>> edit-message-frontend
 	};
 }
 
@@ -264,11 +285,19 @@ function collectMessageActionsByType(
 // reachable from the message — following chains through `editsByTarget`,
 // across forks — becomes a version; the one with the highest timestamp is the
 // displayed text.
+//
+// TODO(after p2panda-spaces integration): this trusts every edit op in the
+// raw logs and enforces none of the backend's edit-validation rules
+// (`ValidChatOps::validate_edit` in crates/dashchat-node/src/chat/edit.rs):
+// author-only, at most one edit per target resolved by (seq_num, hash), the
+// 24h edit window, and target-must-be-editable. A misbehaving peer's ops
+// would therefore render here. Once p2panda-spaces is integrated the
+// frontend should consume validated logs (or mirror validate_edit) instead.
 function applyEdits(
 	message: Message,
-	editsByTarget: Record<Hash, Record<Hash, Edit>>,
+	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>,
 ): Message {
-	const versions: Edit[] = [];
+	const versions: MessageVersion[] = [];
 	const seen = new Set<Hash>([message.hash]);
 	const pending = Object.values(editsByTarget[message.hash] ?? {});
 	while (pending.length > 0) {
@@ -285,11 +314,17 @@ function applyEdits(
 	return {
 		...message,
 		content: { ...message.content, message: latest.text },
-		history: [
-			{ text: message.content.message, timestamp: message.timestamp },
-			...versions.map(({ text, timestamp }) => ({ text, timestamp })),
-		],
-		editedAt: latest.timestamp,
-		latestEditHash: latest.hash,
+		editHistory: versions,
+	};
+}
+
+function currentVersion(message: Message): MessageVersion {
+	if (message.editHistory.length > 0) {
+		return message.editHistory[message.editHistory.length - 1];
+	}
+	return {
+		hash: message.hash,
+		text: message.content.message,
+		timestamp: message.timestamp,
 	};
 }

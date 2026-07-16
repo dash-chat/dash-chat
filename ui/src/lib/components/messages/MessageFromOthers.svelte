@@ -14,7 +14,7 @@
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
-	import QuickReactionBar from './QuickReactionBar.svelte';
+	import MessageActions from './MessageActions.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
@@ -30,7 +30,6 @@
 		chatId,
 		sender,
 		showSenderName = false,
-		onShowHistory,
 		showAvatar = false,
 	}: {
 		message: Message;
@@ -40,7 +39,6 @@
 		searchQuery: string;
 		sender: Profile | undefined;
 		showSenderName?: boolean;
-		onShowHistory?: () => void;
 		showAvatar?: boolean;
 	} = $props();
 
@@ -79,7 +77,7 @@
 </script>
 
 {#snippet editedIndicator()}
-	<EditedIndicator class="quiet" {onShowHistory} />
+	<EditedIndicator class="quiet" />
 {/snippet}
 
 {#snippet metadata()}
@@ -111,6 +109,7 @@
 			contentWrapPadding="p-2"
 			class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 		>
+<<<<<<< HEAD
 			{#if message.deleted}
 				<div
 					class="flex items-end gap-2.5 px-1 italic"
@@ -131,6 +130,18 @@
 					metadata={isLast ? metadata : undefined}
 				/>
 			{/if}
+=======
+			<MessageContent
+				{message}
+				{searchQuery}
+				senderName={senderDisplayName}
+				{showSenderName}
+				editedIndicator={message.editHistory.length > 0
+					? editedIndicator
+					: undefined}
+				metadata={isLast ? metadata : undefined}
+			/>
+>>>>>>> edit-message-frontend
 		</Card>
 	</div>
 	{#if Object.keys(message.reactions).length > 0}
@@ -144,7 +155,7 @@
 		</div>
 	{/if}
 </div>
-<QuickReactionBar
+<MessageActions
 	{message}
 	{myDeviceId}
 	bind:opened={reactionsOpened}

@@ -33,15 +33,17 @@
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
-	import EditHistorySheet from '$lib/components/messages/EditHistorySheet.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import {
 		messagePosition,
 		canEditMessage,
 		canDeleteMessageForEveryone,
 	} from '$lib/components/messages/message-helpers';
+<<<<<<< HEAD
 	import { showToast } from '$lib/utils/toasts';
 	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
+=======
+>>>>>>> edit-message-frontend
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
@@ -73,6 +75,7 @@
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
+<<<<<<< HEAD
 	const editing = new MessageEditing(store.messages);
 	let deletingMessage: Message | undefined = $state(undefined);
 
@@ -93,6 +96,9 @@
 		historyMessage = message;
 		showHistory = true;
 	}
+=======
+	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
+>>>>>>> edit-message-frontend
 
 	// Scroll the message we just sent into view once its bubble mounts.
 	let justSentMessageHash: Hash | null = $state(null);
@@ -286,14 +292,17 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
-														onShowHistory={() => openHistory(message)}
 														canEdit={canEditMessage(message, myDeviceId)}
+<<<<<<< HEAD
 														onEdit={() => editing.start(message)}
 														canDelete={canDeleteMessageForEveryone(
 															message,
 															myDeviceId,
 														)}
 														onDelete={() => (deletingMessage = message)}
+=======
+														onEdit={() => composer?.editMessage(message)}
+>>>>>>> edit-message-frontend
 													/>
 												</div>
 											{:else}
@@ -316,7 +325,6 @@
 														sender={author?.profile}
 														showSenderName={position === 'first' ||
 															position === 'single'}
-														onShowHistory={() => openHistory(message)}
 														showAvatar
 													/>
 												</div>
@@ -351,11 +359,8 @@
 		{#await Promise.all([$me, $info]) then [me, info]}
 			{#if me.member}
 				<MessageComposer
+					bind:this={composer}
 					store={store.messages}
-					bind:value={editing.value}
-					editing={editing.editing}
-					onEdit={editing.submit}
-					onCancelEdit={() => editing.cancel()}
 					destinationName={info.name}
 					onSent={onMessageSent}
 				/>
@@ -369,6 +374,7 @@
 			{/if}
 		{/await}
 	</div>
+<<<<<<< HEAD
 
 	<EditHistorySheet
 		message={historyMessage}
@@ -393,4 +399,6 @@
 			</DialogButton>
 		{/snippet}
 	</Dialog>
+=======
+>>>>>>> edit-message-frontend
 </div>

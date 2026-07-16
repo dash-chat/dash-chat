@@ -6,7 +6,7 @@ use aliased::Aliasing;
 use anyhow::Context;
 
 use super::*;
-use crate::{compat::Capabilities, *};
+use crate::*;
 
 #[derive(derive_more::Deref, derive_more::From)]
 pub struct Behavior {
@@ -27,10 +27,10 @@ impl Behavior {
         other: &TestNode,
         share_intent: ShareIntent,
     ) -> anyhow::Result<()> {
-        let qr = self.new_qr_code(share_intent, true).await?;
+        let qr = self.new_qr_code(share_intent).await?;
         other.add_contact(qr).await?;
         self.accept_next_contact().await?;
-        self.await_first_capabilities(other.device_id()).await?;
+
         // The scanner records the contact asynchronously when it receives our
         // ack (it learns our agent_id only then), so wait for it to land before
         // returning a fully-established mutual contact.
@@ -71,30 +71,6 @@ impl Behavior {
         self.node.accept_contact(agent_id).await?;
 
         Ok(agent_id)
-    }
-
-    // NOTE: we technically want to wait for the *last* capabilities announcement.
-    //       this is an approximation, assuming that this signals the entire announcement topic being synced.
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
-    pub async fn await_first_capabilities(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<Capabilities> {
-        let mut watcher = self.watcher.lock().await;
-        watcher
-            .watch_mapped(Duration::from_secs(15), |n: &Notification| {
-                if n.header.verifying_key != *device_id {
-                    return None;
-                }
-                match n.payload {
-                    Some(Payload::Announcements(AnnouncementsPayload::SetCapabilities {
-                        capabilities,
-                    })) => Some(capabilities),
-                    _ => None,
-                }
-            })
-            .await
-            .context("no capabilities announcement found")
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]

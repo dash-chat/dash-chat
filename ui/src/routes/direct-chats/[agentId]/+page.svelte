@@ -8,7 +8,6 @@
 	import {
 		fullName,
 		type ChatsStore,
-		type ContactCode,
 		type ContactRequest,
 		type ContactsStore,
 		type DeviceId,
@@ -48,7 +47,6 @@
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
-	import EditHistorySheet from '$lib/components/messages/EditHistorySheet.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -61,7 +59,6 @@
 		canEditMessage,
 		canDeleteMessageForEveryone,
 	} from '$lib/components/messages/message-helpers';
-	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	let agentId = page.params.agentId!;
 
@@ -132,6 +129,7 @@
 		}
 	}
 
+<<<<<<< HEAD
 	const editing = new MessageEditing(store.messages);
 	let deletingMessage: Message | undefined = $state(undefined);
 
@@ -147,6 +145,9 @@
 
 	let historyMessage: Message | undefined = $state(undefined);
 	let showHistory = $state(false);
+=======
+	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
+>>>>>>> edit-message-frontend
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -274,11 +275,6 @@
 			}
 		}
 		closest?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-	}
-
-	function openHistory(message: Message) {
-		historyMessage = message;
-		showHistory = true;
 	}
 
 	const theme = $derived(useTheme());
@@ -585,17 +581,21 @@
 																		{myDeviceId}
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
-																		onShowHistory={() => openHistory(message)}
 																		canEdit={canEditMessage(
 																			message,
 																			myDeviceId,
 																		)}
+<<<<<<< HEAD
 																		onEdit={() => editing.start(message)}
 																		canDelete={canDeleteMessageForEveryone(
 																			message,
 																			myDeviceId,
 																		)}
 																		onDelete={() => (deletingMessage = message)}
+=======
+																		onEdit={() =>
+																			composer?.editMessage(message)}
+>>>>>>> edit-message-frontend
 																	/>
 																{/await}
 															</div>
@@ -615,7 +615,6 @@
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
 																		sender={profile}
-																		onShowHistory={() => openHistory(message)}
 																	/>
 																{/await}
 															</div>
@@ -683,6 +682,7 @@
 						onClose={() => (showPeerProfile = false)}
 						{profile}
 					/>
+<<<<<<< HEAD
 
 					<EditHistorySheet
 						message={historyMessage}
@@ -708,6 +708,8 @@
 							</DialogButton>
 						{/snippet}
 					</Dialog>
+=======
+>>>>>>> edit-message-frontend
 				</ReverseScrollPage>
 
 				{#if !isAtBottom}
@@ -846,11 +848,8 @@
 						</div>
 					{:else}
 						<MessageComposer
+							bind:this={composer}
 							store={store.messages}
-							bind:value={editing.value}
-							editing={editing.editing}
-							onEdit={editing.submit}
-							onCancelEdit={() => editing.cancel()}
 							destinationName={profile ? fullName(profile) : undefined}
 							onSent={onMessageSent}
 						/>

@@ -2,14 +2,12 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { getContext } from 'svelte';
 	import {
-		decodeContactCode,
-		encodeContactCode,
 		fullName,
 		pendingChatKey,
 		type ContactsStore,
 		type SettingsStore,
 	} from 'dash-chat-stores';
-	import type { AddContactError, ContactCode } from 'dash-chat-stores';
+	import type { AddContactError } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -48,7 +46,7 @@
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const settingsStore: SettingsStore = getContext('settings-store');
 
-	let myCode = contactsStore.client.createContactCode().then(encodeContactCode);
+	let myCode = contactsStore.client.createContactCode();
 
 	let tab = $state<TabName>('code');
 	let scannerRef: QrCodeScanner | null = $state(null);
@@ -68,15 +66,6 @@
 	}
 
 	async function receiveCode(code: string) {
-		let contactCode: ContactCode;
-		try {
-			contactCode = decodeContactCode(code);
-		} catch (e) {
-			console.error('Error decoding contact code', e);
-			showToast(m.errorAddContactInvalidCode(), 'error');
-			return;
-		}
-
 		try {
 			const myCodeString = await myCode;
 
@@ -85,33 +74,24 @@
 				return;
 			}
 
-			// Don't send a contact request if they're already in your contacts
-			//
-			// Uncommenting this would mean that if the contact rejected your contact request
-			// there is no way to resend the contact request
-			//
-			// const contacts = await contactsStore.contactsAgentIds();
-			//
-			// if (contacts.includes(contactCode.agent_id)) {
-			// 	showToast(m.contactAlreadyExists());
-			// 	return;
-			// }
-
-			await contactsStore.client.addContact(contactCode);
+			const devicePubkey = await contactsStore.client.addContact(code);
 			showToast(m.contactRequestSent());
 
-			const knownAgent = await contactsStore.client.agentForDevice(
-				contactCode.device_pubkey,
-			);
-			goto(
-				`/direct-chats/${knownAgent ?? pendingChatKey(contactCode.device_pubkey)}`,
-			);
+			const knownAgent =
+				await contactsStore.client.agentForDevice(devicePubkey);
+			goto(`/direct-chats/${knownAgent ?? pendingChatKey(devicePubkey)}`);
 		} catch (e) {
 			console.error(e);
 			const error = e as AddContactError;
 			switch (error.kind) {
 				case 'ProfileNotCreated':
 					showToast(m.errorAddContactProfileRequired(), 'error');
+					break;
+				case 'InvalidContactCode':
+					showToast(m.errorAddContactInvalidCode(), 'error');
+					break;
+				case 'AddDeviceNotSupported':
+					showToast(m.errorAddContactDeviceLinkingNotSupported(), 'error');
 					break;
 				case 'InitializeTopic':
 				case 'AuthorOperation':
