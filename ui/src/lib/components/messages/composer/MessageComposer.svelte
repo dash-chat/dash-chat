@@ -19,7 +19,7 @@
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiClose, mdiPencil } from '@mdi/js';
+	import { mdiClose, mdiPencil, mdiPencilOutline } from '@mdi/js';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
@@ -230,7 +230,9 @@
 						class="flex items-center gap-1.5 ps-3 pt-2 text-sm font-semibold"
 						data-testid="composer-editing-banner"
 					>
-						<wa-icon src={wrapPathInSvg(mdiPencil)} style="font-size: 0.9rem"
+						<wa-icon
+							src={wrapPathInSvg(mdiPencilOutline)}
+							style="font-size: 0.9rem"
 						></wa-icon>
 						{m.editingMessage()}
 					</div>
