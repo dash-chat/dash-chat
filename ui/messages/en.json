@@ -220,6 +220,7 @@
 	"errorCreateContactCode": "Failed to create contact code. Please try again.",
 	"errorAddContact": "Failed to add contact. Please try again.",
 	"errorAddContactInvalidCode": "Invalid contact code. Please ask your contact to share their code again.",
+	"errorAddContactDeviceLinkingNotSupported": "This code is for linking a device, not adding a contact.",
 	"errorAddContactProfileRequired": "Please create your profile before adding contacts.",
 	"errorSetProfile": "Failed to save profile. Please try again.",
 	"errorScanningQrCode": "Failed to scan QR code. Please try again.",

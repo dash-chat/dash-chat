@@ -1,4 +1,5 @@
 use aliased::Aliasing;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
@@ -7,30 +8,11 @@ use std::str::FromStr;
 
 use crate::{DeviceId, Topic, topic::kind};
 
-/// An 8-byte nonce serialized as a hex string at the JSON/Tauri boundary.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(transparent)]
-pub struct InboxNonce(#[serde(with = "hex::serde")] pub [u8; 8]);
+const QR_CODE_ENCODING_ENGINE: base64::engine::GeneralPurpose = URL_SAFE_NO_PAD;
 
-impl<'de> Deserialize<'de> for InboxNonce {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Vis;
-        impl serde::de::Visitor<'_> for Vis {
-            type Value = InboxNonce;
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("a 16-character hex string")
-            }
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                let bytes = hex::decode(v).map_err(serde::de::Error::custom)?;
-                let arr: [u8; 8] = bytes.try_into().map_err(|_| {
-                    serde::de::Error::custom("expected exactly 8 bytes (16 hex chars)")
-                })?;
-                Ok(InboxNonce(arr))
-            }
-        }
-        deserializer.deserialize_str(Vis)
-    }
-}
+/// An 8-byte nonce used to derive an inbox topic ID.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InboxNonce(pub [u8; 8]);
 
 impl InboxNonce {
     pub fn random() -> Self {
@@ -51,8 +33,7 @@ pub fn derive_inbox_topic(device_pubkey: &DeviceId, nonce: &[u8; 8]) -> [u8; 32]
 }
 
 /// The content for a QR code or deep link.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-// #[serde(into = "String", try_from = "String")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QrCode {
     /// Pubkey of this node: allows adding this node to groups.
     pub device_pubkey: DeviceId,
@@ -124,25 +105,33 @@ mod expires_at_minutes {
 impl std::fmt::Display for QrCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let bytes = encode_cbor(&(
-            &self.device_pubkey,
-            &self.inbox_nonce.as_bytes(),
+            serde_bytes::Bytes::new(self.device_pubkey.as_bytes()),
+            serde_bytes::Bytes::new(&self.inbox_nonce.as_bytes()),
             &self.share_intent,
         ))
         .map_err(|_| std::fmt::Error)?;
-        write!(f, "{}", hex::encode(bytes))
+        write!(f, "{}", QR_CODE_ENCODING_ENGINE.encode(bytes))
     }
 }
 
 impl FromStr for QrCode {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let bytes = hex::decode(s)?;
-        let (device_pubkey, inbox_nonce_raw, share_intent): (DeviceId, [u8; 8], ShareIntent) =
-            decode_cbor(bytes.as_slice())?;
+        use p2panda::VerifyingKey;
+        let bytes = QR_CODE_ENCODING_ENGINE.decode(s)?;
+        let (device_pubkey_bytes, inbox_nonce_bytes, share_intent): (
+            serde_bytes::ByteBuf,
+            serde_bytes::ByteBuf,
+            ShareIntent,
+        ) = decode_cbor(bytes.as_slice())?;
+        let device_pubkey = DeviceId::from(VerifyingKey::from_bytes(
+            device_pubkey_bytes.as_ref().try_into()?,
+        )?);
+        let inbox_nonce: [u8; 8] = inbox_nonce_bytes.as_ref().try_into()?;
         Ok(QrCode {
             device_pubkey,
             share_intent,
-            inbox_nonce: InboxNonce(inbox_nonce_raw),
+            inbox_nonce: InboxNonce(inbox_nonce),
         })
     }
 }
@@ -156,7 +145,7 @@ impl From<QrCode> for String {
 impl TryFrom<String> for QrCode {
     type Error = anyhow::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        Ok(QrCode::from_str(&value)?)
+        QrCode::from_str(&value)
     }
 }
 
@@ -168,7 +157,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_contact_roundtrip() {
+    fn test_contact_roundtrip_add_device() {
         let pubkey = VerifyingKey::from_bytes(&[11; 32]).unwrap();
         let device_pubkey = DeviceId::from(pubkey);
         let nonce: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -179,7 +168,28 @@ mod tests {
         };
         let encoded = contact.to_string();
         let decoded = QrCode::from_str(&encoded).unwrap();
-
         assert_eq!(contact, decoded);
+    }
+
+    #[test]
+    fn test_contact_roundtrip_add_contact() {
+        let pubkey = VerifyingKey::from_bytes(&[22; 32]).unwrap();
+        let device_pubkey = DeviceId::from(pubkey);
+        let nonce: [u8; 8] = [8, 7, 6, 5, 4, 3, 2, 1];
+        let contact = QrCode {
+            device_pubkey,
+            share_intent: ShareIntent::AddContact,
+            inbox_nonce: InboxNonce(nonce),
+        };
+        let encoded = contact.to_string();
+        let decoded = QrCode::from_str(&encoded).unwrap();
+        assert_eq!(contact, decoded);
+    }
+
+    #[test]
+    fn test_from_str_rejects_garbage() {
+        assert!(QrCode::from_str("not-a-valid-code").is_err());
+        assert!(QrCode::from_str("").is_err());
+        assert!(QrCode::from_str("!!!").is_err());
     }
 }
