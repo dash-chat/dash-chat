@@ -30,6 +30,7 @@
      first time the menu opens. -->
 <IconButton
 	onClick={handleClick}
+	{expanded}
 	testid="message-input-attach"
 	label={m.attachMenu()}
 	class={className}

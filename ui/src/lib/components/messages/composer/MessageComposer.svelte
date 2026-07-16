@@ -195,7 +195,17 @@
 			</MessageInput>
 
 			{#if isMobile}
-				{#if hasContent}
+				{#if isIos}
+					<div
+						class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {hasContent
+							? 'ms-0 w-[42px] opacity-100'
+							: '-ms-2 w-0 opacity-0'}"
+						style="transform: scale({hasContent ? 1 : 0})"
+						aria-hidden={!hasContent}
+					>
+						<SendButton onSend={send} />
+					</div>
+				{:else if hasContent}
 					<SendButton onSend={send} />
 				{:else if theme !== 'ios'}
 					<StandaloneAttachButton onClick={toggleMediaPanel} />

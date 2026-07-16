@@ -245,7 +245,7 @@
 			label={m.previousPhoto()}
 			testid="lightbox-prev"
 			filled
-			class="absolute top-1/2 left-3 -translate-y-1/2 opacity-85 {zoomed
+			class="absolute top-1/2 start-3 -translate-y-1/2 opacity-85 {zoomed
 				? '!opacity-0 pointer-events-none'
 				: ''}"
 		/>
@@ -257,7 +257,7 @@
 			label={m.nextPhoto()}
 			testid="lightbox-next"
 			filled
-			class="absolute top-1/2 right-3 -translate-y-1/2 opacity-85 {zoomed
+			class="absolute top-1/2 end-3 -translate-y-1/2 opacity-85 {zoomed
 				? '!opacity-0 pointer-events-none'
 				: ''}"
 		/>
