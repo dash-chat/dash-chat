@@ -315,11 +315,16 @@ impl OpProjection {
     }
 
     async fn save_profile(&self, agent_id: AgentId, profile: Profile) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR REPLACE INTO agents (agent_id, profile) VALUES (?, ?)")
-            .bind(agent_id)
-            .bind(profile)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "
+            INSERT INTO agents (agent_id, profile) VALUES (?, ?) 
+            ON CONFLICT(agent_id) DO UPDATE SET profile = excluded.profile
+        ",
+        )
+        .bind(agent_id)
+        .bind(profile)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
