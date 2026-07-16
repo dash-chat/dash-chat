@@ -461,9 +461,6 @@ impl Node {
                         purged,
                         "operation was expected to be tombstoned but was not"
                     );
-                    // The payload is tombstoned, so there's nothing to process.
-                    self.notify_header(dashchat_topic, header).await?;
-                    return Ok(());
                 }
             }
 
