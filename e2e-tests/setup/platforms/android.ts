@@ -74,7 +74,9 @@ function connectedDevices(): string[] {
  * env vars so the launcher and worker config loads agree on the udid->slot
  * mapping even if `adb devices` ordering changes between them.
  */
-function claimDevices(kindBySlot: Map<number, AndroidKind>): Map<number, string> {
+function claimDevices(
+	kindBySlot: Map<number, AndroidKind>,
+): Map<number, string> {
 	const devices = connectedDevices();
 	const pools: Record<AndroidKind, string[]> = {
 		android: devices.filter(d => !d.startsWith('emulator-')),
