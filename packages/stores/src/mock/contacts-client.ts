@@ -32,9 +32,7 @@ export class MockContactsClient implements IContactsClient {
 	}
 
 	async createContactCode(): Promise<string> {
-		// In the browser preview we can't run Rust encoding; return a random-looking string.
-		const bytes = crypto.getRandomValues(new Uint8Array(51));
-		return btoa(String.fromCharCode(...bytes));
+		return Math.random().toString(36).slice(2);
 	}
 
 	async activeInboxTopics(): Promise<TopicId[]> {
