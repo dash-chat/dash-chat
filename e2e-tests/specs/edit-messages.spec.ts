@@ -39,12 +39,6 @@ describe('Editing messages', () => {
 		);
 	});
 
-	it('shows the full edit history, original first', async () => {
-		await agent1.directChatPage.messages.openEditHistory('Hello world');
-		const versions = await agent1.directChatPage.messages.editHistoryVersions();
-		expect(versions).toEqual(['Hello world', 'Helo world']);
-	});
-
 	it('does not offer Edit on the peer’s messages', async () => {
 		await agent2.directChatPage.sendMessage("Bob's message");
 		await agent1.directChatPage.messages.waitForMessage("Bob's message");

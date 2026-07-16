@@ -26,7 +26,6 @@
 		myDeviceId,
 		searchQuery,
 		chatId,
-		onShowHistory,
 		canEdit = false,
 		onEdit,
 	}: {
@@ -35,7 +34,6 @@
 		myDeviceId: DeviceId;
 		chatId: ChatId;
 		searchQuery: string;
-		onShowHistory?: () => void;
 		canEdit?: boolean;
 		onEdit?: () => void;
 	} = $props();
@@ -72,7 +70,7 @@
 </script>
 
 {#snippet editedIndicator()}
-	<EditedIndicator class="dark-quiet" {onShowHistory} />
+	<EditedIndicator class="dark-quiet" />
 {/snippet}
 
 {#snippet metadata()}

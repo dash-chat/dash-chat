@@ -41,12 +41,6 @@ describe('Editing group messages', () => {
 		);
 	});
 
-	it('shows the full edit history, original first', async () => {
-		await agent1.groupChatPage.messages.openEditHistory('Hello group');
-		const versions = await agent1.groupChatPage.messages.editHistoryVersions();
-		expect(versions).toEqual(['Hello group', 'Helo group']);
-	});
-
 	it('does not offer Edit on another member’s messages', async () => {
 		await agent2.groupChatPage.sendMessage("Bob's message");
 		await agent1.groupChatPage.messages.waitForMessage("Bob's message");

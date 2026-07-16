@@ -29,7 +29,6 @@ export class Messages extends TestHelper {
 	lightbox = new Lightbox(this.agent);
 	/** The composer, for driving the type/send step of an in-place edit. */
 	private composer = new Composer(this.agent);
-	editHistorySheet = this.el(tid('edit-history-sheet'));
 
 	/** Every message mounts its own (closed) actions popover, so the menu and
 	 * its actions must be resolved scoped to the message containing `text`. */
@@ -308,26 +307,6 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Click the "Edited" indicator on the message containing `text`. */
-	async openEditHistory(text: string): Promise<void> {
-		await this.agent.execute(
-			(messagesSel: string, editedSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						(wrapper.querySelector(editedSel) as HTMLElement | null)?.click();
-						return;
-					}
-				}
-			},
-			this.messagesSelector,
-			tid('message-edited-indicator'),
-			text,
-		);
-	}
-
 	/** Open the actions menu on the message with `oldText`, tap Edit, replace
 	 * the text with `newText`, and send. */
 	async editMessage(oldText: string, newText: string): Promise<void> {
@@ -344,17 +323,5 @@ export class Messages extends TestHelper {
 		);
 		await this.composer.type(newText);
 		await this.composer.send();
-	}
-
-	/** Text of each version listed in the open edit-history sheet, newest first. */
-	async editHistoryVersions(): Promise<string[]> {
-		await this.editHistorySheet.waitForExist();
-		return this.agent.execute((sel: string) => {
-			const sheet = document.querySelector(sel);
-			if (!sheet) return [];
-			return Array.from(sheet.querySelectorAll('.whitespace-pre-wrap')).map(
-				el => el.textContent?.trim() ?? '',
-			);
-		}, tid('edit-history-sheet'));
 	}
 }

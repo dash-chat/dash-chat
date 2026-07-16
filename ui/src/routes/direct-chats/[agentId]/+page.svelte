@@ -47,7 +47,6 @@
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
-	import EditHistorySheet from '$lib/components/messages/EditHistorySheet.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -130,8 +129,6 @@
 	}
 
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
-	let historyMessage: Message | undefined = $state(undefined);
-	let showHistory = $state(false);
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -259,11 +256,6 @@
 			}
 		}
 		closest?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-	}
-
-	function openHistory(message: Message) {
-		historyMessage = message;
-		showHistory = true;
 	}
 
 	const theme = $derived(useTheme());
@@ -570,7 +562,6 @@
 																		{myDeviceId}
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
-																		onShowHistory={() => openHistory(message)}
 																		canEdit={canEditMessage(
 																			message,
 																			myDeviceId,
@@ -596,7 +587,6 @@
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
 																		sender={profile}
-																		onShowHistory={() => openHistory(message)}
 																	/>
 																{/await}
 															</div>
@@ -663,12 +653,6 @@
 						opened={showPeerProfile}
 						onClose={() => (showPeerProfile = false)}
 						{profile}
-					/>
-
-					<EditHistorySheet
-						message={historyMessage}
-						opened={showHistory}
-						onClose={() => (showHistory = false)}
 					/>
 				</ReverseScrollPage>
 

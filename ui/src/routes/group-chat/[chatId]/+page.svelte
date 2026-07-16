@@ -26,7 +26,6 @@
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
-	import EditHistorySheet from '$lib/components/messages/EditHistorySheet.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import {
 		messagePosition,
@@ -64,13 +63,6 @@
 	let unreadDividerCaptured = false;
 
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
-	let historyMessage: Message | undefined = $state(undefined);
-	let showHistory = $state(false);
-
-	function openHistory(message: Message) {
-		historyMessage = message;
-		showHistory = true;
-	}
 
 	// Scroll the message we just sent into view once its bubble mounts.
 	let justSentMessageHash: Hash | null = $state(null);
@@ -264,7 +256,6 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
-														onShowHistory={() => openHistory(message)}
 														canEdit={canEditMessage(message, myDeviceId)}
 														onEdit={() => composer?.editMessage(message)}
 													/>
@@ -289,7 +280,6 @@
 														sender={author?.profile}
 														showSenderName={position === 'first' ||
 															position === 'single'}
-														onShowHistory={() => openHistory(message)}
 														showAvatar
 													/>
 												</div>
@@ -339,10 +329,4 @@
 			{/if}
 		{/await}
 	</div>
-
-	<EditHistorySheet
-		message={historyMessage}
-		opened={showHistory}
-		onClose={() => (showHistory = false)}
-	/>
 </div>

@@ -30,7 +30,6 @@
 		chatId,
 		sender,
 		showSenderName = false,
-		onShowHistory,
 		showAvatar = false,
 	}: {
 		message: Message;
@@ -40,7 +39,6 @@
 		searchQuery: string;
 		sender: Profile | undefined;
 		showSenderName?: boolean;
-		onShowHistory?: () => void;
 		showAvatar?: boolean;
 	} = $props();
 
@@ -79,7 +77,7 @@
 </script>
 
 {#snippet editedIndicator()}
-	<EditedIndicator class="quiet" {onShowHistory} />
+	<EditedIndicator class="quiet" />
 {/snippet}
 
 {#snippet metadata()}
