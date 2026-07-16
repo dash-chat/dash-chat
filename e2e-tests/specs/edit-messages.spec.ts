@@ -61,4 +61,36 @@ describe('Editing messages', () => {
 			await agent1.tr('copiedMessageToClipboard'),
 		);
 	});
+
+	it('asks before discarding a draft when starting an edit', async () => {
+		const { composer, messages } = agent1.directChatPage;
+		const startEdit = async () => {
+			await messages.openMessageActions('Hello world');
+			const editAction = await messages.editAction('Hello world');
+			await editAction.waitForClickable();
+			await editAction.click();
+			await composer.discardDraftConfirm.waitForClickable();
+		};
+
+		await composer.type('Draft in progress');
+		await startEdit();
+
+		// Cancel keeps the draft and stays out of edit mode.
+		await composer.discardDraftCancel.click();
+		await composer.discardDraftConfirm.waitForClickable({ reverse: true });
+		expect(await composer.editingBanner.isExisting()).toBe(false);
+		expect(await composer.messageInput.getValue()).toBe('Draft in progress');
+
+		// Discard drops the draft and enters edit mode prefilled.
+		await startEdit();
+		await composer.discardDraftConfirm.click();
+		await composer.editingBanner.waitForExist();
+		await browser.waitUntil(
+			async () => (await composer.messageInput.getValue()) === 'Hello world',
+			{ timeoutMsg: 'Editing input is not prefilled with the message text' },
+		);
+
+		await composer.cancelEditButton.click();
+		await composer.editingBanner.waitForExist({ reverse: true });
+	});
 });
