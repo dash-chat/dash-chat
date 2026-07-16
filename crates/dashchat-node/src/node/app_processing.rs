@@ -251,6 +251,8 @@ impl Node {
     /// synced onward. The operation arrives here already written to the op
     /// store (by peers or by mailbox sync), so this deletes the body after the
     /// fact.
+    //
+    // TODO: when device groups exist, test that tombstones are enforced across devices.
     async fn enforce_tombstone(
         &self,
         topic: TopicId,
