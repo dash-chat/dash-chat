@@ -436,20 +436,31 @@ impl Node {
             }
         }
 
+        // If a receiver is processing this, the tombstone may have been processed prior,
+        // so we want to drop the payload now and not process it.
+        if self
+            .enforce_tombstone(topic, &operation.event.operation)
+            .await?
+        {
+            // The payload is tombstoned, so we must not process it. Return early.
+            self.notify_header(dashchat_topic, header).await?;
+            return Ok(());
+        }
+
         let hash = operation.id();
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
 
         match &payload {
             Payload::DeviceGroup(DeviceGroupPayload::TombstoneMessage { topic, hash }) => {
-                // If a node is processing this as the author of the tombstone (and hence the target),
-                // then the target operation needs to be cleared from all storage.
-                // If a receiver is processing this, they may have already received and processed the operation,
-                // or they may receive the operation after this point.
-
+                // If a node has already processed the target, now that the tombstone has arrived
+                // it's time to purge it.
                 if let Some(tombstoned_op) = self.op_store.get_operation(hash).await? {
                     let purged = self.enforce_tombstone(*topic, &tombstoned_op).await?;
-                    assert!(purged);
+                    debug_assert!(
+                        purged,
+                        "operation was expected to be tombstoned but was not"
+                    );
                     // The payload is tombstoned, so there's nothing to process.
                     self.notify_header(dashchat_topic, header).await?;
                     return Ok(());
