@@ -910,7 +910,7 @@ impl Node {
         self.projection.lookup_contact_by_device_id(device_id).await
     }
 
-    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
+    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
         self.projection.all_contact_agent_ids().await
     }
 
@@ -1610,6 +1610,41 @@ impl Node {
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::RejectContactRequest(agent_id)),
             Some(&format!("reject_contact_request({:?})", agent_id.aliased())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Block a contact. While blocked, all operations authored by the contact's
+    /// devices are invalidated by the projection layer (except those needed to
+    /// maintain group chats), so their messages never reach us.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn block_contact(&self, agent_id: AgentId) -> Result<(), Error> {
+        tracing::debug!("blocking contact: {:?}", agent_id.aliased());
+
+        self.publish(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::BlockAgent(agent_id)),
+            Some(&format!("block_contact({:?})", agent_id.aliased())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Unblock a previously blocked contact, allowing their operations to be
+    /// processed again.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn unblock_contact(&self, agent_id: AgentId) -> Result<(), Error> {
+        tracing::debug!("unblocking contact: {:?}", agent_id.aliased());
+
+        self.publish(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::UnblockAgent(agent_id)),
+            Some(&format!("unblock_contact({:?})", agent_id.aliased())),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
