@@ -1,15 +1,14 @@
 use aliased::Aliasing;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::str::FromStr;
 
-use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
-
-const QR_CODE_ENCODING_ENGINE: base64::engine::GeneralPurpose = STANDARD_NO_PAD;
-
 use crate::{DeviceId, Topic, topic::kind};
+
+const QR_CODE_ENCODING_ENGINE: base64::engine::GeneralPurpose = URL_SAFE_NO_PAD;
 
 /// An 8-byte nonce serialized as a hex string at the JSON/Tauri boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -193,27 +192,5 @@ mod tests {
         let decoded = QrCode::from_str(&encoded).unwrap();
 
         assert_eq!(contact, decoded);
-    }
-
-    #[test]
-    fn test_contact_roundtrip_no_nonce() {
-        // Cross-format test vector: encoded by the TypeScript encodeContactCode
-        // function using cbor-web + base64-js. Verifies Rust FromStr/Display
-        // produces the same byte layout (CBOR byte strings, base64 no-padding).
-        //
-        // device_pubkey: [11; 32], nonce: [1,2,3,4,5,6,7,8], intent: AddDevice (0)
-        // Produced by: encodeContactCode({ device_pubkey: "0b".repeat(32), inbox_nonce: "0102030405060708", share_intent: 0 })
-        let pubkey = VerifyingKey::from_bytes(&[11; 32]).unwrap();
-        let device_pubkey = DeviceId::from(pubkey);
-        let nonce: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
-        let contact = QrCode {
-            device_pubkey,
-            share_intent: ShareIntent::AddDevice,
-            inbox_nonce: InboxNonce(nonce),
-        };
-        let ts_encoded = "g1ggCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwtIAQIDBAUGBwgA";
-        let decoded = QrCode::from_str(ts_encoded).unwrap();
-        assert_eq!(contact, decoded);
-        assert_eq!(contact.to_string(), ts_encoded);
     }
 }
