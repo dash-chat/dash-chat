@@ -38,7 +38,7 @@
 	import {
 		messagePosition,
 		canEditMessage,
-		canDeleteMessage,
+		canDeleteMessageForEveryone,
 	} from '$lib/components/messages/message-helpers';
 	import { showToast } from '$lib/utils/toasts';
 	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
@@ -289,7 +289,10 @@
 														onShowHistory={() => openHistory(message)}
 														canEdit={canEditMessage(message, myDeviceId)}
 														onEdit={() => editing.start(message)}
-														canDelete={canDeleteMessage(message, myDeviceId)}
+														canDelete={canDeleteMessageForEveryone(
+															message,
+															myDeviceId,
+														)}
 														onDelete={() => (deletingMessage = message)}
 													/>
 												</div>

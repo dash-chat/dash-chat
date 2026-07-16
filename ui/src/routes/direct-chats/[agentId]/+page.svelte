@@ -59,7 +59,7 @@
 	import {
 		messagePosition,
 		canEditMessage,
-		canDeleteMessage,
+		canDeleteMessageForEveryone,
 	} from '$lib/components/messages/message-helpers';
 	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
@@ -591,7 +591,7 @@
 																			myDeviceId,
 																		)}
 																		onEdit={() => editing.start(message)}
-																		canDelete={canDeleteMessage(
+																		canDelete={canDeleteMessageForEveryone(
 																			message,
 																			myDeviceId,
 																		)}

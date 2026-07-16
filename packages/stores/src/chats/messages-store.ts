@@ -20,6 +20,13 @@ import { type IMessagesClient } from './messages-client';
  * Mirrors `EDIT_WINDOW_MICROS` in `crates/dashchat-node/src/chat/edit.rs`. */
 export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/** The window during which a message may be deleted for everyone, measured
+ * from the original message timestamp. Deleting a message for yourself is
+ * always allowed. Mirrors `DELETE_WINDOW_MICROS` in
+ * `crates/dashchat-node/src/chat/validation/delete.rs` (frontend timestamps
+ * are ms). */
+export const DELETE_FOR_EVERYONE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 /** A single version of a message's text, with the time it was authored. */
 export interface MessageVersion {
 	text: string;

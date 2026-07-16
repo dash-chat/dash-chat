@@ -1,4 +1,9 @@
-import { type DeviceId, EDIT_WINDOW_MS, type Message } from 'dash-chat-stores';
+import {
+	DELETE_FOR_EVERYONE_WINDOW_MS,
+	type DeviceId,
+	EDIT_WINDOW_MS,
+	type Message,
+} from 'dash-chat-stores';
 
 export type MessagePosition = 'first' | 'middle' | 'last' | 'single';
 
@@ -12,12 +17,14 @@ export function canEditMessage(
 	return Date.now() - rootTimestamp <= EDIT_WINDOW_MS;
 }
 
-export function canDeleteMessage(
+export function canDeleteMessageForEveryone(
 	message: Message,
 	myDeviceId: DeviceId,
 ): boolean {
 	if (message.deleted) return false;
-	return message.author === myDeviceId;
+	if (message.author !== myDeviceId) return false;
+	const rootTimestamp = message.history?.[0]?.timestamp ?? message.timestamp;
+	return Date.now() - rootTimestamp <= DELETE_FOR_EVERYONE_WINDOW_MS;
 }
 
 export function messagePosition(
