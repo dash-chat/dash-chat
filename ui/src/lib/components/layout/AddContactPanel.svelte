@@ -90,6 +90,9 @@
 				case 'InvalidContactCode':
 					showToast(m.errorAddContactInvalidCode(), 'error');
 					break;
+				case 'AddDeviceNotSupported':
+					showToast(m.errorAddContactDeviceLinkingNotSupported(), 'error');
+					break;
 				case 'InitializeTopic':
 				case 'AuthorOperation':
 				case 'CreateQrCode':
