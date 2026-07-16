@@ -19,8 +19,8 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"[A-Za-z0-9+/]{40,}={0,2}",
         // DeviceId and AgentId wrappers (must precede bare VerifyingKey/Hash patterns)
         r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
-        // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...])
-        r"(VerifyingKey|Hash|Signature)\(\[[\d, ]+\]\)",
+        // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...]), InboxNonce([...])
+        r"(VerifyingKey|Hash|Signature|InboxNonce)\(\[[\d, ]+\]\)",
         // Timestamps (seconds or microseconds since epoch, 10+ digits)
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
         // Debug format: name/surname/about/description fields with quoted values

@@ -1,6 +1,6 @@
 import { LogsClient, waitForOperation } from '../p2panda/logs-client';
 import { AgentId, DeviceId, type TopicId } from '../p2panda/types';
-import { ContactCode, Payload } from '../types';
+import { Payload } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
 
 export interface Profile {
@@ -30,15 +30,15 @@ export interface IContactsClient {
 
 	/// contacts
 
-	// Creates a new contact code to be shared
-	createContactCode(): Promise<ContactCode>;
+	// Creates a new contact code string to be shared
+	createContactCode(): Promise<string>;
 
 	activeInboxTopics(): Promise<TopicId[]>;
 
 	// getContacts(): Promise<Array<VerifyingKey>>;
 
-	// Add contact
-	addContact(code: ContactCode): Promise<void>;
+	// Add a contact from the given encoded contact code string; returns the device pubkey
+	addContact(code: string): Promise<DeviceId>;
 
 	// Accept an incoming contact request
 	acceptContact(agentId: AgentId): Promise<void>;
@@ -89,7 +89,7 @@ export class ContactsClient implements IContactsClient {
 		});
 	}
 
-	createContactCode(): Promise<ContactCode> {
+	createContactCode(): Promise<string> {
 		return invokeAfterSetup('create_contact_code');
 	}
 
@@ -97,8 +97,8 @@ export class ContactsClient implements IContactsClient {
 		return invokeAfterSetup('active_inbox_topics');
 	}
 
-	async addContact(contactCode: ContactCode): Promise<void> {
-		await invokeAfterSetup('add_contact', { contactCode });
+	async addContact(contactCode: string): Promise<DeviceId> {
+		return invokeAfterSetup('add_contact', { contactCode });
 	}
 
 	async acceptContact(agentId: AgentId): Promise<void> {
@@ -107,7 +107,8 @@ export class ContactsClient implements IContactsClient {
 			waitForOperation(
 				this.logsClient,
 				op =>
-					op.body?.payload.type === 'AddContact' &&
+					op.body?.type === 'DeviceGroupPayload' &&
+					op.body.payload.type === 'AddContact' &&
 					op.body.payload.payload.agent_id === agentId,
 			),
 		]);
@@ -119,7 +120,8 @@ export class ContactsClient implements IContactsClient {
 			waitForOperation(
 				this.logsClient,
 				op =>
-					op.body?.payload.type === 'RejectContactRequest' &&
+					op.body?.type === 'DeviceGroupPayload' &&
+					op.body.payload.type === 'RejectContactRequest' &&
 					op.body.payload.payload === agentId,
 			),
 		]);

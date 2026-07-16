@@ -27,6 +27,9 @@ pub enum AddContactError {
     #[error("Profile must be created before adding contacts")]
     ProfileNotCreated,
 
+    #[error("Invalid contact code: {0}")]
+    InvalidContactCode(String),
+
     #[error("Failed to create QR code: {0}")]
     CreateQrCode(String),
 
