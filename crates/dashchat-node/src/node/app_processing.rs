@@ -282,7 +282,7 @@ impl Node {
     ) -> anyhow::Result<()> {
         self.register_bootstrap(operation, source).await?;
 
-        // If an operation is invalided by the projection layer, we don't process it,
+        // If an operation is invalidated by the projection layer, we don't process it,
         // but still allow it to be acknowledged as processed.
         match self.projection.reduce(self.agent_id(), operation).await {
             // Continue processing.
@@ -429,7 +429,7 @@ impl Node {
             return Ok(());
         }
 
-        // If an operation is invalided by the projection layer, we don't process it,
+        // If an operation is invalidated by the projection layer, we don't process it,
         // but still allow it to be acknowledged as processed.
         match self.projection.reduce(self.agent_id(), operation).await {
             // Continue processing.
