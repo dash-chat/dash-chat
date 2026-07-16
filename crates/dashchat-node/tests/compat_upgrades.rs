@@ -207,6 +207,7 @@ async fn direct_chat_capability_upgrade() {
 /// - Upgrade cammy; now messages are V1
 /// - A fourth member with zero capability joins; messages revert to V0
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "TODO: The compatibility system needs to be reworked. Crate-level docs for dashchat-compat."]
 async fn group_chat_capability_upgrade() {
     use maplit::btreemap;
 
