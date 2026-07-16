@@ -1192,14 +1192,10 @@ impl Node {
         Ok(latest.map(|(_, d)| d))
     }
 
-    /// Tombstone an operation: record its hash in the topic's persisted
-    /// tombstone set so its payload is never stored or synced again, and
-    /// immediately drop any payload already stored for it.
-    ///
-    /// This has the effect that when the operation is played back, it will
-    /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
-    /// is `true` MUST also revert their changes in [`Self::unprocess_app`]
-    /// so that they leave behind no traces in local state.
+    /// Record a Tombstone in the device group topic for a given operation,
+    /// which when processed has the effect that the target payload is
+    /// never stored or synced again, and the node immediately drops any payload
+    /// already stored for it.
     pub async fn tombstone_operation(
         &self,
         topic: TopicId,
