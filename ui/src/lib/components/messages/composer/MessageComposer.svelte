@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isMobile } from '$lib/utils/environment';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { keyboard } from '$lib/utils/keyboard.svelte';
 	import {
 		type DraftMedia,
@@ -218,8 +219,9 @@
 		<div class="m-2 row gap-2" style="align-items: flex-end;">
 			{#if editing}
 				<!-- Media cannot be edited: the attach button gives way to the cancel
-				     button on mobile; on desktop cancel sits after the input. -->
-				{#if isMobile}
+				     button in the narrow layout; on wide screens cancel sits after
+				     the input. -->
+				{#if !isWideScreen.value}
 					<IconButton
 						icon={mdiClose}
 						circle
@@ -267,7 +269,7 @@
 				</div>
 			</div>
 
-			{#if editing && !isMobile}
+			{#if editing && isWideScreen.value}
 				<IconButton
 					icon={mdiClose}
 					circle
