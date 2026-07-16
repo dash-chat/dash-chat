@@ -39,19 +39,14 @@ pub async fn agent_for_device(
 pub async fn add_contact(
     contact_code: String,
     app_node: State<'_, AppNode>,
-) -> Result<DeviceId, dashchat_node::AddContactError> {
+) -> Result<DeviceId, Error> {
     let qr = QrCode::from_str(&contact_code)
         .map_err(|e| dashchat_node::AddContactError::InvalidContactCode(e.to_string()))?;
     if qr.share_intent == ShareIntent::AddDevice {
-        return Err(
-            dashchat_node::Error::AuthorOperation("device linking not supported".into()).into(),
-        );
+        return Err(Error::AddDeviceNotSupported);
     }
     let device_pubkey = qr.device_pubkey;
-    let node = app_node
-        .get()
-        .await
-        .map_err(|e| dashchat_node::Error::AuthorOperation(e.to_string()))?;
+    let node = app_node.get().await?;
     node.add_contact(qr).await?;
     Ok(device_pubkey)
 }
