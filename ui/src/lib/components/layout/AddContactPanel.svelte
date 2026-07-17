@@ -175,17 +175,10 @@
 	}
 </script>
 
-{#await Promise.all([myDeepLink, myName])}
-	<Page style="display: flex; flex-direction: column">
-		<div
-			class="column"
-			style="height: 100%; align-items: center; justify-content: center"
-		>
-			<Preloader />
-		</div>
-	</Page>
-{:then [deepLink, name]}
-	{#if colorPickerOpen}
+{#if colorPickerOpen}
+	{#await Promise.all([myDeepLink, myName])}
+		<Preloader />
+	{:then [deepLink, name]}
 		{#if deepLink !== null}
 			<SelectColor
 				code={deepLink}
@@ -194,86 +187,97 @@
 				onClose={() => (colorPickerOpen = false)}
 			/>
 		{/if}
-	{:else}
-		<Page
-			class={tab === 'scan' ? 'transparent' : ''}
-			style="display: flex; flex-direction: column"
+	{:catch}
+		<!-- -->
+	{/await}
+{:else}
+	<Page
+		class={tab === 'scan' ? 'transparent' : ''}
+		style="display: flex; flex-direction: column"
+	>
+		<Navbar
+			centerTitle={isMobile || theme === 'ios'}
+			titleClass="opacity1"
+			transparent={true}
+			style={tab === 'scan' && theme === 'material'
+				? 'background-color: var(--background-color)'
+				: ''}
 		>
-			<Navbar
-				centerTitle={isMobile || theme === 'ios'}
-				titleClass="opacity1"
-				transparent={true}
-				style={tab === 'scan' && theme === 'material'
-					? 'background-color: var(--background-color)'
-					: ''}
-			>
-				{#snippet left()}
-					{#if showBack}
-						<NavbarBackLink
-							data-testid="add-contact-back"
-							onClick={() => {
-								window.history.back();
-							}}
-						/>
-					{/if}
-				{/snippet}
+			{#snippet left()}
+				{#if showBack}
+					<NavbarBackLink
+						data-testid="add-contact-back"
+						onClick={() => {
+							window.history.back();
+						}}
+					/>
+				{/if}
+			{/snippet}
 
-				{#snippet title()}
-					{#if isMobile}
-						{#if theme === 'material'}
-							<div
-								class="row gap-2"
-								style="align-items: center; justify-content: center"
-							>
-								<Button
-									class="w-24"
-									small
-									rounded
-									tonal={tab !== 'code'}
-									onClick={() => void switchTab('code')}
-									data-testid="add-contact-link-tab"
-									>{m.code()}
-								</Button>
+			{#snippet title()}
+				{#if isMobile}
+					{#if theme === 'material'}
+						<div
+							class="row gap-2"
+							style="align-items: center; justify-content: center"
+						>
+							<Button
+								class="w-24"
+								small
+								rounded
+								tonal={tab !== 'code'}
+								onClick={() => void switchTab('code')}
+								data-testid="add-contact-link-tab"
+								>{m.code()}
+							</Button>
 
-								<Button
-									class="w-24"
-									small
-									rounded
-									tonal={tab !== 'scan'}
-									onClick={() => void switchTab('scan')}
-									data-testid="add-contact-scan-tab"
-									>{m.scan()}
-								</Button>
-							</div>
-						{:else}
-							<Tabbar
-								labels={true}
-								class="transparent"
-								style="margin-top: env(safe-area-inset-top); z-index: -1;"
-							>
-								<ToolbarPane>
-									<TabbarLink
-										active={tab === 'code'}
-										onclick={() => void switchTab('code')}
-										label={m.code()}
-										data-testid="add-contact-link-tab"
-									/>
-									<TabbarLink
-										active={tab === 'scan'}
-										onclick={() => void switchTab('scan')}
-										label={m.scan()}
-										data-testid="add-contact-scan-tab"
-									/>
-								</ToolbarPane>
-							</Tabbar>
-						{/if}
+							<Button
+								class="w-24"
+								small
+								rounded
+								tonal={tab !== 'scan'}
+								onClick={() => void switchTab('scan')}
+								data-testid="add-contact-scan-tab"
+								>{m.scan()}
+							</Button>
+						</div>
 					{:else}
-						{m.addContact()}
+						<Tabbar
+							labels={true}
+							class="transparent"
+							style="margin-top: env(safe-area-inset-top); z-index: -1;"
+						>
+							<ToolbarPane>
+								<TabbarLink
+									active={tab === 'code'}
+									onclick={() => void switchTab('code')}
+									label={m.code()}
+									data-testid="add-contact-link-tab"
+								/>
+								<TabbarLink
+									active={tab === 'scan'}
+									onclick={() => void switchTab('scan')}
+									label={m.scan()}
+									data-testid="add-contact-scan-tab"
+								/>
+							</ToolbarPane>
+						</Tabbar>
 					{/if}
-				{/snippet}
-			</Navbar>
+				{:else}
+					{m.addContact()}
+				{/if}
+			{/snippet}
+		</Navbar>
 
-			{#if tab === 'code'}
+		{#if tab === 'code'}
+			{#await Promise.all([myDeepLink, myName])}
+				<div
+					class="column"
+					style="height: 100%; align-items: center; justify-content: center"
+				>
+					<Preloader />
+				</div>
+			{:then [deepLink, name]}
 				{#if deepLink !== null}
 					{#await $qrColor then savedColor}
 						{@const color = savedColor ?? defaultQrColor()}
@@ -330,9 +334,11 @@
 						/>
 					{/await}
 				{/if}
-			{:else if tab === 'scan'}
-				<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveDeepLink} />
-			{/if}
-		</Page>
-	{/if}
-{/await}
+			{:catch}
+				<!-- -->
+			{/await}
+		{:else if tab === 'scan'}
+			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveDeepLink} />
+		{/if}
+	</Page>
+{/if}
