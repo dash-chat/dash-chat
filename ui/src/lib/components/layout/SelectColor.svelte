@@ -17,10 +17,12 @@
 
 	let {
 		code,
+		qrCodeLabel,
 		qrColor,
 		onClose,
 	}: {
 		code: string;
+		qrCodeLabel?: string | undefined;
 		qrColor: string;
 		onClose: () => void;
 	} = $props();
@@ -87,6 +89,7 @@
 			<QrCodeCard
 				value={code}
 				color={selectedColor}
+				label={qrCodeLabel}
 				copyButtonTestId="color-picker-copy-btn"
 				copiedMessage={m.copiedCodeToClipboard()}
 			/>

@@ -162,9 +162,10 @@
 </script>
 
 {#if colorPickerOpen}
-	{#await myCode then code}
+	{#await Promise.all([myCode, myName]) then [code, name]}
 		<SelectColor
 			code={toDeepLink(code)}
+			qrCodeLabel={name}
 			qrColor={colorForPicker}
 			onClose={() => (colorPickerOpen = false)}
 		/>
