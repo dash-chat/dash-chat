@@ -181,7 +181,7 @@
 	{:then [deepLink, name]}
 		{#if deepLink !== null}
 			<SelectColor
-				code={deepLink}
+				qrCodeValue={deepLink}
 				qrCodeLabel={name}
 				qrColor={colorForPicker}
 				onClose={() => (colorPickerOpen = false)}

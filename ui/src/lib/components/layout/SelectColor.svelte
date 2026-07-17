@@ -16,12 +16,12 @@
 	import QrCodeCard from '$lib/components/QrCodeCard.svelte';
 
 	let {
-		code,
+		qrCodeValue,
 		qrCodeLabel,
 		qrColor,
 		onClose,
 	}: {
-		code: string;
+		qrCodeValue: string;
 		qrCodeLabel?: string | undefined;
 		qrColor: string;
 		onClose: () => void;
@@ -87,7 +87,7 @@
 			style="align-items: center; width: 100%; max-width: 400px;"
 		>
 			<QrCodeCard
-				value={code}
+				value={qrCodeValue}
 				color={selectedColor}
 				label={qrCodeLabel}
 				copyButtonTestId="color-picker-copy-btn"
