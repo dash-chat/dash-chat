@@ -12,11 +12,13 @@
 		value,
 		color,
 		copyButtonTestId,
+		label,
 		copiedMessage = m.copiedToClipboard(),
 	}: {
 		value: string;
 		color: string;
 		copyButtonTestId: string;
+		label?: string | undefined;
 		copiedMessage?: string;
 	} = $props();
 
@@ -52,7 +54,9 @@
 				onClick={copyLink}
 			>
 				<wa-icon src={wrapPathInSvg(mdiContentCopy)}> </wa-icon>
-				{value.slice(0, 25)}...
+				<div class="truncate max-w-40">
+					{label ?? value}
+				</div>
 			</Button>
 		</div>
 	</div>

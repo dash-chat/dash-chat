@@ -51,6 +51,7 @@
 	const settingsStore: SettingsStore = getContext('settings-store');
 
 	let myCode = contactsStore.client.createContactCode();
+	let myName = getMyName();
 
 	let tab = $state<TabName>('code');
 	let scannerRef: QrCodeScanner | null = $state(null);
@@ -248,20 +249,21 @@
 		</Navbar>
 
 		{#if tab === 'code'}
-			{#await myCode}
+			{#await Promise.all([myCode, myName])}
 				<div
 					class="column"
 					style="height: 100%; align-items: center; justify-content: center"
 				>
 					<Preloader />
 				</div>
-			{:then code}
+			{:then [code, name]}
 				{#await $qrColor then savedColor}
 					{@const color = savedColor ?? defaultQrColor()}
 					<div class="column" style="flex:1">
 						<div class="column center-in-desktop gap-4 mx-4 mt-4">
 							<QrCodeCard
 								value={toDeepLink(code)}
+								label={name}
 								{color}
 								copyButtonTestId="add-contact-copy-btn"
 								copiedMessage={m.copiedCodeToClipboard()}
