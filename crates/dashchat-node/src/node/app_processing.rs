@@ -183,8 +183,10 @@ impl Node {
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
 
 
+                                dbg!();
                                 // Process the operation.
                                 let result = node.process_app(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
+                                dbg!();
 
                                 // Signal that the operation has been fully processed. This will
                                 // allow the ProcessFuture to complete. We return a result here so
@@ -475,6 +477,7 @@ impl Node {
             }
         }
 
+        dbg!();
         // If a receiver is processing this, the tombstone may have been processed prior,
         // so we want to drop the payload now and not process it.
         if self
@@ -486,15 +489,19 @@ impl Node {
             return Ok(());
         }
 
+        dbg!();
         let hash = operation.id();
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
 
+        dbg!(&payload);
         match &payload {
             Payload::DeviceGroup(DeviceGroupPayload::TombstoneMessage { topic, hash }) => {
+                dbg!();
                 // If a node has already processed the target, now that the tombstone has arrived
                 // it's time to purge it.
                 if let Some(tombstoned_op) = self.op_store.get_operation(hash).await? {
+                    dbg!();
                     let purged = self.enforce_tombstone(*topic, &tombstoned_op).await?;
                     debug_assert!(
                         purged,
@@ -502,6 +509,7 @@ impl Node {
                     );
                     // The payload is tombstoned, so there's nothing to process.
                     self.notify_header(dashchat_topic, header).await?;
+                    dbg!();
                     return Ok(());
                 }
             }
@@ -666,6 +674,7 @@ impl Node {
                     // tombstoning relies on.
                     let chat_id = ChatId::from_topic_id(topic)?;
                     let valid_ops = self.valid_chat_ops(chat_id).await?;
+                    dbg!();
                     if hashes.iter().all(|h| valid_ops.contains_key(h)) {
                         let delete_ts: u64 = operation.processed().header().timestamp.into();
                         if let Err(err) = (DeleteCandidate {
@@ -680,7 +689,9 @@ impl Node {
                             return Ok(());
                         }
                     }
+                    dbg!();
                     self.apply_delete(topic.into(), author, hashes).await?;
+                    dbg!();
                 }
             }
 

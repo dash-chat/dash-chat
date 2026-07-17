@@ -1096,6 +1096,7 @@ impl Node {
         }
         .validate(&ops)?;
 
+        dbg!();
         let header = self
             .publish(
                 topic,
@@ -1103,6 +1104,7 @@ impl Node {
                 None,
             )
             .await?;
+        dbg!();
 
         Ok(header)
     }
@@ -1269,14 +1271,17 @@ impl Node {
         let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
             return Ok(());
         };
+        dbg!(&payload);
         if Self::is_tombstoneable(&payload) {
             let hash = operation.hash;
+            dbg!();
             self.publish(
                 self.device_group_topic(),
                 Payload::DeviceGroup(DeviceGroupPayload::TombstoneMessage { topic, hash }),
                 Some(&format!("tombstone {:?}", hash.aliased())),
             )
             .await?;
+            dbg!();
         } else {
             tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
         }

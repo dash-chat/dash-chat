@@ -344,7 +344,7 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
 /// on the author side.
 #[tokio::test(flavor = "multi_thread")]
 async fn invalid_deletes_are_rejected() {
-    setup();
+    // setup();
 
     let poll = PollConfig::default();
     let mb = TestMailbox::from_env();
@@ -365,11 +365,13 @@ async fn invalid_deletes_are_rejected() {
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());
+    dbg!();
 
     let msg = alice
         .send_message_raw(chat, "alice's".into())
         .await
         .unwrap();
+    dbg!();
 
     poll.wait_for(|| async {
         let n = bobbi.get_messages(chat).await.unwrap().len();
@@ -377,6 +379,7 @@ async fn invalid_deletes_are_rejected() {
     })
     .await
     .unwrap();
+    dbg!();
 
     // Author-side: bobbi cannot delete alice's message.
     let err = bobbi.delete_message(chat, msg.hash()).await.unwrap_err();
@@ -385,18 +388,23 @@ async fn invalid_deletes_are_rejected() {
         DeleteMessageError::Validation(DeleteError::NotAuthor)
     ));
 
+    dbg!();
+
     // Receiver-side: bobbi injects the delete anyway, bypassing author-side
     // validation. It must be ignored everywhere.
     bobbi
         .delete_message_raw(chat, std::iter::once(msg.hash()).collect())
         .await
         .unwrap();
+    dbg!();
 
     // A legitimate operation afterwards gives us a positive signal to wait on.
     alice.send_message_raw(chat, "after".into()).await.unwrap();
+    dbg!();
     poll.consistency([&alice, &bobbi], &[chat.into()])
         .await
         .unwrap();
+    dbg!();
 
     for node in [&alice, &bobbi] {
         assert!(
@@ -412,8 +420,11 @@ async fn invalid_deletes_are_rejected() {
         );
     }
 
+    dbg!();
     // Deleting an already-deleted message is an error.
     alice.delete_message(chat, msg.hash()).await.unwrap();
+    dbg!();
     let err = alice.delete_message(chat, msg.hash()).await.unwrap_err();
+    dbg!();
     assert!(matches!(err, DeleteMessageError::Validation(_)));
 }
