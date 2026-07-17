@@ -70,7 +70,7 @@ describe('Waiting-for-profile placeholder', () => {
 
 	it('shows the placeholder on direct-chat after one-sided contact addition', async () => {
 		await navigateToAddContact(agent2);
-		await agent2.addContactPage.enterCode(contactCode1);
+		await agent2.addContactPage.enterAddContactLink(contactCode1);
 		await agent2.directChatPage.ready();
 
 		await waitForTextContent(

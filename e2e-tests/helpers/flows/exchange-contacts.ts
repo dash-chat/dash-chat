@@ -8,7 +8,7 @@ export async function navigateToAddContact(agent: Agent): Promise<void> {
 }
 
 /**
- * Two-way contact exchange: both agents add each other's code and end up on
+ * Two-way contact exchange: both agents add each other's link and end up on
  * their respective direct-chat pages.
  */
 export async function exchangeContacts(
@@ -17,10 +17,10 @@ export async function exchangeContacts(
 ): Promise<void> {
 	await navigateToAddContact(agent1);
 	await navigateToAddContact(agent2);
-	const code1 = await agent1.addContactPage.getAddContactLink();
-	const code2 = await agent2.addContactPage.getAddContactLink();
-	await agent1.addContactPage.enterCode(code2);
+	const link1 = await agent1.addContactPage.getAddContactLink();
+	const link2 = await agent2.addContactPage.getAddContactLink();
+	await agent1.addContactPage.enterAddContactLink(link2);
 	await agent1.directChatPage.ready();
-	await agent2.addContactPage.enterCode(code1);
+	await agent2.addContactPage.enterAddContactLink(link1);
 	await agent2.directChatPage.ready();
 }

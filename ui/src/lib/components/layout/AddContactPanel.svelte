@@ -81,7 +81,7 @@
 	async function receiveDeepLink(input: string) {
 		const code = extractCodeFromDeepLink(input.trim());
 		if (code === null) {
-			showToast(m.errorAddContactInvalidCode(), 'error');
+			showToast(m.errorAddContactInvalidLink(), 'error');
 			return;
 		}
 
@@ -111,7 +111,7 @@
 					showToast(m.errorAddContactProfileRequired(), 'error');
 					break;
 				case 'InvalidContactCode':
-					showToast(m.errorAddContactInvalidCode(), 'error');
+					showToast(m.errorAddContactInvalidLink(), 'error');
 					break;
 				case 'AddDeviceNotSupported':
 					showToast(m.errorAddContactDeviceLinkingNotSupported(), 'error');
@@ -231,7 +231,7 @@
 									rounded
 									tonal={tab !== 'code'}
 									onClick={() => void switchTab('code')}
-									data-testid="add-contact-code-tab"
+									data-testid="add-contact-link-tab"
 									>{m.code()}
 								</Button>
 
@@ -256,7 +256,7 @@
 										active={tab === 'code'}
 										onclick={() => void switchTab('code')}
 										label={m.code()}
-										data-testid="add-contact-code-tab"
+										data-testid="add-contact-link-tab"
 									/>
 									<TabbarLink
 										active={tab === 'scan'}
@@ -308,10 +308,10 @@
 									>
 										<ListInput
 											floatingLabel
-											label={m.enterYourContactsCode()}
+											label={m.enterYourContactsLink()}
 											type="text"
 											outline
-											data-testid="add-contact-code-input"
+											data-testid="add-contact-link-input"
 											onInput={async (e: Event) => {
 												const target = e.target as HTMLInputElement;
 												if (target.value) {

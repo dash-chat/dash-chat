@@ -38,7 +38,7 @@ describe('Long name truncation', () => {
 		await navigateToAddContact(agent2);
 		agent1Code = await agent1.addContactPage.getAddContactLink();
 		agent2Code = await agent2.addContactPage.getAddContactLink();
-		await agent1.addContactPage.enterCode(agent2Code);
+		await agent1.addContactPage.enterAddContactLink(agent2Code);
 
 		await agent2.addContactPage.back.click();
 		await agent2.newMessagePage.back.click();
@@ -62,7 +62,7 @@ describe('Long name truncation', () => {
 		await agent2.directChatPage.back.click();
 		await agent2.homePage.ready();
 		await navigateToAddContact(agent2);
-		await agent2.addContactPage.enterCode(agent1Code);
+		await agent2.addContactPage.enterAddContactLink(agent1Code);
 		await agent2.directChatPage.ready();
 
 		expect(await agent2.directChatPage.isPeerNamePresent()).toBe(true);

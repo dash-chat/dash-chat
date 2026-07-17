@@ -7,11 +7,11 @@ const FILE_INPUT_TESTID = 'add-contact-file-input';
 
 export class AddContactPage extends TestHelper {
 	back = this.el(tid('add-contact-back'));
-	codeTab = this.el(tid('add-contact-code-tab'));
+	codeTab = this.el(tid('add-contact-link-tab'));
 	scanTab = this.el(tid('add-contact-scan-tab'));
 	qrCode = this.el('wa-qr-code');
 	copyButton = this.el(tid('add-contact-copy-btn'));
-	codeInput = this.el(tid('add-contact-code-input'));
+	codeInput = this.el(tid('add-contact-link-input'));
 	shareButton = this.el(tid('add-contact-share-btn'));
 	saveButton = this.el(tid('add-contact-save-btn'));
 	uploadButton = this.el(tid('add-contact-upload-btn'));
@@ -23,7 +23,7 @@ export class AddContactPage extends TestHelper {
 		await this.codeInput.waitForExist();
 	}
 
-	/** Read the contact code from the QR element. */
+	/** Read the contact link from the QR element. */
 	async getAddContactLink(): Promise<string> {
 		await this.qrCode.waitForExist();
 		const link = (await this.qrCode.getProperty('value')) as string | null;
@@ -31,14 +31,14 @@ export class AddContactPage extends TestHelper {
 		return link;
 	}
 
-	async enterCode(code: string) {
-		await this.typeInto(`${tid('add-contact-code-input')} input`, code);
+	async enterAddContactLink(link: string) {
+		await this.typeInto(`${tid('add-contact-link-input')} input`, link);
 	}
 
-	/** Generate a QR PNG for the given code and inject it into the file input. */
-	async uploadQrCodeImage(code: string): Promise<void> {
+	/** Generate a QR PNG for the given string and inject it into the file input. */
+	async uploadQrCodeImage(value: string): Promise<void> {
 		const pngBase64 = (
-			await QRCode.toBuffer(code, { type: 'png', errorCorrectionLevel: 'L' })
+			await QRCode.toBuffer(value, { type: 'png', errorCorrectionLevel: 'L' })
 		).toString('base64');
 		await this.agent.execute(
 			(base64: string, testid: string) => {

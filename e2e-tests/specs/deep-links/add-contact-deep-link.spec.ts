@@ -22,7 +22,7 @@ describe('Deep links', () => {
 			);
 			await agent1.addContactPage.ready();
 			await agent1.toast.expectMessage(
-				await agent1.tr('errorAddContactInvalidCode'),
+				await agent1.tr('errorAddContactInvalidLink'),
 			);
 			await agent1.addContactPage.back.click();
 			await agent1.homePage.ready();
@@ -32,7 +32,7 @@ describe('Deep links', () => {
 			await agent1.handleDeepLink('dash-chat://add-contact/invalidcode');
 			await agent1.addContactPage.ready();
 			await agent1.toast.expectMessage(
-				await agent1.tr('errorAddContactInvalidCode'),
+				await agent1.tr('errorAddContactInvalidLink'),
 			);
 			await agent1.addContactPage.back.click();
 			await agent1.homePage.ready();
