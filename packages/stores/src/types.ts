@@ -258,13 +258,41 @@ export type GroupControlEvent =
 			timestamp: number;
 	  };
 
+/** A single version of a message's text, with the time it was authored. */
+export interface MessageVersion {
+	hash: string;
+	text: string;
+	timestamp: number;
+}
+
+/** The renderable content of a message, or the sentinel for a message deleted
+ * for everyone. The deleted sentinel replaces the content entirely — there is
+ * no separate flag; `content === 'deleted-for-everyone'` is the placeholder
+ * indication. Reactions and edit history live here too: a deleted message has
+ * neither, so the sentinel drops them along with the text and media. */
+export type MessageDisplay =
+	| {
+			message: string;
+			media: MediaAttachment | null;
+			reactions: Record<DeviceId, string>;
+			editHistory: MessageVersion[];
+	  }
+	| 'deleted-for-everyone';
+
+/** Whether a message was deleted for everyone. Written as a type guard so the
+ * `else` branch narrows `content` to its live-payload member. */
+export function isDeleted(
+	content: MessageDisplay,
+): content is 'deleted-for-everyone' {
+	return content === 'deleted-for-everyone';
+}
+
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
-			content: { message: string; media: MediaAttachment | null };
+			content: MessageDisplay;
 			authorName?: string;
 			timestamp: number;
-			deleted?: boolean;
 	  }
 	| { kind: 'contact_request'; timestamp: number }
 	| { kind: 'contact_added'; timestamp: number }

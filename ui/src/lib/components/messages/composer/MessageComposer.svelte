@@ -16,7 +16,12 @@
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
 	} from '$lib/utils/media';
-	import type { Hash, Message, MessagesStore } from 'dash-chat-stores';
+	import {
+		type Hash,
+		type Message,
+		type MessagesStore,
+		isDeleted,
+	} from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -68,6 +73,8 @@
 	let editing = $state<Message | null>(null);
 	/** Edit requested while a draft was present, awaiting discard confirmation. */
 	let pendingEdit = $state<Message | null>(null);
+	/** Message awaiting delete-for-everyone confirmation. */
+	let deleting = $state<Message | null>(null);
 
 	/** Switch the composer to editing `message`'s text instead of sending a
 	 * new message. Media attachments are disabled while editing. Asks to
@@ -81,6 +88,7 @@
 	}
 
 	function startEdit(message: Message) {
+		if (isDeleted(message.content)) return;
 		editing = message;
 		value = message.content.message;
 	}
@@ -100,7 +108,7 @@
 
 	async function submitEdit() {
 		const target = editing;
-		if (!target) return;
+		if (!target || isDeleted(target.content)) return;
 		const text = value.trim();
 		if (!text || text === target.content.message) {
 			cancelEdit();
@@ -112,6 +120,23 @@
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to edit message', e);
+		}
+	}
+
+	/** Open the delete-for-everyone confirmation dialog for `message`. */
+	export function deleteMessage(message: Message) {
+		deleting = message;
+	}
+
+	async function confirmDelete() {
+		const target = deleting;
+		deleting = null;
+		if (!target) return;
+		try {
+			await store.deleteMessage(target);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to delete message', e);
 		}
 	}
 
@@ -363,6 +388,25 @@
 			onClick={discardDraftAndEdit}
 		>
 			{m.discard()}
+		</DialogButton>
+	{/snippet}
+</Dialog>
+
+<Dialog
+	opened={deleting !== null}
+	onBackdropClick={() => (deleting = null)}
+	title={m.deleteMessageTitle()}
+	data-testid="composer-delete-message-dialog"
+>
+	{#snippet buttons()}
+		<DialogButton
+			data-testid="composer-delete-cancel"
+			onClick={() => (deleting = null)}
+		>
+			{m.cancel()}
+		</DialogButton>
+		<DialogButton data-testid="composer-delete-confirm" onClick={confirmDelete}>
+			{m.deleteForEveryone()}
 		</DialogButton>
 	{/snippet}
 </Dialog>

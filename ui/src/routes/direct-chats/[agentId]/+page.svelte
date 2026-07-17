@@ -661,26 +661,6 @@
 						onClose={() => (showPeerProfile = false)}
 						{profile}
 					/>
-
-					<!-- TODO: must it move? -->
-					<Dialog
-						opened={deletingMessage !== undefined}
-						onBackdropClick={() => (deletingMessage = undefined)}
-						title={m.deleteMessageTitle()}
-					>
-						{#snippet buttons()}
-							<DialogButton onClick={() => (deletingMessage = undefined)}>
-								{m.cancel()}
-							</DialogButton>
-							<DialogButton
-								data-testid="delete-message-confirm"
-								onClick={() =>
-									deletingMessage && deleteForEveryone(deletingMessage)}
-							>
-								{m.deleteForEveryone()}
-							</DialogButton>
-						{/snippet}
-					</Dialog>
 				</ReverseScrollPage>
 
 				{#if !isAtBottom}

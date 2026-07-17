@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { Card } from 'konsta/svelte';
-	import type {
-		ChatId,
-		DeviceId,
-		MailboxTrackerStore,
-		Message,
-		MessagesStore,
+	import {
+		type ChatId,
+		type DeviceId,
+		type MailboxTrackerStore,
+		type Message,
+		type MessagesStore,
+		isDeleted,
 	} from 'dash-chat-stores';
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
@@ -43,6 +44,13 @@
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
+
+	const reactions = $derived(
+		isDeleted(message.content) ? {} : message.content.reactions,
+	);
+	const editHistory = $derived(
+		isDeleted(message.content) ? [] : message.content.editHistory,
+	);
 
 	const store: MessagesStore = getContext('messages-store');
 
@@ -91,7 +99,7 @@
 	bind:this={messageEl}
 	use:longpress={{
 		onLongPress: () => {
-			if (!message.deleted) reactionsOpened = true;
+			if (!isDeleted(message.content)) reactionsOpened = true;
 		},
 	}}
 >
@@ -104,16 +112,15 @@
 			{message}
 			{searchQuery}
 			senderName={m.you()}
-			editedIndicator={message.editHistory.length > 0
-				? editedIndicator
-				: undefined}
+			deletedText={m.youDeletedThisMessage()}
+			editedIndicator={editHistory.length > 0 ? editedIndicator : undefined}
 			metadata={isLast ? metadata : undefined}
 		/>
 	</Card>
-	{#if Object.keys(message.reactions).length > 0}
+	{#if Object.keys(reactions).length > 0}
 		<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
 			<Reactions
-				reactions={message.reactions}
+				{reactions}
 				{myDeviceId}
 				onToggleReaction={emoji =>
 					toggleReaction(store, message, myDeviceId, emoji)}

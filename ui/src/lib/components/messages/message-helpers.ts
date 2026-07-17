@@ -3,6 +3,7 @@ import {
 	type DeviceId,
 	EDIT_WINDOW_MS,
 	type Message,
+	isDeleted,
 } from 'dash-chat-stores';
 
 export type MessagePosition = 'first' | 'middle' | 'last' | 'single';
@@ -11,7 +12,7 @@ export function canEditMessage(
 	message: Message,
 	myDeviceId: DeviceId,
 ): boolean {
-	if (message.deleted) return false;
+	if (isDeleted(message.content)) return false;
 	if (message.author !== myDeviceId) return false;
 	// `timestamp` is the original message op's; edits never change it.
 	return Date.now() - message.timestamp <= EDIT_WINDOW_MS;
@@ -21,10 +22,10 @@ export function canDeleteMessageForEveryone(
 	message: Message,
 	myDeviceId: DeviceId,
 ): boolean {
-	if (message.deleted) return false;
+	if (isDeleted(message.content)) return false;
 	if (message.author !== myDeviceId) return false;
-	const rootTimestamp = message.history?.[0]?.timestamp ?? message.timestamp;
-	return Date.now() - rootTimestamp <= DELETE_FOR_EVERYONE_WINDOW_MS;
+	// `timestamp` is the original message op's; edits never change it.
+	return Date.now() - message.timestamp <= DELETE_FOR_EVERYONE_WINDOW_MS;
 }
 
 export function messagePosition(

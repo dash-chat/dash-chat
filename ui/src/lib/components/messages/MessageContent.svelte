@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { Message } from 'dash-chat-stores';
+	import { type Message, isDeleted } from 'dash-chat-stores';
 	import { senderColor } from './message-helpers';
 	import { shrinkToWidestLine } from '$lib/actions/shrink-to-widest-line';
 	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
@@ -14,6 +14,7 @@
 		editedIndicator,
 		senderName = '',
 		showSenderName = false,
+		deletedText = '',
 	}: {
 		message: Message;
 		searchQuery: string;
@@ -23,78 +24,112 @@
 		 * as the lightbox title. */
 		senderName?: string;
 		showSenderName?: boolean;
+		/** Placeholder shown when the message was deleted for everyone. */
+		deletedText?: string;
 	} = $props();
 
-	const media = $derived(message.content.media);
-	const hasText = $derived(!!message.content.message);
+	const body = $derived(isDeleted(message.content) ? null : message.content);
+	const media = $derived(body?.media ?? null);
+	const hasText = $derived(!!body?.message);
 	const isPhotoOnly = $derived(media?.kind === 'photos' && !hasText);
 	const isFileOnly = $derived(media?.kind === 'file' && !hasText);
 
 	let metadataWidth = $state(0);
 </script>
 
-{#if showSenderName}
-	<div
-		class="sender-name"
-		style="color: {senderColor(message.author)}"
-		data-testid="group-message-sender-name"
-	>
-		{senderName}
-	</div>
-{/if}
-{#if media?.kind === 'photos'}
-	<div class="media photos">
-		<PhotosAttachment
-			photos={media.photos}
+{#if isDeleted(message.content)}
+	{#if showSenderName}
+		<div
+			class="sender-name"
+			style="color: {senderColor(message.author)}"
+			data-testid="group-message-sender-name"
+		>
 			{senderName}
-			timestamp={message.timestamp}
-		/>
-		{#if isPhotoOnly && (metadata || editedIndicator)}
-			<div
-				class="photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 px-2 pt-4 pb-1"
-			>
-				{#if editedIndicator}
-					{@render editedIndicator()}
-				{/if}
-				{#if metadata}
-					{@render metadata()}
-				{/if}
-			</div>
-		{/if}
-	</div>
-{:else if media?.kind === 'file'}
-	<div class="media file">
-		<FileAttachment
-			file={media.file}
-			metadata={isFileOnly ? metadata : undefined}
-		/>
-	</div>
-{/if}
-{#if hasText || (metadata && !isPhotoOnly && !isFileOnly) || (editedIndicator && !isPhotoOnly && !isFileOnly)}
+		</div>
+	{/if}
 	<div class="caption relative px-1">
-		{#if metadata || editedIndicator}
+		{#if metadata}
 			<div
 				class="absolute bottom-0 end-0 flex items-center gap-1 whitespace-nowrap select-none"
 				bind:clientWidth={metadataWidth}
 			>
-				{#if editedIndicator}
-					{@render editedIndicator()}
-				{/if}
-				{#if metadata}
-					{@render metadata()}
-				{/if}
+				{@render metadata()}
 			</div>
 		{/if}
-		<div class="max-w-full" use:shrinkToWidestLine>
-			<MessageText text={message.content.message} {searchQuery} />
-			<!-- Reserves the metadata's space in the bottom-end corner, since
-			     wrapped text cannot be made to avoid an absolute box via CSS. -->
-			{#if metadata || editedIndicator}
+		<div class="max-w-full">
+			<span class="italic opacity-80" data-testid="message-deleted-placeholder"
+				>{deletedText}</span
+			>
+			{#if metadata}
 				<span class="ms-2.5 inline-block" style="width: {metadataWidth}px"
 				></span>
 			{/if}
 		</div>
 	</div>
+{:else}
+	{#if showSenderName}
+		<div
+			class="sender-name"
+			style="color: {senderColor(message.author)}"
+			data-testid="group-message-sender-name"
+		>
+			{senderName}
+		</div>
+	{/if}
+	{#if media?.kind === 'photos'}
+		<div class="media photos">
+			<PhotosAttachment
+				photos={media.photos}
+				{senderName}
+				timestamp={message.timestamp}
+			/>
+			{#if isPhotoOnly && (metadata || editedIndicator)}
+				<div
+					class="photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 px-2 pt-4 pb-1"
+				>
+					{#if editedIndicator}
+						{@render editedIndicator()}
+					{/if}
+					{#if metadata}
+						{@render metadata()}
+					{/if}
+				</div>
+			{/if}
+		</div>
+	{:else if media?.kind === 'file'}
+		<div class="media file">
+			<FileAttachment
+				file={media.file}
+				metadata={isFileOnly ? metadata : undefined}
+			/>
+		</div>
+	{/if}
+	{#if hasText || (metadata && !isPhotoOnly && !isFileOnly) || (editedIndicator && !isPhotoOnly && !isFileOnly)}
+		<div class="caption relative px-1">
+			{#if metadata || editedIndicator}
+				<div
+					class="absolute bottom-0 end-0 flex items-center gap-1 whitespace-nowrap select-none"
+					bind:clientWidth={metadataWidth}
+				>
+					{#if editedIndicator}
+						{@render editedIndicator()}
+					{/if}
+					{#if metadata}
+						{@render metadata()}
+					{/if}
+				</div>
+			{/if}
+			<div class="max-w-full" use:shrinkToWidestLine>
+				<MessageText text={body?.message ?? ''} {searchQuery} />
+				<!-- Reserves the metadata's space in the bottom-end corner, since
+			     wrapped text cannot be made to avoid an absolute box via CSS. -->
+				{#if metadata || editedIndicator}
+					<span class="ms-2.5 inline-block" style="width: {metadataWidth}px"
+					></span>
+				{/if}
+			</div>
+		</div>
+	{/if}
 {/if}
 
 <style>

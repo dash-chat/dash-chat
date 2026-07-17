@@ -2,6 +2,7 @@
 	import { Card } from 'konsta/svelte';
 	import {
 		fullName,
+		isDeleted,
 		type ChatId,
 		type DeviceId,
 		type MailboxTrackerStore,
@@ -47,6 +48,13 @@
 		sender && sender.name ? fullName(sender) : m.unknownSender(),
 	);
 
+	const reactions = $derived(
+		isDeleted(message.content) ? {} : message.content.reactions,
+	);
+	const editHistory = $derived(
+		isDeleted(message.content) ? [] : message.content.editHistory,
+	);
+
 	const store: MessagesStore = getContext('messages-store');
 
 	let reactionsOpened = $state(false);
@@ -88,7 +96,7 @@
 	bind:this={messageEl}
 	use:longpress={{
 		onLongPress: () => {
-			if (!message.deleted) reactionsOpened = true;
+			if (!isDeleted(message.content)) reactionsOpened = true;
 		},
 	}}
 >
@@ -114,17 +122,16 @@
 				{searchQuery}
 				senderName={senderDisplayName}
 				{showSenderName}
-				editedIndicator={message.editHistory.length > 0
-					? editedIndicator
-					: undefined}
+				deletedText={m.thisMessageWasDeleted()}
+				editedIndicator={editHistory.length > 0 ? editedIndicator : undefined}
 				metadata={isLast ? metadata : undefined}
 			/>
 		</Card>
 	</div>
-	{#if Object.keys(message.reactions).length > 0}
+	{#if Object.keys(reactions).length > 0}
 		<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
 			<Reactions
-				reactions={message.reactions}
+				{reactions}
 				{myDeviceId}
 				onToggleReaction={emoji =>
 					toggleReaction(store, message, myDeviceId, emoji)}

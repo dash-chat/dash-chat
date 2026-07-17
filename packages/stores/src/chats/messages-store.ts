@@ -7,9 +7,11 @@ import { DeviceId, Hash } from '../p2panda/types';
 import {
 	ChatId,
 	ChatReaction,
-	MediaAttachment,
+	MessageDisplay,
+	MessageVersion,
 	OutgoingMedia,
 	Payload,
+	isDeleted,
 	mediaBundleToAttachment,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
@@ -26,27 +28,14 @@ export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
  * are ms). */
 export const DELETE_FOR_EVERYONE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** A single version of a message's text, with the time it was authored. */
-export interface MessageVersion {
-	hash: string;
-	text: string;
-	timestamp: number;
-}
-
 export interface Message {
 	hash: string;
-	content: {
-		message: string;
-		media: MediaAttachment | null;
-	};
+	/** The message payload with its reactions and edit history, or
+	 * `'deleted-for-everyone'` once deleted. */
+	content: MessageDisplay;
 	timestamp: number;
 	author: DeviceId;
 	seqNum: number;
-	reactions: Record<DeviceId, string>;
-	editHistory: MessageVersion[];
-	/** Whether the message was deleted for everyone; rendered as a placeholder. */
-	// TODO: recheck
-	deleted?: boolean;
 }
 
 // The messages of a single chat, direct or group alike: the message log with
@@ -70,10 +59,11 @@ export class MessagesStore {
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
 			const message = messages[target];
-			if (message) {
-				message.reactions = byAuthor;
-			} else {
+			if (message === undefined) {
 				console.warn('reaction for missing message');
+				// Deletes are applied last, so live content is always present here.
+			} else if (!isDeleted(message.content)) {
+				message.content.reactions = byAuthor;
 			}
 		}
 
@@ -84,7 +74,7 @@ export class MessagesStore {
 		for (const target of Object.keys(deletesByTarget)) {
 			const message = messages[target];
 			if (message !== undefined) {
-				message.deleted = true;
+				message.content = 'deleted-for-everyone';
 			}
 		}
 
@@ -161,6 +151,12 @@ export class MessagesStore {
 		const current = currentVersion(message);
 		return this.client.editMessage(chatId, current.hash, newText);
 	}
+
+	async deleteMessage(message: Message): Promise<Hash> {
+		const chatId = await this.chatId();
+		const current = currentVersion(message);
+		return this.client.deleteMessage(chatId, current.hash);
+	}
 }
 
 /** A delete op, keyed in `deletesByTarget` by the original message it
@@ -178,6 +174,7 @@ function collectMessageActionsByType(
 	messages: Record<Hash, Message>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
 	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
+	deletesByTarget: Record<Hash, Record<Hash, Delete>>;
 } {
 	const messages: Record<Hash, Message> = {};
 	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
@@ -194,12 +191,12 @@ function collectMessageActionsByType(
 					content: {
 						message: body.payload.payload.message,
 						media: mediaBundleToAttachment(body.payload.payload.media),
+						reactions: {},
+						editHistory: [],
 					},
 					author,
 					seqNum: operation.header.seq_num,
 					timestamp: operation.header.timestamp,
-					reactions: {},
-					editHistory: [],
 				};
 			} else if (body.payload.type === 'Reaction') {
 				const { target, emoji } = body.payload.payload;
@@ -260,6 +257,8 @@ function applyEdits(
 	message: Message,
 	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>,
 ): Message {
+	// Deletes are applied after edits, so live content is always present here.
+	if (isDeleted(message.content)) return message;
 	const versions: MessageVersion[] = [];
 	const seen = new Set<Hash>([message.hash]);
 	const pending = Object.values(editsByTarget[message.hash] ?? {});
@@ -276,14 +275,21 @@ function applyEdits(
 	const latest = versions[versions.length - 1];
 	return {
 		...message,
-		content: { ...message.content, message: latest.text },
-		editHistory: versions,
+		content: {
+			...message.content,
+			message: latest.text,
+			editHistory: versions,
+		},
 	};
 }
 
 function currentVersion(message: Message): MessageVersion {
-	if (message.editHistory.length > 0) {
-		return message.editHistory[message.editHistory.length - 1];
+	if (isDeleted(message.content)) {
+		return { hash: message.hash, text: '', timestamp: message.timestamp };
+	}
+	const { editHistory } = message.content;
+	if (editHistory.length > 0) {
+		return editHistory[editHistory.length - 1];
 	}
 	return {
 		hash: message.hash,

@@ -2,7 +2,11 @@
 	import '@awesome.me/webawesome/dist/components/badge/badge.js';
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
-	import { type ChatSummary, type MediaAttachment } from 'dash-chat-stores';
+	import {
+		type ChatSummary,
+		type MediaAttachment,
+		isDeleted,
+	} from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Badge } from 'konsta/svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
@@ -85,12 +89,12 @@
 				{:else if summary.lastEvent.kind === 'message'}
 					{#if summary.type === 'GroupChat'}
 						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
-						{#if summary.lastEvent.deleted}
+						{#if isDeleted(summary.lastEvent.content)}
 							<span class="italic">{m.messageDeleted()}</span>
 						{:else}
 							{summarizeMessage(summary.lastEvent.content)}
 						{/if}
-					{:else if summary.lastEvent.deleted}
+					{:else if isDeleted(summary.lastEvent.content)}
 						<span class="italic">{m.messageDeleted()}</span>
 					{:else}
 						{summarizeMessage(summary.lastEvent.content)}

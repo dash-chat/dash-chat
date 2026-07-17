@@ -185,7 +185,6 @@ export class GroupChatStore {
 					content: lastMessage.content,
 					authorName: await this.nameForDevice(lastMessage.author),
 					timestamp: lastMessage.timestamp,
-					deleted: lastMessage.deleted,
 				}
 			: undefined;
 

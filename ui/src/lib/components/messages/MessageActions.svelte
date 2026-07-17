@@ -3,7 +3,12 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { Sheet, Block, Button, Chip } from 'konsta/svelte';
 	import { getContext } from 'svelte';
-	import type { Message, DeviceId, MessagesStore } from 'dash-chat-stores';
+	import {
+		type Message,
+		type DeviceId,
+		type MessagesStore,
+		isDeleted,
+	} from 'dash-chat-stores';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import SpotlightOverlay from '$lib/components/SpotlightOverlay.svelte';
 	import EmojiPickerWrapper from './EmojiPickerWrapper.svelte';
@@ -23,6 +28,9 @@
 		/** Whether to offer an edit action (author, within the edit window). */
 		canEdit?: boolean;
 		onEdit?: () => void;
+		/** Whether to offer a delete-for-everyone action (author, within the delete window). */
+		canDelete?: boolean;
+		onDelete?: () => void;
 	}
 
 	let {
@@ -32,6 +40,8 @@
 		myDeviceId,
 		canEdit = false,
 		onEdit,
+		canDelete = false,
+		onDelete,
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
@@ -57,13 +67,24 @@
 		onEdit?.();
 	}
 
+	function del() {
+		close();
+		onDelete?.();
+	}
+
 	async function copy() {
 		close();
+		if (isDeleted(message.content)) return;
 		await writeText(message.content.message);
 		showToast(m.copiedMessageToClipboard());
 	}
 
-	const condensed = $derived(condenseReactions(message.reactions, myDeviceId));
+	const condensed = $derived(
+		condenseReactions(
+			isDeleted(message.content) ? {} : message.content.reactions,
+			myDeviceId,
+		),
+	);
 </script>
 
 <SpotlightOverlay {opened} {target} onClose={close} contentHidden={expanded}>
@@ -76,7 +97,13 @@
 		/>
 	{/snippet}
 	{#snippet below()}
-		<MessageActionsMenu {canEdit} onEdit={edit} onCopy={copy} />
+		<MessageActionsMenu
+			{canEdit}
+			onEdit={edit}
+			onCopy={copy}
+			{canDelete}
+			onDelete={del}
+		/>
 	{/snippet}
 </SpotlightOverlay>
 

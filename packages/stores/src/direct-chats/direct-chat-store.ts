@@ -112,7 +112,6 @@ export class DirectChatStore {
 					kind: 'message',
 					content: message.content,
 					timestamp: message.timestamp,
-					deleted: message.deleted,
 				}
 			: {
 					kind: 'contact_added',
