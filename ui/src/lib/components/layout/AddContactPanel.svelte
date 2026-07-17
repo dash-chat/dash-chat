@@ -52,6 +52,11 @@
 
 	let myCode = contactsStore.client.createContactCode();
 	let myName = getMyName();
+	let myDeepLink = myCode.then(code => {
+		const link = toDeepLink(code);
+		if (link === null) console.error('toDeepLink returned null for code', code);
+		return link;
+	});
 
 	let tab = $state<TabName>('code');
 	let scannerRef: QrCodeScanner | null = $state(null);
@@ -71,7 +76,13 @@
 	}
 
 	async function receiveDeepLink(input: string) {
-		await receiveCode(extractCodeFromDeepLink(input.trim()));
+		const code = extractCodeFromDeepLink(input.trim());
+		if (code === null) {
+			showToast(m.errorAddContactInvalidCode(), 'error');
+			return;
+		}
+
+		await receiveCode(code);
 	}
 
 	async function receiveCode(code: string) {
@@ -161,159 +172,164 @@
 	}
 </script>
 
-{#if colorPickerOpen}
-	{#await Promise.all([myCode, myName]) then [code, name]}
-		<SelectColor
-			code={toDeepLink(code)}
-			qrCodeLabel={name}
-			qrColor={colorForPicker}
-			onClose={() => (colorPickerOpen = false)}
-		/>
-	{/await}
-{:else}
-	<Page
-		class={tab === 'scan' ? 'transparent' : ''}
-		style="display: flex; flex-direction: column"
-	>
-		<Navbar
-			centerTitle={isMobile || theme === 'ios'}
-			titleClass="opacity1"
-			transparent={true}
-			style={tab === 'scan' && theme === 'material'
-				? 'background-color: var(--background-color)'
-				: ''}
+{#await Promise.all([myDeepLink, myName])}
+	<Page style="display: flex; flex-direction: column">
+		<div
+			class="column"
+			style="height: 100%; align-items: center; justify-content: center"
 		>
-			{#snippet left()}
-				{#if showBack}
-					<NavbarBackLink
-						data-testid="add-contact-back"
-						onClick={() => {
-							window.history.back();
-						}}
-					/>
-				{/if}
-			{/snippet}
-
-			{#snippet title()}
-				{#if isMobile}
-					{#if theme === 'material'}
-						<div
-							class="row gap-2"
-							style="align-items: center; justify-content: center"
-						>
-							<Button
-								class="w-24"
-								small
-								rounded
-								tonal={tab !== 'code'}
-								onClick={() => void switchTab('code')}
-								data-testid="add-contact-code-tab"
-								>{m.code()}
-							</Button>
-
-							<Button
-								class="w-24"
-								small
-								rounded
-								tonal={tab !== 'scan'}
-								onClick={() => void switchTab('scan')}
-								data-testid="add-contact-scan-tab"
-								>{m.scan()}
-							</Button>
-						</div>
-					{:else}
-						<Tabbar
-							labels={true}
-							class="transparent"
-							style="margin-top: env(safe-area-inset-top); z-index: -1;"
-						>
-							<ToolbarPane>
-								<TabbarLink
-									active={tab === 'code'}
-									onclick={() => void switchTab('code')}
-									label={m.code()}
-									data-testid="add-contact-code-tab"
-								/>
-								<TabbarLink
-									active={tab === 'scan'}
-									onclick={() => void switchTab('scan')}
-									label={m.scan()}
-									data-testid="add-contact-scan-tab"
-								/>
-							</ToolbarPane>
-						</Tabbar>
+			<Preloader />
+		</div>
+	</Page>
+{:then [deepLink, name]}
+	{#if colorPickerOpen}
+		{#if deepLink !== null}
+			<SelectColor
+				code={deepLink}
+				qrCodeLabel={name}
+				qrColor={colorForPicker}
+				onClose={() => (colorPickerOpen = false)}
+			/>
+		{/if}
+	{:else}
+		<Page
+			class={tab === 'scan' ? 'transparent' : ''}
+			style="display: flex; flex-direction: column"
+		>
+			<Navbar
+				centerTitle={isMobile || theme === 'ios'}
+				titleClass="opacity1"
+				transparent={true}
+				style={tab === 'scan' && theme === 'material'
+					? 'background-color: var(--background-color)'
+					: ''}
+			>
+				{#snippet left()}
+					{#if showBack}
+						<NavbarBackLink
+							data-testid="add-contact-back"
+							onClick={() => {
+								window.history.back();
+							}}
+						/>
 					{/if}
-				{:else}
-					{m.addContact()}
-				{/if}
-			{/snippet}
-		</Navbar>
+				{/snippet}
 
-		{#if tab === 'code'}
-			{#await Promise.all([myCode, myName])}
-				<div
-					class="column"
-					style="height: 100%; align-items: center; justify-content: center"
-				>
-					<Preloader />
-				</div>
-			{:then [code, name]}
-				{#await $qrColor then savedColor}
-					{@const color = savedColor ?? defaultQrColor()}
-					<div class="column" style="flex:1">
-						<div class="column center-in-desktop gap-4 mx-4 mt-4">
-							<QrCodeCard
-								value={toDeepLink(code)}
-								label={name}
-								{color}
-								copyButtonTestId="add-contact-copy-btn"
-								copiedMessage={m.copiedCodeToClipboard()}
-							/>
-
-							<QrActionButtons
-								{isMobile}
-								onShare={() => shareCode(toDeepLink(code))}
-								onSave={() => saveCode(toDeepLink(code), color)}
-								onUpload={() => uploaderRef?.trigger()}
-								onOpenColorPicker={openColorPicker}
-							/>
-
-							<span class="mx-2 mb-2 text-center quiet" style="font-size: 13px"
-								>{m.shareCodeWarning()}</span
+				{#snippet title()}
+					{#if isMobile}
+						{#if theme === 'material'}
+							<div
+								class="row gap-2"
+								style="align-items: center; justify-content: center"
 							>
+								<Button
+									class="w-24"
+									small
+									rounded
+									tonal={tab !== 'code'}
+									onClick={() => void switchTab('code')}
+									data-testid="add-contact-code-tab"
+									>{m.code()}
+								</Button>
 
-							<div class="column gap-1">
-								<List
-									nested
-									strongIos
-									inset={isWideScreen.value || theme === 'ios'}
-								>
-									<ListInput
-										floatingLabel
-										label={m.enterYourContactsCode()}
-										type="text"
-										outline
-										data-testid="add-contact-code-input"
-										onInput={async (e: Event) => {
-											const target = e.target as HTMLInputElement;
-											if (target.value) {
-												await receiveDeepLink(target.value);
-												target.value = '';
-											}
-										}}
+								<Button
+									class="w-24"
+									small
+									rounded
+									tonal={tab !== 'scan'}
+									onClick={() => void switchTab('scan')}
+									data-testid="add-contact-scan-tab"
+									>{m.scan()}
+								</Button>
+							</div>
+						{:else}
+							<Tabbar
+								labels={true}
+								class="transparent"
+								style="margin-top: env(safe-area-inset-top); z-index: -1;"
+							>
+								<ToolbarPane>
+									<TabbarLink
+										active={tab === 'code'}
+										onclick={() => void switchTab('code')}
+										label={m.code()}
+										data-testid="add-contact-code-tab"
 									/>
-								</List>
+									<TabbarLink
+										active={tab === 'scan'}
+										onclick={() => void switchTab('scan')}
+										label={m.scan()}
+										data-testid="add-contact-scan-tab"
+									/>
+								</ToolbarPane>
+							</Tabbar>
+						{/if}
+					{:else}
+						{m.addContact()}
+					{/if}
+				{/snippet}
+			</Navbar>
+
+			{#if tab === 'code'}
+				{#if deepLink !== null}
+					{#await $qrColor then savedColor}
+						{@const color = savedColor ?? defaultQrColor()}
+						<div class="column" style="flex:1">
+							<div class="column center-in-desktop gap-4 mx-4 mt-4">
+								<QrCodeCard
+									value={deepLink}
+									label={name}
+									{color}
+									copyButtonTestId="add-contact-copy-btn"
+									copiedMessage={m.copiedCodeToClipboard()}
+								/>
+
+								<QrActionButtons
+									{isMobile}
+									onShare={() => shareCode(deepLink)}
+									onSave={() => saveCode(deepLink, color)}
+									onUpload={() => uploaderRef?.trigger()}
+									onOpenColorPicker={openColorPicker}
+								/>
+
+								<span
+									class="mx-2 mb-2 text-center quiet"
+									style="font-size: 13px">{m.shareCodeWarning()}</span
+								>
+
+								<div class="column gap-1">
+									<List
+										nested
+										strongIos
+										inset={isWideScreen.value || theme === 'ios'}
+									>
+										<ListInput
+											floatingLabel
+											label={m.enterYourContactsCode()}
+											type="text"
+											outline
+											data-testid="add-contact-code-input"
+											onInput={async (e: Event) => {
+												const target = e.target as HTMLInputElement;
+												if (target.value) {
+													await receiveDeepLink(target.value);
+													target.value = '';
+												}
+											}}
+										/>
+									</List>
+								</div>
 							</div>
 						</div>
-					</div>
-					<QrCodeUploader
-						bind:this={uploaderRef}
-						onSelectImage={receiveDeepLink}
-					/>
-				{/await}
-			{/await}
-		{:else if tab === 'scan'}
-			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveDeepLink} />
-		{/if}
-	</Page>
-{/if}
+						<QrCodeUploader
+							bind:this={uploaderRef}
+							onSelectImage={receiveDeepLink}
+						/>
+					{/await}
+				{/if}
+			{:else if tab === 'scan'}
+				<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveDeepLink} />
+			{/if}
+		</Page>
+	{/if}
+{/await}
