@@ -30,9 +30,13 @@
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
+	import {
+		toDeepLink,
+		extractCodeFromDeepLink,
+	} from '$lib/deep-links/add-contact';
 	import { defaultQrColor } from '$lib/utils/qrcode';
 	import SelectColor from './SelectColor.svelte';
-	import MyQrCodeCard from '$lib/components/contacts/MyQrCodeCard.svelte';
+	import QrCodeCard from '$lib/components/QrCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
 	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
 	import QrCodeUploader from '$lib/components/contacts/QrCodeUploader.svelte';
@@ -63,6 +67,10 @@
 		replaceState(url, page.state);
 
 		await receiveCode(code);
+	}
+
+	async function receiveDeepLink(input: string) {
+		await receiveCode(extractCodeFromDeepLink(input.trim()));
 	}
 
 	async function receiveCode(code: string) {
@@ -155,7 +163,7 @@
 {#if colorPickerOpen}
 	{#await myCode then code}
 		<SelectColor
-			{code}
+			code={toDeepLink(code)}
 			qrColor={colorForPicker}
 			onClose={() => (colorPickerOpen = false)}
 		/>
@@ -252,12 +260,17 @@
 					{@const color = savedColor ?? defaultQrColor()}
 					<div class="column" style="flex:1">
 						<div class="column center-in-desktop gap-4 mx-4 mt-4">
-							<MyQrCodeCard {code} {color} />
+							<QrCodeCard
+								value={toDeepLink(code)}
+								{color}
+								copyButtonTestId="add-contact-copy-btn"
+								copiedMessage={m.copiedCodeToClipboard()}
+							/>
 
 							<QrActionButtons
 								{isMobile}
-								onShare={() => shareCode(code)}
-								onSave={() => saveCode(code, color)}
+								onShare={() => shareCode(toDeepLink(code))}
+								onSave={() => saveCode(toDeepLink(code), color)}
 								onUpload={() => uploaderRef?.trigger()}
 								onOpenColorPicker={openColorPicker}
 							/>
@@ -281,7 +294,7 @@
 										onInput={async (e: Event) => {
 											const target = e.target as HTMLInputElement;
 											if (target.value) {
-												await receiveCode(target.value);
+												await receiveDeepLink(target.value);
 												target.value = '';
 											}
 										}}
@@ -290,11 +303,14 @@
 							</div>
 						</div>
 					</div>
-					<QrCodeUploader bind:this={uploaderRef} onSelectImage={receiveCode} />
+					<QrCodeUploader
+						bind:this={uploaderRef}
+						onSelectImage={receiveDeepLink}
+					/>
 				{/await}
 			{/await}
 		{:else if tab === 'scan'}
-			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveCode} />
+			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveDeepLink} />
 		{/if}
 	</Page>
 {/if}

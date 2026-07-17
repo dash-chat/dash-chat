@@ -1,4 +1,8 @@
 import * as addContact from '$lib/deep-links/add-contact';
+import {
+	HTTPS_DEEP_LINK_BASE_URL,
+	SCHEME_DEEP_LINK_BASE_URL,
+} from '$lib/deep-links/constants';
 import { m } from '$lib/paraglide/messages.js';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 
@@ -15,9 +19,6 @@ function escapeRegex(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-const HTTPS_DEEP_LINK_BASE_URL = escapeRegex('https://dashchat.org');
-const SCHEME_DEEP_LINK_BASE_URL = escapeRegex('dash-chat:/');
-
 function matchesDeepLinkPath(
 	url: string,
 	path: string,
@@ -33,7 +34,7 @@ function matchesDeepLinkPath(
 		.join('');
 	const match = url.match(
 		new RegExp(
-			`^(?:${HTTPS_DEEP_LINK_BASE_URL}|${SCHEME_DEEP_LINK_BASE_URL})${pattern}(?:[?#].*)?$`,
+			`^(?:${escapeRegex(HTTPS_DEEP_LINK_BASE_URL)}|${escapeRegex(SCHEME_DEEP_LINK_BASE_URL)})${pattern}(?:[?#].*)?$`,
 		),
 	);
 	if (!match) return null;

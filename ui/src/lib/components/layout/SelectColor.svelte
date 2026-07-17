@@ -122,7 +122,7 @@
 						>
 							<wa-icon src={wrapPathInSvg(mdiContentCopy)}> </wa-icon>
 
-							{code.slice(0, 15)}...
+							{code.slice(0, 25)}...
 						</Button>
 					</div>
 				</div>

@@ -9,28 +9,32 @@
 	import { m } from '$lib/paraglide/messages.js';
 
 	let {
-		code,
+		value,
 		color,
+		copyButtonTestId,
+		copiedMessage = m.copiedToClipboard(),
 	}: {
-		code: string;
+		value: string;
 		color: string;
+		copyButtonTestId: string;
+		copiedMessage?: string;
 	} = $props();
 
 	const isWhite = $derived(color === '#ffffff');
 
 	async function copyLink() {
-		await writeText(code);
-		showToast(m.copiedCodeToClipboard());
+		await writeText(value);
+		showToast(copiedMessage);
 	}
 </script>
 
-<Card class="qr-card my-code-card p-2.5 pb-2" style="background-color: {color}">
+<Card class="qr-card qr-code-card p-2.5 pb-2" style="background-color: {color}">
 	<div class="column" style="align-items: center">
 		<div
 			class="column w-full p-3"
 			style="align-items: center; justify-content: center; background-color: white; border-radius: 10px;"
 		>
-			<wa-qr-code value={code} size="180" fill={isWhite ? '#000000' : color}
+			<wa-qr-code {value} size="180" fill={isWhite ? '#000000' : color}
 			></wa-qr-code>
 		</div>
 
@@ -44,18 +48,18 @@
 				clearIos
 				clearMaterial
 				small
-				data-testid="add-contact-copy-btn"
+				data-testid={copyButtonTestId}
 				onClick={copyLink}
 			>
 				<wa-icon src={wrapPathInSvg(mdiContentCopy)}> </wa-icon>
-				{code.slice(0, 15)}...
+				{value.slice(0, 25)}...
 			</Button>
 		</div>
 	</div>
 </Card>
 
 <style>
-	:global(.my-code-card) {
+	:global(.qr-code-card) {
 		align-self: center;
 		width: fit-content;
 		margin: 0 !important;
