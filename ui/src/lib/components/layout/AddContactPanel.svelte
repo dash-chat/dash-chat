@@ -54,7 +54,10 @@
 	let myName = getMyName();
 	let myDeepLink = myCode.then(code => {
 		const link = toDeepLink(code);
-		if (link === null) console.error('toDeepLink returned null for code', code);
+		if (link === null) {
+			console.error('toDeepLink returned null for code', code);
+			showToast(m.errorUnexpected(), 'error');
+		}
 		return link;
 	});
 

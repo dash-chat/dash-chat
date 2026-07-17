@@ -24,11 +24,11 @@ export class AddContactPage extends TestHelper {
 	}
 
 	/** Read the contact code from the QR element. */
-	async getContactCode(): Promise<string> {
+	async getAddContactLink(): Promise<string> {
 		await this.qrCode.waitForExist();
-		const code = (await this.qrCode.getProperty('value')) as string | null;
-		if (!code) throw new Error('contact code missing on QR element');
-		return code;
+		const link = (await this.qrCode.getProperty('value')) as string | null;
+		if (!link) throw new Error('add contact link missing on QR element');
+		return link;
 	}
 
 	async enterCode(code: string) {

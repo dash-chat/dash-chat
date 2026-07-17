@@ -36,8 +36,8 @@ describe('Long name truncation', () => {
 	it('agent1 sends a one-way contact request — chat list has no overflow', async () => {
 		await navigateToAddContact(agent1);
 		await navigateToAddContact(agent2);
-		agent1Code = await agent1.addContactPage.getContactCode();
-		agent2Code = await agent2.addContactPage.getContactCode();
+		agent1Code = await agent1.addContactPage.getAddContactLink();
+		agent2Code = await agent2.addContactPage.getAddContactLink();
 		await agent1.addContactPage.enterCode(agent2Code);
 
 		await agent2.addContactPage.back.click();
@@ -89,8 +89,8 @@ describe('Long name truncation', () => {
 		await agent1.settingsPage.ready();
 		await agent1.settingsPage.profileLink.click();
 		await agent1.profilePage.ready();
-		await agent1.waitUntil(
-			async () => agent1.profilePage.nameItemContains(LONG_NAME),
+		await agent1.waitUntil(async () =>
+			agent1.profilePage.nameItemContains(LONG_NAME),
 		);
 		expect(await agent1.checkOverflow()).toEqual([]);
 	});

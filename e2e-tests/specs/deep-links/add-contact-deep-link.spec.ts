@@ -42,15 +42,13 @@ describe('Deep links', () => {
 			await agent2.homePage.newMessageButton.click();
 			await agent2.newMessagePage.addContact.click();
 			await agent2.addContactPage.ready();
-			const code = await agent2.addContactPage.getContactCode();
+			const link = await agent2.addContactPage.getAddContactLink();
 
 			await agent2.addContactPage.back.click();
 			await agent2.newMessagePage.back.click();
 			await agent2.homePage.ready();
 
-			await agent1.handleDeepLink(
-				`https://dashchat.org/add-contact/${encodeURIComponent(code)}`,
-			);
+			await agent1.handleDeepLink(link);
 			await agent1.directChatPage.ready();
 
 			await agent2.waitUntil(

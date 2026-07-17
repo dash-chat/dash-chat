@@ -17,8 +17,8 @@ export async function exchangeContacts(
 ): Promise<void> {
 	await navigateToAddContact(agent1);
 	await navigateToAddContact(agent2);
-	const code1 = await agent1.addContactPage.getContactCode();
-	const code2 = await agent2.addContactPage.getContactCode();
+	const code1 = await agent1.addContactPage.getAddContactLink();
+	const code2 = await agent2.addContactPage.getAddContactLink();
 	await agent1.addContactPage.enterCode(code2);
 	await agent1.directChatPage.ready();
 	await agent2.addContactPage.enterCode(code1);
