@@ -1,19 +1,25 @@
 import { goto } from '$app/navigation';
 
-import { HTTPS_DEEP_LINK_BASE_URL } from './constants';
+import {
+	HTTPS_DEEP_LINK_BASE_URL,
+	SCHEME_DEEP_LINK_BASE_URL,
+} from './constants';
 
 export const path = '/add-contact/{{code}}';
 
-const deepLinkPrefix = HTTPS_DEEP_LINK_BASE_URL + path.replace('{{code}}', '');
+const pathPrefix = path.replace('{{code}}', '');
+const httpsDeepLinkPrefix = HTTPS_DEEP_LINK_BASE_URL + pathPrefix;
+const schemeDeepLinkPrefix = SCHEME_DEEP_LINK_BASE_URL + pathPrefix.slice(1);
 
 export function toDeepLink(code: string): string {
-	return deepLinkPrefix + code;
+	return httpsDeepLinkPrefix + code;
 }
 
 export function extractCodeFromDeepLink(input: string): string {
-	if (input.startsWith(deepLinkPrefix)) {
-		return input.slice(deepLinkPrefix.length);
-	}
+	if (input.startsWith(httpsDeepLinkPrefix))
+		return input.slice(httpsDeepLinkPrefix.length);
+	if (input.startsWith(schemeDeepLinkPrefix))
+		return input.slice(schemeDeepLinkPrefix.length);
 	return input;
 }
 
