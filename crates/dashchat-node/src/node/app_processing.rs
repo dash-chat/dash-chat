@@ -607,17 +607,15 @@ impl Node {
             }
 
             Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
-                let mut enforced = false;
-
+                // Enforce the tombstones the projection just recorded, dropping
+                // the targets' payloads. The delete op's *own* payload is only a
+                // list of hashes (nothing sensitive), so we fall through to
+                // `notify_payload` below: the frontend needs it to learn which
+                // messages were deleted and render their placeholders.
                 for hash in hashes {
                     if let Some(op) = self.op_store.get_operation(hash).await? {
-                        enforced |= self.enforce_tombstone(topic, &op).await?;
+                        self.enforce_tombstone(topic, &op).await?;
                     }
-                }
-                // If the payload was removed, only notify the header and return early.
-                if enforced {
-                    self.notify_header(dashchat_topic, header).await?;
-                    return Ok(());
                 }
             }
 

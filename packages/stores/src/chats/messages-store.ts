@@ -54,8 +54,13 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const { messages, reactionsByTarget, editsByTarget, deletesByTarget } =
-			collectMessageActionsByType(logs);
+		const {
+			messages,
+			reactionsByTarget,
+			editsByTarget,
+			deletesByTarget,
+			opHeaders,
+		} = collectMessageActionsByType(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
 			const message = messages[target];
@@ -71,11 +76,28 @@ export class MessagesStore {
 			messages[hash] = applyEdits(message, editsByTarget);
 		}
 
-		for (const target of Object.keys(deletesByTarget)) {
+		for (const [target, byOp] of Object.entries(deletesByTarget)) {
 			const message = messages[target];
 			if (message !== undefined) {
 				message.content = 'deleted-for-everyone';
+				continue;
 			}
+			// The original message's body was tombstoned (dropped) after the
+			// delete, so no live Message op remains to key the placeholder on.
+			// Reconstruct one from the retained header, but only at the chain's
+			// original message (lowest seq_num) so a deleted-then-edited message
+			// renders a single placeholder rather than one per edit op.
+			const del = Object.values(byOp)[0];
+			if (target !== originalOfChain(del.hashes, opHeaders)) continue;
+			const header = opHeaders[target];
+			if (header === undefined) continue;
+			messages[target] = {
+				hash: target,
+				content: 'deleted-for-everyone',
+				author: header.author,
+				seqNum: header.seqNum,
+				timestamp: header.timestamp,
+			};
 		}
 
 		return messages;
@@ -175,14 +197,23 @@ function collectMessageActionsByType(
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
 	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
 	deletesByTarget: Record<Hash, Record<Hash, Delete>>;
+	opHeaders: Record<Hash, OpHeader>;
 } {
 	const messages: Record<Hash, Message> = {};
 	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
 	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
 	const deletesByTarget: Record<Hash, Record<Hash, Delete>> = {};
+	const opHeaders: Record<Hash, OpHeader> = {};
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
+			// Recorded for every op, including body-less (tombstoned) ones,
+			// so a deleted message can be reconstructed as a placeholder.
+			opHeaders[operation.hash] = {
+				author,
+				seqNum: operation.header.seq_num,
+				timestamp: operation.header.timestamp,
+			};
 			const body = operation.body;
 			if (body?.type !== 'Chat') continue;
 			if (body.payload.type === 'Message') {
@@ -238,7 +269,34 @@ function collectMessageActionsByType(
 		reactionsByTarget,
 		editsByTarget,
 		deletesByTarget,
+		opHeaders,
 	};
+}
+
+/** The retained header fields of an operation, kept for every op (including
+ * body-less tombstoned ones) so a deleted message can still be placed. */
+interface OpHeader {
+	author: DeviceId;
+	seqNum: number;
+	timestamp: number;
+}
+
+/** The original message of a delete's chain: the covered hash with the lowest
+ * seq_num (edits always follow the original in the same author's log). */
+function originalOfChain(
+	hashes: Hash[],
+	opHeaders: Record<Hash, OpHeader>,
+): Hash | undefined {
+	let original: Hash | undefined;
+	let lowestSeqNum = Infinity;
+	for (const hash of hashes) {
+		const header = opHeaders[hash];
+		if (header !== undefined && header.seqNum < lowestSeqNum) {
+			lowestSeqNum = header.seqNum;
+			original = hash;
+		}
+	}
+	return original;
 }
 
 // Apply the message's edits and return the resulting message. Every edit
