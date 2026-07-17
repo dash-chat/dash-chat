@@ -1,12 +1,14 @@
 use aliased::Aliasing;
+use derive_more::derive::{Deref, From};
 use p2panda::Hash;
+use p2panda::operation::Header;
 use p2panda::streams::ProcessedOperation;
 use p2panda_auth::group::GroupAction;
 use p2panda_auth::processor::GroupsArgs;
 use sqlx::SqlitePool;
 use std::collections::{BTreeSet, HashMap};
 
-use crate::{AgentId, DeviceId, Profile, TopicId};
+use crate::{AgentId, DeleteCandidate, DeviceId, Profile, TopicId};
 use crate::{
     AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
 };
@@ -188,6 +190,9 @@ impl OpProjection {
         &self,
         me: AgentId,
         operation: &ProcessedOperation<Payload>,
+        // XXX: once refined operation logs (e.g. `all_valid_ops`) are moved
+        //      to the projection layer, this Node injection must be removed.
+        node: BadUseOfNode,
     ) -> Result<(), ProjectionError> {
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
@@ -199,6 +204,14 @@ impl OpProjection {
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
                 for (device_id, agent_id) in agents {
                     self.save_agent_mapping(*device_id, *agent_id).await?;
+                }
+            }
+
+            Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
+                self.validate_delete(topic, operation.event.operation.header(), hashes, node)
+                    .await?;
+                for hash in hashes {
+                    self.add_tombstone(topic.into(), *hash).await?;
                 }
             }
 
@@ -223,9 +236,6 @@ impl OpProjection {
                 }
                 DeviceGroupPayload::UnblockAgent(agent_id) => {
                     self.unblock_agent(*agent_id).await?;
-                }
-                DeviceGroupPayload::TombstoneMessage { topic, hash } => {
-                    self.add_tombstone(*topic, *hash).await?;
                 }
                 _ => (),
             },
@@ -291,6 +301,86 @@ impl OpProjection {
                 )));
             }
         };
+        Ok(())
+    }
+
+    async fn validate_delete(
+        &self,
+        topic: TopicId,
+        header: &Header,
+        payload: &BTreeSet<Hash>,
+        node: BadUseOfNode,
+    ) -> Result<(), ProjectionError> {
+        let hash = header.hash();
+        let author = DeviceId::from(header.verifying_key);
+
+        // On replay (or a duplicate delivery) the delete has already
+        // been applied and its targets' bodies are gone, which would
+        // fail validation; skip silently instead.
+        let mut already_applied = true;
+        for h in payload.iter() {
+            if !self.is_tombstoned(topic, *h).await? {
+                already_applied = false;
+                break;
+            }
+        }
+        if already_applied {
+            return Err(ProjectionError::invalid(format!(
+                "delete has already been applied: {:?}",
+                hash.aliased()
+            )));
+        }
+
+        let Some(deleted_op) = node.op_store.get_operation(&hash).await? else {
+            tracing::warn!(op = ?hash.aliased(), "delete references an unknown operation; skipping");
+            return Err(ProjectionError::invalid(format!(
+                "delete references an unknown operation: {:?}",
+                hash.aliased()
+            )));
+        };
+
+        let deleted_op_agent = self
+            .lookup_contact_by_device_id(DeviceId::from(deleted_op.header.verifying_key))
+            .await?;
+        let deleter_agent = self.lookup_contact_by_device_id(author).await?;
+
+        if deleted_op_agent != deleter_agent {
+            tracing::warn!(op = ?hash.aliased(), "delete references another author's operation; skipping");
+            return Err(ProjectionError::invalid(format!(
+                "delete references another author's operation: {:?} != {:?}",
+                deleted_op_agent.aliased(),
+                deleter_agent.aliased()
+            )));
+        }
+
+        // Mirror the author-side validation: a delete that breaks
+        // the chain-completeness / authorship / window rules is
+        // ignored (not applied) with a warning. Full validation
+        // needs every referenced payload; when some are already
+        // gone (a partially-applied replay, or a member that
+        // joined after the delete and synced body-less copies) the
+        // chain can't be reconstructed, and the per-operation
+        // authorship check in `apply_delete` is the property that
+        // tombstoning relies on.
+        let chat_id = ChatId::from_topic_id(topic)?;
+        let valid_ops = node.valid_chat_ops(chat_id).await?;
+        if payload.iter().all(|h| valid_ops.contains_key(h)) {
+            let delete_ts: u64 = header.timestamp.into();
+            if let Err(err) = (DeleteCandidate {
+                hashes: payload.clone(),
+                deleter: author,
+                delete_timestamp: delete_ts,
+                self_hash: Some(hash),
+            })
+            .validate(&valid_ops)
+            {
+                tracing::warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
+                return Err(ProjectionError::invalid(format!(
+                    "invalid delete message: {err}"
+                )));
+            }
+        }
+
         Ok(())
     }
 
@@ -383,6 +473,10 @@ impl From<anyhow::Error> for ProjectionError {
         Self::Any(error)
     }
 }
+
+#[derive(Clone, Deref, From)]
+#[deprecated = "XXX: this is temporary only until we properly implement projections of operations. Until then we grab data directly from the node."]
+pub struct BadUseOfNode(crate::Node);
 
 #[cfg(test)]
 mod tests {

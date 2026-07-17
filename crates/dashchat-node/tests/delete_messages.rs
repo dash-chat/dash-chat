@@ -238,10 +238,7 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
         assert!(served.iter().any(|op| op.header.hash() == msg1.hash()));
     }
 
-    // Ugly use of deprecation just to get a compiler warning to call attention
-    // to this followup.
-    #[deprecated = "TODO: mailbox scrubbing is a followup"]
-    if false {
+    if mailbox_scrubbing_implemented() {
         // The mailbox's own copies were scrubbed: fetching everything it holds for
         // the chat returns the deleted chain body-less.
         let mb_client = mb.client().await;
@@ -301,18 +298,28 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
     .await
     .unwrap();
 
-    for hash in [msg1.hash(), edit1.hash()] {
-        assert_eq!(
-            payload_present(&carol, *chat, alice.device_id(), hash).await,
-            Some(false),
-            "carol received a deleted payload"
-        );
+    if mailbox_scrubbing_implemented() {
+        for hash in [msg1.hash(), edit1.hash()] {
+            assert_eq!(
+                payload_present(&carol, *chat, alice.device_id(), hash).await,
+                Some(false),
+                "carol received a deleted payload"
+            );
+        }
     }
     for hash in [msg2.hash(), edit2.hash()] {
         assert_eq!(
             payload_present(&carol, *chat, alice.device_id(), hash).await,
             Some(true)
         );
+    }
+
+    // When mailbox scrubbing is implemented, we should not wait for consistency.
+    // Until then, carol needs to process the delete message before the deleted conditions are met.
+    if !mailbox_scrubbing_implemented() {
+        poll.consistency([&alice, &bobbi, &carol], &[chat.into()])
+            .await
+            .unwrap();
     }
 
     // Carol sees only the undeleted message (with its edit) and never learns
@@ -337,6 +344,11 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
             .await
             .is_empty()
     );
+}
+
+#[deprecated = "this just calls attention to the need for mailbox scrubbing. When that is implemented, replace all calls to this function with `true`."]
+fn mailbox_scrubbing_implemented() -> bool {
+    false
 }
 
 /// Receiver-side validation: a delete injected by someone other than the
@@ -365,13 +377,11 @@ async fn invalid_deletes_are_rejected() {
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());
-    dbg!();
 
     let msg = alice
         .send_message_raw(chat, "alice's".into())
         .await
         .unwrap();
-    dbg!();
 
     poll.wait_for(|| async {
         let n = bobbi.get_messages(chat).await.unwrap().len();
@@ -379,7 +389,6 @@ async fn invalid_deletes_are_rejected() {
     })
     .await
     .unwrap();
-    dbg!();
 
     // Author-side: bobbi cannot delete alice's message.
     let err = bobbi.delete_message(chat, msg.hash()).await.unwrap_err();
@@ -388,23 +397,18 @@ async fn invalid_deletes_are_rejected() {
         DeleteMessageError::Validation(DeleteError::NotAuthor)
     ));
 
-    dbg!();
-
     // Receiver-side: bobbi injects the delete anyway, bypassing author-side
     // validation. It must be ignored everywhere.
     bobbi
         .delete_message_raw(chat, std::iter::once(msg.hash()).collect())
         .await
         .unwrap();
-    dbg!();
 
     // A legitimate operation afterwards gives us a positive signal to wait on.
     alice.send_message_raw(chat, "after".into()).await.unwrap();
-    dbg!();
     poll.consistency([&alice, &bobbi], &[chat.into()])
         .await
         .unwrap();
-    dbg!();
 
     for node in [&alice, &bobbi] {
         assert!(
@@ -420,11 +424,8 @@ async fn invalid_deletes_are_rejected() {
         );
     }
 
-    dbg!();
     // Deleting an already-deleted message is an error.
     alice.delete_message(chat, msg.hash()).await.unwrap();
-    dbg!();
     let err = alice.delete_message(chat, msg.hash()).await.unwrap_err();
-    dbg!();
     assert!(matches!(err, DeleteMessageError::Validation(_)));
 }

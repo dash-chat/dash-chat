@@ -1096,7 +1096,6 @@ impl Node {
         }
         .validate(&ops)?;
 
-        dbg!();
         let header = self
             .publish(
                 topic,
@@ -1104,7 +1103,6 @@ impl Node {
                 None,
             )
             .await?;
-        dbg!();
 
         Ok(header)
     }
@@ -1253,39 +1251,6 @@ impl Node {
             }
         }
         Ok(latest.map(|(_, d)| d))
-    }
-
-    /// Tombstone an operation: record its hash in the topic's persisted
-    /// tombstone set so its payload is never stored or synced again, and
-    /// immediately drop any payload already stored for it.
-    ///
-    /// This has the effect that when the operation is played back, it will
-    /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
-    /// is `true` MUST also revert their changes in [`Self::unprocess_app`]
-    /// so that they leave behind no traces in local state.
-    pub async fn tombstone_operation(
-        &self,
-        topic: TopicId,
-        operation: &Operation,
-    ) -> anyhow::Result<()> {
-        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
-            return Ok(());
-        };
-        dbg!(&payload);
-        if Self::is_tombstoneable(&payload) {
-            let hash = operation.hash;
-            dbg!();
-            self.publish(
-                self.device_group_topic(),
-                Payload::DeviceGroup(DeviceGroupPayload::TombstoneMessage { topic, hash }),
-                Some(&format!("tombstone {:?}", hash.aliased())),
-            )
-            .await?;
-            dbg!();
-        } else {
-            tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
-        }
-        Ok(())
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.

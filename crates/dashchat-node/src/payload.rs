@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chat::ChatId;
 use crate::topic::{Topic, kind};
-use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, DeviceId, TopicId};
+use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, DeviceId};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
@@ -155,10 +155,6 @@ pub enum DeviceGroupPayload {
     BlockAgent(AgentId),
     UnblockAgent(AgentId),
     ReadMessages(ReadMessagesPayload),
-    TombstoneMessage {
-        topic: TopicId,
-        hash: Hash,
-    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

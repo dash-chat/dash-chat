@@ -7,9 +7,8 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
-use crate::DeleteCandidate;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
-use crate::stores::ProjectionError;
+use crate::stores::{BadUseOfNode, ProjectionError};
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
@@ -183,10 +182,8 @@ impl Node {
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
 
 
-                                dbg!();
                                 // Process the operation.
                                 let result = node.process_app(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
-                                dbg!();
 
                                 // Signal that the operation has been fully processed. This will
                                 // allow the ProcessFuture to complete. We return a result here so
@@ -287,33 +284,6 @@ impl Node {
         )
     }
 
-    /// Apply a delete: tombstone every operation in the edit chain, undo their
-    /// local effects, and drop their stored payloads
-    ///
-    /// Each operation is guarded by an authorship check — a delete may only
-    /// ever drop its own author's operations — so this is safe to call even
-    /// when the full chain validation couldn't run (see the `DeleteMessage`
-    /// arm in [`Self::process_app`]).
-    async fn apply_delete(
-        &self,
-        topic: TopicId,
-        deleter: DeviceId,
-        hashes: &std::collections::BTreeSet<Hash>,
-    ) -> anyhow::Result<()> {
-        for hash in hashes {
-            let Some(op) = self.op_store.get_operation(hash).await? else {
-                warn!(op = ?hash.aliased(), "delete references an unknown operation; skipping");
-                continue;
-            };
-            if DeviceId::from(op.header.verifying_key) != deleter {
-                warn!(op = ?hash.aliased(), "delete references another author's operation; skipping");
-                continue;
-            }
-            self.tombstone_operation(topic, &op).await?;
-        }
-        Ok(())
-    }
-
     /// Note that this is a function that processes operations which could have deleted payloads.
     /// This function currently doesn't do anything with payloads, so we don't check for tombstones here.
     /// If this function is modified to process payloads, then we should call
@@ -327,7 +297,11 @@ impl Node {
 
         // If an operation is invalidated by the projection layer, we don't process it,
         // but still allow it to be acknowledged as processed.
-        match self.projection.reduce(self.agent_id(), operation).await {
+        match self
+            .projection
+            .reduce(self.agent_id(), operation, BadUseOfNode::from(self.clone()))
+            .await
+        {
             // Continue processing.
             Ok(_) => (),
 
@@ -461,7 +435,11 @@ impl Node {
 
         // If an operation is invalidated by the projection layer, we don't process it,
         // but still allow it to be acknowledged as processed.
-        match self.projection.reduce(self.agent_id(), operation).await {
+        match self
+            .projection
+            .reduce(self.agent_id(), operation, BadUseOfNode::from(self.clone()))
+            .await
+        {
             // Continue processing.
             Ok(_) => (),
 
@@ -477,7 +455,6 @@ impl Node {
             }
         }
 
-        dbg!();
         // If a receiver is processing this, the tombstone may have been processed prior,
         // so we want to drop the payload now and not process it.
         if self
@@ -489,31 +466,11 @@ impl Node {
             return Ok(());
         }
 
-        dbg!();
         let hash = operation.id();
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
 
-        dbg!(&payload);
         match &payload {
-            Payload::DeviceGroup(DeviceGroupPayload::TombstoneMessage { topic, hash }) => {
-                dbg!();
-                // If a node has already processed the target, now that the tombstone has arrived
-                // it's time to purge it.
-                if let Some(tombstoned_op) = self.op_store.get_operation(hash).await? {
-                    dbg!();
-                    let purged = self.enforce_tombstone(*topic, &tombstoned_op).await?;
-                    debug_assert!(
-                        purged,
-                        "operation was expected to be tombstoned but was not"
-                    );
-                    // The payload is tombstoned, so there's nothing to process.
-                    self.notify_header(dashchat_topic, header).await?;
-                    dbg!();
-                    return Ok(());
-                }
-            }
-
             Payload::GroupControl(_) => {
                 // Nothing to do.
             }
@@ -650,48 +607,17 @@ impl Node {
             }
 
             Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
-                // On replay (or a duplicate delivery) the delete has already
-                // been applied and its targets' bodies are gone, which would
-                // fail validation; skip silently instead.
-                //
-                // TODO: move this to the projection layer.
-                let mut already_applied = true;
-                for h in hashes {
-                    if !self.projection.is_tombstoned(topic, *h).await? {
-                        already_applied = false;
-                        break;
+                let mut enforced = false;
+
+                for hash in hashes {
+                    if let Some(op) = self.op_store.get_operation(hash).await? {
+                        enforced |= self.enforce_tombstone(topic, &op).await?;
                     }
                 }
-                if !already_applied {
-                    // Mirror the author-side validation: a delete that breaks
-                    // the chain-completeness / authorship / window rules is
-                    // ignored (not applied) with a warning. Full validation
-                    // needs every referenced payload; when some are already
-                    // gone (a partially-applied replay, or a member that
-                    // joined after the delete and synced body-less copies) the
-                    // chain can't be reconstructed, and the per-operation
-                    // authorship check in `apply_delete` is the property that
-                    // tombstoning relies on.
-                    let chat_id = ChatId::from_topic_id(topic)?;
-                    let valid_ops = self.valid_chat_ops(chat_id).await?;
-                    dbg!();
-                    if hashes.iter().all(|h| valid_ops.contains_key(h)) {
-                        let delete_ts: u64 = operation.processed().header().timestamp.into();
-                        if let Err(err) = (DeleteCandidate {
-                            hashes: hashes.clone(),
-                            deleter: author,
-                            delete_timestamp: delete_ts,
-                            self_hash: Some(hash),
-                        })
-                        .validate(&valid_ops)
-                        {
-                            warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
-                            return Ok(());
-                        }
-                    }
-                    dbg!();
-                    self.apply_delete(topic.into(), author, hashes).await?;
-                    dbg!();
+                // If the payload was removed, only notify the header and return early.
+                if enforced {
+                    self.notify_header(dashchat_topic, header).await?;
+                    return Ok(());
                 }
             }
 

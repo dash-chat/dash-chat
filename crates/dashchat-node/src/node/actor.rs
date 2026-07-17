@@ -253,7 +253,6 @@ impl Actor {
                 tx
             }
         };
-        dbg!();
 
         // If the payload represents a change to group state then publish it as a groups control
         // message, all other payload variants are published via the "normal" route.
@@ -261,15 +260,12 @@ impl Actor {
             Payload::GroupControl(args) => tx.publish_groups(args.clone(), payload).await,
             _ => tx.publish(payload).await,
         }?;
-        dbg!();
 
         let (processed_tx, processed_rx) = oneshot::channel();
         let hash = publish_fut.hash();
         hash.alias_numbered();
         let _ = self.processed.insert(hash, processed_tx);
-        dbg!();
         let process_fut = ProcessFuture::new(hash, publish_fut, processed_rx);
-        dbg!();
 
         Ok(process_fut)
     }
