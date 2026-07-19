@@ -30,5 +30,6 @@
     "avatarText": "头像文本",
     "editAvatarText": "编辑头像文本",
     "removePhoto": "移除照片",
-    "preview": "预览"
+    "preview": "预览",
+    "setProfile": "设置个人资料"
 }
