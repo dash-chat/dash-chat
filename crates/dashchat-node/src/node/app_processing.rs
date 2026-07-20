@@ -701,6 +701,10 @@ impl Node {
         Ok(())
     }
 
+    /// Notify the frontend of an operation without its payload. Used when the
+    /// op's body has been tombstoned: the frontend must learn the op exists (so
+    /// it refetches and renders the body-less op) but must never receive the
+    /// deleted content.
     pub async fn notify_header(&self, topic: Topic, header: &Header) -> anyhow::Result<()> {
         if let Some(notification_tx) = self.notification_tx.clone() {
             notification_tx

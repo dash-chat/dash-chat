@@ -11,7 +11,7 @@ import {
 	MessageVersion,
 	OutgoingMedia,
 	Payload,
-	isDeleted,
+	hasBody,
 	mediaBundleToAttachment,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
@@ -54,20 +54,15 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const {
-			messages,
-			reactionsByTarget,
-			editsByTarget,
-			deletesByTarget,
-			opHeaders,
-		} = collectMessageActionsByType(logs);
+		const { messages, reactionsByTarget, editsByTarget, deletesByTarget } =
+			collectMessageActionsByType(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
 			const message = messages[target];
 			if (message === undefined) {
 				console.warn('reaction for missing message');
 				// Deletes are applied last, so live content is always present here.
-			} else if (!isDeleted(message.content)) {
+			} else if (hasBody(message.content)) {
 				message.content.reactions = byAuthor;
 			}
 		}
@@ -76,29 +71,7 @@ export class MessagesStore {
 			messages[hash] = applyEdits(message, editsByTarget);
 		}
 
-		for (const [target, byOp] of Object.entries(deletesByTarget)) {
-			const message = messages[target];
-			if (message !== undefined) {
-				message.content = 'deleted-for-everyone';
-				continue;
-			}
-			// The original message's body was tombstoned (dropped) after the
-			// delete, so no live Message op remains to key the placeholder on.
-			// Reconstruct one from the retained header, but only at the chain's
-			// original message (lowest seq_num) so a deleted-then-edited message
-			// renders a single placeholder rather than one per edit op.
-			const del = Object.values(byOp)[0];
-			if (target !== originalOfChain(del.hashes, opHeaders)) continue;
-			const header = opHeaders[target];
-			if (header === undefined) continue;
-			messages[target] = {
-				hash: target,
-				content: 'deleted-for-everyone',
-				author: header.author,
-				seqNum: header.seqNum,
-				timestamp: header.timestamp,
-			};
-		}
+		applyDeletes(messages, deletesByTarget);
 
 		return messages;
 	});
@@ -197,25 +170,33 @@ function collectMessageActionsByType(
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
 	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
 	deletesByTarget: Record<Hash, Record<Hash, Delete>>;
-	opHeaders: Record<Hash, OpHeader>;
 } {
 	const messages: Record<Hash, Message> = {};
 	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
 	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
 	const deletesByTarget: Record<Hash, Record<Hash, Delete>> = {};
-	const opHeaders: Record<Hash, OpHeader> = {};
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
-			// Recorded for every op, including body-less (tombstoned) ones,
-			// so a deleted message can be reconstructed as a placeholder.
-			opHeaders[operation.hash] = {
-				author,
-				seqNum: operation.header.seq_num,
-				timestamp: operation.header.timestamp,
-			};
 			const body = operation.body;
-			if (body?.type !== 'Chat') continue;
+			if (!body) {
+				// The only body-less ops in a chat log are group-control ops
+				// (which carry their action in `header.auth`) and messages whose
+				// payload was tombstoned by a delete. Record the latter as a
+				// placeholder: the DeleteMessage op that references it confirms it
+				// as deleted (see `applyDeletes`); an unreferenced one is an
+				// anomaly rendered as an error bubble (`'body-unavailable'`).
+				if (operation.header.auth) continue;
+				messages[operation.hash] = {
+					hash: operation.hash,
+					content: 'body-unavailable',
+					author,
+					seqNum: operation.header.seq_num,
+					timestamp: operation.header.timestamp,
+				};
+				continue;
+			}
+			if (body.type !== 'Chat') continue;
 			if (body.payload.type === 'Message') {
 				messages[operation.hash] = {
 					hash: operation.hash,
@@ -269,34 +250,40 @@ function collectMessageActionsByType(
 		reactionsByTarget,
 		editsByTarget,
 		deletesByTarget,
-		opHeaders,
 	};
 }
 
-/** The retained header fields of an operation, kept for every op (including
- * body-less tombstoned ones) so a deleted message can still be placed. */
-interface OpHeader {
-	author: DeviceId;
-	seqNum: number;
-	timestamp: number;
-}
-
-/** The original message of a delete's chain: the covered hash with the lowest
- * seq_num (edits always follow the original in the same author's log). */
-function originalOfChain(
-	hashes: Hash[],
-	opHeaders: Record<Hash, OpHeader>,
-): Hash | undefined {
-	let original: Hash | undefined;
-	let lowestSeqNum = Infinity;
-	for (const hash of hashes) {
-		const header = opHeaders[hash];
-		if (header !== undefined && header.seqNum < lowestSeqNum) {
-			lowestSeqNum = header.seqNum;
-			original = hash;
+/** Mark deleted messages as such, collapsing each delete's chain (the original
+ * message plus its edits) to a single placeholder. Every chain member is
+ * present in `messages` — either as a live op or, once tombstoned, as a
+ * body-less `'body-unavailable'` record — so we keep the original (lowest
+ * seq_num, since edits always follow it in the same author's log) as the
+ * `'deleted-for-everyone'` placeholder and drop the rest. */
+function applyDeletes(
+	messages: Record<Hash, Message>,
+	deletesByTarget: Record<Hash, Record<Hash, Delete>>,
+): void {
+	const deletes: Record<Hash, Delete> = {};
+	for (const byOp of Object.values(deletesByTarget)) {
+		for (const [opHash, del] of Object.entries(byOp)) {
+			deletes[opHash] = del;
 		}
 	}
-	return original;
+
+	for (const del of Object.values(deletes)) {
+		const chain = del.hashes.filter(hash => messages[hash] !== undefined);
+		if (chain.length === 0) continue;
+		const original = chain.reduce((a, b) =>
+			messages[a].seqNum <= messages[b].seqNum ? a : b,
+		);
+		for (const hash of chain) {
+			if (hash === original) {
+				messages[hash].content = 'deleted-for-everyone';
+			} else {
+				delete messages[hash];
+			}
+		}
+	}
 }
 
 // Apply the message's edits and return the resulting message. Every edit
@@ -316,7 +303,7 @@ function applyEdits(
 	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>,
 ): Message {
 	// Deletes are applied after edits, so live content is always present here.
-	if (isDeleted(message.content)) return message;
+	if (!hasBody(message.content)) return message;
 	const versions: MessageVersion[] = [];
 	const seen = new Set<Hash>([message.hash]);
 	const pending = Object.values(editsByTarget[message.hash] ?? {});
@@ -342,7 +329,7 @@ function applyEdits(
 }
 
 function currentVersion(message: Message): MessageVersion {
-	if (isDeleted(message.content)) {
+	if (!hasBody(message.content)) {
 		return { hash: message.hash, text: '', timestamp: message.timestamp };
 	}
 	const { editHistory } = message.content;

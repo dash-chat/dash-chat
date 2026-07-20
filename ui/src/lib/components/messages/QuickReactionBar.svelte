@@ -4,7 +4,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiDotsHorizontal } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { type Message, type DeviceId, isDeleted } from 'dash-chat-stores';
+	import { type Message, type DeviceId, hasBody } from 'dash-chat-stores';
 	import IconButton from '$lib/components/IconButton.svelte';
 
 	interface Props {
@@ -18,7 +18,7 @@
 	let { message, myDeviceId, onReact, onExpand }: Props = $props();
 
 	function hasReacted(emoji: string): boolean {
-		if (isDeleted(message.content)) return false;
+		if (!hasBody(message.content)) return false;
 		return message.content.reactions[myDeviceId] === emoji;
 	}
 </script>

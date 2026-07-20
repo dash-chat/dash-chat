@@ -5,6 +5,7 @@
 	import {
 		type ChatSummary,
 		type MediaAttachment,
+		hasBody,
 		isDeleted,
 	} from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
@@ -89,15 +90,23 @@
 				{:else if summary.lastEvent.kind === 'message'}
 					{#if summary.type === 'GroupChat'}
 						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
-						{#if isDeleted(summary.lastEvent.content)}
-							<span class="italic">{m.messageDeleted()}</span>
-						{:else}
+						{#if hasBody(summary.lastEvent.content)}
 							{summarizeMessage(summary.lastEvent.content)}
+						{:else}
+							<span class="italic"
+								>{isDeleted(summary.lastEvent.content)
+									? m.messageDeleted()
+									: m.messageUnavailable()}</span
+							>
 						{/if}
-					{:else if isDeleted(summary.lastEvent.content)}
-						<span class="italic">{m.messageDeleted()}</span>
-					{:else}
+					{:else if hasBody(summary.lastEvent.content)}
 						{summarizeMessage(summary.lastEvent.content)}
+					{:else}
+						<span class="italic"
+							>{isDeleted(summary.lastEvent.content)
+								? m.messageDeleted()
+								: m.messageUnavailable()}</span
+						>
 					{/if}
 				{:else}
 					{groupEventText(summary.lastEvent)}

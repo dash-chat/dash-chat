@@ -265,22 +265,34 @@ export interface MessageVersion {
 	timestamp: number;
 }
 
-/** The renderable content of a message, or the sentinel for a message deleted
- * for everyone. The deleted sentinel replaces the content entirely — there is
- * no separate flag; `content === 'deleted-for-everyone'` is the placeholder
- * indication. Reactions and edit history live here too: a deleted message has
- * neither, so the sentinel drops them along with the text and media. */
-export type MessageDisplay =
-	| {
-			message: string;
-			media: MediaAttachment | null;
-			reactions: Record<DeviceId, string>;
-			editHistory: MessageVersion[];
-	  }
-	| 'deleted-for-everyone';
+/** The live, renderable body of a message: its text, media, reactions and edit
+ * history. */
+export interface MessageBody {
+	message: string;
+	media: MediaAttachment | null;
+	reactions: Record<DeviceId, string>;
+	editHistory: MessageVersion[];
+}
 
-/** Whether a message was deleted for everyone. Written as a type guard so the
- * `else` branch narrows `content` to its live-payload member. */
+/** The renderable content of a message, or a sentinel that replaces the body
+ * entirely (dropping text, media, reactions and edits):
+ * - `'deleted-for-everyone'`: the message was deleted for everyone (a delete op
+ *   references it). Rendered as the deleted placeholder.
+ * - `'body-unavailable'`: the operation's payload is gone but no delete op
+ *   justifies it — an anomaly (e.g. a peer that synced the body-less op before
+ *   the delete arrives). Rendered as an error bubble to bring attention to it. */
+export type MessageDisplay =
+	| MessageBody
+	| 'deleted-for-everyone'
+	| 'body-unavailable';
+
+/** Whether a message still has a live body. Written as a type guard so the
+ * `true` branch narrows `content` to `MessageBody`. */
+export function hasBody(content: MessageDisplay): content is MessageBody {
+	return typeof content !== 'string';
+}
+
+/** Whether a message was deleted for everyone. */
 export function isDeleted(
 	content: MessageDisplay,
 ): content is 'deleted-for-everyone' {

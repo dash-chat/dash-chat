@@ -20,7 +20,7 @@
 		type Hash,
 		type Message,
 		type MessagesStore,
-		isDeleted,
+		hasBody,
 	} from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { showToast } from '$lib/utils/toasts';
@@ -88,7 +88,7 @@
 	}
 
 	function startEdit(message: Message) {
-		if (isDeleted(message.content)) return;
+		if (!hasBody(message.content)) return;
 		editing = message;
 		value = message.content.message;
 	}
@@ -108,7 +108,7 @@
 
 	async function submitEdit() {
 		const target = editing;
-		if (!target || isDeleted(target.content)) return;
+		if (!target || !hasBody(target.content)) return;
 		const text = value.trim();
 		if (!text || text === target.content.message) {
 			cancelEdit();

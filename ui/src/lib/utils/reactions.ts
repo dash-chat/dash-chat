@@ -4,7 +4,7 @@ import {
 	type DeviceId,
 	type Message,
 	type MessagesStore,
-	isDeleted,
+	hasBody,
 } from 'dash-chat-stores';
 
 /** Adds the emoji reaction to the message, or removes it when the device has
@@ -15,7 +15,7 @@ export async function toggleReaction(
 	myDeviceId: DeviceId,
 	emoji: string,
 ) {
-	if (isDeleted(message.content)) return;
+	if (!hasBody(message.content)) return;
 	const newEmoji =
 		message.content.reactions[myDeviceId] === emoji ? null : emoji;
 	try {

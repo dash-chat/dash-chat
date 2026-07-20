@@ -2,7 +2,7 @@
 	import { Card } from 'konsta/svelte';
 	import {
 		fullName,
-		isDeleted,
+		hasBody,
 		type ChatId,
 		type DeviceId,
 		type MailboxTrackerStore,
@@ -49,10 +49,10 @@
 	);
 
 	const reactions = $derived(
-		isDeleted(message.content) ? {} : message.content.reactions,
+		hasBody(message.content) ? message.content.reactions : {},
 	);
 	const editHistory = $derived(
-		isDeleted(message.content) ? [] : message.content.editHistory,
+		hasBody(message.content) ? message.content.editHistory : [],
 	);
 
 	const store: MessagesStore = getContext('messages-store');
@@ -96,7 +96,7 @@
 	bind:this={messageEl}
 	use:longpress={{
 		onLongPress: () => {
-			if (!isDeleted(message.content)) reactionsOpened = true;
+			if (hasBody(message.content)) reactionsOpened = true;
 		},
 	}}
 >

@@ -7,7 +7,7 @@
 		type Message,
 		type DeviceId,
 		type MessagesStore,
-		isDeleted,
+		hasBody,
 	} from 'dash-chat-stores';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import SpotlightOverlay from '$lib/components/SpotlightOverlay.svelte';
@@ -74,14 +74,14 @@
 
 	async function copy() {
 		close();
-		if (isDeleted(message.content)) return;
+		if (!hasBody(message.content)) return;
 		await writeText(message.content.message);
 		showToast(m.copiedMessageToClipboard());
 	}
 
 	const condensed = $derived(
 		condenseReactions(
-			isDeleted(message.content) ? {} : message.content.reactions,
+			hasBody(message.content) ? message.content.reactions : {},
 			myDeviceId,
 		),
 	);

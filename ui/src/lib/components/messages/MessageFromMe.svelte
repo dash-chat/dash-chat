@@ -6,7 +6,7 @@
 		type MailboxTrackerStore,
 		type Message,
 		type MessagesStore,
-		isDeleted,
+		hasBody,
 	} from 'dash-chat-stores';
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
@@ -46,10 +46,10 @@
 	const isLast = $derived(position === 'last' || position === 'single');
 
 	const reactions = $derived(
-		isDeleted(message.content) ? {} : message.content.reactions,
+		hasBody(message.content) ? message.content.reactions : {},
 	);
 	const editHistory = $derived(
-		isDeleted(message.content) ? [] : message.content.editHistory,
+		hasBody(message.content) ? message.content.editHistory : [],
 	);
 
 	const store: MessagesStore = getContext('messages-store');
@@ -99,7 +99,7 @@
 	bind:this={messageEl}
 	use:longpress={{
 		onLongPress: () => {
-			if (!isDeleted(message.content)) reactionsOpened = true;
+			if (hasBody(message.content)) reactionsOpened = true;
 		},
 	}}
 >

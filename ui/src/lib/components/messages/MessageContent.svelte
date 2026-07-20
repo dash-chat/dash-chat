@@ -1,6 +1,10 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { type Message, isDeleted } from 'dash-chat-stores';
+	import '@awesome.me/webawesome/dist/components/icon/icon.js';
+	import { type Message, hasBody, isDeleted } from 'dash-chat-stores';
+	import { m } from '$lib/paraglide/messages.js';
+	import { mdiAlertCircleOutline } from '@mdi/js';
+	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { senderColor } from './message-helpers';
 	import { shrinkToWidestLine } from '$lib/actions/shrink-to-widest-line';
 	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
@@ -28,7 +32,7 @@
 		deletedText?: string;
 	} = $props();
 
-	const body = $derived(isDeleted(message.content) ? null : message.content);
+	const body = $derived(hasBody(message.content) ? message.content : null);
 	const media = $derived(body?.media ?? null);
 	const hasText = $derived(!!body?.message);
 	const isPhotoOnly = $derived(media?.kind === 'photos' && !hasText);
@@ -37,7 +41,7 @@
 	let metadataWidth = $state(0);
 </script>
 
-{#if isDeleted(message.content)}
+{#if !hasBody(message.content)}
 	{#if showSenderName}
 		<div
 			class="sender-name"
@@ -57,9 +61,20 @@
 			</div>
 		{/if}
 		<div class="max-w-full">
-			<span class="italic opacity-80" data-testid="message-deleted-placeholder"
-				>{deletedText}</span
-			>
+			{#if isDeleted(message.content)}
+				<span
+					class="italic opacity-80"
+					data-testid="message-deleted-placeholder">{deletedText}</span
+				>
+			{:else}
+				<span
+					class="message-unavailable inline-flex items-center gap-1"
+					data-testid="message-unavailable"
+				>
+					<wa-icon src={wrapPathInSvg(mdiAlertCircleOutline)}></wa-icon>
+					{m.messageUnavailable()}
+				</span>
+			{/if}
 			{#if metadata}
 				<span class="ms-2.5 inline-block" style="width: {metadataWidth}px"
 				></span>
@@ -139,6 +154,16 @@
 		font-size: 0.875rem;
 		font-weight: 600;
 		text-align: start;
+	}
+
+	/* Deliberately non-canonical styling: a body-less op without a delete to
+	 * justify it is an anomaly, so it reads as a warning rather than a message. */
+	.message-unavailable {
+		color: var(--color-amber-600, #d97706);
+		font-style: italic;
+	}
+	.message-unavailable :global(wa-icon) {
+		font-size: 1rem;
 	}
 
 	/* Photos bleed past the bubble's 0.5rem padding to sit edge-to-edge; the
