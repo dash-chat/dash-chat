@@ -35,6 +35,7 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '../profiles/Avatar.svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
+	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
@@ -46,21 +47,31 @@
 
 	let menuFor = $state<{ agentId: AgentId; profile: Profile } | null>(null);
 	let menuIsBlocked = $state(false);
+	let showBlockDialog = $state(false);
+	let dialogFor = $state<{ agentId: AgentId; profile: Profile } | null>(null);
 
 	function openMenu(agentId: AgentId, profile: Profile, blocked: boolean) {
 		menuFor = { agentId, profile };
 		menuIsBlocked = blocked;
 	}
 
-	async function toggleBlock() {
+	function requestBlockToggle() {
 		if (!menuFor) return;
-		const { agentId } = menuFor;
+		dialogFor = menuFor;
+		showBlockDialog = true;
 		menuFor = null;
+	}
+
+	async function confirmBlockToggle() {
+		if (!dialogFor) return;
+		const { agentId } = dialogFor;
+		showBlockDialog = false;
 		if (menuIsBlocked) {
 			await contactsStore.client.unblockContact(agentId);
 		} else {
 			await contactsStore.client.blockContact(agentId);
 		}
+		dialogFor = null;
 	}
 
 	const isAddContact = $derived(
@@ -207,7 +218,7 @@
 		{/if}
 		<ActionsButton
 			bold
-			onClick={toggleBlock}
+			onClick={requestBlockToggle}
 			data-testid="contact-block-toggle"
 		>
 			{menuIsBlocked ? m.unblock() : m.block()}
@@ -219,6 +230,19 @@
 		</ActionsButton>
 	</ActionsGroup>
 </Actions>
+
+{#if dialogFor}
+	<BlockContactDialog
+		opened={showBlockDialog}
+		name={fullName(dialogFor.profile)}
+		blocked={menuIsBlocked}
+		onConfirm={confirmBlockToggle}
+		onClose={() => {
+			showBlockDialog = false;
+			dialogFor = null;
+		}}
+	/>
+{/if}
 
 <style>
 	.new-message-panel {
