@@ -15,8 +15,9 @@ existing backend + store plumbing (`blockContact`/`unblockContact` clients,
 Plus one supporting piece the above implies: a blocked direct chat must replace
 the composer with a blocked banner (we intend to grow that banner later).
 
-Scope note: blocking is a **direct-chat** concern only. Group rows/members are
-out of scope.
+Scope note: blocking a contact who is also in a group **is** supported by the
+backend. This UI work only scopes the ⊘ **icon** to direct-chat contexts — we
+do not show the ⊘ next to a blocked member's name inside a group.
 
 ## Existing pieces (already present, do not rebuild)
 
@@ -143,7 +144,10 @@ before the name using logical spacing (`me-*`).
 
 ## Out of scope
 
-- Blocking group members.
+- Showing the ⊘ icon next to blocked members inside a group (blocking in groups
+  is supported; the icon is intentionally direct-chat-only).
 - A dedicated "Blocked users" settings list (Signal has one; not requested).
 - Report/spam flows.
 - Changes to reject/block backend semantics.
+- Removing the now-unused `rejectContactRequest` frontend handler (deferred to a
+  follow-up cleanup; leave it in place for now).
