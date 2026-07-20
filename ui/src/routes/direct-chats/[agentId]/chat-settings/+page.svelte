@@ -19,6 +19,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { onActivate } from '$lib/utils/keyboard';
 	import { showToast } from '$lib/utils/toasts';
+	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
@@ -48,8 +49,10 @@
 	const isBlocked = $derived(($blockedAgentIds ?? new Set()).has(agentId));
 
 	let showPeerProfile = $state(false);
+	let showBlockDialog = $state(false);
 
-	async function toggleBlock() {
+	async function confirmBlockToggle() {
+		showBlockDialog = false;
 		if (isBlocked) {
 			await contactsStore.client.unblockContact(agentId);
 		} else {
@@ -155,7 +158,7 @@
 						chevron={false}
 						title={isBlocked ? m.unblock() : m.block()}
 						class={isBlocked ? '' : 'text-red-500'}
-						onClick={toggleBlock}
+						onClick={() => (showBlockDialog = true)}
 						data-testid="chat-settings-block-toggle"
 					>
 						{#snippet media()}
@@ -215,6 +218,14 @@
 				opened={showPeerProfile}
 				onClose={() => (showPeerProfile = false)}
 				{profile}
+			/>
+
+			<BlockContactDialog
+				opened={showBlockDialog}
+				name={profile.name}
+				blocked={isBlocked}
+				onConfirm={confirmBlockToggle}
+				onClose={() => (showBlockDialog = false)}
 			/>
 		{/if}
 	{/await}
