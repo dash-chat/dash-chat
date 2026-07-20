@@ -1,10 +1,6 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/qr-code/qr-code.js';
 	import { getContext, untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiContentCopy } from '@mdi/js';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { writeText } from '$lib/utils/clipboard';
 	import { showToast } from '$lib/utils/toasts';
 	import { type SettingsStore } from 'dash-chat-stores';
 	import { defaultQrColor } from '$lib/utils/qrcode';
@@ -13,18 +9,20 @@
 		Navbar,
 		NavbarBackLink,
 		Link,
-		Card,
 		Button,
 		useTheme,
 	} from 'konsta/svelte';
 	import { isIos } from '$lib/utils/environment';
+	import QrCodeCard from '$lib/components/QrCodeCard.svelte';
 
 	let {
-		code,
+		qrCodeValue,
+		qrCodeLabel,
 		qrColor,
 		onClose,
 	}: {
-		code: string;
+		qrCodeValue: string;
+		qrCodeLabel?: string | undefined;
 		qrColor: string;
 		onClose: () => void;
 	} = $props();
@@ -51,7 +49,6 @@
 	);
 
 	const selectedColor = $derived(qrColors[qrColorIndex]);
-	const isWhite = $derived(selectedColor === '#ffffff');
 
 	async function save() {
 		try {
@@ -89,44 +86,13 @@
 			class="column center-in-desktop gap-6 mx-4 mt-4"
 			style="align-items: center; width: 100%; max-width: 400px;"
 		>
-			<Card
-				class="qr-card p-2.5 pb-2"
-				style="background-color: {selectedColor}"
-			>
-				<div class="column" style="align-items: center">
-					<div
-						class="column w-full p-3"
-						style="align-items: center; justify-content: center; background-color: white; border-radius: 10px;"
-					>
-						<wa-qr-code
-							value={code}
-							size="180"
-							fill={isWhite ? '#000000' : selectedColor}
-						></wa-qr-code>
-					</div>
-
-					<div class="py-1">
-						<Button
-							colors={{
-								touchRipple: isWhite ? 'black' : 'white',
-								textIos: isWhite ? 'text-black' : 'text-white',
-								textMaterial: isWhite ? 'text-black' : 'text-white',
-							}}
-							clear
-							small
-							data-testid="color-picker-copy-btn"
-							onClick={async () => {
-								await writeText(code);
-								showToast(m.copiedCodeToClipboard());
-							}}
-						>
-							<wa-icon src={wrapPathInSvg(mdiContentCopy)}> </wa-icon>
-
-							{code.slice(0, 15)}...
-						</Button>
-					</div>
-				</div>
-			</Card>
+			<QrCodeCard
+				value={qrCodeValue}
+				color={selectedColor}
+				label={qrCodeLabel}
+				copyButtonTestId="color-picker-copy-btn"
+				copiedMessage={m.copiedCodeToClipboard()}
+			/>
 
 			<div
 				class="grid grid-cols-4 gap-4 justify-items-center px-4"

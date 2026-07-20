@@ -34,8 +34,8 @@
 	onMount(async () => {
 		cancelled = false;
 		try {
-			const code = await scanQrCode();
-			await onSelectImage(code);
+			const qrCodeValue = await scanQrCode();
+			await onSelectImage(qrCodeValue);
 		} catch (e) {
 			if (cancelled) return;
 			console.error(e);
