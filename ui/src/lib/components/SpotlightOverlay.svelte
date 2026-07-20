@@ -3,7 +3,12 @@
 	import { fade } from 'svelte/transition';
 	import { untrack, type Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { keyboard } from '$lib/utils/keyboard.svelte';
+	import {
+		keyboard,
+		preserveKeyboardSpace,
+		releaseKeyboardSpace,
+	} from '$lib/utils/keyboard.svelte';
+	import { safeAreaInsets } from '$lib/utils/safe-area';
 	import {
 		hideKeyboard,
 		reopenComposerKeyboard,
@@ -43,35 +48,80 @@
 	});
 
 	// The keyboard gives way to the overlay — hidden explicitly, since only
-	// some WebViews retract it on long-press and only some of the time — and
-	// if it was open, dismissing the overlay refocuses the composer and brings
-	// it back.
+	// some WebViews retract it on long-press and only some of the time —
+	// while the composer keeps an empty spacer in its slot so the input bar
+	// doesn't drop to the bottom. Dismissing the overlay refocuses the
+	// composer and brings the keyboard back into the reserved space.
+	// Tracked with a plain variable and an explicit open→close transition
+	// (not an effect cleanup): the effect can re-run spuriously while the
+	// overlay stays open, and a cleanup-based restore would re-summon the
+	// keyboard mid-hide on every such re-run.
 	let restoreKeyboard = false;
 
 	$effect(() => {
 		if (opened) {
-			restoreKeyboard = untrack(() => keyboard.isOpen);
-			if (restoreKeyboard) hideKeyboard();
+			if (untrack(() => keyboard.isOpen)) {
+				restoreKeyboard = true;
+				preserveKeyboardSpace();
+				hideKeyboard();
+			}
 		} else if (restoreKeyboard) {
 			restoreKeyboard = false;
+			// Not released here: the composer's spacer releases it once the
+			// rising keyboard has reclaimed the slot. Releasing earlier flashes
+			// the bar's safe-area padding on for the frames where neither the
+			// keyboard nor the preserved slot is there.
 			reopenComposerKeyboard();
 		}
+	});
+
+	// Destroyed while open (e.g. navigation): drop the composer's keyboard
+	// spacer, but don't re-summon the keyboard.
+	$effect(() => {
+		return () => {
+			if (restoreKeyboard) releaseKeyboardSpace();
+		};
 	});
 
 	// The whole spotlight scene lives between the page chrome (z <= 30) and
 	// Konsta's modal layer (z-40): backdrop 32, lifted target 34, anchored
 	// popovers 36. Sheets/dialogs (40) and toasts (50) always cover it.
+	// The target is taken out of the flow and fixed at its pressed position
+	// (plus the bump), so layout shifts underneath — the chat re-anchoring to
+	// the bottom when the keyboard hides, scroll compensations — cannot move
+	// it, and its parent keeps its height locked so the list doesn't reflow.
 	// Matches Signal's focused-message lift.
 	$effect(() => {
-		if (!spotlighted || !target) return;
-		target.style.position = 'relative';
+		if (!spotlighted || !target || !baseRect) return;
+		const base = baseRect;
+		const holder = target.parentElement;
+		if (holder) {
+			holder.style.height = `${holder.getBoundingClientRect().height}px`;
+		}
+		target.style.position = 'fixed';
+		target.style.top = `${base.top}px`;
+		target.style.left = `${base.left}px`;
+		target.style.width = `${base.width}px`;
+		target.style.margin = '0';
 		target.style.zIndex = '34';
+		let raf = 0;
+		if (bump !== 0) {
+			// Applied a frame later so the bump animates from the pressed spot.
+			raf = requestAnimationFrame(() => {
+				target.style.transition = 'top 150ms ease';
+				target.style.top = `${base.top + bump}px`;
+			});
+		}
 		return () => {
+			cancelAnimationFrame(raf);
 			target.style.position = '';
+			target.style.top = '';
+			target.style.left = '';
+			target.style.width = '';
+			target.style.margin = '';
 			target.style.zIndex = '';
-			target.style.transform = '';
 			target.style.transition = '';
-			appliedShift = 0;
+			if (holder) holder.style.height = '';
 		};
 	});
 
@@ -89,57 +139,33 @@
 
 	$effect(() => {
 		if (!opened || !target) {
-			baseRect = undefined;
-			bump = 0;
+			// Keep the pressed position while the backdrop fades out — the fixed
+			// lift needs it until the very end.
+			if (!spotlighted) {
+				baseRect = undefined;
+				bump = 0;
+			}
 			return;
 		}
 		const base = target.getBoundingClientRect();
 		baseRect = base;
 		bump = untrack(() => {
 			if (!aboveEl || !belowEl) return 0;
-			const finalViewport =
-				(window.visualViewport?.height ?? window.innerHeight) + keyboard.height;
+			const { top: safeTop, bottom: safeBottom } = safeAreaInsets();
+			const bottomLimit =
+				(window.visualViewport?.height ?? window.innerHeight) +
+				keyboard.height -
+				safeBottom;
 			let next = 0;
 			const menuBottom = base.bottom + GAP + belowEl.offsetHeight + MARGIN;
-			if (menuBottom > finalViewport) next -= menuBottom - finalViewport;
+			if (menuBottom > bottomLimit) next -= menuBottom - bottomLimit;
 			const barTop = base.top + next - GAP - aboveEl.offsetHeight - MARGIN;
-			if (barTop < 0) next -= barTop;
+			if (barTop < safeTop) next += safeTop - barTop;
 			return next;
 		});
 		// Konsta popovers only re-read their anchors on window resize; nudge
 		// them once the anchors are in place.
 		requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
-	});
-
-	// Pin the target visually to its pressed position plus the bump. The bump
-	// is animated; corrections for layout drift underneath the overlay (the
-	// chat re-anchoring to the bottom when the keyboard hides, its scroll
-	// compensations, …) land instantly so the drift never shows. Drift is
-	// checked every frame while the spotlight is up — resize events alone
-	// miss the chat's own async scroll corrections.
-	let appliedShift = 0;
-
-	$effect(() => {
-		if (!spotlighted || !target || !baseRect) return;
-		const base = baseRect;
-		let animatingUntil = 0;
-		const pin = (animate: boolean) => {
-			const layoutTop = target.getBoundingClientRect().top - appliedShift;
-			const shift = base.top + bump - layoutTop;
-			if (shift === appliedShift && !animate) return;
-			appliedShift = shift;
-			target.style.transition = animate ? 'transform 150ms ease' : '';
-			target.style.transform = shift === 0 ? '' : `translateY(${shift}px)`;
-			// While the bump transition runs, measured positions are
-			// interpolated and would misread as drift.
-			if (animate) animatingUntil = performance.now() + 170;
-		};
-		pin(true);
-		let raf = requestAnimationFrame(function tick() {
-			if (performance.now() >= animatingUntil) pin(false);
-			raf = requestAnimationFrame(tick);
-		});
-		return () => cancelAnimationFrame(raf);
 	});
 
 	// Anchors follow the pinned position, never the live layout.
@@ -165,7 +191,7 @@
 
 {#if opened}
 	<button
-		class="fixed inset-0 z-[32] h-full w-full cursor-default bg-black/50"
+		class="fixed inset-0 z-[32] h-full w-full cursor-default bg-black/90"
 		aria-label={m.close()}
 		transition:fade={{ duration: 200 }}
 		onclick={onClose}

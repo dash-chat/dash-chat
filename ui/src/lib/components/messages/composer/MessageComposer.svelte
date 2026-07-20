@@ -5,7 +5,7 @@
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { keyboard } from '$lib/utils/keyboard.svelte';
+	import { keyboard, releaseKeyboardSpace } from '$lib/utils/keyboard.svelte';
 	import {
 		type DraftMedia,
 		type IngestError,
@@ -23,6 +23,7 @@
 		hasBody,
 	} from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
+	import { renderBelowKeyboard } from '$lib/components/messages/composer/render-below-keyboard.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiPencilOutline } from '@mdi/js';
@@ -108,18 +109,21 @@
 
 	async function submitEdit() {
 		const target = editing;
-		if (!target || !hasBody(target.content)) return;
+		if (!target || sending || !hasBody(target.content)) return;
 		const text = value.trim();
 		if (!text || text === target.content.message) {
 			cancelEdit();
 			return;
 		}
+		sending = true;
 		try {
 			await store.editMessage(target, text);
 			cancelEdit();
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to edit message', e);
+		} finally {
+			sending = false;
 		}
 	}
 
@@ -259,13 +263,15 @@
 
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<!-- Safe-area padding only when the bar is the bottom-most surface (nothing
-	     below it): no panel and no keyboard. Keying it off the panel alone bumps
-	     the bar by `env(safe-area-inset-bottom)` during the panel→keyboard swap,
-	     because the panel closes before the (visual-viewport-driven) safe area
-	     has collapsed to 0. -->
+	     below it): no panel, no keyboard, no preserved keyboard slot. Keying it
+	     off the panel alone bumps the bar by `env(safe-area-inset-bottom)`
+	     during the panel→keyboard swap, because the panel closes before the
+	     (visual-viewport-driven) safe area has collapsed to 0. -->
 	<div
 		class="message-input-bar"
-		class:pb-safe={!showMediaPanel && !keyboard.isOpen}
+		class:pb-safe={!showMediaPanel &&
+			!keyboard.isOpen &&
+			!keyboard.spacePreserved}
 	>
 		{#if !editing && !isMobile}
 			<StagedAttachments bind:media onFiles={stage} />
@@ -349,6 +355,14 @@
 
 	{#if isMobile}
 		<MediaPanel bind:open={showMediaPanel} onFiles={stage} />
+		<!-- Empty stand-in for the keyboard while it's hidden under the
+		     message-actions overlay, so the input bar stays put. -->
+		<div
+			use:renderBelowKeyboard={{
+				open: keyboard.spacePreserved,
+				onClose: releaseKeyboardSpace,
+			}}
+		></div>
 	{/if}
 </div>
 

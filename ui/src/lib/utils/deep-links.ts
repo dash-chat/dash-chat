@@ -1,4 +1,5 @@
 import * as addContact from '$lib/deep-links/add-contact';
+import { extractDeepLinkParams } from '$lib/deep-links/helpers';
 import { m } from '$lib/paraglide/messages.js';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 
@@ -10,43 +11,6 @@ type DeepLinkHandler = {
 };
 
 const handlers: DeepLinkHandler[] = [addContact];
-
-function escapeRegex(s: string): string {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-const HTTPS_DEEP_LINK_BASE_URL = escapeRegex('https://dashchat.org');
-const SCHEME_DEEP_LINK_BASE_URL = escapeRegex('dash-chat:/');
-
-function matchesDeepLinkPath(
-	url: string,
-	path: string,
-): Record<string, string> | null {
-	const names: string[] = [];
-	const pattern = path
-		.split(/\{\{(\w+)\}\}/g)
-		.map((chunk, i) => {
-			if (i % 2 === 0) return escapeRegex(chunk);
-			names.push(chunk);
-			return '([^/?#]+)';
-		})
-		.join('');
-	const match = url.match(
-		new RegExp(
-			`^(?:${HTTPS_DEEP_LINK_BASE_URL}|${SCHEME_DEEP_LINK_BASE_URL})${pattern}(?:[?#].*)?$`,
-		),
-	);
-	if (!match) return null;
-	return Object.fromEntries(
-		names.map((name, i) => {
-			try {
-				return [name, decodeURIComponent(match[i + 1])];
-			} catch {
-				return [name, match[i + 1]];
-			}
-		}),
-	);
-}
 
 function sanitizeUrl(url: string): string {
 	try {
@@ -61,7 +25,7 @@ export function handleUrls(urls: string[]) {
 	for (const url of urls) {
 		let matched = false;
 		for (const handler of handlers) {
-			const params = matchesDeepLinkPath(url, handler.path);
+			const params = extractDeepLinkParams(url, handler.path);
 			if (params) {
 				handler.handle(params);
 				matched = true;

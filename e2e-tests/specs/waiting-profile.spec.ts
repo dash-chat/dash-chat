@@ -1,11 +1,11 @@
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
+import { tid } from '../helpers/selectors';
 import {
 	isRemoteMailbox,
 	resumeMailbox,
 	suspendMailbox,
 } from '../setup/mailbox-control';
 import { type Agent, setupAgent } from '../setup/setup-agents';
-import { tid } from '../helpers/selectors';
 
 async function waitForTextContent(
 	agent: Agent,
@@ -46,7 +46,7 @@ describe('Waiting-for-profile placeholder', () => {
 		// Fetch agent1's contact code while its p2p is still up (generating the
 		// code sets up agent1's inbox gossip topic, which needs a live endpoint).
 		await navigateToAddContact(agent1);
-		contactCode1 = await agent1.addContactPage.getContactCode();
+		contactCode1 = await agent1.addContactPage.getAddContactLink();
 		// Hold agent2 in the pre-sync state so the "waiting for profile"
 		// placeholder stays visible: suspend the shared mailbox AND cut agent1
 		// off from p2p. Without disabling p2p, the two agents sync agent1's
@@ -70,10 +70,14 @@ describe('Waiting-for-profile placeholder', () => {
 
 	it('shows the placeholder on direct-chat after one-sided contact addition', async () => {
 		await navigateToAddContact(agent2);
-		await agent2.addContactPage.enterCode(contactCode1);
+		await agent2.addContactPage.enterAddContactLink(contactCode1);
 		await agent2.directChatPage.ready();
 
-		await waitForTextContent(agent2, tid('direct-chat-peer-header'), waitingText);
+		await waitForTextContent(
+			agent2,
+			tid('direct-chat-peer-header'),
+			waitingText,
+		);
 		await waitForTextContent(
 			agent2,
 			tid('direct-chat-settings-link'),
