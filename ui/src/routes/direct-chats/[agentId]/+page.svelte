@@ -401,6 +401,7 @@
 										{#if profile}
 											<AvatarWithName
 												{profile}
+												blocked={isBlocked}
 												nameTestId="direct-chat-peer-name"
 											/>
 										{:else}

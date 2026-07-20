@@ -2,6 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/badge/badge.js';
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
+	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import {
 		type ChatSummary,
 		type MediaAttachment,
@@ -19,8 +20,14 @@
 	} from '$lib/utils/time';
 	import { groupEventText } from '$lib/utils/group-event-text';
 	import Avatar from '../profiles/Avatar.svelte';
+	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { mdiCancel } from '@mdi/js';
 
-	let { summary, active }: { summary: ChatSummary; active: boolean } = $props();
+	let {
+		summary,
+		active,
+		blocked = false,
+	}: { summary: ChatSummary; active: boolean; blocked?: boolean } = $props();
 
 	const chatHref = (s: ChatSummary) =>
 		s.type === 'GroupChat'
@@ -40,14 +47,32 @@
 </script>
 
 <TitleTruncatedListItem
-	title={summary.waitingForProfile ? m.waitingForProfile() : summary.name}
-	titleWrapClass={summary.waitingForProfile ? 'quiet' : ''}
 	link
 	class={active ? 'active' : ''}
 	linkProps={{ href: chatHref(summary) }}
 	chevron={false}
 	data-testid="all-chats-row"
 >
+	{#snippet title()}
+		<span
+			class="flex min-w-0 flex-row items-center gap-1 {summary.waitingForProfile
+				? 'quiet'
+				: ''}"
+		>
+			{#if blocked}
+				<wa-icon
+					class="small-icon quiet shrink-0"
+					src={wrapPathInSvg(mdiCancel)}
+					data-testid="blocked-row-icon"
+				></wa-icon>
+			{/if}
+			<span class="truncate"
+				>{summary.waitingForProfile
+					? m.waitingForProfile()
+					: summary.name}</span
+			>
+		</span>
+	{/snippet}
 	{#snippet media()}
 		<Avatar image={summary.avatar} initials={summary.name.slice(0, 2)} />
 	{/snippet}
