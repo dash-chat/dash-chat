@@ -68,7 +68,14 @@
 	};
 
 	function onMessageSent(messageHash: Hash) {
-		justSentMessageHash = messageHash;
+		// The bubble renders off the new-operation event, which can beat
+		// sendMessage's response — if it already mounted, the action missed
+		// the handshake, so scroll now.
+		if (document.querySelector(`[data-message-hash="${messageHash}"]`)) {
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		} else {
+			justSentMessageHash = messageHash;
+		}
 		capturedUnreadHash = null;
 		unreadDividerCaptured = false;
 	}
