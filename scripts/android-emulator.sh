@@ -7,6 +7,12 @@ OUT_LINK="$ROOT/e2e-tests/.appium/emulator"
 
 nix build "git+file:$ROOT#android-emulator" --out-link "$OUT_LINK"
 
+# CI runners pre-set ANDROID_HOME to their own SDK, and the emulator prefers
+# it over the ANDROID_SDK_ROOT that run-test-emulator exports — so it fails to
+# find the AVD's system image. Point ANDROID_HOME at the same nix SDK.
+ANDROID_HOME="$(sed -n 's/^export ANDROID_SDK_ROOT=//p' "$OUT_LINK/bin/run-test-emulator")"
+export ANDROID_HOME
+
 # run-test-emulator boots the emulator on the next free port, waits until the
 # device is ready, and exits — the emulator itself keeps running. Detach its
 # stdio into a log file: the emulator inherits these fds, and holding a
