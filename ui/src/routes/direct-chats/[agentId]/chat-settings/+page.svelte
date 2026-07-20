@@ -222,7 +222,7 @@
 
 			<BlockContactDialog
 				opened={showBlockDialog}
-				name={profile.name}
+				name={fullName(profile)}
 				blocked={isBlocked}
 				onConfirm={confirmBlockToggle}
 				onClose={() => (showBlockDialog = false)}

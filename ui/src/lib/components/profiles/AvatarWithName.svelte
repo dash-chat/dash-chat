@@ -31,6 +31,6 @@
 				data-testid="blocked-name-icon"
 			></wa-icon>
 		{/if}
-		<span class="truncate">{fullName(profile)}</span>
+		<span class="truncate min-w-0">{fullName(profile)}</span>
 	</span>
 </span>

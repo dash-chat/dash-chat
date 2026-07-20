@@ -66,7 +66,7 @@
 					data-testid="blocked-row-icon"
 				></wa-icon>
 			{/if}
-			<span class="truncate"
+			<span class="truncate min-w-0"
 				>{summary.waitingForProfile
 					? m.waitingForProfile()
 					: summary.name}</span

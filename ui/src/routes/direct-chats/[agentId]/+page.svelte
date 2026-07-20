@@ -683,7 +683,7 @@
 					{/if}
 					<BlockContactDialog
 						opened={showBlockDialog}
-						name={profile ? profile.name : ''}
+						name={profile ? fullName(profile) : ''}
 						blocked={isBlocked}
 						onConfirm={confirmBlock}
 						onClose={() => (showBlockDialog = false)}
