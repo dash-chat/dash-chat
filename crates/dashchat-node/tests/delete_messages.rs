@@ -429,3 +429,73 @@ async fn invalid_deletes_are_rejected() {
     let err = alice.delete_message(chat, msg.hash()).await.unwrap_err();
     assert!(matches!(err, DeleteMessageError::Validation(_)));
 }
+
+/// Receiver-side authorship must be enforced per *target op*, not just when the
+/// full chain can be reconstructed. A malicious peer that mixes a victim's live
+/// message hash with a hash that isn't a valid chat op would otherwise skip
+/// full validation and censor the victim's message.
+#[tokio::test(flavor = "multi_thread")]
+async fn mixed_hash_delete_cannot_censor_another_author() {
+    let poll = PollConfig::default();
+    let mb = TestMailbox::from_env();
+    let config = NodeConfig::testing().no_p2p();
+
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mb)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mb)
+        .await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_topic(bobbi.agent_id());
+
+    let msg = alice
+        .send_message_raw(chat, "alice's".into())
+        .await
+        .unwrap();
+
+    poll.wait_for(|| async {
+        let n = bobbi.get_messages(chat).await.unwrap().len();
+        (n == 1).then_some(()).ok_or(n)
+    })
+    .await
+    .unwrap();
+
+    // Bobbi injects a delete whose payload mixes alice's live message with a
+    // hash that is not a valid chat op, so the chain can't be reconstructed and
+    // full validation is skipped. The per-target authorship check must still
+    // reject it.
+    let not_a_chat_op = Hash::from_bytes([0xAB; 32]);
+    bobbi
+        .delete_message_raw(chat, [msg.hash(), not_a_chat_op].into_iter().collect())
+        .await
+        .unwrap();
+
+    // A legitimate operation afterwards gives us a positive signal to wait on.
+    alice.send_message_raw(chat, "after".into()).await.unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
+    for node in [&alice, &bobbi] {
+        assert!(
+            !node
+                .projection
+                .is_tombstoned(*chat, msg.hash())
+                .await
+                .unwrap(),
+            "victim message was censored by a mixed-hash delete"
+        );
+        assert_eq!(
+            payload_present(node, *chat, alice.device_id(), msg.hash()).await,
+            Some(true)
+        );
+    }
+}

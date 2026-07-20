@@ -331,37 +331,37 @@ impl OpProjection {
             )));
         }
 
-        let Some(deleted_op) = node.op_store.get_operation(&hash).await? else {
-            tracing::warn!(op = ?hash.aliased(), "delete references an unknown operation; skipping");
-            return Err(ProjectionError::invalid(format!(
-                "delete references an unknown operation: {:?}",
-                hash.aliased()
-            )));
-        };
-
-        let deleted_op_agent = self
-            .lookup_contact_by_device_id(DeviceId::from(deleted_op.header.verifying_key))
-            .await?;
+        // Authorship: a delete may only tombstone operations authored by the
+        // same agent as the deleter. Check every *target* op (the hashes in the
+        // payload), not the delete op itself. Body-less/tombstoned copies still
+        // carry the author's key in their header, so late joiners can enforce
+        // this too. Targets we haven't synced yet can't be checked here; they
+        // are tombstoned regardless so their body is dropped on arrival.
         let deleter_agent = self.lookup_contact_by_device_id(author).await?;
-
-        if deleted_op_agent != deleter_agent {
-            tracing::warn!(op = ?hash.aliased(), "delete references another author's operation; skipping");
-            return Err(ProjectionError::invalid(format!(
-                "delete references another author's operation: {:?} != {:?}",
-                deleted_op_agent.aliased(),
-                deleter_agent.aliased()
-            )));
+        for target in payload.iter() {
+            let Some(target_op) = node.op_store.get_operation(target).await? else {
+                continue;
+            };
+            let target_agent = self
+                .lookup_contact_by_device_id(DeviceId::from(target_op.header.verifying_key))
+                .await?;
+            if target_agent != deleter_agent {
+                tracing::warn!(op = ?hash.aliased(), target = ?target.aliased(), "delete references another author's operation; skipping");
+                return Err(ProjectionError::invalid(format!(
+                    "delete references another author's operation: {:?} != {:?}",
+                    target_agent.aliased(),
+                    deleter_agent.aliased()
+                )));
+            }
         }
 
-        // Mirror the author-side validation: a delete that breaks
-        // the chain-completeness / authorship / window rules is
-        // ignored (not applied) with a warning. Full validation
-        // needs every referenced payload; when some are already
-        // gone (a partially-applied replay, or a member that
-        // joined after the delete and synced body-less copies) the
-        // chain can't be reconstructed, and the per-operation
-        // authorship check in `apply_delete` is the property that
-        // tombstoning relies on.
+        // Mirror the author-side validation: a delete that breaks the
+        // chain-completeness / window rules is ignored (not applied) with a
+        // warning. Full validation needs every referenced op as a valid chat
+        // op; when some are already gone (a partially-applied replay, or a
+        // member that joined after the delete and synced body-less copies) the
+        // chain can't be reconstructed, so we fall back to the per-target
+        // authorship check above.
         let chat_id = ChatId::from_topic_id(topic)?;
         let valid_ops = node.valid_chat_ops(chat_id).await?;
         if payload.iter().all(|h| valid_ops.contains_key(h)) {

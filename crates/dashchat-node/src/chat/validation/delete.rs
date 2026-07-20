@@ -178,9 +178,9 @@ impl DeleteCandidate {
             if covered.is_disjoint(&self.hashes) {
                 return false;
             }
-            let conflicing_order_key = (op.seq_num, *hash);
+            let conflicting_order_key = (op.seq_num, *hash);
             match self_order_key {
-                Some(self_order_key) => conflicing_order_key < self_order_key,
+                Some(self_order_key) => conflicting_order_key < self_order_key,
                 None => true,
             }
         });
