@@ -22,6 +22,7 @@
 		mdiAlert,
 		mdiAccountQuestion,
 		mdiAccountGroup,
+		mdiCancel,
 		mdiChevronDown,
 		mdiChevronRight,
 		mdiChevronUp,
@@ -47,6 +48,7 @@
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
+	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -63,6 +65,11 @@
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
+
+	const blockedAgentIds = useReactiveValue(
+		contactsStore.blockedContactAgentIds,
+	);
+	const isBlocked = $derived(($blockedAgentIds ?? new Set()).has(agentId));
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
@@ -129,11 +136,26 @@
 		}
 	}
 
+	async function confirmBlock() {
+		showBlockDialog = false;
+		try {
+			if (isBlocked) {
+				await contactsStore.client.unblockContact(agentId);
+			} else {
+				await contactsStore.client.blockContact(agentId);
+			}
+		} catch (e) {
+			console.error(e);
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
+	}
+
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
 	let showRejectDialog = $state(false);
+	let showBlockDialog = $state(false);
 	let profileNamesSheetOpen = $state(false);
 	// Initial value reserves space for the bottom bar before bind:clientHeight
 	// has measured it, so the latest message doesn't flash under the input on
@@ -658,6 +680,13 @@
 							{/snippet}
 						</Dialog>
 					{/if}
+					<BlockContactDialog
+						opened={showBlockDialog}
+						name={profile ? profile.name : ''}
+						blocked={isBlocked}
+						onConfirm={confirmBlock}
+						onClose={() => (showBlockDialog = false)}
+					/>
 					<SafetyTipsSheet
 						opened={showSecurityTips}
 						onClose={() => (showSecurityTips = false)}
@@ -758,6 +787,34 @@
 								{m.waitingForProfile()}
 							</p>
 						</div>
+					{:else if isBlocked}
+						<div class="pb-safe bg-page-surface">
+							<div
+								class="mx-4 border-t border-gray-300 dark:border-gray-600"
+								style="margin: 0 auto"
+							></div>
+							<div
+								class="flex flex-col items-center gap-3 px-6 py-3"
+								data-testid="direct-chat-blocked-banner"
+							>
+								<p
+									class="flex items-center gap-2 text-center text-sm text-gray-600 dark:text-gray-400"
+								>
+									<wa-icon
+										class="small-icon quiet shrink-0"
+										src={wrapPathInSvg(mdiCancel)}
+									></wa-icon>
+									{m.youBlockedThisPerson()}
+								</p>
+								<Button
+									class="neutral-tonal-button flex-1"
+									rounded
+									tonal
+									data-testid="direct-chat-unblock-btn"
+									onClick={() => (showBlockDialog = true)}>{m.unblock()}</Button
+								>
+							</div>
+						</div>
 					{:else if contactRequest}
 						<div class="pb-safe bg-page-surface">
 							<div
@@ -789,9 +846,8 @@
 										class="neutral-tonal-button text-red-500 flex-1"
 										rounded
 										tonal
-										data-testid="direct-chat-reject-btn"
-										onClick={() => (showRejectDialog = true)}
-										>{m.reject()}</Button
+										data-testid="direct-chat-block-btn"
+										onClick={() => (showBlockDialog = true)}>{m.block()}</Button
 									>
 									<Button
 										class="neutral-tonal-button flex-1"
