@@ -57,6 +57,22 @@ const ON_DEVICE_SPECS = ['./specs/send-messages.spec.ts'];
 let mailboxServer: ChildProcess | undefined;
 let mailboxLogger: ChildProcess | undefined;
 
+async function teardown() {
+	if (mailboxServer?.pid) {
+		// Negative PID = signal the entire process group the detached
+		// mailbox server runs in.
+		try {
+			process.kill(-mailboxServer.pid, 'SIGTERM');
+		} catch {
+			/* already gone */
+		}
+	}
+	for (const platform of platforms) {
+		await platform.onComplete();
+	}
+	mailboxLogger?.kill();
+}
+
 export const config: WebdriverIO.MultiremoteConfig = {
 	runner: 'local',
 
@@ -137,6 +153,13 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			}
 		} catch (err) {
 			console.error('onPrepare failed, aborting run:', err);
+			// process.exit skips onComplete — tear down the already-started
+			// mailbox server (and any platform state) so it isn't orphaned.
+			try {
+				await teardown();
+			} catch {
+				/* best effort */
+			}
 			process.exit(1);
 		}
 	},
@@ -154,18 +177,6 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	},
 
 	async onComplete() {
-		if (mailboxServer?.pid) {
-			// Negative PID = signal the entire process group the detached
-			// mailbox server runs in.
-			try {
-				process.kill(-mailboxServer.pid, 'SIGTERM');
-			} catch {
-				/* already gone */
-			}
-		}
-		for (const platform of platforms) {
-			await platform.onComplete();
-		}
-		mailboxLogger?.kill();
+		await teardown();
 	},
 };
