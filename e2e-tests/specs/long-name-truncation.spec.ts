@@ -36,9 +36,9 @@ describe('Long name truncation', () => {
 	it('agent1 sends a one-way contact request — chat list has no overflow', async () => {
 		await navigateToAddContact(agent1);
 		await navigateToAddContact(agent2);
-		agent1Code = await agent1.addContactPage.getContactCode();
-		agent2Code = await agent2.addContactPage.getContactCode();
-		await agent1.addContactPage.enterCode(agent2Code);
+		agent1Code = await agent1.addContactPage.getAddContactLink();
+		agent2Code = await agent2.addContactPage.getAddContactLink();
+		await agent1.addContactPage.enterAddContactLink(agent2Code);
 
 		await agent2.addContactPage.back.click();
 		await agent2.newMessagePage.back.click();
@@ -62,7 +62,7 @@ describe('Long name truncation', () => {
 		await agent2.directChatPage.back.click();
 		await agent2.homePage.ready();
 		await navigateToAddContact(agent2);
-		await agent2.addContactPage.enterCode(agent1Code);
+		await agent2.addContactPage.enterAddContactLink(agent1Code);
 		await agent2.directChatPage.ready();
 
 		expect(await agent2.directChatPage.isPeerNamePresent()).toBe(true);
@@ -89,8 +89,8 @@ describe('Long name truncation', () => {
 		await agent1.settingsPage.ready();
 		await agent1.settingsPage.profileLink.click();
 		await agent1.profilePage.ready();
-		await agent1.waitUntil(
-			async () => agent1.profilePage.nameItemContains(LONG_NAME),
+		await agent1.waitUntil(async () =>
+			agent1.profilePage.nameItemContains(LONG_NAME),
 		);
 		expect(await agent1.checkOverflow()).toEqual([]);
 	});
