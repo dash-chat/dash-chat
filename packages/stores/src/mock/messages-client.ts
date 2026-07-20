@@ -53,7 +53,7 @@ export class MockMessagesClient implements IMessagesClient {
 		// the delete covers the whole chain, mirroring the backend.
 		const hashes = [targetHash];
 		let current = targetHash;
-		for (;;) {
+		for (let i = 0; i < log.length; i++) {
 			const op = log.find(o => o.hash === current);
 			const body = op?.body;
 			if (body?.type !== 'Chat' || body.payload.type !== 'EditMessage') break;
