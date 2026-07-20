@@ -10,9 +10,17 @@
 		ContactsStore,
 		DeviceId,
 		Hash,
+		Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
-	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
+	import {
+		Navbar,
+		NavbarBackLink,
+		Link,
+		Dialog,
+		DialogButton,
+		useTheme,
+	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -26,7 +34,11 @@
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import {
+		messagePosition,
+		canEditMessage,
+		canDeleteMessageForEveryone,
+	} from '$lib/components/messages/message-helpers';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
@@ -58,6 +70,8 @@
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
+	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
+
 	// Scroll the message we just sent into view once its bubble mounts.
 	let justSentMessageHash: Hash | null = $state(null);
 	const scrollToBottomOnMount: Action<HTMLElement, Hash> = (_node, hash) => {
@@ -68,7 +82,14 @@
 	};
 
 	function onMessageSent(messageHash: Hash) {
-		justSentMessageHash = messageHash;
+		// The bubble renders off the new-operation event, which can beat
+		// sendMessage's response — if it already mounted, the action missed
+		// the handshake, so scroll now.
+		if (document.querySelector(`[data-message-hash="${messageHash}"]`)) {
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		} else {
+			justSentMessageHash = messageHash;
+		}
 		capturedUnreadHash = null;
 		unreadDividerCaptured = false;
 	}
@@ -240,7 +261,7 @@
 											)}
 											{#if myDeviceId === message.author}
 												<div
-													class="self-end max-w-[85%]"
+													class="w-full"
 													data-message-hash={hash}
 													use:scrollToBottomOnMount={hash}
 												>
@@ -250,6 +271,13 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
+														canEdit={canEditMessage(message, myDeviceId)}
+														onEdit={() => composer?.editMessage(message)}
+														canDelete={canDeleteMessageForEveryone(
+															message,
+															myDeviceId,
+														)}
+														onDelete={() => composer?.deleteMessage(message)}
 													/>
 												</div>
 											{:else}
@@ -257,7 +285,7 @@
 													m.deviceIds.includes(message.author),
 												)}
 												<div
-													class="self-start max-w-[85%]"
+													class="w-full"
 													data-message-hash={hash}
 													use:readMessageOnObserve={readHashes?.has(hash)
 														? null
@@ -306,6 +334,7 @@
 		{#await Promise.all([$me, $info]) then [me, info]}
 			{#if me.member}
 				<MessageComposer
+					bind:this={composer}
 					store={store.messages}
 					destinationName={info.name}
 					onSent={onMessageSent}

@@ -1,5 +1,11 @@
 import { Profile } from './contacts/contacts-client';
-import { AgentId, DeviceId, Hash, TopicId } from './p2panda/types';
+import {
+	AgentId,
+	DeviceId,
+	Hash,
+	TopicId,
+	VerifyingKey,
+} from './p2panda/types';
 
 export type ChatId = TopicId;
 
@@ -144,31 +150,26 @@ export interface GroupInfo {
 	image: string | undefined;
 }
 
+export interface EditMessagePayload {
+	/** The corrected text. Media cannot be edited. */
+	message: string;
+	/** Hash of the message (or prior edit) being edited; edits chain linearly. */
+	edit_hash: Hash;
+}
+
+export interface DeleteMessagePayload {
+	/** The complete edit chain being deleted: the original message plus every
+	 * edit (a single hash when the message was never edited). */
+	hashes: Hash[];
+}
+
 export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
 	| { type: 'Reaction'; payload: ChatReaction }
+	| { type: 'EditMessage'; payload: EditMessagePayload }
+	| { type: 'DeleteMessage'; payload: DeleteMessagePayload }
 	| { type: 'JoinGroup'; payload: { chat_id: string } }
 	| { type: 'GroupInfo'; payload: GroupInfo };
-
-export interface InboxTopic {
-	expires_at: number;
-	topic: TopicId;
-}
-
-/** Numeric discriminant matching `dashchat_node::ShareIntent` (serde_repr u8). */
-export type ShareIntent = 0 | 1;
-export const ShareIntent = {
-	AddDevice: 0,
-	AddContact: 1,
-} as const;
-
-export interface ContactCode {
-	/// Pubkey of this node: allows adding this node to groups.
-	device_pubkey: DeviceId;
-	inbox_topic: InboxTopic | undefined;
-	/// The intent of the QR code: whether to add this node as a contact or a device.
-	share_intent: ShareIntent;
-}
 
 export interface ReadMessagesPayload {
 	chat_id: ChatId;
@@ -186,18 +187,24 @@ export type DeviceGroupPayload =
 export type InboxPayload = {
 	type: 'ContactRequest';
 	payload: {
-		code: ContactCode;
 		profile: Profile;
 		agent_id: AgentId;
 		reply_topic: TopicId;
 	};
 };
 
+/** `p2panda_auth::processor::GroupsArgs`; `action` is not modeled here. */
+export interface GroupControlPayload {
+	group_id: VerifyingKey;
+	dependencies: Hash[];
+}
+
 export type Payload =
 	| { type: 'Announcements'; payload: AnnouncementPayload }
 	| { type: 'Chat'; payload: ChatPayload }
 	| { type: 'DeviceGroupPayload'; payload: DeviceGroupPayload }
-	| { type: 'Inbox'; payload: InboxPayload };
+	| { type: 'Inbox'; payload: InboxPayload }
+	| { type: 'GroupControl'; payload: GroupControlPayload };
 
 export type MessageId = string;
 
@@ -253,10 +260,51 @@ export type GroupControlEvent =
 			timestamp: number;
 	  };
 
+/** A single version of a message's text, with the time it was authored. */
+export interface MessageVersion {
+	hash: string;
+	text: string;
+	timestamp: number;
+}
+
+/** The live, renderable body of a message: its text, media, reactions and edit
+ * history. */
+export interface MessageBody {
+	message: string;
+	media: MediaAttachment | null;
+	reactions: Record<DeviceId, string>;
+	editHistory: MessageVersion[];
+}
+
+/** The renderable content of a message, or a sentinel that replaces the body
+ * entirely (dropping text, media, reactions and edits):
+ * - `'deleted-for-everyone'`: the message was deleted for everyone (a delete op
+ *   references it). Rendered as the deleted placeholder.
+ * - `'body-unavailable'`: the operation's payload is gone but no delete op
+ *   justifies it — an anomaly (e.g. a peer that synced the body-less op before
+ *   the delete arrives). Rendered as an error bubble to bring attention to it. */
+export type MessageDisplay =
+	| MessageBody
+	| 'deleted-for-everyone'
+	| 'body-unavailable';
+
+/** Whether a message still has a live body. Written as a type guard so the
+ * `true` branch narrows `content` to `MessageBody`. */
+export function hasBody(content: MessageDisplay): content is MessageBody {
+	return typeof content !== 'string';
+}
+
+/** Whether a message was deleted for everyone. */
+export function isDeleted(
+	content: MessageDisplay,
+): content is 'deleted-for-everyone' {
+	return content === 'deleted-for-everyone';
+}
+
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
-			content: { message: string; media: MediaAttachment | null };
+			content: MessageDisplay;
 			authorName?: string;
 			timestamp: number;
 	  }

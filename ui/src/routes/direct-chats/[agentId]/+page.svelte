@@ -8,11 +8,11 @@
 	import {
 		fullName,
 		type ChatsStore,
-		type ContactCode,
 		type ContactRequest,
 		type ContactsStore,
 		type DeviceId,
 		type Hash,
+		type Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
@@ -54,7 +54,11 @@
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
-	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import {
+		messagePosition,
+		canEditMessage,
+		canDeleteMessageForEveryone,
+	} from '$lib/components/messages/message-helpers';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	let agentId = page.params.agentId!;
 
@@ -125,6 +129,7 @@
 		}
 	}
 
+	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -167,7 +172,14 @@
 	};
 
 	function onMessageSent(messageHash: Hash) {
-		justSentMessageHash = messageHash;
+		// The bubble renders off the new-operation event, which can beat
+		// sendMessage's response — if it already mounted, the action missed
+		// the handshake, so scroll now.
+		if (document.querySelector(`[data-message-hash="${messageHash}"]`)) {
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		} else {
+			justSentMessageHash = messageHash;
+		}
 		capturedUnreadHash = null;
 		unreadDividerCaptured = false;
 	}
@@ -547,7 +559,7 @@
 														)}
 														{#if myDeviceId == message.author}
 															<div
-																class="self-end max-w-[85%]"
+																class="w-full"
 																data-message-hash={hash}
 																use:scrollToBottomOnMount={hash}
 															>
@@ -558,12 +570,24 @@
 																		{myDeviceId}
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
+																		canEdit={canEditMessage(
+																			message,
+																			myDeviceId,
+																		)}
+																		onEdit={() =>
+																			composer?.editMessage(message)}
+																		canDelete={canDeleteMessageForEveryone(
+																			message,
+																			myDeviceId,
+																		)}
+																		onDelete={() =>
+																			composer?.deleteMessage(message)}
 																	/>
 																{/await}
 															</div>
 														{:else}
 															<div
-																class="self-start max-w-[85%]"
+																class="w-full"
 																data-message-hash={hash}
 																use:readMessageOnObserve={readHashes?.has(hash)
 																	? null
@@ -634,7 +658,6 @@
 							{/snippet}
 						</Dialog>
 					{/if}
-
 					<SafetyTipsSheet
 						opened={showSecurityTips}
 						onClose={() => (showSecurityTips = false)}
@@ -783,6 +806,7 @@
 						</div>
 					{:else}
 						<MessageComposer
+							bind:this={composer}
 							store={store.messages}
 							destinationName={profile ? fullName(profile) : undefined}
 							onSent={onMessageSent}

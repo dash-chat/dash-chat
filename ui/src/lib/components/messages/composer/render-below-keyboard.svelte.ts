@@ -41,31 +41,75 @@ export const renderBelowKeyboard: Action<
 		}
 	}
 
+	// Pin the slot's height to the viewport via CSS (Android): JS resize handling
+	// lags the frame resize by a paint, which flashed the input bar out of place
+	// mid-swap. The wanted height is always `reserved - keyboardHeight`, which is
+	// linear in the viewport height, so calc(100dvh - Cpx) tracks it atomically
+	// in the same relayout as any frame resize. C is stable for the panel's whole
+	// lifetime; it's computed from live metrics whenever a phase starts.
+	function pinSlot() {
+		// Fractional viewport height: clientHeight rounds to an integer while
+		// 100dvh is fractional on non-integer DPRs, and the sub-pixel error shows
+		// up as a 1px step in the input bar between the panel and keyboard states.
+		const viewportNow =
+			window.visualViewport?.height ?? document.documentElement.clientHeight;
+		const c = viewportNow + keyboard.height - keyboard.reservedHeight;
+		node.style.height = `max(0px, calc(100dvh - ${c}px))`;
+	}
+
+	// Finish a yield: collapse the slot and report the close. Done directly (not
+	// via the host flipping `open`) because the host may have cleared `open`
+	// already, in which case no effect re-run would arrive.
+	function closeNow() {
+		clearTimeout(timer);
+		phase = 'closed';
+		setContentHidden(false);
+		node.style.height = '0px';
+		onClose();
+	}
+
 	// Start handing the slot back to the keyboard: keep the slot (so a sibling
 	// input bar stays pinned) but, on iOS, hide the content so it never renders
 	// on top of the rising keyboard during the visualViewport lag.
 	function enterYield() {
 		phase = 'yielding';
 		if (isIos) setContentHidden(true);
+		else pinSlot();
 		// The keyboard is about to rise; poll the layout each frame so the slot
 		// collapses in step with it rather than lagging a (late) resize event.
 		pulseKeyboardTracking();
 		clearTimeout(timer);
-		// Backstop in case the keyboard settles shorter than the reserved height,
-		// so `slot` never quite reaches 0.
-		timer = setTimeout(() => onClose(), YIELD_BACKSTOP_MS);
+		// Backstop in case the keyboard settles shorter than the reserved height
+		// (so `slot` never quite reaches 0) or never rises at all (hardware
+		// keyboard).
+		timer = setTimeout(closeNow, YIELD_BACKSTOP_MS);
 	}
 
-	// On iOS the input regaining focus is the earliest signal the keyboard is
-	// about to reclaim the slot — visualViewport lags it by ~130ms — so yield as
-	// soon as it's focused rather than waiting for the (late) height change.
+	function editableFocused() {
+		const el = document.activeElement;
+		return (
+			el instanceof HTMLElement &&
+			(el.tagName === 'INPUT' ||
+				el.tagName === 'TEXTAREA' ||
+				el.isContentEditable)
+		);
+	}
+
+	// The input regaining focus is the earliest signal the keyboard is about to
+	// reclaim the slot — the viewport metrics lag it (~130ms on iOS, a paint or
+	// two on Android) — so yield as soon as it's focused rather than waiting for
+	// the (late) height change. 'opening' counts too: the panel is visible while
+	// the keyboard it displaced is still retracting, and a quick close-tap there
+	// must not fall back to the laggy unpinned path.
 	function onFocusIn(event: FocusEvent) {
 		const target = event.target;
 		if (
-			isIos &&
 			open &&
-			phase === 'shown' &&
+			(phase === 'shown' || phase === 'opening') &&
 			target instanceof HTMLElement &&
+			// hideKeyboard's throwaway inputs drive the IME, they never mean
+			// the keyboard is reclaiming the slot.
+			target.dataset.keyboardDummy === undefined &&
 			(target.tagName === 'INPUT' ||
 				target.tagName === 'TEXTAREA' ||
 				target.isContentEditable)
@@ -85,16 +129,30 @@ export const renderBelowKeyboard: Action<
 			if (isOpen && !wasOpen) {
 				// Just opened: if the keyboard is up, dismiss it and grow into the
 				// space it vacates; otherwise show at full height immediately.
+				// A pending yield backstop must not outlive the reopen.
+				clearTimeout(timer);
 				phase = kbOpen ? 'opening' : 'shown';
 				setContentHidden(false);
+				if (!isIos) pinSlot();
 				if (kbOpen) {
 					(document.activeElement as HTMLElement | null)?.blur();
 					pulseKeyboardTracking();
 				}
 			} else if (!isOpen) {
-				phase = 'closed';
-				setContentHidden(false);
-				clearTimeout(timer);
+				if (
+					wasOpen &&
+					(phase === 'shown' || phase === 'opening') &&
+					editableFocused()
+				) {
+					// The host cleared `open` while handing focus to an input (so the
+					// button state flips instantly): keep the slot until the keyboard
+					// claims it, so the input bar stays pinned during the swap.
+					enterYield();
+				} else if (phase !== 'yielding') {
+					phase = 'closed';
+					setContentHidden(false);
+					clearTimeout(timer);
+				}
 			}
 			wasOpen = isOpen;
 
@@ -103,13 +161,21 @@ export const renderBelowKeyboard: Action<
 			} else if (phase === 'shown' && kbOpen) {
 				// The keyboard rose without `onFocusIn` firing first — hand the slot back.
 				enterYield();
-			} else if (phase === 'yielding' && slot <= 1) {
-				clearTimeout(timer);
-				phase = 'closed';
-				onClose();
+			} else if (
+				phase === 'yielding' &&
+				node.getBoundingClientRect().height <= 1
+			) {
+				// Close on the *rendered* height, not the tracked keyboard height:
+				// visualViewport (which feeds keyboard.height) leads the layout
+				// viewport by a frame, and closing early swaps the pinned slot for
+				// 0px while the layout is still tall — dropping the bar for a frame.
+				closeNow();
 			}
 
-			node.style.height = `${phase === 'closed' ? 0 : slot}px`;
+			// While CSS-pinned (Android, any live phase) the height must not be
+			// overwritten per-frame, or the JS lag the pin avoids would come back.
+			const cssPinned = phase !== 'closed' && !isIos;
+			if (!cssPinned) node.style.height = `${phase === 'closed' ? 0 : slot}px`;
 		});
 	});
 

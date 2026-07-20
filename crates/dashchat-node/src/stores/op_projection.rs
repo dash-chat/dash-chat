@@ -1,22 +1,24 @@
 use aliased::Aliasing;
+use derive_more::derive::{Deref, From};
+use p2panda::Hash;
+use p2panda::operation::Header;
 use p2panda::streams::ProcessedOperation;
 use p2panda_auth::group::GroupAction;
 use p2panda_auth::processor::GroupsArgs;
 use sqlx::SqlitePool;
 use std::collections::{BTreeSet, HashMap};
 
-use crate::{AgentId, DeviceId, Profile, compat::Capabilities};
+use crate::{AgentId, DeleteCandidate, DeviceId, Profile, TopicId};
 use crate::{
     AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
 };
 
 // TODO: rework this not as migrations, but as a single schema that, when changed,
-//       triggers a re-projection of the store.
+//       triggers a re-projection of the db.
 const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS devices (
         device_id BLOB PRIMARY KEY,
-        agent_id BLOB NOT NULL,
-        capabilities BLOB NULL
+        agent_id BLOB NOT NULL
     )",
     "CREATE TABLE IF NOT EXISTS agents (
         agent_id BLOB PRIMARY KEY,
@@ -33,14 +35,19 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS group_chats (
         chat_id BLOB NOT NULL PRIMARY KEY
     )",
+    "CREATE TABLE IF NOT EXISTS tombstones (
+        topic_id BLOB NOT NULL,
+        op_hash BLOB NOT NULL,
+        PRIMARY KEY (topic_id, op_hash)
+    )",
 ];
 
 /// The [`OpProjection`] is a projection of the [`crate::stores::OpStore`] that is used to make streamlined queries.
 /// It only contains data already present in the operations, just reshaped to be more queryable.
 ///
 /// - Writes only occur in the [`Self::reduce`] method.
-/// - The store is populated by streaming operations through [`Self::reduce`].
-/// - The store can be purged and rebuilt by replaying operation streams.
+/// - The projection is populated by streaming operations through [`Self::reduce`].
+/// - The projection can be purged and rebuilt by replaying operation streams.
 /// - If a log is partially purged, the OpProjection can be deleted and the streams replayed from their new starting point.
 /// - To achieve ACID compliance:
 ///   - every write must be idempotent in case operations need to be replayed.
@@ -56,8 +63,8 @@ impl OpProjection {
             sqlx::query(sql).execute(&pool).await?;
         }
 
-        let store = Self { pool };
-        Ok(store)
+        let projection = Self { pool };
+        Ok(projection)
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
@@ -135,18 +142,6 @@ impl OpProjection {
         Ok(row.map(|(blocked,)| blocked).unwrap_or(false))
     }
 
-    pub async fn get_capabilities(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<Option<Capabilities>> {
-        let row: Option<(Option<Capabilities>,)> =
-            sqlx::query_as("SELECT capabilities FROM devices WHERE device_id = ?")
-                .bind(device_id)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.and_then(|(capabilities,)| capabilities))
-    }
-
     pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
         let row: Option<(Option<Profile>,)> =
             sqlx::query_as("SELECT profile FROM agents WHERE agent_id = ?")
@@ -165,10 +160,39 @@ impl OpProjection {
             .collect()
     }
 
+    pub async fn is_tombstoned(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<bool> {
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT 1 FROM tombstones WHERE topic_id = ? AND op_hash = ?")
+                .bind(topic.as_bytes().to_vec())
+                .bind(op_hash.as_bytes().to_vec())
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.is_some())
+    }
+
+    pub async fn tombstoned_hashes(&self, topic: TopicId) -> anyhow::Result<BTreeSet<Hash>> {
+        let rows: Vec<(Vec<u8>,)> =
+            sqlx::query_as("SELECT op_hash FROM tombstones WHERE topic_id = ?")
+                .bind(topic.as_bytes().to_vec())
+                .fetch_all(&self.pool)
+                .await?;
+        rows.into_iter()
+            .map(|(bytes,)| {
+                let arr: [u8; 32] = bytes
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("tombstone op_hash is not 32 bytes"))?;
+                Ok(Hash::from_bytes(arr))
+            })
+            .collect()
+    }
+
     pub async fn reduce(
         &self,
         me: AgentId,
         operation: &ProcessedOperation<Payload>,
+        // XXX: once refined operation logs (e.g. `all_valid_ops`) are moved
+        //      to the projection layer, this Node injection must be removed.
+        node: BadUseOfNode,
     ) -> Result<(), ProjectionError> {
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
@@ -183,6 +207,14 @@ impl OpProjection {
                 }
             }
 
+            Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
+                self.validate_delete(topic, operation.event.operation.header(), hashes, node)
+                    .await?;
+                for hash in hashes {
+                    self.add_tombstone(topic.into(), *hash).await?;
+                }
+            }
+
             Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
                 // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
                 let agent_id =
@@ -193,18 +225,6 @@ impl OpProjection {
                 tracing::info!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
 
                 self.save_profile(agent_id, profile.clone()).await?;
-            }
-
-            Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
-                // Save the device_id -> agent_id mapping so group members can look each other up.
-
-                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
-                self.save_agent_mapping(author, agent_id).await?;
-                self.save_capabilities(author, capabilities.clone()).await?;
             }
 
             Payload::DeviceGroup(p) => match p {
@@ -284,6 +304,86 @@ impl OpProjection {
         Ok(())
     }
 
+    async fn validate_delete(
+        &self,
+        topic: TopicId,
+        header: &Header,
+        payload: &BTreeSet<Hash>,
+        node: BadUseOfNode,
+    ) -> Result<(), ProjectionError> {
+        let hash = header.hash();
+        let author = DeviceId::from(header.verifying_key);
+
+        // On replay (or a duplicate delivery) the delete has already
+        // been applied and its targets' bodies are gone, which would
+        // fail validation; skip silently instead.
+        let mut already_applied = true;
+        for h in payload.iter() {
+            if !self.is_tombstoned(topic, *h).await? {
+                already_applied = false;
+                break;
+            }
+        }
+        if already_applied {
+            return Err(ProjectionError::invalid(format!(
+                "delete has already been applied: {:?}",
+                hash.aliased()
+            )));
+        }
+
+        // Authorship: a delete may only tombstone operations authored by the
+        // same agent as the deleter. Check every *target* op (the hashes in the
+        // payload), not the delete op itself. Body-less/tombstoned copies still
+        // carry the author's key in their header, so late joiners can enforce
+        // this too. Targets we haven't synced yet can't be checked here; they
+        // are tombstoned regardless so their body is dropped on arrival.
+        let deleter_agent = self.lookup_contact_by_device_id(author).await?;
+        for target in payload.iter() {
+            let Some(target_op) = node.op_store.get_operation(target).await? else {
+                continue;
+            };
+            let target_agent = self
+                .lookup_contact_by_device_id(DeviceId::from(target_op.header.verifying_key))
+                .await?;
+            if target_agent != deleter_agent {
+                tracing::warn!(op = ?hash.aliased(), target = ?target.aliased(), "delete references another author's operation; skipping");
+                return Err(ProjectionError::invalid(format!(
+                    "delete references another author's operation: {:?} != {:?}",
+                    target_agent.aliased(),
+                    deleter_agent.aliased()
+                )));
+            }
+        }
+
+        // Mirror the author-side validation: a delete that breaks the
+        // chain-completeness / window rules is ignored (not applied) with a
+        // warning. Full validation needs every referenced op as a valid chat
+        // op; when some are already gone (a partially-applied replay, or a
+        // member that joined after the delete and synced body-less copies) the
+        // chain can't be reconstructed, so we fall back to the per-target
+        // authorship check above.
+        let chat_id = ChatId::from_topic_id(topic)?;
+        let valid_ops = node.valid_chat_ops(chat_id).await?;
+        if payload.iter().all(|h| valid_ops.contains_key(h)) {
+            let delete_ts: u64 = header.timestamp.into();
+            if let Err(err) = (DeleteCandidate {
+                hashes: payload.clone(),
+                deleter: author,
+                delete_timestamp: delete_ts,
+                self_hash: Some(hash),
+            })
+            .validate(&valid_ops)
+            {
+                tracing::warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
+                return Err(ProjectionError::invalid(format!(
+                    "invalid delete message: {err}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     // === setters === //
 
     async fn save_agent_mapping(
@@ -304,25 +404,17 @@ impl OpProjection {
         Ok(())
     }
 
-    async fn save_capabilities(
-        &self,
-        device_id: DeviceId,
-        capabilities: Capabilities,
-    ) -> anyhow::Result<()> {
-        sqlx::query("UPDATE devices SET capabilities = ? WHERE device_id = ?")
-            .bind(capabilities)
-            .bind(device_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
     async fn save_profile(&self, agent_id: AgentId, profile: Profile) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR REPLACE INTO agents (agent_id, profile) VALUES (?, ?)")
-            .bind(agent_id)
-            .bind(profile)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "
+            INSERT INTO agents (agent_id, profile) VALUES (?, ?) 
+            ON CONFLICT(agent_id) DO UPDATE SET profile = excluded.profile
+        ",
+        )
+        .bind(agent_id)
+        .bind(profile)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -351,6 +443,17 @@ impl OpProjection {
         tx.commit().await?;
         Ok(())
     }
+
+    /// Record an operation hash in the per-topic tombstone set. Payloads for
+    /// tombstoned operations must never be stored or synced.
+    async fn add_tombstone(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<()> {
+        sqlx::query("INSERT OR IGNORE INTO tombstones (topic_id, op_hash) VALUES (?, ?)")
+            .bind(topic.as_bytes().to_vec())
+            .bind(op_hash.as_bytes().to_vec())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -371,12 +474,16 @@ impl From<anyhow::Error> for ProjectionError {
     }
 }
 
+#[derive(Clone, Deref, From)]
+#[deprecated = "XXX: this is temporary only until we properly implement projections of operations. Until then we grab data directly from the node."]
+pub struct BadUseOfNode(crate::Node);
+
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::stores::create_sqlite_pool;
+    use crate::{stores::create_sqlite_pool, topic::kind};
 
     fn agent(n: u8) -> AgentId {
         AgentId::from(crate::ActorId::from(
@@ -403,78 +510,129 @@ mod tests {
     /// restores every device.
     #[tokio::test]
     async fn test_block_applies_to_all_devices_of_agent() {
-        let store = projection().await;
+        let db = projection().await;
 
         let agent_a = agent(1);
         let agent_b = agent(2);
         let (d1, d2, d3) = (device(10), device(11), device(20));
 
         // agent_a controls two devices, agent_b controls one.
-        store.save_agent_mapping(d1, agent_a).await.unwrap();
-        store.save_agent_mapping(d2, agent_a).await.unwrap();
-        store.save_agent_mapping(d3, agent_b).await.unwrap();
+        db.save_agent_mapping(d1, agent_a).await.unwrap();
+        db.save_agent_mapping(d2, agent_a).await.unwrap();
+        db.save_agent_mapping(d3, agent_b).await.unwrap();
 
         // Nothing blocked initially.
-        assert!(!store.is_author_blocked(&d1).await.unwrap());
-        assert!(!store.is_author_blocked(&d2).await.unwrap());
-        assert!(!store.is_author_blocked(&d3).await.unwrap());
+        assert!(!db.is_author_blocked(&d1).await.unwrap());
+        assert!(!db.is_author_blocked(&d2).await.unwrap());
+        assert!(!db.is_author_blocked(&d3).await.unwrap());
 
-        store.block_agent(agent_a).await.unwrap();
+        db.block_agent(agent_a).await.unwrap();
 
         // Both of agent_a's devices are blocked; agent_b's device is not.
-        assert!(store.is_author_blocked(&d1).await.unwrap());
-        assert!(store.is_author_blocked(&d2).await.unwrap());
-        assert!(!store.is_author_blocked(&d3).await.unwrap());
+        assert!(db.is_author_blocked(&d1).await.unwrap());
+        assert!(db.is_author_blocked(&d2).await.unwrap());
+        assert!(!db.is_author_blocked(&d3).await.unwrap());
 
-        store.unblock_agent(agent_a).await.unwrap();
+        db.unblock_agent(agent_a).await.unwrap();
 
         // Unblocking restores every device of the agent.
-        assert!(!store.is_author_blocked(&d1).await.unwrap());
-        assert!(!store.is_author_blocked(&d2).await.unwrap());
-        assert!(!store.is_author_blocked(&d3).await.unwrap());
+        assert!(!db.is_author_blocked(&d1).await.unwrap());
+        assert!(!db.is_author_blocked(&d2).await.unwrap());
+        assert!(!db.is_author_blocked(&d3).await.unwrap());
     }
 
     /// A device with no contact entry is never considered blocked.
     #[tokio::test]
     async fn test_unknown_device_is_not_blocked() {
-        let store = projection().await;
-        assert!(!store.is_author_blocked(&device(99)).await.unwrap());
+        let db = projection().await;
+        assert!(!db.is_author_blocked(&device(99)).await.unwrap());
     }
 
     /// A device newly mapped to an already-blocked agent is immediately blocked,
     /// since the block lives on the agent, not the device.
     #[tokio::test]
     async fn test_block_covers_devices_added_after_block() {
-        let store = projection().await;
+        let db = projection().await;
         let agent_a = agent(1);
 
-        store.save_agent_mapping(device(10), agent_a).await.unwrap();
-        store.block_agent(agent_a).await.unwrap();
+        db.save_agent_mapping(device(10), agent_a).await.unwrap();
+        db.block_agent(agent_a).await.unwrap();
 
         // A second device shows up for the same agent after the block.
-        store.save_agent_mapping(device(11), agent_a).await.unwrap();
+        db.save_agent_mapping(device(11), agent_a).await.unwrap();
 
-        assert!(store.is_author_blocked(&device(11)).await.unwrap());
+        assert!(db.is_author_blocked(&device(11)).await.unwrap());
     }
 
     /// `all_contact_agent_ids` returns one entry per agent, even when an agent
     /// has multiple devices, and includes blocked agents.
     #[tokio::test]
     async fn test_all_contact_agent_ids_dedups_by_agent() {
-        let store = projection().await;
+        let db = projection().await;
 
         let agent_a = agent(1);
         let agent_b = agent(2);
 
-        store.save_agent_mapping(device(10), agent_a).await.unwrap();
-        store.save_agent_mapping(device(11), agent_a).await.unwrap();
-        store.save_agent_mapping(device(20), agent_b).await.unwrap();
+        db.save_agent_mapping(device(10), agent_a).await.unwrap();
+        db.save_agent_mapping(device(11), agent_a).await.unwrap();
+        db.save_agent_mapping(device(20), agent_b).await.unwrap();
 
-        store.block_agent(agent_b).await.unwrap();
+        db.block_agent(agent_b).await.unwrap();
 
         assert_eq!(
-            store.all_contact_agent_ids().await.unwrap(),
+            db.all_contact_agent_ids().await.unwrap(),
             maplit::btreeset![agent_a, agent_b]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tombstones_per_topic() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
+            .await
+            .unwrap();
+        let db = OpProjection::new(pool.clone()).await.unwrap();
+
+        let topic_a = *Topic::<kind::Untyped>::new([1; 32]);
+        let topic_b = *Topic::<kind::Untyped>::new([2; 32]);
+        let hash1 = Hash::digest(b"op1");
+        let hash2 = Hash::digest(b"op2");
+
+        assert!(!db.is_tombstoned(topic_a, hash1).await.unwrap());
+
+        db.add_tombstone(topic_a, hash1).await.unwrap();
+        db.add_tombstone(topic_a, hash2).await.unwrap();
+        db.add_tombstone(topic_b, hash1).await.unwrap();
+        // Adding the same hash again is idempotent.
+        db.add_tombstone(topic_a, hash1).await.unwrap();
+
+        assert!(db.is_tombstoned(topic_a, hash1).await.unwrap());
+        assert!(db.is_tombstoned(topic_a, hash2).await.unwrap());
+        // Tombstones are scoped per-topic: hash2 in topic_a does not leak into topic_b.
+        assert!(db.is_tombstoned(topic_b, hash1).await.unwrap());
+        assert!(!db.is_tombstoned(topic_b, hash2).await.unwrap());
+
+        assert_eq!(
+            db.tombstoned_hashes(topic_a).await.unwrap(),
+            maplit::btreeset![hash1, hash2]
+        );
+        assert_eq!(
+            db.tombstoned_hashes(topic_b).await.unwrap(),
+            maplit::btreeset![hash1]
+        );
+
+        // Tombstones persist across reopening the database.
+        drop(db);
+        pool.close().await;
+
+        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
+            .await
+            .unwrap();
+        let db = OpProjection::new(pool).await.unwrap();
+        assert!(db.is_tombstoned(topic_a, hash1).await.unwrap());
+        assert_eq!(
+            db.tombstoned_hashes(topic_a).await.unwrap(),
+            maplit::btreeset![hash1, hash2]
         );
     }
 }

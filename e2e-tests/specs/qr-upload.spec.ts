@@ -21,7 +21,7 @@ describe('QR code image upload', () => {
 		await navigateToAddContact(agent1);
 		await navigateToAddContact(agent2);
 
-		const contactCode = await agent2.addContactPage.getContactCode();
+		const contactCode = await agent2.addContactPage.getAddContactLink();
 		await agent1.addContactPage.uploadQrCodeImage(contactCode);
 
 		await agent1.directChatPage.ready();

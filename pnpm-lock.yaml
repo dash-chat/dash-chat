@@ -136,15 +136,9 @@ importers:
       '@webbuf/blake3':
         specifier: ^3.0.28
         version: 3.0.28(@webbuf/fixedbuf@3.0.28(@webbuf/webbuf@3.0.28))(@webbuf/webbuf@3.0.28)
-      base64-js:
-        specifier: ^1.5.1
-        version: 1.5.1
       blakejs:
         specifier: ^1.2.1
         version: 1.2.1
-      cbor-web:
-        specifier: ^10.0.11
-        version: 10.0.11
       emittery:
         specifier: ^1.2.0
         version: 1.2.0
@@ -184,7 +178,7 @@ importers:
         version: 0.3.0
       '@gbyte/tauri-plugin-ios-photos':
         specifier: github:dash-chat/tauri-plugin-ios-photos#ec723636ddf248dd6542e02fb2e83d91d1da36c9
-        version: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9
+        version: git+https://git@github.com:dash-chat/tauri-plugin-ios-photos.git#ec723636ddf248dd6542e02fb2e83d91d1da36c9
       '@mdi/js':
         specifier: ^7.4.47
         version: 7.4.47
@@ -1050,8 +1044,8 @@ packages:
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
 
-  '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9':
-    resolution: {tarball: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9}
+  '@gbyte/tauri-plugin-ios-photos@git+https://git@github.com:dash-chat/tauri-plugin-ios-photos.git#ec723636ddf248dd6542e02fb2e83d91d1da36c9':
+    resolution: {commit: ec723636ddf248dd6542e02fb2e83d91d1da36c9, repo: git@github.com:dash-chat/tauri-plugin-ios-photos.git, type: git}
     version: 0.3.0
 
   '@holo-host/identicon@0.1.0':
@@ -2232,10 +2226,6 @@ packages:
 
   caniuse-lite@1.0.30001768:
     resolution: {integrity: sha512-qY3aDRZC5nWPgHUgIB84WL+nySuo19wk0VJpp/XI9T34lrvkyhRvNVOFJOp2kxClQhiFBu+TaUSudf6oa3vkSA==}
-
-  cbor-web@10.0.11:
-    resolution: {integrity: sha512-bhhIZD2ycDtBWfZsuxri1t2djzzpQAqBpW2sxGWHElTZgaf3kTN3eKNIko0wkxv2OZ3Jl2J2ykhsnNMex8gxzw==}
-    engines: {node: '>=20'}
 
   cbor@10.0.11:
     resolution: {integrity: sha512-vIwORDd/WyB8Nc23o2zNN5RrtFGlR6Fca61TtjkUXueI3Jf2DOZDl1zsshvBntZ3wZHBM9ztjnkXSmzQDaq3WA==}
@@ -5400,7 +5390,7 @@ snapshots:
 
   '@floating-ui/utils@0.2.10': {}
 
-  '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9':
+  '@gbyte/tauri-plugin-ios-photos@git+https://git@github.com:dash-chat/tauri-plugin-ios-photos.git#ec723636ddf248dd6542e02fb2e83d91d1da36c9':
     dependencies:
       '@tauri-apps/api': 2.11.0
 
@@ -6673,8 +6663,6 @@ snapshots:
   camelcase@6.3.0: {}
 
   caniuse-lite@1.0.30001768: {}
-
-  cbor-web@10.0.11: {}
 
   cbor@10.0.11:
     dependencies:

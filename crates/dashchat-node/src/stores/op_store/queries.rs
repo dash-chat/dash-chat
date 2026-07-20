@@ -154,6 +154,6 @@ mod tests {
         let log_heights = get_log_heights_by_author(&node.op_store.store, &log_id)
             .await
             .unwrap();
-        assert_eq!(log_heights, btreemap! { node.device_id() => 1 });
+        assert_eq!(log_heights, btreemap! { node.device_id() => 0 });
     }
 }

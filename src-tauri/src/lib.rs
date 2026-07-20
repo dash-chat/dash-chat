@@ -138,6 +138,7 @@ pub fn run() {
             commands::direct_chats::direct_chat_id,
             commands::chats::send_message,
             commands::chats::edit_message,
+            commands::chats::delete_message,
             commands::chats::send_reaction,
             commands::chats::mark_messages_read,
             commands::chats::create_group,

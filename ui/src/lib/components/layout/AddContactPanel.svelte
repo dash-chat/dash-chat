@@ -2,14 +2,12 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { getContext } from 'svelte';
 	import {
-		decodeContactCode,
-		encodeContactCode,
 		fullName,
 		pendingChatKey,
 		type ContactsStore,
 		type SettingsStore,
 	} from 'dash-chat-stores';
-	import type { AddContactError, ContactCode } from 'dash-chat-stores';
+	import type { AddContactError } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -32,9 +30,13 @@
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
+	import {
+		toDeepLink,
+		extractCodeFromDeepLink,
+	} from '$lib/deep-links/add-contact';
 	import { defaultQrColor } from '$lib/utils/qrcode';
 	import SelectColor from './SelectColor.svelte';
-	import MyQrCodeCard from '$lib/components/contacts/MyQrCodeCard.svelte';
+	import QrCodeCard from '$lib/components/QrCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
 	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
 	import QrCodeUploader from '$lib/components/contacts/QrCodeUploader.svelte';
@@ -48,7 +50,16 @@
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const settingsStore: SettingsStore = getContext('settings-store');
 
-	let myCode = contactsStore.client.createContactCode().then(encodeContactCode);
+	let myCode = contactsStore.client.createContactCode();
+	let myName = getMyName();
+	let myDeepLink = myCode.then(code => {
+		const link = toDeepLink(code);
+		if (link === null) {
+			console.error('toDeepLink returned null for code', code);
+			showToast(m.errorUnexpected(), 'error');
+		}
+		return link;
+	});
 
 	let tab = $state<TabName>('code');
 	let scannerRef: QrCodeScanner | null = $state(null);
@@ -67,16 +78,17 @@
 		await receiveCode(code);
 	}
 
-	async function receiveCode(code: string) {
-		let contactCode: ContactCode;
-		try {
-			contactCode = decodeContactCode(code);
-		} catch (e) {
-			console.error('Error decoding contact code', e);
-			showToast(m.errorAddContactInvalidCode(), 'error');
+	async function receiveDeepLink(input: string) {
+		const code = extractCodeFromDeepLink(input.trim());
+		if (code === null) {
+			showToast(m.errorAddContactInvalidLink(), 'error');
 			return;
 		}
 
+		await receiveCode(code);
+	}
+
+	async function receiveCode(code: string) {
 		try {
 			const myCodeString = await myCode;
 
@@ -85,33 +97,24 @@
 				return;
 			}
 
-			// Don't send a contact request if they're already in your contacts
-			//
-			// Uncommenting this would mean that if the contact rejected your contact request
-			// there is no way to resend the contact request
-			//
-			// const contacts = await contactsStore.contactsAgentIds();
-			//
-			// if (contacts.includes(contactCode.agent_id)) {
-			// 	showToast(m.contactAlreadyExists());
-			// 	return;
-			// }
-
-			await contactsStore.client.addContact(contactCode);
+			const devicePubkey = await contactsStore.client.addContact(code);
 			showToast(m.contactRequestSent());
 
-			const knownAgent = await contactsStore.client.agentForDevice(
-				contactCode.device_pubkey,
-			);
-			goto(
-				`/direct-chats/${knownAgent ?? pendingChatKey(contactCode.device_pubkey)}`,
-			);
+			const knownAgent =
+				await contactsStore.client.agentForDevice(devicePubkey);
+			goto(`/direct-chats/${knownAgent ?? pendingChatKey(devicePubkey)}`);
 		} catch (e) {
 			console.error(e);
 			const error = e as AddContactError;
 			switch (error.kind) {
 				case 'ProfileNotCreated':
 					showToast(m.errorAddContactProfileRequired(), 'error');
+					break;
+				case 'InvalidContactCode':
+					showToast(m.errorAddContactInvalidLink(), 'error');
+					break;
+				case 'AddDeviceNotSupported':
+					showToast(m.errorAddContactDeviceLinkingNotSupported(), 'error');
 					break;
 				case 'InitializeTopic':
 				case 'AuthorOperation':
@@ -173,12 +176,19 @@
 </script>
 
 {#if colorPickerOpen}
-	{#await myCode then code}
-		<SelectColor
-			{code}
-			qrColor={colorForPicker}
-			onClose={() => (colorPickerOpen = false)}
-		/>
+	{#await Promise.all([myDeepLink, myName])}
+		<Preloader />
+	{:then [deepLink, name]}
+		{#if deepLink !== null}
+			<SelectColor
+				qrCodeValue={deepLink}
+				qrCodeLabel={name}
+				qrColor={colorForPicker}
+				onClose={() => (colorPickerOpen = false)}
+			/>
+		{/if}
+	{:catch}
+		<!-- -->
 	{/await}
 {:else}
 	<Page
@@ -217,7 +227,7 @@
 								rounded
 								tonal={tab !== 'code'}
 								onClick={() => void switchTab('code')}
-								data-testid="add-contact-code-tab"
+								data-testid="add-contact-link-tab"
 								>{m.code()}
 							</Button>
 
@@ -242,7 +252,7 @@
 									active={tab === 'code'}
 									onclick={() => void switchTab('code')}
 									label={m.code()}
-									data-testid="add-contact-code-tab"
+									data-testid="add-contact-link-tab"
 								/>
 								<TabbarLink
 									active={tab === 'scan'}
@@ -260,61 +270,75 @@
 		</Navbar>
 
 		{#if tab === 'code'}
-			{#await myCode}
+			{#await Promise.all([myDeepLink, myName])}
 				<div
 					class="column"
 					style="height: 100%; align-items: center; justify-content: center"
 				>
 					<Preloader />
 				</div>
-			{:then code}
-				{#await $qrColor then savedColor}
-					{@const color = savedColor ?? defaultQrColor()}
-					<div class="column" style="flex:1">
-						<div class="column center-in-desktop gap-4 mx-4 mt-4">
-							<MyQrCodeCard {code} {color} />
+			{:then [deepLink, name]}
+				{#if deepLink !== null}
+					{#await $qrColor then savedColor}
+						{@const color = savedColor ?? defaultQrColor()}
+						<div class="column" style="flex:1">
+							<div class="column center-in-desktop gap-4 mx-4 mt-4">
+								<QrCodeCard
+									value={deepLink}
+									label={name}
+									{color}
+									copyButtonTestId="add-contact-copy-btn"
+									copiedMessage={m.copiedCodeToClipboard()}
+								/>
 
-							<QrActionButtons
-								{isMobile}
-								onShare={() => shareCode(code)}
-								onSave={() => saveCode(code, color)}
-								onUpload={() => uploaderRef?.trigger()}
-								onOpenColorPicker={openColorPicker}
-							/>
+								<QrActionButtons
+									{isMobile}
+									onShare={() => shareCode(deepLink)}
+									onSave={() => saveCode(deepLink, color)}
+									onUpload={() => uploaderRef?.trigger()}
+									onOpenColorPicker={openColorPicker}
+								/>
 
-							<span class="mx-2 mb-2 text-center quiet" style="font-size: 13px"
-								>{m.shareCodeWarning()}</span
-							>
-
-							<div class="column gap-1">
-								<List
-									nested
-									strongIos
-									inset={isWideScreen.value || theme === 'ios'}
+								<span
+									class="mx-2 mb-2 text-center quiet"
+									style="font-size: 13px">{m.shareCodeWarning()}</span
 								>
-									<ListInput
-										floatingLabel
-										label={m.enterYourContactsCode()}
-										type="text"
-										outline
-										data-testid="add-contact-code-input"
-										onInput={async (e: Event) => {
-											const target = e.target as HTMLInputElement;
-											if (target.value) {
-												await receiveCode(target.value);
-												target.value = '';
-											}
-										}}
-									/>
-								</List>
+
+								<div class="column gap-1">
+									<List
+										nested
+										strongIos
+										inset={isWideScreen.value || theme === 'ios'}
+									>
+										<ListInput
+											floatingLabel
+											label={m.enterYourContactsLink()}
+											type="text"
+											outline
+											data-testid="add-contact-link-input"
+											onInput={async (e: Event) => {
+												const target = e.target as HTMLInputElement;
+												if (target.value) {
+													await receiveDeepLink(target.value);
+													target.value = '';
+												}
+											}}
+										/>
+									</List>
+								</div>
 							</div>
 						</div>
-					</div>
-					<QrCodeUploader bind:this={uploaderRef} onSelectImage={receiveCode} />
-				{/await}
+						<QrCodeUploader
+							bind:this={uploaderRef}
+							onSelectImage={receiveDeepLink}
+						/>
+					{/await}
+				{/if}
+			{:catch}
+				<!-- -->
 			{/await}
 		{:else if tab === 'scan'}
-			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveCode} />
+			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveDeepLink} />
 		{/if}
 	</Page>
 {/if}

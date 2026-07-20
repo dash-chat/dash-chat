@@ -8,7 +8,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
 use crate::node::actor::{ProcessorError, ProcessorEvent};
-use crate::stores::ProjectionError;
+use crate::stores::{BadUseOfNode, ProjectionError};
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
@@ -154,7 +154,6 @@ impl Node {
                                     continue;
                                 };
 
-
                                 let result = node.process_groups(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
 
                                 // Signal that the operation has been fully processed. This will
@@ -184,7 +183,7 @@ impl Node {
 
 
                                 // Process the operation.
-                                let result = node.process_app(&operation, &source).await.map_err(|err| ProcessorError::App(err.to_string()));
+                                let result = node.process_app(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
 
                                 // Signal that the operation has been fully processed. This will
                                 // allow the ProcessFuture to complete. We return a result here so
@@ -204,6 +203,15 @@ impl Node {
 
 
                                 if let Err(err) = node.ack_operation(&operation).await {
+                                    tracing::error!(?err, "failed to acknowledge operation");
+                                }
+
+                                // Acknowledge the operation now that application-layer
+                                // processing has finished. The node uses an `Explicit`
+                                // ack policy, so this persisted ack is what makes the
+                                // operation eligible for mailbox transmission (see
+                                // `OpStore::acked_log_height`).
+                                if let Err(err) = operation.ack().await {
                                     tracing::error!(?err, "failed to acknowledge operation");
                                 }
 
@@ -251,14 +259,16 @@ impl Node {
     /// synced onward. The operation arrives here already written to the op
     /// store (by peers or by mailbox sync), so this deletes the body after the
     /// fact.
+    //
+    // TODO: when device groups exist, test that tombstones are enforced across devices.
     async fn enforce_tombstone(
         &self,
-        operation: &ProcessedOperation<Payload>,
+        topic: TopicId,
+        tombstoned_op: &Operation,
     ) -> anyhow::Result<bool> {
-        let topic = operation.topic();
-        let hash = operation.id();
-        if self.local_store.is_tombstoned(topic, hash).await? {
-            self.unprocess_app(&operation.processed().operation).await?;
+        let hash = tombstoned_op.hash;
+        if self.projection.is_tombstoned(topic, hash).await? {
+            self.unprocess_app(tombstoned_op).await?;
             self.op_store.delete_body(&hash).await?;
             Ok(true)
         } else {
@@ -267,8 +277,11 @@ impl Node {
     }
 
     /// Filter out operations whose payloads are not able to be deleted.
-    pub(crate) fn is_tombstoneable(&self, payload: &Payload) -> bool {
-        matches!(payload, Payload::Chat(ChatPayload::Message(_)))
+    pub(crate) fn is_tombstoneable(payload: &Payload) -> bool {
+        matches!(
+            payload,
+            Payload::Chat(ChatPayload::Message(_) | ChatPayload::EditMessage { .. })
+        )
     }
 
     /// Note that this is a function that processes operations which could have deleted payloads.
@@ -282,9 +295,13 @@ impl Node {
     ) -> anyhow::Result<()> {
         self.register_bootstrap(operation, source).await?;
 
-        // If an operation is invalided by the projection layer, we don't process it,
+        // If an operation is invalidated by the projection layer, we don't process it,
         // but still allow it to be acknowledged as processed.
-        match self.projection.reduce(self.agent_id(), operation).await {
+        match self
+            .projection
+            .reduce(self.agent_id(), operation, BadUseOfNode::from(self.clone()))
+            .await
+        {
             // Continue processing.
             Ok(_) => (),
 
@@ -368,7 +385,7 @@ impl Node {
         let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
             return Ok(());
         };
-        if self.is_tombstoneable(&payload) {
+        if Self::is_tombstoneable(&payload) {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     use p2panda_store::topics::TopicStore;
@@ -416,22 +433,13 @@ impl Node {
         let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         let header = operation.processed().header();
 
-        // NOTE: realistically the tombstone will only be enforced here
-        // upon playback of operations. The first time through, it will
-        // have been processed and potentially have modified local state.
-        // Upon tombstoning (or enforcement), it will be "unprocessed"
-        // via [`Self::unprocess_app`] to undo those state changes,
-        // as if it were never processed at all. On playback, the operation
-        // simply doesn't get processed.
-        if self.enforce_tombstone(&operation).await? {
-            // The payload is tombstoned, so there's nothing to process.
-            self.notify_header(dashchat_topic, header).await?;
-            return Ok(());
-        }
-
-        // If an operation is invalided by the projection layer, we don't process it,
+        // If an operation is invalidated by the projection layer, we don't process it,
         // but still allow it to be acknowledged as processed.
-        match self.projection.reduce(self.agent_id(), operation).await {
+        match self
+            .projection
+            .reduce(self.agent_id(), operation, BadUseOfNode::from(self.clone()))
+            .await
+        {
             // Continue processing.
             Ok(_) => (),
 
@@ -445,6 +453,17 @@ impl Node {
             Err(ProjectionError::Any(err)) => {
                 return Err(err);
             }
+        }
+
+        // If a receiver is processing this, the tombstone may have been processed prior,
+        // so we want to drop the payload now and not process it.
+        if self
+            .enforce_tombstone(topic, &operation.event.operation)
+            .await?
+        {
+            // The payload is tombstoned, so we must not process it. Return early.
+            self.notify_header(dashchat_topic, header).await?;
+            return Ok(());
         }
 
         let hash = operation.id();
@@ -493,9 +512,7 @@ impl Node {
                     return Ok(());
                 }
                 match invitation {
-                    InboxPayload::ContactRequest {
-                        agent_id, profile, ..
-                    } => {
+                    InboxPayload::ContactRequest { agent_id, .. } => {
                         // A request arrived on our advertised inbox. Perform no network
                         // side-effects (bootstrap registration, topic
                         // subscriptions) and disclose nothing about us until the
@@ -583,9 +600,22 @@ impl Node {
                     timestamp: edit_ts,
                     self_hash: Some(hash),
                 };
-                if let Err(err) = valid_ops.validate_edit(&candidate) {
+                if let Err(err) = candidate.validate(&valid_ops) {
                     warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
                     return Ok(());
+                }
+            }
+
+            Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
+                // Enforce the tombstones the projection just recorded, dropping
+                // the targets' payloads. The delete op's *own* payload is only a
+                // list of hashes (nothing sensitive), so we fall through to
+                // `notify_payload` below: the frontend needs it to learn which
+                // messages were deleted and render their placeholders.
+                for hash in hashes {
+                    if let Some(op) = self.op_store.get_operation(hash).await? {
+                        self.enforce_tombstone(topic, &op).await?;
+                    }
                 }
             }
 
@@ -671,6 +701,10 @@ impl Node {
         Ok(())
     }
 
+    /// Notify the frontend of an operation without its payload. Used when the
+    /// op's body has been tombstoned: the frontend must learn the op exists (so
+    /// it refetches and renders the body-less op) but must never receive the
+    /// deleted content.
     pub async fn notify_header(&self, topic: Topic, header: &Header) -> anyhow::Result<()> {
         if let Some(notification_tx) = self.notification_tx.clone() {
             notification_tx

@@ -199,25 +199,23 @@ async fn competing_edits_resolve_deterministically_on_both_nodes() {
         .edit_message_raw(chat_id, original.hash(), "edit-a")
         .await
         .unwrap();
-    let edit_b = alice
+    alice
         .edit_message_raw(chat_id, original.hash(), "edit-b")
         .await
         .unwrap();
 
-    // Lowest op hash wins.
-    let winner_text = if edit_a.hash() < edit_b.hash() {
-        "edit-a"
-    } else {
-        "edit-b"
-    };
-
+    // The earliest published edit (lowest seq_num) wins; the hash only breaks
+    // ties between forked logs reusing a seq_num, which can't happen here.
     // Both nodes converge on exactly one surviving edit — the same one.
     for node in [&alice, &bobbi] {
         poll.wait_for(|| async {
             let edits = node.valid_edits(chat_id).await.unwrap();
-            (edits.len() == 1 && edits[0].text == winner_text && edits[0].target == original.hash())
-                .then_some(())
-                .ok_or_else(|| edits.clone())
+            (edits.len() == 1
+                && edits[0].op_hash == edit_a.hash()
+                && edits[0].text == "edit-a"
+                && edits[0].target == original.hash())
+            .then_some(())
+            .ok_or_else(|| edits.clone())
         })
         .await
         .unwrap();

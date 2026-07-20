@@ -2,6 +2,7 @@
 	import { Card } from 'konsta/svelte';
 	import {
 		fullName,
+		hasBody,
 		type ChatId,
 		type DeviceId,
 		type MailboxTrackerStore,
@@ -12,8 +13,9 @@
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
+	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
-	import QuickReactionBar from './QuickReactionBar.svelte';
+	import MessageActions from './MessageActions.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
@@ -46,6 +48,13 @@
 		sender && sender.name ? fullName(sender) : m.unknownSender(),
 	);
 
+	const reactions = $derived(
+		hasBody(message.content) ? message.content.reactions : {},
+	);
+	const editHistory = $derived(
+		hasBody(message.content) ? message.content.editHistory : [],
+	);
+
 	const store: MessagesStore = getContext('messages-store');
 
 	let reactionsOpened = $state(false);
@@ -75,52 +84,65 @@
 	);
 </script>
 
+{#snippet editedIndicator()}
+	<EditedIndicator class="quiet" />
+{/snippet}
+
 {#snippet metadata()}
 	<MessageTimestamp timestamp={message.timestamp} class="quiet" />
 {/snippet}
 
 <div
 	bind:this={messageEl}
-	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
+	class="flex justify-start"
+	use:longpress={{
+		onLongPress: () => {
+			if (hasBody(message.content)) reactionsOpened = true;
+		},
+	}}
 >
-	<div class="row items-end gap-2">
-		{#if showAvatar}
-			{#if isLast}
-				<Avatar
-					image={sender?.avatar}
-					initials={sender?.name.slice(0, 2)}
-					size="2rem"
-				/>
-			{:else}
-				<div class="shrink-0" style="width: 2rem"></div>
+	<div bind:this={messageEl} class="max-w-[85%]">
+		<div class="row items-end gap-2">
+			{#if showAvatar}
+				{#if isLast}
+					<Avatar
+						image={sender?.avatar}
+						initials={sender?.name.slice(0, 2)}
+						size="2rem"
+					/>
+				{:else}
+					<div class="shrink-0" style="width: 2rem"></div>
+				{/if}
 			{/if}
-		{/if}
-		<Card
-			raised
-			contentWrapPadding="p-2"
-			class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
-		>
-			<MessageContent
-				{message}
-				{searchQuery}
-				senderName={senderDisplayName}
-				{showSenderName}
-				metadata={isLast ? metadata : undefined}
-			/>
-		</Card>
-	</div>
-	{#if Object.keys(message.reactions).length > 0}
-		<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
-			<Reactions
-				reactions={message.reactions}
-				{myDeviceId}
-				onToggleReaction={emoji =>
-					toggleReaction(store, message, myDeviceId, emoji)}
-			/>
+			<Card
+				raised
+				contentWrapPadding="p-2"
+				class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+			>
+				<MessageContent
+					{message}
+					{searchQuery}
+					senderName={senderDisplayName}
+					{showSenderName}
+					deletedText={m.thisMessageWasDeleted()}
+					editedIndicator={editHistory.length > 0 ? editedIndicator : undefined}
+					metadata={isLast ? metadata : undefined}
+				/>
+			</Card>
 		</div>
-	{/if}
+		{#if Object.keys(reactions).length > 0}
+			<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
+				<Reactions
+					{reactions}
+					{myDeviceId}
+					onToggleReaction={emoji =>
+						toggleReaction(store, message, myDeviceId, emoji)}
+				/>
+			</div>
+		{/if}
+	</div>
 </div>
-<QuickReactionBar
+<MessageActions
 	{message}
 	{myDeviceId}
 	bind:opened={reactionsOpened}

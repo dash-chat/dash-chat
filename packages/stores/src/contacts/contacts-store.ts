@@ -5,12 +5,11 @@ import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
-import { AnnouncementPayload, ContactCode, Payload } from '../types';
+import { AnnouncementPayload, Payload } from '../types';
 import { IContactsClient, Profile } from './contacts-client';
 
 export interface ContactRequest {
 	profile: Profile;
-	code: ContactCode;
 	agentId: AgentId;
 	timestamp: number;
 	topicId: TopicId;
@@ -203,7 +202,7 @@ export class ContactsStore {
 				for (const operation of operations) {
 					if (operation.body?.type !== 'Inbox') continue;
 					if (operation.body.payload.type !== 'ContactRequest') continue;
-					const { code, profile, agent_id } = operation.body.payload.payload;
+					const { profile, agent_id } = operation.body.payload.payload;
 					if (!agent_id) continue;
 					const agentId = agent_id;
 
@@ -219,7 +218,6 @@ export class ContactsStore {
 						continue;
 
 					contactRequests.push({
-						code,
 						profile,
 						agentId,
 						topicId,

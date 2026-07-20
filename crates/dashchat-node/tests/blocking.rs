@@ -1,6 +1,8 @@
 use std::time::Duration;
 
 use dashchat_node::{testing::*, *};
+use maplit::btreemap;
+use p2panda_auth::Access;
 
 const TRACING_FILTER: [&str; 2] = ["dashchat=info", "p2panda_stream=warn"];
 
@@ -19,6 +21,21 @@ fn is_chat_text(notification: &Notification, text: &str) -> bool {
         &notification.payload,
         Some(Payload::Chat(ChatPayload::Message(content))) if content.message() == text
     )
+}
+
+fn is_group_info(notification: &Notification) -> bool {
+    matches!(
+        &notification.payload,
+        Some(Payload::Chat(ChatPayload::GroupInfo(_)))
+    )
+}
+
+fn is_group_control(notification: &Notification) -> bool {
+    matches!(&notification.payload, Some(Payload::GroupControl(_)))
+}
+
+fn notification_author(notification: &Notification) -> DeviceId {
+    DeviceId::from(notification.header.verifying_key)
 }
 
 /// The blob hash of the single media item on the message with `text`, as stored
@@ -186,4 +203,161 @@ async fn test_block_and_unblock_contact() {
     };
     assert_eq!(photos.len(), 1);
     assert_eq!(photos[0].data, allowed_photo);
+}
+
+/// A blocked contact who shares a group chat with us stays a functioning group
+/// member: `enforce_blocklist` drops their chat messages but deliberately lets
+/// their `GroupControl` (membership) and `Chat(GroupInfo)` (name/avatar) ops
+/// through so group state stays consistent. Alice, bobbi and cammy share a
+/// group; alice blocks cammy; cammy then renames the group, sends a message,
+/// and removes bobbi. Alice must be notified of the group-info and
+/// group-control ops (and see their effects) but never of the chat message.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_blocked_group_member_control_and_info_still_apply() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let poll = PollConfig::default();
+    let config = NodeConfig::testing();
+    let mailbox = TestMailbox::from_env();
+
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let cammy = TestNode::new(config.clone(), "cammy")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&cammy, ShareIntent::AddContact)
+        .await
+        .unwrap();
+
+    // cammy is an admin so she can perform a group-control action (removing
+    // bobbi); bobbi is a plain member.
+    let chat = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => Access::write(),
+            *cammy.device_id() => Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+    cammy
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi, &cammy], &[chat.into()])
+        .await
+        .unwrap();
+
+    // Baseline: while unblocked, cammy's message reaches and notifies alice.
+    cammy
+        .send_message(chat, "hello before block", None)
+        .await
+        .unwrap();
+    alice
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(Duration::from_secs(30), |n: &Notification| {
+            is_chat_text(n, "hello before block").then_some(())
+        })
+        .await
+        .expect("alice receives cammy's pre-block message");
+
+    // Alice blocks cammy, then drop any notifications buffered from setup so the
+    // collection below only sees cammy's post-block ops.
+    alice.block_contact(cammy.agent_id()).await.unwrap();
+    {
+        let mut watcher = alice.watcher.lock().await;
+        while watcher.try_recv().is_ok() {}
+    }
+
+    // While blocked, cammy renames the group, sends a chat message, and removes
+    // bobbi from the group.
+    let renamed = GroupInfo {
+        name: "renamed by cammy".into(),
+        description: None,
+        image: None,
+    };
+    cammy.set_group_info(chat, renamed.clone()).await.unwrap();
+    cammy
+        .send_message(chat, "blocked group text", None)
+        .await
+        .unwrap();
+    cammy
+        .remove_group_member(chat, *bobbi.device_id())
+        .await
+        .unwrap();
+
+    // Wait until alice has synced and processed all three ops. The dropped chat
+    // message is still acked as processed, so consistency covers it too.
+    poll.consistency([&alice, &cammy], &[chat.into()])
+        .await
+        .unwrap();
+
+    // Collect every notification alice emitted for cammy's post-block ops.
+    let from_cammy: Vec<Notification> = {
+        let mut watcher = alice.watcher.lock().await;
+        let mut collected = vec![];
+        while let Ok(n) = watcher.try_recv() {
+            if notification_author(&n) == cammy.device_id() {
+                collected.push(n);
+            }
+        }
+        collected
+    };
+
+    // The blocked chat message was never surfaced to alice...
+    assert!(
+        !from_cammy
+            .iter()
+            .any(|n| is_chat_text(n, "blocked group text")),
+        "alice must not be notified of a blocked group member's chat message",
+    );
+    // ...but her group-info update and group-control action both applied.
+    assert!(
+        from_cammy.iter().any(is_group_info),
+        "alice must still process a blocked group member's group-info update",
+    );
+    assert!(
+        from_cammy.iter().any(is_group_control),
+        "alice must still process a blocked group member's group-control action",
+    );
+
+    // The effects are visible in alice's durable state: the group is renamed and
+    // bobbi has been removed.
+    assert_eq!(
+        alice.get_group_info(chat.into()).await.unwrap(),
+        Some(renamed)
+    );
+    assert!(
+        !alice
+            .get_group_members(chat)
+            .await
+            .unwrap()
+            .iter()
+            .any(|(m, _)| *m == bobbi.device_id()),
+        "cammy's removal of bobbi must apply on alice's side despite the block",
+    );
 }

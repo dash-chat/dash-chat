@@ -1,8 +1,7 @@
-mod compat_tests;
-mod edit;
 mod message;
-pub use edit::*;
+mod validation;
 pub use message::*;
+pub use validation::*;
 
 use crate::Topic;
 

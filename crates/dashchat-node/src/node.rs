@@ -14,7 +14,6 @@ use crate::node::actor::{Actor, Command};
 use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
-use dashchat_compat::VersionConvert;
 use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
@@ -29,16 +28,19 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
-use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps};
+use crate::chat::{
+    ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps,
+    collect_deletable_edit_chain,
+};
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, EditMessageError, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile,
-    OutgoingMedia,
+    AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
+    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, MediaBundle, MediaMetaKind,
+    MediaMetadata, OutgoingFile, OutgoingMedia,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
@@ -430,11 +432,6 @@ impl Node {
 
         node.initialize_stored_topics().await?;
 
-        // === announce === //
-
-        node.announce_device_capabilities(node.config.capabilities)
-            .await?;
-
         Ok(node)
     }
 
@@ -451,33 +448,23 @@ impl Node {
 
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
-    pub async fn new_qr_code(
-        &self,
-        share_intent: ShareIntent,
-        inbox: bool,
-    ) -> Result<QrCode, crate::Error> {
-        let inbox_topic = if inbox {
-            let inbox_topic = InboxTopic {
-                topic: Topic::inbox()
-                    .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
-                expires_at: Utc::now() + self.config.contact_code_expiry,
-            };
-            self.initialize_topic(*inbox_topic.topic)
-                .await
-                .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
-            self.local_store
-                .add_active_inbox_topic(inbox_topic.clone())
-                .await
-                .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
-            Some(inbox_topic)
-        } else {
-            None
-        };
+    pub async fn new_qr_code(&self, share_intent: ShareIntent) -> Result<QrCode, crate::Error> {
+        let (inbox_topic, nonce) = InboxTopic::new_random(
+            &self.device_id(),
+            Utc::now() + self.config.contact_code_expiry,
+        );
+        self.initialize_topic(*inbox_topic.topic)
+            .await
+            .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
+        self.local_store
+            .add_active_inbox_topic(inbox_topic.clone())
+            .await
+            .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
 
         Ok(QrCode {
             device_pubkey: self.device_id(),
-            inbox_topic,
             share_intent,
+            inbox_nonce: nonce,
         })
     }
 
@@ -1002,27 +989,8 @@ impl Node {
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
 
-        let (capabilities, num_agents) = self.get_group_capabilities(topic).await?;
-        let capabilities = capabilities.ok_or(anyhow::anyhow!(
-            "no capabilities found for chat: {:?}",
-            topic.aliased()
-        ))?;
-
-        // NOTE: we may need logic for an agent to re-send a downgraded message if they later discover
-        //       intended recipients who don't have the proper capabilities for receiving this message
-        if num_agents == 1 {
-            tracing::warn!(
-                "sending message to group without knowing any other members' capabilities",
-            );
-        }
-        let message = message.to_version(&capabilities)?;
-
         let header = self
-            .publish(
-                topic,
-                Payload::Chat(ChatPayload::Message(message.clone())),
-                None,
-            )
+            .publish(topic, Payload::Chat(ChatPayload::Message(message)), None)
             .await?;
 
         Ok(header)
@@ -1057,12 +1025,13 @@ impl Node {
         let topic = topic.into();
         let valid_ops = self.valid_chat_ops(topic).await?;
         let now = u64::from(p2panda_core::Timestamp::now());
-        valid_ops.validate_edit(&EditCandidate {
+        EditCandidate {
             target: edit_hash,
             editor: self.device_id(),
             timestamp: now,
             self_hash: None,
-        })?;
+        }
+        .validate(&valid_ops)?;
 
         let header = self
             .publish(
@@ -1102,6 +1071,62 @@ impl Node {
         Ok(header)
     }
 
+    /// Delete a previously-sent message for everyone in the chat.
+    ///
+    /// `target` must be the most recent edit of the message (or the message
+    /// itself when unedited), authored by us, within the delete window, and not
+    /// already deleted. The full edit chain is collected and published in a
+    /// `DeleteMessage` payload; processing it tombstones every operation in the
+    /// chain. See [`DeleteError`](crate::chat::DeleteError).
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn delete_message(
+        &self,
+        topic: impl Into<ChatId>,
+        target: Hash,
+    ) -> Result<Header, DeleteMessageError> {
+        let topic = topic.into();
+        let ops = self.valid_chat_ops(topic).await?;
+        let hashes = collect_deletable_edit_chain(&ops, &target)?;
+        let now = u64::from(p2panda_core::Timestamp::now());
+        DeleteCandidate {
+            hashes: hashes.clone(),
+            deleter: self.device_id(),
+            delete_timestamp: now,
+            self_hash: None,
+        }
+        .validate(&ops)?;
+
+        let header = self
+            .publish(
+                topic,
+                Payload::Chat(ChatPayload::DeleteMessage { hashes }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Publish a delete without validating it. For testing the receiving-side
+    /// handling of invalid deletes, which the author-side validation would
+    /// otherwise prevent from ever being created.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn delete_message_raw(
+        &self,
+        topic: impl Into<ChatId>,
+        hashes: BTreeSet<Hash>,
+    ) -> anyhow::Result<Header> {
+        let header = self
+            .publish(
+                topic.into(),
+                Payload::Chat(ChatPayload::DeleteMessage { hashes }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
     /// Collect all chat operations in a topic, reduced to the fields edit
     /// validation needs, keyed by operation hash.
     //
@@ -1124,6 +1149,7 @@ impl Node {
                 let kind = match chat {
                     ChatPayload::Message(_) => ChatOpKind::Message,
                     ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
+                    ChatPayload::DeleteMessage { hashes } => ChatOpKind::Delete(hashes),
                     _ => ChatOpKind::Other,
                 };
                 ops.insert(
@@ -1225,33 +1251,6 @@ impl Node {
             }
         }
         Ok(latest.map(|(_, d)| d))
-    }
-
-    /// Tombstone an operation: record its hash in the topic's persisted
-    /// tombstone set so its payload is never stored or synced again, and
-    /// immediately drop any payload already stored for it.
-    ///
-    /// This has the effect that when the operation is played back, it will
-    /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
-    /// is `true` MUST also revert their changes in [`Self::unprocess_app`]
-    /// so that they leave behind no traces in local state.
-    pub async fn tombstone_operation(
-        &self,
-        topic: TopicId,
-        operation: &Operation,
-    ) -> anyhow::Result<()> {
-        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
-            return Ok(());
-        };
-        if self.is_tombstoneable(&payload) {
-            let hash = operation.hash;
-            self.local_store.add_tombstone(topic, hash.clone()).await?;
-            self.unprocess_app(operation).await?;
-            self.op_store.delete_body(&hash).await?;
-        } else {
-            tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
-        }
-        Ok(())
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.
@@ -1374,7 +1373,6 @@ impl Node {
     pub async fn add_contact(&self, contact: QrCode) -> Result<(), AddContactError> {
         tracing::debug!(
             device_pub_key = ?contact.device_pubkey.aliased(),
-            inbox_topic = ?contact.inbox_topic,
             "adding contact",
         );
 
@@ -1387,11 +1385,11 @@ impl Node {
 
         // SPACES: Register the member in the spaces manager
 
-        let Some(inbox_topic) = contact.inbox_topic.clone() else {
-            return Err(AddContactError::CreateQrCode(
-                "contact code has no inbox to send a request to".to_string(),
-            ));
-        };
+        let inbox_topic = InboxTopic::from_nonce(
+            &contact.device_pubkey,
+            &contact.inbox_nonce,
+            Utc::now() + self.config.contact_code_expiry,
+        );
 
         // TODO: use all of this commented out stuff when spaces are possible again
         // // XXX: there should be a better way to wait for the device group to be created,
@@ -1459,12 +1457,6 @@ impl Node {
             .add_reply_inbox_topic(reply_inbox.clone(), contact.device_pubkey)
             .await
             .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
-
-        let code = self
-            .new_qr_code(ShareIntent::AddContact, false)
-            .await
-            .map_err(|e| AddContactError::CreateQrCode(e.to_string()))?;
-
         let Some(profile) = self
             .my_profile()
             .await
@@ -1476,7 +1468,6 @@ impl Node {
         self.publish(
             inbox_topic.topic,
             Payload::Inbox(InboxPayload::ContactRequest {
-                code,
                 profile,
                 agent_id: self.agent_id(),
                 reply_topic: reply_inbox.topic.clone(),
@@ -1765,64 +1756,6 @@ impl Node {
             .await?;
 
         Ok(())
-    }
-
-    pub async fn announce_device_capabilities(
-        &self,
-        capabilities: Capabilities,
-    ) -> anyhow::Result<()> {
-        let announcements = Topic::announcements(self.agent_id());
-        let latest_capability = self.projection.get_capabilities(self.device_id()).await?;
-
-        // If the capability is unset or different from the current one, set it now.
-        if latest_capability != Some(capabilities) {
-            self.publish(
-                announcements,
-                Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }),
-                Some(&format!(
-                    "set_device_capabilities({:?})",
-                    self.device_id().aliased()
-                )),
-            )
-            .await?;
-        }
-
-        Ok(())
-    }
-
-    /// Find the infimum of the capabilities of all other members of the group with read access or above.
-    ///
-    /// This is dependent on eventual consistency, and as other members join, the capabilities may change.
-    pub async fn get_group_capabilities(
-        &self,
-        topic: ChatId,
-    ) -> anyhow::Result<(Option<Capabilities>, usize)> {
-        let members = self.group_store.members(topic).await?;
-        let mut devices = members
-            .iter()
-            .filter_map(|(member, access)| {
-                // Only include members with read access or above
-                // TODO: make sure this pubkey corresponds to a DeviceId and not an AgentId,
-                //       once device groups are implemented
-                (*access >= Access::read()).then_some(*member)
-            })
-            .collect::<BTreeSet<_>>();
-        devices.insert(self.device_id());
-
-        // Collect capabilities for all agents
-        let caps = futures::future::join_all(
-            devices
-                .into_iter()
-                .map(|device| self.projection.get_capabilities(device)),
-        )
-        .await
-        .into_iter()
-        .collect::<Result<Vec<Option<Capabilities>>>>()?;
-
-        let caps = caps.into_iter().flatten().collect::<Vec<_>>();
-        let num = caps.len();
-
-        Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
     }
 
     pub async fn store_media(

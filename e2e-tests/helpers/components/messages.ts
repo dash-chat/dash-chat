@@ -1,6 +1,7 @@
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 import { SYNC_TIMEOUT } from '../timeouts';
+import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
 // Driver for a chat's rendered message list — the messages themselves plus the
@@ -26,6 +27,28 @@ export class Messages extends TestHelper {
 	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
 	lightbox = new Lightbox(this.agent);
+	/** The composer, for driving the type/send step of an in-place edit. */
+	private composer = new Composer(this.agent);
+
+	/** Every message mounts its own (closed) actions popover, so the menu and
+	 * its actions must be resolved scoped to the message containing `text`. */
+	private async messageScoped(text: string, testId: string) {
+		const wrapper = await this.messageBubbleWithText(text);
+		if (!wrapper) throw new Error(`Message "${text}" not found`);
+		return wrapper.$(tid(testId));
+	}
+
+	actionsMenu(text: string) {
+		return this.messageScoped(text, 'message-actions-menu');
+	}
+
+	editAction(text: string) {
+		return this.messageScoped(text, 'message-action-edit');
+	}
+
+	copyAction(text: string) {
+		return this.messageScoped(text, 'message-action-copy');
+	}
 
 	async unreadBadgeText(): Promise<string | null> {
 		if (!(await this.unreadBadge.isExisting())) return null;
@@ -161,8 +184,9 @@ export class Messages extends TestHelper {
 	}
 
 	/** Long-press (via a synthetic contextmenu) the bubble containing `text` to
-	 * open its quick-reaction bar, and resolve the bar scoped to that message. */
-	async openReactions(text: string) {
+	 * open its message actions UI — the quick-reaction bar plus, on own
+	 * editable messages, the actions menu — and resolve the bubble's wrapper. */
+	async openMessageActions(text: string) {
 		const dispatched = await this.agent.execute(
 			(messagesSel: string, t: string) => {
 				const wrappers = document.querySelectorAll<HTMLElement>(
@@ -197,7 +221,7 @@ export class Messages extends TestHelper {
 
 	/** Open the quick-reaction bar for `text` and tap the given quick emoji. */
 	async reactWith(text: string, emoji: string) {
-		const wrapper = await this.openReactions(text);
+		const wrapper = await this.openMessageActions(text);
 		await wrapper.$(tid(`quick-reaction-${emoji}`)).click();
 	}
 
@@ -254,5 +278,43 @@ export class Messages extends TestHelper {
 			this.messagesSelector,
 			messageText,
 		);
+	}
+
+	/** Whether the message containing `text` shows the "Edited" indicator. */
+	async hasEditedIndicator(text: string): Promise<boolean> {
+		return this.agent.execute(
+			(messagesSel: string, editedSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return !!wrapper.querySelector(editedSel);
+					}
+				}
+				return false;
+			},
+			this.messagesSelector,
+			tid('message-edited-indicator'),
+			text,
+		);
+	}
+
+	/** Open the actions menu on the message with `oldText`, tap Edit, replace
+	 * the text with `newText`, and send. */
+	async editMessage(oldText: string, newText: string): Promise<void> {
+		await this.openMessageActions(oldText);
+		const editAction = await this.editAction(oldText);
+		await editAction.waitForClickable();
+		await editAction.click();
+		// The Signal-style editing state: header banner plus the input prefilled
+		// with the message being edited.
+		await this.composer.editingBanner.waitForExist();
+		await this.agent.waitUntil(
+			async () => (await this.composer.messageInput.getValue()) === oldText,
+			{ timeoutMsg: 'Editing input is not prefilled with the original text' },
+		);
+		await this.composer.type(newText);
+		await this.composer.send();
 	}
 }

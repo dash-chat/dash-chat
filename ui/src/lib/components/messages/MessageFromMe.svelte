@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { Card } from 'konsta/svelte';
-	import type {
-		ChatId,
-		DeviceId,
-		MailboxTrackerStore,
-		Message,
-		MessagesStore,
+	import {
+		type ChatId,
+		type DeviceId,
+		type MailboxTrackerStore,
+		type Message,
+		type MessagesStore,
+		hasBody,
 	} from 'dash-chat-stores';
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
+	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
-	import QuickReactionBar from './QuickReactionBar.svelte';
+	import MessageActions from './MessageActions.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useReactiveValue } from '$lib/stores/use-signal';
@@ -25,15 +27,30 @@
 		myDeviceId,
 		searchQuery,
 		chatId,
+		canEdit = false,
+		onEdit,
+		canDelete = false,
+		onDelete,
 	}: {
 		message: Message;
 		position: MessagePosition;
 		myDeviceId: DeviceId;
 		chatId: ChatId;
 		searchQuery: string;
+		canEdit?: boolean;
+		onEdit?: () => void;
+		canDelete?: boolean;
+		onDelete?: () => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
+
+	const reactions = $derived(
+		hasBody(message.content) ? message.content.reactions : {},
+	);
+	const editHistory = $derived(
+		hasBody(message.content) ? message.content.editHistory : [],
+	);
 
 	const store: MessagesStore = getContext('messages-store');
 
@@ -64,6 +81,10 @@
 	);
 </script>
 
+{#snippet editedIndicator()}
+	<EditedIndicator class="dark-quiet" />
+{/snippet}
+
 {#snippet metadata()}
 	<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
 
@@ -75,35 +96,43 @@
 {/snippet}
 
 <div
-	bind:this={messageEl}
+	class="flex justify-end"
 	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
 >
-	<Card
-		raised
-		contentWrapPadding="p-2"
-		class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
-	>
-		<MessageContent
-			{message}
-			{searchQuery}
-			senderName={m.you()}
-			metadata={isLast ? metadata : undefined}
-		/>
-	</Card>
-	{#if Object.keys(message.reactions).length > 0}
-		<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
-			<Reactions
-				reactions={message.reactions}
-				{myDeviceId}
-				onToggleReaction={emoji =>
-					toggleReaction(store, message, myDeviceId, emoji)}
+	<div bind:this={messageEl} class="max-w-[85%]">
+		<Card
+			raised
+			contentWrapPadding="p-2"
+			class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+		>
+			<MessageContent
+				{message}
+				{searchQuery}
+				senderName={m.you()}
+				deletedText={m.youDeletedThisMessage()}
+				editedIndicator={editHistory.length > 0 ? editedIndicator : undefined}
+				metadata={isLast ? metadata : undefined}
 			/>
-		</div>
-	{/if}
+		</Card>
+		{#if Object.keys(reactions).length > 0}
+			<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
+				<Reactions
+					{reactions}
+					{myDeviceId}
+					onToggleReaction={emoji =>
+						toggleReaction(store, message, myDeviceId, emoji)}
+				/>
+			</div>
+		{/if}
+	</div>
 </div>
-<QuickReactionBar
+<MessageActions
 	{message}
 	{myDeviceId}
+	{canEdit}
+	{onEdit}
+	{canDelete}
+	{onDelete}
 	bind:opened={reactionsOpened}
 	target={messageEl}
 />

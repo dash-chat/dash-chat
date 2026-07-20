@@ -1,11 +1,10 @@
-use std::collections::HashMap;
-
-use derive_more::derive::{Deref, DerefMut};
 use p2panda::Hash;
 use serde::Serialize;
 use thiserror::Error;
 
 use crate::DeviceId;
+
+use super::{ChatOpKind, ValidChatOps};
 
 /// The window during which a message may be edited, measured from the original
 /// message timestamp. p2panda header timestamps are microseconds since the UNIX
@@ -34,32 +33,6 @@ pub enum EditError {
 
     #[error("the edit window for this message has expired")]
     WindowExpired,
-}
-
-/// A chat operation reduced to only the facts that edit validation cares about.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ChatOpKind {
-    /// An original `ChatPayload::Message`.
-    Message,
-    /// A `ChatPayload::EditMessage` pointing at the operation it edits.
-    Edit(Hash),
-    /// Any other chat payload (reaction, group info, …) which are not
-    /// valid targets for editing.
-    Other,
-}
-
-/// A chat operation reduced to only the fields edit validation needs.
-///
-/// By writing edit validation in terms of `ChatOp`s instead of full `ChatPayload`s,
-/// we keep the scope of edit validation bounded to only the relevant facts.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChatOp {
-    pub author: DeviceId,
-    /// Microseconds since the UNIX epoch (the operation header timestamp).
-    pub timestamp: u64,
-    /// Position in the author's append-only log; monotonic in publish order.
-    pub seq_num: u64,
-    pub kind: ChatOpKind,
 }
 
 /// A received edit that passed validation, exposed for tests.
@@ -91,90 +64,34 @@ pub struct EditCandidate {
     pub self_hash: Option<Hash>,
 }
 
-/// The set of all chat operations in a topic that pass edit validation, keyed
-/// by operation hash. Callers obtain a pruned, cheat-proof view via
-/// [`Node::valid_chat_ops`](crate::Node) and validate candidate edits against
-/// it with [`ValidChatOps::validate`].
-#[derive(Debug, Clone, Default, Deref, DerefMut)]
-pub struct ValidChatOps(HashMap<Hash, ChatOp>);
-
-impl ValidChatOps {
-    pub(crate) fn new(ops: HashMap<Hash, ChatOp>) -> Self {
-        Self(ops)
-    }
-
-    pub(crate) fn contains(&self, hash: &Hash) -> bool {
-        self.0.contains_key(hash)
-    }
-
-    /// Validate that `edit` may be applied to its target message,
+impl EditCandidate {
+    /// Validate that this edit may be applied to its target message,
     /// given the set of existing valid chat ops.
-    pub fn validate_edit(&self, edit: &EditCandidate) -> Result<(), EditError> {
-        let target = self.get(&edit.target).ok_or(EditError::TargetNotFound)?;
-        Self::check_target_editable(target)?;
-        Self::check_editor_is_author(target, edit)?;
-        self.check_not_conflicting(edit)?;
-        self.check_within_edit_window(edit)?;
+    pub fn validate(&self, valid_ops: &ValidChatOps) -> Result<(), EditError> {
+        self.check_target_editable(valid_ops)?;
+        self.check_editor_is_author(valid_ops)?;
+        self.check_not_conflicting(valid_ops)?;
+        self.check_within_edit_window(valid_ops)?;
         Ok(())
     }
 
-    /// Strip edit ops that don't pass validation so callers always work with a
-    /// consistent, cheat-proof view. An invalid edit (wrong author, expired
-    /// window, or broken chain) must not poison the scan for legitimate edits.
-    /// Removals cascade — a chained edit whose target gets stripped is itself
-    /// invalid — so iterate to a fixpoint. Validation depends only on the op
-    /// set, not arrival order, so every peer converges on the same reduced
-    /// view.
-    pub(crate) fn prune(&mut self) {
-        loop {
-            let edit_hashes: Vec<Hash> = self
-                .0
-                .iter()
-                .filter_map(|(hash, op)| matches!(op.kind, ChatOpKind::Edit(_)).then_some(*hash))
-                .collect();
-            let mut removed_any = false;
-            for hash in edit_hashes {
-                let Some(candidate) = self.edit_candidate(&hash) else {
-                    continue;
-                };
-                if self.validate_edit(&candidate).is_err() {
-                    self.0.remove(&hash);
-                    removed_any = true;
-                }
-            }
-            if !removed_any {
-                break;
-            }
-        }
-    }
-
-    /// Build the [`EditCandidate`] for an edit already stored under `hash`, for
-    /// re-validating it against the rest of the set. `None` if `hash` is absent
-    /// or is not an edit.
-    fn edit_candidate(&self, hash: &Hash) -> Option<EditCandidate> {
-        let op = self.get(hash)?;
-        let ChatOpKind::Edit(target) = op.kind else {
-            return None;
-        };
-        Some(EditCandidate {
-            target,
-            editor: op.author,
-            timestamp: op.timestamp,
-            self_hash: Some(*hash),
-        })
-    }
-
-    fn check_target_editable(target: &ChatOp) -> Result<(), EditError> {
+    fn check_target_editable(&self, valid_ops: &ValidChatOps) -> Result<(), EditError> {
+        let target = valid_ops
+            .get(&self.target)
+            .ok_or(EditError::TargetNotFound)?;
         match target.kind {
             ChatOpKind::Message | ChatOpKind::Edit(_) => Ok(()),
-            ChatOpKind::Other => Err(EditError::TargetNotEditable),
+            ChatOpKind::Delete(_) | ChatOpKind::Other => Err(EditError::TargetNotEditable),
         }
     }
 
     // TODO: this is only a same-device check.
     // If we want editing across devices, we need to check against AgentId, which is more complicated.
-    fn check_editor_is_author(target: &ChatOp, edit: &EditCandidate) -> Result<(), EditError> {
-        if edit.editor != target.author {
+    fn check_editor_is_author(&self, valid_ops: &ValidChatOps) -> Result<(), EditError> {
+        let target = valid_ops
+            .get(&self.target)
+            .ok_or(EditError::TargetNotFound)?;
+        if self.editor != target.author {
             return Err(EditError::NotAuthor);
         }
         Ok(())
@@ -194,14 +111,14 @@ impl ValidChatOps {
     /// set and the `(seq_num, hash)` key excludes it from itself; on the author
     /// side (`self_hash` is `None`, before the op has a hash) any existing edit
     /// blocks publishing outright.
-    fn check_not_conflicting(&self, edit: &EditCandidate) -> Result<(), EditError> {
+    fn check_not_conflicting(&self, valid_ops: &ValidChatOps) -> Result<(), EditError> {
         // The order key for this candidate, to be compared against
         // the order key of any potentially conflicting edits.
-        let self_order_key = edit
+        let self_order_key = self
             .self_hash
-            .and_then(|h| self.get(&h).map(|op| (op.seq_num, h)));
-        let invalid = self.iter().any(|(hash, op)| {
-            let conflicting = matches!(&op.kind, ChatOpKind::Edit(t) if t == &edit.target);
+            .and_then(|h| valid_ops.get(&h).map(|op| (op.seq_num, h)));
+        let invalid = valid_ops.iter().any(|(hash, op)| {
+            let conflicting = matches!(&op.kind, ChatOpKind::Edit(t) if t == &self.target);
             if !conflicting {
                 return false;
             }
@@ -222,27 +139,46 @@ impl ValidChatOps {
         Ok(())
     }
 
-    fn check_within_edit_window(&self, edit: &EditCandidate) -> Result<(), EditError> {
-        let root_timestamp = self
-            .root_message_timestamp(&edit.target)
+    fn check_within_edit_window(&self, valid_ops: &ValidChatOps) -> Result<(), EditError> {
+        let root_timestamp = valid_ops
+            .root_message_timestamp_for_edit_chain(&self.target)
             .ok_or(EditError::TargetNotFound)?;
-        if edit.timestamp.saturating_sub(root_timestamp) > EDIT_WINDOW_MICROS {
+        if self.timestamp.saturating_sub(root_timestamp) > EDIT_WINDOW_MICROS {
             return Err(EditError::WindowExpired);
         }
         Ok(())
+    }
+}
+
+impl ValidChatOps {
+    /// Build the [`EditCandidate`] for an edit already stored under `hash`, for
+    /// re-validating it against the rest of the set. `None` if `hash` is absent
+    /// or is not an edit.
+    #[allow(unused)]
+    fn edit_candidate(&self, hash: &Hash) -> Option<EditCandidate> {
+        let op = self.get(hash)?;
+        let ChatOpKind::Edit(target) = op.kind else {
+            return None;
+        };
+        Some(EditCandidate {
+            target,
+            editor: op.author,
+            timestamp: op.timestamp,
+            self_hash: Some(*hash),
+        })
     }
 
     /// Walk the edit chain back from `start` to the original message and return
     /// its timestamp. Returns `None` if the chain is broken (a link is missing
     /// or reaches a non-editable operation) or cyclic.
-    fn root_message_timestamp(&self, start: &Hash) -> Option<u64> {
+    fn root_message_timestamp_for_edit_chain(&self, start: &Hash) -> Option<u64> {
         let mut current = start;
         for _ in 0..self.len() + 1 {
             let op = self.get(current)?;
             match &op.kind {
                 ChatOpKind::Message => return Some(op.timestamp),
                 ChatOpKind::Edit(target) => current = target,
-                ChatOpKind::Other => return None,
+                ChatOpKind::Delete(_) | ChatOpKind::Other => return None,
             }
         }
         None
@@ -251,6 +187,9 @@ impl ValidChatOps {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use super::super::ChatOp;
     use super::*;
 
     fn device(n: u8) -> DeviceId {
@@ -291,14 +230,15 @@ mod tests {
     #[test]
     fn valid_first_edit() {
         let alice = device(1);
-        let ops = ValidChatOps::new(HashMap::from([(hash(1), message(alice, 1000, 0))]));
+        let ops = ValidChatOps::new([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(1),
                 editor: alice,
                 timestamp: 2000,
                 self_hash: None,
-            }),
+            }
+            .validate(&ops),
             Ok(())
         );
     }
@@ -306,18 +246,19 @@ mod tests {
     #[test]
     fn valid_chained_edit() {
         let alice = device(1);
-        let ops = ValidChatOps::new(HashMap::from([
+        let ops = ValidChatOps::new([
             (hash(1), message(alice, 1000, 0)),
             (hash(2), edit(alice, 2000, 1, hash(1))),
-        ]));
+        ]);
         // Editing the edit (hash 2) extends the linear chain.
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(2),
                 editor: alice,
                 timestamp: 3000,
                 self_hash: None,
-            }),
+            }
+            .validate(&ops),
             Ok(())
         );
     }
@@ -325,14 +266,15 @@ mod tests {
     #[test]
     fn target_not_found() {
         let alice = device(1);
-        let ops = ValidChatOps::new(HashMap::from([(hash(1), message(alice, 1000, 0))]));
+        let ops = ValidChatOps::new([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(9),
                 editor: alice,
                 timestamp: 2000,
                 self_hash: None,
-            }),
+            }
+            .validate(&ops),
             Err(EditError::TargetNotFound)
         );
     }
@@ -341,14 +283,15 @@ mod tests {
     fn target_not_editable() {
         let alice = device(1);
         // hash 1 is a reaction / group-info / etc.
-        let ops = ValidChatOps::new(HashMap::from([(hash(1), other(alice, 1000, 0))]));
+        let ops = ValidChatOps::new([(hash(1), other(alice, 1000, 0))]);
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(1),
                 editor: alice,
                 timestamp: 2000,
                 self_hash: None,
-            }),
+            }
+            .validate(&ops),
             Err(EditError::TargetNotEditable)
         );
     }
@@ -357,14 +300,15 @@ mod tests {
     fn not_author() {
         let alice = device(1);
         let bobbi = device(2);
-        let ops = ValidChatOps::new(HashMap::from([(hash(1), message(alice, 1000, 0))]));
+        let ops = ValidChatOps::new([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(1),
                 editor: bobbi,
                 timestamp: 2000,
                 self_hash: None,
-            }),
+            }
+            .validate(&ops),
             Err(EditError::NotAuthor)
         );
     }
@@ -372,18 +316,19 @@ mod tests {
     #[test]
     fn already_edited_is_rejected() {
         let alice = device(1);
-        let ops = ValidChatOps::new(HashMap::from([
+        let ops = ValidChatOps::new([
             (hash(1), message(alice, 1000, 0)),
             (hash(2), edit(alice, 2000, 1, hash(1))),
-        ]));
+        ]);
         // A second edit of hash 1 would form a tree, not a chain.
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(1),
                 editor: alice,
                 timestamp: 2500,
                 self_hash: None,
-            }),
+            }
+            .validate(&ops),
             Err(EditError::AlreadyEdited)
         );
     }
@@ -391,19 +336,20 @@ mod tests {
     #[test]
     fn self_hash_excluded_from_already_edited_scan() {
         let alice = device(1);
-        let ops = ValidChatOps::new(HashMap::from([
+        let ops = ValidChatOps::new([
             (hash(1), message(alice, 1000, 0)),
             (hash(2), edit(alice, 2000, 1, hash(1))),
-        ]));
+        ]);
         // Validating the existing edit (hash 2) against its own target must not
         // see itself as a competing edit.
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(1),
                 editor: alice,
                 timestamp: 2000,
                 self_hash: Some(hash(2)),
-            }),
+            }
+            .validate(&ops),
             Ok(())
         );
     }
@@ -422,21 +368,23 @@ mod tests {
 
         // hash(3) has the lower seq_num, so it wins
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(1),
                 editor: alice,
                 timestamp: 2000,
                 self_hash: Some(hash(3)),
-            }),
+            }
+            .validate(&ops),
             Ok(())
         );
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(1),
                 editor: alice,
                 timestamp: 2000,
                 self_hash: Some(hash(2)),
-            }),
+            }
+            .validate(&ops),
             Err(EditError::AlreadyEdited)
         );
     }
@@ -452,21 +400,23 @@ mod tests {
             (hash(3), edit(alice, 2000, 1, hash(1))),
         ]));
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(1),
                 editor: alice,
                 timestamp: 2000,
                 self_hash: Some(hash(2)),
-            }),
+            }
+            .validate(&ops),
             Ok(())
         );
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(1),
                 editor: alice,
                 timestamp: 2000,
                 self_hash: Some(hash(3)),
-            }),
+            }
+            .validate(&ops),
             Err(EditError::AlreadyEdited)
         );
     }
@@ -480,23 +430,25 @@ mod tests {
         ]));
         // Editing the chained edit just within the window from the root is ok.
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(2),
                 editor: alice,
                 timestamp: 1000 + EDIT_WINDOW_MICROS,
                 self_hash: None,
-            }),
+            }
+            .validate(&ops),
             Ok(())
         );
         // Just past the window from the root is rejected, even though the direct
         // target (hash 2) is recent.
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(2),
                 editor: alice,
                 timestamp: 1000 + EDIT_WINDOW_MICROS + 1,
                 self_hash: None,
-            }),
+            }
+            .validate(&ops),
             Err(EditError::WindowExpired)
         );
     }
@@ -506,12 +458,13 @@ mod tests {
         let alice = device(1);
         let ops = ValidChatOps::new(HashMap::from([(hash(1), message(alice, 1000, 0))]));
         assert_eq!(
-            ops.validate_edit(&EditCandidate {
+            EditCandidate {
                 target: hash(1),
                 editor: alice,
                 timestamp: 1000 + EDIT_WINDOW_MICROS + 1,
                 self_hash: None,
-            }),
+            }
+            .validate(&ops),
             Err(EditError::WindowExpired)
         );
     }

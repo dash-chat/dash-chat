@@ -83,7 +83,7 @@ Run on **both agents simultaneously**. The inline `waitFor`/`typeInto` helpers s
   await waitFor('[data-testid="all-chats-empty"]');
   (await waitFor('[data-testid="home-new-message-btn"]')).click();
   (await waitFor('[data-testid="new-message-add-contact"] a')).click();
-  await waitFor('[data-testid="add-contact-code-input"]');
+  await waitFor('[data-testid="add-contact-link-input"]');
   const qr = await waitFor('wa-qr-code');
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
@@ -122,7 +122,7 @@ Run on **both agents simultaneously**. Each agent types the peer's code, waits f
     el.dispatchEvent(new Event('change', { bubbles: true }));
     await new Promise(r => requestAnimationFrame(r));
   };
-  await typeInto('[data-testid="add-contact-code-input"] input', '<agent2Code>');
+  await typeInto('[data-testid="add-contact-link-input"] input', '<agent2Code>');
   await waitFor('[data-testid="direct-chat-page"]');
   await typeInto('[data-testid="message-input-textarea"] textarea', 'Hello from Alice!');
   (await waitFor('[data-testid="message-input-send"]')).click();

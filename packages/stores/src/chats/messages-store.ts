@@ -7,23 +7,35 @@ import { DeviceId, Hash } from '../p2panda/types';
 import {
 	ChatId,
 	ChatReaction,
-	MediaAttachment,
+	MessageDisplay,
+	MessageVersion,
 	OutgoingMedia,
 	Payload,
+	hasBody,
 	mediaBundleToAttachment,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
 
+/** The window during which a message may be edited, measured from the original
+ * message timestamp. Frontend operation timestamps are milliseconds since the
+ * UNIX epoch (the backend serializes them as such), so this is 24h in ms. */
+export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** The window during which a message may be deleted for everyone, measured
+ * from the original message timestamp. Deleting a message for yourself is
+ * always allowed. Mirrors `DELETE_WINDOW_MICROS` in
+ * `crates/dashchat-node/src/chat/validation/delete.rs` (frontend timestamps
+ * are ms). */
+export const DELETE_FOR_EVERYONE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 export interface Message {
 	hash: string;
-	content: {
-		message: string;
-		media: MediaAttachment | null;
-	};
+	/** The message payload with its reactions and edit history, or
+	 * `'deleted-for-everyone'` once deleted. */
+	content: MessageDisplay;
 	timestamp: number;
 	author: DeviceId;
 	seqNum: number;
-	reactions: Record<DeviceId, string>;
 }
 
 // The messages of a single chat, direct or group alike: the message log with
@@ -42,16 +54,24 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const { messages, reactionsByTarget } = collectMessageActionsByType(logs);
+		const { messages, reactionsByTarget, editsByTarget, deletes } =
+			collectMessageActionsByType(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
 			const message = messages[target];
-			if (message) {
-				message.reactions = byAuthor;
-			} else {
+			if (message === undefined) {
 				console.warn('reaction for missing message');
+				// Deletes are applied last, so live content is always present here.
+			} else if (hasBody(message.content)) {
+				message.content.reactions = byAuthor;
 			}
 		}
+
+		for (const [hash, message] of Object.entries(messages)) {
+			messages[hash] = applyEdits(message, editsByTarget);
+		}
+
+		applyDeletes(messages, deletes);
 
 		return messages;
 	});
@@ -120,6 +140,27 @@ export class MessagesStore {
 		const chatId = await this.chatId();
 		await this.client.sendReaction(chatId, reaction);
 	}
+
+	async editMessage(message: Message, newText: string): Promise<Hash> {
+		const chatId = await this.chatId();
+		const current = currentVersion(message);
+		return this.client.editMessage(chatId, current.hash, newText);
+	}
+
+	async deleteMessage(message: Message): Promise<Hash> {
+		const chatId = await this.chatId();
+		const current = currentVersion(message);
+		return this.client.deleteMessage(chatId, current.hash);
+	}
+}
+
+/** A delete op, keyed in `deletesByTarget` by the original message it
+ * deletes. */
+interface Delete {
+	hash: Hash;
+	timestamp: number;
+	/** The complete chain covered: the original message plus every edit. */
+	hashes: Hash[];
 }
 
 function collectMessageActionsByType(
@@ -127,39 +168,174 @@ function collectMessageActionsByType(
 ): {
 	messages: Record<Hash, Message>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
+	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
+	/** Delete ops keyed by their own op hash; each carries the full chain of
+	 * message hashes it covers. */
+	deletes: Record<Hash, Delete>;
 } {
 	const messages: Record<Hash, Message> = {};
-	const reactions: Record<Hash, Record<DeviceId, string>> = {};
+	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
+	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
+	const deletes: Record<Hash, Delete> = {};
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
 			const body = operation.body;
-			if (body?.type !== 'Chat') continue;
+			if (!body) {
+				// The only body-less ops in a chat log are group-control ops
+				// (which carry their action in `header.auth`) and messages whose
+				// payload was tombstoned by a delete. Record the latter as a
+				// placeholder: the DeleteMessage op that references it confirms it
+				// as deleted (see `applyDeletes`); an unreferenced one is an
+				// anomaly rendered as an error bubble (`'body-unavailable'`).
+				if (operation.header.auth) continue;
+				messages[operation.hash] = {
+					hash: operation.hash,
+					content: 'body-unavailable',
+					author,
+					seqNum: operation.header.seq_num,
+					timestamp: operation.header.timestamp,
+				};
+				continue;
+			}
+			if (body.type !== 'Chat') continue;
 			if (body.payload.type === 'Message') {
 				messages[operation.hash] = {
 					hash: operation.hash,
 					content: {
 						message: body.payload.payload.message,
 						media: mediaBundleToAttachment(body.payload.payload.media),
+						reactions: {},
+						editHistory: [],
 					},
 					author,
 					seqNum: operation.header.seq_num,
 					timestamp: operation.header.timestamp,
-					reactions: {},
 				};
 			} else if (body.payload.type === 'Reaction') {
 				const { target, emoji } = body.payload.payload;
-				if (reactions[target] === undefined) {
-					reactions[target] = {};
+				if (reactionsByTarget[target] === undefined) {
+					reactionsByTarget[target] = {};
 				}
 				if (emoji) {
-					reactions[target][author] = emoji;
+					reactionsByTarget[target][author] = emoji;
 				} else {
-					delete reactions[target][author];
+					delete reactionsByTarget[target][author];
 				}
+			} else if (body.payload.type === 'EditMessage') {
+				const target = body.payload.payload.edit_hash;
+				if (editsByTarget[target] === undefined) {
+					editsByTarget[target] = {};
+				}
+				editsByTarget[target][operation.hash] = {
+					hash: operation.hash,
+					text: body.payload.payload.message,
+					timestamp: operation.header.timestamp,
+				};
+			} else if (body.payload.type === 'DeleteMessage') {
+				deletes[operation.hash] = {
+					hash: operation.hash,
+					timestamp: operation.header.timestamp,
+					hashes: body.payload.payload.hashes,
+				};
 			}
 		}
 	}
 
-	return { messages, reactionsByTarget: reactions };
+	return {
+		messages,
+		reactionsByTarget,
+		editsByTarget,
+		deletes,
+	};
+}
+
+/** Mark deleted messages as such, collapsing each delete's chain (the original
+ * message plus its edits) to a single placeholder: keep the original (lowest
+ * seq_num, since edits always follow it in the same author's log) as the
+ * `'deleted-for-everyone'` placeholder and drop the rest. */
+function applyDeletes(
+	messages: Record<Hash, Message>,
+	deletes: Record<Hash, Delete>,
+): void {
+	for (const del of Object.values(deletes)) {
+		// A chain member is absent from `messages` when it's an edit op that still
+		// has its body (edits live in `editsByTarget`, not `messages`) or an op
+		// this peer hasn't synced yet. Tombstoned members are *not* absent: they
+		// stay as body-less records. Skip the delete entirely until at least one
+		// target is present.
+		//
+		// We trust the backend to delivery only valid operations, so this is not a check
+		// for validity.
+		const chain = del.hashes.filter(hash => messages[hash] !== undefined);
+		if (chain.length === 0) continue;
+
+		const original = chain.reduce((a, b) =>
+			messages[a].seqNum <= messages[b].seqNum ? a : b,
+		);
+		for (const hash of chain) {
+			if (hash === original) {
+				messages[hash].content = 'deleted-for-everyone';
+			} else {
+				delete messages[hash];
+			}
+		}
+	}
+}
+
+// Apply the message's edits and return the resulting message. Every edit
+// reachable from the message — following chains through `editsByTarget`,
+// across forks — becomes a version; the one with the highest timestamp is the
+// displayed text.
+//
+// TODO(after p2panda-spaces integration): this trusts every edit op in the
+// raw logs and enforces none of the backend's edit-validation rules
+// (`ValidChatOps::validate_edit` in crates/dashchat-node/src/chat/edit.rs):
+// author-only, at most one edit per target resolved by (seq_num, hash), the
+// 24h edit window, and target-must-be-editable. A misbehaving peer's ops
+// would therefore render here. Once p2panda-spaces is integrated the
+// frontend should consume validated logs (or mirror validate_edit) instead.
+function applyEdits(
+	message: Message,
+	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>,
+): Message {
+	// Deletes are applied after edits, so live content is always present here.
+	if (!hasBody(message.content)) return message;
+	const versions: MessageVersion[] = [];
+	const seen = new Set<Hash>([message.hash]);
+	const pending = Object.values(editsByTarget[message.hash] ?? {});
+	while (pending.length > 0) {
+		const edit = pending.pop();
+		if (edit === undefined || seen.has(edit.hash)) continue;
+		seen.add(edit.hash);
+		versions.push(edit);
+		pending.push(...Object.values(editsByTarget[edit.hash] ?? {}));
+	}
+	if (versions.length === 0) return message;
+
+	versions.sort((v1, v2) => v1.timestamp - v2.timestamp);
+	const latest = versions[versions.length - 1];
+	return {
+		...message,
+		content: {
+			...message.content,
+			message: latest.text,
+			editHistory: versions,
+		},
+	};
+}
+
+function currentVersion(message: Message): MessageVersion {
+	if (!hasBody(message.content)) {
+		return { hash: message.hash, text: '', timestamp: message.timestamp };
+	}
+	const { editHistory } = message.content;
+	if (editHistory.length > 0) {
+		return editHistory[editHistory.length - 1];
+	}
+	return {
+		hash: message.hash,
+		text: message.content.message,
+		timestamp: message.timestamp,
+	};
 }
