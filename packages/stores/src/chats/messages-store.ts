@@ -54,7 +54,7 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const { messages, reactionsByTarget, editsByTarget, deletesByTarget } =
+		const { messages, reactionsByTarget, editsByTarget, deletes } =
 			collectMessageActionsByType(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
@@ -71,7 +71,7 @@ export class MessagesStore {
 			messages[hash] = applyEdits(message, editsByTarget);
 		}
 
-		applyDeletes(messages, deletesByTarget);
+		applyDeletes(messages, deletes);
 
 		return messages;
 	});
@@ -169,12 +169,14 @@ function collectMessageActionsByType(
 	messages: Record<Hash, Message>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
 	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
-	deletesByTarget: Record<Hash, Record<Hash, Delete>>;
+	/** Delete ops keyed by their own op hash; each carries the full chain of
+	 * message hashes it covers. */
+	deletes: Record<Hash, Delete>;
 } {
 	const messages: Record<Hash, Message> = {};
 	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
 	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
-	const deletesByTarget: Record<Hash, Record<Hash, Delete>> = {};
+	const deletes: Record<Hash, Delete> = {};
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
@@ -231,16 +233,11 @@ function collectMessageActionsByType(
 					timestamp: operation.header.timestamp,
 				};
 			} else if (body.payload.type === 'DeleteMessage') {
-				for (const target of body.payload.payload.hashes) {
-					if (deletesByTarget[target] === undefined) {
-						deletesByTarget[target] = {};
-					}
-					deletesByTarget[target][operation.hash] = {
-						hash: operation.hash,
-						timestamp: operation.header.timestamp,
-						hashes: body.payload.payload.hashes,
-					};
-				}
+				deletes[operation.hash] = {
+					hash: operation.hash,
+					timestamp: operation.header.timestamp,
+					hashes: body.payload.payload.hashes,
+				};
 			}
 		}
 	}
@@ -249,30 +246,30 @@ function collectMessageActionsByType(
 		messages,
 		reactionsByTarget,
 		editsByTarget,
-		deletesByTarget,
+		deletes,
 	};
 }
 
 /** Mark deleted messages as such, collapsing each delete's chain (the original
- * message plus its edits) to a single placeholder. Every chain member is
- * present in `messages` — either as a live op or, once tombstoned, as a
- * body-less `'body-unavailable'` record — so we keep the original (lowest
+ * message plus its edits) to a single placeholder: keep the original (lowest
  * seq_num, since edits always follow it in the same author's log) as the
  * `'deleted-for-everyone'` placeholder and drop the rest. */
 function applyDeletes(
 	messages: Record<Hash, Message>,
-	deletesByTarget: Record<Hash, Record<Hash, Delete>>,
+	deletes: Record<Hash, Delete>,
 ): void {
-	const deletes: Record<Hash, Delete> = {};
-	for (const byOp of Object.values(deletesByTarget)) {
-		for (const [opHash, del] of Object.entries(byOp)) {
-			deletes[opHash] = del;
-		}
-	}
-
 	for (const del of Object.values(deletes)) {
+		// A chain member is absent from `messages` when it's an edit op that still
+		// has its body (edits live in `editsByTarget`, not `messages`) or an op
+		// this peer hasn't synced yet. Tombstoned members are *not* absent: they
+		// stay as body-less records. Skip the delete entirely until at least one
+		// target is present.
+		//
+		// We trust the backend to delivery only valid operations, so this is not a check
+		// for validity.
 		const chain = del.hashes.filter(hash => messages[hash] !== undefined);
 		if (chain.length === 0) continue;
+
 		const original = chain.reduce((a, b) =>
 			messages[a].seqNum <= messages[b].seqNum ? a : b,
 		);
